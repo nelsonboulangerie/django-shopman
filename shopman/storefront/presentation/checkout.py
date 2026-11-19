@@ -705,20 +705,22 @@ def _money_notices(
     ADR-036) e que tem prazo de aceite a prometer: o Pix é pago no pedido e
     volta inteiro; o cartão é só reservado e a cobrança é o aceite.
     """
-    try:
-        from datetime import date
+    from datetime import date
 
-        from django.utils import timezone
+    from django.utils import timezone
 
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        if ChannelConfig.for_channel(channel_ref).payment.timing != "at_commit":
-            return ()
-        order_date = date.fromisoformat(requested_date) if requested_date else None
-        moment = now or timezone.now()
-    except Exception:
-        logger.debug("checkout_projection_money_notices_failed", exc_info=True)
+    # Fora de qualquer ``try``: canal sem configuração é defeito de instância e
+    # falha gritando, nunca vira "sem frase" em silêncio.
+    if ChannelConfig.for_channel(channel_ref).payment.timing != "at_commit":
         return ()
+    try:
+        order_date = date.fromisoformat(requested_date) if requested_date else None
+    except ValueError:
+        # Data ilegível no rascunho: sem data não há prazo a prometer.
+        return ()
+    moment = now or timezone.now()
     window = checkout_projection.acceptance_window(channel_ref, order_date=order_date, now=moment)
     if window is None:
         return ()

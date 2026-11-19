@@ -95,7 +95,7 @@ def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
 
 class TestPreorderTracking:
     """Pedido confirmado com ``delivery_date`` futura conta a história de
-    encomenda: estado ``preorder_scheduled``, o combinado ("amanhã · A partir
+    encomenda: estado ``preorder_scheduled``, o combinado ("Amanhã · A partir
     das 09h") e o rótulo "Encomenda confirmada"."""
 
     def _make_preorder(self, order, *, days_ahead=1, slot="slot-09"):
@@ -124,8 +124,8 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.state == "preorder_scheduled"
         assert proj.status_label == "Encomenda confirmada"
-        assert proj.when_display == "amanhã · A partir das 9h"
-        assert "garantido para amanhã · A partir das 9h" in proj.promise.message
+        assert proj.when_display == "Amanhã · A partir das 9h"
+        assert "garantido para amanhã, a partir das 9h." in proj.promise.message
 
     def test_unaccepted_future_order_never_promises_confirmation_or_guarantee(self, order):
         from shopman.orderman.models import Order as _Order
@@ -162,7 +162,7 @@ class TestPreorderTracking:
 
         proj = build_order_tracking(order)
 
-        assert proj.when_display == "amanhã · 14h às 14h30"
+        assert proj.when_display == "Amanhã · 14h às 14h30"
 
     def test_on_the_day_the_preorder_rejoins_the_normal_flow(self, order):
         order, _ = self._make_preorder(order, days_ahead=0)
@@ -194,7 +194,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã · A partir das 9h."
+            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã, a partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 
@@ -222,7 +222,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Finalize no ambiente seguro para garantir sua encomenda para amanhã · A partir das 9h."
+            "Finalize no ambiente seguro para garantir sua encomenda para amanhã, a partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 
@@ -1420,8 +1420,11 @@ class TestStatusColours:
         assert proj.promise.fulfillment_wait_kind == "planned_batch"
         assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
         # O que existe é dinheiro reservado no cartão, não produto em lista de espera.
-        assert proj.promise.message.startswith(
-            "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido"
+        # Sem timer de aceite na fila não há prazo na frase; o dia vem em frase
+        # própria, e "pedido" aparece uma vez só (#2749).
+        assert proj.promise.message == (
+            "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar. "
+            "Seu pedido é para hoje."
         )
         assert "fila de espera" not in proj.promise.message
         assert "disponibilidade" not in proj.promise.message.lower()
@@ -1696,7 +1699,7 @@ class TestTrackingSummary:
         proj = build_order_tracking(order)
 
         assert proj.when_display is None
-        assert proj.schedule_display == "hoje · 19h30 às 20h"
+        assert proj.schedule_display == "Hoje · 19h30 às 20h"
 
 
 class TestShareSummary:
@@ -1719,7 +1722,12 @@ class TestShareSummary:
 
         assert text.splitlines()[0].startswith(f"Pedido {order_items.ref} na ")
         assert "10× " in text and "2× " in text
-        assert "Entrega: hoje · 19h30 às 20h" in text
+        # A data vai por extenso: o texto é lido depois, por outra pessoa (WP-L06, P2-10).
+        from django.utils import formats
+
+        today = timezone.localdate()
+        assert f"Entrega: {formats.date_format(today, 'l').lower()}, {formats.date_format(today, 'd/m')} · 19h30 às 20h" in text
+        assert "hoje" not in text
         assert "Endereço: Rua Pará, 100 - Centro - Londrina/PR" in text
         assert "http" not in text
         assert "/pedido/" not in text

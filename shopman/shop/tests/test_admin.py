@@ -1163,6 +1163,106 @@ class TestShopAdminPreorderKitchen:
         assert preorder_activation_at(order)[0] == at(15, 30)
 
 
+class TestShopAdminNoShow:
+    """``Shop.defaults["no_show"]`` editável na página de Pedidos, sem JSON."""
+
+    def test_change_page_shows_no_show_fields(self, db, admin_user, shop):
+        client = Client()
+        client.force_login(admin_user)
+        resp = client.get(reverse("admin:shop_shopordering_change", args=[shop.pk]))
+        assert resp.status_code == 200
+        assert b'name="defaults_no_show_tolerance_minutes"' in resp.content
+        assert b'name="defaults_no_show_cutoff_minutes_before_close"' in resp.content
+        assert b'name="defaults_no_show_paid_waits_cutoff"' in resp.content
+        assert "Pedido não retirado" in resp.content.decode()
+
+    def test_initial_shows_effective_policy(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"no_show": {"tolerance_minutes": 30, "paid_waits_cutoff": False}}
+        shop.save(update_fields=["defaults"])
+
+        form = ShopForm(instance=shop)
+        assert form.fields["defaults_no_show_tolerance_minutes"].initial == 30
+        # Chave ausente mostra o padrão declarado da política.
+        assert form.fields["defaults_no_show_cutoff_minutes_before_close"].initial == 0
+        assert form.fields["defaults_no_show_paid_waits_cutoff"].initial is False
+
+    def test_initial_without_the_block_shows_the_house_rule(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        form = ShopForm(instance=shop)
+        assert form.fields["defaults_no_show_tolerance_minutes"].initial == 60
+        assert form.fields["defaults_no_show_cutoff_minutes_before_close"].initial == 0
+        assert form.fields["defaults_no_show_paid_waits_cutoff"].initial is True
+
+    def test_form_saves_policy_into_shop_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"no_show": {"future_key": "kept"}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = "45"
+        data["defaults_no_show_cutoff_minutes_before_close"] = "30"
+        data.pop("defaults_no_show_paid_waits_cutoff", None)  # chave desligada não vai no POST
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["no_show"] == {
+            "future_key": "kept",
+            "tolerance_minutes": 45,
+            "cutoff_minutes_before_close": 30,
+            "paid_waits_cutoff": False,
+        }
+
+    def test_blank_fields_save_declared_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = ""
+        data["defaults_no_show_cutoff_minutes_before_close"] = ""
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["no_show"] == {
+            "tolerance_minutes": 60,
+            "cutoff_minutes_before_close": 0,
+            "paid_waits_cutoff": True,
+        }
+
+    def test_invalid_values_are_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = "-5"
+        data["defaults_no_show_cutoff_minutes_before_close"] = "99999"
+
+        form = ShopForm(data=data, instance=shop)
+        assert not form.is_valid()
+        assert "defaults_no_show_tolerance_minutes" in form.errors
+        assert "defaults_no_show_cutoff_minutes_before_close" in form.errors
+        shop.refresh_from_db()
+        assert "no_show" not in (shop.defaults or {})
+
+    def test_saving_moves_the_time_the_gesture_releases(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.policies.no_show_policy import resolve_no_show_policy
+
+        assert resolve_no_show_policy().tolerance_minutes == 60
+
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = "20"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        form.save()
+
+        assert resolve_no_show_policy().tolerance_minutes == 20
+
+
 class TestShopAdminPurchaseDefaults:
     """Política de reposição de Compras editável como campos estruturados no ShopForm."""
 

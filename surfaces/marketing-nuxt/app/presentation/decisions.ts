@@ -24,7 +24,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 // Título curto do cartão, pela ocasião. "Lote" é a palavra da Produção para o que
-// sai do forno (vocabulário da suíte, 22/09); "fornada" fica no texto do cliente.
+// fica pronto (vocabulário da suíte, 22/09); "fornada" fica no texto do cliente.
 const TRIGGER_TITLES: Record<string, string> = {
   production_finished: "Lote pronto",
   low_stock: "Estoque baixo",

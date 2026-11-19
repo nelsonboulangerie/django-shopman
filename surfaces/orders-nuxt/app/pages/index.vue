@@ -38,6 +38,8 @@ import {
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import type { ReasonOrderFacts } from "~/presentation/orderReason";
+import { blockedReasonLines } from "~/presentation/cardBlocks";
 import { boardStrip, type BoardStrip } from "~/presentation/boardStrip";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
@@ -83,6 +85,7 @@ const {
   refresh,
   isBusy,
   actionError,
+  actionErrorField,
   clearActionError,
   confirm,
   advance,
@@ -360,6 +363,16 @@ function rowPrimary(card: OrderCardProjection) {
 function rowSecondary(card: OrderCardProjection) {
   const primary = rowPrimary(card);
   return cardAffordances(card).filter((aff) => aff.ref !== primary?.ref);
+}
+/** Por que um gesto da linha está travado, escrito na linha aberta (WP-G06). */
+function rowBlockedReasons(card: OrderCardProjection) {
+  const primary = rowPrimary(card);
+  return blockedReasonLines({
+    primary,
+    primaryLabel: primary?.label ?? "",
+    secondary: rowSecondary(card),
+    blockAnnounced: Boolean(card.advance_block_reason),
+  });
 }
 // how many cards survive the current filters (for the "no results" affordance).
 const visibleCount = computed(() =>
@@ -1158,10 +1171,20 @@ const rejectRef = ref<string | null>(null);
 // fechar, e a página guarda só a saída por rota e por recarga.
 const rejectDirty = ref(false);
 const confirmDiscard = useConfirm();
+// Recusar sem surpresa (WP-G06): ao abrir, o diálogo lê o detalhe do pedido para dizer
+// o que acontece com o dinheiro (o cartão não tem esse fato, e não ganha). A falha da
+// recusa fica guardada aqui e aparece DENTRO do diálogo: o aviso do cartão está atrás
+// dele.
+const rejectRead = useOrderReasonRead();
+const rejectError = ref("");
+const rejectErrorField = ref("");
 function closeReject() {
   if (rejectRef.value && isBusy(rejectRef.value)) return;
   rejectRef.value = null;
   rejectDirty.value = false;
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  rejectRead.clear();
 }
 onBeforeRouteLeave(
   () =>
@@ -1181,18 +1204,35 @@ function beforeUnload(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", beforeUnload));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
+// O pedido do diálogo: o cartão diz quem é na hora em que o diálogo abre; o detalhe,
+// quando chega, vale por cima (e continua valendo se o cartão sair do painel).
+const rejectOrder = computed<ReasonOrderFacts | null>(() => {
+  const ref_ = rejectRef.value;
+  if (!ref_) return null;
+  const card = allCards.value.find((c) => c.ref === ref_);
+  return { ...card, ...rejectRead.order.value, ref: ref_ };
+});
 const isMarketplaceReject = computed(
-  () =>
-    allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref ===
-    "ifood",
+  () => rejectOrder.value?.channel_ref === "ifood",
 );
 function openReject(ref_: string) {
   rejectRef.value = ref_;
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  void rejectRead.read(ref_);
 }
 async function confirmReject(payload: { reasonKey: string; internalNote: string }) {
   const ref_ = rejectRef.value;
   if (!ref_ || isBusy(ref_)) return;
-  if (await reject(ref_, payload)) closeReject();
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  if (await reject(ref_, payload)) {
+    closeReject();
+    return;
+  }
+  // O diálogo continua aberto, com o motivo escolhido e a frase da falha.
+  rejectError.value = actionError(ref_);
+  rejectErrorField.value = actionErrorField(ref_);
 }
 
 // settle-cash dialog (needs an amount; and, when the courier took change from
@@ -2061,7 +2101,7 @@ function compactClear() {
           pinned="order"
           view-key="orders-queue"
           empty-icon="i-lucide-inbox"
-          empty-title="Nenhum pedido precisa de você agora."
+          empty-title="Nenhum pedido em andamento."
           caption="Tabela dos pedidos em andamento"
           data-supervision-table
         >
@@ -2245,28 +2285,39 @@ function compactClear() {
                   <dd>{{ row.original.card.advance_block_reason }}</dd>
                 </template>
               </dl>
-              <div
-                class="flex flex-wrap content-start items-start justify-end gap-2"
-              >
-                <NuxtButton
-                  v-for="aff in rowSecondary(row.original.card)"
-                  :key="aff.ref"
-                  :icon="aff.icon.replace('lucide:', 'i-lucide-')"
-                  :label="aff.label"
-                  :color="aff.priority === 'danger' ? 'error' : 'neutral'"
-                  variant="outline"
-                  :disabled="isBusy(row.original.card.ref) || aff.disabled"
-                  :title="aff.reason || undefined"
-                  @click="onAction(row.original.card.ref, aff.ref)"
-                />
-                <NuxtButton
-                  v-if="canManageOrders"
-                  :to="`/${row.original.card.ref}`"
-                  icon="i-lucide-file-text"
-                  label="Abrir o pedido"
-                  color="neutral"
-                  variant="outline"
-                />
+              <div class="flex flex-col gap-2">
+                <div
+                  class="flex flex-wrap content-start items-start justify-end gap-2"
+                >
+                  <NuxtButton
+                    v-for="aff in rowSecondary(row.original.card)"
+                    :key="aff.ref"
+                    :icon="aff.icon.replace('lucide:', 'i-lucide-')"
+                    :label="aff.label"
+                    :color="aff.priority === 'danger' ? 'error' : 'neutral'"
+                    variant="outline"
+                    :disabled="isBusy(row.original.card.ref) || aff.disabled"
+                    :title="aff.reason || undefined"
+                    @click="onAction(row.original.card.ref, aff.ref)"
+                  />
+                  <NuxtButton
+                    v-if="canManageOrders"
+                    :to="`/${row.original.card.ref}`"
+                    icon="i-lucide-file-text"
+                    label="Abrir o pedido"
+                    color="neutral"
+                    variant="outline"
+                  />
+                </div>
+                <!-- Por que o gesto está travado, escrito (o `title` não existe no toque). -->
+                <p
+                  v-for="line in rowBlockedReasons(row.original.card)"
+                  :key="line"
+                  class="text-end text-xs text-muted"
+                  data-supervision-blocked-reason
+                >
+                  {{ line }}
+                </p>
               </div>
             </div>
           </template>
@@ -2320,13 +2371,21 @@ function compactClear() {
       data-exit-base-action
     />
 
-    <!-- reject dialog: o mesmo diálogo de motivo do detalhe do pedido -->
+    <!-- reject dialog: o mesmo diálogo de motivo do detalhe do pedido. No painel ele
+         diz qual pedido é e lê o destino do dinheiro ao abrir. -->
     <OrderReasonDialog
       :open="rejectRef != null"
       mode="reject"
+      identify
+      :order="rejectOrder"
+      :money-effect="rejectRead.order.value?.cancel_money_effect ?? ''"
+      :money-read="rejectRead.state.value"
+      :error="rejectError"
+      :error-field="rejectErrorField"
       :marketplace="isMarketplaceReject"
       :cancel-reasons="cancelReasons"
       :busy="Boolean(rejectRef && isBusy(rejectRef))"
+      @retry-money="rejectRef && rejectRead.read(rejectRef)"
       @dirty-change="rejectDirty = $event"
       @update:open="
         (v) => {

@@ -69,13 +69,25 @@ class DeliveryStopProjection:
     error: str = ""
     #: "Chamar sozinho" (``courier-dispatch``), com a revisão e quem chama.
     dispatch_action: Action | None = None
+    #: A última chamada ficou sem resposta da TaOn: "Chamar de novo"
+    #: (``courier-dispatch-again``), a MESMA ação do Painel do pedido. Com ela, o
+    #: "Chamar sozinho" some (o servidor recusaria) e o pedido não entra em corrida.
+    dispatch_again_action: Action | None = None
+    #: Numa parada de corrida: o pedido mudou depois da chamada e a cobrança que o
+    #: entregador leu ficou para trás (``courier.charge_outdated``):
+    #: ``{sent, current, collected}``, ou ``None``.
+    charge_outdated: dict | None = None
 
 
 @dataclass(frozen=True)
 class DeliveryDriverProjection:
     name: str
     phone: str
+    #: "Honda CG prata · ABC1D23": modelo e cor juntos, a placa depois.
     vehicle: str
+    #: A foto do entregador, servida pelo servidor (``deliveries/<corrida>/driver-photo/``)
+    #: só enquanto a corrida vive. Vazio sem foto: a tela mostra a inicial.
+    photo_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -96,7 +108,11 @@ class DeliveryRideProjection:
     called_at: str = ""
     called_by: str = ""
     pickup_eta_at: str = ""
+    #: A TaOn avisou que o entregador está nas redondezas da loja (``AN``).
+    near_pickup_at: str = ""
     arrived_pickup_at: str = ""
+    #: A TaOn avisou que o entregador espera na loja além do combinado (``AW``).
+    waited_pickup_at: str = ""
     picked_up_at: str = ""
     delivery_eta_at: str = ""
     tracking_url: str = ""
@@ -117,10 +133,21 @@ class DeliveryRideProjection:
     #: Só com ``state == "reopened"``.
     reopened_at: str = ""
     reopened_driver: str = ""
+    #: ``withdrew`` (o entregador desistiu) ou ``transfer`` (a TaOn trocou o entregador).
+    reopened_reason: str = ""
+    #: Antes da coleta, o que vai na mão do entregador e o que conferir:
+    #: "Leva a maquininha e o troco. Confira a placa antes de entregar."
+    custody_line: str = ""
+    #: A corrida passou da idade em que se acompanha de perto
+    #: (``courier.ride_open_too_long``): a leitura segue lenta e a tela avisa.
+    open_too_long: bool = False
     #: O cancelamento pedido desta corrida: "" · pending · unknown · failed
     #: (``courier.cancel_state``, a mesma fonte do Painel do pedido) e a frase.
     cancel_state: str = ""
     cancel_message: str = ""
+    #: Desde quando a TaOn não informa a corrida (``courier.progress_view``, o
+    #: mesmo do Painel); vazio com a leitura em dia.
+    sync_since: str = ""
 
 
 @dataclass(frozen=True)
@@ -171,7 +198,12 @@ def _action(ref: str, label: str, revision: str, user, *, confirm: bool = True,
 
 
 def _stop(order: Order, *, with_asks: bool = False, user=None) -> DeliveryStopProjection:
-    from shopman.backstage.projections.order_queue import _courier_change_fields, _declared_volumes
+    from shopman.backstage.projections.order_queue import (
+        COURIER_DISPATCH_AGAIN_CONFIRMATION,
+        COURIER_NO_ANSWER_MESSAGE,
+        _courier_change_fields,
+        _declared_volumes,
+    )
     from shopman.shop.services import courier, operator_orders
 
     data = order.data or {}
@@ -184,6 +216,13 @@ def _stop(order: Order, *, with_asks: bool = False, user=None) -> DeliveryStopPr
     change_q = int(asks.get("change_out_suggested_q") or 0)
     block = courier.get_block(order)
     error = block.get("error") if isinstance(block.get("error"), dict) else {}
+    message = str(error.get("message") or "")
+    callable_here = with_asks and courier.is_enabled_for(order) and not courier.has_active_ride(order)
+    # A chamada sem resposta trava qualquer outra (não se sabe se a corrida abriu
+    # lá): a mesma regra e a mesma frase do Painel (``order_queue._courier_block``).
+    unresolved = courier.unresolved_dispatch(order) is not None if callable_here else False
+    if unresolved:
+        message = COURIER_NO_ANSWER_MESSAGE
     return DeliveryStopProjection(
         ref=order.ref,
         code=operator_orders.short_ref(order.ref),
@@ -199,9 +238,14 @@ def _stop(order: Order, *, with_asks: bool = False, user=None) -> DeliveryStopPr
         needs_machine=bool(asks.get("needs_machine")),
         change_label=_courier_change_fields(order).get("change_label", "") if change_q else "",
         group_refusal=courier.group_refusal(order) if with_asks else "",
-        error=str(error.get("message") or "") if with_asks else "",
+        error=message if with_asks else "",
         dispatch_action=_action("courier-dispatch", "Chamar sozinho", courier.dispatch_revision(order), user)
-        if with_asks and courier.is_enabled_for(order) and not courier.has_active_ride(order) else None,
+        if callable_here and not unresolved else None,
+        dispatch_again_action=_action(
+            "courier-dispatch-again", "Chamar de novo", courier.dispatch_revision(order), user,
+            confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+        ) if unresolved else None,
+        charge_outdated=None if with_asks else courier.charge_outdated(order),
     )
 
 
@@ -269,8 +313,14 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
     raw_driver = block.get("driver") if isinstance(block.get("driver"), dict) else None
     driver = None
     if raw_driver and raw_driver.get("name"):
-        vehicle = " · ".join(p for p in (str(raw_driver.get("vehicle_model") or ""), str(raw_driver.get("vehicle_plate") or "")) if p)
-        driver = DeliveryDriverProjection(name=str(raw_driver["name"]), phone=str(raw_driver.get("phone") or ""), vehicle=vehicle)
+        ride_id = str(block.get("id_mch") or "")
+        driver = DeliveryDriverProjection(
+            name=str(raw_driver["name"]),
+            phone=str(raw_driver.get("phone") or ""),
+            vehicle=courier.vehicle_line(raw_driver),
+            photo_url=(f"/api/v1/backstage/deliveries/{ride_id}/driver-photo/"
+                       if state in ("coming", "atStore", "route") and courier.has_driver_photo(ride_id) else ""),
+        )
     position = None
     if block.get("id_mch") and state in ("coming", "atStore", "route"):
         cached = cache.get(f"courier:pos:{block['id_mch']}")
@@ -285,7 +335,9 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
     trip = _trip_fields(lead) if back else {}
     cancel = courier_cancel_state(lead)
     can_cancel = courier_can_cancel(lead, cancel)
-    reopened = courier.reopen_view(block) if state == "reopened" else {"at": "", "driver": ""}
+    reopened = courier.reopen_view(block) if state == "reopened" else {"at": "", "driver": "", "reason": ""}
+    custody_line = (_custody_line([by_ref[ref] for ref in sequence])
+                    if driver is not None and state in ("coming", "atStore") else "")
     return DeliveryRideProjection(
         key=str(block.get("id_mch") or f"call:{lead.ref}"),
         number=int(block.get("ride_number") or 0),
@@ -298,7 +350,9 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         called_at=str(block.get("called_at") or ""),
         called_by=str(block.get("called_by") or ""),
         pickup_eta_at=progress.get("pickup_eta_at", ""),
+        near_pickup_at=progress.get("near_pickup_at", ""),
         arrived_pickup_at=progress.get("arrived_pickup_at", ""),
+        waited_pickup_at=progress.get("waited_pickup_at", ""),
         picked_up_at=progress.get("picked_up_at", ""),
         delivery_eta_at=progress.get("delivery_eta_at", ""),
         # O link é de UMA parada. Com várias, "o link da corrida" seria o de um
@@ -316,7 +370,25 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         cancel_message=cancel["message"],
         reopened_at=reopened["at"],
         reopened_driver=reopened["driver"],
+        reopened_reason=reopened["reason"],
+        custody_line=custody_line,
+        open_too_long=courier.ride_open_too_long(block),
+        sync_since=progress.get("sync_since", ""),
     )
+
+
+def _custody_line(orders: list[Order]) -> str:
+    """O que sai com o entregador da TaOn nesta corrida, e a conferência que isso pede.
+
+    Só a maquininha e o troco que de fato saíram (a custódia registrada na
+    chamada): quem leva dinheiro ou equipamento da casa é conferido pela placa.
+    """
+    from shopman.shop.services import operator_orders
+
+    machine = any(operator_orders.equipment_custody(order).pending for order in orders)
+    change = any(operator_orders.courier_change(order).pending for order in orders)
+    things = " e ".join(word for word, out in (("a maquininha", machine), ("o troco", change)) if out)
+    return f"Leva {things}. Confira a placa antes de entregar." if things else ""
 
 
 def build_deliveries(*, user=None) -> DeliveriesProjection:

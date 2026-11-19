@@ -256,7 +256,8 @@ def test_storefront_copy_fact_contract_covers_waitlist_and_card_authorization():
         )
 
     assert "pending → authorized → captured" in payment_contract
-    assert "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE" in tracking_presentation
+    assert "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL" in tracking_presentation
+    assert "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE" in tracking_presentation
     assert "Cartão autorizado. Acompanhe o pedido por aqui." in copy_defaults
     assert "Cartão autorizado. Pedido aceito; acompanhe o andamento por aqui." in copy_defaults
     assert "Sua reserva está na fila de espera." in copy_defaults
@@ -293,7 +294,8 @@ def test_storefront_operational_copy_guardrails_cover_payment_prep_and_fulfillme
         "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
         "Finalize no ambiente seguro para seguir com o pedido aceito.",
         "Finalize no ambiente seguro para garantir sua encomenda para {when}.",
-        "Pagamento recebido. A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
+        "Pagamento recebido. A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+        "Sua encomenda é para {when}.",
         "Pague ao receber",
         "Acompanhe o status do pedido em tempo real.",
         "Assim que a confirmação chegar, atualizamos esta tela.",
