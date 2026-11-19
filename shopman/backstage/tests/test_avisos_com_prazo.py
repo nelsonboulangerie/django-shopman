@@ -55,10 +55,27 @@ def test_contagem_e_livro_sao_panoramicos():
         assert OperatorAlert.audience_for_type(type_) == "finance"
 
 
+#: Tipos que só interrompem com prazo próprio (``respond_by``): a spec dá origem e assunto,
+#: e o prazo é o do relógio do tipo, não a régua da casa. O "vou verificar" da Concierge
+#: põe o ``respond_by`` no primeiro prazo, contado com a loja aberta (WP-06).
+ONLY_OWN_DEADLINE = {"concierge_verify"}
+
+
 def test_todo_tipo_que_interrompe_tem_origem_assunto_e_regua():
     for type_, spec in ALERT_SPECS.items():
         assert spec.origin and spec.subject and spec.origin_icon.startswith("i-lucide-"), type_
-        assert spec.deadline_minutes > 0, type_
+        if type_ in ONLY_OWN_DEADLINE:
+            assert spec.deadline_minutes == 0, type_
+        else:
+            assert spec.deadline_minutes > 0, type_
+
+
+def test_a_verificacao_da_concierge_so_interrompe_com_o_prazo_dela(db):
+    sem_prazo = _alert("concierge_verify")
+    assert deadline_for(sem_prazo) is None and deadline_kind(sem_prazo) == ""
+    prazo = timezone.now() + timedelta(minutes=20)
+    com_prazo = _alert("concierge_verify", respond_by=prazo)
+    assert deadline_for(com_prazo) == prazo and deadline_kind(com_prazo) == "external"
 
 
 def test_whatsapp_tem_a_regua_de_5_minutos(db):

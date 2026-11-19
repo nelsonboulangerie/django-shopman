@@ -339,12 +339,11 @@ def alert_message(conversation, record: dict) -> str:
         promised = f"A Concierge prometeu a resposta até {promise['when']}."
     else:
         promised = "A Concierge não prometeu prazo."
+    # Os gestos (responder, assumir) são do cartão: a mensagem só diz o que é e o que
+    # foi prometido. O cliente vai pelo nome; a transcrição, pelo Admin.
     name = (getattr(conversation, "customer_name", "") or "").strip()
-    who = f"{name}, conversa #{conversation.pk}" if name else f"Conversa #{conversation.pk}"
-    return (
-        f"{asked}\n{promised} Responda aqui que ela repassa, ou assuma a conversa.\n"
-        f"{who}: /admin/shop/conversation/{conversation.pk}/change/\n\nDedupe: {_dedupe_key(conversation, record)}"
-    )
+    who = f"\nCliente: {name}." if name else ""
+    return f"{asked}\n{promised}{who}\n\nDedupe: {_dedupe_key(conversation, record)}"
 
 
 def notify_team(conversation, record: dict | None) -> None:
@@ -512,8 +511,6 @@ def take_over(alert_pk: int, *, actor: str):
 
 #: A verificação que passou do segundo prazo e foi entregue à equipe.
 HANDED_OFF = "handed_off"
-#: A severidade do cartão no primeiro prazo: urgente no sino, sem e-mail (``critical``).
-URGENT_SEVERITY = "error"
 #: O ``escalated_by`` da triagem do handoff no segundo prazo (``triage.Triage``).
 ESCALATED_BY = "verification_timeout"
 
@@ -562,7 +559,12 @@ def _handoff_triage(record: dict):
 
 
 def _nudge(conversation, record: dict, *, now: datetime) -> str:
-    """Primeiro prazo: o cliente recebe UM aviso, e o cartão sobe a urgente com o segundo prazo."""
+    """Primeiro prazo: o cliente recebe UM aviso, e o cartão sobe a urgente com o segundo prazo.
+
+    Urgente é o prazo (``respond_by``): com ele, a janela do aviso interrompe a tela no
+    Gestor e conta até o segundo prazo. A severidade fica a de aviso: uma pergunta de
+    cliente não é erro.
+    """
     from shopman.shop.adapters import alert as alert_adapter
 
     from . import house_rules
@@ -573,9 +575,7 @@ def _nudge(conversation, record: dict, *, now: datetime) -> str:
         return ""
     if claimed.get("alert_pk"):
         try:
-            alert_adapter.revise(
-                int(claimed["alert_pk"]), severity=URGENT_SEVERITY, respond_by=_parse(claimed.get("handoff_due_at"))
-            )
+            alert_adapter.revise(int(claimed["alert_pk"]), respond_by=_parse(claimed.get("handoff_due_at")))
         except Exception:
             logger.warning("concierge.verification.escalate_failed conversation=%s", conversation.pk, exc_info=True)
     text = _copy(NUDGE_COPY_KEY)
