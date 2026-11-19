@@ -931,7 +931,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_WAITLIST_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+                message="Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
             ),
         },
     },
@@ -947,7 +947,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             WILDCARD: CopyEntry(
                 message=(
                     "Pagamento recebido. Sua reserva está na fila de espera da fornada "
-                    "prevista para {when}. Avisamos quando sair."
+                    "prevista para {when}. Avisamos quando ficar pronta."
                 ),
             ),
         },
@@ -1262,7 +1262,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_WAITLIST_WAITING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+            message="Assim que a fornada ficar pronta, a gente te avisa para confirmar. Nada foi cobrado ainda.",
         )},
     },
     # O chamado é a frase principal do acompanhamento (título e mensagem da

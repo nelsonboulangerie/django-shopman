@@ -1673,7 +1673,7 @@ def _waitlist_message(
             ).replace("{when}", wait_display)
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE",
-            "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+            "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
         ).replace("{when}", wait_display)
     if data.fulfillment_wait_kind == "preorder":
         return copy.message(
@@ -1761,7 +1761,7 @@ def _paid_fulfillment_wait_message(
     if wait_display:
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID",
-            "Pagamento recebido. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+            "Pagamento recebido. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
         ).replace("{when}", wait_display)
     return copy.message(
         "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE",
@@ -2118,7 +2118,7 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         waitlist_waiting_title=copy.title("TRACKING_WAITLIST_WAITING_TITLE", "Você está na fila"),
         waitlist_waiting_message=copy.message(
             "TRACKING_WAITLIST_WAITING_MESSAGE",
-            "Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+            "Assim que a fornada ficar pronta, a gente te avisa para confirmar. Nada foi cobrado ainda.",
         ),
         waitlist_confirm_cta=copy.title("TRACKING_WAITLIST_CONFIRM_CTA", "Confirmar meu pedido"),
         waitlist_confirmed_title=copy.title("TRACKING_WAITLIST_CONFIRMED_TITLE", "Confirmado, já vamos separar"),
