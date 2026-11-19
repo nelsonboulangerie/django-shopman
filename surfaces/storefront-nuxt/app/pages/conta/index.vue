@@ -41,6 +41,9 @@ const countLabel = computed(() => ordersCountLabel(
   summary.value?.total_order_count || 0
 ))
 const lastOrder = computed(() => summary.value?.last_order || null)
+// O "Último pedido" só aparece quando nada está em andamento: é pedido encerrado,
+// e o botão dele diz "Ver pedido".
+const LAST_ORDER_IS_OVER = { is_active: false } as const
 const lastOrderReorder = computed(() => (lastOrder.value ? reorderActionFrom(lastOrder.value) : null))
 const conflictRef = conflict as Ref<ReorderConflictProjection | null>
 // Ação de substituição do diálogo de conflito (prefere a action 'replace'; senão a 1ª).
@@ -209,7 +212,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             <p class="shop-muted">{{ lastOrder.created_at_display }}</p>
           </div>
           <div class="flex shrink-0 gap-2">
-            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" :icon="orderOpenIcon(lastOrder)" data-order-open>{{ orderOpenLabel(lastOrder) }}</UiButton>
+            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" :icon="orderOpenIcon(LAST_ORDER_IS_OVER)" data-order-open>{{ orderOpenLabel(LAST_ORDER_IS_OVER) }}</UiButton>
             <UiButton
               v-if="lastOrderReorder"
               size="sm"
