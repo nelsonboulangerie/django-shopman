@@ -1043,8 +1043,8 @@ def _cancel_capability(order: Order, user) -> dict:
         }
 
     if cancellation_service.is_advanced_cancel(order):
-        autorizado = bool(user and user.has_perm(cancellation_service.ADVANCED_CANCEL_PERMISSION))
-        if not autorizado:
+        authorized = bool(user and user.has_perm(cancellation_service.ADVANCED_CANCEL_PERMISSION))
+        if not authorized:
             return {
                 "can_cancel": False,
                 "cancel_requires_approval": False,
@@ -1206,15 +1206,15 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             cancel_reasons=_cancel_reasons(order.channel_ref or ""),
         )
 
-    bloqueio = operator_orders.gestor_advance_block(order)
-    next_status = operator_orders.next_status_for(order) if not bloqueio else ""
+    advance_block = operator_orders.gestor_advance_block(order)
+    next_status = operator_orders.next_status_for(order) if not advance_block else ""
     block_label, block_reason = _advance_block_copy(
-        order, bloqueio, method, payment_pending=_is_payment_pending(order, method, payment_status)
+        order, advance_block, method, payment_pending=_is_payment_pending(order, method, payment_status)
     )
     # A promessa do pedido (WP-G08), a mesma leitura e o mesmo bloqueio do cartão.
     promise = _promise_of(order)
-    waits_batch = _waits_batch(promise, bloqueio, next_status)
-    pending_block = str(bloqueio or "")
+    waits_batch = _waits_batch(promise, advance_block, next_status)
+    pending_block = str(advance_block or "")
     if waits_batch:
         next_status = ""
         pending_block = str(operator_orders.AdvanceBlock.WAITLIST_FERMATA)
@@ -2351,7 +2351,7 @@ def _promise_of(order: Order, reads=None) -> order_promise.OrderPromiseProjectio
     return reads.get(order.ref)
 
 
-def _waits_batch(promise, bloqueio, next_status: str) -> bool:
+def _waits_batch(promise, advance_block, next_status: str) -> bool:
     """O preparo deste pedido espera o lote ficar pronto?
 
     Só quando nada mais barra o avanço (o pagamento e o dia da encomenda vêm
@@ -2360,7 +2360,7 @@ def _waits_batch(promise, bloqueio, next_status: str) -> bool:
     return bool(
         promise is not None
         and promise.blocks_start
-        and not bloqueio
+        and not advance_block
         and next_status == Order.Status.PREPARING
     )
 
@@ -2627,8 +2627,8 @@ def _build_card(
     )
 
     batch_state = waitlist_states.get(order.ref) if waitlist_states is not None else None
-    bloqueio = operator_orders.gestor_advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
-    next_status = operator_orders.next_status_for(order) if not bloqueio else ""
+    advance_block = operator_orders.gestor_advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
+    next_status = operator_orders.next_status_for(order) if not advance_block else ""
     next_label = _next_label(order)
 
     payment_data = order.data.get("payment", {})
@@ -2636,12 +2636,12 @@ def _build_card(
     payment_status = (_payment_status(order) if order.channel_ref == "ifood" else (payment_svc.get_payment_status(order, payment_reads=payment_reads) or ""))
     payment_method_label = _payment_method_label(method, payment_data, labels=method_labels, order=order)
     block_label, block_reason = _advance_block_copy(
-        order, bloqueio, method, payment_pending=_is_payment_pending(order, method, payment_status)
+        order, advance_block, method, payment_pending=_is_payment_pending(order, method, payment_status)
     )
     # A promessa do pedido (WP-G08). Quem espera o lote não inicia o preparo: o
     # pão ainda não existe. Não depende do estado da fila de espera (P1-22).
     promise = _promise_of(order, promise_reads)
-    waits_batch = _waits_batch(promise, bloqueio, next_status)
+    waits_batch = _waits_batch(promise, advance_block, next_status)
     if waits_batch:
         next_status = ""
         block_label, block_reason = order_promise.BATCH_WAIT_BLOCK_LABEL, order_promise.batch_wait_reason(promise)
@@ -3305,7 +3305,7 @@ def _payment_wait_copy(order: Order, method: str, *, awaiting_acceptance: bool =
 _EXPIRING_PAYMENT_METHODS = frozenset({"pix", "link"})
 
 
-def _advance_block_copy(order: Order, bloqueio, method: str, *, payment_pending: bool = False) -> tuple[str, str]:
+def _advance_block_copy(order: Order, advance_block, method: str, *, payment_pending: bool = False) -> tuple[str, str]:
     """O rótulo curto e a frase do bloqueio do avanço, na voz do operador.
 
     ``NO_NEXT_STEP`` não é bloqueio que se mostra (o pedido novo espera o aceite,
@@ -3321,12 +3321,12 @@ def _advance_block_copy(order: Order, bloqueio, method: str, *, payment_pending:
         order.status == Order.Status.NEW
         and payment_pending
         and method in _EXPIRING_PAYMENT_METHODS
-        and bloqueio in (None, "", operator_orders.AdvanceBlock.NO_NEXT_STEP, operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED)
+        and advance_block in (None, "", operator_orders.AdvanceBlock.NO_NEXT_STEP, operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED)
     ):
         return _payment_wait_copy(order, method, awaiting_acceptance=True)
-    if not bloqueio or bloqueio == operator_orders.AdvanceBlock.NO_NEXT_STEP:
+    if not advance_block or advance_block == operator_orders.AdvanceBlock.NO_NEXT_STEP:
         return "", ""
-    if bloqueio == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED:
+    if advance_block == operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED:
         if payment_svc.capture_failure(order) is not None:
             return CARD_CAPTURE_FAILED_LABEL, CARD_CAPTURE_FAILED_REASON
         if payment_svc.awaiting_repayment(order) is not None:
@@ -3338,17 +3338,17 @@ def _advance_block_copy(order: Order, bloqueio, method: str, *, payment_pending:
                 f"{times}. Sem pagamento no prazo, o pedido cancela sozinho."
             )
         return _payment_wait_copy(order, method)
-    return advance_block_label(bloqueio), operator_orders.advance_block_message(bloqueio)
+    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block)
 
 
-def advance_block_label(bloqueio: operator_orders.AdvanceBlock) -> str:
+def advance_block_label(advance_block: operator_orders.AdvanceBlock) -> str:
     """Rótulo curto para o botão desabilitado (o motivo inteiro vai no title).
 
     Só ganha rótulo o bloqueio TEMPORÁRIO — aquele que a espera resolve. Pedido
     cancelado ou concluído não tem próxima etapa e por isso não ganha botão
     nenhum: lugar ocupado por algo que nunca vai destravar é ruído.
     """
-    return _ADVANCE_BLOCK_LABELS.get(bloqueio, "")
+    return _ADVANCE_BLOCK_LABELS.get(advance_block, "")
 
 
 def _payment_status(order: Order) -> str:

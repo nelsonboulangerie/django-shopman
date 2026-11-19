@@ -2028,8 +2028,8 @@ const outside = useOutsideStore(
           : ''
       "
       @update:open="
-        (aberto: boolean) => {
-          if (!aberto) dismissManagerChallenge();
+        (open: boolean) => {
+          if (!open) dismissManagerChallenge();
         }
       "
       @authorize="signWithPin"
