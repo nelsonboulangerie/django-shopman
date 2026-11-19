@@ -1865,11 +1865,12 @@ class TestWaitlistCallIsTheMainSentence:
         assert proj.waitlist_state == "confirming"
         assert proj.promise.state == "waitlist_confirming"
         assert proj.promise.tone == "info"
-        assert proj.promise.title == "Sua fornada ficou pronta!"
+        # O título fala da cliente, não da fornada (que é da casa).
+        assert proj.promise.title == "Chegou a sua vez!"
         clock = format_clock(timezone.localtime(parse_datetime(proj.waitlist_deadline)))
         assert proj.promise.message == (
             f"Confirme seu pedido até {clock} para garantir a sua vaga. "
-            "Se o prazo passar, a vaga vai para a próxima pessoa da fila."
+            "Depois desse horário, ela passa para a próxima pessoa da fila."
         )
         # A frase não manda esperar quando quem age é a cliente.
         assert "conferindo" not in proj.promise.message
@@ -1930,10 +1931,7 @@ class TestWaitlistCallIsTheMainSentence:
 
         message = build_order_tracking(order).promise.message
 
-        assert message == (
-            "Confirme seu pedido para garantir a sua vaga. "
-            "Se não confirmar, a vaga vai para a próxima pessoa da fila."
-        )
+        assert message == "Confirme seu pedido para garantir a sua vaga na fila."
         assert "{" not in message
 
     def test_the_call_speaks_the_house_words(self):
@@ -1942,6 +1940,8 @@ class TestWaitlistCallIsTheMainSentence:
         promise = build_order_tracking(order).promise
         text = f"{promise.title} {promise.message}".lower()
 
-        # "Ficar pronto", nunca "sair"; sem travessão.
+        # "Ficar pronto", nunca "sair"; sem travessão; a palavra da fila é "vaga".
         assert "saiu" not in text and "sair" not in text
         assert "—" not in text and "–" not in text
+        assert "vaga" in text and "lugar" not in text
+        assert "fornada" not in text, "a fornada é da casa; o título fala da vez da cliente"

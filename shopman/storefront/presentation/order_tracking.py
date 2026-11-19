@@ -1229,22 +1229,23 @@ def _promise_copy(
         )
 
     if state == "waitlist_confirming":
-        # O chamado da fila é da frase principal: o que aconteceu (a fornada
-        # ficou pronta), o que fazer e até quando, e o que acontece se o prazo
-        # passar. O cartão da fila, logo abaixo, fica com o relógio e o botão
-        # (#2771: antes a frase dizia "Estamos conferindo a disponibilidade.
-        # Avisamos em seguida." ao lado do chamado).
-        title = copy.title("TRACKING_WAITLIST_CONFIRM_TITLE", "Sua fornada ficou pronta!")
+        # O chamado da fila é da frase principal: o que aconteceu (chegou a vez
+        # dela), o que fazer e até quando, e o que acontece depois do horário. O
+        # cartão da fila, logo abaixo, fica com o relógio e o botão (#2771: antes
+        # a frase dizia "Estamos conferindo a disponibilidade. Avisamos em
+        # seguida." ao lado do chamado). O título fala da cliente, não da casa:
+        # a fornada é da padaria, a vez é dela.
+        title = copy.title("TRACKING_WAITLIST_CONFIRM_TITLE", "Chegou a sua vez!")
         call_until = _acceptance_until(data.deadline_at)
         if call_until:
             message = copy.message(
                 "TRACKING_WAITLIST_CONFIRM_MESSAGE",
-                "Confirme seu pedido {until} para garantir a sua vaga. Se o prazo passar, a vaga vai para a próxima pessoa da fila.",
+                "Confirme seu pedido {until} para garantir a sua vaga. Depois desse horário, ela passa para a próxima pessoa da fila.",
             ).replace("{until}", call_until)
         else:
             message = copy.message(
                 "TRACKING_WAITLIST_CONFIRM_MESSAGE_NO_DEADLINE",
-                "Confirme seu pedido para garantir a sua vaga. Se não confirmar, a vaga vai para a próxima pessoa da fila.",
+                "Confirme seu pedido para garantir a sua vaga na fila.",
             )
         return title, message
 
