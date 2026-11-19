@@ -77,6 +77,57 @@ def _dynamic_collection_texts() -> dict[str, str]:
     return out
 
 
+def _badge_texts() -> dict[str, str]:
+    """O selo de fornada do produto, nos dois tempos (agora e há N minutos)."""
+    from datetime import UTC, datetime, timedelta
+
+    from shopman.storefront.presentation.fomo import badges_for_product
+
+    now = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
+    out: dict[str, str] = {}
+    for name, finished in (("agora", now), ("ha_12_min", now - timedelta(minutes=12))):
+        for badge in badges_for_product("SKU", production={"finished_at": finished}, now=now):
+            out[f"{badge.type}/{name}"] = badge.label
+    return out
+
+
+def _alert_type_texts() -> dict[str, str]:
+    """O nome de cada tipo de aviso, como a cliente lê na conta."""
+    from shopman.storefront.models import StockAlertSubscription
+
+    return {value: str(label) for value, label in StockAlertSubscription.AlertType.choices}
+
+
+def _screen_texts() -> dict[str, list[str]]:
+    """O que as telas da loja dizem: os trechos de texto do ``<template>`` de cada
+    página e componente, sem comentário. Um trecho por nó, para a frase de um lugar
+    não se misturar com a de outro."""
+    from pathlib import Path
+
+    app = Path(__file__).resolve().parents[4] / "surfaces" / "storefront-nuxt" / "app"
+    out: dict[str, list[str]] = {}
+    for path in sorted(app.rglob("*.vue")):
+        source = path.read_text(encoding="utf-8")
+        start, end = source.find("<template"), source.rfind("</template>")
+        if start < 0 or end < 0:
+            continue
+        template = re.sub(r"<!--.*?-->", " ", source[start:end], flags=re.DOTALL)
+        # Só o texto entre as marcas: expressões, atributos e classes ficam de fora.
+        nodes = [" ".join(node.split()) for node in re.findall(r">([^<>{}]+)<", template)]
+        nodes = [node for node in nodes if node]
+        if nodes:
+            out[str(path.relative_to(app))] = nodes
+    return out
+
+
+def says_out_of_the_oven_on_screen(text: str) -> bool:
+    """Nas telas, só o que fala do forno ou da fornada. O "saiu" sozinho fica de fora:
+    a loja também diz "a mensagem que saiu do seu WhatsApp"."""
+    if FORBIDDEN[0].search(text) or FORBIDDEN[2].search(text):
+        return True
+    return bool(_BATCH_TALK.search(text) and _SAIR_ALONE.search(text))
+
+
 #: O que ainda diz o verbo antigo, e por quê. Vazia desde 19/11/2026: o aviso do
 #: chamado da fila e o de fornada pronta nunca tiveram modelo submetido à Meta
 #: (``docs/reference/whatsapp-templates-meta.md``), então os textos mudaram junto
@@ -91,6 +142,13 @@ def _offenders() -> set[str]:
     }
     found |= {
         f"collection:{where}" for where, text in _dynamic_collection_texts().items() if says_out_of_the_oven(text)
+    }
+    found |= {f"badge:{where}" for where, text in _badge_texts().items() if says_out_of_the_oven(text)}
+    found |= {f"alert-type:{where}" for where, text in _alert_type_texts().items() if says_out_of_the_oven(text)}
+    found |= {
+        f"screen:{where}"
+        for where, nodes in _screen_texts().items()
+        if any(says_out_of_the_oven_on_screen(node) for node in nodes)
     }
     return found
 
@@ -175,3 +233,17 @@ def test_the_live_menu_section_has_the_new_name():
 
     assert texts["fresh_from_oven/label"] == "Acabaram de ficar prontos"
     assert texts["fresh_from_oven/description"] == "Ficaram prontos nos últimos 60 minutos."
+
+
+def test_the_badge_the_alert_name_and_the_screens_say_ficar_pronto():
+    badges = _badge_texts()
+    assert badges["fresh/agora"] == "Fornada pronta agora"
+    assert badges["fresh/ha_12_min"] == "Fornada pronta há 12 min"
+    assert _alert_type_texts()["production_ready"] == "fornada pronta"
+    # A varredura das telas enxerga a loja: sem isso, ela passaria por não ler nada.
+    screens = _screen_texts()
+    assert len(screens) > 50
+    assert any("o pão ficou pronto" in node for node in screens["pages/conta/seguranca.vue"])
+    # E acusaria a frase antiga, sem confundir com o que não é do forno.
+    assert says_out_of_the_oven_on_screen("recebe o aviso de que o pão saiu do forno.")
+    assert not says_out_of_the_oven_on_screen("a mensagem que saiu do seu WhatsApp.")
