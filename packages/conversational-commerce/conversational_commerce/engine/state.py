@@ -1,0 +1,130 @@
+"""O que o turno sabe enquanto decide e responde: necessidades, fatos e a situação comum."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+from conversational_commerce.authority import Offer
+from conversational_commerce.catalog import Situation
+from conversational_commerce.contracts import ActionReceipt, Commitment, DeploymentProfile, IdentityEvidence
+from conversational_commerce.contracts.common import Fact
+
+from .acts import CHANGE_ACTS, QUERY_ACTS
+
+# Recusas no ponto de efeito (ou da confirmação) que pedem termos novos e confirmação nova.
+RETERM = frozenset({"terms_changed", "terms_expired", "grant_expired", "confirmation_before_terms",
+                    "revision_conflict"})
+
+
+@dataclass(frozen=True, slots=True)
+class NeedSpec:
+    need_id: str
+    act: str
+    # Uma entrada por leitura plausível (a principal primeiro). Cada uma com os campos do ato.
+    readings: tuple[Mapping[str, Any], ...] = ({},)
+    # A pergunta no ar a que esta necessidade responde, se for resposta.
+    answers_question: str | None = None
+
+    @property
+    def request_kind(self) -> str:
+        return "change" if self.act in CHANGE_ACTS else "query"
+
+    @property
+    def is_query(self) -> bool:
+        return self.act in QUERY_ACTS
+
+
+@dataclass(frozen=True, slots=True)
+class Subject:
+    """Quem fala, como o adaptador o resolve a partir do contexto confiável, nunca do texto.
+
+    ``cart_ref``: o carrinho do sujeito no sistema de registro. Sem ele, nenhuma
+    mudança de carrinho nem cotação é proposta (a ação fica inelegível).
+    """
+
+    subject_ref: str | None = None
+    identity_evidence: tuple[IdentityEvidence, ...] = ()
+    cart_ref: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EffectPlan:
+    """O que um movimento de efeito pede: a ação, o alvo, os parâmetros e a base da concessão."""
+
+    action: str
+    target: str
+    parameters: Mapping[str, Any]
+    expected_versions: Mapping[str, int]
+    basis: Literal["confirmation", "line"]
+
+
+@dataclass
+class TurnState:
+    now: str
+    channel: str
+    identity: str
+    profile: DeploymentProfile
+    needs: tuple[NeedSpec, ...] = ()
+    facts: dict[str, Fact] = field(default_factory=dict)
+    fact_facets: dict[str, str] = field(default_factory=dict)
+    # Necessidades que já têm pergunta no ar (uma por necessidade).
+    open_question_needs: frozenset[str] = frozenset()
+    event_assurance: str = "provider_claimed"
+    subject: Subject = field(default_factory=Subject)
+    # Os termos apresentados, se a pergunta que pede a confirmação deles está no ar nesta época.
+    offer: Offer | None = None
+    # Necessidade que responde à oferta → por que a confirmação não autoriza (``None``: autoriza).
+    confirmation_problems: dict[str, str | None] = field(default_factory=dict)
+    # Termos cotados neste turno, por alvo.
+    terms: dict[str, Any] = field(default_factory=dict)
+    # O que aconteceu no ponto de efeito, por necessidade.
+    receipts: dict[str, ActionReceipt] = field(default_factory=dict)
+    refused: dict[str, str] = field(default_factory=dict)
+    commitments: dict[str, Commitment] = field(default_factory=dict)
+
+    def fact_keys_for(self, need: NeedSpec) -> tuple[str, ...]:
+        if need.act == "ask_hours":
+            return ("hours",)
+        return tuple(f"item.{reading['item']}" for reading in need.readings if reading.get("item"))
+
+    def answers_offer(self, need: NeedSpec) -> bool:
+        """O "sim" desta necessidade é a resposta à pergunta que pede a confirmação dos termos."""
+        return (self.offer is not None and need.act == "affirm"
+                and need.answers_question == self.offer.question_id)
+
+    def wants_terms(self, need: NeedSpec) -> bool:
+        """Esta necessidade pede termos (novos): fechar o pedido, ou confirmação que não valeu mais."""
+        if need.act == "place_order":
+            return True
+        if not self.answers_offer(need):
+            return False
+        code = self.refused.get(need.need_id) or self.confirmation_problems.get(need.need_id)
+        return code in RETERM
+
+    @staticmethod
+    def terms_key(target: str) -> str:
+        return f"terms.{target}"
+
+    def situation(self, need: NeedSpec, **fields: Any) -> Situation:
+        """A situação comum a toda proposta da necessidade, mais o que o movimento acrescenta."""
+        keys = self.fact_keys_for(need)
+        base: dict[str, Any] = {
+            "now": self.now,
+            "channel": self.channel,
+            "identity": self.identity,
+            "event_assurance": self.event_assurance,
+            "reading_count": len(need.readings),
+            "request_kind": need.request_kind,
+            "missing_required_field": need.act == "unknown" or (need.is_query and need.act != "ask_hours"
+                                                                and not keys),
+            "answer_changes_decision": True,
+            "question_open_for_need": need.need_id in self.open_question_needs,
+            "requested_move_ineligible": False,
+            "reply_only_courtesy": False,
+            "facts_needed": {key: self.facts[key] for key in keys if key in self.facts} or None,
+            "fact_is_personal": False,
+        }
+        base.update(fields)
+        return Situation(**base)

@@ -117,7 +117,11 @@ from shopman.backstage.projections.order_pending import (
     OrderPendingProjection,
 )
 from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
-from shopman.backstage.projections.order_promise import OrderPromiseItemProjection, OrderPromiseProjection
+from shopman.backstage.projections.order_promise import (
+    OrderPromiseAlternativeProjection,
+    OrderPromiseItemProjection,
+    OrderPromiseProjection,
+)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CancelReasonProjection,
@@ -194,6 +198,7 @@ CONTRACT_DATACLASSES = (
     KitchenStationProjection,
     KitchenProgressProjection,
     CourierReminderProjection,
+    OrderPromiseAlternativeProjection,
     OrderPromiseItemProjection,
     OrderPromiseProjection,
     OrderCardProjection,

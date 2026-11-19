@@ -123,6 +123,18 @@ export function orderStatusDotClass (tone: string | null | undefined): string {
   }
 }
 
+// O botão que abre o pedido. "Acompanhar" é para o que ainda está andando; no
+// pedido encerrado (entregue, cancelado) não há o que acompanhar: "Ver pedido".
+export function orderOpenLabel (order: { is_active?: boolean }): string {
+  return order.is_active ? 'Acompanhar' : 'Ver pedido'
+}
+
+export function orderOpenIcon (order: { is_active?: boolean }): string {
+  return order.is_active ? 'lucide:radar' : 'lucide:receipt-text'
+}
+
+// O gesto de repetir tem um nome só na loja inteira ("Repetir pedido"), e ele vem
+// do servidor, no rótulo da ação.
 export function reorderActionFrom (order: Pick<OrderHistoryItem, 'actions'>): Action | null {
   return order.actions?.find(action => action.ref === 'reorder' && action.enabled) || null
 }

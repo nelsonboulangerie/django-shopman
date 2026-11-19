@@ -31,8 +31,16 @@ const props = withDefaults(
     busy?: boolean;
     /** A DANFE deste pedido está indo para a impressora. */
     danfePrinting?: boolean;
+    /** O estorno deste pedido está sendo pedido de novo ao meio de pagamento (WP-G13). */
+    refundRetrying?: boolean;
   }>(),
-  { pending: () => [], money: null, busy: false, danfePrinting: false },
+  {
+    pending: () => [],
+    money: null,
+    busy: false,
+    danfePrinting: false,
+    refundRetrying: false,
+  },
 );
 
 const emit = defineEmits<{ act: [ref: string] }>();
@@ -41,6 +49,7 @@ const lines = computed(() =>
   pendingLines(props.pending, {
     busy: props.busy,
     danfePrinting: props.danfePrinting,
+    refundRetrying: props.refundRetrying,
   }),
 );
 const money = computed(() => settledMoney(props.money));
@@ -86,6 +95,24 @@ const { attrsFor } = useOperatorAppLink();
                 >
                   {{ line.reason }}
                 </p>
+                <!-- O que fazer agora, quando a linha tem mais de uma saída. -->
+                <p
+                  v-if="line.nextStep"
+                  class="text-sm font-medium text-highlighted"
+                  data-pending-next-step
+                >
+                  {{ line.nextStep }}
+                </p>
+                <!-- A tentativa que não deu certo fica escrita na linha (WP-G13): quem
+                     abre o pedido depois lê o que o meio de pagamento respondeu. -->
+                <p
+                  v-if="line.failure"
+                  class="text-sm text-error"
+                  role="status"
+                  data-pending-failure
+                >
+                  {{ line.failure }}
+                </p>
                 <p
                   v-for="reason in line.blockedReasons"
                   :key="reason"
@@ -104,7 +131,7 @@ const { attrsFor } = useOperatorAppLink();
                 v-for="(button, index) in line.buttons"
                 :key="button.ref"
               >
-                <!-- O PDV abre na janela dele (outro app de operador). -->
+                <!-- O PDV e a Produção abrem na janela deles (outro app de operador). -->
                 <NuxtButton
                   v-if="button.href && button.crossApp"
                   :to="button.href"
@@ -139,6 +166,7 @@ const { attrsFor } = useOperatorAppLink();
                   :variant="button.variant"
                   :disabled="button.disabled"
                   :data-focus-control="index === 0 ? '' : undefined"
+                  :loading="button.loading"
                   :data-pending-action="button.ref"
                   @click="emit('act', button.ref)"
                 />

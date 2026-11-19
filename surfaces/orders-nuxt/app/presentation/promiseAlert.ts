@@ -3,10 +3,13 @@
 // A encomenda de amanhã que perdeu o lote ficava quieta, abaixo da dobra, numa lista
 // que ninguém abre no meio do turno (P0-1, lado do Gestor). Enquanto houver pedido com
 // a promessa em risco, o cabeçalho do painel diz quantos são e leva ao primeiro.
-// Quem diz que há risco é o servidor (`card.promise`); aqui só se conta e se escreve.
+// Quem diz que há risco, e o que fazer, é o servidor (`card.promise`, com `next_step`
+// e `recommended_action`); aqui só se conta e se escreve. O aviso diz o que fazer, não
+// só quem: com um pedido, a frase do próximo passo do servidor; com vários, um título
+// que a tela compõe (`manyOrdersStep`), a única frase que nasce aqui.
 import type { OrderCardProjection } from "~/types/orders";
 import { splitRef } from "./board";
-import { promiseRisk } from "./orderPromise";
+import { OPEN_PRODUCTION, promiseRisk } from "./orderPromise";
 import { preorderFocusKey } from "./preorderList";
 
 type AlertSource = Pick<OrderCardProjection, "ref"> &
@@ -30,6 +33,22 @@ export interface PromiseRiskAlert {
 
 /** Quantos códigos o aviso escreve antes de resumir o resto num número. */
 const NAMED_ORDERS = 3;
+
+/**
+ * O que fazer quando são vários pedidos em risco, para o título do aviso.
+ *
+ * Quando TODOS pedem só a Produção (sem lote planejado, plano que não cobre), o passo é
+ * dela. Basta um pedido cujo item não vai existir ou está atrasado para o passo ser
+ * falar com os clientes: é o que protege quem comprou, e vence o misto.
+ */
+export function manyOrdersStep(
+  recommendedActions: readonly string[],
+): string {
+  return recommendedActions.length > 0 &&
+    recommendedActions.every((action) => action === OPEN_PRODUCTION)
+    ? "peça à Produção para planejar"
+    : "avise os clientes e remarque";
+}
 
 function listed(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
@@ -63,9 +82,14 @@ export function promiseRiskAlert(
     return {
       id,
       title: `${first.risk.label} no pedido ${first.code}`,
-      // O item e o porquê, com as frases do servidor, uma depois da outra.
-      description: first.risk.items
-        .map((item) => [item.label, item.detail].filter(Boolean).join(". "))
+      // O item, o porquê e o que fazer, com as frases do servidor, uma depois da outra.
+      description: [
+        ...first.risk.items.map((item) =>
+          [item.label, item.detail].filter(Boolean).join(". "),
+        ),
+        first.risk.nextStep,
+      ]
+        .filter(Boolean)
         .join(" "),
       actionLabel: canOpen ? "Abrir o pedido" : `Ver o ${first.code}`,
       refs,
@@ -77,7 +101,9 @@ export function promiseRiskAlert(
   const rest = codes.length - named.length;
   return {
     id,
-    title: `${first.risk.label} em ${risky.length} pedidos`,
+    title: `${first.risk.label} em ${risky.length} pedidos: ${manyOrdersStep(
+      risky.map((entry) => entry.risk.recommendedAction),
+    )}`,
     description: rest
       ? `${named.join(", ")} e mais ${rest} ${rest === 1 ? "pedido" : "pedidos"}.`
       : `${listed(named)}.`,

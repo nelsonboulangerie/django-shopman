@@ -9,8 +9,8 @@
 // está paga e se a produção cobre. A linha abre o pedido; "Remarcar no PDV" abre AQUELA
 // encomenda no PDV, onde mora o remarcar (D-003). O cabeçalho leva à lista do PDV.
 //
-// A encomenda que perdeu o lastro (WP-G08) diz "Promessa em risco" e o item sem
-// reserva, e a linha abre o pedido já na faixa das três saídas.
+// A encomenda que perdeu o lastro (WP-G08) diz "Promessa em risco", o item sem
+// reserva e o que fazer agora, e a linha abre o pedido já na faixa das saídas.
 import type { PreorderGroup } from "~/presentation/board";
 import {
   preorderFocusKey,
@@ -126,6 +126,13 @@ const rows = computed(() =>
                 class="font-semibold text-error"
                 data-preorder-risk-items
                 >{{ line.risk.items }}</span
+              >
+              <!-- O próximo passo, escrito: a linha abre o pedido, onde estão os gestos. -->
+              <span
+                v-if="line.risk?.nextStep"
+                class="font-medium text-highlighted"
+                data-preorder-risk-next-step
+                >{{ line.risk.nextStep }}</span
               >
               <span v-if="line.production" data-preorder-production>{{ line.production }}</span>
               <span

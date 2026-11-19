@@ -11,7 +11,7 @@ import type {
   DeliveryRideProjection,
 } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
-import { rideLine, rideNotice, whatsappLink } from "~/presentation/deliveries";
+import { rideChargeNotices, rideLine, rideNotice, rideStale, whatsappLink } from "~/presentation/deliveries";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
@@ -74,6 +74,15 @@ const cancelDismissed = ref("");
 const showCancelState = computed(
   () => Boolean(cancelState.value) && cancelDismissed.value !== `${props.ride.key}:${props.ride.cancel_state}`,
 );
+
+// O que o Painel do pedido também diz (paridade): a TaOn parou de informar a
+// corrida, e a cobrança que o entregador leu ficou para trás. Os dois se
+// dispensam e voltam se a causa mudar.
+const stale = computed(() => rideStale(props.ride));
+const staleDismissed = ref("");
+const charges = computed(() => rideChargeNotices(props.ride));
+const chargeDismissed = ref<string[]>([]);
+const chargeKey = (charge: { code: string; description: string }) => `${charge.code}:${charge.description}`;
 </script>
 
 <template>
@@ -115,6 +124,34 @@ const showCancelState = computed(
           @update:open="cancelDismissed = `${ride.key}:${ride.cancel_state}`"
         />
       </div>
+      <div v-if="stale && staleDismissed !== ride.sync_since" class="mx-5 mt-4">
+        <NuxtAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-cloud-off"
+          :title="stale"
+          description="O que está aqui pode ter mudado. Confira na central da TaOn ou ligue para o entregador."
+          close
+          role="status"
+          data-ride-stale
+          @update:open="staleDismissed = ride.sync_since"
+        />
+      </div>
+      <template v-for="charge in charges" :key="chargeKey(charge)">
+        <div v-if="!chargeDismissed.includes(chargeKey(charge))" class="mx-5 mt-4">
+          <NuxtAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-banknote"
+            :title="charge.title"
+            :description="charge.description"
+            close
+            role="status"
+            data-ride-charge-outdated
+            @update:open="chargeDismissed = [...chargeDismissed, chargeKey(charge)]"
+          />
+        </div>
+      </template>
       <div v-if="located.length" class="relative mx-5 mt-4 h-48 overflow-hidden rounded-xl ring-1 ring-default">
         <CourierDeliveriesMap
           :origin="mapOrigin"

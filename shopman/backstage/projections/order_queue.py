@@ -1209,6 +1209,14 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     no_show_action = no_show_detail_action(order, user)
     if no_show_action is not None:
         extra_actions.append(no_show_action)
+    # "Tentar o estorno de novo" (WP-G13): só para o dinheiro do cancelado em
+    # "Estorno não saiu". A régua (quanto, de onde, a base) é de ``services/refund_retry``.
+    refund_retry_plan = None
+    if cancelled_money is not None and cancelled_money.state == order_pending.MONEY_REFUND_FAILED:
+        from shopman.backstage.services import refund_retry
+
+        refund_retry_plan = refund_retry.plan(order)
+        extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -1244,7 +1252,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
         promise = order_promise.with_actions(promise, _promise_detail_actions(
             order, authorized=authorized, whatsapp_url=contact.get("customer_whatsapp_url", ""),
-            cancel_action=cancel_action,
+            cancel_action=cancel_action, user=user, promise=promise,
         ))
     link_fields, link_problem = _payment_link_read(order, method)
     danfe = order_danfe.card_state(order, now=now)
@@ -1265,6 +1273,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             danfe=danfe,
             awaiting_work_orders=common["awaiting_work_orders"],
             money=cancelled_money,
+            refund_retry_plan=refund_retry_plan,
             alerts=pending_alerts,
             schedule_label=common["schedule_label"],
             whatsapp_url=contact.get("customer_whatsapp_url", ""),
@@ -1452,7 +1461,8 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
     extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
         enabled=authorized and courier_block["can_dispatch"],
         reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-            "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+            "" if courier_block["can_dispatch"] else
+            courier_block.get("not_today") or "Confira o estado do pedido e da corrida antes de despachar."),
         method="POST", idempotency="required",
         confirmation={"required": True, "description": _courier_dispatch_question(order)},
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
@@ -1695,9 +1705,11 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, unresolved_dispatch
+        from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
+        # A encomenda de outro dia: chamar recusa com a frase (a régua do servidor).
+        not_today = not_today_refusal(order) if order_can_ride and not active else ""
         # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
         # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
@@ -1743,7 +1755,8 @@ def _courier_block(order: Order) -> dict | None:
             "position": position,
             "error": error,
             "can_quote": can_quote(order),
-            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
+            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None and not not_today,
+            "not_today": not_today,
             "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and courier_can_cancel(order, cancel),
             # Em que pé está o cancelamento pedido: ``{state, message, at}``
@@ -1757,7 +1770,7 @@ def _courier_block(order: Order) -> dict | None:
             # Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais
             # perto primeiro. Só enquanto este pedido pode ser chamado.
             "ride_offer": (_ride_offer(order) if adapter_on and house and not active and order_can_ride
-                           and unresolved is None else []),
+                           and unresolved is None and not not_today else []),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
             "charge_outdated": charge_outdated(order),
@@ -2416,46 +2429,99 @@ def _reschedule_at_pos_action(order: Order, *, authorized: bool) -> Action:
     )
 
 
-def _promise_card_actions(order: Order, user) -> tuple[Action, ...]:
-    """As saídas da promessa em risco no CARTÃO: três atalhos, nenhum dado do cliente.
+def _open_production_action(promise, user) -> Action | None:
+    """ "Abrir a Produção": o plano do dia que ainda pode cobrir o item (sem lote, ou lote curto).
+
+    Só para quem opera a Produção (a mesma pergunta do tile da Central) e com o
+    endereço do app configurado. Sem um dos dois a ação não vem: a frase do
+    próximo passo ("Peça à Produção para planejar.") segue dizendo o que fazer.
+    """
+    from urllib.parse import urlencode
+
+    from shopman.backstage.permissions import can_operate_production
+    from shopman.backstage.projections.hub import surface_link
+
+    day = order_promise.production_day(promise)
+    if not day or user is None or not getattr(user, "is_active", False) or not can_operate_production(user):
+        return None
+    href = surface_link("production", f"plan?{urlencode({'date': day})}")
+    if not href:
+        return None
+    return Action(
+        ref=order_promise.ACTION_OPEN_PRODUCTION, kind="link", label="Abrir a Produção", href=href, idempotency="none",
+    )
+
+
+def _promise_exits(promise, exits) -> tuple[Action, ...]:
+    """As saídas na ordem e com o peso que a situação pede.
+
+    A recomendada (``promise.recommended_action``) vem primeiro, com
+    ``priority="primary"``; as outras são ``secondary``, e cancelar segue por
+    último, ``danger``. Quando a recomendada não está entre as saídas (quem não
+    abre a Produção), nenhuma é a principal.
+    """
+    recommended = promise.recommended_action
+    present = [action for action in exits if action is not None]
+
+    def weighed(action: Action) -> Action:
+        if action.ref == order_promise.ACTION_CANCEL:
+            return action if action.priority == "danger" else replace(action, priority="danger")
+        priority = "primary" if action.ref == recommended else "secondary"
+        return action if action.priority == priority else replace(action, priority=priority)
+
+    def rank(action: Action) -> int:
+        if action.ref == recommended:
+            return 0
+        return 2 if action.ref == order_promise.ACTION_CANCEL else 1
+
+    return tuple(weighed(action) for action in sorted(present, key=rank))
+
+
+def _promise_card_actions(order: Order, user, promise) -> tuple[Action, ...]:
+    """As saídas da promessa em risco no CARTÃO: atalhos, nenhum dado do cliente.
 
     O contato do cliente não mora no cartão do painel (#2434), e cancelar pede
     o motivo, o destino do dinheiro e, às vezes, o gerente: os dois gestos
-    acontecem no detalhe, e o cartão leva até lá. Remarcar abre o PDV.
+    acontecem no detalhe, e o cartão leva até lá. Remarcar abre o PDV; quando a
+    Produção ainda resolve, "Abrir a Produção" abre o plano daquele dia.
     """
     from urllib.parse import quote
 
     authorized = _manages_orders(user)
     detail = f"/{quote(order.ref, safe='')}"
     reason = "" if authorized else _PERMISSION_REASON
-    return (
+    return _promise_exits(promise, (
         Action(
-            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente", priority="primary",
+            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente",
             enabled=authorized, reason=reason, href=f"{detail}#promise" if authorized else "", idempotency="none",
         ),
         _reschedule_at_pos_action(order, authorized=authorized),
+        _open_production_action(promise, user),
         Action(
             ref=order_promise.ACTION_CANCEL, kind="link", label="Cancelar pedido", priority="danger",
             enabled=authorized, reason=reason, href=f"{detail}#cancel" if authorized else "", idempotency="none",
         ),
-    )
+    ))
 
 
-def _promise_detail_actions(order: Order, *, authorized: bool, whatsapp_url: str, cancel_action: Action) -> tuple[Action, ...]:
-    """As saídas da promessa em risco no DETALHE: a conversa, o PDV e o cancelar de verdade."""
+def _promise_detail_actions(
+    order: Order, *, authorized: bool, whatsapp_url: str, cancel_action: Action, user, promise,
+) -> tuple[Action, ...]:
+    """As saídas da promessa em risco no DETALHE: a conversa, o PDV, a Produção e o cancelar de verdade."""
     contact_reason = (
         _PERMISSION_REASON if not authorized
         else "" if whatsapp_url else "Este pedido não tem WhatsApp do cliente."
     )
-    return (
+    return _promise_exits(promise, (
         Action(
-            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente", priority="primary",
+            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente",
             enabled=not contact_reason, reason=contact_reason, href="" if contact_reason else whatsapp_url,
             idempotency="none",
         ),
         _reschedule_at_pos_action(order, authorized=authorized),
+        _open_production_action(promise, user),
         cancel_action,
-    )
+    ))
 
 
 def _parse_iso(value) -> datetime | None:
@@ -2675,7 +2741,7 @@ def _build_card(
         actions = _batch_wait_actions(actions, block_reason)
     actions = _exit_gesture_actions(order, actions, customer_name=customer_name)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
-        promise = order_promise.with_actions(promise, _promise_card_actions(order, user))
+        promise = order_promise.with_actions(promise, _promise_card_actions(order, user, promise))
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order, batch=accept_batch)
@@ -3910,6 +3976,9 @@ _EVENT_LABELS = {
     "payment.repayment_requested": "Novo pagamento pedido ao cliente",
     "payment.method_changed": "Cliente trocou o pagamento para Pix",
     "payment.refunded": "Pagamento estornado",
+    # WP-G13: quem tentou é o autor da linha; quem autorizou e o que o gateway
+    # respondeu vão no detalhe (``_refund_retry_detail``).
+    "payment.refund_retry": "Estorno tentado de novo",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }
 
@@ -4075,8 +4144,12 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
 
         if event.type == _PRODUCTION_HOLD_LOST_EVENT:
             detail = _production_hold_lost_detail(payload)
+        elif event.type == "payment.refund_retry":
+            detail = _refund_retry_detail(payload)
+        elif event.type in _PAYMENT_EVENT_TYPES:
+            detail = _payment_event_detail(payload)
         else:
-            detail = _payment_event_detail(payload) if event.type in _PAYMENT_EVENT_TYPES else _event_detail(payload)
+            detail = _event_detail(payload)
         if not detail and event.type in _STATUS_EVENT_TYPES and new_status == Order.Status.CANCELLED:
             detail = _cancellation_detail(order)
 
@@ -4145,6 +4218,20 @@ def _production_hold_lost_detail(payload: dict) -> str:
     item = f"{qty}x {name}" if qty and name else name
     lot = f"lote de {_short_date(payload.get('date'))}" if payload.get("date") else ""
     return " · ".join(part for part in (item, lot) if part)
+
+
+def _refund_retry_detail(payload: dict) -> str:
+    """"Pix · R$ 22,00 · autorizado por Joyce · não saiu: …": a tentativa de estorno do Gestor."""
+    parts = [_payment_event_detail(payload)]
+    approver = str(payload.get("approved_by") or "").strip()
+    if approver:
+        parts.append(f"autorizado por {_actor_names([approver]).get(approver, approver)}")
+    if payload.get("outcome") == "refunded":
+        parts.append("o meio de pagamento confirmou")
+    else:
+        answer = str(payload.get("message") or "").strip()
+        parts.append(f"não saiu: {answer}" if answer else "não saiu")
+    return " · ".join(part for part in parts if part)
 
 
 def _event_detail(payload: dict) -> str:

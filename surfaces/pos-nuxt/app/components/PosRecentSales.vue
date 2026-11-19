@@ -46,6 +46,8 @@ interface RecentSale {
 const props = defineProps<{
   open: boolean;
   pos: POSProjection | null;
+  /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
+  operatorName?: string;
 }>();
 // `cancelled` sobe para a tela de venda limpar o vestígio da mesma venda
 // (tela de resultado, chip de PIX pendente) e recarregar a Projection.
@@ -276,12 +278,15 @@ function messageOf(error: unknown): string {
 const saleCorrection = computed(() => props.pos?.checkout?.capabilities?.sale_correction ?? null);
 const cancelDialogOpen = ref(false);
 const cancelTargetRef = ref("");
+// O valor que o gerente assina, lido da linha que a Caixa tocou (P1-6).
+const cancelTargetTotal = ref("");
 const cancelReason = ref("");
 const cancelBusy = ref(false);
 const cancelError = ref("");
 
 function openCancel(sale: RecentSale) {
   cancelTargetRef.value = sale.order_ref;
+  cancelTargetTotal.value = `R$ ${sale.total_display}`;
   cancelReason.value = "";
   cancelError.value = "";
   cancelDialogOpen.value = true;
@@ -548,6 +553,8 @@ function fiscalChipClass(status: string): string {
     v-model:open="cancelDialogOpen"
     v-model:reason="cancelReason"
     :order-ref="cancelTargetRef"
+    :total-display="cancelTargetTotal"
+    :operator-name="props.operatorName || ''"
     :max-age-minutes="saleCorrection?.max_age_minutes || 0"
     :busy="cancelBusy"
     :error="cancelError"

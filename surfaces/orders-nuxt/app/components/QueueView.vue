@@ -16,8 +16,10 @@
 // vêm do servidor (`order_attention`).
 //
 // WP-G08: a promessa em risco aparece na linha com o item que ficou sem reserva, o
-// porquê e as três saídas; o bloqueio ganha o motivo escrito e o gesto ao lado, e o
-// avanço travado que só repetia o nome do bloqueio deixa de ser botão.
+// porquê, o PRÓXIMO PASSO escrito (o que fazer, com o que a casa pode oferecer no
+// lugar) e as saídas, a recomendada em botão cheio; o bloqueio ganha o motivo escrito
+// e o gesto ao lado, e o avanço travado que só repetia o nome do bloqueio deixa de ser
+// botão.
 import type {
   OrderCardProjection,
   QueueAwarenessProjection,
@@ -237,6 +239,16 @@ function switchHint(row: {
   if (!row.switch?.requires_manager_approval) return "";
   return row.active ? "desligar pede gerente" : "ligar pede gerente";
 }
+
+// Um botão cheio por linha. Com a promessa em risco e uma saída recomendada pelo
+// servidor ("Avisar o cliente", "Abrir a Produção"), é ela a cheia: o gesto da etapa
+// continua na linha, em contorno. Iniciar o preparo de um pedido sem lastro não é o
+// próximo passo (dono, 19/11/2026: o aviso diz o que fazer).
+function riskLeads(item: { card: OrderCardProjection }): boolean {
+  return Boolean(
+    promiseRisk(item.card)?.exits.some((exit) => exit.recommended && !exit.disabled),
+  );
+}
 </script>
 
 <template>
@@ -398,9 +410,9 @@ function switchHint(row: {
                 item.card.change_label || paymentLabel(item.card)
               }}</span>
             </p>
-            <!-- Promessa em risco (WP-G08): o item que ficou sem reserva, o porquê e as
-                 três saídas, com as palavras do servidor. Quando é ela o fato que o
-                 pedido espera, a primeira saída é o gesto principal da linha. -->
+            <!-- Promessa em risco (WP-G08): o item que ficou sem reserva, o porquê, o
+                 que fazer agora e as saídas, com as palavras do servidor. A saída que
+                 ele recomenda é a única cheia. -->
             <div
               v-if="promiseRisk(item.card)"
               class="flex min-w-0 flex-col gap-1.5"
@@ -424,11 +436,18 @@ function switchHint(row: {
                   }}</span>
                 </li>
               </ul>
+              <!-- O próximo passo: aviso que não diz o que fazer não é aviso. -->
+              <p
+                v-if="promiseRisk(item.card)!.nextStep"
+                class="op-body font-medium"
+                data-queue-promise-next-step
+              >
+                {{ promiseRisk(item.card)!.nextStep }}
+              </p>
               <div class="flex flex-wrap gap-2">
                 <OrderPromiseExits
                   :exits="promiseRisk(item.card)!.exits"
                   :code="splitRef(item.card.ref).code"
-                  :tone="item.kind === 'promise' ? 'lead' : 'plain'"
                 />
               </div>
               <p
@@ -711,15 +730,18 @@ function switchHint(row: {
                             )
                   "
                   :color="
-                    queueGesture(item).primary!.disabled
+                    queueGesture(item).primary!.disabled || riskLeads(item)
                       ? 'neutral'
                       : item.kind === 'ifood_accept'
                         ? 'error'
                         : 'primary'
                   "
                   :variant="
-                    queueGesture(item).primary!.disabled ? 'outline' : 'solid'
+                    queueGesture(item).primary!.disabled || riskLeads(item)
+                      ? 'outline'
+                      : 'solid'
                   "
+                  :data-queue-primary-weight="riskLeads(item) ? 'secondary' : undefined"
                   block
                   class="min-w-0"
                   :disabled="

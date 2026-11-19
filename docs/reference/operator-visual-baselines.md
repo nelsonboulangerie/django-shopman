@@ -48,7 +48,11 @@ abaixo vale para ela também.
    Playwright). A baseline canônica só nasce ali; rasterização de outra máquina não
    promove. Quando o download local do Chromium estiver bloqueado, use o artefato
    `marketing-browser-gates` da execução oficial e promova os `actual.png`
-   inspecionados — foi o que o `V6-SEG-MKT-VISUAL-GATE` fez.
+   inspecionados — foi o que o `V6-SEG-MKT-VISUAL-GATE` fez. O `macos-15` vale só
+   para quem declara `visualRunner` em `surfaces/contracts.json` (hoje `pos-nuxt` e
+   `marketing-nuxt`), cujo retrato roda no workflow `surfaces-visual-pinned.yml`
+   (artefato `<app>-visual-pinned-evidence`); os demais apps gravam em
+   `ubuntu-latest`, no próprio job do Surfaces Gate.
 3. **Separe mudança intencional de regressão funcional.** No V6-SEG, das 62 falhas,
    a maioria era retrato anterior e contrato de teste velho, e havia uma regressão
    real (`Criar cupom` inalcançável no celular). Baseline regerada sem essa separação

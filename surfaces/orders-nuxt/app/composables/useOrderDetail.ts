@@ -176,6 +176,7 @@ export function useOrderDetail(orderRef: string) {
           "ifood-accept-retry",
           "return",
           "no-show",
+          "refund-retry",
         ].includes(action)
       ) {
         await intentions.execute(
@@ -289,6 +290,12 @@ export function useOrderDetail(orderRef: string) {
   // confere; a do detalhe só diz se a porta existe. O PIN vem pelo desafio de sempre.
   const markNotPickedUp = (contract: Action) =>
     act("no-show", undefined, undefined, contract);
+  // Tentar o estorno de novo (WP-G13): não há o que escolher, o valor e as cobranças
+  // são do servidor. A ação é a do detalhe (`refund-retry`), com a base que o comando
+  // confere; o PIN vem pelo desafio de sempre. `true` diz que a TENTATIVA foi gravada:
+  // se o dinheiro voltou, quem diz é o pedido relido (`cancelled_money`), e a recusa
+  // do meio de pagamento chega escrita na linha da faixa.
+  const retryRefund = () => act("refund-retry");
   const settleCash = (
     amount: string,
     changeBack?: string,
@@ -465,6 +472,7 @@ export function useOrderDetail(orderRef: string) {
     cancel,
     returnOrder,
     markNotPickedUp,
+    retryRefund,
     settleCash,
     equipmentBack,
     courierBack,

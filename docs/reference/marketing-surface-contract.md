@@ -622,8 +622,11 @@ significa "na próxima passada" e pode levar alguns minutos** — não é defeit
   --platform instagram`: preflight somente leitura a partir do número já visível na
   URL; imprime a consequência e o comando exato, sem publicar;
 - `make admin`: garante o corte Nuxt operacional/Admin audit-only;
-- job `Marketing — cadeia completa`: instalação, unit/component, lint, tipos, build,
-  E2E, acessibilidade, visual e segurança — só o que o Marketing precisa provar;
+- job `marketing-nuxt` do Surfaces Gate (check obrigatório, Linux): instalação,
+  unit/component, lint, tipos, E2E, acessibilidade e segurança; o retrato visual,
+  gravado em `macos-15`, roda em `Retratos macOS — marketing-nuxt`
+  (`surfaces-visual-pinned.yml`), no PR que toca o app e toda noite no `main`,
+  fora do caminho da fila (ver [ci-escopo.md](ci-escopo.md));
 - job `Supply chain — npm audit`: o `npm audit --audit-level=high` de `operator-kit` e
   `marketing-nuxt`, com a allowlist versionada em `surfaces/npm-audit-allowlist.json`.
   Ele saiu de dentro do job de Marketing para que um vermelho de Marketing volte a

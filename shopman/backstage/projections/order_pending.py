@@ -19,8 +19,9 @@ Três regras desta lista:
   que o acompanhamento do cliente lê, com a frase que ele lê.
 
 Nada aqui grava, e nada aqui inventa ação: toda ``ref`` de ação ou está em
-``actions`` do detalhe (``requeue-fiscal``, ``resend-payment-link``, ``cancel``)
-ou é um gesto de tela que já existia (``print-danfe``, ``contact-customer``).
+``actions`` do detalhe (``requeue-fiscal``, ``resend-payment-link``, ``cancel``,
+``refund-retry``) ou é um gesto de tela que já existia (``print-danfe``,
+``contact-customer``).
 """
 
 from __future__ import annotations
@@ -92,7 +93,14 @@ class OrderPendingActionProjection:
     ``ref`` é uma ação de ``actions`` do detalhe ou um gesto de tela
     (:data:`ACTION_PRINT_DANFE`, :data:`ACTION_CONTACT_CUSTOMER`). ``enabled`` e
     ``reason`` são os da própria ação: a faixa nunca oferece o que o servidor
-    recusaria. ``href`` só existe na conversa com o cliente.
+    recusaria. ``href`` só existe no que leva para fora do Gestor (a conversa
+    com o cliente, o PDV, a Produção).
+
+    ``priority`` é o peso que a linha declara para o gesto: ``primary`` (o
+    recomendado, o único cheio da linha), ``secondary`` ou ``danger``. Vazio, a
+    linha não declara nada e a tela trata o primeiro gesto como o principal.
+    Linha que declara e não tem ``primary`` não tem gesto cheio: quem resolve
+    não é quem está olhando (a promessa em risco que pede a Produção).
     """
 
     ref: str
@@ -100,6 +108,7 @@ class OrderPendingActionProjection:
     enabled: bool = True
     reason: str = ""
     href: str = ""
+    priority: str = ""
 
 
 @dataclass(frozen=True)
@@ -108,6 +117,11 @@ class OrderPendingProjection:
 
     ``tone``: ``error`` (alguém precisa agir), ``warning`` (confira) ou ``info``
     (espera que se resolve sozinha). ``key`` é estável, para a tela e os testes.
+    ``next_step`` é o que fazer agora, numa frase, quando a linha tem mais de
+    uma saída e uma delas é a certa (a promessa em risco).
+    ``failure``: o que deu errado na última vez que alguém tentou o gesto desta
+    linha (hoje, só o estorno tentado de novo). A tela escreve na própria linha,
+    em tom de erro; vazio quando ninguém tentou ou a última tentativa deu certo.
     """
 
     key: str
@@ -115,6 +129,8 @@ class OrderPendingProjection:
     label: str
     reason: str = ""
     actions: tuple[OrderPendingActionProjection, ...] = ()
+    next_step: str = ""
+    failure: str = ""
 
 
 @dataclass(frozen=True)
@@ -228,7 +244,54 @@ def _quoted(line: str) -> str:
     return f" O cliente lê na loja: “{line}”" if line else ""
 
 
-def _money_pending(order: Order, money: CancelledMoneyProjection | None, alerts: frozenset[str]):
+#: Por onde o estorno tentado de novo volta, no fim de "pede esse estorno outra vez…".
+_RETRY_DESTINATION = {"pix": " ao Pix do cliente", "card": " ao cartão do cliente"}
+
+
+def _refund_retry_pending(order: Order, money: CancelledMoneyProjection, plan, by_ref: dict):
+    """ "Estorno não saiu" com o gesto (WP-G13): o valor, o que o botão faz e a última resposta.
+
+    A falha da tentativa mora na própria linha (``failure``), vinda do pedido
+    (``refund_retry.last_attempt``): quem abre o pedido depois lê o que o gateway
+    respondeu, e não um aviso que já sumiu.
+    """
+    from django.utils import timezone
+    from shopman.utils.formatting import format_local
+
+    from shopman.backstage.services import refund_retry
+
+    action = by_ref.get(refund_retry.ACTION_REF)
+    amount = f" de {money.amount_display}" if money.amount_display else ""
+    parts = [f"A devolução{amount} não chegou ao cliente."]
+    if plan.block_reason:
+        # Sem caminho daqui: a frase diz por quê, e não promete um botão que não age.
+        parts.append(plan.block_reason)
+    else:
+        # Quase sempre é o valor inteiro que falta; quando só parte dele volta por
+        # gateway, a frase diz quanto o botão pede.
+        asked = "esse estorno" if _money(plan.amount_q) == money.amount_display else _money(plan.amount_q)
+        parts.append(
+            f"Tentar de novo pede {asked} outra vez{_RETRY_DESTINATION.get(plan.method, '')}, "
+            "com a autorização de um gerente."
+        )
+    failure = ""
+    attempt = refund_retry.last_attempt(order)
+    if attempt is not None and attempt.message and attempt.outcome != refund_retry.OUTCOME_UNRECORDED:
+        when = format_local(timezone.localtime(attempt.at), "%d/%m às {clock}")
+        failure = f"Última tentativa, em {when}: {_sentence(attempt.message)}"
+    return OrderPendingProjection(
+        key="refund",
+        tone=TONE_ERROR,
+        label=money.label,
+        reason=" ".join(parts),
+        actions=() if plan.block_reason else _from_action(action),
+        failure=failure,
+    )
+
+
+def _money_pending(
+    order: Order, money: CancelledMoneyProjection | None, alerts: frozenset[str], *, refund_retry_plan=None, by_ref=None,
+):
     if money is not None and money.state == MONEY_REFUND_REQUESTED:
         return OrderPendingProjection(
             key="refund",
@@ -244,6 +307,10 @@ def _money_pending(order: Order, money: CancelledMoneyProjection | None, alerts:
     )
     if not failed:
         return None
+    if money is not None and money.state == MONEY_REFUND_FAILED and refund_retry_plan is not None:
+        return _refund_retry_pending(order, money, refund_retry_plan, by_ref or {})
+    # O estorno que falhou fora do cancelado (devolução, encomenda editada): sem o
+    # valor certo a pedir de novo, quem conclui ainda é o suporte.
     amount = f" de {money.amount_display}" if money is not None and money.amount_display else ""
     return OrderPendingProjection(
         key="refund",
@@ -459,7 +526,12 @@ def _lot_lines(promise, awaiting_work_orders) -> str:
 
 
 def _promise_pending(promise):
-    """Promessa em risco: o item que ficou sem lastro, o porquê e as três saídas ao lado."""
+    """Promessa em risco: o item que ficou sem lastro, o porquê, o que fazer e as saídas ao lado.
+
+    A saída recomendada vem primeiro e é a única ``primary``; sem recomendada
+    entre as saídas (quem não abre a Produção), nenhuma é cheia e a frase do
+    próximo passo diz o que fazer.
+    """
     if promise is None or promise.state != order_promise.STATE_AT_RISK:
         return None
     return OrderPendingProjection(
@@ -467,10 +539,11 @@ def _promise_pending(promise):
         tone=TONE_ERROR,
         label=promise.label,
         reason=order_promise.risk_reason(promise),
+        next_step=promise.next_step,
         actions=tuple(
             OrderPendingActionProjection(
                 ref=action.ref, label=action.label, enabled=bool(action.enabled), reason=action.reason or "",
-                href=action.href or "",
+                href=action.href or "", priority=action.priority or "secondary",
             )
             for action in promise.actions
         ),
@@ -495,6 +568,7 @@ def build_pending(
     schedule_label: str = "",
     whatsapp_url: str = "",
     promise=None,
+    refund_retry_plan=None,
 ) -> tuple[OrderPendingProjection, ...]:
     """As pendências do pedido, do que pede alguém agora ao que só espera.
 
@@ -543,7 +617,7 @@ def build_pending(
         _fiscal_pending(order, fiscal_status, by_ref),
         _fiscal_cancel_pending(order, alerts),
         _danfe_pending(order, danfe),
-        _money_pending(order, money, alerts),
+        _money_pending(order, money, alerts, refund_retry_plan=refund_retry_plan, by_ref=by_ref),
     ):
         if item is not None:
             pending.append(item)

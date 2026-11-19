@@ -2438,6 +2438,14 @@ function compactClear() {
                         <span class="text-muted-foreground">{{ item.detail }}</span>
                       </li>
                     </ul>
+                    <!-- O próximo passo, com as palavras do servidor. -->
+                    <p
+                      v-if="promiseRisk(row.original.card)!.nextStep"
+                      class="mt-2 font-medium"
+                      data-supervision-promise-next-step
+                    >
+                      {{ promiseRisk(row.original.card)!.nextStep }}
+                    </p>
                     <div class="mt-2 flex flex-wrap gap-2">
                       <OrderPromiseExits
                         :exits="promiseRisk(row.original.card)!.exits"

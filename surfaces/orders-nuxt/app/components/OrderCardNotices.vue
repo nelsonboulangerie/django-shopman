@@ -3,8 +3,8 @@
 // texto e o gesto no Popover. Um lugar só para o cartão inteiro e o enxuto do Painel.
 //
 // O aviso com mais de um fato (a promessa em risco, WP-G08: um item por linha, com o
-// porquê) escreve as linhas no lugar da descrição, e as saídas dele são atalhos
-// (`OrderPromiseExits`), na cor do aviso.
+// porquê) escreve as linhas no lugar da descrição, depois o próximo passo (o que fazer
+// agora), e as saídas dele são atalhos (`OrderPromiseExits`), na cor do aviso.
 import type { CardNotice } from "./OrderCard.vue";
 import OrderPromiseExits from "./OrderPromiseExits.vue";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
@@ -37,7 +37,10 @@ defineProps<{ notices: CardNotice[] }>();
           :actions="alertActions(notice.color, notice.actions ?? [])"
           v-bind="notice.attrs"
         >
-          <template v-if="notice.lines?.length || notice.notes?.length" #description>
+          <template
+            v-if="notice.lines?.length || notice.notes?.length || notice.nextStep"
+            #description
+          >
             <div class="flex flex-col gap-2">
               <ul v-if="notice.lines?.length" class="flex flex-col gap-1.5">
                 <li
@@ -50,6 +53,14 @@ defineProps<{ notices: CardNotice[] }>();
                   <span v-if="line.detail">{{ line.detail }}</span>
                 </li>
               </ul>
+              <!-- O que fazer agora, com as palavras do servidor. -->
+              <p
+                v-if="notice.nextStep"
+                class="font-medium"
+                data-card-notice-next-step
+              >
+                {{ notice.nextStep }}
+              </p>
               <!-- Por que uma saída não pode agora, escrito. -->
               <p
                 v-for="note in notice.notes"

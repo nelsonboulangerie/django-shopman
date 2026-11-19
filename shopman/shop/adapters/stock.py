@@ -14,6 +14,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 from django.utils import timezone
 
+from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
 from shopman.shop.protocols import ReserveRefusal
 
 logger = logging.getLogger(__name__)
@@ -90,19 +91,21 @@ def create_hold(
     allowed_positions = scope.get("allowed_positions")
     excluded_positions = scope.get("excluded_positions")
     safety_margin = int(scope.get("safety_margin") or 0) if apply_safety_margin else 0
+    target = target_date or timezone.localdate()
 
     try:
         hold_id = stock.hold(
             qty,
             product,
-            target_date=target_date or timezone.localdate(),
+            target_date=target,
             expires_at=expires_at,
             allowed_positions=allowed_positions,
             excluded_positions=excluded_positions,
             safety_margin=safety_margin,
             # Gates de LOTE do canal (C2): a reserva respeita o mesmo escopo
-            # da leitura — vitrine e hold nunca discordam.
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            # da leitura — vitrine e hold nunca discordam. A margem é a do
+            # ALVO: a reserva para data futura não ancora na sobra de hoje.
+            expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), target),
             include_nonconforming=scope.get("sells_nonconforming", True),
             allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             allow_demand=allow_demand,
@@ -261,12 +264,13 @@ def _free_by_eligible_quant(sku: str, *, target_date: date | None, channel_ref: 
     from shopman.stockman.services.scope import quants_eligible_for
 
     scope = get_channel_scope(channel_ref) if channel_ref else {}
+    target = target_date or timezone.localdate()
     eligible = quants_eligible_for(
         sku,
-        target_date=target_date or timezone.localdate(),
+        target_date=target,
         allowed_positions=scope.get("allowed_positions"),
         excluded_positions=scope.get("excluded_positions"),
-        expiry_margin_days=scope.get("expiry_margin_days", 0),
+        expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), target),
         include_nonconforming=scope.get("sells_nonconforming", True),
         allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
     )
@@ -884,10 +888,16 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
     coordenada (``receive``) abria o lote do dia para o perecível, e o pão de
     ontem voltava à vitrine com a validade de hoje (#2604).
 
+    Baixa feita contra saldo de produção cujo lote ainda não fechou (#2724): o
+    mesmo saldo é esse saldo de produção, e a devolução entra na conta da
+    reserva (``Move.metadata.delivery``, que é o que o fechamento lê). Sem a
+    chave o fechamento abateria do lote uma entrega que foi desfeita.
+
     Returns:
         True se devolveu; False se o hold não está FULFILLED.
     """
     from shopman.stockman import Move
+    from shopman.stockman.services.holds import DELIVERY_RETURNED, delivery_entry
     from shopman.stockman.services.movements import StockMovements
 
     hold = _fulfilled_hold(hold_id)
@@ -896,7 +906,17 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
 
     text = f"{reason} (ref: {reference})"
     if hold.quant is not None:
-        StockMovements.receive_into(quantity=qty, quant=hold.quant, reason=text, kind=Move.Kind.RETURN)
+        # Saldo de produção (lote ainda não fechou): a devolução leva a chave da
+        # conta da entrega, que é o que o fechamento lê para não abater do lote
+        # o que foi desfeito. No saldo físico não há conta a acertar.
+        in_production_balance = hold.quant.target_date is not None
+        StockMovements.receive_into(
+            quantity=qty,
+            quant=hold.quant,
+            reason=text,
+            kind=Move.Kind.RETURN,
+            metadata=delivery_entry(hold.pk, DELIVERY_RETURNED) if in_production_balance else None,
+        )
     else:
         # Hold baixado sem saldo ligado não tem lote a que voltar.
         StockMovements.receive(quantity=qty, sku=hold.sku, position=None, reason=text, kind=Move.Kind.RETURN)
