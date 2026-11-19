@@ -1126,7 +1126,7 @@ const outside = useOutsideStore(
           variant="ghost"
           square
           class="size-11 shrink-0 justify-center"
-          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
+          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'"
           data-compact-back
         />
       </template>
@@ -1177,7 +1177,7 @@ const outside = useOutsideStore(
           variant="ghost"
           square
           :aria-label="
-            fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'
+            fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'
           "
           data-detail-back
         />

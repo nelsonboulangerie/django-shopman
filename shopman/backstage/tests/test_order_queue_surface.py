@@ -766,6 +766,33 @@ class TimelineSpeaksPortugueseTests(TestCase):
         self.assertEqual(event.label, "Comentário")
         self.assertEqual(event.detail, "Cliente pediu sem cebola")
 
+    def test_an_unlabelled_event_never_shows_its_identifier(self) -> None:
+        # WP-G09 (P2-17): o tipo sem rótulo saía humanizado, em inglês ("Legacy
+        # sync finished"). Identificador não é texto de tela: a linha diz que
+        # houve um registro, e o defeito grita no log com o tipo.
+        with self.assertLogs("shopman.backstage.projections.order_queue", level="ERROR") as logs:
+            event = self._with_event("TL-SEM-ROTULO", "legacy_sync_finished", {"from_session": "SESS-ABC"})
+
+        self.assertEqual(event.label, "Registro do sistema")
+        self.assertNotIn("legacy", event.label.lower())
+        self.assertNotIn("sync", event.label.lower())
+        self.assertEqual(event.detail, "")
+        self.assertIn("legacy_sync_finished", "".join(logs.output))
+
+    def test_money_the_gateway_returned_has_one_word(self) -> None:
+        # "Reembolsado" no resumo convivia com "Pagamento estornado" na linha do
+        # tempo e "Estornado" no cancelado: três formas de um fato só.
+        from shopman.backstage.presentation.status import payment_status_label
+        from shopman.backstage.projections import order_pending
+        from shopman.backstage.projections.order_queue import _EVENT_LABELS
+
+        self.assertEqual(payment_status_label("refunded"), "Estornado")
+        self.assertEqual(order_pending._MONEY_LABELS[order_pending.MONEY_REFUNDED], "Estornado")
+        self.assertEqual(_EVENT_LABELS["payment.refunded"], "Pagamento estornado")
+        self.assertEqual(_EVENT_LABELS["refund_processed"], "Estorno processado")
+        for label in _EVENT_LABELS.values():
+            self.assertNotIn("eembols", label)
+
     def test_both_spellings_of_the_status_event_are_recognised(self) -> None:
         # `status_changed` vem do model; `status_change` é a grafia da maioria
         # esmagadora das linhas no banco. Só a primeira era tratada.

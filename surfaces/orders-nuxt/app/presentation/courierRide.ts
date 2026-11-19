@@ -60,7 +60,7 @@ export function courierRideAction(
   const complete = Object.keys(revisions).length === refs.length;
   return {
     enabled: action.enabled && complete,
-    reason: action.reason || (complete ? "" : "A fila mudou. Atualize antes de chamar a corrida."),
+    reason: action.reason || (complete ? "" : "Os pedidos mudaram. Atualize antes de chamar a corrida."),
     method: action.method,
     payload_schema: {
       expected_actor_id: action.payload_schema.expected_actor_id,

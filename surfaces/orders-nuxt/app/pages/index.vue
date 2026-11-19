@@ -1029,7 +1029,7 @@ const phoneHeaderActions = computed(() => {
       onSelect: () => (selecting.value ? stopSelection() : startSelection()),
     },
     { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => exportCsv() },
-    { label: "Imprimir fila", icon: "i-lucide-printer", onSelect: () => printQueue() },
+    { label: "Imprimir pedidos", icon: "i-lucide-printer", onSelect: () => printQueue() },
   ];
 });
 // Os recortes ativos (chips removíveis abaixo da linha e o número no "Filtros").
@@ -1600,7 +1600,7 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
     });
   return alerts;
 });
-// "Falha ao atualizar a fila" fecha e volta na próxima leitura que falhar: cada falha nova
+// "Falha ao atualizar os pedidos" fecha e volta na próxima leitura que falhar: cada falha nova
 // (outro erro) é outra chave.
 const queueFailures = ref(0);
 watch(error, (now, before) => {
@@ -1676,7 +1676,7 @@ function compactClear() {
       </template>
     </OperatorCompactBar>
     <!-- Sem conexão segue EXPLÍCITO (cor + texto), não só o chip do selo. Com a
-         leitura falhada o conteúdo já diz "Falha ao atualizar a fila"; aqui não repete. -->
+         leitura falhada o conteúdo já diz "Falha ao atualizar os pedidos"; aqui não repete. -->
     <p v-if="liveTone === 'off' && !error" class="flex items-center gap-2 border-b border-default bg-error/10 px-3 py-2 text-sm text-error md:hidden" role="status" data-compact-offline>
       <NuxtIcon name="i-lucide-wifi-off" class="size-4 shrink-0" /><span>Sem conexão.<template v-if="readClock"> Última leitura às {{ readClock }}.</template></span>
     </p>
@@ -1698,7 +1698,7 @@ function compactClear() {
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       actions-from="md"
-      actions-label="Mais ações da fila"
+      actions-label="Mais ações dos pedidos"
       :active-filters="activeFilters"
     >
       <template #status>
@@ -2020,7 +2020,7 @@ function compactClear() {
       <div
         v-if="(pending || !hydrated) && !zones.length"
         class="grid gap-3 md:grid-cols-2 lg:grid-cols-3"
-        aria-label="Carregando fila"
+        aria-label="Carregando pedidos"
       >
         <NuxtSkeleton v-for="i in 3" :key="i" class="h-40 w-full" />
       </div>
@@ -2032,7 +2032,7 @@ function compactClear() {
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="Falha ao atualizar a fila"
+        title="Falha ao atualizar os pedidos"
         description="Mantivemos a última leitura; atualize antes de confirmar ações."
         data-queue-error
         @update:open="notices.onOpen(`queue-error:${queueFailures}`, $event)"

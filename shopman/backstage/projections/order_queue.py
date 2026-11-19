@@ -118,7 +118,7 @@ def _order_payment_status_label(order, payment_status: str) -> str:
     if payment_status not in _PAYMENT_COMPLETE and payment_svc.awaiting_repayment(order) is not None:
         return AWAITING_REPAYMENT_LABEL
     if (order.data or {}).get("no_show"):
-        # Pedido não retirado (WP-G11): só parte do valor volta. "Reembolsado"
+        # Pedido não retirado (WP-G11): só parte do valor volta. "Estornado"
         # sozinho mentiria sobre o que ficou com a loja.
         from shopman.backstage.projections.order_no_show import payment_outcome_label
 
@@ -3874,7 +3874,7 @@ _EVENT_LABELS = {
     "fiscal_issue_override": "NFC-e emitida com autorização do gerente",
     "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
     "return_initiated": "Devolução iniciada",
-    "refund_processed": "Reembolso processado",
+    "refund_processed": "Estorno processado",
     "volume_checked": "Volume conferido",
     "volume_check_wrong_bag": "Sacola de outro pedido lida na conferência",
     # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
@@ -3906,6 +3906,9 @@ _EVENT_LABELS = {
     "payment.refunded": "Pagamento estornado",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }
+
+#: O que a linha do tempo diz de um evento ainda sem rótulo: nunca o identificador.
+UNLABELLED_EVENT_LABEL = "Registro do sistema"
 
 #: O Pix que caiu numa cobrança já encerrada e foi registrado à parte.
 _OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
@@ -4057,9 +4060,12 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:
-            # Último recurso para um tipo que ninguém rotulou ainda. Continua
-            # feio, mas é o caso raro; o que era comum agora tem nome.
-            label = event.type.replace("_", " ").capitalize()
+            # Tipo que ninguém rotulou. Identificador não é texto de tela: a linha
+            # diz que houve um registro, em português, e o defeito grita no log com
+            # o tipo, para ganhar rótulo em ``_EVENT_LABELS``. Antes saía o código
+            # humanizado ("Customer cancellation requested") na tela do operador.
+            logger.error("order_queue.event_without_label type=%s order=%s", event.type, order.ref)
+            label = UNLABELLED_EVENT_LABEL
 
         if event.type == _PRODUCTION_HOLD_LOST_EVENT:
             detail = _production_hold_lost_detail(payload)
