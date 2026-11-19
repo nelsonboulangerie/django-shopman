@@ -193,7 +193,7 @@ export interface CardNotice {
   description?: string;
   actions?: ButtonProps[];
   /** Os fatos do aviso, um por linha, no lugar da descrição (o item e o porquê). */
-  lines?: Array<{ key: string; label: string; detail?: string }>;
+  lines?: Array<{ key: string; label: string; detail?: string; suggestions?: string[] }>;
   /** O que fazer agora, numa frase do servidor, escrito sob as linhas. */
   nextStep?: string;
   /** Por que uma saída do aviso não pode agora, escrito sob as linhas. */

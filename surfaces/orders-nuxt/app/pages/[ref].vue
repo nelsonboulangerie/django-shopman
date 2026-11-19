@@ -1558,6 +1558,7 @@ const outside = useOutsideStore(
         v-if="order"
         :pending="order.pending"
         :money="order.cancelled_money"
+        :promise="order.promise"
         :busy="busy"
         :danfe-printing="danfePrinting"
         :refund-retrying="refundRetrying"

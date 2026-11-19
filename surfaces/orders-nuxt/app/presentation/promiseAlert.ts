@@ -9,7 +9,7 @@
 // que a tela compõe (`manyOrdersStep`), a única frase que nasce aqui.
 import type { OrderCardProjection } from "~/types/orders";
 import { splitRef } from "./board";
-import { OPEN_PRODUCTION, promiseRisk } from "./orderPromise";
+import { OPEN_PRODUCTION, SUGGESTIONS_HEADING, promiseRisk } from "./orderPromise";
 import { preorderFocusKey } from "./preorderList";
 
 type AlertSource = Pick<OrderCardProjection, "ref"> &
@@ -82,10 +82,19 @@ export function promiseRiskAlert(
     return {
       id,
       title: `${first.risk.label} no pedido ${first.code}`,
-      // O item, o porquê e o que fazer, com as frases do servidor, uma depois da outra.
+      // O item, o porquê, as sugestões e a frase do servidor, um depois do outro. O
+      // aviso do cabeçalho é uma frase corrida (o kit não desenha lista nele): as
+      // sugestões vão na mesma linha, e a lista com marcador mora no pedido.
       description: [
         ...first.risk.items.map((item) =>
-          [item.label, item.detail].filter(Boolean).join(". "),
+          [
+            [item.label, item.detail].filter(Boolean).join(". "),
+            item.suggestions.length
+              ? `${SUGGESTIONS_HEADING} ${item.suggestions.join("; ")}.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
         ),
         first.risk.nextStep,
       ]

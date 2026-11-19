@@ -2429,18 +2429,28 @@ def _manages_orders(user) -> bool:
     return bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
 
 
-def _reschedule_at_pos_action(order: Order, *, authorized: bool) -> Action:
+def _reschedule_at_pos_action(order: Order, *, authorized: bool, promise=None) -> Action:
     """ "Remarcar no PDV": o pedido aberto no PDV, onde mora o remarcar (D-003).
 
     Link, não mutação: a régua de quem pode remarcar é a do orquestrador
     (``reschedule.state_refusal``), a mesma que o PDV aplica.
+
+    Com promessa em risco, as sugestões da tela seguem junto no endereço
+    (``?suggestions=<JSON>``, :func:`order_promise.pos_suggestions`), para a
+    Caixa trocar o item sem procurar de novo (dono, 19/11/2026; o lado do PDV é
+    a #2765). São só SKUs e quantidade: nenhum dado do cliente vai na URL.
     """
-    from urllib.parse import quote
+    import json
+    from urllib.parse import quote, urlencode
 
     from shopman.backstage.projections.hub import surface_link
     from shopman.shop.services import reschedule
 
-    href = surface_link("pos", f"preorders/{quote(order.ref, safe='')}")
+    path = f"preorders/{quote(order.ref, safe='')}"
+    suggestions = order_promise.pos_suggestions(promise) if promise is not None else []
+    if suggestions:
+        path = f"{path}?{urlencode({'suggestions': json.dumps(suggestions, separators=(',', ':'))})}"
+    href = surface_link("pos", path)
     reason = (
         _PERMISSION_REASON if not authorized
         else reschedule.state_refusal(order) or ("" if href else "O endereço do PDV não está configurado.")
@@ -2517,7 +2527,7 @@ def _promise_card_actions(order: Order, user, promise) -> tuple[Action, ...]:
             ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente",
             enabled=authorized, reason=reason, href=f"{detail}#promise" if authorized else "", idempotency="none",
         ),
-        _reschedule_at_pos_action(order, authorized=authorized),
+        _reschedule_at_pos_action(order, authorized=authorized, promise=promise),
         _open_production_action(promise, user),
         Action(
             ref=order_promise.ACTION_CANCEL, kind="link", label="Cancelar pedido", priority="danger",
@@ -2540,7 +2550,7 @@ def _promise_detail_actions(
             enabled=not contact_reason, reason=contact_reason, href="" if contact_reason else whatsapp_url,
             idempotency="none",
         ),
-        _reschedule_at_pos_action(order, authorized=authorized),
+        _reschedule_at_pos_action(order, authorized=authorized, promise=promise),
         _open_production_action(promise, user),
         cancel_action,
     ))
@@ -3974,7 +3984,7 @@ _EVENT_LABELS = {
     "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
     # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
-    "production_hold_lost": "Produção cancelada: item ficou sem reserva",
+    "production_hold_lost": "Lote cancelado: o item ficou em falta",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",

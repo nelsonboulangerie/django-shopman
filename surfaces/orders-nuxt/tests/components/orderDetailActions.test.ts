@@ -1398,8 +1398,8 @@ describe("detalhe do pedido — tentar o estorno de novo", () => {
 describe("detalhe do pedido — promessa em risco", () => {
   const promiseLine = (over: Record<string, unknown> = {}) => ({
     key: "promise", tone: "error", label: "Promessa em risco",
-    reason: "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado.",
-    next_step: "Avise o cliente e ofereça: Fendu (6 livres para amanhã).",
+    reason: "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.",
+    next_step: "Nenhum produto parecido livre para amanhã.",
     actions: [
       { ref: "contact-customer", label: "Avisar o cliente", enabled: true, reason: "", href: "https://wa.me/5543999990000", priority: "primary" },
       { ref: "reschedule-at-pos", label: "Remarcar no PDV", enabled: true, reason: "", href: "https://pdv.example.test/preorders/WEB-1", priority: "secondary" },
@@ -1418,8 +1418,8 @@ describe("detalhe do pedido — promessa em risco", () => {
     const w = abrir(emRisco());
     const row = w.get('[data-pending="promise"]');
     expect(row.text()).toContain("Promessa em risco");
-    expect(row.text()).toContain("4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado.");
-    expect(row.get("[data-pending-next-step]").text()).toBe("Avise o cliente e ofereça: Fendu (6 livres para amanhã).");
+    expect(row.text()).toContain("Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.");
+    expect(row.get("[data-pending-next-step]").text()).toBe("Nenhum produto parecido livre para amanhã.");
     expect(row.findAll("[data-pending-action]").map((button) => button.text())).toEqual([
       "Avisar o cliente", "Remarcar no PDV", "Cancelar pedido",
     ]);

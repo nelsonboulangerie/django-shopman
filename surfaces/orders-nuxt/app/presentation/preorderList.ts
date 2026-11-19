@@ -8,7 +8,7 @@
 // se escolhe o que a linha diz e com que palavras.
 //
 // A encomenda de data futura que perdeu o lastro mora AQUI, e não no quadro (WP-G08): a
-// linha diz "Promessa em risco", o item sem reserva e o que fazer agora, conta como
+// linha diz "Promessa em risco", o item que falta e as sugestões, conta como
 // "Precisa de você" e abre o pedido na faixa que tem as saídas.
 import type {
   OrderCardProjection,
@@ -20,7 +20,11 @@ import {
   splitRef,
   type KitchenWait,
 } from "./board";
-import { promiseRisk, promiseRiskSummary } from "./orderPromise";
+import {
+  promiseRisk,
+  promiseRiskSummary,
+  promiseSuggestionGroups,
+} from "./orderPromise";
 
 type LineSource = Pick<
   OrderCardProjection,
@@ -63,11 +67,12 @@ export interface PreorderLine {
   /** O pagamento ainda não caiu: a linha diz isso com nome, sem pedir gesto. */
   awaitingPayment: boolean;
   /** "Produção de Kuro Pan: não começou", quando o pedido espera um lote. Vazio na
-   *  promessa em risco: o item sem reserva já diz o que há com o lote. */
+   *  promessa em risco: o item que falta já diz o que há com o lote. */
   production: string;
-  /** A promessa em risco: o nome do estado, o item que ficou sem reserva e o próximo
-   *  passo, com as palavras do servidor. `null` em quem tem lastro. */
-  risk: { label: string; items: string; nextStep: string } | null;
+  /** A promessa em risco: o nome do estado, o item que falta, as sugestões do que
+   *  oferecer no lugar (numa linha só: a lista com marcador mora no pedido) e a frase
+   *  do servidor, quando há. `null` em quem tem lastro. */
+  risk: { label: string; items: string; suggestions: string; nextStep: string } | null;
   /** Há um gesto que só uma pessoa faz (nunca o pagamento que ainda não caiu). */
   needsYou: boolean;
   /** Para onde a linha leva: o pedido; em risco, o pedido na faixa das saídas. */
@@ -101,7 +106,14 @@ export function preorderLine(card: LineSource): PreorderLine {
       .map((line) => line.text)
       .join(" · "),
     risk: risk
-      ? { label: risk.label, items: promiseRiskSummary(risk), nextStep: risk.nextStep }
+      ? {
+          label: risk.label,
+          items: promiseRiskSummary(risk),
+          suggestions: promiseSuggestionGroups(risk)
+            .map((group) => `${group.heading} ${group.options.join("; ")}`)
+            .join(" "),
+          nextStep: risk.nextStep,
+        }
       : null,
     // "Precisa de você" é de quem espera um gesto. O pagamento que ainda não caiu é
     // fato de fora: avança sozinho, e a linha já diz "Aguardando pagamento". A

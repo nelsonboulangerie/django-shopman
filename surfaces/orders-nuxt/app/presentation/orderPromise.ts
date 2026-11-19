@@ -20,12 +20,26 @@ export interface PromiseSource {
   promise?: OrderPromiseProjection | null;
 }
 
-/** Um item da promessa em risco: o que falta ("4x Baguete sem reserva") e o porquê. */
+/** Um item da promessa em risco: o que falta ("Faltam 4x Baguete"), o porquê e o que
+ *  a casa pode oferecer no lugar, uma sugestão por linha. */
 export interface PromiseRiskItem {
   key: string;
+  /** O nome do produto, para o título da lista quando a linha fala de mais de um. */
+  name: string;
   label: string;
   detail: string;
+  /** "Fendu · 6 livres para amanhã": o nome e o quanto há, com as palavras do servidor. */
+  suggestions: string[];
 }
+
+/** Um grupo de sugestões para quem escreve os itens numa frase só (a faixa do detalhe). */
+export interface PromiseSuggestionGroup {
+  key: string;
+  heading: string;
+  options: string[];
+}
+
+export const SUGGESTIONS_HEADING = "Sugestões:";
 
 /** Uma saída da promessa em risco, como a tela a desenha. */
 export interface PromiseExit {
@@ -47,7 +61,8 @@ export interface PromiseRisk {
   /** "Promessa em risco", o nome que o servidor deu ao estado. */
   label: string;
   items: PromiseRiskItem[];
-  /** O que fazer agora, numa frase do servidor ("Avise o cliente e ofereça: …"). */
+  /** O que a tela ainda precisa dizer, numa frase do servidor ("Peça à Produção para
+   *  planejar."); vazio quando as sugestões ou a saída cheia já dizem tudo. */
   nextStep: string;
   /** A `ref` da saída que a situação pede, mesmo quando esta conta não a recebe. */
   recommendedAction: string;
@@ -96,7 +111,15 @@ export function promiseRisk(source: PromiseSource): PromiseRisk | null {
     label: promise.label,
     items: (promise.items ?? [])
       .filter((item) => item.at_risk)
-      .map((item) => ({ key: item.sku, label: item.label, detail: item.detail })),
+      .map((item) => ({
+        key: item.sku,
+        name: item.name,
+        label: item.label,
+        detail: item.detail,
+        suggestions: (item.alternatives ?? []).map((option) =>
+          [option.name, option.available_display].filter(Boolean).join(" · "),
+        ),
+      })),
     nextStep: String(promise.next_step ?? "").trim(),
     recommendedAction: String(promise.recommended_action ?? ""),
     exits: actions.map(exit),
@@ -119,7 +142,21 @@ export function promiseRiskLeads(source: PromiseSource): boolean {
   return Boolean(promiseRisk(source)?.exits.some((exit) => exit.recommended && !exit.disabled));
 }
 
-/** Os itens em risco numa linha só, para quem lista ("4x Baguete sem reserva · 2x Brioche sem reserva"). */
+/**
+ * As sugestões por item, para quem escreve os itens numa frase só. Um item com
+ * sugestão: "Sugestões:". Mais de um: "Sugestões para Baguete:", para a lista dizer de
+ * quem é.
+ */
+export function promiseSuggestionGroups(risk: PromiseRisk | null): PromiseSuggestionGroup[] {
+  const offered = (risk?.items ?? []).filter((item) => item.suggestions.length);
+  return offered.map((item) => ({
+    key: item.key,
+    heading: offered.length > 1 ? `Sugestões para ${item.name}:` : SUGGESTIONS_HEADING,
+    options: item.suggestions,
+  }));
+}
+
+/** Os itens em risco numa linha só, para quem lista ("Faltam 4x Baguete · Faltam 2x Brioche"). */
 export function promiseRiskSummary(risk: PromiseRisk): string {
   return risk.items.map((item) => item.label).join(" · ");
 }
