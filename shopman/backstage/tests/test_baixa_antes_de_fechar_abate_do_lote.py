@@ -272,8 +272,14 @@ def test_baixa_de_tudo_antes_de_fechar_credita_zero(lote, caixa, django_capture_
 
 
 @override_settings(SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token"})
-def test_pedido_da_loja_pago_e_aceito_antes_de_o_lote_fechar(lote, django_capture_on_commit_callbacks):
-    """Commit, webhook de pagamento e aceite de ponta a ponta, com o lote só planejado."""
+@pytest.mark.parametrize("lote_aberto", [False, True], ids=["lote-planejado", "lote-aberto"])
+def test_pedido_da_loja_pago_e_aceito_antes_de_o_lote_fechar(lote, lote_aberto, django_capture_on_commit_callbacks):
+    """Commit, webhook de pagamento e aceite de ponta a ponta, com o lote só planejado
+    e com o lote já aberto (a loja reserva o que está em produção, #2715)."""
+    saldo = "em_producao" if lote_aberto else "planejado"
+    if lote_aberto:
+        with django_capture_on_commit_callbacks(execute=True):
+            _iniciar(lote)
     Session.objects.create(
         session_key="S-WEB", channel_ref="web", state="open", rev=1,
         data={"payment": {"method": "pix"}, "fulfillment_type": "pickup", "origin_channel": "web"},
@@ -286,7 +292,7 @@ def test_pedido_da_loja_pago_e_aceito_antes_de_o_lote_fechar(lote, django_captur
         )
     order = Order.objects.get(ref=result["order_ref"] if isinstance(result, dict) else result.order_ref)
     hold = _reserva(order)
-    assert (_onde(hold), hold.status) == ("planejado", HoldStatus.PENDING)
+    assert (_onde(hold), hold.status) == (saldo, HoldStatus.PENDING)
 
     intent = PaymentIntent.objects.get(ref=order.data["payment"]["intent_ref"])
     with django_capture_on_commit_callbacks(execute=True):
@@ -304,10 +310,11 @@ def test_pedido_da_loja_pago_e_aceito_antes_de_o_lote_fechar(lote, django_captur
         confirm_order(order, actor="operator")
     hold.refresh_from_db()
     assert hold.status == HoldStatus.FULFILLED, "o aceite do pedido pago baixa na hora"
-    assert _saldo("planejado") == D("6")
+    assert _saldo(saldo) == D("6")
 
-    with django_capture_on_commit_callbacks(execute=True):
-        _iniciar(lote)
+    if not lote_aberto:
+        with django_capture_on_commit_callbacks(execute=True):
+            _iniciar(lote)
     assert (_saldo("planejado"), _saldo("em_producao")) == (D("0"), D("6"))
 
     with django_capture_on_commit_callbacks(execute=True):
