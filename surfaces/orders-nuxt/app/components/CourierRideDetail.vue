@@ -69,6 +69,14 @@ function confirmCancel(reasonId?: number) {
 
 // O cancelamento pedido: espera, dúvida ou recusa da TaOn. Dispensável, e volta
 // se o estado mudar (a recusa depois da espera é outro aviso).
+// Sem o botão de cancelar, o rodapé diz por quê SEGUNDO o estado: "já saiu com as
+// sacolas" só depois da coleta. Antes dela, o botão some por outro motivo (o serviço
+// não cancela por aqui), e a frase da coleta contradiria "Entregador na loja".
+const noCancelLine = computed(() =>
+  props.ride.picked_up_at
+    ? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn."
+    : "Para cancelar esta corrida, use a central da TaOn.",
+);
 const cancelState = computed(() => courierCancelNotice(props.ride.cancel_state, props.ride.cancel_message));
 const cancelDismissed = ref("");
 const showCancelState = computed(
@@ -211,7 +219,7 @@ const showCancelState = computed(
         </template>
       </template>
       <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da TaOn antes de pedir o cancelamento de novo.</p>
-      <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn." }}</p>
+      <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? noCancelLine }}</p>
     </footer>
   </aside>
 </template>
