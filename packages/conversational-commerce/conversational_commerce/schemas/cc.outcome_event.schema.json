@@ -1,0 +1,267 @@
+{
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "Qualquer valor JSON, sem número de ponto flutuante."
+    },
+    "MetricRef": {
+      "additionalProperties": false,
+      "properties": {
+        "definition_version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "definition_version"
+      ],
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "Window": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        "start": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Contrato OutcomeEvent. Contrato de observação: campo desconhecido só com MENOR acima; o leitor o guarda em extensions.",
+  "properties": {
+    "assignment": {
+      "oneOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "command_ids": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "customer_ref": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decision_ids": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "kind": {
+      "const": "OutcomeEvent"
+    },
+    "metric": {
+      "$ref": "#/$defs/MetricRef"
+    },
+    "observation": {
+      "enum": [
+        "observed",
+        "unknown",
+        "censored",
+        "not_applicable"
+      ],
+      "type": "string"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "const": "cc.outcome_event"
+    },
+    "schema_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "source": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "supersedes": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "value": {
+      "$ref": "#/$defs/JsonValue"
+    },
+    "window": {
+      "$ref": "#/$defs/Window"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "metric",
+    "window",
+    "observation",
+    "source"
+  ],
+  "title": "OutcomeEvent",
+  "type": "object",
+  "x-contract-version": "1.0"
+}

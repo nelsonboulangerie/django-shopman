@@ -1,0 +1,325 @@
+{
+  "$defs": {
+    "ConfirmationEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "after_terms": {
+          "type": "boolean"
+        },
+        "event_assurance": {
+          "enum": [
+            "verified",
+            "provider_claimed",
+            "none"
+          ],
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "event_assurance",
+        "after_terms"
+      ],
+      "type": "object"
+    },
+    "GrantLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_amount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_uses": {
+          "oneOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "IdentityEvidence": {
+      "additionalProperties": false,
+      "description": "Evidência de identidade: de onde vem e que degrau da escada ela sustenta.",
+      "properties": {
+        "assurance": {
+          "enum": [
+            "anonymous",
+            "transported",
+            "weak_verified",
+            "strong_verified"
+          ],
+          "type": "string"
+        },
+        "kind": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "ref": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "assurance"
+      ],
+      "type": "object"
+    },
+    "Money": {
+      "additionalProperties": false,
+      "description": "Dinheiro: inteiro na menor unidade da moeda. Nunca float.",
+      "properties": {
+        "amount_minor": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount_minor",
+        "currency"
+      ],
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Contrato AuthorizationGrant. Contrato estrito: campo desconhecido e versão não suportada são recusados.",
+  "properties": {
+    "action": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "basis": {
+      "enum": [
+        "customer_confirmation",
+        "staff_approval",
+        "profile_line"
+      ],
+      "type": "string"
+    },
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confirmation_evidence": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConfirmationEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "grant_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "identity_evidence": {
+      "items": {
+        "$ref": "#/$defs/IdentityEvidence"
+      },
+      "type": "array"
+    },
+    "issuer": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "kind": {
+      "const": "AuthorizationGrant"
+    },
+    "limits": {
+      "$ref": "#/$defs/GrantLimits"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "purpose": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revoked_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "const": "cc.authorization_grant"
+    },
+    "schema_version": {
+      "enum": [
+        "1.0"
+      ]
+    },
+    "subject": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "terms_hash": {
+      "oneOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "valid_from": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "valid_until": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "grant_id",
+    "subject",
+    "issuer",
+    "basis",
+    "purpose",
+    "action",
+    "targets",
+    "limits",
+    "valid_from",
+    "valid_until"
+  ],
+  "title": "AuthorizationGrant",
+  "type": "object",
+  "x-contract-version": "1.0"
+}

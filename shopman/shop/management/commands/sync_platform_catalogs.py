@@ -10,6 +10,10 @@ e ela cobre três buracos:
 - produto que entrou numa coleção do canal não dispara sinal nenhum;
 - envio que falhou de vez (credencial vencida, queda longa) fica para trás.
 
+No Google, também reenvia os itens visíveis na virada do dia (o corte da grade de
+retirada e a meia-noite local), porque o ``pickupSla`` muda sem o estoque mudar
+(``services/pickup_turn``, issue #2655).
+
 No Google, também lê (no máximo de hora em hora, só leitura) o estado da retirada no
 mesmo dia e da disponibilidade na loja, que a aba Canais mostra
 (``services/google_store_review``).
@@ -29,11 +33,14 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_INTERVAL_HOURS = 24
 #: Envio que falhou não é reenfileirado a cada ciclo: espera este tanto antes de tentar.
@@ -80,9 +87,24 @@ class Command(BaseCommand):
             sent, retracted = self._reconcile(ref, options)
             if sent or retracted:
                 self.stdout.write(f"{ref}: {sent} reenviado(s), {retracted} retirado(s).")
+            if display_catalog.resolve_channel(ref)[1] == "google_merchant":
+                turned = self._turn_of_the_day(ref)
+                if turned:
+                    self.stdout.write(f"{ref}: virada do dia, {turned} item(ns) reenviado(s) com a nova retirada.")
 
         if any(display_catalog.resolve_channel(ref)[1] == "google_merchant" for ref in channels):
             self._read_google_store_review()
+
+    def _turn_of_the_day(self, ref: str) -> int:
+        """No corte e à meia-noite, o ``pickupSla`` muda sem o estoque mudar: reenvia."""
+        from shopman.shop.services import pickup_turn
+
+        try:
+            return pickup_turn.resend_on_turn(ref)
+        except Exception as exc:
+            logger.exception("sync_platform_catalogs: virada do dia de %s não reenviou", ref)
+            self.stderr.write(f"{ref}: virada do dia não reenviou: {exc}")
+            return 0
 
     def _read_google_store_review(self) -> None:
         """O estado da retirada e da disponibilidade na loja, para a aba Canais (só leitura)."""

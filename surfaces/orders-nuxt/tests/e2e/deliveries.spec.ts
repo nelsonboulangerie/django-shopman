@@ -7,7 +7,7 @@ test.describe("Entregas: corrida por letra", () => {
   test.use({ viewport: { width: 1360, height: 900 } });
 
   test("as corridas vivas aparecem como A e B, nunca como 1 e 2", async ({ page }) => {
-    await page.goto("/deliveries");
+    await page.goto("/delivery");
     const mirrors = page.locator("[data-ride-mirror]");
     await expect(mirrors).toHaveCount(2);
     await expect(mirrors.nth(0).locator("span").first()).toHaveText("A");
@@ -21,7 +21,7 @@ test.describe("Entregas: corrida por letra", () => {
   });
 
   test("a corrida em edição ganha a próxima letra livre, do título ao botão de chamar", async ({ page }) => {
-    await page.goto("/deliveries");
+    await page.goto("/delivery");
     await page.getByRole("button", { name: /A47 · Ana/ }).click();
     await expect(page.getByText("Corrida C", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Desfazer a corrida C", exact: true })).toBeVisible();
@@ -31,7 +31,7 @@ test.describe("Entregas: corrida por letra", () => {
   });
 
   test("o detalhe abre pela chave na URL e se apresenta pela letra", async ({ page }) => {
-    await page.goto("/deliveries?ride=776753358");
+    await page.goto("/delivery?ride=776753358");
     const detail = page.locator("[data-ride-detail]");
     await expect(detail.getByText("Corrida B · Em rota", { exact: true })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Corrida B" })).toBeVisible();
