@@ -939,22 +939,30 @@ class TestDayOneDeliveryCard:
 
         sheet = page.get_by_role("dialog").filter(has_text="Revise seu pedido")
         expect(sheet).to_be_visible(timeout=15_000)
+
+        # Cartão em um toque (WP-L05): quem acabou de enviar com cartão já decidiu
+        # pagar. O pedido nasce, a loja passa pelo acompanhamento e leva sozinha ao
+        # pagamento seguro, na mesma aba. O caminho fica registrado para o teste
+        # ler o código do pedido, porque a parada no acompanhamento é curta.
+        visited: list[str] = []
+        page.on(
+            "framenavigated",
+            lambda frame: visited.append(frame.url) if frame == page.main_frame else None,
+        )
         sheet.get_by_role(
             "button", name=re.compile(r"enviar|confirmar", re.IGNORECASE)
         ).last.click()
 
-        # ── Acompanhamento: o pedido nasce e oferece o cartão ────────
-        page.wait_for_url(re.compile(r"/pedido/"), timeout=30_000)
-        match = re.search(r"/pedido/([^/?#]+)", page.url)
-        assert match, f"URL de acompanhamento sem ref de pedido: {page.url}"
-        order_ref = match.group(1)
-
-        pay_link = page.get_by_role("link", name="Pagar com cartão")
-        expect(pay_link).to_be_visible(timeout=15_000)
-        checkout_url = pay_link.get_attribute("href") or ""
-        assert checkout_url.startswith(f"{fake_stripe_base}/pay/cs_test_"), (
-            f"O link do cartão não é a Checkout Session criada pelo adapter: {checkout_url!r}"
+        page.wait_for_url(
+            re.compile(re.escape(fake_stripe_base) + r"/pay/cs_test_"), timeout=45_000
         )
+        checkout_url = page.url
+        assert checkout_url.startswith(f"{fake_stripe_base}/pay/cs_test_"), (
+            f"O destino do cartão não é a Checkout Session criada pelo adapter: {checkout_url!r}"
+        )
+        refs = [m.group(1) for url in visited if (m := re.search(r"/pedido/([^/?#]+)", url))]
+        assert refs, f"A loja não passou pelo acompanhamento antes do pagamento: {visited}"
+        order_ref = refs[0]
 
         born = _in_thread(_day_one_order_facts, django_db_blocker, order_ref)
         assert born["channel_ref"] == "web"
@@ -969,19 +977,14 @@ class TestDayOneDeliveryCard:
         assert born["intent_gateway_id"].startswith("cs_test_")
 
         # ── "Página do Stripe": o cliente paga e volta ao acompanhamento ─
-        with page.context.expect_page() as stripe_tab_info:
-            pay_link.click()
-        stripe_tab = stripe_tab_info.value
-        expect(stripe_tab.get_by_role("heading", name=re.compile("Checkout de teste"))).to_be_visible(
+        expect(page.get_by_role("heading", name=re.compile("Checkout de teste"))).to_be_visible(
             timeout=15_000
         )
-        stripe_tab.get_by_role("button", name="Pagar").click()
+        page.get_by_role("button", name="Pagar").click()
         # O Stripe falso entrega o webhook ANTES do redirect: quando o
         # acompanhamento carrega aqui, a autorização já está gravada.
-        stripe_tab.wait_for_url(
-            re.compile(re.escape(storefront_links.path_order_tracking(order_ref)) + r"$"),
-            timeout=30_000,
-        )
+        tracking_url = re.compile(re.escape(storefront_links.path_order_tracking(order_ref)) + r"$")
+        page.wait_for_url(tracking_url, timeout=30_000)
 
         paid = _in_thread(_day_one_order_facts, django_db_blocker, order_ref)
         assert paid["intent_status"] == "authorized", (
@@ -993,16 +996,18 @@ class TestDayOneDeliveryCard:
         # Sem worker de directives neste gate, o pedido segue no estado do commit.
         assert paid["status"] in {"new", "accepted"}, paid["status"]
 
-        # O acompanhamento que o cliente vê depois de pagar não pede o cartão
-        # de novo, e a aba original (SSE/poll) chega ao mesmo estado.
-        expect(stripe_tab.get_by_text("Pagamento autorizado").first).to_be_visible(
+        # O acompanhamento que o cliente vê depois de pagar carrega inteiro (a
+        # volta do pagamento é carga de página, não navegação da loja), não pede o
+        # cartão de novo e não leva ao pagamento outra vez: o atalho vale uma vez.
+        expect(page.get_by_text("Pagamento autorizado").first).to_be_visible(
             timeout=15_000
         )
-        expect(stripe_tab.get_by_role("link", name="Pagar com cartão")).to_have_count(
+        expect(page.get_by_role("link", name="Pagar com cartão")).to_have_count(
             0, timeout=15_000
         )
-        expect(page.get_by_role("link", name="Pagar com cartão")).to_have_count(
-            0, timeout=30_000
+        page.wait_for_timeout(2_000)
+        assert tracking_url.search(page.url), (
+            f"O acompanhamento levou ao pagamento de novo depois de pago: {page.url}"
         )
 
 

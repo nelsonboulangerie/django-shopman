@@ -33,7 +33,7 @@ class AcceptanceWindow:
 def shop_today(*, now: datetime | None = None) -> date:
     """O "hoje" da loja, no fuso dela: o mesmo de ``availability_dates``.
 
-    A tela do checkout lia o dia do relógio do aparelho; "hoje", "amanhã" e os
+    A tela do checkout lia o dia do relógio do dispositivo; "hoje", "amanhã" e os
     limites do calendário passam a sair daqui.
     """
     from shopman.shop.services import fulfillment_window
