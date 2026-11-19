@@ -22,7 +22,11 @@ describe('acompanhamento: o chamado da fila', () => {
   it('o cartão da fila tem o relógio e o botão, e não repete o chamado', () => {
     const card = confirmingCard()
 
-    expect(card).toContain('Confirme em {{ waitlistDeadlineLeft }}')
+    // A contagem é dita por extenso ("Faltam 14 min 45 s"), nunca "em 14:45": ao lado de
+    // "até 13h27" o formato de relógio se lê como hora do dia.
+    expect(card).toContain('{{ waitlistDeadlineLeft }}')
+    expect(card).not.toContain('Confirme em')
+    expect(page).toContain('return remainingPhrase(Math.floor(ms / 1000))')
     expect(card).toContain('tracking.copy.waitlist_confirm_cta')
     expect(card).toContain('@click="confirmWaitlistSlot"')
     expect(card).not.toContain('waitlist_confirm_title')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs, URGENT_THRESHOLD_PCT } from '~/presentation/deadline'
+import { countdownPct, deadlineCountdown, isCountdownUrgent, remainingPhrase, serverClockOffsetMs, URGENT_THRESHOLD_PCT } from '~/presentation/deadline'
 
 const deadline = '2026-06-14T12:00:00+00:00'
 
@@ -40,5 +40,22 @@ describe('deadline presentation — progress', () => {
     expect(isCountdownUrgent(URGENT_THRESHOLD_PCT - 1)).toBe(true)
     expect(isCountdownUrgent(URGENT_THRESHOLD_PCT + 1)).toBe(false)
     expect(isCountdownUrgent(100)).toBe(false)
+  })
+})
+
+describe('deadline presentation — remainingPhrase', () => {
+  it('diz o tempo que falta por extenso, nunca em formato de relógio', () => {
+    expect(remainingPhrase(14 * 60 + 45)).toBe('Faltam 14 min 45 s')
+    expect(remainingPhrase(14 * 60 + 5)).toBe('Faltam 14 min 05 s')
+    expect(remainingPhrase(14 * 60)).toBe('Faltam 14 min 00 s')
+    expect(remainingPhrase(14 * 60 + 45)).not.toMatch(/\d:\d/)
+  })
+
+  it('no último minuto fala só em segundos, e concorda no singular', () => {
+    expect(remainingPhrase(60)).toBe('Falta 1 min')
+    expect(remainingPhrase(59)).toBe('Faltam 59 s')
+    expect(remainingPhrase(1)).toBe('Falta 1 s')
+    expect(remainingPhrase(0)).toBe('Faltam 0 s')
+    expect(remainingPhrase(-3)).toBe('Faltam 0 s')
   })
 })
