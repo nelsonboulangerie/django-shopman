@@ -3288,7 +3288,7 @@ class OrderNoShowView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Ask the gateway again for the refund that failed on a cancelled order (manager's PIN)",
+        summary="Ask the gateway again for a refund that failed (manager's PIN)",
         responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
     ),
 )
@@ -3296,8 +3296,9 @@ class OrderRefundRetryView(_OrderActionBase):
     """Tentar o estorno de novo (WP-G13, decisão 3 do dono, 17/11/2026).
 
     ``POST {base_revision, expected_actor_id, manager_approval}``. Só existe para o
-    pedido cancelado cujo dinheiro está em "Estorno não saiu"; em qualquer outro
-    estado, 409 com a frase do motivo. Sempre com o PIN de um Gerente escolhido da
+    pedido em "Estorno não saiu": o cancelado e, desde a #2727, a devolução, a
+    encomenda editada que ficou mais barata e o pagamento que chegou depois do
+    balcão (``refund_retry.plan``); em qualquer outro estado, 409 com a frase do motivo. Sempre com o PIN de um Gerente escolhido da
     lista (ou o crachá), a mesma assinatura do cancelamento de pedido pago. O valor
     e as cobranças são do servidor (``refund_retry.plan``); a tela não escolhe nada.
 

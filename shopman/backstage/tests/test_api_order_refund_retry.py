@@ -4,7 +4,8 @@ O estorno do cancelado que falhou deixava o pedido em "Estorno não saiu" espera
 suporte. Agora a linha da faixa tem o gesto, com a assinatura de um Gerente. Esta suíte
 prende:
 
-- a rota só existe para o dinheiro do cancelado em "Estorno não saiu";
+- a rota só existe para o pedido em "Estorno não saiu" (aqui, o do cancelado; fora
+  dele, ``test_api_order_refund_retry_fora_do_cancelado.py``);
 - pede a permissão de gerenciar pedidos e o PIN de um Gerente, e sem ele nada é gravado;
 - a chave é por tentativa: a mesma tentativa duas vezes fala com o gateway uma vez só, e
   uma tentativa nova, depois de outra recusada, leva outra chave;
@@ -614,8 +615,7 @@ def test_a_linha_do_estorno_que_nao_saiu_ganha_o_gesto_e_diz_o_valor_e_o_que_ele
 
     assert (line.tone, line.label) == ("error", "Estorno não saiu")
     assert line.reason == (
-        "A devolução de R$ 22,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez "
-        "ao Pix do cliente, com a autorização de um gerente."
+        "A devolução de R$ 22,00 não chegou ao Pix do cliente."
     )
     assert "suporte" not in line.reason
     (action,) = line.actions
@@ -625,7 +625,10 @@ def test_a_linha_do_estorno_que_nao_saiu_ganha_o_gesto_e_diz_o_valor_e_o_que_ele
     # A ação da linha é a MESMA do detalhe, com a base e a assinatura que a rota confere.
     contract = next(item for item in detail.actions if item.ref == "refund-retry")
     assert contract.payload_schema == {"base_revision": refund_retry.revision(order), "expected_actor_id": operador.pk}
-    assert contract.confirmation == {"required": True, "manager_approval": True}
+    assert contract.confirmation == {
+        "required": True, "manager_approval": True,
+        "description": "Estorno de R$ 22,00, pedido de novo ao meio de pagamento.",
+    }
     assert (contract.method, contract.idempotency) == ("POST", "required")
     assert line.failure == ""
     assert "—" not in line.reason
@@ -653,8 +656,13 @@ def test_estorno_pedido_e_estornado_nao_ganham_o_gesto(operador):
     assert not any(action.ref == "refund-retry" for action in detail.actions)
 
 
-def test_estorno_que_falhou_fora_do_cancelado_segue_com_o_suporte(operador):
-    """Devolução e encomenda editada: sem o valor certo a pedir de novo, o gesto não aparece."""
+def test_aviso_aberto_sem_dinheiro_a_devolver_segue_com_o_suporte(operador):
+    """Pedido vivo com o aviso aberto e nada a mais do que ele vale: não há o que pedir de novo.
+
+    A devolução e a encomenda editada que ficou mais barata ganham o gesto (#2727,
+    ``test_api_order_refund_retry_fora_do_cancelado.py``); sem dinheiro a devolver,
+    quem conclui segue sendo o suporte.
+    """
     order = _alive("G13-VIVO")
 
     detail, line = _refund_line(order, operador)

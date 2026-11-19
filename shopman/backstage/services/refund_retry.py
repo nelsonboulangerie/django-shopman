@@ -1,24 +1,31 @@
 """Tentar o estorno de novo (WP-G13): o Gerente resolve o estorno que falhou.
 
-O estorno do cancelado que o gateway recusou (ou que o sistema desistiu de tentar)
-ficava em "Estorno não saiu" esperando o suporte: o único reenvio era o Admin do
-Payman, com permissão só do Dono (EXCELENCIA-GESTOR P1-15, F-10). Aqui o gesto vai
-para o Gestor, com a assinatura de um Gerente (decisão 3 do dono, 17/11/2026).
+O estorno que o gateway recusou (ou que o sistema desistiu de tentar) ficava em
+"Estorno não saiu" esperando o suporte: o único reenvio era o Admin do Payman, com
+permissão só do Dono (EXCELENCIA-GESTOR P1-15, F-10). Aqui o gesto vai para o
+Gestor, com a assinatura de um Gerente (decisão 3 do dono, 17/11/2026). Vale para
+o cancelado e, desde a #2727, para o que falhou fora dele: a devolução registrada
+(WP-G12), a encomenda editada que ficou mais barata e o pagamento digital que
+chegou depois de o balcão receber.
 
 Nada de estorno novo é inventado: quem fala com o gateway é o mesmo
 ``payment.refund_intent_at_gateway`` do Admin, cobrança por cobrança. Este módulo só
 responde três perguntas e registra a tentativa:
 
-- **pode?** Só o dinheiro de um pedido cancelado que está em "Estorno não saiu"
-  (a mesma régua da faixa do detalhe: devolução pedida, aviso de falha aberto);
-- **quanto e de onde?** O que ``payment.cancelled_money`` diz que falta voltar, já
-  descontado o que fica com a loja no "não retirado" (``payment.refund_ceiling_q``),
-  repartido pelas cobranças de gateway que ainda guardam dinheiro;
+- **pode?** Só o pedido em "Estorno não saiu": o aviso ``payment_refund_failed``
+  aberto e dinheiro que ainda falta voltar (no cancelado, a mesma régua da faixa:
+  devolução pedida e não fechada);
+- **quanto e de onde?** O que ``payment.gateway_refund_owed_q`` diz que falta
+  voltar pelo meio online (no cancelado, o ``cancelled_money`` com o teto do "não
+  retirado"; fora dele, o ``overpaid_q`` e o pagamento que chegou depois do balcão,
+  já descontado o que a gaveta e a maquininha devolvem), repartido pelas
+  cobranças online que ainda guardam dinheiro (``payment.gateway_refund_legs``);
 - **com que chave?** Uma por tentativa (a chave da intenção da tela). A exceção é a
   tentativa que ficou SEM RESPOSTA do gateway: a seguinte reapresenta a mesma
   chave, para o gateway devolver a mesma devolução em vez de fazer outra. Vale
-  também para o estorno automático que esgotou as tentativas sem resposta: a
-  primeira tentativa daqui reapresenta a chave DELE.
+  também para o estorno automático que pode ter saído sem resposta (a directive
+  que esgotou as tentativas, o estorno do pagamento que chegou depois do balcão):
+  a primeira tentativa daqui reapresenta a chave DELE.
 
 Cada tentativa vira o evento ``payment.refund_retry`` do pedido (quem tentou, quem
 autorizou, o que o gateway respondeu); a que sai também grava o ``payment.refunded``
@@ -33,6 +40,7 @@ from dataclasses import dataclass
 
 from django.db import transaction
 from shopman.orderman.models import Directive, Order
+from shopman.utils.monetary import format_money
 
 from shopman.shop.directives import PAYMENT_REFUND
 from shopman.shop.services import payment as payment_svc
@@ -123,8 +131,12 @@ class RetryPlan:
     """O que a tentativa faria agora. ``block_reason`` vazio: pode tentar."""
 
     block_reason: str = ""
+    #: O pedido está em "Estorno não saiu" (com ou sem por onde tentar daqui): a
+    #: faixa mostra a linha do gesto. ``False``: não há estorno que falhou.
+    failed: bool = False
     amount_q: int = 0
-    #: ``pix`` ou ``card``: por onde o dinheiro volta (``payment.CancelledMoney.method``).
+    #: ``pix`` ou ``card``: por onde o dinheiro volta (``payment.CancelledMoney.method``,
+    #: ou a primeira cobrança online fora do cancelado).
     method: str = ""
     legs: tuple[RetryLeg, ...] = ()
     #: Quantas tentativas o pedido já teve: entra na base, e a tela velha é recusada.
@@ -160,76 +172,65 @@ def last_attempt(order: Order) -> RetryAttempt | None:
     )
 
 
-def _failed_money(order: Order) -> tuple[object | None, str]:
-    """``(dinheiro, motivo)``: o dinheiro do cancelado em "Estorno não saiu", ou por que não é o caso.
+def _failed_money(order: Order) -> tuple[bool, str, str]:
+    """``(falhou, meio, motivo)``: o pedido está em "Estorno não saiu", ou por que não está.
 
-    A régua é a da faixa (``order_pending.cancelled_money``): a devolução foi
-    pedida, não fechou, e o aviso ``payment_refund_failed`` do pedido está aberto.
+    No cancelado digital, a régua é a da faixa (``order_pending.cancelled_money``):
+    a devolução foi pedida, não fechou, e o aviso ``payment_refund_failed`` do
+    pedido está aberto. Fora dele não há estado de devolução para ler: o que
+    falhou é o aviso aberto, e o valor vem de ``payment.gateway_refund_owed_q``.
     """
     from shopman.backstage.projections import order_pending
 
     money = payment_svc.cancelled_money(order)
-    if money is None:
-        return None, NOT_FAILED_REASON
-    if money.outcome != order_pending.MONEY_REFUND_REQUESTED:
-        return None, _STATE_REASONS.get(money.outcome, NOT_FAILED_REASON)
+    if money is not None:
+        if money.outcome != order_pending.MONEY_REFUND_REQUESTED:
+            return False, "", _STATE_REASONS.get(money.outcome, NOT_FAILED_REASON)
+        if order_pending.ALERT_REFUND_FAILED not in order_pending.open_alert_types(order):
+            return False, "", _STATE_REASONS["refund_requested"]
+        return True, str(money.method or ""), ""
     if order_pending.ALERT_REFUND_FAILED not in order_pending.open_alert_types(order):
-        return None, _STATE_REASONS["refund_requested"]
-    return money, ""
+        return False, "", NOT_FAILED_REASON
+    return True, "", ""
+
+
+def _leg_method(method: str) -> str:
+    """Como a faixa nomeia o meio de uma cobrança online: ``pix`` ou ``card``."""
+    return "pix" if str(method or "").lower() == "pix" else "card"
 
 
 def _gateway_legs(order: Order, owed_q: int) -> tuple[RetryLeg, ...]:
-    """Reparte ``owed_q`` pelas cobranças de gateway do pedido que ainda guardam dinheiro."""
-    from shopman.payman import PaymentService
-
-    from shopman.shop.services.order_edit import ROUTE_GATEWAY, refund_route
-
-    legs: list[RetryLeg] = []
-    remaining_q = owed_q
-    for intent in PaymentService.get_by_order(order.ref).filter(status__in=("captured", "refunded")).order_by("id"):
-        if remaining_q <= 0:
-            break
-        if refund_route(intent) != ROUTE_GATEWAY:
-            continue
-        held_q = (
-            PaymentService.captured_total(intent.ref)
-            - PaymentService.refunded_total(intent.ref)
-            - PaymentService.chargeback_total(intent.ref)
-        )
-        if held_q <= 0:
-            continue
-        amount_q = min(held_q, remaining_q)
-        legs.append(RetryLeg(intent_ref=intent.ref, method=str(intent.method or ""), amount_q=amount_q))
-        remaining_q -= amount_q
-    return tuple(legs)
+    """Reparte ``owed_q`` pelas cobranças online do pedido que ainda guardam dinheiro."""
+    return tuple(
+        RetryLeg(intent_ref=intent_ref, method=method, amount_q=amount_q)
+        for intent_ref, method, amount_q in payment_svc.gateway_refund_legs(order, owed_q)
+    )
 
 
 def plan(order: Order) -> RetryPlan:
     """O que "Tentar o estorno de novo" faria agora, sem gravar nem falar com o gateway."""
-    money, reason = _failed_money(order)
-    if money is None:
+    failed, method, reason = _failed_money(order)
+    if not failed:
         return RetryPlan(block_reason=reason)
     attempts = _attempt_payloads(order)
     count = len(attempts)
-    method = str(money.method or "")
-    owed_q = int(money.amount_q or 0)
-    # Não retirado: nunca mais do que o teto (o capturado menos o que fica com a loja).
-    ceiling_q = payment_svc.refund_ceiling_q(order)
-    if ceiling_q is not None:
-        owed_q = min(owed_q, ceiling_q)
+    # No cancelado, nunca mais do que o teto do "não retirado" (o capturado menos o
+    # que fica com a loja); fora dele, nunca o que a gaveta ou a maquininha devolvem.
+    owed_q = payment_svc.gateway_refund_owed_q(order)
     if owed_q <= 0:
         return RetryPlan(block_reason=NOT_FAILED_REASON, method=method, attempts=count)
+    legs = _gateway_legs(order, owed_q)
+    method = method or (_leg_method(legs[0].method) if legs else "")
     if attempts and attempts[-1][0].get("outcome") == OUTCOME_UNRECORDED:
-        return RetryPlan(block_reason=UNRECORDED_REASON, amount_q=owed_q, method=method, attempts=count)
+        return RetryPlan(block_reason=UNRECORDED_REASON, failed=True, amount_q=owed_q, method=method, attempts=count)
     in_flight = Directive.objects.filter(
         topic=PAYMENT_REFUND, payload__order_ref=order.ref, status__in=("queued", "running"),
     ).exists()
     if in_flight:
-        return RetryPlan(block_reason=IN_FLIGHT_REASON, amount_q=owed_q, method=method, attempts=count)
-    legs = _gateway_legs(order, owed_q)
+        return RetryPlan(block_reason=IN_FLIGHT_REASON, failed=True, amount_q=owed_q, method=method, attempts=count)
     if not legs:
-        return RetryPlan(block_reason=NO_ROUTE_REASON, amount_q=owed_q, method=method, attempts=count)
-    return RetryPlan(amount_q=sum(leg.amount_q for leg in legs), method=method, legs=legs, attempts=count)
+        return RetryPlan(block_reason=NO_ROUTE_REASON, failed=True, amount_q=owed_q, method=method, attempts=count)
+    return RetryPlan(failed=True, amount_q=sum(leg.amount_q for leg in legs), method=method, legs=legs, attempts=count)
 
 
 def revision(order: Order, current: RetryPlan | None = None) -> str:
@@ -255,11 +256,18 @@ def detail_action(order: Order, user=None, *, current: RetryPlan | None = None):
 
     current = current if current is not None else plan(order)
     reason = current.block_reason or ("" if _authorized(user) else PERMISSION_REASON)
+    confirmation = {"required": True, "manager_approval": True}
+    if current.amount_q > 0:
+        # O que o gerente lê antes de assinar. No cancelado a tela já o tira do
+        # ``cancelled_money``; fora dele (devolução, encomenda editada) só daqui.
+        confirmation["description"] = (
+            f"Estorno de R$ {format_money(current.amount_q)}, pedido de novo ao meio de pagamento."
+        )
     return Action(
         ref=ACTION_REF, kind="mutation", label=ACTION_LABEL, priority="secondary",
         enabled=not reason, reason=reason, method="POST", idempotency="required",
         payload_schema={"base_revision": revision(order, current), "expected_actor_id": getattr(user, "pk", None)},
-        confirmation={"required": True, "manager_approval": True},
+        confirmation=confirmation,
     )
 
 
@@ -292,10 +300,37 @@ def _gateway_key(order: Order, leg: RetryLeg, attempt_key: str) -> str:
     ):
         return str(previous["gateway_key"])
     if previous is None:
-        inherited = _exhausted_automatic_key(order, leg)
+        inherited = _exhausted_automatic_key(order, leg) or _late_payment_key(order, leg)
         if inherited:
             return inherited
     return fresh_gateway_key(order.ref, leg.intent_ref, attempt_key)
+
+
+def _late_payment_key(order: Order, leg: RetryLeg) -> str:
+    """A chave do estorno automático do pagamento que chegou depois de o balcão receber.
+
+    Aquele estorno (``counter_takeover.refund_late_payment``) abre o aviso tanto
+    na recusa quanto na falta de resposta do gateway, e o aviso não diz qual das
+    duas foi. Na dúvida, a primeira tentativa daqui reapresenta a chave DELE, com
+    o mesmo valor (o saldo inteiro da cobrança): se ele saiu, o gateway devolve a
+    mesma devolução; se foi recusado, a resposta volta igual e a tentativa
+    seguinte leva chave nova. Valor diferente, a chave é nova: não é o mesmo estorno.
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    from shopman.shop.services import counter_takeover
+
+    try:
+        intent = PaymentService.get(leg.intent_ref)
+    except PaymentError:
+        return ""
+    if not counter_takeover.late_payment_of_takeover(order, intent):
+        return ""
+    if PaymentService.refunded_total(intent.ref) > 0:
+        return ""
+    if PaymentService.captured_total(intent.ref) != leg.amount_q:
+        return ""
+    return counter_takeover.late_refund_key(intent.ref)
 
 
 def _exhausted_automatic_key(order: Order, leg: RetryLeg) -> str:
@@ -386,9 +421,9 @@ def retry(order: Order, *, actor: str, approved_by: str, attempt_key: str, expec
                     actor=actor,
                     payload={"method": leg.method, "amount_q": done_q, "intent_ref": leg.intent_ref},
                 )
-        after = payment_svc.cancelled_money(locked)
-        if after is not None and after.outcome == "refunded":
-            # O Payman já diz "estornado": o aviso do sino deixa de ser verdade.
+        if refunded_q > 0 and payment_svc.gateway_refund_owed_q(locked) <= 0:
+            # O Payman já diz que nada mais volta pelo meio online: o aviso do sino
+            # deixa de ser verdade.
             resolve_alerts(ALERT_TYPE, order_ref=locked.ref, actor=f"refund-retry:{actor}")
     logger.info(
         "refund_retry order=%s actor=%s approved_by=%s amount_q=%s refunded_q=%s failures=%s",

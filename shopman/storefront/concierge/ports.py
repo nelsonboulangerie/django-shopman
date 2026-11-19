@@ -1,0 +1,225 @@
+"""As portas da Nice para o framework de comércio conversacional: canal, modelo e posse (N4).
+
+- ``NiceChannel`` (``ChannelPort``): fachada sobre o ``ConversationAdapter`` da conexão do
+  WhatsApp. ``normalize`` traduz o envelope de entrada da Concierge (``InboundEvent.as_envelope``)
+  em ``InteractionEvent``; ``capabilities()`` traduz as ``ChannelCapabilities`` da conexão. No
+  alpha a identidade do evento **não** é verificada (``stable_event_identity_verified=false``),
+  e a porta diz isso: o evento sai ``provider_claimed``, nunca ``verified``. Enviar, consultar a
+  entrega e pedir transferência estão declarados e **não suportados** aqui: o envio da Nice
+  segue pelo caminho legado até o N9, e a sombra (N5) nunca envia.
+- ``LocalReader`` (``ModelPort``): o leitor local por regra da Concierge
+  (``intents.local_acts``), o mesmo do ``--reader local`` do placar. Nenhuma chamada a modelo,
+  custo ``Unavailable`` (nunca zero). ``draft`` e ``score`` não existem (corte C1).
+- ``ConversationOwnership`` (``Ownership`` do comércio): o sujeito do contexto confiável é a
+  conversa (``conversation:<pk>``); a sacola, o cliente e os pedidos são os dela.
+
+O texto do cliente não passa por aqui: o evento leva só a referência (``message:<pk>``), e o
+leitor resolve a referência do lado do Shopman (N23).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from conversational_commerce.contracts import InteractionEvent, Producer, Understanding
+from conversational_commerce.ports import Capabilities, Consumption, PortError, TrustedContext
+from conversational_commerce.ports.channel import OPERATIONS as CHANNEL_OPERATIONS
+from conversational_commerce.ports.model import OPERATIONS as MODEL_OPERATIONS
+
+from shopman.shop.conversational.commerce_read import instant
+
+SUBJECT_PREFIX = "conversation:"
+MESSAGE_PREFIX = "message:"
+TEXT_PREFIX = "text:"
+READER = Producer(name="concierge-local-rules", version="1")
+UNAVAILABLE = {"status": "unavailable", "reason": "no_calibration"}
+
+# Ato da Concierge (``intents``) → ato da lista fechada do framework. O que não tem par vira
+# ``unknown``: o núcleo nunca recebe ato fora da lista dele (K05).
+ACT_MAP = {
+    "greet": "greet",
+    "thanks": "thank",
+    "product_question": "ask_item",
+    "order": "change_quantity",
+    "hours_delivery": "ask_hours",
+    "complaint": "complain",
+    "cancel_order": "cancel_order",
+    "human": "request_human",
+}
+
+
+def subject_of(conversation_id: int | str) -> str:
+    return f"{SUBJECT_PREFIX}{conversation_id}"
+
+
+def _conversation(ctx: TrustedContext):
+    from shopman.shop.models import Conversation
+
+    subject = ctx.subject or ""
+    if not subject.startswith(SUBJECT_PREFIX):
+        return None
+    try:
+        return Conversation.objects.filter(pk=int(subject[len(SUBJECT_PREFIX):])).first()
+    except ValueError:
+        return None
+
+
+class ConversationOwnership:
+    """A sacola, o cliente e os pedidos da conversa do contexto confiável; de mais ninguém."""
+
+    def cart(self, ctx: TrustedContext) -> str | None:
+        conversation = _conversation(ctx)
+        return (conversation.session_key or None) if conversation is not None else None
+
+    def customer(self, ctx: TrustedContext) -> str | None:
+        conversation = _conversation(ctx)
+        return (conversation.customer_ref or None) if conversation is not None else None
+
+    def owns_order(self, ctx: TrustedContext, order_ref: str) -> bool:
+        """O mesmo filtro de identidade que o ``order_status`` da Concierge usa."""
+        from shopman.orderman.models import Order
+
+        from shopman.shop.services.customer_orders import customer_identity_filter
+
+        conversation = _conversation(ctx)
+        if conversation is None or not order_ref:
+            return False
+        identity = customer_identity_filter(customer_ref=conversation.customer_ref or None,
+                                            phone=conversation.phone or None)
+        if identity is None:
+            return False
+        return Order.objects.filter(identity).filter(ref__iexact=order_ref).exists()
+
+
+@dataclass
+class NiceChannel:
+    """``ChannelPort`` sobre o adaptador da conexão da Concierge."""
+
+    adapter: Any
+    PORT = "channel"
+
+    def capabilities(self) -> Capabilities:
+        caps = self.adapter.capabilities
+        window = caps.response_window
+        return Capabilities(
+            port="channel", operations=CHANNEL_OPERATIONS,
+            unsupported=("send", "delivery_status", "request_handoff"),
+            guarantees={"stable_event_identity_verified": bool(caps.stable_event_identity_verified),
+                        "read_receipts": False, "delivery_receipts": bool(caps.delivery_receipts),
+                        "supports_handoff": bool(caps.supports_handoff),
+                        "response_window_seconds": int(window.total_seconds()) if window else None,
+                        "max_text_chars": int(caps.max_text_chars)})
+
+    def normalize(self, ctx: TrustedContext, raw: Mapping[str, Any], received_at: str) -> InteractionEvent:
+        """O envelope da Concierge (``InboundEvent.as_envelope``), com ``message_ref`` opcional."""
+        event_id = str(raw.get("event_id") or "")
+        verified = bool(self.adapter.capabilities.stable_event_identity_verified)
+        # Sem verificação da conexão, o id do provedor é só alegado; sem id, não há identidade.
+        identity = ({"id": event_id, "assurance": "verified" if verified and raw.get("event_identity_assurance")
+                     == "verified" else "provider_claimed"} if event_id else {"assurance": "none"})
+        subject = str(raw.get("subject") or "")
+        message_ref = raw.get("message_ref")
+        return InteractionEvent(
+            id=f"evt-{raw.get('connection_key', 'conn')}-{event_id or raw.get('payload_hash') or received_at}",
+            tenant=ctx.tenant, environment=ctx.environment, trace_id=f"trace-{event_id or received_at}",
+            occurred_at=_iso_instant(raw.get("occurred_at")) or received_at,
+            producer={"name": "concierge-channel", "version": "1"},
+            channel_binding={"channel": str(raw.get("transport_channel") or "whatsapp"),
+                             "conversation_ref": subject or "unknown"},
+            actor="customer", event_identity=identity, type="message",
+            content_ref=f"{MESSAGE_PREFIX}{message_ref}" if message_ref else None,
+            # O telefone do WhatsApp só é transportado; nada promove identidade aqui (P03).
+            identity_evidence=[{"kind": "channel_identity", "ref": subject, "assurance": "transported"}]
+            if subject else [])
+
+    def send(self, ctx, prepared, idempotency_key):
+        raise PortError("capability_missing", "o envio da Nice segue pelo caminho legado até o N9")
+
+    def delivery_status(self, ctx, exposure_id):
+        raise PortError("capability_missing", "a entrega da Nice é lida pelo caminho legado até o N9")
+
+    def request_handoff(self, ctx, request):
+        raise PortError("capability_missing", "a transferência da Nice segue pelo caminho legado até o N9")
+
+
+class LocalReader:
+    """``ModelPort`` pelo leitor local por regra da Concierge: sem modelo, sem custo inventado."""
+
+    PORT = "model"
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score"),
+                            guarantees={"priced": False, "calls_model": False})
+
+    def interpret(self, ctx: TrustedContext, request) -> tuple[Understanding, Consumption]:
+        from .intents import local_acts
+
+        if request.request.data_class == "personal":
+            raise PortError("object_forbidden", "dado pessoal não vai ao leitor")
+        text = resolve_text(request.content_ref)
+        allowed = set(request.allowed_acts)
+        acts = []
+        for act in local_acts(text):
+            name = ACT_MAP.get(act.act, "unknown")
+            if allowed and name not in allowed:
+                name = "unknown"
+            fields = {"qty": str(act.qty)} if act.qty else {}
+            acts.append({"act": name, "fields": fields, "confidence": UNAVAILABLE})
+        now = instant(datetime.now(UTC))
+        understanding = Understanding(
+            id=f"und-{request.event_id}", tenant=ctx.tenant, environment=ctx.environment,
+            trace_id=f"trace-{request.event_id}", occurred_at=now, producer=READER, event_id=request.event_id,
+            acts=acts or [{"act": "unknown", "fields": {}, "confidence": UNAVAILABLE}],
+            signals={"friction": "unknown", "risk": "unknown"}, reader=READER)
+        return understanding, Consumption(model=READER, calls=0, cost={"status": "unavailable",
+                                                                       "reason": "no_model_call"})
+
+    def draft(self, ctx, request, plan):
+        raise PortError("capability_missing", "a Nice não redige por modelo (corte C1)")
+
+    def score(self, ctx, request):
+        raise PortError("capability_missing", "o leitor local não pontua")
+
+
+def resolve_text(content_ref: str | None) -> str:
+    """A referência protegida do conteúdo: ``message:<pk>`` (a mensagem gravada) ou ``text:`` (teste)."""
+    from shopman.shop.models import ConversationMessage
+
+    if not content_ref:
+        return ""
+    if content_ref.startswith(TEXT_PREFIX):
+        return content_ref[len(TEXT_PREFIX):]
+    if content_ref.startswith(MESSAGE_PREFIX):
+        try:
+            message = ConversationMessage.objects.filter(pk=int(content_ref[len(MESSAGE_PREFIX):])).first()
+        except ValueError:
+            return ""
+        return message.text if message is not None else ""
+    return ""
+
+
+def _iso_instant(value: Any) -> str | None:
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return instant(moment)
+
+
+def nice_channel() -> NiceChannel | None:
+    """A porta de canal sobre a conexão ativa do WhatsApp, ou ``None`` sem conexão."""
+    from .transport import adapter_for_connection, configured_connections
+
+    for connection in configured_connections():
+        if connection.channel == "whatsapp":
+            adapter = adapter_for_connection(connection)
+            if adapter is not None:
+                return NiceChannel(adapter)
+    return None

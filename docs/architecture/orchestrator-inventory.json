@@ -4095,6 +4095,12 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "REFUND_GATEWAY_REFUSED",
+            "REFUND_GATEWAY_UNCONFIRMED",
+            "REFUND_HANDED_OFF",
+            "REFUND_PENDING_COUNTER",
+            "_order_refunded_q",
+            "_refund_not_returned_reason",
             "logger"
           ]
         }
@@ -9333,6 +9339,8 @@
             "_cancel_local_intent",
             "_local_status",
             "_payment",
+            "late_payment_of_takeover",
+            "late_refund_key",
             "logger"
           ]
         }
@@ -12740,6 +12748,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "OUTSIDE_CHARGE_BOOKERS",
+            "REFUND_FAILED_RETRY_HERE",
+            "REFUND_FAILED_SUPPORT",
             "_ack_payment_failed_alerts",
             "_adapter_config",
             "_adapter_for_persisted_intent",
@@ -12750,6 +12761,7 @@
             "_cancel_open_account_intents",
             "_capture_once",
             "_card_machine_intents",
+            "_counter_refund_claims_q",
             "_create_payment_failed_alert",
             "_customer_name",
             "_efi_intent_environment_matches_runtime",
@@ -12770,6 +12782,7 @@
             "_link_deadline_minutes",
             "_lock_payment_intents",
             "_methods_of",
+            "_net_held_q",
             "_notify_payment_failed",
             "_notify_refund",
             "_order_for_intent",
@@ -12800,8 +12813,12 @@
             "_stamp_gateway_check",
             "_terminal_amounts_by_method",
             "_terminal_ref",
+            "booked_outside_charge",
+            "gateway_refund_legs",
+            "gateway_refund_owed_q",
             "logger",
-            "order_refund_gateway_key"
+            "order_refund_gateway_key",
+            "refund_retry_available"
           ]
         }
       ]
@@ -14891,6 +14908,56 @@
             "_alert_behind",
             "_latest_fact_at",
             "_stale_test_conclusion"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/__init__.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/commerce_read.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "conversational.house-policy-read"
+      ],
+      "responsibilities": [
+        "decisão",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "CURRENCY",
+            "DenyAll",
+            "FACT_VALIDITY_SECONDS",
+            "FORMAT",
+            "Ownership",
+            "PORT",
+            "PRODUCER_NAME",
+            "UNSUPPORTED",
+            "_date_of",
+            "_text",
+            "instant",
+            "logger"
           ]
         }
       ]

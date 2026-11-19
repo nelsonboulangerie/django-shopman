@@ -605,7 +605,7 @@ async function submitRefundRetry() {
   }
 }
 function onRefundRetryDone() {
-  const told = refundRetryToast(order.value?.cancelled_money);
+  const told = refundRetryToast(order.value?.cancelled_money, order.value?.pending);
   if (told) useSonner.success(told);
 }
 
@@ -620,7 +620,10 @@ const managerAuthDetail = computed(() => {
   if (managerChallenge.value?.action === "return") return returnMoneySentence.value;
   if (managerChallenge.value?.action === "no-show") return noShowMoneySentence.value;
   if (managerChallenge.value?.action === REFUND_RETRY)
-    return refundRetrySentence(order.value?.cancelled_money);
+    return refundRetrySentence(
+      order.value?.cancelled_money,
+      order.value?.actions?.find((item) => item.ref === REFUND_RETRY),
+    );
   return order.value?.cancel_money_effect || "";
 });
 // A espera longa que o gerente não vê: o gesto fala com o meio de pagamento.
