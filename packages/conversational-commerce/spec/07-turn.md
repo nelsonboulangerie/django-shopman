@@ -65,7 +65,8 @@ O F8, o F9 e o F10 acrescentam módulos sem editar o laço.
 
 Movimentos do F7: `acknowledge`, `inform`, `cover_readings`, `inform_limitation` e
 `ask_clarification`. O F8 acrescentou os de efeito (`08-effect.md`, seção 6), e o F9 os de
-compromisso (`09-commitments.md`, seção 4). `inform_limitation` cobre o pedido de mudança que
+compromisso (`09-commitments.md`, seção 4), e o F10 a recomendação (`10-outcomes.md`, seção 1).
+`inform_limitation` cobre o pedido de mudança que
 nenhum movimento elegível faz, a reclamação sem caso possível, o pedido de pessoa sem fila, e a
 consulta cujo fato está desconhecido sem verificação possível (desconhecido não vira frase). Numa mudança
 ambígua ele não é proposto: pergunta-se antes, porque ainda não se sabe o que foi pedido.

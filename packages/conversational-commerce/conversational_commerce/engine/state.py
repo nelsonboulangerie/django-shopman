@@ -109,6 +109,12 @@ class TurnState:
     waiting: dict[str, str] = field(default_factory=dict)
     # Compromisso → a fila recebeu (``True``) ou recusou (``False``) o pedido.
     routed: dict[str, bool] = field(default_factory=dict)
+    # Contexto comercial (F10): o item que atende a necessidade declarada, por necessidade, e o que trava ofertas.
+    recommendations: dict[str, str] = field(default_factory=dict)
+    declined_offers: bool = False
+    open_problem: bool = False
+    overdue_commitment: bool = False
+    friction: str = "unknown"
 
     def fact_keys_for(self, need: NeedSpec) -> tuple[str, ...]:
         if need.act == "ask_hours":
