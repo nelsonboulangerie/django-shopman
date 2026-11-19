@@ -1891,6 +1891,19 @@ Contrato:
   `window.confirm`. Ocupado (`busy`), o diálogo não fecha nem confirma de novo.
 - A autorização do gerente fica **fora**: o `OperatorManagerAuth` sobe por cima, e o
   motivo digitado continua embaixo.
+- **O que decide o gesto fica sempre à vista** (WP-G06): o confirmar, o Voltar, a linha
+  do que falta, a pergunta de descarte e a falha moram no rodapé do `NuxtModal`, que não
+  rola. O corpo (motivos, frase do cliente, observação) é o que rola. Com oito motivos
+  em 850 px de altura o confirmar ficava cortado na base.
+- **A falha aparece dentro do diálogo** (`error`): o toast e o cartão de quem chamou
+  ficam atrás dele. `errorField` (`key` ou `reason`) marca o campo que a falha aponta,
+  no dialeto `{detail, field, errors}`. Quem chama limpa o `error` ao tentar de novo.
+- **`blocked`**: a frase de por que ainda não dá para confirmar quando o motivo não é o
+  que falta (quem chama ainda lê o que o gesto faz). O confirmar apaga e a linha ao lado
+  dele diz a frase; "Escolha um motivo para confirmar." vem antes.
+- **`#summary`**: sobre o quê é o gesto e o que ele faz (qual pedido, o destino do
+  dinheiro), no topo do corpo, antes da pergunta do motivo. No celular a `description`
+  do cabeçalho passa por baixo do X quando é longa: frase longa vai aqui.
 - Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtRadioGroup`,
   `NuxtFormField` com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
 

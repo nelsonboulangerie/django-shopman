@@ -557,6 +557,7 @@ conclui de `ready`. O código de retirada só aparece se o iFood mandar `deliver
 | Entregador voltou / Acertar entrega | Gestor | diálogo | OK |
 | Cancelar | Gestor/PDV | motivo (opcional) + gerente se pago ou adiantado | ATRITO: motivo vai literal ao cliente (P1-10), resolvido #1730 |
 | Reprocessar NFC-e / Imprimir DANFE | Gestor | não | OK |
+| Tentar o estorno de novo | Gestor, na linha "Estorno não saiu" do pedido cancelado | PIN de gerente | OK (WP-G13): pede de novo ao gateway só o que falta voltar, nunca acima do teto do "não retirado"; a recusa do gateway fica escrita na linha |
 | Imprimir Via Pedido | PDV e Gestor | — | ATRITO (P2-19), resolvido #1752 |
 | Declarar volumes | Gestor, Saída, KDS | não | OK |
 | Ligar / WhatsApp ao cliente; ligar ao entregador | detalhe do pedido | não | OK |

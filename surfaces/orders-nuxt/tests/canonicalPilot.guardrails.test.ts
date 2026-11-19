@@ -807,7 +807,11 @@ describe("Gestor canônico em Nuxt UI", () => {
     // O rodapé de gestos é um componente só (cartão inteiro e compacto do Painel).
     expect(card).toContain("<OrderCardActions");
     expect(cardActions).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
-    expect(cardActions).toContain('class="@container flex items-end gap-2"');
+    // A linha dos botões continua alinhada pela base; o porquê de um botão travado
+    // vai escrito logo abaixo dela, dentro do mesmo contêiner (WP-G06).
+    expect(cardActions).toContain('class="@container flex flex-col gap-1.5"');
+    expect(cardActions).toContain('class="flex items-end gap-2"');
+    expect(cardActions).toContain("data-card-blocked-reason");
     // Cartão sem cabeçalho nem rodapé destacados (conjunto mínimo, regra do dono): o
     // título e as ações moram no corpo, sem a divisória dos slots oficiais. O
     // `OrderCard` (acima) é a exceção da Saída: o cartão do pedido tem cabeçalho.

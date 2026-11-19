@@ -253,7 +253,7 @@ def check_staff(port: Any, env: HarnessEnv) -> None:
 
 
 def check_store(port: Any, env: HarnessEnv) -> None:
-    event = InteractionEvent(**_envelope(env, "evt"), channel_binding={"channel": "harness", "conversation_ref": "c"},
+    event = InteractionEvent(**_envelope(env, "evt", episode_id="harness-ep"), channel_binding={"channel": "harness", "conversation_ref": "c"},
                              actor="customer", event_identity={"id": "harness-msg-1", "assurance": "verified"},
                              type="message")
     first, created = port.record_event_once(env.ctx, event)
@@ -269,6 +269,9 @@ def check_store(port: Any, env: HarnessEnv) -> None:
     _expect(loaded is not None and loaded.version == 1, "load_episode não devolve o que foi confirmado")
     _expect_error("revision_conflict", lambda: port.commit_transition(
         env.ctx, Transition(episode=episode, expected_version=0), (), ()))
+    latest = port.latest_record(env.ctx, "harness-ep", InteractionEvent.SCHEMA)
+    _expect(latest is not None and latest.id == event.id, "latest_record não devolve o último registro do episódio")
+    _expect(port.latest_episode(env.ctx, "harness-subject") is None, "latest_episode inventou episódio")
     other_tenant = TrustedContext(tenant=f"{env.ctx.tenant}-other", environment=env.ctx.environment)
     _expect(port.load_episode(other_tenant, "harness-ep") is None, "um inquilino leu o episódio de outro")
 

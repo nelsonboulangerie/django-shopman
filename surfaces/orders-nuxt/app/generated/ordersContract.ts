@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -677,6 +677,34 @@ export interface CounterOrderProjection {
   edit: PreorderEditProjection;
 }
 
+/** O gesto que resolve uma pendência. */
+export interface OrderPendingActionProjection {
+  ref: string;
+  label: string;
+  enabled: boolean;
+  reason: string;
+  href: string;
+}
+
+/** Uma linha de "O que falta neste pedido": o fato, o motivo e o que fazer. */
+export interface OrderPendingProjection {
+  key: string;
+  tone: string;
+  label: string;
+  reason: string;
+  actions: OrderPendingActionProjection[];
+  failure: string;
+}
+
+/** O destino do dinheiro de um pedido cancelado, como o Gestor o lê. */
+export interface CancelledMoneyProjection {
+  state: string;
+  label: string;
+  amount_display: string;
+  customer_line: string;
+  settled: boolean;
+}
+
 /** O detalhe de um pedido — o MESMO contrato para o Gestor e o PDV (``context``). */
 export interface OperatorOrderProjection {
   ref: string;
@@ -776,6 +804,12 @@ export interface OperatorOrderProjection {
   cancel_waits_for_gateway: boolean;
   transferred_from_label: string;
   payment_lapsed: boolean;
+  pending: OrderPendingProjection[];
+  cancelled_money: CancelledMoneyProjection | null;
+  danfe_printable: boolean;
+  danfe_printed: boolean;
+  danfe_state: string;
+  danfe_problem: string;
 }
 
 /** Top-level read model for the operator order queue. */
@@ -1200,6 +1234,8 @@ export interface DeliveryStopProjection {
   group_refusal: string;
   error: string;
   dispatch_action: Action | null;
+  dispatch_again_action: Action | null;
+  charge_outdated: Record<string, unknown> | null;
 }
 
 /** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str') */
@@ -1237,6 +1273,7 @@ export interface DeliveryRideProjection {
   reopened_driver: string;
   cancel_state: string;
   cancel_message: string;
+  sync_since: string;
 }
 
 /** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */

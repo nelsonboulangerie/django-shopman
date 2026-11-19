@@ -16,7 +16,7 @@ const { default: Detail } = await import("../../app/components/CourierRideDetail
 const stop = (ref: string, over: Record<string, unknown> = {}) => ({
   ref, code: ref.slice(-3), customer: "Ana", place: "Centro", address: "Rua das Flores, 123", latitude: -21.17,
   longitude: -47.81, stage: "Pronto", volumes: 1, done: false, change_out_suggested_q: 0, needs_machine: false,
-  change_label: "", group_refusal: "", error: "", dispatch_action: null, ...over,
+  change_label: "", group_refusal: "", error: "", dispatch_action: null, dispatch_again_action: null, charge_outdated: null, ...over,
 });
 function ride(over: Partial<DeliveryRideProjection> = {}): DeliveryRideProjection {
   return {
