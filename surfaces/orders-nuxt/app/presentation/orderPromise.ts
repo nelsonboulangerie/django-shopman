@@ -116,8 +116,11 @@ export function waitsForBatch(
   return block !== "" && block === promise.label;
 }
 
+/** A frase do item depois de "Produto: " continua a oração, em minúscula (como o servidor). */
+const afterColon = (sentence: string) => sentence.charAt(0).toLowerCase() + sentence.slice(1);
+
 /**
- * O lote que o pedido espera, uma frase por produto: "Baguete de tradição: O lote de
+ * O lote que o pedido espera, uma frase por produto: "Baguete de tradição: o lote de
  * hoje não começou. Fica pronto às 12h." (as palavras do servidor).
  *
  * Só o item que espera, nunca o item em risco (esse tem o aviso dele). E só quando o
@@ -127,10 +130,11 @@ export function waitsForBatch(
 export function promiseWaitLines(
   source: PromiseSource & { advance_block_reason?: string | null },
 ): Array<{ ref: string; text: string }> {
-  const said = String(source.advance_block_reason ?? "");
+  // O motivo do bloqueio traz a mesma frase em minúscula, depois de "Produto: ".
+  const said = String(source.advance_block_reason ?? "").toLowerCase();
   return (source.promise?.items ?? [])
-    .filter((item) => !item.at_risk && item.detail && !said.includes(item.detail))
-    .map((item) => ({ ref: item.sku, text: `${item.name}: ${item.detail}` }));
+    .filter((item) => !item.at_risk && item.detail && !said.includes(item.detail.toLowerCase()))
+    .map((item) => ({ ref: item.sku, text: `${item.name}: ${afterColon(item.detail)}` }));
 }
 
 /**

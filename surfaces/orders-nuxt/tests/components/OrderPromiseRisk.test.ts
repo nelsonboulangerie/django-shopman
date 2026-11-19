@@ -28,7 +28,7 @@ vi.stubGlobal("useRuntimeConfig", () => ({ public: { posUrl: "https://pdv.exampl
 
 const PERMISSION = "Identifique uma pessoa com permissão para gerenciar pedidos.";
 const BATCH_REASON =
-  "O preparo abre quando o lote ficar pronto. Baguete de tradição: O lote de hoje não começou. Fica pronto às 12h.";
+  "O preparo abre quando o lote ficar pronto. Baguete de tradição: o lote de hoje não começou. Fica pronto às 12h.";
 
 const act = (over: Partial<Action>): Action => ({
   ref: "advance", kind: "mutation", label: "Iniciar preparo", priority: "primary", enabled: true,

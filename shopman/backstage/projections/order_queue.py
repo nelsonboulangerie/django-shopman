@@ -4112,7 +4112,10 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             # feio, mas é o caso raro; o que era comum agora tem nome.
             label = event.type.replace("_", " ").capitalize()
 
-        detail = _payment_event_detail(payload) if event.type in _PAYMENT_EVENT_TYPES else _event_detail(payload)
+        if event.type == _PRODUCTION_HOLD_LOST_EVENT:
+            detail = _production_hold_lost_detail(payload)
+        else:
+            detail = _payment_event_detail(payload) if event.type in _PAYMENT_EVENT_TYPES else _event_detail(payload)
         if not detail and event.type in _STATUS_EVENT_TYPES and new_status == Order.Status.CANCELLED:
             detail = _cancellation_detail(order)
 
@@ -4163,6 +4166,24 @@ def _payment_event_detail(payload: dict) -> str:
     if payload.get("amount_q"):
         parts.append(_money(payload.get("amount_q")))
     return " · ".join(part for part in parts if part)
+
+
+#: O evento que ``shop/services/production_promise`` grava quando o lote cancelado
+#: leva a reserva do pedido.
+_PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
+
+
+def _production_hold_lost_detail(payload: dict) -> str:
+    """O item e o lote que ele perdeu ("4x Ciabatta · lote de 19/11").
+
+    O ``reason`` desse evento é um código (``production_voided``), não uma frase:
+    na linha do tempo ele aparecia cru ao lado do título (prévia do WP-G08).
+    """
+    name = str(payload.get("product_name") or payload.get("sku") or "").strip()
+    qty = str(payload.get("qty") or "").strip()
+    item = f"{qty}x {name}" if qty and name else name
+    lot = f"lote de {_short_date(payload.get('date'))}" if payload.get("date") else ""
+    return " · ".join(part for part in (item, lot) if part)
 
 
 def _event_detail(payload: dict) -> str:

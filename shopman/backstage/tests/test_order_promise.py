@@ -262,6 +262,22 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     assert "5543999990000" not in "".join(action.href for action in card.promise.actions)
 
 
+def test_a_linha_do_tempo_diz_o_item_e_o_lote_sem_codigo_cru(ficha, gerente):
+    """O evento do lote cancelado carrega um código em ``reason``; a tela mostra o item e o lote."""
+    order, work_order, _hold = _encomenda(ficha, "ENC-LINHA")
+    work_order.refresh_from_db()
+    craft.void(work_order, reason="Forno parou")
+
+    detail = build_operator_order(Order.objects.get(pk=order.pk), user=gerente)
+    lost = [event for event in detail.timeline if event.event_type == "production_hold_lost"]
+    assert len(lost) == 1
+    assert lost[0].label == "Produção cancelada: item ficou sem reserva"
+    assert lost[0].detail.startswith("4x ")
+    assert "lote de " in lost[0].detail
+    assert "production_voided" not in lost[0].detail
+    assert "_" not in lost[0].detail
+
+
 def test_o_detalhe_abre_com_promessa_em_risco_e_as_saidas_de_verdade(ficha, gerente, settings):
     settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/"}
     order, work_order, _hold = _encomenda(ficha, "ENC-DETALHE")
@@ -577,7 +593,7 @@ def test_pedido_pago_do_dia_que_espera_o_lote_tem_o_selo_e_o_bloqueio(ficha, bag
     assert advance.enabled is False
     assert advance.reason == (
         "O preparo abre quando o lote ficar pronto. "
-        "Baguete de tradição: O lote de hoje não começou. Fica pronto às 12h."
+        "Baguete de tradição: o lote de hoje não começou. Fica pronto às 12h."
     )
     assert (card.can_advance, card.next_status) == (False, "")
     assert card.advance_block_label == "Esperando o lote…"

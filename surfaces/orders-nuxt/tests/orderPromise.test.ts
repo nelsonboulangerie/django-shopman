@@ -68,7 +68,7 @@ const waiting = (over: Partial<OrderPromiseProjection> = {}): OrderPromiseProjec
   since_iso: "", actions: [], ...over,
 });
 const BATCH_REASON =
-  "O preparo abre quando o lote ficar pronto. Baguete de tradição: O lote de hoje não começou. Fica pronto às 12h.";
+  "O preparo abre quando o lote ficar pronto. Baguete de tradição: o lote de hoje não começou. Fica pronto às 12h.";
 
 function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   return {
@@ -239,7 +239,7 @@ describe("productionLines: uma fonte só para o lote (P2-19)", () => {
         awaiting_work_orders: [wo("planned", "Baguete de tradição")], status: "accepted",
         promise: waiting(), advance_block_reason: "Pix gerado às 9h.",
       }),
-    ).toEqual([{ ref: "BAGUETE", text: "Baguete de tradição: O lote de hoje não começou. Fica pronto às 12h." }]);
+    ).toEqual([{ ref: "BAGUETE", text: "Baguete de tradição: o lote de hoje não começou. Fica pronto às 12h." }]);
   });
 
   it("a promessa em risco tira a linha da produção: o aviso já diz o que há com o lote", () => {

@@ -611,7 +611,12 @@ def risk_reason(promise: OrderPromiseProjection) -> str:
 
 def batch_lines(promise: OrderPromiseProjection, *, causes=BATCH_NOT_OUT) -> str:
     """O lote de cada item que ainda não ficou pronto: o produto, o estado e a hora quando há."""
-    return " ".join(f"{item.name}: {item.detail}" for item in promise.items if item.cause in causes)
+    return " ".join(f"{item.name}: {_after_colon(item.detail)}" for item in promise.items if item.cause in causes)
+
+
+def _after_colon(sentence: str) -> str:
+    """A frase do item depois de "Produto: ": continua a oração, em minúscula."""
+    return sentence[:1].lower() + sentence[1:]
 
 
 def batch_wait_reason(promise: OrderPromiseProjection) -> str:
