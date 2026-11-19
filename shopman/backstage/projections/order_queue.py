@@ -1182,6 +1182,10 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     block_label, block_reason = _advance_block_copy(
         order, advance_block, method, payment_pending=_is_payment_pending(order, method, payment_status)
     )
+    # A cobrança que venceu diz isso também no resumo do pagamento (a mesma régua do cartão).
+    lapsed_status = _lapsed_payment_status_label(block_label)
+    if lapsed_status:
+        common["payment_status_label"] = lapsed_status
     # A promessa do pedido (WP-G08), a mesma leitura e o mesmo bloqueio do cartão.
     promise = _promise_of(order)
     waits_batch = _waits_batch(promise, advance_block, next_status)
@@ -2732,9 +2736,15 @@ def _build_card(
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
-        payment_status_label=_order_payment_status_label(order, payment_status),
+        payment_status_label=(
+            _lapsed_payment_status_label(block_label) or _order_payment_status_label(order, payment_status)
+        ),
         payment_pending=_is_payment_pending(order, method, payment_status),
-        payment_tone=_payment_tone(order, method, payment_status, payment_data),
+        # Cobrança vencida não é espera (ampulheta): não destrava sozinha.
+        payment_tone=(
+            "danger" if _lapsed_payment_status_label(block_label)
+            else _payment_tone(order, method, payment_status, payment_data)
+        ),
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
@@ -3257,6 +3267,20 @@ AWAITING_REPAYMENT_LABEL = "Aguardando novo pagamento"
 #: Os rótulos do bloqueio de pagamento que não destrava sozinho: a cobrança
 #: venceu ou foi recusada. A tela oferece cancelar com o motivo já marcado.
 LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL, CARD_CAPTURE_FAILED_LABEL})
+#: A situação na LINHA do pagamento quando a cobrança venceu. O bloqueio dizia "Pix
+#: expirado" e a linha do pagamento do mesmo pedido, "Pix · Aguardando pagamento": o
+#: mesmo fato em duas formas, uma delas falsa (ninguém mais espera aquele Pix).
+#: Com o meio na frente, a linha lê "Pix · Expirado" e "Link de pagamento · Vencido".
+_LAPSED_PAYMENT_STATUS_LABELS = {PIX_LAPSED_LABEL: "Expirado", PAYMENT_LAPSED_LABEL: "Vencido"}
+
+
+def _lapsed_payment_status_label(block_label: str) -> str:
+    """A situação do pagamento que venceu ("Expirado", "Vencido"), ou ``""``.
+
+    Lê o nome do bloqueio, que já decidiu se a cobrança venceu
+    (:func:`_payment_wait_copy`): uma régua só para a pílula e para a linha.
+    """
+    return _LAPSED_PAYMENT_STATUS_LABELS.get(block_label, "")
 
 
 def _payment_wait_copy(order: Order, method: str, *, awaiting_acceptance: bool = False) -> tuple[str, str]:
