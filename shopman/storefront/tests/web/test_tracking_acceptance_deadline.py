@@ -117,7 +117,7 @@ def test_cartao_autorizado_sem_prazo_publicado_fica_sem_o_trecho_do_prazo():
     )
 
     assert message == (
-        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido. "
+        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar. "
         "Seu pedido é para amanhã, a partir das 15h."
     )
     assert "até" not in message
@@ -167,7 +167,7 @@ def test_pix_pago_sem_prazo_publicado_mantem_a_frase_inteira():
     )
 
     assert message == (
-        "A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor. "
+        "A loja confirma e avisa por aqui. Se não puder, devolvemos o valor. "
         "Sua encomenda é para amanhã, a partir das 15h."
     )
 
@@ -193,6 +193,98 @@ def test_encomenda_sem_pagamento_esperando_a_loja_nao_promete_devolucao(state):
 
     assert message == "A loja confirma até 8h40 e avisa por aqui. Sua encomenda é para amanhã, a partir das 15h."
     assert "devolvemos" not in message
+
+
+# ── As quatro combinações de cada frase da família ────────────────────────────
+#
+# Com e sem prazo publicado × com e sem dia combinado. Sem prazo e com dia, a
+# frase do aceite não nomeia o pedido (a frase do dia vem logo depois e o nomeia);
+# sem dia, ela nomeia. Em nenhuma combinação o substantivo aparece duas vezes.
+
+CARD_RESERVED = "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar"
+REFUND = "Se não puder, devolvemos o valor."
+ORDER_IS_FOR = "Seu pedido é para amanhã, a partir das 15h."
+PREORDER_IS_FOR = "Sua encomenda é para amanhã, a partir das 15h."
+
+#: família → (estado, pago, método) e as quatro frases: (prazo, dia) → frase literal.
+FAMILY = {
+    "cartao_autorizado": {
+        "build": ("payment_authorized", False, "card"),
+        (True, True): f"{CARD_RESERVED}, até 8h40. {ORDER_IS_FOR}",
+        (True, False): f"{CARD_RESERVED}, até 8h40.",
+        (False, True): f"{CARD_RESERVED}. {ORDER_IS_FOR}",
+        (False, False): f"{CARD_RESERVED} seu pedido.",
+    },
+    "pix_pago": {
+        "build": ("payment_confirmed", True, "pix"),
+        (True, True): f"A loja confirma até 8h40 e avisa por aqui. {REFUND} {PREORDER_IS_FOR}",
+        (True, False): f"A loja confirma até 8h40 e avisa por aqui. {REFUND}",
+        (False, True): f"A loja confirma e avisa por aqui. {REFUND} {PREORDER_IS_FOR}",
+        (False, False): f"A loja confirma sua encomenda e avisa por aqui. {REFUND}",
+    },
+    "encomenda_esperando_a_loja": {
+        "build": ("received", False, "pix"),
+        (True, True): f"A loja confirma até 8h40 e avisa por aqui. {PREORDER_IS_FOR}",
+        (True, False): "A loja confirma até 8h40 e avisa por aqui.",
+        (False, True): f"A loja confirma e avisa por aqui. {PREORDER_IS_FOR}",
+        (False, False): "A loja confirma sua encomenda e avisa por aqui.",
+    },
+    "pago_e_conferindo": {
+        "build": ("store_checking", True, "pix"),
+        (True, True): f"Pagamento recebido. A loja confirma até 8h40 e avisa por aqui. {REFUND} {PREORDER_IS_FOR}",
+        (True, False): f"Pagamento recebido. A loja confirma até 8h40 e avisa por aqui. {REFUND}",
+        (False, True): f"Pagamento recebido. A loja confirma e avisa por aqui. {REFUND} {PREORDER_IS_FOR}",
+        (False, False): f"Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. {REFUND}",
+    },
+}
+
+
+def _family_message(family: str, *, with_deadline: bool, with_date: bool) -> str:
+    state, paid, method = FAMILY[family]["build"]
+    deadline = NOW + timedelta(minutes=60) if with_deadline else None
+    data = _card(deadline) if method == "card" else _preorder(state, deadline)
+    _title, message = _promise_copy(
+        data,
+        status="new",
+        is_delivery=False,
+        copy=_copy(),
+        when_phrase=WHEN if with_date else None,
+        payment_confirmed=paid,
+    )
+    return message
+
+
+@pytest.mark.parametrize("family", sorted(FAMILY))
+@pytest.mark.parametrize("with_deadline", [True, False])
+@pytest.mark.parametrize("with_date", [True, False])
+def test_as_quatro_combinacoes_de_cada_frase(family, with_deadline, with_date):
+    message = _family_message(family, with_deadline=with_deadline, with_date=with_date)
+
+    assert message == FAMILY[family][(with_deadline, with_date)]
+
+
+@pytest.mark.parametrize("family", sorted(FAMILY))
+@pytest.mark.parametrize("with_deadline", [True, False])
+@pytest.mark.parametrize("with_date", [True, False])
+def test_o_mesmo_substantivo_nao_aparece_duas_vezes(family, with_deadline, with_date):
+    message = _family_message(family, with_deadline=with_deadline, with_date=with_date).lower()
+
+    for noun in ("encomenda", "pedido"):
+        assert message.count(noun) <= 1, f"{noun!r} repetido: {message}"
+    assert "{" not in message
+
+
+def test_o_estado_de_espera_sem_pagamento_tambem_fecha_as_quatro():
+    # ``store_checking`` sem pagamento usa a mesma frase de ``received``.
+    for with_deadline in (True, False):
+        for with_date in (True, False):
+            deadline = NOW + timedelta(minutes=60) if with_deadline else None
+            _title, message = _promise_copy(
+                _preorder("store_checking", deadline),
+                status="new", is_delivery=False, copy=_copy(),
+                when_phrase=WHEN if with_date else None,
+            )
+            assert message == FAMILY["encomenda_esperando_a_loja"][(with_deadline, with_date)]
 
 
 def test_nenhuma_frase_da_familia_junta_o_aceite_com_o_dia_do_pedido():

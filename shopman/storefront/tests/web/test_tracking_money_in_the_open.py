@@ -153,7 +153,9 @@ class TestPaidPreorderAwaitingTheStorePromisesTheRefund:
         )
 
         assert title == "Pagamento recebido"
-        assert message.startswith("A loja confirma sua encomenda")
+        # Com dia combinado quem nomeia a encomenda é a frase do dia; sem ele, a do aceite.
+        assert message.startswith("A loja confirma e avisa" if when else "A loja confirma sua encomenda")
+        assert message.count("encomenda") == 1
         assert "Se não puder, devolvemos o valor." in message
         assert "Pagamento recebido" not in message, "o título já diz; a frase não repete"
         assert "{when}" not in message
