@@ -18,7 +18,8 @@ import {
   nextFocusAfterSuggestion,
   resolvePreselectedAddress,
   stillFailingErrors,
-  savedAddressDisplayLabel,
+  savedAddressLines,
+  savedAddressTag,
   selectionFromDraft,
   selectionFromSavedAddress,
   structuredFromDraft,
@@ -289,8 +290,39 @@ describe('label depois', () => {
   })
 
   it('prefers the custom label for display', () => {
-    expect(savedAddressDisplayLabel({ label: 'Outro', label_key: 'other', label_custom: 'Casa da mãe' })).toBe('Casa da mãe')
-    expect(savedAddressDisplayLabel({ label: 'Casa', label_key: 'home', label_custom: '' })).toBe('Casa')
+    expect(savedAddressTag({ label: 'Outro', label_key: 'other', label_custom: 'Casa da mãe' })).toBe('Casa da mãe')
+    expect(savedAddressTag({ label: 'Casa', label_key: 'home', label_custom: '' })).toBe('Casa')
+  })
+
+  // #2775: "Outro" sem nome é o endereço que ninguém etiquetou (o que o pedido de
+  // entrega grava). Não há etiqueta a mostrar: quem fala é o endereço.
+  it('has no label for an address nobody labeled', () => {
+    expect(savedAddressTag({ label: 'Outro', label_key: 'other', label_custom: '' })).toBe('')
+    expect(savedAddressTag({ label: 'Outro', label_key: 'other', label_custom: '   ' })).toBe('')
+  })
+
+  // A etiqueta que o cliente escreveu à mão vale como qualquer outra, mesmo "Entrega".
+  it('keeps a label the customer wrote by hand', () => {
+    expect(savedAddressTag({ label: 'Entrega', label_key: 'other', label_custom: 'Entrega' })).toBe('Entrega')
+  })
+
+  it('lists a labeled address by its label, with the address below', () => {
+    expect(savedAddressLines(savedAddress())).toEqual({ title: 'Casa', detail: savedAddress().formatted_address })
+  })
+
+  // Sem etiqueta, quem fala é o endereço: a rua com o número e, embaixo, o bairro e a
+  // cidade, como o PDV lista o mesmo endereço. Nada de "Outro" nem de "Entrega".
+  it('lists an address nobody labeled by its street', () => {
+    const untagged = savedAddress({ label: 'Outro', label_key: 'other', label_custom: '' })
+    expect(savedAddressLines(untagged)).toEqual({
+      title: `${untagged.route}, ${untagged.street_number}`,
+      detail: `${untagged.neighborhood} · ${untagged.city}/${untagged.state_code}`
+    })
+  })
+
+  it('falls back to the whole line when the street was not saved apart', () => {
+    const legacy = savedAddress({ label: 'Outro', label_key: 'other', label_custom: '', route: '', street_number: '' })
+    expect(savedAddressLines(legacy)).toEqual({ title: legacy.formatted_address, detail: '' })
   })
 
   it('names the chosen label for the post-order confirmation', () => {

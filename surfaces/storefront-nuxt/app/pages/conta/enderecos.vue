@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AddressListResponse, SavedAddressProjection } from '~/types/shopman'
 import { addressSheetDescription, addressSheetTitle } from '~/presentation/account'
+import { savedAddressLines } from '~/presentation/address'
 import { formatCount } from '~/utils/display'
 
 definePageMeta({ middleware: 'account' })
@@ -155,10 +156,11 @@ useSeoMeta({ title: 'Endereços' })
             </span>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 font-semibold">
-                {{ address.label }}
+                <!-- Sem etiqueta, quem fala é o endereço (#2775). -->
+                {{ savedAddressLines(address).title }}
                 <UiBadge v-if="address.is_default" variant="secondary">Padrão</UiBadge>
               </div>
-              <p class="mt-0.5 shop-muted">{{ address.formatted_address }}</p>
+              <p v-if="savedAddressLines(address).detail" class="mt-0.5 shop-muted">{{ savedAddressLines(address).detail }}</p>
               <p v-if="address.complement" class="shop-muted">{{ address.complement }}</p>
             </div>
           </div>

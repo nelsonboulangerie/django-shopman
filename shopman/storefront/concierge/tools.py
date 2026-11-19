@@ -958,7 +958,12 @@ def set_fulfillment(
                 )
             saved_choice = delivery_address.pick_saved(saved_list, saved_address_label) if wants_saved else None
             if saved_choice is None:
-                prefix = "" if list_saved_addresses and not wants_saved else "Não achei esse endereço no seu cadastro. "
+                if list_saved_addresses and not wants_saved:
+                    prefix = ""
+                elif len(delivery_address.matching_saved(saved_list, saved_address_label)) > 1:
+                    prefix = "Encontrei mais de um endereço assim no seu cadastro. "
+                else:
+                    prefix = "Não achei esse endereço no seu cadastro. "
                 return _saved_addresses_result("saved_addresses", prefix + delivery_address.saved_listing(saved_list), saved_list)
         if asks_nothing and saved_list:
             return _saved_addresses_result("saved_address_offer", delivery_address.saved_offer(saved_list), saved_list)
@@ -1035,9 +1040,12 @@ def _saved_addresses_result(code: str, message: str, saved_list: list) -> dict:
     O modelo recebe os rótulos para repassar a escolha em
     ``saved_address_label``; o cliente recebe a frase (``render_result``).
     """
+    from shopman.storefront.concierge import address as delivery_address
+
     return {
         "ok": True, "code": code, "message": message,
-        "saved_address_labels": [saved.display_label for saved in saved_list],
+        # Sem etiqueta, o endereço é chamado pela rua (#2775).
+        "saved_address_labels": [delivery_address.saved_name(saved) for saved in saved_list],
     }
 
 

@@ -186,9 +186,27 @@ export function addressLabelDisplay (key: AddressLabelKey, custom = ''): string 
   return key === 'work' ? 'Trabalho' : 'Casa'
 }
 
-export function savedAddressDisplayLabel (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom'>): string {
-  if (address.label_key === 'other' && address.label_custom) return address.label_custom
-  return address.label || 'Endereço'
+// A etiqueta que o cliente deu ao endereço ("Casa", "Trabalho", "Casa da mãe"), ou
+// vazio quando não há. "Outro" sem nome não é etiqueta: é o endereço que ninguém
+// etiquetou, como o que um pedido de entrega grava sozinho (#2775). Sem etiqueta,
+// quem fala na tela é o próprio endereço.
+export function savedAddressTag (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom'>): string {
+  if (address.label_key === 'other') return (address.label_custom || '').trim()
+  return (address.label || '').trim()
+}
+
+// As duas linhas de um endereço salvo numa lista. Com etiqueta: a etiqueta e,
+// embaixo, o endereço. Sem etiqueta: a rua com o número e, embaixo, o bairro e a
+// cidade, como o PDV lista o mesmo endereço (#2775). Cadastro sem a rua separada
+// (ou reduzido, sem rua): a linha é o endereço inteiro.
+export function savedAddressLines (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom' | 'formatted_address' | 'route' | 'street_number' | 'neighborhood' | 'city' | 'state_code'>): { title: string, detail: string } {
+  const place = (address.formatted_address || '').trim()
+  const tag = savedAddressTag(address)
+  if (tag) return { title: tag, detail: place }
+  const street = [address.route, address.street_number].map(part => (part || '').trim()).filter(Boolean).join(', ')
+  if (!(address.route || '').trim()) return { title: place, detail: '' }
+  const cityState = [address.city, address.state_code].map(part => (part || '').trim()).filter(Boolean).join('/')
+  return { title: street, detail: [(address.neighborhood || '').trim(), cityState].filter(Boolean).join(' · ') }
 }
 
 // A frase da busca por CEP sem resultado (beta SMS-01). "Não achamos" só quando o
