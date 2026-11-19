@@ -221,6 +221,9 @@ MAINTENANCE_COMMANDS = (
     # esquecida no Portal) ou abre com ela fechada. É o vigia que o
     # ``ifood_poll`` não tinha. Desligado (IFOOD_MERCHANT_SYNC), volta calado.
     "check_ifood_store",
+    # Fato do iFood (confirmou, saiu, concluiu) que chegou antes de o pedido local
+    # estar no ponto: aplica quando recente, avisa quando velho (3417, 12/11/2026).
+    "reconcile_ifood_orders",
     # O sinal de vida do ``ifood_poll --watch``: a integração direta entra só por
     # polling, e sem ele o iFood cancela em 8 min o pedido que não entrou. Mais de
     # 2 min sem resposta do iFood vira alerta crítico com e-mail (DEV-2026-017).

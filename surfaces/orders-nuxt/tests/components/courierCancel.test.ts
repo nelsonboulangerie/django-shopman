@@ -142,7 +142,7 @@ describe("Painel do pedido: cancelar a corrida", () => {
 const stop = (ref: string) => ({
   ref, code: ref.slice(-3), customer: "Ana", place: "Centro", address: "Rua das Flores, 123", latitude: null,
   longitude: null, stage: "Pronto", volumes: 1, done: false, change_out_suggested_q: 0, needs_machine: false,
-  change_label: "", group_refusal: "", error: "", dispatch_action: null,
+  change_label: "", group_refusal: "", error: "", dispatch_action: null, dispatch_again_action: null, charge_outdated: null,
 });
 function ride(over: Partial<DeliveryRideProjection> = {}): DeliveryRideProjection {
   return {
@@ -195,6 +195,18 @@ describe("Entregas: cancelar a corrida no detalhe", () => {
       expect(w.text()).not.toContain("O cancelamento já foi pedido");
       expect(w.text()).not.toContain("Ele já saiu com as sacolas");
     } finally { w.unmount(); }
+  });
+
+  it("sem botão de cancelar, o rodapé segue o estado: 'já saiu com as sacolas' só depois da coleta", () => {
+    const atStore = mountDetail({ cancel_action: null, cancel_state: "", picked_up_at: "" });
+    try {
+      expect(atStore.get("[data-ride-footer]").text()).toContain("Para cancelar esta corrida, use a central da TaOn.");
+      expect(atStore.text()).not.toContain("Ele já saiu com as sacolas");
+    } finally { atStore.unmount(); }
+    const onStreet = mountDetail({ cancel_action: null, cancel_state: "", picked_up_at: "2026-11-19T12:00:00-03:00" });
+    try {
+      expect(onStreet.get("[data-ride-footer]").text()).toContain("Ele já saiu com as sacolas");
+    } finally { onStreet.unmount(); }
   });
 
   it("recusa da TaOn: aviso de erro, e o Cancelar corrida segue disponível", () => {

@@ -2467,6 +2467,32 @@ class DeliveriesCountView(APIView):
         return Response({"waiting": deliveries_waiting_count()})
 
 
+class DeliveryDriverPhotoView(APIView):
+    """A foto do entregador de uma corrida VIVA, servida pelo servidor.
+
+    A tela nunca vê o endereço da TaOn (assinado e pessoal). A foto mora só em
+    cache e só enquanto a corrida vive (decisão do dono, LGPD): corrida
+    encerrada responde 404. ``Cache-Control: no-store`` para o navegador também
+    não guardar.
+    """
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request, ride: str):
+        from django.http import HttpResponse
+
+        from shopman.shop.services import courier
+
+        photo = courier.driver_photo(ride)
+        if photo is None:
+            response = HttpResponse(status=404)
+        else:
+            body, content_type = photo
+            response = HttpResponse(body, content_type=content_type)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
 class OrderRailCountsView(APIView):
     """Os selos do rail fora do quadro (G26): ``{intake, exit}``, a mesma régua do quadro.
     Leve de propósito: o Catálogo, os Clientes e os Canais leem isto em vez do quadro."""
@@ -3141,6 +3167,163 @@ class OrderReturnView(_OrderActionBase):
         return self._context_response(
             request, order, "return", {"items": items, "reason": reason}, execute, prepare=prepare,
         )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="No-show preview: what goes back on sale, what is lost and where the money goes",
+        responses={200: OpenApiResponse(description="No-show preview.")},
+    ),
+)
+class OrderNoShowPreviewView(OperationalObservationMixin, APIView):
+    """A prévia do "Não retirado" (WP-G11): o destino de cada linha, quanto volta ao
+    cliente e por onde, quanto fica com a loja, o texto que o cliente vai ler e a ação
+    com a base que o comando confere."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_no_show import build_order_no_show
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(build_order_no_show(order, user=request.user))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Close a ready pickup order the customer never collected (manager's PIN)",
+        responses={200: OpenApiResponse(description="Order closed as not picked up.")},
+    ),
+)
+class OrderNoShowView(_OrderActionBase):
+    """Encerrar como não retirado (WP-G11): o dinheiro segue o produto.
+
+    ``POST {base_revision, expected_actor_id, manager_approval}``. Sempre com o PIN de
+    um Gerente escolhido da lista (ou o crachá): o gesto decide dinheiro do cliente e
+    perda de estoque. Não há corpo a escolher: o destino de cada linha é do servidor
+    (``no_show.decide_destiny``), e a base confere que o Gerente assinou o que a prévia
+    mostrou. O comando é ``no_show.mark_not_picked_up``; estoque, estorno e aviso saem
+    do cancelamento de sempre, lendo ``order.data["no_show"]``.
+    """
+
+    intention_operation = "no-show"
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import no_show
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        prepared: dict = {}
+
+        def prepare():
+            blocked = no_show.block_reason(order)
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "no_show_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_no_show",
+                    message="Não retirado pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            try:
+                block = no_show.mark_not_picked_up(
+                    order,
+                    actor=_actor(request),
+                    approved_by=prepared["approver"].get_username(),
+                    expected_revision=base,
+                )
+            except no_show.NoShowStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except no_show.NoShowRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund_q": block["refund_q"], "retained_q": block["retained_q"]}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(request, order, "no-show", {}, execute, prepare=prepare)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Ask the gateway again for the refund that failed on a cancelled order (manager's PIN)",
+        responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
+    ),
+)
+class OrderRefundRetryView(_OrderActionBase):
+    """Tentar o estorno de novo (WP-G13, decisão 3 do dono, 17/11/2026).
+
+    ``POST {base_revision, expected_actor_id, manager_approval}``. Só existe para o
+    pedido cancelado cujo dinheiro está em "Estorno não saiu"; em qualquer outro
+    estado, 409 com a frase do motivo. Sempre com o PIN de um Gerente escolhido da
+    lista (ou o crachá), a mesma assinatura do cancelamento de pedido pago. O valor
+    e as cobranças são do servidor (``refund_retry.plan``); a tela não escolhe nada.
+
+    A chave da intenção (``Idempotency-Key``) é a chave DA TENTATIVA: repetir a
+    mesma devolve o mesmo recibo sem falar com o gateway de novo, e uma tentativa
+    nova, depois de outra recusada, leva outra chave ao gateway.
+
+    A resposta é 200 também quando o gateway recusa: a tentativa FOI gravada (o
+    evento ``payment.refund_retry`` do pedido, com quem tentou e quem autorizou), e
+    ``refund`` diz o que houve: ``{outcome, amount_q, refunded_q, message}``, com
+    ``outcome`` em ``refunded`` · ``refused`` · ``unconfirmed`` · ``unrecorded`` e
+    ``message`` com o que o gateway respondeu.
+    """
+
+    intention_operation = "refund-retry"
+
+    def post(self, request, ref: str):
+        from shopman.backstage.services import refund_retry
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        attempt_key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        prepared: dict = {}
+
+        def prepare():
+            blocked = refund_retry.plan(order).block_reason
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "refund_retry_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_refund_retry",
+                    message="Tentar o estorno de novo pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            try:
+                result = refund_retry.retry(
+                    order,
+                    actor=_actor(request),
+                    approved_by=prepared["approver"].get_username(),
+                    attempt_key=attempt_key,
+                    expected_revision=base,
+                )
+            except refund_retry.RefundRetryStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except refund_retry.RefundRetryRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund": result}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(request, order, "refund-retry", {}, execute, prepare=prepare)
 
 
 @extend_schema_view(
@@ -5719,6 +5902,80 @@ class WorkOrderOvenConcludeView(_ProductionActionBase):
 # ── POS cash shift endpoints ──────────────────────────────────────────
 
 
+#: Quantos PINs de gerente errados um operador digita antes de o PDV parar de
+#: conferir (P2-12). O gerente trava no quinto erro (``DOORMAN.PIN_MAX_ATTEMPTS``), e
+#: a conferência do PIN não gravava quem errou: a Caixa, sozinha, travava quem
+#: autoriza. Com o teto abaixo do do gerente, o operador para antes, e cada erro fica
+#: no log com quem digitou e para quem. A conta mora no mesmo rate-limit do
+#: destrave do operador (``django_ratelimit``, cache compartilhado em produção).
+MANAGER_PIN_OPERATOR_RATE = "3/15m"
+MANAGER_PIN_OPERATOR_GROUP = "pos.manager_pin.wrong"
+MANAGER_PIN_THROTTLED_DETAIL = (
+    "Três PINs de gerente errados em 15 minutos. Espere ou peça ao gerente para assinar com o crachá."
+)
+
+
+def _pin_do_gerente(approval) -> str:
+    """O gerente cujo PIN veio na aprovação, ou ``""`` (crachá e aprovação vazia não contam)."""
+    if not isinstance(approval, dict) or str(approval.get("badge") or "").strip():
+        return ""
+    username = str(approval.get("username") or "").strip()
+    return username if username and str(approval.get("pin") or "") else ""
+
+
+def _uso_do_pin_errado(request, *, contar: bool) -> dict:
+    from django_ratelimit.core import get_usage
+
+    return get_usage(
+        request, group=MANAGER_PIN_OPERATOR_GROUP, key="user",
+        rate=MANAGER_PIN_OPERATOR_RATE, increment=contar,
+    ) or {}
+
+
+def _orcamento_de_pin_esgotado(request, approval) -> Response | None:
+    """A recusa ANTES de conferir, quando este operador já errou o PIN demais."""
+    if not _pin_do_gerente(approval):
+        return None
+    uso = _uso_do_pin_errado(request, contar=False)
+    if not uso or int(uso.get("count") or 0) < int(uso.get("limit") or 0):
+        return None
+    logger.warning(
+        "pos_manager_pin_throttled operator=%s manager=%s path=%s",
+        _actor(request), _pin_do_gerente(approval), request.path,
+    )
+    return Response(
+        {
+            "detail": MANAGER_PIN_THROTTLED_DETAIL,
+            "field": "manager_approval",
+            "errors": {"manager_approval": [MANAGER_PIN_THROTTLED_DETAIL]},
+            "error": {
+                "code": "manager_approval_throttled",
+                "message": MANAGER_PIN_THROTTLED_DETAIL,
+                "field": "manager_approval",
+                "focus": "approval",
+                "recovery": "Espere ou use o crachá do gerente.",
+            },
+        },
+        status=429,
+    )
+
+
+def _conta_pin_do_gerente(request, approval, resposta: Response) -> Response:
+    """Grava o PIN errado na conta de quem DIGITOU, e no log com o nome do gerente."""
+    gerente = _pin_do_gerente(approval)
+    if not gerente:
+        return resposta
+    dados = resposta.data if isinstance(resposta.data, dict) else {}
+    erro = dados.get("error") if isinstance(dados.get("error"), dict) else {}
+    if erro.get("code") == "manager_approval_invalid":
+        uso = _uso_do_pin_errado(request, contar=True)
+        logger.warning(
+            "pos_manager_pin_wrong operator=%s manager=%s path=%s wrong_in_window=%s",
+            _actor(request), gerente, request.path, uso.get("count"),
+        )
+    return resposta
+
+
 #: Escopo da trava das mutações de dinheiro do caixa, na `IdempotencyKey` do
 #: orderman — a mesma tabela do commit de sessão, do replay de webhook e do submit
 #: do PDV. Nenhum modelo novo, nenhuma migração.
@@ -5733,14 +5990,80 @@ def _falha_do_caixa(exc, padrao: str) -> Response:
     está errado"; aqui o pedido está certo e o ESTADO da loja é que é ambíguo — mais de
     uma gaveta ativa e ninguém disse qual. O operador não tem o que corrigir no que
     mandou, então a resposta é 409, com o campo que falta nomeado.
-    """
-    from rest_framework.exceptions import APIException
 
+    ⚠️ E devolvia ``str(exc)`` para QUALQUER exceção (P1-9 do plano de excelência do
+    PDV): erro de banco, ``KeyError`` ou bug chegavam ao balcão como texto de
+    programador, com 400, e o operador lia "seu pedido está errado" sobre uma falha
+    que era do sistema. Agora são três casos, todos no dialeto ``{detail, field,
+    errors}`` (``docs/reference/errors.md``):
+
+    - ``APIException`` (a estação que não confere, por exemplo): o status e o
+      ``detail`` dela, com ``field``/``errors`` quando ela nomeia o campo;
+    - recusa de negócio (as famílias com texto para a tela, mais ``POSError`` do
+      backstage): 400 (409 na gaveta ambígua) com a frase do serviço;
+    - qualquer outra coisa é falha do SISTEMA: 500, com ``padrao`` (a frase do gesto
+      que não aconteceu), e o texto da exceção só no log, com o traceback.
+    """
+    from rest_framework.exceptions import APIException, ValidationError
+
+    from shopman.shop.api_errors import validation_error_payload
+
+    if isinstance(exc, ValidationError):
+        return Response(validation_error_payload(exc.detail), status=exc.status_code)
     if isinstance(exc, APIException):
-        return Response(exc.detail, status=exc.status_code)
+        dados = exc.detail if isinstance(exc.detail, dict) else {"detail": exc.detail}
+        corpo = dict(dados)
+        corpo["detail"] = str(corpo.get("detail") or padrao)
+        return Response(_no_dialeto(corpo), status=exc.status_code)
     if isinstance(exc, POSTerminalAmbiguous):
-        return Response({"detail": str(exc), "field": "terminal_ref"}, status=409)
-    return Response({"detail": str(exc) or padrao}, status=400)
+        return Response(_no_dialeto({"detail": str(exc), "field": "terminal_ref"}), status=409)
+    if isinstance(exc, ObjectDoesNotExist):
+        return Response({"detail": padrao}, status=404)
+    if isinstance(exc, POSError) or _recusa_de_negocio(exc):
+        return Response({"detail": str(exc) or padrao}, status=400)
+    logger.exception("pos_cash_unexpected_error type=%s", type(exc).__name__)
+    return Response(
+        {"detail": padrao, "error": {"code": "cash_system_error", "message": padrao}},
+        status=500,
+    )
+
+
+def _recusa_de_negocio(exc) -> bool:
+    """A exceção nasce com texto para a tela? (Ver ``public_error_detail``.)"""
+    from shopman.cashman.exceptions import CashError
+    from shopman.orderman.exceptions import OrderError
+    from shopman.payman.exceptions import PaymentError
+    from shopman.utils.exceptions import BaseError
+
+    return isinstance(exc, (ValueError, BaseError, OrderError, CashError, PaymentError))
+
+
+def _resposta_no_dialeto(resposta: Response) -> Response:
+    """A recusa de uma mutação de caixa sai no dialeto canônico (ver ``_no_dialeto``)."""
+    if isinstance(resposta.data, dict) and resposta.data.get("detail"):
+        resposta.data = _no_dialeto(dict(resposta.data))
+    return resposta
+
+
+def _no_dialeto(corpo: dict) -> dict:
+    """Completa uma recusa no dialeto canônico ``{detail, field, errors}``.
+
+    O PDV fala um superset (``error: {code, field, focus, recovery}``), e um front
+    que só lê o canônico perdia o campo quando ele vinha só dentro de ``error``
+    (#2347). Aqui o ``field`` sobe para o topo e ``errors`` ganha a frase sob o
+    campo. Nada é removido: ``error`` continua inteiro para quem o lê.
+    """
+    detail = str(corpo.get("detail") or "")
+    erro = corpo.get("error") if isinstance(corpo.get("error"), dict) else {}
+    campo = corpo.get("field") or erro.get("field") or ""
+    if campo:
+        corpo["field"] = str(campo)
+        erros = corpo.get("errors") if isinstance(corpo.get("errors"), dict) else {}
+        erros.setdefault(str(campo), [detail])
+        corpo["errors"] = erros
+    elif "field" in corpo and not corpo["field"]:
+        corpo.pop("field")
+    return corpo
 
 
 def _cash_idempotent(request, *, acao: str, executar):
@@ -5765,21 +6088,38 @@ def _local_idempotent(request, *, scope: str, executar, terminal_ref: str = ""):
     gravada da primeira vez, sem executar de novo; recusa (status >= 300) não
     queima a chave, e a próxima tentativa executa. O caixa usa com o terminal
     da estação na impressão digital; o cancelamento de venda, sem ele.
-    """
-    from shopman.shop.services.remote_mutations import (
-        RemoteMutationConflict,
-        RemoteMutationInProgress,
-        mutation_fingerprint,
-        run_idempotent_mutation,
-    )
 
-    chave = str(request.data.get("client_request_id") or "").strip()
+    Antes de conferir o PIN do gerente, o orçamento de PINs errados de quem digita
+    (``_orcamento_de_pin_esgotado``, P2-12); depois, a conta do erro ou do acerto.
+    """
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    chave =str(request.data.get("client_request_id") or "").strip()
     if not chave or len(chave) > 128:
-        return Response({"detail": "Identifique a tentativa antes de registrar.",
+        return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+            "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
             "error": {"code": "client_request_id_required"}}, status=422)
     payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
     fingerprint = mutation_fingerprint({"actor": request.user.pk, "terminal": terminal_ref,
         "path": request.path, "payload": payload})
+
+    aprovacao = request.data.get("manager_approval")
+    esgotado = _orcamento_de_pin_esgotado(request, aprovacao)
+    if esgotado is not None:
+        return esgotado
+    return _conta_pin_do_gerente(
+        request, aprovacao, _local_idempotent_com_pin(request, scope=scope, chave=chave,
+                                                      fingerprint=fingerprint, executar=executar),
+    )
+
+
+def _local_idempotent_com_pin(request, *, scope: str, chave: str, fingerprint: str, executar):
+    """O claim da tentativa, com o PIN do gerente conferido fora da transação."""
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
+        RemoteMutationInProgress,
+        run_idempotent_mutation,
+    )
 
     class CashMutationRejected(Exception):
         def __init__(self, response):
@@ -5803,7 +6143,7 @@ def _local_idempotent(request, *, scope: str, executar, terminal_ref: str = ""):
                 execute=_executar_para_o_claim,
             )
     except CashMutationRejected as exc:
-        return exc.response
+        return _resposta_no_dialeto(exc.response)
     except RemoteMutationConflict:
         return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
             "error": {"code": "idempotency_conflict"}}, status=409)
@@ -5840,7 +6180,8 @@ def _cash_remote_idempotent(request, *, acao: str, executar):
     terminal_ref = _terminal_do_pedido(request)
     chave = str(request.data.get("client_request_id") or "").strip()
     if not chave or len(chave) > 128:
-        return Response({"detail": "Identifique a tentativa antes de registrar.",
+        return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+            "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
             "error": {"code": "client_request_id_required"}}, status=422)
     payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
     intention = {"actor": request.user.pk, "terminal": terminal_ref, "path": request.path, "payload": payload}
@@ -5864,7 +6205,7 @@ def _cash_remote_idempotent(request, *, acao: str, executar):
             execute=_executar_para_o_claim,
         )
     except CashMutationRejected as exc:
-        return exc.response
+        return _resposta_no_dialeto(exc.response)
     except RemoteMutationConflict:
         return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
             "error": {"code": "idempotency_conflict"}}, status=409)
@@ -5919,7 +6260,7 @@ class POSCashOpenView(APIView):
                 )
             except Exception as exc:
                 logger.debug("pos_cash_shift_open_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao abrir caixa.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu abrir o caixa.")
             return Response({"ok": True, "shift_id": session.pk, "terminal_ref": session.terminal.ref})
 
         return _cash_idempotent(request, acao="open_cash_shift", executar=lambda: _executar())
@@ -5965,7 +6306,7 @@ class POSCashCloseView(APIView):
                 )
             except Exception as exc:
                 logger.debug("pos_cash_shift_close_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao fechar caixa.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu fechar o caixa.")
             return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
 
         return _cash_idempotent(request, acao="close_cash_shift", executar=lambda: _executar())
@@ -5989,7 +6330,9 @@ class POSMovementView(APIView):
             amount = request.data.get("amount", "0")
             reason = (request.data.get("reason") or "").strip()
             if kind not in {"sangria", "suprimento"}:
-                return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
+                return Response(
+                    _no_dialeto({"detail": "Escolha entrada ou saída de caixa.", "field": "kind"}), status=400,
+                )
             try:
                 entry = pos_service.register_cash_movement(
                     operator=request.user,
@@ -6005,7 +6348,7 @@ class POSMovementView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao registrar movimento.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu registrar o movimento no livro-caixa.")
             return Response({"ok": True, "entry_id": getattr(entry, "pk", None)})
 
         return _cash_idempotent(request, acao="cash_movement", executar=lambda: _executar())
@@ -6114,7 +6457,7 @@ class POSCashDrawerOpenView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_open_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar abertura.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar a abertura da gaveta.")
         body = {"ok": True, "entry_id": entry.pk, "pulse": None}
         if job is not None:
             state = drawer_pulse._state_of(job)
@@ -6142,7 +6485,7 @@ class POSCashDrawerPulseView(APIView):
             state = drawer_pulse.pulse_state(ref=ref, terminal_ref=_terminal_do_pedido(request))
         except Exception as exc:
             logger.debug("pos_drawer_pulse_read_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Pulso não encontrado.")
+            return _falha_do_caixa(exc, "O sistema não achou o pedido de abrir a gaveta.")
         return Response({"pulse": {"ref": state.ref, "state": state.state, "message": state.message}})
 
 
@@ -6175,7 +6518,7 @@ class POSCashDrawerUnlockAttemptView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_unlock_attempt_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar a tentativa.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar a tentativa.")
         return Response({"ok": True})
 
 
@@ -6208,7 +6551,7 @@ class POSCashDrawerLeftOpenView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_left_open_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar a gaveta aberta.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar a gaveta aberta.")
         return Response({"ok": True})
 
 
@@ -6246,7 +6589,7 @@ class POSCashDrawerBlockView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_block_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar o bloqueio.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar o bloqueio.")
         return Response({"ok": True})
 
 
@@ -6281,7 +6624,7 @@ class POSCashDrawerBlindView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_blind_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar o sensor cego.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar o sensor da gaveta.")
         return Response({"ok": True})
 
 
@@ -6321,7 +6664,7 @@ class POSCashDrawerUnlockView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_unlock_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao liberar a gaveta.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu liberar a gaveta.")
         return Response({"ok": True})
 
 
@@ -6382,7 +6725,7 @@ class POSChangeRequestView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao pedir troco.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu pedir o troco.")
             return Response({"ok": True, "request_ref": str(entry.pk)})
 
         return _cash_idempotent(request, acao="request_change", executar=lambda: _executar())
@@ -6425,7 +6768,7 @@ class POSChangeRequestServeView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_serve_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao atender o pedido.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu atender o pedido de troco.")
             return Response({"ok": True})
 
         return _cash_idempotent(request, acao="serve_change_request", executar=lambda: _executar(request_ref))
@@ -6463,7 +6806,7 @@ class POSChangeRequestCancelView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_cancel_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao cancelar o pedido.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu cancelar o pedido de troco.")
             return Response({"ok": True})
 
         return _cash_idempotent(request, acao="cancel_change_request", executar=lambda: _executar(request_ref))
@@ -6498,7 +6841,7 @@ class POSCardMachineRefundView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_card_machine_refund_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao registrar o estorno.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu registrar o estorno.")
             return Response({"ok": True, "refunded_q": recorded_q})
 
         return _cash_idempotent(request, acao="card_machine_refund", executar=lambda: _executar(order_ref))
@@ -6538,7 +6881,7 @@ class POSCashRefundView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_cash_refund_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao devolver o dinheiro.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu registrar a devolução.")
             return Response({"ok": True, "refunded_q": refunded_q})
 
         return _cash_idempotent(request, acao="refund_cash", executar=lambda: _executar(order_ref))
@@ -7177,6 +7520,12 @@ class POSManagerApprovalCheckView(APIView):
         approval = (request.data or {}).get("manager_approval")
         if not isinstance(approval, dict):
             approval = {}
+        esgotado = _orcamento_de_pin_esgotado(request, approval)
+        if esgotado is not None:
+            return esgotado
+        return _conta_pin_do_gerente(request, approval, self._check(request, approval))
+
+    def _check(self, request, approval):
         try:
             approver = pos_tabs_service.validate_manager_override(
                 approval,
@@ -7431,8 +7780,14 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
     server_timing_methods = ("POST",)
 
     def post(self, request):
+        # Toda recusa do fechamento sai no dialeto canônico ``{detail, field,
+        # errors}`` por cima do superset do PDV (#2347): o ``field`` que vinha só
+        # dentro de ``error`` sobe para o topo, e ``errors`` diz a frase sob o campo.
+        return _resposta_no_dialeto(self._close(request))
+
+    def _close(self, request):
         if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
-            return Response({"detail": "Atualize a comanda antes de finalizar.",
+            return Response({"detail": "Atualize a comanda antes de finalizar.", "field": "expected_revision",
                              "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
@@ -7445,13 +7800,8 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
                 operator_username=_username(request),
             )
         except PosIntentError as exc:
-            body = {"detail": exc.message, "error": exc.as_dict()}
-            if exc.field:
-                # O canônico (``docs/reference/errors.md``) por cima do superset do
-                # PDV: ``field``/``errors`` dizem a quem lê só o dialeto comum que
-                # campo recusou (ex.: ``expected_total_q`` no total que mudou).
-                body.update({"field": exc.field, "errors": {exc.field: [exc.message]}})
-            return Response(body, status=exc.status)
+            # ``field``/``errors`` do canônico saem em ``post`` (``_no_dialeto``).
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except PosCustomerConflict as exc:
             # ⚠️ ANTES do `except ValueError` — ver `_pos_customer_conflict_response`.
             # O conflito de cliente sempre foi detectado no COMMIT; o que nunca

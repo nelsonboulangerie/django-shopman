@@ -83,6 +83,8 @@ export interface CourierReminder {
   since_iso: string;
   since_basis: string;
   short_ref: string;
+  /** `preparing` · `ready` (pronto, no balcão) · `retry` (a última corrida terminou sem entregador). */
+  stage?: string;
 }
 
 /**
@@ -99,6 +101,10 @@ export function courierReminderLine(
   const since = Date.parse(reminder.since_iso);
   if (!Number.isFinite(due) || !Number.isFinite(since) || nowMs < due)
     return null;
+  if (reminder.stage === "retry")
+    return `Pedido ${reminder.short_ref} continua sem entregador. Chamar de novo?`;
+  if (reminder.stage === "ready")
+    return `Pedido ${reminder.short_ref} está pronto e sem entregador. Chamar agora?`;
   const minutes = Math.max(1, Math.floor((nowMs - since) / 60_000));
   return `Pedido ${reminder.short_ref} em preparo há ${minutes} min. Já dá para chamar o entregador?`;
 }

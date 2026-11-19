@@ -336,11 +336,12 @@ describe("useOrdersBoard — ações (act)", () => {
 
   it("falha sem motivo do servidor diz em que pé o pedido ficou e QUAL gesto não chegou (F8, frase do dono 09/10)", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 500 });
-    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-6", status_label: "Novo", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-261118-K42", status_label: "Novo", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
-    expect(await board.confirm("WEB-6")).toBe(false);
-    expect(board.actionError("WEB-6")).toBe("WEB-6 continua novo: o Aceitar não chegou. Tente de novo.");
-    expect(board.actionError("WEB-6")).not.toContain("Falha na ação");
+    expect(await board.confirm("WEB-261118-K42")).toBe(false);
+    // O pedido vai pelo código que o cartão mostra, não pela referência inteira.
+    expect(board.actionError("WEB-261118-K42")).toBe("K42 continua novo: o Aceitar não chegou. Tente de novo.");
+    expect(board.actionError("WEB-261118-K42")).not.toContain("Falha na ação");
   });
 
   it("sem a situação na projeção, a falha diz só o gesto que não chegou", async () => {
@@ -365,6 +366,23 @@ describe("useOrdersBoard — ações (act)", () => {
     const board = useOrdersBoard();
     expect(await board.confirm("WEB-8")).toBe(false);
     expect(board.actionError("WEB-8")).toBe("O pedido não foi atualizado. Tente de novo.");
+  });
+
+  // WP-G06: a recusa mora num diálogo, e o `field` do dialeto `{detail, field,
+  // errors}` precisa chegar a ele para marcar o campo.
+  it("a recusa do servidor guarda o campo que ela apontou, e a nova tentativa o limpa", async () => {
+    env.fetchMock.mockRejectedValueOnce({
+      status: 400,
+      data: { detail: "Escolha um dos motivos da lista.", field: "reason_key", errors: { reason_key: ["Escolha um dos motivos da lista."] } },
+    });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-4", actions: fixtureActions({ can_confirm: true }) }] } };
+    const board = useOrdersBoard();
+    expect(await board.reject("WEB-4", { reasonKey: "gone", internalNote: "" })).toBe(false);
+    expect(board.actionError("WEB-4")).toBe("Escolha um dos motivos da lista.");
+    expect(board.actionErrorField("WEB-4")).toBe("reason_key");
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    expect(await board.reject("WEB-4", { reasonKey: "other", internalNote: "" })).toBe(false);
+    expect(board.actionErrorField("WEB-4")).toBe("");
   });
 
   it("uma nova tentativa limpa o erro anterior do ref", async () => {

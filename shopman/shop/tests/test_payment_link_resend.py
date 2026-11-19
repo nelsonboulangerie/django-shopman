@@ -337,7 +337,7 @@ class TestProvaDeEnvio:
         notification_svc.send(order, "payment_link_sent")
         (directive,) = _directives(order)
         _settled(directive, "failed")
-        assert self._notice(order) == "O envio do link falhou. Reenvie ou copie o link."
+        assert self._notice(order) == "O envio do link falhou. Reenvie o link."
 
     def test_a_ultima_directive_manda(self):
         """Depois do reenvio, a prova é do reenvio — não do envio original."""

@@ -19,6 +19,12 @@ const { data, pending, error, refresh } = await useFetch<CatalogResponse>(apiPat
   lazy: true
 })
 usePageContentPending(pending)
+// Loja viva (WP-L04): o resultado da busca não fica velho na tela.
+useLiveRevalidate(
+  data,
+  () => $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include' }),
+  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS }
+)
 
 function parseFilters (raw: unknown): string[] {
   return String(raw || '').split(',').map(part => part.trim()).filter(Boolean)

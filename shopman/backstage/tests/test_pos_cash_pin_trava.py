@@ -50,11 +50,19 @@ def _post(client, path, body):
     return client.post(BASE + path, data=json.dumps(body), content_type="application/json")
 
 
-def test_pin_errado_na_sangria_conta_tentativa(client, setup):
-    """Brute force do PIN do gerente pela sangria: a falha precisa ficar gravada."""
+def test_pin_errado_na_sangria_conta_tentativa(client, setup, settings):
+    """Brute force do PIN do gerente pela sangria: a falha precisa ficar gravada.
+
+    Cada operador para no terceiro erro (P2-12, ``MANAGER_PIN_OPERATOR_RATE``); a trava
+    do GERENTE continua armando quando os erros somam o teto dele, venham de quem vierem.
+    Aqui o freio do operador fica de fora para medir só a trava do gerente.
+    """
+    import uuid as _uuid
+
     mgr = setup["mgr"]
     max_attempts = PinCredential.objects.get(user=mgr).max_attempts
     for i in range(max_attempts + 2):
+        settings.RATELIMIT_CACHE_PREFIX = f"rl:{_uuid.uuid4().hex}:"
         r = _post(client, "/pos/cash/movement/", {
             "kind": "sangria", "amount": "10,00", "reason": "cofre", "terminal_ref": "balcao-1",
             "manager_approval": {"username": mgr.username, "pin": f"{i:04d}"},
