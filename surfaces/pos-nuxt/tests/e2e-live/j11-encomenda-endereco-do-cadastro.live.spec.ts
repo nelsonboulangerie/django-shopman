@@ -3,13 +3,13 @@
 //
 // A Caixa (Fran) monta uma encomenda de entrega para a Maria Santos, que tem três
 // endereços no cadastro: Casa (o padrão), Trabalho e um salvo de pedido de entrega,
-// com a etiqueta "Entrega" que o sistema põe (é a do cliente vindo do iFood).
+// sem etiqueta, como o sistema grava (é o do cliente vindo do iFood, #2775).
 //
 // O que a jornada prova, pela tela, no celular (375 px) e no balcão (1366 px):
 //   1. a encomenda pede o cliente, depois "para quando", depois o recebimento;
 //   2. ao escolher Entrega, o endereço padrão já vem marcado, numa lista de linha
-//      inteira em que cada endereço se identifica sozinho (a etiqueta "Entrega" não
-//      aparece: quem fala é o endereço);
+//      inteira em que cada endereço se identifica sozinho (o sem etiqueta não ganha
+//      "Outro" nem "Entrega": quem fala é o endereço);
 //   3. no balcão, a seta desce para outro endereço e o Enter aceita e segue; no
 //      celular, o toque na linha escolhe e "Montar encomenda" segue;
 //   4. a barra da venda vem na ordem cliente, quando, recebimento, com F6, F7 e F8;
@@ -290,9 +290,10 @@ for (const device of ["phone", "counter"] as const) {
       await expect(radios).toHaveCount(3);
       await expect(radios.nth(0)).toBeChecked();
       await expect(step.locator("[data-pos-saved-address-line]")).toHaveText([HOME, FROM_DELIVERY, WORK]);
-      // A etiqueta que identifica aparece; a que só repete o canal ("Entrega"), não.
+      // A etiqueta do cliente aparece; o endereço sem etiqueta não ganha "Outro" nem "Entrega".
       await expect(step.locator("[data-pos-saved-address-tag]")).toHaveText(["Casa", "Trabalho"]);
       await expect(step.locator("[data-pos-saved-addresses]")).not.toContainText("Entrega");
+      await expect(step.locator("[data-pos-saved-addresses]")).not.toContainText("Outro");
       if (keyboard) await expect(radios.nth(0)).toBeFocused();
       await still(page);
       await audits(page, "lista no assistente", LIST_TEXT);

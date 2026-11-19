@@ -7920,10 +7920,10 @@ class Command(BaseCommand):
                  "state_code": "PR", "postal_code": "86020-080",
                  "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False},
                 # O endereço que um pedido de entrega (iFood incluído) grava sozinho no
-                # cadastro, com a etiqueta neutra "Entrega" (`shop/services/customer.py`).
-                # Está aqui para a lista de endereços do PDV ter o caso real: a etiqueta
-                # que só repete o canal não identifica nada, e a tela mostra o endereço.
-                {"label": "other", "label_custom": "Entrega",
+                # cadastro, SEM etiqueta (`shop/services/customer.py`, #2775: "Outro" sem
+                # nome). Está aqui para as listas de endereços (PDV, loja, Gestor) terem o
+                # caso real: sem etiqueta, a tela mostra o endereço.
+                {"label": "other", "label_custom": "",
                  "formatted_address": "Rua Sergipe, 890 - Centro, Londrina - PR, 86010-360",
                  "route": "Rua Sergipe", "street_number": "890", "complement": "",
                  "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
