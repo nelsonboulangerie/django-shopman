@@ -71,7 +71,7 @@ defineExpose({ focusTarget });
       variant="card"
       legend="Endereços do cliente"
       :disabled="disabled"
-      :ui="{ fieldset: 'w-full gap-y-2', item: 'w-full', wrapper: 'min-w-0', label: 'break-words', description: 'flex flex-wrap items-baseline gap-x-1.5' }"
+      :ui="{ fieldset: 'w-full gap-y-2', item: 'w-full', wrapper: 'min-w-0', label: 'break-words', description: 'break-words' }"
       @update:model-value="pick"
     >
       <!-- Duas linhas em toda opção, sempre no mesmo lugar: em cima o endereço;
@@ -83,9 +83,9 @@ defineExpose({ focusTarget });
         <span data-pos-saved-address-line>{{ item.label }}</span>
       </template>
       <template #description="{ item }">
-        <span v-if="item.tag" class="font-medium text-default" data-pos-saved-address-tag>{{ item.tag }}</span>
-        <span v-if="item.tag && item.description" aria-hidden="true">·</span>
-        <span v-if="item.description" data-pos-saved-address-detail>{{ item.description }}</span>
+        <!-- Tudo em linha, com o mesmo " · " entre as partes (o do bairro e da
+             cidade vem pronto de `savedAddressOption`). -->
+        <span v-if="item.tag" class="font-medium text-default" data-pos-saved-address-tag>{{ item.tag }}</span><span v-if="item.tag && item.description" aria-hidden="true">{{ " · " }}</span><span v-if="item.description" data-pos-saved-address-detail>{{ item.description }}</span>
       </template>
     </NuxtRadioGroup>
   </div>
