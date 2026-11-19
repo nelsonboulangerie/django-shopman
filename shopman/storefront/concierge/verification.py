@@ -506,3 +506,166 @@ def take_over(alert_pk: int, *, actor: str):
     if message is not None and message.transport_state != "accepted":
         return DeskResult(True, "not_sent", (message.envelope or {}).get("code", ""), ack)
     return DeskResult(True, sent_text=ack)
+
+
+# ── Os prazos (WP-06) ─────────────────────────────────────────────────
+
+#: A verificação que passou do segundo prazo e foi entregue à equipe.
+HANDED_OFF = "handed_off"
+#: A severidade do cartão no primeiro prazo: urgente no sino, sem e-mail (``critical``).
+URGENT_SEVERITY = "error"
+#: O ``escalated_by`` da triagem do handoff no segundo prazo (``triage.Triage``).
+ESCALATED_BY = "verification_timeout"
+
+
+def _parse(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
+
+
+def _claim_step(conversation_pk: int, record_id: str, *, step: str, now: datetime) -> dict | None:
+    """Reivindica um passo do relógio sob trava, ANTES de qualquer envio: sai uma vez só.
+
+    ``step`` é ``nudge`` (grava ``nudged_at``) ou ``handoff`` (fecha como ``handed_off``).
+    Devolve o registro como ficou, ou ``None`` se outro ciclo (ou a equipe) chegou antes.
+    """
+    from shopman.shop.models import Conversation
+
+    with transaction.atomic():
+        locked = Conversation.objects.select_for_update().get(pk=conversation_pk)
+        flags = dict(locked.flags or {})
+        stored = flags.get(FLAG_KEY)
+        if not isinstance(stored, dict) or stored.get("id") != record_id or stored.get("status") != OPEN:
+            return None
+        if step == "nudge":
+            if stored.get("nudged_at"):
+                return None
+            updated = {**stored, "nudged_at": now.isoformat()}
+        else:
+            updated = {**stored, "status": HANDED_OFF, "closed_at": now.isoformat(), "closed_by": ACTOR}
+        flags[FLAG_KEY] = updated
+        Conversation.objects.filter(pk=conversation_pk).update(flags=flags)
+        return updated
+
+
+def _handoff_triage(record: dict):
+    from . import triage
+
+    questions = "; ".join(f"“{q.get('text', '')}”" for q in record.get("questions") or [] if q.get("text"))
+    summary = f"A Concierge perguntou à equipe e ninguém respondeu no prazo: {questions}."
+    return triage.Triage("human", triage.NOW, triage.TEAM, summary[:480], "verification", ESCALATED_BY)
+
+
+def _nudge(conversation, record: dict, *, now: datetime) -> str:
+    """Primeiro prazo: o cliente recebe UM aviso, e o cartão sobe a urgente com o segundo prazo."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    from . import house_rules
+    from .service import send_out_of_turn
+
+    claimed = _claim_step(conversation.pk, record["id"], step="nudge", now=now)
+    if claimed is None:
+        return ""
+    if claimed.get("alert_pk"):
+        try:
+            alert_adapter.revise(
+                int(claimed["alert_pk"]), severity=URGENT_SEVERITY, respond_by=_parse(claimed.get("handoff_due_at"))
+            )
+        except Exception:
+            logger.warning("concierge.verification.escalate_failed conversation=%s", conversation.pk, exc_info=True)
+    text = _copy(NUDGE_COPY_KEY)
+    message = send_out_of_turn(conversation, text, receipts=frozenset({house_rules.VERIFY})) if text else None
+    if message is None or message.transport_state != "accepted":
+        # O aviso é uma vez só: falhou, não volta. O cartão urgente é o que segue valendo.
+        logger.warning(
+            "concierge.verification.nudge_not_sent conversation=%s code=%s",
+            conversation.pk,
+            (getattr(message, "envelope", None) or {}).get("code", "") if message is not None else "no_binding",
+        )
+        return "nudge_not_sent"
+    return "nudged"
+
+
+def _hand_off(conversation, record: dict, *, now: datetime) -> str:
+    """Segundo prazo: a conversa vai para a equipe, com a pergunta no cartão de handoff."""
+    from shopman.shop.models import Conversation, ConversationMessage
+
+    from .service import mark_handoff, send_out_of_turn
+
+    claimed = _claim_step(conversation.pk, record["id"], step="handoff", now=now)
+    if claimed is None:
+        return ""
+    _resolve_card(conversation, claimed, actor=ACTOR)
+    conversation.refresh_from_db()
+    if conversation.state != Conversation.State.ACTIVE:
+        return "already_with_team"
+    latest = (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND, binding__isnull=False)
+        .order_by("-pk")
+        .first()
+    )
+    if latest is None:
+        return "no_binding"
+    team = _handoff_triage(claimed)
+    mark_handoff(conversation, latest.binding, team.reason_line(), triage=team)
+    conversation.refresh_from_db()
+    ack = _copy(HANDOFF_COPY_KEY)
+    message = send_out_of_turn(conversation, ack, purpose="handoff_ack") if ack else None
+    if message is None or message.transport_state != "accepted":
+        return "handed_off_ack_not_sent"
+    return "handed_off"
+
+
+def sweep(*, now: datetime | None = None, limit: int = 200) -> dict[str, int]:
+    """Os dois prazos de cada verificação aberta. Custo zero: nenhuma chamada de modelo.
+
+    Os instantes (``nudge_due_at``, ``handoff_due_at``) já foram contados pelo
+    calendário da casa quando a verificação abriu; mesmo assim, com a casa fechada
+    agora, nada corre (o calendário pode ter mudado depois). Verificação de conversa
+    que já está com a equipe fecha calada, com o cartão.
+    """
+    from shopman.shop.models import Conversation
+    from shopman.shop.services import business_calendar
+
+    now = now or _now()
+    counts = {"open": 0, "nudged": 0, "nudge_not_sent": 0, "handed_off": 0, "closed_with_team": 0, "closed": 0}
+    rows = list(
+        Conversation.objects.filter(**{f"flags__{FLAG_KEY}__status": OPEN}).order_by("pk")[: max(1, int(limit))]
+    )
+    counts["open"] = len(rows)
+    if not rows:
+        return counts
+    house_open = business_calendar.current_business_state(now=now).is_open
+    for conversation in rows:
+        record = current(conversation)
+        if record is None:
+            continue
+        try:
+            if conversation.state != Conversation.State.ACTIVE:
+                closed = _close(conversation.pk, record["id"], status=HANDED_OFF, actor=ACTOR)
+                if closed is not None:
+                    _resolve_card(conversation, closed, actor=ACTOR)
+                    counts["closed_with_team"] += 1
+                continue
+            if not house_open:
+                continue
+            handoff_due = _parse(record.get("handoff_due_at"))
+            nudge_due = _parse(record.get("nudge_due_at"))
+            if handoff_due is not None and now >= handoff_due:
+                outcome = _hand_off(conversation, record, now=now)
+                if outcome.startswith("handed_off"):
+                    counts["handed_off"] += 1
+                elif outcome:
+                    counts["closed"] += 1
+            elif nudge_due is not None and now >= nudge_due and not record.get("nudged_at"):
+                outcome = _nudge(conversation, record, now=now)
+                if outcome:
+                    counts[outcome] += 1
+        except Exception:
+            logger.warning("concierge.verification.sweep_failed conversation=%s", conversation.pk, exc_info=True)
+    return counts

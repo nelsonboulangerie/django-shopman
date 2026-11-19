@@ -167,7 +167,7 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default`, `failures` ou `verification` (o "vou verificar" sem resposta no segundo prazo); `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave), `verification_timeout` (a pergunta à equipe passou do segundo prazo sem resposta, `intent=human`, `destination=team`) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
 
 Cancelamento pela Concierge (dono, 03/10/2026; `shopman/storefront/concierge/cancellation.py`):
 a pergunta de confirmação fica em `Conversation.flags["pending_cancel"]` = `{order_ref, asked_at,
@@ -277,7 +277,8 @@ como funciona a casa) sem fato vira pergunta à equipe, e a conversa segue com a
 nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
 conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
 marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
-equipe saiu ao cliente) ou `taken_over` (alguém assumiu a conversa: handoff); `fence` é o
+equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff) ou `handed_off` (o segundo prazo
+passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06); `fence` é o
 `turn_fence` do turno que abriu (gravada na mesma transação da resposta: turno revogado não grava);
 `questions` = `[{text, product, at}]`, até 5, `text` a fala do cliente REDIGIDA (`triage._redacted`,
 até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` ("em até 10 minutos"),
@@ -285,7 +286,9 @@ até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` (
 `business_calendar.format_deadline`) ou `no_promise` (o segundo prazo passaria da janela de 24 horas:
 nenhuma verificação é gravada, e a Concierge diz quando a equipe volta); `nudge_due_at` e
 `handoff_due_at` são ISO 8601, os dois prazos do `ChannelConfig.confirmation` contados pelo calendário
-da casa (o WP-06 lê); `nudged_at` é ISO 8601 do aviso do primeiro prazo (vazio até ele sair, WP-06);
+da casa; `nudged_at` é ISO 8601 do primeiro prazo, gravado ANTES do aviso ao cliente (o aviso sai uma vez
+só, mesmo que o envio falhe); no primeiro prazo o cartão vira severidade `error` com `respond_by` = `handoff_due_at`;
+no segundo, a triagem do handoff grava `source=verification`, `escalated_by=verification_timeout`, `intent=human`;
 `alert_pk` é o `OperatorAlert` `concierge_verify` (sino do Gestor de pedidos, público `orders`);
 `closed_at` ISO 8601, `closed_by` quem respondeu ou assumiu (usuário do Gestor) e `answer` o texto da
 equipe. A memória da conversa lê a verificação aberta como `verifying` = `{id, questions, promise}`

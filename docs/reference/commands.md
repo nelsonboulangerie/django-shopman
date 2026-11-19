@@ -93,6 +93,7 @@ DigitalOcean ou do Sentry.
 | [`concierge_check`](#concierge_check) | storefront | Concierge | Confere se o Concierge ligado consegue atender (configuração; com `--live`, o campo de atendimento humano no ManyChat) |
 | [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede, sombra do Jev); roda no `maintenance_worker` |
 | [`concierge_triage_shadow`](#concierge_triage_shadow) | storefront | Concierge | O Jev decidindo a intenção em sombra: onde ele e a regra local discordam |
+| [`concierge_verification_sweep`](#concierge_verification_sweep) | storefront | Concierge | Os prazos do "vou verificar": aviso ao cliente no primeiro, conversa para a equipe no segundo (no `maintenance_worker`) |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -1678,6 +1679,19 @@ local e a do Jev, gravadas pelo `run_intent_pilot`) e diz quantas concordam, as 
 mais comuns, onde o Jev escalaria e a regra não, e o tempo do Jev. `--run N` grava a sombra de até
 N mensagens antes; `--days` (padrão 7) e `--examples`. Para o Jev decidir de verdade quando a
 Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
+
+### concierge_verification_sweep
+
+**Propósito:** O relógio do "vou verificar" da Concierge (WP-05/WP-06 do
+[plano da Concierge](../plans/CONCIERGE-PLANO-DE-ACAO.md)). Roda no `maintenance_worker`, logo depois do
+`recover_concierge`. Para cada verificação aberta (`Conversation.flags["verification"]`): no primeiro prazo
+(`ChannelConfig.confirmation.concierge_verify_nudge_minutes`, 10 por padrão) sem resposta da equipe, o cartão
+`concierge_verify` sobe a urgente no sino do Gestor (severidade `error`, `respond_by` = o segundo prazo) e o
+cliente recebe UM aviso ("Ainda estou confirmando com a equipe..."); no segundo
+(`concierge_verify_handoff_minutes`, 30), a conversa vai para a equipe, com a pergunta no cartão de
+handoff, e o cliente recebe "Alguém da equipe continua com você por aqui.". Os prazos contam só tempo de loja
+aberta, e com a casa fechada nada corre. Cada passo é reivindicado sob trava antes do envio: sai uma vez só.
+Custo zero, nenhuma chamada de modelo. Imprime as contagens do ciclo em JSON.
 
 ### run_alias_benchmark
 
