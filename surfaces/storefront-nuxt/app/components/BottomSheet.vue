@@ -72,6 +72,8 @@ watch(keyboardInset, () => {
   if (import.meta.client) requestAnimationFrame(revealFocused)
 })
 const showBottomFade = ref(false)
+/** Folga do fim do corpo que não conta como "mais abaixo": um passo de espaçamento. */
+const END_SLACK_PX = 16
 let io: IntersectionObserver | null = null
 function teardownObserver() {
   io?.disconnect()
@@ -82,7 +84,11 @@ function setupObserver() {
   if (!scrollEl.value || !sentinel.value) return
   io = new IntersectionObserver(
     entries => { showBottomFade.value = !entries[0]!.isIntersecting },
-    { root: scrollEl.value, threshold: 0.01 }
+    // "Tem mais abaixo" fala de CONTEÚDO, não de respiro: quando o que falta
+    // rolar é só a folga do fim do corpo (até um passo de espaçamento), a seta
+    // não aparece. Sem a margem, ela subia por causa de um ou dois pixels e
+    // cobria a última linha, já inteira na tela.
+    { root: scrollEl.value, threshold: 0.01, rootMargin: `0px 0px ${END_SLACK_PX}px 0px` }
   )
   io.observe(sentinel.value)
 }

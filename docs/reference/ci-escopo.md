@@ -116,3 +116,16 @@ espelho lento, estourava o teto (#2679, #2756, #2757, 19/11/2026). O
 contrato, de 6 em 6 horas e à mão), uma por combinação de `surface_contract.mjs matrix
 browsers`. O Surfaces Gate só restaura; gravar no ref da fila enchia a cota sem servir a
 ninguém.
+
+**A cota é de todos, e o que a fila grava despeja o `main`.** Medido em 19/11/2026, 15h40,
+uma hora depois do cache do `main` ser aquecido: 14,6 GB em uso, acima da cota, 11 GB em
+branches da fila (71 entradas do `cache: npm` do setup-node, ~170 MB por app por grupo). O
+Actions despeja pelo uso mais antigo, e o cache de navegadores do `main` saiu em menos de 25
+min; o grupo seguinte voltou a baixar o apt do zero (run 44552779149). Por isso:
+
+- o npm do app-quality e do PWA **só restaura** na fila (`actions/cache/restore`, chave
+  `npm-<os>-<arch>-<hash dos locks do app e do kit>`); grava no PR e no `main`, pelo job
+  `npm` do mesmo `playwright-cache-main.yml`;
+- [`cache-cleanup.yml`](../../.github/workflows/cache-cleanup.yml) apaga o cache de branch da
+  fila que já não existe e de PR fechado, ao fim de cada workflow da fila e de 10 em 10 min.
+  Nunca toca no `main`, em branch vivo nem em PR aberto.

@@ -112,8 +112,8 @@ A preocupação do dono era a v2, que encolhia a lista de itens para 275 px. A v
 contrário: **648 px no desktop**, contra 485 px hoje (cerca de 10 linhas visíveis contra 8), porque
 o teclado numérico da tela **recolhe numa faixa de 44 px quando há teclado físico** (as teclas
 continuam funcionando como hoje, e "Mostrar teclado" abre de volta). Seções e saúde do terminal
-vão para o rail; o contexto da comanda (Balcão/Encomendas, #1007, Cliente F6, Recebimento F7,
-Quando F8, PIX, Liberar) cabe numa barra única de 56 px. **No tablet**, sem teclado físico, o
+vão para o rail; o contexto da comanda (Balcão/Encomendas, #1007, Cliente F6, Quando F7,
+Recebimento F8, PIX, Liberar) cabe numa barra única de 56 px. **No tablet**, sem teclado físico, o
 teclado numérico fica visível e a lista mantém a altura de hoje (406 px × 405 px), com o total
 dentro do botão Pagamento.
 
@@ -493,7 +493,7 @@ cabeçalho único. No PDV, o teclado numérico da tela recolhe numa faixa quando
 | hoje | proposta |
 |---|---|
 | Rail: Comandas, Sessão de caixa/Abrir caixa, Encomendas (badge), Tela do cliente, Atualizar, saúde do terminal | abas Comandas (F2) · Encomendas · Caixa; "Tela do cliente" e "PDV-01" (saúde: agente, impressora, gaveta, fiscal) como controles do app; Atualizar no popover do terminal |
-| Voltar, Balcão/Encomendas, renomear comanda, Cliente F6, Recebimento F7, Quando F8, Liberar comanda (confirmação), PIX aguardando | barra de trabalho da venda, mesmas teclas; Recebimento e Quando só em Encomendas, como hoje |
+| Voltar, Balcão/Encomendas, renomear comanda, Cliente F6, Quando F7, Recebimento F8, Liberar comanda (confirmação), PIX aguardando | barra de trabalho da venda; a tecla segue a posição do chip (ordem do funil da encomenda, #2754); Quando e Recebimento só em Encomendas, como hoje |
 | Atalhos (?), Últimas vendas | botão de atalhos da faixa global; Últimas vendas na barra de seções |
 | Não salvo / descartar e atualizar; edição de pedido com descartar; alerta de fechamento | mantidos, em `UiAlert` padrão |
 | Busca F3 (Enter adiciona, Esc sai; letra digitada começa a busca) | campo de 48 px com a dica "Enter adiciona · Esc sai" |
