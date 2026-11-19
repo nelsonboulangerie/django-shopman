@@ -1196,6 +1196,7 @@ preserva o motivo anterior antes de limpar `Directive.last_error` para retry.
 | `additional_info` | `string` | hooks (opcional) | NFCeEmitHandler |
 | `delivery` | `dict` ou `null` | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
 | `intermediary` | `dict` (ausente na venda direta) | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
+| `emitter_answer` | `string` (só na directive recusada) | NFCeEmitHandler (`_refuse`, ao encerrar a emissão como `failed`) | Gestor, linha "NFC-e não autorizada" (`backstage/projections/order_pending.fiscal_failure_reason`) | A resposta do emissor na recusa, sem o prefixo do log. Some no reprocesso, que reconstrói o payload. Transiente que esgota as tentativas e erro interno não a gravam |
 
 Cada linha de `items` leva `gtin` (`str`): o GTIN confiável do produto
 (`fiscal._trusted_gtin`, regra na linha `gtin_source` de `Product.metadata`) ou
