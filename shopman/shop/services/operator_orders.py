@@ -294,7 +294,8 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
             return AdvanceBlock.IFOOD_WINDOW_NOT_OPEN
         if next_status == Order.Status.DISPATCHED and not str(order.external_ref or "").upper().startswith("IFOOD-SIM-"):
             facts = (order.data or {}).get("ifood") or {}
-            if not facts.get("remote_dispatched"):
+            # O CON também prova a coleta: o iFood só conclui o que já saiu.
+            if not (facts.get("remote_dispatched") or facts.get("remote_concluded")):
                 delivered_by = str(facts.get("delivered_by") or "").upper()
                 if delivered_by == "IFOOD":
                     return AdvanceBlock.IFOOD_WAITING_PICKUP

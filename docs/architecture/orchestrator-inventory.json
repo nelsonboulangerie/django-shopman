@@ -14886,7 +14886,8 @@
             "Command",
             "LOOKBACK",
             "_alert_behind",
-            "_latest_fact_at"
+            "_latest_fact_at",
+            "_stale_test_conclusion"
           ]
         }
       ]
