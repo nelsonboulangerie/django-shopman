@@ -15,11 +15,15 @@ Produção dizem agora, para o painel inteiro de uma vez. Esta suíte prende:
   ainda, e a do produto feito na hora;
 - o pedido pago do dia que espera o lote volta a ter o selo e o bloqueio, sem
   depender do estado da fila de espera;
-- cartão, Fila e detalhe leem a mesma leitura, com as três saídas ao lado;
-- todo item em risco diz o próximo passo, pela causa, e a saída recomendada vem
-  primeiro e é a única principal; "Abrir a Produção" só para quem a opera;
+- cartão, Fila e detalhe leem a mesma leitura, com a mesma saída ao lado:
+  "Resolver", que abre o diálogo (as escolhas e a mensagem ao cliente moram em
+  ``test_api_order_promise_resolution``);
+- todo item em risco diz o próximo passo, pela causa, e a saída principal vem
+  primeiro e é a única cheia; "Abrir a Produção" só para quem a opera, e cheia
+  só quando a Produção resolve tudo o que falta;
 - a casa oferece o que tem no lugar, pelo mecanismo de substitutos da loja: para
-  a encomenda de outro dia, só o que o lote DA DATA tem livre;
+  a encomenda de outro dia, só o que o lote DA DATA tem livre. A função pública
+  ``alternatives_for`` devolve o mesmo que o aviso mostra (é ela que o PDV chama);
 - o número de consultas não cresce com o número de pedidos.
 
 Os lotes são planejados, abertos, fechados e cancelados pelo Craftsman de
@@ -28,10 +32,8 @@ verdade: é a ponte dele com o estoque que mexe nos saldos.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal
-from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -251,29 +253,26 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     assert item.batch_date == _day(1).isoformat()
     assert item.batch_status == "void"
     assert item.work_order_refs == (work_order.ref,)
-    # O próximo passo: sem outro produto a oferecer, remarcar. A saída é falar com o cliente.
+    # O próximo passo: sem outro produto a oferecer, a tela diz que procurou. A saída é "Resolver".
     assert item.next_step == "Nenhum produto parecido livre para amanhã."
     assert item.alternatives == ()
     assert promise.next_step == item.next_step
-    assert promise.recommended_action == "contact-customer"
+    assert promise.recommended_action == "resolve"
 
-    # O cartão: o selo, as três saídas e o lugar na Fila "Precisa de você".
+    # O cartão: o selo, UMA saída ("Resolver") e o lugar na Fila "Precisa de você".
     card = build_order_card(Order.objects.get(pk=order.pk), user=gerente)
     assert card.promise.state == "at_risk"
     assert card.attention == "promise"
     assert card.attention_since_iso == promise.since_iso
-    actions = {action.ref: action for action in card.promise.actions}
-    assert list(actions) == ["contact-customer", "reschedule-at-pos", "cancel"]
-    assert [action.label for action in card.promise.actions] == ["Avisar o cliente", "Remarcar no PDV", "Cancelar pedido"]
-    # A recomendada vem primeiro e é a única principal; cancelar segue vermelho.
-    assert [action.priority for action in card.promise.actions] == ["primary", "secondary", "danger"]
+    (resolve,) = card.promise.actions
+    # Abre o diálogo: não é link nem mutação, e não leva endereço nenhum.
+    assert (resolve.ref, resolve.kind, resolve.label) == ("resolve", "dialog", "Resolver")
+    assert (resolve.priority, resolve.enabled, resolve.reason, resolve.href) == ("primary", True, "", "")
+    assert (resolve.method, resolve.idempotency) == ("", "none")
     assert card.promise.next_step == "Nenhum produto parecido livre para amanhã."
-    assert all(action.kind == "link" and action.enabled for action in actions.values())
-    assert actions["contact-customer"].href == "/ENC-CANCELADA#promise"
-    assert actions["reschedule-at-pos"].href == "https://pdv.example.test/preorders/ENC-CANCELADA"
-    assert actions["cancel"].href == "/ENC-CANCELADA#cancel"
-    # O telefone do cliente não vai para o cartão do painel (#2434).
-    assert "5543999990000" not in "".join(action.href for action in card.promise.actions)
+    # Nenhum dado do cliente vai para o cartão do painel (#2434): nem telefone, nem nome.
+    assert "5543999990000" not in repr(card.promise)
+    assert "Cliente ENC-CANCELADA" not in repr(card.promise)
 
 
 def test_a_linha_do_tempo_diz_o_item_e_o_lote_sem_codigo_cru(ficha, gerente):
@@ -292,40 +291,49 @@ def test_a_linha_do_tempo_diz_o_item_e_o_lote_sem_codigo_cru(ficha, gerente):
     assert "_" not in lost[0].detail
 
 
-def test_o_detalhe_abre_com_promessa_em_risco_e_as_saidas_de_verdade(ficha, gerente, settings):
+def test_o_detalhe_abre_com_promessa_em_risco_e_a_mesma_saida_do_cartao(ficha, gerente, settings):
+    """As saídas antigas (avisar, remarcar, cancelar) moram dentro do diálogo: o
+    aviso do detalhe leva a MESMA ação "Resolver" do cartão, e a faixa também."""
     settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/"}
     order, work_order, _hold = _encomenda(ficha, "ENC-DETALHE")
     craft.void(work_order, reason="Forno parou")
+    order = Order.objects.get(pk=order.pk)
 
-    detail = build_operator_order(Order.objects.get(pk=order.pk), user=gerente)
+    detail = build_operator_order(order, user=gerente)
 
     assert detail.promise.state == "at_risk"
-    actions = {action.ref: action for action in detail.promise.actions}
-    assert actions["contact-customer"].href == "https://wa.me/5543999990000"
-    assert actions["reschedule-at-pos"].href == "https://pdv.example.test/preorders/ENC-DETALHE"
-    # Cancelar é a MESMA ação do detalhe, com a revisão e a régua do gerente.
-    assert actions["cancel"] is next(action for action in detail.actions if action.ref == "cancel")
-    assert actions["cancel"].kind == "mutation"
+    assert detail.promise.actions == build_order_card(order, user=gerente).promise.actions
+    assert [(action.ref, action.kind, action.priority) for action in detail.promise.actions] == [
+        ("resolve", "dialog", "primary"),
+    ]
+    # O cancelar de verdade continua nas ações do detalhe: é ele que o diálogo abre.
+    assert next(action for action in detail.actions if action.ref == "cancel").kind == "mutation"
 
     first = detail.pending[0]
     assert (first.key, first.tone, first.label) == ("promise", "error", "Promessa em risco")
     assert first.reason == "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado."
-    assert [action.ref for action in first.actions] == ["contact-customer", "reschedule-at-pos", "cancel"]
-    assert first.actions[0].href == "https://wa.me/5543999990000"
-    # A faixa diz o que fazer e qual gesto é o recomendado.
+    # A faixa diz o que fazer e leva a mesma saída, cheia, sem endereço.
     assert first.next_step == "Nenhum produto parecido livre para amanhã."
-    assert [action.priority for action in first.actions] == ["primary", "secondary", "danger"]
+    assert [(action.ref, action.label, action.priority, action.enabled, action.href) for action in first.actions] == [
+        ("resolve", "Resolver", "primary", True, ""),
+    ]
 
 
-def test_quem_nao_gerencia_pedidos_ve_o_risco_e_nao_recebe_atalho(ficha, django_user_model):
+def test_quem_nao_gerencia_pedidos_ve_o_risco_e_recebe_o_resolver_travado(ficha, django_user_model):
     order, work_order, _hold = _encomenda(ficha, "ENC-SEM-PERMISSAO")
     craft.void(work_order, reason="Forno parou")
     visitante = django_user_model.objects.create_user(username="so-olha", is_staff=True)
+    order = Order.objects.get(pk=order.pk)
 
-    card = build_order_card(Order.objects.get(pk=order.pk), user=visitante)
+    card = build_order_card(order, user=visitante)
 
     assert card.promise.state == "at_risk"
-    assert all(not action.enabled and action.reason and not action.href for action in card.promise.actions)
+    (resolve,) = card.promise.actions
+    assert (resolve.ref, resolve.enabled, resolve.href) == ("resolve", False, "")
+    assert resolve.reason == "Identifique uma pessoa com permissão para gerenciar pedidos."
+    # A faixa do detalhe trava igual, com o mesmo motivo.
+    (line_action,) = build_operator_order(order, user=visitante).pending[0].actions
+    assert (line_action.ref, line_action.enabled, line_action.reason) == ("resolve", False, resolve.reason)
 
 
 def test_saldo_do_lote_que_encolhe_deixa_a_reserva_em_parte(ficha):
@@ -434,7 +442,7 @@ def test_lote_fechado_com_menos_que_o_planejado(ficha, relogio):
     assert item.detail == "O lote de hoje fechou com 6, e o planejado era 10."
     assert item.batch_status == "finished"
     assert item.next_step == "Remarque o que faltou ou devolva a diferença."
-    assert promise.recommended_action == "contact-customer"
+    assert promise.recommended_action == "resolve"
     assert promise.since_iso  # desde o fechamento do lote
 
 
@@ -495,10 +503,10 @@ def test_lote_de_hoje_depois_da_hora_esta_atrasado(ficha, baguete, relogio):
     assert item.detail == "O lote de hoje está atrasado: devia ficar pronto às 12h e está em andamento."
     assert item.batch_status == "started"
     # A leitura não conhece hora nova para o lote, e não inventa uma.
-    # O lote atrasado não tem frase: o porquê já diz a hora, e a saída cheia é "Avisar o cliente".
+    # O lote atrasado não tem frase: o porquê já diz a hora, e a saída cheia é "Resolver".
     assert item.next_step == ""
     assert item.alternatives == ()
-    assert (promise.next_step, promise.recommended_action) == ("", "contact-customer")
+    assert (promise.next_step, promise.recommended_action) == ("", "resolve")
 
 
 def test_lote_de_ontem_que_nunca_ficou_pronto_esta_atrasado(ficha, relogio):
@@ -510,7 +518,7 @@ def test_lote_de_ontem_que_nunca_ficou_pronto_esta_atrasado(ficha, relogio):
     item = _one(_promise(order))
     assert (item.cause, item.at_risk) == ("batch_late", True)
     assert item.detail == "O lote de ontem não ficou pronto."
-    # O lote atrasado não tem frase: o porquê já diz a hora, e a saída cheia é "Avisar o cliente".
+    # O lote atrasado não tem frase: o porquê já diz a hora, e a saída cheia é "Resolver".
     assert item.next_step == ""
     assert item.work_order_refs == (work_order.ref,)
 
@@ -761,7 +769,7 @@ def test_o_numero_de_consultas_nao_cresce_com_o_numero_de_pedidos(ficha, baguete
 
 def test_a_frase_do_proximo_passo_por_causa():
     """A frase só diz o que a tela ainda não disse (dono, 19/11/2026): o verbo
-    do botão ("Avisar o cliente") não se repete no corpo do aviso."""
+    do botão ("Resolver") não se repete no corpo do aviso."""
     step = order_promise.next_step_for
     nothing = "Nenhum produto parecido livre para amanhã."
     # O item que não vai existir, sem o que oferecer: a tela diz que procurou e não achou.
@@ -777,9 +785,11 @@ def test_a_frase_do_proximo_passo_por_causa():
     # O lote atrasado e quem só espera o lote não têm frase.
     assert step("batch_late") == ""
     assert step("batch_waiting") == ""
-    # Nenhuma frase repete o verbo da saída cheia.
+    # Nenhuma frase repete o verbo da saída cheia, nem o das saídas que foram para o diálogo.
     for cause in order_promise._CAUSE_ORDER:
-        assert "vise o cliente" not in step(cause, none_phrase=nothing)
+        phrase = step(cause, none_phrase=nothing).lower()
+        assert "resolv" not in phrase
+        assert "vise o cliente" not in phrase
 
 
 def test_com_sugestoes_a_frase_se_cala_e_a_lista_fala():
@@ -824,28 +834,32 @@ def test_abrir_a_producao_e_a_saida_recomendada_quando_ela_ainda_resolve(baguete
     assert card.promise.next_step == "Peça à Produção para planejar."
     assert card.promise.recommended_action == "open-production"
     actions = card.promise.actions
-    assert [action.ref for action in actions] == ["open-production", "contact-customer", "reschedule-at-pos", "cancel"]
-    assert [action.priority for action in actions] == ["primary", "secondary", "secondary", "danger"]
-    opening = actions[0]
+    # "Abrir a Produção" é a cheia; "Resolver" fica ao lado, em contorno.
+    assert [(action.ref, action.priority) for action in actions] == [
+        ("open-production", "primary"), ("resolve", "secondary"),
+    ]
+    opening, resolve = actions
     assert (opening.kind, opening.label, opening.enabled) == ("link", "Abrir a Produção", True)
     # O plano DAQUELE dia, na rota que a Produção lê (`plan?date=`).
     assert opening.href == f"https://producao.example.test/plan?date={_day().isoformat()}"
+    assert (resolve.kind, resolve.label, resolve.enabled, resolve.href) == ("dialog", "Resolver", True, "")
 
     detail = build_operator_order(order, user=padeiro)
-    assert [action.ref for action in detail.promise.actions] == [
-        "open-production", "contact-customer", "reschedule-at-pos", "cancel",
-    ]
+    assert detail.promise.actions == actions
     line = detail.pending[0]
     assert (line.key, line.next_step) == ("promise", "Peça à Produção para planejar.")
     assert [(action.ref, action.priority) for action in line.actions] == [
-        ("open-production", "primary"), ("contact-customer", "secondary"),
-        ("reschedule-at-pos", "secondary"), ("cancel", "danger"),
+        ("open-production", "primary"), ("resolve", "secondary"),
     ]
     assert line.actions[0].href == opening.href
 
 
-def test_quem_nao_opera_a_producao_nao_recebe_a_acao_e_a_frase_segue_valendo(baguete, gerente, settings):
-    """Sem a permissão a ação não vem, nenhuma saída é a principal, e a frase diz o que fazer."""
+def test_quem_nao_opera_a_producao_recebe_o_resolver_cheio_e_a_frase_segue_valendo(baguete, gerente, settings):
+    """Sem a permissão "Abrir a Produção" não vem: "Resolver" é a cheia, e a frase diz o que fazer.
+
+    ``recommended_action`` fala da SITUAÇÃO (a Produção ainda resolve), não de
+    quem lê: é com ela que a tela escolhe o título do aviso de vários pedidos.
+    """
     settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": "https://producao.example.test/"}
     order = _sem_lote_hoje("HOJE-SEM-PRODUCAO")
 
@@ -853,20 +867,38 @@ def test_quem_nao_opera_a_producao_nao_recebe_a_acao_e_a_frase_segue_valendo(bag
 
     assert card.promise.next_step == "Peça à Produção para planejar."
     assert card.promise.recommended_action == "open-production"
-    assert [action.ref for action in card.promise.actions] == ["contact-customer", "reschedule-at-pos", "cancel"]
-    assert [action.priority for action in card.promise.actions] == ["secondary", "secondary", "danger"]
+    assert [(action.ref, action.priority, action.enabled) for action in card.promise.actions] == [
+        ("resolve", "primary", True),
+    ]
 
     line = build_operator_order(order, user=gerente).pending[0]
     assert line.next_step == "Peça à Produção para planejar."
-    assert "primary" not in {action.priority for action in line.actions}
+    assert [(action.ref, action.priority) for action in line.actions] == [("resolve", "primary")]
 
 
 def test_sem_o_endereco_da_producao_a_acao_nao_vem(baguete, padeiro, settings):
     settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": ""}
     card = build_order_card(_sem_lote_hoje("HOJE-SEM-ENDERECO"), user=padeiro)
 
-    assert "open-production" not in {action.ref for action in card.promise.actions}
-    assert "primary" not in {action.priority for action in card.promise.actions}
+    assert [(action.ref, action.priority) for action in card.promise.actions] == [("resolve", "primary")]
+
+
+def test_quem_opera_a_producao_e_nao_gerencia_pedidos_abre_o_plano_e_ve_o_resolver_travado(
+    baguete, django_user_model, settings,
+):
+    """O padeiro que só opera a Produção: a cheia é dele, e "Resolver" aparece travado, com o motivo."""
+    settings.SHOPMAN_SURFACE_URLS = {"production": "https://producao.example.test/"}
+    so_producao = django_user_model.objects.create_user(username="so-producao", is_staff=True)
+    so_producao.user_permissions.add(
+        Permission.objects.get(codename="operate_production", content_type__app_label="backstage"),
+    )
+
+    card = build_order_card(_sem_lote_hoje("HOJE-SO-PRODUCAO"), user=so_producao)
+
+    opening, resolve = card.promise.actions
+    assert (opening.ref, opening.priority, opening.enabled) == ("open-production", "primary", True)
+    assert (resolve.ref, resolve.priority, resolve.enabled) == ("resolve", "secondary", False)
+    assert resolve.reason == "Identifique uma pessoa com permissão para gerenciar pedidos."
 
 
 def test_a_producao_nao_e_saida_de_quem_precisa_avisar_o_cliente(ficha, padeiro, settings):
@@ -877,8 +909,7 @@ def test_a_producao_nao_e_saida_de_quem_precisa_avisar_o_cliente(ficha, padeiro,
 
     card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
 
-    assert [action.ref for action in card.promise.actions] == ["contact-customer", "reschedule-at-pos", "cancel"]
-    assert [action.priority for action in card.promise.actions] == ["primary", "secondary", "danger"]
+    assert [(action.ref, action.priority) for action in card.promise.actions] == [("resolve", "primary")]
 
 
 # A casa oferece o que tem no lugar: o mecanismo de substitutos da loja.
@@ -930,23 +961,20 @@ def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, g
     assert [(option.sku, option.name, option.available_display) for option in item.alternatives] == [
         ("FENDU", "Fendu", "6 livres para amanhã"),
     ]
-    # Com sugestão, a frase se cala: a lista fala, e a saída cheia é "Avisar o cliente".
+    # Com sugestão, a frase se cala: a lista fala, e a saída cheia é "Resolver".
     assert (item.next_step, promise.next_step) == ("", "")
-    assert promise.recommended_action == "contact-customer"
+    assert promise.recommended_action == "resolve"
     assert item.label == "Faltam 4x Baguete de tradição"
-    # O cartão e o detalhe leem a mesma lista, e o "Remarcar no PDV" a leva junto.
+    # O cartão e o detalhe leem a mesma lista. Nenhuma sugestão viaja em endereço:
+    # o aviso só leva "Resolver", e o formato combinado com o PDV (`?swap=<sku>`)
+    # só existe dentro do diálogo (`test_api_order_promise_resolution`).
     order = Order.objects.get(pk=order.pk)
     card = build_order_card(order, user=gerente)
     detail = build_operator_order(order, user=gerente)
     for read in (card.promise, detail.promise):
         assert [option.sku for option in read.items[0].alternatives] == ["FENDU"]
+        assert [(action.ref, action.href) for action in read.actions] == [("resolve", "")]
     assert detail.pending[0].next_step == ""
-    assert order_promise.pos_suggestions(promise) == [{"sku": SKU, "qty": "4", "offer": ["FENDU"]}]
-    for read in (card.promise, detail.promise):
-        href = next(action.href for action in read.actions if action.ref == "reschedule-at-pos")
-        query = parse_qs(urlsplit(href).query)
-        assert urlsplit(href).path.endswith("/preorders/ENC-OFERECE")
-        assert json.loads(query["suggestions"][0]) == [{"sku": SKU, "qty": "4", "offer": ["FENDU"]}]
 
 
 def test_pedido_de_hoje_oferece_o_que_ha_na_loja_agora(vitrine):
@@ -974,9 +1002,8 @@ def test_pedido_de_hoje_oferece_o_que_ha_na_loja_agora(vitrine):
     assert item.label == "Falta 1 de 3x Baguete de tradição"
 
 
-def test_sem_nada_a_oferecer_a_tela_diz_que_nao_ha_parecido(ficha, vitrine, gerente, settings):
+def test_sem_nada_a_oferecer_a_tela_diz_que_nao_ha_parecido(ficha, vitrine):
     """Os outros pães existem no cardápio, mas não têm lote amanhã: não se promete o que não há."""
-    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/"}
     order, work_order, _hold = _encomenda(ficha, "ENC-SEM-ALTERNATIVA")
     craft.void(work_order, reason="Forno parou")
 
@@ -984,10 +1011,71 @@ def test_sem_nada_a_oferecer_a_tela_diz_que_nao_ha_parecido(ficha, vitrine, gere
 
     assert item.alternatives == ()
     assert item.next_step == "Nenhum produto parecido livre para amanhã."
-    # Sem sugestão, o "Remarcar no PDV" abre o pedido sem nada na URL.
-    card = build_order_card(Order.objects.get(pk=order.pk), user=gerente)
-    href = next(action.href for action in card.promise.actions if action.ref == "reschedule-at-pos")
-    assert href == "https://pdv.example.test/preorders/ENC-SEM-ALTERNATIVA"
+
+
+# A função pública das alternativas: a mesma régua para o aviso, o diálogo e o PDV (#2765).
+
+
+def test_a_funcao_publica_devolve_as_mesmas_alternativas_do_aviso(ficha, vitrine):
+    """Pedido + SKU, sem dizer quanto falta (é o que o PDV sabe): o que o aviso mostra."""
+    fendu, _campagne = vitrine
+    stock.plan(Decimal("10"), fendu, _day(1))
+    order, work_order, _hold = _encomenda(ficha, "ENC-FUNCAO")
+    craft.void(work_order, reason="Forno parou")
+    order = Order.objects.get(pk=order.pk)
+
+    shown = _one(_promise(order)).alternatives
+    assert [(option.sku, option.available_display) for option in shown] == [("FENDU", "10 livres para amanhã")]
+
+    assert order_promise.alternatives_for(order, SKU) == shown
+    # Quem já sabe quanto falta chega no mesmo lugar, sem reler a promessa.
+    assert order_promise.alternatives_for(order, SKU, missing=Decimal("4")) == shown
+
+
+def test_a_funcao_publica_nao_oferece_a_sobra_de_hoje_para_a_encomenda_de_amanha(ficha, vitrine):
+    """Dono, 18/11/2026: vitrine cheia hoje não é alternativa para amanhã. Só o lote da data conta."""
+    fendu, campagne = vitrine
+    loja = Position.objects.get(ref="loja")
+    stock.receive(quantity=Decimal("30"), sku=campagne.sku, position=loja, reason="vitrine de hoje")
+    stock.receive(quantity=Decimal("30"), sku=fendu.sku, position=loja, reason="vitrine de hoje")
+    order, work_order, _hold = _encomenda(ficha, "ENC-FUNCAO-SOBRA")
+    craft.void(work_order, reason="Forno parou")
+    order = Order.objects.get(pk=order.pk)
+
+    # Nenhum dos dois tem lote amanhã: a busca rodou e não há o que oferecer.
+    assert order_promise.alternatives_for(order, SKU) == ()
+    assert order_promise.alternatives_for(order, SKU, missing=Decimal("4")) == ()
+
+    # A mesma busca no dia da encomenda vê a vitrine: é a data que muda a régua, não o produto.
+    on_the_day = order_promise.alternatives_for(order, SKU, missing=Decimal("4"), today=_day(1))
+    assert [(option.sku, option.available_display) for option in on_the_day] == [
+        ("FENDU", "30 disponíveis hoje"), ("CAMPAGNE", "30 disponíveis hoje"),
+    ]
+
+
+def test_a_funcao_publica_serve_o_sku_que_nao_esta_em_risco(ficha, vitrine):
+    """O PDV pode perguntar por um item que não perdeu nada: a busca vale para o que o pedido leva dele."""
+    fendu, _campagne = vitrine
+    stock.plan(Decimal("10"), fendu, _day(1))
+    order, _work_order, _hold = _encomenda(ficha, "ENC-FUNCAO-INTEIRA")
+
+    assert order_promise.read_for([order]) == {}
+    assert [(option.sku, option.available_display) for option in order_promise.alternatives_for(order, SKU)] == [
+        ("FENDU", "10 livres para amanhã"),
+    ]
+
+
+def test_a_funcao_publica_devolve_none_quando_a_busca_nao_pode_rodar(ficha, monkeypatch):
+    from shopman.shop.services import substitutes
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("catálogo fora do ar")
+
+    monkeypatch.setattr(substitutes, "find", broken)
+    order, _work_order, _hold = _encomenda(ficha, "ENC-FUNCAO-QUEBRADA")
+
+    # Quem não conseguiu procurar não afirma que não há.
+    assert order_promise.alternatives_for(order, SKU, missing=Decimal("4")) is None
 
 
 def test_falha_na_busca_de_alternativas_nao_derruba_a_leitura(ficha, monkeypatch):
@@ -1009,8 +1097,8 @@ def test_falha_na_busca_de_alternativas_nao_derruba_a_leitura(ficha, monkeypatch
 
 def test_pedido_com_passos_diferentes_diz_cada_um_com_o_produto_e_o_cliente_primeiro(ficha, padeiro, settings):
     """Baguete com o lote cancelado e Brioche com o plano curto: a frase do pedido
-    nomeia cada produto, primeiro o que protege o cliente; a saída recomendada é
-    falar com ele, e a Produção fica ao lado."""
+    nomeia cada produto, primeiro o que protege o cliente; a saída cheia é
+    "Resolver", e a Produção fica ao lado."""
     settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": "https://producao.example.test/"}
     brioche = Product.objects.create(
         sku="BRIOCHE", name="Brioche", unit="un", base_price_q=900, availability_policy="planned_ok", is_sellable=True,
@@ -1031,12 +1119,11 @@ def test_pedido_com_passos_diferentes_diz_cada_um_com_o_produto_e_o_cliente_prim
         "Baguete de tradição: nenhum produto parecido livre para amanhã. "
         "Brioche: peça à Produção para aumentar o lote."
     )
-    assert promise.recommended_action == "contact-customer"
+    assert promise.recommended_action == "resolve"
 
     card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
     assert [(action.ref, action.priority) for action in card.promise.actions] == [
-        ("contact-customer", "primary"), ("reschedule-at-pos", "secondary"),
-        ("open-production", "secondary"), ("cancel", "danger"),
+        ("resolve", "primary"), ("open-production", "secondary"),
     ]
 
 

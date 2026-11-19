@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py + shopman/backstage/projections/order_promise_resolution.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -526,6 +526,53 @@ export interface OrderPromiseProjection {
   actions: Action[];
   next_step: string;
   recommended_action: string;
+}
+
+/** Dá para chamar o cliente no WhatsApp? ``reason`` diz por que não. */
+export interface OrderPromiseContactProjection {
+  enabled: boolean;
+  reason: string;
+}
+
+/** Uma linha da lista FINAL de itens, no formato de ``POST orders/<ref>/edit/``. */
+export interface OrderPromiseEditLineProjection {
+  line_id: string;
+  sku: string;
+  qty: string;
+}
+
+/** Como a escolha se conclui, depois que o cliente responde. */
+export interface OrderPromiseConcludeProjection {
+  kind: string;
+  label: string;
+  href: string;
+  items: OrderPromiseEditLineProjection[];
+  payload_schema: Record<string, unknown>;
+}
+
+/** Uma escolha de "O que fazer" no diálogo "Resolver". */
+export interface OrderPromiseChoiceProjection {
+  key: string;
+  kind: string;
+  label: string;
+  detail: string;
+  enabled: boolean;
+  reason: string;
+  message: string;
+  whatsapp_url: string;
+  conclude: OrderPromiseConcludeProjection;
+  requires_manager_approval: boolean;
+}
+
+/** O diálogo "Resolver" de um pedido com a promessa em risco. */
+export interface OrderPromiseResolutionProjection {
+  order_ref: string;
+  code: string;
+  customer_name: string;
+  facts: string[];
+  contact: OrderPromiseContactProjection;
+  interim_note: string;
+  choices: OrderPromiseChoiceProjection[];
 }
 
 /** A single order card in the operator queue. */
