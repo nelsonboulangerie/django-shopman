@@ -2879,6 +2879,38 @@ pergunta poder ser feita depois: *este saldo foi medido ou foi convertido?*
 `converted_via.approximate` para pôr o `≈` no saldo.
 
 
+### `stockman.Move.metadata` — a conta da entrega de uma reserva (#2724)
+
+Escrito pelo Stockman (`services/holds.py::delivery_entry`): no `fulfill`, nas
+duas pernas que levam a entrega com o lote (`planning.realize` e
+`StockPlanning.carry_deliveries`) e, pelo orquestrador, na devolução de um
+pedido cancelado cuja baixa ainda está em saldo de produção
+(`shop/adapters/stock.py::return_fulfilled_hold`). Uma chave só, estruturada:
+
+| Chave | Tipo | O que é |
+|-------|------|---------|
+| `delivery` | `{hold_id: str, entry: str}` | o lançamento na conta da entrega da reserva `hold_id` (`"hold:N"`, o formato do Stockman) |
+
+`entry` diz qual lançamento é:
+
+| `entry` | Sinal | Quem escreve | O que é |
+|---------|-------|--------------|---------|
+| `fulfilled` | `-` | `StockHolds.fulfill` | a baixa, no quant em que a reserva estava |
+| `carried_out` | `+` | `realize`, `carry_deliveries` | a entrega deixa este saldo de produção e segue com o lote |
+| `carried_in` | `-` | `realize`, `carry_deliveries` | a entrega passa a pesar neste saldo (o saldo em produção, ou o lote) |
+| `returned` | `+` | `return_fulfilled_hold` | pedido cancelado antes de o lote fechar: a entrega é desfeita no mesmo saldo |
+
+**É a chave, e a única.** O líquido da conta de uma reserva num saldo de
+produção é o que esse saldo ainda deve ao lote
+(`planning._early_deliveries`, que filtra por `quant` e por
+`metadata__delivery__hold_id__in`). O `Move.reason` (`Entrega hold:N`,
+`Entrega hold:N segue com o lote`) é frase para gente e não participa: pode
+ser reescrito sem mudar o estoque, e um `Move` com a frase mas sem a chave
+não entra na conta. As duas subchaves viajam num objeto só porque uma sem a
+outra não diz nada. Sem legado: baixa gravada antes de a chave existir não é
+entrega antecipada conhecida, e não há leitura pelo texto.
+
+
 ### `stockman.Move.metadata` — a baixa de insumo da venda (ADR-040)
 
 Escrito por `shop/services/made_to_order.py` (via o argumento `metadata` de

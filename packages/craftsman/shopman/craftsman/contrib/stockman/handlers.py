@@ -410,7 +410,8 @@ def _handle_started(work_order, product_ref, date):
     effectively entered production.
 
     The reservations follow the quantity (:func:`_settle_production_holds`):
-    the lot that opened is the first to be served.
+    the lot that opened is the first to be served. So does what was already
+    delivered against the plan (``StockPlanning.carry_deliveries``, #2724).
     """
     if not work_order or not date:
         logger.warning(
@@ -421,6 +422,7 @@ def _handle_started(work_order, product_ref, date):
         return
 
     from shopman.stockman.services.movements import StockMovements
+    from shopman.stockman.services.planning import StockPlanning
     from shopman.stockman.services.queries import StockQueries
 
     started_qty = work_order.started_qty or work_order.quantity
@@ -429,14 +431,6 @@ def _handle_started(work_order, product_ref, date):
     planned_quant = StockQueries.get_quant(product_ref, target_date=date, position=position)
     if planned_quant is None:
         planned_quant = StockQueries.get_quant(product_ref, target_date=date)
-
-    if planned_quant is not None:
-        remaining_planned = max(planned_quant.quantity - started_qty, 0)
-        StockMovements.adjust(
-            planned_quant,
-            remaining_planned,
-            reason=f"Entrada em produção: {work_order.ref}",
-        )
 
     started_quant = StockMovements.receive(
         quantity=started_qty,
@@ -447,7 +441,23 @@ def _handle_started(work_order, product_ref, date):
         reason=f"Produção do lote: {work_order.ref}",
         kind="make",  # Move.Kind.MAKE
     )
+
     if planned_quant is not None:
+        # O que já foi entregue contra o plano entra em produção junto com a
+        # contribuição do lote (#2724). Sem isso o plano absorvia a entrega em
+        # silêncio, o saldo em produção nascia cheio e o balcão oferecia de
+        # novo o que já tinha saído. Vem ANTES do ajuste: o plano recebe de
+        # volta a entrega e só então perde a contribuição inteira.
+        StockPlanning.carry_deliveries(planned_quant, started_quant, limit=started_qty)
+        planned_quant.refresh_from_db()
+        remaining_planned = max(planned_quant.quantity - started_qty, 0)
+        StockMovements.adjust(
+            planned_quant,
+            remaining_planned,
+            reason=f"Entrada em produção: {work_order.ref}",
+        )
+        # Por último as reservas ainda ativas: o saldo em produção já desconta
+        # o que foi entregue, então só segue para ele o que ainda cabe.
         _settle_production_holds(
             work_order,
             product_ref,
@@ -455,6 +465,7 @@ def _handle_started(work_order, product_ref, date):
             planned_quant=planned_quant,
             started_quant=started_quant,
         )
+
     logger.info(
         "Started supply materialized: sku=%s started=%s target_date=%s position=%s ref=%s",
         product_ref,
