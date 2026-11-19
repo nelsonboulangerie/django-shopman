@@ -328,11 +328,9 @@ describe("OrderCard iFood", () => {
     // para baixo da dobra sem ajudar a decidir nada.
     expect(w.find("[data-ifood-payment]").exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
-    // A pílula do bloqueio diz o fato (WP-G06), então o nome aparece duas vezes: o
-    // gesto travado é o botão principal do cartão.
-    const blocked = w.get("[data-card-primary]");
-    expect(blocked.text()).toContain("Aguardando iFood");
-    expect(blocked.attributes("disabled")).toBeDefined();
+    // A pílula do bloqueio diz o fato (WP-G06), e o botão travado que só repetiria o
+    // mesmo nome não é desenhado: um fato, um lugar.
+    expect(w.find("[data-card-primary]").exists()).toBe(false);
     expect(w.get('[data-card-notice="block"]').text()).toBe("Aguardando iFood");
     expect(
       w

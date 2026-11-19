@@ -84,6 +84,25 @@ describe("OrderCardActions: botão travado", () => {
     expect(w.find("[data-card-blocked-reason]").exists()).toBe(false);
   });
 
+  it("o avanço travado que repete a pílula do bloqueio não vira botão morto (P1-16)", () => {
+    const w = rodape({
+      card: card({ advance_block_label: "Pix expirado", advance_block_reason: "gerado às 20h56 · expirou às 21h26" }),
+      primary: aff({ ref: "advance", label: "Pix expirado", disabled: true, reason: "Pagamento ainda não foi confirmado." }),
+      secondary: [],
+    });
+    expect(w.find("[data-card-primary]").exists()).toBe(false);
+    expect(w.find("[data-card-blocked-reason]").exists()).toBe(false);
+    expect(w.find("[data-card-menu]").exists()).toBe(true);
+  });
+
+  it("o Aceitar travado continua no cartão, com o nome do gesto", () => {
+    const w = rodape({
+      card: card({ advance_block_label: "Aguardando Pix…", advance_block_reason: "expira às 22h25" }),
+      primary: aff({ disabled: true, reason: "Pagamento ainda não confirmado." }),
+    });
+    expect(w.get("[data-card-primary]").text()).toContain("Aceitar");
+  });
+
   it("com a saída tocada (Desfazer no lugar dos botões), não há motivo a escrever", () => {
     const w = rodape({
       handoff: { label: "Entregue", canUndo: false, untilIso: "", sinceIso: "", action: "undo_handoff" },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Affordance } from "../app/presentation/board";
-import { blockPillLabel, blockedReasonLines } from "../app/presentation/cardBlocks";
+import { blockPillLabel, blockedReasonLines, lockedButtonRepeatsPill } from "../app/presentation/cardBlocks";
 
 // WP-G06 (laudo do Gestor, P1-12 e P2-16): o motivo do botão travado vai escrito, e a
 // pílula do bloqueio diz o fato.
@@ -114,5 +114,40 @@ describe("blockPillLabel: a pílula do bloqueio diz o fato (P2-16)", () => {
     expect(blockPillLabel("  ")).toBe("Por que espera");
     expect(blockPillLabel(undefined)).toBe("Por que espera");
     expect(blockPillLabel(null)).toBe("Por que espera");
+  });
+});
+
+describe("lockedButtonRepeatsPill: o botão morto que só repete a pílula sai (P1-16)", () => {
+  const locked = aff({ ref: "advance", label: "Iniciar preparo", disabled: true, reason: "Pagamento ainda não foi confirmado." });
+
+  it("o avanço travado com o nome do bloqueio repete a pílula", () => {
+    expect(
+      lockedButtonRepeatsPill({ primary: locked, primaryLabel: "Pix expirado", blockLabel: "Pix expirado", blockAnnounced: true }),
+    ).toBe(true);
+    expect(
+      lockedButtonRepeatsPill({ primary: locked, primaryLabel: "Aguardando Pix", blockLabel: "Aguardando Pix…", blockAnnounced: true }),
+    ).toBe(true);
+  });
+
+  it("sem a pílula no cartão, o botão travado fica: é o único lugar do fato", () => {
+    expect(
+      lockedButtonRepeatsPill({ primary: locked, primaryLabel: "Pix expirado", blockLabel: "Pix expirado", blockAnnounced: false }),
+    ).toBe(false);
+  });
+
+  it("o Aceitar travado guarda o nome do gesto e fica", () => {
+    expect(
+      lockedButtonRepeatsPill({
+        primary: aff({ disabled: true, reason: "Pagamento ainda não confirmado." }),
+        primaryLabel: "Aceitar", blockLabel: "Aguardando Pix…", blockAnnounced: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("botão livre nunca sai", () => {
+    expect(
+      lockedButtonRepeatsPill({ primary: aff({ ref: "advance", label: "Iniciar preparo" }), primaryLabel: "Iniciar preparo", blockLabel: "", blockAnnounced: false }),
+    ).toBe(false);
+    expect(lockedButtonRepeatsPill({ primary: null, primaryLabel: "", blockLabel: "Pix expirado", blockAnnounced: true })).toBe(false);
   });
 });

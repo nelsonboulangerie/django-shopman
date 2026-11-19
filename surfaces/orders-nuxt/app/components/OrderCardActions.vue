@@ -10,7 +10,7 @@ import { computed } from "vue";
 
 import type { OrderCardProjection } from "~/types/orders";
 import type { Affordance, AffordanceRef, UndoLine } from "~/presentation/board";
-import { blockedReasonLines } from "~/presentation/cardBlocks";
+import { blockedReasonLines, lockedButtonRepeatsPill } from "~/presentation/cardBlocks";
 import OrderCardMenu from "./OrderCardMenu.vue";
 
 const props = defineProps<{
@@ -31,11 +31,23 @@ const emit = defineEmits<{
   (e: "station-recall" | "volumes", value: number): void;
 }>();
 
+// O avanço travado que só repetiria a pílula do bloqueio não vira botão morto.
+const shownPrimary = computed(() =>
+  lockedButtonRepeatsPill({
+    primary: props.primary,
+    primaryLabel: props.primaryLabel,
+    blockLabel: props.card.advance_block_label,
+    blockAnnounced: Boolean(props.card.advance_block_reason),
+  })
+    ? null
+    : props.primary,
+);
+
 const blockedReasons = computed(() =>
   props.handoff
     ? []
     : blockedReasonLines({
-        primary: props.primary,
+        primary: shownPrimary.value,
         primaryLabel: props.primaryLabel,
         secondary: props.secondary,
         blockAnnounced: Boolean(props.card.advance_block_reason),
@@ -74,7 +86,7 @@ function nuxtIcon(icon: string): string {
         v-else-if="!handoff"
         class="grid min-w-0 flex-1 gap-2"
         :class="
-          primary && secondary.length === 1
+          shownPrimary && secondary.length === 1
             ? '@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
             : secondary.length > 1
               ? 'grid-cols-1 @[20rem]:grid-cols-2'
@@ -100,28 +112,28 @@ function nuxtIcon(icon: string): string {
           }}</span>
         </NuxtButton>
         <NuxtButton
-          v-if="primary"
+          v-if="shownPrimary"
           block
           class="min-w-0"
           :class="secondary.length > 1 ? '@[20rem]:col-span-2' : undefined"
-          :disabled="busy || primary.disabled"
+          :disabled="busy || shownPrimary.disabled"
           :loading="busy"
           :title="
-            primary.reason ||
-            (primaryLabel !== primary.label ? primary.label : undefined)
+            shownPrimary.reason ||
+            (primaryLabel !== shownPrimary.label ? shownPrimary.label : undefined)
           "
-          :color="primary.disabled ? 'neutral' : 'primary'"
-          :variant="primary.disabled ? 'outline' : 'solid'"
-          :icon="primary.disabled ? 'i-lucide-lock' : nuxtIcon(primary.icon)"
+          :color="shownPrimary.disabled ? 'neutral' : 'primary'"
+          :variant="shownPrimary.disabled ? 'outline' : 'solid'"
+          :icon="shownPrimary.disabled ? 'i-lucide-lock' : nuxtIcon(shownPrimary.icon)"
           data-card-primary
-          @click="!primary.disabled && emit('action', primary.ref)"
+          @click="!shownPrimary.disabled && emit('action', shownPrimary.ref)"
         >
           <span class="min-w-0 text-center leading-tight">{{
             primaryLabel
           }}</span>
         </NuxtButton>
         <NuxtAlert
-          v-else-if="waitingFor"
+          v-else-if="!primary && waitingFor"
           class="min-w-0"
           color="info"
           variant="subtle"

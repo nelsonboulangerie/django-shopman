@@ -83,3 +83,26 @@ const UNNAMED_BLOCK_PILL = "Por que espera";
 export function blockPillLabel(blockLabel: string | null | undefined): string {
   return String(blockLabel ?? "").replace(/…$/, "").trim() || UNNAMED_BLOCK_PILL;
 }
+
+/**
+ * O botão travado repete a pílula?
+ *
+ * O avanço travado leva o nome do bloqueio como rótulo ("Pix expirado"), e a pílula do
+ * cartão passou a dizer o mesmo nome (P2-16). Os dois juntos são o mesmo fato escrito
+ * duas vezes, um deles num botão que não faz nada (laudo, P1-16: "um estado desenhado
+ * como rótulo dentro de um botão"). Quando a pílula existe e diz o que o botão diria, o
+ * botão sai: a pílula fica com o fato, o porquê e a saída ("Cancelar pedido").
+ * O "Aceitar" travado não entra aqui: ele guarda o nome do gesto, que a pílula não diz.
+ */
+export function lockedButtonRepeatsPill(input: {
+  primary: Affordance | null;
+  primaryLabel: string;
+  blockLabel: string | null | undefined;
+  /** O cartão tem a pílula do bloqueio (`card.advance_block_reason`). */
+  blockAnnounced: boolean;
+}): boolean {
+  const { primary } = input;
+  if (!primary || !primary.disabled || !input.blockAnnounced) return false;
+  const shown = String(input.primaryLabel || primary.label).trim();
+  return shown !== "" && shown === blockPillLabel(input.blockLabel);
+}
