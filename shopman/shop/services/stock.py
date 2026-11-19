@@ -226,6 +226,65 @@ def _qty_text(value: Decimal) -> str:
     return format(value.normalize(), "f").replace(".", ",")
 
 
+def plan_backing_on(skus, day, *, channel_ref: str | None = None) -> dict[str, dict[str, Decimal]]:
+    """O lastro de cada SKU numa data de ENCOMENDA: o lote planejado e o que dele está sem encomenda.
+
+    ``planned_qty`` é o lote planejado para a data; ``unclaimed_qty``, o que desse
+    lote ainda não está preso a outra encomenda (nunca maior que o planejado). A
+    régua é só o plano DA DATA: a sobra de hoje e a vitrine não lastreiam
+    encomenda (dono, 18/11/2026: "não oferecemos pães de um dia para o outro!").
+    SKU sem lote planejado na data fica de fora (data sem plano, WP-E3).
+
+    É o que o PDV mostra na linha da encomenda e o que decide se a encomenda
+    passa do plano (WP-E2, D-041). Hoje não é encomenda: devolve vazio.
+    ``channel_ref`` não recorta: o plano da data é da casa, não do canal.
+    """
+    wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
+    if day is None or day <= timezone.localdate() or not wanted:
+        return {}
+    backing: dict[str, dict[str, Decimal]] = {}
+    for sku, info in get_adapter("stock").planned_on_date(wanted, day).items():
+        planned = info["planned_qty"]
+        if planned <= 0:
+            continue
+        unclaimed = min(planned, max(Decimal("0"), planned - info["held_qty"]))
+        backing[sku] = {"planned_qty": planned, "unclaimed_qty": unclaimed}
+    return backing
+
+
+def over_plan_lines(lines, day, *, channel_ref: str | None = None) -> list[dict]:
+    """As linhas da encomenda que passam do plano da data, com os números.
+
+    ``lines`` é ``[(sku, nome, quantidade)]``; o mesmo SKU em duas linhas soma.
+    Passa do plano quando o pedido é maior que o que o lote da data ainda tem sem
+    encomenda: duas encomendas de 20 contra 22 planejadas não passam as duas sem
+    gerente. Encomenda acima do plano BLOQUEIA e só o gerente libera, vendo os
+    números (D-041).
+    """
+    requested: dict[str, Decimal] = {}
+    names: dict[str, str] = {}
+    for sku, name, qty in lines:
+        if not sku or qty is None:
+            continue
+        requested[sku] = requested.get(sku, Decimal("0")) + Decimal(str(qty))
+        names.setdefault(sku, str(name or sku))
+    backing = plan_backing_on(list(requested), day, channel_ref=channel_ref)
+    over = []
+    for sku, qty in requested.items():
+        info = backing.get(sku)
+        if info is None or qty <= info["unclaimed_qty"]:
+            continue
+        over.append({
+            "sku": sku,
+            "name": names[sku],
+            "requested_qty": qty,
+            "planned_qty": info["planned_qty"],
+            "unclaimed_qty": info["unclaimed_qty"],
+            "date": day.isoformat(),
+        })
+    return over
+
+
 def _items_to_hold(order) -> list[dict]:
     """As linhas que a reserva cobre: as que VALEM agora.
 

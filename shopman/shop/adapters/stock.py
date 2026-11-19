@@ -845,6 +845,37 @@ def _fulfilled_hold(hold_id: str):
     return Hold.objects.select_related("quant__position").filter(pk=pk, status=HoldStatus.FULFILLED).first()
 
 
+def planned_on_date(skus: list[str], day: date) -> dict[str, dict[str, Decimal]]:
+    """Por SKU, o lote planejado PARA ``day`` e quanto dele já está preso a reservas.
+
+    ``planned_qty``: a soma dos saldos com ``target_date == day`` (o plano da data).
+    ``held_qty``: as reservas ativas presas a esses saldos (``Hold.objects.active()``,
+    a mesma régua de ``Quant.held``). Saldo com outra data (a sobra de hoje, a
+    vitrine) NÃO entra: pão de hoje não lastreia encomenda de amanhã (dono,
+    18/11/2026). Leitura pura; SKU sem lote planejado na data some da resposta.
+    """
+    from django.db.models import Sum
+    from shopman.stockman import Hold, Quant
+
+    wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
+    if not wanted:
+        return {}
+    quants = Quant.objects.filter(sku__in=wanted, target_date=day, _quantity__gt=0)
+    planned = {
+        row["sku"]: Decimal(str(row["total"]))
+        for row in quants.values("sku").annotate(total=Sum("_quantity"))
+        if row["total"]
+    }
+    held = {
+        row["quant__sku"]: Decimal(str(row["total"] or 0))
+        for row in Hold.objects.active()
+        .filter(quant__in=quants)
+        .values("quant__sku")
+        .annotate(total=Sum("quantity"))
+    }
+    return {sku: {"planned_qty": qty, "held_qty": held.get(sku, Decimal("0"))} for sku, qty in planned.items()}
+
+
 def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason: str) -> bool:
     """Devolve ao ledger o estoque de um hold FULFILLED (cancelamento tardio).
 

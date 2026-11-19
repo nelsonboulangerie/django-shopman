@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { POSCartItem } from "~/types/pos";
+import type { POSCartItem, POSPlanBacking } from "~/types/pos";
+import { planLineFact } from "~/presentation/payment";
 import type { ActionAffordance } from "~/presentation/actions";
 import { formatBRL } from "~/utils/posIntent";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
@@ -118,7 +119,22 @@ const props = defineProps<{
   quickPayments?: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }>;
   /** O Envio (Auto · Manual) está sendo gravado nas estações. */
   autoFireBusy?: boolean;
+  /**
+   * Encomenda de outro dia (WP-E2): o lastro de cada SKU na data, do servidor
+   * (`/pos/schedule/`). A linha diz "22 planejadas para 17/11"; acima do livre,
+   * em âmbar, porque o Validar vai pedir o gerente.
+   */
+  planBySku?: Record<string, POSPlanBacking>;
+  /** A data da encomenda (AAAA-MM-DD) a que `planBySku` responde. */
+  planDate?: string;
 }>();
+/** O fato do plano da data na linha da encomenda; o mesmo SKU em duas linhas soma. */
+function planFact(item: POSCartItem) {
+  const backing = props.planBySku?.[item.sku];
+  if (!backing || !props.planDate) return null;
+  const total = props.items.filter((line) => line.sku === item.sku).reduce((sum, line) => sum + (Number(line.qty) || 0), 0);
+  return planLineFact(total, backing, props.planDate);
+}
 // Folha aberta: PIX e Maquininha são o gesto principal; o dinheiro (V6-CAIXA)
 // vem embaixo, secundário.
 const primaryQuickPayments = computed(() => (props.quickPayments || []).filter((m) => !m.secondary));
@@ -2083,9 +2099,18 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 <!-- O fato da linha, numa linha só (v4): observação, desconto (preço
                      unitário só aqui ou no peso) e o estado na cozinha. -->
                 <span
-                  v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired' || goesToKitchen(item) || cancelledUnits[item.line_id]"
+                  v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired' || goesToKitchen(item) || cancelledUnits[item.line_id] || planFact(item)"
                   class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 op-micro text-muted-foreground tnum"
                 >
+                  <!-- O lastro da encomenda: a fornada da data. Acima do livre, âmbar
+                       e escrito (a cor nunca anda sozinha): o Validar vai pedir o gerente. -->
+                  <span
+                    v-if="planFact(item)"
+                    class="inline-flex min-w-0 items-center gap-1"
+                    :class="planFact(item)!.over ? 'rounded-sm bg-warning/10 px-1 font-semibold text-warning' : ''"
+                    :data-pos-line-plan="planFact(item)!.over ? 'over' : 'within'"
+                    ><Icon :name="planFact(item)!.over ? 'lucide:triangle-alert' : 'lucide:calendar-check'" class="size-3.5 shrink-0" aria-hidden="true" /><span class="[overflow-wrap:anywhere]">{{ planFact(item)!.over ? `Passa do plano: ${planFact(item)!.text}` : planFact(item)!.text }}</span></span
+                  >
                   <span v-if="item.notes" class="min-w-0 text-foreground/80 [overflow-wrap:anywhere]">Obs.: {{ item.notes }}</span>
                   <span v-if="isWeighedLine(item)" class="shrink-0">{{ formatBRL(unitChargedQ(item)) }}/kg</span>
                   <span

@@ -14,7 +14,7 @@ Never imports from ``shopman.storefront.views.*`` or ``shop.services``.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from shopman.utils.formatting import format_clock
@@ -66,7 +66,6 @@ class CartItemProjection:
     unit_price_q: int
     total_price_q: int
     price_display: str           # preço CHEIO por unidade, e.g. "R$ 0,90"
-    total_display: str           # total CHEIO da linha (desconto só no resumo), e.g. "R$ 2,70"
     image_url: str | None
 
     # Pricing transparency — populated when a promo/coupon reduced the line.
@@ -75,6 +74,17 @@ class CartItemProjection:
     # A linha exibe ``price_display`` riscado e este ao lado; ``None`` quando
     # não há promoção na linha. Cupom não entra: é do pedido e mora no resumo.
     promo_price_display: str | None
+    # O total da linha como a cliente paga, e o cheio para riscar ao lado
+    # (decisão do dono 1, 16/11/2026): com promoção do produto, a linha mostra
+    # o total com desconto e o cheio riscado; sem promoção, ``line_total_display``
+    # é o total cheio e ``line_total_struck_display`` é ``None``. Cupom não
+    # abate aqui: é do pedido e mora no resumo.
+    line_total_display: str
+    line_total_struck_display: str | None
+    # Preço de lista por unidade, em centavos: a tela refaz o total da linha
+    # enquanto a resposta da troca de quantidade não chega, sem ler número de
+    # dentro de ``price_display``.
+    list_price_q: int
 
     # Availability snapshot at render-time.
     is_available: bool
@@ -116,14 +126,6 @@ class CartItemProjection:
     # traz) e se a linha tem escolha. Linha com escolha muda pela ``line_id``.
     options_summary: str = ""
     has_options: bool = False
-
-    # O total da linha como a cliente paga, e o cheio para riscar ao lado
-    # (decisão do dono 1, 16/11/2026): com promoção do produto, a linha mostra
-    # o total com desconto e o cheio riscado; sem promoção, ``line_total_display``
-    # é o total cheio e ``line_total_struck_display`` é ``None``. Cupom não
-    # abate aqui: é do pedido e mora no resumo.
-    line_total_display: str = ""
-    line_total_struck_display: str | None = None
 
     # Quando fica pronto: a mesma promessa do card e do produto
     # (``presentation/promise``). Na linha que espera uma fornada, o dia é o da
@@ -192,11 +194,28 @@ class CartProjection:
     subtotal_q: int
     subtotal_display: str
     original_subtotal_q: int
-    original_subtotal_display: str
     discount_total_q: int
     discount_total_display: str
     has_discount: bool
+    # Todo desconto do pedido, um por origem (promoção de produto, cupom,
+    # pontos). É o dado; o que a tela SUBTRAI no resumo é
+    # ``order_discount_lines``.
     discount_lines: tuple[DiscountLineProjection, ...]
+
+    # O resumo como a cliente lê (decisão do dono 1, 16/11/2026). A promoção
+    # do produto já abateu na linha, então:
+    # - ``lines_subtotal_*`` é o Subtotal: a soma das linhas como a tela as
+    #   mostra (com a promoção do produto, sem cupom nem pontos);
+    # - ``promo_savings_*`` diz quanto as promoções de produto já abateram
+    #   (informa, não subtrai de novo; ``None`` sem promoção);
+    # - ``order_discount_lines`` são as linhas que o resumo subtrai: cupom,
+    #   pontos e desconto de pedido. Subtotal menos elas, mais a entrega, é o
+    #   Total.
+    lines_subtotal_q: int
+    lines_subtotal_display: str
+    promo_savings_q: int
+    promo_savings_display: str | None
+    order_discount_lines: tuple[DiscountLineProjection, ...]
 
     delivery_fee_q: int | None
     delivery_fee_display: str | None
@@ -292,6 +311,7 @@ def build_cart(
         for line in data.lines
     )
 
+    summary = _summary(data)
     min_order = present_minimum_order(data.minimum_order)
     delivery_minimum = present_minimum_order(data.delivery_minimum)
     free_delivery = present_free_delivery(data.free_delivery)
@@ -312,11 +332,19 @@ def build_cart(
         subtotal_q=data.subtotal_q,
         subtotal_display=_money(data.subtotal_q),
         original_subtotal_q=data.original_subtotal_q,
-        original_subtotal_display=_money(data.original_subtotal_q),
         discount_total_q=data.discount_total_q,
         discount_total_display=_money(data.discount_total_q),
         has_discount=data.discount_total_q > 0,
         discount_lines=tuple(_present_discount_line(dl) for dl in data.discount_lines),
+        lines_subtotal_q=summary.lines_subtotal_q,
+        lines_subtotal_display=_money(summary.lines_subtotal_q),
+        promo_savings_q=summary.promo_savings_q,
+        promo_savings_display=(
+            _money(summary.promo_savings_q) if summary.promo_savings_q else None
+        ),
+        order_discount_lines=tuple(
+            _present_discount_line(dl) for dl in summary.order_discount_lines
+        ),
         delivery_fee_q=data.delivery_fee_q,
         delivery_fee_display=_delivery_fee_display(data),
         delivery_is_free=data.delivery_is_free,
@@ -388,23 +416,18 @@ def _present_line(
         )
 
     # O cardápio mostrou "antes R$ 6,00, R$ 5,10"; a linha da sacola repete a
-    # mesma dupla para o preço não mudar no caminho (beta 06/11). O total da
-    # linha segue cheio: a soma das linhas é o Subtotal (MKT-05).
+    # mesma dupla para o preço não mudar no caminho (beta 06/11). Decisão do
+    # dono 1 (16/11/2026): com promoção do produto, o unitário E o total da
+    # linha falam o preço com desconto, cada um com o cheio riscado ao lado.
+    # Sem promoção (inclusive com cupom ou oferta de valor fixo, que são do
+    # pedido), a linha fala o cheio e o desconto mora no resumo.
     promo_price_display: str | None = None
-    if (
-        line.discount_name
-        and not line.discount_is_coupon
-        and line.unit_price_q < line.list_price_q
-    ):
+    line_total_display = _money(line.list_total_q)
+    line_total_struck_display: str | None = None
+    if _has_product_promo(line):
         promo_price_display = _money(line.unit_price_q)
-
-    # Decisão 1: com promoção, a linha fala o total com desconto e risca o cheio.
-    if promo_price_display is not None:
         line_total_display = _money(line.line_total_q)
-        line_total_struck_display: str | None = _money(line.list_total_q)
-    else:
-        line_total_display = _money(line.list_total_q)
-        line_total_struck_display = None
+        line_total_struck_display = _money(line.list_total_q)
 
     return CartItemProjection(
         line_id=line.line_id,
@@ -413,15 +436,16 @@ def _present_line(
         qty=line.qty,
         unit_price_q=line.unit_price_q,
         total_price_q=line.line_total_q,
-        # A linha fala o preço CHEIO e o desconto mora só no resumo: a soma das
-        # linhas é o Subtotal e o Subtotal menos os descontos é o Total. Mostrar o
-        # unitário já rateado ("2 × R$ 8,00" num croissant de R$ 13) fazia as
-        # linhas somarem 16 sob um Subtotal de 26 (beta 05/11, MKT-05).
+        # O unitário cheio. Desconto de PEDIDO rateado na linha nunca vira preço
+        # exibido: "2 × R$ 8,00" num croissant de R$ 13 fazia as linhas somarem
+        # 16 sob um Subtotal de 26 (beta 05/11, MKT-05).
         price_display=_money(line.list_price_q),
-        total_display=_money(line.list_total_q),
         image_url=image_by_sku.get(line.sku),
         discount_label=discount_label,
         promo_price_display=promo_price_display,
+        line_total_display=line_total_display,
+        line_total_struck_display=line_total_struck_display,
+        list_price_q=line.list_price_q,
         is_available=line.is_available,
         availability_warning=warning,
         available_qty=line.available_qty,
@@ -441,9 +465,71 @@ def _present_line(
         notes=line.notes,
         options_summary=line.options_summary,
         has_options=line.has_options,
-        line_total_display=line_total_display,
-        line_total_struck_display=line_total_struck_display,
         promise=_line_promise(line, promise_facts),
+    )
+
+
+def _has_product_promo(line: cart_data.CartLineProjection) -> bool:
+    """A linha tem promoção do PRODUTO: o desconto abate nela, não no resumo.
+
+    Cupom e oferta de valor fixo são do pedido: o motor rateia o valor no preço
+    cobrado, mas a linha segue falando o cheio.
+    """
+    return bool(
+        line.discount_name
+        and not line.discount_is_coupon
+        and line.unit_price_q < line.list_price_q
+    )
+
+
+@dataclass(frozen=True)
+class _CartSummary:
+    lines_subtotal_q: int
+    promo_savings_q: int
+    order_discount_lines: tuple[cart_data.CartDiscountLineProjection, ...]
+
+
+def _summary(data: cart_data.CartProjection) -> _CartSummary:
+    """O resumo que fecha com as linhas (decisão do dono 1, 16/11/2026).
+
+    O Subtotal é a soma das linhas como a tela as mostra: com promoção do
+    produto, o total com desconto; sem ela, o cheio. As linhas de desconto do
+    resumo são o que sobra depois de tirar o que já abateu nas linhas: cupom,
+    pontos e desconto de pedido. Subtotal menos elas é o que a cliente paga
+    pelos itens (``subtotal_q``).
+    """
+    lines_subtotal_q = 0
+    promo_savings_q = 0
+    saved_by_promo: dict[str, int] = {}
+    for line in data.lines:
+        if _has_product_promo(line):
+            saved_q = max(line.list_total_q - line.line_total_q, 0)
+            promo_savings_q += saved_q
+            name = line.discount_name or ""
+            saved_by_promo[name] = saved_by_promo.get(name, 0) + saved_q
+            lines_subtotal_q += line.line_total_q
+        else:
+            lines_subtotal_q += line.list_total_q
+
+    order_rows: list[cart_data.CartDiscountLineProjection] = []
+    for row in data.discount_lines:
+        on_lines_q = 0 if row.is_coupon else saved_by_promo.get(row.name, 0)
+        amount_q = row.amount_q - on_lines_q
+        if amount_q > 0:
+            order_rows.append(replace(row, amount_q=amount_q))
+
+    closes_q = lines_subtotal_q - sum(row.amount_q for row in order_rows)
+    if closes_q != data.subtotal_q:
+        # A tela mostraria um resumo que não soma. Não há como consertar aqui
+        # sem inventar número: o aviso é para quem mantém o motor de preço.
+        logger.warning(
+            "cart.summary_does_not_close shown_q=%s charged_q=%s",
+            closes_q, data.subtotal_q,
+        )
+    return _CartSummary(
+        lines_subtotal_q=lines_subtotal_q,
+        promo_savings_q=promo_savings_q,
+        order_discount_lines=tuple(order_rows),
     )
 
 

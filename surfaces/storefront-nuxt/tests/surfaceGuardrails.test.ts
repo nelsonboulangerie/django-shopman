@@ -921,35 +921,60 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain(':aria-label="`Remover ${line.name}`"')
     // Lixeira sempre viva: mutações otimistas não bloqueiam remoção.
     expect(cartPage).not.toContain(':disabled="cart.summary_pending"')
-    // Preço da linha na dupla do cardápio: cheio riscado + promoção (beta 06/11).
+    // Preço da linha na dupla do cardápio (beta 06/11), com a decisão do dono 1
+    // de 16/11/2026: o unitário e o total falam o preço com desconto, cada um
+    // com o cheio riscado ao lado e a palavra "antes" (risco mudo não se ouve).
     expect(cartPage).toContain('data-cart-line-price')
-    expect(cartPage).toContain('<span class="line-through">{{ linePrice(line).original }}</span>')
+    expect(cartPage).toContain('cada, antes <span class="line-through">{{ linePrice(line).original }}</span>')
     expect(cartPage).toContain('{{ linePrice(line).current }}')
-    expect(cartPage).toContain('{{ line.total_display }}')
+    expect(cartPage).toContain('<CartLineTotal :line="line" stacked')
+    expect(cartPage).not.toContain('line.total_display')
+    const lineTotal = read('app/components/CartLineTotal.vue')
+    expect(lineTotal).toContain('antes <span class="line-through">{{ total.original }}</span>')
+    // Quando fica pronto: a promessa do servidor na linha de fornada e, no alto,
+    // para quando fica o pedido (WP-L03). "Previsto para" saiu da sacola.
+    expect(cartPage).toContain('data-cart-line-promise')
+    expect(cartPage).toContain('data-cart-ready-line')
+    expect(cartPage).not.toContain('plannedForNotice')
     expect(cartPage).toContain('<CartUpsellRail v-if="cart.upsell"')
     // Planned-hold transparente: badges por linha + banner com countdown.
     expect(cartPage).toContain('data-cart-line-awaiting')
     expect(cartPage).toContain('data-cart-line-ready')
     expect(cartPage).toContain('data-cart-hold-banner')
-    expect(cartPage).toContain('Lista de espera')
+    // O selo antigo só sobra quando a promessa não veio. O aviso de prioridade da
+    // linha em espera é decisão do dono de 14/07/2026 e continua na sacola.
+    expect(cartPage).toContain('<UiBadge v-if="!cartLinePromise(line.promise)"')
+    expect(cartPage).toContain('cart.awaiting_confirmation_notice')
+    // "Continuar comprando" uma vez por tela: embaixo da lista só no celular.
+    expect(cartPage).toContain('md:hidden"\n              data-cart-continue-mobile')
     expect(cartPage).toContain('Tudo pronto! Confirme')
     expect(cartPage).toContain('Tempo restante:')
   })
 
-  it('shows coupon savings as signed discounts without losing the original subtotal', () => {
+  it('fecha o resumo com as linhas: Subtotal é a soma delas, e só cupom e pontos são subtraídos', () => {
     const summary = read('app/components/CartSummaryBreakdown.vue')
     const cartPage = read('app/pages/sacola.vue')
     const checkout = read('app/pages/finalizar.vue')
 
+    const cartPresentation = read('app/presentation/cart.ts')
     expect(summary).toContain("import type { CartProjection } from '~/types/shopman'")
-    expect(summary).toContain('cart.has_discount')
-    // KISS: Subtotal = valor CHEIO (pré-desconto), sem risco. Descontos vêm depois
-    // como linhas assinadas; a conta fecha (Subtotal − Descontos = Total). Nada de
-    // strikethrough nem subtotal duplicado (confundia: desconto aparecia 2x).
-    expect(summary).toContain('cart.original_subtotal_display')
+    // Decisão do dono 1 (16/11/2026): a promoção do produto abate na linha, o
+    // Subtotal é a soma das linhas como a tela as mostra, a nota diz quanto as
+    // promoções já abateram (sem subtrair de novo) e as linhas assinadas são só
+    // as do pedido. A conta fecha (Subtotal − Descontos do pedido = Total). Nada
+    // de strikethrough no resumo nem de desconto aparecendo duas vezes.
+    expect(summary).toContain('{{ cart.lines_subtotal_display }}')
+    expect(summary).toContain('promoSavingsNote(cart)')
+    expect(summary).toContain('v-for="discount in cart.order_discount_lines"')
+    expect(summary).not.toContain('original_subtotal')
     expect(summary).not.toContain('line-through')
     expect(summary).toContain('discountDisplay(discount.amount_display)')
-    expect(summary).toContain("return value.startsWith('-') ? value : `- ${value}`")
+    expect(cartPresentation).toContain("return value.startsWith('-') ? value : `- ${value}`")
+    // A revisão do checkout conta a mesma conta, com o mesmo total de linha.
+    expect(checkout).toContain('{{ cart.lines_subtotal_display }}')
+    expect(checkout).toContain('v-for="discount in cart.order_discount_lines"')
+    expect(checkout).toContain('<CartLineTotal :line="line"')
+    expect(checkout).not.toContain('line.total_display')
     expect(cartPage).not.toContain('{{ cart.subtotal_display }}</span>')
     // Cupom mora no CHECKOUT (decisão Pablo 2026-06-16), não mais no carrinho —
     // aplicar/remover via cart state + refresh() do payload do checkout.

@@ -83,6 +83,53 @@ export function inCartWhenLine (qty: number, promise: ReadyPromise | null | unde
   return `${qty} na sacola, para ${promise.day_label}.`
 }
 
+// A promessa que manda no pedido: a do item mais tardio (o pedido só fica
+// pronto inteiro). Uma linha sem promessa (indisponível ou sem dado) cala tudo:
+// a tela não promete o que não sabe.
+function latestPromise (
+  items: ReadonlyArray<Pick<CartItemProjection, 'promise'>> | null | undefined
+): ReadyPromise | null {
+  if (!items?.length) return null
+  let latest: ReadyPromise | null = null
+  for (const item of items) {
+    const promise = item.promise
+    if (!promise) return null
+    if (!latest || promise.date > latest.date || (promise.date === latest.date && promise.ready_at > latest.ready_at)) {
+      latest = promise
+    }
+  }
+  return latest
+}
+
+/**
+ * A promessa na LINHA da sacola: só a de fornada, que é fato do item ("Fica
+ * pronto amanhã, terça, a partir das 15h"). Pronto agora é o normal e não tem
+ * frase. A encomenda (o item é de hoje, mas a casa já não tem horário hoje) é
+ * fato da casa, igual para todas as linhas: quem diz é `cartReadyLine`, uma
+ * vez, no alto da sacola.
+ */
+export function cartLinePromise (promise: ReadyPromise | null | undefined): string {
+  if (!promise || promise.kind !== 'batch') return ''
+  return promise.text
+}
+
+/**
+ * Para quando fica o PEDIDO, no alto da sacola (antes de a cliente escolher
+ * retirada ou entrega). Tudo pronto agora não tem frase: é o normal. Com a
+ * casa fechada, com o corte do dia ou com um item de fornada, a frase diz o
+ * dia e a hora antes do checkout.
+ */
+export function cartReadyLine (
+  items: ReadonlyArray<Pick<CartItemProjection, 'promise'>> | null | undefined
+): string {
+  const latest = latestPromise(items)
+  if (!latest) return ''
+  if (promiseIsToday(latest)) {
+    return latest.kind === 'ready' ? '' : `Seu pedido fica pronto hoje, a partir das ${promiseHour(latest.ready_at)}.`
+  }
+  return `Seu pedido fica pronto ${latest.day_label}, a partir das ${promiseHour(latest.ready_at)}.`
+}
+
 /**
  * Quando o PEDIDO fica pronto para retirada, no checkout: o item mais tardio
  * manda (o pedido só sai inteiro). Uma linha sem promessa (indisponível ou sem
@@ -91,15 +138,7 @@ export function inCartWhenLine (qty: number, promise: ReadyPromise | null | unde
 export function orderReadyLine (
   items: ReadonlyArray<Pick<CartItemProjection, 'promise'>> | null | undefined
 ): string {
-  if (!items?.length) return ''
-  let latest: ReadyPromise | null = null
-  for (const item of items) {
-    const promise = item.promise
-    if (!promise) return ''
-    if (!latest || promise.date > latest.date || (promise.date === latest.date && promise.ready_at > latest.ready_at)) {
-      latest = promise
-    }
-  }
+  const latest = latestPromise(items)
   if (!latest) return ''
   if (latest.kind === 'ready' && promiseIsToday(latest)) return 'Seu pedido fica pronto para retirada hoje.'
   if (promiseIsToday(latest)) return `Seu pedido fica pronto para retirada hoje, a partir das ${promiseHour(latest.ready_at)}.`

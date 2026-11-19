@@ -19,7 +19,9 @@ import type {
   POSWeighedEntry,
   POSReceiptIdentityChoice,
   POSProjection,
+  POSOverPlanLine,
   POSSaleReviewProjection,
+  POSPlanBacking,
   POSScheduleResponse,
   POSSaleReviewResponse,
   PosFiscalState,
@@ -49,6 +51,7 @@ import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } fro
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
 import { lastBookableDate, resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
+  collectionsForFulfillment,
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
   paymentProofView,
@@ -142,9 +145,13 @@ export interface CloseGuardApprovalView {
   threshold_q: number;
   reasons: string[];
   house_account_limit: POSSaleReviewProjection["house_account_limit"] | null;
+  /** Encomenda acima do plano: as linhas com os dois números que o gerente vê. */
+  over_plan: POSOverPlanLine[];
 }
 
-const NO_APPROVAL_FIGURES: CloseGuardApprovalView = { discount_q: 0, threshold_q: 0, reasons: [], house_account_limit: null };
+const NO_APPROVAL_FIGURES: CloseGuardApprovalView = {
+  discount_q: 0, threshold_q: 0, reasons: [], house_account_limit: null, over_plan: [],
+};
 
 function closeGuardApprovalView(raw: unknown): CloseGuardApprovalView | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
@@ -156,6 +163,9 @@ function closeGuardApprovalView(raw: unknown): CloseGuardApprovalView | undefine
     house_account_limit: view.house_account_limit && typeof view.house_account_limit === "object"
       ? view.house_account_limit
       : null,
+    over_plan: Array.isArray(view.over_plan)
+      ? view.over_plan.filter((line): line is POSOverPlanLine => !!line && typeof line === "object" && typeof line.sku === "string")
+      : [],
   };
 }
 
@@ -633,6 +643,7 @@ export function usePosSale(deps: PosSaleDeps) {
               reasons: shown.reasons,
               discount_q: shown.discount_q,
               account_over_q: shown.house_account_limit?.over_q || 0,
+              over_plan: shown.over_plan,
             });
             if (token) signature = { token };
           } catch (error) {
@@ -1234,6 +1245,7 @@ export function usePosSale(deps: PosSaleDeps) {
     paymentTenders: cart.paymentTenders,
     customerRef: cart.customerRef,
     deliveryFeeOverrideQ: deliveryFeeOverrideQ.value,
+    deliveryDate: cart.deliveryDate,
   }));
   /** O gerente assinou ESTE retrato. É o que libera "Validar". */
   const managerApproved = computed(() => managerSignature.value?.portrait === currentApprovalPortrait.value);
@@ -1259,6 +1271,7 @@ export function usePosSale(deps: PosSaleDeps) {
       threshold_q: shown.manager_approval_threshold_q || 0,
       reasons: [...(shown.approval_reasons || [])],
       house_account_limit: shown.house_account_limit ?? null,
+      over_plan: [...(shown.preorder_over_plan || [])],
     };
   }
   const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
@@ -1354,6 +1367,12 @@ export function usePosSale(deps: PosSaleDeps) {
   // daquele dia (`productsForOrderDate`).
   const gridProducts = computed(() => productsForOrderDate(pos.value?.products || [], schedule.value, cart.deliveryDate));
   const scheduleToday = computed(() => schedule.value?.today || pos.value?.delivery_today || "");
+  /** O lastro da data da encomenda, por SKU (WP-E2): só a resposta DESTA data. */
+  const planBySku = computed<Record<string, POSPlanBacking>>(() => {
+    const answer = schedule.value;
+    if (!answer || answer.is_today || !cart.deliveryDate || answer.date !== cart.deliveryDate) return {};
+    return answer.plan_by_sku ?? {};
+  });
   const scheduleAvailableDates = computed(() => schedule.value?.available_dates ?? []);
   const scheduleBottleneckName = computed(() => schedule.value?.bottleneck_name || "");
   const scheduleReadyAt = computed(() => schedule.value?.ready_at || "");
@@ -1740,10 +1759,18 @@ export function usePosSale(deps: PosSaleDeps) {
   // ele fazia o watcher abaixo reescrever "Na entrega" para "No caixa" em
   // silêncio numa comanda reaberta com `payment_method: "pix"`. Os tenders são a
   // verdade, e o workspace já valida cada linha contra a coleta (`blockedForDelivery`).
+  // Encomenda de outro dia não fica "Na retirada" (D-041): a mesma regra do
+  // Pagamento (`collectionsForFulfillment`), e o watch abaixo tira a escolha que
+  // deixou de valer quando a data muda.
+  const preorderOtherDay = computed(
+    () => Boolean(scheduleToday.value) && (deliveryDateEffective.value || "") > scheduleToday.value,
+  );
   const availablePaymentCollections = computed(() =>
-    (pos.value?.payment_collections || []).filter((collection) =>
-      collection.fulfillment_types.includes(cart.fulfillmentType)
-      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order"),
+    collectionsForFulfillment(
+      pos.value?.payment_collections || [],
+      cart.fulfillmentType,
+      cart.salesMode,
+      preorderOtherDay.value,
     ),
   );
 
@@ -2770,13 +2797,16 @@ export function usePosSale(deps: PosSaleDeps) {
   async function requestSaleApprovalToken(
     username: string,
     pin: string,
-    shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number },
+    shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number; over_plan?: POSOverPlanLine[] },
   ): Promise<string> {
     const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
     const scope = {
       tab_ref: shown.tab_ref,
       discount_q: shown.reasons.includes("discount_over_threshold") ? shown.discount_q : 0,
       account_over_q: shown.reasons.includes("house_account_over_limit") ? shown.account_over_q : 0,
+      // A encomenda acima do plano: as linhas com o pedido, a fornada e o livre
+      // que o diálogo mostrou. O carimbo vale só para esses números.
+      over_plan: shown.reasons.includes("preorder_over_plan") ? (shown.over_plan ?? []) : [],
     };
     const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
     return typeof answer?.token === "string" ? answer.token : "";
@@ -2800,6 +2830,7 @@ export function usePosSale(deps: PosSaleDeps) {
         reasons: current?.approval_reasons || [],
         discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
         account_over_q: current?.house_account_limit?.over_q || 0,
+        over_plan: current?.preorder_over_plan || [],
       });
       if (!token) return false;
       managerSignature.value = { token, portrait };
@@ -4760,6 +4791,7 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryWindowLabel,
     deliveryDateEffective,
     scheduleToday,
+    planBySku,
     scheduleAvailableDates,
     scheduleBottleneckName,
     scheduleReadyAt,
