@@ -46,14 +46,24 @@ async function otherCustomer (browser: Browser): Promise<{ context: BrowserConte
   return { context, page: await context.newPage() }
 }
 
+/** A sacola respondeu: a quantidade na tela é otimista, e a reserva só existe depois da
+ *  resposta do servidor. Sem esperar por ela, A pode tocar antes de B ter levado de fato. */
+function bagAnswered (page: Page) {
+  return page.waitForResponse(response => /\/cart\//.test(response.url()) && response.request().method() !== 'GET' && response.ok())
+}
+
 /** B põe as últimas unidades na sacola, pela página do produto. */
 async function takesTheLastUnits (page: Page): Promise<void> {
   await opensProduct(page)
+  let answered = bagAnswered(page)
   await addButton(page).click()
+  await answered
   const quantity = page.getByRole('group', { name: `Quantidade de ${PRODUCT}` }).first()
   await expect(quantity).toContainText('1')
   for (let qty = 2; qty <= LAST_UNITS; qty += 1) {
+    answered = bagAnswered(page)
     await quantity.getByRole('button', { name: `Aumentar ${PRODUCT}` }).click()
+    await answered
     await expect(quantity).toContainText(String(qty))
   }
 }
@@ -66,7 +76,7 @@ async function putsThemBack (page: Page): Promise<void> {
   await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` })).toHaveCount(0)
 }
 
-/** Ao fim de cada caminho, mesmo quando ele reprova: nada fica preso na sacola de B,
+/** Ao fim de cada caminho, mesmo quando ele reprova: nada fica preso na sacola de ninguém,
  *  senão o caminho seguinte começa com o produto já indisponível. */
 async function leavesNothingBehind (page: Page): Promise<void> {
   try {
@@ -113,6 +123,7 @@ test('J3: o produto que acaba muda sozinho na tela de quem está olhando', async
     })
   } finally {
     await leavesNothingBehind(other.page)
+    await leavesNothingBehind(page)
     await other.context.close()
   }
 })
@@ -137,6 +148,7 @@ test('J3: com o aviso derrubado, a consulta de reserva corrige a tela em cerca d
     await stillTheSameVisit(page)
   } finally {
     await leavesNothingBehind(other.page)
+    await leavesNothingBehind(page)
     await other.context.close()
   }
 })
@@ -167,6 +179,7 @@ test('J3: se A tocar antes de a tela mudar, o aviso aparece e a página fica cer
     await putsThemBack(other.page)
   } finally {
     await leavesNothingBehind(other.page)
+    await leavesNothingBehind(page)
     await other.context.close()
   }
 })
