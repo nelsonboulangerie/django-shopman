@@ -1,8 +1,10 @@
 // Presentation — order board shaping. Pure transforms over the order queue
 // projection (served by shopman/backstage/api/operations.py). The projection is
-// already screen-ready (status_label, timer_class, next_action_label, can_* flags
-// pre-resolved); this layer only derives the view shape, the functional-color tone,
-// and the action affordances. No status arithmetic (the backend owns the lifecycle).
+// already screen-ready (status_label, timer_class, channel_name, the label of each
+// action, can_* flags pre-resolved); this layer only derives the view shape, the
+// functional-color tone, and the action affordances. No status arithmetic (the
+// backend owns the lifecycle), and no naming: o nome do canal e o nome de cada gesto
+// são os do servidor.
 import type {
   EquipmentOptionProjection,
   EquipmentOutProjection,
@@ -32,6 +34,7 @@ import {
 import { joinFacts } from "../../../operator-kit/app/presentation/orderDetail";
 import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
 import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
+import { promiseWaitLines, waitsForBatch } from "./orderPromise";
 
 export {
   joinFacts,
@@ -542,7 +545,9 @@ export type AffordanceRef =
   | "undo_ready"
   // O "Dispensar" do lembrete de chamar o entregador (aviso do cartão, não botão largo).
   | "dismiss_courier_reminder"
-  | "ifood_accept_retry";
+  | "ifood_accept_retry"
+  // O "Resolver" da promessa em risco (aviso do cartão e linha da Fila): abre o diálogo.
+  | "resolve_promise";
 
 export interface Affordance {
   ref: AffordanceRef;
@@ -676,21 +681,6 @@ export function matchesQuery(
 
 // ── Triage: channel filter, sort, view-mode (Arc 1) ─────────────────────────
 
-/** Friendly channel labels. Unknown channels fall back to a capitalised ref so
- *  a new channel never renders blank. */
-const CHANNEL_LABEL: Record<string, string> = {
-  web: "Loja online",
-  whatsapp: "WhatsApp",
-  ifood: "iFood",
-  pdv: "PDV",
-  pos: "PDV",
-};
-
-export function channelLabel(ref: string): string {
-  if (CHANNEL_LABEL[ref]) return CHANNEL_LABEL[ref];
-  return ref ? ref.charAt(0).toUpperCase() + ref.slice(1) : "—";
-}
-
 export interface ChannelOption {
   ref: string;
   label: string;
@@ -698,13 +688,18 @@ export interface ChannelOption {
 }
 
 /** Distinct channels present in the queue, with counts, for the filter control.
- *  Derived from the data so the control only ever offers channels that exist. */
+ *  Derived from the data so the control only ever offers channels that exist. O nome
+ *  é o que o servidor manda em cada cartão (`channel_name`, o mesmo do detalhe): a tela
+ *  não tem tabela de nomes de canal. */
 export function channelOptions(cards: OrderCardProjection[]): ChannelOption[] {
-  const counts = new Map<string, number>();
-  for (const c of cards)
-    counts.set(c.channel_ref, (counts.get(c.channel_ref) ?? 0) + 1);
-  return [...counts.entries()]
-    .map(([ref, count]) => ({ ref, label: channelLabel(ref), count }))
+  const found = new Map<string, { label: string; count: number }>();
+  for (const c of cards) {
+    const entry = found.get(c.channel_ref);
+    if (entry) entry.count += 1;
+    else found.set(c.channel_ref, { label: c.channel_name, count: 1 });
+  }
+  return [...found.entries()]
+    .map(([ref, { label, count }]) => ({ ref, label, count }))
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
 }
 
@@ -972,7 +967,7 @@ export function rowsToCsv(rows: FlatRow[]): string {
     rows: rows.map((r) => [
       r.card.ref,
       r.zoneTitle,
-      channelLabel(r.card.channel_ref),
+      r.card.channel_name ?? "",
       r.card.customer_name ?? "",
       r.card.items_summary ?? "",
       r.card.total_display ?? "",
@@ -1037,6 +1032,52 @@ export function bulkableRefs(
       : (c: OrderCardProjection) =>
           c.can_advance && !dispatchAsksChange(c) && !c.dispatch_needs_machine;
   return cards.filter((c) => selected.has(c.ref) && can(c)).map((c) => c.ref);
+}
+
+// ── Pagamento (WP-G09) ──────────────────────────────────────────────────────
+
+type PaymentSource = Pick<
+  OrderCardProjection,
+  "payment_method_label" | "payment_status_label"
+>;
+
+/**
+ * O pagamento do pedido como o servidor o diz: o meio e a situação, numa frase.
+ *
+ * "Pix · Pago", "Cartão · Cobrança recusada", "Pix · Pagamento simulado, sem dinheiro",
+ * "Dinheiro na entrega" (sem situação, quando ainda não há o que dizer). A mesma frase
+ * do detalhe. O cartão escrevia só o meio, e "Pagamento simulado" e "Cobrança recusada"
+ * existiam no servidor sem nunca chegar à tela (laudo do Gestor, P2-09).
+ */
+export function paymentLabel(card: PaymentSource): string {
+  return joinFacts(card.payment_method_label, card.payment_status_label);
+}
+
+export interface PaymentAlert {
+  label: string;
+  color: "warning" | "error";
+  icon: string;
+}
+
+/**
+ * O pagamento que pede um olhar, para o cartão enxuto do Painel (que não tem a linha
+ * do pagamento): só quando o tom do servidor é de aviso (`payment_tone`: o simulado, a
+ * cobrança recusada, o que o canal não informou). Quem ainda espera o pagamento já tem
+ * o fato na pílula do bloqueio ("Aguardando Pix", "Pix expirado", "Cobrança recusada"),
+ * e não se repete aqui.
+ */
+export function paymentAlert(
+  card: PaymentSource &
+    Pick<OrderCardProjection, "payment_tone" | "payment_pending">,
+): PaymentAlert | null {
+  const tone = card.payment_tone;
+  if (tone !== "warning" && tone !== "danger") return null;
+  if (card.payment_pending) return null;
+  const label = paymentLabel(card);
+  if (!label) return null;
+  return tone === "danger"
+    ? { label, color: "error", icon: "i-lucide-triangle-alert" }
+    : { label, color: "warning", icon: "i-lucide-circle-alert" };
 }
 
 // ── Troco da entrega (WP-9) ─────────────────────────────────────────────────
@@ -1234,10 +1275,13 @@ const SEAL_TONE: Record<string, SealTone> = {
 type SealSource = Pick<
   OrderCardProjection,
   "status" | "status_label" | "can_confirm" | "advance_block_reason" | "actions"
->;
+> &
+  Partial<Pick<OrderCardProjection, "promise" | "advance_block_label">>;
 
 /** Selo do canto do cartão. Bloqueio primeiro (o motivo vem escrito no cartão); depois
- *  "Novo" (a decisão pendente) e "Próximo" (o primeiro da Saída a sair); senão o estado. */
+ *  "Novo" (a decisão pendente) e "Próximo" (o primeiro da Saída a sair); senão o estado.
+ *  Quem só espera o lote ficar pronto não é "Bloqueado": a reserva está inteira, e a
+ *  espera saudável não usa cor de erro (WP-G08; a pílula "Esperando o lote" diz o fato). */
 export function cardSeal(
   card: SealSource,
   opts: { next?: boolean } = {},
@@ -1245,7 +1289,7 @@ export function cardSeal(
   const advance = (card.actions ?? []).find(
     (a) => a.ref === "advance" && a.priority !== "menu",
   );
-  if (card.advance_block_reason && advance && !advance.enabled)
+  if (card.advance_block_reason && advance && !advance.enabled && !waitsForBatch(card))
     return { label: "Bloqueado", tone: "error" };
   if (card.can_confirm) return { label: "Novo", tone: "primary" };
   if (opts.next) return { label: "Próximo", tone: "primary" };
@@ -1371,30 +1415,6 @@ export function customerFirstName(name: string): string {
   return clean.split(/\s+/)[0] ?? "";
 }
 
-type VerbSource = Pick<
-  OrderCardProjection,
-  "ref" | "status" | "fulfillment_type" | "next_status" | "customer_name"
->;
-
-/** O verbo do botão largo, com o nome (v4: "Entregar a Ana", "Despachar M09").
- *
- *  Só muda o rótulo da SAÍDA, onde o fato é entregar à pessoa ou despachar: o rótulo do
- *  servidor ("Marcar como retirado") fica no `title` do botão. Os outros passos seguem
- *  com o rótulo do servidor, que é a fonte única. */
-export function primaryVerb(
-  card: VerbSource,
-  aff: Pick<Affordance, "ref" | "label" | "disabled">,
-): string {
-  if (aff.ref !== "advance" || aff.disabled) return aff.label;
-  if (card.next_status === "dispatched")
-    return `Despachar ${splitRef(card.ref).code}`;
-  if (card.status === "ready" && card.fulfillment_type === "pickup") {
-    const name = customerFirstName(card.customer_name);
-    return name ? `Entregar a ${name}` : `Entregar ${splitRef(card.ref).code}`;
-  }
-  return aff.label;
-}
-
 function joinNames(names: string[]): string {
   return names.length <= 1
     ? (names[0] ?? "")
@@ -1418,11 +1438,39 @@ const PRODUCTION_STATE: Record<string, string> = {
   void: "cancelada",
 };
 
-/** A produção que o pedido espera, uma frase por ordem: "Produção de Croissant: não
- *  começou". Sem porcentagem: 0% de uma ordem planejada não diz nada ao balcão. */
+/** Pedido que já tem o produto na mão: o vínculo com o lote não diz mais nada. */
+const PRODUCT_IN_HAND = new Set([
+  "ready",
+  "dispatched",
+  "delivered",
+  "completed",
+  "cancelled",
+]);
+
+type ProductionSource = Pick<OrderCardProjection, "awaiting_work_orders"> &
+  Partial<
+    Pick<OrderCardProjection, "promise" | "status" | "advance_block_reason">
+  >;
+
+/**
+ * O lote que o pedido espera, uma frase por produto.
+ *
+ * Duas fontes falavam do mesmo lote, e a mais antiga não sabia a hora nem o que fazer
+ * (P2-19). Agora vale uma só por pedido:
+ *
+ * - com a leitura da promessa (`card.promise`, WP-G08), as frases são as dela, com a
+ *   hora do lote: "Baguete de tradição: O lote de hoje não começou. Fica pronto às
+ *   12h.". O item em risco não entra (tem o aviso "Promessa em risco"), nem a frase
+ *   que o bloqueio "Esperando o lote" já escreve;
+ * - sem ela, vale o vínculo do pedido com o lote ("Produção de Croissant: não
+ *   começou"), só enquanto o pedido ainda espera o produto. Em pedido pronto a linha
+ *   era mentira: o vínculo fica gravado depois que o pão saiu.
+ */
 export function productionLines(
-  card: Pick<OrderCardProjection, "awaiting_work_orders">,
+  card: ProductionSource,
 ): Array<{ ref: string; text: string }> {
+  if (card.promise) return promiseWaitLines(card);
+  if (card.status && PRODUCT_IN_HAND.has(card.status)) return [];
   return card.awaiting_work_orders.map((wo) => ({
     ref: wo.ref,
     text: `Produção de ${wo.recipe_name}: ${PRODUCTION_STATE[wo.status] ?? wo.status_label.toLowerCase()}`,

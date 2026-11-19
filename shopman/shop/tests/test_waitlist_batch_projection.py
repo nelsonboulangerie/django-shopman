@@ -7,7 +7,7 @@ from django.test.utils import CaptureQueriesContext
 from shopman.orderman.models import Order
 from shopman.stockman.models import Hold
 
-from shopman.backstage.projections.order_queue import build_order_queue, build_two_zone_queue
+from shopman.backstage.projections.order_queue import build_two_zone_queue
 from shopman.shop.models import Shop
 from shopman.shop.services import waitlist
 from shopman.shop.tests.test_waitlist_lifecycle import _order_in_fermata, _planned_quant
@@ -15,13 +15,12 @@ from shopman.shop.tests.test_waitlist_lifecycle import _order_in_fermata, _plann
 pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
-@pytest.mark.parametrize("build", [build_order_queue, build_two_zone_queue])
 @pytest.mark.parametrize("status", ["ready", "accepted"])
-def test_a_hundred_cards_read_holds_once(build, status):
+def test_a_hundred_cards_read_holds_once(status):
     Shop.objects.create(name="Lab")
     Order.objects.bulk_create([Order(ref=f"BATCH-{i}", status=status, channel_ref="web", data={"payment": {"method": "cash"}}) for i in range(100)])
     with CaptureQueriesContext(connection) as queries:
-        build()
+        build_two_zone_queue()
     hold_queries = [query["sql"] for query in queries if "stockman_hold" in query["sql"].lower()]
     assert len(hold_queries) == 1
 

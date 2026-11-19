@@ -8,11 +8,6 @@ import OrderDetailPending from "~/components/OrderDetailPending.vue";
 import { useGestorAccess } from "~/composables/useGestorAccess";
 import { orderDetailDenial } from "~/presentation/gestorSections";
 import { danfeLine } from "~/presentation/danfe";
-import {
-  REFUND_RETRY,
-  refundRetrySentence,
-  refundRetryToast,
-} from "~/presentation/orderPending";
 // Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
 // observação, nota da cozinha, histórico) são do `OperatorOrderDetail` do kit — a
 // MESMA tela do detalhe da encomenda no PDV (decisão do dono, 28/09/2026). Aqui
@@ -40,6 +35,16 @@ import { settledRefresh } from "~/utils/settledRefresh";
 import type { Action } from "~/generated/ordersContract";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
+import { PROMISE_HASH } from "~/presentation/preorderList";
+import { RESOLVE } from "~/presentation/orderPromise";
+import { CANCEL_HASH } from "~/presentation/promiseResolution";
+import {
+  pendingFocusKey,
+  PROMISE_PENDING_KEY,
+  REFUND_RETRY,
+  refundRetrySentence,
+  refundRetryToast,
+} from "~/presentation/orderPending";
 import { contactRequestNotice } from "~/presentation/contactRequest";
 import { ifoodChatNotice } from "~/presentation/ifoodWidget";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
@@ -124,10 +129,19 @@ function onPendingAction(ref_: string) {
   else if (ref_ === "resend-payment-link") void resendPaymentLink();
   else if (ref_ === "print-danfe") void printDanfe();
   else if (ref_ === REFUND_RETRY) void submitRefundRetry();
+  else if (ref_ === RESOLVE) resolveOpen.value = true;
   else if (ref_ === "cancel")
     void openDialog("cancel", {
       reasonKey: order.value?.payment_lapsed ? PAYMENT_NOT_CONFIRMED : "",
     });
+}
+// "Resolver" a promessa em risco (WP-G08): o botão mora na linha da promessa, na faixa
+// "O que falta neste pedido", e abre o diálogo das escolhas. Tirar o item grava dali e
+// o pedido é relido; cancelar o pedido inteiro abre o cancelar de sempre, com o motivo
+// e o dinheiro.
+const resolveOpen = ref(false);
+function cancelFromResolve() {
+  void openDialog("cancel");
 }
 // A DANFE no ⋯ do pedido (P1-14): imprimir e reimprimir, o mesmo gesto do cartão.
 const danfe = computed(() => (order.value ? danfeLine(order.value) : null));
@@ -174,6 +188,11 @@ const IFOOD_NEGOTIATIONS = "ifood-negotiations";
 // O aviso "o aceite não chegou ao iFood" chega com `#ifood-accept`: o foco vai ao
 // Tentar de novo, com o prazo do iFood à vista.
 const IFOOD_ACCEPT = "ifood-accept";
+// A lista de Encomendas e o aviso do painel chegam com `#promise` (WP-G08): a página
+// vai à linha da promessa em risco, na faixa "O que falta neste pedido", com o teclado
+// no primeiro gesto dela ("Resolver"). O "Cancelar o pedido inteiro" do diálogo do
+// painel chega com `#cancel` e abre o cancelar (mais abaixo); se o pedido não pode mais
+// ser cancelado, a página vai à mesma linha, onde o "Resolver" diz o que ainda dá.
 const focusKey = computed(() => {
   if (
     route.hash === `#${IFOOD_NEGOTIATIONS}` &&
@@ -182,6 +201,14 @@ const focusKey = computed(() => {
     return IFOOD_NEGOTIATIONS;
   if (route.hash === `#${IFOOD_ACCEPT}` && order.value?.ifood_accept_failed)
     return IFOOD_ACCEPT;
+  const toPromise =
+    route.hash === PROMISE_HASH ||
+    (route.hash === CANCEL_HASH && order.value?.can_cancel === false);
+  if (
+    toPromise &&
+    order.value?.pending?.some((item) => item.key === PROMISE_PENDING_KEY)
+  )
+    return pendingFocusKey(PROMISE_PENDING_KEY);
   return null;
 });
 const { reveal } = useNextFocus();
@@ -887,7 +914,7 @@ const primary = computed(() => {
     return advance.enabled
       ? {
           key: "advance" as const,
-          label: o.next_action_label || advance.label,
+          label: advance.label,
           icon: "lucide:arrow-right",
           enabled: true,
           reason: "",
@@ -996,6 +1023,16 @@ watch(
   () => route.hash === CANCEL_UNPAID_HASH && cancelUnpaid.value,
   (arrive) => {
     if (arrive && !dialog.value) openCancelUnpaid();
+  },
+  { immediate: true },
+);
+// O "Cancelar o pedido inteiro" do diálogo "Resolver" do painel chega com `#cancel`
+// (WP-G08): o MESMO diálogo do menu do pedido, com o motivo por escolher e a régua do
+// gerente.
+watch(
+  () => route.hash === CANCEL_HASH && Boolean(order.value?.can_cancel),
+  (arrive) => {
+    if (arrive && !dialog.value) void openDialog("cancel");
   },
   { immediate: true },
 );
@@ -1141,7 +1178,7 @@ const outside = useOutsideStore(
           variant="ghost"
           square
           class="size-11 shrink-0 justify-center"
-          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
+          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'"
           data-compact-back
         />
       </template>
@@ -1192,7 +1229,7 @@ const outside = useOutsideStore(
           variant="ghost"
           square
           :aria-label="
-            fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'
+            fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'
           "
           data-detail-back
         />
@@ -1530,6 +1567,7 @@ const outside = useOutsideStore(
         v-if="order"
         :pending="order.pending"
         :money="order.cancelled_money"
+        :promise="order.promise"
         :busy="busy"
         :danfe-printing="danfePrinting"
         :refund-retrying="refundRetrying"
@@ -1836,6 +1874,16 @@ const outside = useOutsideStore(
       @confirm="submitReason"
     />
 
+    <!-- "Resolver" a promessa em risco: as escolhas, a mensagem ao cliente e o que conclui -->
+    <OrderPromiseResolveDialog
+      :open="resolveOpen"
+      :order-ref="orderRef"
+      :managers="order?.managers || []"
+      @update:open="(value: boolean) => (resolveOpen = value)"
+      @changed="refresh()"
+      @cancel="cancelFromResolve"
+    />
+
     <!-- devolução depois da venda: itens, quantidade, motivo e o valor que volta -->
     <OrderReturnDialog
       :open="dialog === 'return'"
@@ -2040,8 +2088,8 @@ const outside = useOutsideStore(
           : ''
       "
       @update:open="
-        (aberto: boolean) => {
-          if (!aberto) dismissManagerChallenge();
+        (open: boolean) => {
+          if (!open) dismissManagerChallenge();
         }
       "
       @authorize="signWithPin"

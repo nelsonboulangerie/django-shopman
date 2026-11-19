@@ -70,7 +70,7 @@ test.describe("carga direta no celular: a tela que o celular promete", () => {
   test("a Fila sai do esqueleto e mostra as abas e os cartões", async ({ page }) => {
     expect(await openDirect(page, "/")).toEqual([]);
     await expect(page.locator("[data-board-zone-tabs]")).toBeVisible();
-    await expect(page.getByLabel("Carregando fila")).toHaveCount(0);
+    await expect(page.getByLabel("Carregando pedidos")).toHaveCount(0);
     await expect(page.locator("[data-card-primary]").first()).toBeVisible();
   });
 

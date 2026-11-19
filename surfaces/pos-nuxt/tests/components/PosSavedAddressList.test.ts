@@ -11,9 +11,10 @@ import type { SavedAddressProjection } from "~/types/pos";
 function saved(id: number, extra: Partial<SavedAddressProjection> = {}): SavedAddressProjection {
   return {
     id,
-    label: "Entrega",
+    // Sem etiqueta, como o pedido de entrega grava (#2775): "Outro" sem nome.
+    label: "Outro",
     label_key: "other",
-    label_custom: "Entrega",
+    label_custom: "",
     formatted_address: `Rua ${id}, ${id}00 - Centro - Londrina/PR`,
     route: `Rua ${id}`,
     street_number: `${id}00`,
@@ -69,11 +70,12 @@ describe("PosSavedAddressList", () => {
     expect(list.querySelector("legend")?.textContent?.trim()).toBe("Endereços do cliente");
   });
 
-  it("a etiqueta que só repete o canal ('Entrega', de pedido do iFood) não aparece; Casa e Trabalho, sim", async () => {
+  it("o endereço sem etiqueta (de pedido de entrega, iFood incluído) não ganha etiqueta; Casa e Trabalho, sim", async () => {
     await mountList();
     const tags = Array.from(document.querySelectorAll("[data-pos-saved-address-tag]")).map((el) => el.textContent?.trim());
     expect(tags).toEqual(["Casa", "Trabalho"]);
     expect(document.querySelector("[data-pos-saved-addresses]")!.textContent).not.toContain("Entrega");
+    expect(document.querySelector("[data-pos-saved-addresses]")!.textContent).not.toContain("Outro");
   });
 
   it("o toque na linha escolhe aquele endereço", async () => {

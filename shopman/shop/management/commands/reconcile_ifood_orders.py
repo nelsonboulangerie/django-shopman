@@ -6,7 +6,8 @@ próxima transição local. Pedido em que ninguém mais mexe ficava parado para
 sempre: o 3417 (12/11/2026) seguia "Em preparo" no Gestor quatro dias depois de
 o iFood avisar que ele saiu e foi concluído.
 
-Roda no maintenance-worker. A regra é a mesma de sempre
+Pedido de teste concluído no iFood fecha mesmo fora da janela (ver
+``_stale_test_conclusion``). Roda no maintenance-worker. A regra é a mesma de sempre
 (``ifood_events.reconcile_remote``): nunca inventa preparo, nunca pula a custódia
 do entregador; só aplica o que os fatos já autorizam.
 """
@@ -47,7 +48,7 @@ class Command(BaseCommand):
         moved = 0
         now = timezone.now()
         for order in pending:
-            if now - _latest_fact_at(order, default=now) > APPLY_WINDOW:
+            if now - _latest_fact_at(order, default=now) > APPLY_WINDOW and not _stale_test_conclusion(order):
                 _alert_behind(order)
                 continue
             before = order.status
@@ -58,6 +59,19 @@ class Command(BaseCommand):
                 self.stdout.write(f"reconcile_ifood_orders: {order.ref} {before} → {order.status}")
         if moved:
             self.stdout.write(f"reconcile_ifood_orders: {moved} pedido(s) alcançaram o iFood")
+
+
+def _stale_test_conclusion(order) -> bool:
+    """Pedido de TESTE que o iFood concluiu fecha aqui a qualquer tempo.
+
+    A janela existe pelo cliente que receberia "saiu para entrega" horas depois
+    de comer; pedido de teste não avisa ninguém, não emite nota nem mexe em
+    estoque (``is_test_order``). É assim que os presos de antes da regra saem da
+    fila, no próximo ciclo depois do deploy, e de novo sem efeito se já saíram.
+    """
+    from shopman.shop.services.order_helpers import is_test_order
+
+    return is_test_order(order) and bool(((order.data or {}).get("ifood") or {}).get("remote_concluded"))
 
 
 def _latest_fact_at(order, *, default):

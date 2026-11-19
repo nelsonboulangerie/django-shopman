@@ -6,11 +6,11 @@
  * cortado, e num cliente vindo de pedido de entrega todos diziam "Entrega", a
  * mesma palavra do botão de cima (pedido do dono, 19/11/2026, #2754).
  *
- * A ETIQUETA só aparece quando identifica: "Casa", "Trabalho" ou o nome que o
- * cliente deu ("Mãe"). A etiqueta neutra que o sistema põe em todo endereço
- * salvo de um pedido de entrega (`shop/services/customer.py`: "Entrega") repete
- * o canal e não distingue um endereço do outro; "Outro" sem nome também não. Nos
- * dois casos quem fala é o endereço.
+ * A ETIQUETA aparece quando o endereço tem uma: "Casa", "Trabalho" ou o nome que
+ * o cliente deu ("Mãe"). Sem etiqueta ("Outro" sem nome, como o endereço que um
+ * pedido de entrega grava sozinho no cadastro desde #2775), quem fala é o
+ * endereço. A decisão é a mesma da loja e da Concierge: pela `label_key` e pelo
+ * `label_custom`, nunca por uma lista de palavras escondidas.
  */
 import type { SavedAddressProjection, StructuredAddressProjection } from "~/types/pos";
 import { addressDisplay } from "./address";
@@ -35,17 +35,13 @@ function fold(value: unknown): string {
     .toLowerCase();
 }
 
-/** Etiquetas que não distinguem um endereço do outro: o canal e a categoria vazia. */
-const TAGS_THAT_SAY_NOTHING = new Set(["entrega", "delivery", "outro", "other"]);
+const clean = (value: unknown) => String(value ?? "").replace(/\s+/g, " ").trim();
 
-/** A etiqueta que vale mostrar: a que o cliente reconhece e que não é o próprio endereço. */
+/** A etiqueta do cliente ("Casa", "Trabalho", "Mãe"), ou vazio quando o endereço não tem. */
 export function savedAddressTag(address: SavedAddressProjection): string {
-  const tag = String(address.label || "").replace(/\s+/g, " ").trim();
-  const folded = fold(tag);
-  if (!folded || TAGS_THAT_SAY_NOTHING.has(folded)) return "";
-  // Sem etiqueta, a projeção devolve o próprio endereço no lugar dela.
-  if (folded === fold(address.formatted_address)) return "";
-  return tag;
+  // "Outro" é a categoria, não a etiqueta: sem nome, o endereço não tem etiqueta.
+  if (address.label_key === "other") return clean(address.label_custom);
+  return clean(address.label);
 }
 
 export function savedAddressOption(address: SavedAddressProjection): SavedAddressOption {

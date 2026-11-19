@@ -186,7 +186,7 @@ def test_a_porta_responde_o_resultado_e_o_cartao_mostra_o_progresso(gestor, clie
     assert empty.status_code == 400
     card = build_order_card(Order.objects.get(ref=order.ref))
     assert (card.volumes_checked, card.volumes_to_check) == (1, 2)
-    assert card.volume_check_label == "1 de 2 sacolas conferidas"
+    assert volume_check.progress_label(Order.objects.get(ref=order.ref)) == "1 de 2 sacolas conferidas"
 
 
 def test_sem_acesso_ao_quadro_nao_confere(loja, client):

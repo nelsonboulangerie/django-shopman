@@ -104,6 +104,22 @@ export function parseLocalDate (value: string): Date | null {
   return date
 }
 
+/**
+ * O "agora" do checkout: a meia-noite do HOJE DA LOJA (`checkout.today`, escrito pelo
+ * servidor no fuso dela). "Hoje", "Amanhã" e os limites do calendário saem daqui. O
+ * relógio do aparelho só entra quando a projeção ainda não chegou ou veio sem a data:
+ * aparelho com o relógio errado, ou em outro fuso, mostrava "Hoje" no dia errado, e a
+ * cliente só descobria no envio (plano EXCELENCIA-STOREFRONT, P2-08).
+ */
+export function checkoutNow (checkout?: Pick<CheckoutProjection, 'today'> | null): Date {
+  return (checkout?.today ? parseLocalDate(checkout.today) : null) || new Date()
+}
+
+/** O hoje da loja em ISO (`AAAA-MM-DD`), para as contas de data da sacola. */
+export function checkoutTodayValue (checkout?: Pick<CheckoutProjection, 'today'> | null): string {
+  return localDateValue(startOfCheckoutDay(checkoutNow(checkout)))
+}
+
 export function startOfCheckoutDay (now = new Date()): Date {
   const date = new Date(now)
   date.setHours(0, 0, 0, 0)

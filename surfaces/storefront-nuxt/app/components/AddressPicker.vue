@@ -24,7 +24,7 @@ import {
   nextFocusAfterSuggestion,
   pickerDraftPending,
   resolvePreselectedAddress,
-  savedAddressDisplayLabel,
+  savedAddressLines,
   selectionFromDraft,
   selectionFromSavedAddress,
   stillFailingErrors,
@@ -1086,11 +1086,11 @@ function onLabelResolved () {
             <UiFieldContent>
               <UiFieldTitle>
                 <Icon name="lucide:map-pin-house" class="size-4" />
-                {{ savedAddressDisplayLabel(address) }}
+                {{ savedAddressLines(address).title }}
                 <UiBadge v-if="address.is_default" variant="secondary">Padrão</UiBadge>
               </UiFieldTitle>
-              <UiFieldDescription>
-                {{ address.formatted_address }}<template v-if="address.complement"> · {{ address.complement }}</template>
+              <UiFieldDescription v-if="savedAddressLines(address).lines.length">
+                <span v-for="(line, index) in savedAddressLines(address).lines" :key="index" class="block">{{ line }}</span>
               </UiFieldDescription>
             </UiFieldContent>
             <UiButton

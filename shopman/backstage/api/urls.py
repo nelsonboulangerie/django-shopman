@@ -8,7 +8,12 @@ from shopman.backstage.api.purchase_csv import PurchaseCsvView
 from shopman.backstage.api.purchase_supplier_bulk import PurchaseSupplierBulkView
 from shopman.shop.eventstream import events as eventstream_view
 
-from .alerts import AlertAckView, AlertListView
+from .alerts import (
+    AlertAckView,
+    AlertListView,
+    ConciergeVerificationAnswerView,
+    ConciergeVerificationTakeOverView,
+)
 from .backup import BackupExportView
 from .bi import (
     BICashView,
@@ -219,6 +224,7 @@ from .operations import (
     OrderNoShowView,
     OrderNotesView,
     OrderPaymentCheckView,
+    OrderPromiseResolutionView,
     OrderQueueView,
     OrderRailCountsView,
     OrderRefundRetryView,
@@ -991,6 +997,11 @@ urlpatterns = [
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
     path("orders/<str:ref>/return/", OrderReturnView.as_view(), name="api-backstage-order-return"),
     path("orders/<str:ref>/return/preview/", OrderReturnPreviewView.as_view(), name="api-backstage-order-return-preview"),
+    path(
+        "orders/<str:ref>/promise-resolution/",
+        OrderPromiseResolutionView.as_view(),
+        name="api-backstage-order-promise-resolution",
+    ),
     path("orders/<str:ref>/no-show/", OrderNoShowView.as_view(), name="api-backstage-order-no-show"),
     path("orders/<str:ref>/no-show/preview/", OrderNoShowPreviewView.as_view(), name="api-backstage-order-no-show-preview"),
     path("orders/<str:ref>/refund-retry/", OrderRefundRetryView.as_view(), name="api-backstage-order-refund-retry"),
@@ -1047,6 +1058,17 @@ urlpatterns = [
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
+    # "Vou verificar" da Concierge: a equipe responde a pergunta do cliente, ou assume.
+    path(
+        "alerts/<int:pk>/concierge-verification/answer/",
+        ConciergeVerificationAnswerView.as_view(),
+        name="api-backstage-alert-concierge-verification-answer",
+    ),
+    path(
+        "alerts/<int:pk>/concierge-verification/take-over/",
+        ConciergeVerificationTakeOverView.as_view(),
+        name="api-backstage-alert-concierge-verification-take-over",
+    ),
     # Suporte (helpdesk interno)
     path(
         "support/capabilities/",

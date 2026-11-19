@@ -117,6 +117,18 @@ from shopman.backstage.projections.order_pending import (
     OrderPendingProjection,
 )
 from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
+from shopman.backstage.projections.order_promise import (
+    OrderPromiseAlternativeProjection,
+    OrderPromiseItemProjection,
+    OrderPromiseProjection,
+)
+from shopman.backstage.projections.order_promise_resolution import (
+    OrderPromiseChoiceProjection,
+    OrderPromiseConcludeProjection,
+    OrderPromiseContactProjection,
+    OrderPromiseEditLineProjection,
+    OrderPromiseResolutionProjection,
+)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CancelReasonProjection,
@@ -128,7 +140,6 @@ from shopman.backstage.projections.order_queue import (
     KitchenStationProjection,
     OperatorOrderProjection,
     OrderCardProjection,
-    OrderQueueProjection,
     RideCandidateProjection,
     TwoZoneQueueProjection,
     UndoProjection,
@@ -194,6 +205,14 @@ CONTRACT_DATACLASSES = (
     KitchenStationProjection,
     KitchenProgressProjection,
     CourierReminderProjection,
+    OrderPromiseAlternativeProjection,
+    OrderPromiseItemProjection,
+    OrderPromiseProjection,
+    OrderPromiseContactProjection,
+    OrderPromiseEditLineProjection,
+    OrderPromiseConcludeProjection,
+    OrderPromiseChoiceProjection,
+    OrderPromiseResolutionProjection,
     OrderCardProjection,
     PreorderCardProjection,
     PreorderHandOverProjection,
@@ -205,7 +224,6 @@ CONTRACT_DATACLASSES = (
     OrderPendingProjection,
     CancelledMoneyProjection,
     OperatorOrderProjection,
-    OrderQueueProjection,
     SystemActionProjection,
     MenuOutageProjection,
     MenuChannelProjection,
@@ -263,6 +281,8 @@ def render_orders_contract_ts() -> str:
             " + shopman/backstage/projections/order_attention.py"
             " + shopman/backstage/projections/deliveries.py"
             " + shopman/backstage/projections/order_pending.py"
+            " + shopman/backstage/projections/order_promise.py"
+            " + shopman/backstage/projections/order_promise_resolution.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

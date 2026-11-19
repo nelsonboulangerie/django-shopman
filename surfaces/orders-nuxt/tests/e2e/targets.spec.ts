@@ -59,8 +59,8 @@ for (const touch of [false, true]) {
       await expect(page.getByText("Pagamento pendente · Loja online", { exact: true })).toHaveCount(0);
       await expect(page.locator("[data-card-who]").filter({ hasText: "Ana" }).filter({ hasText: "Loja online" }).first()).toBeVisible();
       await page.goto("/?view=board");
-      const more = page.getByRole("button", { name: "Mais ações da fila", exact: true });
-      await target(more, "Mais ações da fila");
+      const more = page.getByRole("button", { name: "Mais ações dos pedidos", exact: true });
+      await target(more, "Mais ações dos pedidos");
       if (touch) {
         // Tablet em pé: ordenar e a visão entram no ⋯ do painel (o cabeçalho fica numa linha).
         await more.click();

@@ -9,8 +9,8 @@ import { chosenSavedAddressValue, savedAddressOption, savedAddressTag } from "..
 import type { SavedAddressProjection } from "../app/types/pos";
 
 // Os endereços já cadastrados do cliente, como linhas de uma lista (pedido do
-// dono, 19/11/2026, #2754): cada um se identifica sozinho, e a etiqueta só
-// aparece quando distingue um endereço do outro.
+// dono, 19/11/2026, #2754): cada um se identifica sozinho, e a etiqueta aparece
+// quando o endereço tem uma (#2775).
 
 function address(extra: Partial<SavedAddressProjection> = {}): SavedAddressProjection {
   return {
@@ -101,27 +101,34 @@ describe("endereço na tela: um formato só", () => {
   });
 });
 
-describe("endereço cadastrado: a etiqueta só aparece quando identifica", () => {
+describe("endereço cadastrado: a etiqueta aparece quando o endereço tem uma", () => {
   it("Casa, Trabalho e o nome que o cliente deu aparecem", () => {
     expect(savedAddressTag(address())).toBe("Casa");
     expect(savedAddressTag(address({ label: "Trabalho", label_key: "work" }))).toBe("Trabalho");
     expect(savedAddressTag(address({ label: "Mãe", label_key: "other", label_custom: "Mãe" }))).toBe("Mãe");
   });
 
-  // O sistema põe "Entrega" em todo endereço salvo de um pedido de entrega
-  // (iFood incluído): é a palavra do canal, igual em todos, e não distingue nada.
-  it("a etiqueta que só repete o canal não aparece: quem fala é o endereço", () => {
-    for (const label of ["Entrega", "entrega", " ENTREGA ", "Delivery"]) {
-      const option = savedAddressOption(address({ label, label_key: "other", label_custom: label }));
+  // #2775: o endereço que o pedido de entrega grava nasce sem etiqueta ("Outro" sem
+  // nome), e a projeção manda "Outro" no `label`. Não é etiqueta: quem fala é o endereço.
+  it("'Outro' sem nome não é etiqueta: quem fala é o endereço", () => {
+    for (const custom of ["", "   "]) {
+      const option = savedAddressOption(address({ label: "Outro", label_key: "other", label_custom: custom }));
       expect(option.tag).toBe("");
       expect(option.label).toBe("Rua Pará, 100, apto 12");
     }
   });
 
-  it("'Outro' sem nome, etiqueta vazia e etiqueta que é o próprio endereço também não aparecem", () => {
-    expect(savedAddressTag(address({ label: "Outro", label_key: "other" }))).toBe("");
-    expect(savedAddressTag(address({ label: "" }))).toBe("");
-    expect(savedAddressTag(address({ label: "Rua Pará, 100 - Centro - Londrina/PR" }))).toBe("");
+  // Não há mais lista de palavras escondidas: "Entrega" só existe se alguém escreveu,
+  // e então vale como qualquer etiqueta (o "Entrega" do sistema saiu com a shop.0123).
+  it("a etiqueta escrita à mão aparece como foi escrita, mesmo \"Entrega\"", () => {
+    expect(savedAddressTag(address({ label: "Entrega", label_key: "other", label_custom: "Entrega" }))).toBe("Entrega");
+    expect(savedAddressTag(address({ label: "Delivery", label_key: "other", label_custom: " Delivery " }))).toBe("Delivery");
+  });
+
+  it("decide pela categoria e pelo nome, não pelo texto do `label`", () => {
+    // Outro com nome: vale o nome, mesmo que o `label` diga outra coisa.
+    expect(savedAddressTag(address({ label: "Outro", label_key: "other", label_custom: "Sítio" }))).toBe("Sítio");
+    expect(savedAddressTag(address({ label: "", label_key: "home" }))).toBe("");
   });
 });
 
