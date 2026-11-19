@@ -308,7 +308,7 @@ def test_refazer_com_a_data_que_ja_passou_abre_sem_data_e_diz_por_que():
     hoje = timezone.localdate()
     assert redo.schedule_dropped == (
         "A data combinada já passou. Escolha hoje ou uma data futura. "
-        f"A comanda veio para {hoje.strftime('%d/%m')}, sem horário: confirme a data com o cliente (F8)."
+        f"A comanda veio para {hoje.strftime('%d/%m')}, sem horário: confirme a data com o cliente (F7)."
     )
     tab = build_open_tab(redo.session)
     assert tab["delivery_date"] == hoje.isoformat() and tab["delivery_time_slot"] == ""

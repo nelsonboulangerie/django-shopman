@@ -10,6 +10,17 @@ describe("atalhos do PDV, o dicionário das teclas", () => {
   const teclas = (rotulo: string) =>
     POS_SHORTCUT_GROUPS.flatMap((group) => group.items).find((item) => item.label.includes(rotulo))?.keys;
 
+  // Os três fatos do pedido seguem a ordem da barra, que é a do funil da
+  // encomenda (dono, 19/11/2026, #2754): cliente, quando, recebimento. A tecla é
+  // da POSIÇÃO, então F7 e F8 trocaram de dono.
+  it("F6 é o cliente, F7 é o quando e F8 é o recebimento, nessa ordem", () => {
+    expect(teclas("Cliente (")).toEqual(["F6"]);
+    expect(teclas("Quando (")).toEqual(["F7"]);
+    expect(teclas("Recebimento (")).toEqual(["F8"]);
+    const facts = POS_SHORTCUT_GROUPS[0]!.items.map((item) => item.keys[0]).filter((key) => ["F6", "F7", "F8"].includes(key!));
+    expect(facts).toEqual(["F6", "F7", "F8"]);
+  });
+
   it("no pagamento, F10 é dividir a conta", () => {
     expect(teclas("Dividir a conta")).toEqual(["F10"]);
   });

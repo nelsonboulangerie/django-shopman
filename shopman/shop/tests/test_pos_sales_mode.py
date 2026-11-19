@@ -36,6 +36,24 @@ def test_order_requires_wizard_before_items(missing, code):
     assert error.value.code == code
 
 
+@pytest.mark.parametrize("missing,code,focus", [
+    (("customer_ref", "delivery_date", "fulfillment_type"), "order_customer_required", "customer"),
+    (("delivery_date", "fulfillment_type"), "order_date_required", "schedule"),
+    (("fulfillment_type",), "order_fulfillment_required", "fulfillment"),
+])
+def test_order_wizard_asks_customer_then_date_then_fulfillment(missing, code, focus):
+    """A ordem do funil (#2754): com mais de uma coisa faltando, o servidor cobra
+    primeiro o cliente, depois a data e só então o recebimento, a mesma ordem em
+    que o assistente do PDV pergunta."""
+    payload = order_payload()
+    for key in missing:
+        payload.pop(key)
+    with pytest.raises(PosIntentError) as error:
+        parse_pos_sale_intent(payload, for_commit=False)
+    assert error.value.code == code
+    assert error.value.focus == focus
+
+
 @pytest.mark.parametrize("mode", ["remote", "", [], {}])
 def test_invalid_mode_is_recoverable(mode):
     with pytest.raises(PosIntentError) as error:
