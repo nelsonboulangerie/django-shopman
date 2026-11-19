@@ -515,6 +515,9 @@ class SyncResult:
     created: int = 0
     removed: int = 0
     failed: int = 0
+    #: O iFood recusou o horário de vez. A Directive segue (a pausa já saiu) e o
+    #: aviso já foi criado; o gesto "gravar horário" da tela relança este erro.
+    hours_error: MerchantAPIError | None = None
 
 
 def enqueue_sync(reason: str) -> None:
@@ -561,6 +564,7 @@ def sync_store(*, now: datetime | None = None) -> SyncResult:
             if exc.retryable:
                 raise
             result.failed += 1
+            result.hours_error = exc
             alert_store_write_failed(exc, what="o horário de funcionamento", now=now)
 
     _status_row(update={"synced_at": now})
