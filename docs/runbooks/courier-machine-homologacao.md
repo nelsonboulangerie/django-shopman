@@ -436,9 +436,10 @@ inteiro na homologação, use o painel da TaOn ou um `curl` de ensaio, nunca o l
   certo, o evento foi entendido.
 - **posicao**: só chega com corrida aceita (`A`, `S`, `E`), em lote a cada 10 s, com `data[]`.
   Na homologação sem entregador simulado ele pode não chegar; anote se chegou.
-- Header `Signature-V2` conferido pelo nosso endpoint (HMAC-SHA-512 hexadecimal do corpo cru com
-  o `MACHINE_API_KEY` do `web`). Resposta `401` com `Signature-V2 não confere` no log, seguida de
-  `size=... sha256=... signature=<8 caracteres>...`: a chave do `web` não é a que a TaOn usa para
+- Header `Signature-V2` conferido pelo nosso endpoint (HMAC-SHA-512 do corpo cru com o
+  `MACHINE_API_KEY` do `web`, escrito em hexadecimal ou base64: em 19/11 a produção mandou
+  letras fora do hexadecimal, e o endpoint recusava). O aceite loga `signature=ok encoding=…`. Resposta `401` com `Signature-V2 não confere` no log, seguida de
+  `size=... sha256=... signature=<8 caracteres>... len=<n> alphabet=<hex|base64|…>`: a chave do `web` não é a que a TaOn usa para
   assinar (a homologação pode ter chave própria), ou a conta da Machine difere da documentada.
   Anote qual dos dois (o `sha256` casa a linha com o envio; o corpo não é logado).
 - **Token na URL.** A URL cadastrada na TaOn leva `?token=` (é assim que ela autentica o POST).
