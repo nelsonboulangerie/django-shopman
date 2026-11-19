@@ -275,6 +275,42 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
+    "CONCIERGE_VERIFY_ANSWER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_ASKED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_ASKED_LATER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_HANDOFF": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_JOINED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_NO_PROMISE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_NO_PROMISE_UNKNOWN": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_NUDGE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_WAITING": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
     "CONFIRMATION_SHARE_CTA": (
         ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
     ),

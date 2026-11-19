@@ -180,7 +180,8 @@
             "open_counts",
             "recent_exists",
             "resolve",
-            "resolve_matching"
+            "resolve_matching",
+            "revise"
           ]
         }
       ]
@@ -2790,6 +2791,31 @@
             "oklch_to_css",
             "oklch_to_hex",
             "oklch_to_raw"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/concierge_verification.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "Answer",
+            "DeskResult",
+            "TakeOver",
+            "_handlers",
+            "answer",
+            "register",
+            "take_over"
           ]
         }
       ]

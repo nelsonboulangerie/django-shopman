@@ -29,6 +29,12 @@ class StorefrontConfig(AppConfig):
         registry.register_directive_handler(StockAlertDeliveryHandler())
         # "Medir agora" do placar das intenções (Admin): a medição roda no worker.
         registry.register_directive_handler(IntentPilotMeasureHandler())
+        # "Vou verificar" (WP-05): a equipe responde ou assume pelo cartão do sino, no
+        # backstage, que não importa superfície; a Concierge se registra na porta do shop.
+        from shopman.shop import concierge_verification
+        from shopman.storefront.concierge import verification
+
+        concierge_verification.register(answer=verification.answer, take_over=verification.take_over)
         from shopman.storefront.continuum import CatalogStructureRefreshHandler
 
         registry.register_directive_handler(CatalogStructureRefreshHandler())

@@ -433,14 +433,16 @@ def test_triage_does_not_call_the_nudge_a_complaint_but_keeps_the_explicit_one()
 
 @pytest.mark.django_db
 def test_my_question_answers_again_what_was_left_without_answer(conversation, outbox):  # noqa: F811 (fixtures)
+    # A parte que fica sem resposta é a não entendida: a consulta sem fato agora vira
+    # pergunta à equipe ("vou verificar", WP-05) e não volta na pergunta repetida.
     reader = ReaderClient([
         _act("product_question", "tem pão francês?", "pão francês"),
-        _act("house_info", "vocês aceitam vale refeição?"),
+        _act("unknown", "e aquele do vale refeição?"),
     ])
-    _turn(conversation, "tem pão francês? e vocês aceitam vale refeição?", "again-1", reader)
+    _turn(conversation, "tem pão francês? e aquele do vale refeição?", "again-1", reader)
     conversation.refresh_from_db()
     parts = conversation.flags["dialogue"]["parts"]
-    assert [(p["act"], p["state"]) for p in parts] == [("product_question", "answered"), ("house_info", "unanswered")]
+    assert [(p["act"], p["state"]) for p in parts] == [("product_question", "answered"), ("unknown", "unanswered")]
 
     result = _turn(conversation, "e a minha pergunta?", "again-2", reader)
 

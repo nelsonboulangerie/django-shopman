@@ -1577,6 +1577,58 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Desculpe, não encontrei a sua pergunta aqui. Pode me mandar de novo?",
         )},
     },
+    # Vou verificar (WP-05, bloco 4 do V2): a parte sem fato vira pergunta à equipe no sino do
+    # Gestor, e a resposta volta ao cliente pela Concierge. {minutes} é o primeiro prazo do canal
+    # (ChannelConfig.confirmation.concierge_verify_nudge_minutes); {when} sai do calendário da casa
+    # ("amanhã às 7h10", "seg. 24/11 às 7h10").
+    "CONCIERGE_VERIFY_ASKED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Já perguntei para a equipe e te respondo por aqui em até {minutes} minutos.",
+        )},
+    },
+    "CONCIERGE_VERIFY_ASKED_LATER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Já deixei a pergunta com a equipe e te respondo por aqui até {when}.",
+        )},
+    },
+    "CONCIERGE_VERIFY_JOINED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Juntei isso à pergunta que já fiz para a equipe e te respondo tudo junto por aqui.",
+        )},
+    },
+    # Fora da janela de 24 horas do WhatsApp a resposta da equipe não chegaria: nada é prometido.
+    "CONCIERGE_VERIFY_NO_PROMISE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quem confirma isso é a equipe, que volta {when}. Se puder, me escreva de novo nesse horário.",
+        )},
+    },
+    "CONCIERGE_VERIFY_NO_PROMISE_UNKNOWN": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quem confirma isso é a equipe. Se puder, me escreva de novo no horário de atendimento da casa.",
+        )},
+    },
+    "CONCIERGE_VERIFY_WAITING": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Ainda estou esperando a equipe confirmar sobre “{part}”. Assim que chegar, te aviso por aqui.",
+        )},
+    },
+    "CONCIERGE_VERIFY_ANSWER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="A equipe confirmou: {answer}",
+        )},
+    },
+    # Os dois prazos sem resposta da equipe (WP-06): o aviso de uma vez só, e a conversa
+    # que passa para a equipe (também quando alguém assume pelo cartão).
+    "CONCIERGE_VERIFY_NUDGE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Ainda estou confirmando com a equipe. Assim que eu tiver a resposta, te aviso por aqui.",
+        )},
+    },
+    "CONCIERGE_VERIFY_HANDOFF": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Alguém da equipe continua com você por aqui.",
+        )},
+    },
     "CONCIERGE_IDENTITY": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",

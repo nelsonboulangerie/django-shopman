@@ -390,12 +390,53 @@ def _accept_order_action(alert) -> ProductionActionProjection:
     )
 
 
+def _concierge_verification_actions(alert) -> list[ProductionActionProjection]:
+    """O "vou verificar" da Concierge (WP-05): responder ao cliente, ou assumir a conversa.
+
+    A resposta vai no corpo (``{"text": ...}``) e sai ao cliente pela Concierge; o
+    cartão fecha sozinho quando ela sai ou quando alguém assume.
+    """
+    base = f"/api/v1/backstage/alerts/{alert.pk}/concierge-verification"
+    rows = (
+        ("answer_concierge_verification", "Responder ao cliente", 1, "answer", "ConciergeVerificationAnswerRequest"),
+        ("take_over_conversation", "Assumir a conversa", 2, "take-over", ""),
+    )
+    return [
+        ProductionActionProjection(
+            ref=f"{kind}:{alert.pk}",
+            kind=kind,
+            label=label,
+            priority=priority,
+            enabled=True,
+            reason="",
+            method="POST",
+            href=f"{base}/{path}/",
+            payload_schema=schema,
+            expected_rev=None,
+            idempotency=ProductionActionIdempotencyProjection(required=False, key_scope=""),
+            confirmation=ProductionActionConfirmationProjection(
+                required=False,
+                reason_required=False,
+                title="",
+                confirm_label=label,
+            ),
+            approval_requirement=None,
+            source_alert_ref=str(alert.pk),
+            source_alert_effect="resolves",
+            proof="",
+        )
+        for kind, label, priority, path, schema in rows
+    ]
+
+
 def _alert_actions(
     alert, *, target_date: str = "", surface: str = "", acceptable: bool = False
 ) -> tuple[ProductionActionProjection, ...]:
     actions = []
     if acceptable:
         actions.append(_accept_order_action(alert))
+    if alert.type == "concierge_verify":
+        actions.extend(_concierge_verification_actions(alert))
     href, label = alert_context_href(alert, surface=surface, target_date=target_date)
     if href:
         actions.append(_open_context_action(alert, label=label, href=href))

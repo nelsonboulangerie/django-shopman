@@ -321,6 +321,10 @@ class OperatorAlert(models.Model):
         # "outra mesa": operação geral, no Admin, sem acordar o balcão.
         ("concierge_handoff", "WhatsApp: conversa para a equipe"),
         ("concierge_other_desk", "WhatsApp: mensagem para outra mesa"),
+        # "Vou verificar" (WP-05): a parte sem fato que a Concierge perguntou à equipe.
+        # A conversa segue com a Concierge; a equipe responde no cartão e a resposta
+        # volta ao cliente por ela, ou alguém assume a conversa. Sino do Gestor.
+        ("concierge_verify", "WhatsApp: cliente esperando confirmação da equipe"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
         ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
         ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
@@ -451,6 +455,7 @@ class OperatorAlert(models.Model):
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",
+        "concierge_verify",
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",

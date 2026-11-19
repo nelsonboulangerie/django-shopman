@@ -30,6 +30,22 @@ def create(
     )
 
 
+def revise(pk: int, *, message: str) -> bool:
+    """Troca a mensagem de um alerta ainda aberto, com revisão nova; ``False`` se fechou."""
+    from django.db import transaction
+
+    from shopman.backstage.models import OperatorAlert
+
+    with transaction.atomic():
+        alert = OperatorAlert.objects.select_for_update().filter(pk=pk, resolved_at__isnull=True).first()
+        if alert is None:
+            return False
+        alert.message = message
+        alert.rev += 1
+        alert.save(update_fields=["message", "rev"])
+        return True
+
+
 def recent_exists(
     type: str,
     since,
