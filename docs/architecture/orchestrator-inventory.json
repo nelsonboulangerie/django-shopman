@@ -8048,6 +8048,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/promise_expiry_margin.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.promise-expiry-margin"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/realtime.py",
       "touchpoints": [
         "outro"

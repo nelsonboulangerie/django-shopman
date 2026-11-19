@@ -435,28 +435,46 @@ def stock_on_dates(
 
     Devolve cópias: quem recebe pode mexer no ``dict`` sem tocar o memo.
     Fora do memo (comando, worker, request que muta) é a leitura direta.
+
+    A margem de validade é a de CADA data (``expiry_margin_for_target``): hoje
+    lê com a margem do canal, e a data futura não conta o que estará no último
+    dia de validade nela. As duas saem da mesma varredura, e a chave do memo
+    não muda: a margem de uma data sai do recorte, do dia de hoje e da data,
+    que já estão na chave.
     """
     from django.utils import timezone
     from shopman.stockman.services.availability import availability_for_skus_on_dates
 
     from shopman.shop import request_memo
+    from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
+
+    def read(read_skus, read_dates):
+        return availability_for_skus_on_dates(
+            read_skus,
+            read_dates,
+            **scope,
+            expiry_margin_days_by_date={
+                on: expiry_margin_for_target(scope.get("expiry_margin_days", 0), on)
+                for on in dict.fromkeys(read_dates)
+            },
+        )
 
     unique_dates = list(dict.fromkeys(dates))
     unique_skus = list(dict.fromkeys(skus))
     if not unique_skus or not unique_dates:
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
     try:
         base = ("stock_on_dates", _scope_key(scope), timezone.localdate())
         hash(base)
     except TypeError:
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
     buckets = {on: request_memo.stock_bucket((*base, on)) for on in unique_dates}
     if any(bucket is None for bucket in buckets.values()):
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
 
     missing = [sku for sku in unique_skus if any(sku not in buckets[on] for on in unique_dates)]
     if missing:
-        fresh = availability_for_skus_on_dates(missing, unique_dates, **scope)
+        fresh = read(missing, unique_dates)
         for on in unique_dates:
             for sku, info in (fresh.get(on) or {}).items():
                 buckets[on].setdefault(sku, info)
@@ -550,7 +568,7 @@ def decide(
 
     adapter = get_adapter("stock")
     scope = adapter.get_channel_scope(channel_ref)
-    info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope))
+    info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope, target_date))
     from shopman.stockman.services.availability import decision_from_availability
 
     return _promise_payload(decision_from_availability(sku, qty_d, info, target_date=target_date))
@@ -606,7 +624,7 @@ def decide_many(
     ]
     if to_read:
         scope = adapter.get_channel_scope(channel_ref)
-        kwargs = _availability_kwargs(scope)
+        kwargs = _availability_kwargs(scope, target_date)
         bulk_read = getattr(adapter, "get_availability_for_skus", None)
         if bulk_read is not None:
             infos = bulk_read(to_read, target_date=target_date, **kwargs)
@@ -630,13 +648,19 @@ def decide_many(
     return decisions
 
 
-def _availability_kwargs(scope: dict) -> dict:
-    """O recorte do canal nos argumentos da leitura de estoque do adapter."""
+def _availability_kwargs(scope: dict, target_date: date | None) -> dict:
+    """O recorte do canal nos argumentos da leitura de estoque do adapter.
+
+    A margem de validade é a da DATA lida (``expiry_margin_for_target``): a
+    mesma que a reserva usa em ``adapters.stock.create_hold``.
+    """
+    from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
+
     return {
         "safety_margin": scope["safety_margin"],
         "allowed_positions": scope["allowed_positions"],
         "excluded_positions": scope.get("excluded_positions"),
-        "expiry_margin_days": scope.get("expiry_margin_days", 0),
+        "expiry_margin_days": expiry_margin_for_target(scope.get("expiry_margin_days", 0), target_date),
         "include_nonconforming": scope.get("sells_nonconforming", True),
         "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
     }
