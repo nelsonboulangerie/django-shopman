@@ -23,6 +23,20 @@ export async function cashierAccepts(page: Page, ref: string): Promise<void> {
   await expect(orderCard(page, ref).getByRole("button", { name: "Aceitar", exact: true })).toHaveCount(0, { timeout: 60_000 });
 }
 
+/** Recusar: o Caixa dá "Visto" no alarme do pedido novo, se ele cobriu a tela, e toca
+ *  em Recusar no card. Devolve o diálogo de recusa, aberto. */
+export async function cashierOpensReject(page: Page, ref: string): Promise<Locator> {
+  const alarm = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Pedido novo sem aceite" }) });
+  if (await alarm.isVisible().catch(() => false)) {
+    await alarm.getByRole("button", { name: "Visto", exact: true }).click();
+    await expect(alarm).toBeHidden();
+  }
+  await orderCard(page, ref).getByRole("button", { name: "Recusar", exact: true }).click();
+  const dialog = page.getByRole("dialog").filter({ has: page.getByRole("button", { name: "Recusar pedido", exact: true }) });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 /** Coluna recolhida esconde o card: o Caixa abre a coluna, como faria na tela. */
 export async function revealCard(page: Page, ref: string): Promise<Locator> {
   const card = orderCard(page, ref);

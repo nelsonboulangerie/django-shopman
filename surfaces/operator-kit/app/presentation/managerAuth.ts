@@ -88,7 +88,7 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   // prévia do servidor (`money_sentence`).
   order_no_show: {
     title: "Autorizar encerrar como não retirado",
-    reason: "Encerrar o pedido como não retirado pede a autorização de um gerente.",
+    reason: "O cliente não veio buscar o pedido.",
   },
   order_edit_refund: {
     title: "Autorizar a devolução",

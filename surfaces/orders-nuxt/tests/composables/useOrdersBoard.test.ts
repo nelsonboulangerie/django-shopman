@@ -367,6 +367,23 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(board.actionError("WEB-8")).toBe("O pedido não foi atualizado. Tente de novo.");
   });
 
+  // WP-G06: a recusa mora num diálogo, e o `field` do dialeto `{detail, field,
+  // errors}` precisa chegar a ele para marcar o campo.
+  it("a recusa do servidor guarda o campo que ela apontou, e a nova tentativa o limpa", async () => {
+    env.fetchMock.mockRejectedValueOnce({
+      status: 400,
+      data: { detail: "Escolha um dos motivos da lista.", field: "reason_key", errors: { reason_key: ["Escolha um dos motivos da lista."] } },
+    });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-4", actions: fixtureActions({ can_confirm: true }) }] } };
+    const board = useOrdersBoard();
+    expect(await board.reject("WEB-4", { reasonKey: "gone", internalNote: "" })).toBe(false);
+    expect(board.actionError("WEB-4")).toBe("Escolha um dos motivos da lista.");
+    expect(board.actionErrorField("WEB-4")).toBe("reason_key");
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    expect(await board.reject("WEB-4", { reasonKey: "other", internalNote: "" })).toBe(false);
+    expect(board.actionErrorField("WEB-4")).toBe("");
+  });
+
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "boom" } });
     env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "WEB-3", actions: fixtureActions({ can_advance: true }) }] } };

@@ -100,7 +100,7 @@ describe("managerAuth: não retirado no Gestor", () => {
 
   it("sem a frase do dinheiro, a frase fixa do ato, sem travessão", () => {
     const fixed = managerAuthReason({ action: "order_no_show" });
-    expect(fixed).toBe("Encerrar o pedido como não retirado pede a autorização de um gerente.");
+    expect(fixed).toBe("O cliente não veio buscar o pedido.");
     expect(`${managerAuthTitle("order_no_show")} ${fixed}`).not.toMatch(/[—–]/);
   });
 });
