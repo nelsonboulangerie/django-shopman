@@ -336,11 +336,12 @@ describe("useOrdersBoard — ações (act)", () => {
 
   it("falha sem motivo do servidor diz em que pé o pedido ficou e QUAL gesto não chegou (F8, frase do dono 09/10)", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 500 });
-    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-6", status_label: "Novo", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-261118-K42", status_label: "Novo", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
-    expect(await board.confirm("WEB-6")).toBe(false);
-    expect(board.actionError("WEB-6")).toBe("WEB-6 continua novo: o Aceitar não chegou. Tente de novo.");
-    expect(board.actionError("WEB-6")).not.toContain("Falha na ação");
+    expect(await board.confirm("WEB-261118-K42")).toBe(false);
+    // O pedido vai pelo código que o cartão mostra, não pela referência inteira.
+    expect(board.actionError("WEB-261118-K42")).toBe("K42 continua novo: o Aceitar não chegou. Tente de novo.");
+    expect(board.actionError("WEB-261118-K42")).not.toContain("Falha na ação");
   });
 
   it("sem a situação na projeção, a falha diz só o gesto que não chegou", async () => {

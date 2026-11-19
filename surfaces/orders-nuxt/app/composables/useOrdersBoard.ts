@@ -22,6 +22,7 @@ import {
   zonesView,
   type PreorderGroup,
   type ZoneView,
+  splitRef,
 } from "~/presentation/board";
 import { stationReadyPath, stationRecallPath } from "~/presentation/kitchen";
 import { showTreatableOrderNotification } from "~/utils/treatableNotification";
@@ -579,8 +580,11 @@ export function useOrdersBoard() {
   const actionErrorFields = new Map<string, string>();
   const actionErrorField = (ref_: string) => actionErrorFields.get(ref_) ?? "";
   // A falha diz em que pé o pedido ficou e QUAL gesto não chegou (F8 do laudo do
-  // Gestor; frase do dono, 09/10/2026): "WEB-6 continua novo: o Aceitar não chegou.
-  // Tente de novo." A referência, a situação e o nome do botão vêm da projeção.
+  // Gestor; frase do dono, 09/10/2026): "K42 continua novo: o Aceitar não chegou.
+  // Tente de novo." O pedido vai pelo CÓDIGO que o cartão mostra ("K42"), não pela
+  // referência inteira ("WEB-261118-K42"): é o nome pelo qual quem opera o conhece
+  // (auditoria da prévia do WP-G06, 18/11/2026). A situação e o nome do botão vêm da
+  // projeção.
   function failureMessage(ref_: string, action: string): string {
     const card = [
       ...zones.value.flatMap((zone) => zone.cards),
@@ -592,7 +596,7 @@ export function useOrdersBoard() {
     const situation = situationAfterContinua(card?.status_label);
     if (!label) return "O pedido não foi atualizado. Tente de novo.";
     return card?.ref && situation
-      ? `${card.ref} continua ${situation}: o ${label} não chegou. Tente de novo.`
+      ? `${splitRef(card.ref).code} continua ${situation}: o ${label} não chegou. Tente de novo.`
       : `O ${label} não chegou. Tente de novo.`;
   }
 

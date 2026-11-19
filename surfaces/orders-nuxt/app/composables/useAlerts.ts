@@ -8,7 +8,7 @@ import { useOperatorResourceKey } from "./useOperatorResourceKey";
 // marketing e B.I. ficam no Admin, onde alguém pode agir.
 import type { AlertProjection, AlertsResponse, OrderDetailResponse } from "~/types/orders";
 import { useOrderIntention } from "./useOrderIntention";
-import { alertMessageWithSchedule } from "~/presentation/board";
+import { alertMessageWithSchedule, splitRef } from "~/presentation/board";
 import {
   openResilientEventSource,
   type ResilientEventSource,
@@ -173,14 +173,14 @@ export function useAlerts() {
       );
       const confirm = detail.order.actions?.find((item) => item.ref === "confirm");
       if (!confirm) {
-        useSonner.error(`O pedido ${ref_} não espera mais aceite. Abra o pedido para conferir.`);
+        useSonner.error(`O pedido ${splitRef(ref_).code} não espera mais aceite. Abra o pedido para conferir.`);
         return false;
       }
       await intentions.executePath(`${ref_}:confirm`, action.href, confirm, {});
-      useSonner.success(`Pedido ${ref_} aceito.`);
+      useSonner.success(`Pedido ${splitRef(ref_).code} aceito.`);
       return true;
     } catch (error) {
-      const fallback = `${ref_} continua novo: o Aceitar não chegou. Tente de novo.`;
+      const fallback = `${splitRef(ref_).code} continua novo: o Aceitar não chegou. Tente de novo.`;
       // Recusa do servidor fala pelo `detail`; a da intenção local (identificação
       // trocada, gravação anterior sem resultado) fala pela própria mensagem.
       useSonner.error(
