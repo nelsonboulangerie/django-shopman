@@ -143,6 +143,54 @@ def test_uppercase_hex_signature_is_accepted():
     assert resp.status_code == 202
 
 
+def _hmac(body: bytes, key: str = API_KEY) -> bytes:
+    import hashlib
+    import hmac
+
+    return hmac.new(key.encode(), body, hashlib.sha512).digest()
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_base64_signature_is_accepted():
+    # Produção, 19/11: a TaOn mandou a assinatura com letras fora do hexadecimal,
+    # e o lower() de antes estragava o base64. A conta é a mesma; muda a escrita.
+    import base64
+
+    body = b'{"algo": "desconhecido"}'
+    resp = _raw_post(body, HTTP_SIGNATURE_V2=base64.b64encode(_hmac(body)).decode())
+    assert resp.status_code == 202
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_base64url_and_prefixed_signatures_are_accepted():
+    import base64
+
+    body = b'{"algo": "desconhecido"}'
+    url = base64.urlsafe_b64encode(_hmac(body)).decode().rstrip("=")
+    assert _raw_post(body, HTTP_SIGNATURE_V2=url).status_code == 202
+    assert _raw_post(body, HTTP_SIGNATURE_V2="sha512=" + signature_for(body, API_KEY)).status_code == 202
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_base64_signature_with_another_key_is_rejected():
+    import base64
+
+    body = b'{"algo": "desconhecido"}'
+    forged = base64.b64encode(_hmac(body, "outra-chave")).decode()
+    assert _raw_post(body, HTTP_SIGNATURE_V2=forged).status_code == 401
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_base64_signature_lowercased_is_rejected():
+    # base64 diferencia maiúscula: só o hexadecimal é aceito em qualquer caixa.
+    import base64
+
+    body = b'{"algo": "desconhecido"}'
+    sig = base64.b64encode(_hmac(body)).decode()
+    assert sig != sig.lower()
+    assert _raw_post(body, HTTP_SIGNATURE_V2=sig.lower()).status_code == 401
+
+
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_invalid_signature_is_rejected_and_touches_nothing(shop):
     order = _order_with_ride()
@@ -666,4 +714,5 @@ def test_signature_mismatch_logs_a_digest_not_the_body(webhook_log):
     logged = webhook_log.getvalue()
     assert "Diego Ferreira" not in logged
     assert "signature=abcdef01..." in logged
+    assert "len=128 alphabet=hex" in logged
     assert f"size={len(body)} sha256=" in logged
