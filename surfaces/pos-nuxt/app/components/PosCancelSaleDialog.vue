@@ -12,6 +12,12 @@ import type { POSManagerProjection } from "~/types/pos";
 const props = defineProps<{
   open: boolean;
   orderRef: string;
+  /**
+   * O valor da venda que o gerente assina ("R$ 42,00"), na frente do PIN. Sem
+   * ele, o diálogo dizia só o número do pedido, e o gerente assinava o
+   * cancelamento de uma venda de R$ 4,00 ou de R$ 400,00 do mesmo jeito (P1-6).
+   */
+  totalDisplay: string;
   reason: string;
   maxAgeMinutes?: number;
   managers?: POSManagerProjection[];
@@ -42,8 +48,11 @@ const emit = defineEmits<{
     @authorize-badge="(token: string) => emit('confirmBadge', token)"
   >
     <template #context>
+      <p class="text-base font-semibold text-highlighted" data-cancel-sale-total>
+        Cancelar a venda de <span class="tabular-nums">{{ props.totalDisplay }}</span>
+      </p>
       <p class="text-sm text-muted-foreground">
-        O pedido {{ props.orderRef }} será cancelado.
+        Pedido {{ props.orderRef }}.
         <template v-if="props.maxAgeMinutes">
           Disponível por até {{ props.maxAgeMinutes }} minutos após a venda; depois, cancele pelo gestor.
         </template>

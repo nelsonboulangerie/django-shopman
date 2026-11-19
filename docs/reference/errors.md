@@ -56,6 +56,19 @@ obrigatório; `error` agrega metadados estáveis de recuperação
 Um front que só entende o dialeto canônico continua funcionando (lê `detail`);
 o operator-kit usa `error.{code,focus,recovery}` para foco e ação de 1 clique.
 
+Nos gestos de dinheiro do caixa (`pos/cash/*`, devolução, estorno, troco, acerto,
+cancelar venda recente) e em `POST pos/sale/close/`, toda recusa sai com o canônico
+**por cima** do superset: quando `error.field` existe, `field` sobe para o topo e
+`errors` traz `{field: [detail]}` (#2347, WP-E6). Falha que não é recusa de negócio
+(banco, bug) sai **500** com `error.code = "cash_system_error"` e, em `detail`, a frase
+do gesto que não aconteceu ("O sistema não conseguiu registrar o movimento no
+livro-caixa."); o texto da exceção vai só para o log.
+
+| `error.code` | Status | O que aconteceu | O que resolve |
+|---|---|---|---|
+| `manager_approval_throttled` | 429 | O operador errou o PIN de gerente três vezes em 15 minutos; o PDV para de conferir antes de o gerente travar (P2-12) | Esperar, ou o gerente assinar com o crachá (crachá não conta) |
+| `cash_system_error` | 500 | Falha do sistema num gesto de caixa | O que a saída da tela diz; repetir não grava duas vezes |
+
 ### Recusas do PDV pela política "encomenda cobra antes" (422)
 
 Encomenda não vai à cozinha enquanto não paga (política da casa, 28/08/2026), e o
