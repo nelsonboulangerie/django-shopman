@@ -152,6 +152,22 @@ const QUEUE = {
 
 // O detalhe de um pedido da fila: o card + o que só o detalhe traz. Sem isto o
 // `/<ref>` recebia `{}` e a e2e não alcançava o resumo do iFood, que mora no detalhe.
+/**
+ * "O que falta neste pedido" (WP-G05): o servidor de verdade manda a lista pronta
+ * (`projections/order_pending.py`). Aqui ela sai dos mesmos campos do cartão: o avanço
+ * travado vira a linha do bloqueio, com o nome e o motivo.
+ */
+function pendingFor(card) {
+  if (!card.advance_block_label && !card.advance_block_reason) return [];
+  return [{
+    key: card.payment_pending ? "payment" : "advance",
+    tone: "info",
+    label: String(card.advance_block_label || "").replace(/…$/, ""),
+    reason: card.advance_block_reason || "",
+    actions: [],
+  }];
+}
+
 const DETAIL_EXTRA = {
   customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "",
   delivery_address: "", delivery_instructions: "",
@@ -400,7 +416,9 @@ const server = createServer((req, res) => {
     const inRide = cancelScenario ? rideOrder(detail[1]) : null;
     if (inRide) return json(res, 200, { order: inRide });
     const card = queueCard(detail[1]);
-    return card ? json(res, 200, { order: { ...card, ...DETAIL_EXTRA } }) : json(res, 404, { detail: "Pedido não encontrado." });
+    return card
+      ? json(res, 200, { order: { ...card, ...DETAIL_EXTRA, pending: pendingFor(card) } })
+      : json(res, 404, { detail: "Pedido não encontrado." });
   }
   if (/\/alerts\/?(\?|$)/.test(url)) return json(res, 200, { alerts: [], counts: { active: 0, critical: 0 } });
   return json(res, 200, {});
