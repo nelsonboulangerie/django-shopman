@@ -93,3 +93,17 @@ describe('cartReservationNotice', () => {
     expect(cartReservationNotice(cart(), serverNowMs, null, '2026-11-19T19:40:00-03:00')?.kind).toBe('held')
   })
 })
+
+describe('linha da reserva: o ícone', () => {
+  it('guardando, a linha leva a sacola, e não um segundo relógio', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const page = readFileSync(join(process.cwd(), 'app/pages/sacola.vue'), 'utf8')
+    const icon = page.match(/<Icon :name="reservationNotice\.kind === 'held' \? '([^']+)' : '([^']+)'"/)
+
+    expect(icon?.[1]).toBe('lucide:shopping-bag')
+    expect(icon?.[2]).toBe('lucide:timer-off')
+    // A linha de cima ("Seu pedido fica pronto…") é a que tem o relógio.
+    expect(page).toMatch(/data-cart-ready-line>\s*<Icon name="lucide:clock"/)
+  })
+})
