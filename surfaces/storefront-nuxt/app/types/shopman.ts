@@ -393,6 +393,13 @@ export interface CartProjection {
   has_ready_for_confirmation_items: boolean
   unavailable_banner: string
   awaiting_confirmation_notice: string
+  // Reserva com prazo à vista (WP-L11): até quando a sacola guarda os itens. É o
+  // menor prazo das reservas vivas da sessão; null quando nada tem prazo correndo
+  // (sacola vazia, só item de fornada futura). `reserved_until_display` já vem no
+  // formato da casa ("19h18"). O prazo é contado pelo relógio do servidor, que vem
+  // no envelope da leitura da sacola (`CartResponse.server_now_iso`).
+  reserved_until_iso: string | null
+  reserved_until_display: string | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
@@ -798,6 +805,8 @@ export interface ProductResponse {
 
 export interface CartResponse {
   cart: CartProjection
+  // O relógio do servidor na hora da resposta (só na leitura da sacola).
+  server_now_iso?: string
 }
 
 export interface ReorderConflictItemProjection {
@@ -1005,6 +1014,13 @@ export interface CheckoutProjection {
   // Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
   // "Hoje" não vem em `available_dates` e a tela diz por quê.
   today_over?: boolean
+  // O "hoje" da loja (ISO), no fuso dela: a tela calcula "hoje", "amanhã" e os
+  // limites do calendário a partir daqui, não do relógio do aparelho.
+  today?: string
+  // A frase do dinheiro de cada forma de pagamento, para a revisão: paga agora,
+  // até quando a loja confirma e o que acontece se não confirmar. Vazio quando
+  // não há prazo a prometer.
+  money_notices?: Array<{ method: string, text: string }>
   // NOTA DA ENTREGA: toda entrega pede CPF/CNPJ. `prefill_tax_id` é o documento
   // que já vem no campo (do cadastro ou da última entrega); `prefill_tax_id_source`
   // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.
@@ -1170,8 +1186,6 @@ export interface TrackingCopyProjection {
   // Fila de espera: cada fase tem a sua voz — esperar, confirmar, sair.
   waitlist_waiting_title: string
   waitlist_waiting_message: string
-  waitlist_confirm_title: string
-  waitlist_confirm_message: string
   waitlist_confirm_cta: string
   waitlist_confirmed_title: string
   waitlist_released_title: string

@@ -36,6 +36,7 @@ TEST_LINES: tuple[tuple[str, Any, str], ...] = (
     ("commerce.cancel_order", True, "liga o cancelamento no perfil de teste"),
     ("commerce.amend_order", True, "liga a alteração no perfil de teste"),
     ("commerce.discount_cap_minor", 500, "teto do desconto no perfil de teste"),
+    ("commitment.escalation", "supervisor", "prazo da equipe vencido escala ao supervisor (K22)"),
 )
 
 # Movimento → linha de que ele depende.
@@ -81,7 +82,8 @@ def build_test_profile(*, tenant: str = "tenant-test", **overrides: Any) -> Depl
         "adapters": {
             "commerce": ("search", "read_item", "promise", "quote", "execute", "locate", "reconcile"),
             "channel": ("send", "delivery_status", "request_handoff"),
-            "staff": ("ask", "assign", "record_acceptance"),
+            "staff": ("ask", "open_or_update", "assign", "record_acceptance", "record_fulfillment",
+                      "promote_answer"),
         },
         "catalog_version": "1",
         "policy_version": "1",

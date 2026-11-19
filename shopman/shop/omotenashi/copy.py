@@ -976,19 +976,45 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE": {
+    # Encomenda esperando a loja. Até quando a loja confirma ({until} = "até 8h40",
+    # "até amanhã, sexta, às 10h") e para quando é a encomenda são frases
+    # separadas (#2749): juntas, "A loja confirma sua encomenda para amanhã, a
+    # partir das 15h" lia como se a confirmação fosse amanhã às 15h. Sem prazo
+    # publicado há duas frases do aceite: ``_NO_UNTIL`` quando o dia da encomenda
+    # vem logo depois (em ``..._IS_FOR``) e, por isso, não nomeia a encomenda; e
+    # ``_NO_DATE`` quando não há dia combinado, e a frase a nomeia.
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_UNTIL": {
         WILDCARD: {
-            WILDCARD: CopyEntry(message="A loja confirma sua encomenda para {when} e avisa por aqui."),
+            WILDCARD: CopyEntry(message="A loja confirma {until} e avisa por aqui."),
         },
     },
     # A mesma encomenda, já paga: o título diz "Pagamento recebido" e a frase
     # promete a devolução se a loja não puder confirmar.
-    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID": {
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
+                message="A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
             ),
         },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma e avisa por aqui."),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    # Para quando é ({when} = "amanhã, a partir das 15h"), em frase própria.
+    "TRACKING_PROMISE_PREORDER_IS_FOR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua encomenda é para {when}.")},
+    },
+    "TRACKING_PROMISE_ORDER_IS_FOR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido é para {when}.")},
     },
     "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE": {
         WILDCARD: {
@@ -1002,10 +1028,17 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             WILDCARD: CopyEntry(message="A loja confirma sua encomenda e avisa por aqui."),
         },
     },
-    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": {
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento recebido. A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
+                message="Pagamento recebido. A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pagamento recebido. A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
             ),
         },
     },
@@ -1128,17 +1161,29 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE": {
+    # Cartão reservado esperando a loja: o prazo vai nesta frase, e o dia do
+    # pedido em ``TRACKING_PROMISE_ORDER_IS_FOR`` (#2749). O verbo é "confirmar",
+    # como na revisão do checkout e nas frases do Pix: um ato, um verbo só.
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para {when}.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
+            ),
+        },
+    },
+    # Sem prazo publicado e com o dia do pedido na frase seguinte: não nomeia o
+    # pedido, para o substantivo não se repetir. Sem dia combinado, ``_NO_DATE``.
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar seu pedido.",
             ),
         },
     },
@@ -1220,12 +1265,25 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
         )},
     },
+    # O chamado é a frase principal do acompanhamento (título e mensagem da
+    # promessa, estado ``waitlist_confirming``); o cartão da fila fica com o
+    # relógio e o botão. {until} = "até 9h52". O título fala da cliente ("a sua
+    # vez"), não da fornada, que é da casa. A palavra é "vaga", a mesma das
+    # outras telas da fila ("A vaga passou a vez", "liberamos a sua vaga").
     "TRACKING_WAITLIST_CONFIRM_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Sua fornada saiu!")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Chegou a sua vez!")},
     },
     "TRACKING_WAITLIST_CONFIRM_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Confirme para garantir o seu. Se não der, a vaga vai para a próxima pessoa da fila.",
+            message=(
+                "Confirme seu pedido {until} para garantir a sua vaga. "
+                "Depois desse horário, ela passa para a próxima pessoa da fila."
+            ),
+        )},
+    },
+    "TRACKING_WAITLIST_CONFIRM_MESSAGE_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Confirme seu pedido para garantir a sua vaga na fila.",
         )},
     },
     "TRACKING_WAITLIST_CONFIRM_CTA": {
@@ -1530,6 +1588,58 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_PARTS_REPEAT_ASK": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Desculpe, não encontrei a sua pergunta aqui. Pode me mandar de novo?",
+        )},
+    },
+    # Vou verificar (WP-05, bloco 4 do V2): a parte sem fato vira pergunta à equipe no sino do
+    # Gestor, e a resposta volta ao cliente pela Concierge. {minutes} é o primeiro prazo do canal
+    # (ChannelConfig.confirmation.concierge_verify_nudge_minutes); {when} sai do calendário da casa
+    # ("amanhã às 7h10", "seg. 24/11 às 7h10").
+    "CONCIERGE_VERIFY_ASKED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Já perguntei para a equipe e te respondo por aqui em até {minutes} minutos.",
+        )},
+    },
+    "CONCIERGE_VERIFY_ASKED_LATER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Já deixei a pergunta com a equipe e te respondo por aqui até {when}.",
+        )},
+    },
+    "CONCIERGE_VERIFY_JOINED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Juntei isso à pergunta que já fiz para a equipe e te respondo tudo junto por aqui.",
+        )},
+    },
+    # Fora da janela de 24 horas do WhatsApp a resposta da equipe não chegaria: nada é prometido.
+    "CONCIERGE_VERIFY_NO_PROMISE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quem confirma isso é a equipe, que volta {when}. Se puder, me escreva de novo nesse horário.",
+        )},
+    },
+    "CONCIERGE_VERIFY_NO_PROMISE_UNKNOWN": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quem confirma isso é a equipe. Se puder, me escreva de novo no horário de atendimento da casa.",
+        )},
+    },
+    "CONCIERGE_VERIFY_WAITING": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Ainda estou esperando a equipe confirmar sobre “{part}”. Assim que chegar, te aviso por aqui.",
+        )},
+    },
+    "CONCIERGE_VERIFY_ANSWER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="A equipe confirmou: {answer}",
+        )},
+    },
+    # Os dois prazos sem resposta da equipe (WP-06): o aviso de uma vez só, e a conversa
+    # que passa para a equipe (também quando alguém assume pelo cartão).
+    "CONCIERGE_VERIFY_NUDGE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Ainda estou confirmando com a equipe. Assim que eu tiver a resposta, te aviso por aqui.",
+        )},
+    },
+    "CONCIERGE_VERIFY_HANDOFF": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Alguém da equipe continua com você por aqui.",
         )},
     },
     "CONCIERGE_IDENTITY": {

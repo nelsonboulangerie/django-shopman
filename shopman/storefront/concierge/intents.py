@@ -665,6 +665,8 @@ class PartReply:
     #: A pergunta desta parte é a que fica no fim da resposta: a confirmação que só o
     #: "sim" aplica (o cancelamento, o acréscimo a pedido já feito).
     keeps_question: bool = False
+    #: A parte não tinha fato e foi perguntada à equipe ("vou verificar").
+    verifying: bool = False
     memo: dict = field(default_factory=dict)
     tool_events: list[dict] = field(default_factory=list)
 
@@ -679,6 +681,11 @@ class Execution:
     team_offers: list[str] = field(default_factory=list)
     #: A pergunta de alergia foi respondida pelo aviso da casa (a triagem guarda).
     allergy_answered_by: str = ""
+    #: "Vou verificar" (WP-05): as partes de consulta sem fato que vão para a equipe
+    #: (``[{text, product}]``, redigidas), o prazo que a casa pode prometer e a frase dele.
+    verify: list[dict] = field(default_factory=list)
+    verify_promise: dict = field(default_factory=dict)
+    verify_note: str = ""
 
     @property
     def to_team(self) -> bool:
@@ -777,7 +784,11 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             customer_text=text,
         )
 
-    def search(act: Act) -> PartReply:
+    from . import verification
+
+    verifiable = verification.can_verify(conversation) and not team_in_turn
+
+    def search(act: Act, *, consult: bool = False) -> PartReply:
         from . import dialogue
 
         query = _search_text(act)
@@ -786,6 +797,12 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         if result.get("ok") and result.get("found"):
             reply.text = tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
+        elif consult and verifiable and verification.question_text(act):
+            # Sem fato numa consulta: a casa não inventa e não larga o cliente. Diz que
+            # não tem aqui, pergunta à equipe e, no fim da resposta, promete o prazo.
+            reply.text = _fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(act.product or act.span))
+            reply.verifying = True
+            run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
         else:
             # Sem fato, a casa não inventa: diz que não tem e oferece a equipe.
             reply.text = " ".join(
@@ -805,7 +822,7 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=topic)))
             continue
         if act.act in {PRODUCT, HOURS, HOUSE}:
-            run.replies.append(search(act))
+            run.replies.append(search(act, consult=True))
             continue
         if act.act == ORDER:
             if team_in_turn:
@@ -863,6 +880,24 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         run.replies.append(PartReply(act, text=_fill(copy(UNCLEAR_COPY_KEY) or "", part=_clip(act.span))))
     if run.allergy_team and not run.team:
         run.team = [Act(ALLERGY)]
+    if run.verify and run.to_team:
+        # A equipe assume a conversa neste turno e vê todas as partes no cartão dela:
+        # não há verificação à parte, e a frase de cada parte já diz que não tem aqui.
+        run.verify = []
+        for reply in run.replies:
+            reply.verifying = False
+    elif run.verify:
+        run.verify_promise = verification.promise_for(conversation)
+        open_now = verification.current(conversation) is not None
+        run.verify_note = verification.promise_text(run.verify_promise, joined=open_now)
+        if run.verify_promise.get("kind") == verification.NO_PROMISE:
+            # Fora da janela de 24 horas, nada volta pela conversa: nenhum cartão abre, e
+            # a parte fica sem resposta na memória (a pergunta repetida a busca de novo).
+            run.verify = []
+            for reply in run.replies:
+                if reply.verifying:
+                    reply.verifying = False
+                    reply.memo = {"found": False}
     return run
 
 
@@ -932,6 +967,9 @@ def compose(run: Execution) -> str:
             continue
         if text and text not in blocks:
             blocks.append(text)
+    if run.verify_note:
+        # O prazo do "vou verificar" fecha as respostas (antes da confirmação no ar).
+        blocks.append(run.verify_note)
     if kept:
         blocks.append(kept)
         last_question = len(blocks) - 1
@@ -1041,6 +1079,19 @@ def run(conversation, *, binding, decision, client=None):
             return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
         return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
 
+    # "E aí?" com uma pergunta à equipe em espera ("vou verificar", WP-05): a resposta é
+    # o estado da espera, sem cartão novo e sem buscar de novo.
+    verifying = memory.state.get("verifying")
+    if verifying:
+        from . import verification
+        from .metrics import LAYER_CONTEXT as _LAYER_CONTEXT
+
+        if verification.asks_for_news(customer_text):
+            waiting = AgentOutcome(reply_text=verification.waiting_reply(verifying), layer=_LAYER_CONTEXT,
+                                   memory=memory)
+            waiting.verification = {"waiting": True}
+            return waiting
+
     # Pergunta repetida (decisão da coordenação, 03/10/2026): "você não respondeu",
     # "e a minha pergunta?" sem outra pergunta junto. A Concierge responde as partes
     # que ficaram pendentes, pela memória; reclamação só com queixa explícita.
@@ -1120,6 +1171,8 @@ def _parts_memo(run_: Execution) -> dict:
             state = "team"
         elif reply.suspended:
             state = "suspended"
+        elif reply.verifying:
+            state = "verifying"
         elif act.act == UNKNOWN or reply.memo.get("found") is False:
             state = "unanswered"
         else:
@@ -1143,6 +1196,9 @@ def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text:
         memory_memos=[*memos, *executed.memos, _parts_memo(executed)],
         intents=found.as_dict(),
     )
+    if executed.verify_note and not executed.to_team:
+        # "Vou verificar": o turno grava a pergunta e o cartão da equipe (``service.run_turn``).
+        outcome.verification = {"requests": list(executed.verify), "promise": dict(executed.verify_promise)}
     if executed.allergy_answered_by and not executed.to_team:
         # O próximo "sim" à oferta da equipe para alergia grave lê isto (``triage``).
         outcome.triage_update = triage.Triage(
@@ -1179,7 +1235,8 @@ def _pending_parts(memory) -> list[Act]:
     devolve. Sem partes na memória (a última resposta não foi pelas partes), vazio.
     """
     rows = [row for row in (memory.state.get("parts") or []) if isinstance(row, dict)
-            and row.get("act") in ACT_NAMES and row.get("state") != "team" and row.get("act") not in COURTESY]
+            and row.get("act") in ACT_NAMES and row.get("state") not in {"team", "verifying"}
+            and row.get("act") not in COURTESY]
     pending = [row for row in rows if row.get("state") != "answered"] or rows
     return [Act(row["act"], span=str(row.get("span") or ""), product=str(row.get("product") or ""),
                 qty=int(row.get("qty") or 0)) for row in pending]

@@ -99,7 +99,7 @@ class DecisionItemProjection:
     product_name: str
     #: A foto que o anúncio leva, ou a do produto (a miniatura do cartão, v4 pino 2).
     image_url: str
-    #: O fato do lote, quando o anúncio nasceu de um: "24 un saíram às 10:01".
+    #: O fato do lote, quando o anúncio nasceu de um: "24 un ficaram prontas às 10h01".
     lot_quantity: str
     lot_finished_at: datetime | None
     #: Falha: o que JÁ foi entregue nas outras plataformas ("Facebook e WhatsApp

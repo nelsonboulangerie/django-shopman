@@ -266,6 +266,17 @@ class CartProjection:
     draft_context: str = ""
     # Economia do grupo (texto por grupo, Admin). Vazia quando não houve.
     group_savings_message: str = ""
+    # Reserva com prazo à vista (WP-L11, decisão do dono 4 de 16/11/2026): até
+    # quando a sacola guarda os itens. É o menor prazo das reservas vivas da
+    # sessão; cada gesto na sacola renova, e a resposta já traz a hora nova.
+    # ``None`` quando nada tem prazo correndo (sacola vazia, só item de fornada
+    # futura): a tela não promete hora nenhuma. ``reserved_until_display`` é a
+    # hora no formato da casa ("19h18"). O relógio do servidor NÃO mora aqui: a
+    # projeção é o estado da sacola e sai igual em toda resposta do mesmo
+    # estado (o replay de uma oferta e o gêmeo público dependem disso). Ele vai
+    # no envelope da leitura da sacola (``GET /api/v1/storefront/cart/``).
+    reserved_until_iso: str | None = None
+    reserved_until_display: str | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -321,7 +332,10 @@ def build_cart(
 
     from shopman.storefront.identity import checkout_draft_context
     context = checkout_draft_context(request, session_key)
+    reserved_until = None if data.is_empty else cart_data.reserved_until(session_key)
     return CartProjection(
+        reserved_until_iso=_iso(reserved_until),
+        reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
         revision=data.revision,
         draft_context=context,
         items=items,

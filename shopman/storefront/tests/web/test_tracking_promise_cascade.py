@@ -21,7 +21,7 @@ from shopman.shop.projections import order_tracking
 from shopman.shop.projections.order_tracking import build_tracking
 
 # Estados em que a bola é do cliente: ele precisa agir (pagar/tentar) AGORA.
-CUSTOMER_BALL_STATES = {"payment_pix_ready", "payment_card_ready", "payment_retry"}
+CUSTOMER_BALL_STATES = {"payment_pix_ready", "payment_card_ready", "payment_retry", "waitlist_confirming"}
 
 
 @pytest.fixture
@@ -489,7 +489,7 @@ def test_authorized_card_waiting_says_money_is_reserved_not_a_waitlist(status, w
     if when:
         assert when in message
     if status == "new":
-        assert "só é cobrado quando a loja aceitar" in message
+        assert "só é cobrado quando a loja confirmar" in message
 
 
 def test_state_payment_capture_failed(make_order, patch_payment):
@@ -563,7 +563,9 @@ def test_preorder_not_accepted_yet_is_not_called_reserved(state, paid, when):
         payment_confirmed=paid,
     )
     assert "reservada" not in message
-    assert "A loja confirma sua encomenda" in message
+    # Com dia combinado quem nomeia a encomenda é a frase do dia (#2749).
+    assert ("A loja confirma e avisa" if when else "A loja confirma sua encomenda") in message
+    assert message.count("encomenda") == 1
     assert "{when}" not in message
     if when:
         assert when in message

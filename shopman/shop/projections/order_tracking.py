@@ -223,6 +223,11 @@ class TrackingPromiseData:
     # cliente, resolvido aqui pelo mesmo motivo do `next_opening_phrase` (o
     # calendário é lado de escrita; a presentation só lê projections).
     payment_deadline_phrase: str = ""
+    # Até quando a loja responde ao pedido que ainda espera a decisão dela (ISO),
+    # nos dois modos do canal: é o instante em que o ``confirmation.timeout`` do
+    # pedido está agendado (aceite automático no ``auto_confirm``, cancelamento
+    # com devolução no ``auto_cancel``). Só nos estados em que a bola é da loja.
+    acceptance_deadline_at: str | None = None
     # ready_pickup: "hoje às 15h" quando a retirada ainda não pode acontecer
     # agora (a janela combinada não começou ou a loja está fechada). Vazio
     # quando o cliente pode vir já.
@@ -960,6 +965,7 @@ def _promise(
     eta_at: str | None = None,
     next_opening_phrase: str = "",
     payment_deadline_phrase: str = "",
+    acceptance_deadline_at: str | None = None,
     pickup_from_phrase: str = "",
     payment_method: str = "",
     pix_qr_code: str | None = None,
@@ -984,6 +990,7 @@ def _promise(
         eta_at=eta_at,
         next_opening_phrase=next_opening_phrase,
         payment_deadline_phrase=payment_deadline_phrase,
+        acceptance_deadline_at=acceptance_deadline_at,
         pickup_from_phrase=pickup_from_phrase,
         payment_method=payment_method,
         pix_qr_code=pix_qr_code,
@@ -1114,6 +1121,11 @@ def _build_promise(
         return _promise(
             fulfillment_wait_kind=wait_kind,
             fulfillment_wait_until=wait_until,
+            acceptance_deadline_at=(
+                _acceptance_deadline_at(order)
+                if kwargs.get("state") in _STORE_DECISION_STATES
+                else None
+            ),
             **kwargs,
         )
 
@@ -1269,6 +1281,35 @@ def _build_promise(
             # mesma ação "tentar de novo" pede a conferência, que regenera o intent.
             return _payment_retry_promise(order, method=method)
         # Pix sem código ainda → não é a bola do cliente; cai para a loja.
+
+    # ── 3b. BOLA DO CLIENTE — a loja está chamando a fila (#2771) ───
+    # A fornada ficou pronta e a vaga é do cliente por um prazo curto: quem age
+    # é ele, pelo botão do cartão da fila. Sem este degrau a cascata caía em
+    # ``store_checking`` e a frase principal dizia "Estamos conferindo a
+    # disponibilidade. Avisamos em seguida." ao lado do chamado com relógio:
+    # duas mensagens para o mesmo momento, e a primeira mandava esperar.
+    #
+    # Vem depois dos degraus de pagar: código de pagamento na tela é gesto mais
+    # concreto que o chamado. Na prática os dois não se cruzam, porque a
+    # cobrança da fila nasce NA confirmação.
+    waitlist_calling, waitlist_call_deadline = _waitlist_call(order)
+    if waitlist_calling:
+        return promise(
+            state="waitlist_confirming",
+            tone="info",
+            deadline_at=waitlist_call_deadline,
+            deadline_kind="waitlist" if waitlist_call_deadline else None,
+            # Sem ``timer_mode="countdown"``: quem conta o tempo na tela é o cartão
+            # da fila, ao lado do botão. Duas contagens seriam ruído.
+            deadline_action="release_waitlist_slot" if waitlist_call_deadline else "none",
+            requires_active_notification=True,
+            notification_topic="waitlist_available",
+            # O bloco "Total · Pix · o prazo para pagar começa quando o código
+            # aparecer" segue na tela durante o chamado, como estava antes deste
+            # degrau existir: é ele que diz quanto e como ela paga DEPOIS de
+            # confirmar. Sem a forma de pagamento na promessa o bloco sumia.
+            payment_method="pix" if payment_open and method == "pix" and not has_pix_code else None,
+        )
 
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
     if card_authorized:
@@ -1936,17 +1977,48 @@ def _store_confirmation_is_deferred(
     return store_review_deferred_state(order, state=business_state) is not None
 
 
-def _confirmation_deadline(order) -> datetime | None:
-    directive = (
-        Directive.objects.filter(
-            topic="confirmation.timeout",
-            payload__order_ref=order.ref,
-            payload__action="confirm",
-            status="queued",
-        )
-        .order_by("available_at", "id")
-        .first()
+#: Os estados em que a bola é da loja e o cliente só espera a decisão dela.
+_STORE_DECISION_STATES = frozenset(
+    {"payment_authorized", "payment_confirmed", "store_checking", "store_closed", "received"}
+)
+
+
+def _acceptance_deadline_at(order) -> str | None:
+    """Até quando a loja responde a ESTE pedido (ISO), ou ``None``.
+
+    A fonte é a própria Directive ``confirmation.timeout`` que o lifecycle
+    agendou (``lifecycle._schedule_confirmation_timeout``), qualquer que seja a
+    ação dela: no ``auto_confirm`` o pedido é aceito sozinho nesse instante, no
+    ``auto_cancel`` é cancelado e o dinheiro volta. O prazo não é recalculado
+    aqui: quem conta (tempo de loja aberta, prazo longo da encomenda e da casa
+    fechada) é quem agenda, e a tela lê o que ficou agendado.
+
+    Sem prazo a publicar: pedido que a loja já decidiu (aceito, cancelado, em
+    preparo), pedido sem Directive na fila, e prazo que já venceu (dizer "até
+    8h40" às 8h45 é promessa errada; a frase segue sem o trecho do prazo).
+    """
+    if order.status != "new":
+        return None
+    deadline = _confirmation_deadline(order, action=None)
+    if deadline is None or deadline <= timezone.now():
+        return None
+    return deadline.isoformat()
+
+
+def _confirmation_deadline(order, *, action: str | None = "confirm") -> datetime | None:
+    """O instante agendado do ``confirmation.timeout`` do pedido.
+
+    ``action="confirm"`` é a contagem do aceite automático (``auto_confirm``);
+    ``action=None`` aceita qualquer ação, para o prazo de resposta da loja.
+    """
+    timers = Directive.objects.filter(
+        topic="confirmation.timeout",
+        payload__order_ref=order.ref,
+        status="queued",
     )
+    if action is not None:
+        timers = timers.filter(payload__action=action)
+    directive = timers.order_by("available_at", "id").first()
     if not directive:
         return None
     if directive.available_at:
@@ -2095,6 +2167,25 @@ def _parse_datetime(value) -> datetime | None:
 
 
 _WAITLIST_NONE = {"waitlist_state": "none", "waitlist_deadline": None, "waitlist_planned_for": None}
+
+
+def _waitlist_call(order) -> tuple[bool, str | None]:
+    """A loja está chamando este pedido da fila? E até quando vale o chamado (ISO).
+
+    Mesma verdade de :func:`_waitlist_info` (``waitlist.state_for``), lida aqui
+    para a promessa. A consulta ao estado só acontece quando o bloco gravado já
+    diz ``confirming``: pedido fora da fila não paga por ela.
+    """
+    from shopman.shop.services import waitlist
+
+    if order.status not in {"new", "accepted"}:
+        return False, None
+    block = (order.data or {}).get(waitlist.WAITLIST_KEY) or {}
+    if block.get("state") != waitlist.CONFIRMING:
+        return False, None
+    if waitlist.state_for(order) != waitlist.CONFIRMING:
+        return False, None
+    return True, block.get("deadline") or None
 
 
 def _waitlist_info(order, *, payment_unsettled: bool) -> dict:

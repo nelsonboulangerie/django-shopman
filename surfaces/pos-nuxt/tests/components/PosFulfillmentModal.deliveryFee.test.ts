@@ -4,7 +4,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime";
 import PosFulfillmentModal from "~/components/PosFulfillmentModal.vue";
 
 // A TAXA DE ENTREGA diz a verdade. Queixa do dono (28/09/2026): com o endereço
-// salvo "Casa" escolhido no F7 da venda, o bloco mostrava "R$ 0,00" e "Preencha
+// salvo "Casa" escolhido no F8 da venda, o bloco mostrava "R$ 0,00" e "Preencha
 // o endereço para a loja calcular a taxa." — as duas coisas falsas. A taxa é
 // resolvida pela review, e a review só roda no pagamento; fora dele não há
 // número nenhum, e a tela tem de dizer isso.

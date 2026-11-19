@@ -104,3 +104,28 @@ do PDV mede posição, não pixel.
   `skipped` **só** no `pull_request`; em qualquer outro evento continua reprovando.
 - `python scripts/check_canonical_docs.py` confere que os 29 obrigatórios seguem
   produzidos em `pull_request` + `merge_group`.
+
+## Cache dos navegadores mora no `main`
+
+O cache do Actions é escopado por ref: um grupo da fila (`gh-readonly-queue/main/pr-N-<sha>`)
+só lê cache do próprio ref e do `main`, e o Surfaces Gate não roda no `main`. Sem isso, todo
+grupo baixava do zero os 140 MB de pacotes apt do WebKit do `production-nuxt` e, com o
+espelho lento, estourava o teto (#2679, #2756, #2757, 19/11/2026). O
+[`playwright-cache-main.yml`](../../.github/workflows/playwright-cache-main.yml) grava no
+`main` as mesmas chaves que o Surfaces Gate restaura (no push que muda lock, script ou
+contrato, de 6 em 6 horas e à mão), uma por combinação de `surface_contract.mjs matrix
+browsers`. O Surfaces Gate só restaura; gravar no ref da fila enchia a cota sem servir a
+ninguém.
+
+**A cota é de todos, e o que a fila grava despeja o `main`.** Medido em 19/11/2026, 15h40,
+uma hora depois do cache do `main` ser aquecido: 14,6 GB em uso, acima da cota, 11 GB em
+branches da fila (71 entradas do `cache: npm` do setup-node, ~170 MB por app por grupo). O
+Actions despeja pelo uso mais antigo, e o cache de navegadores do `main` saiu em menos de 25
+min; o grupo seguinte voltou a baixar o apt do zero (run 44552779149). Por isso:
+
+- o npm do app-quality e do PWA **só restaura** na fila (`actions/cache/restore`, chave
+  `npm-<os>-<arch>-<hash dos locks do app e do kit>`); grava no PR e no `main`, pelo job
+  `npm` do mesmo `playwright-cache-main.yml`;
+- [`cache-cleanup.yml`](../../.github/workflows/cache-cleanup.yml) apaga o cache de branch da
+  fila que já não existe e de PR fechado, ao fim de cada workflow da fila e de 10 em 10 min.
+  Nunca toca no `main`, em branch vivo nem em PR aberto.

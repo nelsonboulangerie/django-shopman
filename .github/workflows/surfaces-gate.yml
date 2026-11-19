@@ -213,10 +213,21 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            surfaces/${{ matrix.dir }}/package-lock.json
-            surfaces/operator-kit/package-lock.json
+
+      # Cache do npm só RESTAURA na fila; quem grava é o PR e o
+      # `playwright-cache-main.yml` no `main`. Medido em 19/11/2026: o
+      # `cache: npm` do setup-node gravava ~170 MB por app em cada grupo da fila
+      # (12 GB em 71 entradas numa hora e meia), cache que só o próprio grupo lê,
+      # e a cota estourada despejava o cache de navegadores do `main`.
+      # Regra: docs/reference/ci-escopo.md ("Cache dos navegadores mora no main").
+      - name: Restore npm cache
+        if: ${{ !matrix.skip }}
+        id: npm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('surfaces/{0}/package-lock.json', matrix.dir), 'surfaces/operator-kit/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Set up Python for declared browser mock
         if: matrix.python_mock
@@ -235,6 +246,14 @@ jobs:
       - name: Install dependencies
         if: ${{ !matrix.skip }}
         run: npm ci
+
+      - name: Save npm cache
+        if: ${{ !matrix.skip && github.event_name != 'merge_group' && steps.npm-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
 
       - name: Unit tests
         if: ${{ !matrix.skip }}
@@ -267,6 +286,7 @@ jobs:
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" build
 
       # Navegadores do Playwright: cache por versão do Playwright + motores + imagem.
+      # A chave é gravada no `main` pelo playwright-cache-main.yml (mesma fórmula).
       # Medido em 06/11/2026: o `install --with-deps chromium webkit` do
       # production-nuxt travou 3 vezes; os 114 MB de .deb do WebKit vinham do
       # espelho apt da Azure a 47 kB/s e o job morria aos 45 min, CANCELLED.
@@ -301,15 +321,10 @@ jobs:
         timeout-minutes: 25
         run: node ../../scripts/install_playwright_browsers.mjs "${{ matrix.browser_engines }}" ${{ matrix.browser_with_deps && '--with-deps' || '' }}
 
-      - name: Save Playwright browsers
-        if: steps.playwright.outputs.key && steps.playwright-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          key: ${{ steps.playwright.outputs.key }}
-          path: |
-            ~/.cache/ms-playwright
-            ~/Library/Caches/ms-playwright
-            ~/.cache/playwright-apt
+      # Sem "Save" aqui (19/11/2026): o grupo da fila grava num ref que nenhum
+      # outro grupo lê (`gh-readonly-queue/...`), ~500 MB por grupo, e enchia a
+      # cota de cache do repositório até expulsar o que servia. Quem grava é o
+      # `playwright-cache-main.yml`, no `main`, que todo ref enxerga.
 
       - name: Visual and responsive contract
         if: matrix.visual && !matrix.browser_suite
@@ -374,10 +389,14 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            surfaces/${{ matrix.dir }}/package-lock.json
-            surfaces/operator-kit/package-lock.json
+
+      # Só restaura, pelo mesmo motivo do app-quality (o PWA roda só na fila).
+      - name: Restore npm cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('surfaces/{0}/package-lock.json', matrix.dir), 'surfaces/operator-kit/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install operator-kit capability dependencies
         if: matrix.install_layer

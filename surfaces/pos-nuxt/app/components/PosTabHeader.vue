@@ -373,39 +373,17 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       >F6</OperatorKbd>
     </NuxtButton>
 
-    <!-- RECEBIMENTO: irmão do chip de cliente. Os dois são fatos do PEDIDO,
-         decididos na abertura do atendimento e revistos de relance daqui em
-         diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
-         decide é o começo do fluxo, não esta barra. -->
-    <!-- NO BALCÃO os dois chips continuam (v4, `pos-sale4.html`): "Consumir aqui F7"
-         e "Agora F8" tracejado. São a porta da encomenda: entregar ou agendar troca
-         o modo e abre a mesma pergunta (`pages/index.vue`, `leaveCounterThen`). -->
-    <NuxtButton
-      v-if="hasOpenTab"
-      :size="controlSize"
-      :color="!isCounter && fulfillmentType === 'delivery' ? 'primary' : 'neutral'"
-      variant="outline"
-      class="min-w-0 shrink-0 gap-2 max-sm:hidden"
-      aria-haspopup="dialog"
-      :aria-label="`Recebimento: ${isCounter ? 'Consumir aqui' : fulfillmentLabel}`"
-      :title="isCounter ? 'Consumir aqui. Recebimento (F7): entregar vira encomenda' : `${fulfillmentLabel}. Recebimento (F7)`"
-      data-context-entry="fulfillment"
-      @click="$emit('openFulfillment')"
-    >
-      <Icon :name="isCounter ? 'lucide:utensils' : (fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store')" class="size-4 shrink-0 text-muted-foreground" />
-      <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ isCounter ? 'Consumir aqui' : fulfillmentLabel }}</span>
-      <OperatorKbd
-        v-if="!coarsePointer"
-        class="hidden @min-[50rem]:inline-flex"
-        aria-hidden="true"
-      >F7</OperatorKbd>
-    </NuxtButton>
-
-    <!-- QUANDO: o terceiro irmão. A data morava dentro do formulário de
-         ENTREGA, e por isso a retirada agendada não existia: a casa recebe
-         encomenda por telefone e o balcão não tinha onde escrever isso.
-         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio; por isso
-         a borda tracejada (v4) enquanto nada foi agendado. -->
+    <!-- QUANDO: o segundo, logo depois do cliente, na ordem do funil da
+         encomenda (decisão do dono, 19/11/2026, #2754: a data diz o que a casa
+         pode prometer). A data morava dentro do formulário de ENTREGA, e por
+         isso a retirada agendada não existia: a casa recebe encomenda por
+         telefone e o balcão não tinha onde escrever isso. "Para hoje" é o
+         padrão e é uma AFIRMAÇÃO, não um campo vazio; por isso a borda
+         tracejada (v4) enquanto nada foi agendado. -->
+    <!-- NO BALCÃO os dois chips continuam (v4, `pos-sale4.html`): "Agora F7"
+         tracejado e "Consumir aqui F8". São a porta da encomenda: agendar ou
+         entregar troca o modo e abre a mesma pergunta (`pages/index.vue`,
+         `leaveCounterThen`). -->
     <NuxtButton
       v-if="hasOpenTab"
       :size="controlSize"
@@ -416,7 +394,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       data-context-entry="schedule"
       aria-haspopup="dialog"
       :aria-label="`Quando: ${isCounter ? 'Agora' : scheduleLabel}`"
-      :title="scheduleConflictReason || (isCounter ? 'Agora. Quando (F8): agendar vira encomenda' : `${scheduleLabel}. Quando (F8)`)"
+      :title="scheduleConflictReason || (isCounter ? 'Agora. Quando (F7): agendar vira encomenda' : `${scheduleLabel}. Quando (F7)`)"
       @click="$emit('openSchedule')"
     >
       <Icon
@@ -425,6 +403,31 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         :class="scheduleConflict ? '' : 'text-muted-foreground'"
       />
       <span class="hidden whitespace-nowrap @min-[26rem]:inline" :class="scheduled || scheduleConflict ? 'font-semibold' : ''" aria-hidden="true">{{ isCounter ? 'Agora' : scheduleLabel }}</span>
+      <OperatorKbd
+        v-if="!coarsePointer"
+        class="hidden @min-[50rem]:inline-flex"
+        aria-hidden="true"
+      >F7</OperatorKbd>
+    </NuxtButton>
+
+    <!-- RECEBIMENTO: o terceiro irmão. Como o cliente, é fato do PEDIDO,
+         decidido na abertura do atendimento e revisto de relance daqui em
+         diante. Na barra ele é LEITURA com porta de saída; o lugar onde se
+         decide é o começo do fluxo, não esta barra. -->
+    <NuxtButton
+      v-if="hasOpenTab"
+      :size="controlSize"
+      :color="!isCounter && fulfillmentType === 'delivery' ? 'primary' : 'neutral'"
+      variant="outline"
+      class="min-w-0 shrink-0 gap-2 max-sm:hidden"
+      aria-haspopup="dialog"
+      :aria-label="`Recebimento: ${isCounter ? 'Consumir aqui' : fulfillmentLabel}`"
+      :title="isCounter ? 'Consumir aqui. Recebimento (F8): entregar vira encomenda' : `${fulfillmentLabel}. Recebimento (F8)`"
+      data-context-entry="fulfillment"
+      @click="$emit('openFulfillment')"
+    >
+      <Icon :name="isCounter ? 'lucide:utensils' : (fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store')" class="size-4 shrink-0 text-muted-foreground" />
+      <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ isCounter ? 'Consumir aqui' : fulfillmentLabel }}</span>
       <OperatorKbd
         v-if="!coarsePointer"
         class="hidden @min-[50rem]:inline-flex"

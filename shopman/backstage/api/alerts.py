@@ -219,3 +219,104 @@ class AlertAckView(APIView):
         if not ok:
             return Response({"detail": "Alerta não encontrado."}, status=404)
         return Response({"ok": True, "pk": pk})
+
+
+# ── "Vou verificar" da Concierge (WP-05) ──────────────────────────────
+
+_VERIFY_ALERT_TYPE = "concierge_verify"
+
+#: (status, frase do cartão) de cada desfecho de ``shopman.shop.concierge_verification``.
+_VERIFY_OUTCOMES = {
+    "not_found": (404, "Esta pergunta não está mais na conversa."),
+    "not_open": (409, "Esta pergunta já foi respondida ou assumida."),
+    "with_team": (409, "A conversa já está com a equipe. Continue por lá."),
+    "empty_answer": (422, "Escreva a resposta para o cliente."),
+    "answer_too_long": (422, "A resposta passou de {detail} caracteres. Encurte, ou assuma a conversa."),
+    "house_rule_held": (422, "A resposta não pode sair como está (regra da casa {detail}). Reescreva, ou assuma a conversa."),
+    "not_sent": (409, "A resposta não saiu pelo WhatsApp ({detail}). O texto continua aqui: tente de novo, ou assuma a conversa."),
+    "window_closed": (409, "A janela de 24 horas do WhatsApp fechou: a resposta não sai mais por aqui. Assuma a conversa."),
+    "unavailable": (503, "A Concierge não está ligada nesta instalação."),
+}
+
+_VERIFY_ANSWER_REQUEST = inline_serializer(
+    name="ConciergeVerificationAnswerRequest",
+    fields={"text": serializers.CharField(allow_blank=True, max_length=2000)},
+)
+_VERIFY_RESPONSE = inline_serializer(
+    name="ConciergeVerificationResponse",
+    fields={"ok": serializers.BooleanField(), "pk": serializers.IntegerField(), "sent_text": serializers.CharField()},
+)
+
+
+def _verify_alert(request, pk: int):
+    """O cartão de verificação aberto que este operador pode ver; ``None`` senão."""
+    from shopman.backstage.models import OperatorAlert
+
+    return (
+        OperatorAlert.objects.filter(
+            pk=pk,
+            type=_VERIFY_ALERT_TYPE,
+            resolved_at__isnull=True,
+            audience__in=alert_service.visible_alert_audiences(request.user),
+        )
+        .only("pk")
+        .first()
+    )
+
+
+def _verify_response(pk: int, result) -> Response:
+    if result.ok and not result.code:
+        return Response({"ok": True, "pk": pk, "sent_text": result.sent_text})
+    code = result.code
+    if result.ok:
+        # Assumiu, mas o aviso ao cliente não saiu: a conversa já é da equipe.
+        return Response({"ok": True, "pk": pk, "sent_text": "", "warning": code, "detail": result.detail})
+    key = "window_closed" if code == "not_sent" and result.detail == "window_closed" else code
+    status, detail = _VERIFY_OUTCOMES.get(key, (409, "Não deu para concluir. Atualize os avisos."))
+    body = {"detail": detail.replace("{detail}", result.detail or code), "error": {"code": key}}
+    if status == 422:
+        body["field"] = "text"
+    if result.sent_text:
+        body["error"]["text"] = result.sent_text
+    return Response(body, status=status)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Answer the customer's question the Concierge asked the team",
+        request=_VERIFY_ANSWER_REQUEST,
+        responses={200: _VERIFY_RESPONSE},
+    ),
+)
+class ConciergeVerificationAnswerView(APIView):
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.shop import concierge_verification
+
+        if _verify_alert(request, pk) is None:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        text = str((request.data or {}).get("text") or "")
+        result = concierge_verification.answer(pk, text, actor=alert_service._actor_ref(request.user) or "operador")
+        return _verify_response(pk, result)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Take over the conversation the Concierge is verifying",
+        request=None,
+        responses={200: _VERIFY_RESPONSE},
+    ),
+)
+class ConciergeVerificationTakeOverView(APIView):
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.shop import concierge_verification
+
+        if _verify_alert(request, pk) is None:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        result = concierge_verification.take_over(pk, actor=alert_service._actor_ref(request.user) or "operador")
+        return _verify_response(pk, result)

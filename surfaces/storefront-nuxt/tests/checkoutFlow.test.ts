@@ -317,3 +317,29 @@ describe('calendário depois do encerramento', () => {
     expect(datepickerDisabledDates([], [], '')).toEqual([])
   })
 })
+
+// WP-L05 (P2-08): o relógio do checkout é o da loja, escrito pelo servidor.
+describe('checkout flow — o hoje é o da loja', () => {
+  it('"hoje", "amanhã" e os limites saem de checkout.today, não do aparelho', async () => {
+    const { checkoutNow, checkoutTodayValue, checkoutDateBounds, displayCheckoutDate } = await import('~/utils/checkoutFlow')
+    const checkout = { today: '2031-03-10', max_preorder_days: 3 }
+
+    expect(checkoutTodayValue(checkout)).toBe('2031-03-10')
+    const bounds = checkoutDateBounds(checkout, checkoutNow(checkout))
+    expect(bounds.todayValue).toBe('2031-03-10')
+    expect(bounds.tomorrowValue).toBe('2031-03-11')
+    expect(bounds.maxDateValue).toBe('2031-03-13')
+    expect(displayCheckoutDate('2031-03-10', checkoutNow(checkout))).toBe('Hoje')
+    expect(displayCheckoutDate('2031-03-11', checkoutNow(checkout))).toBe('Amanhã')
+  })
+
+  it('sem a data do servidor (projeção ainda não chegou), vale o relógio do aparelho', async () => {
+    const { checkoutNow, checkoutTodayValue, localDateValue } = await import('~/utils/checkoutFlow')
+    const device = localDateValue(new Date())
+
+    expect(checkoutTodayValue(null)).toBe(device)
+    expect(checkoutTodayValue({ today: '' })).toBe(device)
+    expect(checkoutTodayValue({ today: 'lixo' })).toBe(device)
+    expect(checkoutNow(undefined)).toBeInstanceOf(Date)
+  })
+})

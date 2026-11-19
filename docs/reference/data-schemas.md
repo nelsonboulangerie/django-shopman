@@ -18,7 +18,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `customer` | `dict` | CheckoutView, POS, API (`set_data`), iFood webhook | CommitService, handlers | Dados do cliente: `{name, phone, notes, ref, price_tier, price_tiers, cpf, address}`. `price_tiers` é a LISTA de refs dos grupos do cliente (relação N:N, `Customer.price_tiers`); `price_tier` é o grupo PRIMÁRIO (maior `priority`) e sobrevive só como leitura de tela/PDV. O motor de desconto casa `customer_segments` contra QUALQUER ref da lista: vale a melhor vantagem por tipo, sem acumular. ⚠️ **`phone` preenchido não quer dizer que dá para falar com o cliente.** No pedido do iFood ele é um RELÉ de voz: o 0800 da central mais o `phone_localizer` que quem liga digita para cair na pessoa (`services/ifood_orders._map_customer`). Serve para o operador ligar à mão; não serve para WhatsApp, SMS nem aviso automático. Quem precisa do telefone COMO CONTATO pergunta a `services/notification.customer_contact_phone(order)`, que devolve `""` no relé — o sinal é o `phone_localizer` e, quando a plataforma o omite, a declaração do canal (`notifications.customer_phone = "relay"`). O localizador VENCE: `phone_localizer_expiration` (ISO, do `localizerExpiration` do iFood) diz até quando a central repassa a ligação. A tela de detalhe mostra o relé como "Central 0800… · Código …" e o "Ligar pela central" disca os dois (`tel:<0800>,<código>`); sem WhatsApp, e sem ligação quando o código venceu (`backstage/projections/order_queue._relay_contact`). **Identidade no iFood**, também de `_map_customer`: `ifood_customer_id` (o `customer.id` — identificador do CLIENTE, e a chave de identidade de `shop/services/customer._handle_ifood`; até 19/09/2026 a estratégia usava o id do PEDIDO e criava um `Customer` por compra), `orders_count_on_merchant` (pedidos anteriores desta pessoa NESTA loja pela contagem do iFood; `None` = o iFood não informou, que é diferente de `0` = primeira compra) e `segmentation` (a Super-Segmentação do iFood — ⚠️ **dado confidencial pela documentação deles: não vai para o cliente nem para terceiros**; fica no snapshot para leitura interna) |
 | `fulfillment_type` | `string` | CheckoutView, POS, API, iFood webhook | CommitService, MinimumOrderValidator | `"pickup"` ou `"delivery"` |
 | `delivery_address` | `string` | CheckoutView, API, iFood webhook | CommitService, CustomerIdentificationHandler | Endereço formatado (texto livre) |
-| `pos.sales_mode` | `string` | PDV intent/save | PDV projection e `_mark_tab_committed` | `counter` (retirada imediata, sem data/janela) ou `order` (cadastro ativo selecionado + recebimento explícito + data antes dos itens). Draft sem itens pode completar o funil. Registros antigos inferem pelo recebimento/data/janela. Copiado para `Order.data.pos.sales_mode` pelo carimbo POS existente. |
+| `pos.sales_mode` | `string` | PDV intent/save | PDV projection e `_mark_tab_committed` | `counter` (retirada imediata, sem data/janela) ou `order` (cadastro ativo selecionado + data + recebimento explícito antes dos itens; o servidor cobra nessa ordem, a mesma do assistente do PDV). Draft sem itens pode completar o funil. Registros antigos inferem pelo recebimento/data/janela. Copiado para `Order.data.pos.sales_mode` pelo carimbo POS existente. |
 | `delivery_date` | `string` | CheckoutView | CommitService | ISO date (`YYYY-MM-DD`). Se futuro, indica encomenda. No PDV, data explícita (inclusive hoje) ou janela exige cliente identificado; vazio sem janela é venda imediata. |
 | `delivery_time_slot` | `string` | CheckoutView · PDV | CommitService | **Dois vocabulários na mesma chave, e a DATA decide qual.** Encomenda (data futura, loja e PDV) → ref do slot canônico de `Shop.defaults["pickup_slots"]` (`"slot-09"`, `"slot-12"`, `"slot-15"`; label via `shop.services.fulfillment_window.canonical_slots`). Venda para HOJE (PDV, e retirada pela loja e pela concierge) → janela de meia hora do expediente, onde o ref É o par de horas (`"14:00-14:30"`) e por isso se lê sozinho num pedido antigo. Quem escolhe a grade é `fulfillment_window._grid_for`; quem lê deve tolerar as duas formas. **Na ENTREGA pela loja e pela concierge** (decisão do dono, 14/10/2026) o cliente escolhe na grade de `fulfillment_window.delivery_windows_for` (meia hora hoje, turno na encomenda) e o commit recusa o que não está nela (`delivery_window_error`: janela que já passou ou que a grade não oferece; em branco segue "a combinar"). ⚠️ Ficou assim porque encomenda é TURNO ("a partir das 12h", promessa de fornada) e a entrega de hoje é JANELA (o combinado com o entregador) — são compromissos diferentes, e unificá-los perderia um dos dois. |
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
@@ -270,6 +270,30 @@ recente (entregue ou cancelado há até `SHOPMAN_CONCIERGE["recent_order_days"]`
 sem pedido mais novo) NÃO é guardado aqui: vem do Orderman a cada turno. Zerado quando a equipe
 devolve a conversa (`return_to_concierge`). Lido por `dialogue.for_turn`; nada de pedido, sacola ou
 preço mora aqui.
+"Vou verificar" (WP-05, bloco 4 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/verification.py`): a parte de consulta (produto, horário ou entrega,
+como funciona a casa) sem fato vira pergunta à equipe, e a conversa segue com a Concierge.
+`Conversation.flags["verification"]` = `{v: 1, id, status, opened_at, fence, questions, promise,
+nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
+conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
+marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
+equipe saiu ao cliente) ou `taken_over` (alguém assumiu a conversa: handoff); `fence` é o
+`turn_fence` do turno que abriu (gravada na mesma transação da resposta: turno revogado não grava);
+`questions` = `[{text, product, at}]`, até 5, `text` a fala do cliente REDIGIDA (`triage._redacted`,
+até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` ("em até 10 minutos"),
+`later` (a casa fechada ou fechando: "até amanhã às 7h10", `when` de
+`business_calendar.format_deadline`) ou `no_promise` (o segundo prazo passaria da janela de 24 horas:
+nenhuma verificação é gravada, e a Concierge diz quando a equipe volta); `nudge_due_at` e
+`handoff_due_at` são ISO 8601, os dois prazos do `ChannelConfig.confirmation` contados pelo calendário
+da casa (o WP-06 lê); `nudged_at` é ISO 8601 do aviso do primeiro prazo (vazio até ele sair, WP-06);
+`alert_pk` é o `OperatorAlert` `concierge_verify` (sino do Gestor de pedidos, público `orders`);
+`closed_at` ISO 8601, `closed_by` quem respondeu ou assumiu (usuário do Gestor) e `answer` o texto da
+equipe. A memória da conversa lê a verificação aberta como `verifying` = `{id, questions, promise}`
+(`dialogue.for_turn`), sem gravá-la em `flags["dialogue"]`: "e aí?" durante a espera responde por ela.
+Nas partes (`flags["dialogue"]["parts"]`), a parte perguntada à equipe tem `state=verifying` e não
+volta na pergunta repetida. A resposta da equipe sai como `kind=reply` com `envelope["purpose"]=reply`
+pelo envio fora do turno (`service.send_out_of_turn`), com a prova de janela da última entrada; o aviso
+de quem assume, com `purpose=handoff_ack`.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.
@@ -502,7 +526,7 @@ relógio; a confirmação, sim.
 
 | Estado | De onde vem | O que significa |
 |--------|-------------|-----------------|
-| `fermata` | **derivado**: hold com `metadata.planned` e `expires_at IS NULL` | Reservado, esperando a fornada. Sem prazo, sem cobrança |
+| `fermata` | **derivado**: hold com `metadata.planned` e `expires_at IS NULL` | Reservado, esperando a fornada. Sem prazo, sem cobrança: o commit não cria o Pix/cartão nem com `payment.timing=at_commit`, e a conferência de pagamento da tela também não (`policies/waitlist_charge.charge_waits_for_the_queue`, #2730) |
 | `confirming` | `waitlist.open_window` (sinal de materialização) | A fornada saiu; o cliente tem `deadline` para confirmar |
 | `confirmed` | `waitlist.confirm` (cliente, via `POST /api/v1/orders/{ref}/waitlist-confirm/`) | Vaga garantida; a cobrança acontece aqui (`charge_at=confirmation`) |
 | `released` | `waitlist.release` (timeout via `sweep_waitlist_windows`, ou recusa) | Saiu da fila; hold liberado, cliente avisado, `OperatorAlert` no Gestor |
@@ -1505,6 +1529,8 @@ Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 | `preorder_timeout_minutes` | `int \| null` | `null` | Prazo LONGO de aceite (encomenda com data combinada posterior a hoje, e pedido que chega com a casa fechada) nos modes auto_confirm/auto_cancel; sem chave, vale o `timeout_minutes`. Recusado em outro modo e quando não é inteiro > 0. Loja online: 60. Lido por `lifecycle.acceptance_timeout_minutes` (prazo e meta do pedido novo no Gestor) |
 | `stale_new_alert_minutes` | `int` | `0` | Opt-in para `mode="manual"`: após X minutos em NEW sem decisão, dispara `OperatorAlert("stale_new_order")`. Recusado no `auto_cancel`: lá o aviso sai a 1/3 do prazo de aceite do próprio pedido (`lifecycle.STALE_ALERT_FRACTION_OF_DEADLINE`) e diz até quando. No iFood tem de ser MENOR que `external_sla_minutes`, senão o alerta toca com o pedido já cancelado (estava 20 contra 8 até 19/09/2026) |
 | `external_sla_minutes` | `int` | `0` | Prazo que o MARKETPLACE impõe para confirmar, contado do `createdAt` dele. Vencido, quem cancela é o marketplace. Gravado no pedido como `ifood.confirm_by` e contado no card. `0` = sem SLA externo (todo canal da casa). iFood: 8 (documentado; medido a 8min10s em 19/09/2026) |
+| `concierge_verify_nudge_minutes` | `int` | `10` | "Vou verificar" da Concierge (WP-05; dono, 16/11/2026: "Sim. Configurável via admin."): o PRIMEIRO prazo, em minutos de loja aberta (`business_calendar.next_operational_deadline`), que a Concierge promete ao cliente ("te respondo por aqui em até 10 minutos"; com a casa fechada, "até amanhã às 7h10") e no qual o cartão `concierge_verify` sobe a urgente e o cliente recebe um aviso (WP-06). Inteiro > 0 e menor que o segundo. Vale o do canal da Concierge (`whatsapp`) ou o de `Shop.defaults` |
+| `concierge_verify_handoff_minutes` | `int` | `30` | O SEGUNDO prazo do "vou verificar", em minutos de loja aberta: sem resposta da equipe até ele, a conversa vai para a equipe (WP-06). É também o teto da promessa: se ele passa da janela de 24 horas do WhatsApp, nada é prometido. Inteiro > 0 e maior que o primeiro |
 
 Lido por: `hooks._on_order_created`, `ConfirmationTimeoutHandler`, `confirmation.py` helpers, `CheckoutView`, `TrackingView`.
 

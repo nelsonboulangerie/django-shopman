@@ -25,7 +25,9 @@ na §8.
   (dono, 16/11/2026, DEV-2026-030; substitui a premissa de 13/10, "não existe entregador da
   casa"). A cobrança na porta vai com quem levar. No iFood quem entrega é o **iFood**, sempre
   (`deliveredBy=IFOOD`).
-- Encomenda: a casa dita o fluxo (cliente → recebimento → quando → produtos).
+- Encomenda: a casa dita o fluxo (cliente → quando → recebimento → produtos). "Pra quando" vem
+  em segundo, logo depois do cliente, porque diz respeito à disponibilidade (dono, 19/11/2026,
+  #2754; revê a ordem de 16/09, que punha o recebimento antes do quando).
 - "Via Recibo primeiro, Nota depois": a NFC-e acompanha a **saída** da mercadoria.
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).
 - Expedição sem NFC-e só avisa, nunca segura a sacola.
@@ -93,7 +95,7 @@ O que cada fase faz (`shopman/shop/lifecycle.py:324-737`):
 
 | Fase | Efeitos |
 |---|---|
-| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit`, aviso `order_received` (fora do `immediate`) |
+| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit` (menos para o pedido na fila da fornada de hoje, que só é cobrado quando o cliente confirma a vaga), aviso `order_received` (fora do `immediate`) |
 | `on_accepted` | cobra se o pagamento digital ainda não entrou (Pix nasce **aqui** na loja online); encomenda futura agenda o despertador; KDS (se o preparo começa sozinho); baixa de estoque; aviso `order_accepted` (nunca no balcão já entregue) |
 | `on_paid` | pago depois de cancelado → estorno + alerta; NFC-e do PDV pela regra "na saída"; aviso `payment_confirmed` |
 | `on_preparing` | tickets do KDS; aviso `order_preparing` |
@@ -293,9 +295,10 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 ### 3.1 Caminho feliz, retirada
 
-1. **PDV, Encomendas.** Funil `PosOrderEntry` (`PosOrderEntry.vue:39,148`): **cliente**
-   (cadastro obrigatório, `pos_sales_mode.py:87-113`) → **recebimento** (Retirada) →
-   **quando** (Hoje · horário a combinar) → **Montar encomenda**.
+1. **PDV, Encomendas.** Funil `PosOrderEntry` (`PosOrderEntry.vue`): **cliente** (cadastro
+   obrigatório, `validate_sales_mode` em `pos_sales_mode.py`) → **quando** (Hoje · horário a
+   combinar) → **recebimento** (Retirada) → **Montar encomenda**. A barra da venda repete a
+   ordem, com a tecla pela posição: Cliente F6, Quando F7, Recebimento F8.
 2. **Produtos e cobrança.** Igual ao balcão. A encomenda pode ficar **a receber** (cobrar na
    retirada) ou ser paga agora (R/P/C/D/E/L). Link só aqui (`pos.py:1267`), exige telefone ou
    e-mail.
@@ -310,9 +313,12 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 ### 3.2 Caminho feliz, entrega (TaOn)
 
-1. Funil com **Entrega**: endereço (CEP, número, bairro; geocodifica), taxa calculada pela
-   faixa de distância/zona e mostrada na revisão; CPF opcional (ADR-035); pedido mínimo checado
-   no fechamento (`pos.py:1441`).
+1. Funil com **Entrega** (depois do cliente e do quando): o endereço é a última etapa. O
+   endereço padrão do cliente já vem marcado na lista dos cadastrados, uma linha inteira por
+   endereço (Enter aceita e segue, as setas trocam, e dá para tirar o endereço da entrega sem
+   mexer no cadastro); endereço novo vai ao formulário (CEP, número, bairro; geocodifica). Taxa
+   calculada pela faixa de distância/zona e mostrada na revisão; CPF opcional (ADR-035); pedido
+   mínimo checado no fechamento (`pos.py:1441`).
 2. Pagamento: pago agora, em conta, link, ou **cobrar na entrega** (dinheiro com "troco para",
    ou maquininha que sai com o entregador).
 3. KDS prepara → `ready` → NFC-e da sacola (`lifecycle.py:622`), aviso
@@ -341,7 +347,7 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 | Requisito | Como atende | Onde | Estado |
 |---|---|---|---|
-| Afirmar cliente, recebimento e quando antes dos produtos | funil | `PosOrderEntry.vue` | OK |
+| Afirmar cliente, quando e recebimento, nessa ordem, antes dos produtos | funil | `PosOrderEntry.vue` | OK |
 | "O quanto antes" explícito | "Hoje · a combinar" | `schedule.ts:86` | ATRITO, resolvido #1714 |
 | Endereço e taxa | motor de taxa + linha manual | `pos.py:3541-3646` | OK |
 | Cotação da TaOn à vista | custo interno, no Gestor | `courier.py:227` | ATRITO, resolvido #1715 |

@@ -1,0 +1,189 @@
+name: Cache do main (Playwright e npm)
+
+# Por que existe (medido em 19/11/2026, run 44505942253): o production-nuxt caiu
+# na fila três vezes no mesmo dia (#2679, #2756, #2757) no passo "Install
+# declared browser engines". Ali, 185 pacotes apt do WebKit (140 MB) vinham do
+# espelho a ~0,3 MB/s e estouravam os três tetos de 5 min do
+# scripts/install_playwright_browsers.mjs.
+#
+# A causa não era o apt: era o cache, que nunca chegava. O cache do Actions é
+# escopado por ref. Cada grupo da fila roda num branch próprio
+# (`gh-readonly-queue/main/pr-N-<sha>`) e só lê cache do próprio ref e do
+# `main`. O Surfaces Gate nunca roda no `main` (sem push nem schedule, de
+# propósito), então o `main` não tinha cache de Playwright nenhum, e todo grupo
+# da fila baixava tudo do zero. O que cada grupo gravava morria com o branch.
+# A troca do ubuntu-latest para 26.04 (ImageOS `ubuntu26`) só zerou a chave.
+#
+# Este workflow grava no `main` as mesmas chaves que o app-quality do Surfaces
+# Gate restaura (mesma fórmula: ImageOS, arquitetura, versão do Playwright,
+# motores, `-deps`), uma por combinação que a matriz usa
+# (`surface_contract.mjs matrix browsers`). Fora do caminho da fila, com teto
+# folgado. Não é check obrigatório e não testa nada: só aquece.
+#
+# Desde 19/11/2026 (tarde) aquece também o cache do npm de cada app (job
+# `npm`): a fila só restaura o npm, não grava mais (ver surfaces-gate.yml,
+# "Restore npm cache"), então o `main` é de novo a única fonte que ela lê.
+#
+# Roda: no push do `main` que muda lock, script ou contrato; de 6 em 6 horas,
+# para pegar imagem nova do runner (a chave muda com o ImageOS) e manter o cache
+# vivo (o Actions apaga cache sem uso em 7 dias); e à mão.
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - surfaces/*/package-lock.json
+      - surfaces/contracts.json
+      - scripts/install_playwright_browsers.mjs
+      - scripts/surface_contract.mjs
+      - .github/workflows/playwright-cache-main.yml
+  pull_request:
+    paths:
+      - .github/workflows/playwright-cache-main.yml
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  combos:
+    name: Combinações de navegador
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.m.outputs.include }}
+      quality: ${{ steps.q.outputs.quality }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - id: m
+        run: echo "include=$(node scripts/surface_contract.mjs matrix browsers)" >> "$GITHUB_OUTPUT"
+      - id: q
+        run: echo "quality=$(node scripts/surface_contract.mjs matrix quality)" >> "$GITHUB_OUTPUT"
+
+  warm:
+    name: Cache — ${{ matrix.browser_engines }}${{ matrix.browser_with_deps && ' + deps' || '' }}
+    needs: combos
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.combos.outputs.include) }}
+    defaults:
+      run:
+        working-directory: surfaces/${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: surfaces/${{ matrix.dir }}/package-lock.json
+
+      # Só o binário do Playwright importa aqui: sem postinstall (`nuxt prepare`
+      # pediria a layer instalada).
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # A MESMA fórmula do app-quality em surfaces-gate.yml; se uma mudar, a
+      # outra muda junto, ou a fila volta a baixar do zero.
+      - name: Resolve Playwright cache key
+        id: playwright
+        env:
+          ENGINES: ${{ matrix.browser_engines }}
+          WITH_DEPS: ${{ matrix.browser_with_deps }}
+        run: |
+          version="$(npx --no-install playwright --version | awk '{print $2}')"
+          engines="$(echo "$ENGINES" | tr ' ' '-')"
+          deps="$([ "$WITH_DEPS" = "true" ] && echo "-deps" || true)"
+          echo "key=playwright-${ImageOS:-$RUNNER_OS}-${RUNNER_ARCH}-${version}-${engines}${deps}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.playwright.outputs.key }}
+          lookup-only: true
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/.cache/playwright-apt
+
+      - name: Cache já está no main
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: echo "${{ steps.playwright.outputs.key }} já existe; nada a fazer." >> "$GITHUB_STEP_SUMMARY"
+
+      # Teto folgado: aqui o espelho lento custa minutos de um job que ninguém
+      # espera, em vez de um grupo inteiro da fila.
+      - name: Install declared browser engines
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 65
+        env:
+          PLAYWRIGHT_DEPS_TIMEOUT_MS: "900000"
+          PLAYWRIGHT_BROWSER_TIMEOUT_MS: "300000"
+        run: node ../../scripts/install_playwright_browsers.mjs "${{ matrix.browser_engines }}" ${{ matrix.browser_with_deps && '--with-deps' || '' }}
+
+      - name: Save Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.playwright.outputs.key }}
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/.cache/playwright-apt
+
+  # O cache do npm que o app-quality e o PWA do Surfaces Gate restauram. Chave
+  # IGUAL à de lá (lock do app + lock do operator-kit); se uma mudar, a outra
+  # muda junto.
+  npm:
+    name: Cache npm — ${{ matrix.dir }}
+    needs: combos
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.combos.outputs.quality) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Look up npm cache
+        id: npm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('surfaces/{0}/package-lock.json', matrix.dir), 'surfaces/operator-kit/package-lock.json') }}
+          lookup-only: true
+
+      # Só o download importa: `--ignore-scripts` enche o ~/.npm sem o
+      # `nuxt prepare` do postinstall.
+      - name: Fill npm cache
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        env:
+          DIR: ${{ matrix.dir }}
+          LAYER: ${{ matrix.install_layer }}
+        run: |
+          if [ "$LAYER" = "true" ] && [ "$DIR" != "operator-kit" ]; then
+            (cd surfaces/operator-kit && npm ci --ignore-scripts)
+          fi
+          cd "surfaces/$DIR" && npm ci --ignore-scripts
+
+      - name: Save npm cache
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}

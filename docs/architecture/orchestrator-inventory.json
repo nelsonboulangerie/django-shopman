@@ -180,7 +180,8 @@
             "open_counts",
             "recent_exists",
             "resolve",
-            "resolve_matching"
+            "resolve_matching",
+            "revise"
           ]
         }
       ]
@@ -2790,6 +2791,31 @@
             "oklch_to_css",
             "oklch_to_hex",
             "oklch_to_raw"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/concierge_verification.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "Answer",
+            "DeskResult",
+            "TakeOver",
+            "_handlers",
+            "answer",
+            "register",
+            "take_over"
           ]
         }
       ]
@@ -7084,6 +7110,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/waitlist_charge.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "waitlist.charge-waits-for-the-queue"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/pool_liveness.py",
       "touchpoints": [
         "outro"
@@ -7312,6 +7352,7 @@
             "build_free_delivery_progress",
             "build_minimum_order_progress",
             "logger",
+            "reserved_until",
             "shop_rule_q"
           ]
         }
@@ -7462,9 +7503,12 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "AcceptanceWindow",
+            "acceptance_window",
             "availability_dates",
             "customer_checkout_defaults",
-            "logger"
+            "logger",
+            "shop_today"
           ]
         }
       ]
@@ -7722,7 +7766,9 @@
             "TrackingTimelineEventData",
             "_COURIER_ENDED_STATUSES",
             "_DIGITAL_PAYMENT_METHODS",
+            "_STORE_DECISION_STATES",
             "_WAITLIST_NONE",
+            "_acceptance_deadline_at",
             "_action",
             "_active_progress_key",
             "_bill_line_of",
@@ -7778,6 +7824,7 @@
             "_stale_after_seconds",
             "_step_was_reached",
             "_store_confirmation_is_deferred",
+            "_waitlist_call",
             "_waitlist_info",
             "as_customer_sees",
             "build_tracking",

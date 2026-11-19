@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-058",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "E sim, retoma a Concierge.",
+  "dono": "Engenharia",
+  "criado": "2026-11-19",
+  "revisar_em": "2026-11-26",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}
