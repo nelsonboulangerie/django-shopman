@@ -1304,6 +1304,11 @@ def _build_promise(
             deadline_action="release_waitlist_slot" if waitlist_call_deadline else "none",
             requires_active_notification=True,
             notification_topic="waitlist_available",
+            # O bloco "Total · Pix · o prazo para pagar começa quando o código
+            # aparecer" segue na tela durante o chamado, como estava antes deste
+            # degrau existir: é ele que diz quanto e como ela paga DEPOIS de
+            # confirmar. Sem a forma de pagamento na promessa o bloco sumia.
+            payment_method="pix" if payment_open and method == "pix" and not has_pix_code else None,
         )
 
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
