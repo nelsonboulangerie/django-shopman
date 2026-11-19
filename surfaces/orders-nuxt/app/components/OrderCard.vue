@@ -40,6 +40,7 @@ import { danfeLine } from "~/presentation/danfe";
 import { COURIER_CALL_HASH, courierReminderLine } from "~/presentation/courier";
 import { kitchenChips } from "~/presentation/kitchen";
 import { cardCheckBadge } from "~/presentation/volumeCheck";
+import { blockPillLabel } from "~/presentation/cardBlocks";
 import OrderCardActions from "./OrderCardActions.vue";
 import OrderCardNotices from "./OrderCardNotices.vue";
 
@@ -320,7 +321,9 @@ const notices = computed<CardNotice[]>(() => {
       key: "block",
       color: seal.value.tone === "error" ? "error" : "info",
       icon: "i-lucide-lock",
-      label: "Por que espera",
+      // A pílula diz o fato, pelo nome do bloqueio; sem nome do servidor, pergunta
+      // (laudo do Gestor, P2-16).
+      label: blockPillLabel(card.advance_block_label),
       // O nome do bloqueio primeiro ("Pix expirado"), o porquê embaixo: só os
       // horários ("gerado às 05:51 · expirou às 05:57") não diziam o que trava.
       // O mesmo par do aviso de bloqueio do detalhe.
@@ -403,7 +406,9 @@ const notices = computed<CardNotice[]>(() => {
       actions: [
         action(
           {
-            label: "Abrir e reprocessar",
+            // O botão só abre o pedido, e diz que abre (P2-13): o reprocessar é
+            // gesto do detalhe, e só lá o botão leva esse verbo.
+            label: "Abrir o pedido",
             to: `/${card.ref}`,
           },
           { "data-fiscal-failed-open": "" },

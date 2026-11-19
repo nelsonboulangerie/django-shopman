@@ -29,6 +29,7 @@ OPERATIONS = (
     "latest_record",
     "commit_transition",
     "claim_work",
+    "complete_work",
     "append_receipt",
 )
 
@@ -90,5 +91,9 @@ class StorePort(Protocol):
     ) -> Episode: ...
 
     def claim_work(self, ctx: TrustedContext, kind: str, lease_seconds: int) -> Claim | None: ...
+
+    def complete_work(self, ctx: TrustedContext, work_id: str) -> None:
+        """Tira da caixa de saída o trabalho concluído (F8: a execução que chegou a recibo terminal)."""
+        ...
 
     def append_receipt(self, ctx: TrustedContext, receipt: ActionReceipt) -> ActionReceipt: ...

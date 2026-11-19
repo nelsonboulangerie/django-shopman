@@ -35,7 +35,7 @@ from shopman.shop.adapters.courier_machine import (
     CourierError,
 )
 from shopman.shop.services import delivery_services
-from shopman.shop.services.order_helpers import get_fulfillment_type, merge_order_data
+from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, merge_order_data
 
 logger = logging.getLogger(__name__)
 
@@ -586,6 +586,10 @@ def request_dispatch(order, *, actor: str, ride_number: int | None = None) -> Di
         return None
     if order.status not in RIDE_ORDER_STATUSES:
         return None
+    if not_today_refusal(order):
+        # A encomenda de outro dia que ficou pronta antes: o lifecycle não chama;
+        # a chamada manual recusa com a frase (``redispatch``).
+        return None
     if has_active_ride(order):
         return None
 
@@ -741,6 +745,23 @@ def next_ride_number(*, exclude_refs=(), prefer: int | None = None) -> int:
 MAX_RIDE_STOPS = 4
 
 
+def not_today_refusal(order) -> str:
+    """A encomenda é para outro dia: o entregador se chama no dia ("" quando é hoje).
+
+    A régua única de "chamável hoje" (ENT-LIM-15): a lista Aguardando já não
+    mostra a encomenda futura, e a chamada por API, a chamada em grupo e o
+    lifecycle também não a chamam. Sem data combinada, é para hoje.
+    """
+    from shopman.shop.services.operator_orders import short_ref
+
+    commitment = get_commitment_date(order)
+    today = timezone.localdate()
+    if commitment is None or commitment <= today:
+        return ""
+    day = f"amanhã, {commitment:%d/%m}" if commitment == today + timedelta(days=1) else f"{commitment:%d/%m}"
+    return f"A encomenda {short_ref(order.ref)} é para {day}. O entregador se chama no dia."
+
+
 def group_refusal(order) -> str:
     """Por que este pedido não entra numa corrida com outros ("" quando entra)."""
     from shopman.shop.services.operator_orders import short_ref
@@ -750,6 +771,8 @@ def group_refusal(order) -> str:
         return "Nenhuma central de entregas configurada."
     if get_fulfillment_type(order) != "delivery":
         return f"O pedido {code} não é entrega."
+    if refusal := not_today_refusal(order):
+        return refusal
     if not house_dispatches(order):
         return f"O pedido {code}: {not_house_dispatch_message(order)}"
     if order.status not in RIDE_ORDER_STATUSES or order.status == Order.Status.DISPATCHED:
@@ -948,6 +971,8 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None, ride_
         raise ValueError("Chamar entregador só é possível depois de aceitar o pedido.")
     if has_active_ride(order):
         raise ValueError("Já existe uma corrida ativa para este pedido.")
+    if refusal := not_today_refusal(order):
+        raise ValueError(refusal)
 
     block = get_block(order)
     if block.get("id_mch"):

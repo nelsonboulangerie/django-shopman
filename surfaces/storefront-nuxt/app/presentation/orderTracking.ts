@@ -49,7 +49,18 @@ export function trackingStatusPanelActions (
 // quantos já concluíram (no mínimo 1).
 export function timelineActiveStep (steps: OrderProgressStepProjection[]): number | undefined {
   if (!steps.length) return undefined
-  const active = steps.findIndex(step => step.state === 'current' || step.state === 'cancelled')
+  // Depois do cancelamento ainda pode haver um marco que JÁ aconteceu (o dinheiro
+  // devolvido): a linha do tempo vai até ele, em vez de deixá-lo apagado como
+  // passo futuro.
+  const cancelled = steps.findIndex(step => step.state === 'cancelled')
+  if (cancelled >= 0) {
+    let last = cancelled
+    for (let index = cancelled + 1; index < steps.length; index++) {
+      if (steps[index]!.state === 'completed') last = index
+    }
+    return last + 1
+  }
+  const active = steps.findIndex(step => step.state === 'current')
   if (active >= 0) return active + 1
   return Math.max(steps.filter(step => step.state === 'completed').length, 1)
 }

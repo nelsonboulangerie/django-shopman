@@ -8,6 +8,11 @@ import type {
 } from "~/generated/ordersContract";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import {
+  courierChargeNotice,
+  type CourierChargeNotice,
+  type CourierChargeOutdated,
+} from "../../../operator-kit/app/presentation/courierCharge";
+import {
   clockHHMM,
   GROUPED_HINT,
   GROUPED_TITLE,
@@ -129,8 +134,16 @@ export function rideLine(ride: DeliveryRideProjection, now: number): RideLine {
   switch (ride.state) {
     case "searching":
       return { icon: "i-lucide-radar", title: "Procurando entregador", hint: missing };
-    case "late":
-      return { icon: "i-lucide-hourglass", title: "Ninguém aceitou ainda", hint: missing };
+    case "late": {
+      // Com os minutos: "Ninguém aceitou em 12 min" diz se é hora de olhar a central.
+      const called = Date.parse(ride.called_at);
+      const minutes = Number.isFinite(called) ? Math.max(0, Math.floor((now - called) / 60000)) : null;
+      return {
+        icon: "i-lucide-hourglass",
+        title: minutes ? `Ninguém aceitou em ${minutes} min` : "Ninguém aceitou ainda",
+        hint: missing,
+      };
+    }
     case "reopened": {
       // O entregador desistiu e a TaOn redistribui a MESMA corrida: nada a chamar.
       const at = Date.parse(ride.reopened_at);
@@ -147,7 +160,13 @@ export function rideLine(ride: DeliveryRideProjection, now: number): RideLine {
       return {
         icon: "i-lucide-bike",
         title: minutes === null ? `${who} vem para a loja` : minutes <= 1 ? `${who} está chegando` : `${who} chega em ${minutes} min`,
-        hint: missing || (ride.bags ? `Separe ${bagsWord(ride.bags)} no balcão de saída` : ""),
+        hint:
+          missing ||
+          (ride.bags
+            ? ride.driver?.name
+              ? `Separe ${bagsWord(ride.bags)} para ${ride.driver.name}`
+              : `Separe ${bagsWord(ride.bags)} no balcão de saída`
+            : ""),
       };
     }
     case "atStore":
@@ -280,4 +299,105 @@ export function whatsappLink(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (!digits) return "";
   return `https://wa.me/${digits.startsWith("55") ? digits : `55${digits}`}`;
+}
+
+/**
+ * A TaOn parou de informar a corrida: a frase do Painel do pedido
+ * (`courierProgress.stale`), para as duas telas dizerem o mesmo. Vazio com a
+ * leitura em dia e depois que tudo foi entregue.
+ */
+export function rideStale(ride: Pick<DeliveryRideProjection, "sync_since" | "state">): string {
+  if (ride.state === "back") return "";
+  const since = Date.parse(ride.sync_since ?? "");
+  return Number.isFinite(since) ? `A TaOn não informa a corrida desde ${clockHHMM(since)}.` : "";
+}
+
+export interface RideChargeNotice extends CourierChargeNotice {
+  code: string;
+  /** O entregador já coletou: o gesto é ligar para ele. */
+  collected: boolean;
+}
+
+/**
+ * As paradas cuja cobrança ficou para trás (o pedido mudou depois da chamada), com
+ * a frase do Painel (`courierChargeNotice`). Na página, cancelar mora no detalhe.
+ */
+export function rideChargeNotices(
+  ride: Pick<DeliveryRideProjection, "stops" | "cancel_action">,
+): RideChargeNotice[] {
+  return ride.stops.flatMap((stop) => {
+    const outdated = stop.charge_outdated as unknown as CourierChargeOutdated | null | undefined;
+    const notice = courierChargeNotice(outdated, { cancelHere: Boolean(ride.cancel_action) });
+    return notice && !stop.done
+      ? [{ ...notice, title: `${stop.code}: ${notice.title.toLowerCase()}`, code: stop.code, collected: Boolean(outdated?.collected) }]
+      : [];
+  });
+}
+
+/** O que o diálogo "Entregador voltou" confere: os pedidos da corrida e o que volta na mão. */
+export function backCheck(ride: Pick<DeliveryRideProjection, "stops" | "back_lines">) {
+  return {
+    courier_return_orders: ride.stops.map((stop) => stop.ref),
+    courier_return_lines: [...ride.back_lines],
+  };
+}
+
+export interface ToggleResult {
+  editing: EditingRide[];
+  active: number;
+  /** O que o toque não fez como pedido, em uma frase ("" quando fez). */
+  notice: string;
+}
+
+/**
+ * O toque num pedido de Aguardando. Pedido que não vai em corrida nenhuma
+ * (`group_refusal`, chamada sem resposta) não entra, e a frase diz por quê. A
+ * corrida ativa cheia não engole o toque em silêncio: o pedido vai para a próxima
+ * corrida com lugar (ou uma nova), e a frase diz para qual.
+ */
+export function toggleStop(
+  editing: readonly EditingRide[],
+  active: number,
+  ref: string,
+  stops: readonly DeliveryStopProjection[],
+  maxStops: number,
+  free: readonly number[],
+): ToggleResult {
+  const stop = stops.find((item) => item.ref === ref);
+  const rides = editing.map((ride) => ({ number: ride.number, refs: [...ride.refs] }));
+  if (!stop) return { editing: rides, active, notice: "" };
+  if (stop.dispatch_again_action || stop.group_refusal)
+    return { editing: rides, active, notice: stop.group_refusal || stop.error };
+  let mine = rides.find((ride) => ride.number === active);
+  if (!mine) {
+    const number = nextFreeNumber(free, rides.map((ride) => ride.number)) ?? 1;
+    mine = { number, refs: [] };
+    rides.push(mine);
+    active = number;
+  }
+  const at = rides.find((ride) => ride.refs.includes(ref));
+  if (at === mine) {
+    mine.refs = mine.refs.filter((item) => item !== ref);
+    return { editing: rides, active, notice: "" };
+  }
+  if (mine.refs.length >= maxStops) {
+    const full = `A corrida ${rideLetter(mine.number)} já tem ${maxStops} pedidos.`;
+    let other = rides.find((ride) => ride !== mine && ride !== at && ride.refs.length < maxStops);
+    if (!other) {
+      const number = nextFreeNumber(free, rides.map((ride) => ride.number));
+      if (!number) return { editing: rides, active, notice: `${full} Tire um para pôr ${stop.code}.` };
+      other = { number, refs: [] };
+      rides.push(other);
+    }
+    if (at) at.refs = at.refs.filter((item) => item !== ref);
+    other.refs = [...other.refs, ref];
+    return {
+      editing: rides,
+      active: other.number,
+      notice: `${full} ${stop.code} foi para a corrida ${rideLetter(other.number)}.`,
+    };
+  }
+  if (at) at.refs = at.refs.filter((item) => item !== ref);
+  mine.refs = [...mine.refs, ref];
+  return { editing: rides, active, notice: "" };
 }

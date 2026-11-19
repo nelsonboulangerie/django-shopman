@@ -271,12 +271,59 @@ def test_sem_resposta_do_ifood_a_directive_repete(fake):
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_grade_recusada_pelo_ifood_nao_repete(fake):
+def test_grade_recusada_pelo_ifood_nao_repete_e_avisa(fake):
+    from shopman.backstage.models import OperatorAlert
+
     _shop()
     fake.override[("PUT", f"{BASE}/opening-hours")] = _Resp(400, {"error": {"message": "overlap"}})
 
+    # Repetir não resolve: a Directive termina (sem exceção) e o Gestor fica sabendo.
+    IFoodMerchantSyncHandler().handle(message=Directive(topic=IFOOD_MERCHANT_SYNC, payload={}), ctx={})
+
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
+    assert "horário de funcionamento" in alert.message
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_horario_recusado_nao_impede_a_pausa_de_chegar_ao_ifood(fake):
+    """16/11/2026: o 403 do horário abortava a gravação antes da pausa do Gestor."""
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    _ifood()
+    fake.override[("GET", f"{BASE}/opening-hours")] = _Resp(
+        403, {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+    )
+
+    _switch(False, "1h")
+    result = ifood_merchant.sync_store(now=TUESDAY_10H)
+
+    (interruption,) = fake.interruptions
+    assert interruption["description"] == ifood_merchant.CHANNEL_OFF_DESCRIPTION
+    assert result.created == 1 and result.failed == 1
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
+    assert "Portal do Parceiro" in alert.message
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_pausa_recusada_de_vez_avisa_que_o_ifood_pode_seguir_aberto(fake):
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    _ifood()
+    fake.override[("GET", f"{BASE}/interruptions")] = _Resp(
+        403, {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+    )
+    _switch(False, "1h")
+
     with pytest.raises(DirectiveTerminalError):
         IFoodMerchantSyncHandler().handle(message=Directive(topic=IFOOD_MERCHANT_SYNC, payload={}), ctx={})
+
+    directive = Directive(topic=IFOOD_MERCHANT_SYNC, payload={}, last_error="[terminal] iFood merchant: HTTP 403")
+    IFoodMerchantSyncHandler().on_terminal_failure(message=directive)
+
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
+    assert "403" in alert.message and "Portal do Parceiro" in alert.message
 
 
 # ── 2. Toggle do canal → iFood ────────────────────────────────────────────────
@@ -505,6 +552,23 @@ def test_concordancia_limpa_a_divergencia_e_conferencia_pede_gravacao(fake):
     assert IFoodStoreStatus.objects.get().divergent_since is None
     # Nunca gravou (synced_at vazio): a conferência pede a gravação.
     assert Directive.objects.filter(topic=IFOOD_MERCHANT_SYNC).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_status_negado_pelo_ifood_vira_aviso_e_nao_fica_so_no_log(fake):
+    """12–16/11/2026: a conferência da loja real deu 403 em silêncio por quatro dias."""
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    fake.override[("GET", f"{BASE}/status")] = _Resp(
+        403, {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+    )
+
+    assert ifood_merchant.check_store(now=TUESDAY_10H) is None
+    ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)  # um só: dedupe
+    assert "conferir se a loja está aberta" in alert.message
 
 
 @override_settings(SHOPMAN_IFOOD=OFF)

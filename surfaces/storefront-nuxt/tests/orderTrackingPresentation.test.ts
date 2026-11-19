@@ -73,6 +73,14 @@ describe('order tracking presentation — timeline & polling', () => {
     expect(timelineActiveStep([step('completed'), step('cancelled')])).toBe(2)
   })
 
+  it('goes as far as the refund that came after the cancellation (WP-L06)', () => {
+    // Recebido, Pago, Cancelado, Devolvido: o dinheiro que voltou já aconteceu e
+    // não pode ficar apagado como passo futuro.
+    expect(timelineActiveStep([step('completed'), step('completed'), step('cancelled'), step('completed')])).toBe(4)
+    // Sem nada depois do cancelamento, a linha para nele.
+    expect(timelineActiveStep([step('completed'), step('completed'), step('cancelled')])).toBe(3)
+  })
+
   it('says the step state out loud, since the check mark is visual only', () => {
     // O passo `current` recebia o mesmo ✓ do `completed` — a tela dizia "já foi"
     // sobre o que está acontecendo agora, contra o próprio contrato.

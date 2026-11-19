@@ -15,4 +15,4 @@ def money_text(value: Any) -> str:
     return f"{value['currency']} {amount}"
 
 
-DEFAULT_FORMATTERS = {"price": money_text, "price_a": money_text, "price_b": money_text}
+DEFAULT_FORMATTERS = {"price": money_text, "price_a": money_text, "price_b": money_text, "total": money_text}
