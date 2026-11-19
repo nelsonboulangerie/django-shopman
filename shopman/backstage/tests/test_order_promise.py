@@ -210,14 +210,14 @@ def test_reserva_ja_baixada_nao_aparece_e_custa_uma_consulta(baguete):
 
 
 def test_o_lote_que_abre_nao_acusa_ninguem(ficha):
-    """Abrir o lote tira a quantidade do saldo planejado e a põe no "em produção":
-    a reserva continua presa ao primeiro, e o lastro é a soma dos dois."""
+    """Abrir o lote tira a quantidade do saldo planejado e a põe no "em produção",
+    e a reserva vai junto (conserto da #2709): o pedido segue com lastro."""
     order, work_order, hold = _encomenda(ficha)
     work_order.refresh_from_db()
     craft.start(work_order, quantity=Decimal("10"), expected_rev=work_order.rev)
 
     hold.refresh_from_db()
-    assert hold.quant.quantity == 0  # o saldo planejado esvaziou
+    assert hold.quant.quantity >= hold.quantity  # a reserva está no saldo que tem o pão
     assert order_promise.read_for([order]) == {}
 
 

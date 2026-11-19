@@ -25,8 +25,9 @@ A régua é a que o orquestrador já usa, lida em lote:
 O saldo de produção de um produto numa data é UM bolo, mesmo quando o Stockman
 o guarda em dois saldos (o planejado e o que já entrou em produção,
 ``batch="started"``): o lote que abre tira a quantidade do primeiro e põe no
-segundo, e as reservas continuam presas ao primeiro. Medir saldo a saldo
-acusaria todo pedido no instante em que o lote abre.
+segundo. Desde o conserto da #2709 as reservas vão junto; o bolo único continua
+valendo porque um lote parcialmente aberto deixa quantidade nos dois saldos, e
+medir saldo a saldo acusaria pedido que o outro saldo cobre.
 
 ## O que a leitura responde
 
