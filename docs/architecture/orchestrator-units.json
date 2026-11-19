@@ -19673,6 +19673,45 @@
       "test_gap_reason": null,
       "policy": false,
       "out_of_extraction": false
+    },
+    {
+      "id": "conversational.house-policy-read",
+      "question": "Que política da casa a porta de leitura do comércio conversacional sabe afirmar, e o que ela diz que não sabe?",
+      "owner": "conversational.house-policy-read",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.conversational.commerce_read:ShopmanCommerceRead.read_policy",
+      "authoritative_symbols": [
+        "shopman.shop.conversational.commerce_read:ShopmanCommerceRead.read_policy"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/conversational/commerce_read.py",
+          "symbols": [
+            "ShopmanCommerceRead"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "offerman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:stock"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_conversational_read_ports.py::test_read_policy_states_only_the_house_hours"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
     }
   ]
 }

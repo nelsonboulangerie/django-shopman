@@ -14854,6 +14854,56 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/conversational/__init__.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/commerce_read.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "conversational.house-policy-read"
+      ],
+      "responsibilities": [
+        "decisão",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "CURRENCY",
+            "DenyAll",
+            "FACT_VALIDITY_SECONDS",
+            "FORMAT",
+            "Ownership",
+            "PORT",
+            "PRODUCER_NAME",
+            "UNSUPPORTED",
+            "_date_of",
+            "_text",
+            "instant",
+            "logger"
+          ]
+        }
+      ]
     }
   ]
 }

@@ -25,7 +25,7 @@ from conversational_commerce.testing.fakes.clock import FakeClock
 from shopman.offerman.models import Product
 from shopman.orderman.models import Session
 
-from shopman.shop.conversational import DenyAll, ShopmanCommerceRead
+from shopman.shop.conversational.commerce_read import DenyAll, ShopmanCommerceRead
 from shopman.shop.models import Channel, Shop
 
 pytestmark = pytest.mark.django_db
@@ -150,3 +150,13 @@ def test_declared_but_unsupported_operations_answer_honestly(shop):
     assert reader.knowledge(CTX, "anything") == ()
     assert isinstance(reader.scarcity(CTX, SKU), Unavailable)
     assert reader.read_policy(CTX, "returns") == Unknown(reason="not_found")
+
+
+def test_read_policy_states_only_the_house_hours(shop):
+    """A política que a porta sabe afirmar é o horário, lido do calendário da casa; o resto não se sabe."""
+    reader = ShopmanCommerceRead(channel_ref=CHANNEL)
+    fact = ShopmanCommerceRead.read_policy(reader, CTX, "hours")
+    assert isinstance(fact, Known) and fact.source == "shop:business_calendar"
+    assert set(fact.value) == {"open", "opens", "closes"}
+    for unknown in ("returns", "delivery_fee", ""):
+        assert ShopmanCommerceRead.read_policy(reader, CTX, unknown) == Unknown(reason="not_found")
