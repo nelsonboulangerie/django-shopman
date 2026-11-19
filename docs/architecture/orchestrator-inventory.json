@@ -9294,6 +9294,8 @@
             "_cancel_local_intent",
             "_local_status",
             "_payment",
+            "late_payment_of_takeover",
+            "late_refund_key",
             "logger"
           ]
         }
@@ -12701,6 +12703,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "OUTSIDE_CHARGE_BOOKERS",
+            "REFUND_FAILED_RETRY_HERE",
+            "REFUND_FAILED_SUPPORT",
             "_ack_payment_failed_alerts",
             "_adapter_config",
             "_adapter_for_persisted_intent",
@@ -12711,6 +12716,7 @@
             "_cancel_open_account_intents",
             "_capture_once",
             "_card_machine_intents",
+            "_counter_refund_claims_q",
             "_create_payment_failed_alert",
             "_customer_name",
             "_efi_intent_environment_matches_runtime",
@@ -12731,6 +12737,7 @@
             "_link_deadline_minutes",
             "_lock_payment_intents",
             "_methods_of",
+            "_net_held_q",
             "_notify_payment_failed",
             "_notify_refund",
             "_order_for_intent",
@@ -12761,8 +12768,12 @@
             "_stamp_gateway_check",
             "_terminal_amounts_by_method",
             "_terminal_ref",
+            "booked_outside_charge",
+            "gateway_refund_legs",
+            "gateway_refund_owed_q",
             "logger",
-            "order_refund_gateway_key"
+            "order_refund_gateway_key",
+            "refund_retry_available"
           ]
         }
       ]

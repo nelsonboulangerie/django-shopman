@@ -1260,14 +1260,18 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     no_show_action = no_show_detail_action(order, user)
     if no_show_action is not None:
         extra_actions.append(no_show_action)
-    # "Tentar o estorno de novo" (WP-G13): só para o dinheiro do cancelado em
-    # "Estorno não saiu". A régua (quanto, de onde, a base) é de ``services/refund_retry``.
+    # "Tentar o estorno de novo" (WP-G13, #2727): o pedido em "Estorno não saiu",
+    # cancelado ou não (devolução, encomenda editada, pagamento que chegou depois do
+    # balcão). A régua (quanto, de onde, a base) é de ``services/refund_retry``.
     refund_retry_plan = None
-    if cancelled_money is not None and cancelled_money.state == order_pending.MONEY_REFUND_FAILED:
+    if (cancelled_money is not None and cancelled_money.state == order_pending.MONEY_REFUND_FAILED) or (
+        cancelled_money is None and order_pending.ALERT_REFUND_FAILED in pending_alerts
+    ):
         from shopman.backstage.services import refund_retry
 
         refund_retry_plan = refund_retry.plan(order)
-        extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
+        if refund_retry_plan.failed:
+            extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":

@@ -236,8 +236,11 @@ def _quoted(line: str) -> str:
 _RETRY_DESTINATION = {"pix": " ao Pix do cliente", "card": " ao cartão do cliente"}
 
 
-def _refund_retry_pending(order: Order, money: CancelledMoneyProjection, plan, by_ref: dict):
+def _refund_retry_pending(order: Order, plan, by_ref: dict, *, amount_display: str):
     """ "Estorno não saiu" com o gesto (WP-G13): o valor, o que o botão faz e a última resposta.
+
+    ``amount_display`` é o que falta voltar: o do cancelado (``cancelled_money``)
+    ou, fora dele, o da régua do gesto (``plan.amount_q``).
 
     A falha da tentativa mora na própria linha (``failure``), vinda do pedido
     (``refund_retry.last_attempt``): quem abre o pedido depois lê o que o gateway
@@ -249,7 +252,7 @@ def _refund_retry_pending(order: Order, money: CancelledMoneyProjection, plan, b
     from shopman.backstage.services import refund_retry
 
     action = by_ref.get(refund_retry.ACTION_REF)
-    amount = f" de {money.amount_display}" if money.amount_display else ""
+    amount = f" de {amount_display}" if amount_display else ""
     parts = [f"A devolução{amount} não chegou ao cliente."]
     if plan.block_reason:
         # Sem caminho daqui: a frase diz por quê, e não promete um botão que não age.
@@ -257,7 +260,7 @@ def _refund_retry_pending(order: Order, money: CancelledMoneyProjection, plan, b
     else:
         # Quase sempre é o valor inteiro que falta; quando só parte dele volta por
         # gateway, a frase diz quanto o botão pede.
-        asked = "esse estorno" if _money(plan.amount_q) == money.amount_display else _money(plan.amount_q)
+        asked = "esse estorno" if _money(plan.amount_q) == amount_display else _money(plan.amount_q)
         parts.append(
             f"Tentar de novo pede {asked} outra vez{_RETRY_DESTINATION.get(plan.method, '')}, "
             "com a autorização de um gerente."
@@ -270,7 +273,7 @@ def _refund_retry_pending(order: Order, money: CancelledMoneyProjection, plan, b
     return OrderPendingProjection(
         key="refund",
         tone=TONE_ERROR,
-        label=money.label,
+        label=_MONEY_LABELS[MONEY_REFUND_FAILED],
         reason=" ".join(parts),
         actions=() if plan.block_reason else _from_action(action),
         failure=failure,
@@ -296,9 +299,14 @@ def _money_pending(
     if not failed:
         return None
     if money is not None and money.state == MONEY_REFUND_FAILED and refund_retry_plan is not None:
-        return _refund_retry_pending(order, money, refund_retry_plan, by_ref or {})
-    # O estorno que falhou fora do cancelado (devolução, encomenda editada): sem o
-    # valor certo a pedir de novo, quem conclui ainda é o suporte.
+        return _refund_retry_pending(order, refund_retry_plan, by_ref or {}, amount_display=money.amount_display)
+    if money is None and refund_retry_plan is not None and refund_retry_plan.failed:
+        # Fora do cancelado (devolução, encomenda editada que ficou mais barata,
+        # pagamento que chegou depois do balcão): o valor é o da régua do gesto.
+        amount_display = _money(refund_retry_plan.amount_q) if refund_retry_plan.amount_q else ""
+        return _refund_retry_pending(order, refund_retry_plan, by_ref or {}, amount_display=amount_display)
+    # Sem o que pedir de novo daqui (nada mais a devolver pelo meio online, ou o
+    # Payman mudo): quem conclui é o suporte.
     amount = f" de {money.amount_display}" if money is not None and money.amount_display else ""
     return OrderPendingProjection(
         key="refund",

@@ -371,6 +371,69 @@ def test_pix_que_chega_depois_do_balcao_e_estornado_no_pix_e_alerta(balcao):
     assert PaymentService.refunded_total(booked.ref) == 3600
 
 
+@override_settings(SHOPMAN_PAYMENT_ADAPTERS=ADAPTERS)
+def test_pix_tardio_que_o_gateway_recusou_devolver_ganha_o_gesto_do_gestor(balcao, operator):
+    """#2727: a cobrança assumida no balcão, e o estorno do Pix tardio recusado.
+
+    A linha "Estorno não saiu" ganha o "Tentar o estorno de novo" com o valor do Pix
+    tardio (o dinheiro recebido no balcão fica). A 1ª tentativa reapresenta a chave do
+    estorno automático (o aviso não diz se ele foi recusado ou ficou sem resposta);
+    recusada de novo, a seguinte leva chave nova. O dinheiro sai uma vez só.
+    """
+    from shopman.backstage.projections.order_queue import build_operator_order
+    from shopman.backstage.services import refund_retry
+
+    order, _intent = _pix_order("PIX-TARDIO-RECUSA")
+    _hand_over(balcao, order, tenders=[{"method": "cash", "amount_q": 3600}], request_id="t-pix-tardio-recusa")
+    refused = PaymentResult(success=False, error_code="E_DECLINED", message="saldo insuficiente na conta")
+    with patch.object(payment_mock, "refund", return_value=refused), pytest.raises(counter_takeover.LateRefundPending):
+        confirm_pix(txid=f"txid-{order.ref}", e2e_id="E2E-RECUSA", amount="36.00")
+
+    booked = PaymentService.get_by_order(order.ref).get(gateway_data__booked_by="pix_confirmation")
+    cash_intent = PaymentService.get_by_order(order.ref).get(method="cash")
+    order.refresh_from_db()
+    assert order.status == "completed"
+    assert payment_svc.gateway_refund_owed_q(order) == 3600
+    current = refund_retry.plan(order)
+    assert (current.block_reason, current.amount_q, current.method) == ("", 3600, "pix")
+    assert [leg.intent_ref for leg in current.legs] == [booked.ref]
+    line = {item.key: item for item in build_operator_order(order, user=operator).pending}["refund"]
+    assert line.reason.startswith("A devolução de R$ 36,00 não chegou ao cliente. Tentar de novo pede")
+    assert [(action.ref, action.enabled) for action in line.actions] == [("refund-retry", True)]
+    alert = OperatorAlert.objects.get(type="payment_refund_failed", order_ref=order.ref)
+    assert payment_svc.REFUND_FAILED_RETRY_HERE in alert.message
+
+    keys: list[str] = []
+    accept = payment_mock.refund
+
+    def gateway(intent_ref, **kwargs):
+        keys.append(kwargs["idempotency_key"])
+        return refused if len(keys) == 1 else accept(intent_ref, **kwargs)
+
+    with patch.object(payment_mock, "refund", side_effect=gateway):
+        first = refund_retry.retry(
+            order, actor="marina", approved_by="joyce", attempt_key="tentativa-1",
+            expected_revision=refund_retry.revision(order),
+        )
+        order.refresh_from_db()
+        second = refund_retry.retry(
+            order, actor="marina", approved_by="joyce", attempt_key="tentativa-2",
+            expected_revision=refund_retry.revision(order),
+        )
+
+    assert (first["outcome"], second["outcome"]) == ("refused", "refunded")
+    assert keys == [
+        counter_takeover.late_refund_key(booked.ref),
+        refund_retry.fresh_gateway_key(order.ref, booked.ref, "tentativa-2"),
+    ]
+    assert PaymentService.refunded_total(booked.ref) == 3600
+    assert PaymentService.refunded_total(cash_intent.ref) == 0
+    order.refresh_from_db()
+    assert payment_svc.gateway_refund_owed_q(order) == 0
+    alert.refresh_from_db()
+    assert alert.resolved_at is not None
+
+
 # ── Link do Stripe pendente → balcão recebe ───────────────────────────────
 
 
