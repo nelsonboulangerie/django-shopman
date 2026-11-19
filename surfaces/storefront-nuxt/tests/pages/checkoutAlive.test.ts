@@ -205,9 +205,48 @@ describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () =>
     mounted = page
     await openReview(page)
 
-    const notice = document.body.querySelector('[data-review-money-notice]')
-    expect(notice?.classList.contains('shop-surface-faubourg')).toBe(true)
-    expect(notice?.classList.contains('border')).toBe(true)
+    // "Antes de enviar": um card só (Faubourg, tom neutro), com a frase do dinheiro dentro.
+    const card = document.body.querySelector('[data-review-before-sending]')
+    expect(card?.classList.contains('shop-surface-faubourg')).toBe(true)
+    expect(card?.classList.contains('border')).toBe(true)
+    expect(card?.textContent).toContain('Antes de enviar')
+    expect(card?.querySelector('[data-review-money-notice]')).toBeTruthy()
+    // Condição do pedido não é alerta: nenhuma cor semântica no card.
+    expect(card?.className).not.toMatch(/warning|destructive|success|amber|yellow|red-/)
+  })
+
+  it('na encomenda para retirar, o não retirado entra no mesmo card, com divisor e o link dos Termos dentro', async () => {
+    // Para a loja hoje é hoje: a data do rascunho (amanhã) é uma encomenda.
+    served = projection({ today: iso(new Date()) })
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await openReview(page)
+
+    const card = document.body.querySelector('[data-review-before-sending]')
+    const rule = card?.querySelector('[data-review-unclaimed-rule]')
+    const money = card?.querySelector('[data-review-money-notice]')
+    expect(rule).toBeTruthy()
+    expect(money).toBeTruthy()
+    expect(card?.querySelector('[data-review-before-sending-divider]')).toBeTruthy()
+    expect(rule!.textContent).toContain('Pedido não retirado até o fim do expediente do dia combinado')
+    expect(rule!.querySelector('a')?.getAttribute('href')).toBe('/termos#pickup-and-delivery')
+    // As duas frases têm o mesmo peso de leitura, e a regra só aparece uma vez na revisão.
+    expect(rule!.classList.contains('shop-body')).toBe(true)
+    expect(money!.querySelector('p')?.classList.contains('shop-body')).toBe(true)
+    expect(document.body.querySelectorAll('[data-review-unclaimed-rule]')).toHaveLength(1)
+  })
+
+  it('no pedido para hoje o card fica só com o dinheiro, sem divisor', async () => {
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await openReview(page)
+
+    const card = document.body.querySelector('[data-review-before-sending]')
+    expect(card?.querySelector('[data-review-money-notice]')).toBeTruthy()
+    expect(document.body.querySelector('[data-review-unclaimed-rule]')).toBeNull()
+    expect(card?.querySelector('[data-review-before-sending-divider]')).toBeNull()
   })
 
   function waitingCart (promise: unknown) {

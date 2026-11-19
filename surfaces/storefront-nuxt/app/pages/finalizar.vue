@@ -2584,17 +2584,6 @@ useSeoMeta({
               <!-- Como/onde/pgto/contato: ícone + valor, sem rótulo (o valor já se explica). -->
               <OrderSummaryRows :rows="reviewSummaryRows" />
 
-              <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
-                   enviar e de pagar (#2613, decisão do dono de 18/11/2026). A frase é a da
-                   cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
-                   reprova se uma mudar sem a outra. -->
-              <p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>
-                Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
-                voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
-                loja.
-                <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
-              </p>
-
               <!-- Cartão do presente / observação: bilhete em superfície destacada (muted). -->
               <p v-if="state.is_gift && state.gift_message" class="mt-3 rounded-lg bg-muted/50 p-3">
                 <span class="mb-0.5 block shop-kicker">Cartão do presente</span>
@@ -2628,15 +2617,38 @@ useSeoMeta({
                 <p v-if="cart.group_savings_message" class="mt-2 shop-body text-primary">{{ cart.group_savings_message }}</p>
               </template>
 
-              <!-- O que acontece com o dinheiro, antes de enviar: paga agora, até quando a
-                   loja confirma e o que acontece se não confirmar. A frase vem do servidor,
-                   com o prazo de aceite do canal (P1-06). -->
-              <!-- Card dentro do card (a superfície Faubourg, a mesma do login): a frase
-                   do dinheiro é um bloco próprio da revisão, não uma linha solta. -->
-              <div v-if="moneyNotice" class="shop-surface-faubourg mt-3 flex items-start gap-3 rounded-lg border p-4" data-review-money-notice>
-                <Icon name="lucide:shield-check" class="mt-0.5 size-5 shrink-0" />
-                <p class="shop-body">{{ moneyNotice }}</p>
-              </div>
+              <!-- Antes de enviar: as condições do pedido num bloco só, card dentro do card
+                   (a superfície Faubourg, a mesma do login). São condição, não alerta nem
+                   sucesso: tom neutro da superfície, sem cor semântica (dono e coordenação,
+                   19/11/2026). Cada frase tem o seu ícone; com as duas, um divisor entre elas. -->
+              <section
+                v-if="moneyNotice || showUnclaimedOrderRule"
+                class="shop-surface-faubourg mt-3 rounded-lg border p-4"
+                aria-labelledby="review-before-sending-title"
+                data-review-before-sending
+              >
+                <p id="review-before-sending-title" class="shop-kicker">Antes de enviar</p>
+                <!-- O dinheiro: o que acontece com ele, até quando a loja confirma e o que
+                     acontece se não confirmar. A frase vem do servidor (P1-06). -->
+                <div v-if="moneyNotice" class="mt-2 flex items-start gap-3" data-review-money-notice>
+                  <Icon name="lucide:shield-check" class="mt-0.5 size-5 shrink-0" />
+                  <p class="shop-body">{{ moneyNotice }}</p>
+                </div>
+                <UiSeparator v-if="moneyNotice && showUnclaimedOrderRule" class="my-3" data-review-before-sending-divider />
+                <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
+                     enviar e de pagar (#2613, decisão do dono de 18/11/2026). A frase é a da
+                     cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
+                     reprova se uma mudar sem a outra. -->
+                <div v-if="showUnclaimedOrderRule" class="flex items-start gap-3" :class="moneyNotice ? '' : 'mt-2'">
+                  <Icon name="lucide:calendar-clock" class="mt-0.5 size-5 shrink-0" />
+                  <p class="shop-body" data-review-unclaimed-rule>
+                    Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
+                    voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
+                    loja.
+                    <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
+                  </p>
+                </div>
+              </section>
             </div>
 
             <!-- Rodapé mínimo: Total em destaque + UM botão full-width. Sem botão amarelo,
