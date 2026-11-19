@@ -232,7 +232,16 @@ async function auditsAddressList(page: Page, label: string, blockSelector: strin
   return report;
 }
 
-const LIST_TEXT = "[data-pos-saved-addresses] legend, [data-pos-saved-address-line], [data-pos-saved-addresses] [data-slot='description'], [data-pos-saved-address-tag]";
+const LIST_TEXT = "[data-pos-saved-addresses] legend, [data-pos-saved-address-line], [data-pos-saved-address-detail], [data-pos-saved-address-tag]";
+
+/** Aviso passageiro na tela (o parabéns do aniversariante, por exemplo): a Fran lê e fecha. */
+async function dismissesNotices(page: Page) {
+  const close = page.locator("[data-sonner-toast] [data-close-button]");
+  for (let left = await close.count(); left > 0; left -= 1) {
+    await close.first().click({ timeout: 5000 }).catch(() => undefined);
+  }
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 15_000 });
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -252,6 +261,7 @@ for (const device of ["phone", "counter"] as const) {
 
       // 2 · Depois do cliente, "PARA QUANDO" (não mais o recebimento).
       await identifiesCustomer(page);
+      await dismissesNotices(page);
       await expect(currentStep(page)).toHaveAttribute("aria-label", "2. Data e horário", { timeout: 30_000 });
       await expect(page.getByRole("heading", { name: "Para quando?" })).toBeVisible();
       await capture(page, testInfo, "depois-pra-quando");

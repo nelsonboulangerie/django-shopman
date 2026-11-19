@@ -7,6 +7,6 @@
   "criado": "2026-11-19",
   "revisar_em": "2026-11-26",
   "gatilho": "issue #2754",
-  "estado": "ABERTO",
-  "prova": "-"
+  "estado": "FEITO",
+  "prova": "#2774 (fecha #2754; adiados nas issues #2775, #2776, #2777 e #2778; o #2765 é o PR seguinte da frente)"
 }

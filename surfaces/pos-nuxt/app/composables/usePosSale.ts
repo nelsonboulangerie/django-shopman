@@ -2499,14 +2499,23 @@ export function usePosSale(deps: PosSaleDeps) {
     // A linha do endereço é RECOMPOSTA dos campos, como na loja (`addressForm`):
     // a do Google ficava velha no instante em que o operador corrigia o número, e
     // era ela que ia para o pedido, a nota e o entregador.
-    structured.formatted_address = composedAddressLine({
+    //
+    // A exceção é o endereço ESCOLHIDO DO CADASTRO e não mexido: ele viaja com a
+    // linha do próprio cadastro. O servidor reconhece o endereço do cliente por
+    // essa linha (`_ensure_customer_address`), e a recomposta, escrita de outro
+    // jeito, fazia cada comanda salva gravar o mesmo endereço de novo, como "Casa".
+    const composed = (place: StructuredAddressProjection) => composedAddressLine({
       ...emptyAddressDraft(),
-      route: structured.route || "",
-      street_number: structured.street_number || "",
-      neighborhood: structured.neighborhood || "",
-      city: structured.city || "",
-      state_code: structured.state_code || "",
-    }) || structured.formatted_address || "";
+      route: place.route || "",
+      street_number: place.street_number || "",
+      neighborhood: place.neighborhood || "",
+      city: place.city || "",
+      state_code: place.state_code || "",
+    });
+    const fromRecord = cart.deliveryAddressStructured;
+    const untouched = Boolean(fromRecord.formatted_address) && composed(structured) === composed(fromRecord);
+    structured.formatted_address = (untouched ? fromRecord.formatted_address : composed(structured))
+      || structured.formatted_address || "";
     const deliveryAddress = structured.formatted_address;
     const discountValueNum = Number(String(cart.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
     const manualDiscount = discountValueNum > 0

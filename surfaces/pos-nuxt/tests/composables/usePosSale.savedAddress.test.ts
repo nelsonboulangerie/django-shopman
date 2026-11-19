@@ -7,7 +7,7 @@ import { nextTick } from "vue";
 import { toast } from "vue-sonner";
 
 import type { SavedAddressProjection } from "~/types/pos";
-import { makeSale } from "./_posSaleHarness";
+import { makeProjection, makeSale } from "./_posSaleHarness";
 
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
@@ -52,6 +52,29 @@ function orderWaitingFulfillment(addresses: SavedAddressProjection[] = [HOME, OT
     saved_addresses: addresses,
   } as unknown as NonNullable<typeof sale.customerLookup.value>;
   return h;
+}
+
+/** O corpo do último salvamento da comanda (o que o servidor recebe). */
+async function savedBody(addresses: SavedAddressProjection[], act: (sale: Harness["sale"]) => void) {
+  const actionCall = vi.fn().mockResolvedValue({});
+  const h = makeSale({
+    actionCall,
+    projection: makeProjection({ checkout: {
+      intent_version: 1,
+      capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
+    } as ReturnType<typeof makeProjection>["checkout"] }),
+  });
+  instances.push(h);
+  Object.assign(h.sale.cart, { tabRef: "M1", tabSessionKey: "sess-1", customerRef: "CUST-A", customerName: "Ana" });
+  h.sale.customerLookup.value = {
+    ref: "CUST-A", name: "Ana", default_address: addresses[0] ?? null, saved_addresses: addresses,
+  } as unknown as NonNullable<typeof h.sale.customerLookup.value>;
+  h.sale.setSalesMode("order");
+  h.sale.cart.deliveryDate = "2099-09-12";
+  act(h.sale);
+  await h.sale.saveTab();
+  const call = actionCall.mock.calls.find((c) => String(c[0]).includes("/tabs/save/"))!;
+  return call[1]!.body as Record<string, any>;
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.mocked(toast.info).mockClear(); instances = []; });
@@ -180,6 +203,37 @@ describe("usePosSale: o endereço da entrega", () => {
     expect(sale.canRestoreDeliveryAddress.value).toBe(false);
     sale.restoreDeliveryAddress();
     expect(sale.cart.deliveryAddress).toBe("");
+  });
+
+  // O servidor reconhece o endereço do cliente pela LINHA do cadastro. A linha
+  // recomposta pelo PDV é escrita de outro jeito, e cada comanda salva gravava o
+  // mesmo endereço de novo no cadastro, como "Casa" (medido na jornada J11).
+  it("o endereço escolhido do cadastro viaja com a linha do cadastro, para não ser gravado de novo", async () => {
+    const fromStore = saved(3, { formatted_address: "Rua 3, 300 - Centro, Londrina - PR, 86010-000" });
+    const body = await savedBody([fromStore], (sale) => sale.chooseFulfillment("delivery"));
+    expect(body.fulfillment_type).toBe("delivery");
+    expect(body.delivery_address).toBe("Rua 3, 300 - Centro, Londrina - PR, 86010-000");
+    expect(body.delivery_address_structured.formatted_address).toBe("Rua 3, 300 - Centro, Londrina - PR, 86010-000");
+  });
+
+  it("o operador corrigiu o número: já não é o endereço do cadastro, e a linha é recomposta", async () => {
+    const fromStore = saved(3, { formatted_address: "Rua 3, 300 - Centro, Londrina - PR, 86010-000" });
+    const body = await savedBody([fromStore], (sale) => {
+      sale.chooseFulfillment("delivery");
+      sale.cart.deliveryStreetNumber = "302";
+    });
+    expect(body.delivery_address).toBe("Rua 3, 302 - Centro - Londrina/PR");
+  });
+
+  it("endereço digitado na hora segue com a linha recomposta dos campos", async () => {
+    const body = await savedBody([], (sale) => {
+      sale.chooseFulfillment("delivery");
+      sale.cart.deliveryAddress = "Rua Nova";
+      sale.cart.deliveryStreetNumber = "9";
+      sale.cart.deliveryNeighborhood = "Centro";
+      sale.cart.deliveryAddressStructured = { city: "Londrina", state_code: "PR", postal_code: "86015-000" };
+    });
+    expect(body.delivery_address).toBe("Rua Nova, 9 - Centro - Londrina/PR");
   });
 
   it("sem endereço na entrega, tirar não faz nada", () => {

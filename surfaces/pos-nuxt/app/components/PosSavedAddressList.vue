@@ -71,12 +71,19 @@ defineExpose({ focusTarget });
       variant="card"
       legend="Endereços do cliente"
       :disabled="disabled"
-      :ui="{ fieldset: 'w-full gap-y-2', item: 'w-full', wrapper: 'min-w-0', label: 'flex flex-wrap items-center gap-x-2 gap-y-1' }"
+      :ui="{ fieldset: 'w-full gap-y-2', item: 'w-full', wrapper: 'min-w-0', label: 'break-words', description: 'flex flex-wrap items-center gap-x-2 gap-y-1' }"
       @update:model-value="pick"
     >
+      <!-- Duas linhas em toda opção, sempre no mesmo lugar: em cima o endereço;
+           embaixo a etiqueta do cliente (quando identifica) e o bairro com a
+           cidade. A etiqueta fica na segunda linha para a rua nunca dividir a
+           largura com ela no celular. -->
       <template #label="{ item }">
-        <span class="min-w-0 break-words" data-pos-saved-address-line>{{ item.label }}</span>
+        <span data-pos-saved-address-line>{{ item.label }}</span>
+      </template>
+      <template #description="{ item }">
         <NuxtBadge v-if="item.tag" color="neutral" variant="soft" :label="item.tag" data-pos-saved-address-tag />
+        <span v-if="item.description" data-pos-saved-address-detail>{{ item.description }}</span>
       </template>
     </NuxtRadioGroup>
   </div>
