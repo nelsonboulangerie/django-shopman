@@ -489,7 +489,7 @@ def test_authorized_card_waiting_says_money_is_reserved_not_a_waitlist(status, w
     if when:
         assert when in message
     if status == "new":
-        assert "só é cobrado quando a loja aceitar" in message
+        assert "só é cobrado quando a loja confirmar" in message
 
 
 def test_state_payment_capture_failed(make_order, patch_payment):

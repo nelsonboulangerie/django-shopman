@@ -1294,26 +1294,29 @@ def _promise_copy(
             # aceitar. "Sua reserva está na fila de espera" soava como produto em
             # lista de espera (beta 06/11).
             if status == "new":
-                # Duas coisas, duas frases (#2749): até quando a loja aceita, e
-                # para quando é o pedido. Juntas ("aceitar seu pedido para amanhã,
-                # a partir das 15h") liam como se a loja fosse aceitar amanhã às 15h.
-                # Sem prazo publicado, a frase do aceite só nomeia o pedido quando
-                # a frase do dia não vem logo depois: "aceitar seu pedido. Seu
-                # pedido é para..." repetia o substantivo.
+                # Duas coisas, duas frases (#2749): até quando a loja confirma, e
+                # para quando é o pedido. Juntas ("...seu pedido para amanhã, a
+                # partir das 15h") liam como se a loja fosse confirmar amanhã às 15h.
+                # Sem prazo publicado, a frase só nomeia o pedido quando a frase do
+                # dia não vem logo depois: "...seu pedido. Seu pedido é para..."
+                # repetia o substantivo.
+                #
+                # O verbo é "confirmar", o mesmo da revisão do checkout e das
+                # frases do Pix: um ato da loja, um verbo só (dono, 19/11/2026).
                 if until:
                     acceptance = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL",
-                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar, {until}.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
                     ).replace("{until}", until)
                 elif wait_display:
                     acceptance = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL",
-                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar.",
                     )
                 else:
                     acceptance = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE",
-                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar seu pedido.",
                     )
                 message = _with_commitment(
                     acceptance,

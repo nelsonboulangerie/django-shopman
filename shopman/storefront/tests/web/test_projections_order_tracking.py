@@ -1423,7 +1423,7 @@ class TestStatusColours:
         # Sem timer de aceite na fila não há prazo na frase; o dia vem em frase
         # própria, e "pedido" aparece uma vez só (#2749).
         assert proj.promise.message == (
-            "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar. "
+            "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar. "
             "Seu pedido é para hoje."
         )
         assert "fila de espera" not in proj.promise.message

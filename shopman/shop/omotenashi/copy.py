@@ -1161,12 +1161,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    # Cartão reservado esperando a loja: o prazo do aceite vai nesta frase, e o
-    # dia do pedido em ``TRACKING_PROMISE_ORDER_IS_FOR`` (#2749).
+    # Cartão reservado esperando a loja: o prazo vai nesta frase, e o dia do
+    # pedido em ``TRACKING_PROMISE_ORDER_IS_FOR`` (#2749). O verbo é "confirmar",
+    # como na revisão do checkout e nas frases do Pix: um ato, um verbo só.
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar, {until}.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
             ),
         },
     },
@@ -1175,14 +1176,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar seu pedido.",
             ),
         },
     },

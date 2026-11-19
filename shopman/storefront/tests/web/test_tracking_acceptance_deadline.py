@@ -1,10 +1,10 @@
 """O acompanhamento diz até quando a loja responde, e separa do dia do pedido (#2749).
 
-Antes: "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar
-seu pedido para amanhã, a partir das 15h." A frase juntava o aceite (que tem prazo
-de minutos) com o dia do pedido, e lia como se a loja fosse aceitar amanhã às 15h.
-Agora são duas frases: o aceite com o prazo que o servidor publicou, e para quando
-é o pedido.
+Antes a frase do cartão juntava a resposta da loja (que tem prazo de minutos) com
+o dia do pedido ("...só é cobrado quando a loja aceitar seu pedido para amanhã, a
+partir das 15h."), e lia como se a loja fosse responder amanhã às 15h. Agora são
+duas frases: a resposta da loja com o prazo que o servidor publicou, e para quando
+é o pedido. O verbo é "confirmar" em toda a família, como na revisão do checkout.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def test_cartao_autorizado_separa_o_prazo_do_aceite_e_o_dia_do_pedido():
 
     assert title == "Pagamento autorizado"
     assert message == (
-        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar, até 8h40. "
+        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, até 8h40. "
         "Seu pedido é para amanhã, a partir das 15h."
     )
 
@@ -106,7 +106,7 @@ def test_cartao_autorizado_com_a_casa_fechada_diz_o_dia_do_prazo():
     )
 
     assert message == (
-        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar, "
+        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, "
         "até amanhã, sexta, às 10h. Seu pedido é para amanhã, a partir das 15h."
     )
 
@@ -117,7 +117,7 @@ def test_cartao_autorizado_sem_prazo_publicado_fica_sem_o_trecho_do_prazo():
     )
 
     assert message == (
-        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar. "
+        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar. "
         "Seu pedido é para amanhã, a partir das 15h."
     )
     assert "até" not in message
@@ -128,7 +128,7 @@ def test_cartao_autorizado_sem_dia_combinado_fica_so_com_a_frase_do_aceite():
     data = replace(_card(NOW + timedelta(minutes=60)), fulfillment_wait_until=None)
     _title, message = _promise_copy(data, status="new", is_delivery=False, copy=_copy())
 
-    assert message == "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar, até 8h40."
+    assert message == "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, até 8h40."
 
 
 def test_cartao_de_pedido_ja_aceito_nao_fala_em_prazo_de_aceite():
@@ -201,7 +201,7 @@ def test_encomenda_sem_pagamento_esperando_a_loja_nao_promete_devolucao(state):
 # frase do aceite não nomeia o pedido (a frase do dia vem logo depois e o nomeia);
 # sem dia, ela nomeia. Em nenhuma combinação o substantivo aparece duas vezes.
 
-CARD_RESERVED = "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar"
+CARD_RESERVED = "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar"
 REFUND = "Se não puder, devolvemos o valor."
 ORDER_IS_FOR = "Seu pedido é para amanhã, a partir das 15h."
 PREORDER_IS_FOR = "Sua encomenda é para amanhã, a partir das 15h."
@@ -306,5 +306,17 @@ def test_nenhuma_frase_da_familia_junta_o_aceite_com_o_dia_do_pedido():
         assert "·" not in message, "dentro de frase vai a forma de frase (#2752)"
         assert "—" not in message
         for sentence in message.split(". "):
-            mixes = ("aceitar" in sentence or "confirma" in sentence) and "para amanhã" in sentence
+            mixes = "confirma" in sentence and "para amanhã" in sentence
             assert not mixes, sentence
+
+
+@pytest.mark.parametrize("family", sorted(FAMILY))
+@pytest.mark.parametrize("with_deadline", [True, False])
+@pytest.mark.parametrize("with_date", [True, False])
+def test_o_ato_da_loja_tem_um_verbo_so(family, with_deadline, with_date):
+    # A revisão do checkout e o Pix dizem "confirmar"; o cartão dizia "aceitar".
+    # Dois verbos para o mesmo ato fazem a cliente procurar a diferença (dono, 19/11).
+    message = _family_message(family, with_deadline=with_deadline, with_date=with_date).lower()
+
+    assert "aceit" not in message, message
+    assert "confirm" in message
