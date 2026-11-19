@@ -7,6 +7,6 @@
   "criado": "2026-11-19",
   "revisar_em": "2026-11-26",
   "gatilho": "-",
-  "estado": "EM_ANDAMENTO",
+  "estado": "EM_EXECUCAO",
   "prova": "CON do iFood fecha pedido de teste e de entregador do iFood; manutenção recupera os de teste presos. Fora: #2812 (3417 real), #2813 (K76)."
 }
