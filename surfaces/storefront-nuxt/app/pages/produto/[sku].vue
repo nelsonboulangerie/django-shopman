@@ -27,6 +27,14 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
   { credentials: 'include', lazy: true, $fetch: useStorefrontPageFetch() }
 )
 usePageContentPending(pending)
+// Loja viva (WP-L04): o produto que esgota, ou que fica pronto, muda na frente da
+// cliente. A releitura troca o dado no lugar, sem esqueleto; se ela já foi para
+// outro produto, a resposta atrasada é descartada.
+useLiveRevalidate(
+  data,
+  () => $fetch<ProductResponse>(apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`), { credentials: 'include' }),
+  { scope: () => sku.value }
+)
 
 // Pré-go-live não há redirecionamento de SKU antigo.
 if (import.meta.server && error.value?.statusCode === 404) {

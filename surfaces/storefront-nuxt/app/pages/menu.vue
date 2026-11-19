@@ -58,6 +58,13 @@ const {
   lazy: import.meta.client || !canonicalOnServer
 })
 await siteSeoReady
+// Loja viva (WP-L04): disponibilidade e preço dos cards mudam sozinhos. A estrutura
+// (seções, ordem) segue no ritmo próprio do snapshot; aqui só a leitura canônica.
+useLiveRevalidate(
+  data,
+  () => $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include' }),
+  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS }
+)
 
 const catalog = computed(() => data.value?.catalog || structureCatalog.value || null)
 const pending = computed(() => !catalog.value && (canonicalPending.value || continuum?.pending.value))
