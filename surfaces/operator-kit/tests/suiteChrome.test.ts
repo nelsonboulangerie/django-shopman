@@ -20,6 +20,8 @@ import {
   inboxAlertDescription,
   operatorAlertToInbox,
   urgentAlerts,
+  answerPill,
+  answerPillReturnAt,
   deadlineLeftLabel,
   respondInLabel,
   reminderIntervalMs,
@@ -287,6 +289,39 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     );
     expect(view.blocking?.key).toBe(1);
     expect(view.reminders.map((item) => item.key)).toEqual([2]);
+  });
+
+  const min = 60_000;
+  it("a pergunta que espera resposta só vira janela quando o prazo vence", () => {
+    const answer = { label: "Responder", placeholder: "", maxLength: 300 };
+    const running = urgentAlerts([{ key: 1, respondByIso: at(7), seen: false, deadlineKind: "house", answer }], NOW);
+    expect(running).toEqual({ blocking: null, reminders: [] });
+    const late = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: false, deadlineKind: "house", answer }], NOW);
+    expect(late.blocking?.key).toBe(1);
+    // Vista, não vira lembrete passageiro: a pílula é o lembrete dela.
+    const seen = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: true, deadlineKind: "house", answer }], NOW);
+    expect(seen).toEqual({ blocking: null, reminders: [] });
+  });
+
+  it("a pílula mostra a pergunta mais antiga, some no X e volta no ritmo dos lembretes", () => {
+    const answer = { label: "Responder", placeholder: "", maxLength: 300 };
+    const items = [
+      { key: 1, respondByIso: at(9), answer },
+      { key: 2, respondByIso: at(4), answer },
+      { key: 3, respondByIso: at(1) },
+    ];
+    expect(answerPill(items, NOW, new Map())?.key).toBe(2);
+    // A janela na tela fala pela pergunta dela.
+    expect(answerPill(items, NOW, new Map(), 2)?.key).toBe(1);
+    const back = answerPillReturnAt(at(4), NOW);
+    expect(back - NOW).toBe(min);
+    const hidden = new Map([[2, back]]);
+    expect(answerPill(items, NOW, hidden)?.key).toBe(1);
+    expect(answerPill(items, back, hidden)?.key).toBe(2);
+    // Sem pergunta aberta, sem pílula.
+    expect(answerPill([{ key: 3, respondByIso: at(1) }], NOW, new Map())).toBeNull();
+    // Vencido o prazo, volta a cada 5 min.
+    expect(answerPillReturnAt(at(-2), NOW) - NOW).toBe(5 * min);
   });
 
   it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {

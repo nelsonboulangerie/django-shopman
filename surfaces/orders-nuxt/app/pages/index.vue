@@ -1461,6 +1461,18 @@ function seeAttention() {
 // o próximo pedido que pedir atenção traz a pílula de volta. Visto continua sendo o "eu vi,
 // pode parar de avisar".
 const notices = useAlertDismissals();
+// Com a pílula da pergunta da Concierge na base (kit, `OperatorUrgentAlert`), esta sobe
+// uma pílula: as duas ficam à vista, uma sobre a outra.
+const answerPillShown = useAnswerPillShown();
+const attentionPillBottom = computed(() =>
+  phoneExitMode.value
+    ? answerPillShown.value
+      ? "bottom-[calc(var(--operator-quick-bar-inset,0px)+11rem)]"
+      : "bottom-[calc(var(--operator-quick-bar-inset,0px)+6rem)]"
+    : answerPillShown.value
+      ? "bottom-[calc(var(--operator-quick-bar-inset,0px)+6rem)]"
+      : "bottom-[calc(var(--operator-quick-bar-inset,0px)+1rem)]",
+);
 
 // A encomenda recém-aceita (WP-G03): sai das colunas do dia e vai morar na lista
 // "Encomendas", abaixo da dobra. O aviso diz para onde ela foi e em que dia, e leva
@@ -1578,14 +1590,11 @@ function compactClear() {
     <!-- O aviso no polegar, sem empurrar a fila: qual pedido, o status do cartão dele, Ver
          e Visto. Na Saída fica acima do "Entregar", a ação do momento ali. Sobe pela altura da
          barra de baixo do shell (`--operator-quick-bar-inset`, do kit): nunca a cobre. -->
-    <div v-if="attentionPending && !exitPostView && notices.isOpen(`attention:${attentionRef}`)" :class="phoneExitMode ? 'bottom-[calc(var(--operator-quick-bar-inset,0px)+6rem)]' : 'bottom-[calc(var(--operator-quick-bar-inset,0px)+1rem)]'" class="fixed inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
-      <div class="flex items-center gap-2 rounded-2xl bg-inverted py-1.5 pl-4 pr-1.5 text-inverted shadow-lg">
-        <NuxtIcon name="i-lucide-bell-ring" class="size-5 shrink-0" />
-        <p class="min-w-0 flex-1 leading-tight"><strong class="block truncate">{{ attention.code || attention.what }}</strong><span v-if="attention.code" class="block truncate text-xs opacity-80">{{ attention.what }}</span></p>
+    <div v-if="attentionPending && !exitPostView && notices.isOpen(`attention:${attentionRef}`)" :class="attentionPillBottom" class="fixed inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
+      <OperatorAttentionPill :title="attention.code || attention.what" :detail="attention.code ? attention.what : ''" :close-attrs="{ 'data-attention-close': true }" @close="notices.close(`attention:${attentionRef}`)">
         <NuxtButton label="Ver" color="neutral" variant="ghost" class="min-h-11 text-inverted" data-attention-see @click="seeAttention" />
         <NuxtButton icon="i-lucide-check" label="Visto" color="neutral" variant="outline" class="min-h-11" data-attention-seen @click="acknowledgeAttention" />
-        <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square class="size-11 justify-center text-inverted" aria-label="Fechar o aviso" data-attention-close @click="notices.close(`attention:${attentionRef}`)" />
-      </div>
+      </OperatorAttentionPill>
     </div>
     <OperatorPageHeader
       title="Pedidos"

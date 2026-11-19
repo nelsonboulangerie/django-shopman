@@ -11,14 +11,22 @@
 //
 // Lê a mesma fonte da caixa de Avisos (`provideOperatorInboxAlerts`): o app só precisa
 // mandar `respondByIso` no item. Sem prazo, nada aqui acontece.
+//
+// O aviso que se resolve com resposta escrita (a pergunta que a Concierge levou à equipe,
+// dono, 19/11/2026) sobe em degraus: chega como a pílula invertida na base, com
+// "Responder" (abre esta janela) e X; o X dispensa e ela volta no ritmo dos lembretes
+// enquanto ninguém responde nem assume; vencido o prazo, a janela interrompe a tela.
 import { useNow } from "@vueuse/core";
-import { computed, onBeforeUnmount, onMounted } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import {
+  useAnswerPillShown,
   useOperatorInboxAlerts,
   type OperatorInboxAlert,
 } from "../composables/useSuiteChrome";
 import {
+  answerPill,
+  answerPillReturnAt,
   reminderIntervalMs,
   respondInLabel,
   urgentAlerts,
@@ -32,7 +40,33 @@ const now = useNow({ interval: 1000 });
 const view = computed(() =>
   urgentAlerts(source.value?.items ?? [], now.value.getTime()),
 );
-const blocking = computed(() => view.value.blocking);
+/** A janela aberta pelo "Responder" da pílula (some quando o aviso sai da fonte). */
+const requestedKey = ref<string | number | null>(null);
+const requested = computed(
+  () => (source.value?.items ?? []).find((item) => item.key === requestedKey.value) ?? null,
+);
+const blocking = computed(() => view.value.blocking ?? requested.value);
+/** A janela veio de um toque, não do prazo: fecha como qualquer janela. */
+const onRequest = computed(() => !view.value.blocking && Boolean(requested.value));
+function closeRequested(open: boolean) {
+  if (!open) requestedKey.value = null;
+}
+
+const pillHidden = reactive(new Map<string | number, number>());
+const pill = computed(() =>
+  answerPill(source.value?.items ?? [], now.value.getTime(), pillHidden, blocking.value?.key ?? null),
+);
+const pillShown = useAnswerPillShown();
+watch(pill, (item) => {
+  pillShown.value = Boolean(item);
+}, { immediate: true });
+function dismissPill() {
+  const item = pill.value;
+  if (item) pillHidden.set(item.key, answerPillReturnAt(item.respondByIso, Date.now()));
+}
+function answerFromPill() {
+  if (pill.value) requestedKey.value = pill.value.key;
+}
 const pending = computed(() =>
   blocking.value ? Boolean(source.value?.isPending?.(blocking.value.key)) : false,
 );
@@ -132,20 +166,49 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer);
+  pillShown.value = false;
 });
 </script>
 
 <template>
+  <!-- A pílula da pergunta que espera resposta: na base, acima da barra do shell. -->
+  <div
+    v-if="pill"
+    class="fixed inset-x-3 bottom-[calc(var(--operator-quick-bar-inset,0px)+1rem)] z-40 md:inset-x-auto md:left-1/2 md:w-[min(36rem,calc(100vw-2rem))] md:-translate-x-1/2"
+    role="status"
+    data-operator-answer-pill
+  >
+    <OperatorAttentionPill
+      :icon="pill.originIcon || 'i-lucide-message-circle'"
+      :title="pill.subject || pill.eyebrow || 'Aviso'"
+      :detail="pill.respondByIso ? `até ${clock(pill.respondByIso)}` : ''"
+      inline
+      :close-attrs="{ 'data-operator-answer-pill-close': true }"
+      @close="dismissPill"
+    >
+      <NuxtButton
+        icon="i-lucide-reply"
+        label="Responder"
+        color="neutral"
+        variant="outline"
+        class="min-h-11"
+        data-operator-answer-pill-open
+        @click="answerFromPill"
+      />
+    </OperatorAttentionPill>
+  </div>
   <NuxtModal
     :open="Boolean(blocking)"
-    :dismissible="false"
-    :close="false"
+    :dismissible="onRequest"
+    :close="onRequest"
     :title="blocking?.subject || blocking?.eyebrow || 'Aviso com prazo'"
     data-operator-urgent-alert
+    @update:open="closeRequested"
   >
     <!-- 1 origem · 2 assunto: o que é, antes de quanto falta. -->
     <template #header>
-      <div v-if="blocking" class="flex min-w-0 flex-col gap-1">
+      <div v-if="blocking" class="flex w-full items-start gap-2">
+      <div class="flex min-w-0 flex-1 flex-col gap-1">
         <p
           v-if="blocking.origin"
           class="flex items-center gap-1.5 op-label text-muted-foreground"
@@ -161,6 +224,18 @@ onBeforeUnmount(() => {
         <h2 class="text-lg font-semibold text-highlighted" data-operator-urgent-subject>
           {{ blocking.subject || blocking.eyebrow }}
         </h2>
+      </div>
+      <!-- Aberta pelo "Responder" da pílula: fecha, e a pílula continua. -->
+      <NuxtButton
+        v-if="onRequest"
+        icon="i-lucide-x"
+        color="neutral"
+        variant="ghost"
+        square
+        aria-label="Fechar"
+        data-operator-urgent-close
+        @click="requestedKey = null"
+      />
       </div>
     </template>
     <!-- 3 prazo, contado ao vivo · 4 o detalhe. -->

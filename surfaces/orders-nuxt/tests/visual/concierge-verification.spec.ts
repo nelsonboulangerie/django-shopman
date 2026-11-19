@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Prévia do "vou verificar" da Concierge no sino do Gestor (WP-07): o cartão com a pergunta
-// do cliente, a resposta digitada, a resposta enviada, o erro de envio (o texto fica) e a
-// janela do aviso com prazo. Só roda quando alguém pede a prévia (`PREVIA_DIR` = onde
+// Prévia do "vou verificar" da Concierge no Gestor (WP-07): a pergunta chega como a pílula
+// invertida na base (dono, 19/11/2026), o X a dispensa e ela volta, "Responder" abre a
+// janela com o campo, respondida tudo some, e vencido o prazo a janela interrompe a tela.
+// Nos dois temas, porque a pílula é a cor oposta ao tema. Só roda quando alguém pede a prévia (`PREVIA_DIR` = onde
 // gravar as capturas): é a evidência para o dono, não uma baseline da matriz.
 const BACKEND = "http://127.0.0.1:" + process.env.ORDERS_VISUAL_BACKEND_PORT;
 const OUT = process.env.PREVIA_DIR || "";
@@ -11,8 +12,9 @@ test.skip(!OUT, "prévia sob pedido: defina PREVIA_DIR");
 
 const VIEWPORTS = [
   { id: "celular-375", width: 375, height: 812 },
-  { id: "tablet-768", width: 768, height: 1024 },
+  { id: "escritorio-1366", width: 1366, height: 768 },
 ];
+const THEMES = ["light", "dark"] as const;
 
 async function open(page: Page, scenario: string, viewport: (typeof VIEWPORTS)[number]) {
   await page.request.get(BACKEND + "/__visual/scenario?set=" + scenario);
@@ -21,19 +23,6 @@ async function open(page: Page, scenario: string, viewport: (typeof VIEWPORTS)[n
   await expect(page.locator("[data-orders-app]")).toBeVisible();
   await page.waitForTimeout(1200);
   await page.evaluate(() => document.fonts.ready);
-}
-
-async function openBell(page: Page) {
-  // O primeiro toque pode chegar antes de a caixa hidratar: tenta de novo, uma vez.
-  const trigger = page.locator("[data-operator-inbox-trigger]:visible").first();
-  const answer = page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer]");
-  await trigger.click();
-  const opened = await answer.waitFor({ state: "visible", timeout: 4000 }).then(() => true, () => false);
-  if (!opened) {
-    await page.waitForTimeout(1500);
-    await trigger.click();
-  }
-  await expect(answer).toBeVisible();
 }
 
 // Auditoria antes de mostrar (regra da casa): contraste de texto/fundo e tamanho de
@@ -63,7 +52,7 @@ async function audit(page: Page, scope: string, name: string) {
     const out: Array<Record<string, unknown>> = [];
     const box = document.querySelector(root);
     if (!box) return out;
-    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea")) {
+    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-operator-attention-pill] *")) {
       const text = (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim()))
         ? el.textContent!.trim().slice(0, 50) : "";
       if (!text && el.tagName !== "TEXTAREA") continue;
@@ -87,47 +76,58 @@ async function shot(page: Page, name: string) {
 }
 
 for (const viewport of VIEWPORTS) {
-  test(`prévia vou verificar · ${viewport.id}`, async ({ page }) => {
-    // O cartão nasce com o prazo prometido: a janela do aviso interrompe a tela.
-    await open(page, "concierge", viewport);
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    await expect(dialog.locator("[data-operator-inbox-answer]")).toBeVisible();
-    await shot(page, `${viewport.id}-1-janela`);
-    await audit(page, "[role=dialog]", `${viewport.id}-1-janela`);
+  for (const theme of THEMES) {
+    test(`prévia vou verificar · ${viewport.id} · ${theme}`, async ({ page }) => {
+      const id = `${viewport.id}-${theme}`;
+      await page.addInitScript(
+        ([value, key]) => {
+          localStorage.setItem("nuxt-color-mode", value);
+          localStorage.setItem(key, value);
+        },
+        [theme, "orders-nuxt-color-mode"],
+      );
+      await page.clock.install();
 
-    await dialog.locator("textarea").fill("Amanhã tem sim, fica pronto às 9h. A entrega sai a partir das 10h.");
-    await shot(page, `${viewport.id}-2-resposta-digitada`);
+      // 1. A pergunta chega: a pílula invertida na base, sem janela por cima.
+      await open(page, "concierge", viewport);
+      await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /light/);
+      const pill = page.locator("[data-operator-answer-pill]");
+      const dialog = page.getByRole("dialog");
+      await expect(pill).toBeVisible();
+      await expect(pill).toContainText("Ana espera a resposta da equipe");
+      await expect(pill).toContainText(/até \d{1,2}h(\d{2})?/);
+      await expect(dialog).toBeHidden();
+      await shot(page, `${id}-1-pilula-chegando`);
+      await audit(page, "[data-operator-answer-pill]", `${id}-1-pilula-chegando`);
 
-    await dialog.locator("[data-operator-inbox-answer-send]").click();
-    await expect(page.getByText("Resposta enviada ao cliente.").first()).toBeVisible();
-    await expect(dialog).toBeHidden();
-    await shot(page, `${viewport.id}-3-resposta-enviada`);
+      // 2. O X dispensa; ela volta no ritmo dos lembretes (faltam 7 min: em ~2 min).
+      await pill.locator("[data-operator-answer-pill-close]").click();
+      await expect(pill).toBeHidden();
+      await page.clock.fastForward("02:05");
+      await expect(pill).toBeVisible();
+      await shot(page, `${id}-2-pilula-voltou`);
 
-    // Visto na janela: o cartão segue na caixa de Avisos, respondível de lá.
-    await open(page, "concierge", viewport);
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "Visto" }).click();
-    await expect(dialog).toBeHidden();
-    await openBell(page);
-    await shot(page, `${viewport.id}-4-cartao-na-caixa`);
-    await audit(page, "[data-operator-inbox-panel]", `${viewport.id}-4-cartao-na-caixa`);
+      // 3. "Responder" abre a janela com o campo (fecha sem responder: a pílula fica).
+      await pill.locator("[data-operator-answer-pill-open]").click();
+      await expect(dialog.locator("[data-operator-inbox-answer]")).toBeVisible();
+      await shot(page, `${id}-3-janela-pelo-responder`);
+      await audit(page, "[role=dialog]", `${id}-3-janela-pelo-responder`);
 
-    const field = page.locator("[data-operator-inbox-panel] textarea").first();
-    await field.fill("Teste de janela fechada");
-    await page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer-send]").click();
-    await expect(page.locator("[data-operator-inbox-answer-error]")).toBeVisible();
-    await expect(field).toHaveValue("Teste de janela fechada");
-    // Janela fechada: tentar de novo não adianta; Assumir vira o principal.
-    await expect(page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer-send]")).toBeDisabled();
-    await expect(page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer-primary]")).toBeVisible();
-    await shot(page, `${viewport.id}-5-erro-de-envio`);
-    await audit(page, "[data-operator-inbox-panel]", `${viewport.id}-5-erro-de-envio`);
+      // 4. Respondida: a pergunta sai, e não sobra aviso nenhum na base.
+      await dialog.locator("textarea").fill("Amanhã tem sim, fica pronto às 9h. A entrega sai a partir das 10h.");
+      await dialog.locator("[data-operator-inbox-answer-send]").click();
+      await expect(page.getByText("Resposta enviada ao cliente.").first()).toBeVisible();
+      await expect(dialog).toBeHidden();
+      await expect(pill).toBeHidden();
+      await page.clock.fastForward("05:00");
+      await expect(pill).toBeHidden();
+      await shot(page, `${id}-4-respondido-sem-aviso`);
 
-    // A promessa venceu: a janela fica e diz há quanto passou.
-    await open(page, "concierge-late", viewport);
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByText(/Passou do prazo/)).toBeVisible();
-    await shot(page, `${viewport.id}-6-promessa-vencida`);
-  });
+      // 5. A promessa venceu: a janela interrompe a tela, o último degrau.
+      await open(page, "concierge-late", viewport);
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText(/Passou do prazo/)).toBeVisible();
+      await shot(page, `${id}-5-prazo-vencido`);
+    });
+  }
 }

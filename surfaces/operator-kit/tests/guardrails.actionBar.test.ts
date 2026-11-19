@@ -43,6 +43,10 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
     max: 1,
     reason: "o aviso de versão nova do app instalado, acima da barra inferior",
   },
+  "operator-kit/app/components/OperatorUrgentAlert.vue": {
+    max: 1,
+    reason: "a pílula invertida da pergunta que espera resposta (dono, 19/11/2026): aviso que flutua sobre a tela e volta depois do X, acima da barra inferior; não é a ação do momento",
+  },
   "operator-kit/app/components/IFoodHomologationBand.vue": {
     max: 1,
     reason: "a faixa de data, hora e client_id dos vídeos de homologação do iFood: só existe no runtime local de teste, sem clique (pointer-events-none), não é ação",

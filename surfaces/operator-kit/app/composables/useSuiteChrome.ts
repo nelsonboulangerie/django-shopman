@@ -140,6 +140,14 @@ export function useOperatorInboxAlerts() {
 }
 
 /**
+ * A pílula da pergunta que espera resposta (`OperatorUrgentAlert`) está na base da tela?
+ * Quem tem outra pílula ali (o Gestor, o pedido que pede atenção) sobe a dele.
+ */
+export function useAnswerPillShown() {
+  return useState<boolean>("operator-answer-pill-shown", () => false);
+}
+
+/**
  * O app entrega os alertas dele à caixa de Avisos do kit. Chamado na navegação do app
  * (montada em toda tela); some quando ela desmonta.
  */

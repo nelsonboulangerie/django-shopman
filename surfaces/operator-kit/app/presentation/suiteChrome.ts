@@ -414,13 +414,18 @@ export interface UrgentAlertsView<T> {
   reminders: T[];
 }
 
-type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string };
+type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string; answer?: unknown };
 
 /**
  * Quais avisos interrompem a tela: os que têm prazo. Vencido o prazo do mundo lá fora
  * (`external`, ex.: o iFood), a decisão já saiu e o aviso sai da tela; vencida a régua
  * da casa (`house`), a causa continua e o aviso fica, atrasado. Entre os não vistos,
  * o de prazo mais curto primeiro.
+ *
+ * O aviso que se resolve com uma resposta escrita (`answer`, a pergunta que a Concierge
+ * levou à equipe) tem degraus (dono, 19/11/2026): primeiro a pílula invertida
+ * (`answerPill`), que volta depois do X; a janela só quando o prazo vence. Nenhum dos
+ * dois vira lembrete passageiro: a pílula é o lembrete dele.
  */
 export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: number): UrgentAlertsView<T> {
   const running = items
@@ -431,9 +436,38 @@ export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: numbe
     )
     .sort((a, b) => a.deadline - b.deadline);
   return {
-    blocking: running.find(({ item }) => !item.seen)?.item ?? null,
-    reminders: running.filter(({ item }) => item.seen).map(({ item }) => item),
+    blocking:
+      running.find(({ item, deadline }) => !item.seen && (!item.answer || deadline <= nowMs))?.item ?? null,
+    reminders: running.filter(({ item }) => item.seen && !item.answer).map(({ item }) => item),
   };
+}
+
+type Answerable = Urgent & { key: string | number };
+
+/**
+ * A pílula invertida do aviso que espera resposta escrita: aparece quando ele chega e
+ * só some de vez quando alguém responde ou assume (o aviso sai da fonte). O X dispensa
+ * até `hiddenUntil[key]`; a janela, quando está na tela, fala por ela. Mais antigo primeiro.
+ */
+export function answerPill<T extends Answerable>(
+  items: readonly T[],
+  nowMs: number,
+  hiddenUntil: ReadonlyMap<string | number, number>,
+  showing: string | number | null = null,
+): T | null {
+  return (
+    items
+      .filter((item) => item.answer && item.key !== showing && (hiddenUntil.get(item.key) ?? 0) <= nowMs)
+      .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
+      .sort((a, b) => (Number.isFinite(a.deadline) ? a.deadline : Infinity) - (Number.isFinite(b.deadline) ? b.deadline : Infinity))[0]
+      ?.item ?? null
+  );
+}
+
+/** Quando a pílula dispensada volta: o ritmo dos lembretes (`reminderIntervalMs`). */
+export function answerPillReturnAt(respondByIso: string | undefined, nowMs: number): number {
+  const deadline = Date.parse(respondByIso ?? "");
+  return nowMs + reminderIntervalMs(Number.isFinite(deadline) ? deadline - nowMs : 0);
 }
 
 /** "6 min" · "menos de 1 min" · "2 h" · "3 dias": quanto, num relance. */
