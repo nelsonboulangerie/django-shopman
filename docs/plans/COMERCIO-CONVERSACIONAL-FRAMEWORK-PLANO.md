@@ -32,8 +32,8 @@
   não tem buraco (F11).
 - **Primeiro a delegar:** F0 (esqueleto, ADR e guardas), em paralelo com N1 e N2 do adaptador
   (os dois defeitos locais, #2626 e #2625).
-- **Do dono:** nenhuma decisão bloqueia o framework. As duas que bloqueiam o adaptador estão no
-  plano irmão.
+- **Do dono:** nenhuma decisão bloqueia o framework. As duas que bloqueavam o adaptador foram
+  respondidas em 18/11 (plano irmão, seção 9).
 
 ## 1. Regra de corte e o que não entra
 

@@ -33,7 +33,8 @@
 - **A Concierge não para:** os 16 WPs dela seguem. O adaptador lê a Concierge, não a reescreve,
   até o N9, que só começa depois do D1, do adaptador pronto, das duas decisões do dono e do
   WP-14 da Concierge no `main`.
-- **Do dono:** duas decisões, as duas bloqueando o N9 (seção 9).
+- **Do dono:** as duas decisões que bloqueavam o N9 foram respondidas em 18/11 (seção 9): a Nice
+  herda as três alçadas, só no WhatsApp, e quem estiver com o Gestor aberto assume pelo sino.
 
 ## 1. Mapa porta a porta, reconferido no código
 
@@ -86,13 +87,13 @@ framework.
 | P06 | Regras da casa | `house_rules.RULES`, R1 a R14 | Dono (OBS0310-M, #1442) | aprovado |
 | P07 | Movimentos ligados | `acknowledge`, `inform`, `cover_readings`, `inform_limitation`, `ask_clarification`, `handoff`; `verify_with_staff` quando o WP-05 da Concierge entrar | Dono (comportamento atual) | aprovado |
 | P08 | Pedido na conversa (`present_terms`, `change_cart`, `commit_order`) | Pedido pelo dono em 16/11 (DEV-2026-027); construído nos WP-11 a WP-14 da Concierge | Dono | em validação até o WP-14 |
-| P09 | **Desconto com teto** (`grant_discount`, A4) | Teto do `ChannelConfig.pricing.concierge_discount_max_percent` (padrão 2,5 no código; valor do alpha NÃO MEDIDO, o N3 mede pela 25060); um cupom por pedido; só no WhatsApp | Dono (OBS0310-O, #1444) | vigente no legado; **proposto** para o framework (decisão 1) |
-| P10 | **Cancelamento em autoatendimento** (`cancel_order`, A3) | Só quando o próprio cliente poderia cancelar pelo site (`customer_orders.can_cancel`: preparo não começado), com confirmação de uma linha | Dono (OBS0310-O, #1445) | vigente no legado; **proposto** (decisão 1) |
-| P11 | **Acréscimo a pedido feito** (`amend_order`, A3) | Só aumento, pelo `order_edit` do balcão: até "em preparo", sem NFC-e autorizada, fora do iFood | Dono (OBS0310-P, #1450) | vigente no legado; **proposto** (decisão 1) |
+| P09 | **Desconto com teto** (`grant_discount`, A4) | Teto do `ChannelConfig.pricing.concierge_discount_max_percent` (padrão 2,5 no código; valor do alpha NÃO MEDIDO, o N3 mede pela 25060); um cupom por pedido; só no WhatsApp | Dono (OBS0310-O, #1444) | aprovado (dono, 18/11, decisão 1) |
+| P10 | **Cancelamento em autoatendimento** (`cancel_order`, A3) | Só quando o próprio cliente poderia cancelar pelo site (`customer_orders.can_cancel`: preparo não começado), com confirmação de uma linha | Dono (OBS0310-O, #1445) | aprovado (dono, 18/11, decisão 1) |
+| P11 | **Acréscimo a pedido feito** (`amend_order`, A3) | Só aumento, pelo `order_edit` do balcão: até "em preparo", sem NFC-e autorizada, fora do iFood | Dono (OBS0310-P, #1450) | aprovado (dono, 18/11, decisão 1) |
 | P12 | Compensação | Nenhuma alçada | Dono (Q4) | ausente: só com pessoa |
 | P13 | Recomendação (`recommend`) | Não existe | Dono (15.5, movimentos comerciais) | ausente: a sombra calcula a candidata, nada sai |
 | P14 | Fontes de fato | Preço do canal (Offerman), promessa (Stockman, `PromiseDecision`), pedido (Orderman), horário e calendário (`Shop`), alérgenos (`concierge/allergens.py`); lidos ao vivo, valem para o turno | Engenharia | aprovado |
-| P15 | Fila humana | Sino do Gestor (`OperatorAlert`), prazos 10 e 30 min no `ChannelConfig` (dono, 16/11); fora do expediente a Nice diz quando a equipe atende | Dono | prazos aprovados; **aceite nominal proposto** (decisão 2) |
+| P15 | Fila humana | Sino do Gestor (`OperatorAlert`), prazos 10 e 30 min no `ChannelConfig` (dono, 16/11); fora do expediente a Nice diz quando a equipe atende; aceite nominal: quem estiver com o Gestor aberto assume pelo sino, com nome, em até 10 min no expediente; fora dele a Nice não muda nada sozinha | Dono (16/11 e 18/11, decisão 2) | aprovado |
 | P16 | Tetos do turno | `MAX_LOOPS` do `handler.py`, `claim_until`, teto do `ai_governor` | Engenharia | aprovado |
 | P17 | Privacidade | Texto redigido (WP-03), `sensitive` nunca sai, nome e endereço não saem (WP-08), `/privacidade` declara quem recebe (WP-10), observação com 7 dias de retenção | Dono (D-039, D-040) | aprovado |
 | P18 | Memória além do episódio | Só memória declarada | Dono (Q6) | ausente |
@@ -101,8 +102,8 @@ framework.
 | P21 | Modo do app vivo | `CONCIERGE_READ_ONLY=true`, `assist`, coorte de um contato, transferência e devolução desligadas | Dono | vigente |
 
 As três alçadas que já existem (P09 a P11) **não somem e não crescem em silêncio** (v2 11.3):
-no legado seguem como estão; no framework entram como `proposed` e, por isso, desligadas na
-sombra e no N9 até a decisão 1. O teto que o código traz como padrão não é, por estar no código,
+no legado seguem como estão, e no framework entram como aprovadas, só no WhatsApp, com os
+mesmos limites (decisão 1, 18/11). O teto que o código traz como padrão não é, por estar no código,
 política aprovada.
 
 ## 3. Convivência com os WPs em voo da Concierge (v2 15.7)
@@ -309,8 +310,8 @@ alpha só se lê, e só pela conexão direta 25060; prova de concorrência roda 
 
 - **Objetivo:** `StaffPort` sobre o cartão `concierge_verify` e os prazos da Concierge, com
   promessa, aceite nominal, cumprimento e reabertura.
-- **Depende de:** F9; WP-05, WP-06 e WP-07 da Concierge no `main`; a decisão 2 para o aceite
-  nominal (sem ela, a porta declara `record_acceptance` indisponível).
+- **Depende de:** F9; WP-05, WP-06 e WP-07 da Concierge no `main`. O aceite nominal segue a
+  decisão 2 (18/11).
 - **Arquivos:** `shopman/shop/conversational/staff.py` (novo),
   `shopman/shop/tests/test_conversational_staff.py` (novo).
 - **Fora do escopo:** a tela do sino (WP-07); os prazos (WP-06).
@@ -339,7 +340,8 @@ alpha só se lê, e só pela conexão direta 25060; prova de concorrência roda 
 
 - **Objetivo:** o turno da Nice passa a ser o `engine.turn()` do framework com as portas do
   Shopman, por classe de ação, com o caminho legado como queda, sem mudar o que o cliente lê.
-- **Depende de:** F11, N7, N8; WP-14 da Concierge no `main`; decisões 1 e 2 do dono.
+- **Depende de:** F11, N7, N8; WP-14 da Concierge no `main` (as decisões 1 e 2 do dono já
+  foram dadas em 18/11).
 - **Arquivos:** `shopman/storefront/concierge/service.py` (o ponto de troca, um só),
   `shopman/storefront/concierge/turn_framework.py` (novo), `profile_lines.py` (estados das
   linhas aprovadas), testes de não regressão. A sessão escreve no PR, antes de codar, a lista
@@ -369,20 +371,16 @@ WP próprio.
 
 ## 9. Decisões do dono
 
-Das oito de v2 15.5, só duas bloqueiam um pacote deste plano, e as duas bloqueiam o N9 (o N7
-anda sem a segunda, só sem aceite nominal). As outras seis têm padrão seguro que o plano já usa
-(seção 2: linha ausente, ação desligada) e não travam nada até o D3.
+Das oito de v2 15.5, só duas bloqueavam um pacote deste plano, e as duas bloqueavam o N9. As
+outras seis têm padrão seguro que o plano já usa (seção 2: linha ausente, ação desligada) e não
+travam nada até o D3.
 
-**Decisão 1. Alçadas da Nice no framework.** Recomendo **sim**: a Nice herda as três como estão
-hoje, só no WhatsApp: desconto até o teto do Admin, cancelamento só quando o próprio cliente
-poderia cancelar pelo site, acréscimo só até "em preparo". Ampliar para outro canal vira
-pergunta nova. Alternativa: herdar só cancelamento e acréscimo, e desconto passa a ser sempre
-com pessoa.
+**Respondidas em 18/11/2026** (pela coordenação; registro no comentário do dono no PR #2632):
 
-**Decisão 2. Quem assume o que a Nice passa para a equipe.** Recomendo: **quem estiver com o
-Gestor aberto assume pelo sino, com nome; 10 minutos para alguém assumir no expediente; fora do
-expediente, a Nice não muda nada sozinha e diz quando a equipe volta.** Sem essa resposta, a
-Nice no framework só informa e encaminha (não escreve). Alternativa: só o Gerente assume.
+| # | Pergunta | Resposta | O que mudou |
+|---|---|---|---|
+| 1 | A Nice herda, no framework, as três alçadas que já tem? | Sim, como estão hoje, só no WhatsApp: desconto até o teto do Admin, cancelamento só quando a própria cliente poderia cancelar pelo site, acréscimo só até "em preparo" | P09, P10 e P11 aprovadas. Ampliar para outro canal é pergunta nova |
+| 2 | Quem assume o que a Nice passa para a equipe? | Quem estiver com o Gestor aberto assume pelo sino, com nome; 10 minutos para alguém assumir no expediente; fora do expediente a Nice não muda nada sozinha e diz quando a equipe volta | P15 aprovada com o aceite nominal. O N9 deixa de esperar o dono e segue esperando o D1, o N8 e o WP-14 da Concierge |
 
 ## 10. Fora deste plano
 
