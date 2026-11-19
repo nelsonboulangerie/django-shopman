@@ -137,7 +137,7 @@ function scoped(entry) {
     python_mock: false,
     catalog: false,
     visual: false,
-    geometry: false,
+    geometry: entry.geometry, // PROVA TEMPORÁRIA, não mergear
     browser: false,
     browser_suite: false,
     a11y: false,
