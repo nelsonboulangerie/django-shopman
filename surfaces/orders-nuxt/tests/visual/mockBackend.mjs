@@ -191,12 +191,13 @@ function verificationAlert(urgent) {
   });
   return {
     pk, rev: 0, type: "concierge_verify", type_label: "WhatsApp: cliente esperando confirmação da equipe",
-    severity: urgent ? "error" : "warning", severity_label: urgent ? "Erro" : "Aviso", audience: "orders",
+    severity: "warning", severity_label: "Aviso", audience: "orders",
     message:
       "Pergunta do cliente: “amanhã vai ter pão de forma? queria para entregar”.\n" +
-      "A Concierge prometeu a resposta em até 10 minutos. Responda aqui que ela repassa, ou assuma a conversa.\n" +
-      "Ana, conversa #12: /admin/shop/conversation/12/change/",
+      "A Concierge prometeu a resposta em até 10 minutos.\nCliente: Ana.",
     order_ref: "", created_at_display: "19/11 às 16h02",
+    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle",
+    subject: "Cliente esperando a resposta da equipe",
     ...(urgent
       ? { respond_by_iso: new Date(Date.now() + 18 * 60_000).toISOString(), deadline_kind: "external" }
       : {}),

@@ -24,8 +24,16 @@ async function open(page: Page, scenario: string, viewport: (typeof VIEWPORTS)[n
 }
 
 async function openBell(page: Page) {
-  await page.locator("[data-operator-inbox-trigger]:visible").first().click();
-  await expect(page.locator("[data-operator-inbox-answer]")).toBeVisible();
+  // O primeiro toque pode chegar antes de a caixa hidratar: tenta de novo, uma vez.
+  const trigger = page.locator("[data-operator-inbox-trigger]:visible").first();
+  const answer = page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer]");
+  await trigger.click();
+  const opened = await answer.waitFor({ state: "visible", timeout: 4000 }).then(() => true, () => false);
+  if (!opened) {
+    await page.waitForTimeout(1500);
+    await trigger.click();
+  }
+  await expect(answer).toBeVisible();
 }
 
 async function shot(page: Page, name: string) {
@@ -39,12 +47,12 @@ for (const viewport of VIEWPORTS) {
     await openBell(page);
     await shot(page, `${viewport.id}-1-cartao`);
 
-    const field = page.locator("[data-operator-inbox-answer-field] textarea, textarea[data-operator-inbox-answer-field]").first();
+    const field = page.locator("[data-operator-inbox-panel] textarea").first();
     await field.fill("Amanhã tem sim, fica pronto às 9h. A entrega sai a partir das 10h.");
     await shot(page, `${viewport.id}-2-resposta-digitada`);
 
     await page.locator("[data-operator-inbox-answer-send]").click();
-    await expect(page.getByText("Resposta enviada ao cliente.")).toBeVisible();
+    await expect(page.getByText("Resposta enviada ao cliente.").first()).toBeVisible();
     await shot(page, `${viewport.id}-3-resposta-enviada`);
 
     await open(page, "concierge", viewport);
@@ -56,8 +64,9 @@ for (const viewport of VIEWPORTS) {
     await shot(page, `${viewport.id}-4-erro-de-envio`);
 
     await open(page, "concierge-urgent", viewport);
-    await expect(page.locator("[data-operator-urgent-alert]")).toBeVisible();
-    await expect(page.locator("[data-operator-urgent-alert] [data-operator-inbox-answer]")).toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("[data-operator-inbox-answer]")).toBeVisible();
     await shot(page, `${viewport.id}-5-janela-com-prazo`);
   });
 }
