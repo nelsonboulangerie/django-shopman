@@ -212,3 +212,37 @@ class TestStandaloneValuesStartWithACapital:
 
         assert proj.schedule_display.startswith("Amanhã · ")
         assert proj.pickup_info is None or proj.pickup_info.when_display.startswith("Amanhã · ")
+
+
+class TestTheAgreedTimeInsideASentence:
+    """#2752: dentro de frase o combinado vai na forma de frase, nunca na de rótulo."""
+
+    def test_preorder_message_has_no_label_separator(self, order_items):
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        Order.objects.filter(pk=order_items.pk).update(
+            status="confirmed",
+            data={"fulfillment_type": "pickup", "delivery_date": tomorrow.isoformat(), "delivery_time_slot": "09:00-09:30"},
+        )
+        order_items.refresh_from_db()
+
+        proj = build_order_tracking(order_items)
+
+        assert " · " not in proj.promise.message
+        assert "amanhã, " in proj.promise.message
+        # O rótulo isolado continua na forma de rótulo.
+        assert proj.schedule_display.startswith("Amanhã · ")
+
+    @pytest.mark.parametrize("state", ["store_checking", "payment_confirmed", "payment_authorized", "received"])
+    def test_every_waiting_sentence_takes_the_phrase_form(self, state):
+        from shopman.shop.projections.copy import build_copy
+        from shopman.storefront.presentation.order_tracking import _promise_copy
+        from shopman.storefront.tests.web.test_tracking_promise_cascade import _preorder_wait_data
+
+        _title, message = _promise_copy(
+            _preorder_wait_data(state), status="new", is_delivery=False, copy=build_copy("TRACKING"),
+            when_display="amanhã · A partir das 15h", when_phrase="amanhã, a partir das 15h",
+            payment_confirmed=state in {"store_checking", "payment_confirmed"},
+        )
+
+        assert " · " not in message
+        assert "amanhã, a partir das 15h" in message
