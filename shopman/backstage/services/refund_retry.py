@@ -16,7 +16,9 @@ responde três perguntas e registra a tentativa:
   repartido pelas cobranças de gateway que ainda guardam dinheiro;
 - **com que chave?** Uma por tentativa (a chave da intenção da tela). A exceção é a
   tentativa que ficou SEM RESPOSTA do gateway: a seguinte reapresenta a mesma
-  chave, para o gateway devolver a mesma devolução em vez de fazer outra.
+  chave, para o gateway devolver a mesma devolução em vez de fazer outra. Vale
+  também para o estorno automático que esgotou as tentativas sem resposta: a
+  primeira tentativa daqui reapresenta a chave DELE.
 
 Cada tentativa vira o evento ``payment.refund_retry`` do pedido (quem tentou, quem
 autorizou, o que o gateway respondeu); a que sai também grava o ``payment.refunded``
@@ -262,7 +264,36 @@ def _gateway_key(order: Order, leg: RetryLeg, attempt_key: str) -> str:
         and previous.get("amount_q") == leg.amount_q
     ):
         return str(previous["gateway_key"])
+    if previous is None:
+        inherited = _exhausted_automatic_key(order, leg)
+        if inherited:
+            return inherited
     return fresh_gateway_key(order.ref, leg.intent_ref, attempt_key)
+
+
+def _exhausted_automatic_key(order: Order, leg: RetryLeg) -> str:
+    """A chave do estorno automático que esgotou as tentativas SEM resposta do gateway.
+
+    A directive ``payment.refund`` só termina em ``failed`` quando toda tentativa
+    caiu em falha transiente (gateway fora, timeout): a recusa de verdade encerra
+    a directive e abre o aviso na hora. Sem resposta, o estorno pode ter saído.
+    A primeira tentativa do Gestor reapresenta a chave DAQUELE estorno, com o
+    mesmo valor: se ele saiu, o gateway devolve a mesma devolução em vez de
+    fazer outra (o que importa no "não retirado", em que sobra saldo na
+    cobrança). Valor diferente, a chave é nova: não é o mesmo estorno.
+    """
+    payload = (
+        Directive.objects.filter(topic=PAYMENT_REFUND, payload__order_ref=order.ref, status=Directive.Status.FAILED)
+        .order_by("-id").values_list("payload", flat=True).first()
+    )
+    if not isinstance(payload, dict):
+        return ""
+    asked_q = payload.get("amount_q")
+    if asked_q is not None and int(asked_q) != leg.amount_q:
+        return ""
+    return payment_svc.order_refund_gateway_key(
+        order, leg.intent_ref, idempotency_key=str(payload.get("idempotency_key") or "") or None,
+    )
 
 
 def retry(order: Order, *, actor: str, approved_by: str, attempt_key: str, expected_revision: str) -> dict:

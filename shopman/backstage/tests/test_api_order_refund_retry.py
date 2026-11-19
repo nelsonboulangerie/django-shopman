@@ -452,6 +452,58 @@ def test_tentativa_sem_resposta_repete_a_chave_na_vez_seguinte(client, operador,
     assert _refunds("G13-MUDO").count() == 1
 
 
+def test_estorno_automatico_que_esgotou_sem_resposta_tem_a_chave_reapresentada(client, operador, gerente):
+    """O automático pode ter saído sem resposta: a 1ª tentativa do Gestor usa a chave DELE.
+
+    Com chave nova, o gateway faria OUTRA devolução (no "não retirado" sobra saldo
+    na cobrança e a segunda passaria). Com a mesma chave, ele devolve a mesma.
+    """
+    order = _failed("G13-ESGOTOU")
+    Directive.objects.create(
+        topic="payment.refund", status="failed", last_error="refund gateway error: timeout",
+        payload={"order_ref": order.ref, "amount_q": order.total_q, "idempotency_key": "order-refund:G13-ESGOTOU"},
+    )
+    gateway = Gateway("refuse")
+
+    with patch(SIGN, return_value=gerente), patch(ADAPTER, return_value=gateway):
+        first = _retry(client, operador, order, manager_approval=APPROVAL)
+    assert first.status_code == 200, first.content
+    assert gateway.calls[0]["key"] == "order-refund:G13-ESGOTOU"
+
+    # O gateway respondeu que não: aquele estorno não saiu, e a seguinte leva chave nova.
+    order.refresh_from_db()
+    second_key = str(uuid.uuid4())
+    gateway.mode = "accept"
+    with patch(SIGN, return_value=gerente), patch(ADAPTER, return_value=gateway):
+        second = _retry(client, operador, order, key=second_key, manager_approval=APPROVAL)
+    assert second.status_code == 200, second.content
+    assert second.json()["refund"]["outcome"] == "refunded"
+    assert gateway.calls[1]["key"] == refund_retry.fresh_gateway_key("G13-ESGOTOU", "INT-G13-ESGOTOU", second_key)
+    assert _refunds("G13-ESGOTOU").count() == 1
+
+
+def test_recusa_de_verdade_do_automatico_nao_herda_chave(client, operador, gerente):
+    """Sem directive esgotada, o automático foi RECUSADO: nada saiu, e a chave é nova."""
+    order = _failed("G13-RECUSADO")
+    gateway = Gateway("accept")
+    key = str(uuid.uuid4())
+
+    with patch(SIGN, return_value=gerente), patch(ADAPTER, return_value=gateway):
+        resp = _retry(client, operador, order, key=key, manager_approval=APPROVAL)
+
+    assert resp.status_code == 200, resp.content
+    assert gateway.calls[0]["key"] == refund_retry.fresh_gateway_key("G13-RECUSADO", "INT-G13-RECUSADO", key)
+
+
+def test_chave_do_automatico_segue_a_mesma_regra_do_estorno_do_pedido():
+    order = _cancelled_pix("G13-CHAVE")
+    assert payment_service.order_refund_gateway_key(order, "INT-G13-CHAVE") == "order-refund:G13-CHAVE"
+    assert (
+        payment_service.order_refund_gateway_key(order, "INT-G13-CHAVE", idempotency_key="return:G13-CHAVE:1")
+        == "return:G13-CHAVE:1"
+    )
+
+
 def test_dinheiro_que_saiu_sem_registro_trava_a_tentativa_seguinte(client, operador, gerente):
     order = _failed("G13-LIVRO")
 
