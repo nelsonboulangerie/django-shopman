@@ -4,6 +4,8 @@ import {
   accountGreeting,
   accountNavCards,
   loyaltyView,
+  orderOpenIcon,
+  orderOpenLabel,
   ordersCountLabel,
   orderStatusAccentClass,
   orderStatusDotClass,
@@ -32,7 +34,7 @@ const greeting = computed(() => accountGreeting(
 const loyalty = computed(() => loyaltyView(summary.value?.loyalty))
 const navCards = computed(() => accountNavCards(summary.value || null))
 // Pedidos em andamento são o primeiro conteúdo da conta; o "Último pedido"
-// vira fallback quando não há nada ativo (aí sim, Refazer é o convite certo).
+// vira fallback quando não há nada ativo (aí sim, repetir é o convite certo).
 const activeOrders = computed(() => summary.value?.active_orders ?? [])
 const countLabel = computed(() => ordersCountLabel(
   summary.value?.active_order_count || 0,
@@ -207,7 +209,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             <p class="shop-muted">{{ lastOrder.created_at_display }}</p>
           </div>
           <div class="flex shrink-0 gap-2">
-            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" icon="lucide:radar">Acompanhar</UiButton>
+            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" :icon="orderOpenIcon(lastOrder)" data-order-open>{{ orderOpenLabel(lastOrder) }}</UiButton>
             <UiButton
               v-if="lastOrderReorder"
               size="sm"
@@ -215,7 +217,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
               :loading="!!reorderPending[lastOrder.ref]"
               @click="performAction(lastOrderReorder)"
             >
-              Refazer
+              {{ lastOrderReorder.label }}
             </UiButton>
           </div>
         </div>
