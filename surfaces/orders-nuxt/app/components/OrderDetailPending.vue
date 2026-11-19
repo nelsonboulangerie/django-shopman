@@ -8,8 +8,9 @@
 // nada falta. Espera saudável não usa cor de erro.
 // `data-detail-block` marca a linha do avanço travado (pagamento ou espera): é o gancho
 // que as jornadas de navegador já usavam para o aviso de bloqueio que esta faixa absorveu.
-// Cada linha é alvo do próximo foco (`data-focus-target`): quem chega do cartão com
-// `#promise` é levado à linha da promessa em risco, com o teclado no primeiro gesto dela.
+// Cada linha é alvo do próximo foco (`data-focus-target`): quem chega com `#promise` é
+// levado à linha da promessa em risco, com o teclado no primeiro gesto dela. O gesto
+// dessa linha é "Resolver": sobe para a página (`act`), que abre o diálogo das escolhas.
 import { computed } from "vue";
 
 import type {
@@ -64,7 +65,7 @@ const money = computed(() => settledMoney(props.money));
 const suggestionGroups = computed(() =>
   promiseSuggestionGroups(promiseRisk({ promise: props.promise })),
 );
-// "Remarcar no PDV" abre outro app de operador: na janela dele quando instalado.
+// "Abrir a Produção" abre outro app de operador: na janela dele quando instalado.
 const { attrsFor } = useOperatorAppLink();
 </script>
 
@@ -152,7 +153,7 @@ const { attrsFor } = useOperatorAppLink();
                 v-for="(button, index) in line.buttons"
                 :key="button.ref"
               >
-                <!-- O PDV e a Produção abrem na janela deles (outro app de operador). -->
+                <!-- A Produção abre na janela dela (outro app de operador). -->
                 <NuxtButton
                   v-if="button.href && button.crossApp"
                   :to="button.href"

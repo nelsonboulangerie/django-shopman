@@ -1254,10 +1254,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     operational = _exit_gesture_actions(order, operational, customer_name=customer_name)
     actions = (*operational, *extra_actions)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
-        promise = order_promise.with_actions(promise, _promise_detail_actions(
-            order, authorized=authorized, whatsapp_url=contact.get("customer_whatsapp_url", ""),
-            cancel_action=cancel_action, user=user, promise=promise,
-        ))
+        promise = order_promise.with_actions(promise, _promise_actions(user, promise))
     link_fields, link_problem = _payment_link_read(order, method)
     danfe = order_danfe.card_state(order, now=now)
     return OperatorOrderProjection(
@@ -1343,6 +1340,26 @@ def _detail_payment_status_label(order: Order, payment_status: str, cancelled_mo
 _GATEWAY_REFUND_DESTINATION = {"pix": "ao Pix do cliente", "card": "no cartão do cliente", "link": "no cartão do cliente"}
 
 
+def refund_effect(amount_q: int, method: str) -> str:
+    """Para onde volta o dinheiro que a casa devolve, na frase que o operador lê.
+
+    Uma frase por caminho, a mesma no cancelar (:func:`_cancel_money_effect`) e
+    no "tirar o item" do diálogo "Resolver" (``order_promise_resolution``): o
+    gateway estorna sozinho; dinheiro e maquininha ficam a devolver por alguém
+    da casa. ``method`` é o meio do pagamento ("pix", "card", "cash", "credit"…).
+    """
+    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
+
+    money = _money(amount_q)
+    if method in _GATEWAY_REFUND_DESTINATION:
+        return f"{money} serão estornados {_GATEWAY_REFUND_DESTINATION[method]}."
+    if method == "cash":
+        return f"{money} em dinheiro ficam a devolver no caixa."
+    if method in CARD_MACHINE_METHODS:
+        return f"{money} ficam a estornar na maquininha."
+    return f"{money} ficam a devolver ao cliente."
+
+
 def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict:
     """O que o cancelamento (ou a recusa) faz com o dinheiro, dito antes do gesto.
 
@@ -1356,24 +1373,15 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
     silêncio: ``captured_balance_q`` devolve ``None`` quando um intent não pôde
     ser lido, e ``None`` não é zero. O iFood também: o dinheiro é dele.
     """
-    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
-
     empty = {"cancel_money_effect": "", "cancel_waits_for_gateway": False}
     if order.channel_ref == "ifood" or order.status not in {"new", "accepted", "preparing", "ready", "dispatched", "delivered", "completed"}:
         return empty
     captured_q = payment_svc.captured_balance_q(order)
     if captured_q:
-        money = _money(captured_q)
-        if method in _GATEWAY_REFUND_DESTINATION:
-            return {
-                "cancel_money_effect": f"{money} serão estornados {_GATEWAY_REFUND_DESTINATION[method]}.",
-                "cancel_waits_for_gateway": True,
-            }
-        if method == "cash":
-            return {**empty, "cancel_money_effect": f"{money} em dinheiro ficam a devolver no caixa."}
-        if method in CARD_MACHINE_METHODS:
-            return {**empty, "cancel_money_effect": f"{money} ficam a estornar na maquininha."}
-        return {**empty, "cancel_money_effect": f"{money} ficam a devolver ao cliente."}
+        return {
+            "cancel_money_effect": refund_effect(captured_q, method),
+            "cancel_waits_for_gateway": method in _GATEWAY_REFUND_DESTINATION,
+        }
     if method == "card" and str(payment_status).lower() == "authorized":
         total = _money(order_composition.effective_total_q(order))
         return {
@@ -2413,38 +2421,6 @@ def _manages_orders(user) -> bool:
     return bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
 
 
-def _reschedule_at_pos_action(order: Order, *, authorized: bool, promise=None) -> Action:
-    """ "Remarcar no PDV": o pedido aberto no PDV, onde mora o remarcar (D-003).
-
-    Link, não mutação: a régua de quem pode remarcar é a do orquestrador
-    (``reschedule.state_refusal``), a mesma que o PDV aplica.
-
-    Com promessa em risco, as sugestões da tela seguem junto no endereço
-    (``?suggestions=<JSON>``, :func:`order_promise.pos_suggestions`), para a
-    Caixa trocar o item sem procurar de novo (dono, 19/11/2026; o lado do PDV é
-    a #2765). São só SKUs e quantidade: nenhum dado do cliente vai na URL.
-    """
-    import json
-    from urllib.parse import quote, urlencode
-
-    from shopman.backstage.projections.hub import surface_link
-    from shopman.shop.services import reschedule
-
-    path = f"preorders/{quote(order.ref, safe='')}"
-    suggestions = order_promise.pos_suggestions(promise) if promise is not None else []
-    if suggestions:
-        path = f"{path}?{urlencode({'suggestions': json.dumps(suggestions, separators=(',', ':'))})}"
-    href = surface_link("pos", path)
-    reason = (
-        _PERMISSION_REASON if not authorized
-        else reschedule.state_refusal(order) or ("" if href else "O endereço do PDV não está configurado.")
-    )
-    return Action(
-        ref=order_promise.ACTION_RESCHEDULE_AT_POS, kind="link", label="Remarcar no PDV",
-        enabled=not reason, reason=reason, href="" if reason else href, idempotency="none",
-    )
-
-
 def _open_production_action(promise, user) -> Action | None:
     """ "Abrir a Produção": o plano do dia que ainda pode cobrir o item (sem lote, ou lote curto).
 
@@ -2468,76 +2444,30 @@ def _open_production_action(promise, user) -> Action | None:
     )
 
 
-def _promise_exits(promise, exits) -> tuple[Action, ...]:
-    """As saídas na ordem e com o peso que a situação pede.
+def _promise_actions(user, promise) -> tuple[Action, ...]:
+    """As saídas do aviso "Promessa em risco": as mesmas no cartão e no detalhe.
 
-    A recomendada (``promise.recommended_action``) vem primeiro, com
-    ``priority="primary"``; as outras são ``secondary``, e cancelar segue por
-    último, ``danger``. Quando a recomendada não está entre as saídas (quem não
-    abre a Produção), nenhuma é a principal.
+    "Resolver" abre o diálogo onde moram as escolhas (trocar, remarcar, tirar o
+    item, cancelar) e a mensagem ao cliente: a ação não leva endereço nem dado
+    do cliente (#2434), a tela busca ``orders/<ref>/promise-resolution/`` ao
+    abrir. Quem não gerencia pedidos a recebe travada, com o motivo.
+
+    "Abrir a Produção" só vem quando algum item ela ainda resolve e a conta a
+    opera. A principal (``priority="primary"``, a primeira) é ela quando TUDO o
+    que falta a Produção resolve (``promise.recommended_action``) e a ação veio;
+    senão é "Resolver". Sempre há uma principal.
     """
-    recommended = promise.recommended_action
-    present = [action for action in exits if action is not None]
-
-    def weighed(action: Action) -> Action:
-        if action.ref == order_promise.ACTION_CANCEL:
-            return action if action.priority == "danger" else replace(action, priority="danger")
-        priority = "primary" if action.ref == recommended else "secondary"
-        return action if action.priority == priority else replace(action, priority=priority)
-
-    def rank(action: Action) -> int:
-        if action.ref == recommended:
-            return 0
-        return 2 if action.ref == order_promise.ACTION_CANCEL else 1
-
-    return tuple(weighed(action) for action in sorted(present, key=rank))
-
-
-def _promise_card_actions(order: Order, user, promise) -> tuple[Action, ...]:
-    """As saídas da promessa em risco no CARTÃO: atalhos, nenhum dado do cliente.
-
-    O contato do cliente não mora no cartão do painel (#2434), e cancelar pede
-    o motivo, o destino do dinheiro e, às vezes, o gerente: os dois gestos
-    acontecem no detalhe, e o cartão leva até lá. Remarcar abre o PDV; quando a
-    Produção ainda resolve, "Abrir a Produção" abre o plano daquele dia.
-    """
-    from urllib.parse import quote
-
     authorized = _manages_orders(user)
-    detail = f"/{quote(order.ref, safe='')}"
-    reason = "" if authorized else _PERMISSION_REASON
-    return _promise_exits(promise, (
-        Action(
-            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente",
-            enabled=authorized, reason=reason, href=f"{detail}#promise" if authorized else "", idempotency="none",
-        ),
-        _reschedule_at_pos_action(order, authorized=authorized, promise=promise),
-        _open_production_action(promise, user),
-        Action(
-            ref=order_promise.ACTION_CANCEL, kind="link", label="Cancelar pedido", priority="danger",
-            enabled=authorized, reason=reason, href=f"{detail}#cancel" if authorized else "", idempotency="none",
-        ),
-    ))
-
-
-def _promise_detail_actions(
-    order: Order, *, authorized: bool, whatsapp_url: str, cancel_action: Action, user, promise,
-) -> tuple[Action, ...]:
-    """As saídas da promessa em risco no DETALHE: a conversa, o PDV, a Produção e o cancelar de verdade."""
-    contact_reason = (
-        _PERMISSION_REASON if not authorized
-        else "" if whatsapp_url else "Este pedido não tem WhatsApp do cliente."
+    resolve = Action(
+        ref=order_promise.ACTION_RESOLVE, kind="dialog", label="Resolver",
+        enabled=authorized, reason="" if authorized else _PERMISSION_REASON, idempotency="none",
     )
-    return _promise_exits(promise, (
-        Action(
-            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente",
-            enabled=not contact_reason, reason=contact_reason, href="" if contact_reason else whatsapp_url,
-            idempotency="none",
-        ),
-        _reschedule_at_pos_action(order, authorized=authorized, promise=promise),
-        _open_production_action(promise, user),
-        cancel_action,
-    ))
+    opening = _open_production_action(promise, user)
+    if opening is None:
+        return (replace(resolve, priority="primary"),)
+    if promise.recommended_action == order_promise.ACTION_OPEN_PRODUCTION:
+        return (replace(opening, priority="primary"), resolve)
+    return (replace(resolve, priority="primary"), opening)
 
 
 def _parse_iso(value) -> datetime | None:
@@ -2757,7 +2687,7 @@ def _build_card(
         actions = _batch_wait_actions(actions, block_reason)
     actions = _exit_gesture_actions(order, actions, customer_name=customer_name)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
-        promise = order_promise.with_actions(promise, _promise_card_actions(order, user, promise))
+        promise = order_promise.with_actions(promise, _promise_actions(user, promise))
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order, batch=accept_batch)

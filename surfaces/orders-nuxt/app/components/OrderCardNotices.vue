@@ -5,7 +5,8 @@
 // O aviso com mais de um fato (a promessa em risco, WP-G08: um item por linha, com o
 // porquê) escreve as linhas no lugar da descrição, com as sugestões de cada item em
 // lista (`OrderPromiseSuggestions`), depois a frase do servidor quando há, e as saídas
-// dele são atalhos (`OrderPromiseExits`), na cor do aviso.
+// dele (`OrderPromiseExits`, na cor do aviso): "Resolver" chama o `onResolve` do aviso,
+// que sobe até a página, e "Abrir a Produção" é atalho.
 import type { CardNotice } from "./OrderCard.vue";
 import OrderPromiseExits from "./OrderPromiseExits.vue";
 import OrderPromiseSuggestions from "./OrderPromiseSuggestions.vue";
@@ -84,6 +85,7 @@ defineProps<{ notices: CardNotice[] }>();
               :exits="notice.exits"
               :code="notice.code ?? ''"
               tone="alert"
+              @resolve="notice.onResolve?.()"
             />
           </template>
         </NuxtAlert>

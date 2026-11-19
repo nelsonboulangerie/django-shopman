@@ -3,9 +3,11 @@
 // Quem decide se a promessa do pedido tem lastro é o servidor
 // (`shopman/backstage/projections/order_promise.py`): o estado, o nome dele, a frase de
 // cada item, o PRÓXIMO PASSO (o que fazer, com o que a casa pode oferecer no lugar) e
-// as saídas, com a recomendada marcada, chegam prontos em `card.promise`. Aqui só se
-// escolhe o que o cartão, a Fila, a Tabela e a lista de Encomendas desenham, com as
-// palavras que vieram. Nenhuma conta de reserva, de lote ou de hora mora neste arquivo.
+// as saídas ("Resolver" e, quando couber, "Abrir a Produção"), com a recomendada
+// marcada, chegam prontos em `card.promise`. Aqui só se escolhe o que o cartão, a Fila,
+// a Tabela e a lista de Encomendas desenham, com as palavras que vieram. Nenhuma conta
+// de reserva, de lote ou de hora mora neste arquivo. O que cada escolha faz (trocar,
+// remarcar, tirar o item, cancelar) mora no diálogo "Resolver" (`promiseResolution.ts`).
 import type {
   Action,
   OrderPromiseProjection,
@@ -46,12 +48,12 @@ export interface PromiseExit {
   ref: string;
   label: string;
   icon: string;
-  /** Para onde leva: rota do Gestor ("/REF#promise") ou outro app (o PDV). */
+  /** "Resolver": botão que abre o diálogo das escolhas (avisa quem o monta), não link. */
+  opensDialog: boolean;
+  /** Para onde o atalho leva (outro app: a Produção); vazio em quem abre o diálogo. */
   href: string;
   /** Abre fora do Gestor. */
   external: boolean;
-  /** Cancelar: vermelho, como no menu do pedido. */
-  danger: boolean;
   disabled: boolean;
   /** A saída que o servidor recomenda (`priority: "primary"`): o único botão cheio. */
   recommended: boolean;
@@ -71,27 +73,28 @@ export interface PromiseRisk {
   blockedReasons: string[];
 }
 
-const EXIT_ICONS: Record<string, string> = {
-  "contact-customer": "i-lucide-message-circle",
-  "reschedule-at-pos": "i-lucide-calendar-clock",
-  "open-production": "i-lucide-croissant",
-  cancel: "i-lucide-ban",
-};
-
+/** A saída que abre o diálogo "Resolver": as escolhas, a mensagem ao cliente e o que conclui. */
+export const RESOLVE = "resolve";
 /** A saída que abre o plano do dia na Produção, quando ela ainda resolve. */
 export const OPEN_PRODUCTION = "open-production";
 
+const EXIT_ICONS: Record<string, string> = {
+  [RESOLVE]: "i-lucide-list-checks",
+  [OPEN_PRODUCTION]: "i-lucide-croissant",
+};
+
 function exit(action: Action): PromiseExit {
-  const href = action.enabled ? String(action.href ?? "") : "";
+  const opensDialog = action.ref === RESOLVE;
+  const href = action.enabled && !opensDialog ? String(action.href ?? "") : "";
   return {
     ref: action.ref,
     label: action.label,
     icon: EXIT_ICONS[action.ref] ?? "i-lucide-arrow-right",
+    opensDialog,
     href,
     external: /^https?:\/\//.test(href),
-    danger: action.ref === "cancel",
     // Atalho sem destino não é botão que se toca: o servidor diz o porquê em `reason`.
-    disabled: !action.enabled || !href,
+    disabled: !action.enabled || (!opensDialog && !href),
     recommended: action.priority === "primary",
   };
 }
@@ -100,8 +103,8 @@ function exit(action: Action): PromiseExit {
  * A promessa em risco do pedido, pronta para desenhar; `null` quando não há risco.
  *
  * Os itens são os que o servidor marcou em risco, na ordem dele, com as frases dele.
- * As saídas são as ações que vieram em `promise.actions` (no cartão, atalhos), na ordem
- * do servidor: a recomendada primeiro.
+ * As saídas são as ações que vieram em `promise.actions`, na ordem do servidor:
+ * "Resolver" (abre o diálogo) e, quando a Produção ainda resolve, "Abrir a Produção".
  */
 export function promiseRisk(source: PromiseSource): PromiseRisk | null {
   const promise = source.promise;
@@ -214,7 +217,7 @@ export interface ExitButton extends PromiseExit {
 /**
  * O botão de cada saída. Cheio é só o que o servidor recomenda (`recommended`); sem
  * recomendada entre as saídas, nenhum é cheio e a frase do próximo passo diz o que
- * fazer. Saída travada nunca é cheia; cancelar é sempre vermelho.
+ * fazer. Saída travada nunca é cheia.
  */
 export function exitButtons(
   exits: readonly PromiseExit[],
@@ -222,12 +225,10 @@ export function exitButtons(
 ): ExitButton[] {
   return exits.map((item) => {
     const lead = item.recommended && !item.disabled;
-    if (tone === "alert")
-      return { ...item, color: "error", variant: lead ? "solid" : "outline" };
     return {
       ...item,
-      color: item.danger ? "error" : lead ? "primary" : "neutral",
-      variant: lead && !item.danger ? "solid" : "outline",
+      color: tone === "alert" ? "error" : lead ? "primary" : "neutral",
+      variant: lead ? "solid" : "outline",
     };
   });
 }

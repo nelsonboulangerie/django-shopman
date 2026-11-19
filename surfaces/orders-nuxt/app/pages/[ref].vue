@@ -36,6 +36,8 @@ import type { Action } from "~/generated/ordersContract";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { PROMISE_HASH } from "~/presentation/preorderList";
+import { RESOLVE } from "~/presentation/orderPromise";
+import { CANCEL_HASH } from "~/presentation/promiseResolution";
 import {
   pendingFocusKey,
   PROMISE_PENDING_KEY,
@@ -127,10 +129,19 @@ function onPendingAction(ref_: string) {
   else if (ref_ === "resend-payment-link") void resendPaymentLink();
   else if (ref_ === "print-danfe") void printDanfe();
   else if (ref_ === REFUND_RETRY) void submitRefundRetry();
+  else if (ref_ === RESOLVE) resolveOpen.value = true;
   else if (ref_ === "cancel")
     void openDialog("cancel", {
       reasonKey: order.value?.payment_lapsed ? PAYMENT_NOT_CONFIRMED : "",
     });
+}
+// "Resolver" a promessa em risco (WP-G08): o botão mora na linha da promessa, na faixa
+// "O que falta neste pedido", e abre o diálogo das escolhas. Tirar o item grava dali e
+// o pedido é relido; cancelar o pedido inteiro abre o cancelar de sempre, com o motivo
+// e o dinheiro.
+const resolveOpen = ref(false);
+function cancelFromResolve() {
+  void openDialog("cancel");
 }
 // A DANFE no ⋯ do pedido (P1-14): imprimir e reimprimir, o mesmo gesto do cartão.
 const danfe = computed(() => (order.value ? danfeLine(order.value) : null));
@@ -177,12 +188,11 @@ const IFOOD_NEGOTIATIONS = "ifood-negotiations";
 // O aviso "o aceite não chegou ao iFood" chega com `#ifood-accept`: o foco vai ao
 // Tentar de novo, com o prazo do iFood à vista.
 const IFOOD_ACCEPT = "ifood-accept";
-// O cartão e a lista de Encomendas chegam com `#promise` (WP-G08, "Avisar o cliente"
-// da promessa em risco): a página vai à linha da promessa, na faixa "O que falta neste
-// pedido", com o teclado no primeiro gesto dela. O "Cancelar pedido" do cartão chega
-// com `#cancel` e abre o diálogo (mais abaixo); quando o pedido não pode ser cancelado,
-// a página vai à mesma linha, onde o cancelar travado diz o porquê.
-const CANCEL_HASH = "#cancel";
+// A lista de Encomendas e o aviso do painel chegam com `#promise` (WP-G08): a página
+// vai à linha da promessa em risco, na faixa "O que falta neste pedido", com o teclado
+// no primeiro gesto dela ("Resolver"). O "Cancelar o pedido inteiro" do diálogo do
+// painel chega com `#cancel` e abre o cancelar (mais abaixo); se o pedido não pode mais
+// ser cancelado, a página vai à mesma linha, onde o "Resolver" diz o que ainda dá.
 const focusKey = computed(() => {
   if (
     route.hash === `#${IFOOD_NEGOTIATIONS}` &&
@@ -1016,8 +1026,9 @@ watch(
   },
   { immediate: true },
 );
-// O "Cancelar pedido" da promessa em risco no cartão chega com `#cancel` (WP-G08): o
-// MESMO diálogo do menu do pedido, com o motivo por escolher e a régua do gerente.
+// O "Cancelar o pedido inteiro" do diálogo "Resolver" do painel chega com `#cancel`
+// (WP-G08): o MESMO diálogo do menu do pedido, com o motivo por escolher e a régua do
+// gerente.
 watch(
   () => route.hash === CANCEL_HASH && Boolean(order.value?.can_cancel),
   (arrive) => {
@@ -1861,6 +1872,16 @@ const outside = useOutsideStore(
         }
       "
       @confirm="submitReason"
+    />
+
+    <!-- "Resolver" a promessa em risco: as escolhas, a mensagem ao cliente e o que conclui -->
+    <OrderPromiseResolveDialog
+      :open="resolveOpen"
+      :order-ref="orderRef"
+      :managers="order?.managers || []"
+      @update:open="(value: boolean) => (resolveOpen = value)"
+      @changed="refresh()"
+      @cancel="cancelFromResolve"
     />
 
     <!-- devolução depois da venda: itens, quantidade, motivo e o valor que volta -->

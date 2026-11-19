@@ -242,7 +242,7 @@ function switchHint(row: {
 }
 
 // Um botão cheio por linha. Com a promessa em risco e uma saída recomendada pelo
-// servidor ("Avisar o cliente", "Abrir a Produção"), é ela a cheia: o gesto da etapa
+// servidor ("Resolver", "Abrir a Produção"), é ela a cheia: o gesto da etapa
 // continua na linha, em contorno. Iniciar o preparo de um pedido sem lastro não é o
 // próximo passo (dono, 19/11/2026: o aviso diz o que fazer).
 function riskLeads(item: { card: OrderCardProjection }): boolean {
@@ -452,6 +452,7 @@ function riskLeads(item: { card: OrderCardProjection }): boolean {
                 <OrderPromiseExits
                   :exits="promiseRisk(item.card)!.exits"
                   :code="splitRef(item.card.ref).code"
+                  @resolve="emit('action', item.card.ref, 'resolve_promise')"
                 />
               </div>
               <p
