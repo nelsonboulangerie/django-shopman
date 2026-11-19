@@ -51,13 +51,34 @@ Cada workflow com filtro tem um job **Escopo do PR**, que chama a action local
 | Testes (test-cores / test-storefront / test-counter-agent), Admin/Unfold gate, Admin CSP | se mexeu Python | sempre |
 | Production Contract, Security Gate (CodeQL) | se mexeu código | sempre |
 | `operator-kit`, `<app>-nuxt` (Surfaces Gate) | leve, só nos apps tocados; os outros reportam verde | inteiro: navegador, visual, geometria, a11y, segurança, catálogo |
+| Retratos macOS — `pos-nuxt` / `marketing-nuxt` (**não obrigatório**) | se tocou o app, a layer ou o contrato | não roda; noturno no `main` |
 | Shop heavy/rest, Backstage seed/heavy/rest, Coverage Gate | pulado (agregadores `Testes (test-shop)`/`(test-backstage)` verdes) | sempre |
 | Docker deploy image, PostgreSQL + Redis runtime stress gate | pulado | sempre |
 | Browser QA, Storefront E2E | pulado | sempre |
 | Supply chain, PWA | pulado | sempre |
 
-No PR, o leve das superfícies roda em Linux mesmo no app declarado em macOS: o macOS
-só existe pelas baselines visuais e pelo WebKit, que ficam na fila.
+## macOS fora do caminho obrigatório
+
+Nenhum check obrigatório roda em macOS. Medido em 17/11/2026 em 36 grupos da fila:
+`pos-nuxt` e `marketing-nuxt`, então em `macos-15`, esperavam 19 a 20 min por
+máquina (mediana), até 88 e 126 min, e a fila derrubou PRs por tempo (#2589, #2531,
+#2602, #2605) com todo o resto verde. O único motivo do macOS nesses dois apps é o
+**retrato de pixel**, gravado no Chromium do `macos-15`. WebKit não entra: o único
+app que o usa (`production-nuxt`) já roda em Linux com `--with-deps`, e a geometria
+do PDV mede posição, não pixel.
+
+- O app declara `visualRunner` em `surfaces/contracts.json`; `runner` próprio no
+  check obrigatório é recusado pelo `surface_contract.mjs validate`.
+- O check do app (`pos-nuxt`, `marketing-nuxt`) roda em Linux tudo menos o retrato:
+  unit, component, lint, tipos, e2e, geometria, a11y e segurança.
+- O retrato roda em **Retratos macOS — `<app>`** (`surfaces-visual-pinned.yml`), que
+  **não é obrigatório**: no PR que toca o app, a layer ou o contrato (`paths:`), toda
+  noite no `main` e à mão. Falha noturna abre ou comenta a issue "Retratos presos ao
+  macOS reprovaram no main".
+- O custo: uma regressão só de pixel nesses dois apps pode chegar ao `main` se o
+  autor ignorar o vermelho do PR; a rodada noturna a acusa no dia seguinte. Gravar as
+  baselines deles em Linux, como os outros apps, devolve o retrato ao caminho
+  obrigatório, mas isso pede regerar e revisar o antes/depois com o dono.
 
 ## O custo que aceitamos
 
