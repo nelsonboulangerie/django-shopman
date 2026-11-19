@@ -139,9 +139,11 @@ const typeButton = (label: string) =>
   Array.from(document.querySelectorAll<HTMLElement>("[data-pos-fulfillment-modal] button, [role='dialog'] button"))
     .find((button) => button.textContent?.trim().startsWith(label))!;
 const search = () => document.querySelector<HTMLInputElement>('[data-focus-target="delivery-search"] input')!;
+// O grupo de rádio marca a opção um instante depois de o foco chegar nela pela
+// seta: a espera é desse instante.
 async function press(key: string) {
   (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
-  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 30));
   await nextTick();
 }
 

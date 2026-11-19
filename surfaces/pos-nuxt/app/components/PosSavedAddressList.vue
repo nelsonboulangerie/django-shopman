@@ -71,7 +71,7 @@ defineExpose({ focusTarget });
       variant="card"
       legend="Endereços do cliente"
       :disabled="disabled"
-      :ui="{ fieldset: 'w-full gap-y-2', item: 'w-full items-center', wrapper: 'min-w-0', label: 'flex flex-wrap items-center gap-x-2 gap-y-1' }"
+      :ui="{ fieldset: 'w-full gap-y-2', item: 'w-full', wrapper: 'min-w-0', label: 'flex flex-wrap items-center gap-x-2 gap-y-1' }"
       @update:model-value="pick"
     >
       <template #label="{ item }">

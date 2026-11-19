@@ -46,9 +46,11 @@ async function mountList(initial = "1") {
   const wrapper = await mountSuspended(Host, { attachTo: document.body });
   const radios = () => Array.from(document.querySelectorAll<HTMLElement>('[data-pos-saved-addresses] [role="radio"]'));
   const checked = () => radios().map((radio) => radio.getAttribute("aria-checked"));
+  // O grupo de rádio marca a opção um instante depois de o foco chegar nela
+  // pela seta: a espera é desse instante.
   const press = async (key: string) => {
     (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
-    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 30));
     await nextTick();
   };
   return { wrapper, selected, accepted, radios, checked, press };
