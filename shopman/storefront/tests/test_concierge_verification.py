@@ -137,7 +137,11 @@ def test_1_without_fact_in_business_hours_asks_the_team_and_answers_the_other_pa
     assert record["alert_pk"] == card.pk
     assert "estacionamento" in card.message
     assert "99876-5432" not in card.message, "a pergunta vai redigida para o cartão"
-    assert "em até 10 minutos" in card.message
+    assert "Prometemos responder até " in card.message
+    assert card.respond_by == timezone.datetime.fromisoformat(record["nudge_due_at"]), (
+        "o sino conta até o prazo prometido, e só até ele"
+    )
+    assert "Pergunta do cliente" not in card.message and "Cliente:" not in card.message
 
 
 def test_1_the_first_deadline_comes_from_the_channel_config_in_the_admin(conversation, outbox):  # noqa: F811
@@ -281,7 +285,7 @@ def test_5_outside_business_hours_the_deadline_comes_from_the_house_calendar(con
     assert record["promise"]["kind"] == verification.LATER
     due = timezone.localtime(timezone.datetime.fromisoformat(record["nudge_due_at"]))
     assert (due.date(), due.hour, due.minute) == (timezone.localdate() + timedelta(days=1), 7, 10)
-    assert "até amanhã às 7h10" in _cards().get().message
+    assert "Prometemos responder até amanhã às 7h10." in _cards().get().message
 
 
 # ── 6. Fora da janela de 24 horas ─────────────────────────────────────
@@ -352,6 +356,9 @@ def test_the_bell_card_carries_the_answer_and_take_over_actions(conversation, ou
     )
     assert kinds["take_over_conversation"]["href"].endswith("/concierge-verification/take-over/")
     assert "estacionamento" in row["message"] and "Dedupe" not in row["message"]
+    assert row["subject"] == "Ana espera a resposta da equipe", "quem espera vai no título"
+    assert row["origin_label"] == "WhatsApp"
+    assert row["deadline_kind"] == "house", "a promessa vencida fica na tela"
 
 
 def test_the_answer_endpoint_sends_and_reports_errors_in_the_house_dialect(conversation, outbox, client, gestor):  # noqa: F811

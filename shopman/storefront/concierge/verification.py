@@ -325,25 +325,35 @@ def _dedupe_key(conversation, record: dict) -> str:
     return f"concierge:{conversation.pk}:verify:{record.get('id', '')}"
 
 
-def alert_message(conversation, record: dict) -> str:
-    """O cartão da equipe: a pergunta exata, o que foi prometido e onde está a conversa."""
-    questions = [q.get("text", "") for q in record.get("questions") or [] if q.get("text")]
-    if len(questions) == 1:
-        asked = f"Pergunta do cliente: “{questions[0]}”."
-    else:
-        asked = "Perguntas do cliente: " + "; ".join(f"{i}) “{q}”" for i, q in enumerate(questions, 1)) + "."
+def promised_label(record: dict) -> str:
+    """O prazo que a Concierge prometeu, como hora da casa: "16h12", "amanhã às 7h10"."""
+    from shopman.utils.formatting import format_clock
+
     promise = record.get("promise") or {}
     if promise.get("kind") == NOW:
-        promised = f"A Concierge prometeu a resposta em até {promise.get('minutes')} minutos."
-    elif promise.get("kind") == LATER and promise.get("when"):
-        promised = f"A Concierge prometeu a resposta até {promise['when']}."
+        due = _parse(record.get("nudge_due_at"))
+        return format_clock(timezone.localtime(due)) if due else ""
+    if promise.get("kind") == LATER:
+        return promise.get("when", "")
+    return ""
+
+
+def alert_message(conversation, record: dict) -> str:
+    """O cartão da equipe: a pergunta do cliente e o prazo prometido, nessa ordem.
+
+    Quem espera vai no título (``shop.concierge_verification.card_subject``, pela
+    projeção do sino); os gestos
+    (responder, assumir) são do cartão. O prazo é UM só, o que a Concierge prometeu:
+    o segundo, de passar à equipe, não aparece para quem opera.
+    """
+    questions = [q.get("text", "") for q in record.get("questions") or [] if q.get("text")]
+    if len(questions) == 1:
+        asked = f"“{questions[0]}”"
     else:
-        promised = "A Concierge não prometeu prazo."
-    # Os gestos (responder, assumir) são do cartão: a mensagem só diz o que é e o que
-    # foi prometido. O cliente vai pelo nome; a transcrição, pelo Admin.
-    name = (getattr(conversation, "customer_name", "") or "").strip()
-    who = f"\nCliente: {name}." if name else ""
-    return f"{asked}\n{promised}{who}\n\nDedupe: {_dedupe_key(conversation, record)}"
+        asked = "; ".join(f"{i}) “{q}”" for i, q in enumerate(questions, 1))
+    when = promised_label(record)
+    promised = f"Prometemos responder até {when}." if when else "A Concierge não prometeu prazo."
+    return f"{asked}\n{promised}\n\nDedupe: {_dedupe_key(conversation, record)}"
 
 
 def notify_team(conversation, record: dict | None) -> None:
@@ -367,6 +377,9 @@ def notify_team(conversation, record: dict | None) -> None:
                 conversation_id=conversation.pk,
                 owner_role="atendimento",
                 action="answer_concierge_verification",
+                # O prazo prometido ao cliente: o sino conta até ele e, vencido, segue
+                # mostrando há quanto passou (``alert_specs``: o prazo próprio fica).
+                respond_by=_parse(record.get("nudge_due_at")),
             )
             if alert is None:
                 return
@@ -559,25 +572,18 @@ def _handoff_triage(record: dict):
 
 
 def _nudge(conversation, record: dict, *, now: datetime) -> str:
-    """Primeiro prazo: o cliente recebe UM aviso, e o cartão sobe a urgente com o segundo prazo.
+    """Primeiro prazo (o prometido): o cliente recebe UM aviso.
 
-    Urgente é o prazo (``respond_by``): com ele, a janela do aviso interrompe a tela no
-    Gestor e conta até o segundo prazo. A severidade fica a de aviso: uma pergunta de
-    cliente não é erro.
+    O cartão já conta até este prazo desde que nasceu (``respond_by``) e, vencido, a
+    janela do aviso segue na tela dizendo há quanto passou: nada muda nele aqui. A
+    severidade fica a de aviso: uma pergunta de cliente não é erro.
     """
-    from shopman.shop.adapters import alert as alert_adapter
-
     from . import house_rules
     from .service import send_out_of_turn
 
     claimed = _claim_step(conversation.pk, record["id"], step="nudge", now=now)
     if claimed is None:
         return ""
-    if claimed.get("alert_pk"):
-        try:
-            alert_adapter.revise(int(claimed["alert_pk"]), respond_by=_parse(claimed.get("handoff_due_at")))
-        except Exception:
-            logger.warning("concierge.verification.escalate_failed conversation=%s", conversation.pk, exc_info=True)
     text = _copy(NUDGE_COPY_KEY)
     message = send_out_of_turn(conversation, text, receipts=frozenset({house_rules.VERIFY})) if text else None
     if message is None or message.transport_state != "accepted":

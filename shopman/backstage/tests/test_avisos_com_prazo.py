@@ -75,7 +75,8 @@ def test_a_verificacao_da_concierge_so_interrompe_com_o_prazo_dela(db):
     assert deadline_for(sem_prazo) is None and deadline_kind(sem_prazo) == ""
     prazo = timezone.now() + timedelta(minutes=20)
     com_prazo = _alert("concierge_verify", respond_by=prazo)
-    assert deadline_for(com_prazo) == prazo and deadline_kind(com_prazo) == "external"
+    # A promessa é da casa: vencida, fica na tela dizendo há quanto passou.
+    assert deadline_for(com_prazo) == prazo and deadline_kind(com_prazo) == "house"
 
 
 def test_whatsapp_tem_a_regua_de_5_minutos(db):

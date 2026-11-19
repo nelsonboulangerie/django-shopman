@@ -324,7 +324,7 @@ class OperatorAlert(models.Model):
         # "Vou verificar" (WP-05): a parte sem fato que a Concierge perguntou à equipe.
         # A conversa segue com a Concierge; a equipe responde no cartão e a resposta
         # volta ao cliente por ela, ou alguém assume a conversa. Sino do Gestor.
-        ("concierge_verify", "WhatsApp: cliente esperando a resposta da equipe"),
+        ("concierge_verify", "WhatsApp: cliente espera a resposta da equipe"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
         ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
         ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
