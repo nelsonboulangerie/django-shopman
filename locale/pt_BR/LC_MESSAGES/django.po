@@ -208,3 +208,10 @@ msgstr "Nada por aqui ainda. Crie o primeiro item ou ajuste os filtros."
 
 msgid "Add %(name)s"
 msgstr "Adicionar %(name)s"
+
+# ── Django: abreviação do sábado ──
+# A tradução do próprio Django traz "Sab", sem acento. É o que `date_format(dia, "D")`
+# devolve, e sai na lista de Encomendas do Gestor, na agenda, no fechamento do dia, nas
+# Encomendas do PDV e no comprovante impresso ("Sab, 21/11"). O dia é "Sáb".
+msgid "Sat"
+msgstr "Sáb"

@@ -24,6 +24,7 @@ import {
   undoLine,
 } from "~/presentation/board";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
+import type { ManagerAction } from "../../../operator-kit/app/presentation/managerAuth";
 import { onMounted, onBeforeUnmount } from "vue";
 import { settledRefresh } from "~/utils/settledRefresh";
 import type { Action } from "~/generated/ordersContract";
@@ -78,6 +79,7 @@ const {
   reject,
   cancel,
   returnOrder,
+  markNotPickedUp,
   settleCash,
   equipmentBack,
   courierBack,
@@ -333,7 +335,14 @@ function applyNoteTag(tag: string) {
 // reason list (`cancel_reasons`) in every channel; on iFood orders the server already
 // left out the reasons iFood does not offer, and maps the reason to iFood's code.
 const dialog = ref<
-  "" | "reject" | "cancel" | "settle" | "dispatch" | "courier-back" | "return"
+  | ""
+  | "reject"
+  | "cancel"
+  | "settle"
+  | "dispatch"
+  | "courier-back"
+  | "return"
+  | "no-show"
 >("");
 // O motivo já marcado quando a tela sabe o porquê: cancelar o Pix vencido abre com
 // "Pagamento não confirmado" (o operador ainda pode trocar).
@@ -494,11 +503,45 @@ async function submitReturn(payload: {
   }
 }
 
+// Não retirado (WP-G11): a porta existe quando o servidor manda a ação `no-show`
+// no detalhe (pedido pronto, de retirada, fora do iFood); a tela não repete a
+// régua. O diálogo lê a prévia e confirma com a ação DELA; o PIN vem depois, no
+// mesmo `OperatorManagerAuth`, com a frase do dinheiro do servidor.
+const noShowAction = computed(() => projectedAction("no-show"));
+const noShowMoneySentence = ref("");
+async function submitNoShow(payload: { contract: Action; moneySentence: string }) {
+  noShowMoneySentence.value = payload.moneySentence;
+  if (await markNotPickedUp(payload.contract)) onNoShowDone();
+}
+function onNoShowDone() {
+  dialog.value = "";
+  useSonner.success("Pedido encerrado como não retirado.");
+}
+
+// O ato que o gerente assina e a frase que ele lê, pelo gesto que pediu a assinatura.
+const managerAuthAction = computed<ManagerAction>(() => {
+  if (managerChallenge.value?.action === "return") return "order_return";
+  if (managerChallenge.value?.action === "no-show") return "order_no_show";
+  return "cancel_order";
+});
+const managerAuthDetail = computed(() => {
+  if (managerChallenge.value?.action === "return") return returnMoneySentence.value;
+  if (managerChallenge.value?.action === "no-show") return noShowMoneySentence.value;
+  return order.value?.cancel_money_effect || "";
+});
+
+async function signed(approval: Record<string, string>) {
+  // O desafio some quando a assinatura vale: o gesto assinado se lê antes.
+  const signedAction = managerChallenge.value?.action;
+  if (!(await authorize(approval))) return;
+  if (signedAction === "no-show") onNoShowDone();
+  else dialog.value = "";
+}
 async function signWithPin(username: string, pin: string) {
-  if (await authorize({ username, pin })) dialog.value = "";
+  await signed({ username, pin });
 }
 async function signWithBadge(badge: string) {
-  if (await authorize({ badge })) dialog.value = "";
+  await signed({ badge });
 }
 
 async function submitSettle() {
@@ -681,6 +724,23 @@ const detailMenuItems = computed(() => [
           "data-action": "return",
           disabled: busy.value,
           onSelect: () => menuDo(() => (dialog.value = "return")),
+        },
+      ]
+    : []),
+  // Não retirado (WP-G11): o servidor decide se a porta existe (a ação `no-show`
+  // do detalhe) e se já pode ser tocada. Antes da hora ela fica no lugar,
+  // desabilitada, dizendo a partir de quando.
+  ...(noShowAction.value
+    ? [
+        {
+          label: "Não retirado (pede gerente)",
+          description:
+            (!noShowAction.value.enabled && noShowAction.value.reason) || undefined,
+          icon: "i-lucide-package-x",
+          "data-action": "no-show",
+          disabled: busy.value || !noShowAction.value.enabled,
+          title: noShowAction.value.reason || undefined,
+          onSelect: () => menuDo(() => (dialog.value = "no-show")),
         },
       ]
     : []),
@@ -1686,6 +1746,19 @@ const outside = useOutsideStore(
       @confirm="submitReturn"
     />
 
+    <!-- não retirado: o destino de cada item, o dinheiro e o texto do cliente -->
+    <OrderNoShowDialog
+      :open="dialog === 'no-show'"
+      :order-ref="orderRef"
+      :busy="busy"
+      @update:open="
+        (v) => {
+          if (!v) dialog = '';
+        }
+      "
+      @confirm="submitNoShow"
+    />
+
     <!-- entregador voltou: o MESMO diálogo da Fila (confere e fecha a saída inteira) -->
     <CourierBackDialog
       :card="dialog === 'courier-back' ? order : null"
@@ -1853,16 +1926,12 @@ const outside = useOutsideStore(
          há outro gerente e deixa o crachá valendo; nunca vira campo de nome. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
-      :action="managerChallenge?.action === 'return' ? 'order_return' : 'cancel_order'"
-      :detail="
-        managerChallenge?.action === 'return'
-          ? returnMoneySentence
-          : order?.cancel_money_effect || ''
-      "
+      :action="managerAuthAction"
+      :detail="managerAuthDetail"
       :managers="order?.managers || []"
       :busy="busy"
       :busy-text="
-        managerChallenge?.action !== 'return' && order?.cancel_waits_for_gateway
+        managerAuthAction === 'cancel_order' && order?.cancel_waits_for_gateway
           ? 'Cancelando e falando com o meio de pagamento. Leva alguns segundos.'
           : ''
       "

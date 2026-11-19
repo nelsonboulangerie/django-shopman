@@ -810,11 +810,19 @@ def revert_fulfilled(order) -> None:
     ``order.data['reverted_hold_ids']`` para nunca devolver o mesmo estoque
     duas vezes (o RETURN move não muda o status do hold, então sem essa marca
     um on_cancelled re-disparado creditaria o estoque de novo).
+
+    Pedido NÃO RETIRADO (``order.data["no_show"]``, WP-G11): o estoque segue a
+    linha. O que é de linha ``restock`` volta ao lote de onde saiu; o que é de
+    linha ``loss`` vira perda com motivo, no mesmo saldo
+    (``no_show.stock_plan``). Sem o bloco, tudo volta, como sempre.
     """
     hold_ids = (order.data or {}).get("hold_ids", [])
     if not hold_ids:
         return
 
+    from shopman.shop.services import no_show
+
+    plan = no_show.stock_plan(order)
     already = set((order.data or {}).get("reverted_hold_ids") or [])
     adapter = get_adapter("stock")
     reverted: list[str] = []
@@ -823,13 +831,27 @@ def revert_fulfilled(order) -> None:
         qty = entry.get("qty")
         if not hold_id or not qty or hold_id in already:
             continue
+        back, lost = Decimal(str(qty)), Decimal("0")
+        reason = f"Cancelamento pós-baixa do pedido {order.ref}"
+        if plan is not None:
+            back, lost = plan.get(hold_id, (back, lost))
+            reason = f"Pedido não retirado {order.ref}: volta à venda"
         try:
-            if adapter.return_fulfilled_hold(
-                hold_id,
-                Decimal(str(qty)),
-                reference=f"cancel:{order.ref}",
-                reason=f"Cancelamento pós-baixa do pedido {order.ref}",
-            ):
+            done = False
+            # A perda primeiro: ela é idempotente pelo ledger, e a devolução
+            # não. Se a devolução falhar, a nova tentativa não repete a perda.
+            if lost > 0:
+                done = adapter.waste_fulfilled_hold(
+                    hold_id,
+                    lost,
+                    reason=f"Perda: pedido não retirado ({order.ref})",
+                    metadata={"source": no_show.MOVE_SOURCE, "order_ref": order.ref, "sku": entry.get("sku")},
+                )
+            if back > 0:
+                done = adapter.return_fulfilled_hold(
+                    hold_id, back, reference=f"cancel:{order.ref}", reason=reason,
+                ) or done
+            if done:
                 reverted.append(hold_id)
         except Exception as exc:
             logger.warning(
