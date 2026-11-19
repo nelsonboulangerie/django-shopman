@@ -84,6 +84,15 @@ export function cartItemsCount (items: CartItemProjection[]): number {
   return items.reduce((total, line) => total + line.qty, 0)
 }
 
+// Nome do link da sacola para o leitor de tela: "Sacola" e, com itens, a contagem
+// que o selo mostra ("Sacola, 2 itens"). O selo é aria-hidden; o número vive aqui.
+// Um nome só para a barra de baixo (celular) e o cabeçalho (desktop), #2609.
+export function cartLinkName (cart: Pick<CartProjection, 'is_empty' | 'items_count'>): string {
+  if (cart.is_empty) return 'Sacola'
+  const count = cart.items_count
+  return `Sacola, ${count} ${count === 1 ? 'item' : 'itens'}`
+}
+
 // Preço por unidade da linha, na mesma dupla do cardápio: com promoção, o cheio
 // riscado (`original`) e o da promoção (`current`); sem promoção, só o cheio.
 export function linePrice (line: Pick<CartItemProjection, 'price_display' | 'promo_price_display'>): { original: string | null, current: string } {
