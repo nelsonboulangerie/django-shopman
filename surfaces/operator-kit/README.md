@@ -396,9 +396,11 @@ rota desconhecida cai na seção raiz — a barra nunca fica sem nenhuma aba ace
 "nenhuma acesa" é a tela dizendo que o operador está em lugar nenhum.
 
 **Por que isto virou peça da layer.** Quatro apps desenhavam a mesma barra à mão e, na
-medição de 22/09/2026, "a mesma" já não era a mesma: `min-h-control` (44px) no Gestor,
-`h-11` no Marketing e **`h-8`** no B.I. e no Compras — metade do alvo de toque que o
-token `--spacing-control` define para a casa, numa barra usada com a mão ocupada. O
+medição de 22/09/2026, "a mesma" já não era a mesma: `min-h-control` (que então media
+44px) no Gestor, `h-11` no Marketing e **`h-8`** no B.I. e no Compras, cada app com a
+sua altura escrita à mão. Hoje a barra usa o token: `--spacing-control` mede 32 px, a
+altura `md` de campos e botões em todos os apps (decisão do dono de 09/10/2026; trava em
+`tests/catalog.guardrails.test.ts`). O
 `chipClass(active)` do B.I. e o do Compras eram cópia byte a byte. E a aba ativa só era
 trazida para dentro da área visível no Marketing — onde o defeito tinha aparecido de
 verdade: a 390px cabem duas abas e meia, e em `/platforms` a seção ativa nascia fora da
@@ -474,8 +476,10 @@ lugar só; `divider` desenha um traço acima dela no rail.
 Onde mora a navegação (V6-KIT, `depois-navegacao.jpg`): rail no tablet deitado e em
 qualquer tela de 1024px para cima; no celular e no tablet em pé, barra de 56px em cima e
 seções embaixo. A régua é uma só: a variante `rail:` no CSS e `useSuiteRailShown()` no
-script. Alvos ≥ 44px em tudo (as prévias tinham chips de
-40px: aqui ficaram com 44). `prefers-reduced-motion` desliga as transições dentro de
+script. O item do rail, as iniciais do operador e os ícones da linha compacta têm 44px
+ou mais (as prévias tinham chips de 40px); os itens da barra de seções e todo campo e
+botão das telas ficam na altura `md` (`min-h-control`, 32 px, decisão do dono de
+09/10/2026). `prefers-reduced-motion` desliga as transições dentro de
 `data-suite`. Contrato em `tests/components/SuiteChrome.test.ts`;
 `tests/guardrails.appBar.test.ts` lista quem migrou.
 
@@ -2193,11 +2197,12 @@ O chip é `role="checkbox"` com `aria-checked`, como o `UiCheckbox` — escolher
 é marcar item, não apertar um botão que fica apertado. Um grupo de chips mora dentro de
 um `<fieldset>` com `<legend>` ou de um `role="group"` com nome.
 
-**Não há degrau denso, e é de propósito.** O alvo de 44 px (`min-h-control`) é o piso do
-kit, e o `h-9` de 36 px é justamente a dívida que a cópia do Marketing carregava —
+**Não há degrau denso, e é de propósito.** A altura é a do token (`min-h-control`, 32 px,
+a altura `md` de campos e botões em todos os apps, decisão do dono de 09/10/2026), e o
+`h-9` escrito à mão é justamente a dívida que a cópia do Marketing carregava:
 `kitOwnership.guardrails.test.ts` recusa altura literal em primitivo. Grade que não cabe
-a 44 px não vira exceção aqui: ela **reflui**. Os sete dias da semana do Marketing eram o
-caso difícil e viraram quatro colunas no celular, sete a partir do `sm`.
+na altura do token não vira exceção aqui: ela **reflui**. Os sete dias da semana do
+Marketing eram o caso difícil e viraram quatro colunas no celular, sete a partir do `sm`.
 
 ### ⚠️ `aria-pressed` não é sinal de chip — e quase nunca é
 
@@ -2249,8 +2254,9 @@ Passo de wizard e campo de formulário (PDV agendar e reagendar; Compras recebim
                    :max="maxDate" :available-dates="openDates" label="Dia da retirada" />
 ```
 
-- **Quatro botões de 44 px** (`min-h-control`), um toque escolhe: `Hoje / Qui 01/10`,
-  `Amanhã / Sex 02/10`, `<dia da semana por extenso> / 03/10` e `Outra data`.
+- **Quatro botões**, com piso na altura `md` (`min-h-control`, 32 px); um toque escolhe:
+  `Hoje / Qui 01/10`, `Amanhã / Sex 02/10`, `<dia da semana por extenso> / 03/10` e
+  `Outra data`.
 - O terceiro é a **próxima data depois de amanhã que o contexto permite**: pula dia
   fechado (`availableDates`) e respeita `min`/`max`.
 - Hoje e amanhã **aparecem sempre**; se o contexto não deixa, ficam apagados com o
