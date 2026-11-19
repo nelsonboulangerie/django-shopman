@@ -127,7 +127,14 @@ const rows = computed(() =>
                 data-preorder-risk-items
                 >{{ line.risk.items }}</span
               >
-              <!-- O próximo passo, escrito: a linha abre o pedido, onde estão os gestos. -->
+              <!-- O que oferecer no lugar, numa linha só: a linha abre o pedido, onde a
+                   lista e os gestos estão. -->
+              <span
+                v-if="line.risk?.suggestions"
+                class="font-medium text-highlighted"
+                data-preorder-risk-suggestions
+                >{{ line.risk.suggestions }}</span
+              >
               <span
                 v-if="line.risk?.nextStep"
                 class="font-medium text-highlighted"

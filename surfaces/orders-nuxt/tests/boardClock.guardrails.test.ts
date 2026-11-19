@@ -10,12 +10,19 @@ import { describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (path: string) => readFileSync(join(here, path), "utf8");
 
-/** O arquivo sem comentários: o que vale é o código. */
+/** O arquivo sem comentários: o que vale é o código. Repete até não sobrar marcador:
+ *  tirar um comentário pode juntar as pontas de outro (`<!-<!-- x -->-`). */
 function code(path: string): string {
-  return read(path)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/(^|\s)\/\/[^\n]*/g, "$1");
+  let text = read(path);
+  let before: string;
+  do {
+    before = text;
+    text = text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/(^|\s)\/\/[^\n]*/g, "$1");
+  } while (text !== before);
+  return text;
 }
 
 describe("o relógio do painel ancora na leitura do servidor", () => {

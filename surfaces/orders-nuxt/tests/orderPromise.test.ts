@@ -19,6 +19,7 @@ import {
   promiseRiskSummary,
   promiseWaitLines,
   waitsForBatch,
+  promiseSuggestionGroups,
 } from "../app/presentation/orderPromise";
 import {
   manyOrdersStep,
@@ -49,7 +50,7 @@ const cardExits = (ref: string): Action[] => [
   link("reschedule-at-pos", "Remarcar no PDV", `https://pdv.example.test/preorders/${ref}`),
   link("cancel", "Cancelar pedido", `/${ref}#cancel`, { priority: "danger" }),
 ];
-const RESCHEDULE_STEP = "Avise o cliente e remarque para o próximo lote.";
+const NOTHING_STEP = "Nenhum produto parecido livre para amanhã.";
 const PLAN_STEP = "Peça à Produção para planejar.";
 const openProduction = (over: Partial<Action> = {}) =>
   link("open-production", "Abrir a Produção", "https://producao.example.test/plan?date=2026-11-18", {
@@ -71,9 +72,9 @@ const needsProduction = (ref = "HOJE-PLANEJAR", operates = true): OrderPromisePr
 });
 const item = (over: Partial<OrderPromiseItemProjection> = {}): OrderPromiseItemProjection => ({
   sku: "BAGUETE", name: "Baguete de tradição", reservation: "lost", cause: "batch_cancelled",
-  at_risk: true, qty: "4", missing_qty: "4", label: "4x Baguete de tradição sem reserva",
+  at_risk: true, qty: "4", missing_qty: "4", label: "Faltam 4x Baguete de tradição",
   detail: "O lote de amanhã foi cancelado.", batch_date: "2026-11-19", batch_status: "void",
-  batch_ready_at_iso: "", work_order_refs: ["WO-1"], next_step: "Avise o cliente e remarque para o próximo lote.",
+  batch_ready_at_iso: "", work_order_refs: ["WO-1"], next_step: NOTHING_STEP,
   alternatives: [], ...over,
 });
 const waitingItem = (over: Partial<OrderPromiseItemProjection> = {}) =>
@@ -84,7 +85,7 @@ const waitingItem = (over: Partial<OrderPromiseItemProjection> = {}) =>
   });
 const atRisk = (ref = "ENC-CANCELADA", over: Partial<OrderPromiseProjection> = {}): OrderPromiseProjection => ({
   state: "at_risk", label: "Promessa em risco", items: [item()], blocks_start: false,
-  since_iso: "", actions: cardExits(ref), next_step: "Avise o cliente e remarque para o próximo lote.",
+  since_iso: "", actions: cardExits(ref), next_step: NOTHING_STEP,
   recommended_action: "contact-customer", ...over,
 });
 const waiting = (over: Partial<OrderPromiseProjection> = {}): OrderPromiseProjection => ({
@@ -123,13 +124,16 @@ describe("promiseRisk: o estado, os itens e as saídas, com as palavras do servi
     expect(promiseRisk({ promise: waiting() })).toBeNull();
   });
 
-  it("diz o nome do estado, o item sem reserva e o porquê, sem reescrever", () => {
+  it("diz o nome do estado, o item que falta e o porquê, sem reescrever", () => {
     const risk = promiseRisk({ promise: atRisk() })!;
     expect(risk.label).toBe("Promessa em risco");
     expect(risk.items).toEqual([
-      { key: "BAGUETE", label: "4x Baguete de tradição sem reserva", detail: "O lote de amanhã foi cancelado." },
+      {
+        key: "BAGUETE", name: "Baguete de tradição", label: "Faltam 4x Baguete de tradição",
+        detail: "O lote de amanhã foi cancelado.", suggestions: [],
+      },
     ]);
-    expect(promiseRiskSummary(risk)).toBe("4x Baguete de tradição sem reserva");
+    expect(promiseRiskSummary(risk)).toBe("Faltam 4x Baguete de tradição");
   });
 
   it("só o item em risco entra: o que só espera o lote tem a linha dele", () => {
@@ -213,10 +217,58 @@ describe("exitButtons: o peso de cada saída", () => {
 });
 
 describe("o próximo passo: o aviso diz o que fazer", () => {
-  it("a frase é a do servidor, sem reescrever", () => {
-    expect(promiseRisk({ promise: atRisk() })!.nextStep).toBe(RESCHEDULE_STEP);
-    const offer = "Avise o cliente e ofereça: Fendu (6 livres para amanhã) ou Pain de Campagne (8 livres para amanhã).";
-    expect(promiseRisk({ promise: atRisk("X", { next_step: offer }) })!.nextStep).toBe(offer);
+  it("a frase é a do servidor, sem reescrever; vazia quando ele não manda", () => {
+    expect(promiseRisk({ promise: atRisk() })!.nextStep).toBe(NOTHING_STEP);
+    expect(promiseRisk({ promise: atRisk("X", { next_step: "" }) })!.nextStep).toBe("");
+  });
+
+  it("as sugestões vêm por item, uma por linha: o nome e o quanto há, com as palavras do servidor", () => {
+    const offered = item({
+      next_step: "",
+      alternatives: [
+        { sku: "FENDU", name: "Fendu", available_display: "6 livres para amanhã" },
+        { sku: "CAMPAGNE", name: "Pain de Campagne", available_display: "8 livres para amanhã" },
+      ],
+    });
+    const risk = promiseRisk({ promise: atRisk("X", { items: [offered], next_step: "" }) })!;
+
+    expect(risk.items[0]!.suggestions).toEqual([
+      "Fendu · 6 livres para amanhã", "Pain de Campagne · 8 livres para amanhã",
+    ]);
+    // Um item com sugestão: o título é só "Sugestões:".
+    expect(promiseSuggestionGroups(risk)).toEqual([
+      { key: "BAGUETE", heading: "Sugestões:", options: risk.items[0]!.suggestions },
+    ]);
+    // Na lista de Encomendas, numa linha só.
+    expect(preorderLine(card({ attention: "promise", promise: atRisk("X", { items: [offered], next_step: "" }) })).risk).toEqual({
+      label: "Promessa em risco", items: "Faltam 4x Baguete de tradição",
+      suggestions: "Sugestões: Fendu · 6 livres para amanhã; Pain de Campagne · 8 livres para amanhã", nextStep: "",
+    });
+  });
+
+  it("dois itens com sugestão: cada lista diz de quem é; item sem sugestão não ganha lista", () => {
+    const fendu = [{ sku: "FENDU", name: "Fendu", available_display: "6 livres para amanhã" }];
+    const risk = promiseRisk({
+      promise: atRisk("X", {
+        items: [
+          item({ alternatives: fendu }),
+          item({ sku: "BRIOCHE", name: "Brioche", label: "Faltam 2x Brioche", alternatives: fendu }),
+          item({ sku: "PITA", name: "Pita", label: "Faltam 3x Pita", alternatives: [] }),
+        ],
+      }),
+    })!;
+
+    expect(promiseSuggestionGroups(risk).map((group) => group.heading)).toEqual([
+      "Sugestões para Baguete de tradição:", "Sugestões para Brioche:",
+    ]);
+    expect(promiseSuggestionGroups(null)).toEqual([]);
+  });
+
+  it("leitura antiga, sem `alternatives`, não quebra: o item fica sem sugestão", () => {
+    const old = { ...item() } as Partial<OrderPromiseItemProjection>;
+    delete old.alternatives;
+    const risk = promiseRisk({ promise: atRisk("X", { items: [old as OrderPromiseItemProjection] }) })!;
+    expect(risk.items[0]!.suggestions).toEqual([]);
   });
 
   it("quando a Produção resolve, a frase pede a Produção e a saída dela abre o plano do dia, fora do Gestor", () => {
@@ -359,7 +411,7 @@ describe("lista de Encomendas: a encomenda em risco mora aqui", () => {
   it("a linha diz \"Promessa em risco\" e o item, conta como \"Precisa de você\" e abre a faixa das saídas", () => {
     const line = preorderLine(card({ attention: "promise", promise: atRisk() }));
     expect(line.risk).toEqual({
-      label: "Promessa em risco", items: "4x Baguete de tradição sem reserva", nextStep: RESCHEDULE_STEP,
+      label: "Promessa em risco", items: "Faltam 4x Baguete de tradição", suggestions: "", nextStep: NOTHING_STEP,
     });
     expect(line.needsYou).toBe(true);
     expect(line.to).toBe("/ENC-CANCELADA#promise");
@@ -397,7 +449,7 @@ describe("promiseRiskAlert: o aviso de página", () => {
     expect(alert).toMatchObject({
       title: "Promessa em risco no pedido W33",
       description:
-        "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado. Avise o cliente e remarque para o próximo lote.",
+        "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado. Nenhum produto parecido livre para amanhã.",
       actionLabel: "Abrir o pedido",
       firstRef: "NB-261118-W33",
       opensOrder: true,
@@ -461,7 +513,7 @@ describe("promiseRiskAlert: o aviso de página", () => {
     const alert = promiseRiskAlert([card({ ref: "NB-261118-N75", promise: needsProduction("NB-261118-N75") })])!;
     expect(alert.title).toBe("Promessa em risco no pedido N75");
     expect(alert.description).toBe(
-      "4x Baguete de tradição sem reserva. Não há lote planejado para hoje. Peça à Produção para planejar.",
+      "Faltam 4x Baguete de tradição. Não há lote planejado para hoje. Peça à Produção para planejar.",
     );
   });
 
