@@ -1,0 +1,249 @@
+{
+  "$defs": {
+    "ChannelBinding": {
+      "additionalProperties": false,
+      "description": "O vínculo do canal: qual canal e qual conversa nele.",
+      "properties": {
+        "channel": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "conversation_ref": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "conversation_ref"
+      ],
+      "type": "object"
+    },
+    "EventIdentity": {
+      "additionalProperties": false,
+      "description": "Identidade estável do evento. Sem garantia (``none``), não há id e não se deduplica.",
+      "properties": {
+        "assurance": {
+          "enum": [
+            "verified",
+            "provider_claimed",
+            "none"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "oneOf": [
+            {
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "assurance"
+      ],
+      "type": "object"
+    },
+    "IdentityEvidence": {
+      "additionalProperties": false,
+      "description": "Evidência de identidade: de onde vem e que degrau da escada ela sustenta.",
+      "properties": {
+        "assurance": {
+          "enum": [
+            "anonymous",
+            "transported",
+            "weak_verified",
+            "strong_verified"
+          ],
+          "type": "string"
+        },
+        "kind": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "ref": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "assurance"
+      ],
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Contrato InteractionEvent. Contrato de observação: campo desconhecido só com MENOR acima; o leitor o guarda em extensions.",
+  "properties": {
+    "actor": {
+      "enum": [
+        "customer",
+        "staff",
+        "system"
+      ],
+      "type": "string"
+    },
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "channel_binding": {
+      "$ref": "#/$defs/ChannelBinding"
+    },
+    "content_ref": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "event_identity": {
+      "$ref": "#/$defs/EventIdentity"
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "identity_evidence": {
+      "items": {
+        "$ref": "#/$defs/IdentityEvidence"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "const": "InteractionEvent"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "const": "cc.interaction_event"
+    },
+    "schema_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "message",
+        "tap",
+        "correction",
+        "staff_took_over",
+        "staff_returned",
+        "delivery_update",
+        "deadline_due",
+        "backend_event"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "channel_binding",
+    "actor",
+    "event_identity",
+    "type"
+  ],
+  "title": "InteractionEvent",
+  "type": "object",
+  "x-contract-version": "1.0"
+}

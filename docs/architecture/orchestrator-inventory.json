@@ -346,31 +346,50 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "IFOOD_ORIGINAL_MARK",
+            "IFoodAddonProjection",
             "IFoodCatalogProjection",
             "IFoodCatalogWriteBlocked",
             "IFoodCategoryError",
             "IFoodConfirmationError",
             "IFoodImageError",
             "IFoodRateLimitError",
+            "IFoodRejected",
+            "_ADDON_NS",
+            "_CONFIRM_WAITS",
             "_IMAGE_PATHS",
             "_MAX_IMAGE_BYTES",
+            "_REJECTION_REASONS",
+            "_addon_groups",
+            "_addon_ids",
+            "_addon_payload",
             "_base_url",
             "_check_rate_limit",
             "_confirm_item_price",
             "_confirm_item_status",
+            "_confirm_option",
             "_download_image",
             "_get_config",
             "_headers",
             "_image_path",
             "_item_payload",
             "_patch_item_price",
+            "_patch_option",
+            "_patch_status",
+            "_raise_for_ifood",
+            "_read_flat",
             "_read_item",
+            "_remote_option",
             "_resolve_category_id",
             "_set_item_status",
             "_storage_image",
             "_upload_image",
             "_upsert_item",
+            "_uuid4_shaped",
             "_validated_image",
+            "addon_external_code",
+            "addon_identity",
+            "ifood_rejection_text",
             "logger"
           ]
         }
@@ -1749,6 +1768,7 @@
             "hold_target_date",
             "is_cart_hold",
             "logger",
+            "planned_on_date",
             "receive_return",
             "release_holds",
             "release_holds_for_reference",
@@ -3400,7 +3420,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "logger"
+            "enqueue_collection_items",
+            "logger",
+            "on_collection_membership_changed"
           ]
         }
       ]
@@ -4133,7 +4155,6 @@
             "_payment_is_authorized",
             "_payment_is_captured",
             "_payment_method",
-            "_physical_work_deferred",
             "_prep_starts_automatically",
             "_record_availability_decision",
             "_record_coupon_use",
@@ -4146,6 +4167,7 @@
             "_stamp_kitchen_released",
             "_verify_holds",
             "acceptance_timeout_minutes",
+            "awaits_kitchen_release",
             "kitchen_release_at",
             "logger",
             "release_preorder_now"
@@ -5693,7 +5715,8 @@
           "symbols": [
             "Command",
             "DEFAULT_MIN_INTERVAL_HOURS",
-            "RETRY_AFTER_FAILURE_HOURS"
+            "RETRY_AFTER_FAILURE_HOURS",
+            "logger"
           ]
         }
       ]
@@ -6113,6 +6136,26 @@
           "responsibility": "configuração",
           "symbols": [
             "Channel"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/channel_addon.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ChannelAddon",
+            "ChannelAddonGroup"
           ]
         }
       ]
@@ -8944,6 +8987,50 @@
         "decisão"
       ],
       "support_claims": []
+    },
+    {
+      "path": "shopman/shop/services/channel_addons.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "AddonError",
+            "AddonReceipt",
+            "AddonRemoteError",
+            "IFOOD_CHANNEL",
+            "_CONFIRM_WAITS",
+            "_backend",
+            "_channel",
+            "_group_id",
+            "_ids",
+            "_merchant",
+            "_name",
+            "_price_q",
+            "_projected_item",
+            "_push_item",
+            "_raise_remote",
+            "_read_item",
+            "_read_until",
+            "_remote_option",
+            "_remote_product",
+            "_slug",
+            "add_addon",
+            "change_addon_price",
+            "create_group",
+            "edit_addon",
+            "groups_for",
+            "set_addon_active"
+          ]
+        }
+      ]
     },
     {
       "path": "shopman/shop/services/channel_policy.py",
@@ -12709,6 +12796,33 @@
             "get_payment_status",
             "has_sufficient_captured_payment",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/pickup_turn.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CACHE_KEY",
+            "CACHE_TTL_SECONDS",
+            "CLOSED",
+            "OPEN",
+            "TRIGGER",
+            "current_phase",
+            "logger",
+            "resend_on_turn",
+            "visible_skus"
           ]
         }
       ]

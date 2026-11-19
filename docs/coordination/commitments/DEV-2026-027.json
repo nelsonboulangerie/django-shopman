@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-027",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-16",
+  "compromisso": "WP destacado: idealmente, quero que a Concierge consiga montar o pedido do cliente NA CONVERSA, interagindo com dados reais, via projections ou o que seja. (Leitura: Jev com um modelo mais barato, como DeepSeek v4 Pro; prazos do vou verificar configuráveis via admin; abrir por grupo de até 20 contatos.)",
+  "dono": "Engenharia",
+  "criado": "2026-11-16",
+  "revisar_em": "2026-11-23",
+  "gatilho": "-",
+  "estado": "EM_EXECUCAO",
+  "prova": "#2486 (respostas na seção 5 do plano e na D-040; WP-11 a WP-14 são o pedido na conversa, WP-15 a promoção a pergunta frequente, WP-16 a mensagem aprovada pela Meta)"
+}

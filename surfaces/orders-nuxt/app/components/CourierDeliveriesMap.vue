@@ -158,6 +158,9 @@ async function mountRealMap() {
     gestureHandling: "greedy",
     // Sem comércio, ônibus e rótulos de lugar; no escuro, o papel escuro.
     styles: googleMapStyles(dark.value),
+    // O fundo por baixo dos blocos de imagem: sem isto o Google usa o cinza-claro
+    // dele, que vaza nas emendas entre os blocos e risca o mapa escuro de linhas.
+    backgroundColor: tokens.value.paper,
   });
   const view = new libs.maps.OverlayView();
   view.onAdd = () => {
@@ -187,7 +190,13 @@ watch(layer, (el) => {
 });
 watch(framePoints, () => fit());
 // Trocar o tema com a tela aberta repinta o Google sem recriar o mapa.
-watch(dark, (value) => map?.setOptions({ styles: googleMapStyles(value) }));
+// O fundo só se escolhe ao criar o mapa; na troca, repinta-se a div que o Google
+// criou dentro do canvas (é nela que ele grava o `backgroundColor`).
+watch(dark, (value) => {
+  map?.setOptions({ styles: googleMapStyles(value) });
+  const inner = canvas.value?.firstElementChild;
+  if (map && inner instanceof HTMLElement) inner.style.backgroundColor = mapTokens(value).paper;
+});
 
 onMounted(() => {
   observer = new ResizeObserver(([entry]) => {

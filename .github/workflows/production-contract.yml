@@ -17,7 +17,7 @@ jobs:
   # não roda o contrato; a fila roda sempre.
   scope:
     name: Escopo do PR
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -40,7 +40,7 @@ jobs:
     name: Production Contract
     needs: scope
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.code != 'false') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       DJANGO_SETTINGS_MODULE: config.settings

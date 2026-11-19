@@ -5,11 +5,12 @@ import hashlib
 from django.conf import settings
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.offerman.models import Collection
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data, read_data
 from shopman.backstage.api.telemetry import OperationalObservationMixin
-from shopman.backstage.projections.catalog_bindings import build_catalog_binding_review
+from shopman.backstage.projections.catalog_bindings import build_catalog_binding_review, remote_category_revision
 from shopman.backstage.services import catalog_bindings as service
 from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogWriteBlocked, IFoodRateLimitError
 from shopman.shop.models import CatalogSnapshot, Channel
@@ -181,8 +182,15 @@ class CatalogCategoryView(_Base):
         snapshot_id = data.get("snapshot_id")
         catalog_ref = data.get("catalog_ref")
         category_ref = data.get("category_ref")
-        if action not in {"map", "rename", "reorder"}:
-            return Response(_error("Escolha mapear, renomear ou reordenar.", "action"), status=400)
+        if action not in {"create", "map", "rename", "reorder"}:
+            return Response(_error("Escolha criar, mapear, renomear ou reordenar.", "action"), status=400)
+        base = data.get("base_revision")
+        if not isinstance(base, str) or len(base) != 64:
+            return Response(_error("Atualize a página antes de alterar categorias.", "base_revision"), status=400)
+        if action == "create":
+            # A categoria ainda não existe: o id é do iFood, e a confirmação é pelo nome.
+            category_ref = "new"
+            data = {**data, "category_ref": "new"}
         if isinstance(snapshot_id, bool) or not isinstance(snapshot_id, int) or snapshot_id < 1:
             return Response(_error("Captura inválida. Atualize a página.", "snapshot_id"), status=400)
         if not isinstance(catalog_ref, str) or not catalog_ref.strip() or len(catalog_ref) > 128:
@@ -202,6 +210,42 @@ class CatalogCategoryView(_Base):
 
         def execute():
             try:
+                current = category_service.list_categories(channel_ref=ref, catalog_ref=catalog_ref)
+                if remote_category_revision(current) != base:
+                    raise service.CatalogBindingConflict(
+                        "As categorias mudaram no iFood desde a última leitura. A lista foi atualizada; confira e repita."
+                    )
+                if action == "create":
+                    # A categoria do iFood é o reflexo de uma coleção da casa: nasce
+                    # com o nome da coleção e já fica ligada a ela. Não há nome
+                    # digitado aqui, para não abrir um cadastro paralelo ao Catálogo.
+                    collection_ref = data.get("collection_ref")
+                    collection = (
+                        Collection.objects.filter(ref=collection_ref.strip(), is_active=True).first()
+                        if isinstance(collection_ref, str) and collection_ref.strip() and len(collection_ref) <= 50
+                        else None
+                    )
+                    if collection is None:
+                        raise service.CatalogBindingError("Escolha uma coleção ativa da casa.")
+                    name = " ".join(collection.name.split())[:128]
+                    rows = current.get("categories") if isinstance(current, dict) else current
+                    if any(isinstance(row, dict) and row.get("name") == name for row in rows or []):
+                        raise service.CatalogBindingConflict(
+                            "Já existe uma categoria com o nome desta coleção no iFood. Escolha-a na lista."
+                        )
+                    created = category_service.create_category(
+                        channel_ref=ref, catalog_ref=catalog_ref, name=name,
+                        status="AVAILABLE", template="DEFAULT",
+                    )
+                    created_ref = created.get("id") if isinstance(created, dict) else None
+                    rows = category_service.list_categories(channel_ref=ref, catalog_ref=catalog_ref)
+                    category = _remote_category(rows, created_ref) if created_ref else None
+                    if category is None or category.get("name") != name:
+                        raise service.CatalogBindingError("O iFood não confirmou a nova categoria.")
+                    category_service.set_collection_category(
+                        channel_ref=ref, collection_ref=collection.ref, category_ref=created_ref,
+                    )
+                    return {"action": action, "collection_ref": collection.ref, "category": category}
                 if action == "rename":
                     name = data.get("name")
                     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 128:
@@ -240,5 +284,5 @@ class CatalogCategoryView(_Base):
             except category_service.IFoodCategoryOperationError as exc:
                 raise service.CatalogBindingError(str(exc)) from exc
 
-        inputs = {key: data.get(key) for key in ("action", "snapshot_id", "catalog_ref", "category_ref", "collection_ref", "name", "index")}
+        inputs = {key: data.get(key) for key in ("action", "snapshot_id", "catalog_ref", "category_ref", "collection_ref", "name", "index", "base_revision")}
         return self.mutate(request, ref, inputs, execute)

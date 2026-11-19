@@ -161,7 +161,7 @@ class TestOGateMedeOMesmoDinheiroQueAReview:
         class _Parou(Exception):
             """Interrompe o close logo depois do gate: aqui só o gate importa."""
 
-        def _espiao(payload, *, operator_username=""):
+        def _espiao(payload, *, operator_username="", channel_ref=None):
             visto["list_price_q"] = payload["items"][0].get("list_price_q")
             visto["discount_q"] = pos_service._payload_discount_q(payload)
             raise _Parou

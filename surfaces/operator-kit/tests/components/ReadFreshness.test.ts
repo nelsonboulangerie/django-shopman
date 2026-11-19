@@ -49,4 +49,23 @@ describe("ReadFreshness: leitura útil e transporte são estados distintos", () 
     expect(root.classes()).not.toContain("truncate");
     wrapper.unmount();
   });
+
+  it("source diz de onde veio a leitura, hora de relógio e idade separadas, numa linha", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "setInterval", "clearInterval"] });
+    const generated = "2026-11-17T16:55:30Z";
+    vi.setSystemTime(Date.parse(generated));
+    const wrapper = mount(ReadFreshness, {
+      props: { inline: true, source: "do iFood", metadata: { generated_at: generated } },
+    });
+    try {
+      vi.advanceTimersByTime(9000);
+      await nextTick();
+      expect(wrapper.get("[data-read-freshness-source]").text()).toBe("Lido do iFood às 13h55 (há 9 s)");
+      // Curta o bastante para uma linha: sem o teto de largura da frase longa.
+      expect(wrapper.get("[data-read-freshness]").classes()).not.toContain("max-w-52");
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
 });

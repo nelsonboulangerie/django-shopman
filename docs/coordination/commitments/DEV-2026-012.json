@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-012",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-12",
+  "compromisso": "Pedidos iFood cancelados pelo próprio iFood: causa medida = ninguém aceita em 8 min (09/11 pedido 6957; 12/11 15:30 IFOOD-* entrou no Gestor e caiu às 15:37)",
+  "dono": "Engenharia · iFood",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-13",
+  "gatilho": "-",
+  "estado": "EM_EXECUCAO",
+  "prova": "-"
+}

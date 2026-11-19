@@ -136,7 +136,7 @@ export function useGestorSections() {
         ? "feeds"
         : "catalog";
     }
-    if (route.path.startsWith("/deliveries")) return "deliveries";
+    if (route.path.startsWith("/delivery")) return "deliveries";
     return route.path === "/" ? "orders" : undefined;
   });
   // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.

@@ -103,6 +103,7 @@ RUN python -m pip install -c constraints.txt \
         ./packages/buyman \
         ./packages/fiscalman \
         ./packages/cashman \
+        ./packages/conversational-commerce \
         .
 
 RUN mkdir -p /app/staticfiles /app/media \

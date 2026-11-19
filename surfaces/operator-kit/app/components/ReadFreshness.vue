@@ -15,11 +15,15 @@
 // `realtimeLabel`: o nome do estado do transporte, dito pelo app ("Ao vivo",
 // "Conectando…"). O kit não decide o vocabulário do tempo real de cada superfície;
 // só diz que a conexão e a leitura são estados distintos.
+//
+// `source` (opt-in): leitura que vem de FORA (o iFood), dita pela fonte e numa linha
+// só: "Lido do iFood às 13h55 (há 9 s)". Hora de relógio e idade não se misturam
+// na mesma grandeza. Sem a prop, a frase de sempre.
 import { computed } from "vue";
 
 import { useNowTick } from "../composables/useNowTick";
 import { STORE_TIME_ZONE } from "../presentation/dates";
-import { formatClockSeconds } from "../presentation/clock";
+import { formatClock, formatClockSeconds } from "../presentation/clock";
 
 const props = defineProps<{
   /** O carimbo da leitura: `generated_at` em ISO, como as projeções o mandam. */
@@ -28,6 +32,8 @@ const props = defineProps<{
   failed?: boolean;
   realtimeLabel?: string;
   inline?: boolean;
+  /** Fonte externa da leitura, com o artigo: "do iFood". */
+  source?: string;
 }>();
 const now = useNowTick(() => props.metadata?.generated_at ?? "");
 const age = computed(() =>
@@ -45,16 +51,32 @@ const clock = computed(() =>
       formatClockSeconds(props.metadata.generated_at, STORE_TIME_ZONE)
     : "",
 );
+const sourceClock = computed(() =>
+  props.metadata?.generated_at
+    ? formatClock(props.metadata.generated_at, STORE_TIME_ZONE)
+    : "",
+);
 </script>
 
 <template>
   <component
     :is="inline ? 'span' : 'p'"
     class="flex flex-wrap gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
-    :class="inline ? 'max-w-52 whitespace-normal leading-4' : 'px-4 py-1'"
+    :class="
+      source
+        ? 'leading-4'
+        : inline
+          ? 'max-w-52 whitespace-normal leading-4'
+          : 'px-4 py-1'
+    "
     data-read-freshness
   >
-    <span v-if="metadata?.generated_at"
+    <span v-if="source && metadata?.generated_at" data-read-freshness-source
+      >Lido {{ source }} às
+      <time :datetime="metadata.generated_at">{{ sourceClock }}</time> (há
+      {{ age }} s)<span v-if="failed"> · a última consulta falhou</span></span
+    >
+    <span v-else-if="metadata?.generated_at"
       >Última leitura útil:
       <time :datetime="metadata.generated_at">{{ clock }}</time> · há
       {{ age }} s<span v-if="failed"> · atualização falhou</span></span

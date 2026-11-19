@@ -48,7 +48,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `tab_display` | `string` | POS tab service | POS UI, Order.data | Rótulo curto para operador. Em numéricos, remove zeros à esquerda; em texto, preserva o rótulo informado. Ex: `"1007"`, `"mesa ana"` |
 | `tab_number` | `string` | `shop/services/pos.rename_pos_tab` (no primeiro renomear) | `build_open_tab` (`tab_number`) → barra de contexto do PDV | O número original da comanda ("1007") quando ela foi renomeada ("Mesa 6"): a barra mostra o nome grande e "#1007" pequeno. Ausente numa comanda nunca renomeada (vale o `tab_ref`) |
 | `seating_spot_ref` | `string` | `shop/services/pos.set_pos_tab_seating` (via `POST pos/tabs/rename/` com a chave `seating_spot_ref`) e `move_pos_tab_lines` (o Transferir para uma mesa LIVRE abre a comanda nova já nela; `POST pos/tabs/move-lines/` com `seating_spot_ref`, dono M=1, 13/10/2026) | `build_open_tab`, `POSTabProjection`, `projections/seating.open_tabs_by_spot` (mesa ocupada no Salão), `_mark_tab_committed` → `Order.data` | **Vínculo OPCIONAL comanda × mesa** (dono, 04/10/2026): o `ref` do `SeatingSpot` escolhido com um toque ao dar nome à comanda. Ausente = comanda sem mesa (balcão, ou ninguém escolheu); uma mesa tem no máximo uma comanda aberta |
-| `kitchen_released_at` | `string` (ISO datetime) | `lifecycle.activate_preorder` (`_stamp_kitchen_released`, o despertador tocou ou `release_preorder_now` antecipou) | `lifecycle._physical_work_deferred` (encomenda liberada não espera mais); `backstage/projections/bi_preorder_kitchen` (B.I., Produção › Encomendas na Cozinha: espera da chegada ao "Iniciar" e preparo do "Iniciar" ao "Pronto", por pedido) | Quando a encomenda saiu da espera e entrou no fluxo do dia: tickets na Cozinha (se houver item de cozinha) e baixa. Escrito uma vez. Ausente em pedido do dia (vai à Cozinha no aceite) |
+| `kitchen_released_at` | `string` (ISO datetime) | `lifecycle.activate_preorder` (`_stamp_kitchen_released`, o despertador tocou ou `release_preorder_now` antecipou) | `lifecycle.awaits_kitchen_release` (encomenda liberada não espera mais); `backstage/projections/bi_preorder_kitchen` (B.I., Produção › Encomendas na Cozinha: espera da chegada ao "Iniciar" e preparo do "Iniciar" ao "Pronto", por pedido) | Quando a encomenda saiu da espera e entrou no fluxo do dia: tickets na Cozinha (se houver item de cozinha) e baixa. Escrito uma vez. Ausente em pedido do dia (vai à Cozinha no aceite) |
 | `transferred_from` | `dict` | `shop/services/pos.move_pos_tab_lines` (comanda NOVA criada pelo Transferir) | `build_open_tab` (selo "Transf. da #13"), CommitService → `Order.data` | **O rastro da comanda** (dono, T1=1, 13/10/2026): `{tab_ref, tab_display, session_key, at, by}` da comanda de onde os itens saíram. Só na comanda criada pela transferência (o destino que já existia não ganha rastro). Nada por item. O evento vai ao log da sessão: `lines_transferred_out` na origem e `lines_transferred_in` no destino (`SessionEvent`, payload `{from_tab_ref, to_tab_ref, new_tab, items: [{sku, name, qty}]}`) |
 | `pos_operator` | `string` | POS tab service | POS projections, Order.data | Username do operador que abriu/tocou o POS tab |
 | `last_touched_at` | `string` | POS tab service | POS projections | Timestamp ISO da última interação operacional |
@@ -1440,6 +1440,8 @@ Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `order_ref_prefix` | `string` | — (ausente = ref do canal em maiúsculas) | Prefixo do ref de pedido gerado no commit (ex.: `"NB"` → `NB-260901-M63`). Escreve: seed/Admin. Lê: `CommitService._do_commit` via config resolvida. Decisão do dono 01/09: pedido da loja online carrega a marca, não o meio. |
+| `ifood_catalog.category_map` | `{collection_ref: category_uuid}` | `{}` | Categoria do iFood em que cada coleção da casa aparece. A categoria nasce de uma coleção ("Criar no iFood com este nome", DEV-2026-044) ou é escolhida entre as que já existem. Escreve: `ifood_catalog_categories.set_collection_category` (Gestor, Canais > iFood > Catálogo). Lê: `catalog_projection_ifood._resolve_category_id`. |
+| `ifood_catalog.default_category_ref` | `string` | — | Categoria de quem não tem coleção mapeada. Lê: o mesmo resolvedor. |
 
 ### 1. Confirmation — como o pedido é aceito?
 
@@ -1594,6 +1596,23 @@ Estas chaves são lidas diretamente de `channel.config` como dict bruto, sem pas
 | `marketplace()` | auto_cancel/5min | external | None | none | (vazio) |
 
 ---
+
+## shop.ChannelAddonGroup / shop.ChannelAddon (complementos do iFood)
+
+Não é JSONField: são modelos do `shop` (migração `shop.0122`), porque o Offerman só tem
+produto vendável e o Core não ganha campo (DEV-2026-044). O complemento é do **item no
+canal**: chaveado por `(channel, sku)`, com o SKU do listing do canal iFood (o serviço
+recusa SKU fora do listing). Não copia nome, preço nem foto do produto.
+
+| Modelo | Campos | Notas |
+|---|---|---|
+| `ChannelAddonGroup` | `channel`, `sku`, `ref`, `name`, `min_choices`, `max_choices`, `index`, `is_active` | Vai como `optionGroups[]` e `products[0].optionGroups[]` (min/max) no `PUT /items`. Grupo sem opção não vai. |
+| `ChannelAddon` | `group`, `ref`, `name`, `price_q`, `image_url`, `index`, `is_active` | Vai como `options[]` e um `products[]` próprio (nome e foto). Preço por `PATCH /options/price`; pausa por `PATCH /options/status`. |
+
+Identidade remota: `catalog_projection_ifood.addon_identity(merchant, sku, group_ref[, addon_ref])`,
+uuid5 com bits de versão 4 (o iFood recusa outra versão em `optionIds`). `externalCode`:
+`<sku>-<grupo>` e `<sku>-<grupo>-<opção>`. Escreve: `shop/services/channel_addons.py`
+(tudo ou nada: só grava quando a leitura do item no iFood confirma).
 
 ## Shop.defaults
 
