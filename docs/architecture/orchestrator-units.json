@@ -8771,7 +8771,8 @@
         {
           "path": "shopman/shop/services/courier.py",
           "symbols": [
-            "group_refusal"
+            "group_refusal",
+            "not_today_refusal"
           ]
         }
       ],
