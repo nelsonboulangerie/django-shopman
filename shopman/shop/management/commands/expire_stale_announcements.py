@@ -1,6 +1,6 @@
 """Caduca campanhas que ninguém aprovou a tempo.
 
-Frescor é efêmero: "saiu do forno" aprovado duas horas depois vira mentira.
+Frescor é efêmero: "acabou de ficar pronto" aprovado duas horas depois vira mentira.
 A regra define o prazo (``Campaign.expires_after_minutes``); este comando
 é quem fecha a porta quando ele passa, sem depender de alguém abrir a tela.
 """

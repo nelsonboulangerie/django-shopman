@@ -7918,7 +7918,17 @@ class Command(BaseCommand):
                  "route": "Av. Higienópolis", "street_number": "350", "complement": "Sala 201",
                  "neighborhood": "Higienópolis", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-080",
-                 "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False}
+                 "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False},
+                # O endereço que um pedido de entrega (iFood incluído) grava sozinho no
+                # cadastro, com a etiqueta neutra "Entrega" (`shop/services/customer.py`).
+                # Está aqui para a lista de endereços do PDV ter o caso real: a etiqueta
+                # que só repete o canal não identifica nada, e a tela mostra o endereço.
+                {"label": "other", "label_custom": "Entrega",
+                 "formatted_address": "Rua Sergipe, 890 - Centro, Londrina - PR, 86010-360",
+                 "route": "Rua Sergipe", "street_number": "890", "complement": "",
+                 "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
+                 "state_code": "PR", "postal_code": "86010-360",
+                 "latitude": Decimal("-23.3125000"), "longitude": Decimal("-51.1600000"), "is_default": False}
             ]),
             ("CLI-002", [
                 {"label": "work", "formatted_address": "Rua Marselha, 191 - Jardim Piza, Londrina - PR, 86041-140",

@@ -449,7 +449,7 @@ def _on_production_changed(sender, product_ref, date, action, work_order, **kwar
         scope=_default_backstage_scope(),
     )
     if action == "finished":
-        # "Saiu do forno" nasce aqui e vale 60 min. O storefront precisa saber
+        # O selo de fornada pronta nasce aqui e vale 60 min. O storefront precisa saber
         # na hora — é o badge mais perecível do sistema.
         emit_fomo_for_sku(work_order.output_sku, reason="production_finished")
 

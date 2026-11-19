@@ -13,12 +13,12 @@ Three verbs:
     check(sku, qty, *, channel_ref) -> dict
         Read-only. Returns whether `qty` of `sku` can be ordered now.
 
-    reserve(sku, qty, *, session_key, channel_ref, ttl_minutes=30) -> dict
+    reserve(sku, qty, *, session_key, channel_ref, ttl_minutes=None) -> dict
         Write. Checks first; if available, creates a hold tagged with session_key
         as `reference` so the order's CommitService can adopt it. On shortage,
         populates `substitutes` with suggested SKUs.
 
-    reconcile(sku, new_qty, *, session_key, channel_ref, ttl_minutes=30) -> dict
+    reconcile(sku, new_qty, *, session_key, channel_ref, ttl_minutes=None) -> dict
         Write. Brings the total reserved quantity for `(session_key, sku)` to
         exactly `new_qty`. Grows by creating a fresh hold for the delta (may
         shortage); shrinks by releasing holds FIFO and returning any release
@@ -58,13 +58,25 @@ def _cart_hold_metadata(source_sku: str, *, bundle_parent_sku: str | None = None
     return metadata
 
 
-def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
+def bump_session_hold_expiry(
+    session_key: str,
+    *,
+    channel_ref: str | None = None,
+    ttl_minutes: int | None = None,
+) -> int:
     """Extend the TTL of every active hold tagged with ``session_key``.
 
     Called from the cart's write paths (add/update/set_qty) so the session's
     holds stay alive as long as the shopper is active. Orphaned holds from
     abandoned sessions still die naturally at their TTL — this just keeps
     the "active shopper" case alive.
+
+    O prazo da renovação é o MESMO da criação: ``ttl_minutes=None`` resolve o
+    TTL configurado no canal (``ChannelConfig.stock.hold_ttl_minutes``); sem
+    configuração, 30 minutos. Até 19/11/2026 a renovação usava 30 fixos: canal
+    com 15 tinha a reserva esticada para 30 no mesmo gesto que a criou, e canal
+    com 60 ficava com itens da mesma sacola em prazos diferentes (#2773). A
+    sacola diz essa hora à cliente ("Guardamos seus itens até 19h18").
 
     Indefinite holds (``expires_at IS NULL`` — planned holds) are untouched:
     their TTL only starts after materialization (AVAILABILITY-PLAN §8).
@@ -88,6 +100,8 @@ def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
         logger.debug("availability.bump_session_hold_expiry degraded; returning 0", exc_info=True)
         return 0
 
+    if ttl_minutes is None:
+        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
     now = timezone.now()
     new_expiry = now + timedelta(minutes=ttl_minutes)
     return (
@@ -1304,10 +1318,15 @@ def reconcile(
     session_key: str,
     channel_ref: str | None = None,
     target_date: date | None = None,
-    ttl_minutes: int = 30,
+    ttl_minutes: int | None = None,
 ) -> dict:
     """
     Bring the total reserved qty for `(session_key, sku)` to exactly `new_qty`.
+
+    ``ttl_minutes=None`` resolve o TTL configurado no canal
+    (``ChannelConfig.stock.hold_ttl_minutes``), como o ``reserve``; sem
+    configuração, 30 minutos. O acréscimo pelo seletor de quantidade nasce com
+    o mesmo prazo do primeiro item (#2773).
 
     Used by the cart's stepper and remove flows: while `reserve()` assumes a
     brand-new additive reservation, `reconcile()` computes the delta against
@@ -1350,6 +1369,8 @@ def reconcile(
     new_qty_d = Decimal(str(new_qty))
     if new_qty_d < 0:
         new_qty_d = Decimal("0")
+    if ttl_minutes is None:
+        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
 
     # Bundles are reconciled per component. Component holds are scoped by
     # cart-line metadata so a combo using CROIS-01 cannot consume/release a

@@ -7327,6 +7327,7 @@
             "build_free_delivery_progress",
             "build_minimum_order_progress",
             "logger",
+            "reserved_until",
             "shop_rule_q"
           ]
         }

@@ -191,8 +191,9 @@ for (const rail of RAILS) for (const viewport of VIEWPORTS) {
     await closeDialog(page);
 
     // ── ENCOMENDA DE ENTREGA, PARA AMANHÃ ──
-    // A encomenda nasce guiada: um assistente de etapas (cliente → recebimento
-    // → endereço, se entrega → data) que termina em "Montar encomenda".
+    // A encomenda nasce guiada: um assistente de etapas (cliente → data →
+    // recebimento → endereço, se entrega) que termina em "Montar encomenda". As
+    // teclas seguem a mesma ordem: F7 é o Quando, F8 é o Recebimento.
     await openFreshTab(page);
     await step(page, "encomenda-nova", async () => {
       await page.getByRole("group", { name: "Modo de atendimento" }).getByRole("button", { name: "Encomendas" }).click();
@@ -200,19 +201,17 @@ for (const rail of RAILS) for (const viewport of VIEWPORTS) {
     });
     await step(page, "encomenda-cliente", () => identifyCustomer(page));
     await closeDialog(page);
-    await step(page, "dialogo-recebimento", async () => { await page.keyboard.press("F7"); await page.getByRole("dialog").waitFor(); });
-    await step(page, "dialogo-recebimento-entrega", async () => {
-      const dialog = page.getByRole("dialog");
-      await dialog.getByRole("button", { name: /^Entrega/ }).first().click();
-      const saved = dialog.locator("button").filter({ hasText: /Casa|Trabalho|Rua|Av/ }).first();
-      if (await saved.isVisible().catch(() => false)) await saved.click();
-    });
-    await page.getByRole("dialog").getByRole("button", { name: /Entrega neste endereço|Retirada no balcão/ }).click().catch(() => closeDialog(page));
-    await step(page, "dialogo-quando", async () => { await page.keyboard.press("F8"); await page.getByRole("dialog").waitFor(); });
+    await step(page, "dialogo-quando", async () => { await page.keyboard.press("F7"); await page.getByRole("dialog").waitFor(); });
     await step(page, "dialogo-quando-amanha", async () => {
       await page.getByRole("dialog").getByRole("button", { name: /^Amanhã/ }).first().click();
     });
     await page.getByRole("dialog").getByRole("button", { name: "Confirmar dia e horário" }).click().catch(() => closeDialog(page));
+    await step(page, "dialogo-recebimento", async () => { await page.keyboard.press("F8"); await page.getByRole("dialog").waitFor(); });
+    // Entrega: o endereço padrão do cliente, se houver, já vem marcado na lista.
+    await step(page, "dialogo-recebimento-entrega", async () => {
+      await page.getByRole("dialog").getByRole("button", { name: /^Entrega/ }).first().click();
+    });
+    await page.getByRole("dialog").getByRole("button", { name: /Entrega neste endereço|Retirada no balcão/ }).click().catch(() => closeDialog(page));
     await step(page, "encomenda-combinada", async () => {
       await page.getByRole("button", { name: /Montar encomenda/ }).waitFor();
     });
