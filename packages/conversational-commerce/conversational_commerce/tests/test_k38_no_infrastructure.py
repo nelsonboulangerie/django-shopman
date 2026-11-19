@@ -30,6 +30,8 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
+from conversational_commerce.testing.conformance import conformance
+
 PACKAGE = "conversational_commerce"
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 
@@ -108,6 +110,7 @@ def infrastructure_imports(package_dir: Path, package: str = PACKAGE) -> tuple[l
     return violations, scanned
 
 
+@conformance("K38", invariants=("N26",), scope="core")
 def test_k38_package_imports_only_the_standard_library():
     violations, scanned = infrastructure_imports(PACKAGE_DIR)
 
@@ -185,6 +188,7 @@ def _runtime_modules() -> list[str]:
     return modules
 
 
+@conformance("K38", invariants=("N26",), scope="core")
 def test_k38_importing_every_module_loads_only_the_standard_library(tmp_path):
     modules = _runtime_modules()
     assert PACKAGE in modules
