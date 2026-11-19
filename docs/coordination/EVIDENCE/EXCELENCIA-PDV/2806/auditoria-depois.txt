@@ -3,100 +3,102 @@ PDV compilado + Django semeado, Caixa com PIN, tema claro. Régua: contraste WCA
 contra o fundo efetivo (>= 4,5), letra na escala 12/14/16/18/20, dentro da tela, sem corte,
 o X contra cada linha do título e da frase, os dois cartões (papel, estado, borda, fundo,
 miolo do rádio, altura e topo) e o transbordo lateral (overflowX).
+O depois foi refeito em 19/11 15h16 com a frase nova do cartão Entrega
+("O pedido vai até o endereço do cliente.", pedido da coordenação).
 
 ===== DEPOIS (este PR) =====
 -- abertura · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 130, topo 96 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
-   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 130, topo 96 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
+   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo 96 · rótulo 13.67 / 14 px · descrição "O cliente retira no balcão." 6.52 / 14 px
+   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo 96 · rótulo 12.05 / 14 px · descrição "O pedido vai até o endereço do cliente." 5.75 / 14 px
    resumo: "Rua Belo Horizonte, 540, Apto 12 · Centro · Londrina/PR" · contraste 13.67 · 14 px
 -- retirada escolhida · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 130, topo 269 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
-   cartão Entrega: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 130, topo 269 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
+   cartão Retirada: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo 279 · rótulo 12.05 / 14 px · descrição "O cliente retira no balcão." 5.75 / 14 px
+   cartão Entrega: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo 279 · rótulo 13.67 / 14 px · descrição "O pedido vai até o endereço do cliente." 6.52 / 14 px
 -- entrega escolhida · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 130, topo 96 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
-   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 130, topo 96 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
+   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo 96 · rótulo 13.67 / 14 px · descrição "O cliente retira no balcão." 6.52 / 14 px
+   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo 96 · rótulo 12.05 / 14 px · descrição "O pedido vai até o endereço do cliente." 5.75 / 14 px
    resumo: "Rua Belo Horizonte, 540, Apto 12 · Centro · Londrina/PR" · contraste 13.67 · 14 px
 -- resumo do endereço · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 130, topo -145 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
-   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 130, topo -145 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
+   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo -125 · rótulo 13.67 / 14 px · descrição "O cliente retira no balcão." 6.52 / 14 px
+   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo -125 · rótulo 12.05 / 14 px · descrição "O pedido vai até o endereço do cliente." 5.75 / 14 px
    resumo: "Rua Belo Horizonte, 540, Apto 12 · Centro · Londrina/PR" · contraste 13.67 · 14 px
 -- abertura · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo 120 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
-   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo 120 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
+   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 90, topo 120 · rótulo 13.67 / 14 px · descrição "O cliente retira no balcão." 6.52 / 14 px
+   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 90, topo 120 · rótulo 12.05 / 14 px · descrição "O pedido vai até o endereço do cliente." 5.75 / 14 px
    resumo: "Rua Belo Horizonte, 540, Apto 12 · Centro · Londrina/PR" · contraste 13.67 · 14 px
 -- retirada escolhida · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo 257 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
-   cartão Entrega: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo 257 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
+   cartão Retirada: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 90, topo 267 · rótulo 12.05 / 14 px · descrição "O cliente retira no balcão." 5.75 / 14 px
+   cartão Entrega: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 90, topo 267 · rótulo 13.67 / 14 px · descrição "O pedido vai até o endereço do cliente." 6.52 / 14 px
 -- entrega escolhida · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo 120 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
-   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo 120 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
+   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 90, topo 120 · rótulo 13.67 / 14 px · descrição "O cliente retira no balcão." 6.52 / 14 px
+   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 90, topo 120 · rótulo 12.05 / 14 px · descrição "O pedido vai até o endereço do cliente." 5.75 / 14 px
    resumo: "Rua Belo Horizonte, 540, Apto 12 · Centro · Londrina/PR" · contraste 13.67 · 14 px
 -- resumo do endereço · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha como o cliente recebe o pedido." · 1 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 110, topo -121 · rótulo 13.67 / 14 px · descrição 6.52 / 14 px
-   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 110, topo -121 · rótulo 12.05 / 14 px · descrição 5.75 / 14 px
+   cartão Retirada: papel radio, marcado false · borda rgb(222, 201, 187) · fundo rgb(255, 255, 255) · miolo do rádio vazio · altura 90, topo -101 · rótulo 13.67 / 14 px · descrição "O cliente retira no balcão." 6.52 / 14 px
+   cartão Entrega: papel radio, marcado true · borda rgb(139, 107, 46) · fundo rgb(243, 240, 234) · miolo do rádio rgb(139, 107, 46) · altura 90, topo -101 · rótulo 12.05 / 14 px · descrição "O pedido vai até o endereço do cliente." 5.75 / 14 px
    resumo: "Rua Belo Horizonte, 540, Apto 12 · Centro · Londrina/PR" · contraste 13.67 · 14 px
 
 ===== ANTES (o branch do E13) =====
 -- abertura · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 1 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
-   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
+   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.76 / 14 px · descrição "O cliente retira no balcão." 6.9 / 12 px
+   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.84 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.93 / 12 px
    resumo: "Rua Belo Horizonte, 540 - Centro - Londrina/PR" · contraste 13.67 · 14 px
 -- retirada escolhida · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 1 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo 302 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
-   cartão Entrega: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo 302 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
+   cartão Retirada: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo 302 · rótulo 12.84 / 14 px · descrição "O cliente retira no balcão." 6.93 / 12 px
+   cartão Entrega: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo 302 · rótulo 12.76 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.9 / 12 px
 -- entrega escolhida · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 1 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
-   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
+   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.76 / 14 px · descrição "O cliente retira no balcão." 6.9 / 12 px
+   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo 101 · rótulo 12.84 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.93 / 12 px
    resumo: "Rua Belo Horizonte, 540 - Centro - Londrina/PR" · contraste 13.67 · 14 px
 -- resumo do endereço · 375 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 1 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo -96 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
-   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo -96 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
+   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 84, topo -96 · rótulo 12.76 / 14 px · descrição "O cliente retira no balcão." 6.9 / 12 px
+   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 84, topo -96 · rótulo 12.84 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.93 / 12 px
    resumo: "Rua Belo Horizonte, 540 - Centro - Londrina/PR" · contraste 13.67 · 14 px
 -- abertura · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
-   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
+   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.76 / 14 px · descrição "O cliente retira no balcão." 6.9 / 12 px
+   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.84 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.93 / 12 px
    resumo: "Rua Belo Horizonte, 540 - Centro - Londrina/PR" · contraste 13.67 · 14 px
 -- retirada escolhida · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo 288 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
-   cartão Entrega: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo 288 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
+   cartão Retirada: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo 288 · rótulo 12.84 / 14 px · descrição "O cliente retira no balcão." 6.93 / 12 px
+   cartão Entrega: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo 288 · rótulo 12.76 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.9 / 12 px
 -- entrega escolhida · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
-   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
+   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.76 / 14 px · descrição "O cliente retira no balcão." 6.9 / 12 px
+   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo 121 · rótulo 12.84 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.93 / 12 px
    resumo: "Rua Belo Horizonte, 540 - Centro - Londrina/PR" · contraste 13.67 · 14 px
 -- resumo do endereço · 1366 px · overflowX 0
    title: "Recebimento" · 1 linha(s), 0 sob o X · contraste 13.67 · 16 px
    description: "Escolha uma opção. Cliente e data não definem como o pedido será recebido." · 2 linha(s), 0 sob o X · contraste 6.52 · 14 px
-   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo -78 · rótulo 12.76 / 14 px · descrição 6.9 / 12 px
-   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo -78 · rótulo 12.84 / 14 px · descrição 6.93 / 12 px
+   cartão Retirada: papel button, marcado false · borda rgb(222, 201, 187) · fundo rgb(252, 246, 241) · miolo do rádio sem rádio · altura 68, topo -78 · rótulo 12.76 / 14 px · descrição "O cliente retira no balcão." 6.9 / 12 px
+   cartão Entrega: papel button, marcado true · borda rgb(139, 107, 46) · fundo rgb(249, 248, 245) · miolo do rádio sem rádio · altura 68, topo -78 · rótulo 12.84 / 14 px · descrição "Entrega local com endereço informado pelo operador." 6.93 / 12 px
    resumo: "Rua Belo Horizonte, 540 - Centro - Londrina/PR" · contraste 13.67 · 14 px
 
