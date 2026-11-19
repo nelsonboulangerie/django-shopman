@@ -72,7 +72,7 @@ async function schedulesTomorrowPickup(page: Page) {
     .first();
   await slot.click({ timeout: 30_000 });
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
-  await page.locator('[data-order-fulfillment="pickup"]').locator("visible=true").first().click();
+  await page.locator("[data-order-fulfillment-options]").getByRole("radio", { name: /^Retirada/ }).click();
   await page.getByRole("button", { name: /Montar encomenda/ }).click();
   await expect(page.getByPlaceholder(/Buscar produto/).locator("visible=true").first()).toBeVisible({ timeout: 30_000 });
 }

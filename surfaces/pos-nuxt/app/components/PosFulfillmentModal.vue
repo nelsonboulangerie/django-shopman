@@ -107,34 +107,12 @@ const isOpen = computed({
   set: (value: boolean) => emit("update:open", value),
 });
 
-// RETIRADA OU ENTREGA, como opções de um grupo de rádio. Nenhuma marcada até o
-// operador escolher ("" e não `undefined`: o grupo continua controlado por aqui).
-type FulfillmentRef = "pickup" | "delivery";
-// O valor é texto (e não o tipo estreito "pickup" | "delivery") para o "" de nenhuma
-// escolha caber no mesmo tipo do grupo.
-const fulfillmentItems = computed(() => props.fulfillmentOptions.map((option) => ({
-  value: String(option.ref),
-  label: option.label,
-  description: option.description,
-})));
+// RETIRADA OU ENTREGA (`PosFulfillmentChoice`, a mesma peça da etapa do
+// assistente). Nenhuma marcada até o operador escolher.
 const chosenFulfillment = computed<string>(() => (props.fulfillmentConfirmed ? props.fulfillmentType : ""));
-function pickFulfillment(value: unknown) {
-  const ref = String(value ?? "");
-  if (ref !== "pickup" && ref !== "delivery") return;
-  emit("update:fulfillmentType", ref as FulfillmentRef);
+function pickFulfillment(ref: "pickup" | "delivery") {
+  emit("update:fulfillmentType", ref);
   emit("update:fulfillmentConfirmed", true);
-}
-// O grupo de rádio do Reka ignora o Enter de propósito; aqui ele escolhe a opção
-// em foco, como o Enter fazia no botão que ela substituiu.
-function onFulfillmentEnter(event: KeyboardEvent) {
-  if (event.isComposing) return;
-  const radio = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="radio"]');
-  if (!radio) return;
-  const radios = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="radio"]'));
-  const option = props.fulfillmentOptions[radios.indexOf(radio)];
-  if (!option) return;
-  event.preventDefault();
-  pickFulfillment(option.ref);
 }
 
 // OS ENDEREÇOS JÁ CADASTRADOS: uma linha inteira por endereço, com o da entrega
@@ -481,19 +459,13 @@ function onMapCancel() {
              de endereços logo abaixo, com o mesmo sinal da escolha (o rádio
              marcado, a borda e o fundo da cor da casa) e o estado no papel
              (`role="radio"` + `aria-checked`). Era um par de botões em que o
-             escolhido só mudava um tom de fundo (#2806). Nada vem marcado antes do
-             toque: o recebimento é escolha explícita. -->
-        <div data-pos-fulfillment-options @keydown.enter="onFulfillmentEnter">
-          <NuxtRadioGroup
-            :model-value="chosenFulfillment"
-            :items="fulfillmentItems"
-            variant="card"
-            orientation="horizontal"
-            aria-label="Como o cliente recebe"
-            :ui="{ fieldset: 'grid grid-cols-2 gap-2', item: 'w-full min-w-0', wrapper: 'min-w-0', label: 'break-words', description: 'break-words' }"
-            @update:model-value="pickFulfillment"
-          />
-        </div>
+             escolhido só mudava um tom de fundo (#2806). -->
+        <PosFulfillmentChoice
+          data-pos-fulfillment-options
+          :options="fulfillmentOptions"
+          :chosen="chosenFulfillment"
+          @pick="pickFulfillment"
+        />
 
         <div v-if="fulfillmentType === 'delivery'" class="grid gap-3">
           <PosSavedAddressList

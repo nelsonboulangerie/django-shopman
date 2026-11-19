@@ -27,7 +27,8 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 //
 // O ASSISTENTE PERGUNTA NO PRÓPRIO CARTÃO (P2-8 do laudo de 16/11). Recebimento
 // e data eram um botão que abria um diálogo por cima do assistente; agora a
-// escolha mora na etapa: Retirada ou Entrega são os dois botões da etapa, e o
+// escolha mora na etapa: Retirada ou Entrega são as duas opções da etapa (o
+// `PosFulfillmentChoice`, a mesma peça do diálogo Recebimento), e o
 // dia e o horário são o `PosSchedulePicker` (a mesma peça do diálogo "Quando" e
 // do reagendar), montado aqui sem moldura. O cliente continua na busca de
 // cliente do cabeçalho (a mesma de toda a venda). O endereço JÁ CADASTRADO se
@@ -115,18 +116,54 @@ watch(current, (key) => {
   if (key === "schedule") emit("schedule");
 }, { immediate: true });
 
+// O GESTO QUE SEGUE TEM O FOCO (#2778). Respondida uma etapa, o foco do teclado
+// está onde o operador age em seguida, sem Tab perdido: o assistente se completa
+// do começo ao fim sem mouse. Quem move o foco é sempre o `useNextFocus`.
+//   - ao chegar numa etapa, a escolha dela (o dia; Retirada/Entrega; o endereço
+//     marcado; ou o botão da etapa);
+//   - escolhido o horário, o Continuar: a etapa da data NÃO anda sozinha (o
+//     operador confere o que escolheu e o Enter confirma, `STAYS_WHEN_READY`);
+//   - escolhida a Retirada, a última etapa, o "Montar encomenda";
+//   - escolhida a Entrega, o endereço padrão já marcado (a etapa do endereço).
 const { reveal } = useNextFocus();
 const focusKey = (key: OrderSetupStepKey) => `order-step-${key}`;
 const hasSavedAddresses = computed(() => Boolean(props.savedAddresses?.length));
+const root = useTemplateRef<HTMLElement>("root");
 const addressListRef = ref<{ focusTarget: () => HTMLElement | null } | null>(null);
+const fulfillmentChoiceRef = ref<{ focusTarget: () => HTMLElement | null } | null>(null);
+// O dia escolhido, ou o primeiro que a casa aceita: o grupo de dias do kit tem
+// uma parada de Tab só, e é nela que o foco cai.
+const dayTabStop = () => root.value?.querySelector<HTMLElement>("[data-order-step='schedule'] [data-day-option][tabindex='0']") ?? null;
 function focusCurrent() {
+  const key = current.value;
   // Na etapa do endereço com lista, o foco cai no endereço marcado: o Enter
   // aceita e segue sem o operador procurar onde está.
-  if (current.value === "address" && hasSavedAddresses.value) {
+  if (key === "address" && hasSavedAddresses.value) {
     reveal(() => addressListRef.value?.focusTarget(), { align: "center" });
-    return;
+  } else if (key === "fulfillment") {
+    reveal(() => fulfillmentChoiceRef.value?.focusTarget(), { align: "center" });
+  } else if (key === "schedule" && props.schedule?.today) {
+    reveal(dayTabStop, { align: "center" });
+  } else {
+    reveal(focusKey(key));
   }
-  reveal(focusKey(current.value));
+}
+// Um botão do rodapé, só quando ele já age: botão desabilitado não recebe foco, e
+// o pedido tenta de novo por alguns quadros até o carrinho responder.
+function footerAction(name: "continue" | "complete") {
+  return () => {
+    const button = root.value?.querySelector<HTMLButtonElement>(`[data-order-${name}]`);
+    return button && !button.disabled ? button : null;
+  };
+}
+function focusContinue() {
+  if (current.value === "schedule") reveal(footerAction("continue"), { align: "center" });
+}
+function pickFulfillment(ref: "pickup" | "delivery") {
+  emit("pickFulfillment", ref);
+  // A entrega leva à etapa do endereço (o `watch` de `current`, abaixo); a
+  // retirada é a última etapa, e o que segue é montar a encomenda.
+  if (ref === "pickup") reveal(footerAction("complete"), { align: "center" });
 }
 // O operador tocou em Entrega NO CARTÃO e a etapa do endereço chegou: o foco vai
 // para ela (na lista, o endereço padrão já vem marcado, e o Enter aceita). Com
@@ -167,9 +204,6 @@ function acceptAddress() {
 // O endereço da entrega em edição só é dito por extenso quando não é nenhum da
 // lista (foi digitado na hora): os da lista se dizem sozinhos, com a marcação.
 const typedAddress = computed(() => (props.chosenAddress ? "" : (props.addressSummary || "").trim()));
-function fulfillmentChosen(ref: string) {
-  return Boolean(props.chosenFulfillment) && props.chosenFulfillment === ref;
-}
 function isReady(key: OrderSetupStepKey) {
   return steps.value.find((step) => step.key === key)?.ready ?? false;
 }
@@ -179,7 +213,7 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
 </script>
 
 <template>
-  <section class="mx-auto grid w-full max-w-2xl gap-5 p-4 md:p-8" aria-label="Preparar encomenda">
+  <section ref="root" class="mx-auto grid w-full max-w-2xl gap-5 p-4 md:p-8" aria-label="Preparar encomenda">
     <div class="grid gap-1">
       <h1 class="text-xl font-semibold">{{ itemCount ? "Preparar encomenda" : "Nova encomenda" }}</h1>
       <p class="text-sm text-muted-foreground">Combine quem recebe, para quando e como. Depois, monte o pedido.</p>
@@ -238,33 +272,23 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
         day-label="Dia da encomenda"
         @update:date="emit('update:scheduleDate', $event)"
         @update:time-slot="emit('update:scheduleTimeSlot', $event)"
+        @time-chosen="focusContinue"
       />
       <p v-if="isReady('schedule') && windowPending" data-schedule-window-pending class="text-sm text-muted-foreground">Horário a combinar.</p>
     </div>
 
     <div v-show="current === 'fulfillment'" data-order-step="fulfillment" :data-focus-target="focusKey('fulfillment')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('fulfillment') ? 'border-success/40' : 'border-primary bg-primary/5'">
       <h2 class="font-medium">Entrega ou retirada?</h2>
-      <div role="radiogroup" aria-label="Como o cliente recebe" class="grid grid-cols-2 gap-2">
-        <NuxtButton
-          v-for="(option, index) in fulfillmentOptions || []"
-          :key="option.ref"
-          :data-focus-control="index === 0 ? '' : undefined"
-          role="radio"
-          :aria-checked="fulfillmentChosen(option.ref)"
-          :data-order-fulfillment="option.ref"
-          color="neutral"
-          variant="outline"
-          class="h-auto min-h-control justify-start whitespace-normal px-3 py-2 text-left"
-          :class="fulfillmentChosen(option.ref) ? 'border-primary bg-primary/5' : 'bg-background'"
-          :disabled="loading"
-          @click="emit('pickFulfillment', option.ref)"
-        >
-          <span>
-            <span class="block text-sm font-semibold" :class="fulfillmentChosen(option.ref) ? 'text-primary' : ''">{{ option.label }}</span>
-            <span class="block text-xs text-muted-foreground">{{ option.description }}</span>
-          </span>
-        </NuxtButton>
-      </div>
+      <!-- A mesma peça do diálogo Recebimento (#2815): o rádio cheio, a borda e o
+           fundo da casa no escolhido, e o estado em `aria-checked`. -->
+      <PosFulfillmentChoice
+        ref="fulfillmentChoiceRef"
+        data-order-fulfillment-options
+        :options="fulfillmentOptions || []"
+        :chosen="chosenFulfillment || ''"
+        :disabled="loading"
+        @pick="pickFulfillment"
+      />
     </div>
 
     <div v-show="current === 'address'" data-order-step="address" :data-focus-target="focusKey('address')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('address') ? 'border-success/40' : 'border-primary bg-primary/5'">
@@ -319,8 +343,8 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
     <div class="flex flex-wrap items-center gap-2 border-t pt-4">
       <NuxtButton v-if="currentIndex > 0" variant="outline" :disabled="loading" @click="goToStep(currentIndex - 1)">Voltar</NuxtButton>
       <span class="min-w-0 flex-1 text-center text-xs text-muted-foreground" role="status">Etapa {{ currentIndex + 1 }} de {{ steps.length }}: {{ currentStep.label }}</span>
-      <NuxtButton v-if="!isLast" :disabled="loading || !currentStep.ready" @click="goToStep(currentIndex + 1)">Continuar</NuxtButton>
-      <NuxtButton v-else :disabled="loading || !allReady" @click="emit('complete')">Montar encomenda <Icon name="lucide:arrow-right" class="ml-2 size-4" /></NuxtButton>
+      <NuxtButton v-if="!isLast" data-order-continue :disabled="loading || !currentStep.ready" @click="goToStep(currentIndex + 1)">Continuar</NuxtButton>
+      <NuxtButton v-else data-order-complete :disabled="loading || !allReady" @click="emit('complete')">Montar encomenda <Icon name="lucide:arrow-right" class="ml-2 size-4" /></NuxtButton>
     </div>
   </section>
 </template>
