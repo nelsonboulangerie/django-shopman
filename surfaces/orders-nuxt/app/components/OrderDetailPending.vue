@@ -24,8 +24,16 @@ const props = withDefaults(
     busy?: boolean;
     /** A DANFE deste pedido está indo para a impressora. */
     danfePrinting?: boolean;
+    /** O estorno deste pedido está sendo pedido de novo ao meio de pagamento (WP-G13). */
+    refundRetrying?: boolean;
   }>(),
-  { pending: () => [], money: null, busy: false, danfePrinting: false },
+  {
+    pending: () => [],
+    money: null,
+    busy: false,
+    danfePrinting: false,
+    refundRetrying: false,
+  },
 );
 
 const emit = defineEmits<{ act: [ref: string] }>();
@@ -34,6 +42,7 @@ const lines = computed(() =>
   pendingLines(props.pending, {
     busy: props.busy,
     danfePrinting: props.danfePrinting,
+    refundRetrying: props.refundRetrying,
   }),
 );
 const money = computed(() => settledMoney(props.money));
@@ -76,6 +85,16 @@ const money = computed(() => settledMoney(props.money));
                 >
                   {{ line.reason }}
                 </p>
+                <!-- A tentativa que não deu certo fica escrita na linha (WP-G13): quem
+                     abre o pedido depois lê o que o meio de pagamento respondeu. -->
+                <p
+                  v-if="line.failure"
+                  class="text-sm text-error"
+                  role="status"
+                  data-pending-failure
+                >
+                  {{ line.failure }}
+                </p>
                 <p
                   v-for="reason in line.blockedReasons"
                   :key="reason"
@@ -109,6 +128,7 @@ const money = computed(() => settledMoney(props.money));
                   :color="button.color"
                   :variant="button.variant"
                   :disabled="button.disabled"
+                  :loading="button.loading"
                   :data-pending-action="button.ref"
                   @click="emit('act', button.ref)"
                 />

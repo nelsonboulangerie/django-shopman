@@ -27,6 +27,8 @@ const advanceFn = vi.fn();
 const fetchCancellationReasons = vi.fn(async () => []);
 // Não retirado (WP-G11): o gesto, o desafio do gerente e a assinatura.
 const markNotPickedUp = vi.fn();
+// Tentar o estorno de novo (WP-G13).
+const retryRefund = vi.fn();
 const authorize = vi.fn();
 const managerChallenge = ref<{ code: string; message: string; action: string } | null>(null);
 const readError = ref<unknown>(null);
@@ -100,6 +102,7 @@ vi.stubGlobal("useOrderDetail", () => ({
   courierCancel: vi.fn(),
   courierQuote: vi.fn(),
   markNotPickedUp,
+  retryRefund,
   authorize,
   managerChallenge,
   dismissManagerChallenge: vi.fn(),
@@ -1141,7 +1144,7 @@ describe("atalhos gerais da nota do pedido", () => {
 // página já sabia fazer. A faixa só aponta: quem decide o que falta é o servidor.
 describe("detalhe do pedido — o que falta, com o gesto ao lado", () => {
   const line = (over: Partial<OperatorOrderProjection["pending"][number]>) => ({
-    key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", actions: [], ...over,
+    key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", actions: [], failure: "", ...over,
   });
   const gesture = (ref: string, label: string, over: Record<string, unknown> = {}) => ({
     ref, label, enabled: true, reason: "", href: "", ...over,
@@ -1277,6 +1280,112 @@ describe("detalhe do pedido — o que falta, com o gesto ao lado", () => {
     expect(money.attributes("data-order-money-state")).toBe("refunded");
     expect(money.text()).toContain("Dinheiro do pedido cancelado: Estornado");
     expect(money.text()).toContain("O cliente lê na loja: “Devolvemos os R$ 18,70 do seu Pix para a mesma conta.”");
+    w.unmount();
+  });
+});
+
+// WP-G13: a linha "Estorno não saiu" tem o gesto. O valor é do servidor, o gerente o lê
+// no diálogo de sempre, e o que a tela diz depois sai do pedido relido.
+describe("detalhe do pedido — tentar o estorno de novo", () => {
+  const failedMoney = { state: "refund_failed", label: "Estorno não saiu", amount_display: "R$ 22,00", customer_line: "", settled: false };
+  const retryLine = (failure = "") => ({
+    key: "refund", tone: "error", label: "Estorno não saiu", failure,
+    reason: "A devolução de R$ 22,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez ao Pix do cliente, com a autorização de um gerente.",
+    actions: [{ ref: "refund-retry", label: "Tentar o estorno de novo", enabled: true, reason: "", href: "" }],
+  });
+  const cancelled = (over: Partial<OperatorOrderProjection> = {}) => order({
+    status: "cancelled", can_confirm: false, payment_method_label: "Pix", payment_status_label: "Estorno não saiu",
+    cancelled_money: failedMoney, pending: [retryLine()], actions: [], ...over,
+  });
+  const challenge = () => {
+    managerChallenge.value = { code: "manager_approval_required", message: "Tentar o estorno de novo pede a autorização de um gerente.", action: "refund-retry" };
+    return false;
+  };
+
+  beforeEach(() => {
+    retryRefund.mockReset();
+    authorize.mockReset();
+    managerChallenge.value = null;
+    vi.mocked(useSonner.success).mockClear();
+    vi.mocked(useSonner.error).mockClear();
+  });
+
+  it("o toque pede o estorno; o servidor pede o gerente, que lê o valor antes de assinar", async () => {
+    retryRefund.mockImplementationOnce(async () => challenge());
+    const w = abrir(cancelled());
+
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    expect(retryRefund).toHaveBeenCalledTimes(1);
+    const auth = w.getComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("open")).toBe(true);
+    expect(auth.props("action")).toBe("refund_retry");
+    expect(auth.props("detail")).toBe("Estorno de R$ 22,00, pedido de novo ao meio de pagamento.");
+    expect(useSonner.success).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("assinado e confirmado pelo meio de pagamento: a tela diz Estornado, com a palavra do servidor", async () => {
+    retryRefund.mockImplementationOnce(async () => challenge());
+    authorize.mockImplementationOnce(async () => {
+      managerChallenge.value = null;
+      detalhe.value = cancelled({
+        payment_status_label: "Estornado", pending: [],
+        cancelled_money: { state: "refunded", label: "Estornado", amount_display: "R$ 22,00", customer_line: "Devolvemos os R$ 22,00 do seu Pix para a mesma conta.", settled: true },
+      });
+      return true;
+    });
+    const w = abrir(cancelled());
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "1234");
+    await flushPromises();
+
+    expect(authorize).toHaveBeenCalledWith({ username: "joyce", pin: "1234" });
+    expect(useSonner.success).toHaveBeenCalledWith("Estornado: o meio de pagamento confirmou a devolução.");
+    expect(w.find('[data-pending="refund"]').exists()).toBe(false);
+    expect(w.get("[data-order-money]").text()).toContain("Dinheiro do pedido cancelado: Estornado");
+    w.unmount();
+  });
+
+  it("o meio de pagamento recusa de novo: nada de Estornado, e a resposta fica escrita na linha", async () => {
+    const failure = "Última tentativa, em 18/11 às 14h32: O estorno foi recusado (Efí), e nada foi registrado aqui. Resposta (Efí): saldo insuficiente.";
+    retryRefund.mockImplementationOnce(async () => challenge());
+    authorize.mockImplementationOnce(async () => {
+      managerChallenge.value = null;
+      detalhe.value = cancelled({ pending: [retryLine(failure)] });
+      return true;
+    });
+    const w = abrir(cancelled());
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "1234");
+    await flushPromises();
+
+    expect(useSonner.success).not.toHaveBeenCalled();
+    const row = w.get('[data-pending="refund"]');
+    expect(row.text()).toContain("Estorno não saiu");
+    expect(row.get("[data-pending-failure]").text()).toBe(failure);
+    // O gesto continua de pé para uma tentativa nova.
+    expect(w.get('[data-pending-action="refund-retry"]').attributes("disabled")).toBeUndefined();
+    w.unmount();
+  });
+
+  it("PIN recusado: nada é dado como feito", async () => {
+    retryRefund.mockImplementationOnce(async () => challenge());
+    authorize.mockResolvedValueOnce(false);
+    const w = abrir(cancelled());
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "0000");
+    await flushPromises();
+
+    expect(useSonner.success).not.toHaveBeenCalled();
+    expect(w.get('[data-pending="refund"]').text()).toContain("Estorno não saiu");
     w.unmount();
   });
 });

@@ -41,8 +41,12 @@ const ACTION_ICONS: Record<string, string> = {
   "resend-payment-link": "i-lucide-send",
   "print-danfe": "i-lucide-printer",
   "contact-customer": "i-lucide-message-circle",
+  "refund-retry": "i-lucide-rotate-ccw",
   cancel: "i-lucide-ban",
 };
+
+/** Tentar o estorno de novo (WP-G13): a ação da linha "Estorno não saiu". */
+export const REFUND_RETRY = "refund-retry";
 
 export interface PendingButton {
   ref: string;
@@ -51,6 +55,8 @@ export interface PendingButton {
   color: "primary" | "neutral" | "error";
   variant: "solid" | "outline";
   disabled: boolean;
+  /** O gesto está falando com o servidor agora (o estorno indo ao meio de pagamento). */
+  loading: boolean;
   /** Por que não pode agora: aparece escrito, não só no `title`. */
   blockedReason: string;
   /** Só a conversa com o cliente: abre fora do Gestor. */
@@ -62,6 +68,8 @@ export interface PendingButtonState {
   busy: boolean;
   /** A DANFE deste pedido está sendo enviada à impressora. */
   danfePrinting: boolean;
+  /** O estorno deste pedido está sendo pedido de novo ao meio de pagamento. */
+  refundRetrying?: boolean;
 }
 
 /**
@@ -74,14 +82,16 @@ export function pendingButton(
   options: PendingButtonState & { lead: boolean },
 ): PendingButton {
   const printing = action.ref === "print-danfe" && options.danfePrinting;
+  const retrying = action.ref === REFUND_RETRY && options.refundRetrying === true;
   const isLink = action.ref === "contact-customer";
   return {
     ref: action.ref,
-    label: printing ? "Imprimindo…" : action.label,
+    label: printing ? "Imprimindo…" : retrying ? "Tentando o estorno…" : action.label,
     icon: ACTION_ICONS[action.ref] ?? "i-lucide-arrow-right",
     color: action.ref === "cancel" ? "error" : options.lead ? "primary" : "neutral",
     variant: options.lead ? "solid" : "outline",
-    disabled: !action.enabled || printing || (!isLink && options.busy),
+    disabled: !action.enabled || printing || retrying || (!isLink && options.busy),
+    loading: retrying,
     blockedReason: action.enabled ? "" : action.reason,
     href: isLink ? action.href : "",
   };
@@ -95,6 +105,8 @@ export interface PendingLine {
   spoken: string;
   label: string;
   reason: string;
+  /** O que deu errado na última tentativa do gesto da linha, escrito NA linha. */
+  failure: string;
   buttons: PendingButton[];
   /** Os motivos das ações que não podem agora, escritos sob a linha. */
   blockedReasons: string[];
@@ -123,6 +135,7 @@ export function pendingLines(
       ...PENDING_TONES[tone],
       label: item.label,
       reason: item.reason,
+      failure: item.failure ?? "",
       buttons,
       blockedReasons: [
         ...new Set(buttons.map((button) => button.blockedReason).filter(Boolean)),
@@ -146,4 +159,31 @@ export function settledMoney(
       ? `O cliente lê na loja: “${money.customer_line}”`
       : "",
   };
+}
+
+/**
+ * O que o gerente lê antes de assinar o estorno de novo: o valor que volta ao cliente.
+ * Sem o valor (o servidor não soube dizer), devolve "" e o diálogo usa a frase do ato.
+ */
+export function refundRetrySentence(
+  money: CancelledMoneyProjection | null | undefined,
+): string {
+  return money?.amount_display
+    ? `Estorno de ${money.amount_display}, pedido de novo ao meio de pagamento.`
+    : "";
+}
+
+/**
+ * O que dizer depois da tentativa, pelo estado que o servidor devolveu. Só diz
+ * "Estornado" com a confirmação do meio de pagamento; a tentativa que não saiu fica
+ * escrita na linha do pedido, e não vira aviso solto.
+ */
+export function refundRetryToast(
+  money: CancelledMoneyProjection | null | undefined,
+): string {
+  if (money?.state === "refunded")
+    return "Estornado: o meio de pagamento confirmou a devolução.";
+  if (money?.state === "refund_requested")
+    return "Estorno pedido. O pedido mostra quando ele for confirmado.";
+  return "";
 }
