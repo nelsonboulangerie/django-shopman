@@ -16,6 +16,11 @@ from shopman.backstage.projections.order_queue import build_order_card, build_tw
 pytestmark = pytest.mark.channels("pdv", "web")
 
 
+def _advance_label(projection) -> str:
+    """O nome do gesto de avançar: o rótulo da ação, a fonte única (WP-G09)."""
+    return next((action.label for action in projection.actions if action.ref == "advance"), "")
+
+
 def _order(
     ref: str,
     status: str,
@@ -219,12 +224,20 @@ class OrderQueueSurfaceTests(TestCase):
             with self.subTest(status=status):
                 card = build_order_card(_order(f"A-{status}", status, "delivery"))
                 self.assertTrue(card.can_advance)
-                self.assertEqual(card.next_action_label, label)
+                self.assertEqual(_advance_label(card), label)
 
+        # O gesto da saída tem um nome só, o do servidor, com o código do pedido
+        # (ou quem recebe): é o que o Painel, a Tabela e o detalhe escrevem.
         pickup_ready = build_order_card(_order("A-ready-pickup", "ready", "pickup"))
         delivery_ready = build_order_card(_order("A-ready-delivery", "ready", "delivery"))
-        self.assertEqual(pickup_ready.next_action_label, "Marcar como retirado")
-        self.assertEqual(delivery_ready.next_action_label, "Marcar saída para entrega")
+        self.assertEqual(_advance_label(pickup_ready), "Entregar a Cliente")
+        self.assertEqual(_advance_label(delivery_ready), "Despachar delivery")
+
+    def test_the_exit_gesture_falls_back_to_the_code_when_there_is_no_name(self) -> None:
+        # Sem nome de gente (telefone, ou o nome que o iFood esconde), o gesto leva o
+        # código do pedido, que é como o balcão o chama.
+        phone = _order("A-ready-phone", "ready", "pickup", data_extra={"customer": {"phone": "+5543999990000"}})
+        self.assertEqual(_advance_label(build_order_card(phone)), "Entregar phone")
 
     def test_new_orders_keep_confirm_or_reject_as_the_only_primary_decision(self) -> None:
         card = build_order_card(_order("A-NEW", "new"))
@@ -418,7 +431,6 @@ class CustomerNoteAndGiftReachTheOperatorTests(TestCase):
         card = build_order_card(order)
 
         self.assertTrue(card.has_customer_note)
-        self.assertFalse(card.has_kitchen_note)
 
     def test_card_kitchen_note_does_not_masquerade_as_customer_note(self) -> None:
         order = _order("NOTE-CARD-2", "new")
@@ -427,7 +439,6 @@ class CustomerNoteAndGiftReachTheOperatorTests(TestCase):
 
         card = build_order_card(order)
 
-        self.assertTrue(card.has_kitchen_note)
         self.assertFalse(card.has_customer_note)
 
     def test_card_blank_customer_note_is_not_presence(self) -> None:
@@ -467,7 +478,6 @@ class CustomerNoteAndGiftReachTheOperatorTests(TestCase):
         card = build_order_card(_order("NOTE-CARD-4", "new"))
 
         self.assertFalse(card.has_customer_note)
-        self.assertFalse(card.has_kitchen_note)
         self.assertFalse(card.is_gift)
         self.assertFalse(card.gift_has_recipient)
 
@@ -609,14 +619,13 @@ class DeliveryAddressReachesTheOperatorTests(TestCase):
         order.save(update_fields=["data", "updated_at"])
         return order
 
-    def test_card_carries_address_and_instructions(self) -> None:
+    def test_card_carries_the_address(self) -> None:
         card = build_order_card(self._delivery("END-1"))
 
         self.assertEqual(
             card.delivery_address,
             "Rua das Flores, 123 - Centro - Londrina - apto 42",
         )
-        self.assertEqual(card.delivery_instructions, "Portão azul, interfone 42")
 
     def test_detail_carries_address_and_instructions(self) -> None:
         from shopman.backstage.projections.order_queue import build_operator_order
@@ -647,7 +656,6 @@ class DeliveryAddressReachesTheOperatorTests(TestCase):
 
         self.assertEqual(card.fulfillment_label, "Retirada")
         self.assertEqual(card.delivery_address, "")
-        self.assertEqual(card.delivery_instructions, "")
 
 
 class FulfillmentLabelIsPortugueseTests(TestCase):
@@ -697,7 +705,7 @@ class DetailProjectionAnswersWhatIsPossibleTests(TestCase):
 
                 self.assertEqual(detail.can_confirm, card.can_confirm)
                 self.assertEqual(detail.can_advance, card.can_advance)
-                self.assertEqual(detail.next_action_label, card.next_action_label)
+                self.assertEqual(_advance_label(detail), _advance_label(card))
                 self.assertEqual(detail.advance_block_label, card.advance_block_label)
                 self.assertEqual(detail.advance_block_reason, card.advance_block_reason)
 
@@ -757,6 +765,33 @@ class TimelineSpeaksPortugueseTests(TestCase):
 
         self.assertEqual(event.label, "Comentário")
         self.assertEqual(event.detail, "Cliente pediu sem cebola")
+
+    def test_an_unlabelled_event_never_shows_its_identifier(self) -> None:
+        # WP-G09 (P2-17): o tipo sem rótulo saía humanizado, em inglês ("Legacy
+        # sync finished"). Identificador não é texto de tela: a linha diz que
+        # houve um registro, e o defeito grita no log com o tipo.
+        with self.assertLogs("shopman.backstage.projections.order_queue", level="ERROR") as logs:
+            event = self._with_event("TL-SEM-ROTULO", "legacy_sync_finished", {"from_session": "SESS-ABC"})
+
+        self.assertEqual(event.label, "Registro do sistema")
+        self.assertNotIn("legacy", event.label.lower())
+        self.assertNotIn("sync", event.label.lower())
+        self.assertEqual(event.detail, "")
+        self.assertIn("legacy_sync_finished", "".join(logs.output))
+
+    def test_money_the_gateway_returned_has_one_word(self) -> None:
+        # "Reembolsado" no resumo convivia com "Pagamento estornado" na linha do
+        # tempo e "Estornado" no cancelado: três formas de um fato só.
+        from shopman.backstage.presentation.status import payment_status_label
+        from shopman.backstage.projections import order_pending
+        from shopman.backstage.projections.order_queue import _EVENT_LABELS
+
+        self.assertEqual(payment_status_label("refunded"), "Estornado")
+        self.assertEqual(order_pending._MONEY_LABELS[order_pending.MONEY_REFUNDED], "Estornado")
+        self.assertEqual(_EVENT_LABELS["payment.refunded"], "Pagamento estornado")
+        self.assertEqual(_EVENT_LABELS["refund_processed"], "Estorno processado")
+        for label in _EVENT_LABELS.values():
+            self.assertNotIn("eembols", label)
 
     def test_both_spellings_of_the_status_event_are_recognised(self) -> None:
         # `status_changed` vem do model; `status_change` é a grafia da maioria

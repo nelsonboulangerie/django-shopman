@@ -2,7 +2,7 @@
 // A Fila "Precisa de você" (V4-G4, prévia v4 `gestor-fila4.html`):
 //
 //   PRECISA DE VOCÊ 4                         Mais urgente primeiro (tempo contra a meta)
-//   [R7K  27 min meta 30 | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
+//   [R7K  27 min meta 30 min | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
 //   …
 //   Mais 3 pedem você · Seguem sozinhos: 5 na cozinha, 2 na rua            Ver todos ›
 //
@@ -26,11 +26,11 @@ import type {
 } from "~/types/orders";
 import type { AffordanceRef } from "~/presentation/board";
 import {
-  channelLabel,
   cardAuthorizationNotice,
   cardDeadlineLabel,
   confirmationRemainingLabel,
   kitchenWait,
+  paymentLabel,
   schedulePromise,
   splitRef,
   undoLine,
@@ -357,12 +357,12 @@ function riskLeads(item: { card: OrderCardProjection }): boolean {
           >
             <p class="op-body">
               <span class="font-semibold">{{
-                queueWho(item.card, channelLabel(item.card.channel_ref)).name
+                queueWho(item.card).name
               }}</span>
               <span class="text-muted-foreground">
                 ·
                 {{
-                  queueWho(item.card, channelLabel(item.card.channel_ref)).rest
+                  queueWho(item.card).rest
                 }}</span
               >
             </p>
@@ -394,7 +394,7 @@ function riskLeads(item: { card: OrderCardProjection }): boolean {
             <p
               v-if="
                 item.card.change_label ||
-                (item.card.payment_method_label && item.kind !== 'blocked')
+                (paymentLabel(item.card) && item.kind !== 'blocked')
               "
               class="flex items-start gap-1.5 op-micro text-muted-foreground"
               data-queue-payment
@@ -406,7 +406,7 @@ function riskLeads(item: { card: OrderCardProjection }): boolean {
                 class="mt-px size-3.5 shrink-0"
               />
               <span>{{
-                item.card.change_label || item.card.payment_method_label
+                item.card.change_label || paymentLabel(item.card)
               }}</span>
             </p>
             <!-- Promessa em risco (WP-G08): o item que falta, o porquê, as sugestões

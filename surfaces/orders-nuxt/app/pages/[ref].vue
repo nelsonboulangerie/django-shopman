@@ -914,7 +914,7 @@ const primary = computed(() => {
     return advance.enabled
       ? {
           key: "advance" as const,
-          label: o.next_action_label || advance.label,
+          label: advance.label,
           icon: "lucide:arrow-right",
           enabled: true,
           reason: "",
@@ -1178,7 +1178,7 @@ const outside = useOutsideStore(
           variant="ghost"
           square
           class="size-11 shrink-0 justify-center"
-          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
+          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'"
           data-compact-back
         />
       </template>
@@ -1229,7 +1229,7 @@ const outside = useOutsideStore(
           variant="ghost"
           square
           :aria-label="
-            fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'
+            fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'
           "
           data-detail-back
         />
@@ -2088,8 +2088,8 @@ const outside = useOutsideStore(
           : ''
       "
       @update:open="
-        (aberto: boolean) => {
-          if (!aberto) dismissManagerChallenge();
+        (open: boolean) => {
+          if (!open) dismissManagerChallenge();
         }
       "
       @authorize="signWithPin"

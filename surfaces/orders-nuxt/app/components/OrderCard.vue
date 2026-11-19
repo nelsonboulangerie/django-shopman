@@ -21,11 +21,12 @@ import {
   cardAuthorizationNotice,
   cardClock,
   cardSeal,
-  channelLabel,
   ifoodAcceptNotice,
+  joinFacts,
   onRoadLine,
   packLabel,
-  primaryVerb,
+  paymentAlert,
+  paymentLabel,
   splitRef,
   kitchenWait,
   kitchenWaiting,
@@ -115,8 +116,13 @@ const secondary = computed(() =>
     (a) => a !== primary.value && !(props.swipeReject && a.ref === "reject"),
   ),
 );
-const primaryLabel = computed(() =>
-  primary.value ? primaryVerb(props.card, primary.value) : "",
+// O nome do gesto é o do servidor (o rótulo da ação): "Entregar a Ana", "Despachar M09",
+// "Iniciar preparo". O mesmo no Painel, na Tabela e no detalhe (WP-G09).
+const primaryLabel = computed(() => primary.value?.label ?? "");
+// Quem e por onde chegou: "Clara Teste · Loja online". Sem canal, só o nome: nada de
+// traço no lugar do que não se sabe.
+const who = computed(() =>
+  joinFacts(props.card.customer_name || "Sem cliente", props.card.channel_name),
 );
 // A estação ainda trabalha e o "Marcar pronto" mora no menu: o lugar do botão diz o que
 // se espera ("Aguardando Café"), sem ser botão.
@@ -149,13 +155,23 @@ const paymentIcon = computed(() => {
   if (!props.card.payment_method) return "lucide:circle-help";
   return (
     {
-      warning: "lucide:hourglass",
+      // A ampulheta é de quem ESPERA o pagamento. O aviso de um pagamento que já
+      // fechou (o simulado, sem dinheiro) leva o mesmo sinal do cartão enxuto.
+      warning: props.card.payment_pending
+        ? "lucide:hourglass"
+        : "lucide:circle-alert",
       danger: "lucide:alert-triangle",
       success: "lucide:check",
       neutral: "lucide:banknote",
     }[props.card.payment_tone] || "lucide:banknote"
   );
 });
+
+// A frase do pagamento é a do servidor: o meio e a situação ("Pix · Pago", "Cartão ·
+// Cobrança recusada"). No cartão enxuto, que não tem a linha do pagamento, ela só
+// aparece quando pede um olhar (`paymentAlert`).
+const payment = computed(() => paymentLabel(props.card));
+const payAlert = computed(() => paymentAlert(props.card));
 
 const danfe = computed(() => danfeLine(props.card));
 // "O sistema fez · desfazer": o pronto que veio da Cozinha, ou a saída tocada ainda na
@@ -624,12 +640,10 @@ function nuxtIcon(icon: string): string {
          "Entrega": é o que decide para onde o pedido vai (P2-04). -->
     <p
       class="flex min-w-0 gap-1"
-      :title="`${card.customer_name || 'Sem cliente'} · ${channelLabel(card.channel_ref)} · ${card.fulfillment_label}`"
+      :title="`${who} · ${card.fulfillment_label}`"
       data-card-who
     >
-      <span class="min-w-0 truncate"
-        >{{ card.customer_name || "Sem cliente" }} ·
-        {{ channelLabel(card.channel_ref) }}</span
+      <span class="min-w-0 truncate">{{ who }}</span
       ><span class="shrink-0" data-card-fulfillment
         >· {{ card.fulfillment_label }}</span
       >
@@ -652,6 +666,15 @@ function nuxtIcon(icon: string): string {
       data-card-kitchen-wait
     >
       <span class="whitespace-normal text-start">{{ wait.label }}</span>
+    </NuxtBadge>
+    <NuxtBadge
+      v-if="payAlert && !handoff"
+      class="max-w-full self-start"
+      :color="payAlert.color"
+      :icon="payAlert.icon"
+      data-card-payment-alert
+    >
+      <span class="whitespace-normal text-start">{{ payAlert.label }}</span>
     </NuxtBadge>
     <p
       v-if="card.items_summary"
@@ -843,13 +866,15 @@ function nuxtIcon(icon: string): string {
         </div>
         <p
           class="truncate op-title"
-          :title="`${card.customer_name || 'Sem cliente'} · ${channelLabel(card.channel_ref)}`"
+          :title="who"
           data-card-who
         >
-          <span>{{ card.customer_name || "Sem cliente" }}</span>
-          {{ " "
-          }}<span class="font-normal text-muted-foreground"
-            >· {{ channelLabel(card.channel_ref) }}</span
+          <span>{{ card.customer_name || "Sem cliente" }}</span
+          ><template v-if="card.channel_name"
+            >{{ " "
+            }}<span class="font-normal text-muted-foreground"
+              >· {{ card.channel_name }}</span
+            ></template
           >
         </p>
       </div>
@@ -1129,12 +1154,16 @@ function nuxtIcon(icon: string): string {
       <!-- pagamento e total, logo acima do gesto -->
       <div v-if="!handoff" class="flex items-baseline justify-between gap-2">
         <NuxtBadge
-          v-if="card.payment_method_label"
+          v-if="payment"
+          class="min-w-0"
           :color="paymentColor"
           :icon="paymentIcon.replace('lucide:', 'i-lucide-')"
-          :label="card.payment_method_label"
           data-card-payment
-        />
+        >
+          <!-- A frase quebra a linha, nunca corta: "Pagamento simulado, sem dinheiro"
+               é o motivo do selo. -->
+          <span class="whitespace-normal text-start">{{ payment }}</span>
+        </NuxtBadge>
         <span class="shrink-0 op-title tnum">{{ card.total_display }}</span>
       </div>
     </div>

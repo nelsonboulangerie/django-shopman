@@ -9,7 +9,7 @@ for (const width of [375, 820, 1280]) {
     await page.route("**/api/v1/backstage/orders/", async route => {
       const response = await route.fetch();
       const body = await response.json();
-      card = { ...body.queue.prep[0], ref: "IFOOD-COMPLETED", channel_ref: "ifood", status: "completed", status_label: "Concluído", customer_name: "Cliente de teste", ifood_negotiations: [dispute], actions: [], can_advance: false, can_confirm: false, attention: "negotiation", attention_since_iso: new Date().toISOString(), goal_minutes: 10, goal_label: "responder até 15:15" };
+      card = { ...body.queue.prep[0], ref: "IFOOD-COMPLETED", channel_ref: "ifood", channel_name: "iFood", status: "completed", status_label: "Concluído", customer_name: "Cliente de teste", ifood_negotiations: [dispute], actions: [], can_advance: false, can_confirm: false, attention: "negotiation", attention_since_iso: new Date().toISOString(), goal_minutes: 10, goal_label: "responder até 15:15" };
       body.queue.ifood_negotiation_orders = [card];
       await route.fulfill({ json: body });
     });

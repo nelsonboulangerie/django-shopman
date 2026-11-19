@@ -113,12 +113,14 @@ vi.stubGlobal("useOrderDetail", () => ({
 const { default: OrderDetailPage } = await import("../../app/pages/[ref].vue");
 const { default: OperatorScreenState } = await import("../../../operator-kit/app/components/OperatorScreenState.vue");
 
-function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjection {
+/** `advance_label`: o nome que o servidor dá ao avanço (o rótulo da ação `advance`). */
+function order(
+  { advance_label, ...over }: Partial<OperatorOrderProjection> & { advance_label?: string } = {},
+): OperatorOrderProjection {
   return {
     ref: "WEB-20260625-0007",
     status: "new",
     status_label: "Novo",
-    status_color: "",
     customer_name: "Ana",
     customer_phone: "",
     customer_phone_uri: "",
@@ -145,7 +147,6 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     payment_status: "pending",
     can_confirm: true,
     can_advance: false,
-    next_action_label: "",
     advance_block_label: "",
     advance_block_reason: "",
     can_settle_delivery_cash: false,
@@ -161,7 +162,6 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     cancel_reasons: [],
     kitchen_note_tags: [],
     equipment_options: [],
-    equipment_out: [],
     equipment_label: "",
     equipment_back_pending: false,
     dispatch_needs_machine: false,
@@ -182,7 +182,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     danfe_state: "",
     danfe_problem: "",
     revisions: {},
-    actions: fixtureActions({ can_confirm: true, ...over }),
+    actions: fixtureActions({ can_confirm: true, advance_label, ...over }),
     ...over,
   } as OperatorOrderProjection;
 }
@@ -290,7 +290,7 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
       status: "accepted",
       can_confirm: false,
       can_advance: true,
-      next_action_label: "Iniciar preparo",
+      advance_label: "Iniciar preparo",
     }));
 
     expect(w.find('[data-action="confirm"]').exists()).toBe(false);
@@ -299,14 +299,14 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   });
 
   it("encomenda que espera a hora da Cozinha: \"Adiantar\" à vista, nunca como botão principal (WP-G02)", () => {
-    const actions = fixtureActions({ can_advance: true, next_action_label: "Adiantar" }).map((action) =>
+    const actions = fixtureActions({ can_advance: true, advance_label: "Adiantar" }).map((action) =>
       action.ref === "advance" ? { ...action, priority: "secondary" } : action,
     );
     const w = abrir(order({
       status: "accepted",
       can_confirm: false,
       can_advance: true,
-      next_action_label: "Adiantar",
+      advance_label: "Adiantar",
       kitchen_release_label: "Vai para a Cozinha às 16h15",
       actions,
     }));
@@ -317,7 +317,7 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   });
 
   it("pedido que não espera a Cozinha: nenhum selo de espera", () => {
-    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, next_action_label: "Iniciar preparo" }));
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, advance_label: "Iniciar preparo" }));
 
     expect(w.find("[data-detail-kitchen-wait]").exists()).toBe(false);
   });
@@ -873,7 +873,7 @@ describe("nota da cozinha vai junto com o gesto do momento", () => {
       detalhe.value = { ...detalhe.value!, kitchen_note: text };
       return true;
     });
-    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, next_action_label: "Iniciar preparo" }));
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, advance_label: "Iniciar preparo" }));
     await w.get("#order-notes").setValue("Sem gergelim");
     await w.get('[data-action="advance"]').trigger("click");
     await flushPromises();
@@ -1233,7 +1233,7 @@ describe("detalhe do pedido — o que falta, com o gesto ao lado", () => {
 
   it("espera saudável: sem cor de erro, e o botão travado guarda o nome do gesto (P2-26)", () => {
     // Como o servidor manda: a ação travada guarda o nome do gesto, e o motivo vai em `reason`.
-    const actions = fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo" }).map((action) =>
+    const actions = fixtureActions({ can_advance: true, advance_label: "Iniciar preparo" }).map((action) =>
       action.ref === "advance"
         ? { ...action, enabled: false, reason: "Encomenda para uma data futura. O preparo abre no dia combinado." }
         : action,

@@ -129,10 +129,7 @@ function nuxtIcon(icon: string): string {
           :class="secondary.length > 1 ? '@[20rem]:col-span-2' : undefined"
           :disabled="busy || shownPrimary.disabled"
           :loading="busy"
-          :title="
-            shownPrimary.reason ||
-            (primaryLabel !== shownPrimary.label ? shownPrimary.label : undefined)
-          "
+          :title="shownPrimary.reason || undefined"
           :color="primaryStepsBack ? 'neutral' : 'primary'"
           :variant="primaryStepsBack ? 'outline' : 'solid'"
           :icon="shownPrimary.disabled ? 'i-lucide-lock' : nuxtIcon(shownPrimary.icon)"

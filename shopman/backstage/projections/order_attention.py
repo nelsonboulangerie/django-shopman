@@ -155,6 +155,15 @@ def _confirmation_goal(order: Order, channel_config) -> int:
     return min(candidates) if candidates else goal
 
 
+def goal_minutes_label(minutes: int) -> str:
+    """A meta da etapa como a Fila a escreve: "meta 5 min".
+
+    Com a unidade: "meta 5" ao lado de "27 min" obrigava a completar o sentido
+    (5 o quê?). A Central já escrevia "meta 10 min" da mesma grandeza.
+    """
+    return f"meta {minutes} min"
+
+
 def attention_kind(order: Order, card) -> str:
     """O fato humano que o pedido espera agora (``ATTENTION_KINDS``) ou ``""``.
 
@@ -211,11 +220,13 @@ def _stage_attention(order: Order, card) -> str:
 
 def card_attention(
     order: Order, card, channel_config=None, *, acceptance_timer: AcceptanceTimer | None = None,
+    today=None,
 ) -> dict:
     """Os campos de atenção do cartão: o fato, desde quando conta e a meta.
 
     ``acceptance_timer`` é o prazo de aceite já agendado para o pedido novo: com
     ele, a meta e o "desde" saem do próprio timer (``acceptance_timer_goal``).
+    ``today`` é o dia da leitura do quadro (um por projeção); sem ele, o de agora.
     """
     kind = attention_kind(order, card)
     if not kind:
@@ -248,13 +259,13 @@ def card_attention(
             "attention": kind,
             "attention_since_iso": _iso(order.created_at),
             "goal_minutes": CONFIRM_GOAL_MINUTES,
-            "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
+            "goal_label": goal_minutes_label(CONFIRM_GOAL_MINUTES),
         }
     if kind == PROMISE_ATTENTION:
         # Conta de quando a reserva perdeu o lastro, quando há esse instante; a
         # meta é o combinado com o cliente, quando há hora combinada.
         since_iso = card.promise.since_iso or _iso(order.accepted_at or order.created_at)
-        agreed = _agreed_goal(order, kind, since_iso, 0, channel_config)
+        agreed = _agreed_goal(order, kind, since_iso, 0, channel_config, today=today)
         return {"attention": kind, "attention_since_iso": since_iso, **(agreed or {"goal_minutes": 0, "goal_label": ""})}
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
         goal, since = acceptance_timer_goal(acceptance_timer) or (
@@ -270,7 +281,7 @@ def card_attention(
             "start": released or order.accepted_at or order.created_at,
             "station": order.preparing_at or order.created_at,
             "mark_ready": order.preparing_at or order.created_at,
-            # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30").
+            # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30 min").
             "dispatch": order.created_at,
             "courier_back": order.dispatched_at or order.created_at,
             "settle": order.delivered_at or order.dispatched_at or order.created_at,
@@ -279,14 +290,14 @@ def card_attention(
     if kind == "handoff":
         # No balcão o relógio é o do pronto ("6 min no balcão").
         since_iso = card.ready_at_iso or _iso(order.ready_at) or _iso(order.created_at)
-    agreed = _agreed_goal(order, kind, since_iso, goal, channel_config)
+    agreed = _agreed_goal(order, kind, since_iso, goal, channel_config, today=today)
     if agreed is not None:
         return {"attention": kind, "attention_since_iso": since_iso, **agreed}
     return {
         "attention": kind,
         "attention_since_iso": since_iso,
         "goal_minutes": goal,
-        "goal_label": "no balcão" if kind == "handoff" else f"meta {goal}",
+        "goal_label": "no balcão" if kind == "handoff" else goal_minutes_label(goal),
     }
 
 
@@ -294,11 +305,11 @@ def card_attention(
 _AGREED_STAGES = ("start", "station", "mark_ready", "dispatch", "handoff", PROMISE_ATTENTION)
 
 
-def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_config) -> dict | None:
+def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_config, *, today=None) -> dict | None:
     """A meta do pedido com hora combinada: o atraso se mede contra o combinado.
 
     Sem isto, a retirada combinada para as 18h aceita às 10h nascia atrasada às
-    10h05 ("iniciar, meta 5"), e a entrega das 18h ficava vermelha 30 min depois
+    10h05 ("iniciar, meta 5 min"), e a entrega das 18h ficava vermelha 30 min depois
     de chegar. A régua é a da Cozinha (``kds._build_ticket``): com hora combinada,
     o prazo é ela (``fulfillment_window.promised_at``). O "desde" continua o da
     etapa (o número diz há quanto tempo o pedido está nela); só a meta se estica
@@ -321,10 +332,11 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
         return None
     clock = timezone.localtime(promised)
     goal_label = f"combinado para as {format_clock(clock)}"
-    if clock.date() != timezone.localdate():
+    today = today or timezone.localdate()
+    if clock.date() != today:
         # Outro dia diz o dia, com a mesma palavra do selo do combinado
         # ("Era para ontem · ..." ao lado de "combinado para ontem às 15h").
-        goal_label = f"combinado para {commitment_day_label(clock.date())} às {format_clock(clock)}"
+        goal_label = f"combinado para {commitment_day_label(clock.date(), today=today)} às {format_clock(clock)}"
     if kind == "start":
         deadline = promised - timedelta(minutes=stage_goal("station", channel_config))
     elif kind == "handoff":
@@ -338,15 +350,16 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
     }
 
 
-def commitment_day_label(day) -> str:
+def commitment_day_label(day, *, today=None) -> str:
     """O dia do combinado como o operador fala: "hoje", "amanhã", "ontem" ou "qua, 18/11".
 
     Uma régua só para o selo do card (``order_queue._schedule``) e para a meta da
-    Fila: duas leituras do mesmo pedido não podem discordar sobre o dia.
+    Fila: duas leituras do mesmo pedido não podem discordar sobre o dia. ``today``
+    é o dia da leitura de quem chama (um por projeção); sem ele, o de agora.
     """
     from django.utils import formats
 
-    today = timezone.localdate()
+    today = today or timezone.localdate()
     if day == today:
         return "hoje"
     if day == today + timedelta(days=1):

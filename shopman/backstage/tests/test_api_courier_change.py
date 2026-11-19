@@ -82,7 +82,7 @@ def test_despacho_pergunta_o_troco_leva_da_gaveta_e_o_acerto_diz_o_que_voltou(cl
     order = _delivery_cash_order("DLV-1", change_for_q=5000)
 
     card = _card(client, "DLV-1")
-    assert (card["change_for_q"], card["change_out_suggested_q"], card["change_out_q"]) == (5000, 2000, 0)
+    assert (card["change_out_suggested_q"], card["change_out_q"]) == (2000, 0)
     assert card["change_label"] == "Cliente paga com R$ 50,00 · levar R$ 20,00 de troco"
     assert card["change_back_pending"] is False
 
@@ -126,11 +126,11 @@ def test_despacho_pergunta_o_troco_leva_da_gaveta_e_o_acerto_diz_o_que_voltou(cl
     assert cash.balance(shift) == 8000 + 3000 + 500
 
     card = _card(client, "DLV-1")
-    assert (card["change_back_pending"], card["change_back_q"]) == (False, 500)
+    assert card["change_back_pending"] is False
     assert card["change_label"] == "Voltou R$ 5,00 de troco"
 
     detail = client.get(reverse("api-backstage-order-detail", args=["DLV-1"])).json()["order"]
-    assert detail["change_out_q"] == 2000 and detail["change_back_q"] == 500
+    assert detail["change_out_q"] == 2000 and detail["change_label"] == "Voltou R$ 5,00 de troco"
 
 
 def test_sem_pedido_de_troco_o_despacho_segue_direto_e_sem_turno_nao_leva(client, operator):
@@ -182,7 +182,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
 
     card = _card(client, "DLV-M1")
     assert [o["ref"] for o in card["equipment_options"]] == [device_ref]
-    assert (card["equipment_out"], card["equipment_back_pending"]) == ([], False)
+    assert (card["equipment_label"], card["equipment_back_pending"]) == ("", False)
 
     # Equipamento que o canal não prevê: recusado.
     response = client.post(
@@ -198,9 +198,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     )
     assert response.status_code == 200
     card = _card(client, "DLV-M1")
-    assert (card["equipment_out"], card["equipment_back_pending"], card["equipment_label"]) == (
-        ["card_machine"], True, "Saiu com a maquininha",
-    )
+    assert (card["equipment_back_pending"], card["equipment_label"]) == (True, "Saiu com a maquininha")
     board = client.get(reverse("api-backstage-orders")).json()["queue"]
     assert [(e["ref"], e["order_ref"]) for e in board["equipment_out"]] == [(str(device.ref), "DLV-M1")]
     order = Order.objects.get(ref="DLV-M1")

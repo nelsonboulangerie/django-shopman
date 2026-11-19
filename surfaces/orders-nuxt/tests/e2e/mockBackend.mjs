@@ -21,14 +21,12 @@ const SESSION = {
 const CARD = {
   ref: "WEB-20260625-0007",
   status: "accepted",
-  revisions: { advance: "fixture-base" },
   actions: [{ ref: "advance", kind: "mutation", label: "Iniciar preparo", priority: "primary", enabled: true, reason: "", href: "", method: "POST", payload_schema: { target_status: "preparing", base_revision: "fixture-base" }, idempotency: "required", confirmation: {} }],
   status_label: "Aceito",
-  status_color: "",
   channel_ref: "web",
+  channel_name: "Loja online",
   channel_icon: "language",
   customer_name: "Ana",
-  created_at_display: "08:00",
   created_at_iso: "",
   server_now_iso: "",
   elapsed_seconds: 30,
@@ -36,13 +34,11 @@ const CARD = {
   items_summary: "2× Pão · 1× Café",
   items_count: 3,
   total_display: "R$ 15,00",
-  fulfillment_icon: "storefront",
   fulfillment_label: "Retirada",
   fulfillment_type: "pickup",
   can_confirm: false,
   can_advance: true,
   next_status: "preparing",
-  next_action_label: "Iniciar preparo",
   payment_method: "cash",
   payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
@@ -52,9 +48,7 @@ const CARD = {
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,
-  fiscal_status_label: "",
   fiscal_status: "",
-  has_kitchen_note: false,
   has_customer_note: false,
   is_gift: false,
   gift_has_recipient: false,
@@ -66,7 +60,7 @@ const CARD = {
   attention: "start",
   attention_since_iso: new Date(Date.now() - 3 * 60_000).toISOString(),
   goal_minutes: 5,
-  goal_label: "meta 5",
+  goal_label: "meta 5 min",
 };
 
 const QUEUE = {
@@ -91,9 +85,9 @@ const QUEUE = {
       ...CARD,
       ref: "IFOOD-260914-1515",
       channel_ref: "ifood",
+      channel_name: "iFood",
       fulfillment_type: "delivery",
       fulfillment_label: "Entrega",
-      fulfillment_icon: "truck",
       channel_icon: "restaurant",
       customer_name: "Pedido iFood agendado",
       items_summary: "1× Pão de teste",
@@ -126,7 +120,6 @@ const QUEUE = {
       items_count: 3,
       actions: [{ ...CARD.actions[0], label: "Marcar pronto", payload_schema: { target_status: "ready", base_revision: "fixture-base" } }],
       next_status: "ready",
-      next_action_label: "Marcar pronto",
       attention: "",
       attention_since_iso: "",
       goal_minutes: 0,
@@ -170,9 +163,10 @@ function pendingFor(card) {
 
 const DETAIL_EXTRA = {
   customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "",
-  delivery_address: "", delivery_instructions: "",
+  delivery_address: "", delivery_instructions: "", fiscal_status_label: "",
+  revisions: { advance: "fixture-base" },
   items: [{ sku: "PAO", name: "Pão", qty: "1", unit_price_display: "R$ 16,00", total_display: "R$ 16,00" }],
-  timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [], equipment_out: [],
+  timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [],
   kitchen_note_tags: [], customer_profile: null,
   can_cancel: true, cancel_requires_approval: false,
   // A lista única de motivos de recusar e cancelar (`shop/services/cancel_reasons.py`).
@@ -283,9 +277,9 @@ function rideOrder(ref) {
   const codes = fixture.stops.map(([stopRef]) => stopRef.split("-").at(-1));
   return {
     ...CARD, ...DETAIL_EXTRA, ref, status: "ready", status_label: "Pronto", customer_name: customer,
-    fulfillment_type: "delivery", fulfillment_label: "Entrega", fulfillment_icon: "truck",
+    fulfillment_type: "delivery", fulfillment_label: "Entrega",
     payment_method: "pix", payment_method_label: "Pix", payment_status: "paid", payment_pending: false,
-    can_advance: false, next_status: "", next_action_label: "",
+    can_advance: false, next_status: "",
     actions: [{ ...cancelAction(fixture.number, codes, fixture.accepted), enabled: cancel.canCancel }],
     courier: {
       provider: "machine", status: fixture.accepted ? "A" : "D",

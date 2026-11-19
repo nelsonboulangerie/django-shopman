@@ -52,7 +52,7 @@ describe("a intenção da corrida de vários pedidos", () => {
   it("faltou a revisão de um pedido: a ação sai desabilitada com o motivo", () => {
     const stale = courierRideAction(action, ["NB-A01", "NB-Z99"]);
     expect(stale?.enabled).toBe(false);
-    expect(stale?.reason).toBe("A fila mudou. Atualize antes de chamar a corrida.");
+    expect(stale?.reason).toBe("Os pedidos mudaram. Atualize antes de chamar a corrida.");
     expect(courierRideAction(null, call.refs)).toBeUndefined();
   });
 

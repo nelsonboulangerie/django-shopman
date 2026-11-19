@@ -24,6 +24,7 @@ import {
   nextOutRef,
   nextSort,
   oneTapDispatch,
+  paymentLabel,
   realtimeIndicator,
   resolveShortcut,
   rideChoices,
@@ -835,7 +836,11 @@ onBeforeUnmount(() => {
 // O nome do recebimento no recorte ativo ("Recebimento: Entrega") e no escopo da seleção.
 const FULFILLMENT_LABELS: Record<string, string> = { delivery: "Entrega", pickup: "Retirada" };
 const channelLabel = (ref: string) => channels.value.find((option) => option.ref === ref)?.label ?? ref;
-const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
+// O relógio do painel é o do servidor: ancora no `generated_at` da última leitura
+// boa. Ancorava no primeiro pedido novo, e sem pedido novo (a maior parte do dia) caía
+// no relógio do dispositivo: um tablet adiantado dava todo mundo por atrasado.
+const serverNow = computed(() => readMetadata.value?.generated_at ?? "");
+const nowMs = useNowTick(() => serverNow.value);
 function zoneNext(zone: ZoneView): string {
   return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
 }
@@ -1026,7 +1031,7 @@ const phoneHeaderActions = computed(() => {
       onSelect: () => (selecting.value ? stopSelection() : startSelection()),
     },
     { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => exportCsv() },
-    { label: "Imprimir fila", icon: "i-lucide-printer", onSelect: () => printQueue() },
+    { label: "Imprimir pedidos", icon: "i-lucide-printer", onSelect: () => printQueue() },
   ];
 });
 // Os recortes ativos (chips removíveis abaixo da linha e o número no "Filtros").
@@ -1613,7 +1618,7 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
     });
   return alerts;
 });
-// "Falha ao atualizar a fila" fecha e volta na próxima leitura que falhar: cada falha nova
+// "Falha ao atualizar os pedidos" fecha e volta na próxima leitura que falhar: cada falha nova
 // (outro erro) é outra chave.
 const queueFailures = ref(0);
 watch(error, (now, before) => {
@@ -1689,7 +1694,7 @@ function compactClear() {
       </template>
     </OperatorCompactBar>
     <!-- Sem conexão segue EXPLÍCITO (cor + texto), não só o chip do selo. Com a
-         leitura falhada o conteúdo já diz "Falha ao atualizar a fila"; aqui não repete. -->
+         leitura falhada o conteúdo já diz "Falha ao atualizar os pedidos"; aqui não repete. -->
     <p v-if="liveTone === 'off' && !error" class="flex items-center gap-2 border-b border-default bg-error/10 px-3 py-2 text-sm text-error md:hidden" role="status" data-compact-offline>
       <NuxtIcon name="i-lucide-wifi-off" class="size-4 shrink-0" /><span>Sem conexão.<template v-if="readClock"> Última leitura às {{ readClock }}.</template></span>
     </p>
@@ -1711,7 +1716,7 @@ function compactClear() {
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       actions-from="md"
-      actions-label="Mais ações da fila"
+      actions-label="Mais ações dos pedidos"
       :active-filters="activeFilters"
     >
       <template #status>
@@ -1944,7 +1949,7 @@ function compactClear() {
             v-if="showSystemBand"
             :lines="systemUndoLines"
             :busy="isBusy"
-            :server-now="queue?.intake[0]?.server_now_iso"
+            :server-now="serverNow || undefined"
             @undo="(ref_) => onAction(ref_, 'undo_ready')"
           />
         </div>
@@ -2033,7 +2038,7 @@ function compactClear() {
       <div
         v-if="(pending || !hydrated) && !zones.length"
         class="grid gap-3 md:grid-cols-2 lg:grid-cols-3"
-        aria-label="Carregando fila"
+        aria-label="Carregando pedidos"
       >
         <NuxtSkeleton v-for="i in 3" :key="i" class="h-40 w-full" />
       </div>
@@ -2045,7 +2050,7 @@ function compactClear() {
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="Falha ao atualizar a fila"
+        title="Falha ao atualizar os pedidos"
         description="Mantivemos a última leitura; atualize antes de confirmar ações."
         data-queue-error
         @update:open="notices.onOpen(`queue-error:${queueFailures}`, $event)"
@@ -2409,10 +2414,10 @@ function compactClear() {
                     · {{ row.original.card.delivery_address }}</template
                   >
                 </dd>
-                <template v-if="row.original.card.payment_method_label">
+                <template v-if="paymentLabel(row.original.card)">
                   <dt class="text-muted-foreground">Pagamento</dt>
                   <dd>
-                    {{ row.original.card.payment_method_label
+                    {{ paymentLabel(row.original.card)
                     }}<template v-if="row.original.card.change_label">
                       · {{ row.original.card.change_label }}</template
                     >

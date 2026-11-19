@@ -106,7 +106,7 @@ async function call() {
   } catch (error) {
     failure.value = httpErrorMessage(
       error,
-      "Não foi possível chamar a corrida. Atualize a fila.",
+      "Não foi possível chamar a corrida. Atualize os pedidos.",
     );
     // Um pedido mudou depois que a fila foi lida: a frase do servidor diz qual,
     // e a fila é relida para a próxima tentativa partir do que está valendo.

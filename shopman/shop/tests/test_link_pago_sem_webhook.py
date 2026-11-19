@@ -167,7 +167,7 @@ class TestRotuloDoPagamentoEmPortugues:
 
         assert payment_status_label("pending") == "Aguardando pagamento"
         assert payment_status_label("captured") == "Pago"
-        assert payment_status_label("refunded") == "Reembolsado"
+        assert payment_status_label("refunded") == "Estornado"
         assert payment_status_label("") == ""
 
     def test_status_desconhecido_nao_some(self):
