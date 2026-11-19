@@ -142,12 +142,20 @@ function focusCurrent() {
     reveal(() => addressListRef.value?.focusTarget(), { align: "center" });
   } else if (key === "fulfillment") {
     reveal(() => fulfillmentChoiceRef.value?.focusTarget(), { align: "center" });
-  } else if (key === "schedule" && props.schedule?.today) {
+  } else if (key === "schedule" && dayTabStop()) {
     reveal(dayTabStop, { align: "center" });
   } else {
     reveal(focusKey(key));
   }
 }
+// Os dias chegam com a agenda, que a etapa da data à vista pede ao servidor: com o
+// foco ainda no bloco da etapa (ele chegou antes da resposta), o foco desce para o
+// dia assim que os dias aparecem.
+watch(() => props.schedule?.today, (today, before) => {
+  if (!today || before || current.value !== "schedule" || !import.meta.client) return;
+  const block = root.value?.querySelector("[data-order-step='schedule']");
+  if (block && document.activeElement === block) reveal(dayTabStop, { align: "center" });
+}, { flush: "post" });
 // Um botão do rodapé, só quando ele já age: botão desabilitado não recebe foco, e
 // o pedido tenta de novo por alguns quadros até o carrinho responder.
 function footerAction(name: "continue" | "complete") {

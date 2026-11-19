@@ -247,6 +247,17 @@ describe("assistente da encomenda: sem mouse", () => {
     expect(active()?.getAttribute("tabindex")).toBe("0");
   });
 
+  it("a agenda chegou depois do foco: o foco desce do bloco da etapa para o dia", async () => {
+    const waiting = { ...props.schedule, today: "", availableDates: [], windows: [], pending: true };
+    const w = await mount({ props: { ...props, issue: "schedule" as const, schedule: waiting }, attachTo: document.body });
+    (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();
+    await settled();
+    expect(active()?.getAttribute("data-order-step")).toBe("schedule");
+    await w.setProps({ schedule: props.schedule });
+    await settled();
+    expect(active()?.getAttribute("data-day-option")).toBe("today");
+  });
+
   it("escolhido o horário, o foco vai para o Continuar e a etapa NÃO anda sozinha", async () => {
     const w = await mount({ props: onSchedule, attachTo: document.body });
     await nav(w)[1]!.trigger("click");
