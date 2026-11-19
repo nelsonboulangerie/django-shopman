@@ -77,7 +77,7 @@ def test_account_summary_exposes_specific_alert_controls_without_contact_data(cl
         "sku": sub.sku,
         "product_name": sub.sku,
         "event_type": "production_ready",
-        "event_label": "saiu do forno",
+        "event_label": "fornada pronta",
         "active": False,
         "requires_adult_confirmation": False,
         "expires_at": None,

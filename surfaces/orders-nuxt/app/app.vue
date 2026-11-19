@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { operatorSupportContext } from "../../operator-kit/app/presentation/support";
 import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteChrome";
+import { verificationInbox } from "~/presentation/conciergeVerification";
 import { gestorSwitcherSections } from "~/presentation/gestorSections";
 
 // Gestor de Pedidos surface shell. Thin shell — the order hub is a board + detail,
@@ -115,11 +116,22 @@ onMounted(() => {
 const switcherSections = computed(() =>
   gestorSwitcherSections(sections.value, mounted.value ? settings.value : []),
 );
-const { alerts, readableAlerts, activeCount, ack, accept, isAccepting } = useAlerts();
+const {
+  alerts,
+  readableAlerts,
+  activeCount,
+  ack,
+  accept,
+  isAccepting,
+  answerVerification,
+  takeOverVerification,
+  isAnswering,
+} = useAlerts();
 provideOperatorInboxAlerts(() => ({
   title: "Gerais",
   emptyText: "Nenhum alerta de pedido agora.",
-  items: readableAlerts.value.map(operatorAlertToInbox),
+  // O "vou verificar" da Concierge troca o gesto direto pelo campo de resposta (WP-07).
+  items: readableAlerts.value.map((alert) => ({ ...operatorAlertToInbox(alert), ...verificationInbox(alert) })),
   count: activeCount.value,
   ack: (key) => {
     const alert = alerts.value.find((item) => item.pk === key);
@@ -130,7 +142,15 @@ provideOperatorInboxAlerts(() => ({
     const alert = alerts.value.find((item) => item.pk === key);
     if (alert) await accept(alert);
   },
-  isPending: (key) => isAccepting(Number(key)),
+  answer: async (key, text) => {
+    const alert = alerts.value.find((item) => item.pk === key);
+    return alert ? answerVerification(alert, text) : null;
+  },
+  answerAlt: async (key) => {
+    const alert = alerts.value.find((item) => item.pk === key);
+    return alert ? takeOverVerification(alert) : null;
+  },
+  isPending: (key) => isAccepting(Number(key)) || isAnswering(Number(key)),
 }));
 
 useOperatorWindowTitle();

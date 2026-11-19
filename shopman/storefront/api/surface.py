@@ -262,7 +262,7 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         ) if exc.is_planned else "",
         "planned_offer_message": (
             resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").message
-            or "Sai fresquinho no próximo lote. Quer garantir o seu?"
+            or "Fica pronto no próximo lote, fresquinho. Quer garantir o seu?"
         ) if exc.is_planned else "",
         # Kintsugi: enquadra a escassez com voz acolhedora (registro, admin-configurável).
         # Um enquadramento só — a pausa não ganha manchete própria, senão o cliente

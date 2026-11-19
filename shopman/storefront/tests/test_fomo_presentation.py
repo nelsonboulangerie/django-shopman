@@ -74,23 +74,23 @@ class TestLowStock:
         assert _by_type(badges, "low_stock").label == "Últimas 2 unidades"
 
 
-# ── F5: saiu do forno ────────────────────────────────────────────────
+# ── F5: fornada pronta ────────────────────────────────────────────────
 
 
 class TestFresh:
     def test_just_finished_reads_agora(self):
         badges = badges_for_product(SKU, production={"finished_at": NOW}, now=NOW)
-        assert _by_type(badges, "fresh").label == "Saiu do forno agora"
+        assert _by_type(badges, "fresh").label == "Fornada pronta agora"
 
     def test_minutes_ago_is_counted(self):
         finished = NOW - timedelta(minutes=12)
         badges = badges_for_product(SKU, production={"finished_at": finished}, now=NOW)
-        assert _by_type(badges, "fresh").label == "Saiu do forno há 12 min"
+        assert _by_type(badges, "fresh").label == "Fornada pronta há 12 min"
 
     def test_iso_string_is_accepted(self):
         finished = (NOW - timedelta(minutes=8)).isoformat()
         badges = badges_for_product(SKU, production={"finished_at": finished}, now=NOW)
-        assert _by_type(badges, "fresh").label == "Saiu do forno há 8 min"
+        assert _by_type(badges, "fresh").label == "Fornada pronta há 8 min"
 
     def test_expires_sixty_minutes_after_the_bake(self):
         finished = NOW - timedelta(minutes=10)

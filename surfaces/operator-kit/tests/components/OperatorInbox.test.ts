@@ -231,6 +231,96 @@ describe("OperatorInbox", () => {
     expect(document.querySelector("[data-alert-open]")).not.toBeNull();
   });
 
+  // O "vou verificar" da Concierge (WP-07): o aviso se resolve com uma resposta escrita.
+  const VERIFICAR = {
+    key: 31, tone: "warning" as const, eyebrow: "Aviso · WhatsApp",
+    message: "Pergunta do cliente: “vocês têm estacionamento”.", canAck: true,
+    answer: {
+      label: "Responder ao cliente", placeholder: "Escreva a resposta para o cliente", maxLength: 300,
+      hint: "Sai pela Concierge como “A equipe confirmou: …”.", altLabel: "Assumir a conversa",
+    },
+  };
+  async function type(text: string) {
+    const field = document.querySelector<HTMLTextAreaElement>("[data-operator-inbox-answer-field] textarea, textarea[data-operator-inbox-answer-field]")!;
+    field.value = text;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+  }
+  const sendButton = () => document.querySelector<HTMLButtonElement>("[data-operator-inbox-answer-send]")!;
+
+  it("o aviso com resposta mostra o campo e os dois gestos, no lugar do gesto direto", async () => {
+    useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, ack: vi.fn(), answer: vi.fn(), answerAlt: vi.fn() };
+    await mount();
+    await openPanel();
+    expect(document.querySelector("[data-operator-inbox-answer]")).not.toBeNull();
+    expect(sendButton().textContent).toContain("Responder ao cliente");
+    expect(sendButton().disabled).toBe(true);
+    expect(document.querySelector("[data-operator-inbox-answer-alt]")!.textContent).toContain("Assumir a conversa");
+    expect(document.querySelector("[data-alert-act]")).toBeNull();
+    expect(document.querySelector("[data-alert-ack]")).not.toBeNull();
+  });
+
+  it("o aviso com resposta diz o canal como selo e quem espera no título, sem gravidade nem tipo", async () => {
+    useOperatorInboxAlerts().value = {
+      items: [{ ...VERIFICAR, origin: "WhatsApp", originIcon: "i-lucide-message-circle", subject: "Ana espera a resposta da equipe" }],
+      count: 1,
+      answer: vi.fn(),
+    };
+    await mount();
+    await openPanel();
+    const title = document.querySelector("[data-operator-inbox-answer-title]")!;
+    expect(document.querySelector("[data-operator-inbox-origin]")!.textContent).toContain("WhatsApp");
+    expect(title.textContent).toContain("Ana espera a resposta da equipe");
+    expect(panel()!.textContent).not.toContain("Aviso · WhatsApp");
+  });
+
+  it("respondeu: a resposta sai e o campo se esvazia", async () => {
+    const answer = vi.fn().mockResolvedValue(null);
+    useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, answer };
+    await mount();
+    await openPanel();
+    await type("  Temos sim, duas vagas.  ");
+    await click("[data-operator-inbox-answer-send]");
+    await nextTick();
+    expect(answer).toHaveBeenCalledWith(31, "Temos sim, duas vagas.");
+    expect(document.querySelector("[data-operator-inbox-answer-error]")).toBeNull();
+    expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+  });
+
+  it("erro de envio: a frase aparece no cartão e a resposta digitada não se perde", async () => {
+    const answer = vi.fn().mockResolvedValue("A janela de 24 horas do WhatsApp fechou: a resposta não sai mais por aqui. Assuma a conversa.");
+    useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, answer };
+    await mount();
+    await openPanel();
+    await type("Temos sim, duas vagas.");
+    await click("[data-operator-inbox-answer-send]");
+    await nextTick();
+    expect(document.querySelector("[data-operator-inbox-answer-error]")!.textContent).toContain("janela de 24 horas");
+    expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Temos sim, duas vagas.");
+  });
+
+  it("erro definitivo (janela fechada): o envio se desliga e Assumir vira o principal, com o texto mantido", async () => {
+    const answer = vi.fn().mockResolvedValue({ message: "A janela de 24 horas do WhatsApp fechou.", final: true });
+    useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, answer, answerAlt: vi.fn() };
+    await mount();
+    await openPanel();
+    await type("Temos sim, duas vagas.");
+    await click("[data-operator-inbox-answer-send]");
+    await nextTick();
+    expect(sendButton().disabled).toBe(true);
+    expect(document.querySelector("[data-operator-inbox-answer-alt]")!.hasAttribute("data-operator-inbox-answer-primary")).toBe(true);
+    expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Temos sim, duas vagas.");
+  });
+
+  it("assumiu: o gesto alternativo vai ao app", async () => {
+    const answerAlt = vi.fn().mockResolvedValue(null);
+    useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, answer: vi.fn(), answerAlt };
+    await mount();
+    await openPanel();
+    await click("[data-operator-inbox-answer-alt]");
+    expect(answerAlt).toHaveBeenCalledWith(31);
+  });
+
   it("sem fonte de alertas, a caixa é só a pessoal (sem abas)", async () => {
     items.value = [ROTINA];
     await mount();

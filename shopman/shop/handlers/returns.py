@@ -20,6 +20,38 @@ from shopman.shop.directives import RETURN_PROCESS
 logger = logging.getLogger(__name__)
 
 
+#: O estorno da devolução não voltou ao cliente agora, mas já tem dono, e repetir a
+#: devolução não ajuda: o gateway recusou (o aviso do sino e o "Tentar o estorno de
+#: novo" do Gestor), o gateway não respondeu (a directive ``payment.refund`` retenta
+#: com a mesma chave), ou o dinheiro volta pela gaveta ou pela maquininha (as listas
+#: do PDV). Ver :meth:`ReturnService.process_refund`.
+REFUND_GATEWAY_REFUSED = "gateway_refused"
+REFUND_GATEWAY_UNCONFIRMED = "gateway_unconfirmed"
+REFUND_PENDING_COUNTER = "pending_counter_refund"
+REFUND_HANDED_OFF = frozenset({REFUND_GATEWAY_REFUSED, REFUND_GATEWAY_UNCONFIRMED, REFUND_PENDING_COUNTER})
+
+
+def _order_refunded_q(order: Order) -> int:
+    """Quanto o Payman diz que já voltou ao cliente, somando todas as cobranças do pedido."""
+    from shopman.payman import PaymentService
+
+    return sum(PaymentService.refunded_total(intent.ref) for intent in PaymentService.get_by_order(order.ref))
+
+
+def _refund_not_returned_reason(order: Order) -> str:
+    """Por que o estorno pedido não voltou (todo ou em parte), lido de onde ele ficou."""
+    from shopman.shop.directives import PAYMENT_REFUND
+    from shopman.shop.services import payment as payment_service
+
+    if Directive.objects.filter(
+        topic=PAYMENT_REFUND, payload__order_ref=order.ref, status__in=("queued", "running"),
+    ).exists():
+        return REFUND_GATEWAY_UNCONFIRMED
+    if payment_service.gateway_refund_owed_q(order) > 0:
+        return REFUND_GATEWAY_REFUSED
+    return REFUND_PENDING_COUNTER
+
+
 @dataclass
 class ReturnResult:
     """Resultado da iniciação de devolução."""
@@ -172,17 +204,35 @@ class ReturnService:
                 # saldo capturado inteiro. ``refund_reference`` (por índice de
                 # devolução) torna o estorno idempotente: um retry após crash
                 # entre o gateway e o save da flag NÃO estorna de novo.
+                #
+                # O ``refund`` não levanta quando o dinheiro NÃO volta: na recusa
+                # do gateway ele abre o aviso, sem resposta ele enfileira o retry,
+                # e gaveta e maquininha ficam nas listas do PDV. Quem diz quanto
+                # voltou é o Payman, antes e depois: o evento ``refund_processed``
+                # (que o Gestor e a loja do cliente mostram) só nasce com dinheiro
+                # que de fato voltou, e com o valor dele.
+                refunded_before_q = _order_refunded_q(order)
                 payment_service.refund(
                     order,
                     amount_q=amount_q,
                     idempotency_key=refund_reference or f"return:{order.ref}",
                 )
-                result["refund"] = {"success": True, "amount_q": amount_q}
-                order.emit_event(
-                    event_type="refund_processed",
-                    actor=actor,
-                    payload={"amount_q": amount_q, "success": True},
-                )
+                returned_q = max(0, _order_refunded_q(order) - refunded_before_q)
+                if returned_q > 0:
+                    order.emit_event(
+                        event_type="refund_processed",
+                        actor=actor,
+                        payload={"amount_q": returned_q, "success": True},
+                    )
+                if returned_q >= amount_q:
+                    result["refund"] = {"success": True, "amount_q": returned_q}
+                else:
+                    reason = _refund_not_returned_reason(order)
+                    logger.warning(
+                        "process_refund: estorno da devolução não voltou order=%s pedido_q=%s voltou_q=%s motivo=%s",
+                        order.ref, amount_q, returned_q, reason,
+                    )
+                    result["refund"] = {"success": False, "amount_q": returned_q, "reason": reason}
             except Exception as exc:
                 logger.exception("process_refund: payment refund failed for %s", order.ref)
                 result["refund"] = {"success": False, "error": str(exc)}
@@ -276,7 +326,12 @@ class ReturnHandler:
                 actor="return.process",
                 refund_reference=f"return:{order_ref}:{return_index}",
             )
-            if result.get("refund", {}) is not None and result.get("refund", {}).get("success") is False:
+            refund = result.get("refund")
+            # O estorno que não voltou mas já tem dono (recusa no sino e no Gestor, retry
+            # da directive ``payment.refund``, listas do PDV) encerra a etapa da devolução:
+            # repetir não devolve nada e só terminaria em "devolução travada". Fora isso,
+            # o estorno que não se confirmou retém o recibo do estoque e retenta.
+            if refund is not None and refund.get("success") is False and refund.get("reason") not in REFUND_HANDED_OFF:
                 raise DirectiveTransientError("Refund not confirmed; stock receipt retained")
         except Exception as exc:
             raise DirectiveTransientError(f"Refund processing failed: {exc}") from exc
