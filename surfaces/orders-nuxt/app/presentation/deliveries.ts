@@ -12,6 +12,8 @@ import {
   GROUPED_HINT,
   GROUPED_TITLE,
   REOPENED_HINT,
+  TRANSFER_HINT,
+  TRANSFER_TITLE,
   withdrawalTitle,
 } from "../../../operator-kit/app/presentation/courierProgress";
 
@@ -112,6 +114,12 @@ function minutesUntil(iso: string, now: number): number | null {
   return Number.isFinite(at) ? Math.max(0, Math.round((at - now) / 60000)) : null;
 }
 
+/** Minutos inteiros desde um instante (0 quando ilegível ou no futuro). */
+function minutesSince(iso: string, now: number): number {
+  const at = Date.parse(iso);
+  return Number.isFinite(at) ? Math.max(0, Math.floor((now - at) / 60000)) : 0;
+}
+
 export interface RideLine {
   icon: string;
   title: string;
@@ -132,7 +140,10 @@ export function rideLine(ride: DeliveryRideProjection, now: number): RideLine {
     case "late":
       return { icon: "i-lucide-hourglass", title: "Ninguém aceitou ainda", hint: missing };
     case "reopened": {
-      // O entregador desistiu e a TaOn redistribui a MESMA corrida: nada a chamar.
+      // O entregador desistiu, ou a TaOn está trocando o entregador, e ela
+      // redistribui a MESMA corrida: nada a chamar.
+      if (ride.reopened_reason === "transfer")
+        return { icon: "i-lucide-repeat", title: TRANSFER_TITLE, hint: TRANSFER_HINT };
       const at = Date.parse(ride.reopened_at);
       return {
         icon: "i-lucide-user-x",
@@ -146,12 +157,23 @@ export function rideLine(ride: DeliveryRideProjection, now: number): RideLine {
       const minutes = ride.pickup_eta_at ? minutesUntil(ride.pickup_eta_at, now) : null;
       return {
         icon: "i-lucide-bike",
-        title: minutes === null ? `${who} vem para a loja` : minutes <= 1 ? `${who} está chegando` : `${who} chega em ${minutes} min`,
+        // Nas redondezas (``AN`` da TaOn), a previsão já não importa: está chegando.
+        title: ride.near_pickup_at || (minutes !== null && minutes <= 1)
+          ? `${who} está chegando`
+          : minutes === null ? `${who} vem para a loja` : `${who} chega em ${minutes} min`,
         hint: missing || (ride.bags ? `Separe ${bagsWord(ride.bags)} no balcão de saída` : ""),
       };
     }
-    case "atStore":
-      return { icon: "i-lucide-store", title: `${who} está na loja`, hint: missing };
+    case "atStore": {
+      // O relógio da espera no balcão conta da chegada (TAON-12).
+      const waited = ride.arrived_pickup_at ? minutesSince(ride.arrived_pickup_at, now) : 0;
+      const codes = pending.map((stop) => stop.code);
+      return {
+        icon: "i-lucide-store",
+        title: waited >= 1 ? `${who} espera na loja há ${waited} min` : `${who} está na loja`,
+        hint: missing || (ride.bags && codes.length ? `Entregue ${bagsWord(ride.bags)} de ${listCodes(codes)}` : ""),
+      };
+    }
     case "route":
       return {
         icon: "i-lucide-navigation",
@@ -231,12 +253,18 @@ export function beforeHandoff(ride: Pick<DeliveryRideProjection, "state">): bool
 export interface RideNotice {
   /** A causa: o aviso dispensado volta quando ela muda. */
   key: string;
-  color: "info" | "neutral";
+  color: "info" | "neutral" | "warning";
   icon: string;
   title: string;
   description: string;
-  /** O rodapé do detalhe, no lugar da frase de cancelar. */
-  footer: string;
+  /** O rodapé do detalhe, no lugar da frase de cancelar (sem ele, fica a de sempre). */
+  footer?: string;
+}
+
+
+/** "A47", "A47 e C03", "A47, C03 e D12". */
+export function listCodes(codes: readonly string[]): string {
+  return codes.length > 1 ? `${codes.slice(0, -1).join(", ")} e ${codes.at(-1)}` : (codes[0] ?? "");
 }
 
 /**
@@ -246,6 +274,25 @@ export interface RideNotice {
  */
 export function rideNotice(ride: DeliveryRideProjection, now: number): RideNotice | null {
   const line = rideLine(ride, now);
+  if (ride.open_too_long)
+    return {
+      key: "open_too_long",
+      color: "warning",
+      icon: "i-lucide-clock-alert",
+      title: "Corrida aberta há muito tempo.",
+      description:
+        "A TaOn ainda não encerrou esta corrida. Confira no painel da central se ela já terminou; a tela segue perguntando a cada 10 min.",
+    };
+  if (ride.state === "atStore" && ride.waited_pickup_at)
+    return {
+      key: `waited:${ride.waited_pickup_at}`,
+      color: "warning",
+      icon: "i-lucide-timer",
+      title: `${line.title}.`,
+      description: line.hint
+        ? `A TaOn avisou que a espera passou do combinado. ${line.hint}.`
+        : "A TaOn avisou que a espera passou do combinado.",
+    };
   if (ride.state === "reopened")
     return {
       key: `reopened:${ride.reopened_at}`,

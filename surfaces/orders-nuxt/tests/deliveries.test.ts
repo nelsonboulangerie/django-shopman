@@ -32,7 +32,8 @@ function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjecti
     key: "1", number: 1, letter: "A", state: "searching", status_label: "", stops: [stop("NB-A01")], driver: null, position: null,
     called_at: "", called_by: "", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "", delivery_eta_at: "",
     tracking_url: "", cost_display: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
-    back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", reopened_at: "", reopened_driver: "", ...extra,
+    back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", reopened_at: "", reopened_driver: "",
+    near_pickup_at: "", waited_pickup_at: "", reopened_reason: "", custody_line: "", open_too_long: false, ...extra,
   };
 }
 
@@ -224,6 +225,17 @@ describe("a corrida que segue chamada sem nada a fazer", () => {
     expect(beforeHandoff(reopened)).toBe(true);
   });
 
+  it("a TaOn trocou o entregador: a mesma corrida, sem falha e sem chamar de novo", () => {
+    const transfer = ride({
+      state: "reopened", status_label: "Procurando outro entregador",
+      reopened_at: "2026-11-16T14:32:00-03:00", reopened_driver: "Diego", reopened_reason: "transfer",
+    });
+    expect(rideLine(transfer, now)).toEqual({
+      icon: "i-lucide-repeat", title: "A TaOn está trocando de entregador", hint: "A corrida continua a mesma",
+    });
+    expect(rideNotice(transfer, now)?.description).toContain("Chamar de novo faria uma segunda corrida paga.");
+  });
+
   it("a TaOn juntou com outra corrida: nunca é \"Ninguém aceitou\"", () => {
     const grouped = ride({ state: "grouped", status_label: "Junto com outra corrida", stops: [stop("NB-E09")] });
     expect(rideLine(grouped, now)).toEqual({
@@ -241,6 +253,39 @@ describe("a corrida que segue chamada sem nada a fazer", () => {
   it("corrida no caminho de sempre não tem aviso", () => {
     expect(rideNotice(ride({ state: "searching" }), now)).toBeNull();
     expect(rideNotice(ride({ state: "late" }), now)).toBeNull();
+  });
+});
+
+describe("corrida em apuros", () => {
+  const now = Date.parse("2026-11-16T14:40:00-03:00");
+  const driver = { name: "Diego", phone: "", vehicle: "Honda CG prata · ABC1D23", photo_url: "" };
+
+  it("nas redondezas (AN), a previsão já não importa: está chegando", () => {
+    const near = ride({ state: "coming", driver, pickup_eta_at: "2026-11-16T14:50:00-03:00",
+                        near_pickup_at: "2026-11-16T14:39:00-03:00" });
+    expect(rideLine(near, now).title).toBe("Diego está chegando");
+  });
+
+  it("na loja, o relógio da espera conta e diz o que entregar", () => {
+    const waiting = ride({
+      state: "atStore", driver, arrived_pickup_at: "2026-11-16T14:33:00-03:00", bags: 2,
+      stops: [stop("NB-A47", { volumes: 2 })],
+    });
+    expect(rideLine(waiting, now)).toEqual({
+      icon: "i-lucide-store", title: "Diego espera na loja há 7 min", hint: "Entregue 2 sacolas de A47",
+    });
+    expect(rideNotice(waiting, now)).toBeNull();
+    // A TaOn avisou que a espera passou do combinado (AW): vira aviso.
+    const late = { ...waiting, waited_pickup_at: "2026-11-16T14:38:00-03:00" };
+    const notice = rideNotice(late, now);
+    expect(notice?.color).toBe("warning");
+    expect(notice?.title).toBe("Diego espera na loja há 7 min.");
+    expect(notice?.footer).toBeUndefined();
+  });
+
+  it("corrida aberta além da idade acompanhada avisa sem inventar falha", () => {
+    const old = ride({ state: "route", driver, open_too_long: true });
+    expect(rideNotice(old, now)?.title).toBe("Corrida aberta há muito tempo.");
   });
 });
 

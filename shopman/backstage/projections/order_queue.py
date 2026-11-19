@@ -48,7 +48,7 @@ from shopman.backstage.projections.order_attention import (
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
-from shopman.backstage.services.courier_reminder import CourierReminderProjection, courier_reminder
+from shopman.backstage.services.courier_reminder import REMINDER_STATUSES, CourierReminderProjection, courier_reminder
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -1660,7 +1660,7 @@ def _courier_block(order: Order) -> dict | None:
 
         progress = progress_view(block)
         tracking = proven_tracking(block)
-        reopened = reopen_view(block) if active else {"at": "", "driver": ""}
+        reopened = reopen_view(block) if active else {"at": "", "driver": "", "reason": ""}
         status_label = COURIER_STATUS_LABELS.get(ride_status, "")
         if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
             status_label = "Entregador na loja"
@@ -1676,6 +1676,8 @@ def _courier_block(order: Order) -> dict | None:
             # quando, e quem saiu. Vazios fora disso.
             "reopened_at": reopened["at"],
             "reopened_driver": reopened["driver"],
+            # ``withdrew`` (o entregador desistiu) ou ``transfer`` (a TaOn trocou o entregador).
+            "reopened_reason": reopened["reason"],
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
@@ -2568,7 +2570,7 @@ def _build_card(
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
-        courier_reminder=courier_reminder(order) if order.status == Order.Status.PREPARING else None,
+        courier_reminder=courier_reminder(order) if order.status in REMINDER_STATUSES else None,
     )
     attention = card_attention(
         order, card, channel_config,

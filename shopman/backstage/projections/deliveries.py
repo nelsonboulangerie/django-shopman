@@ -75,7 +75,11 @@ class DeliveryStopProjection:
 class DeliveryDriverProjection:
     name: str
     phone: str
+    #: "Honda CG prata · ABC1D23": modelo e cor juntos, a placa depois.
     vehicle: str
+    #: A foto do entregador, servida pelo servidor (``deliveries/<corrida>/driver-photo/``)
+    #: só enquanto a corrida vive. Vazio sem foto: a tela mostra a inicial.
+    photo_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -96,7 +100,11 @@ class DeliveryRideProjection:
     called_at: str = ""
     called_by: str = ""
     pickup_eta_at: str = ""
+    #: A TaOn avisou que o entregador está nas redondezas da loja (``AN``).
+    near_pickup_at: str = ""
     arrived_pickup_at: str = ""
+    #: A TaOn avisou que o entregador espera na loja além do combinado (``AW``).
+    waited_pickup_at: str = ""
     picked_up_at: str = ""
     delivery_eta_at: str = ""
     tracking_url: str = ""
@@ -117,6 +125,14 @@ class DeliveryRideProjection:
     #: Só com ``state == "reopened"``.
     reopened_at: str = ""
     reopened_driver: str = ""
+    #: ``withdrew`` (o entregador desistiu) ou ``transfer`` (a TaOn trocou o entregador).
+    reopened_reason: str = ""
+    #: Antes da coleta, o que vai na mão do entregador e o que conferir:
+    #: "Leva a maquininha e o troco. Confira a placa antes de entregar."
+    custody_line: str = ""
+    #: A corrida passou da idade em que se acompanha de perto
+    #: (``courier.ride_open_too_long``): a leitura segue lenta e a tela avisa.
+    open_too_long: bool = False
     #: O cancelamento pedido desta corrida: "" · pending · unknown · failed
     #: (``courier.cancel_state``, a mesma fonte do Painel do pedido) e a frase.
     cancel_state: str = ""
@@ -269,8 +285,14 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
     raw_driver = block.get("driver") if isinstance(block.get("driver"), dict) else None
     driver = None
     if raw_driver and raw_driver.get("name"):
-        vehicle = " · ".join(p for p in (str(raw_driver.get("vehicle_model") or ""), str(raw_driver.get("vehicle_plate") or "")) if p)
-        driver = DeliveryDriverProjection(name=str(raw_driver["name"]), phone=str(raw_driver.get("phone") or ""), vehicle=vehicle)
+        ride_id = str(block.get("id_mch") or "")
+        driver = DeliveryDriverProjection(
+            name=str(raw_driver["name"]),
+            phone=str(raw_driver.get("phone") or ""),
+            vehicle=courier.vehicle_line(raw_driver),
+            photo_url=(f"/api/v1/backstage/deliveries/{ride_id}/driver-photo/"
+                       if state in ("coming", "atStore", "route") and courier.has_driver_photo(ride_id) else ""),
+        )
     position = None
     if block.get("id_mch") and state in ("coming", "atStore", "route"):
         cached = cache.get(f"courier:pos:{block['id_mch']}")
@@ -285,7 +307,9 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
     trip = _trip_fields(lead) if back else {}
     cancel = courier_cancel_state(lead)
     can_cancel = courier_can_cancel(lead, cancel)
-    reopened = courier.reopen_view(block) if state == "reopened" else {"at": "", "driver": ""}
+    reopened = courier.reopen_view(block) if state == "reopened" else {"at": "", "driver": "", "reason": ""}
+    custody_line = (_custody_line([by_ref[ref] for ref in sequence])
+                    if driver is not None and state in ("coming", "atStore") else "")
     return DeliveryRideProjection(
         key=str(block.get("id_mch") or f"call:{lead.ref}"),
         number=int(block.get("ride_number") or 0),
@@ -298,7 +322,9 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         called_at=str(block.get("called_at") or ""),
         called_by=str(block.get("called_by") or ""),
         pickup_eta_at=progress.get("pickup_eta_at", ""),
+        near_pickup_at=progress.get("near_pickup_at", ""),
         arrived_pickup_at=progress.get("arrived_pickup_at", ""),
+        waited_pickup_at=progress.get("waited_pickup_at", ""),
         picked_up_at=progress.get("picked_up_at", ""),
         delivery_eta_at=progress.get("delivery_eta_at", ""),
         # O link é de UMA parada. Com várias, "o link da corrida" seria o de um
@@ -316,7 +342,24 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         cancel_message=cancel["message"],
         reopened_at=reopened["at"],
         reopened_driver=reopened["driver"],
+        reopened_reason=reopened["reason"],
+        custody_line=custody_line,
+        open_too_long=courier.ride_open_too_long(block),
     )
+
+
+def _custody_line(orders: list[Order]) -> str:
+    """O que sai com o entregador da TaOn nesta corrida, e a conferência que isso pede.
+
+    Só a maquininha e o troco que de fato saíram (a custódia registrada na
+    chamada): quem leva dinheiro ou equipamento da casa é conferido pela placa.
+    """
+    from shopman.shop.services import operator_orders
+
+    machine = any(operator_orders.equipment_custody(order).pending for order in orders)
+    change = any(operator_orders.courier_change(order).pending for order in orders)
+    things = " e ".join(word for word, out in (("a maquininha", machine), ("o troco", change)) if out)
+    return f"Leva {things}. Confira a placa antes de entregar." if things else ""
 
 
 def build_deliveries(*, user=None) -> DeliveriesProjection:
