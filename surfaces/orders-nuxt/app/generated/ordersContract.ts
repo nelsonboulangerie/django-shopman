@@ -487,6 +487,7 @@ export interface CourierReminderProjection {
   since_iso: string;
   since_basis: string;
   short_ref: string;
+  stage: string;
 }
 
 /** Um produto que a casa pode oferecer no lugar do item em risco. */
@@ -1253,11 +1254,12 @@ export interface DeliveryStopProjection {
   charge_outdated: Record<string, unknown> | null;
 }
 
-/** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str') */
+/** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str', photo_url: 'str' = '') */
 export interface DeliveryDriverProjection {
   name: string;
   phone: string;
   vehicle: string;
+  photo_url: string;
 }
 
 /** Uma corrida chamada, viva: do "procurando" à volta do entregador. */
@@ -1273,7 +1275,9 @@ export interface DeliveryRideProjection {
   called_at: string;
   called_by: string;
   pickup_eta_at: string;
+  near_pickup_at: string;
   arrived_pickup_at: string;
+  waited_pickup_at: string;
   picked_up_at: string;
   delivery_eta_at: string;
   tracking_url: string;
@@ -1286,6 +1290,9 @@ export interface DeliveryRideProjection {
   cancel_action: Action | null;
   reopened_at: string;
   reopened_driver: string;
+  reopened_reason: string;
+  custody_line: string;
+  open_too_long: boolean;
   cancel_state: string;
   cancel_message: string;
   sync_since: string;

@@ -109,6 +109,16 @@ export function promiseRisk(source: PromiseSource): PromiseRisk | null {
   };
 }
 
+/**
+ * A saída recomendada da promessa em risco é o botão cheio do pedido: o gesto da etapa
+ * ("Iniciar preparo") continua lá, em contorno. Iniciar o preparo de um pedido sem
+ * lastro não é o próximo passo (dono, 19/11/2026: o aviso diz o que fazer). Vale para
+ * o cartão do Painel e para a linha da Fila.
+ */
+export function promiseRiskLeads(source: PromiseSource): boolean {
+  return Boolean(promiseRisk(source)?.exits.some((exit) => exit.recommended && !exit.disabled));
+}
+
 /** Os itens em risco numa linha só, para quem lista ("4x Baguete sem reserva · 2x Brioche sem reserva"). */
 export function promiseRiskSummary(risk: PromiseRisk): string {
   return risk.items.map((item) => item.label).join(" · ");

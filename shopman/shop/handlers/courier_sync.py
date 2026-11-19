@@ -5,10 +5,13 @@ homologado): heartbeat auto-reagendável por pedido, no padrão do
 ``production.late_check``. Cada batida lê a corrida inteira
 (``adapter.read_ride``: status, entregador, previsão de chegada à loja,
 coleta, viagem, valor) e aplica pelo funil ``courier.apply_snapshot``. Para
-sozinho quando a corrida chega a um status terminal (F/N/C), quando a corrida
-some do pedido, quando passa de ``courier.MAX_POLL_HOURS`` ou quando o polling
-é desligado (``Shop.defaults.delivery.courier_poll_seconds = 0``). Leitura que
-falha aparece na tela (``courier.sync``) e vira aviso ao operador.
+sozinho quando a corrida chega a um status terminal (F/N/C) ou some do pedido.
+Passada a idade de ``courier.MAX_POLL_HOURS``, ou com o polling desligado
+(``Shop.defaults.delivery.courier_poll_seconds = 0``, só webhook), a batida
+fica LENTA (``courier.SLOW_POLL_SECONDS``) em vez de parar: a corrida aberta
+não fica na tela para sempre sem ninguém perguntar à central se ela acabou
+(ENT-07). Leitura que falha aparece na tela (``courier.sync``) e vira aviso
+ao operador.
 
 Webhook e polling convergem no mesmo funil (``courier.apply_status``), que é
 idempotente — receber o mesmo status pelas duas vias é inofensivo.
@@ -64,11 +67,10 @@ class CourierSyncHandler:
         if adapter is None:
             return
 
-        seconds = courier.poll_seconds()
+        seconds = courier.sync_interval(block)
         ride_id = block["id_mch"]
         if courier.poll_expired(block):
-            logger.warning("courier.sync_expired order=%s id_mch=%s", order.ref, ride_id)
-            return
+            logger.info("courier.sync_slow order=%s id_mch=%s", order.ref, ride_id)
 
         try:
             read_ride = getattr(adapter, "read_ride", None)
@@ -80,8 +82,7 @@ class CourierSyncHandler:
             # prazo que a TaOn pediu.
             logger.warning("courier.sync_rate_limited order=%s id_mch=%s retry_after=%s",
                            order.ref, ride_id, exc.retry_after)
-            if seconds > 0:
-                courier.schedule_sync(order, delay_seconds=max(seconds, exc.retry_after))
+            courier.schedule_sync(order, delay_seconds=max(seconds, exc.retry_after))
             return
         except CourierError as exc:
             # A batida não "falha" (o heartbeat segue), mas não fica calada: a
@@ -94,8 +95,7 @@ class CourierSyncHandler:
                 order.ref, ride_id, exc,
             )
             courier.record_sync_failure(order, exc, ride_id=ride_id)
-            if seconds > 0:
-                courier.schedule_sync(order, delay_seconds=seconds)
+            courier.schedule_sync(order, delay_seconds=seconds)
             return
 
         if snapshot:
@@ -107,8 +107,8 @@ class CourierSyncHandler:
 
         block = courier.get_block(order)
         still_active = bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
-        if still_active and seconds > 0:
-            courier.schedule_sync(order, delay_seconds=seconds)
+        if still_active:
+            courier.schedule_sync(order, delay_seconds=courier.sync_interval(block))
         elif not block.get("id_mch"):
             # A leitura encerrou a corrida neste pedido; se algum companheiro não
             # recebeu o fim (falha local no meio), ele recebe agora.
