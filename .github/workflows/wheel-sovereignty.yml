@@ -23,7 +23,7 @@ concurrency:
 jobs:
   wheel-suite:
     name: Wheel limpo passa a própria suíte
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout

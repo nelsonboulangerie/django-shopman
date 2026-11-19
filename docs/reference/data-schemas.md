@@ -401,6 +401,12 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
 ```jsonc
 "courier": {
   "provider": "machine",
+  "service": "taon",               // o serviço de entrega da corrida (`DeliveryService.ref`), gravado quando ela abre: o padrão do Admin (DEV-2026-030, M1). Quem fala com ele é `services/delivery_services.courier_backend(block)`; corrida sem a chave (aberta antes) segue com a central configurada
+  // Corrida dos entregadores da casa (DEV-2026-030, M2; `services/own_fleet`): `provider` = "own_fleet", `service` = "casa",
+  // `id_mch` = "CASA-…" (o identificador da corrida até a M1b renomear), as mesmas letras internas (A designada, E saiu,
+  // F entregue, C cancelada), `driver` = {name, phone, vehicle_model} do cadastro, `courier_ref` = o `Courier.ref`,
+  // `estimate.value_q` = o valor da tabela (vira `final_value_q` na entrega) e
+  // "problems": [{"kind": "no_answer", "at": "iso", "by": "courier:diego", "payment": "card"}]  // a folha "Problema" do link
   "id_mch": "184532",              // corrida ATIVA (string); some quando N/C arquiva
   "status": "E",                   // letra Machine crua
   "called_at": "iso",              // a PRIMEIRA chamada pedida (courier.request_dispatch), antes da central responder
@@ -1434,6 +1440,8 @@ Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `order_ref_prefix` | `string` | — (ausente = ref do canal em maiúsculas) | Prefixo do ref de pedido gerado no commit (ex.: `"NB"` → `NB-260901-M63`). Escreve: seed/Admin. Lê: `CommitService._do_commit` via config resolvida. Decisão do dono 01/09: pedido da loja online carrega a marca, não o meio. |
+| `ifood_catalog.category_map` | `{collection_ref: category_uuid}` | `{}` | Categoria do iFood em que cada coleção da casa aparece. A categoria nasce de uma coleção ("Criar no iFood com este nome", DEV-2026-044) ou é escolhida entre as que já existem. Escreve: `ifood_catalog_categories.set_collection_category` (Gestor, Canais > iFood > Catálogo). Lê: `catalog_projection_ifood._resolve_category_id`. |
+| `ifood_catalog.default_category_ref` | `string` | — | Categoria de quem não tem coleção mapeada. Lê: o mesmo resolvedor. |
 
 ### 1. Confirmation — como o pedido é aceito?
 
@@ -1588,6 +1596,23 @@ Estas chaves são lidas diretamente de `channel.config` como dict bruto, sem pas
 | `marketplace()` | auto_cancel/5min | external | None | none | (vazio) |
 
 ---
+
+## shop.ChannelAddonGroup / shop.ChannelAddon (complementos do iFood)
+
+Não é JSONField: são modelos do `shop` (migração `shop.0122`), porque o Offerman só tem
+produto vendável e o Core não ganha campo (DEV-2026-044). O complemento é do **item no
+canal**: chaveado por `(channel, sku)`, com o SKU do listing do canal iFood (o serviço
+recusa SKU fora do listing). Não copia nome, preço nem foto do produto.
+
+| Modelo | Campos | Notas |
+|---|---|---|
+| `ChannelAddonGroup` | `channel`, `sku`, `ref`, `name`, `min_choices`, `max_choices`, `index`, `is_active` | Vai como `optionGroups[]` e `products[0].optionGroups[]` (min/max) no `PUT /items`. Grupo sem opção não vai. |
+| `ChannelAddon` | `group`, `ref`, `name`, `price_q`, `image_url`, `index`, `is_active` | Vai como `options[]` e um `products[]` próprio (nome e foto). Preço por `PATCH /options/price`; pausa por `PATCH /options/status`. |
+
+Identidade remota: `catalog_projection_ifood.addon_identity(merchant, sku, group_ref[, addon_ref])`,
+uuid5 com bits de versão 4 (o iFood recusa outra versão em `optionIds`). `externalCode`:
+`<sku>-<grupo>` e `<sku>-<grupo>-<opção>`. Escreve: `shop/services/channel_addons.py`
+(tudo ou nada: só grava quando a leitura do item no iFood confirma).
 
 ## Shop.defaults
 

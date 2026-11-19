@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.utils import timezone
 from shopman.utils.formatting import format_clock
 
+from shopman.shop.projections.opening_hours import split_by_breaks
+
 logger = logging.getLogger(__name__)
 
 DAY_NAMES_PT = {
@@ -88,11 +90,26 @@ def current_business_state(*, now: datetime | None = None, shop=None) -> Busines
     opens_at, closes_at = day_window
     current_time = local_now.time()
     if opens_at <= current_time < closes_at:
+        shifts = _day_shifts(shop, local_now.date())
+        shift = next((s for s in shifts if s[0] <= current_time < s[1]), None)
+        if shift is None:
+            # Intervalo entre turnos (almoço, por exemplo): fechado agora, volta
+            # no começo do próximo turno do mesmo dia.
+            resume = next(s[0] for s in shifts if s[0] > current_time)
+            return BusinessCalendarState(
+                is_open=False,
+                opens_at=_fmt_hhmm(resume),
+                closes_at=_fmt_hhmm(closes_at),
+                message=f"Fechado. Voltamos às {_fmt_hour(resume)}",
+                next_open_at=datetime.combine(local_now.date(), resume, tzinfo=local_now.tzinfo),
+                closure_source="break",
+                resolved_at=local_now,
+            )
         return BusinessCalendarState(
             is_open=True,
-            opens_at=_fmt_hhmm(opens_at),
-            closes_at=_fmt_hhmm(closes_at),
-            message=f"Aberto até {_fmt_hour(closes_at)}",
+            opens_at=_fmt_hhmm(shift[0]),
+            closes_at=_fmt_hhmm(shift[1]),
+            message=f"Aberto até {_fmt_hour(shift[1])}",
             next_open_at=None,
             resolved_at=local_now,
         )
@@ -226,6 +243,19 @@ def selling_hours_for(day: date, *, shop=None) -> tuple[time, time] | None:
     return _day_window(shop, day)
 
 
+def shifts_for(day: date, *, shop=None) -> list[tuple[time, time]]:
+    """Os turnos de venda de ``day``: o expediente (``selling_hours_for``) menos os
+    intervalos declarados no dia da semana (``Shop.opening_hours[dia]["breaks"]``).
+
+    Dia sem intervalo devolve um turno só, igual ao expediente. Lista vazia = dia
+    sem expediente. Horário especial (``closed_dates`` com hora) é um turno só.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return []
+    return _day_shifts(shop, day)
+
+
 def closed_weekdays(*, shop=None) -> list[int]:
     """Índices de dia da semana (0=segunda … 6=domingo) sem expediente regular."""
     shop = _load_shop(shop)
@@ -240,7 +270,9 @@ def closed_weekdays(*, shop=None) -> list[int]:
     return out
 
 
-def available_dates(*, max_count: int = 3, horizon_days: int = 30, now: datetime | None = None, shop=None) -> list[date]:
+def available_dates(
+    *, max_count: int = 3, horizon_days: int = 30, now: datetime | None = None, shop=None
+) -> list[date]:
     """As próximas ``max_count`` datas em que a loja realmente opera.
 
     Pula dias da semana fechados e exceções (feriados/férias) — nunca devolve
@@ -317,14 +349,18 @@ def delivery_slots_for(
     cursor = datetime.combine(day, opens_at)
     end = datetime.combine(day, closes_at)
     step = timedelta(minutes=DELIVERY_SLOT_MINUTES)
+    shifts = _day_shifts(shop, day) if shop else [window]
     while cursor + step <= end:
         starts = cursor.time()
         finishes = (cursor + step).time()
-        if earliest is None or starts >= earliest:
-            slots.append({
-                "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
-                "label": f"{_fmt_hour(starts)} às {_fmt_hour(finishes)}",
-            })
+        inside_a_shift = any(s_start <= starts and finishes <= s_end for s_start, s_end in shifts)
+        if inside_a_shift and (earliest is None or starts >= earliest):
+            slots.append(
+                {
+                    "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
+                    "label": f"{_fmt_hour(starts)} às {_fmt_hour(finishes)}",
+                }
+            )
         cursor += step
     return slots
 
@@ -350,6 +386,23 @@ def weekly_windows(*, shop=None) -> dict[str, tuple[time, time]]:
         window = _weekday_window(shop, name)
         if window is not None:
             out[name] = window
+    return out
+
+
+def weekly_shifts(*, shop=None) -> dict[str, list[tuple[time, time]]]:
+    """A grade semanal em turnos: ``{"sunday": [(09:00, 12:00), (13:00, 16:00)], ...}``.
+
+    É a leitura que o iFood espelha (um turno do iFood por turno da casa). Mesma
+    fonte de ``weekly_windows``: o turno é o expediente do dia menos os intervalos.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return {}
+    out: dict[str, list[tuple[time, time]]] = {}
+    for name in DAY_ORDER:
+        window = _weekday_window(shop, name)
+        if window is not None:
+            out[name] = split_by_breaks(window, (getattr(shop, "opening_hours", None) or {}).get(name))
     return out
 
 
@@ -519,8 +572,7 @@ def _closed_dates(shop) -> list:
 def _has_regular_hours(shop) -> bool:
     hours = getattr(shop, "opening_hours", None)
     return isinstance(hours, dict) and any(
-        isinstance(value, dict) and value.get("open") and value.get("close")
-        for value in hours.values()
+        isinstance(value, dict) and value.get("open") and value.get("close") for value in hours.values()
     )
 
 
@@ -529,6 +581,16 @@ def _day_window(shop, day: date) -> tuple[time, time] | None:
     if special is not None:
         return special
     return _weekday_window(shop, DAY_ORDER[day.weekday()])
+
+
+def _day_shifts(shop, day: date) -> list[tuple[time, time]]:
+    window = _day_window(shop, day)
+    if window is None:
+        return []
+    if special_hours_for(day, _closed_dates(shop)) is not None:
+        return [window]
+    entry = (getattr(shop, "opening_hours", None) or {}).get(DAY_ORDER[day.weekday()])
+    return split_by_breaks(window, entry)
 
 
 def _calendar_time(value) -> time | None:

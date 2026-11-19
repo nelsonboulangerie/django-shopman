@@ -837,11 +837,28 @@ const phoneHeaderActions = computed(() => [
                 <!-- Só o canal com catálogo externo tem vínculos para revisar: a tela
                      é do iFood, e na Loja ou no PDV ela falava só do iFood (GES-09). -->
                 <NuxtButton
+                  v-if="channel.ref === IFOOD_CHANNEL_REF"
+                  :to="`/channels/${IFOOD_CHANNEL_REF}/store`"
+                  label="Ver a loja no iFood"
+                  color="neutral"
+                  variant="outline"
+                  data-ifood-store-link
+                />
+                <NuxtButton
                   v-if="channelHasBindingReview(channel.ref)"
                   :to="`/channels/${encodeURIComponent(channel.ref)}/catalog`"
                   label="Revisar vínculos"
                   color="neutral"
                   variant="outline"
+                />
+                <NuxtButton
+                  v-if="channel.ref === IFOOD_CHANNEL_REF"
+                  :to="`/channels/${IFOOD_CHANNEL_REF}/reviews`"
+                  label="Avaliações"
+                  icon="i-lucide-star"
+                  color="neutral"
+                  variant="outline"
+                  data-ifood-reviews-link
                 />
                 <NuxtButton
                   :to="channel.catalog_path"

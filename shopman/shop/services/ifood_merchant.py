@@ -31,9 +31,12 @@ Este módulo faz três coisas, todas atrás de ``SHOPMAN_IFOOD["merchant_sync_en
 (``is-connected``), mas o polling também traz cancelamento e alteração de pedido
 já aceito. Fechar é sempre interrupção ou horário.
 
-Fuso: a documentação diz que o iFood interpreta a interrupção no fuso da LOJA e
-ignora o do payload. Mandamos a hora local da loja com o deslocamento dela
-(``2026-12-25T00:00:00-03:00``) — correto nas duas leituras possíveis.
+Fuso: o iFood lê início e fim da interrupção como hora LOCAL da loja. Medido na
+loja de teste em 17/11/2026 (#2618): ``12:51:00-03:00`` voltou como ``15:51:00`` (ele
+converte para UTC e descarta o deslocamento) e a loja NÃO fechou às 12:51; ``12:53:00``
+sem deslocamento voltou igual e a validação ``unavailabilities`` fechou a loja às
+12:53. Por isso mandamos a hora local da loja SEM deslocamento
+(``2026-12-25T00:00:00``) e lemos a resposta sem fuso como hora local.
 
 Chamadas passam por ``ifood_http.request`` (retry da recusa de borda, token do
 ``ifood_auth``), o mesmo caminho do polling e dos callbacks de pedido.
@@ -299,19 +302,26 @@ def _shifts_from_body(body) -> list[dict]:
 
 
 def desired_shifts(shop=None) -> list[dict]:
-    """A grade semanal da casa no formato do iFood: um turno por dia aberto."""
+    """A grade semanal da casa no formato do iFood: um turno do iFood por turno da casa.
+
+    Dia com intervalo (``breaks``) vira dois ou mais turnos no mesmo dia, que é
+    como o iFood expressa "domingo das 9h às 12h e das 13h às 16h". Os turnos
+    nunca se sobrepõem: o formulário do Admin recusa intervalo sobreposto, que o
+    iFood recusaria com 400.
+    """
     shifts = []
-    for day, (opens_at, closes_at) in business_calendar.weekly_windows(shop=shop).items():
-        duration = (closes_at.hour * 60 + closes_at.minute) - (opens_at.hour * 60 + opens_at.minute)
-        if duration <= 0:
-            continue
-        shifts.append(
-            {
-                "dayOfWeek": _IFOOD_DAYS[day],
-                "start": opens_at.strftime("%H:%M:%S"),
-                "duration": duration,
-            }
-        )
+    for day, day_shifts in business_calendar.weekly_shifts(shop=shop).items():
+        for opens_at, closes_at in day_shifts:
+            duration = (closes_at.hour * 60 + closes_at.minute) - (opens_at.hour * 60 + opens_at.minute)
+            if duration <= 0:
+                continue
+            shifts.append(
+                {
+                    "dayOfWeek": _IFOOD_DAYS[day],
+                    "start": opens_at.strftime("%H:%M:%S"),  # hora-ok: contrato do iFood
+                    "duration": duration,
+                }
+            )
     return shifts
 
 
@@ -460,7 +470,8 @@ CHANNEL_OFF_DESCRIPTION = "iFood desligado no Gestor"
 
 
 def _ifood_datetime(value: datetime, tz) -> str:
-    return timezone.localtime(value, timezone=tz).isoformat(timespec="seconds")
+    """Hora local da loja, sem deslocamento: é como o iFood lê (ver a nota de fuso no topo)."""
+    return timezone.localtime(value, timezone=tz).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _parse_remote_datetime(value, tz) -> datetime | None:
@@ -811,7 +822,9 @@ def summarize_status(operations: list[dict]) -> tuple[bool, str, list[dict]]:
         for validation in op.get("validations") or []:
             if not isinstance(validation, dict):
                 continue
-            code = str(validation.get("code") or "")
+            # O ``id`` é o nome estável da validação (``is-connected``); o ``code`` real
+            # muda com o estado (``is.not.connected.config``). Medido em 17/11/2026.
+            code = str(validation.get("id") or validation.get("code") or "")
             vstate = str(validation.get("state") or "").upper()
             if vstate == "OK" or not code or code in seen:
                 continue

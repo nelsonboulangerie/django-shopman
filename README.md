@@ -45,6 +45,11 @@ Cada app é um pacote pip independente. Os cores nunca se importam entre si — 
 | **Cashman** | `shopman-cashman` | `shopman.cashman` | Caixa e livro financeiro | Terminal, Shift, Movement |
 | **Watchman** | `shopman-watchman` | `shopman.watchman` | Saúde e supervisão | — |
 
+Fora da família dos cores, `packages/conversational-commerce` (distribuição
+`conversational-commerce`, import `conversational_commerce`) é o núcleo genérico de comércio
+conversacional: Python puro, sem Django e sem dependência nenhuma. O Shopman o instala, e o
+adaptador da Concierge mora no orquestrador ([ADR-049](docs/decisions/adr-049-comercio-conversacional-pacote-puro.md)).
+
 ## Quickstart
 
 O backend Django é **headless**: serve API JSON em `/api/v1/`. As telas vivas são os apps

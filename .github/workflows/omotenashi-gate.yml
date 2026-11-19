@@ -31,9 +31,35 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
+  # Escopo (17/11/2026, docs/reference/ci-escopo.md): Browser QA e Storefront
+  # E2E são pesados e rodam só na fila; o Admin CSP roda no PR que mexe Python.
+  scope:
+    name: Escopo do PR
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      python: ${{ steps.scope.outputs.python }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+
   omotenashi-browser-qa:
     name: Browser QA (Nuxt store + Django operator)
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
+    # verde ("pulado") com o mesmo nome, que é check obrigatório.
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -170,7 +196,10 @@ jobs:
   # header não traz 'unsafe-inline' no script-src.
   admin-csp:
     name: Admin CSP (production settings)
-    runs-on: ubuntu-latest
+    needs: scope
+    # Escopo que falha (saída vazia) RODA: só `false` explícito pula.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.python != 'false') }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -242,7 +271,10 @@ jobs:
 
   storefront-e2e:
     name: Storefront E2E (Playwright)
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
+    # verde ("pulado") com o mesmo nome, que é check obrigatório.
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     # ⚠️ Este alvo existia e não rodava em lugar nenhum. Foi assim que a suíte

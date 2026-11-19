@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-007",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-12",
+  "compromisso": "Quero poder, SEMPRE que eu discutir algo, seja uma correção, ou um pedido de uma feature nova, NADA seja perdido, nunca mais!",
+  "dono": "Engenharia",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-19",
+  "gatilho": "-",
+  "estado": "EM_EXECUCAO",
+  "prova": "-"
+}

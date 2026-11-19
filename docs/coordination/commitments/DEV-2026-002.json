@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-002",
+  "tipo": "compromisso",
+  "origem": "#2298 / #2301",
+  "compromisso": "Editar preorder_kitchen no Admin, hoje só JSON em Shop.defaults",
+  "dono": "Engenharia · Admin",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-26",
+  "gatilho": "#2298 na fila",
+  "estado": "EM_EXECUCAO",
+  "prova": "#2303"
+}

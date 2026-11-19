@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-052",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Urgente: não estou conseguindo visualizar normalmente a pagina do Gestor... Esta tudo em branco... depois de testar o modo escuro",
+  "dono": "Engenharia",
+  "criado": "2026-11-18",
+  "revisar_em": "2026-11-25",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

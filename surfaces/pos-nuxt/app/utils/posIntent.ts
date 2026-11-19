@@ -246,7 +246,57 @@ export function buildPosSaleIntent(
   }
   if (state.receiptIdentityChoices?.length) payload.receipt_identity_choices = state.receiptIdentityChoices;
   if (state.manualDiscount) payload.manual_discount = state.manualDiscount;
-  if (state.managerApproval) payload.manager_approval = state.managerApproval;
+  // ⚠️ A assinatura do gerente NÃO mora no intent. Este corpo é o mesmo que vai
+  // a `tabs/save`, a `sale/review`, ao guarda do fechamento incerto
+  // (`localStorage`) e à fila sem conexão (IndexedDB): com o PIN aqui, ele ficava
+  // em claro no navegador (P1-4). Só o POST do fechamento leva a assinatura, e
+  // só enquanto o retrato que o gerente viu ainda é o da tela (`approvalPortrait`).
 
   return payload;
+}
+
+/** O que o gerente assinou: a comanda, os itens, o desconto e a forma. */
+export interface ApprovalPortraitInput {
+  tabRef: string;
+  tabSessionKey: string;
+  items: POSCartItem[];
+  discountType: string;
+  discountValue: string;
+  paymentCollection: string;
+  paymentTenders: POSPaymentTenderDraft[];
+  customerRef: string;
+  deliveryFeeOverrideQ: number | null;
+}
+
+/**
+ * O RETRATO de uma autorização do gerente (P0-1, WP-E1): a assinatura vale para
+ * este retrato e para nenhum outro. Qualquer mudança no desconto, nos itens, na
+ * forma de pagamento, na comanda ou no cliente (a conta na casa mede o limite
+ * dele) dá outro retrato, e a assinatura antiga deixa de valer.
+ *
+ * Fica de fora o que o servidor carimba depois (preço de tabela, preço cobrado),
+ * o texto que não mexe em valor (nome, observação, motivo do desconto) e o que a
+ * própria cobrança acrescenta à forma ("Recebi o Pix", referência): mudar isso
+ * não muda o que o gerente viu, e pedir de novo por isso seria só atrito.
+ */
+export function approvalPortrait(input: ApprovalPortraitInput): string {
+  const discountValue = Number(String(input.discountValue || "").replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
+  return JSON.stringify({
+    tab: [input.tabRef || "", input.tabSessionKey || ""],
+    items: input.items.map((item) => [
+      item.line_id,
+      item.sku,
+      item.qty,
+      item.weighed ? weighedIntent(item.weighed) : null,
+      item.options?.length ? optionsIntent(item.options) : null,
+      item.discount && item.discount.value > 0 ? [item.discount.type || "percent", item.discount.value] : null,
+    ]),
+    discount: discountValue > 0 ? [input.discountType, discountValue] : null,
+    payment: [
+      input.paymentCollection,
+      input.paymentTenders.map((tender) => [tender.method, tender.amount_q, tender.collection]),
+    ],
+    customer: input.customerRef || "",
+    deliveryFee: input.deliveryFeeOverrideQ,
+  });
 }

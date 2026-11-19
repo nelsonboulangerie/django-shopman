@@ -126,7 +126,7 @@ describe("escolhas no produto · apresentação", () => {
       deliveryFeeOverrideQ: null, orderNotes: "", paymentMethod: "cash", paymentCollection: "terminal",
       paymentTenders: [], tenderedQ: null, changeForQ: 0, receiptChannels: [], receiptEmail: "",
       saveReceiptContact: false, saveReceiptTaxId: false, saveReceiptTaxIdConfirmed: false,
-      manualDiscount: null, managerApproval: null, clientRequestId: "pos:opcoes-1",
+      manualDiscount: null, clientRequestId: "pos:opcoes-1",
       items: [
         { line_id: "L-1", sku: "CQMO", name: "Croque Monsieur (+ Ovo frito)", price_q: 2800, qty: 1, notes: "", options: [ovo] },
         { line_id: "L-2", sku: "PAO", name: "Pão", price_q: 500, qty: 1, notes: "" },

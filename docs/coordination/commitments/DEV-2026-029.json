@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-029",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-16",
+  "compromisso": "Sim, abriremos agora. Quero o prompt para o Fable revisar o plano. Quero dele um plano de ação objetivo e estruturado em pacotes de trabalho delegáveis.",
+  "dono": "Engenharia",
+  "criado": "2026-11-16",
+  "revisar_em": "2026-11-23",
+  "gatilho": "-",
+  "estado": "EM_EXECUCAO",
+  "prova": "#2486 (plano de ação da Concierge, 16 WPs)"
+}

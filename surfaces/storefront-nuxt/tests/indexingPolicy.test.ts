@@ -31,6 +31,9 @@ describe('indexing policy', () => {
     '/sacola',
     '/finalizar',
     '/pedido/NB-123',
+    '/rota/',
+    '/rota/tok-123',
+    '/rota/manifest.webmanifest',
   ])('%s responde noindex no cabeçalho', async (path) => {
     const response = await handle()(new Request(`https://loja.test${path}`))
     expect(response.headers.get('x-robots-tag')).toBe('noindex')

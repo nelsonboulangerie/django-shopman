@@ -9,6 +9,8 @@ aparece às 9h tem razão.
 from __future__ import annotations
 
 from datetime import date, datetime
+from types import SimpleNamespace
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -385,3 +387,42 @@ class TestSlotCanonicoEmPedidoQueVirouHoje:
 
         assert erro is not None
         assert "não reconhecido" in erro
+
+
+class TestJanelaForaDaGrade:
+    """A casa tirou a janela do Admin com pedido aberto nela: cada leitor tem sua frase.
+
+    A equipe lê "horário não reconhecido" (é um aviso para ela agir); o cliente
+    lê "horário a confirmar", porque o cliente não lê frase de erro do sistema
+    (coordenação, 17/11/2026, #2555). Nos dois casos o ref cru nunca sai e o
+    erro grita no log.
+    """
+
+    def test_a_equipe_le_horario_nao_reconhecido(self, loja):
+        with patch("shopman.shop.services.fulfillment_window.logger") as log:
+            assert fulfillment_window.window_label("manha") == "horário não reconhecido"
+        assert log.error.called
+
+    def test_o_cliente_le_horario_a_confirmar(self, loja):
+        with patch("shopman.shop.services.fulfillment_window.logger") as log:
+            assert fulfillment_window.window_label("manha", for_customer=True) == "horário a confirmar"
+        assert log.error.called
+
+    def test_janela_conhecida_e_a_mesma_para_os_dois(self, loja):
+        assert fulfillment_window.window_label("slot-09", for_customer=True) == "A partir das 9h"
+        assert fulfillment_window.window_label("14:00-14:30", for_customer=True) == "14h às 14h30"
+
+    def test_o_acompanhamento_do_cliente_diz_a_confirmar(self, loja):
+        from shopman.shop.projections.order_tracking import _slot_label
+
+        with patch("shopman.shop.services.fulfillment_window.logger"):
+            assert _slot_label("manha") == "horário a confirmar"
+
+    def test_a_notificacao_do_cliente_diz_a_confirmar(self, loja):
+        from shopman.shop.services.notification import _commitment_phrase
+
+        pedido = SimpleNamespace(data={"delivery_date": "2026-09-10", "delivery_time_slot": "manha"})
+        with patch("shopman.shop.services.fulfillment_window.logger"):
+            frase = _commitment_phrase(pedido)
+        assert frase.endswith(", horário a confirmar")
+        assert "não reconhecido" not in frase

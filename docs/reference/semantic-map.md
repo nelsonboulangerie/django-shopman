@@ -216,6 +216,22 @@ explicitamente. A topologia e as setas físicas continuam em
 - **Evidência:** [módulos públicos](../../packages/utils/shopman/utils/) e
   [Constituição C5](../constitution.md#c5-uma-decisão-tem-um-dono).
 
+## conversational-commerce
+
+**Diretório físico:** `packages/conversational-commerce/`
+
+- **Pergunta canônica:** Como uma conversa de comércio consulta, decide e comprova, com
+  qualquer canal, modelo ou sistema de comércio por trás, sem que o núcleo saiba qual?
+- **Verbos:** ainda não há verbos publicados: o pacote é só esqueleto (WP F0). Contratos,
+  portas, política, turno e contrato de efeito chegam nos WPs F1 a F11 do plano do framework.
+- **Estados e sinais:** não possui estado canônico ainda. A máquina de estados do episódio é
+  do F4.
+- **Eventos:** não publica signal nem evento: é Python puro, sem Django. Registros de decisão
+  e recibos serão contratos versionados (F1), não signals.
+- **Evidência:** [ADR-049](../decisions/adr-049-comercio-conversacional-pacote-puro.md),
+  [K38](../../packages/conversational-commerce/conversational_commerce/tests/test_k38_no_infrastructure.py)
+  e [índice da especificação](../../packages/conversational-commerce/spec/00-index.md).
+
 ## Regra de manutenção
 
 Todo novo diretório físico diretamente sob `packages/` entra neste mapa no mesmo PR. Remover

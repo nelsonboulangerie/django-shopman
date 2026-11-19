@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { POSFulfillmentOptionProjection } from "~/types/pos";
+import type { ScheduleWindow } from "~/presentation/schedule";
 import {
   firstPendingStep,
   nextOrderSetupStep,
@@ -20,8 +22,13 @@ import {
 // chegam sem código aqui: o cliente sai, a etapa 1 volta a ser a vez; a
 // retirada vira entrega sem endereço, a etapa do endereço aparece pendente.
 //
-// Cada etapa resolve com o MESMO diálogo de sempre (cliente, recebimento,
-// agenda). O assistente não reabre a pergunta: ele diz qual é a vez.
+// O ASSISTENTE PERGUNTA NO PRÓPRIO CARTÃO (P2-8 do laudo de 16/11). Recebimento
+// e data eram um botão que abria um diálogo por cima do assistente; agora a
+// escolha mora na etapa: Retirada ou Entrega são os dois botões da etapa, e o
+// dia e o horário são o `PosSchedulePicker` (a mesma peça do diálogo "Quando" e
+// do reagendar), montado aqui sem moldura. O cliente continua na busca de
+// cliente do cabeçalho (a mesma de toda a venda) e o endereço no formulário de
+// entrega (CEP, mapa e taxa), que não cabem num cartão.
 const props = defineProps<{
   issue: OrderSetupIssue;
   /** Entrega escolhida: só então o endereço é etapa. */
@@ -33,8 +40,37 @@ const props = defineProps<{
   /** A janela combinada. Vazia = horário a combinar (trocar o dia a limpa). */
   scheduleWindow?: string;
   loading: boolean;
+  /** As formas de receber que a loja oferece (retirada, entrega). */
+  fulfillmentOptions?: POSFulfillmentOptionProjection[];
+  /** A forma já escolhida pelo operador; vazia enquanto ele não escolheu. */
+  chosenFulfillment?: "pickup" | "delivery" | "";
+  /** O dia e a janela escolhidos (vazios até o operador escolher). */
+  scheduleDate?: string;
+  scheduleTimeSlot?: string;
+  /** O que o `PosSchedulePicker` precisa: a mesma resposta do diálogo "Quando". */
+  schedule?: {
+    today: string;
+    availableDates: string[];
+    maxDate: string;
+    windows: ScheduleWindow[];
+    bottleneckName: string;
+    readyAt: string;
+    pending: boolean;
+    failed: boolean;
+  };
 }>();
-const emit = defineEmits<{ customer: []; fulfillment: []; schedule: []; complete: [] }>();
+const emit = defineEmits<{
+  customer: [];
+  /** O endereço da entrega: abre o formulário de entrega. */
+  fulfillment: [];
+  /** Retirada ou entrega, escolhida no cartão. */
+  pickFulfillment: ["pickup" | "delivery"];
+  /** A etapa da data ficou à vista: a agenda precisa ser buscada. */
+  schedule: [];
+  "update:scheduleDate": [string];
+  "update:scheduleTimeSlot": [string];
+  complete: [];
+}>();
 
 const steps = computed(() => orderSetupSteps(props.issue, Boolean(props.delivery)));
 const current = ref<OrderSetupStepKey>(firstPendingStep(steps.value));
@@ -49,6 +85,11 @@ watch(steps, (next) => {
   current.value = nextOrderSetupStep({ steps: next, current: current.value, wasReady: currentWasReady });
   currentWasReady = next.find((step) => step.key === current.value)?.ready ?? false;
 });
+
+// A data só se escolhe com a agenda na mão: a etapa à vista pede a busca.
+watch(current, (key) => {
+  if (key === "schedule") emit("schedule");
+}, { immediate: true });
 
 const { reveal } = useNextFocus();
 const focusKey = (key: OrderSetupStepKey) => `order-step-${key}`;
@@ -66,11 +107,13 @@ function goToStep(index: number) {
 const isLast = computed(() => currentIndex.value === steps.value.length - 1);
 const allReady = computed(() => !props.issue);
 
-// O endereço mora no diálogo do recebimento: a etapa 3 abre o mesmo diálogo.
+// O endereço mora no formulário de entrega: a etapa 3 abre esse formulário.
 function act(key: OrderSetupStepKey) {
   if (key === "customer") emit("customer");
-  else if (key === "schedule") emit("schedule");
   else emit("fulfillment");
+}
+function fulfillmentChosen(ref: string) {
+  return Boolean(props.chosenFulfillment) && props.chosenFulfillment === ref;
 }
 function isReady(key: OrderSetupStepKey) {
   return steps.value.find((step) => step.key === key)?.ready ?? false;
@@ -124,8 +167,27 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
 
     <div v-show="current === 'fulfillment'" data-order-step="fulfillment" :data-focus-target="focusKey('fulfillment')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('fulfillment') ? 'border-success/40' : 'border-primary bg-primary/5'">
       <h2 class="font-medium">Entrega ou retirada?</h2>
-      <p class="text-sm text-muted-foreground">{{ isReady('fulfillment') ? fulfillmentLabel : "Escolha como o cliente vai receber." }}</p>
-      <NuxtButton data-focus-control class="justify-self-start" :color="isReady('fulfillment') ? 'neutral' : 'primary'" :variant="isReady('fulfillment') ? 'outline' : 'solid'" :disabled="loading" @click="act('fulfillment')">{{ isReady('fulfillment') ? "Trocar entrega ou retirada" : "Escolher entrega ou retirada" }}</NuxtButton>
+      <div role="radiogroup" aria-label="Como o cliente recebe" class="grid grid-cols-2 gap-2">
+        <NuxtButton
+          v-for="(option, index) in fulfillmentOptions || []"
+          :key="option.ref"
+          :data-focus-control="index === 0 ? '' : undefined"
+          role="radio"
+          :aria-checked="fulfillmentChosen(option.ref)"
+          :data-order-fulfillment="option.ref"
+          color="neutral"
+          variant="outline"
+          class="h-auto min-h-control justify-start whitespace-normal px-3 py-2 text-left"
+          :class="fulfillmentChosen(option.ref) ? 'border-primary bg-primary/5' : 'bg-background'"
+          :disabled="loading"
+          @click="emit('pickFulfillment', option.ref)"
+        >
+          <span>
+            <span class="block text-sm font-semibold" :class="fulfillmentChosen(option.ref) ? 'text-primary' : ''">{{ option.label }}</span>
+            <span class="block text-xs text-muted-foreground">{{ option.description }}</span>
+          </span>
+        </NuxtButton>
+      </div>
     </div>
 
     <div v-show="current === 'address'" data-order-step="address" :data-focus-target="focusKey('address')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('address') ? 'border-success/40' : 'border-primary bg-primary/5'">
@@ -136,9 +198,24 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
 
     <div v-show="current === 'schedule'" data-order-step="schedule" :data-focus-target="focusKey('schedule')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('schedule') ? 'border-success/40' : 'border-primary bg-primary/5'">
       <h2 class="font-medium">Para quando?</h2>
-      <p class="text-sm text-muted-foreground">{{ isReady('schedule') ? scheduleLabel : "Combine o dia e o horário: é o que a casa promete ao cliente." }}</p>
+      <p class="text-sm text-muted-foreground">{{ isReady('schedule') ? scheduleLabel : "Escolha o dia e o horário: é o que a casa promete ao cliente." }}</p>
+      <PosSchedulePicker
+        v-if="schedule"
+        :today="schedule.today"
+        :date="scheduleDate || ''"
+        :time-slot="scheduleTimeSlot || ''"
+        :available-dates="schedule.availableDates"
+        :max-date="schedule.maxDate"
+        :windows="schedule.windows"
+        :bottleneck-name="schedule.bottleneckName"
+        :ready-at="schedule.readyAt"
+        :pending="schedule.pending"
+        :failed="schedule.failed"
+        day-label="Dia da encomenda"
+        @update:date="emit('update:scheduleDate', $event)"
+        @update:time-slot="emit('update:scheduleTimeSlot', $event)"
+      />
       <p v-if="isReady('schedule') && windowPending" data-schedule-window-pending class="text-sm text-muted-foreground">Horário a combinar.</p>
-      <NuxtButton data-focus-control class="justify-self-start" :color="isReady('schedule') ? 'neutral' : 'primary'" :variant="isReady('schedule') ? 'outline' : 'solid'" :disabled="loading" @click="act('schedule')">{{ isReady('schedule') ? "Trocar data e horário" : "Escolher data e horário" }}</NuxtButton>
     </div>
 
     <div class="flex flex-wrap items-center gap-2 border-t pt-4">

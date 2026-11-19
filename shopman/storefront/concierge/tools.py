@@ -348,7 +348,7 @@ def _slot_label(fulfillment_type: str, slot_ref: str) -> str:
     from shopman.shop.services.fulfillment_window import window_label
 
     try:
-        return window_label(slot_ref) or slot_ref
+        return window_label(slot_ref, for_customer=True) or slot_ref
     except Exception:
         logger.debug("concierge.slot_label degraded slot=%s", slot_ref, exc_info=True)
         return slot_ref
@@ -1250,6 +1250,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     from shopman.shop.services import checkout as checkout_service
     from shopman.shop.services import remote_mutations
     from shopman.shop.services.customer_orders import customer_identity_filter
+    from shopman.storefront.concierge.service import TurnRevoked
 
     _assert_authority(ctx)
     conversation = ctx.conversation
@@ -1391,6 +1392,13 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             session_key = locked.session_key
             expected_revision = locked.rev
 
+        def effect_guard():
+            # A conferência acima soltou a trava ao fechar o bloco. O pedido nasce no
+            # commit do Orderman: a posse é reconferida ali, na mesma transação (#2625).
+            from .effect_authority import lock_turn_authority
+
+            lock_turn_authority(conversation, channel_ref=ctx.channel_ref)
+
         try:
             result = checkout_service.process(
                 session_key, ctx.channel_ref, data,
@@ -1398,6 +1406,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
                 ctx={"actor": "concierge", "conversation_id": conversation.pk},
                 expected_total_q=int(quote["lines_total_q"]), expected_revision=expected_revision,
                 expected_grand_total_q=int(quote["total_q"]),
+                effect_guard=effect_guard,
             )
         except Exception as exc:
             logger.debug("concierge checkout refused before seal", exc_info=True)
@@ -1429,6 +1438,10 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             "in_progress",
             "Sua confirmação está em processamento. Consulte o resultado sem fazer outro pedido.",
         )
+    except TurnRevoked:
+        # A posse mudou antes do efeito: nenhum pedido nasceu, e o turno para aqui
+        # (o serviço preserva as entradas para quem assumiu). Não é falha de checkout.
+        raise
     except Exception as exc:
         logger.exception("concierge.place_order refused conversation=%s", conversation.pk)
         try:
