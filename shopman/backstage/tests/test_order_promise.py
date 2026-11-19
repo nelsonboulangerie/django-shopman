@@ -749,7 +749,7 @@ def test_o_numero_de_consultas_nao_cresce_com_o_numero_de_pedidos(ficha, baguete
     assert len(many) == len(few)
     assert len(few) <= 8
     # Um pedido em risco no painel pequeno, cinco no grande, o mesmo item: uma busca cada.
-    assert searches == [(SKU, Decimal("4"), "web", 3, _day(2))] * 2
+    assert searches == [(SKU, Decimal("4"), "web", order_promise.ALTERNATIVES_LIMIT, _day(2))] * 2
 
 
 # ── O próximo passo: a frase, a saída recomendada e o que oferecer no lugar ──
@@ -782,6 +782,8 @@ def test_a_frase_oferece_o_que_ha_e_nunca_mais_que_isso():
     brioche = option(sku="BRIOCHE", name="Brioche", available_display="1 livre para amanhã")
     step = order_promise.next_step_for
 
+    # A leitura traz no máximo duas: a frase é para ler de relance, no balcão.
+    assert order_promise.ALTERNATIVES_LIMIT == 2
     assert step("batch_cancelled", alternatives=(fendu,)) == "Avise o cliente e ofereça: Fendu (12 livres para amanhã)."
     assert step("batch_cancelled", alternatives=(fendu, campagne)) == (
         "Avise o cliente e ofereça: Fendu (12 livres para amanhã) ou Pain de Campagne (6 livres para amanhã)."

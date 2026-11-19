@@ -180,6 +180,7 @@ from .operations import (
     DayClosingView,
     DeliveriesCountView,
     DeliveriesView,
+    DeliveryDriverPhotoView,
     OperationEpisodeAnswerView,
     OperatorBadgeLostView,
     OperatorEligibleView,
@@ -794,6 +795,8 @@ urlpatterns = [
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
     path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
     path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
+    path("deliveries/<str:ride>/driver-photo/", DeliveryDriverPhotoView.as_view(),
+         name="api-backstage-delivery-driver-photo"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
     path("ifood/widget/", IFoodWidgetView.as_view(), name="api-backstage-ifood-widget"),

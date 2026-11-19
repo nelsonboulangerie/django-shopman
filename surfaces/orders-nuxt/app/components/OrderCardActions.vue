@@ -11,6 +11,7 @@ import { computed } from "vue";
 import type { OrderCardProjection } from "~/types/orders";
 import type { Affordance, AffordanceRef, UndoLine } from "~/presentation/board";
 import { blockedReasonLines, cardFooter } from "~/presentation/cardBlocks";
+import { promiseRiskLeads } from "~/presentation/orderPromise";
 import OrderCardMenu from "./OrderCardMenu.vue";
 
 const props = defineProps<{
@@ -46,6 +47,12 @@ const footer = computed(() =>
   }),
 );
 const shownPrimary = computed(() => footer.value.primary);
+// Promessa em risco com saída recomendada: o cheio do pedido é a saída (dentro da
+// pílula), e o gesto da etapa fica em contorno. A mesma regra da linha da Fila.
+const riskLeads = computed(() => promiseRiskLeads(props.card));
+const primaryStepsBack = computed(
+  () => Boolean(shownPrimary.value?.disabled) || riskLeads.value,
+);
 
 const blockedReasons = computed(() =>
   props.handoff
@@ -123,10 +130,11 @@ function nuxtIcon(icon: string): string {
           :disabled="busy || shownPrimary.disabled"
           :loading="busy"
           :title="shownPrimary.reason || undefined"
-          :color="shownPrimary.disabled ? 'neutral' : 'primary'"
-          :variant="shownPrimary.disabled ? 'outline' : 'solid'"
+          :color="primaryStepsBack ? 'neutral' : 'primary'"
+          :variant="primaryStepsBack ? 'outline' : 'solid'"
           :icon="shownPrimary.disabled ? 'i-lucide-lock' : nuxtIcon(shownPrimary.icon)"
           data-card-primary
+          :data-card-primary-weight="riskLeads ? 'secondary' : undefined"
           @click="!shownPrimary.disabled && emit('action', shownPrimary.ref)"
         >
           <span class="min-w-0 text-center leading-tight">{{

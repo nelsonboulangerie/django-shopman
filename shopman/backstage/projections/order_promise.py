@@ -165,7 +165,7 @@ _NEXT_STEP_ORDER = (
     CAUSE_NO_BATCH,
 )
 #: Quantas alternativas a frase oferece, no máximo.
-ALTERNATIVES_LIMIT = 3
+ALTERNATIVES_LIMIT = 2
 
 STEP_RESCHEDULE = "Avise o cliente e remarque para o próximo lote."
 STEP_LATE = "Avise o cliente do atraso."
