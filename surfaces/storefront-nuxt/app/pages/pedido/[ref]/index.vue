@@ -18,12 +18,13 @@ import {
 } from '~/presentation/orderTracking'
 import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
-import { showsPaymentBlock } from '~/presentation/payment'
+import { isHostedCheckout, showsPaymentBlock } from '~/presentation/payment'
 import {
   canShareNatively,
   shareNatively,
   whatsAppShareHref
 } from '~/utils/share'
+import { takeCardHandoff } from '~/utils/cardHandoff'
 import { takeJustPlaced } from '~/utils/justPlaced'
 
 const route = useRoute()
@@ -198,6 +199,21 @@ const paymentLapsed = computed(() => mounted.value && paymentDeadlineLapsed(
   tracking.value?.is_active
 ))
 const deadlineUrgent = computed(() => isCountdownUrgent(deadlinePct.value))
+// Cartão em um toque (P2-09): quem acabou de enviar o pedido com cartão já decidiu
+// pagar. Assim que o link do pagamento seguro chega, a tela leva até ele, uma vez só
+// (a marca é do checkout, fica na aba e vence em minutos). O botão "Pagar com cartão"
+// continua no bloco, para quem voltou sem pagar.
+// Fica DEPOIS de `paymentLapsed`: a observação roda na hora (`immediate`), e ler o
+// bloco de pagamento antes de o prazo existir derruba a página inteira no servidor.
+const cardHandoffUrl = computed(() => {
+  const promise = tracking.value?.promise
+  if (!showPaymentBlock.value || !promise || !isHostedCheckout(promise.payment_method)) return ''
+  return promise.checkout_url || ''
+})
+watch(cardHandoffUrl, (url) => {
+  if (!url || !import.meta.client || !tracking.value) return
+  if (takeCardHandoff(tracking.value.ref)) window.location.assign(url)
+}, { immediate: true })
 
 // Frescor do dado: idade viva "Atualizado há X", que vira aviso se um poll falhar
 // (idade > 2× a janela de frescor do servidor). Só em pedidos ativos — um pedido

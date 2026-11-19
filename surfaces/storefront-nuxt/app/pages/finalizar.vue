@@ -3,7 +3,7 @@ import { navigateTo } from '#app'
 import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
 import type { AddressSelection } from '~/presentation/address'
 import { cartBatchFloor, cartBatchFloorReason, discountDisplay, linePrice, promoSavingsNote, reviewWaitlist } from '~/presentation/cart'
-import { orderReadyLine } from '~/presentation/promise'
+import { cartLinePromise, orderReadyLine } from '~/presentation/promise'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
@@ -11,6 +11,8 @@ import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
+import { isHostedCheckout } from '~/presentation/payment'
+import { markCardHandoff } from '~/utils/cardHandoff'
 import { markJustPlaced } from '~/utils/justPlaced'
 import {
   addressSummary as buildAddressSummary,
@@ -60,6 +62,8 @@ import {
   DELIVERY_ZONE_REFUSAL_SELECTOR,
   rememberChoicesDescription,
   whenSummary as buildWhenSummary,
+  checkoutNow,
+  checkoutTodayValue,
   type CheckoutSectionState,
   type CheckoutStep
 } from '~/utils/checkoutFlow'
@@ -341,7 +345,7 @@ function dateOptionDescription (value: string): string {
 // Título da próxima data disponível: "Amanhã" quando ela for de fato o dia seguinte;
 // senão "Próxima fornada" (ex.: sáb→seg pulando domingo, véspera de feriado/férias).
 function nextDateTitle (value: string): string {
-  return displayCheckoutDate(value) === 'Amanhã' ? 'Amanhã' : 'Próxima fornada'
+  return displayCheckoutDate(value, shopNow.value) === 'Amanhã' ? 'Amanhã' : 'Próxima fornada'
 }
 
 const checkoutQuery = computed(() => state.delivery_date ? { delivery_date: state.delivery_date } : {})
@@ -377,6 +381,36 @@ function acceptCartProjection (incoming: CartProjection) {
 }
 
 const checkout = computed(() => freshestCheckout.value)
+
+// O relógio do checkout é o da LOJA (`checkout.today`, escrito pelo servidor no fuso
+// dela): "Hoje", "Amanhã", o piso da fornada e os limites do calendário saem daqui, e
+// não do relógio do aparelho (plano EXCELENCIA-STOREFRONT, P2-08).
+const shopNow = computed(() => checkoutNow(checkout.value))
+const shopToday = computed(() => checkoutTodayValue(checkout.value))
+
+// O checkout não envelhece: ao voltar para a aba, quando a rede volta, e numa cadência
+// calma com a aba à vista, a tela refaz a consulta. O corte do dia, o fechamento da
+// casa e o prazo da frase do dinheiro aparecem sem a cliente tocar em nada, em vez de
+// só no envio. Não refaz no meio de um envio nem enquanto ela digita num campo.
+const CHECKOUT_CALM_REFRESH_MS = 120_000
+function isTyping (): boolean {
+  const active = import.meta.client ? document.activeElement : null
+  return !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
+}
+async function refreshIfIdle () {
+  if (submitting.value || isTyping()) return
+  await refresh().catch(() => null)
+}
+useConnectivity().watchConnectivity(refreshIfIdle)
+let calmRefreshTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  calmRefreshTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') void refreshIfIdle()
+  }, CHECKOUT_CALM_REFRESH_MS)
+})
+onBeforeUnmount(() => {
+  if (calmRefreshTimer) clearInterval(calmRefreshTimer)
+})
 const cart = computed(() => checkout.value?.cart)
 
 // Cupom: aplica/remove via cart state (servidor) e re-busca o checkout p/ refletir
@@ -461,6 +495,34 @@ const pixProviderTest = computed(() => pixProviderTestConstraint(checkout.value?
 // pode ter mudado desde que a tela carregou. Vale enquanto o total da tela for o
 // que o servidor recusou; a sacola mudou, quem decide volta a ser a conta local.
 const pixLimitRefusal = ref<{ message: string, totalQ: number } | null>(null)
+// Faltou estoque no envio (`insufficient_supply`): o servidor diz qual item, e a tela
+// guarda isso para o aviso com saída (plano EXCELENCIA-STOREFRONT, P1-11).
+const stockRefusal = ref<{ sku: string, name: string, message: string } | null>(null)
+function revealStockRefusal () {
+  // O alvo é a moldura (régua canônica + respiro), não o aviso: o aviso sozinho
+  // não tem margem de rolagem e pararia debaixo do cabeçalho.
+  reveal(() => document.querySelector('[data-focus-target="stock-refusal"]'), { align: 'start', focus: true })
+}
+// A folha de revisão, ao terminar de fechar, devolve o foco ao botão que a abriu
+// ("Revisar pedido"), e o navegador rola até ele. Quando ela fecha por causa de uma
+// recusa com aviso, o foco é do aviso: a devolução é cancelada e a tela vai até ele.
+// O fim do fechamento pode chegar antes ou depois de a consulta refeita terminar; a
+// marca vale para as duas ordens e cai quando a revisão abre de novo.
+let reviewClosesIntoStockRefusal = false
+// A revisão abre do começo. Sem isto o foco inicial ia para o primeiro elemento
+// focável do corpo, o link dos Termos, que agora fica no fim do card "Antes de
+// enviar": a folha abria já rolada e escondia o primeiro item. O foco vai para a
+// própria folha (o leitor de tela começa pelo título), sem rolar nada.
+function onReviewOpened (event: Event) {
+  event.preventDefault()
+  ;(event.target as HTMLElement | null)?.focus?.({ preventScroll: true })
+}
+function onReviewClosed (event: Event) {
+  if (!reviewClosesIntoStockRefusal) return
+  reviewClosesIntoStockRefusal = false
+  event.preventDefault()
+  revealStockRefusal()
+}
 const pixLimitRefusalActive = computed(() =>
   !!pixLimitRefusal.value && state.payment_method === 'pix' &&
   (cart.value?.grand_total_q == null || cart.value.grand_total_q === pixLimitRefusal.value.totalQ)
@@ -502,13 +564,24 @@ const paymentMethodLabel = computed(() => resolvePaymentMethodLabel(checkout.val
 const selectedSlotLabel = computed(() => selectedSlot.value?.label || state.delivery_time_slot || '')
 const fulfillmentLabel = computed(() => resolveFulfillmentLabel(state.fulfillment_type))
 const fulfillmentIcon = computed(() => resolveFulfillmentIcon(state.fulfillment_type))
-const selectedDateLabel = computed(() => displayCheckoutDate(state.delivery_date, undefined, true))
-const whenSummary = computed(() => buildWhenSummary(state.delivery_date, selectedSlotLabel.value))
+const selectedDateLabel = computed(() => displayCheckoutDate(state.delivery_date, shopNow.value, true))
+// A frase do dinheiro da forma de pagamento escolhida ('' quando o servidor não tem
+// prazo a prometer).
+const moneyNotice = computed(() =>
+  checkout.value?.money_notices?.find(notice => notice.method === state.payment_method)?.text || ''
+)
+const whenSummary = computed(() => buildWhenSummary(state.delivery_date, selectedSlotLabel.value, shopNow.value))
 const fulfillmentSummary = computed(() => buildFulfillmentSummary(fulfillmentLabel.value, whenSummary.value))
 // Lista de espera na revisão: só quando alguma linha realmente disputa a
 // fornada do dia ESCOLHIDO (pedido agendado para outra data não tem fila).
+// "Itens em lista de espera: avisamos quando ficarem prontos." só quando alguma linha em
+// espera NÃO tem a promessa com dia e hora. Com a promessa ("Fica pronto amanhã, sexta, a
+// partir das 15h"), a linha já diz quando: as duas juntas eram duas promessas para o
+// mesmo item.
 const hasReviewWaitlist = computed(() =>
-  (cart.value?.items || []).some(line => reviewWaitlist(line, state.delivery_date))
+  (cart.value?.items || []).some(line =>
+    reviewWaitlist(line, state.delivery_date, shopToday.value) && !cartLinePromise(line.promise)
+  )
 )
 const phoneDisplay = computed(() => displayBrazilianPhone(state.phone || checkout.value?.customer_phone || '', defaultDdd.value))
 const contactComplete = computed(() => buildContactComplete(state, phoneDisplay.value))
@@ -556,9 +629,9 @@ const deliveryAddressLines = computed(() => addressLines(state.delivery_address)
 const confirmSheetDescription = computed(() => buildConfirmSheetDescription(checkout.value))
 // Um pedido, uma data: a sacola que espera uma fornada de outro dia não vira
 // pedido de antes dela. O piso entra nos limites (calendário, caixas, "Continuar").
-const batchFloor = computed(() => cartBatchFloor(checkout.value?.cart?.items || []))
-const dateBounds = computed(() => checkoutDateBounds(checkout.value, new Date(), batchFloor.value?.date || ''))
-const batchFloorNotice = computed(() => cartBatchFloorReason(batchFloor.value, state.fulfillment_type))
+const batchFloor = computed(() => cartBatchFloor(checkout.value?.cart?.items || [], shopToday.value))
+const dateBounds = computed(() => checkoutDateBounds(checkout.value, shopNow.value, batchFloor.value?.date || ''))
+const batchFloorNotice = computed(() => cartBatchFloorReason(batchFloor.value, state.fulfillment_type, shopToday.value))
 const checkoutMinDate = computed(() => dateBounds.value.minDate)
 const checkoutMaxDate = computed(() => dateBounds.value.maxDate)
 const closedDateEntries = computed(() => parseClosedDateEntries(checkout.value?.closed_dates_json))
@@ -864,7 +937,7 @@ function initializeDeliveryDate () {
     restoredUsable && !restoredIsOver,
     checkout.value.available_dates || [],
     dateBounds.value,
-    localDateValue(new Date())
+    shopToday.value
   )
   const parsed = parseLocalDate(value)
   if (!parsed) return
@@ -1241,6 +1314,7 @@ function continueFromPayment () {
 }
 
 function openConfirmSheet () {
+  reviewClosesIntoStockRefusal = false
   if (!validate()) { revealFirstError(); return }
   // Defesa em profundidade: entrega numa zona recusada nunca chega à revisão
   // com o envio liberado e total sem taxa (beta SMS-06).
@@ -1379,6 +1453,7 @@ async function submitCheckout () {
   // A idempotência do servidor é a última defesa; esta guarda evita o request
   // concorrente antes dele sair do navegador.
   if (submitting.value || !checkout.value || !validate()) return
+  stockRefusal.value = null
   const baseline = checkoutBaseline(cart.value)
   if (!baseline) {
     serverError.value = 'Sua sacola precisa ser atualizada antes da confirmação. Confira o resumo e tente novamente.'
@@ -1416,13 +1491,15 @@ async function submitCheckout () {
     // O confete do acompanhamento é deste navegador: é ele quem sabe que o pedido
     // acabou de ser fechado (utils/justPlaced).
     markJustPlaced(response.order_ref)
+    // Cartão em um toque: o acompanhamento leva direto ao pagamento seguro assim que
+    // o link chega (utils/cardHandoff).
+    if (isHostedCheckout(state.payment_method)) markCardHandoff(response.order_ref)
     clearCart()
     clearCheckoutDraft()
     attemptKey.value = createCheckoutAttemptKey()
-    // O BACKEND decide o próximo passo (views.py, next_url): cartão vai direto
-    // pagar; PIX em canal post_commit e dinheiro vão para o acompanhamento, que
-    // já mostra o momento "pedido recebido" e libera o "Pagar agora" sozinho
-    // quando a loja confirma. Não existe mais tela intermediária.
+    // O próximo passo é sempre o acompanhamento (views.py, next_url): é lá que o
+    // Pix aparece e que o cartão é levado ao pagamento seguro (marca acima). Não
+    // existe tela intermediária.
     const confirmedUrl = response.next_url
       || `/pedido/${encodeURIComponent(response.order_ref)}`
     // O endereço novo já foi guardado pelo Core com rótulo neutro. Nomeá-lo é
@@ -1480,6 +1557,26 @@ async function submitCheckout () {
       confirmOpen.value = false
       activeStep.value = 'payment'
       await refresh()
+      return
+    }
+    // Faltou estoque no último passo: a revisão fecha, a tela diz QUAL item ficou
+    // indisponível e leva à sacola, onde a linha dele mostra o que dá para fazer (usar o
+    // que sobrou, pedir o aviso de volta, tirar). Antes era um aviso que sumia, sem o
+    // item e sem para onde ir.
+    if (data.error_code === 'insufficient_supply') {
+      const context = (data.context || {}) as { sku?: unknown, name?: unknown }
+      stockRefusal.value = {
+        sku: String(context.sku || ''),
+        name: String(context.name || ''),
+        message: serverError.value
+      }
+      serverError.value = ''
+      // O foco é do aviso, não do botão que abriu a revisão (`onReviewClosed`).
+      reviewClosesIntoStockRefusal = true
+      confirmOpen.value = false
+      await refresh()
+      await nextTick()
+      revealStockRefusal()
       return
     }
     if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {
@@ -1541,7 +1638,7 @@ async function switchToPickup () {
 }
 
 useSeoMeta({
-  title: 'Checkout'
+  title: 'Finalizar pedido'
 })
 </script>
 
@@ -1587,6 +1684,24 @@ useSeoMeta({
         </UiAlert>
 
         <template v-else-if="checkout">
+          <!-- Faltou estoque no envio: qual item, e o caminho para resolver. O alvo do
+               foco é a moldura, que para na régua canônica (sob o cabeçalho); o respiro
+               de cima mora dentro dela (`pt-4`, compensado por `-mt-4`), então o aviso
+               não encosta no cabeçalho e nenhuma linha do texto de cima sobra cortada. -->
+          <div v-if="stockRefusal" class="-mt-4 pt-4" data-focus-target="stock-refusal">
+            <UiAlert variant="warning" data-checkout-stock-refusal>
+              <!-- O título é a frase inteira ("X ficou indisponível antes de..."): quebra
+                   em linhas no celular, em vez de cortar com reticências. -->
+              <UiAlertTitle class="line-clamp-none leading-snug">{{ stockRefusal.message }}</UiAlertTitle>
+              <UiAlertDescription>
+                <p>Abra a sacola para ver o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
+                <UiButton size="sm" icon="lucide:shopping-bag" class="mt-2" to="/sacola" data-focus-control>
+                  Abrir a sacola
+                </UiButton>
+              </UiAlertDescription>
+            </UiAlert>
+          </div>
+
           <UiAlert v-if="pickupSwapOffer" variant="warning" data-checkout-pickup-swap>
             <UiAlertTitle>{{ serverError || 'Ainda não entregamos nesse endereço' }}</UiAlertTitle>
             <UiAlertDescription>
@@ -1973,7 +2088,7 @@ useSeoMeta({
                              que o calendário travou. A legenda diz o que o risco quer
                              dizer e qual é o gesto. -->
                         <p class="border-t px-3 py-2 shop-meta text-muted-foreground" data-checkout-date-legend>
-                          Agendamentos até {{ displayCheckoutDate(dateBounds.maxDateValue) }}.
+                          Encomendas até {{ displayCheckoutDate(dateBounds.maxDateValue, shopNow) }}.
                           Datas passadas, sem atendimento ou fora desse prazo ficam desabilitadas.
                         </p>
                       </UiPopoverContent>
@@ -2413,6 +2528,8 @@ useSeoMeta({
             max-width="md"
             title="Revise seu pedido"
             :description="confirmSheetDescription"
+            @open-auto-focus="onReviewOpened"
+            @close-auto-focus="onReviewClosed"
           >
             <!-- Superfície única, diagramação enxuta. O corpo rola; o rodapé fica
                  mínimo (Total + 1 ação) e sempre visível — nada vaza da tela. -->
@@ -2436,13 +2553,22 @@ useSeoMeta({
                     </span>
                     <CartLineTotal :line="line" value-class="tabular-nums" class="shrink-0" data-review-line-total />
                   </span>
-                  <!-- Lista de espera = história do MESMO dia (fila de espera da produção).
+                  <!-- A espera = história do MESMO dia (fila de espera da produção).
                        Pedido agendado para outra data não tem fila: a reserva nasce na
-                       data com prioridade de pedido, e o "Quando" já conta o combinado. -->
-                  <UiBadge v-if="reviewWaitlist(line, state.delivery_date)" variant="outline" class="ml-1 align-middle">
-                    Lista de espera
-                  </UiBadge>
-                  <span v-if="reviewWaitlist(line, state.delivery_date)?.notice" class="ml-1 shop-meta">{{ reviewWaitlist(line, state.delivery_date)?.notice }}</span>
+                       data com prioridade de pedido, e o "Quando" já conta o combinado.
+                       A frase é a promessa do servidor, a mesma da sacola ("Fica pronto
+                       amanhã, quinta, a partir das 15h"); o selo e o "Previsto para" só
+                       sobram quando a promessa não veio. -->
+                  <template v-if="reviewWaitlist(line, state.delivery_date, shopToday)">
+                    <span v-if="cartLinePromise(line.promise)" class="flex items-start gap-1 shop-meta text-foreground" data-review-line-promise>
+                      <Icon name="lucide:clock" class="mt-px size-3.5 shrink-0" />
+                      {{ cartLinePromise(line.promise) }}
+                    </span>
+                    <template v-else>
+                      <UiBadge variant="outline" class="ml-1 align-middle">Lista de espera</UiBadge>
+                      <span v-if="reviewWaitlist(line, state.delivery_date, shopToday)?.notice" class="ml-1 shop-meta">{{ reviewWaitlist(line, state.delivery_date, shopToday)?.notice }}</span>
+                    </template>
+                  </template>
                   <!-- Preparado na hora: promessa declarada da casa, eixo próprio.
                        Não disputa com a lista de espera acima — as duas podem valer
                        para o mesmo item, e cada uma responde uma pergunta. -->
@@ -2466,17 +2592,6 @@ useSeoMeta({
 
               <!-- Como/onde/pgto/contato: ícone + valor, sem rótulo (o valor já se explica). -->
               <OrderSummaryRows :rows="reviewSummaryRows" />
-
-              <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
-                   enviar e de pagar (#2613, decisão do dono de 18/11/2026). A frase é a da
-                   cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
-                   reprova se uma mudar sem a outra. -->
-              <p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>
-                Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
-                voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
-                loja.
-                <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
-              </p>
 
               <!-- Cartão do presente / observação: bilhete em superfície destacada (muted). -->
               <p v-if="state.is_gift && state.gift_message" class="mt-3 rounded-lg bg-muted/50 p-3">
@@ -2510,6 +2625,36 @@ useSeoMeta({
                 </dl>
                 <p v-if="cart.group_savings_message" class="mt-2 shop-body text-primary">{{ cart.group_savings_message }}</p>
               </template>
+
+              <!-- Antes de enviar: o que acontece com o dinheiro, card dentro do card (a
+                   superfície Faubourg, a mesma do login). É condição, não alerta nem
+                   sucesso: tom neutro da superfície, sem cor semântica (dono e coordenação,
+                   19/11/2026). A frase vem do servidor (P1-06): o que acontece com o
+                   dinheiro, até quando a loja confirma e o que acontece se não confirmar. -->
+              <section
+                v-if="moneyNotice"
+                class="shop-surface-faubourg mt-3 rounded-lg border p-4"
+                aria-labelledby="review-before-sending-title"
+                data-review-before-sending
+              >
+                <p id="review-before-sending-title" class="shop-kicker">Antes de enviar</p>
+                <div class="mt-2 flex items-start gap-3" data-review-money-notice>
+                  <Icon name="lucide:shield-check" class="mt-0.5 size-5 shrink-0" />
+                  <p class="shop-body">{{ moneyNotice }}</p>
+                </div>
+              </section>
+              <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
+                   enviar e de pagar (#2613, decisão do dono de 18/11/2026). Fica FORA do
+                   card, numa linha logo abaixo dele: dentro, com as duas frases, o card
+                   passava da dobra no celular (coordenação, 19/11/2026). A frase é a da
+                   cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
+                   reprova se uma mudar sem a outra. -->
+              <p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>
+                Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
+                voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
+                loja.
+                <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
+              </p>
             </div>
 
             <!-- Rodapé mínimo: Total em destaque + UM botão full-width. Sem botão amarelo,

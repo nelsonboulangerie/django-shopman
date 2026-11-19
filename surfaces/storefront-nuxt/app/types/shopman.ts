@@ -1014,6 +1014,13 @@ export interface CheckoutProjection {
   // Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
   // "Hoje" não vem em `available_dates` e a tela diz por quê.
   today_over?: boolean
+  // O "hoje" da loja (ISO), no fuso dela: a tela calcula "hoje", "amanhã" e os
+  // limites do calendário a partir daqui, não do relógio do aparelho.
+  today?: string
+  // A frase do dinheiro de cada forma de pagamento, para a revisão: paga agora,
+  // até quando a loja confirma e o que acontece se não confirmar. Vazio quando
+  // não há prazo a prometer.
+  money_notices?: Array<{ method: string, text: string }>
   // NOTA DA ENTREGA: toda entrega pede CPF/CNPJ. `prefill_tax_id` é o documento
   // que já vem no campo (do cadastro ou da última entrega); `prefill_tax_id_source`
   // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.
