@@ -11,6 +11,8 @@ import {
   splitRef,
   type Affordance,
 } from "./board";
+import { blockedReasonLines, lockedButtonRepeatsPill } from "./cardBlocks";
+import { waitsForBatch } from "./orderPromise";
 import {
   timeTone,
   type TimeTone,
@@ -355,6 +357,41 @@ export function restLine(
   return { hidden, moving, text: [ask, going].filter(Boolean).join(" · ") };
 }
 
+export interface QueueBlock {
+  /** O nome do bloqueio ("Pix expirado", "Esperando o lote"); sem nome, "Bloqueado". */
+  label: string;
+  /** O porquê, escrito na linha. */
+  reason: string;
+  /** Vermelho só no bloqueio que pede alguém; a espera que anda sozinha é neutra. */
+  color: "error" | "neutral";
+  icon: string;
+  /** A cobrança venceu e não destrava sozinha: a linha oferece "Cancelar pedido". */
+  cancelUnpaid: boolean;
+}
+
+/**
+ * O bloqueio do avanço na linha da Fila: o nome, o motivo escrito e a saída (resto do
+ * P1-12 do laudo: era pílula com o motivo e nenhum gesto).
+ *
+ * Aparece em quem a Fila chama de bloqueado, em quem não pede ninguém (o recorte
+ * "Todos": o pedido que só espera o lote) e em quem está com a promessa em risco. Nos
+ * outros fatos (aceitar, iniciar, despachar) o gesto da linha já diz o que fazer.
+ */
+export function queueBlock(item: QueueItem): QueueBlock | null {
+  const card = item.card;
+  const reason = String(card.advance_block_reason ?? "").trim();
+  if (!reason) return null;
+  if (item.kind && item.kind !== "blocked" && item.kind !== "promise") return null;
+  const waits = waitsForBatch(card);
+  return {
+    label: String(card.advance_block_label || "Bloqueado").replace(/…$/, ""),
+    reason,
+    color: item.kind === "blocked" ? "error" : "neutral",
+    icon: waits ? "i-lucide-hourglass" : "i-lucide-lock",
+    cancelUnpaid: Boolean(card.payment_lapsed),
+  };
+}
+
 export interface QueueGesture {
   /** O gesto principal: o fato humano, com o verbo da v4 ("Aceitar", "Saiu", "Retirou"). */
   primary: (Affordance & { verb: string }) | null;
@@ -367,8 +404,9 @@ export interface QueueGesture {
 /** O botão da linha: só o fato humano é botão (v4). O rótulo do servidor vira `title`. */
 export function queueGesture(item: QueueItem): QueueGesture {
   // A negociação do iFood se responde no pedido (motivo, prova, contraproposta), não
-  // com o gesto do cartão: a linha oferece "Responder", que é um link.
-  if (!item.kind || item.kind === "negotiation")
+  // com o gesto do cartão: a linha oferece "Responder", que é um link. A promessa em
+  // risco tem as saídas dela escritas na linha (WP-G08), e nenhum gesto de etapa.
+  if (!item.kind || item.kind === "negotiation" || item.kind === "promise")
     return { primary: null, secondary: null, shortcut: "" };
   // O aceite que não chegou ao iFood: o gesto é reenviar, não avançar o pedido.
   if (item.kind === "ifood_accept") {
@@ -392,9 +430,21 @@ export function queueGesture(item: QueueItem): QueueGesture {
     };
   }
   const affordances = cardAffordances(item.card);
-  const primary =
+  const found =
     affordances.find((aff) => aff.priority === "primary" || aff.disabled) ??
     null;
+  // O avanço travado que só leva o nome do bloqueio não vira botão morto: a linha já
+  // mostra o selo com esse nome e o motivo ao lado (P1-16, como no cartão).
+  const primary =
+    found &&
+    lockedButtonRepeatsPill({
+      primary: found,
+      primaryLabel: found.label,
+      blockLabel: item.card.advance_block_label,
+      blockAnnounced: Boolean(queueBlock(item)),
+    })
+      ? null
+      : found;
   const secondary =
     item.kind === "confirm"
       ? (affordances.find((aff) => aff.ref === "reject") ?? null)
@@ -413,6 +463,21 @@ export function queueGesture(item: QueueItem): QueueGesture {
     secondary,
     shortcut: primary.ref === "confirm" && !primary.disabled ? "A" : "Enter",
   };
+}
+
+/**
+ * Por que um gesto da linha está travado, escrito sob os botões: o `title` não existe
+ * no toque (sobra do WP-G06, #2710). O que o selo do bloqueio da linha já diz não se
+ * repete.
+ */
+export function queueBlockedReasons(item: QueueItem): string[] {
+  const gesture = queueGesture(item);
+  return blockedReasonLines({
+    primary: gesture.primary,
+    primaryLabel: gesture.primary?.verb ?? "",
+    secondary: gesture.secondary ? [gesture.secondary] : [],
+    blockAnnounced: Boolean(queueBlock(item)),
+  });
 }
 
 /** "João Oliveira" e o resto da linha ("Entrega · Rua Paranaguá, 800 · iFood"). */

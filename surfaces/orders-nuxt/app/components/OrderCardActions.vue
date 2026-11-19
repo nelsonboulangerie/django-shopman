@@ -10,7 +10,8 @@ import { computed } from "vue";
 
 import type { OrderCardProjection } from "~/types/orders";
 import type { Affordance, AffordanceRef, UndoLine } from "~/presentation/board";
-import { blockedReasonLines, lockedButtonRepeatsPill } from "~/presentation/cardBlocks";
+import { blockedReasonLines, cardFooter } from "~/presentation/cardBlocks";
+import { promiseRiskLeads } from "~/presentation/orderPromise";
 import OrderCardMenu from "./OrderCardMenu.vue";
 
 const props = defineProps<{
@@ -31,16 +32,26 @@ const emit = defineEmits<{
   (e: "station-recall" | "volumes", value: number): void;
 }>();
 
-// O avanço travado que só repetiria a pílula do bloqueio não vira botão morto.
-const shownPrimary = computed(() =>
-  lockedButtonRepeatsPill({
+// O avanço travado que só repetiria a pílula do bloqueio não vira botão morto. Sem
+// botão nenhum, o lugar deles recebe as pílulas de aviso do cartão (`#lone`): o ⋮ não
+// fica sozinho numa linha (#2710).
+const footer = computed(() =>
+  cardFooter({
     primary: props.primary,
     primaryLabel: props.primaryLabel,
+    secondary: props.secondary,
     blockLabel: props.card.advance_block_label,
     blockAnnounced: Boolean(props.card.advance_block_reason),
-  })
-    ? null
-    : props.primary,
+    handoff: Boolean(props.handoff),
+    waitingFor: props.waitingFor,
+  }),
+);
+const shownPrimary = computed(() => footer.value.primary);
+// Promessa em risco com saída recomendada: o cheio do pedido é a saída (dentro da
+// pílula), e o gesto da etapa fica em contorno. A mesma regra da linha da Fila.
+const riskLeads = computed(() => promiseRiskLeads(props.card));
+const primaryStepsBack = computed(
+  () => Boolean(shownPrimary.value?.disabled) || riskLeads.value,
 );
 
 const blockedReasons = computed(() =>
@@ -83,7 +94,7 @@ function nuxtIcon(icon: string): string {
         @click="emit('action', handoff.action)"
       />
       <div
-        v-else-if="!handoff"
+        v-else-if="!handoff && !footer.empty"
         class="grid min-w-0 flex-1 gap-2"
         :class="
           shownPrimary && secondary.length === 1
@@ -122,10 +133,11 @@ function nuxtIcon(icon: string): string {
             shownPrimary.reason ||
             (primaryLabel !== shownPrimary.label ? shownPrimary.label : undefined)
           "
-          :color="shownPrimary.disabled ? 'neutral' : 'primary'"
-          :variant="shownPrimary.disabled ? 'outline' : 'solid'"
+          :color="primaryStepsBack ? 'neutral' : 'primary'"
+          :variant="primaryStepsBack ? 'outline' : 'solid'"
           :icon="shownPrimary.disabled ? 'i-lucide-lock' : nuxtIcon(shownPrimary.icon)"
           data-card-primary
+          :data-card-primary-weight="riskLeads ? 'secondary' : undefined"
           @click="!shownPrimary.disabled && emit('action', shownPrimary.ref)"
         >
           <span class="min-w-0 text-center leading-tight">{{
@@ -142,7 +154,9 @@ function nuxtIcon(icon: string): string {
           data-card-waiting
         />
       </div>
-      <div v-else class="flex-1" />
+      <div v-else class="min-w-0 flex-1" data-card-lone>
+        <slot name="lone" />
+      </div>
 
       <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. -->
       <OrderCardMenu

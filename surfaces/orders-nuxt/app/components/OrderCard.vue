@@ -5,7 +5,7 @@
 //   código grande + nome                         selo do estado · tempo
 //   etiquetas cheias (Retirada · 3 itens …)
 //   itens
-//   andamento numa frase, sem barra ("Produção de Croissant: não começou")
+//   andamento numa frase, sem barra ("Baguete: O lote de hoje não começou. Fica pronto às 12h.")
 //   "Pronto pela Cozinha · desfazer" (a última estação fechou o pedido)
 //   bloqueio escrito no cartão
 //   pagamento ······························ total
@@ -40,7 +40,13 @@ import { danfeLine } from "~/presentation/danfe";
 import { COURIER_CALL_HASH, courierReminderLine } from "~/presentation/courier";
 import { kitchenChips } from "~/presentation/kitchen";
 import { cardCheckBadge } from "~/presentation/volumeCheck";
-import { blockPillLabel } from "~/presentation/cardBlocks";
+import { blockPillLabel, cardFooter } from "~/presentation/cardBlocks";
+import {
+  promiseRisk,
+  waitsForBatch,
+  type PromiseExit,
+} from "~/presentation/orderPromise";
+import { orderFocusKey } from "~/presentation/promiseAlert";
 import OrderCardActions from "./OrderCardActions.vue";
 import OrderCardNotices from "./OrderCardNotices.vue";
 
@@ -186,6 +192,18 @@ export interface CardNotice {
   title: string;
   description?: string;
   actions?: ButtonProps[];
+  /** Os fatos do aviso, um por linha, no lugar da descrição (o item e o porquê). */
+  lines?: Array<{ key: string; label: string; detail?: string; suggestions?: string[] }>;
+  /** O que fazer agora, numa frase do servidor, escrito sob as linhas. */
+  nextStep?: string;
+  /** Por que uma saída do aviso não pode agora, escrito sob as linhas. */
+  notes?: string[];
+  /** As saídas da promessa em risco, no lugar de `actions`. */
+  exits?: PromiseExit[];
+  /** "Resolver" foi tocado: abre o diálogo das escolhas deste pedido. */
+  onResolve?: () => void;
+  /** O código curto do pedido, para o nome acessível das saídas. */
+  code?: string;
   /** Ganchos de teste no Alert do Popover. */
   attrs?: Record<string, string>;
 }
@@ -282,6 +300,26 @@ const notices = computed<CardNotice[]>(() => {
       attrs: { "data-card-authorization": "" },
     });
   }
+  // Promessa em risco (WP-G08): um item do pedido ficou sem lastro (o lote foi
+  // cancelado, fechou com menos, atrasou). O servidor diz o item, o porquê, o que
+  // fazer agora e as saídas, com a recomendada marcada: "Resolver" sobe para a página,
+  // que abre o diálogo das escolhas (um só por tela), e "Abrir a Produção" é atalho.
+  const risk = promiseRisk(card);
+  if (risk)
+    out.push({
+      key: "promise",
+      color: "error",
+      icon: "i-lucide-package-x",
+      label: risk.label,
+      title: risk.label,
+      lines: risk.items,
+      nextStep: risk.nextStep,
+      notes: risk.blockedReasons,
+      exits: risk.exits,
+      onResolve: () => emit("action", "resolve_promise"),
+      code: code.value.code,
+      attrs: { "data-promise-risk": "" },
+    });
   // Lembrete temporário (até a chamada antecipada aprender): entrega da casa em
   // preparo há X min sem entregador chamado. O "Chamar entregador" abre o pedido
   // com a confirmação armada (a corrida é paga: a pergunta vem antes).
@@ -320,7 +358,8 @@ const notices = computed<CardNotice[]>(() => {
     out.push({
       key: "block",
       color: seal.value.tone === "error" ? "error" : "info",
-      icon: "i-lucide-lock",
+      // Quem espera o lote não está travado por um problema: ampulheta, não cadeado.
+      icon: waitsForBatch(card) ? "i-lucide-hourglass" : "i-lucide-lock",
       // A pílula diz o fato, pelo nome do bloqueio; sem nome do servidor, pergunta
       // (laudo do Gestor, P2-16).
       label: blockPillLabel(card.advance_block_label),
@@ -456,6 +495,22 @@ const notices = computed<CardNotice[]>(() => {
   return out;
 });
 
+// O rodapé sem botão nenhum (o avanço travado que só repetiria a pílula saiu, WP-G06):
+// o ⋮ não fica sozinho numa linha. As pílulas de aviso descem para a linha dele.
+const noticesBesideMenu = computed(
+  () =>
+    notices.value.length > 0 &&
+    cardFooter({
+      primary: primary.value,
+      primaryLabel: primaryLabel.value,
+      secondary: secondary.value,
+      blockLabel: props.card.advance_block_label,
+      blockAnnounced: Boolean(props.card.advance_block_reason),
+      handoff: Boolean(handoff.value),
+      waitingFor: waitingFor.value,
+    }).empty,
+);
+
 /** Ação de Alert com ganchos de teste ou nome acessível: o tipo `ButtonProps` não
  *  declara `data-*` nem `aria-label`, mas o Nuxt UI os repassa ao botão. */
 function action(
@@ -519,6 +574,7 @@ function nuxtIcon(icon: string): string {
     as="article"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"
+    :data-focus-target="orderFocusKey(card.ref)"
     :data-highlight="next ? 'ready' : card.attention && !handoff ? 'true' : undefined"
     :aria-selected="selecting ? selected : undefined"
     data-card-compact
@@ -612,8 +668,8 @@ function nuxtIcon(icon: string): string {
     >
       {{ compactDetail }}
     </p>
-    <!-- as exceções, só quando existem -->
-    <OrderCardNotices :notices="notices" />
+    <!-- as exceções, só quando existem (sem botão no rodapé, moram na linha do ⋮) -->
+    <OrderCardNotices v-if="!noticesBesideMenu" :notices="notices" />
     <!-- O "pronto sozinho" com Desfazer mora na faixa "O sistema fez", abaixo do
          cabeçalho do Painel; aqui não se repete. -->
     <div
@@ -661,7 +717,11 @@ function nuxtIcon(icon: string): string {
         @select-mode="emit('select-mode')"
         @volumes="(count) => emit('volumes', count)"
         @station-recall="(pk) => emit('station-recall', pk)"
-      />
+      >
+        <template v-if="noticesBesideMenu" #lone>
+          <OrderCardNotices :notices="notices" />
+        </template>
+      </OrderCardActions>
     </div>
     </div>
   </NuxtCard>
@@ -671,6 +731,7 @@ function nuxtIcon(icon: string): string {
     class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"
+    :data-focus-target="orderFocusKey(card.ref)"
     :data-highlight="next ? 'ready' : undefined"
     :aria-selected="selecting ? selected : undefined"
     @pointerdown="pressStart"
@@ -1022,8 +1083,9 @@ function nuxtIcon(icon: string): string {
         </div>
       </template>
 
-      <!-- avisos: a pílula com cor e nome; o texto e o gesto no Popover -->
-      <OrderCardNotices :notices="notices" />
+      <!-- avisos: a pílula com cor e nome; o texto e o gesto no Popover (sem botão no
+           rodapé, moram na linha do ⋮) -->
+      <OrderCardNotices v-if="!noticesBesideMenu" :notices="notices" />
       <p
         v-if="card.ifood_schedule_label"
         class="op-micro text-muted-foreground"
@@ -1099,7 +1161,11 @@ function nuxtIcon(icon: string): string {
         @select-mode="emit('select-mode')"
         @volumes="(count) => emit('volumes', count)"
         @station-recall="(pk) => emit('station-recall', pk)"
-      />
+      >
+        <template v-if="noticesBesideMenu" #lone>
+          <OrderCardNotices :notices="notices" />
+        </template>
+      </OrderCardActions>
     </template>
   </NuxtCard>
 </template>

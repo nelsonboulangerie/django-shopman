@@ -30,7 +30,7 @@ from shopman.backstage.presentation.status import (
     status_color,
 )
 from shopman.backstage.projections import ifood as ifood_projection
-from shopman.backstage.projections import order_pending, order_pricing
+from shopman.backstage.projections import order_pending, order_pricing, order_promise
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
 from shopman.backstage.projections.notification_receipts import (
     NotificationReceiptProjection,
@@ -632,6 +632,15 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # A promessa do pedido (WP-G08, ``projections/order_promise``): ``None`` quando
+    # a reserva está como deve estar. ``state`` ``at_risk`` é "Promessa em risco"
+    # (algum item ficou sem lastro, ou o lote dele atrasou), com o item, quanto
+    # falta, o porquê e as saídas ao lado (``actions``: avisar o cliente, remarcar
+    # no PDV, cancelar; no cartão as três levam ao detalhe ou ao PDV).
+    # ``waiting_batch`` é "Esperando o lote": a reserva está inteira e o lote de
+    # hoje ainda não ficou pronto; o preparo fica barrado (``blocks_start``) e o
+    # selo não depende mais do estado da fila de espera.
+    promise: order_promise.OrderPromiseProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -921,6 +930,10 @@ class OperatorOrderProjection:
     danfe_printed: bool = False
     danfe_state: str = ""
     danfe_problem: str = ""
+    # A promessa do pedido, a MESMA do cartão (WP-G08). No detalhe as saídas são
+    # as de verdade: a conversa com o cliente, o PDV e o cancelar de ``actions``.
+    # ``None`` no contexto ``"pos"`` e quando a reserva está como deve estar.
+    promise: order_promise.OrderPromiseProjection | None = None
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -1043,7 +1056,8 @@ def build_order_queue(
     channel_configs = _channel_configs_for(filtered)
     cash_context = _cash_settlement_context(filtered)
     fiscal_states = _fiscal_states_for(filtered)
-    cards = tuple(_build_card(o, fiscal_states=fiscal_states, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads) for o in filtered)
+    promise_reads = order_promise.read_for(filtered)
+    cards = tuple(_build_card(o, fiscal_states=fiscal_states, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads, promise_reads=promise_reads) for o in filtered)
 
     return OrderQueueProjection(
         orders=cards,
@@ -1241,6 +1255,14 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     block_label, block_reason = _advance_block_copy(
         order, bloqueio, method, payment_pending=_is_payment_pending(order, method, payment_status)
     )
+    # A promessa do pedido (WP-G08), a mesma leitura e o mesmo bloqueio do cartão.
+    promise = _promise_of(order)
+    waits_batch = _waits_batch(promise, bloqueio, next_status)
+    pending_block = str(bloqueio or "")
+    if waits_batch:
+        next_status = ""
+        pending_block = str(operator_orders.AdvanceBlock.WAITLIST_FERMATA)
+        block_label, block_reason = order_promise.BATCH_WAIT_BLOCK_LABEL, order_promise.batch_wait_reason(promise)
 
     cancel_capability = _cancel_capability(order, user)
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
@@ -1296,7 +1318,11 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     waits_kitchen = kitchen_release_at is not None
     if waits_kitchen:
         operational = _early_start_actions(operational)
+    if waits_batch:
+        operational = _batch_wait_actions(operational, block_reason)
     actions = (*operational, *extra_actions)
+    if promise is not None and promise.state == order_promise.STATE_AT_RISK:
+        promise = order_promise.with_actions(promise, _promise_actions(user, promise))
     link_fields, link_problem = _payment_link_read(order, method)
     danfe = order_danfe.card_state(order)
     return OperatorOrderProjection(
@@ -1307,7 +1333,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             order,
             actions=actions,
             fiscal_status=fiscal_status,
-            block=str(bloqueio or ""),
+            block=pending_block,
             block_label=block_label,
             block_reason=block_reason,
             payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
@@ -1320,7 +1346,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             alerts=pending_alerts,
             schedule_label=common["schedule_label"],
             whatsapp_url=contact.get("customer_whatsapp_url", ""),
+            promise=promise,
         ),
+        promise=promise,
         danfe_printable=danfe.printable,
         danfe_printed=danfe.printed,
         danfe_state=danfe.state,
@@ -1381,6 +1409,26 @@ def _detail_payment_status_label(order: Order, payment_status: str, cancelled_mo
 _GATEWAY_REFUND_DESTINATION = {"pix": "ao Pix do cliente", "card": "no cartão do cliente", "link": "no cartão do cliente"}
 
 
+def refund_effect(amount_q: int, method: str) -> str:
+    """Para onde volta o dinheiro que a casa devolve, na frase que o operador lê.
+
+    Uma frase por caminho, a mesma no cancelar (:func:`_cancel_money_effect`) e
+    no "tirar o item" do diálogo "Resolver" (``order_promise_resolution``): o
+    gateway estorna sozinho; dinheiro e maquininha ficam a devolver por alguém
+    da casa. ``method`` é o meio do pagamento ("pix", "card", "cash", "credit"…).
+    """
+    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
+
+    money = _money(amount_q)
+    if method in _GATEWAY_REFUND_DESTINATION:
+        return f"{money} serão estornados {_GATEWAY_REFUND_DESTINATION[method]}."
+    if method == "cash":
+        return f"{money} em dinheiro ficam a devolver no caixa."
+    if method in CARD_MACHINE_METHODS:
+        return f"{money} ficam a estornar na maquininha."
+    return f"{money} ficam a devolver ao cliente."
+
+
 def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict:
     """O que o cancelamento (ou a recusa) faz com o dinheiro, dito antes do gesto.
 
@@ -1394,24 +1442,15 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
     silêncio: ``captured_balance_q`` devolve ``None`` quando um intent não pôde
     ser lido, e ``None`` não é zero. O iFood também: o dinheiro é dele.
     """
-    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
-
     empty = {"cancel_money_effect": "", "cancel_waits_for_gateway": False}
     if order.channel_ref == "ifood" or order.status not in {"new", "accepted", "preparing", "ready", "dispatched", "delivered", "completed"}:
         return empty
     captured_q = payment_svc.captured_balance_q(order)
     if captured_q:
-        money = _money(captured_q)
-        if method in _GATEWAY_REFUND_DESTINATION:
-            return {
-                "cancel_money_effect": f"{money} serão estornados {_GATEWAY_REFUND_DESTINATION[method]}.",
-                "cancel_waits_for_gateway": True,
-            }
-        if method == "cash":
-            return {**empty, "cancel_money_effect": f"{money} em dinheiro ficam a devolver no caixa."}
-        if method in CARD_MACHINE_METHODS:
-            return {**empty, "cancel_money_effect": f"{money} ficam a estornar na maquininha."}
-        return {**empty, "cancel_money_effect": f"{money} ficam a devolver ao cliente."}
+        return {
+            "cancel_money_effect": refund_effect(captured_q, method),
+            "cancel_waits_for_gateway": method in _GATEWAY_REFUND_DESTINATION,
+        }
     if method == "card" and str(payment_status).lower() == "authorized":
         total = _money(order_composition.effective_total_q(order))
         return {
@@ -2107,6 +2146,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     payment_reads = payment_svc.read_payments_for(all_orders)
     # A última tentativa de DANFE de cada pedido e o destino: uma leitura só.
     danfe_reads = order_danfe.read_for(all_orders)
+    # A saúde da reserva de cada pedido (WP-G08): uma leitura para o painel inteiro.
+    promise_reads = order_promise.read_for(all_orders)
     from shopman.backstage.models import DeliveryDevice
     from shopman.backstage.services.delivery_devices import PREFIX
 
@@ -2138,7 +2179,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # 09/11). Aceita, a encomenda de data futura sai do dia e vai para "Agendados";
     # o despertador (preorder.activate) a devolve ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
@@ -2150,7 +2191,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
     ready_moments = ready_moments_for(ready_orders)
     expectation = prep_expectation(now=timezone.now())
-    day_cards = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
+    day_cards = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
     # A encomenda do dia que ainda espera a hora da Cozinha não é trabalho do quadro
     # (dono, 18/11/2026): mora na lista "Encomendas", abaixo das colunas, com "Vai
     # para a Cozinha às 17h15", e só entra em "Em preparo" quando chega a hora dela.
@@ -2167,17 +2208,17 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("accepted", "preparing") and _is_future_preorder(o)
     ]
     future_cards = tuple(
-        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user)
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     # Hoje primeiro (pela hora em que cada uma chega à Cozinha), depois os próximos dias.
     preorders = (*waiting_today, *future_cards)
     preparing_count = len(prep)
 
-    expedition_pickup = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -2197,7 +2238,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
-            _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
+            _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user)
             for o in all_orders if o.channel_ref == "ifood" and ((o.data or {}).get("ifood") or {}).get("handshake_pending")
         ),
         intake=intake,
@@ -2360,6 +2401,91 @@ def _early_start_actions(actions) -> tuple:
     )
 
 
+def _promise_of(order: Order, reads=None) -> order_promise.OrderPromiseProjection | None:
+    """A promessa deste pedido: da leitura do painel, ou lida agora para um pedido só."""
+    if reads is None:
+        reads = order_promise.read_for([order])
+    return reads.get(order.ref)
+
+
+def _waits_batch(promise, bloqueio, next_status: str) -> bool:
+    """O preparo deste pedido espera o lote ficar pronto?
+
+    Só quando nada mais barra o avanço (o pagamento e o dia da encomenda vêm
+    antes, cada um com a sua frase) e o próximo passo é justamente o preparo.
+    """
+    return bool(
+        promise is not None
+        and promise.blocks_start
+        and not bloqueio
+        and next_status == Order.Status.PREPARING
+    )
+
+
+def _batch_wait_actions(actions, reason: str) -> tuple:
+    """As ações do pedido que espera o lote: o gesto de iniciar existe, desligado e com o motivo."""
+    return tuple(
+        replace(action, enabled=False, reason=action.reason or reason) if action.ref == "advance" else action
+        for action in actions
+    )
+
+
+_PERMISSION_REASON = "Identifique uma pessoa com permissão para gerenciar pedidos."
+
+
+def _manages_orders(user) -> bool:
+    return bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+
+
+def _open_production_action(promise, user) -> Action | None:
+    """ "Abrir a Produção": o plano do dia que ainda pode cobrir o item (sem lote, ou lote curto).
+
+    Só para quem opera a Produção (a mesma pergunta do tile da Central) e com o
+    endereço do app configurado. Sem um dos dois a ação não vem: a frase do
+    próximo passo ("Peça à Produção para planejar.") segue dizendo o que fazer.
+    """
+    from urllib.parse import urlencode
+
+    from shopman.backstage.permissions import can_operate_production
+    from shopman.backstage.projections.hub import surface_link
+
+    day = order_promise.production_day(promise)
+    if not day or user is None or not getattr(user, "is_active", False) or not can_operate_production(user):
+        return None
+    href = surface_link("production", f"plan?{urlencode({'date': day})}")
+    if not href:
+        return None
+    return Action(
+        ref=order_promise.ACTION_OPEN_PRODUCTION, kind="link", label="Abrir a Produção", href=href, idempotency="none",
+    )
+
+
+def _promise_actions(user, promise) -> tuple[Action, ...]:
+    """As saídas do aviso "Promessa em risco": as mesmas no cartão e no detalhe.
+
+    "Resolver" abre o diálogo onde moram as escolhas (trocar, remarcar, tirar o
+    item, cancelar) e a mensagem ao cliente: a ação não leva endereço nem dado
+    do cliente (#2434), a tela busca ``orders/<ref>/promise-resolution/`` ao
+    abrir. Quem não gerencia pedidos a recebe travada, com o motivo.
+
+    "Abrir a Produção" só vem quando algum item ela ainda resolve e a conta a
+    opera. A principal (``priority="primary"``, a primeira) é ela quando TUDO o
+    que falta a Produção resolve (``promise.recommended_action``) e a ação veio;
+    senão é "Resolver". Sempre há uma principal.
+    """
+    authorized = _manages_orders(user)
+    resolve = Action(
+        ref=order_promise.ACTION_RESOLVE, kind="dialog", label="Resolver",
+        enabled=authorized, reason="" if authorized else _PERMISSION_REASON, idempotency="none",
+    )
+    opening = _open_production_action(promise, user)
+    if opening is None:
+        return (replace(resolve, priority="primary"),)
+    if promise.recommended_action == order_promise.ACTION_OPEN_PRODUCTION:
+        return (replace(opening, priority="primary"), resolve)
+    return (replace(resolve, priority="primary"), opening)
+
+
 def _parse_iso(value) -> datetime | None:
     if not value:
         return None
@@ -2503,6 +2629,7 @@ def _build_card(
     kitchen_chips=None,
     ready_moments=None,
     expectation: PrepExpectation | None = None,
+    promise_reads=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     kitchen_release_at, kitchen_released_at = _kitchen_clock(order, now)
@@ -2543,6 +2670,13 @@ def _build_card(
     block_label, block_reason = _advance_block_copy(
         order, bloqueio, method, payment_pending=_is_payment_pending(order, method, payment_status)
     )
+    # A promessa do pedido (WP-G08). Quem espera o lote não inicia o preparo: o
+    # pão ainda não existe. Não depende do estado da fila de espera (P1-22).
+    promise = _promise_of(order, promise_reads)
+    waits_batch = _waits_batch(promise, bloqueio, next_status)
+    if waits_batch:
+        next_status = ""
+        block_label, block_reason = order_promise.BATCH_WAIT_BLOCK_LABEL, order_promise.batch_wait_reason(promise)
     fiscal_status, fiscal_status_label, fiscal_state, _fiscal_links = _fiscal_status(
         order,
         directive_status=fiscal_states.directive_status.get(order.ref, "") if fiscal_states is not None else None,
@@ -2559,6 +2693,10 @@ def _build_card(
     if kitchen_release_at is not None:
         actions = _early_start_actions(actions)
         next_label = EARLY_START_LABEL
+    if waits_batch:
+        actions = _batch_wait_actions(actions, block_reason)
+    if promise is not None and promise.state == order_promise.STATE_AT_RISK:
+        promise = order_promise.with_actions(promise, _promise_actions(user, promise))
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order, batch=accept_batch)
@@ -2667,6 +2805,7 @@ def _build_card(
         danfe_problem=danfe.problem,
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
         courier_reminder=courier_reminder(order) if order.status in REMINDER_STATUSES else None,
+        promise=promise,
     )
     attention = card_attention(
         order, card, channel_config,
@@ -3775,7 +3914,7 @@ _EVENT_LABELS = {
     "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
     # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
-    "production_hold_lost": "Produção cancelada: item ficou sem reserva",
+    "production_hold_lost": "Lote cancelado: o item ficou em falta",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -3984,7 +4123,9 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             # feio, mas é o caso raro; o que era comum agora tem nome.
             label = event.type.replace("_", " ").capitalize()
 
-        if event.type == "payment.refund_retry":
+        if event.type == _PRODUCTION_HOLD_LOST_EVENT:
+            detail = _production_hold_lost_detail(payload)
+        elif event.type == "payment.refund_retry":
             detail = _refund_retry_detail(payload)
         elif event.type in _PAYMENT_EVENT_TYPES:
             detail = _payment_event_detail(payload)
@@ -4040,6 +4181,24 @@ def _payment_event_detail(payload: dict) -> str:
     if payload.get("amount_q"):
         parts.append(_money(payload.get("amount_q")))
     return " · ".join(part for part in parts if part)
+
+
+#: O evento que ``shop/services/production_promise`` grava quando o lote cancelado
+#: leva a reserva do pedido.
+_PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
+
+
+def _production_hold_lost_detail(payload: dict) -> str:
+    """O item e o lote que ele perdeu ("4x Ciabatta · lote de 19/11").
+
+    O ``reason`` desse evento é um código (``production_voided``), não uma frase:
+    na linha do tempo ele aparecia cru ao lado do título (prévia do WP-G08).
+    """
+    name = str(payload.get("product_name") or payload.get("sku") or "").strip()
+    qty = str(payload.get("qty") or "").strip()
+    item = f"{qty}x {name}" if qty and name else name
+    lot = f"lote de {_short_date(payload.get('date'))}" if payload.get("date") else ""
+    return " · ".join(part for part in (item, lot) if part)
 
 
 def _refund_retry_detail(payload: dict) -> str:
