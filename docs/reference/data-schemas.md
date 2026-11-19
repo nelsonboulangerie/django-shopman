@@ -122,6 +122,15 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
 }
 ```
 
+### Decisão em sombra do framework conversacional
+
+`ConversationalDecision` e `ConversationalOutcome` (`shopman/shop/models/conversational.py`, N5 do
+[plano do adaptador da Nice](../plans/COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md)) não são JSON de
+sessão: são tabelas só de acréscimo. O campo `document` da decisão é o `DecisionRecord` do framework
+(`packages/conversational-commerce/spec/01-contracts.md`), e o resultado segue o `OutcomeEvent` de lá. A forma
+mora no contrato do framework e não se redefine aqui. Nenhuma chave nova em `Session.data`, `Order.data` ou
+`Directive.payload`.
+
 ### Concierge de WhatsApp
 
 O concierge ([plano](../plans/WHATSAPP-CONCIERGE-PLAN.md), [ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md))
