@@ -16,9 +16,11 @@ from .faults import Fault
 class FakeChannel(FakeBase):
     PORT = "channel"
 
-    def __init__(self, clock, faults=None, *, read_receipts: bool = True) -> None:
+    def __init__(self, clock, faults=None, *, read_receipts: bool = True, name: str = "test-channel") -> None:
         super().__init__(clock, faults)
         self.read_receipts = read_receipts
+        # O nome do canal casa com o canal do perfil de teste (``profile/test_profile.CHANNEL``).
+        self.name = name
         self.outbox: dict[str, ExposureEvent] = {}
         self.handoffs: list[HandoffRequest] = []
         self._inbox: list[Mapping[str, Any]] = []
@@ -50,7 +52,7 @@ class FakeChannel(FakeBase):
         provider_id = raw.get("id")
         return InteractionEvent(
             **self.envelope(ctx, "evt", occurred_at=raw.get("sent_at", received_at)),
-            channel_binding={"channel": "fake-channel", "conversation_ref": raw.get("conversation", "conv-1")},
+            channel_binding={"channel": self.name, "conversation_ref": raw.get("conversation", "conv-1")},
             actor=raw.get("actor", "customer"),
             event_identity={"id": provider_id, "assurance": "provider_claimed"} if provider_id
             else {"assurance": "none"},

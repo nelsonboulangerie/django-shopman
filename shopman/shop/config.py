@@ -276,7 +276,9 @@ class ChannelConfig:
         # Não oferecer lote a menos de N dias do vencimento (near-expiry).
         # 0 = só exclui o já vencido (comportamento de sempre). O queijo de
         # 20 dias sai da vitrine remota com antecedência; o pão de 1 dia
-        # não é afetado.
+        # não é afetado. Esta é a margem da venda de HOJE: para data futura
+        # ela ganha um dia em todo canal, porque a sobra de hoje não lastreia
+        # encomenda (``policies/promise_expiry_margin``, #2693).
 
     # ── 4b. Fila de espera (WP-P2E) ──
     @dataclass

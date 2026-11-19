@@ -150,7 +150,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `availability_for_sku/for_skus` — retornam `{sku, availability_policy, total_available, total_promisable, total_reserved, available, expected, planned, ready_physical, held_ready, breakdown{ready,in_production,planned}, is_planned, is_paused, positions[]}`.
 - `promise_for_sku(sku, qty, ...)→PromiseDecision(approved, requested_qty, available_qty, reason_code)`.
 
-**Scope gate canônico**: `quants_eligible_for(sku, channel_ref, target_date, allowed_positions, excluded_positions)` — aplicado por availability reads E hold finding; filtros na ordem: (1) sku+`_quantity>0`, (2) `filter_valid_quants()` shelflife, (3) allowed/excluded positions, (4) batch expiry.
+**Scope gate canônico**: `quants_eligible_for(sku, channel_ref, target_date, allowed_positions, excluded_positions)` — aplicado por availability reads E hold finding; filtros na ordem: (1) sku+`_quantity>0`, (2) `filter_valid_quants()` shelflife, (3) allowed/excluded positions, (4) batch expiry. `expiry_margin_days` vale nos passos (2) e (4): lote datado pelo `Batch.expiry_date`, saldo sem lote pela validade implícita (produção + `shelf_life_days`); a fornada planejada para a própria data-alvo sempre conta, e o saldo físico de lote é julgado pela data de produção que o lote declara (`Batch.production_date`), não pelo `created_at` (o lote de amanhã fechado hoje conta para amanhã). O orquestrador soma um dia à margem quando a data é futura (`shop/policies/promise_expiry_margin.py`, #2693): sobra de hoje não lastreia encomenda.
 
 **Signal**: `holds_materialized(hold_ids, sku, target_date, to_position)`.
 
