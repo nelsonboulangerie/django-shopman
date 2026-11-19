@@ -894,12 +894,18 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
 
     quant = hold.quant
     if quant is not None and quant.target_date is not None:
-        Move.objects.create(
-            quant=quant,
-            delta=qty,
+        # Pelo serviço do Stockman (o ledger é dele, C11), na coordenada exata
+        # do saldo em que a reserva está: o ``receive`` reencontra esse quant e
+        # leva a chave da conta para o ``Move.metadata``.
+        StockMovements.receive(
+            quantity=qty,
+            sku=hold.sku,
+            position=quant.position,
+            target_date=quant.target_date,
+            batch=quant.batch,
             reason=f"{reason} (ref: {reference})",
             kind=Move.Kind.RETURN,
-            metadata=delivery_entry(pk, DELIVERY_RETURNED),
+            **delivery_entry(pk, DELIVERY_RETURNED),
         )
         return True
 
