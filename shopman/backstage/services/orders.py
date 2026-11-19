@@ -68,6 +68,13 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
             change_out_q = parse_money_to_q(str(change_out_raw))
         except POSError as exc:
             raise OrderError(str(exc) or "Valor de troco inválido.") from exc
+    # Quem espera o lote não inicia o preparo: a tela desliga o gesto, e o
+    # comando recusa com a mesma frase (a régua é a da promessa, #2721).
+    from shopman.backstage.projections.order_queue import batch_wait_refusal
+
+    refusal = batch_wait_refusal(order)
+    if refusal:
+        raise OrderError(refusal)
     shift = None
     if operator is not None and change_out_q:
         from shopman.backstage.services import pos as pos_service
