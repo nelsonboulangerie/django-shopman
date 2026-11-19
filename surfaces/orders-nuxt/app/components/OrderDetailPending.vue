@@ -86,6 +86,14 @@ const { attrsFor } = useOperatorAppLink();
                 >
                   {{ line.reason }}
                 </p>
+                <!-- O que fazer agora, quando a linha tem mais de uma saída. -->
+                <p
+                  v-if="line.nextStep"
+                  class="text-sm font-medium text-highlighted"
+                  data-pending-next-step
+                >
+                  {{ line.nextStep }}
+                </p>
                 <p
                   v-for="reason in line.blockedReasons"
                   :key="reason"
@@ -104,7 +112,7 @@ const { attrsFor } = useOperatorAppLink();
                 v-for="(button, index) in line.buttons"
                 :key="button.ref"
               >
-                <!-- O PDV abre na janela dele (outro app de operador). -->
+                <!-- O PDV e a Produção abrem na janela deles (outro app de operador). -->
                 <NuxtButton
                   v-if="button.href && button.crossApp"
                   :to="button.href"

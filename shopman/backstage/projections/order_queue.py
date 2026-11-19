@@ -1316,7 +1316,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
         promise = order_promise.with_actions(promise, _promise_detail_actions(
             order, authorized=authorized, whatsapp_url=contact.get("customer_whatsapp_url", ""),
-            cancel_action=cancel_action,
+            cancel_action=cancel_action, user=user, promise=promise,
         ))
     link_fields, link_problem = _payment_link_read(order, method)
     danfe = order_danfe.card_state(order)
@@ -2436,46 +2436,99 @@ def _reschedule_at_pos_action(order: Order, *, authorized: bool) -> Action:
     )
 
 
-def _promise_card_actions(order: Order, user) -> tuple[Action, ...]:
-    """As saídas da promessa em risco no CARTÃO: três atalhos, nenhum dado do cliente.
+def _open_production_action(promise, user) -> Action | None:
+    """ "Abrir a Produção": o plano do dia que ainda pode cobrir o item (sem lote, ou lote curto).
+
+    Só para quem opera a Produção (a mesma pergunta do tile da Central) e com o
+    endereço do app configurado. Sem um dos dois a ação não vem: a frase do
+    próximo passo ("Peça à Produção para planejar.") segue dizendo o que fazer.
+    """
+    from urllib.parse import urlencode
+
+    from shopman.backstage.permissions import can_operate_production
+    from shopman.backstage.projections.hub import surface_link
+
+    day = order_promise.production_day(promise)
+    if not day or user is None or not getattr(user, "is_active", False) or not can_operate_production(user):
+        return None
+    href = surface_link("production", f"plan?{urlencode({'date': day})}")
+    if not href:
+        return None
+    return Action(
+        ref=order_promise.ACTION_OPEN_PRODUCTION, kind="link", label="Abrir a Produção", href=href, idempotency="none",
+    )
+
+
+def _promise_exits(promise, exits) -> tuple[Action, ...]:
+    """As saídas na ordem e com o peso que a situação pede.
+
+    A recomendada (``promise.recommended_action``) vem primeiro, com
+    ``priority="primary"``; as outras são ``secondary``, e cancelar segue por
+    último, ``danger``. Quando a recomendada não está entre as saídas (quem não
+    abre a Produção), nenhuma é a principal.
+    """
+    recommended = promise.recommended_action
+    present = [action for action in exits if action is not None]
+
+    def weighed(action: Action) -> Action:
+        if action.ref == order_promise.ACTION_CANCEL:
+            return action if action.priority == "danger" else replace(action, priority="danger")
+        priority = "primary" if action.ref == recommended else "secondary"
+        return action if action.priority == priority else replace(action, priority=priority)
+
+    def rank(action: Action) -> int:
+        if action.ref == recommended:
+            return 0
+        return 2 if action.ref == order_promise.ACTION_CANCEL else 1
+
+    return tuple(weighed(action) for action in sorted(present, key=rank))
+
+
+def _promise_card_actions(order: Order, user, promise) -> tuple[Action, ...]:
+    """As saídas da promessa em risco no CARTÃO: atalhos, nenhum dado do cliente.
 
     O contato do cliente não mora no cartão do painel (#2434), e cancelar pede
     o motivo, o destino do dinheiro e, às vezes, o gerente: os dois gestos
-    acontecem no detalhe, e o cartão leva até lá. Remarcar abre o PDV.
+    acontecem no detalhe, e o cartão leva até lá. Remarcar abre o PDV; quando a
+    Produção ainda resolve, "Abrir a Produção" abre o plano daquele dia.
     """
     from urllib.parse import quote
 
     authorized = _manages_orders(user)
     detail = f"/{quote(order.ref, safe='')}"
     reason = "" if authorized else _PERMISSION_REASON
-    return (
+    return _promise_exits(promise, (
         Action(
-            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente", priority="primary",
+            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente",
             enabled=authorized, reason=reason, href=f"{detail}#promise" if authorized else "", idempotency="none",
         ),
         _reschedule_at_pos_action(order, authorized=authorized),
+        _open_production_action(promise, user),
         Action(
             ref=order_promise.ACTION_CANCEL, kind="link", label="Cancelar pedido", priority="danger",
             enabled=authorized, reason=reason, href=f"{detail}#cancel" if authorized else "", idempotency="none",
         ),
-    )
+    ))
 
 
-def _promise_detail_actions(order: Order, *, authorized: bool, whatsapp_url: str, cancel_action: Action) -> tuple[Action, ...]:
-    """As saídas da promessa em risco no DETALHE: a conversa, o PDV e o cancelar de verdade."""
+def _promise_detail_actions(
+    order: Order, *, authorized: bool, whatsapp_url: str, cancel_action: Action, user, promise,
+) -> tuple[Action, ...]:
+    """As saídas da promessa em risco no DETALHE: a conversa, o PDV, a Produção e o cancelar de verdade."""
     contact_reason = (
         _PERMISSION_REASON if not authorized
         else "" if whatsapp_url else "Este pedido não tem WhatsApp do cliente."
     )
-    return (
+    return _promise_exits(promise, (
         Action(
-            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente", priority="primary",
+            ref=order_promise.ACTION_CONTACT_CUSTOMER, kind="link", label="Avisar o cliente",
             enabled=not contact_reason, reason=contact_reason, href="" if contact_reason else whatsapp_url,
             idempotency="none",
         ),
         _reschedule_at_pos_action(order, authorized=authorized),
+        _open_production_action(promise, user),
         cancel_action,
-    )
+    ))
 
 
 def _parse_iso(value) -> datetime | None:
@@ -2688,7 +2741,7 @@ def _build_card(
     if waits_batch:
         actions = _batch_wait_actions(actions, block_reason)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
-        promise = order_promise.with_actions(promise, _promise_card_actions(order, user))
+        promise = order_promise.with_actions(promise, _promise_card_actions(order, user, promise))
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order, batch=accept_batch)

@@ -1,9 +1,11 @@
 <script setup lang="ts">
-// As saídas de uma promessa em risco (WP-G08): "Avisar o cliente", "Remarcar no PDV" e
-// "Cancelar pedido". Os nomes, a ordem, o destino e a guarda vêm do servidor
-// (`promise.actions`); aqui cada uma vira um botão. No cartão e nas listas são
-// atalhos: o contato do cliente e o cancelar com motivo moram no detalhe do pedido, e
-// remarcar mora no PDV, que abre na janela dele (`useOperatorAppLink`).
+// As saídas de uma promessa em risco (WP-G08): "Avisar o cliente", "Remarcar no PDV",
+// "Cancelar pedido" e, quando a Produção ainda resolve, "Abrir a Produção". Os nomes, a
+// ordem, o destino, a guarda e QUAL é a recomendada vêm do servidor
+// (`promise.actions`); aqui cada uma vira um botão, e só a recomendada é cheia. No
+// cartão e nas listas são atalhos: o contato do cliente e o cancelar com motivo moram
+// no detalhe do pedido; remarcar mora no PDV e o plano, na Produção, que abrem na
+// janela deles (`useOperatorAppLink`).
 //
 // Sem raiz própria: quem chama dá o lugar (as ações do aviso, a linha da Fila).
 import { computed } from "vue";
@@ -24,7 +26,7 @@ const props = withDefaults(
     code: string;
     tone?: ExitTone;
   }>(),
-  { tone: "plain" },
+  { tone: "row" },
 );
 
 const { attrsFor } = useOperatorAppLink();

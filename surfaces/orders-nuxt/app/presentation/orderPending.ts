@@ -42,17 +42,23 @@ const ACTION_ICONS: Record<string, string> = {
   "print-danfe": "i-lucide-printer",
   "contact-customer": "i-lucide-message-circle",
   "reschedule-at-pos": "i-lucide-calendar-clock",
+  "open-production": "i-lucide-croissant",
   cancel: "i-lucide-ban",
 };
 
 /** A ação que remarca: abre o pedido no PDV, onde mora o remarcar (D-003). */
 const RESCHEDULE_AT_POS = "reschedule-at-pos";
+/** A ação que abre o plano do dia na Produção, quando ela ainda resolve o item. */
+const OPEN_PRODUCTION = "open-production";
+/** Os atalhos que abrem OUTRO app de operador, na janela dele. */
+const CROSS_APP_ACTIONS = new Set([RESCHEDULE_AT_POS, OPEN_PRODUCTION]);
 /**
- * As ações que são atalho para fora do Gestor: a conversa com o cliente e o PDV. Pela
- * `ref`, e não por ter `href`: o cancelar da promessa em risco é a ação de gravar do
- * detalhe, e o endereço que ela carrega é o da rota de gravação, não um link.
+ * As ações que são atalho para fora do Gestor: a conversa com o cliente, o PDV e a
+ * Produção. Pela `ref`, e não por ter `href`: o cancelar da promessa em risco é a ação
+ * de gravar do detalhe, e o endereço que ela carrega é o da rota de gravação, não um
+ * link.
  */
-const LINK_ACTIONS = new Set(["contact-customer", RESCHEDULE_AT_POS]);
+const LINK_ACTIONS = new Set(["contact-customer", ...CROSS_APP_ACTIONS]);
 
 /** A chave do próximo foco de uma linha da faixa (`data-focus-target`). */
 export const pendingFocusKey = (key: string) => `pending:${key}`;
@@ -70,7 +76,7 @@ export interface PendingButton {
   blockedReason: string;
   /** A conversa com o cliente e o PDV: abrem fora do Gestor. Vazio no que grava. */
   href: string;
-  /** O atalho abre outro app de operador (o PDV), na janela dele. */
+  /** O atalho abre outro app de operador (o PDV, a Produção), na janela dele. */
   crossApp: boolean;
 }
 
@@ -103,7 +109,7 @@ export function pendingButton(
     // Atalho que o servidor desligou não leva a lugar nenhum: vira botão travado, com
     // o motivo escrito.
     href: isLink && action.enabled ? action.href : "",
-    crossApp: action.ref === RESCHEDULE_AT_POS,
+    crossApp: CROSS_APP_ACTIONS.has(action.ref),
   };
 }
 
@@ -115,6 +121,8 @@ export interface PendingLine {
   spoken: string;
   label: string;
   reason: string;
+  /** O que fazer agora, numa frase do servidor; vazio na linha de um gesto só. */
+  nextStep: string;
   buttons: PendingButton[];
   /** Os motivos das ações que não podem agora, escritos sob a linha. */
   blockedReasons: string[];
@@ -131,10 +139,16 @@ export function pendingLines(
   )?.key;
   return pending.map((item) => {
     const tone = pendingTone(item.tone);
+    // Na linha que declara o peso dos gestos (`priority`, a promessa em risco), o
+    // principal é o que o servidor recomenda; sem recomendado, nenhum é cheio. Na
+    // linha que não declara nada, o primeiro gesto é o principal, como sempre foi.
+    const declares = item.actions.some((action) => action.priority);
     const buttons = item.actions.map((action, index) =>
       pendingButton(action, {
         ...state,
-        lead: item.key === leadKey && index === 0,
+        lead:
+          item.key === leadKey &&
+          (declares ? action.priority === "primary" : index === 0),
       }),
     );
     return {
@@ -143,6 +157,7 @@ export function pendingLines(
       ...PENDING_TONES[tone],
       label: item.label,
       reason: item.reason,
+      nextStep: String(item.next_step ?? "").trim(),
       buttons,
       blockedReasons: [
         ...new Set(buttons.map((button) => button.blockedReason).filter(Boolean)),

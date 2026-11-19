@@ -16,6 +16,10 @@ Produção dizem agora, para o painel inteiro de uma vez. Esta suíte prende:
 - o pedido pago do dia que espera o lote volta a ter o selo e o bloqueio, sem
   depender do estado da fila de espera;
 - cartão, Fila e detalhe leem a mesma leitura, com as três saídas ao lado;
+- todo item em risco diz o próximo passo, pela causa, e a saída recomendada vem
+  primeiro e é a única principal; "Abrir a Produção" só para quem a opera;
+- a casa oferece o que tem no lugar, pelo mecanismo de substitutos da loja: para
+  a encomenda de outro dia, só o que o lote DA DATA tem livre;
 - o número de consultas não cresce com o número de pedidos.
 
 Os lotes são planejados, abertos, fechados e cancelados pelo Craftsman de
@@ -245,6 +249,11 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     assert item.batch_date == _day(1).isoformat()
     assert item.batch_status == "void"
     assert item.work_order_refs == (work_order.ref,)
+    # O próximo passo: sem outro produto a oferecer, remarcar. A saída é falar com o cliente.
+    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert item.alternatives == ()
+    assert promise.next_step == item.next_step
+    assert promise.recommended_action == "contact-customer"
 
     # O cartão: o selo, as três saídas e o lugar na Fila "Precisa de você".
     card = build_order_card(Order.objects.get(pk=order.pk), user=gerente)
@@ -254,6 +263,9 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     actions = {action.ref: action for action in card.promise.actions}
     assert list(actions) == ["contact-customer", "reschedule-at-pos", "cancel"]
     assert [action.label for action in card.promise.actions] == ["Avisar o cliente", "Remarcar no PDV", "Cancelar pedido"]
+    # A recomendada vem primeiro e é a única principal; cancelar segue vermelho.
+    assert [action.priority for action in card.promise.actions] == ["primary", "secondary", "danger"]
+    assert card.promise.next_step == "Avise o cliente e remarque para o próximo lote."
     assert all(action.kind == "link" and action.enabled for action in actions.values())
     assert actions["contact-customer"].href == "/ENC-CANCELADA#promise"
     assert actions["reschedule-at-pos"].href == "https://pdv.example.test/preorders/ENC-CANCELADA"
@@ -298,6 +310,9 @@ def test_o_detalhe_abre_com_promessa_em_risco_e_as_saidas_de_verdade(ficha, gere
     assert first.reason == "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado."
     assert [action.ref for action in first.actions] == ["contact-customer", "reschedule-at-pos", "cancel"]
     assert first.actions[0].href == "https://wa.me/5543999990000"
+    # A faixa diz o que fazer e qual gesto é o recomendado.
+    assert first.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert [action.priority for action in first.actions] == ["primary", "secondary", "danger"]
 
 
 def test_quem_nao_gerencia_pedidos_ve_o_risco_e_nao_recebe_atalho(ficha, django_user_model):
@@ -334,6 +349,7 @@ def test_saldo_do_lote_que_encolhe_deixa_a_reserva_em_parte(ficha):
     assert (item.qty, item.missing_qty) == ("4", "2")
     assert item.label == "Baguete de tradição: 2 de 4 sem reserva"
     assert item.detail == "A produção planejada para amanhã não cobre o pedido."
+    assert item.next_step == "Peça à Produção para aumentar o lote."
 
 
 def test_um_de_dois_lotes_cancelado_so_acusa_quem_ficou_sem_lastro(ficha):
@@ -372,6 +388,7 @@ def test_estoque_menor_que_o_reservado(baguete):
     assert (item.qty, item.missing_qty) == ("3", "1")
     assert item.detail == "O estoque é menor que o reservado."
     assert item.batch_date == ""
+    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
 
 
 def test_reserva_vencida_e_reserva_perdida(baguete):
@@ -385,6 +402,7 @@ def test_reserva_vencida_e_reserva_perdida(baguete):
     item = _one(_promise(order))
     assert (item.reservation, item.cause) == ("lost", "hold_released")
     assert item.detail == "A reserva deste item foi solta."
+    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
 
 
 # ── O lote: fechado com menos, atrasado, esperando ───────────────────────────
@@ -413,6 +431,8 @@ def test_lote_fechado_com_menos_que_o_planejado(ficha, relogio):
     assert (item.qty, item.missing_qty) == ("5", "5")
     assert item.detail == "O lote de hoje fechou com 6, e o planejado era 10."
     assert item.batch_status == "finished"
+    assert item.next_step == "Avise o cliente: faltam 5. Remarque o que faltou ou devolva a diferença."
+    assert promise.recommended_action == "contact-customer"
     assert promise.since_iso  # desde o fechamento do lote
 
 
@@ -432,6 +452,7 @@ def test_lote_fechado_inteiro_com_a_reserva_fora_dele(ficha, relogio):
     item = _one(_promise(order))
     assert (item.reservation, item.cause) == ("lost", "batch_closed")
     assert item.detail == "O lote de hoje já fechou e esta reserva ficou de fora."
+    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
 
 
 def test_lote_de_hoje_antes_da_hora_so_espera(ficha, baguete, relogio):
@@ -449,6 +470,9 @@ def test_lote_de_hoje_antes_da_hora_so_espera(ficha, baguete, relogio):
     assert item.detail == "O lote de hoje não começou. Fica pronto às 12h."
     assert item.batch_status == "planned"
     assert item.batch_ready_at_iso == _at(12).isoformat()
+    # Esperar o lote é estado normal: nenhuma frase de ação, nenhuma saída recomendada.
+    assert (item.next_step, item.alternatives) == ("", ())
+    assert (promise.next_step, promise.recommended_action, promise.actions) == ("", "", ())
 
 
 def test_lote_de_hoje_depois_da_hora_esta_atrasado(ficha, baguete, relogio):
@@ -468,6 +492,10 @@ def test_lote_de_hoje_depois_da_hora_esta_atrasado(ficha, baguete, relogio):
     assert item.missing_qty == "0"
     assert item.detail == "O lote de hoje está atrasado: devia ficar pronto às 12h e está em andamento."
     assert item.batch_status == "started"
+    # A leitura não conhece hora nova para o lote, e não inventa uma.
+    assert item.next_step == "Avise o cliente do atraso."
+    assert item.alternatives == ()
+    assert (promise.next_step, promise.recommended_action) == ("Avise o cliente do atraso.", "contact-customer")
 
 
 def test_lote_de_ontem_que_nunca_ficou_pronto_esta_atrasado(ficha, relogio):
@@ -479,6 +507,7 @@ def test_lote_de_ontem_que_nunca_ficou_pronto_esta_atrasado(ficha, relogio):
     item = _one(_promise(order))
     assert (item.cause, item.at_risk) == ("batch_late", True)
     assert item.detail == "O lote de ontem não ficou pronto."
+    assert item.next_step == "Avise o cliente do atraso."
     assert item.work_order_refs == (work_order.ref,)
 
 
@@ -520,9 +549,11 @@ def test_demanda_acima_do_plano_da_data(ficha):
     _reserve(order, "6", day=_day(2), quant=_planned_quant(_day(2)))
     _reserve(order, "14", day=_day(2))
 
-    item = _one(_promise(order))
+    promise = _promise(order)
+    item = _one(promise)
     assert (item.reservation, item.cause) == ("partial", "plan_short")
     assert (item.qty, item.missing_qty) == ("20", "10")
+    assert (promise.next_step, promise.recommended_action) == ("Peça à Produção para aumentar o lote.", "open-production")
     assert item.label == "Baguete de tradição: 10 de 20 sem reserva"
     assert item.detail == f"A produção planejada para {commitment_day_label(_day(2))} não cobre o pedido."
 
@@ -531,9 +562,13 @@ def test_demanda_de_hoje_sem_lote_e_risco(baguete):
     order = _order("HOJE-SEM-LOTE", days=0)
     _reserve(order, "4", day=_day())
 
-    item = _one(_promise(order))
+    promise = _promise(order)
+    item = _one(promise)
     assert (item.reservation, item.cause) == ("lost", "no_batch")
     assert item.detail == "Não há lote planejado para hoje."
+    assert item.next_step == "Peça à Produção para planejar."
+    assert item.alternatives == ()  # o pão ainda pode existir: não se oferece outro no lugar
+    assert (promise.next_step, promise.recommended_action) == ("Peça à Produção para planejar.", "open-production")
 
 
 def test_a_sobra_de_hoje_nao_lastreia_a_encomenda_de_amanha(baguete, ficha):
@@ -662,8 +697,22 @@ def test_no_painel_a_encomenda_em_risco_pede_alguem_e_a_inteira_nao(ficha, geren
     assert risk.goal_minutes > 0
 
 
-def test_o_numero_de_consultas_nao_cresce_com_o_numero_de_pedidos(ficha, baguete, relogio):
-    """Um painel com 3 pedidos e um com 15 custam as mesmas consultas."""
+def test_o_numero_de_consultas_nao_cresce_com_o_numero_de_pedidos(ficha, baguete, relogio, monkeypatch):
+    """Um painel com 3 pedidos e um com 15 custam as mesmas consultas.
+
+    A busca de alternativas tem a conta dela e fica de fora desta: aqui se
+    prende que ela acontece UMA vez por item em risco distinto (produto, quanto
+    falta, canal e data), e não uma por pedido.
+    """
+    from shopman.shop.services import substitutes
+
+    searches: list[tuple] = []
+
+    def find(sku, *, qty, channel, limit, target_date):
+        searches.append((sku, qty, channel, limit, target_date))
+        return []
+
+    monkeypatch.setattr(substitutes, "find", find)
     Product.objects.filter(pk=baguete.pk).update(metadata={"ready_from": "12:00"})
     relogio(9)
     _lot(ficha, "200", days=0)
@@ -699,3 +748,324 @@ def test_o_numero_de_consultas_nao_cresce_com_o_numero_de_pedidos(ficha, baguete
     assert len(first) == 2 and len(second) == 10
     assert len(many) == len(few)
     assert len(few) <= 8
+    # Um pedido em risco no painel pequeno, cinco no grande, o mesmo item: uma busca cada.
+    assert searches == [(SKU, Decimal("4"), "web", 3, _day(2))] * 2
+
+
+# ── O próximo passo: a frase, a saída recomendada e o que oferecer no lugar ──
+
+
+def test_a_frase_do_proximo_passo_por_causa():
+    """A copy fechada pela coordenação (19/11/2026), causa a causa."""
+    step = order_promise.next_step_for
+    reschedule = "Avise o cliente e remarque para o próximo lote."
+    assert step("batch_cancelled") == reschedule
+    assert step("batch_closed") == reschedule
+    assert step("hold_released") == reschedule
+    assert step("stock_short") == reschedule
+    assert step("batch_late") == "Avise o cliente do atraso."
+    assert step("no_batch") == "Peça à Produção para planejar."
+    assert step("plan_short") == "Peça à Produção para aumentar o lote."
+    assert step("batch_short", missing=Decimal("4")) == (
+        "Avise o cliente: faltam 4. Remarque o que faltou ou devolva a diferença."
+    )
+    assert step("batch_short", missing=Decimal("1")).startswith("Avise o cliente: falta 1.")
+    assert step("batch_short", missing=Decimal("0.35")).startswith("Avise o cliente: falta 0,35.")
+    # Quem só espera o lote não tem o que fazer.
+    assert step("batch_waiting") == ""
+
+
+def test_a_frase_oferece_o_que_ha_e_nunca_mais_que_isso():
+    option = order_promise.OrderPromiseAlternativeProjection
+    fendu = option(sku="FENDU", name="Fendu", available_display="12 livres para amanhã")
+    campagne = option(sku="CAMPAGNE", name="Pain de Campagne", available_display="6 livres para amanhã")
+    brioche = option(sku="BRIOCHE", name="Brioche", available_display="1 livre para amanhã")
+    step = order_promise.next_step_for
+
+    assert step("batch_cancelled", alternatives=(fendu,)) == "Avise o cliente e ofereça: Fendu (12 livres para amanhã)."
+    assert step("batch_cancelled", alternatives=(fendu, campagne)) == (
+        "Avise o cliente e ofereça: Fendu (12 livres para amanhã) ou Pain de Campagne (6 livres para amanhã)."
+    )
+    assert step("hold_released", alternatives=(fendu, campagne, brioche)) == (
+        "Avise o cliente e ofereça: Fendu (12 livres para amanhã), Pain de Campagne (6 livres para amanhã)"
+        " ou Brioche (1 livre para amanhã)."
+    )
+    assert step("batch_short", missing=Decimal("4"), alternatives=(fendu,)) == (
+        "Avise o cliente: faltam 4. Ofereça: Fendu (12 livres para amanhã)."
+    )
+    # O lote atrasado e o que a Produção ainda resolve não oferecem outro produto.
+    assert step("batch_late", alternatives=(fendu,)) == "Avise o cliente do atraso."
+    assert step("no_batch", alternatives=(fendu,)) == "Peça à Produção para planejar."
+
+
+@pytest.fixture
+def padeiro(django_user_model):
+    """Gerencia pedidos E opera a Produção: o Gerente da casa."""
+    user = django_user_model.objects.create_user(username="gerente-producao", is_staff=True)
+    user.user_permissions.add(
+        Permission.objects.get(codename="manage_orders", content_type__app_label="shop"),
+        Permission.objects.get(codename="operate_production", content_type__app_label="backstage"),
+    )
+    return user
+
+
+def _sem_lote_hoje(ref: str) -> Order:
+    order = _order(ref, days=0)
+    _reserve(order, "4", day=_day())
+    return Order.objects.get(pk=order.pk)
+
+
+def test_abrir_a_producao_e_a_saida_recomendada_quando_ela_ainda_resolve(baguete, padeiro, settings):
+    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": "https://producao.example.test/"}
+    order = _sem_lote_hoje("HOJE-PLANEJAR")
+
+    card = build_order_card(order, user=padeiro)
+
+    assert card.promise.next_step == "Peça à Produção para planejar."
+    assert card.promise.recommended_action == "open-production"
+    actions = card.promise.actions
+    assert [action.ref for action in actions] == ["open-production", "contact-customer", "reschedule-at-pos", "cancel"]
+    assert [action.priority for action in actions] == ["primary", "secondary", "secondary", "danger"]
+    opening = actions[0]
+    assert (opening.kind, opening.label, opening.enabled) == ("link", "Abrir a Produção", True)
+    # O plano DAQUELE dia, na rota que a Produção lê (`plan?date=`).
+    assert opening.href == f"https://producao.example.test/plan?date={_day().isoformat()}"
+
+    detail = build_operator_order(order, user=padeiro)
+    assert [action.ref for action in detail.promise.actions] == [
+        "open-production", "contact-customer", "reschedule-at-pos", "cancel",
+    ]
+    line = detail.pending[0]
+    assert (line.key, line.next_step) == ("promise", "Peça à Produção para planejar.")
+    assert [(action.ref, action.priority) for action in line.actions] == [
+        ("open-production", "primary"), ("contact-customer", "secondary"),
+        ("reschedule-at-pos", "secondary"), ("cancel", "danger"),
+    ]
+    assert line.actions[0].href == opening.href
+
+
+def test_quem_nao_opera_a_producao_nao_recebe_a_acao_e_a_frase_segue_valendo(baguete, gerente, settings):
+    """Sem a permissão a ação não vem, nenhuma saída é a principal, e a frase diz o que fazer."""
+    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": "https://producao.example.test/"}
+    order = _sem_lote_hoje("HOJE-SEM-PRODUCAO")
+
+    card = build_order_card(order, user=gerente)
+
+    assert card.promise.next_step == "Peça à Produção para planejar."
+    assert card.promise.recommended_action == "open-production"
+    assert [action.ref for action in card.promise.actions] == ["contact-customer", "reschedule-at-pos", "cancel"]
+    assert [action.priority for action in card.promise.actions] == ["secondary", "secondary", "danger"]
+
+    line = build_operator_order(order, user=gerente).pending[0]
+    assert line.next_step == "Peça à Produção para planejar."
+    assert "primary" not in {action.priority for action in line.actions}
+
+
+def test_sem_o_endereco_da_producao_a_acao_nao_vem(baguete, padeiro, settings):
+    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": ""}
+    card = build_order_card(_sem_lote_hoje("HOJE-SEM-ENDERECO"), user=padeiro)
+
+    assert "open-production" not in {action.ref for action in card.promise.actions}
+    assert "primary" not in {action.priority for action in card.promise.actions}
+
+
+def test_a_producao_nao_e_saida_de_quem_precisa_avisar_o_cliente(ficha, padeiro, settings):
+    """Lote cancelado: quem opera a Produção também não ganha "Abrir a Produção"."""
+    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": "https://producao.example.test/"}
+    order, work_order, _hold = _encomenda(ficha, "ENC-SO-CLIENTE")
+    craft.void(work_order, reason="Forno parou")
+
+    card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
+
+    assert [action.ref for action in card.promise.actions] == ["contact-customer", "reschedule-at-pos", "cancel"]
+    assert [action.priority for action in card.promise.actions] == ["primary", "secondary", "danger"]
+
+
+# A casa oferece o que tem no lugar: o mecanismo de substitutos da loja.
+
+
+@pytest.fixture
+def vitrine(baguete):
+    """A baguete e dois pães da mesma prateleira, no cardápio do canal."""
+    from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem
+
+    listing = Listing.objects.create(ref="web", name="Loja online", is_active=True)
+    fendu = Product.objects.create(
+        sku="FENDU", name="Fendu", unit="un", base_price_q=1200, availability_policy="planned_ok",
+        is_sellable=True, is_published=True,
+    )
+    campagne = Product.objects.create(
+        sku="CAMPAGNE", name="Pain de Campagne", unit="un", base_price_q=1870, availability_policy="planned_ok",
+        is_sellable=True, is_published=True,
+    )
+    Product.objects.filter(pk=baguete.pk).update(is_published=True)
+    collection = Collection.objects.create(ref="paes", name="Pães")
+    for index, product in enumerate((baguete, fendu, campagne)):
+        ListingItem.objects.create(
+            listing=listing, product=product, price_q=product.base_price_q, is_published=True, is_sellable=True,
+        )
+        CollectionItem.objects.create(collection=collection, product=product, sort_order=index, is_primary=True)
+    return fendu, campagne
+
+
+def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, gerente):
+    """Para a encomenda de amanhã, só conta o lote de AMANHÃ: 10 planejados, 4
+    prometidos, 6 livres. O pão que há hoje na loja não é alternativa (dono, 18/11)."""
+    fendu, campagne = vitrine
+    loja = Position.objects.get(ref="loja")
+    stock.receive(quantity=Decimal("30"), sku=campagne.sku, position=loja, reason="vitrine de hoje")
+    stock.plan(Decimal("10"), fendu, _day(1))
+    lote_fendu = Quant.objects.get(sku=fendu.sku, target_date=_day(1))
+    Hold.objects.create(
+        sku=fendu.sku, quant=lote_fendu, quantity=Decimal("4"), target_date=_day(1), status=HoldStatus.CONFIRMED,
+        metadata={"reference": "order:ENC-OUTRA", "planned": True},
+    )
+    order, work_order, _hold = _encomenda(ficha, "ENC-OFERECE")
+    craft.void(work_order, reason="Forno parou")
+
+    promise = _promise(order)
+    item = _one(promise)
+
+    assert [(option.sku, option.name, option.available_display, option.price_display) for option in item.alternatives] == [
+        ("FENDU", "Fendu", "6 livres para amanhã", "R$ 12,00"),
+    ]
+    assert item.next_step == "Avise o cliente e ofereça: Fendu (6 livres para amanhã)."
+    assert promise.next_step == item.next_step
+    assert promise.recommended_action == "contact-customer"
+    # O cartão, a Fila e a faixa do detalhe leem a mesma frase.
+    order = Order.objects.get(pk=order.pk)
+    assert build_order_card(order, user=gerente).promise.next_step == item.next_step
+    assert build_operator_order(order, user=gerente).pending[0].next_step == item.next_step
+
+
+def test_pedido_de_hoje_oferece_o_que_ha_na_loja_agora(vitrine):
+    """Pedido de hoje reservado na vitrine, com a contagem baixando o saldo: a
+    alternativa é o que a loja tem agora."""
+    _fendu, campagne = vitrine
+    loja = Position.objects.get(ref="loja")
+    stock.receive(quantity=Decimal("8"), sku=campagne.sku, position=loja, reason="vitrine de hoje")
+    stock.receive(quantity=Decimal("3"), sku=SKU, position=loja, reason="vitrine")
+    quant = Quant.objects.get(sku=SKU, position=loja, target_date__isnull=True)
+    order = _order("HOJE-OFERECE", days=None, status="new")
+    _reserve(order, "3", day=_day(), quant=quant)
+    stock.adjust(quant, Decimal("2"), reason="Quebra")
+
+    item = _one(_promise(order))
+
+    assert item.cause == "stock_short"
+    # O Fendu não tem saldo no ledger: cabe o que se pediu, e ninguém contou
+    # quantos há. A frase não afirma número; o Campagne, contado, diz os 8.
+    assert [(option.sku, option.available_display) for option in item.alternatives] == [
+        ("FENDU", "disponível hoje"),
+        ("CAMPAGNE", "8 disponíveis hoje"),
+    ]
+    assert item.next_step == (
+        "Avise o cliente e ofereça: Fendu (disponível hoje) ou Pain de Campagne (8 disponíveis hoje)."
+    )
+
+
+def test_sem_nada_a_oferecer_a_frase_volta_a_remarcar(ficha, vitrine):
+    """Os outros pães existem no cardápio, mas não têm lote amanhã: não se promete o que não há."""
+    order, work_order, _hold = _encomenda(ficha, "ENC-SEM-ALTERNATIVA")
+    craft.void(work_order, reason="Forno parou")
+
+    item = _one(_promise(order))
+
+    assert item.alternatives == ()
+    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+
+
+def test_falha_na_busca_de_alternativas_nao_derruba_a_leitura(ficha, monkeypatch):
+    from shopman.shop.services import substitutes
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("catálogo fora do ar")
+
+    monkeypatch.setattr(substitutes, "find", broken)
+    order, work_order, _hold = _encomenda(ficha, "ENC-BUSCA-QUEBRADA")
+    craft.void(work_order, reason="Forno parou")
+
+    item = _one(_promise(order))
+
+    assert item.alternatives == ()
+    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+
+
+def test_pedido_com_passos_diferentes_diz_cada_um_com_o_produto_e_o_cliente_primeiro(ficha, padeiro, settings):
+    """Baguete com o lote cancelado e Brioche com o plano curto: a frase do pedido
+    nomeia cada produto, primeiro o que protege o cliente; a saída recomendada é
+    falar com ele, e a Produção fica ao lado."""
+    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": "https://producao.example.test/"}
+    brioche = Product.objects.create(
+        sku="BRIOCHE", name="Brioche", unit="un", base_price_q=900, availability_policy="planned_ok", is_sellable=True,
+    )
+    receita = Recipe.objects.create(ref="brioche", name="Brioche", output_sku="BRIOCHE", batch_size=Decimal("10"))
+    RecipeItem.objects.create(recipe=receita, input_sku="FARINHA", quantity=Decimal("0.5"), unit="kg")
+    order, lote_baguete, _hold = _encomenda(ficha, "ENC-DOIS-PASSOS")
+    craft.plan(receita, quantity=Decimal("2"), date=_day(1))
+    _reserve(order, "4", day=_day(1), sku=brioche.sku)
+    craft.void(lote_baguete, reason="Forno parou")
+
+    promise = _promise(order)
+
+    by_sku = {item.sku: item for item in promise.items}
+    assert by_sku[SKU].next_step == "Avise o cliente e remarque para o próximo lote."
+    assert by_sku["BRIOCHE"].next_step == "Peça à Produção para aumentar o lote."
+    assert promise.next_step == (
+        "Baguete de tradição: avise o cliente e remarque para o próximo lote. "
+        "Brioche: peça à Produção para aumentar o lote."
+    )
+    assert promise.recommended_action == "contact-customer"
+
+    card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
+    assert [(action.ref, action.priority) for action in card.promise.actions] == [
+        ("contact-customer", "primary"), ("reschedule-at-pos", "secondary"),
+        ("open-production", "secondary"), ("cancel", "danger"),
+    ]
+
+
+def test_itens_com_o_mesmo_passo_dizem_a_frase_uma_vez(ficha):
+    """Dois produtos que perderam o lote, sem nada a oferecer: uma frase só, sem nome na frente."""
+    brioche = Product.objects.create(
+        sku="BRIOCHE", name="Brioche", unit="un", base_price_q=900, availability_policy="planned_ok", is_sellable=True,
+    )
+    receita = Recipe.objects.create(ref="brioche", name="Brioche", output_sku="BRIOCHE", batch_size=Decimal("10"))
+    RecipeItem.objects.create(recipe=receita, input_sku="FARINHA", quantity=Decimal("0.5"), unit="kg")
+    order, lote_baguete, _hold = _encomenda(ficha, "ENC-MESMO-PASSO")
+    lote_brioche = craft.plan(receita, quantity=Decimal("10"), date=_day(1))
+    _reserve(order, "2", day=_day(1), quant=Quant.objects.get(sku="BRIOCHE", target_date=_day(1), batch=""), sku=brioche.sku)
+    craft.void(lote_baguete, reason="Forno parou")
+    craft.void(lote_brioche, reason="Forno parou")
+
+    promise = _promise(order)
+
+    assert len(promise.items) == 2
+    assert promise.next_step == "Avise o cliente e remarque para o próximo lote."
+
+
+def test_a_busca_de_alternativas_custa_o_mesmo_para_um_ou_cinco_pedidos_do_mesmo_item(ficha, vitrine):
+    """Cinco encomendas que perderam o mesmo lote, com a mesma quantidade, custam
+    as consultas de uma: a busca é por item em risco distinto, com os candidatos
+    de verdade (catálogo, lote da data, preço do cardápio)."""
+    fendu, _campagne = vitrine
+    stock.plan(Decimal("10"), fendu, _day(1))
+    work_order = _lot(ficha, "40")
+    orders = []
+    for index in range(5):
+        order = _order(f"ENC-MESMO-ITEM-{index}")
+        _reserve(order, "4", day=_day(1), quant=_planned_quant(_day(1)))
+        orders.append(order)
+    craft.void(work_order, reason="Forno parou")
+    orders = [Order.objects.get(pk=order.pk) for order in orders]
+
+    order_promise.read_for(orders[:1])  # aquece o que a casa guarda em cache (regras, canal)
+    with CaptureQueriesContext(connection) as one:
+        first = order_promise.read_for(orders[:1])
+    with CaptureQueriesContext(connection) as five:
+        second = order_promise.read_for(orders)
+
+    assert len(first) == 1 and len(second) == 5
+    assert all(_one(promise).alternatives for promise in second.values())
+    assert len(five) == len(one)
+    # Medido em 19/11/2026: 19 consultas, das quais 11 são a busca de substitutos.
+    assert len(one) <= 24

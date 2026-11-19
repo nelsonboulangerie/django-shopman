@@ -489,6 +489,14 @@ export interface CourierReminderProjection {
   short_ref: string;
 }
 
+/** Um produto que a casa pode oferecer no lugar do item em risco. */
+export interface OrderPromiseAlternativeProjection {
+  sku: string;
+  name: string;
+  available_display: string;
+  price_display: string;
+}
+
 /** Um produto do pedido cuja promessa pede atenção, ou espera o lote. */
 export interface OrderPromiseItemProjection {
   sku: string;
@@ -504,6 +512,8 @@ export interface OrderPromiseItemProjection {
   batch_status: string;
   batch_ready_at_iso: string;
   work_order_refs: string[];
+  next_step: string;
+  alternatives: OrderPromiseAlternativeProjection[];
 }
 
 /** A promessa de um pedido que pede atenção ou espera: o selo e os itens. */
@@ -514,6 +524,8 @@ export interface OrderPromiseProjection {
   blocks_start: boolean;
   since_iso: string;
   actions: Action[];
+  next_step: string;
+  recommended_action: string;
 }
 
 /** A single order card in the operator queue. */
@@ -712,6 +724,7 @@ export interface OrderPendingActionProjection {
   enabled: boolean;
   reason: string;
   href: string;
+  priority: string;
 }
 
 /** Uma linha de "O que falta neste pedido": o fato, o motivo e o que fazer. */
@@ -721,6 +734,7 @@ export interface OrderPendingProjection {
   label: string;
   reason: string;
   actions: OrderPendingActionProjection[];
+  next_step: string;
 }
 
 /** O destino do dinheiro de um pedido cancelado, como o Gestor o lê. */

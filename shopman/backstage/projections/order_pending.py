@@ -92,7 +92,14 @@ class OrderPendingActionProjection:
     ``ref`` é uma ação de ``actions`` do detalhe ou um gesto de tela
     (:data:`ACTION_PRINT_DANFE`, :data:`ACTION_CONTACT_CUSTOMER`). ``enabled`` e
     ``reason`` são os da própria ação: a faixa nunca oferece o que o servidor
-    recusaria. ``href`` só existe na conversa com o cliente.
+    recusaria. ``href`` só existe no que leva para fora do Gestor (a conversa
+    com o cliente, o PDV, a Produção).
+
+    ``priority`` é o peso que a linha declara para o gesto: ``primary`` (o
+    recomendado, o único cheio da linha), ``secondary`` ou ``danger``. Vazio, a
+    linha não declara nada e a tela trata o primeiro gesto como o principal.
+    Linha que declara e não tem ``primary`` não tem gesto cheio: quem resolve
+    não é quem está olhando (a promessa em risco que pede a Produção).
     """
 
     ref: str
@@ -100,6 +107,7 @@ class OrderPendingActionProjection:
     enabled: bool = True
     reason: str = ""
     href: str = ""
+    priority: str = ""
 
 
 @dataclass(frozen=True)
@@ -108,6 +116,8 @@ class OrderPendingProjection:
 
     ``tone``: ``error`` (alguém precisa agir), ``warning`` (confira) ou ``info``
     (espera que se resolve sozinha). ``key`` é estável, para a tela e os testes.
+    ``next_step`` é o que fazer agora, numa frase, quando a linha tem mais de
+    uma saída e uma delas é a certa (a promessa em risco).
     """
 
     key: str
@@ -115,6 +125,7 @@ class OrderPendingProjection:
     label: str
     reason: str = ""
     actions: tuple[OrderPendingActionProjection, ...] = ()
+    next_step: str = ""
 
 
 @dataclass(frozen=True)
@@ -459,7 +470,12 @@ def _lot_lines(promise, awaiting_work_orders) -> str:
 
 
 def _promise_pending(promise):
-    """Promessa em risco: o item que ficou sem lastro, o porquê e as três saídas ao lado."""
+    """Promessa em risco: o item que ficou sem lastro, o porquê, o que fazer e as saídas ao lado.
+
+    A saída recomendada vem primeiro e é a única ``primary``; sem recomendada
+    entre as saídas (quem não abre a Produção), nenhuma é cheia e a frase do
+    próximo passo diz o que fazer.
+    """
     if promise is None or promise.state != order_promise.STATE_AT_RISK:
         return None
     return OrderPendingProjection(
@@ -467,10 +483,11 @@ def _promise_pending(promise):
         tone=TONE_ERROR,
         label=promise.label,
         reason=order_promise.risk_reason(promise),
+        next_step=promise.next_step,
         actions=tuple(
             OrderPendingActionProjection(
                 ref=action.ref, label=action.label, enabled=bool(action.enabled), reason=action.reason or "",
-                href=action.href or "",
+                href=action.href or "", priority=action.priority or "secondary",
             )
             for action in promise.actions
         ),
