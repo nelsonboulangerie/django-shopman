@@ -239,6 +239,16 @@ function switchHint(row: {
   if (!row.switch?.requires_manager_approval) return "";
   return row.active ? "desligar pede gerente" : "ligar pede gerente";
 }
+
+// Um botão cheio por linha. Com a promessa em risco e uma saída recomendada pelo
+// servidor ("Avisar o cliente", "Abrir a Produção"), é ela a cheia: o gesto da etapa
+// continua na linha, em contorno. Iniciar o preparo de um pedido sem lastro não é o
+// próximo passo (dono, 19/11/2026: o aviso diz o que fazer).
+function riskLeads(item: { card: OrderCardProjection }): boolean {
+  return Boolean(
+    promiseRisk(item.card)?.exits.some((exit) => exit.recommended && !exit.disabled),
+  );
+}
 </script>
 
 <template>
@@ -720,15 +730,18 @@ function switchHint(row: {
                             )
                   "
                   :color="
-                    queueGesture(item).primary!.disabled
+                    queueGesture(item).primary!.disabled || riskLeads(item)
                       ? 'neutral'
                       : item.kind === 'ifood_accept'
                         ? 'error'
                         : 'primary'
                   "
                   :variant="
-                    queueGesture(item).primary!.disabled ? 'outline' : 'solid'
+                    queueGesture(item).primary!.disabled || riskLeads(item)
+                      ? 'outline'
+                      : 'solid'
                   "
+                  :data-queue-primary-weight="riskLeads(item) ? 'secondary' : undefined"
                   block
                   class="min-w-0"
                   :disabled="

@@ -494,7 +494,6 @@ export interface OrderPromiseAlternativeProjection {
   sku: string;
   name: string;
   available_display: string;
-  price_display: string;
 }
 
 /** Um produto do pedido cuja promessa pede atenção, ou espera o lote. */

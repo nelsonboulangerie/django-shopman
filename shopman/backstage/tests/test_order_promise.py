@@ -926,8 +926,8 @@ def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, g
     promise = _promise(order)
     item = _one(promise)
 
-    assert [(option.sku, option.name, option.available_display, option.price_display) for option in item.alternatives] == [
-        ("FENDU", "Fendu", "6 livres para amanhã", "R$ 12,00"),
+    assert [(option.sku, option.name, option.available_display) for option in item.alternatives] == [
+        ("FENDU", "Fendu", "6 livres para amanhã"),
     ]
     assert item.next_step == "Avise o cliente e ofereça: Fendu (6 livres para amanhã)."
     assert promise.next_step == item.next_step

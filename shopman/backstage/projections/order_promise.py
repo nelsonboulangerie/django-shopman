@@ -188,13 +188,13 @@ class OrderPromiseAlternativeProjection:
     Vem de ``shop/services/substitutes.find``, o mesmo mecanismo da loja.
     ``available_display`` diz quanto há e para quando: "12 livres para amanhã"
     (o que o lote da data ainda tem sem encomenda) ou "8 disponíveis hoje".
-    ``price_display`` é o preço do cardápio do canal do pedido.
+    Só o que a frase do próximo passo escreve: o preço fica de fora, porque
+    nenhuma tela o lê (entra quando o PDV abrir a troca pré-montada, #2765).
     """
 
     sku: str
     name: str
     available_display: str
-    price_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -671,7 +671,6 @@ class _AlternativeFinder:
                 sku=row["sku"],
                 name=row["name"],
                 available_display=_available_display(int(row.get("available_qty") or 0), target, requested=missing),
-                price_display=row.get("price_display") or "",
             )
             for row in found[:ALTERNATIVES_LIMIT]
         )

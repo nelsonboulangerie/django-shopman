@@ -48,8 +48,8 @@ const item = (over: Partial<OrderPromiseItemProjection> = {}): OrderPromiseItemP
   batch_date: "2026-11-19", batch_status: "void", batch_ready_at_iso: "", work_order_refs: ["WO-1"],
   next_step: OFFER_STEP,
   alternatives: [
-    { sku: "FENDU", name: "Fendu", available_display: "6 livres para amanhã", price_display: "R$ 12,00" },
-    { sku: "CAMPAGNE", name: "Pain de Campagne", available_display: "8 livres para amanhã", price_display: "R$ 18,70" },
+    { sku: "FENDU", name: "Fendu", available_display: "6 livres para amanhã" },
+    { sku: "CAMPAGNE", name: "Pain de Campagne", available_display: "8 livres para amanhã" },
   ],
   ...over,
 });
