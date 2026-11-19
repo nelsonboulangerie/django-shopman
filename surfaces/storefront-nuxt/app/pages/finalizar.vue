@@ -499,7 +499,9 @@ const pixLimitRefusal = ref<{ message: string, totalQ: number } | null>(null)
 // guarda isso para o aviso com saída (plano EXCELENCIA-STOREFRONT, P1-11).
 const stockRefusal = ref<{ sku: string, name: string, message: string } | null>(null)
 function revealStockRefusal () {
-  reveal(() => document.querySelector('[data-checkout-stock-refusal]'), { align: 'start', focus: true })
+  // O alvo é a moldura (régua canônica + respiro), não o aviso: o aviso sozinho
+  // não tem margem de rolagem e pararia debaixo do cabeçalho.
+  reveal(() => document.querySelector('[data-focus-target="stock-refusal"]'), { align: 'start', focus: true })
 }
 // A folha de revisão, ao terminar de fechar, devolve o foco ao botão que a abriu
 // ("Revisar pedido"), e o navegador rola até ele. Quando ela fecha por causa de uma

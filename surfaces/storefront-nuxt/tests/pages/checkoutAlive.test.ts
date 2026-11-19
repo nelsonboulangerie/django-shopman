@@ -267,6 +267,10 @@ describe('checkout: faltou estoque no envio', () => {
     const frame = page.find('[data-focus-target="stock-refusal"]')
     expect(frame.classes()).toEqual(expect.arrayContaining(['pt-4', '-mt-4']))
     expect(frame.find('[data-checkout-stock-refusal]').exists()).toBe(true)
+    // Quem recebe o foco é a moldura: o botão dela fica com o teclado.
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest('[data-focus-target="stock-refusal"]')).toBeTruthy()
+    })
     // A revisão fechou: a recusa tem um lugar só.
     await vi.waitFor(() => { expect(document.body.querySelector('[data-review-items]')).toBeNull() })
   })
