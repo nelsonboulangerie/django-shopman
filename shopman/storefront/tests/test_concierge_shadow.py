@@ -135,3 +135,71 @@ def test_a_failing_entry_never_stops_the_cycle(entry):
         result = run()
     assert result["sweep"] == {"enabled": 1, "decided": 0, "failed": 1}
     assert not ConversationalDecision.objects.exists()
+
+
+# ── Os defeitos da primeira passada em produção (19/11/2026, 22h11Z) ──────────────
+
+
+def _observed_entry(*, phone="", subject="5543988887777", ago=timedelta(0), external_id="mc-9"):
+    conversation = Conversation.objects.create(phone=phone, customer_ref="cust-9", channel_ref="whatsapp")
+    binding = ConversationBinding.objects.create(conversation=conversation, provider="manychat", account="acc-1",
+                                                 transport_channel="whatsapp", subject=subject,
+                                                 connection_key="manychat-whatsapp-primary")
+    message = ConversationMessage.objects.create(conversation=conversation, binding=binding, role="user",
+                                                 kind="inbound", text="qual o horário?", external_id=external_id)
+    if ago:
+        ConversationMessage.objects.filter(pk=message.pk).update(created_at=timezone.now() - ago)
+        message.refresh_from_db()
+    return message
+
+
+def test_a_conversation_without_phone_is_transported_by_the_channel(entry):
+    """375 de 375 falharam em produção: sem telefone, a identidade virava anônima COM sujeito."""
+    message = _observed_entry(phone="")
+    assert shadow.identity_of(message) == "transported"
+    result = run()
+    assert result["sweep"]["failed"] == 0
+    decision = ConversationalDecision.objects.get(message=message)
+    assert decision.document["context"]["snapshot_hash"].startswith("sha256:")
+
+
+def test_an_anonymous_entry_carries_no_subject_and_still_decides(entry):
+    """Sem telefone e sem ligação de canal (o banco não aceita ligação sem número): anônima, sem sujeito."""
+    conversation = Conversation.objects.create(channel_ref="whatsapp")
+    message = ConversationMessage(conversation=conversation, role="user", kind="inbound", text="oi")
+    assert shadow.identity_of(message) == "anonymous"
+    from shopman.storefront.concierge.profile import build_profile
+
+    decision, snapshot, _, _ = shadow.decide_entry(message, profile=build_profile(environment="shadow"))
+    assert snapshot.identity.assurance == "anonymous" and snapshot.identity.subject_ref is None
+    assert decision.decision_id
+
+
+def test_the_outcome_window_counts_from_the_entry_not_from_the_decision(entry):
+    """No acumulado a decisão é de hoje; a janela de 24 h e 7 dias é a da mensagem do cliente."""
+    message = _observed_entry(phone="5543988887777", ago=timedelta(days=10), external_id="mc-old")
+    run()
+    decision = ConversationalDecision.objects.get(message=message)
+    outcomes = {o.metric: o for o in ConversationalOutcome.objects.filter(decision=decision)}
+    assert outcomes["orders_24h"].window_start == decision.entry_at
+    assert outcomes["orders_24h"].observation == "observed" and outcomes["orders_7d"].observation == "observed"
+
+
+def test_entries_that_always_fail_never_starve_the_new_ones(entry, monkeypatch):
+    """Entrada que falha sempre volta a cada ciclo, mas não ocupa o lote: as novas seguem decididas."""
+    broken = [_observed_entry(phone="1", subject=f"55430000000{n}", external_id=f"mc-b{n}", ago=timedelta(days=30))
+              for n in range(3)]
+    real = shadow.decide_entry
+
+    def flaky(message, **kwargs):
+        if message.pk in {m.pk for m in broken}:
+            raise ValueError("defeito permanente")
+        return real(message, **kwargs)
+
+    monkeypatch.setattr(shadow, "decide_entry", flaky)
+    with mock.patch.object(shadow.logger, "warning") as warning:
+        result = shadow.sweep(limit=2)
+    assert result == {"enabled": 1, "decided": 1, "failed": 3}
+    assert ConversationalDecision.objects.filter(message=entry).exists()
+    # Um aviso só no ciclo, com a contagem; nunca um por entrada.
+    assert warning.call_count == 1 and warning.call_args.args[1] == 3
