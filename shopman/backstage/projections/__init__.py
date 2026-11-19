@@ -21,11 +21,9 @@ from .kds import (
 from .order_queue import (
     OperatorOrderProjection,
     OrderCardProjection,
-    OrderQueueProjection,
     TwoZoneQueueProjection,
     build_operator_order,
     build_order_card,
-    build_order_queue,
     build_two_zone_queue,
 )
 from .pos import (
@@ -73,7 +71,6 @@ __all__ = [
     "KDSTicketProjection",
     "OperatorOrderProjection",
     "OrderCardProjection",
-    "OrderQueueProjection",
     "TwoZoneQueueProjection",
     "POSProjection",
     "POSCashRuntimeProjection",
@@ -103,7 +100,6 @@ __all__ = [
     "build_kds_ticket",
     "build_operator_order",
     "build_order_card",
-    "build_order_queue",
     "build_two_zone_queue",
     "build_pos",
     "build_pos_customer_lookup",

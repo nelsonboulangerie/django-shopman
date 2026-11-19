@@ -1,10 +1,11 @@
-"""OrderQueueProjection — read models for the operator order queue (Fase 4).
+"""Os read models dos pedidos do operador: o quadro do Gestor e o detalhe.
 
-Translates the active order queue into immutable projections for the operator
-dashboard. Replaces the inline ``_enrich_order`` / ``_status_counts`` logic
-from ``shopman.backstage.views.orders``.
+``build_two_zone_queue`` monta o quadro (Novos, Em preparo, Prontos e a lista
+de Encomendas), um ``OrderCardProjection`` por pedido; ``build_operator_order``
+monta o detalhe de um pedido, o mesmo contrato para o Gestor e para o PDV.
+Projeções imutáveis, prontas para a tela.
 
-Never imports from ``shopman.backstage.views.*``.
+Nunca importa de ``shopman.backstage.views.*``.
 """
 
 from __future__ import annotations
@@ -968,15 +969,6 @@ _POS_COURIER_ACTIONS = frozenset({"courier-dispatch", "courier-dispatch-again", 
 
 
 @dataclass(frozen=True)
-class OrderQueueProjection:
-    """Top-level read model for the operator order queue."""
-
-    orders: tuple[OrderCardProjection, ...]
-    counts: dict[str, int]  # status → count, includes "all"
-    active_filter: str
-
-
-@dataclass(frozen=True)
 class TwoZoneQueueProjection:
     """Operator queue grouped by action area: intake, prep and expedition
     (rendered as the Entrada, Preparo and Saída columns)."""
@@ -995,12 +987,12 @@ class TwoZoneQueueProjection:
     # memória diária devem seguir o dia calculado pelo Django.
     service_day: str
     service_day_ends_at: str
-    # Encomendas para datas futuras (WP-D): fora das colunas do dia, ordenadas
-    # pela data combinada. Inclui pedidos NOVOS (ainda a aceitar) e confirmados —
-    # ambos carregam o badge "Agendado · <data>", então pertencem aqui, não na
-    # Entrada (o badge e a seção precisam concordar). O card novo mantém prazo de
-    # confirmação e ação de aceitar. No dia, o despertador (preorder.activate)
-    # devolve o pedido ao fluxo normal.
+    # A lista "Encomendas", abaixo das colunas: só encomenda JÁ ACEITA e ainda
+    # antes da expedição. Primeiro as de hoje que esperam a hora da Cozinha (pela
+    # hora em que cada uma chega), depois as de outros dias (pela data combinada).
+    # O pedido NOVO nunca mora aqui, qualquer que seja a data: aceitar tem prazo,
+    # e ele fica em ``intake`` até o aceite. No dia, o despertador
+    # (``preorder.activate``) leva a encomenda de outro dia ao fluxo do dia.
     preorders: tuple[OrderCardProjection, ...] = ()
     preorders_count: int = 0
     # Maquininhas na rua (saíram com o entregador e não voltaram), para o quadro
@@ -1024,46 +1016,6 @@ class TwoZoneQueueProjection:
 
 
 # ── Builders ───────────────────────────────────────────────────────────
-
-
-def build_order_queue(
-    *,
-    filter_status: str = "all",
-) -> OrderQueueProjection:
-    """Build the operator order queue projection.
-
-    Queries all active orders, counts per status, then applies filter.
-    """
-    all_orders = list(
-        Order.objects.filter(status__in=ACTIVE_STATUSES)
-        .prefetch_related("items")
-        .order_by("created_at")
-    )
-
-    counts = _status_counts(all_orders)
-
-    if filter_status != "all" and filter_status in ACTIVE_STATUSES:
-        filtered = [o for o in all_orders if o.status == filter_status]
-    else:
-        filtered = all_orders
-        filter_status = "all"
-
-    courier_change = operator_orders.courier_change_by_order([o.ref for o in filtered])
-    from shopman.shop.services import waitlist
-
-    waitlist_states = waitlist.states_for(filtered)
-    payment_reads = payment_svc.read_payments_for(filtered)
-    channel_configs = _channel_configs_for(filtered)
-    cash_context = _cash_settlement_context(filtered)
-    fiscal_states = _fiscal_states_for(filtered)
-    promise_reads = order_promise.read_for(filtered)
-    cards = tuple(_build_card(o, fiscal_states=fiscal_states, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads, promise_reads=promise_reads) for o in filtered)
-
-    return OrderQueueProjection(
-        orders=cards,
-        counts=counts,
-        active_filter=filter_status,
-    )
 
 
 def _cancel_capability(order: Order, user) -> dict:
@@ -2070,7 +2022,7 @@ def _segment_label(segment: str) -> str:
 
 
 def build_order_card(order: Order, *, user=None) -> OrderCardProjection:
-    """Build a single order card projection (for HTMX partial re-renders)."""
+    """O cartão de UM pedido, fora do quadro: lê sozinho o que o quadro lê em lote."""
     return _build_card(order, user=user)
 
 
@@ -3904,15 +3856,6 @@ def _next_label(order: Order) -> str:
     if order.status == "ready" and _is_delivery(order):
         return READY_DELIVERY_LABEL
     return NEXT_ACTION_LABELS.get(order.status, "")
-
-
-def _status_counts(orders: list[Order]) -> dict[str, int]:
-    counts: dict[str, int] = dict.fromkeys(ACTIVE_STATUSES, 0)
-    for order in orders:
-        if order.status in counts:
-            counts[order.status] += 1
-    counts["all"] = sum(counts.values())
-    return counts
 
 
 # O histórico é texto de tela, e texto de tela é em português. Sem um rótulo

@@ -840,13 +840,6 @@ export interface OperatorOrderProjection {
   promise: OrderPromiseProjection | null;
 }
 
-/** Top-level read model for the operator order queue. */
-export interface OrderQueueProjection {
-  orders: OrderCardProjection[];
-  counts: Record<string, number>;
-  active_filter: string;
-}
-
 /** Uma linha de "O sistema fez": o que mudou sozinho e por quê. */
 export interface SystemActionProjection {
   order_ref: string;
