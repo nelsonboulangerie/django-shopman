@@ -20,8 +20,9 @@ Três regras desta lista:
 
 Nada aqui grava, e nada aqui inventa ação: toda ``ref`` de ação ou está em
 ``actions`` do detalhe (``requeue-fiscal``, ``resend-payment-link``, ``cancel``,
-``refund-retry``) ou é um gesto de tela que já existia (``print-danfe``,
-``contact-customer``).
+``refund-retry``), ou é um gesto de tela que já existia (``print-danfe``,
+``contact-customer``), ou é uma saída do aviso "Promessa em risco" (``resolve``,
+que abre o diálogo, e ``open-production``; ``order_promise``).
 """
 
 from __future__ import annotations
@@ -94,13 +95,12 @@ class OrderPendingActionProjection:
     (:data:`ACTION_PRINT_DANFE`, :data:`ACTION_CONTACT_CUSTOMER`). ``enabled`` e
     ``reason`` são os da própria ação: a faixa nunca oferece o que o servidor
     recusaria. ``href`` só existe no que leva para fora do Gestor (a conversa
-    com o cliente, o PDV, a Produção).
+    com o cliente, a Produção); o gesto que abre um diálogo (``resolve``, da
+    promessa em risco) não leva endereço.
 
     ``priority`` é o peso que a linha declara para o gesto: ``primary`` (o
     recomendado, o único cheio da linha), ``secondary`` ou ``danger``. Vazio, a
     linha não declara nada e a tela trata o primeiro gesto como o principal.
-    Linha que declara e não tem ``primary`` não tem gesto cheio: quem resolve
-    não é quem está olhando (a promessa em risco que pede a Produção).
     """
 
     ref: str
@@ -528,9 +528,10 @@ def _lot_lines(promise, awaiting_work_orders) -> str:
 def _promise_pending(promise):
     """Promessa em risco: o item que ficou sem lastro, o porquê, o que fazer e as saídas ao lado.
 
-    A saída recomendada vem primeiro e é a única ``primary``; sem recomendada
-    entre as saídas (quem não abre a Produção), nenhuma é cheia e a frase do
-    próximo passo diz o que fazer.
+    As mesmas saídas do aviso (``order_queue._promise_actions``): "Resolver",
+    que abre o diálogo com as escolhas e a mensagem ao cliente, e "Abrir a
+    Produção" quando ela ainda resolve e a conta a opera. A principal vem
+    primeiro e é a única ``primary``.
     """
     if promise is None or promise.state != order_promise.STATE_AT_RISK:
         return None

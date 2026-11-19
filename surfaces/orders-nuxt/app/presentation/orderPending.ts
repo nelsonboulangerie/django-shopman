@@ -9,6 +9,7 @@ import type {
   OrderPendingActionProjection,
   OrderPendingProjection,
 } from "~/generated/ordersContract";
+import { OPEN_PRODUCTION, RESOLVE } from "./orderPromise";
 
 export type PendingTone = "error" | "warning" | "info";
 
@@ -41,23 +42,20 @@ const ACTION_ICONS: Record<string, string> = {
   "resend-payment-link": "i-lucide-send",
   "print-danfe": "i-lucide-printer",
   "contact-customer": "i-lucide-message-circle",
-  "reschedule-at-pos": "i-lucide-calendar-clock",
-  "open-production": "i-lucide-croissant",
+  [RESOLVE]: "i-lucide-list-checks",
+  [OPEN_PRODUCTION]: "i-lucide-croissant",
   "refund-retry": "i-lucide-rotate-ccw",
   cancel: "i-lucide-ban",
 };
 
-/** A ação que remarca: abre o pedido no PDV, onde mora o remarcar (D-003). */
-const RESCHEDULE_AT_POS = "reschedule-at-pos";
-/** A ação que abre o plano do dia na Produção, quando ela ainda resolve o item. */
-const OPEN_PRODUCTION = "open-production";
-/** Os atalhos que abrem OUTRO app de operador, na janela dele. */
-const CROSS_APP_ACTIONS = new Set([RESCHEDULE_AT_POS, OPEN_PRODUCTION]);
+/** Os atalhos que abrem OUTRO app de operador, na janela dele: a Produção, quando ela
+ *  ainda resolve o item. */
+const CROSS_APP_ACTIONS = new Set([OPEN_PRODUCTION]);
 /**
- * As ações que são atalho para fora do Gestor: a conversa com o cliente, o PDV e a
- * Produção. Pela `ref`, e não por ter `href`: o cancelar da promessa em risco é a ação
- * de gravar do detalhe, e o endereço que ela carrega é o da rota de gravação, não um
- * link.
+ * As ações que são atalho para fora do Gestor: a conversa com o cliente e a Produção.
+ * Pela `ref`, e não por ter `href`: o cancelar é a ação de gravar do detalhe, e o
+ * endereço que ela carrega é o da rota de gravação, não um link. "Resolver" (a
+ * promessa em risco) também não é link: sobe para a página, que abre o diálogo.
  */
 const LINK_ACTIONS = new Set(["contact-customer", ...CROSS_APP_ACTIONS]);
 
@@ -79,9 +77,9 @@ export interface PendingButton {
   loading: boolean;
   /** Por que não pode agora: aparece escrito, não só no `title`. */
   blockedReason: string;
-  /** A conversa com o cliente e o PDV: abrem fora do Gestor. Vazio no que grava. */
+  /** A conversa com o cliente e a Produção: abrem fora do Gestor. Vazio no que grava. */
   href: string;
-  /** O atalho abre outro app de operador (o PDV, a Produção), na janela dele. */
+  /** O atalho abre outro app de operador (a Produção), na janela dele. */
   crossApp: boolean;
 }
 

@@ -76,6 +76,7 @@ import {
   type AcceptedPreorder,
 } from "~/presentation/preorderList";
 import { promiseRisk, waitsForBatch } from "~/presentation/orderPromise";
+import { CANCEL_HASH } from "~/presentation/promiseResolution";
 import {
   orderFocusKey,
   orderFocusKeys,
@@ -1432,6 +1433,22 @@ function onAction(ref_: string, action: AffordanceRef) {
   else if (action === "dismiss_courier_reminder")
     void dismissCourierReminder(ref_);
   else if (action === "ifood_accept_retry") retryIFoodAccept(ref_);
+  else if (action === "resolve_promise") openResolve(ref_);
+}
+
+// "Resolver" a promessa em risco (WP-G08): UM diálogo para o painel inteiro (cartão,
+// Fila e Tabela), aberto com o pedido que foi tocado. Ele lê as escolhas ao abrir; o
+// cartão não leva o contato do cliente. Tirar o item grava dali e a leitura do painel
+// se refaz; cancelar o pedido inteiro segue para o pedido, que abre o cancelar com
+// motivo e dinheiro (o MESMO diálogo do menu).
+const resolveRef = ref("");
+const resolveOpen = ref(false);
+function openResolve(ref_: string) {
+  resolveRef.value = ref_;
+  resolveOpen.value = true;
+}
+function cancelFromResolve(ref_: string) {
+  void navigateTo(`/${ref_}${CANCEL_HASH}`);
 }
 
 // O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
@@ -1549,7 +1566,7 @@ function findOnScreen(ref_: string): HTMLElement | null {
   }
   return null;
 }
-// Um pedido só: abre o pedido, na faixa que tem as três saídas. Vários: a tela vai até
+// Um pedido só: abre o pedido, na faixa que tem o "Resolver". Vários: a tela vai até
 // o primeiro (o cartão, a linha da Fila ou a da lista de Encomendas). Se ele não está
 // à vista (um filtro o tirou da tela), o aviso abre o pedido: botão de aviso nunca
 // fica sem efeito.
@@ -2456,6 +2473,7 @@ function compactClear() {
                       <OrderPromiseExits
                         :exits="promiseRisk(row.original.card)!.exits"
                         :code="splitRef(row.original.card.ref).code"
+                        @resolve="openResolve(row.original.card.ref)"
                       />
                     </div>
                     <p
@@ -2586,6 +2604,17 @@ function compactClear() {
         }
       "
       @confirm="confirmReject"
+    />
+
+    <!-- "Resolver" a promessa em risco: um diálogo só para o cartão, a Fila e a Tabela -->
+    <OrderPromiseResolveDialog
+      :open="resolveOpen"
+      :order-ref="resolveRef"
+      :managers="queue?.awareness?.managers ?? []"
+      :viewer-name="queue?.awareness?.viewer_name ?? ''"
+      @update:open="(value: boolean) => (resolveOpen = value)"
+      @changed="refresh()"
+      @cancel="cancelFromResolve"
     />
 
     <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->

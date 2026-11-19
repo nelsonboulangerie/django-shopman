@@ -54,15 +54,16 @@ faz agora, pela causa; a promessa traz a frase do pedido inteiro e
 ``recommended_action``, a saída que resolve:
 
 - o item não vai existir (lote cancelado, fechado com menos, reserva de fora,
-  estoque menor, reserva solta): avisar o cliente. Quando a casa tem o que
-  oferecer no lugar, a frase diz o quê e quanto (``alternatives``), pelo MESMO
-  mecanismo de substitutos da loja (``shop/services/substitutes.find``); para a
-  encomenda de outro dia, a conta é a do lote da data, nunca a sobra de hoje.
-  Sem alternativa, remarcar para o próximo lote: a frase não promete o que não há;
-- o lote está atrasado: avisar do atraso (a leitura não conhece hora nova, e
-  não inventa uma);
+  estoque menor, reserva solta) ou o lote está atrasado: ``resolve``, o diálogo
+  "Resolver", onde moram trocar, remarcar, tirar o item, cancelar e a mensagem
+  ao cliente (``projections/order_promise_resolution``). Quando a casa tem o
+  que oferecer no lugar, o item diz o quê e quanto (``alternatives``), pelo
+  MESMO mecanismo de substitutos da loja (:func:`alternatives_for`, sobre
+  ``shop/services/substitutes.find``); para a encomenda de outro dia, a conta é
+  a do lote da data, nunca a sobra de hoje;
 - a Produção ainda pode resolver (sem lote planejado, plano que não cobre):
-  pedir à Produção, e a saída recomendada é abrir o plano daquele dia.
+  pedir à Produção, e a saída recomendada é abrir o plano daquele dia
+  (``open-production``).
 
 "Esperando o lote" não tem próximo passo: é espera, ninguém precisa agir.
 
@@ -78,6 +79,10 @@ As alternativas custam uma busca de substitutos por item EM RISCO distinto
 (produto, quanto falta, canal e data), nunca por pedido do painel: doze
 encomendas que perderam o mesmo lote com a mesma quantidade custam uma busca.
 Painel sem pedido em risco não busca nada.
+
+O diálogo "Resolver" (as escolhas, o dinheiro e a mensagem ao cliente) NÃO entra
+nesta conta: é lido por pedido, quando o operador o abre
+(``projections/order_promise_resolution``). O painel nunca o chama.
 """
 
 from __future__ import annotations
@@ -138,13 +143,12 @@ BATCH_NOT_OUT = frozenset({CAUSE_BATCH_WAITING, CAUSE_BATCH_LATE})
 #: Causas que não falam de lote nenhum: o item não ganha dia de lote.
 _NO_BATCH_CAUSES = frozenset({CAUSE_STOCK_SHORT, CAUSE_HOLD_RELEASED})
 
-#: As saídas de uma promessa em risco. A recomendada vem primeiro
-#: (``order_queue._promise_card_actions``); "Abrir a Produção" só existe quando o
-#: item ainda pode ser produzido e para quem opera a Produção.
-ACTION_CONTACT_CUSTOMER = "contact-customer"
-ACTION_RESCHEDULE_AT_POS = "reschedule-at-pos"
+#: As saídas de uma promessa em risco, no aviso (``order_queue._promise_actions``).
+#: "Resolver" abre o diálogo com as escolhas e a mensagem ao cliente; "Abrir a
+#: Produção" só existe quando o item ainda pode ser produzido e para quem opera a
+#: Produção. A principal vem primeiro.
+ACTION_RESOLVE = "resolve"
 ACTION_OPEN_PRODUCTION = "open-production"
-ACTION_CANCEL = "cancel"
 
 #: Causas que a Produção ainda resolve: planejar o lote, ou aumentá-lo.
 PRODUCTION_CAUSES = frozenset({CAUSE_NO_BATCH, CAUSE_PLAN_SHORT})
@@ -188,9 +192,9 @@ class OrderPromiseAlternativeProjection:
     Vem de ``shop/services/substitutes.find``, o mesmo mecanismo da loja.
     ``available_display`` diz quanto há e para quando: "12 livres para amanhã"
     (o que o lote da data ainda tem sem encomenda) ou "8 disponíveis hoje".
-    A tela escreve uma por linha, sob "Sugestões:" (dono, 19/11/2026), e o
-    ``sku`` segue para o PDV no "Remarcar no PDV" (:func:`pos_suggestions`). O
-    preço fica de fora, porque nenhuma tela o lê (#2765).
+    A tela escreve uma por linha, sob "Sugestões:" (dono, 19/11/2026), e cada
+    uma vira uma escolha "Trocar por" do diálogo "Resolver". O preço fica de
+    fora, porque nenhuma tela o lê (#2765).
     """
 
     sku: str
@@ -221,8 +225,8 @@ class OrderPromiseItemProjection:
     existir como combinado: a tela as lista sob "Sugestões:". ``next_step`` só
     diz o que a tela ainda não disse: o que pedir à Produção, as saídas do lote
     que fechou com menos, ou que não há produto parecido. Nunca repete o verbo
-    do botão ("Avisar o cliente" já é a saída cheia) nem cita as alternativas;
-    vazio em quem só espera o lote, no lote atrasado e quando há sugestões.
+    do botão ("Resolver" já é a saída cheia) nem cita as alternativas; vazio em
+    quem só espera o lote, no lote atrasado e quando há sugestões.
     """
 
     sku: str
@@ -251,16 +255,17 @@ class OrderPromiseProjection:
     o lote de um item reservado ainda não ficou pronto. ``since_iso``: desde
     quando a promessa está em risco, quando há um instante para dizer (a
     reserva solta, o lote fechado com menos). ``actions`` só existe no risco:
-    avisar o cliente, remarcar no PDV, abrir a Produção, cancelar (preenchidas
+    ``resolve`` ("Resolver", ``kind="dialog"``, sem ``href``: a tela abre o
+    diálogo e busca ``orders/<ref>/promise-resolution/``) e, quando a Produção
+    ainda resolve algum item e a conta a opera, ``open-production`` (preenchidas
     por quem monta o cartão ou o detalhe, :func:`with_actions`).
 
     ``next_step`` é a frase do pedido inteiro, quando algum item tem uma (ver
     :class:`OrderPromiseItemProjection`). ``recommended_action`` é a ``ref`` da
-    saída que a situação pede: ``contact-customer`` quando algum item não vai
-    existir como combinado ou está atrasado; ``open-production`` quando tudo o
-    que falta a Produção ainda resolve. Em ``actions`` ela vem primeiro, com
-    ``priority="primary"``; quem não pode abrir a Produção não recebe a ação, e
-    a frase segue dizendo o que fazer.
+    saída que a SITUAÇÃO pede, sem olhar quem lê: ``open-production`` quando
+    tudo o que falta a Produção ainda resolve; senão ``resolve``. Em ``actions``
+    a principal (``priority="primary"``) vem primeiro e depende também da conta:
+    quem não pode abrir a Produção não recebe a ação, e "Resolver" é a cheia.
     """
 
     state: str
@@ -667,8 +672,81 @@ def _nothing_alike(target: date | None) -> str:
     return "Nenhum produto parecido disponível hoje."
 
 
+def alternatives_for(
+    order, sku: str, *, missing: Decimal | None = None, today: date | None = None,
+) -> tuple[OrderPromiseAlternativeProjection, ...] | None:
+    """O que a casa oferece no lugar de ``sku`` neste pedido: as alternativas do aviso.
+
+    Uma régua só para o aviso "Promessa em risco", o diálogo "Resolver" e o PDV
+    (#2765): ``shop/services/substitutes.find`` no canal do pedido, com a
+    quantidade que falta e a data da encomenda, até :data:`ALTERNATIVES_LIMIT`.
+    A encomenda de outro dia mede só o lote DA DATA (a sobra de hoje não é
+    alternativa para amanhã); o pedido de hoje, o que há agora.
+
+    ``missing`` é quanto falta do item. Quem não sabe (o PDV, que chega só com o
+    pedido e o SKU) deixa vazio: a função lê a promessa do pedido e devolve as
+    alternativas do item em risco como o aviso as mostra; se o SKU não está em
+    risco neste pedido, procura para a quantidade que o pedido leva dele.
+
+    Devolve ``()`` quando a busca rodou e não achou nada, e ``None`` quando ela
+    não pôde rodar (catálogo ou estoque fora do ar): quem não conseguiu procurar
+    não afirma que não há.
+    """
+    if missing is None:
+        promise = read_for([order]).get(order.ref)
+        at_risk = next(
+            (item for item in (promise.items if promise is not None else ()) if item.sku == sku and item.at_risk),
+            None,
+        )
+        if at_risk is not None and at_risk.cause in _ALTERNATIVE_CAUSES:
+            return at_risk.alternatives
+        missing = _ordered_qty(order, sku)
+    target = _alternatives_date(order, today or timezone.localdate())
+    return _search_alternatives(sku, missing, order.channel_ref, target)
+
+
+def _alternatives_date(order, today: date) -> date | None:
+    """A data que a alternativa precisa atender: só a encomenda de outro dia mede
+    o lote da data; a de hoje, o que há agora (``None``)."""
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    commitment = get_commitment_date(order)
+    return commitment if commitment is not None and commitment > today else None
+
+
+def _ordered_qty(order, sku: str) -> Decimal:
+    """Quanto o pedido leva de ``sku`` agora (com os ajustes)."""
+    from shopman.shop.services import order_composition
+
+    return sum(
+        (_decimal(item.qty) for item in order_composition.effective_items(order) if item.sku == sku), _ZERO,
+    )
+
+
+def _search_alternatives(sku: str, missing: Decimal, channel_ref: str, target: date | None):
+    from shopman.shop.services import substitutes
+
+    try:
+        found = substitutes.find(
+            sku, qty=missing if missing > 0 else Decimal("1"), channel=channel_ref or None,
+            limit=ALTERNATIVES_LIMIT, target_date=target,
+        )
+    except Exception:
+        # Sem saber o que há para oferecer, a tela não sugere nem nega nada.
+        logger.warning("order_promise: alternativas indisponíveis sku=%s", sku, exc_info=True)
+        return None
+    return tuple(
+        OrderPromiseAlternativeProjection(
+            sku=row["sku"],
+            name=row["name"],
+            available_display=_available_display(int(row.get("available_qty") or 0), target, requested=missing),
+        )
+        for row in found[:ALTERNATIVES_LIMIT]
+    )
+
+
 class _AlternativeFinder:
-    """O que a casa oferece no lugar de um item em risco, com memória dentro da leitura.
+    """As alternativas de :func:`alternatives_for`, com memória dentro da leitura.
 
     Uma busca por (produto, quanto falta, canal, data): os pedidos que perderam
     o mesmo lote com a mesma quantidade dividem a resposta.
@@ -679,42 +757,16 @@ class _AlternativeFinder:
         self._found: dict[tuple, _Offer] = {}
 
     def find(self, order, sku: str, missing: Decimal) -> _Offer:
-        from shopman.shop.services.order_helpers import get_commitment_date
-
-        commitment = get_commitment_date(order)
-        # Só a encomenda de outro dia mede o lote da data; a de hoje, o que há agora.
-        target = commitment if commitment is not None and commitment > self._today else None
+        target = _alternatives_date(order, self._today)
         key = (sku, missing, order.channel_ref, target)
         if key not in self._found:
-            found = self._search(sku, missing, order.channel_ref, target)
+            found = alternatives_for(order, sku, missing=missing, today=self._today)
             self._found[key] = _Offer(
                 options=found or (),
                 # A busca que falhou não afirma que não há nada: a tela só cala.
                 none_phrase="" if found is None else _nothing_alike(target),
             )
         return self._found[key]
-
-    @staticmethod
-    def _search(sku: str, missing: Decimal, channel_ref: str, target: date | None):
-        from shopman.shop.services import substitutes
-
-        try:
-            found = substitutes.find(
-                sku, qty=missing if missing > 0 else Decimal("1"), channel=channel_ref or None,
-                limit=ALTERNATIVES_LIMIT, target_date=target,
-            )
-        except Exception:
-            # Sem saber o que há para oferecer, a tela não sugere nem nega nada.
-            logger.warning("order_promise: alternativas indisponíveis sku=%s", sku, exc_info=True)
-            return None
-        return tuple(
-            OrderPromiseAlternativeProjection(
-                sku=row["sku"],
-                name=row["name"],
-                available_display=_available_display(int(row.get("available_qty") or 0), target, requested=missing),
-            )
-            for row in found[:ALTERNATIVES_LIMIT]
-        )
 
 
 def _available_display(available: int, target: date | None, *, requested: Decimal = _ZERO) -> str:
@@ -749,8 +801,8 @@ def _all_of(parts: list[str]) -> str:
 def next_step_for(cause: str, *, alternatives=(), none_phrase: str = "") -> str:
     """O que a tela ainda precisa dizer sobre um item em risco, numa frase. ``""`` quando não há.
 
-    O verbo do botão não se repete aqui ("Avisar o cliente" é a saída cheia), e
-    as alternativas não entram na frase: a tela as lista sob "Sugestões:".
+    O verbo do botão não se repete aqui ("Resolver" é a saída cheia), e as
+    alternativas não entram na frase: a tela as lista sob "Sugestões:".
     """
     if cause == CAUSE_NO_BATCH:
         return STEP_PLAN
@@ -786,29 +838,8 @@ def _order_guidance(items) -> tuple[str, str]:
         next_step = next(iter(names_by_step))
     else:
         next_step = " ".join(f"{_all_of(names)}: {_after_colon(step)}" for step, names in names_by_step.items())
-    recommended = (
-        ACTION_OPEN_PRODUCTION if all(item.cause in PRODUCTION_CAUSES for item in risky) else ACTION_CONTACT_CUSTOMER
-    )
+    recommended = ACTION_OPEN_PRODUCTION if all(item.cause in PRODUCTION_CAUSES for item in risky) else ACTION_RESOLVE
     return next_step, recommended
-
-
-def pos_suggestions(promise: OrderPromiseProjection) -> list[dict]:
-    """As sugestões que seguem com o "Remarcar no PDV": o item que falta e o que oferecer no lugar.
-
-    Um registro por item em risco com alternativa: ``{"sku", "qty", "offer"}``,
-    onde ``qty`` é o que falta (decimal com ponto) e ``offer`` os SKUs
-    sugeridos, na ordem da tela. É uma dica para o PDV abrir a troca já montada
-    (#2765): quem grava relê a disponibilidade, a URL não reserva nada.
-    """
-    return [
-        {
-            "sku": item.sku,
-            "qty": item.missing_qty.replace(",", "."),
-            "offer": [option.sku for option in item.alternatives],
-        }
-        for item in promise.items
-        if item.at_risk and item.alternatives
-    ]
 
 
 def production_day(promise: OrderPromiseProjection) -> str:

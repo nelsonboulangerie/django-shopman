@@ -20,6 +20,13 @@ confere que a recusa NÃO aparece).
   (`expectNoOperatorOverlap` do kit). Os refs do mock têm a forma real (`WEB-20260625-0008`,
   `IFOOD-260914-1515`): o "BLOCKED" de antes passava da coluna de 80 px da fila.
 - **`resilience.spec.ts`** — `<OfflineBanner>` (kit) aparece ao cair a rede e some ao voltar.
+- **`promiseResolve.spec.ts`**: o diálogo "Resolver" da promessa em risco (WP-G08). O
+  cookie `e2e_promise=risk` põe na fila do mock um pedido com a promessa em risco
+  (`promise.actions` com a ação `resolve`) e liga a leitura do diálogo
+  (`orders/<ref>/promise-resolution/`, as quatro famílias de escolha), a prévia e a
+  gravação da edição. Abre pelo cartão, pela Fila e pelo detalhe; marca cada escolha e
+  confere a mensagem e o botão que conclui; tira o item, cancela, recebe o 409; e, em
+  375 px, confere que nada passa da largura e que o botão que conclui fica à vista.
 
 ## Fora daqui (Django real — reviewer local)
 

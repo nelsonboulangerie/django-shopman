@@ -214,8 +214,10 @@ export interface CardNotice {
   nextStep?: string;
   /** Por que uma saída do aviso não pode agora, escrito sob as linhas. */
   notes?: string[];
-  /** As saídas que são atalhos (a promessa em risco), no lugar de `actions`. */
+  /** As saídas da promessa em risco, no lugar de `actions`. */
   exits?: PromiseExit[];
+  /** "Resolver" foi tocado: abre o diálogo das escolhas deste pedido. */
+  onResolve?: () => void;
   /** O código curto do pedido, para o nome acessível das saídas. */
   code?: string;
   /** Ganchos de teste no Alert do Popover. */
@@ -316,9 +318,8 @@ const notices = computed<CardNotice[]>(() => {
   }
   // Promessa em risco (WP-G08): um item do pedido ficou sem lastro (o lote foi
   // cancelado, fechou com menos, atrasou). O servidor diz o item, o porquê, o que
-  // fazer agora e as saídas, com a recomendada marcada; aqui são atalhos, porque o
-  // contato do cliente e o cancelar com motivo moram no detalhe, remarcar mora no PDV
-  // e o plano, na Produção.
+  // fazer agora e as saídas, com a recomendada marcada: "Resolver" sobe para a página,
+  // que abre o diálogo das escolhas (um só por tela), e "Abrir a Produção" é atalho.
   const risk = promiseRisk(card);
   if (risk)
     out.push({
@@ -331,6 +332,7 @@ const notices = computed<CardNotice[]>(() => {
       nextStep: risk.nextStep,
       notes: risk.blockedReasons,
       exits: risk.exits,
+      onResolve: () => emit("action", "resolve_promise"),
       code: code.value.code,
       attrs: { "data-promise-risk": "" },
     });

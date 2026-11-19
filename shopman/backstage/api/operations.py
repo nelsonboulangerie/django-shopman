@@ -3079,6 +3079,37 @@ class OrderReturnPreviewView(OperationalObservationMixin, APIView):
 
 
 @extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Promise at risk: the choices of the \"Resolver\" dialog and the message to the customer",
+        responses={
+            200: OpenApiResponse(description="Facts, choices (swap, reschedule, remove, cancel) and the customer message."),
+            404: OpenApiResponse(description="Order not found."),
+            409: OpenApiResponse(description="The order's promise is not at risk anymore: {detail}."),
+        },
+    ),
+)
+class OrderPromiseResolutionView(OperationalObservationMixin, APIView):
+    """O diálogo "Resolver" da promessa em risco (WP-G08): o fato, as escolhas, o que
+    acontece com o dinheiro e a mensagem ao cliente de cada uma, lidos na hora em que
+    o diálogo abre. Nada é gravado nem enviado."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_promise_resolution import NOT_AT_RISK, build_promise_resolution
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        resolution = build_promise_resolution(order, user=request.user)
+        if resolution is None:
+            return Response({"detail": NOT_AT_RISK}, status=409)
+        return Response(projection_data(resolution))
+
+
+@extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
         summary="Register a return after the sale (items, reason and the manager's PIN)",
