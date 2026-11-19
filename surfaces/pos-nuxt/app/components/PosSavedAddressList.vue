@@ -66,7 +66,7 @@ defineExpose({ focusTarget });
 <template>
   <div ref="root" data-pos-saved-addresses @keydown.enter="onEnter">
     <NuxtRadioGroup
-      :model-value="selected || undefined"
+      :model-value="selected"
       :items="options"
       variant="card"
       legend="Endereços do cliente"
