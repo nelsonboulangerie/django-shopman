@@ -5,12 +5,15 @@ portas, política, contrato de efeito, resposta com prova, adaptadores falsos
 e a suíte de conformidade. Qualquer canal, qualquer modelo, qualquer sistema
 de comércio por trás.
 
-**Estado:** contratos (F1) e catálogo e perfil (F2). Os 17 contratos, a forma canônica, o hash, o
-JSON Schema gerado e os vetores existem (`conversational_commerce/contracts/`,
-`spec/01-contracts.md`); os 16 movimentos, os níveis, a leitura do perfil e o
-perfil de teste também (`catalog/`, `profile/`, `spec/02-catalog-profile.md`).
-Portas, política e comportamento chegam nos WPs F3 a
-F11 do plano do framework, `docs/plans/COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md`.
+**Estado:** D1 fechado (F0 a F11 do plano do framework,
+`docs/plans/COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md`). Os 17 contratos, o
+catálogo de 16 movimentos e o perfil, as portas com os falsos, o episódio, a
+política, a resposta com prova, o turno, o contrato de efeito, os compromissos, a
+recomendação, os resultados e a memória declarada existem, com as seis jornadas de
+referência (J1 a J6) e os 40 testes de conformidade (K01 a K40) marcados. A
+especificação inteira está `vigente` (`spec/`). O que falta é o lado de cada
+adaptador: os K de escopo `adapter` e `real_mechanism` só valem para uma
+implementação rodados no mecanismo dela (`spec/11-conformance.md`, seção 6).
 
 ## O que o pacote é
 
@@ -34,6 +37,8 @@ a este pacote.
 | Nenhum import fora da biblioteca padrão (K38) | `conversational_commerce/tests/test_k38_no_infrastructure.py` |
 | A suíte roda sem rede | fixture `autouse` em `conversational_commerce/tests/conftest.py` |
 | Instala e passa a própria suíte num venv sem Django | `python scripts/wheel_suite.py conversational-commerce` (na raiz do monorepo) |
+| O critério de saída do D1: a matriz fecha, as seis jornadas juntas, a especificação vigente | `conversational_commerce/tests/test_d1_exit.py` |
+| A matriz teste × invariante | `python -m conversational_commerce.testing.matrix --check` |
 
 ## Rodar
 

@@ -24,7 +24,8 @@ def test_j3_verify_with_the_team_and_return_the_answer():
     # A promessa: dono (a fila do perfil), prazo (o de responder da fila) e a pergunta na equipe.
     (commitment,) = [r for _, r in world.store.records if getattr(r, "SCHEMA", "") == "cc.commitment"
                      and r.state == "open"]
-    assert commitment.owner == "attendant" and commitment.deadline.status == "set"
+    assert commitment.owner == "attendant" and commitment.deadline.at == "2026-01-05T09:30:00.000000Z"
+    assert asked.text == "I'll check with the team and answer by 2026-01-05T09:30:00.000000Z."
     assert [q.question for q in world.staff.questions.values()] == ["ask_price: item.ITEM-Z"]
     assert world.staff.commitments[commitment.commitment_id].obligation.startswith("answer the customer")
     # A resposta volta como fato com autoria, e o compromisso se cumpre com ela como evidência.

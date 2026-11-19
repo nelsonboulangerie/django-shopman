@@ -36,7 +36,8 @@ ASK = JourneyStep(
     message=message("j3-m1", "how much is item z?"),
     understanding={"acts": [{"act": "ask_price", "fields": {"item": "ITEM-Z"}}]},
     expect_moves=("verify_with_staff",),
-    expect_text=("I'll check with the team and answer by 2026-01-05T09:30:00.000000Z.",),
+    # O prazo é o da fila a partir de agora; o instante exato é conferido nos testes do F9.
+    expect_text=("I'll check with the team and answer by ",),
     expect_state="active",
 )
 ANSWERED = JourneyStep(

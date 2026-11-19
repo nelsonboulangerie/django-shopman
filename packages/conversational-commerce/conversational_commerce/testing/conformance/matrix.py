@@ -5,8 +5,8 @@
     python -m conversational_commerce.testing.matrix --path <dir>   # inclui os testes de um adaptador
 
 Lê os testes pelo AST, sem importá-los. Nenhuma lista central para editar: o
-teste se declara, e a matriz sai dele. O ``--check`` passa a ser exigido no F11;
-até lá a listagem diz o que falta.
+teste se declara, e a matriz sai dele. Desde o F11 o ``--check`` roda dentro da
+suíte (``tests/test_d1_exit.py``), com os 40 marcados.
 """
 
 from __future__ import annotations
