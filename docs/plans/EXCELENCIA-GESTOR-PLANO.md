@@ -528,7 +528,29 @@ Tamanhos: P (até meio dia) · M (um dia) · G (uma sessão cheia).
   Antes de apagar um campo, prove com busca que nem o Gestor, nem o kit, nem as vizinhas o
   leem. Um `today` por projeção; o relógio do painel ancora em `generated_at`.
 
-### WP-G10 · Agenda com cobertura
+### WP-G10 · Agenda com cobertura (não será feito, 19/11/2026)
+
+> **Não será feito (not planned).** O dono pôs o WP em dúvida em 19/11/2026 ("tenho duvida se
+> essas situações são fatidicas, se vamos de fato precisar disso ou não"), e a reavaliação
+> mostrou que ele repete, no app errado, o que a Produção já tem:
+>
+> - a Produção já mostra o prometido ao lado do planejado, por dia e produto, com o gesto: o chip
+>   "Ver encomendas (N un.)" na grade, a sugestão do dia como "projeção + encomendas + margem", o
+>   produto com encomenda "Em foco", e o servidor recusa plano abaixo do comprometido
+>   (`COMMITTED_HOLDS`);
+> - encomenda acima do plano pelo PDV só fecha com o gerente assinando os dois números (WP-E2,
+>   #2679);
+> - lote cancelado, fechado com menos ou plano que não cobre já viram "Promessa em risco" por
+>   pedido no Gestor (WP-G08);
+> - "sem lote" para uma data futura é o estado normal antes de a Produção planejar. Mostrá-lo em
+>   âmbar para a Caixa, que não planeja, é ruído.
+>
+> O servidor, a tela e a prévia local chegaram a ser feitos (PR #2722, fechado sem entrar no
+> `main`; o branch `claude/gestor-g10-agenda-com-cobertura` ficou no remoto). O único caso que
+> sobrou, a Produção esquecer de planejar um produto até a véspera, virou a issue #2755: uma
+> linha a mais no WP-G08 ("sem lote para amanhã", a partir de uma hora de corte), que depende
+> de uma decisão do dono. O texto abaixo é o do plano original, mantido como registro.
+
 
 - **Objetivo:** a lista dos próximos dias mostra, por dia, o prometido de cada produto ao
   lado do que a Produção planejou.
@@ -689,7 +711,7 @@ um WP por onda escreve nele.
 | 1 | **G02** (hora da Cozinha) · **G03** (lista de Encomendas) · **G04** (Histórico) | G02 |
 | 2 | **G05** (o detalhe tem o gesto) · **G06** (recusar e bloquear) | G05 |
 | 3 | **G07** (avisar o cliente, depois do G12) · **G08** (promessa em risco) | G08 |
-| 4 | **G09** (contrato limpo) · **G10** (agenda com cobertura) | G09 |
+| 4 | **G09** (contrato limpo). O **G10** (agenda com cobertura) não será feito (19/11/2026, ver a seção do WP) | G09 |
 | 5 | **G12 → G11 → G13**, em fila (mesmos arquivos). G12 e G13 liberados em 17/11/2026; o G11 espera os Termos da loja e o lado do `shop`, e se demorar o G13 passa à frente | nenhum |
 | fora das ondas | **G14** (canal Google), em dois PRs: G14a (envio) e depois G14b (Canais). Espera o WP-L01 da Loja no `main` (#2582) e não divide arquivo com nenhum outro WP do Gestor | nenhum |
 
