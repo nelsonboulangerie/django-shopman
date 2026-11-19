@@ -1887,6 +1887,21 @@ class TestWaitlistCallIsTheMainSentence:
         # Uma contagem só na tela: a do cartão da fila, ao lado do botão.
         assert proj.promise.timer_mode == "none"
 
+    def test_the_payment_block_stays_on_screen_during_the_call(self):
+        """O total e a forma de pagar não somem quando a loja chama.
+
+        A tela só desenha o bloco de pagamento quando a promessa diz a forma.
+        Antes do degrau do chamado, o Pix sem código caía em ``store_checking``
+        com ``payment_method="pix"``; o degrau novo tem de carregar o mesmo.
+        """
+        waiting = build_order_tracking(self._order("FILA-CHAMA-7", state="fermata"))
+        calling = build_order_tracking(self._order("FILA-CHAMA-8"))
+
+        assert waiting.promise.payment_method == "pix"
+        assert calling.promise.state == "waitlist_confirming"
+        assert calling.promise.payment_method == "pix"
+        assert not calling.promise.pix_copy_paste
+
     def test_the_queue_card_keeps_only_the_button(self):
         order = self._order("FILA-CHAMA-3")
 
