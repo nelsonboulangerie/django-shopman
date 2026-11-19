@@ -162,6 +162,8 @@ async function audits(page: Page, label: string, selector: string) {
           left: Math.round(box.left),
           right: Math.round(box.right),
           height: Math.round(box.height),
+          // Coluna esmagada: a frase virou uma palavra por linha num espaço estreito.
+          crushed: box.width < 140 && box.height / (Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.4) >= 3.5,
           clipped: (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1,
           inside: box.left >= 0 && box.right <= window.innerWidth + 0.5,
           covered: (() => {
@@ -182,6 +184,7 @@ async function audits(page: Page, label: string, selector: string) {
     expect(row.inside, `${label}: "${row.text}" fora da tela`).toBe(true);
     expect(row.clipped, `${label}: "${row.text}" cortado`).toBe(false);
     expect(row.covered, `${label}: "${row.text}" encoberto por outra camada`).toBe(false);
+    expect(row.crushed, `${label}: "${row.text}" esmagado numa coluna estreita`).toBe(false);
   }
   return rows;
 }
@@ -300,8 +303,11 @@ for (const device of ["phone", "counter"] as const) {
       // 5 · Outro endereço: a seta desce e o Enter aceita e segue (balcão); o toque na
       // linha escolhe e "Montar encomenda" segue (celular).
       if (keyboard) {
-        await page.keyboard.press("ArrowDown");
+        // A tecla desce e sobe como no dedo: o grupo de rádio marca a opção com a
+        // seta ainda apertada, e um toque instantâneo de robô soltaria antes.
+        await page.keyboard.down("ArrowDown");
         await expect(radios.nth(1)).toBeChecked();
+        await page.keyboard.up("ArrowDown");
         await expect(radios.nth(1)).toBeFocused();
         await capture(page, testInfo, "seta-escolhe-outro");
         await page.keyboard.press("Enter");
@@ -361,7 +367,7 @@ for (const device of ["phone", "counter"] as const) {
       const clear = dialog.locator("[data-pos-address-clear]");
       await expect(clear).toHaveText("Tirar o endereço desta entrega");
       await clear.scrollIntoViewIfNeeded();
-      await audits(page, "tirar o endereço", "[data-pos-address-clear]");
+      await audits(page, "endereço da entrega e o gesto de tirar", "[data-pos-address-summary] p, [data-pos-address-clear]");
       await clear.click();
       await expect(dialogRadios.nth(0)).not.toBeChecked();
       await expect(dialogRadios.nth(1)).not.toBeChecked();

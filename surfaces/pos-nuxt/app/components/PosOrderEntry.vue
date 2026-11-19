@@ -302,10 +302,12 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
           data-order-address-restore
           @click="emit('restoreAddress')"
         >Desfazer</NuxtButton>
+        <!-- Contorno, como o vizinho: no celular os dois quebram em linhas, e as
+             bordas batem uma com a outra e com a lista de cima. -->
         <NuxtButton
           v-if="isReady('address')"
           color="neutral"
-          variant="ghost"
+          variant="outline"
           :disabled="loading"
           title="O endereço continua no cadastro do cliente"
           data-order-address-clear

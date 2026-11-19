@@ -484,28 +484,34 @@ function onMapCancel() {
               @advance="goPast(null)"
             />
           </NuxtFormField>
-          <div v-if="summaryLine" class="flex flex-wrap items-center gap-x-2 gap-y-1" data-pos-address-summary>
-            <Icon name="lucide:map-pin" class="size-4 shrink-0 text-muted" aria-hidden="true" />
-            <p class="min-w-0 flex-1 text-sm font-semibold">{{ summaryLine }}</p>
-            <NuxtButton
-              v-if="canAdjustOnMap"
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-map"
-              label="Ajustar no mapa"
-              data-pos-address-adjust-map
-              @click="openMap('adjust')"
-            />
-            <!-- O nome diz o alcance: sai DESTA entrega, não do cadastro. -->
-            <NuxtButton
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-x"
-              label="Tirar o endereço desta entrega"
-              title="O endereço continua no cadastro do cliente"
-              data-pos-address-clear
-              @click="clearAddress"
-            />
+          <!-- O endereço numa linha própria, e os gestos sobre ele na linha de
+               baixo: lado a lado, no celular os botões espremiam o endereço numa
+               coluna de uma palavra por linha. -->
+          <div v-if="summaryLine" class="grid gap-1" data-pos-address-summary>
+            <div class="flex items-start gap-2">
+              <Icon name="lucide:map-pin" class="mt-0.5 size-4 shrink-0 text-muted" aria-hidden="true" />
+              <p class="min-w-0 flex-1 text-sm font-semibold">{{ summaryLine }}</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <NuxtButton
+                v-if="canAdjustOnMap"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-map"
+                label="Ajustar no mapa"
+                data-pos-address-adjust-map
+                @click="openMap('adjust')"
+              />
+              <!-- O nome diz o alcance: sai DESTA entrega, não do cadastro. -->
+              <NuxtButton
+                color="neutral"
+                variant="outline"
+                label="Tirar o endereço desta entrega"
+                title="O endereço continua no cadastro do cliente"
+                data-pos-address-clear
+                @click="clearAddress"
+              />
+            </div>
           </div>
           <div v-else-if="canRestoreAddress" class="flex flex-wrap items-center gap-x-2 gap-y-1" role="status" data-pos-address-removed>
             <p class="min-w-0 flex-1 text-sm">Endereço tirado desta entrega. O cadastro do cliente não mudou.</p>
