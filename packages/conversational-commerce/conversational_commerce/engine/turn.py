@@ -6,7 +6,9 @@
 3. **Entender.** A porta de modelo, se há orçamento e ela responde; senão, regra
    local. Ato fora da lista vira ``unknown`` e a queda é registrada.
 4. **Montar o snapshot.** Necessidades, pergunta no ar e fatos lidos ao vivo, com
-   teto de passos. Nada fica aberto enquanto se chama modelo ou porta: a única
+   teto de passos; o contexto comercial (problema aberto, atrito, compromisso
+   vencido, a recusa na memória declarada) e o item que atende a necessidade
+   declarada (F10). Nada fica aberto enquanto se chama modelo ou porta: a única
    gravação é a do passo 8.
 5. **Decidir.** ``policy.decide`` sobre as propostas dos movimentos registrados.
 6. **Autorizar e executar** (F8). Para o movimento de efeito escolhido: a
@@ -61,6 +63,7 @@ from conversational_commerce.contracts import (
     ExposureEvent,
     InteractionEvent,
     Known,
+    MemoryItem,
     Producer,
     Understanding,
     Unknown,
@@ -73,6 +76,7 @@ from conversational_commerce.ledger import (
     ESCALATION_LINE,
     CommitmentLedger,
     CommitmentRefused,
+    ExposureLedger,
     ReceiptLedger,
     Settled,
     Settler,
@@ -81,7 +85,9 @@ from conversational_commerce.ledger import (
     staff_owner,
 )
 from conversational_commerce.ledger.commitments import window_seconds
+from conversational_commerce.memory import MemoryStore
 from conversational_commerce.policy import DecisionInput, decide
+from conversational_commerce.policy.advisor import adheres_to_declared_need
 from conversational_commerce.ports import (
     Budget,
     HandoffRequest,
@@ -109,7 +115,7 @@ from conversational_commerce.workflow import (
     transition,
 )
 
-from .acts import ACTS, ANSWER_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
+from .acts import ACTS, ANSWER_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
 from .budget import TurnBudget
 from .format import DEFAULT_FORMATTERS
 from .moves import registry, templates
@@ -119,6 +125,8 @@ PRODUCER = Producer(name="conversational-commerce", version="engine-1")
 LOCAL_READER = Producer(name="local-rules", version="1")
 FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 INACTIVITY_LINE = "episode.inactivity_window_seconds"
+# Memória declarada (F10): o cliente pediu para não receber sugestões.
+OFFERS_DECLINED = "offers.declined"
 
 Outcome = Literal["answered", "duplicate", "held", "revoked", "shadow", "superseded"]
 
@@ -202,6 +210,8 @@ class Engine:
     revocations: Revocations = field(default_factory=Revocations)
     ledger: ReceiptLedger = field(default_factory=ReceiptLedger)
     commitments: CommitmentLedger = field(default_factory=CommitmentLedger)
+    memory: MemoryStore = field(default_factory=MemoryStore)
+    exposures: ExposureLedger = field(default_factory=ExposureLedger)
     _turns: int = 0
 
     # ── envelope ────────────────────────────────────────────────────────────
@@ -437,6 +447,69 @@ class Engine:
                                     "rule_ref": "effect.reconciliation_deadline_seconds"},
                           fulfillment_criterion="a terminal receipt for the command", state="open")
 
+    # ── contexto comercial e memória declarada (F10) ────────────────────────
+    def _commercial_context(self, ctx: TrustedContext, state: TurnState, episode: Episode,
+                            understanding: Understanding, budget: TurnBudget) -> None:
+        """O que trava ou permite a recomendação, e o item que atende a necessidade declarada.
+
+        Problema aberto: caso aberto no episódio, ou reclamação nesta mensagem.
+        Compromisso vencido: prazo de compromisso aberto do episódio já passado. A
+        recusa vem da memória declarada. O item é o primeiro do catálogo que atende
+        cada exigência declarada (restrição de conselheiro); o nome e o preço são lidos
+        do item, com passo do teto.
+        """
+        now = state.now
+        mine = [e for e in self.commitments.open_entries(ctx.tenant, ctx.environment)
+                if e.commitment.episode_id == episode.episode_id]
+        state.open_problem = any(e.commitment.type == "case" for e in mine) or any(
+            need.act == "complain" for need in state.needs)
+        state.overdue_commitment = any(isinstance(e.commitment.deadline, DeadlineSet) and e.commitment.deadline.at
+                                       <= now for e in mine)
+        state.declined_offers = self.memory.value(episode.subject or "unknown", OFFERS_DECLINED, now) is True
+        state.friction = getattr(understanding.signals, "friction", "unknown")
+        from .moves.recommend import declared_need
+
+        for need in state.needs:
+            declared = declared_need(need) if need.act == "ask_recommendation" else {}
+            if not declared or not budget.take_step("read:catalog"):
+                continue
+            try:
+                items = self.ports.commerce_read.search_catalog(ctx, "")
+            except PortError:
+                continue
+            match = next((item for item in items if adheres_to_declared_need(
+                declared, {"unit": item.unit, "ref": item.ref})), None)
+            if match is None:
+                continue
+            key = f"item.{match.ref}"
+            if key not in state.facts and budget.take_step(f"read:{key}"):
+                try:
+                    state.facts[key] = self.ports.commerce_read.read_item(ctx, match.ref)
+                except PortError:
+                    state.facts[key] = Unknown(reason="source_failed")
+            if isinstance(state.facts.get(key), Known):
+                state.recommendations[need.need_id] = match.ref
+
+    def _remember(self, ctx: TrustedContext, state: TurnState, decision: DecisionRecord, by_need, event,
+                  episode: Episode, trace_id: str, unwritten: list) -> None:
+        """O que o cliente declarou vira memória declarada, com fonte; a mudança de ideia substitui (K28).
+
+        Em ``shadow`` nada se guarda.
+        """
+        if ctx.environment == "shadow":
+            return
+        subject = episode.subject or "unknown"
+        for need in state.needs:
+            if need.act not in DECLARATION_ACTS:
+                continue
+            current = self.memory.recall(subject, state.now, OFFERS_DECLINED)
+            item = MemoryItem(**self._envelope(ctx, "mem", episode.episode_id, trace_id, event.id),
+                              memory_id=self.ports.clock.new_id("memory"), subject_ref=subject,
+                              category=OFFERS_DECLINED, value=need.act == "decline_offers",
+                              evidence_state="declared", source=event.id, purpose="service",
+                              sensitivity="ordinary", supersedes=current[-1].memory_id if current else None)
+            unwritten.append(self.memory.declare(item))
+
     # ── passo 6, compromissos (F9) ──────────────────────────────────────────
     def _hours(self, now: str):
         try:
@@ -584,6 +657,7 @@ class Engine:
                 state.confirmation_problems[need.need_id] = confirmation_problem(
                     offer, self._confirmation(ctx, event, subject, epoch), state.now)
         self._read_facts(ctx, state, budget)
+        self._commercial_context(ctx, state, episode, understanding, budget)
         self._quote(ctx, state, budget)
         dialogue = answered(previous_dialogue) if answered_question else previous_dialogue
         answered_offer = offer is not None and answered_question == offer.question_id
@@ -601,6 +675,7 @@ class Engine:
         episode = self._execute(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks,
                                 effects)
         promised = self._promise(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks)
+        self._remember(ctx, state, decision, by_need, event, episode, trace_id, unwritten)
         if state.refused:
             self._quote(ctx, state, budget)
             snapshot = self._snapshot(ctx, episode, trace_id, decision.id, state, dialogue)
@@ -687,7 +762,7 @@ class Engine:
                                    recipient=episode.subject or "unknown", binding=event.channel_binding,
                                    body_ref=f"reply:{reply.plan.id}")
         try:
-            exposure = self.ports.channel.send(ctx, prepared, f"send:{decision_id}")
+            exposure = self.exposures.record(self.ports.channel.send(ctx, prepared, f"send:{decision_id}"))
         except PortError as error:
             # Nada se sabe enviado; o trabalho de envio segue na caixa de saída, com a mesma chave.
             return TurnResult("answered", **{**result, "fallbacks": (*result["fallbacks"],
@@ -830,7 +905,7 @@ class Engine:
         prepared = PreparedMessage(decision_id=decision.decision_id, content_hash=sha256_hash({"text": reply.text}),
                                    recipient=entry.recipient, binding=entry.binding, body_ref=f"reply:{reply.plan.id}")
         try:
-            exposure = self.ports.channel.send(ctx, prepared, f"send:{decision.decision_id}")
+            exposure = self.exposures.record(self.ports.channel.send(ctx, prepared, f"send:{decision.decision_id}"))
         except PortError as error:
             return TurnResult("answered", fallbacks=(f"send_failed:{error.code.value}",), **result)
         return TurnResult("answered", exposure=exposure, **result)
@@ -937,7 +1012,7 @@ class Engine:
 
     def observe_delivery(self, ctx: TrustedContext, exposure_id: str) -> ExposureEvent:
         """Consulta a entrega. Entregue não é lida; canal sem leitura nunca diz "lida" (K18)."""
-        return self.ports.channel.delivery_status(ctx, exposure_id)
+        return self.exposures.record(self.ports.channel.delivery_status(ctx, exposure_id))
 
 
 def fact_value(fact: Any) -> Any:

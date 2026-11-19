@@ -122,6 +122,7 @@ pelo vínculo em que a promessa nasceu.
 | K20 a fila não aceita a transferência: monitorado, com contingência, nada afirma aceite | `adapter` |
 | K21 o cliente encerra com compromisso aberto: o episódio e o compromisso seguem | `core` |
 | K22 prazo vencido sem resposta: evento, escalonamento pelo perfil, cliente avisado uma vez | `adapter` |
+| K26 (lado da equipe): instrução embutida na resposta da equipe é fato com autoria; não muda perfil, identidade, posse nem movimentos, e não entra em pedido ao modelo | `core` |
 | N04: sem dono possível, nenhuma promessa (no livro e no turno); fila que recusa a pergunta | núcleo |
 | Prazo ausente fora do expediente, com motivo e contingência; sombra não chama a equipe | núcleo |
 | Eventos distintos, transições conferidas, evidência exigida, cada prazo vencido uma vez | núcleo |
