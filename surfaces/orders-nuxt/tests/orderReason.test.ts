@@ -115,25 +115,42 @@ describe("reasonDialogView: o diálogo diz qual pedido e o que acontece com o di
     expect(view.blocked).toBe(MONEY_BLOCKED);
   });
 
-  it("leitura que falhou não vira silêncio: o confirmar continua apagado", () => {
+  // O pedido novo se confirma sozinho quando o prazo vence: leitura que falha não pode
+  // prender a recusa, ou quem queria recusar acaba aceitando.
+  it("leitura que falhou não vira silêncio nem trava: diz que não leu e libera o confirmar", () => {
     const view = reasonDialogView({
       mode: "reject", reasons: LIST, order: order(), identify: true, moneyRead: "error",
       moneyEffect: "R$ 48,00 serão estornados ao Pix do cliente.",
     });
-    expect(view.money.state).toBe("error");
-    expect(view.blocked).toBe(MONEY_BLOCKED);
+    // A frase de uma leitura anterior não se mostra como se fosse a de agora.
+    expect(view.money).toEqual({ state: "error", text: "" });
+    expect(view.blocked).toBe("");
   });
 
-  it("sem dinheiro em jogo, não inventa frase: a linha do pagamento já diz como o pedido paga", () => {
+  it("pedido que paga na retirada: a frase do servidor diz que nada foi cobrado", () => {
     const view = reasonDialogView({
       mode: "reject",
       reasons: LIST,
       order: order({ payment_method_label: "Dinheiro na retirada", payment_status: "", payment_status_label: "" }),
       identify: true,
+      moneyEffect: "Nada foi cobrado do cliente.",
+    });
+    expect(view.money).toEqual({ state: "sentence", text: "Nada foi cobrado do cliente." });
+    expect(view.facts).toBe("Retirada · Dinheiro na retirada");
+    expect(view.blocked).toBe("");
+  });
+
+  it("quando o servidor não diz nada (iFood), a tela não inventa frase de dinheiro", () => {
+    const view = reasonDialogView({
+      mode: "reject",
+      reasons: LIST,
+      marketplace: true,
+      order: order({ channel_ref: "ifood", fulfillment_type: "delivery", fulfillment_label: "Entrega", payment_method_label: "iFood", payment_status: "paid", payment_status_label: "Pago online" }),
+      identify: true,
       moneyEffect: "",
     });
     expect(view.money).toEqual({ state: "none", text: "" });
-    expect(view.facts).toBe("Retirada · Dinheiro na retirada");
+    expect(view.facts).toBe("Entrega · iFood · Pago online");
     expect(view.blocked).toBe("");
   });
 

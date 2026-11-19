@@ -173,14 +173,20 @@ describe("OrderReasonDialog: qual pedido, o dinheiro e a falha, dentro do diálo
     w.unmount();
   });
 
-  it("leitura que falhou: diz que não leu, oferece tentar de novo e não deixa confirmar", async () => {
+  // O pedido novo se confirma sozinho no prazo: a leitura que falha não prende a recusa.
+  it("leitura que falhou: diz que não leu, oferece tentar de novo e deixa confirmar", async () => {
     const w = mountDialog({ cancelReasons: FULL, identify: true, order: order(), moneyRead: "error" });
     const failed = w.get("[data-reason-money-error]");
     expect(failed.text()).toContain("Não foi possível carregar o que acontece com o dinheiro");
-    await w.find('[data-reason-keyed] [role="radio"]').trigger("click");
-    expect(confirmBtn(w, "Recusar pedido").attributes("disabled")).toBeDefined();
+    expect(w.find("[data-reason-money]").exists()).toBe(false);
     await failed.findAll("button").find((b) => b.text() === "Tentar de novo")!.trigger("click");
     expect(w.emitted("retry-money")).toHaveLength(1);
+    await w.find('[data-reason-keyed] [role="radio"]').trigger("click");
+    const btn = confirmBtn(w, "Recusar pedido");
+    expect(btn.attributes("disabled")).toBeUndefined();
+    expect(w.find("[data-reason-missing]").exists()).toBe(false);
+    await btn.trigger("click");
+    expect(w.emitted("confirm")![0]).toEqual([{ reasonKey: "out_of_stock", internalNote: "" }]);
     w.unmount();
   });
 

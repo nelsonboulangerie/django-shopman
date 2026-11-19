@@ -61,7 +61,9 @@ export function reasonsForOrder(
 
 export interface ReasonDialogMoney {
   /** `loading`: lendo · `error`: não leu (a peça de estado do kit escreve a frase) ·
-   *  `sentence`: a frase do servidor · `none`: o servidor não tem o que dizer. */
+   *  `sentence`: a frase do servidor · `none`: o servidor não disse nada. Hoje é só
+   *  o pedido do iFood (o dinheiro é dele) e o pagamento que o servidor não conseguiu
+   *  ler; pedido sem nada recebido vem com "Nada foi cobrado do cliente." */
   state: "loading" | "error" | "sentence" | "none";
   text: string;
 }
@@ -77,7 +79,7 @@ export interface ReasonDialogView {
   facts: string;
   money: ReasonDialogMoney;
   reasons: CancelReasonProjection[];
-  /** Por que o confirmar ainda não acende, além do motivo. Vazio libera. */
+  /** Por que o confirmar ainda não acende, além do motivo (só enquanto lê). Vazio libera. */
   blocked: string;
 }
 
@@ -99,8 +101,11 @@ function joined(parts: Array<string | null | undefined>): string {
  * `identify` é o painel: o gesto nasce num cartão entre vários, então o título leva o
  * código ("Recusar o pedido W33?") e o corpo diz quem pediu e quanto. No detalhe do
  * pedido a página já é o pedido, e o diálogo só acrescenta o destino do dinheiro.
- * O confirmar espera a leitura do dinheiro: recusar sem saber para onde ele vai é a
- * surpresa que este diálogo existe para evitar.
+ * Enquanto o dinheiro é lido, o confirmar espera: recusar sem saber para onde ele vai
+ * é a surpresa que este diálogo existe para evitar. Leitura que FALHA não prende a
+ * recusa: o pedido novo se confirma sozinho quando o prazo vence, e quem queria
+ * recusar acabaria aceitando. O diálogo diz que não leu, oferece tentar de novo e
+ * deixa confirmar.
  */
 export function reasonDialogView(input: {
   mode: "reject" | "cancel";
@@ -146,7 +151,7 @@ export function reasonDialogView(input: {
       marketplace,
       initialKey: input.initialKey,
     }),
-    blocked: money.state === "loading" || money.state === "error" ? MONEY_BLOCKED : "",
+    blocked: money.state === "loading" ? MONEY_BLOCKED : "",
   };
 }
 

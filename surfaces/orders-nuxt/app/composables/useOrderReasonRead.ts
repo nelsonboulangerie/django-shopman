@@ -15,7 +15,13 @@ import type {
  *
  * A resposta que chega depois de o diálogo fechar, ou de outro pedido abrir, é
  * descartada: a leitura mais nova vence.
+ *
+ * A leitura tem prazo (`READ_TIMEOUT_MS`): enquanto ela corre o confirmar espera, e
+ * uma leitura pendurada prenderia a recusa para sempre. Vencido o prazo ela vira
+ * `error`, que mostra "Tentar de novo" e libera o confirmar.
  */
+const READ_TIMEOUT_MS = 8000;
+
 export function useOrderReasonRead() {
   const order = shallowRef<OperatorOrderProjection | null>(null);
   const state = ref<MoneyRead>("ready");
@@ -28,6 +34,7 @@ export function useOrderReasonRead() {
     try {
       const response = await $fetch<OrderDetailResponse>(
         `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/`,
+        { timeout: READ_TIMEOUT_MS },
       );
       if (mine !== latest) return;
       order.value = response.order;

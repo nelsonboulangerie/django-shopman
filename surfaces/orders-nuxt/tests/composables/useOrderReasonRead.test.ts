@@ -21,7 +21,7 @@ describe("useOrderReasonRead", () => {
     expect(read.state.value).toBe("loading");
     expect(read.order.value).toBeNull();
     await pending;
-    expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/orders/NB-261118-W33/");
+    expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/orders/NB-261118-W33/", { timeout: 8000 });
     expect(read.state.value).toBe("ready");
     expect(read.order.value?.cancel_money_effect).toBe("R$ 48,00 serão estornados ao Pix do cliente.");
   });
@@ -30,7 +30,19 @@ describe("useOrderReasonRead", () => {
     env.fetchMock.mockResolvedValue(detail());
     await useOrderReasonRead().read("NB-261118-W33");
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
-    expect(env.fetchMock.mock.calls[0]).toHaveLength(1);
+    const options = env.fetchMock.mock.calls[0]![1] as Record<string, unknown>;
+    expect(options.method).toBeUndefined();
+    expect(options.body).toBeUndefined();
+  });
+
+  // Enquanto lê, o confirmar espera: a leitura pendurada prenderia a recusa de um
+  // pedido que se confirma sozinho no prazo.
+  it("a leitura tem prazo, e a que estoura vira erro em vez de ficar lendo", async () => {
+    env.fetchMock.mockRejectedValue(Object.assign(new Error("timeout"), { name: "TimeoutError" }));
+    const read = useOrderReasonRead();
+    await read.read("NB-261118-W33");
+    expect(env.fetchMock.mock.calls[0]![1]).toEqual({ timeout: 8000 });
+    expect(read.state.value).toBe("error");
   });
 
   it("leitura que falha vira estado de erro, não silêncio", async () => {
