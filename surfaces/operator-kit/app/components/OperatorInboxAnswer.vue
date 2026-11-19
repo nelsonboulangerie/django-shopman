@@ -72,7 +72,7 @@ async function run(kind: "answer" | "alt") {
     </p>
     <p
       v-if="error"
-      role="alert"
+      aria-live="polite"
       class="op-body text-error"
       data-operator-inbox-answer-error
     >
