@@ -83,6 +83,7 @@ import {
 } from "~/presentation/promiseAlert";
 import { focusTargetSelector } from "../../../operator-kit/app/presentation/nextFocus";
 import OrderPromiseExits from "~/components/OrderPromiseExits.vue";
+import OrderPromiseSuggestions from "~/components/OrderPromiseSuggestions.vue";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
@@ -2436,6 +2437,11 @@ function compactClear() {
                       >
                         <span class="font-medium">{{ item.label }}</span>
                         <span class="text-muted-foreground">{{ item.detail }}</span>
+                        <OrderPromiseSuggestions
+                          v-if="item.suggestions.length"
+                          class="mt-1"
+                          :options="item.suggestions"
+                        />
                       </li>
                     </ul>
                     <!-- O próximo passo, com as palavras do servidor. -->

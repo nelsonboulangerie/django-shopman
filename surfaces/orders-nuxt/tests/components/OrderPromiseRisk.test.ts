@@ -34,7 +34,8 @@ const act = (over: Partial<Action>): Action => ({
   ref: "advance", kind: "mutation", label: "Iniciar preparo", priority: "primary", enabled: true,
   reason: "", href: "", method: "POST", payload_schema: {}, idempotency: "required", confirmation: {}, ...over,
 });
-const OFFER_STEP = "Avise o cliente e ofereça: Fendu (6 livres para amanhã) ou Pain de Campagne (8 livres para amanhã).";
+// Com sugestões o servidor não manda frase: a lista fala, e a saída cheia é o botão.
+const SUGGESTIONS = ["Fendu · 6 livres para amanhã", "Pain de Campagne · 8 livres para amanhã"];
 const PLAN_STEP = "Peça à Produção para planejar.";
 const exits = (orderRef: string): Action[] => [
   act({ ref: "contact-customer", kind: "link", label: "Avisar o cliente", href: `/${orderRef}#promise` }),
@@ -44,9 +45,9 @@ const exits = (orderRef: string): Action[] => [
 ];
 const item = (over: Partial<OrderPromiseItemProjection> = {}): OrderPromiseItemProjection => ({
   sku: "BAGUETE", name: "Baguete de tradição", reservation: "lost", cause: "batch_cancelled", at_risk: true,
-  qty: "4", missing_qty: "4", label: "4x Baguete de tradição sem reserva", detail: "O lote de amanhã foi cancelado.",
+  qty: "4", missing_qty: "4", label: "Faltam 4x Baguete de tradição", detail: "O lote de amanhã foi cancelado.",
   batch_date: "2026-11-19", batch_status: "void", batch_ready_at_iso: "", work_order_refs: ["WO-1"],
-  next_step: OFFER_STEP,
+  next_step: "",
   alternatives: [
     { sku: "FENDU", name: "Fendu", available_display: "6 livres para amanhã" },
     { sku: "CAMPAGNE", name: "Pain de Campagne", available_display: "8 livres para amanhã" },
@@ -55,7 +56,7 @@ const item = (over: Partial<OrderPromiseItemProjection> = {}): OrderPromiseItemP
 });
 const atRisk = (orderRef: string, over: Partial<OrderPromiseProjection> = {}): OrderPromiseProjection => ({
   state: "at_risk", label: "Promessa em risco", items: [item()], blocks_start: false, since_iso: "",
-  actions: exits(orderRef), next_step: OFFER_STEP, recommended_action: "contact-customer", ...over,
+  actions: exits(orderRef), next_step: "", recommended_action: "contact-customer", ...over,
 });
 /** A promessa que a Produção ainda resolve. `operates`: a conta recebe "Abrir a Produção". */
 const needsProduction = (orderRef: string, operates = true): OrderPromiseProjection => {
@@ -195,7 +196,7 @@ describe("OrderCard: promessa em risco", () => {
     const notice = w.get("[data-promise-risk]");
 
     expect(notice.attributes("color")).toBe("error");
-    expect(notice.get("[data-card-notice-line]").text()).toContain("4x Baguete de tradição sem reserva");
+    expect(notice.get("[data-card-notice-line]").text()).toContain("Faltam 4x Baguete de tradição");
     expect(notice.get("[data-card-notice-line]").text()).toContain("O lote de amanhã foi cancelado.");
     expect(notice.findAll("[data-promise-exit]").map((button) => button.text())).toEqual([
       "Avisar o cliente", "Remarcar no PDV", "Cancelar pedido",
@@ -204,12 +205,17 @@ describe("OrderCard: promessa em risco", () => {
     expect(notice.find("[data-card-notice-note]").exists()).toBe(false);
   });
 
-  it("o aviso diz o que fazer, com o que a casa pode oferecer no lugar, antes das saídas", async () => {
+  it("o aviso lista o que a casa pode oferecer no lugar, uma sugestão por linha, antes das saídas", async () => {
     const w = mountCard({ card: risky });
     await openNotice(w, "promise");
     const notice = w.get("[data-promise-risk]");
 
-    expect(notice.get("[data-card-notice-next-step]").text()).toBe(OFFER_STEP);
+    const list = notice.get("[data-promise-suggestions]");
+    expect(list.get("p").text()).toBe("Sugestões:");
+    expect(list.findAll("[data-promise-suggestion]").map((line) => line.text())).toEqual(SUGGESTIONS);
+    // O corpo do aviso não repete o verbo do botão (dono, 19/11/2026).
+    expect(notice.find("[data-card-notice-next-step]").exists()).toBe(false);
+    expect(notice.get("[data-card-notice-line]").text()).not.toContain("vise o cliente");
     // A recomendada é a cheia; as outras, contornadas.
     expect(notice.findAll("[data-promise-exit]").map((button) => button.attributes("variant"))).toEqual([
       "solid", "outline", "outline",
@@ -346,17 +352,18 @@ describe("OrderPreorderList: a encomenda em risco", () => {
   const mountList = (...cards: OrderCardProjection[]) =>
     mount(OrderPreorderList, { props: { groups: groups(...cards), count: cards.length }, global: { stubs: listStubs } });
 
-  it("a linha diz \"Promessa em risco\", o item sem reserva e \"Precisa de você\"", () => {
+  it("a linha diz \"Promessa em risco\", o item que falta, as sugestões e \"Precisa de você\"", () => {
     const w = mountList(card({ attention: "promise", promise: atRisk("NB-261118-W33"), schedule_label: "Amanhã · A partir das 15h" }));
     const row = w.get('[data-preorder-row="NB-261118-W33"]');
 
     expect(row.attributes("data-preorder-at-risk")).toBeDefined();
     expect(row.get("[data-preorder-risk]").text()).toBe("Promessa em risco");
     expect(row.get("[data-preorder-risk]").attributes("color")).toBe("error");
-    expect(row.get("[data-preorder-risk-items]").text()).toBe("4x Baguete de tradição sem reserva");
+    expect(row.get("[data-preorder-risk-items]").text()).toBe("Faltam 4x Baguete de tradição");
     expect(row.get("[data-preorder-needs-you]").text()).toBe("Precisa de você");
-    // O que fazer, escrito na linha; os gestos estão no pedido que ela abre.
-    expect(row.get("[data-preorder-risk-next-step]").text()).toBe(OFFER_STEP);
+    // O que oferecer no lugar, numa linha só; os gestos estão no pedido que ela abre.
+    expect(row.get("[data-preorder-risk-suggestions]").text()).toBe(`Sugestões: ${SUGGESTIONS.join("; ")}`);
+    expect(row.find("[data-preorder-risk-next-step]").exists()).toBe(false);
     expect(row.find("[data-promise-exit]").exists()).toBe(false);
   });
 
@@ -413,9 +420,10 @@ describe("QueueView: a Fila", () => {
     expect(row.attributes("data-queue-item")).toBe("promise");
     expect(row.attributes("data-focus-target")).toBe("order:NB-261118-W33");
     expect(risk.text()).toContain("Promessa em risco");
-    expect(risk.text()).toContain("4x Baguete de tradição sem reserva");
+    expect(risk.text()).toContain("Faltam 4x Baguete de tradição");
     expect(risk.text()).toContain("O lote de amanhã foi cancelado.");
-    expect(risk.get("[data-queue-promise-next-step]").text()).toBe(OFFER_STEP);
+    expect(risk.findAll("[data-promise-suggestion]").map((line) => line.text())).toEqual(SUGGESTIONS);
+    expect(risk.find("[data-queue-promise-next-step]").exists()).toBe(false);
     const buttons = risk.findAll("[data-promise-exit]");
     expect(buttons.map((button) => button.text())).toEqual(["Avisar o cliente", "Remarcar no PDV", "Cancelar pedido"]);
     // A saída que o servidor recomenda é a única cheia.
@@ -533,15 +541,16 @@ describe("OrderDetailPending: a linha da promessa em risco", () => {
   };
   const line: OrderPendingProjection = {
     key: "promise", tone: "error", label: "Promessa em risco",
-    reason: "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado.",
-    next_step: OFFER_STEP,
+    reason: "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.",
+    next_step: "",
     actions: [
       { ref: "contact-customer", label: "Avisar o cliente", enabled: true, reason: "", href: "https://wa.me/5543999990000", priority: "primary" },
       { ref: "reschedule-at-pos", label: "Remarcar no PDV", enabled: true, reason: "", href: "https://pdv.example.test/preorders/ENC-DETALHE", priority: "secondary" },
       { ref: "cancel", label: "Cancelar pedido", enabled: true, reason: "", href: "/api/v1/backstage/orders/ENC-DETALHE/cancel/", priority: "danger" },
     ],
   };
-  const faixa = (pending: OrderPendingProjection[]) => mount(OrderDetailPending, { props: { pending }, global: { stubs } });
+  const faixa = (pending: OrderPendingProjection[], promise: OrderPromiseProjection | null = atRisk("ENC-DETALHE")) =>
+    mount(OrderDetailPending, { props: { pending, promise }, global: { stubs } });
 
   it("diz o fato e o porquê com as palavras do servidor, e é alvo do `#promise`", () => {
     const row = faixa([line]).get('[data-pending="promise"]');
@@ -549,9 +558,11 @@ describe("OrderDetailPending: a linha da promessa em risco", () => {
     expect(row.attributes("data-focus-target")).toBe("pending:promise");
     expect(row.attributes("data-pending-tone")).toBe("error");
     expect(row.text()).toContain("Promessa em risco");
-    expect(row.get("[data-pending-reason]").text()).toBe("4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado.");
-    // O que fazer, com o que a casa pode oferecer no lugar; o gesto recomendado é o cheio.
-    expect(row.get("[data-pending-next-step]").text()).toBe(OFFER_STEP);
+    expect(row.get("[data-pending-reason]").text()).toBe("Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.");
+    // O que a casa pode oferecer no lugar, em lista; o gesto recomendado é o cheio.
+    expect(row.get("[data-promise-suggestions] p").text()).toBe("Sugestões:");
+    expect(row.findAll("[data-promise-suggestion]").map((option) => option.text())).toEqual(SUGGESTIONS);
+    expect(row.find("[data-pending-next-step]").exists()).toBe(false);
     expect(row.findAll("[data-pending-action]").map((button) => button.attributes("variant"))).toEqual([
       "solid", "outline", "outline",
     ]);

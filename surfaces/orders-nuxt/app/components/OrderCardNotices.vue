@@ -3,10 +3,12 @@
 // texto e o gesto no Popover. Um lugar só para o cartão inteiro e o enxuto do Painel.
 //
 // O aviso com mais de um fato (a promessa em risco, WP-G08: um item por linha, com o
-// porquê) escreve as linhas no lugar da descrição, depois o próximo passo (o que fazer
-// agora), e as saídas dele são atalhos (`OrderPromiseExits`), na cor do aviso.
+// porquê) escreve as linhas no lugar da descrição, com as sugestões de cada item em
+// lista (`OrderPromiseSuggestions`), depois a frase do servidor quando há, e as saídas
+// dele são atalhos (`OrderPromiseExits`), na cor do aviso.
 import type { CardNotice } from "./OrderCard.vue";
 import OrderPromiseExits from "./OrderPromiseExits.vue";
+import OrderPromiseSuggestions from "./OrderPromiseSuggestions.vue";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 defineProps<{ notices: CardNotice[] }>();
@@ -51,6 +53,11 @@ defineProps<{ notices: CardNotice[] }>();
                 >
                   <span class="font-medium">{{ line.label }}</span>
                   <span v-if="line.detail">{{ line.detail }}</span>
+                  <OrderPromiseSuggestions
+                    v-if="line.suggestions?.length"
+                    class="mt-1.5"
+                    :options="line.suggestions"
+                  />
                 </li>
               </ul>
               <!-- O que fazer agora, com as palavras do servidor. -->

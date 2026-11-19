@@ -94,9 +94,10 @@ def announce_lost_holds(lost_by_order: dict[str, Decimal], *, sku: str, date, wo
             logger.warning("production_promise: could not record event on %s", order.ref, exc_info=True)
 
         lot = f" (lote {wo_ref})" if wo_ref else ""
+        lacks = "falta" if qty_text == "1" else "faltam"
         message = (
-            f"Pedido {order.ref}: a produção de {name} para {day} foi cancelada{lot}, e "
-            f"{qty_text} un. ficaram sem reserva. Avise o cliente, remarque ou cancele o pedido."
+            f"Pedido {order.ref}: a produção de {name} para {day} foi cancelada{lot}: "
+            f"{lacks} {qty_text} un. Avise o cliente, remarque ou cancele o pedido."
         )
         alert = create_operator_alert(
             type=ALERT_TYPE,

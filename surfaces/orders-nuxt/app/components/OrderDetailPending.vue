@@ -15,18 +15,24 @@ import { computed } from "vue";
 import type {
   CancelledMoneyProjection,
   OrderPendingProjection,
+  OrderPromiseProjection,
 } from "~/generated/ordersContract";
 import {
+  PROMISE_PENDING_KEY,
   pendingFocusKey,
   pendingLines,
   settledMoney,
 } from "~/presentation/orderPending";
+import { promiseRisk, promiseSuggestionGroups } from "~/presentation/orderPromise";
+import OrderPromiseSuggestions from "./OrderPromiseSuggestions.vue";
 import { useOperatorAppLink } from "../../../operator-kit/app/composables/useOperatorAppLink";
 
 const props = withDefaults(
   defineProps<{
     pending?: readonly OrderPendingProjection[];
     money?: CancelledMoneyProjection | null;
+    /** A promessa do pedido: a linha "Promessa em risco" lista as sugestões dela. */
+    promise?: OrderPromiseProjection | null;
     /** Uma gravação do pedido em andamento. */
     busy?: boolean;
     /** A DANFE deste pedido está indo para a impressora. */
@@ -37,6 +43,7 @@ const props = withDefaults(
   {
     pending: () => [],
     money: null,
+    promise: null,
     busy: false,
     danfePrinting: false,
     refundRetrying: false,
@@ -53,6 +60,10 @@ const lines = computed(() =>
   }),
 );
 const money = computed(() => settledMoney(props.money));
+// A linha da promessa escreve os itens numa frase; as sugestões vêm em lista, por item.
+const suggestionGroups = computed(() =>
+  promiseSuggestionGroups(promiseRisk({ promise: props.promise })),
+);
 // "Remarcar no PDV" abre outro app de operador: na janela dele quando instalado.
 const { attrsFor } = useOperatorAppLink();
 </script>
@@ -95,7 +106,17 @@ const { attrsFor } = useOperatorAppLink();
                 >
                   {{ line.reason }}
                 </p>
-                <!-- O que fazer agora, quando a linha tem mais de uma saída. -->
+                <!-- O que a casa pode oferecer no lugar do item que falta, uma por linha. -->
+                <template v-if="line.key === PROMISE_PENDING_KEY">
+                  <OrderPromiseSuggestions
+                    v-for="group in suggestionGroups"
+                    :key="group.key"
+                    class="mt-1 text-sm text-highlighted"
+                    :heading="group.heading"
+                    :options="group.options"
+                  />
+                </template>
+                <!-- A frase do servidor, quando a lista e o botão cheio não dizem tudo. -->
                 <p
                   v-if="line.nextStep"
                   class="text-sm font-medium text-highlighted"

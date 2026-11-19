@@ -28,8 +28,10 @@ verdade: é a ponte dele com o estoque que mexe nos saldos.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -244,13 +246,13 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     assert (item.sku, item.name) == (SKU, NAME)
     assert (item.reservation, item.cause, item.at_risk) == ("lost", "batch_cancelled", True)
     assert (item.qty, item.missing_qty) == ("4", "4")
-    assert item.label == "4x Baguete de tradição sem reserva"
+    assert item.label == "Faltam 4x Baguete de tradição"
     assert item.detail == "O lote de amanhã foi cancelado."
     assert item.batch_date == _day(1).isoformat()
     assert item.batch_status == "void"
     assert item.work_order_refs == (work_order.ref,)
     # O próximo passo: sem outro produto a oferecer, remarcar. A saída é falar com o cliente.
-    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert item.next_step == "Nenhum produto parecido livre para amanhã."
     assert item.alternatives == ()
     assert promise.next_step == item.next_step
     assert promise.recommended_action == "contact-customer"
@@ -265,7 +267,7 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     assert [action.label for action in card.promise.actions] == ["Avisar o cliente", "Remarcar no PDV", "Cancelar pedido"]
     # A recomendada vem primeiro e é a única principal; cancelar segue vermelho.
     assert [action.priority for action in card.promise.actions] == ["primary", "secondary", "danger"]
-    assert card.promise.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert card.promise.next_step == "Nenhum produto parecido livre para amanhã."
     assert all(action.kind == "link" and action.enabled for action in actions.values())
     assert actions["contact-customer"].href == "/ENC-CANCELADA#promise"
     assert actions["reschedule-at-pos"].href == "https://pdv.example.test/preorders/ENC-CANCELADA"
@@ -283,7 +285,7 @@ def test_a_linha_do_tempo_diz_o_item_e_o_lote_sem_codigo_cru(ficha, gerente):
     detail = build_operator_order(Order.objects.get(pk=order.pk), user=gerente)
     lost = [event for event in detail.timeline if event.event_type == "production_hold_lost"]
     assert len(lost) == 1
-    assert lost[0].label == "Produção cancelada: item ficou sem reserva"
+    assert lost[0].label == "Lote cancelado: o item ficou em falta"
     assert lost[0].detail.startswith("4x ")
     assert "lote de " in lost[0].detail
     assert "production_voided" not in lost[0].detail
@@ -307,11 +309,11 @@ def test_o_detalhe_abre_com_promessa_em_risco_e_as_saidas_de_verdade(ficha, gere
 
     first = detail.pending[0]
     assert (first.key, first.tone, first.label) == ("promise", "error", "Promessa em risco")
-    assert first.reason == "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado."
+    assert first.reason == "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado."
     assert [action.ref for action in first.actions] == ["contact-customer", "reschedule-at-pos", "cancel"]
     assert first.actions[0].href == "https://wa.me/5543999990000"
     # A faixa diz o que fazer e qual gesto é o recomendado.
-    assert first.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert first.next_step == "Nenhum produto parecido livre para amanhã."
     assert [action.priority for action in first.actions] == ["primary", "secondary", "danger"]
 
 
@@ -347,7 +349,7 @@ def test_saldo_do_lote_que_encolhe_deixa_a_reserva_em_parte(ficha):
     item = _one(promises["ENC-SEGUNDO"])
     assert (item.reservation, item.cause) == ("partial", "plan_short")
     assert (item.qty, item.missing_qty) == ("4", "2")
-    assert item.label == "Baguete de tradição: 2 de 4 sem reserva"
+    assert item.label == "Faltam 2 de 4x Baguete de tradição"
     assert item.detail == "A produção planejada para amanhã não cobre o pedido."
     assert item.next_step == "Peça à Produção para aumentar o lote."
 
@@ -388,7 +390,7 @@ def test_estoque_menor_que_o_reservado(baguete):
     assert (item.qty, item.missing_qty) == ("3", "1")
     assert item.detail == "O estoque é menor que o reservado."
     assert item.batch_date == ""
-    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert item.next_step == "Nenhum produto parecido disponível hoje."
 
 
 def test_reserva_vencida_e_reserva_perdida(baguete):
@@ -402,7 +404,7 @@ def test_reserva_vencida_e_reserva_perdida(baguete):
     item = _one(_promise(order))
     assert (item.reservation, item.cause) == ("lost", "hold_released")
     assert item.detail == "A reserva deste item foi solta."
-    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert item.next_step == "Nenhum produto parecido disponível hoje."
 
 
 # ── O lote: fechado com menos, atrasado, esperando ───────────────────────────
@@ -431,7 +433,7 @@ def test_lote_fechado_com_menos_que_o_planejado(ficha, relogio):
     assert (item.qty, item.missing_qty) == ("5", "5")
     assert item.detail == "O lote de hoje fechou com 6, e o planejado era 10."
     assert item.batch_status == "finished"
-    assert item.next_step == "Avise o cliente: faltam 5. Remarque o que faltou ou devolva a diferença."
+    assert item.next_step == "Remarque o que faltou ou devolva a diferença."
     assert promise.recommended_action == "contact-customer"
     assert promise.since_iso  # desde o fechamento do lote
 
@@ -452,7 +454,7 @@ def test_lote_fechado_inteiro_com_a_reserva_fora_dele(ficha, relogio):
     item = _one(_promise(order))
     assert (item.reservation, item.cause) == ("lost", "batch_closed")
     assert item.detail == "O lote de hoje já fechou e esta reserva ficou de fora."
-    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert item.next_step == "Nenhum produto parecido disponível hoje."
 
 
 def test_lote_de_hoje_antes_da_hora_so_espera(ficha, baguete, relogio):
@@ -493,9 +495,10 @@ def test_lote_de_hoje_depois_da_hora_esta_atrasado(ficha, baguete, relogio):
     assert item.detail == "O lote de hoje está atrasado: devia ficar pronto às 12h e está em andamento."
     assert item.batch_status == "started"
     # A leitura não conhece hora nova para o lote, e não inventa uma.
-    assert item.next_step == "Avise o cliente do atraso."
+    # O lote atrasado não tem frase: o porquê já diz a hora, e a saída cheia é "Avisar o cliente".
+    assert item.next_step == ""
     assert item.alternatives == ()
-    assert (promise.next_step, promise.recommended_action) == ("Avise o cliente do atraso.", "contact-customer")
+    assert (promise.next_step, promise.recommended_action) == ("", "contact-customer")
 
 
 def test_lote_de_ontem_que_nunca_ficou_pronto_esta_atrasado(ficha, relogio):
@@ -507,7 +510,8 @@ def test_lote_de_ontem_que_nunca_ficou_pronto_esta_atrasado(ficha, relogio):
     item = _one(_promise(order))
     assert (item.cause, item.at_risk) == ("batch_late", True)
     assert item.detail == "O lote de ontem não ficou pronto."
-    assert item.next_step == "Avise o cliente do atraso."
+    # O lote atrasado não tem frase: o porquê já diz a hora, e a saída cheia é "Avisar o cliente".
+    assert item.next_step == ""
     assert item.work_order_refs == (work_order.ref,)
 
 
@@ -554,7 +558,7 @@ def test_demanda_acima_do_plano_da_data(ficha):
     assert (item.reservation, item.cause) == ("partial", "plan_short")
     assert (item.qty, item.missing_qty) == ("20", "10")
     assert (promise.next_step, promise.recommended_action) == ("Peça à Produção para aumentar o lote.", "open-production")
-    assert item.label == "Baguete de tradição: 10 de 20 sem reserva"
+    assert item.label == "Faltam 10 de 20x Baguete de tradição"
     assert item.detail == f"A produção planejada para {commitment_day_label(_day(2))} não cobre o pedido."
 
 
@@ -756,47 +760,41 @@ def test_o_numero_de_consultas_nao_cresce_com_o_numero_de_pedidos(ficha, baguete
 
 
 def test_a_frase_do_proximo_passo_por_causa():
-    """A copy fechada pela coordenação (19/11/2026), causa a causa."""
+    """A frase só diz o que a tela ainda não disse (dono, 19/11/2026): o verbo
+    do botão ("Avisar o cliente") não se repete no corpo do aviso."""
     step = order_promise.next_step_for
-    reschedule = "Avise o cliente e remarque para o próximo lote."
-    assert step("batch_cancelled") == reschedule
-    assert step("batch_closed") == reschedule
-    assert step("hold_released") == reschedule
-    assert step("stock_short") == reschedule
-    assert step("batch_late") == "Avise o cliente do atraso."
+    nothing = "Nenhum produto parecido livre para amanhã."
+    # O item que não vai existir, sem o que oferecer: a tela diz que procurou e não achou.
+    for cause in ("batch_cancelled", "batch_closed", "hold_released", "stock_short"):
+        assert step(cause, none_phrase=nothing) == nothing
+        # A busca que falhou não afirma nada.
+        assert step(cause) == ""
+    # O lote que fechou com menos: as duas saídas do que faltou.
+    assert step("batch_short", none_phrase=nothing) == "Remarque o que faltou ou devolva a diferença."
+    # O que a Produção ainda resolve.
     assert step("no_batch") == "Peça à Produção para planejar."
     assert step("plan_short") == "Peça à Produção para aumentar o lote."
-    assert step("batch_short", missing=Decimal("4")) == (
-        "Avise o cliente: faltam 4. Remarque o que faltou ou devolva a diferença."
-    )
-    assert step("batch_short", missing=Decimal("1")).startswith("Avise o cliente: falta 1.")
-    assert step("batch_short", missing=Decimal("0.35")).startswith("Avise o cliente: falta 0,35.")
-    # Quem só espera o lote não tem o que fazer.
+    # O lote atrasado e quem só espera o lote não têm frase.
+    assert step("batch_late") == ""
     assert step("batch_waiting") == ""
+    # Nenhuma frase repete o verbo da saída cheia.
+    for cause in order_promise._CAUSE_ORDER:
+        assert "vise o cliente" not in step(cause, none_phrase=nothing)
 
 
-def test_a_frase_oferece_o_que_ha_e_nunca_mais_que_isso():
+def test_com_sugestoes_a_frase_se_cala_e_a_lista_fala():
+    """As alternativas não entram na frase: a tela as lista sob "Sugestões:", uma por linha."""
     option = order_promise.OrderPromiseAlternativeProjection
     fendu = option(sku="FENDU", name="Fendu", available_display="12 livres para amanhã")
     campagne = option(sku="CAMPAGNE", name="Pain de Campagne", available_display="6 livres para amanhã")
-    brioche = option(sku="BRIOCHE", name="Brioche", available_display="1 livre para amanhã")
     step = order_promise.next_step_for
 
-    # A leitura traz no máximo duas: a frase é para ler de relance, no balcão.
+    # A leitura traz no máximo duas: a lista é para ler de relance, no balcão.
     assert order_promise.ALTERNATIVES_LIMIT == 2
-    assert step("batch_cancelled", alternatives=(fendu,)) == "Avise o cliente e ofereça: Fendu (12 livres para amanhã)."
-    assert step("batch_cancelled", alternatives=(fendu, campagne)) == (
-        "Avise o cliente e ofereça: Fendu (12 livres para amanhã) ou Pain de Campagne (6 livres para amanhã)."
-    )
-    assert step("hold_released", alternatives=(fendu, campagne, brioche)) == (
-        "Avise o cliente e ofereça: Fendu (12 livres para amanhã), Pain de Campagne (6 livres para amanhã)"
-        " ou Brioche (1 livre para amanhã)."
-    )
-    assert step("batch_short", missing=Decimal("4"), alternatives=(fendu,)) == (
-        "Avise o cliente: faltam 4. Ofereça: Fendu (12 livres para amanhã)."
-    )
+    for cause in ("batch_cancelled", "batch_closed", "hold_released", "stock_short", "batch_short"):
+        assert step(cause, alternatives=(fendu, campagne), none_phrase="Nenhum…") == ""
     # O lote atrasado e o que a Produção ainda resolve não oferecem outro produto.
-    assert step("batch_late", alternatives=(fendu,)) == "Avise o cliente do atraso."
+    assert step("batch_late", alternatives=(fendu,)) == ""
     assert step("no_batch", alternatives=(fendu,)) == "Peça à Produção para planejar."
 
 
@@ -910,9 +908,10 @@ def vitrine(baguete):
     return fendu, campagne
 
 
-def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, gerente):
+def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, gerente, settings):
     """Para a encomenda de amanhã, só conta o lote de AMANHÃ: 10 planejados, 4
     prometidos, 6 livres. O pão que há hoje na loja não é alternativa (dono, 18/11)."""
+    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/"}
     fendu, campagne = vitrine
     loja = Position.objects.get(ref="loja")
     stock.receive(quantity=Decimal("30"), sku=campagne.sku, position=loja, reason="vitrine de hoje")
@@ -931,13 +930,23 @@ def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, g
     assert [(option.sku, option.name, option.available_display) for option in item.alternatives] == [
         ("FENDU", "Fendu", "6 livres para amanhã"),
     ]
-    assert item.next_step == "Avise o cliente e ofereça: Fendu (6 livres para amanhã)."
-    assert promise.next_step == item.next_step
+    # Com sugestão, a frase se cala: a lista fala, e a saída cheia é "Avisar o cliente".
+    assert (item.next_step, promise.next_step) == ("", "")
     assert promise.recommended_action == "contact-customer"
-    # O cartão, a Fila e a faixa do detalhe leem a mesma frase.
+    assert item.label == "Faltam 4x Baguete de tradição"
+    # O cartão e o detalhe leem a mesma lista, e o "Remarcar no PDV" a leva junto.
     order = Order.objects.get(pk=order.pk)
-    assert build_order_card(order, user=gerente).promise.next_step == item.next_step
-    assert build_operator_order(order, user=gerente).pending[0].next_step == item.next_step
+    card = build_order_card(order, user=gerente)
+    detail = build_operator_order(order, user=gerente)
+    for read in (card.promise, detail.promise):
+        assert [option.sku for option in read.items[0].alternatives] == ["FENDU"]
+    assert detail.pending[0].next_step == ""
+    assert order_promise.pos_suggestions(promise) == [{"sku": SKU, "qty": "4", "offer": ["FENDU"]}]
+    for read in (card.promise, detail.promise):
+        href = next(action.href for action in read.actions if action.ref == "reschedule-at-pos")
+        query = parse_qs(urlsplit(href).query)
+        assert urlsplit(href).path.endswith("/preorders/ENC-OFERECE")
+        assert json.loads(query["suggestions"][0]) == [{"sku": SKU, "qty": "4", "offer": ["FENDU"]}]
 
 
 def test_pedido_de_hoje_oferece_o_que_ha_na_loja_agora(vitrine):
@@ -961,20 +970,24 @@ def test_pedido_de_hoje_oferece_o_que_ha_na_loja_agora(vitrine):
         ("FENDU", "disponível hoje"),
         ("CAMPAGNE", "8 disponíveis hoje"),
     ]
-    assert item.next_step == (
-        "Avise o cliente e ofereça: Fendu (disponível hoje) ou Pain de Campagne (8 disponíveis hoje)."
-    )
+    assert item.next_step == ""
+    assert item.label == "Falta 1 de 3x Baguete de tradição"
 
 
-def test_sem_nada_a_oferecer_a_frase_volta_a_remarcar(ficha, vitrine):
+def test_sem_nada_a_oferecer_a_tela_diz_que_nao_ha_parecido(ficha, vitrine, gerente, settings):
     """Os outros pães existem no cardápio, mas não têm lote amanhã: não se promete o que não há."""
+    settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/"}
     order, work_order, _hold = _encomenda(ficha, "ENC-SEM-ALTERNATIVA")
     craft.void(work_order, reason="Forno parou")
 
     item = _one(_promise(order))
 
     assert item.alternatives == ()
-    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert item.next_step == "Nenhum produto parecido livre para amanhã."
+    # Sem sugestão, o "Remarcar no PDV" abre o pedido sem nada na URL.
+    card = build_order_card(Order.objects.get(pk=order.pk), user=gerente)
+    href = next(action.href for action in card.promise.actions if action.ref == "reschedule-at-pos")
+    assert href == "https://pdv.example.test/preorders/ENC-SEM-ALTERNATIVA"
 
 
 def test_falha_na_busca_de_alternativas_nao_derruba_a_leitura(ficha, monkeypatch):
@@ -989,8 +1002,9 @@ def test_falha_na_busca_de_alternativas_nao_derruba_a_leitura(ficha, monkeypatch
 
     item = _one(_promise(order))
 
+    # Quem não conseguiu procurar não afirma que não há: a tela só cala.
     assert item.alternatives == ()
-    assert item.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert item.next_step == ""
 
 
 def test_pedido_com_passos_diferentes_diz_cada_um_com_o_produto_e_o_cliente_primeiro(ficha, padeiro, settings):
@@ -1011,10 +1025,10 @@ def test_pedido_com_passos_diferentes_diz_cada_um_com_o_produto_e_o_cliente_prim
     promise = _promise(order)
 
     by_sku = {item.sku: item for item in promise.items}
-    assert by_sku[SKU].next_step == "Avise o cliente e remarque para o próximo lote."
+    assert by_sku[SKU].next_step == "Nenhum produto parecido livre para amanhã."
     assert by_sku["BRIOCHE"].next_step == "Peça à Produção para aumentar o lote."
     assert promise.next_step == (
-        "Baguete de tradição: avise o cliente e remarque para o próximo lote. "
+        "Baguete de tradição: nenhum produto parecido livre para amanhã. "
         "Brioche: peça à Produção para aumentar o lote."
     )
     assert promise.recommended_action == "contact-customer"
@@ -1042,7 +1056,7 @@ def test_itens_com_o_mesmo_passo_dizem_a_frase_uma_vez(ficha):
     promise = _promise(order)
 
     assert len(promise.items) == 2
-    assert promise.next_step == "Avise o cliente e remarque para o próximo lote."
+    assert promise.next_step == "Nenhum produto parecido livre para amanhã."
 
 
 def test_a_busca_de_alternativas_custa_o_mesmo_para_um_ou_cinco_pedidos_do_mesmo_item(ficha, vitrine):
