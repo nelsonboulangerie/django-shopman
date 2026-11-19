@@ -94,7 +94,7 @@ O comportamento de cada canal é 100% configurado via `ChannelConfig` — sem cl
 | Aspecto | Valor | Fase |
 |---------|-------|------|
 | `payment.timing` | `"external"` | nenhum payment.initiate |
-| `payment.timing` | `"at_commit"` | payment.initiate em on_commit |
+| `payment.timing` | `"at_commit"` | payment.initiate em on_commit. Exceção: o pedido que entrou na fila da fornada de hoje (`waitlist` em `fermata`) não nasce cobrado; a cobrança nasce quando o cliente confirma a vaga (`policies/waitlist_charge.py`, política da casa de 28/08/2026). A encomenda cobra no commit, como sempre |
 | `payment.timing` | `"post_commit"` | payment.initiate em on_accepted (padrão) |
 | `fulfillment.timing` | `"at_commit"` | fulfillment.create em on_commit |
 | `fulfillment.timing` | `"post_commit"` | fulfillment.create em on_ready (padrão) |
