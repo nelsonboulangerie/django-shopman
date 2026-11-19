@@ -71,7 +71,7 @@ export interface Announcement {
   rejected_reason: string;
   /** Review-only AI suggestion opted in by the template. */
   ai_suggestion_enabled?: boolean;
-  /** O fato do lote que gerou o anúncio (quantas unidades e quando saiu do forno). */
+  /** O fato do lote que gerou o anúncio (quantas unidades e quando ficou pronto). */
   lot_quantity?: string;
   lot_finished_at?: string;
 }

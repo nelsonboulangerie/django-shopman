@@ -32,6 +32,12 @@ function validate() {
     catch { errors.push(`${id}: package.json ausente ou inválido`); continue; }
     for (const [phase, script] of Object.entries(surface.commands ?? {}))
       if (!scripts[script]) errors.push(`${id}: fase ${phase} aponta para script ausente ${script}`);
+    // Retrato de pixel preso a um navegador/SO (`visualRunner`, hoje macos-15)
+    // roda fora do check obrigatório, no workflow `surfaces-visual-pinned.yml`.
+    if (surface.visualRunner && !surface.capabilities?.visual)
+      errors.push(`${id}: visualRunner sem capability visual`);
+    if (surface.runner)
+      errors.push(`${id}: runner próprio no check obrigatório; retrato preso a SO usa visualRunner (docs/reference/ci-escopo.md)`);
     if (id !== "operator-kit") {
       let hasComponentTests = false;
       try {
@@ -83,18 +89,21 @@ function matrix(kind) {
     .filter(([, surface]) =>
       kind === "quality" ||
       (kind === "pwa" && surface.capabilities?.pwa) ||
-      (kind === "audit" && surface.capabilities?.npmAudit),
+      (kind === "audit" && surface.capabilities?.npmAudit) ||
+      (kind === "visual-pinned" && surface.visualRunner),
     )
     .map(([id, surface]) => ({
       id,
       dir: surface.dir,
       kind: surface.kind,
       install_layer: id === "operator-kit" || Boolean(registry.surfaces[id]?.uses_operator_kit),
-      runner: surface.runner ?? "ubuntu-latest",
+      runner: kind === "visual-pinned" ? surface.visualRunner : "ubuntu-latest",
       component: Boolean(surface.commands?.component),
       python_mock: Boolean(surface.pythonMock),
       catalog: Boolean(surface.capabilities?.catalog),
-      visual: Boolean(surface.capabilities?.visual),
+      // O check obrigatório (`quality`) não roda retrato preso a SO: ele mora no
+      // `surfaces-visual-pinned.yml`, fora do caminho da fila.
+      visual: Boolean(surface.capabilities?.visual) && (kind === "visual-pinned" || !surface.visualRunner),
       geometry: Boolean(surface.capabilities?.geometry),
       browser: Boolean(surface.capabilities?.browser),
       browser_suite: Boolean(surface.capabilities?.browserSuite),
@@ -125,9 +134,6 @@ function scoped(entry) {
   const light = {
     ...entry,
     skip: false,
-    // O macOS só existe pelas baselines visuais e pelo WebKit; unit, lint e
-    // typecheck não dependem dele, e o minuto de macOS custa dez de Linux.
-    runner: "ubuntu-latest",
     python_mock: false,
     catalog: false,
     visual: false,
@@ -138,8 +144,26 @@ function scoped(entry) {
     security: false,
   };
   const out = heavy ? { ...entry, skip: false } : light;
-  if (wanted && !wanted.has(entry.dir)) return { ...out, skip: true, component: false, runner: "ubuntu-latest" };
+  if (wanted && !wanted.has(entry.dir)) return { ...out, skip: true, component: false };
   return out;
+}
+
+// Combinações de navegador que a matriz `quality` instala em Linux, uma por chave
+// de cache (motores + dependências de sistema), com um app que as tem. Usada pelo
+// `playwright-cache-main.yml`, que grava o cache no `main`: grupo da fila
+// (`gh-readonly-queue/...`) só lê cache do próprio ref e do `main`.
+function browsers() {
+  const seen = new Map();
+  for (const [, surface] of entries) {
+    const caps = surface.capabilities ?? {};
+    const usesBrowser = caps.visual || caps.geometry || caps.browser || caps.browserSuite || caps.a11y;
+    if (!usesBrowser || surface.runner) continue;
+    const engines = surface.browserEngines ?? "chromium";
+    const withDeps = Boolean(surface.browserWithDeps);
+    const key = `${engines}|${withDeps}`;
+    if (!seen.has(key)) seen.set(key, { dir: surface.dir, browser_engines: engines, browser_with_deps: withDeps });
+  }
+  process.stdout.write(JSON.stringify({ include: [...seen.values()] }));
 }
 
 function run(id, phase) {
@@ -157,6 +181,7 @@ function run(id, phase) {
 
 const [command, ...args] = process.argv.slice(2);
 if (command === "validate") validate();
+else if (command === "matrix" && args[0] === "browsers") browsers();
 else if (command === "matrix") matrix(args[0] ?? "quality");
 else if (command === "run") run(args[0], args[1]);
-else fail(["uso: surface_contract.mjs validate | matrix quality|pwa | run <id> <phase>"]);
+else fail(["uso: surface_contract.mjs validate | matrix quality|pwa|audit|visual-pinned | run <id> <phase>"]);

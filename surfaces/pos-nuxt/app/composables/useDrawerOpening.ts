@@ -1,4 +1,5 @@
 import type { ComputedRef } from "vue";
+import { toast } from "vue-sonner";
 
 import type { useCounterAgent } from "~/composables/useCounterAgent";
 import {
@@ -196,9 +197,15 @@ export function useDrawerOpening({ pos, actions, action, drawer }: DrawerOpening
       // O registro vem depois do chute: o dinheiro já está na mão e a linha
       // `sale` já está no livro. Falhar aqui não fecha a gaveta nem refaz a venda.
       if (kicked) {
+        // A falha não fica calada (P1-9): a gaveta abriu e a trilha não tem a
+        // linha. O operador não refaz nada; quem confere a trilha precisa saber.
         void action
           .call(drawerOpenPath(), { body: { purpose: "sale", order_ref: sale.orderRef, via: "local" } })
-          .catch(() => {});
+          .catch((error: unknown) => {
+            toast.warning("A gaveta abriu, mas a abertura não entrou na trilha.", {
+              description: `${httpErrorMessage(error, "Sem resposta do servidor.")} A venda está registrada; avise o gerente.`,
+            });
+          });
       }
       return;
     }

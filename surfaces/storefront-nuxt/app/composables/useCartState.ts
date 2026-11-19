@@ -400,6 +400,9 @@ export function useCartState () {
         // (menu/PDP/sacola) e já comunica tudo — um toast sobreposto atrapalhava.
         cartIssue.value = issueFromPayload(data, meta)
         lastError.value = cartIssue.value.detail
+        // A recusa é a verdade mais nova que a loja tem (WP-L04): o produto e os
+        // cards abertos releem agora. Ao fechar o aviso, a página já está certa.
+        announceStoreChange('refusal')
       } else if (status === 429) {
         // Sem toast: o banner de rate-limit (com countdown) é a UI dedicada.
         const detail = String(data?.detail || 'Muitas tentativas. Aguarde um instante.')

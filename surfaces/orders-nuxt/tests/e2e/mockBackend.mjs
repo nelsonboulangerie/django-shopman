@@ -152,6 +152,22 @@ const QUEUE = {
 
 // O detalhe de um pedido da fila: o card + o que só o detalhe traz. Sem isto o
 // `/<ref>` recebia `{}` e a e2e não alcançava o resumo do iFood, que mora no detalhe.
+/**
+ * "O que falta neste pedido" (WP-G05): o servidor de verdade manda a lista pronta
+ * (`projections/order_pending.py`). Aqui ela sai dos mesmos campos do cartão: o avanço
+ * travado vira a linha do bloqueio, com o nome e o motivo.
+ */
+function pendingFor(card) {
+  if (!card.advance_block_label && !card.advance_block_reason) return [];
+  return [{
+    key: card.payment_pending ? "payment" : "advance",
+    tone: "info",
+    label: String(card.advance_block_label || "").replace(/…$/, ""),
+    reason: card.advance_block_reason || "",
+    actions: [],
+  }];
+}
+
 const DETAIL_EXTRA = {
   customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "",
   delivery_address: "", delivery_instructions: "",
@@ -358,6 +374,58 @@ const DELIVERIES = {
   maps_key: "",
 };
 
+// A prévia da F4a (`MOCK_F4A=1`): o que a página passou a saber igual ao Painel.
+// Uma chamada sem resposta em Aguardando, a corrida que a TaOn parou de informar
+// com a cobrança de uma parada para trás, a que ninguém aceitou há 12 min e a que
+// voltou (o "Entregador voltou" abre a conferência).
+const AGAIN = {
+  ref: "courier-dispatch-again", kind: "mutation", label: "Chamar de novo", enabled: true, reason: "",
+  method: "POST", idempotency: "required",
+  confirmation: { required: true, description: "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo." },
+  payload_schema: { base_revision: "r1", expected_actor_id: 1 },
+};
+const BACK = { ...AGAIN, ref: "courier-back", label: "Entregador voltou", confirmation: { required: true } };
+function f4aDeliveries() {
+  return {
+    ...DELIVERIES,
+    waiting: [
+      ...DELIVERIES.waiting,
+      deliveryStop("WEB-20261116-0G07", "Gabi", "Centro", -0.009, 0.004, {
+        error: "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu.",
+        group_refusal: "O pedido G07 tem uma chamada sem resposta da TaOn. Confira na central antes.",
+        dispatch_again_action: AGAIN,
+      }),
+    ],
+    rides: [
+      {
+        ...DELIVERIES.rides[0],
+        sync_since: minutesAgo(7),
+        stops: [deliveryStop("WEB-20261116-0B12", "Bia", "Jardim Higienópolis", -0.004, -0.008, {
+          volumes: 2,
+          charge_outdated: { sent: "Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00", current: "Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00", collected: false },
+        })],
+      },
+      DELIVERIES.rides[1],
+      {
+        ...RIDE_BASE,
+        key: "776753359", number: 3, letter: "C", state: "late", status_label: "Ninguém aceitou ainda",
+        stops: [deliveryStop("WEB-20261116-0H11", "Hugo", "Bela Suíça", -0.002, 0.012)],
+        called_at: minutesAgo(12), lead_ref: "WEB-20261116-0H11",
+      },
+      {
+        ...RIDE_BASE,
+        key: "776753360", number: 4, letter: "D", state: "back", status_label: "Tudo entregue",
+        stops: [deliveryStop("WEB-20261116-0J05", "Jo", "Centro", -0.006, 0.006, { done: true })],
+        driver: { name: "Rui", phone: "(43) 99999-0003", vehicle: "Moto vermelha · RUI2B34" },
+        called_at: minutesAgo(50), lead_ref: "WEB-20261116-0J05",
+        back_action: BACK, back_lines: ["R$ 58,00 em dinheiro", "Maquininha Azul"],
+      },
+    ],
+    free_numbers: Array.from({ length: 22 }, (_, i) => i + 5),
+    next_number: 5,
+  };
+}
+
 function queueCard(ref) {
   return Object.values(QUEUE.queue).flat().find((card) => card && typeof card === "object" && card.ref === ref);
 }
@@ -376,7 +444,7 @@ const server = createServer((req, res) => {
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   const cancelScenario = /(?:^|;\s*)e2e_deliveries=cancel(?:;|$)/.test(req.headers.cookie || "");
   if (cancelScenario && /\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, deliveriesProjection());
-  if (/\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, DELIVERIES);
+  if (/\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/?(\?|$)/.test(url)) return json(res, 200, QUEUE);
   if (cancelScenario && /\/e2e\/deliveries\/reset\/?(\?|$)/.test(url)) {
     cancelState.clear();
@@ -400,7 +468,9 @@ const server = createServer((req, res) => {
     const inRide = cancelScenario ? rideOrder(detail[1]) : null;
     if (inRide) return json(res, 200, { order: inRide });
     const card = queueCard(detail[1]);
-    return card ? json(res, 200, { order: { ...card, ...DETAIL_EXTRA } }) : json(res, 404, { detail: "Pedido não encontrado." });
+    return card
+      ? json(res, 200, { order: { ...card, ...DETAIL_EXTRA, pending: pendingFor(card) } })
+      : json(res, 404, { detail: "Pedido não encontrado." });
   }
   if (/\/alerts\/?(\?|$)/.test(url)) return json(res, 200, { alerts: [], counts: { active: 0, critical: 0 } });
   return json(res, 200, {});

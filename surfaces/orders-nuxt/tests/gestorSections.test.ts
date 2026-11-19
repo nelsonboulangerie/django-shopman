@@ -11,6 +11,8 @@ import {
   gestorSettingsSections,
   deniedSettingsSection,
   gestorSwitcherSections,
+  ORDERS_EXIT_POST,
+  orderDetailDenial,
   SETTINGS_ROUTES,
 } from "../app/presentation/gestorSections";
 
@@ -331,5 +333,30 @@ describe("Catálogo e Canais só para quem cuida do catálogo", () => {
     const gerente = [...gestorSections(access), ...gestorSettingsSections(access)];
     for (const path of ["/catalog", "/channels/web/catalog", "/feeds", "/customers", "/workstations"])
       expect(deniedSettingsSection(path, gerente)).toBe("");
+  });
+});
+
+// P1-20: o 403 do detalhe do pedido tem texto próprio. Quem só expede chega pelo sino.
+describe("orderDetailDenial", () => {
+  it("quem só expede lê por que não abre e volta para a Saída", () => {
+    const denial = orderDetailDenial("S84", { expeditesOnly: true });
+    expect(denial.title).toBe("Sua conta não abre o detalhe do pedido");
+    expect(denial.description).toBe(
+      "O detalhe é de quem gerencia pedidos. O pedido S84 continua no painel da Saída, onde você marca a saída e a retirada.",
+    );
+    expect(denial.back).toEqual({ label: "Abrir a Saída", to: ORDERS_EXIT_POST });
+  });
+
+  it("outra conta sem a permissão pede o acesso e volta para onde ela entra", () => {
+    const denial = orderDetailDenial("S84", { landingPath: "/catalog" });
+    expect(denial.description).toBe("O detalhe é de quem gerencia pedidos. Peça o acesso a um gerente.");
+    expect(denial.back).toEqual({ label: "Voltar ao Gestor", to: "/catalog" });
+  });
+
+  it("nenhuma das frases diz que o pedido não foi encontrado, nem usa travessão", () => {
+    for (const denial of [orderDetailDenial("S84", { expeditesOnly: true }), orderDetailDenial("S84")]) {
+      const text = `${denial.title} ${denial.description} ${denial.back.label}`;
+      expect(text).not.toMatch(/não encontrado|[—–]/);
+    }
   });
 });
