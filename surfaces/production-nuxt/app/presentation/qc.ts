@@ -155,7 +155,7 @@ export function applyDiscountGrade(
   return next;
 }
 
-/** Perda derivada: o que não saiu do forno. Fora do plano não há previsto, logo não há perda derivável. */
+/** Perda derivada: o que não ficou pronto. Fora do plano não há previsto, logo não há perda derivável. */
 export function lossQty(state: QcEntryState): number {
   if (state.planned === null) return 0;
   return Math.max(0, state.planned - state.fullQty - state.discountQty);

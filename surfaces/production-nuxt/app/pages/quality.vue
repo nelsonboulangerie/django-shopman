@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Qualidade = a revisão do gestor sobre o lote já fechado (quality_reviewed /
 // quality_corrected). A classificação continua acontecendo na Finalização
-// (ADR-017 §9): o lote sai do forno classificado, e aqui o gestor confere por
+// (ADR-017 §9): o lote fica pronto já classificado, e aqui o gestor confere por
 // exceção (QualityGatePanel), confirma o conjunto sem exceção num ato só ou
 // corrige a partição de um lote (QcCloseScreen em modo de correção). Mesma
 // projeção da Finalização (o quiosque de QC), outra pergunta.
