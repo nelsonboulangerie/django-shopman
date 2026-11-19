@@ -405,7 +405,7 @@ export interface QueueGesture {
 export function queueGesture(item: QueueItem): QueueGesture {
   // A negociação do iFood se responde no pedido (motivo, prova, contraproposta), não
   // com o gesto do cartão: a linha oferece "Responder", que é um link. A promessa em
-  // risco tem as três saídas dela escritas na linha (WP-G08), e nenhum gesto de etapa.
+  // risco tem as saídas dela escritas na linha (WP-G08), e nenhum gesto de etapa.
   if (!item.kind || item.kind === "negotiation" || item.kind === "promise")
     return { primary: null, secondary: null, shortcut: "" };
   // O aceite que não chegou ao iFood: o gesto é reenviar, não avançar o pedido.

@@ -543,7 +543,9 @@ export type AffordanceRef =
   | "undo_ready"
   // O "Dispensar" do lembrete de chamar o entregador (aviso do cartão, não botão largo).
   | "dismiss_courier_reminder"
-  | "ifood_accept_retry";
+  | "ifood_accept_retry"
+  // O "Resolver" da promessa em risco (aviso do cartão e linha da Fila): abre o diálogo.
+  | "resolve_promise";
 
 export interface Affordance {
   ref: AffordanceRef;
