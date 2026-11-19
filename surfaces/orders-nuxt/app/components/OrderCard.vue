@@ -155,7 +155,11 @@ const paymentIcon = computed(() => {
   if (!props.card.payment_method) return "lucide:circle-help";
   return (
     {
-      warning: "lucide:hourglass",
+      // A ampulheta é de quem ESPERA o pagamento. O aviso de um pagamento que já
+      // fechou (o simulado, sem dinheiro) leva o mesmo sinal do cartão enxuto.
+      warning: props.card.payment_pending
+        ? "lucide:hourglass"
+        : "lucide:circle-alert",
       danger: "lucide:alert-triangle",
       success: "lucide:check",
       neutral: "lucide:banknote",

@@ -89,6 +89,16 @@ describe("OrderCard: o pagamento simulado e a cobrança recusada aparecem", () =
     ).toBe("Cartão · Cobrança recusada");
   });
 
+  it("a ampulheta é de quem espera o pagamento; o simulado, que já fechou, leva o sinal de aviso", () => {
+    const icon = (over: Partial<OrderCardProjection>) =>
+      mountCard({ card: card(over) }).get("[data-card-payment]").html();
+    expect(icon(SIMULATED)).toContain("circle-alert");
+    expect(icon(SIMULATED)).not.toContain("hourglass");
+    expect(
+      icon({ payment_status: "pending", payment_status_label: "Aguardando pagamento", payment_pending: true, payment_tone: "warning" }),
+    ).toContain("hourglass");
+  });
+
   it("cartão enxuto (Painel de mesa): só o pagamento que pede um olhar ganha selo", () => {
     expect(
       mountCard({ card: card(), compact: true }).find("[data-card-payment-alert]").exists(),
