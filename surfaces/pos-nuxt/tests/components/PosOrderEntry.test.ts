@@ -34,7 +34,7 @@ function saved(id: number, extra: Partial<SavedAddressProjection> = {}): SavedAd
     label: "Entrega",
     label_key: "other",
     label_custom: "Entrega",
-    formatted_address: `Rua ${id}, ${id}00 - Centro - Londrina/PR`,
+    formatted_address: `Rua ${id}, ${id}00 · Centro · Londrina/PR`,
     route: `Rua ${id}`,
     street_number: `${id}00`,
     neighborhood: "Centro",
@@ -160,8 +160,8 @@ describe("assistente da encomenda", () => {
     expect(w.find("[data-order-address-clear]").exists()).toBe(false);
     await button(w, "Informar endereço")!.trigger("click");
     expect(w.emitted("fulfillment")).toHaveLength(1);
-    await w.setProps({ issue: "", addressSummary: "Rua A, 100 - Centro - Londrina/PR" });
-    expect(w.find("[data-order-step='address']").text()).toContain("Rua A, 100 - Centro - Londrina/PR");
+    await w.setProps({ issue: "", addressSummary: "Rua A, 100 · Centro · Londrina/PR" });
+    expect(w.find("[data-order-step='address']").text()).toContain("Rua A, 100 · Centro · Londrina/PR");
     expect(button(w, "Trocar endereço")).toBeDefined();
     await button(w, "Montar encomenda")!.trigger("click");
     expect(w.emitted("complete")).toHaveLength(1);
@@ -241,7 +241,7 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
     chosenFulfillment: "delivery",
     savedAddresses: [HOME, OTHER],
     chosenAddress: "1",
-    addressSummary: "Rua 1, 100 - Centro - Londrina/PR",
+    addressSummary: "Rua 1, 100 · Centro · Londrina/PR",
   };
 
   it("lista os endereços do cliente em linha inteira, com o da entrega marcado", async () => {
@@ -319,15 +319,15 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
     expect(undo.text()).toBe("Desfazer");
     await undo.trigger("click");
     expect(w.emitted("restoreAddress")).toHaveLength(1);
-    await w.setProps({ issue: "", chosenAddress: "1", addressSummary: "Rua 1, 100 - Centro - Londrina/PR", canRestoreAddress: false });
+    await w.setProps({ issue: "", chosenAddress: "1", addressSummary: "Rua 1, 100 · Centro · Londrina/PR", canRestoreAddress: false });
     expect(w.find("[data-order-address-removed]").exists()).toBe(false);
     expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["true", "false"]);
   });
 
   it("cliente sem endereço cadastrado: o endereço digitado sai e volta pelo mesmo gesto", async () => {
-    const typed = { ...delivery, savedAddresses: [], chosenAddress: "", addressSummary: "Rua Nova, 9 - Centro - Londrina/PR" };
+    const typed = { ...delivery, savedAddresses: [], chosenAddress: "", addressSummary: "Rua Nova, 9 · Centro · Londrina/PR" };
     const w = await mount({ props: typed });
-    expect(w.find("[data-order-step='address']").text()).toContain("Rua Nova, 9 - Centro - Londrina/PR");
+    expect(w.find("[data-order-step='address']").text()).toContain("Rua Nova, 9 · Centro · Londrina/PR");
     await w.find("[data-order-address-clear]").trigger("click");
     expect(w.emitted("clearAddress")).toHaveLength(1);
     await w.setProps({ issue: "address", addressSummary: "", canRestoreAddress: true });
@@ -340,9 +340,9 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
 
   it("endereço digitado na hora (fora da lista) é dito por extenso", async () => {
     const w = await mount({
-      props: { ...delivery, chosenAddress: "", addressSummary: "Rua Nova, 9 - Centro - Londrina/PR" },
+      props: { ...delivery, chosenAddress: "", addressSummary: "Rua Nova, 9 · Centro · Londrina/PR" },
     });
-    expect(w.find("[data-order-address-typed]").text()).toBe("Endereço desta entrega: Rua Nova, 9 - Centro - Londrina/PR");
+    expect(w.find("[data-order-address-typed]").text()).toBe("Endereço desta entrega: Rua Nova, 9 · Centro · Londrina/PR");
     expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["false", "false"]);
   });
 });

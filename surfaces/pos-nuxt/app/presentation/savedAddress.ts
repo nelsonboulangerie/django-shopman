@@ -13,6 +13,7 @@
  * dois casos quem fala é o endereço.
  */
 import type { SavedAddressProjection, StructuredAddressProjection } from "~/types/pos";
+import { addressDisplay } from "./address";
 
 export interface SavedAddressOption {
   /** O id do cadastro, em texto: o valor da opção na lista. */
@@ -48,14 +49,13 @@ export function savedAddressTag(address: SavedAddressProjection): string {
 }
 
 export function savedAddressOption(address: SavedAddressProjection): SavedAddressOption {
-  const street = [address.route, address.street_number].map((part) => String(part || "").trim()).filter(Boolean).join(", ");
-  const complement = String(address.complement || "").trim();
-  const cityState = [address.city, address.state_code].map((part) => String(part || "").trim()).filter(Boolean).join("/");
+  // As duas linhas são as do endereço em qualquer lugar do PDV (`addressDisplay`):
+  // o resumo do endereço escolhido diz o mesmo texto, com o mesmo separador.
+  const { street, place } = addressDisplay(address);
   return {
     value: String(address.id),
-    // Cadastro antigo, sem a rua separada: a linha inteira é o que há.
-    label: street ? [street, complement].filter(Boolean).join(", ") : String(address.formatted_address || "").trim(),
-    description: street ? [String(address.neighborhood || "").trim(), cityState].filter(Boolean).join(" · ") : "",
+    label: street,
+    description: place,
     tag: savedAddressTag(address),
   };
 }

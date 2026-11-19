@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { ADDRESS_PART_SEPARATOR, addressDisplay, addressDisplayLine, composedAddressLine, emptyAddressDraft } from "../app/presentation/address";
 import { chosenSavedAddressValue, savedAddressOption, savedAddressTag } from "../app/presentation/savedAddress";
 import type { SavedAddressProjection } from "../app/types/pos";
 
@@ -47,6 +52,52 @@ describe("endereço cadastrado: a linha que se identifica sozinha", () => {
     const option = savedAddressOption(address({ route: "", street_number: "", formatted_address: "Rua Antiga, 5, Londrina" }));
     expect(option.label).toBe("Rua Antiga, 5, Londrina");
     expect(option.description).toBe("");
+  });
+});
+
+// UM SEPARADOR SÓ, DE UMA FUNÇÃO SÓ (#2806): o resumo do endereço escolhido no
+// Recebimento dizia "Rua Sergipe, 890 - Centro - Londrina/PR" e a lista logo acima
+// dizia "Centro · Londrina/PR". Agora o resumo, o "É aqui?" do mapa e o assistente
+// da encomenda saem de `addressDisplayLine`, com as mesmas partes da lista.
+describe("endereço na tela: um formato só", () => {
+  it("o resumo é a linha da lista, inteira, com o mesmo separador", () => {
+    const saved = address();
+    const option = savedAddressOption(saved);
+    expect(addressDisplayLine(saved)).toBe("Rua Pará, 100, apto 12 · Centro · Londrina/PR");
+    expect(addressDisplayLine(saved)).toBe([option.label, option.description].join(ADDRESS_PART_SEPARATOR));
+    expect(addressDisplay(saved)).toEqual({ street: option.label, place: option.description });
+  });
+
+  it("o rascunho do formulário (o endereço digitado) sai no mesmo formato", () => {
+    const draft = {
+      ...emptyAddressDraft(),
+      route: "Rua Sergipe",
+      street_number: "890",
+      neighborhood: "Centro",
+      city: "Londrina",
+      state_code: "PR",
+    };
+    expect(addressDisplayLine(draft)).toBe("Rua Sergipe, 890 · Centro · Londrina/PR");
+    expect(addressDisplayLine(draft)).not.toContain(" - ");
+  });
+
+  it("a linha que vai para o servidor não muda: é a da loja, com o traço", () => {
+    // `formatted_address` é o da nota, do entregador e do pedido: o formato da
+    // tela não chega a ele.
+    const draft = { ...emptyAddressDraft(), route: "Rua Sergipe", street_number: "890", neighborhood: "Centro", city: "Londrina", state_code: "PR" };
+    expect(composedAddressLine(draft)).toBe("Rua Sergipe, 890 - Centro - Londrina/PR");
+  });
+
+  it("sem rua separada, a linha inteira; sem nada, vazio", () => {
+    expect(addressDisplayLine({ formatted_address: "Rua Antiga, 5, Londrina" })).toBe("Rua Antiga, 5, Londrina");
+    expect(addressDisplayLine({})).toBe("");
+  });
+
+  it("nenhuma tela do PDV monta o endereço pelo resumo da loja", () => {
+    // `draftSummaryLine` (do módulo gêmeo da loja) usa o traço; no PDV ninguém o chama.
+    for (const file of ["components/PosFulfillmentModal.vue", "pages/index.vue", "components/PosOrderEntry.vue", "components/PosAddressMapDialog.vue"]) {
+      expect(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../app", file), "utf8"), file).not.toContain("draftSummaryLine");
+    }
   });
 });
 

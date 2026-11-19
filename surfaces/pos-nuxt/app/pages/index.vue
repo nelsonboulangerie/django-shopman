@@ -10,7 +10,7 @@ import { resolveAffordance } from "~/presentation/actions";
 import { openShiftGate, requiresOpenShiftForSale } from "~/presentation/cash";
 import { stationReadinessAlert } from "~/presentation/stationReadiness";
 import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
-import { draftFromDeliveryState, draftSummaryLine } from "~/presentation/address";
+import { addressDisplayLine, draftFromDeliveryState } from "~/presentation/address";
 import { wantsNewOrder } from "~/presentation/orderSetup";
 import { chosenSavedAddressValue } from "~/presentation/savedAddress";
 import { redoTabLabel } from "~/presentation/preorderActions";
@@ -832,7 +832,7 @@ const savedAddresses = computed(() => customerLookup.value?.saved_addresses || [
 const chosenSavedAddress = computed(() => chosenSavedAddressValue(savedAddresses.value, deliveryAddressState.value));
 /** O endereço desta entrega numa linha ("" enquanto não há). */
 const deliveryAddressSummary = computed(() =>
-  (cart.deliveryAddress.trim() ? draftSummaryLine(draftFromDeliveryState(deliveryAddressState.value)) : ""));
+  (cart.deliveryAddress.trim() ? addressDisplayLine(draftFromDeliveryState(deliveryAddressState.value)) : ""));
 // Tirar e devolver o endereço NO ASSISTENTE: o botão tocado some com o gesto, e o
 // foco segue para a etapa (a lista de endereços, ou "Informar endereço").
 function clearAddressInOrderEntry() {

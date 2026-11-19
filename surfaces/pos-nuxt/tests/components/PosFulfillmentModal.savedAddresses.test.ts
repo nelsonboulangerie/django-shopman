@@ -146,9 +146,11 @@ async function mountModal(initial: Partial<State> = {}, addresses = [HOME, IFOOD
 
 const radios = () => Array.from(document.querySelectorAll<HTMLElement>('[data-pos-saved-addresses] [role="radio"]'));
 const checked = () => radios().map((radio) => radio.getAttribute("aria-checked"));
-const typeButton = (label: string) =>
-  Array.from(document.querySelectorAll<HTMLElement>("[data-pos-fulfillment-modal] button, [role='dialog'] button"))
-    .find((button) => button.textContent?.trim().startsWith(label))!;
+// Retirada e Entrega são as opções de um grupo de rádio (variante cartão): o
+// cartão inteiro é o alvo, e o rádio dentro dele leva o estado.
+const typeCards = () => Array.from(document.querySelectorAll<HTMLElement>('[data-pos-fulfillment-options] [data-slot="item"]'));
+const typeButton = (label: string) => typeCards().find((card) => card.textContent?.trim().startsWith(label))!;
+const typeRadio = (label: string) => typeButton(label).querySelector<HTMLElement>('[role="radio"]')!;
 const search = () => document.querySelector<HTMLInputElement>('[data-focus-target="delivery-search"] input')!;
 // O grupo de rádio marca a opção um instante depois de o foco chegar nela pela
 // seta: a espera é desse instante.
@@ -276,9 +278,75 @@ describe("PosFulfillmentModal: endereços já cadastrados", () => {
     expect(document.querySelector("[data-pos-address-removed]")).toBeNull();
   });
 
+  it("o resumo do endereço escolhido diz o mesmo que a lista, com o mesmo separador", async () => {
+    await mountModal();
+    typeButton("Entrega").click();
+    await vi.waitFor(() => expect(checked()).toEqual(["true", "false", "false"]));
+    const summary = document.querySelector<HTMLElement>("[data-pos-address-summary] p")!.textContent?.trim();
+    const line = document.querySelector("[data-pos-saved-address-line]")!.textContent?.trim();
+    const detail = document.querySelector("[data-pos-saved-address-detail]")!.textContent?.trim();
+    expect(summary).toBe("Rua 1, 100, apto 12 · Centro · Londrina/PR");
+    expect(summary).toBe(`${line} · ${detail}`);
+    expect(summary).not.toContain(" - ");
+  });
+
   it("sem endereço cadastrado, a entrega abre na busca, como sempre", async () => {
     await mountModal({ type: "delivery", confirmed: true }, []);
     expect(document.querySelector("[data-pos-saved-addresses]")).toBeNull();
     await vi.waitFor(() => expect(document.activeElement).toBe(search()));
+  });
+});
+
+// O CARTÃO ESCOLHIDO SE LÊ DE RELANCE (#2806): Retirada e Entrega eram dois botões
+// em que o escolhido só mudava um tom de fundo. Agora são o mesmo grupo de rádio da
+// lista de endereços, com o estado no papel (`aria-checked`) e não só na cor.
+describe("PosFulfillmentModal: Retirada ou Entrega", () => {
+  it("é um grupo de rádio com nome; nada vem marcado antes da escolha", async () => {
+    await mountModal();
+    const group = document.querySelector<HTMLElement>('[data-pos-fulfillment-options] [role="radiogroup"]')!;
+    expect(group.getAttribute("aria-label")).toBe("Como o cliente recebe");
+    expect(typeRadio("Retirada").getAttribute("aria-checked")).toBe("false");
+    expect(typeRadio("Entrega").getAttribute("aria-checked")).toBe("false");
+    // Nenhum botão de "apertado": o estado de escolha é o do rádio.
+    expect(document.querySelector("[data-pos-fulfillment-options] [aria-pressed]")).toBeNull();
+  });
+
+  it("o toque no cartão marca a opção, e a outra desmarca", async () => {
+    const { state } = await mountModal();
+    typeButton("Retirada").click();
+    await vi.waitFor(() => expect(typeRadio("Retirada").getAttribute("aria-checked")).toBe("true"));
+    expect(typeRadio("Entrega").getAttribute("aria-checked")).toBe("false");
+    expect(state).toMatchObject({ type: "pickup", confirmed: true });
+    typeButton("Entrega").click();
+    await vi.waitFor(() => expect(typeRadio("Entrega").getAttribute("aria-checked")).toBe("true"));
+    expect(typeRadio("Retirada").getAttribute("aria-checked")).toBe("false");
+    expect(state).toMatchObject({ type: "delivery", confirmed: true });
+  });
+
+  it("o cartão escolhido tem o mesmo sinal dos endereços: rádio cheio, borda e fundo da casa", async () => {
+    await mountModal({ type: "delivery", confirmed: true });
+    const chosen = typeButton("Entrega");
+    const address = document.querySelector<HTMLElement>('[data-pos-saved-addresses] [data-slot="item"]')!;
+    // As duas listas saem da mesma peça e do mesmo tema: as classes do cartão são
+    // as mesmas, e a escolha acende pelo estado do rádio dentro dele.
+    const signal = (card: HTMLElement) => card.className.split(/\s+/).filter((name) => name.includes("data-[state=checked]")).sort();
+    expect(signal(chosen).length).toBeGreaterThan(0);
+    expect(signal(chosen)).toEqual(signal(address));
+    expect(chosen.querySelector('[role="radio"]')!.getAttribute("data-state")).toBe("checked");
+    expect(typeButton("Retirada").querySelector('[role="radio"]')!.getAttribute("data-state")).toBe("unchecked");
+  });
+
+  it("Enter na opção em foco a escolhe, como no botão de antes", async () => {
+    const { state } = await mountModal();
+    typeRadio("Retirada").focus();
+    await press("Enter");
+    expect(state).toMatchObject({ type: "pickup", confirmed: true, open: true });
+    await vi.waitFor(() => expect(typeRadio("Retirada").getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("a frase de abertura diz o que fazer, sem nota de engenheiro", async () => {
+    await mountModal();
+    const description = document.querySelector<HTMLElement>('[role="dialog"] [data-slot="description"]')!;
+    expect(description.textContent?.trim()).toBe("Escolha como o cliente recebe o pedido.");
   });
 });
