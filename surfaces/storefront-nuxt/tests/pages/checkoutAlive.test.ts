@@ -19,8 +19,8 @@ const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1)
 // O aparelho acha que hoje é hoje; a loja (servidor) já está no dia seguinte.
 const deviceTomorrow = iso(new Date(Date.now() + 24 * 60 * 60 * 1000))
 
-const PIX_NOTICE = 'Se a loja não aceitar em até 5 minutos, o Pix volta inteiro.'
-const CARD_NOTICE = 'O cartão só é cobrado se a loja aceitar, em até 5 minutos.'
+const PIX_NOTICE = 'Se a loja não confirmar seu pedido em até 5 minutos, o Pix volta inteiro.'
+const CARD_NOTICE = 'O cartão só é cobrado se a loja confirmar seu pedido em até 5 minutos.'
 
 function projection (overrides: Record<string, unknown> = {}): CheckoutProjection {
   return {
@@ -229,7 +229,7 @@ describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () =>
     expect(rule).toBeTruthy()
     expect(money).toBeTruthy()
     expect(card?.querySelector('[data-review-before-sending-divider]')).toBeTruthy()
-    expect(rule!.textContent).toContain('Sem retirada no dia combinado, só devolvemos o que voltar à venda.')
+    expect(rule!.textContent).toContain('Não retirou no dia combinado? Devolvemos só o valor do que ainda puder ser vendido.')
     expect(rule!.querySelector('a')?.getAttribute('href')).toBe('/termos#pickup-and-delivery')
     // As duas frases têm o mesmo peso de leitura (o do resumo de valores), e a regra só
     // aparece uma vez na revisão.

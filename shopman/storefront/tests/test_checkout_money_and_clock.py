@@ -130,12 +130,12 @@ class TestAcceptanceWindow:
 class TestMoneyNotices:
     def test_pix_no_dia_paga_agora_e_volta_inteiro(self, web_shop):
         assert _notices(order_date=WEDNESDAY, now=_at(10))["pix"] == (
-            "Se a loja não aceitar em até 5 minutos, o Pix volta inteiro."
+            "Se a loja não confirmar seu pedido em até 5 minutos, o Pix volta inteiro."
         )
 
     def test_cartao_fica_reservado_e_so_e_cobrado_no_aceite(self, web_shop):
         assert _notices(order_date=WEDNESDAY, now=_at(10))["card"] == (
-            "O cartão só é cobrado se a loja aceitar, em até 5 minutos."
+            "O cartão só é cobrado se a loja confirmar seu pedido em até 5 minutos."
         )
 
     def test_encomenda_com_a_casa_aberta_diz_60_minutos(self, web_shop):
@@ -144,7 +144,7 @@ class TestMoneyNotices:
     def test_com_a_casa_fechada_diz_a_hora_em_que_o_prazo_vence_e_nao_minutos(self, web_shop):
         text = _notices(order_date=THURSDAY, now=_at(20))["pix"]
 
-        assert "Se a loja não aceitar até amanhã, quinta, às 10h, o Pix volta inteiro." == text
+        assert "Se a loja não confirmar seu pedido até amanhã, quinta, às 10h, o Pix volta inteiro." == text
         assert "minutos" not in text
 
     def test_prazo_que_atravessa_o_fechamento_diz_a_hora_de_amanha(self, web_shop):

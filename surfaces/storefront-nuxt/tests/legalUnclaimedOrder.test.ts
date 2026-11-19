@@ -11,9 +11,10 @@ import { describe, expect, it } from 'vitest'
 // 19/11/2026: no card "Antes de enviar" o texto tem de ser ultra conciso e inequívoco).
 //
 // O resumo pode encurtar, mas não pode esconder a parte que custa à cliente: nem tudo
-// é devolvido. É o "só" da frase, e esta trava reprova se ele sair.
+// é devolvido. É o "só" da frase, e esta trava reprova se ele sair. "O valor" diz que o
+// que volta é dinheiro, não o item (as duas palavras são do dono, 19/11/2026).
 const REGRA = 'Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a loja.'
-const RESUMO = 'Sem retirada no dia combinado, só devolvemos o que voltar à venda.'
+const RESUMO = 'Não retirou no dia combinado? Devolvemos só o valor do que ainda puder ser vendido.'
 
 const raiz = resolve(__dirname, '..')
 
@@ -53,12 +54,12 @@ describe('pedido não retirado: a cláusula nos Termos, o resumo no checkout', (
     expect(revisao).not.toContain(REGRA)
   })
 
-  it('o resumo diz as três coisas da cláusula: sem retirada, no dia combinado, e que nem tudo volta', () => {
-    expect(RESUMO).toMatch(/^Sem retirada/)
+  it('o resumo diz as três coisas da cláusula: não retirou, no dia combinado, e que nem tudo volta', () => {
+    expect(RESUMO).toMatch(/^Não retirou/)
     expect(RESUMO).toContain('no dia combinado')
-    // "só devolvemos": o que não puder voltar à venda fica com a loja.
-    expect(RESUMO).toMatch(/\bsó devolvemos\b/)
-    expect(RESUMO).toContain('voltar à venda')
+    // "só o valor do que ainda puder ser vendido": o resto fica com a loja, e o que
+    // volta é dinheiro.
+    expect(RESUMO).toMatch(/Devolvemos só o valor do que ainda puder ser vendido/)
     expect(REGRA).toContain('voltar à venda')
     expect(REGRA).toContain('dia combinado')
   })
