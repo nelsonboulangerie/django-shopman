@@ -5,7 +5,7 @@ import PosPaymentWorkspace from "~/components/PosPaymentWorkspace.vue";
 import { workspaceProps } from "../support/paymentWorkspaceProps";
 
 // ENCOMENDA PARA AMANHÃ não vai para a cozinha ao finalizar: o pedido espera a
-// data combinada (`lifecycle._physical_work_deferred`). O pagamento dizia "Ao
+// data combinada (`lifecycle.awaits_kitchen_release`). O pagamento dizia "Ao
 // finalizar, o item vai para a cozinha." — promessa falsa ao operador.
 
 const cash = { method: "cash", amount_q: 1000, collection: "terminal" as const };

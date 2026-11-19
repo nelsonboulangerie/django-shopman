@@ -479,6 +479,26 @@ export function alertMessageWithSchedule(alert: {
   return promise ? `${promise.label}. ${alert.message}` : alert.message;
 }
 
+export interface KitchenWait {
+  /** "Vai para a Cozinha às 16h15", a frase do servidor. */
+  label: string;
+  icon: string;
+}
+
+/**
+ * A encomenda do dia que ainda espera a hora da Cozinha (WP-G02).
+ *
+ * O servidor decide (`kitchen_release_label` só vem enquanto ela espera); aqui só entra
+ * o ícone. Quem espera não tem relógio a contar nem pede gesto: o cartão, a Fila e a
+ * Tabela dizem a hora em que ela chega, e "Adiantar" fica em segundo plano.
+ */
+export function kitchenWait(source: {
+  kitchen_release_label?: string | null;
+}): KitchenWait | null {
+  const label = String(source.kitchen_release_label ?? "").trim();
+  return label ? { label, icon: "i-lucide-chef-hat" } : null;
+}
+
 export interface PreorderGroup {
   /** ISO date the group is committed to (sort key). */
   date: string;
@@ -770,17 +790,72 @@ export function treatableOrderRefs(
     ...queue.expedition_delivery_transit,
     ...(queue.ifood_negotiation_orders ?? []),
   ];
-  return new Set(
-    cards
-      .filter(
-        (card) =>
-          card.can_confirm ||
-          card.can_advance ||
-          card.can_settle_delivery_cash ||
-          card.equipment_back_pending,
-      )
-      .map((card) => card.ref),
+  return new Set(treatableCards(cards).map((card) => card.ref));
+}
+
+/** O que a régua do "tratável" lê do cartão. Estrutural de propósito: as zonas do quadro
+ *  e as negociações do iFood chegam com tipos diferentes do mesmo contrato. */
+type TreatableSource = Pick<
+  OrderCardProjection,
+  | "ref"
+  | "status"
+  | "can_confirm"
+  | "can_advance"
+  | "can_settle_delivery_cash"
+  | "equipment_back_pending"
+  | "kitchen_release_label"
+  | "kitchen_released_at_iso"
+>;
+
+/** Os cartões que pedem trabalho agora. A encomenda do dia que ainda espera a hora da
+ *  Cozinha tem o "Adiantar" disponível, mas não é trabalho do turno: contá-la fazia o
+ *  aviso tocar à meia-noite para toda encomenda do dia (WP-G02, P1-04). */
+function treatableCards<C extends TreatableSource>(cards: C[]): C[] {
+  return cards.filter(
+    (card) =>
+      card.can_confirm ||
+      (card.can_advance && !kitchenWait(card)) ||
+      card.can_settle_delivery_cash ||
+      card.equipment_back_pending,
   );
+}
+
+const KITCHEN_ARRIVAL_MARK = "@cozinha";
+
+/**
+ * As chaves do aviso do Gestor: uma por fato que merece um toque, com o pedido de cada.
+ *
+ * O pedido comum tem uma chave só, o próprio ref. A encomenda ganha uma segunda quando
+ * chega à Cozinha (`kitchen_released_at_iso`): quem a aceitou ontem já "viu" o ref, e
+ * sem a segunda chave a chegada dela ao fluxo do dia passaria em silêncio.
+ */
+export function treatableAttentionKeys(
+  queue: TwoZoneQueueProjection | null,
+): Map<string, string> {
+  const keys = new Map<string, string>();
+  if (!queue) return keys;
+  const refs = treatableOrderRefs(queue);
+  const cards = [
+    ...queue.intake,
+    ...queue.prep,
+    ...queue.expedition_pickup,
+    ...queue.expedition_delivery,
+    ...queue.expedition_delivery_transit,
+    ...(queue.ifood_negotiation_orders ?? []),
+  ];
+  for (const card of cards) {
+    if (!refs.has(card.ref)) continue;
+    const arrived = card.status === "accepted" && card.kitchen_released_at_iso;
+    keys.set(arrived ? `${card.ref}${KITCHEN_ARRIVAL_MARK}` : card.ref, card.ref);
+  }
+  return keys;
+}
+
+/** O ref do pedido de uma chave de aviso (`treatableAttentionKeys`). */
+export function attentionKeyRef(key: string): string {
+  return key.endsWith(KITCHEN_ARRIVAL_MARK)
+    ? key.slice(0, -KITCHEN_ARRIVAL_MARK.length)
+    : key;
 }
 
 /** Refs que passaram de espera passiva para trabalho possível no Gestor. */
@@ -1216,7 +1291,12 @@ type ClockSource = Pick<
   | "elapsed_seconds"
   | "timer_class"
 > &
-  Partial<Pick<OrderCardProjection, "ready_at_iso" | "dispatched_at_iso">>;
+  Partial<
+    Pick<
+      OrderCardProjection,
+      "ready_at_iso" | "dispatched_at_iso" | "kitchen_release_label"
+    >
+  >;
 
 /** Segundos desde um instante ISO do servidor; `null` quando o instante não existe. */
 export function secondsSince(
@@ -1232,7 +1312,8 @@ export function secondsSince(
 /** A linha do tempo do canto: o prazo, quando há ("aceita sozinho em 2:40"); no pronto,
  *  desde quando está pronto ("pronto há 6 min"); na rua, desde a saída ("na rua há 18
  *  min"); senão, o decorrido desde a chegada ("há 9 min"). Um relógio só: quanto falta
- *  decide; quanto passou, não. */
+ *  decide; quanto passou, não. Na encomenda, a chegada é a chegada à Cozinha: o servidor
+ *  conta `elapsed_seconds` dali, nunca da compra (WP-G02, P1-05). */
 export function cardClock(card: ClockSource, nowMs: number): CardClock {
   const left = confirmationRemainingLabel(
     card.confirmation_deadline_iso,
@@ -1249,6 +1330,10 @@ export function cardClock(card: ClockSource, nowMs: number): CardClock {
       countdown: true,
     };
   }
+  // A encomenda que espera a hora da Cozinha não tem tempo a contar: o cartão diz a
+  // hora em que ela chega (`kitchenWait`), e o relógio fica mudo.
+  if (kitchenWait(card))
+    return { text: "", tone: timeTone("on_time"), countdown: false };
   const tone = timerTone(card.timer_class as OrderTimerClass);
   const ready = secondsSince(card.ready_at_iso, nowMs);
   if (ready !== null)

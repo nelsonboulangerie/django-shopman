@@ -187,7 +187,7 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
     expect(close?.manager_approval).toEqual({ token: TOKEN });
     expect(JSON.stringify(close)).not.toContain(PIN);
     const [check] = bodiesTo(actionCall, "/manager-approval/check/");
-    expect(check?.scope).toEqual({ tab_ref: "", discount_q: 600, account_over_q: 0 });
+    expect(check?.scope).toEqual({ tab_ref: "", discount_q: 600, account_over_q: 0, over_plan: [] });
     // O guarda estava gravado durante a cobrança, e sem o PIN.
     expect(guardDuringClose).toContain("client_request_id");
     expect(guardDuringClose).not.toContain(PIN);
@@ -288,7 +288,7 @@ describe("usePosSale — a conferência da venda sem resposta pede o gerente de 
     const [check] = bodiesTo(actionCall, "/manager-approval/check/");
     expect(check).toEqual({
       manager_approval: { username: "joyce", pin: PIN },
-      scope: { tab_ref: "M7", discount_q: 3000, account_over_q: 0 },
+      scope: { tab_ref: "M7", discount_q: 3000, account_over_q: 0, over_plan: [] },
     });
     expect(replay).toMatchObject({ client_request_id: "pos:incerta-1", manager_approval: { token: TOKEN } });
     expect(JSON.stringify(replay)).not.toContain(PIN);

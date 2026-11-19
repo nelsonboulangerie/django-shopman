@@ -2,7 +2,7 @@
 import { navigateTo } from '#app'
 import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
 import type { AddressSelection } from '~/presentation/address'
-import { cartBatchFloor, cartBatchFloorReason, reviewWaitlist } from '~/presentation/cart'
+import { cartBatchFloor, cartBatchFloorReason, discountDisplay, linePrice, promoSavingsNote, reviewWaitlist } from '~/presentation/cart'
 import { orderReadyLine } from '~/presentation/promise'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
@@ -582,6 +582,9 @@ const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, qu
 // "Hoje" fora das opções porque o dia já encerrou: a tela diz, em vez de sumir calado.
 const todayOverNotice = computed(() => (checkout.value?.today_over ? todayOverMessage(state.fulfillment_type) : ''))
 const isTodaySelected = computed(() => state.delivery_date === dateBounds.value.todayValue)
+// Encomenda para retirar (retirada em outro dia): a revisão diz a regra do pedido não
+// retirado antes de a cliente enviar (#2613).
+const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date) && !isTodaySelected.value)
 const contactState = computed<CheckoutSectionState>(() => {
   if (fieldErrors.value.name || fieldErrors.value.phone) return 'error'
   // `nameEditing` entra aqui junto com `contactEditing`, e esta é a METADE
@@ -1537,12 +1540,6 @@ async function switchToPickup () {
   activeStep.value = deliveryDraftFailed.value ? 'fulfillment' : 'when'
 }
 
-// Sinal do desconto no resumo compacto da confirmação (espelha CartSummaryBreakdown).
-function discountSigned (display: string): string {
-  const value = (display || '').trim()
-  return value.startsWith('-') ? value : `- ${value}`
-}
-
 useSeoMeta({
   title: 'Checkout'
 })
@@ -2437,7 +2434,7 @@ useSeoMeta({
                       <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
                       {{ line.name }}
                     </span>
-                    <span class="shrink-0 tabular-nums" data-review-line-total>{{ line.total_display }}</span>
+                    <CartLineTotal :line="line" value-class="tabular-nums" class="shrink-0" data-review-line-total />
                   </span>
                   <!-- Lista de espera = história do MESMO dia (fila de espera da produção).
                        Pedido agendado para outra data não tem fila: a reserva nasce na
@@ -2470,6 +2467,17 @@ useSeoMeta({
               <!-- Como/onde/pgto/contato: ícone + valor, sem rótulo (o valor já se explica). -->
               <OrderSummaryRows :rows="reviewSummaryRows" />
 
+              <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
+                   enviar e de pagar (#2613, decisão do dono de 18/11/2026). A frase é a da
+                   cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
+                   reprova se uma mudar sem a outra. -->
+              <p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>
+                Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
+                voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
+                loja.
+                <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
+              </p>
+
               <!-- Cartão do presente / observação: bilhete em superfície destacada (muted). -->
               <p v-if="state.is_gift && state.gift_message" class="mt-3 rounded-lg bg-muted/50 p-3">
                 <span class="mb-0.5 block shop-kicker">Cartão do presente</span>
@@ -2486,11 +2494,14 @@ useSeoMeta({
                 <dl class="space-y-1 text-sm" data-review-bill>
                   <div class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">Subtotal</dt>
-                    <dd class="tabular-nums">{{ cart.has_discount ? (cart.original_subtotal_display || cart.subtotal_display) : cart.subtotal_display }}</dd>
+                    <dd class="text-right tabular-nums">
+                      {{ cart.lines_subtotal_display }}
+                      <span v-if="promoSavingsNote(cart)" class="block shop-meta" data-review-promo-savings>{{ promoSavingsNote(cart) }}</span>
+                    </dd>
                   </div>
-                  <div v-for="discount in cart.discount_lines" :key="discount.label" class="flex items-baseline justify-between gap-3">
+                  <div v-for="discount in cart.order_discount_lines" :key="discount.label" class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">{{ discount.label }}</dt>
-                    <dd class="tabular-nums text-primary">{{ discountSigned(discount.amount_display) }}</dd>
+                    <dd class="tabular-nums text-primary">{{ discountDisplay(discount.amount_display) }}</dd>
                   </div>
                   <div v-if="cart.delivery_fee_display" class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">Entrega<span v-if="cart.delivery_distance_display"> · {{ cart.delivery_distance_display }}</span></dt>
@@ -2534,9 +2545,9 @@ useSeoMeta({
                 <UiItem v-for="line in cart?.items || []" :key="line.line_id" size="sm" class="items-start bg-transparent p-0">
                   <UiItemContent>
                     <UiItemTitle class="line-clamp-1">{{ line.qty }}× {{ line.name }}</UiItemTitle>
-                    <UiItemDescription>{{ line.price_display }} cada</UiItemDescription>
+                    <UiItemDescription>{{ linePrice(line).current }} cada</UiItemDescription>
                   </UiItemContent>
-                  <UiItemActions class="shop-price">{{ line.total_display }}</UiItemActions>
+                  <UiItemActions><CartLineTotal :line="line" stacked /></UiItemActions>
                 </UiItem>
               </UiItemGroup>
               <CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />
@@ -2591,9 +2602,9 @@ useSeoMeta({
               <UiItem v-for="line in cart?.items || []" :key="line.line_id" size="sm" class="items-start bg-transparent p-0">
                 <UiItemContent>
                   <UiItemTitle class="line-clamp-1">{{ line.qty }}× {{ line.name }}</UiItemTitle>
-                  <UiItemDescription>{{ line.price_display }} cada</UiItemDescription>
+                  <UiItemDescription>{{ linePrice(line).current }} cada</UiItemDescription>
                 </UiItemContent>
-                <UiItemActions class="shop-price">{{ line.total_display }}</UiItemActions>
+                <UiItemActions><CartLineTotal :line="line" stacked /></UiItemActions>
               </UiItem>
             </UiItemGroup>
 

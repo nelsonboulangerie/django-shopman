@@ -24,6 +24,7 @@ import {
   cardAuthorizationNotice,
   cardDeadlineLabel,
   confirmationRemainingLabel,
+  kitchenWait,
   schedulePromise,
   splitRef,
   undoLine,
@@ -319,7 +320,10 @@ function switchHint(row: {
             <p v-else class="op-figure leading-none">
               {{ splitRef(item.card.ref).code }}
             </p>
+            <!-- A encomenda que espera a hora da Cozinha não tem tempo nem meta a
+                 mostrar aqui: a frase dela mora com o combinado, na coluna do meio. -->
             <NuxtBadge
+              v-if="!item.waits"
               :color="toneColor(item.tone)"
               :label="item.timeLabel"
               :data-queue-tone="item.tone"
@@ -355,6 +359,15 @@ function switchHint(row: {
             >
               <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
               <span class="whitespace-normal text-start">{{ schedulePromise(item.card)!.label }}</span>
+            </NuxtBadge>
+            <NuxtBadge
+              v-if="item.waits"
+              class="max-w-full self-start"
+              color="neutral"
+              :icon="kitchenWait(item.card)!.icon"
+              data-queue-kitchen-wait
+            >
+              <span class="whitespace-normal text-start">{{ item.waits }}</span>
             </NuxtBadge>
             <p class="op-body text-foreground/85">
               {{ item.card.items_summary }}

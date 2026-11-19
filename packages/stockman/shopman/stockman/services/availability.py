@@ -16,9 +16,7 @@ from shopman.stockman.adapters.sku_validation import get_sku_validator
 from shopman.stockman.models import Hold, Quant
 from shopman.stockman.models.enums import HoldStatus
 from shopman.stockman.protocols.sku import PromiseDecision, PromiseReasonCode
-from shopman.stockman.services.scope import quants_eligible_for
-
-STARTED_BATCH = "started"
+from shopman.stockman.services.scope import STARTED_BATCH, is_in_production, quants_eligible_for
 
 
 def _policy_promisable_qty(
@@ -687,6 +685,7 @@ def _availability_on_date(
             if (
                 allowed_batch_refs_by_sku is not None
                 and quant.batch
+                and not is_in_production(quant)
                 and quant.batch not in allowed_batch_refs_by_sku.get(sku, set())
             ):
                 # Named refs without a matching Batch are unclassified lots,

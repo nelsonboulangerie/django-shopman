@@ -317,14 +317,14 @@ def test_data_de_HOJE_nao_adia_a_venda_de_balcao(balcao):
 def test_a_fronteira_da_encomenda_e_ESTRITAMENTE_futura(balcao):
     """O contraponto, na fronteira exata: hoje não adia, amanhã adia.
 
-    Testado no predicado (`_physical_work_deferred`) e não pelo pedido inteiro
+    Testado no predicado (`awaits_kitchen_release`) e não pelo pedido inteiro
     de propósito: o agendamento só acontece depois que o pedido é ACEITO, e o
     canal mínimo desta fixture deixa o pedido em `new`. O que precisa ficar
     guardado aqui é a COMPARAÇÃO — `>` e não `>=` —, e ela não depende de
     confirmação nenhuma. O fio inteiro (aceite → directive na madrugada da data)
     já é coberto pelas suítes de lifecycle, e foi conferido no PDV real.
     """
-    from shopman.shop.lifecycle import _physical_work_deferred
+    from shopman.shop.lifecycle import awaits_kitchen_release
 
     hoje = timezone.localdate()
 
@@ -332,10 +332,10 @@ def test_a_fronteira_da_encomenda_e_ESTRITAMENTE_futura(balcao):
         def __init__(self, dia):
             self.data = {"delivery_date": dia.isoformat()} if dia else {}
 
-    assert _physical_work_deferred(_Pedido(hoje)) is False
-    assert _physical_work_deferred(_Pedido(hoje + timezone.timedelta(days=1))) is True
-    assert _physical_work_deferred(_Pedido(hoje - timezone.timedelta(days=1))) is False
-    assert _physical_work_deferred(_Pedido(None)) is False
+    assert awaits_kitchen_release(_Pedido(hoje)) is False
+    assert awaits_kitchen_release(_Pedido(hoje + timezone.timedelta(days=1))) is True
+    assert awaits_kitchen_release(_Pedido(hoje - timezone.timedelta(days=1))) is False
+    assert awaits_kitchen_release(_Pedido(None)) is False
 
 
 # ── A data também é conferida, e sem ela um pedido pago some ─────────────────

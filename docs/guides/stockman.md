@@ -128,6 +128,14 @@ O saldo conta para uma data-alvo enquanto estiver válido nela. A validade tem d
 | `supplier` | CharField(200) | Fornecedor |
 | `notes` | TextField | Observações |
 
+**Lote, sem lote e o marcador de produção.** `Quant.batch` é uma referência textual, e três coisas diferentes moram nela:
+
+- vazio: saldo sem lote (o planejado, por exemplo);
+- o ref de um `Batch`: lote de verdade, com validade e grau de qualidade;
+- `"started"` num saldo com `target_date`: o MARCADOR do que já entrou em produção (`services.scope.STARTED_BATCH`, escrito pela ponte do Craftsman). Não é lote e não existe `Batch` com esse ref.
+
+O canal que lê com lista de graus (`allowed_quality_grade_refs`) só aceita lote de verdade com grau permitido: lote nomeado sem `Batch`, ou com `Batch` sem grau, fica de fora, na leitura, na reserva e na baixa. O marcador de produção passa como o saldo sem lote (`scope.is_in_production`), porque ainda não foi inspecionado; no fechamento, o `realize` só leva a reserva para o pão cujo grau a lista dela aceita.
+
 ### StockAlert
 
 | Campo | Tipo | Descrição |
@@ -260,7 +268,12 @@ quant_fisico = stock.realize(
 )
 # → Transfere holds FIFO do planejado para o físico
 # → Emite sinal holds_materialized
+
+# Reassentar reservas entre saldos planejados irmãos (mesmo SKU e data)
+movidas = stock.settle_holds([quant_em_producao, quant_planejado])
 ```
+
+`realize` só materializa as reservas ancoradas no quant de onde o lote sai (mais a demanda sem saldo da data). Por isso, quando a QUANTIDADE do plano muda de quant (o lote entra em produção e vai para o quant `batch="started"`, um lote é cancelado, o plano encolhe), a reserva tem de mudar junto: é o que `settle_holds` faz. Os quants vêm na ordem em que são servidos (o lote aberto primeiro); as reservas ativas são percorridas na ordem de atendimento do `realize` (`metadata.priority`, depois FIFO) e cada uma vai, inteira, para o primeiro quant em que cabe. A que não cabe em nenhum fica onde está, sem lastro. Não muda quantidade, prazo nem estado. Quem chama é a ponte do Craftsman (`craftsman/contrib/stockman`), no início, no ajuste e no cancelamento do lote.
 
 ### Alertas
 

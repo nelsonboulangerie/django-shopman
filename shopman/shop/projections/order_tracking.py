@@ -1021,7 +1021,7 @@ def _pix_payload(payment: dict) -> tuple[str | None, str | None]:
 def _commitment_info(order):
     """Commitment date + preorder flag, on the lifecycle's own ruler.
 
-    Same predicate as ``lifecycle._physical_work_deferred``: the order is a
+    Same predicate as ``lifecycle.awaits_kitchen_release``: the order is a
     preorder while its commitment date is in the future — on the day it
     rejoins the normal flow (KDS, preparing, ready).
     """

@@ -1,0 +1,262 @@
+{
+  "$defs": {
+    "DeadlineAbsent": {
+      "additionalProperties": false,
+      "properties": {
+        "absent_reason": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        },
+        "contingency": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "status": {
+          "const": "absent"
+        }
+      },
+      "required": [
+        "absent_reason",
+        "contingency"
+      ],
+      "type": "object"
+    },
+    "DeadlineSet": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        "rule_ref": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "status": {
+          "const": "set"
+        }
+      },
+      "required": [
+        "at",
+        "rule_ref"
+      ],
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Contrato Commitment. Contrato de observação: campo desconhecido só com MENOR acima; o leitor o guarda em extensions.",
+  "properties": {
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "commitment_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "deadline": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DeadlineSet"
+        },
+        {
+          "$ref": "#/$defs/DeadlineAbsent"
+        }
+      ]
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "fulfillment_criterion": {
+      "minLength": 1,
+      "pattern": "^\\S(.*\\S)?$",
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Commitment"
+    },
+    "obligation": {
+      "minLength": 1,
+      "pattern": "^\\S(.*\\S)?$",
+      "type": "string"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "owner": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "problem_code": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reopened_from": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requested_resolution": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "const": "cc.commitment"
+    },
+    "schema_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "open",
+        "accepted",
+        "fulfilled",
+        "broken",
+        "expired",
+        "reopened"
+      ],
+      "type": "string"
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "promise",
+        "case"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "commitment_id",
+    "type",
+    "obligation",
+    "owner",
+    "deadline",
+    "fulfillment_criterion",
+    "state"
+  ],
+  "title": "Commitment",
+  "type": "object",
+  "x-contract-version": "1.0"
+}

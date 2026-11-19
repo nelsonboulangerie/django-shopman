@@ -38,6 +38,22 @@ from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.queries import _resolve_stock_profile
 from shopman.stockman.shelflife import filter_valid_quants
 
+#: O que já entrou em produção e ainda não saiu. Quem move a quantidade do
+#: planejado para cá (a ponte do Craftsman, no início do lote) escreve este
+#: valor em ``Quant.batch`` de um saldo com ``target_date``. É um MARCADOR de
+#: etapa, não um lote: não existe ``Batch`` com esse ref, e nunca existirá.
+STARTED_BATCH = "started"
+
+
+def in_production_q() -> Q:
+    """Os saldos em produção: o marcador ``started`` num saldo PLANEJADO."""
+    return Q(batch=STARTED_BATCH, target_date__isnull=False)
+
+
+def is_in_production(quant) -> bool:
+    """:func:`in_production_q` para um quant já carregado."""
+    return quant.batch == STARTED_BATCH and quant.target_date is not None
+
 
 def quants_eligible_for(
     sku: str,
@@ -132,7 +148,15 @@ def quants_eligible_for(
         # only when its Batch fact exists for this SKU and carries an allowed
         # grade.  The empty coordinate remains distinct: it is genuinely
         # batchless stock and must not acquire a made-up QC classification.
-        qs = qs.filter(Q(batch="") | Q(batch__in=allowed_batch_refs))
+        #
+        # O que está EM PRODUÇÃO passa como o planejado sem lote: ainda não
+        # foi inspecionado, então não há grau a comparar. O marcador não abre
+        # a porta para lote nomeado sem ``Batch``: só vale num saldo com data
+        # (nunca no físico), e quem decide se a reserva acompanha o pão que
+        # sair é o ``realize``, pelo grau da inspeção. Sem isto o canal com
+        # lista de graus prometia o lote planejado e deixava de prometê-lo no
+        # instante em que ele começava (#2715).
+        qs = qs.filter(Q(batch="") | in_production_q() | Q(batch__in=allowed_batch_refs))
     elif not include_nonconforming:
         nonconforming_refs = list(Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True))
         if nonconforming_refs:

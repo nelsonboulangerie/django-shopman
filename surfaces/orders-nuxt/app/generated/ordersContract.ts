@@ -546,6 +546,10 @@ export interface OrderCardProjection {
   commitment_date_display: string;
   schedule_label: string;
   schedule_state: string;
+  kitchen_release_at_iso: string;
+  kitchen_release_label: string;
+  kitchen_released_at_iso: string;
+  clock_since_iso: string;
   change_for_q: number;
   change_out_suggested_q: number;
   change_out_q: number;
@@ -753,6 +757,7 @@ export interface OperatorOrderProjection {
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_logistics_label: string;
+  kitchen_release_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
   ifood_accept_failed: boolean;
   ifood_accept_notice: string;
