@@ -287,7 +287,7 @@ export function useOrderIntention() {
       courierRideAction(action, call.refs),
       courierRideInputs(call),
       undefined,
-      { subject: "a corrida foi chamada", where: "a fila" },
+      { subject: "a corrida foi chamada", where: "os pedidos" },
     );
   }
   return {

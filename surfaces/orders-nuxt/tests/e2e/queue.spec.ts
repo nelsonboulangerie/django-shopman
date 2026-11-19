@@ -13,11 +13,14 @@ test("o desktop abre no Painel; a Fila vem por urgência, com a coluna de consci
   await expect(queue.getByRole("heading", { name: "Precisa de você" })).toBeVisible();
   const items = queue.locator("[data-queue-item]");
   await expect(items).toHaveCount(2);
-  // O bloqueado está mais longe da meta (8 de 5 min) e vem primeiro, com o gesto travado.
+  // O bloqueado está mais longe da meta (8 de 5 min) e vem primeiro. O bloqueio diz o
+  // nome e o motivo por escrito, e não desenha botão morto (WP-G08).
   await expect(items.first()).toHaveAttribute("data-queue-item", "blocked");
-  await expect(items.first().locator("[data-queue-primary]")).toBeDisabled();
+  await expect(items.first().locator("[data-queue-block]")).toHaveText("Aguardando pagamento");
+  await expect(items.first().locator("[data-queue-block-reason]")).toHaveText("O pagamento ainda não foi capturado.");
+  await expect(items.first().locator("[data-queue-primary]")).toHaveCount(0);
   await expect(items.nth(1).getByRole("button", { name: "Iniciar preparo" })).toBeEnabled();
-  await expect(items.nth(1).locator("[data-queue-goal]")).toHaveText("meta 5");
+  await expect(items.nth(1).locator("[data-queue-goal]")).toHaveText("meta 5 min");
   // O resto vira contagem com nome (sem "+N" somando grandezas); o agregado, o que o
   // sistema fez e o cardápio ao lado.
   // Só o que está em preparo conta: o iFood agendado, aceito e esperando o horário,

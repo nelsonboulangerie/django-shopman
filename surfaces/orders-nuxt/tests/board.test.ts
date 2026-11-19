@@ -9,7 +9,6 @@ import {
   changeBackSuggestionQ,
   dispatchAsksChange,
   cardAffordances,
-  channelLabel,
   channelOptions,
   elapsedLabel,
   courierRideLabel,
@@ -62,11 +61,10 @@ const card = (
   ref: "WEB-20260625-0007",
   status: "accepted",
   status_label: "Confirmado",
-  status_color: "",
   channel_ref: "web",
+  channel_name: "Loja online",
   channel_icon: "language",
   customer_name: "Ana",
-  created_at_display: "08:00",
   created_at_iso: "",
   server_now_iso: "",
   elapsed_seconds: 30,
@@ -74,49 +72,40 @@ const card = (
   items_summary: "2× Pão · 1× Café",
   items_count: 3,
   total_display: "R$ 15,00",
-  fulfillment_icon: "storefront",
   fulfillment_label: "Retirada",
   fulfillment_type: "pickup",
   can_confirm: false,
   can_advance: true,
   next_status: "preparing",
-  next_action_label: "Iniciar preparo",
   payment_method: "cash",
   payment_method_label: "Dinheiro",
   ifood_cancellation_notice: "",
-  ifood_pickup_code: "",
   ifood_schedule_label: "",
   ifood_remote_ahead_label: "",
   ifood_negotiations: [],
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,
-  fiscal_status_label: "",
   fiscal_status: "",
-  has_kitchen_note: false,
   has_customer_note: false,
   is_gift: false,
   gift_has_recipient: false,
   assigned_operator: "",
   awaiting_work_orders: [],
-  change_for_q: 0,
   change_out_suggested_q: 0,
   change_out_q: 0,
   change_back_pending: false,
-  change_back_q: 0,
   change_label: "",
   equipment_options: [],
-  equipment_out: [],
   equipment_label: "",
   equipment_back_pending: false,
   dispatch_needs_machine: false,
   trip_with: [],
   courier_return_orders: [],
   courier_return_lines: [],
-  revisions: {},
   actions: fixtureActions({
     can_advance: true,
-    next_action_label: "Iniciar preparo",
+    advance_label: "Iniciar preparo",
     ...over,
   }),
   ...over,
@@ -407,22 +396,31 @@ describe("matchesQuery", () => {
   });
 });
 
-describe("channelLabel", () => {
-  it("maps known channels and capitalises unknowns", () => {
-    expect(channelLabel("web")).toBe("Loja online");
-    expect(channelLabel("ifood")).toBe("iFood");
-    expect(channelLabel("pdv")).toBe("PDV");
-    expect(channelLabel("kiosk")).toBe("Kiosk");
-    expect(channelLabel("")).toBe("—");
+describe("o nome do canal é o do servidor (WP-G09)", () => {
+  it("o filtro usa o nome que o cartão traz, sem tabela de nomes na tela", () => {
+    const opts = channelOptions([
+      card({ channel_ref: "balcao-2", channel_name: "Balcão da praça" }),
+      card({ channel_ref: "web", channel_name: "Loja online" }),
+    ]);
+    expect(opts.map((option) => option.label)).toEqual(["Balcão da praça", "Loja online"]);
+  });
+
+  it("a planilha leva o mesmo nome, e pedido sem canal não ganha travessão", () => {
+    const rows = [
+      { card: card({ channel_ref: "", channel_name: "" }), zoneKey: "prep" as const, zoneTitle: "Em preparo" },
+    ];
+    const csv = rowsToCsv(rows);
+    expect(csv).not.toContain("—");
+    expect(csv).toContain("Em preparo;;Ana");
   });
 });
 
 describe("channelOptions", () => {
   it("returns distinct channels with counts, sorted by label", () => {
     const opts = channelOptions([
-      card({ channel_ref: "web" }),
-      card({ channel_ref: "web" }),
-      card({ channel_ref: "ifood" }),
+      card({ channel_ref: "web", channel_name: "Loja online" }),
+      card({ channel_ref: "web", channel_name: "Loja online" }),
+      card({ channel_ref: "ifood", channel_name: "iFood" }),
     ]);
     expect(opts).toEqual([
       { ref: "ifood", label: "iFood", count: 1 },
@@ -433,7 +431,7 @@ describe("channelOptions", () => {
 
 describe("matchesChannel", () => {
   it("treats empty/all as match-all, else exact", () => {
-    const c = card({ channel_ref: "whatsapp" });
+    const c = card({ channel_ref: "whatsapp", channel_name: "WhatsApp" });
     expect(matchesChannel(c, "")).toBe(true);
     expect(matchesChannel(c, "all")).toBe(true);
     expect(matchesChannel(c, "whatsapp")).toBe(true);
@@ -489,18 +487,21 @@ describe("triageCards", () => {
       card({
         ref: "A",
         channel_ref: "web",
+        channel_name: "Loja online",
         customer_name: "Ana",
         elapsed_seconds: 10,
       }),
       card({
         ref: "B",
         channel_ref: "ifood",
+        channel_name: "iFood",
         customer_name: "Ana",
         elapsed_seconds: 99,
       }),
       card({
         ref: "C",
         channel_ref: "web",
+        channel_name: "Loja online",
         customer_name: "Bia",
         elapsed_seconds: 50,
       }),

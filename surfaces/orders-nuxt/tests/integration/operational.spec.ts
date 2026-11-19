@@ -176,7 +176,7 @@ test("cash draft survives close, queue navigation and a declined reload without 
   await page.getByRole("button", { name: "Acertar entrega", exact: true }).click();
   await expect(amount).toHaveValue("14,50");
   await page.getByRole("button", { name: "Voltar", exact: true }).click();
-  await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
+  await page.getByRole("link", { name: "Voltar para os pedidos", exact: true }).click();
   await page.getByRole("searchbox", { name: "Buscar por código, cliente ou item (atalho: /)", exact: true }).fill(lab.cash_ref);
   await page.getByRole("button", { name: "Acertar entrega", exact: true }).click();
   await expect(amount).toHaveValue("14,50");
@@ -657,7 +657,7 @@ test("reason and note drafts require explicit discard across close, reload and n
   const note = page.locator("textarea").first();
   await note.fill("Nota ainda não salva");
   page.once("dialog", async prompt => { expect(prompt.type()).toBe("confirm"); await prompt.dismiss(); });
-  await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
+  await page.getByRole("link", { name: "Voltar para os pedidos", exact: true }).click();
   await expect(note).toHaveValue("Nota ainda não salva");
   await declineReload();
   await expect(note).toHaveValue("Nota ainda não salva");
@@ -732,7 +732,8 @@ test("identified machine dispatch recovers a lost response and return does not c
     } else await route.continue();
   });
   await page.goto(`/${lab.device_order_ref}`);
-  await page.getByRole("button", { name: "Marcar saída para entrega", exact: true }).click();
+  // O gesto da saída tem um nome só, o do servidor: "Despachar <código>" (WP-G09).
+  await page.getByRole("button", { name: /^Despachar \S+$/ }).click();
   await page.getByLabel("Maquininha azul laboratório", { exact: true }).check();
   await page.screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/device-dispatch.png", import.meta.url)), fullPage: true });
   await page.getByRole("button", { name: "Saiu para entrega", exact: true }).click();

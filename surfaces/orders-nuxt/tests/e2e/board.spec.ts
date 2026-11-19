@@ -36,9 +36,10 @@ test("card e lista mantêm o avanço bloqueado e explicam o motivo", async ({ pa
   await pill.click();
   await expect(page.getByText("O pagamento ainda não foi capturado.", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  // Na Tabela o gesto aparece travado, com o motivo no title.
+  // Na Tabela o bloqueio é um selo com o nome, não um botão morto (WP-G08); o motivo
+  // vai escrito na linha aberta, porque o title não existe no toque.
   await page.getByRole("tab", { name: "Tabela" }).click();
-  const action = page.getByRole("button", { name: "Aguardando pagamento", exact: true });
-  await expect(action).toBeDisabled();
-  await expect(action).toHaveAttribute("title", "O pagamento ainda não foi capturado.");
+  const row = page.getByRole("row").filter({ hasText: "Pagamento pendente" });
+  await expect(row.locator("[data-supervision-block]")).toHaveText("Aguardando pagamento");
+  await expect(page.getByRole("button", { name: "Aguardando pagamento", exact: true })).toHaveCount(0);
 });

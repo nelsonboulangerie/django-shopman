@@ -30,6 +30,29 @@ def create(
     )
 
 
+def revise(pk: int, *, message: str | None = None, severity: str | None = None, respond_by=None) -> bool:
+    """Atualiza um alerta ainda aberto (mensagem, severidade, prazo), com revisão nova.
+
+    ``False`` quando o alerta já fechou. Campo ``None`` fica como está.
+    """
+    from django.db import transaction
+
+    from shopman.backstage.models import OperatorAlert
+
+    with transaction.atomic():
+        alert = OperatorAlert.objects.select_for_update().filter(pk=pk, resolved_at__isnull=True).first()
+        if alert is None:
+            return False
+        fields = ["rev"]
+        for name, value in (("message", message), ("severity", severity), ("respond_by", respond_by)):
+            if value is not None:
+                setattr(alert, name, value)
+                fields.append(name)
+        alert.rev += 1
+        alert.save(update_fields=fields)
+        return True
+
+
 def recent_exists(
     type: str,
     since,

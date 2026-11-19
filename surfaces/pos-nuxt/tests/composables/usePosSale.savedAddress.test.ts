@@ -14,9 +14,10 @@ vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: 
 function saved(id: number, extra: Partial<SavedAddressProjection> = {}): SavedAddressProjection {
   return {
     id,
-    label: "Entrega",
+    // Sem etiqueta, como o pedido de entrega grava (#2775): "Outro" sem nome.
+    label: "Outro",
     label_key: "other",
-    label_custom: "Entrega",
+    label_custom: "",
     formatted_address: `Rua ${id}, ${id}00 - Centro - Londrina/PR`,
     route: `Rua ${id}`,
     street_number: `${id}00`,

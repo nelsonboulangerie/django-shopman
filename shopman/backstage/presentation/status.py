@@ -73,6 +73,9 @@ def payment_method_label(method: str) -> str:
 #: "pending" em inglês ao lado de "Link de pagamento" — vocabulário de máquina
 #: numa tela de balcão. A chave desconhecida devolve o próprio valor, para
 #: nunca esconder um estado novo atrás de um rótulo vazio.
+#: O dinheiro que o gateway devolveu é "Estornado", a mesma palavra do resumo do
+#: cancelado e da linha do tempo ("Pagamento estornado"): "Reembolsado" ao lado
+#: delas eram duas palavras para um fato só.
 _PAYMENT_STATUS_LABELS = {
     "": "",
     "pending": "Aguardando pagamento",
@@ -80,7 +83,7 @@ _PAYMENT_STATUS_LABELS = {
     "captured": "Pago",
     "failed": "Falhou",
     "cancelled": "Cancelado",
-    "refunded": "Reembolsado",
+    "refunded": "Estornado",
     "unknown": "Não confirmado",
 }
 

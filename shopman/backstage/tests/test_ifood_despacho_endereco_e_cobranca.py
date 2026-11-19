@@ -97,7 +97,8 @@ def test_o_complemento_e_a_referencia_do_cliente_chegam_as_duas_superficies(cana
 
     card = order_queue.build_order_card(order)
     assert card.delivery_address == "Rua das Flores, 123 - Apto 42, bloco B"
-    assert card.delivery_instructions == "portão azul ao lado da farmácia"
+    # As instruções moram no detalhe: o cartão leva só o endereço.
+    assert order_queue.build_operator_order(order).delivery_instructions == "portão azul ao lado da farmácia"
 
     papel = _papel(order)
     assert "Rua das Flores, 123 - Apto 42, bloco B" in papel
@@ -162,7 +163,6 @@ def test_o_card_do_gestor_mostra_com_quanto_o_cliente_paga(canal_ifood):
     ))
 
     card = order_queue.build_order_card(order)
-    assert card.change_for_q == 5000
     assert card.change_out_suggested_q == 500
     assert "R$ 50,00" in card.change_label and "R$ 5,00" in card.change_label
 

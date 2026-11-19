@@ -106,18 +106,18 @@ describe("o aviso no painel do entregador", () => {
 describe("o aviso no cartão do painel", () => {
   function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     return {
-      ref: "NB-261013-0042", status: "preparing", status_label: "Em preparo", status_color: "",
-      channel_ref: "web", channel_icon: "language", customer_name: "Ana", created_at_display: "19:00",
+      ref: "NB-261013-0042", status: "preparing", status_label: "Em preparo",
+      channel_ref: "web", channel_name: "Loja online", channel_icon: "language", customer_name: "Ana",
       created_at_iso: "", server_now_iso: "", elapsed_seconds: 600, timer_class: "timer-ok",
-      items_summary: "2× Pão", items_count: 2, total_display: "R$ 15,00", fulfillment_icon: "local_shipping",
+      items_summary: "2× Pão", items_count: 2, total_display: "R$ 15,00",
       fulfillment_label: "Entrega", fulfillment_type: "delivery", delivery_address: "Rua das Flores, 123",
-      delivery_instructions: "", can_confirm: false, can_advance: false, next_status: "ready",
-      next_action_label: "", payment_method: "pix", payment_method_label: "PIX",
-      ifood_cancellation_notice: "", ifood_pickup_code: "", ifood_schedule_label: "", ifood_remote_ahead_label: "",
+      can_confirm: false, can_advance: false, next_status: "ready",
+      payment_method: "pix", payment_method_label: "PIX",
+      ifood_cancellation_notice: "", ifood_schedule_label: "", ifood_remote_ahead_label: "",
       ifood_negotiations: [], payment_status: "captured", payment_pending: false, can_settle_delivery_cash: false,
-      fiscal_status_label: "", fiscal_status: "", has_kitchen_note: false, has_customer_note: false, is_gift: false,
+      fiscal_status: "", has_customer_note: false, is_gift: false,
       gift_has_recipient: false, assigned_operator: "", awaiting_work_orders: [], confirmation_deadline_iso: "",
-      confirmation_action: "confirm", revisions: {}, actions: [], courier_reminder: reminder, ...over,
+      confirmation_action: "confirm", actions: [], courier_reminder: reminder, ...over,
     } as OrderCardProjection;
   }
   const stubs = { Icon: true, NuxtLink: { template: "<a><slot /></a>" } };

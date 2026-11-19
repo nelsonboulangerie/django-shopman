@@ -11,6 +11,10 @@ e explícito, e o código resolve a referência contra ele, sem rede e sem model
 - ``last_change``: a última mudança na sacola, para "não, era o outro";
 - ``parts``: as partes da última mensagem lida pelas intenções no plural e o que houve
   com cada uma, para "você não respondeu" / "e a minha pergunta?" (``asks_again``).
+- ``verifying``: as perguntas que a casa levou à equipe e ainda esperam resposta
+  ("vou verificar", ``verification``). Não mora aqui: vem de
+  ``Conversation.flags["verification"]`` a cada turno, porque a resposta da equipe
+  chega fora do turno e fecha a espera sem depender desta gravação.
 
 Regra do dono (03/10/2026): **a memória vence pelo que acontece, não pelo relógio.**
 
@@ -996,8 +1000,14 @@ class TurnMemory:
 
 
 def for_turn(conversation, *, now: datetime | None = None, channel_ref: str = "") -> TurnMemory:
+    from . import verification
+
     facts = load_facts(conversation, now=now, channel_ref=channel_ref)
     state = effective((conversation.flags or {}).get(FLAG_KEY), facts)
+    verifying = verification.memory_view(conversation)
+    if verifying:
+        # Vence pelo que acontece: aberta até a equipe responder, assumir ou o prazo passar.
+        state = {**state, "verifying": verifying}
     return TurnMemory(state=state, facts=facts)
 
 

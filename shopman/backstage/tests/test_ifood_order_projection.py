@@ -153,7 +153,7 @@ def test_builders_override_legacy_paid_with_ifood_evidence_without_local_collect
         assert projected.payment_method_label == ifood.payment_headline(order)
         assert projected.payment_status_label == ""
     else:
-        assert projected.ifood_pickup_code == ifood.pickup_code(order)
+        assert projected.ifood_pickup_code_label == ifood.pickup_code_label(order)
     assert projected.ifood_cancellation_notice == ifood.cancellation_notice(order)
     assert projected.can_settle_delivery_cash is False
     assert projected.can_advance is False

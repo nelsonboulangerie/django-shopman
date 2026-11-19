@@ -774,7 +774,9 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
         CustomerAddressProjection(
             id=address.pk,
             revision=address.updated_at.isoformat(),
-            label=address.display_label,
+            # Vazio quando o endereço não tem etiqueta ("Outro" sem nome, #2775):
+            # a tela mostra o endereço, não a categoria vazia.
+            label="" if address.label == "other" and not address.label_custom else str(address.display_label),
             label_code=address.label,
             formatted_address=address.formatted_address or "",
             route=address.route or "",

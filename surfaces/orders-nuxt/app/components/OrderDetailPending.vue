@@ -8,18 +8,32 @@
 // nada falta. Espera saudável não usa cor de erro.
 // `data-detail-block` marca a linha do avanço travado (pagamento ou espera): é o gancho
 // que as jornadas de navegador já usavam para o aviso de bloqueio que esta faixa absorveu.
+// Cada linha é alvo do próximo foco (`data-focus-target`): quem chega com `#promise` é
+// levado à linha da promessa em risco, com o teclado no primeiro gesto dela. O gesto
+// dessa linha é "Resolver": sobe para a página (`act`), que abre o diálogo das escolhas.
 import { computed } from "vue";
 
 import type {
   CancelledMoneyProjection,
   OrderPendingProjection,
+  OrderPromiseProjection,
 } from "~/generated/ordersContract";
-import { pendingLines, settledMoney } from "~/presentation/orderPending";
+import {
+  PROMISE_PENDING_KEY,
+  pendingFocusKey,
+  pendingLines,
+  settledMoney,
+} from "~/presentation/orderPending";
+import { promiseRisk, promiseSuggestionGroups } from "~/presentation/orderPromise";
+import OrderPromiseSuggestions from "./OrderPromiseSuggestions.vue";
+import { useOperatorAppLink } from "../../../operator-kit/app/composables/useOperatorAppLink";
 
 const props = withDefaults(
   defineProps<{
     pending?: readonly OrderPendingProjection[];
     money?: CancelledMoneyProjection | null;
+    /** A promessa do pedido: a linha "Promessa em risco" lista as sugestões dela. */
+    promise?: OrderPromiseProjection | null;
     /** Uma gravação do pedido em andamento. */
     busy?: boolean;
     /** A DANFE deste pedido está indo para a impressora. */
@@ -30,6 +44,7 @@ const props = withDefaults(
   {
     pending: () => [],
     money: null,
+    promise: null,
     busy: false,
     danfePrinting: false,
     refundRetrying: false,
@@ -46,6 +61,12 @@ const lines = computed(() =>
   }),
 );
 const money = computed(() => settledMoney(props.money));
+// A linha da promessa escreve os itens numa frase; as sugestões vêm em lista, por item.
+const suggestionGroups = computed(() =>
+  promiseSuggestionGroups(promiseRisk({ promise: props.promise })),
+);
+// "Abrir a Produção" abre outro app de operador: na janela dele quando instalado.
+const { attrsFor } = useOperatorAppLink();
 </script>
 
 <template>
@@ -62,6 +83,7 @@ const money = computed(() => settledMoney(props.money));
             :key="line.key"
             class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
             :data-pending="line.key"
+            :data-focus-target="pendingFocusKey(line.key)"
             :data-pending-tone="line.tone"
             :data-detail-block="
               line.key === 'payment' || line.key === 'advance' ? '' : undefined
@@ -84,6 +106,24 @@ const money = computed(() => settledMoney(props.money));
                   data-pending-reason
                 >
                   {{ line.reason }}
+                </p>
+                <!-- O que a casa pode oferecer no lugar do item que falta, uma por linha. -->
+                <template v-if="line.key === PROMISE_PENDING_KEY">
+                  <OrderPromiseSuggestions
+                    v-for="group in suggestionGroups"
+                    :key="group.key"
+                    class="mt-1 text-sm text-highlighted"
+                    :heading="group.heading"
+                    :options="group.options"
+                  />
+                </template>
+                <!-- A frase do servidor, quando a lista e o botão cheio não dizem tudo. -->
+                <p
+                  v-if="line.nextStep"
+                  class="text-sm font-medium text-highlighted"
+                  data-pending-next-step
+                >
+                  {{ line.nextStep }}
                 </p>
                 <!-- A tentativa que não deu certo fica escrita na linha (WP-G13): quem
                      abre o pedido depois lê o que o meio de pagamento respondeu. -->
@@ -109,15 +149,34 @@ const money = computed(() => settledMoney(props.money));
               v-if="line.buttons.length"
               class="flex shrink-0 flex-wrap gap-2 ps-6 sm:ps-0"
             >
-              <template v-for="button in line.buttons" :key="button.ref">
+              <template
+                v-for="(button, index) in line.buttons"
+                :key="button.ref"
+              >
+                <!-- A Produção abre na janela dela (outro app de operador). -->
                 <NuxtButton
-                  v-if="button.href"
+                  v-if="button.href && button.crossApp"
+                  :to="button.href"
+                  :target="attrsFor(button.href).target"
+                  :rel="attrsFor(button.href).rel"
+                  external
+                  :icon="button.icon"
+                  :label="button.label"
+                  :color="button.color"
+                  :variant="button.variant"
+                  :data-focus-control="index === 0 ? '' : undefined"
+                  :data-pending-action="button.ref"
+                />
+                <!-- A conversa com o cliente abre fora da casa, em outra janela. -->
+                <NuxtButton
+                  v-else-if="button.href"
                   :to="button.href"
                   target="_blank"
                   :icon="button.icon"
                   :label="button.label"
                   :color="button.color"
                   :variant="button.variant"
+                  :data-focus-control="index === 0 ? '' : undefined"
                   :data-pending-action="button.ref"
                 />
                 <NuxtButton
@@ -128,6 +187,7 @@ const money = computed(() => settledMoney(props.money));
                   :color="button.color"
                   :variant="button.variant"
                   :disabled="button.disabled"
+                  :data-focus-control="index === 0 ? '' : undefined"
                   :loading="button.loading"
                   :data-pending-action="button.ref"
                   @click="emit('act', button.ref)"
