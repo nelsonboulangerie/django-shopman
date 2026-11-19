@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-056",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "'a vitrine de hoje ainda vale amanhã': isso é controverso! não oferecemos pães de um dia para o outro! eles não ficam disponíveis para encomenda!",
+  "dono": "Engenharia",
+  "criado": "2026-11-18",
+  "revisar_em": "2026-11-25",
+  "gatilho": "issues #2693 e #2685",
+  "estado": "FEITO",
+  "prova": "#2703 (fecha #2693, #2685 e #2700; adiados nas issues #2701 e #2702)"
+}
