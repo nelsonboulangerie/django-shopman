@@ -111,7 +111,7 @@ export function gestorSections({
     key: "deliveries",
     label: "Entregas",
     icon: "lucide:bike",
-    to: "/deliveries",
+    to: "/delivery",
     group: "Operação",
     quick: true,
     ...badge(deliveriesWaiting),

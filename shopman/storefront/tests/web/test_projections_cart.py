@@ -132,7 +132,8 @@ class TestPopulatedCart:
         assert item.unit_price_q > 0
         assert item.total_price_q == item.unit_price_q * 2
         assert item.price_display.startswith("R$ ")
-        assert item.total_display.startswith("R$ ")
+        assert item.line_total_display.startswith("R$ ")
+        assert item.line_total_struck_display is None
         assert item.is_available is True
         assert item.availability_warning is None
 

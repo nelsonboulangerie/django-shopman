@@ -266,13 +266,16 @@ export interface ApprovalPortraitInput {
   paymentTenders: POSPaymentTenderDraft[];
   customerRef: string;
   deliveryFeeOverrideQ: number | null;
+  /** A data da encomenda: o plano que o gerente viu é o desta data (WP-E2). */
+  deliveryDate?: string;
 }
 
 /**
  * O RETRATO de uma autorização do gerente (P0-1, WP-E1): a assinatura vale para
  * este retrato e para nenhum outro. Qualquer mudança no desconto, nos itens, na
- * forma de pagamento, na comanda ou no cliente (a conta na casa mede o limite
- * dele) dá outro retrato, e a assinatura antiga deixa de valer.
+ * forma de pagamento, na comanda, no cliente (a conta na casa mede o limite
+ * dele) ou na data da encomenda (o plano da data, WP-E2) dá outro retrato, e a
+ * assinatura antiga deixa de valer.
  *
  * Fica de fora o que o servidor carimba depois (preço de tabela, preço cobrado),
  * o texto que não mexe em valor (nome, observação, motivo do desconto) e o que a
@@ -298,5 +301,6 @@ export function approvalPortrait(input: ApprovalPortraitInput): string {
     ],
     customer: input.customerRef || "",
     deliveryFee: input.deliveryFeeOverrideQ,
+    deliveryDate: input.deliveryDate || "",
   });
 }
