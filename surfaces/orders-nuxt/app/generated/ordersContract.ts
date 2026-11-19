@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py + shopman/backstage/projections/preorder_coverage.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -1313,4 +1313,42 @@ export interface DeliveriesProjection {
   group_action: Action | null;
   free_numbers: number[];
   next_number: number | null;
+}
+
+/** Um produto prometido num dia, ao lado do que a Produção planejou para ele. */
+export interface PreorderCoverageProductProjection {
+  sku: string;
+  name: string;
+  unit: string;
+  state: string;
+  state_label: string;
+  promised_qty: string;
+  promised_display: string;
+  planned_qty: string;
+  planned_display: string;
+  missing_qty: string;
+  surplus_qty: string;
+  label: string;
+  detail: string;
+  orders_count: number;
+  batch_count: number;
+}
+
+/** Um dia com encomenda: o prometido de cada produto ao lado do planejado. */
+export interface PreorderCoverageDayProjection {
+  date: string;
+  day_label: string;
+  days_ahead: number;
+  state: string;
+  state_label: string;
+  headline: string;
+  orders_count: number;
+  products: PreorderCoverageProductProjection[];
+  production_url: string;
+  production_label: string;
+}
+
+/** A agenda com cobertura: os dias com encomenda, de hoje em diante. */
+export interface PreorderCoverageProjection {
+  days: PreorderCoverageDayProjection[];
 }

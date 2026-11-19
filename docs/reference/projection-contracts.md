@@ -61,6 +61,33 @@ recorte do produto tira o eixo junto. Trava:
 `test_ordered_basis_counts_by_the_day_the_order_was_made` e
 `surfaces/orders-nuxt/tests/history.test.ts` (beta 05/11/2026, ge:BI-03).
 
+### Gestor: agenda com cobertura
+
+A lista de Encomendas do Gestor ganha, por dia, a conta do prometido contra o
+planejado (`shopman/backstage/projections/preorder_coverage.py`,
+`GET /api/v1/backstage/orders/preorder-coverage/`, mesma permissão do quadro). A
+resposta é `{coverage: {days: [...]}, generated_at, contract_version}`; cada dia
+casa com o grupo da lista pelo `date` (o `commitment_date` do cartão).
+
+| Fato | De onde sai |
+|---|---|
+| **Prometido** | soma dos itens que valem agora (`order_composition`, combo aberto nos componentes) dos pedidos `accepted`, `preparing` e `ready` com aquele `delivery_date`: os de data futura e, de hoje, só a encomenda (`is_preorder` ou `kitchen_released_at`) |
+| **Planejado** | lotes do Craftsman do produto NAQUELA data (`WorkOrder.output_sku`, `target_date`): `quantity` do planejado e do em andamento, `finished` do pronto; `void` não conta |
+
+A encomenda de uma data só é coberta pelo lote daquela data (dono, 18/11/2026), a
+mesma regra de `order_promise`. Estado do produto: `covered`, `short`, `no_batch`,
+`made_to_order` (política `demand_ok`) e `from_stock` (sem ficha ativa e sem lote: a
+casa não produz); os dois últimos ficam fora da conta de lote e vêm com
+`planned_qty`, `missing_qty` e `surplus_qty` vazios. Estado do dia: `short` >
+`no_batch` > `covered`, ou `not_batch_based` quando nada depende de lote.
+`production_url` abre o Planejamento da Produção no dia (`/plan?date=`) e vem vazio
+sem endereço configurado ou para quem não opera a Produção.
+
+É rota própria, e não campo do quadro: a conta só muda quando uma encomenda é aceita
+ou um lote é planejado, e o quadro é relido a cada evento de pedido. Custo fixo de
+consultas, qualquer que seja o número de pedidos. Trava:
+`shopman/backstage/tests/test_preorder_coverage.py`.
+
 ### Central (hub): o número no canto do ícone
 
 A Central (`shopman/backstage/projections/hub.py`, `GET /api/v1/backstage/hub/`) é uma

@@ -2460,6 +2460,24 @@ class OrderRailCountsView(APIView):
         return Response(board_rail_counts())
 
 
+class PreorderCoverageView(APIView):
+    """A agenda com cobertura da lista de Encomendas (WP-G10): por dia e por produto,
+    o prometido ao lado do que a Produção planejou, com o atalho para o plano do dia.
+
+    Rota própria, e não um campo do quadro: a cobertura só muda quando uma encomenda
+    é aceita ou um lote é planejado, e o quadro é relido a cada evento de pedido.
+    Só leitura (``projections.preorder_coverage``); a mesma permissão de ler o quadro.
+    """
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request):
+        from shopman.backstage.projections.preorder_coverage import build_preorder_coverage
+
+        coverage = build_preorder_coverage(user=request.user)
+        return Response(read_data(coverage=projection_data(coverage)))
+
+
 class OrderBoardLayoutView(APIView):
     """A arrumação das colunas do Gestor neste POSTO (SUITE-UX §16, lei L7).
 

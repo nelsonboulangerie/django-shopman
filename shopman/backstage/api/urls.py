@@ -289,6 +289,7 @@ from .operations import (
     POSTabSaveView,
     POSTabUnfireView,
     POSView,
+    PreorderCoverageView,
     ProductionBlindCodeAllocationView,
     ProductionBlindMapView,
     ProductionBoardView,
@@ -791,6 +792,9 @@ urlpatterns = [
     # ⚠️ ANTES de `orders/<str:ref>/…`: `board-layout` casaria com `<str:ref>`.
     path("orders/board-layout/", OrderBoardLayoutView.as_view(), name="api-backstage-order-board-layout"),
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
+    # A agenda com cobertura da lista de Encomendas (WP-G10): só leitura.
+    # ⚠️ ANTES de `orders/<str:ref>/…`: `preorder-coverage` casaria com `<str:ref>`.
+    path("orders/preorder-coverage/", PreorderCoverageView.as_view(), name="api-backstage-order-preorder-coverage"),
     path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
     path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).

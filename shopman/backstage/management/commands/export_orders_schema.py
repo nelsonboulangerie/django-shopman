@@ -134,6 +134,11 @@ from shopman.backstage.projections.order_queue import (
     TwoZoneQueueProjection,
     UndoProjection,
 )
+from shopman.backstage.projections.preorder_coverage import (
+    PreorderCoverageDayProjection,
+    PreorderCoverageProductProjection,
+    PreorderCoverageProjection,
+)
 from shopman.backstage.projections.preorders import (
     CounterOrderProjection,
     PreorderCancelProjection,
@@ -246,6 +251,9 @@ CONTRACT_DATACLASSES = (
     DeliveryDriverProjection,
     DeliveryRideProjection,
     DeliveriesProjection,
+    PreorderCoverageProductProjection,
+    PreorderCoverageDayProjection,
+    PreorderCoverageProjection,
 )
 
 
@@ -267,6 +275,7 @@ def render_orders_contract_ts() -> str:
             " + shopman/backstage/projections/deliveries.py"
             " + shopman/backstage/projections/order_pending.py"
             " + shopman/backstage/projections/order_promise.py"
+            " + shopman/backstage/projections/preorder_coverage.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

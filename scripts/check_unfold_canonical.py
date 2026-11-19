@@ -393,6 +393,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/order_pending.py",
             # "Promessa em risco": a saúde da reserva de cada pedido (lastro, lote), no cartão e no detalhe.
             ROOT / "shopman/backstage/projections/order_promise.py",
+            # "Agenda com cobertura": por dia e por produto, o prometido ao lado do que a Produção planejou.
+            ROOT / "shopman/backstage/projections/preorder_coverage.py",
             ROOT / "shopman/backstage/projections/ifood.py",
             ROOT / "shopman/backstage/projections/ifood_handshake.py",
             ROOT / "shopman/backstage/projections/ifood_store.py",
