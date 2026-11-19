@@ -21,6 +21,7 @@ import type {
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import { deliveryFeeWaivedInFull, deliveryFeeWaiverNote } from "~/presentation/deliveryFeeWaiver";
+import { chosenSavedAddressValue } from "~/presentation/savedAddress";
 import {
   BR_STATES,
   DRAFT_FIELD_OF,
@@ -92,6 +93,8 @@ const emit = defineEmits<{
   "update:deliveryFeeOverrideInput": [string];
   "update:orderNotes": [string];
   pickSavedAddress: [SavedAddressProjection];
+  /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
+  clearAddress: [];
   openSchedule: [];
 }>();
 
@@ -100,20 +103,41 @@ const isOpen = computed({
   set: (value: boolean) => emit("update:open", value),
 });
 
-// Foco automático: com entrega selecionada, quem recebe o foco é a busca de
-// endereço — o passo que o operador veio dar. Tanto na abertura quanto ao
-// alternar retirada→entrega com o diálogo já aberto.
+// OS ENDEREÇOS JÁ CADASTRADOS: uma linha inteira por endereço, com o da entrega
+// em edição marcado (ao escolher Entrega, o padrão do cliente já vem; quem faz
+// isso é o dono do carrinho, `chooseFulfillment`). As setas trocam de endereço e
+// o Enter aceita pelo mesmo caminho do botão do rodapé.
+const savedListRef = ref<{ focusTarget: () => HTMLElement | null } | null>(null);
+const chosenSaved = computed(() => chosenSavedAddressValue(props.savedAddresses, {
+  route: props.deliveryAddress,
+  streetNumber: props.deliveryStreetNumber,
+  neighborhood: props.deliveryNeighborhood,
+  complement: props.deliveryComplement,
+  structured: props.deliveryAddressStructured,
+}));
+
+// Foco automático na entrega, tanto na abertura quanto ao alternar
+// retirada→entrega com o diálogo já aberto: com um endereço do cadastro
+// marcado, o foco é dele (o Enter aceita e segue); sem nenhum, é da busca de
+// endereço, o passo que o operador veio dar.
 const addressAutocompleteRef = ref<{ focus: () => void } | null>(null);
 const searchQuery = ref("");
+function focusDeliveryStart() {
+  if (chosenSaved.value && savedListRef.value?.focusTarget()) {
+    reveal(() => savedListRef.value?.focusTarget(), { align: "center" });
+    return;
+  }
+  addressAutocompleteRef.value?.focus();
+}
 function onOpenAutoFocus(event: Event) {
   if (props.fulfillmentType !== "delivery") return; // retirada: foco padrão do diálogo
   event.preventDefault();
-  void nextTick(() => addressAutocompleteRef.value?.focus());
+  void nextTick(focusDeliveryStart);
 }
 watch(() => props.fulfillmentType, async (type) => {
   if (!props.open || type !== "delivery" || !import.meta.client) return;
   await nextTick();
-  addressAutocompleteRef.value?.focus();
+  focusDeliveryStart();
 });
 
 // De onde a taxa saiu, em palavras. O operador precisa poder responder "por que
@@ -252,6 +276,21 @@ function confirmFulfillment() {
     }
   }
   isOpen.value = false;
+}
+
+function onSavedAddressPicked(address: SavedAddressProjection) {
+  fieldErrors.value = {};
+  emit("pickSavedAddress", address);
+}
+
+// TIRAR O ENDEREÇO DESTA ENTREGA: ela volta a "sem endereço" e a busca volta a
+// ser a vez. O cadastro do cliente não é tocado (quem diz isso ao operador, com
+// o Desfazer, é o dono do carrinho).
+function clearAddress() {
+  fieldErrors.value = {};
+  searchQuery.value = "";
+  emit("clearAddress");
+  reveal(fieldKey("search"), { align: "center" });
 }
 
 function goPast(after: DeliveryAddressField | null, values = deliveryValuesFromDraft(draft.value)) {
@@ -413,19 +452,14 @@ function onMapCancel() {
         </div>
 
         <div v-if="fulfillmentType === 'delivery'" class="grid gap-3">
-          <div v-if="savedAddresses.length" class="flex flex-wrap gap-2">
-            <NuxtButton
-              v-for="address in savedAddresses"
-              :key="address.id"
-              type="button"
-              color="neutral" variant="outline"
-              size="md"
-              class="h-auto justify-start whitespace-normal px-2 py-1 text-left"
-              @click="$emit('pickSavedAddress', address)"
-            >
-              <span class="max-w-48 truncate">{{ address.label || address.formatted_address }}</span>
-            </NuxtButton>
-          </div>
+          <PosSavedAddressList
+            v-if="savedAddresses.length"
+            ref="savedListRef"
+            :addresses="savedAddresses"
+            :selected="chosenSaved"
+            @pick="onSavedAddressPicked"
+            @accept="confirmFulfillment"
+          />
           <!-- OS PASSOS DA LOJA: buscar (CEP ou endereço) → a sugestão preenche
                os campos → número, complemento, referência. Cada campo é um bloco
                do próximo foco (`data-focus-target`), e o Enter anda para o
@@ -450,6 +484,16 @@ function onMapCancel() {
               label="Ajustar no mapa"
               data-pos-address-adjust-map
               @click="openMap('adjust')"
+            />
+            <!-- O nome diz o alcance: sai DESTA entrega, não do cadastro. -->
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-x"
+              label="Tirar o endereço desta entrega"
+              title="O endereço continua no cadastro do cliente"
+              data-pos-address-clear
+              @click="clearAddress"
             />
           </div>
           <NuxtFormField label="Rua" :error="fieldErrors.route" :data-focus-target="fieldKey('route')">
@@ -531,7 +575,7 @@ function onMapCancel() {
         </div>
 
         <!-- QUANDO saiu deste formulário, e essa é a mudança. Data e janela
-             viraram a terceira caixa da barra de contexto (PosScheduleModal),
+             viraram uma caixa própria da barra de contexto (PosScheduleModal),
              porque *quando* é fato do PEDIDO e não da entrega: presas dentro do
              bloco de entrega, elas simplesmente NÃO EXISTIAM na retirada, e a
              encomenda por telefone para retirar na quinta não tinha onde ser

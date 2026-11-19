@@ -281,6 +281,8 @@ const emit = defineEmits<{
   /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
   applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   pickSavedAddress: [SavedAddressProjection];
+  /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
+  clearAddress: [];
 }>();
 
 // TOTAL QUE AINDA PODE MUDAR NÃO APARECE COMO TOTAL (regra do dono). Sem a
@@ -2304,6 +2306,7 @@ defineExpose({
     :saved-addresses="savedAddresses"
     :address-autocomplete="addressAutocomplete"
     :delivery-address="deliveryAddress"
+    :delivery-address-structured="deliveryAddressStructured"
     :delivery-street-number="deliveryStreetNumber"
     :delivery-neighborhood="deliveryNeighborhood"
     :delivery-complement="deliveryComplement"
@@ -2328,6 +2331,7 @@ defineExpose({
     @update:delivery-fee-override-input="$emit('update:deliveryFeeOverrideInput', $event)"
     @update:order-notes="$emit('update:orderNotes', $event)"
     @pick-saved-address="$emit('pickSavedAddress', $event)"
+    @clear-address="$emit('clearAddress')"
     @open-schedule="scheduleSheetOpen = true"
   />
 

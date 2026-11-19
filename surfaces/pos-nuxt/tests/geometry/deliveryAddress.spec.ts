@@ -20,11 +20,11 @@ async function openAddress(page: Page, size: { width: number; height: number }, 
   }));
   await page.goto("/");
   await page.getByRole("button", { name: /#12/ }).first().click();
-  // F7 até o Recebimento abrir: no primeiro teste o `nuxt dev` ainda recarrega a
+  // F8 até o Recebimento abrir: no primeiro teste o `nuxt dev` ainda recarrega a
   // página depois de otimizar as dependências, e a tecla cairia no vazio.
   const search = page.locator('[data-focus-target="delivery-search"] input');
   await expect(async () => {
-    if (!(await search.isVisible())) await page.keyboard.press("F7");
+    if (!(await search.isVisible())) await page.keyboard.press("F8");
     await expect(search).toBeFocused({ timeout: 3_000 });
   }).toPass({ timeout: 60_000 });
   await search.fill("86010-000");

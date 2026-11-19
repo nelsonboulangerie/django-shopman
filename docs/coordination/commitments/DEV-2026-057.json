@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-057",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Em uma encomenda no PDv, a etiqueta de endereço já cadastrado aparece apenas como um botãozinho",
+  "dono": "Engenharia",
+  "criado": "2026-11-19",
+  "revisar_em": "2026-11-26",
+  "gatilho": "issue #2754",
+  "estado": "ABERTO",
+  "prova": "-"
+}

@@ -4,20 +4,25 @@
  * A regra de "o que falta" NÃO mora aqui. Ela tem dono: `orderSetupIssue`
  * (`usePosSale`), espelho de `validate_sales_mode` no servidor
  * (`shop/services/pos_sales_mode.py`). O issue é a PRIMEIRA pendência na ordem
- * cliente → recebimento → endereço → data; este módulo só traduz essa resposta
+ * cliente → data → recebimento → endereço; este módulo só traduz essa resposta
  * em etapas. Uma etapa está pronta quando o issue já passou dela. Nada aqui lê o
  * carrinho: se a regra mudar, o assistente acompanha sem ninguém lembrar dele.
  *
+ * "Para quando" vem em SEGUNDO, logo depois do cliente (decisão do dono,
+ * 19/11/2026, #2754): é a data que diz o que a casa pode prometer, e ela vale
+ * antes de se combinar como o pedido será recebido.
+ *
  * Por isso as invalidações chegam sozinhas. Tirar o cliente devolve o issue a
- * "customer"; trocar retirada por entrega sem endereço devolve "address"; apagar
- * o dia devolve "schedule". O assistente só precisa obedecer.
+ * "customer"; apagar o dia devolve "schedule"; trocar retirada por entrega sem
+ * endereço, ou tirar o endereço da entrega, devolve "address". O assistente só
+ * precisa obedecer.
  */
 
-export type OrderSetupIssue = "customer" | "fulfillment" | "address" | "schedule" | "";
+export type OrderSetupIssue = "customer" | "schedule" | "fulfillment" | "address" | "";
 export type OrderSetupStepKey = Exclude<OrderSetupIssue, "">;
 
 /** A ordem da regra: a mesma em que `orderSetupIssue` pergunta. */
-export const ORDER_SETUP_ORDER: readonly OrderSetupStepKey[] = ["customer", "fulfillment", "address", "schedule"];
+export const ORDER_SETUP_ORDER: readonly OrderSetupStepKey[] = ["customer", "schedule", "fulfillment", "address"];
 
 export const ORDER_SETUP_STEP_LABELS: Record<OrderSetupStepKey, string> = {
   customer: "Cliente",
@@ -33,8 +38,8 @@ export interface OrderSetupStep {
 }
 
 /**
- * As etapas da vez. O endereço só existe na entrega: na retirada ele não é
- * etapa pulada, é etapa que não existe ("Etapa 3 de 3", não "de 4").
+ * As etapas da vez. O endereço só existe na entrega, e é a última: na retirada
+ * ele não é etapa pulada, é etapa que não existe ("Etapa 3 de 3", não "de 4").
  */
 export function orderSetupSteps(issue: OrderSetupIssue, delivery: boolean): OrderSetupStep[] {
   const issueIndex = issue ? ORDER_SETUP_ORDER.indexOf(issue) : ORDER_SETUP_ORDER.length;
@@ -54,11 +59,19 @@ export function firstPendingStep(steps: OrderSetupStep[]): OrderSetupStepKey {
 }
 
 /**
+ * A etapa que NÃO anda sozinha quando fica pronta. A data fica pronta com o dia,
+ * mas a etapa ainda pergunta o horário: se o assistente seguisse no toque do
+ * dia, o operador nunca chegaria a escolher a hora. Quem segue é ele, no
+ * Continuar, depois de marcar o horário ou de deixá-lo a combinar.
+ */
+const STAYS_WHEN_READY: ReadonlySet<OrderSetupStepKey> = new Set(["schedule"]);
+
+/**
  * Para onde o assistente vai quando a resposta da regra muda.
  *
  * - A etapa aberta ficou pronta (o operador escolheu no diálogo): segue para a
  *   próxima pendente. É o "assistente": ninguém precisa apertar Continuar
- *   depois de cada diálogo.
+ *   depois de cada diálogo. A exceção é a data (`STAYS_WHEN_READY`).
  * - A etapa aberta deixou de existir (entrega virou retirada) ou ficou fechada
  *   porque uma anterior voltou a pendente (o cliente saiu): volta à pendente.
  * - Fora isso, fica onde o operador está (ele pode estar revendo uma etapa feita).
@@ -70,7 +83,9 @@ export function nextOrderSetupStep(input: {
 }): OrderSetupStepKey {
   const index = input.steps.findIndex((step) => step.key === input.current);
   if (index < 0 || !orderSetupStepEnabled(input.steps, index)) return firstPendingStep(input.steps);
-  if (!input.wasReady && input.steps[index]!.ready) return firstPendingStep(input.steps);
+  if (!input.wasReady && input.steps[index]!.ready && !STAYS_WHEN_READY.has(input.current)) {
+    return firstPendingStep(input.steps);
+  }
   return input.current;
 }
 
