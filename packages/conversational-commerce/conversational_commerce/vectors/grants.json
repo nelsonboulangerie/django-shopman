@@ -1,0 +1,550 @@
+{
+  "format": "cc.vectors/1",
+  "contract": "cc.authorization_grant",
+  "cases": [
+    {
+      "name": "grant-customer-confirmation",
+      "description": "Confirmação do cliente posterior aos termos de terms-basic, presa ao hash deles.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z"
+      },
+      "expect": {
+        "result": "valid"
+      },
+      "binds_to": "terms-basic"
+    },
+    {
+      "name": "grant-staff-approval",
+      "description": "Aprovação da equipe, sem termos, revogada depois de emitida.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0002",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0002",
+        "subject": "customer-0001",
+        "issuer": "staff-0007",
+        "basis": "staff_approval",
+        "purpose": "goodwill",
+        "action": "grant_discount",
+        "targets": [
+          "order-0001"
+        ],
+        "limits": {
+          "max_amount": {
+            "amount_minor": 500,
+            "currency": "BRL"
+          }
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T15:05:00.000000Z",
+        "revoked_at": "2026-11-18T14:20:00.000000Z"
+      },
+      "expect": {
+        "result": "valid"
+      }
+    },
+    {
+      "name": "grant-confirmation-before-terms",
+      "description": "Confirmação anterior aos termos não autoriza (N06).",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": false
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "confirmation_evidence.after_terms"
+      }
+    },
+    {
+      "name": "grant-confirmation-without-terms",
+      "description": "Confirmação do cliente sem terms_hash.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "terms_hash"
+      }
+    },
+    {
+      "name": "grant-confirmation-without-event-identity",
+      "description": "Confirmação vinda de evento sem identidade estável.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "none",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "confirmation_evidence.event_assurance"
+      }
+    },
+    {
+      "name": "grant-expires-before-start",
+      "description": "valid_until antes de valid_from.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:00:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "valid_until"
+      }
+    },
+    {
+      "name": "grant-float-limit",
+      "description": "Teto como número de ponto flutuante.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500.5,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "limits.max_amount.amount_minor"
+      }
+    },
+    {
+      "name": "grant-unknown-field",
+      "description": "Campo desconhecido num contrato estrito.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z",
+        "scope_hint": "all"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": ""
+      }
+    },
+    {
+      "name": "grant-minor-above",
+      "description": "MENOR acima (1.1) num contrato estrito.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.1",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "unsupported_schema",
+        "path": "schema_version"
+      }
+    },
+    {
+      "name": "grant-bad-terms-hash",
+      "description": "terms_hash fora do formato sha256:<64 hex>.",
+      "document": {
+        "schema": "cc.authorization_grant",
+        "kind": "AuthorizationGrant",
+        "id": "rec-grant-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0002",
+        "occurred_at": "2026-11-18T14:05:00.000000Z",
+        "producer": {
+          "name": "core",
+          "version": "0.1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "grant_id": "grant-0001",
+        "subject": "customer-0001",
+        "issuer": "core",
+        "basis": "customer_confirmation",
+        "purpose": "place_order",
+        "action": "commit_order",
+        "targets": [
+          "terms-0001"
+        ],
+        "terms_hash": "sha256:ABC",
+        "limits": {
+          "max_amount": {
+            "amount_minor": 1500,
+            "currency": "BRL"
+          },
+          "max_uses": 1
+        },
+        "identity_evidence": [
+          {
+            "kind": "channel_identity",
+            "ref": "binding-0001",
+            "assurance": "transported"
+          }
+        ],
+        "confirmation_evidence": {
+          "event_id": "evt-0002",
+          "event_assurance": "provider_claimed",
+          "after_terms": true
+        },
+        "valid_from": "2026-11-18T14:05:00.000000Z",
+        "valid_until": "2026-11-18T14:15:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "terms_hash"
+      }
+    }
+  ]
+}

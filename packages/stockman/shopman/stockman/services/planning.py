@@ -102,6 +102,25 @@ def _charge_early_deliveries(quant, deliveries, *, user=None) -> None:
 DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES = 30
 
 
+def _service_order(holds):
+    """As reservas na ordem em que a produção as atende.
+
+    ``metadata.priority`` crescente (ausente = por último), depois FIFO por
+    ``created_at``. A prioridade é um inteiro neutro que quem reserva carimba
+    (o pedido fechado passa na frente da sacola quando a fornada é curta). É a
+    ordem do ``realize`` e do ``settle_holds``: uma fila só.
+    """
+
+    def _priority(hold):
+        value = (hold.metadata or {}).get("priority")
+        try:
+            return (0, int(value)) if value is not None else (1, 0)
+        except (TypeError, ValueError):
+            return (1, 0)
+
+    return sorted(holds, key=lambda hold: (*_priority(hold), hold.created_at))
+
+
 class StockPlanning:
     """Production planning methods."""
 
@@ -330,10 +349,7 @@ class StockPlanning:
             # (quant=None) for the same sku/date — demand registered before a
             # plan existed materializes together with the batch.
             #
-            # Order: ``metadata.priority`` ascending (missing = last), then
-            # FIFO by created_at. Priority is a neutral integer the caller
-            # stamps at hold creation (e.g. committed orders outrank cart
-            # reservations when the batch is short).
+            # Order: :func:`_service_order` (priority, then FIFO).
             #
             # Holds that were against planned stock get a TTL now
             # (the clock starts when stock materializes).
@@ -358,13 +374,6 @@ class StockPlanning:
                 status__in=active_statuses,
             ).filter(Q(expires_at__isnull=True) | Q(expires_at__gte=now))
 
-            def _priority(hold):
-                value = (hold.metadata or {}).get("priority")
-                try:
-                    return (0, int(value)) if value is not None else (1, 0)
-                except (TypeError, ValueError):
-                    return (1, 0)
-
             def _accepts_output_grade(hold):
                 metadata = hold.metadata or {}
                 if metadata.get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
@@ -376,10 +385,7 @@ class StockPlanning:
                     return True
                 return bool(to_quality_grade_ref and to_quality_grade_ref in set(allowlist))
 
-            pool = sorted(
-                filter(_accepts_output_grade, [*anchored, *floating]),
-                key=lambda hold: (*_priority(hold), hold.created_at),
-            )
+            pool = _service_order(filter(_accepts_output_grade, [*anchored, *floating]))
 
             for hold in pool:
                 if transferred >= actual_quantity:
@@ -425,3 +431,68 @@ class StockPlanning:
                 transaction.on_commit(_emit_signal)
 
             return physical_quant
+
+    @classmethod
+    def settle_holds(cls, quants):
+        """
+        Reassenta as reservas entre saldos PLANEJADOS irmãos (mesmo SKU e data).
+
+        O plano de uma data pode estar em mais de um saldo: o que já entrou em
+        produção e o que segue só planejado. Quando a quantidade muda de saldo
+        (o lote abre, um lote é cancelado, o plano encolhe), a reserva tem de
+        acompanhar: cada hold ancora em UM quant, e o ``realize`` só
+        materializa as reservas do saldo de onde o lote sai. Reserva que fica
+        num saldo zerado some da leitura e nunca chega à prateleira.
+
+        ``quants`` vem na ordem em que os saldos são servidos (o lote aberto
+        antes do só planejado). As reservas ativas ancoradas neles são
+        percorridas na ordem de atendimento (:func:`_service_order`, a mesma do
+        ``realize``), e cada uma vai, INTEIRA, para o primeiro saldo em que
+        ainda cabe. A que não cabe em nenhum fica onde está: é reserva sem
+        lastro, e quem decide o destino dela é o chamador.
+
+        Não mexe em quantidade, prazo nem estado: a reserva continua de fornada
+        planejada, e o relógio dela só começa no ``realize``.
+
+        Returns:
+            ``hold_id`` das reservas que mudaram de saldo.
+        """
+        ids = list(dict.fromkeys(quant.pk for quant in quants if quant is not None))
+        if len(ids) < 2:
+            return []
+
+        with transaction.atomic():
+            # Quant antes de Hold, como em ``hold``, ``fulfill`` e ``realize``.
+            locked = {quant.pk: quant for quant in Quant.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
+            siblings = [locked[pk] for pk in ids if pk in locked]
+            coordinates = {(quant.sku, quant.target_date) for quant in siblings}
+            if len(coordinates) != 1 or siblings[0].target_date is None:
+                raise StockError(
+                    "INVALID_SETTLE",
+                    reason="saldos planejados do mesmo SKU e data",
+                    quants=ids,
+                )
+
+            room = {quant.pk: Decimal(str(quant.quantity)) for quant in siblings}
+            holds = Hold.objects.select_for_update().filter(quant_id__in=list(room)).active()
+            moved = []
+            for hold in _service_order(holds):
+                home = next((quant.pk for quant in siblings if room[quant.pk] >= hold.quantity), None)
+                if home is None:
+                    continue
+                room[home] -= hold.quantity
+                if hold.quant_id != home:
+                    hold.quant_id = home
+                    hold.save(update_fields=["quant"])
+                    moved.append(hold.hold_id)
+
+            if moved:
+                logger.info(
+                    "stock.settle_holds",
+                    extra={
+                        "sku": siblings[0].sku,
+                        "target": str(siblings[0].target_date),
+                        "moved": len(moved),
+                    },
+                )
+            return moved

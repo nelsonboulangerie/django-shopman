@@ -41,6 +41,12 @@ version = {attr = "conversational_commerce.__version__"}
 where = ["."]
 include = ["conversational_commerce*"]
 
+[tool.setuptools.package-data]
+# O esquema gerado e os vetores viajam no wheel: a suíte confere a deriva e
+# reproduz os hashes a partir do site-packages (scripts/wheel_suite.py).
+"conversational_commerce.schemas" = ["*.schema.json"]
+"conversational_commerce.vectors" = ["*.json"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["conversational_commerce/tests"]

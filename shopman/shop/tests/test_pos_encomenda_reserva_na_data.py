@@ -97,18 +97,34 @@ def test_encomenda_acima_do_plano_grava_o_disponivel_real_e_avisa_a_producao(bal
     A reserva ficou sem fornada, a decisão gravou ``available_qty 200`` e
     ninguém na Produção soube. Agora a decisão diz o que tem lastro e o que é
     demanda, e a Produção recebe o aviso com o pedido e os dois números.
+
+    Acima do plano só fecha com o gerente (D-041, WP-E2): a encomenda leva a
+    assinatura dos dois números, como a tela a pede.
     """
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Permission
+
     from shopman.backstage.models import OperatorAlert
+    from shopman.shop.services import pos as pos_service
 
     operator, shift = balcao
     product = _croissant_do_dia()
     stock.plan(quantity=Decimal("4"), product=product, target_date=_amanha(), position=_position(), reason="fornada")
+    gerente = get_user_model().objects.create_user(username="joyce", password="x", is_staff=True)
+    gerente.user_permissions.add(Permission.objects.get(content_type__app_label="cashman", codename="adjust_shift"))
+    payload = _payload(
+        shift, client_request_id="enc-acima-do-plano", delivery_date=_amanha().isoformat(),
+        items=[{"sku": "CR", "name": "Croissant", "qty": 10, "unit_price_q": 900}],
+    )
+    review = pos_service.review_sale(channel_ref="pdv", payload=dict(payload), operator_username=operator.username)
+    payload["manager_approval"] = {"token": pos_service.issue_sale_approval(
+        gerente,
+        operator_username=operator.username,
+        scope=pos_service.SaleApprovalScope(over_plan=pos_service.over_plan_scope(review.preorder_over_plan)),
+    )}
 
     with django_capture_on_commit_callbacks(execute=True):
-        result = _close(operator, _payload(
-            shift, client_request_id="enc-acima-do-plano", delivery_date=_amanha().isoformat(),
-            items=[{"sku": "CR", "name": "Croissant", "qty": 10, "unit_price_q": 900}],
-        ))
+        result = _close(operator, payload)
 
     order = Order.objects.get(ref=result.order_ref)
     [decision] = [d for d in order.data["availability_decision"]["decisions"] if d["sku"] == "CR"]

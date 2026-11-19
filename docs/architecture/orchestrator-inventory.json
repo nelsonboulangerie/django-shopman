@@ -1768,6 +1768,7 @@
             "hold_target_date",
             "is_cart_hold",
             "logger",
+            "planned_on_date",
             "receive_return",
             "release_holds",
             "release_holds_for_reference",

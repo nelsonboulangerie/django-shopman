@@ -161,10 +161,11 @@ describe("Encomendas: a de hoje que espera a hora da Cozinha", () => {
       global: { stubs: listStubs },
     });
 
-    expect(w.text()).toContain("hoje");
+    expect(w.get("h3").text()).toBe("Hoje");
     const row = w.get('[data-preorder-row="WEB-261115-E17"]');
     expect(row.get("[data-preorder-kitchen-wait]").html()).toContain("Vai para a Cozinha às 16h15");
-    expect(row.attributes("href")).toBe("/WEB-261115-E17");
+    expect(row.get("a").attributes("href")).toBe("/WEB-261115-E17");
+    expect(row.get("[data-preorder-when]").text()).toBe("Hoje · 17h às 17h30");
   });
 
   it("a de outro dia não ganha a frase", () => {

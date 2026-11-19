@@ -146,6 +146,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `find_by_reference/find_active_by_reference/retag_reference`.
 - `plan(quantity, product, target_date, position, reason, user, **meta)→Quant`.
 - `replan`, `realize(product, target_date, actual_quantity, to_position, from_position, from_batch)` — materializa holds; holds sem TTL ganham `DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES=30`; emite signal `holds_materialized`.
+- `settle_holds(quants)` — reassenta as reservas ativas entre saldos PLANEJADOS irmãos (mesmo SKU e data), na ordem de atendimento do `realize`, reserva inteira no primeiro saldo em que cabe; a que não cabe fica onde está. Chamado pela ponte `craftsman/contrib/stockman` quando a quantidade muda de saldo (lote iniciado, ajustado ou cancelado): a reserva acompanha o lote aberto e chega à vitrine no `realize` (#2709).
 - `availability_for_sku/for_skus` — retornam `{sku, availability_policy, total_available, total_promisable, total_reserved, available, expected, planned, ready_physical, held_ready, breakdown{ready,in_production,planned}, is_planned, is_paused, positions[]}`.
 - `promise_for_sku(sku, qty, ...)→PromiseDecision(approved, requested_qty, available_qty, reason_code)`.
 

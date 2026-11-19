@@ -497,17 +497,31 @@ def test_pedido_cancelado_depois_de_o_lote_fechar_devolve_a_vitrine(lote, caixa,
 # ── As reservas ainda ativas seguem para a vitrine ───────────────────────────
 
 
-def test_reserva_ativa_segue_para_a_vitrine_no_que_sobra_do_lote(lote, caixa, django_capture_on_commit_callbacks):
+@pytest.mark.parametrize("com_iniciar", [True, False], ids=["com-iniciar", "fechado-direto"])
+def test_reserva_ativa_segue_para_a_vitrine_no_que_sobra_do_lote(
+    lote, caixa, com_iniciar, django_capture_on_commit_callbacks,
+):
     """O balcão entrega 4 e a loja tem 3 reservadas no mesmo saldo: fechado o lote,
-    a vitrine tem 6 e 3 delas são da reserva, que chega materializada."""
+    a vitrine tem 6 e 3 delas são da reserva, que chega materializada.
+
+    Com "Iniciar", a reserva acompanha o lote aberto (#2709) no que sobra dele:
+    o saldo em produção já nasce descontado do que foi entregue.
+    """
     reserva = availability.reserve(SKU, D("3"), session_key="S-WEB-1", channel_ref="web")
     assert reserva["ok"], reserva
     [hold_id] = reserva["hold_ids"]
     with django_capture_on_commit_callbacks(execute=True):
         _vender_no_balcao(caixa, 4)
 
+    if com_iniciar:
+        with django_capture_on_commit_callbacks(execute=True):
+            _iniciar(lote)
+        assert _onde(_hold(hold_id)) == "em_producao"
+        em_producao = Quant.objects.get(sku=SKU, batch="started")
+        assert (em_producao.quantity, em_producao.held) == (D("6"), D("3"))
+        assert _livre("pdv") == D("3")
     with django_capture_on_commit_callbacks(execute=True):
-        _fechar(lote, allow_implicit_start=True)
+        _fechar(lote, allow_implicit_start=not com_iniciar)
 
     hold = _hold(hold_id)
     assert _onde(hold) == "vitrine"
