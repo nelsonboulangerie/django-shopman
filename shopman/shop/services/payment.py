@@ -2085,7 +2085,7 @@ _GATEWAY_REFUSALS = {
 
 
 def refund_intent_at_gateway(
-    intent_ref: str, *, amount_q: int, idempotency_key: str, actor: str
+    intent_ref: str, *, amount_q: int, idempotency_key: str, actor: str, origin: str = "Admin"
 ) -> PaymentResult:
     """Devolve ``amount_q`` de UMA cobrança pelo gateway dela (o estorno do Admin).
 
@@ -2103,7 +2103,9 @@ def refund_intent_at_gateway(
     MESMA devolução se a chave voltar, e o Payman deduplica pelo id dela. O duplo
     clique não devolve duas vezes.
 
-    Auditoria: ``actor`` entra no motivo da transação de estorno, que é imutável.
+    Auditoria: ``actor`` entra no motivo da transação de estorno, que é imutável,
+    ao lado de ``origin``: a tela de onde o pedido de estorno saiu (o Admin, ou o
+    Gestor no "Tentar o estorno de novo").
     """
     from shopman.payman import PaymentError, PaymentService
 
@@ -2137,7 +2139,7 @@ def refund_intent_at_gateway(
 
     try:
         result = adapter.refund(
-            intent_ref, amount_q=amount_q, reason=f"Estorno no Admin por {actor}", idempotency_key=idempotency_key
+            intent_ref, amount_q=amount_q, reason=f"Estorno no {origin} por {actor}", idempotency_key=idempotency_key
         )
     except Exception as exc:
         # Timeout/5xx em volta de uma devolução idempotente é AMBÍGUO: o gateway
@@ -2149,7 +2151,7 @@ def refund_intent_at_gateway(
             type="payment_refund_failed",
             severity="critical",
             message=(
-                f"O estorno da cobrança {intent_ref}, pedido no Admin, ficou sem resposta ({gateway}). "
+                f"O estorno da cobrança {intent_ref}, pedido no {origin}, ficou sem resposta ({gateway}). "
                 "O dinheiro pode ter saído sem registro aqui: confira no painel antes de estornar de novo."
             ),
             order_ref=intent.order_ref or "",

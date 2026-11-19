@@ -220,6 +220,7 @@ from .operations import (
     OrderPaymentCheckView,
     OrderQueueView,
     OrderRailCountsView,
+    OrderRefundRetryView,
     OrderRejectView,
     OrderRequeueFiscalView,
     OrderRescheduleView,
@@ -989,6 +990,7 @@ urlpatterns = [
     path("orders/<str:ref>/return/preview/", OrderReturnPreviewView.as_view(), name="api-backstage-order-return-preview"),
     path("orders/<str:ref>/no-show/", OrderNoShowView.as_view(), name="api-backstage-order-no-show"),
     path("orders/<str:ref>/no-show/preview/", OrderNoShowPreviewView.as_view(), name="api-backstage-order-no-show-preview"),
+    path("orders/<str:ref>/refund-retry/", OrderRefundRetryView.as_view(), name="api-backstage-order-refund-retry"),
     path(
         "orders/<str:ref>/settle-delivery-cash/",
         OrderSettleDeliveryCashView.as_view(),

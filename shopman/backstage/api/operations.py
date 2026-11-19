@@ -3212,6 +3212,78 @@ class OrderNoShowView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Ask the gateway again for the refund that failed on a cancelled order (manager's PIN)",
+        responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
+    ),
+)
+class OrderRefundRetryView(_OrderActionBase):
+    """Tentar o estorno de novo (WP-G13, decisão 3 do dono, 17/11/2026).
+
+    ``POST {base_revision, expected_actor_id, manager_approval}``. Só existe para o
+    pedido cancelado cujo dinheiro está em "Estorno não saiu"; em qualquer outro
+    estado, 409 com a frase do motivo. Sempre com o PIN de um Gerente escolhido da
+    lista (ou o crachá), a mesma assinatura do cancelamento de pedido pago. O valor
+    e as cobranças são do servidor (``refund_retry.plan``); a tela não escolhe nada.
+
+    A chave da intenção (``Idempotency-Key``) é a chave DA TENTATIVA: repetir a
+    mesma devolve o mesmo recibo sem falar com o gateway de novo, e uma tentativa
+    nova, depois de outra recusada, leva outra chave ao gateway.
+
+    A resposta é 200 também quando o gateway recusa: a tentativa FOI gravada (o
+    evento ``payment.refund_retry`` do pedido, com quem tentou e quem autorizou), e
+    ``refund`` diz o que houve: ``{outcome, amount_q, refunded_q, message}``, com
+    ``outcome`` em ``refunded`` · ``refused`` · ``unconfirmed`` · ``unrecorded`` e
+    ``message`` com o que o gateway respondeu.
+    """
+
+    intention_operation = "refund-retry"
+
+    def post(self, request, ref: str):
+        from shopman.backstage.services import refund_retry
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        attempt_key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        prepared: dict = {}
+
+        def prepare():
+            blocked = refund_retry.plan(order).block_reason
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "refund_retry_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_refund_retry",
+                    message="Tentar o estorno de novo pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            try:
+                result = refund_retry.retry(
+                    order,
+                    actor=_actor(request),
+                    approved_by=prepared["approver"].get_username(),
+                    attempt_key=attempt_key,
+                    expected_revision=base,
+                )
+            except refund_retry.RefundRetryStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except refund_retry.RefundRetryRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund": result}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(request, order, "refund-retry", {}, execute, prepare=prepare)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Register payment collected at pickup or delivery in the operator's open shift",
         responses={200: OpenApiResponse(description="Payment registered.")},
     ),

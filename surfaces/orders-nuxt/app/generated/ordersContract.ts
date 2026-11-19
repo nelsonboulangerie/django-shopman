@@ -693,6 +693,7 @@ export interface OrderPendingProjection {
   label: string;
   reason: string;
   actions: OrderPendingActionProjection[];
+  failure: string;
 }
 
 /** O destino do dinheiro de um pedido cancelado, como o Gestor o lê. */
