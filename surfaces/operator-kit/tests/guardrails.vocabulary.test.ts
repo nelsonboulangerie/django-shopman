@@ -352,3 +352,143 @@ describe("na tela, a navegação lateral se chama barra lateral", () => {
     expect(APP_SOURCES.length).toBeGreaterThan(400);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO, quinta regra: quando a produção termina, o lote, o
+// produto e as unidades **ficam prontos**. Decisão do dono em 16/11/2026: a casa
+// diz "ficar pronto", nunca "sair do forno". Vale para todo tempo do verbo: "sai
+// do forno", "saiu do forno", "saíram do forno", "saindo do forno", "acabou de
+// sair do forno", "saída do forno".
+//
+// Esta trava nasceu depois da varredura (o PR #2800 e o que fecha a #2798), e não
+// antes, pelo mesmo motivo das outras: a instância consertada sem trava volta. O
+// B.I. dizia "Saíram do forno" na série do gráfico e na exportação, o Marketing
+// dizia "Produto saiu do forno" na lista de avisos e "24 un saíram às 10h01" no
+// cartão do lote, e quem escreveu cada uma leu as vizinhas.
+//
+// ## O que ela recusa, e o que não
+//
+// Recusa o verbo "sair" seguido de "do forno" (com até duas palavras no meio:
+// "saiu agora do forno", "saíram quentinhos do forno"). NÃO recusa o forno: a
+// casa tem forno, e "Retirou do forno", "Tempo de forno" e "Timer do forno"
+// continuam certos. Também não recusa "sair" sozinho: "Saiu para entrega" é o
+// pedido saindo com o entregador, e "saiu às 14h20" é a maquininha. O "sair" sem
+// "do forno" que fala do lote ("quando o lote sair") nenhum regex separa do resto
+// sem ler a frase; esse só olho pega, e está dito aqui em vez de fingir cobertura.
+//
+// Comentário é descontado, como na regra do "lote": a regra é sobre o que chega a
+// alguém (template, atributo, literal de string, nome de teste). A leitura é do
+// texto inteiro, não linha a linha, porque frase de template quebra no meio.
+//
+// ## Quem fica de fora, e por quê (exceção declarada, nunca calada)
+//
+//   - **storefront-nuxt** — fora do escopo desta trava inteira (ver o topo do
+//     arquivo). A loja segue a mesma regra do dono, com a trava DELA: a voz do
+//     cliente não é o vocabulário do operador.
+//   - **marketing-nuxt/tests/** — as fixtures e o mock visual do Marketing levam
+//     CORPO DE ANÚNCIO ("Croissant saiu do forno"), que é o texto que a casa
+//     escreve PARA o cliente, não texto de operador. É a mesma linha de audiência
+//     que deixa "fornada" no Marketing. O `app/` do Marketing NÃO está exento: os
+//     exemplos do formulário de modelo e o fato do lote já dizem "ficar pronto".
+//     E o mock visual tem um motivo mecânico a mais: mexer no corpo do anúncio
+//     dele muda os retratos, e baseline só se regera no navegador da CI.
+//
+// A irmã em Python é `shopman/backstage/tests/test_vocabulario_de_tela.py`.
+const OUT_OF_OVEN_VERB =
+  "(?:sai|saiu|sair|saem|sa[ií]ram|saindo|sairá|sairão|saía|saíam|saída|saídas|saído|saídos)";
+
+/** "sair … do forno", em qualquer tempo, com até duas palavras no meio. */
+const BANNED_OUT_OF_OVEN = new RegExp(
+  `(?<![\\p{L}\\d])${OUT_OF_OVEN_VERB}(?:\\s+[\\p{L}\\d]+){0,2}?\\s+dos?\\s+fornos?(?![\\p{L}\\d])`,
+  "giu",
+);
+
+function saysOutOfOven(text: string): boolean {
+  BANNED_OUT_OF_OVEN.lastIndex = 0;
+  return BANNED_OUT_OF_OVEN.test(text);
+}
+
+/** Texto para o cliente dentro de app de operador: corpo de anúncio em fixture e mock. */
+const EXEMPT_FROM_OUT_OF_OVEN = ["marketing-nuxt/tests/"];
+
+const isOutOfOvenExempt = (file: string) =>
+  EXEMPT_FROM_OUT_OF_OVEN.some((prefix) => relative(surfacesDir, file).startsWith(prefix));
+
+/** Lê o texto inteiro (a frase pode quebrar de linha) e devolve `arquivo:linha: trecho`. */
+function outOfOvenOffenders(file: string): string[] {
+  const text = stripComments(readFileSync(file, "utf8"));
+  return Array.from(text.matchAll(BANNED_OUT_OF_OVEN), (match) => {
+    const line = text.slice(0, match.index).split("\n").length;
+    return `${relative(surfacesDir, file)}:${line}: ${match[0].replace(/\s+/g, " ")}`;
+  });
+}
+
+describe("a casa diz ficar pronto, nunca sair do forno", () => {
+  it("o detector conhece os tempos do verbo", () => {
+    for (const text of [
+      "Saíram do forno",
+      "Unidades que não saíram do forno",
+      "Produto saiu do forno",
+      "O pão acabou de sair do forno!",
+      "o lote sai do forno já classificado",
+      "tem coisa boa saindo do forno",
+      "Saiu agora do forno",
+      "Saíram quentinhos do forno",
+      "Aviso na saída do forno",
+      "unidades que saíram\n          do forno",
+    ]) {
+      expect(saysOutOfOven(text), text).toBe(true);
+    }
+  });
+
+  it("o detector deixa em paz o forno e o que sai sem ser dele", () => {
+    for (const text of [
+      "Retirou do forno",
+      "Tempo de forno medido",
+      "Timer do forno de Baguete",
+      "Só é possível retirar do forno um lote aberto.",
+      "Saiu para entrega",
+      "Pedido A47 · Maria · saiu às 14h20",
+      "Ficaram prontas",
+      "O preparo abre quando o lote ficar pronto.",
+      "24 un ficaram prontas às 10h01",
+    ]) {
+      expect(saysOutOfOven(text), text).toBe(false);
+    }
+  });
+
+  it("nenhum texto de operador diz que algo sai do forno", () => {
+    const leaks = SOURCES.filter((file) => !isOutOfOvenExempt(file)).flatMap(outOfOvenOffenders);
+
+    expect(
+      leaks,
+      "A casa diz 'ficar pronto', nunca 'sair do forno' (decisão do dono, 16/11/2026).\n" +
+        "A trava não escreve a substituição porque o verbo concorda com o que ficou\n" +
+        "pronto: 'Saíram do forno' sobre unidades vira 'Ficaram prontas', 'o lote sai\n" +
+        "do forno' vira 'o lote fica pronto'. Leia a linha. Se o texto é corpo de\n" +
+        "anúncio ou aviso que a casa escreve PARA o cliente, ele não é texto de\n" +
+        "operador: declare a exceção em EXEMPT_FROM_OUT_OF_OVEN, com o motivo.\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
+
+  // Exceção sem prazo vira permanente. Esta é travada pelo CONTEÚDO da lista e pela
+  // prova de que ainda esconde alguma coisa: no dia em que as fixtures do Marketing
+  // não disserem mais a frase, este teste reprova e a exceção sai junto.
+  it("a única exceção é o corpo de anúncio nas fixtures do Marketing, e ela ainda esconde algo", () => {
+    expect(EXEMPT_FROM_OUT_OF_OVEN).toEqual(["marketing-nuxt/tests/"]);
+    const hidden = SOURCES.filter(isOutOfOvenExempt).flatMap(outOfOvenOffenders);
+    expect(hidden.length).toBeGreaterThan(0);
+  }, 30_000);
+
+  it("a varredura enxerga o B.I., o Marketing e a Produção", () => {
+    const paths = SOURCES.filter((file) => !isOutOfOvenExempt(file)).map((file) =>
+      relative(surfacesDir, file),
+    );
+    expect(paths).toContain("bi-nuxt/app/presentation/production.ts");
+    expect(paths).toContain("bi-nuxt/app/components/ProductionLots.vue");
+    expect(paths).toContain("marketing-nuxt/app/components/AnnouncementTemplateForm.vue");
+    expect(paths).toContain("marketing-nuxt/app/presentation/decisions.ts");
+    expect(paths).toContain("production-nuxt/app/pages/close.vue");
+  });
+});
