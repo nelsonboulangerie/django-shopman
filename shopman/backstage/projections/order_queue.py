@@ -1378,6 +1378,12 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
     A mesma régua do estorno (``payment.refund``): gateway estorna sozinho;
     dinheiro e maquininha ficam a devolver por alguém da casa; cartão só
     autorizado tem a reserva desfeita, sem cobrança.
+
+    Sem nada recebido, a frase diz isso em QUALQUER meio (WP-G06): o pedido que
+    paga na retirada ou na entrega saía sem frase, e quem recusava não sabia se
+    o silêncio era "nada a devolver" ou "não sei". "Não sei" continua sendo
+    silêncio: ``captured_balance_q`` devolve ``None`` quando um intent não pôde
+    ser lido, e ``None`` não é zero. O iFood também: o dinheiro é dele.
     """
     from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
 
@@ -1403,7 +1409,7 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
             "cancel_money_effect": f"A reserva de {total} no cartão do cliente será desfeita. Nada foi cobrado.",
             "cancel_waits_for_gateway": True,
         }
-    if method in _GATEWAY_REFUND_DESTINATION and captured_q == 0:
+    if captured_q == 0:
         return {**empty, "cancel_money_effect": "Nada foi cobrado do cliente."}
     return empty
 
