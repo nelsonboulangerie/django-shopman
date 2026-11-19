@@ -91,8 +91,9 @@ class PersistNewAddressTests(TestCase):
         self.assertEqual(addr.place_id, "ChIJ_test_place_id")
         self.assertIsNotNone(addr.latitude)
         self.assertIsNotNone(addr.longitude)
+        # Sem etiqueta (#2775): "Entrega" em todo endereço não distinguia um do outro.
         self.assertEqual(addr.label, "other")
-        self.assertEqual(addr.label_custom, "Entrega")
+        self.assertEqual(addr.label_custom, "")
 
     def test_first_address_becomes_default(self):
         intent = _make_intent()

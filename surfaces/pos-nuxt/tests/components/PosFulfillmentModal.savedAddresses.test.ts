@@ -21,9 +21,10 @@ mockNuxtImport("usePosGoogleMaps", () => () => ({
 function saved(id: number, extra: Partial<SavedAddressProjection> = {}): SavedAddressProjection {
   return {
     id,
-    label: "Entrega",
+    // Sem etiqueta, como o pedido de entrega grava (#2775): "Outro" sem nome.
+    label: "Outro",
     label_key: "other",
-    label_custom: "Entrega",
+    label_custom: "",
     formatted_address: `Rua ${id}, ${id}00 - Centro - Londrina/PR`,
     route: `Rua ${id}`,
     street_number: `${id}00`,
@@ -174,7 +175,7 @@ describe("PosFulfillmentModal: endereços já cadastrados", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(radios()[0]));
   });
 
-  it("cada endereço ocupa a linha inteira e se identifica; a etiqueta 'Entrega' do iFood não aparece", async () => {
+  it("cada endereço ocupa a linha inteira e se identifica; o sem etiqueta não ganha 'Outro' nem 'Entrega'", async () => {
     await mountModal({ type: "delivery", confirmed: true });
     const lines = Array.from(document.querySelectorAll("[data-pos-saved-address-line]")).map((el) => el.textContent?.trim());
     expect(lines).toEqual(["Rua 1, 100, apto 12", "Rua 2, 200", "Rua 3, 300"]);
