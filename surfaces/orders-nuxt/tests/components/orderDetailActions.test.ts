@@ -1283,6 +1283,95 @@ describe("detalhe do pedido — o que falta, com o gesto ao lado", () => {
 
 // P1-20: quem só expede abre um pedido pelo sino. O servidor recusa o detalhe (403 de
 // permissão), e a tela dizia "Pedido não encontrado ou falha ao carregar".
+// WP-G08: a promessa em risco no detalhe. O cartão, a Fila e a lista de Encomendas
+// chegam com `#promise` (avisar o cliente) ou `#cancel` (cancelar); as três saídas
+// moram na linha da promessa, na faixa "O que falta neste pedido".
+describe("detalhe do pedido — promessa em risco", () => {
+  const promiseLine = (over: Record<string, unknown> = {}) => ({
+    key: "promise", tone: "error", label: "Promessa em risco",
+    reason: "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado.",
+    actions: [
+      { ref: "contact-customer", label: "Avisar o cliente", enabled: true, reason: "", href: "https://wa.me/5543999990000" },
+      { ref: "reschedule-at-pos", label: "Remarcar no PDV", enabled: true, reason: "", href: "https://pdv.example.test/preorders/WEB-1" },
+      { ref: "cancel", label: "Cancelar pedido", enabled: true, reason: "", href: "/api/v1/backstage/orders/WEB-1/cancel/" },
+    ],
+    ...over,
+  });
+  const emRisco = (over: Partial<OperatorOrderProjection> = {}) =>
+    order({ status: "accepted", can_confirm: false, can_cancel: true, pending: [promiseLine()] as never, ...over });
+  beforeEach(() => {
+    reveal.mockClear();
+    routeHash.value = "";
+  });
+
+  it("a linha diz o item e o porquê, com as três saídas de nome fixo", () => {
+    const w = abrir(emRisco());
+    const row = w.get('[data-pending="promise"]');
+    expect(row.text()).toContain("Promessa em risco");
+    expect(row.text()).toContain("4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado.");
+    expect(row.findAll("[data-pending-action]").map((button) => button.text())).toEqual([
+      "Avisar o cliente", "Remarcar no PDV", "Cancelar pedido",
+    ]);
+    expect(row.get('[data-pending-action="contact-customer"]').attributes("href")).toBe("https://wa.me/5543999990000");
+    expect(row.get('[data-pending-action="reschedule-at-pos"]').attributes("href")).toBe("https://pdv.example.test/preorders/WEB-1");
+    w.unmount();
+  });
+
+  it("\"Cancelar pedido\" da linha abre o MESMO diálogo do menu, sem motivo marcado", async () => {
+    const w = abrir(emRisco());
+    await w.get('[data-pending-action="cancel"]').trigger("click");
+    await flushPromises();
+    const dialog = w.get("order-reason-dialog-stub");
+    expect(dialog.attributes("open")).toBe("true");
+    expect(dialog.attributes("initial-key") ?? "").toBe("");
+    w.unmount();
+  });
+
+  it("chega com #promise: a página vai à linha da promessa", async () => {
+    routeHash.value = "#promise";
+    const w = abrir(emRisco());
+    await flushPromises();
+    expect(reveal).toHaveBeenCalledWith("pending:promise");
+    expect(w.get('[data-pending="promise"]').attributes("data-focus-target")).toBe("pending:promise");
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    w.unmount();
+  });
+
+  it("#promise num pedido que já não está em risco não rola a página", async () => {
+    routeHash.value = "#promise";
+    const w = abrir(order({ status: "accepted", can_confirm: false, pending: [] as never }));
+    await flushPromises();
+    expect(reveal).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("chega com #cancel: o diálogo de cancelar abre", async () => {
+    routeHash.value = "#cancel";
+    const w = abrir(emRisco());
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).toBe("true");
+    expect(reveal).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("#cancel num pedido que não pode ser cancelado leva à linha, onde o cancelar travado diz o porquê", async () => {
+    routeHash.value = "#cancel";
+    const w = abrir(emRisco({
+      can_cancel: false,
+      pending: [promiseLine({
+        actions: [
+          { ref: "cancel", label: "Cancelar pedido", enabled: false, reason: "Pedido em Pronto não pode ser cancelado.", href: "" },
+        ],
+      })] as never,
+    }));
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    expect(reveal).toHaveBeenCalledWith("pending:promise");
+    expect(w.get("[data-pending-blocked]").text()).toBe("Pedido em Pronto não pode ser cancelado.");
+    w.unmount();
+  });
+});
+
 describe("detalhe do pedido — a leitura que falhou diz por quê", () => {
   const sessao = (role: string) => vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 }, surface_role: role }) }));
   beforeEach(() => {

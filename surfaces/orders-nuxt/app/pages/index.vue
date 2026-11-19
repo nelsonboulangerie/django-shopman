@@ -39,7 +39,11 @@ import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { ReasonOrderFacts } from "~/presentation/orderReason";
-import { blockedReasonLines } from "~/presentation/cardBlocks";
+import {
+  blockPillLabel,
+  blockedReasonLines,
+  lockedButtonRepeatsPill,
+} from "~/presentation/cardBlocks";
 import { boardStrip, type BoardStrip } from "~/presentation/boardStrip";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
@@ -67,8 +71,17 @@ import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import {
   acceptedIntoPreorders,
   preorderFocusKey,
+  PROMISE_HASH,
   type AcceptedPreorder,
 } from "~/presentation/preorderList";
+import { promiseRisk, waitsForBatch } from "~/presentation/orderPromise";
+import {
+  orderFocusKey,
+  orderFocusKeys,
+  promiseRiskAlert,
+} from "~/presentation/promiseAlert";
+import { focusTargetSelector } from "../../../operator-kit/app/presentation/nextFocus";
+import OrderPromiseExits from "~/components/OrderPromiseExits.vue";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
@@ -364,15 +377,41 @@ function rowSecondary(card: OrderCardProjection) {
   const primary = rowPrimary(card);
   return cardAffordances(card).filter((aff) => aff.ref !== primary?.ref);
 }
-/** Por que um gesto da linha está travado, escrito na linha aberta (WP-G06). */
-function rowBlockedReasons(card: OrderCardProjection) {
+/** O bloqueio como estado, não como botão morto: quando o gesto travado da linha só
+ *  leva o nome do bloqueio ("Pix expirado", "Esperando o lote"), a célula mostra o selo
+ *  com esse nome (laudo, P1-16). Quem só espera o lote não usa a cor de erro. */
+function rowBlock(card: OrderCardProjection) {
   const primary = rowPrimary(card);
-  return blockedReasonLines({
+  const repeats = lockedButtonRepeatsPill({
     primary,
     primaryLabel: primary?.label ?? "",
-    secondary: rowSecondary(card),
+    blockLabel: card.advance_block_label,
     blockAnnounced: Boolean(card.advance_block_reason),
   });
+  if (!repeats) return null;
+  const waits = waitsForBatch(card);
+  return {
+    label: blockPillLabel(card.advance_block_label),
+    color: waits ? ("neutral" as const) : ("error" as const),
+    icon: waits ? "i-lucide-hourglass" : "i-lucide-lock",
+  };
+}
+/** Por que o gesto do momento está travado, escrito na própria célula: o `title` não
+ *  existe no toque (sobra do WP-G06, #2710). */
+function rowPrimaryReason(card: OrderCardProjection): string {
+  const primary = rowPrimary(card);
+  return primary?.disabled ? String(primary.reason ?? "").trim() : "";
+}
+/** Por que os outros gestos da linha estão travados, escrito na linha aberta (WP-G06).
+ *  O motivo do gesto do momento já está na célula e não se repete. */
+function rowBlockedReasons(card: OrderCardProjection) {
+  const said = rowPrimaryReason(card);
+  return blockedReasonLines({
+    primary: null,
+    primaryLabel: "",
+    secondary: rowSecondary(card),
+    blockAnnounced: false,
+  }).filter((line) => line !== said);
 }
 // how many cards survive the current filters (for the "no results" affordance).
 const visibleCount = computed(() =>
@@ -1479,22 +1518,83 @@ const { reveal: revealFocus } = useNextFocus();
 function showAcceptedPreorder() {
   if (acceptedPreorder.value) revealFocus(preorderFocusKey(acceptedPreorder.value.ref));
 }
-// O aviso mora nas `alerts` do cabeçalho (o lugar declarado do kit): fica fixo com ele,
-// fecha no X e não rola com o conteúdo. O `id` leva o pedido: outra encomenda aceita é
-// aviso novo.
-const screenAlerts = computed<OperatorScreenAlert[]>(() =>
-  acceptedPreorder.value
-    ? [
-        {
-          id: `preorder-accepted:${acceptedPreorder.value.ref}`,
-          color: "info",
-          icon: "i-lucide-calendar-check",
-          title: acceptedPreorder.value.message,
-          action: { label: "Ver em Encomendas", onSelect: showAcceptedPreorder },
-        },
-      ]
-    : [],
+// Promessa em risco (WP-G08): enquanto houver pedido cuja reserva perdeu o lastro, o
+// cabeçalho diz quantos são e leva ao primeiro. Conta o painel inteiro, sem os filtros
+// da tela: a encomenda de amanhã que perdeu o lote mora abaixo da dobra, e era ali que
+// ela ficava quieta (P0-1). Os de hoje primeiro; depois as encomendas, por data.
+const promiseAlert = computed(() =>
+  promiseRiskAlert(
+    [
+      ...zones.value.flatMap((zone) => zone.cards),
+      ...preorders.value.flatMap((group) => group.cards),
+    ],
+    { canOpen: canManageOrders.value },
+  ),
 );
+// O pedido como a tela o desenha agora: o cartão do quadro, a linha da Fila ou da
+// Tabela e, depois, a linha da lista de Encomendas. Só conta o que está de fato
+// desenhado: a forma que o CSS esconde nesta largura não é destino.
+function findOnScreen(ref_: string): HTMLElement | null {
+  for (const key of orderFocusKeys(ref_)) {
+    const drawn = [
+      ...document.querySelectorAll<HTMLElement>(focusTargetSelector(key)),
+    ].find((element) => element.getClientRects().length > 0);
+    if (drawn) return drawn;
+  }
+  return null;
+}
+// Um pedido só: abre o pedido, na faixa que tem as três saídas. Vários: a tela vai até
+// o primeiro (o cartão, a linha da Fila ou a da lista de Encomendas). Se ele não está
+// à vista (um filtro o tirou da tela), o aviso abre o pedido: botão de aviso nunca
+// fica sem efeito.
+async function showPromiseRisk() {
+  const alert = promiseAlert.value;
+  if (!alert) return;
+  const open = () => navigateTo(`/${alert.firstRef}${PROMISE_HASH}`);
+  if (alert.opensOrder) return void open();
+  let target = findOnScreen(alert.firstRef);
+  const zone = zones.value.find((z) =>
+    z.cards.some((card) => card.ref === alert.firstRef),
+  );
+  if (!target && zone) {
+    // No celular e no tablet as etapas são abas: a do pedido abre antes.
+    if (phoneExitMode.value && zone.key !== "expedition" && zone.key !== "prep")
+      phoneExitMode.value = false;
+    pickPhoneZone(zone.key);
+    await nextTick();
+    target = findOnScreen(alert.firstRef);
+  }
+  if (target) revealFocus(target);
+  else if (canManageOrders.value) void open();
+}
+// Os avisos moram nas `alerts` do cabeçalho (o lugar declarado do kit): ficam fixos com
+// ele, fecham no X e não rolam com o conteúdo. O `id` leva os pedidos: outra encomenda
+// aceita, ou outro pedido em risco, é aviso novo, e o que foi fechado volta. A promessa
+// em risco vem primeiro: o cabeçalho mostra um aviso inteiro e resume o resto.
+const promiseScreenAlert = computed<OperatorScreenAlert | null>(() => {
+  const risk = promiseAlert.value;
+  if (!risk) return null;
+  return {
+    id: risk.id,
+    color: "error",
+    icon: "i-lucide-package-x",
+    title: risk.title,
+    description: risk.description,
+    action: { label: risk.actionLabel, onSelect: () => void showPromiseRisk() },
+  };
+});
+const screenAlerts = computed<OperatorScreenAlert[]>(() => {
+  const alerts = promiseScreenAlert.value ? [promiseScreenAlert.value] : [];
+  if (acceptedPreorder.value)
+    alerts.push({
+      id: `preorder-accepted:${acceptedPreorder.value.ref}`,
+      color: "info",
+      icon: "i-lucide-calendar-check",
+      title: acceptedPreorder.value.message,
+      action: { label: "Ver em Encomendas", onSelect: showAcceptedPreorder },
+    });
+  return alerts;
+});
 // "Falha ao atualizar a fila" fecha e volta na próxima leitura que falhar: cada falha nova
 // (outro erro) é outra chave.
 const queueFailures = ref(0);
@@ -2106,7 +2206,10 @@ function compactClear() {
           data-supervision-table
         >
           <template #order-cell="{ row }">
-            <div class="flex min-w-36 flex-col">
+            <div
+              class="flex min-w-36 flex-col"
+              :data-focus-target="orderFocusKey(row.original.card.ref)"
+            >
               <NuxtLink
                 v-if="canManageOrders"
                 :to="`/${row.original.card.ref}`"
@@ -2139,6 +2242,16 @@ function compactClear() {
                 <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
                 <span class="whitespace-normal text-start">{{ schedulePromise(row.original.card)!.label }}</span>
               </NuxtBadge>
+              <!-- A promessa em risco (WP-G08): o nome do estado; o item e as saídas
+                   moram na linha aberta. -->
+              <NuxtBadge
+                v-if="promiseRisk(row.original.card)"
+                class="mt-1 self-start"
+                color="error"
+                icon="i-lucide-package-x"
+                :label="promiseRisk(row.original.card)!.label"
+                data-table-promise-risk
+              />
             </div>
           </template>
           <template #stage-cell="{ row }">
@@ -2179,8 +2292,15 @@ function compactClear() {
           </template>
           <template #actions-cell="{ row }">
             <div class="flex min-w-max items-center justify-end gap-1.5">
+              <NuxtBadge
+                v-if="rowBlock(row.original.card)"
+                :color="rowBlock(row.original.card)!.color"
+                :icon="rowBlock(row.original.card)!.icon"
+                :label="rowBlock(row.original.card)!.label"
+                data-supervision-block
+              />
               <NuxtButton
-                v-if="rowPrimary(row.original.card)"
+                v-else-if="rowPrimary(row.original.card)"
                 :icon="
                   rowPrimary(row.original.card)!.disabled
                     ? 'i-lucide-lock'
@@ -2204,7 +2324,6 @@ function compactClear() {
                   isBusy(row.original.card.ref) ||
                   rowPrimary(row.original.card)!.disabled
                 "
-                :title="rowPrimary(row.original.card)!.reason || undefined"
                 data-supervision-primary
                 @click="
                   onAction(
@@ -2230,6 +2349,15 @@ function compactClear() {
                 "
               />
             </div>
+            <!-- Por que o gesto do momento está travado, escrito: o `title` não existe
+                 no toque. Quebra a linha, nunca corta. -->
+            <p
+              v-if="rowPrimaryReason(row.original.card)"
+              class="ms-auto mt-1 max-w-64 whitespace-normal text-end text-xs text-muted"
+              data-supervision-primary-reason
+            >
+              {{ rowPrimaryReason(row.original.card) }}
+            </p>
             <NuxtAlert
               v-if="actionError(row.original.card.ref)"
               class="mt-2"
@@ -2280,9 +2408,45 @@ function compactClear() {
                   <dt class="text-muted-foreground">Atende</dt>
                   <dd>{{ row.original.card.assigned_operator }}</dd>
                 </template>
-                <template v-if="row.original.card.advance_block_reason">
+                <template
+                  v-if="
+                    row.original.card.advance_block_reason &&
+                    row.original.card.advance_block_reason !==
+                      rowPrimaryReason(row.original.card)
+                  "
+                >
                   <dt class="text-muted-foreground">Por que espera</dt>
                   <dd>{{ row.original.card.advance_block_reason }}</dd>
+                </template>
+                <template v-if="promiseRisk(row.original.card)">
+                  <dt class="font-medium text-error">
+                    {{ promiseRisk(row.original.card)!.label }}
+                  </dt>
+                  <dd data-supervision-promise-risk>
+                    <ul class="flex flex-col gap-1.5">
+                      <li
+                        v-for="item in promiseRisk(row.original.card)!.items"
+                        :key="item.key"
+                        class="flex flex-col"
+                      >
+                        <span class="font-medium">{{ item.label }}</span>
+                        <span class="text-muted-foreground">{{ item.detail }}</span>
+                      </li>
+                    </ul>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                      <OrderPromiseExits
+                        :exits="promiseRisk(row.original.card)!.exits"
+                        :code="splitRef(row.original.card.ref).code"
+                      />
+                    </div>
+                    <p
+                      v-for="reason in promiseRisk(row.original.card)!.blockedReasons"
+                      :key="reason"
+                      class="mt-1 text-xs text-muted"
+                    >
+                      {{ reason }}
+                    </p>
+                  </dd>
                 </template>
               </dl>
               <div class="flex flex-col gap-2">
@@ -2297,8 +2461,18 @@ function compactClear() {
                     :color="aff.priority === 'danger' ? 'error' : 'neutral'"
                     variant="outline"
                     :disabled="isBusy(row.original.card.ref) || aff.disabled"
-                    :title="aff.reason || undefined"
                     @click="onAction(row.original.card.ref, aff.ref)"
+                  />
+                  <!-- Pix ou link vencido nunca destrava sozinho: a saída vem pronta,
+                       como no cartão (o detalhe abre o cancelar com o motivo marcado). -->
+                  <NuxtButton
+                    v-if="row.original.card.payment_lapsed && canManageOrders"
+                    :to="`/${row.original.card.ref}#cancel-unpaid`"
+                    icon="i-lucide-ban"
+                    label="Cancelar pedido"
+                    color="error"
+                    variant="outline"
+                    data-supervision-cancel-unpaid
                   />
                   <NuxtButton
                     v-if="canManageOrders"

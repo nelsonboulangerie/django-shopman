@@ -51,16 +51,28 @@ export function blockedReasonLines(input: {
       label,
       reason: String(aff.reason).trim(),
     }));
+  return reasonLines(blocked, buttons.length);
+}
+
+/**
+ * Os motivos escritos de um grupo de botões: um por linha, com o nome do botão na
+ * frente quando o motivo não vale para o grupo inteiro (`total` botões).
+ * O mesmo desenho para os gestos do cartão e para as saídas de um aviso.
+ */
+export function reasonLines(
+  blocked: ReadonlyArray<{ label: string; reason: string }>,
+  total: number,
+): string[] {
   const byReason = new Map<string, string[]>();
   for (const gesture of blocked) {
-    const labels = byReason.get(gesture.reason) ?? [];
+    const reason = String(gesture.reason ?? "").trim();
+    if (!reason) continue;
+    const labels = byReason.get(reason) ?? [];
     labels.push(gesture.label);
-    byReason.set(gesture.reason, labels);
+    byReason.set(reason, labels);
   }
   return [...byReason.entries()].map(([reason, labels]) =>
-    labels.length === buttons.length
-      ? reason
-      : `${listed(labels)}: ${reason}`,
+    labels.length === total ? reason : `${listed(labels)}: ${reason}`,
   );
 }
 
@@ -105,4 +117,30 @@ export function lockedButtonRepeatsPill(input: {
   if (!primary || !primary.disabled || !input.blockAnnounced) return false;
   const shown = String(input.primaryLabel || primary.label).trim();
   return shown !== "" && shown === blockPillLabel(input.blockLabel);
+}
+
+/**
+ * O que o rodapé do cartão desenha de fato, depois de tirar o botão morto.
+ *
+ * `empty`: não sobrou botão, nem o Desfazer da saída, nem o "Aguardando <estação>".
+ * Só o ⋮. O cartão então põe o ⋮ na linha das pílulas de aviso, em vez de deixá-lo
+ * sozinho numa linha (sobra do WP-G06, #2710).
+ */
+export function cardFooter(input: {
+  primary: Affordance | null;
+  primaryLabel: string;
+  secondary: readonly Affordance[];
+  blockLabel: string | null | undefined;
+  blockAnnounced: boolean;
+  /** A saída tocada, na janela do desfazer: o rodapé é o Desfazer (ou nada). */
+  handoff: boolean;
+  /** "Café": a estação que ainda trabalha, dita no lugar do botão. */
+  waitingFor: string;
+}): { primary: Affordance | null; empty: boolean } {
+  const primary = lockedButtonRepeatsPill(input) ? null : input.primary;
+  const waiting = !input.primary && Boolean(input.waitingFor);
+  return {
+    primary,
+    empty: !input.handoff && !primary && !input.secondary.length && !waiting,
+  };
 }

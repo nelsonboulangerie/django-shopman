@@ -14,6 +14,10 @@
 // "Atrasados". O tempo é âmbar com intensidade: vermelho é só o bloqueio com motivo.
 // Nada aqui decide estado: o fato, a meta, a previsão da Cozinha e o "o sistema fez"
 // vêm do servidor (`order_attention`).
+//
+// WP-G08: a promessa em risco aparece na linha com o item que ficou sem reserva, o
+// porquê e as três saídas; o bloqueio ganha o motivo escrito e o gesto ao lado, e o
+// avanço travado que só repetia o nome do bloqueio deixa de ser botão.
 import type {
   OrderCardProjection,
   QueueAwarenessProjection,
@@ -33,6 +37,8 @@ import {
   inProgress,
   QUEUE_FOCUS,
   QUEUE_SORT_OPTIONS,
+  queueBlock,
+  queueBlockedReasons,
   queueGesture,
   queueItems,
   queueWho,
@@ -42,7 +48,10 @@ import {
   type QueueScope,
   type QueueSort,
 } from "~/presentation/queue";
+import { promiseRisk } from "~/presentation/orderPromise";
+import { orderFocusKey } from "~/presentation/promiseAlert";
 import OrderCardMenu from "./OrderCardMenu.vue";
+import OrderPromiseExits from "./OrderPromiseExits.vue";
 import {
   COURIER_CALL_HASH,
   courierReminderLine,
@@ -205,10 +214,6 @@ function systemUndoOpen(line: {
 function cardFor(ref: string): OrderCardProjection | undefined {
   return props.cards.find((card) => card.ref === ref);
 }
-/** A pílula do bloqueio é um estado, não uma espera em curso: sem reticências. */
-function blockLabel(card: OrderCardProjection): string {
-  return (card.advance_block_label || "Bloqueado").replace(/…$/, "");
-}
 function toneColor(tone: QueueItem["tone"]): "success" | "warning" | "error" {
   if (tone === "late") return "error";
   if (tone === "warning") return "warning";
@@ -300,6 +305,7 @@ function switchHint(row: {
         highlight-color="primary"
         :data-queue-item="item.kind || 'moving'"
         :data-queue-ref="item.card.ref"
+        :data-focus-target="orderFocusKey(item.card.ref)"
         :aria-current="item.card.ref === focusRef || undefined"
         @pointerdown="emit('focus', item.card.ref)"
       >
@@ -392,7 +398,53 @@ function switchHint(row: {
                 item.card.change_label || item.card.payment_method_label
               }}</span>
             </p>
-            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <!-- Promessa em risco (WP-G08): o item que ficou sem reserva, o porquê e as
+                 três saídas, com as palavras do servidor. Quando é ela o fato que o
+                 pedido espera, a primeira saída é o gesto principal da linha. -->
+            <div
+              v-if="promiseRisk(item.card)"
+              class="flex min-w-0 flex-col gap-1.5"
+              data-queue-promise-risk
+            >
+              <NuxtBadge
+                class="self-start"
+                color="error"
+                icon="i-lucide-package-x"
+                :label="promiseRisk(item.card)!.label"
+              />
+              <ul class="flex flex-col gap-1">
+                <li
+                  v-for="risk in promiseRisk(item.card)!.items"
+                  :key="risk.key"
+                  class="flex flex-col"
+                >
+                  <span class="op-body font-medium">{{ risk.label }}</span>
+                  <span class="op-micro text-muted-foreground">{{
+                    risk.detail
+                  }}</span>
+                </li>
+              </ul>
+              <div class="flex flex-wrap gap-2">
+                <OrderPromiseExits
+                  :exits="promiseRisk(item.card)!.exits"
+                  :code="splitRef(item.card.ref).code"
+                  :tone="item.kind === 'promise' ? 'lead' : 'plain'"
+                />
+              </div>
+              <p
+                v-for="reason in promiseRisk(item.card)!.blockedReasons"
+                :key="reason"
+                class="text-xs text-muted"
+                data-queue-promise-blocked
+              >
+                {{ reason }}
+              </p>
+            </div>
+            <!-- Sem estado a dizer (a promessa em risco já disse tudo acima), a linha
+                 some em vez de deixar um vão. -->
+            <div
+              class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 empty:hidden"
+            >
               <template
                 v-if="undoLine(item.card, nowMs)?.kind === 'auto_ready'"
               >
@@ -500,18 +552,30 @@ function switchHint(row: {
                   }}</span>
                 </span>
               </template>
-              <template v-else-if="item.kind === 'blocked'">
+              <!-- O bloqueio: o nome, o motivo escrito e, na cobrança que venceu, a
+                   saída pronta (o detalhe abre o cancelar com o motivo marcado). -->
+              <template v-else-if="queueBlock(item)">
                 <NuxtBadge
-                  color="error"
-                  icon="i-lucide-lock"
-                  :label="blockLabel(item.card)"
+                  :color="queueBlock(item)!.color"
+                  :icon="queueBlock(item)!.icon"
+                  :label="queueBlock(item)!.label"
                   data-queue-block
                 />
                 <span
                   class="min-w-0 op-micro text-muted-foreground"
                   data-queue-block-reason
-                  >{{ item.card.advance_block_reason }}</span
+                  >{{ queueBlock(item)!.reason }}</span
                 >
+                <NuxtButton
+                  v-if="canOpen && queueBlock(item)!.cancelUnpaid"
+                  :to="`/${item.card.ref}#cancel-unpaid`"
+                  icon="i-lucide-ban"
+                  label="Cancelar pedido"
+                  color="error"
+                  variant="outline"
+                  :aria-label="`Cancelar pedido ${splitRef(item.card.ref).code}`"
+                  data-queue-cancel-unpaid
+                />
               </template>
               <template
                 v-else-if="item.kind === 'station' && readyStation(item.card)"
@@ -550,7 +614,10 @@ function switchHint(row: {
           <!-- pagamento, total e o gesto -->
           <!-- total e gesto: numa linha sob o conteúdo; na coluna própria a partir do xl -->
           <div
-            class="flex min-w-0 items-center gap-3 sm:col-start-2 xl:col-start-auto xl:flex-col xl:items-stretch xl:gap-1.5"
+            class="flex min-w-0 flex-col gap-1.5 sm:col-start-2 xl:col-start-auto"
+          >
+          <div
+            class="flex min-w-0 items-center gap-3 xl:flex-col xl:items-stretch xl:gap-1.5"
           >
             <span class="shrink-0 op-title tnum xl:self-end">{{
               item.card.total_display
@@ -617,7 +684,6 @@ function switchHint(row: {
                     isBusy(item.card.ref) ||
                     queueGesture(item).secondary!.disabled
                   "
-                  :title="queueGesture(item).secondary!.reason || undefined"
                   data-queue-secondary
                   @click="
                     emit(
@@ -661,11 +727,10 @@ function switchHint(row: {
                     queueGesture(item).primary!.disabled
                   "
                   :title="
-                    queueGesture(item).primary!.reason ||
-                    (queueGesture(item).primary!.verb !==
+                    queueGesture(item).primary!.verb !==
                     queueGesture(item).primary!.label
                       ? queueGesture(item).primary!.label
-                      : undefined)
+                      : undefined
                   "
                   data-queue-primary
                   @click="
@@ -703,6 +768,16 @@ function switchHint(row: {
                 "
               />
             </div>
+          </div>
+          <!-- Por que o gesto está travado, escrito: o `title` não existe no toque. -->
+          <p
+            v-for="line in queueBlockedReasons(item)"
+            :key="line"
+            class="text-xs text-muted xl:text-end"
+            data-queue-blocked-reason
+          >
+            {{ line }}
+          </p>
           </div>
         </div>
       </NuxtPageCard>

@@ -41,8 +41,23 @@ const ACTION_ICONS: Record<string, string> = {
   "resend-payment-link": "i-lucide-send",
   "print-danfe": "i-lucide-printer",
   "contact-customer": "i-lucide-message-circle",
+  "reschedule-at-pos": "i-lucide-calendar-clock",
   cancel: "i-lucide-ban",
 };
+
+/** A ação que remarca: abre o pedido no PDV, onde mora o remarcar (D-003). */
+const RESCHEDULE_AT_POS = "reschedule-at-pos";
+/**
+ * As ações que são atalho para fora do Gestor: a conversa com o cliente e o PDV. Pela
+ * `ref`, e não por ter `href`: o cancelar da promessa em risco é a ação de gravar do
+ * detalhe, e o endereço que ela carrega é o da rota de gravação, não um link.
+ */
+const LINK_ACTIONS = new Set(["contact-customer", RESCHEDULE_AT_POS]);
+
+/** A chave do próximo foco de uma linha da faixa (`data-focus-target`). */
+export const pendingFocusKey = (key: string) => `pending:${key}`;
+/** A linha da promessa em risco: quem chega com `#promise` é levado até ela. */
+export const PROMISE_PENDING_KEY = "promise";
 
 export interface PendingButton {
   ref: string;
@@ -53,8 +68,10 @@ export interface PendingButton {
   disabled: boolean;
   /** Por que não pode agora: aparece escrito, não só no `title`. */
   blockedReason: string;
-  /** Só a conversa com o cliente: abre fora do Gestor. */
+  /** A conversa com o cliente e o PDV: abrem fora do Gestor. Vazio no que grava. */
   href: string;
+  /** O atalho abre outro app de operador (o PDV), na janela dele. */
+  crossApp: boolean;
 }
 
 export interface PendingButtonState {
@@ -74,7 +91,7 @@ export function pendingButton(
   options: PendingButtonState & { lead: boolean },
 ): PendingButton {
   const printing = action.ref === "print-danfe" && options.danfePrinting;
-  const isLink = action.ref === "contact-customer";
+  const isLink = LINK_ACTIONS.has(action.ref);
   return {
     ref: action.ref,
     label: printing ? "Imprimindo…" : action.label,
@@ -83,7 +100,10 @@ export function pendingButton(
     variant: options.lead ? "solid" : "outline",
     disabled: !action.enabled || printing || (!isLink && options.busy),
     blockedReason: action.enabled ? "" : action.reason,
-    href: isLink ? action.href : "",
+    // Atalho que o servidor desligou não leva a lugar nenhum: vira botão travado, com
+    // o motivo escrito.
+    href: isLink && action.enabled ? action.href : "",
+    crossApp: action.ref === RESCHEDULE_AT_POS,
   };
 }
 

@@ -10,7 +10,7 @@ import { computed } from "vue";
 
 import type { OrderCardProjection } from "~/types/orders";
 import type { Affordance, AffordanceRef, UndoLine } from "~/presentation/board";
-import { blockedReasonLines, lockedButtonRepeatsPill } from "~/presentation/cardBlocks";
+import { blockedReasonLines, cardFooter } from "~/presentation/cardBlocks";
 import OrderCardMenu from "./OrderCardMenu.vue";
 
 const props = defineProps<{
@@ -31,17 +31,21 @@ const emit = defineEmits<{
   (e: "station-recall" | "volumes", value: number): void;
 }>();
 
-// O avanço travado que só repetiria a pílula do bloqueio não vira botão morto.
-const shownPrimary = computed(() =>
-  lockedButtonRepeatsPill({
+// O avanço travado que só repetiria a pílula do bloqueio não vira botão morto. Sem
+// botão nenhum, o lugar deles recebe as pílulas de aviso do cartão (`#lone`): o ⋮ não
+// fica sozinho numa linha (#2710).
+const footer = computed(() =>
+  cardFooter({
     primary: props.primary,
     primaryLabel: props.primaryLabel,
+    secondary: props.secondary,
     blockLabel: props.card.advance_block_label,
     blockAnnounced: Boolean(props.card.advance_block_reason),
-  })
-    ? null
-    : props.primary,
+    handoff: Boolean(props.handoff),
+    waitingFor: props.waitingFor,
+  }),
 );
+const shownPrimary = computed(() => footer.value.primary);
 
 const blockedReasons = computed(() =>
   props.handoff
@@ -83,7 +87,7 @@ function nuxtIcon(icon: string): string {
         @click="emit('action', handoff.action)"
       />
       <div
-        v-else-if="!handoff"
+        v-else-if="!handoff && !footer.empty"
         class="grid min-w-0 flex-1 gap-2"
         :class="
           shownPrimary && secondary.length === 1
@@ -142,7 +146,9 @@ function nuxtIcon(icon: string): string {
           data-card-waiting
         />
       </div>
-      <div v-else class="flex-1" />
+      <div v-else class="min-w-0 flex-1" data-card-lone>
+        <slot name="lone" />
+      </div>
 
       <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. -->
       <OrderCardMenu

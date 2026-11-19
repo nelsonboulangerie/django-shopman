@@ -35,6 +35,11 @@ import { settledRefresh } from "~/utils/settledRefresh";
 import type { Action } from "~/generated/ordersContract";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
+import { PROMISE_HASH } from "~/presentation/preorderList";
+import {
+  pendingFocusKey,
+  PROMISE_PENDING_KEY,
+} from "~/presentation/orderPending";
 import { contactRequestNotice } from "~/presentation/contactRequest";
 import { ifoodChatNotice } from "~/presentation/ifoodWidget";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
@@ -167,6 +172,12 @@ const IFOOD_NEGOTIATIONS = "ifood-negotiations";
 // O aviso "o aceite não chegou ao iFood" chega com `#ifood-accept`: o foco vai ao
 // Tentar de novo, com o prazo do iFood à vista.
 const IFOOD_ACCEPT = "ifood-accept";
+// O cartão e a lista de Encomendas chegam com `#promise` (WP-G08, "Avisar o cliente"
+// da promessa em risco): a página vai à linha da promessa, na faixa "O que falta neste
+// pedido", com o teclado no primeiro gesto dela. O "Cancelar pedido" do cartão chega
+// com `#cancel` e abre o diálogo (mais abaixo); quando o pedido não pode ser cancelado,
+// a página vai à mesma linha, onde o cancelar travado diz o porquê.
+const CANCEL_HASH = "#cancel";
 const focusKey = computed(() => {
   if (
     route.hash === `#${IFOOD_NEGOTIATIONS}` &&
@@ -175,6 +186,14 @@ const focusKey = computed(() => {
     return IFOOD_NEGOTIATIONS;
   if (route.hash === `#${IFOOD_ACCEPT}` && order.value?.ifood_accept_failed)
     return IFOOD_ACCEPT;
+  const toPromise =
+    route.hash === PROMISE_HASH ||
+    (route.hash === CANCEL_HASH && order.value?.can_cancel === false);
+  if (
+    toPromise &&
+    order.value?.pending?.some((item) => item.key === PROMISE_PENDING_KEY)
+  )
+    return pendingFocusKey(PROMISE_PENDING_KEY);
   return null;
 });
 const { reveal } = useNextFocus();
@@ -953,6 +972,15 @@ watch(
   () => route.hash === CANCEL_UNPAID_HASH && cancelUnpaid.value,
   (arrive) => {
     if (arrive && !dialog.value) openCancelUnpaid();
+  },
+  { immediate: true },
+);
+// O "Cancelar pedido" da promessa em risco no cartão chega com `#cancel` (WP-G08): o
+// MESMO diálogo do menu do pedido, com o motivo por escolher e a régua do gerente.
+watch(
+  () => route.hash === CANCEL_HASH && Boolean(order.value?.can_cancel),
+  (arrive) => {
+    if (arrive && !dialog.value) void openDialog("cancel");
   },
   { immediate: true },
 );
