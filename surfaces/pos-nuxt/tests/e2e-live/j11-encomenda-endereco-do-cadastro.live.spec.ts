@@ -283,7 +283,7 @@ for (const device of ["phone", "counter"] as const) {
       await capture(page, testInfo, "depois-o-recebimento");
 
       // 4 · Entrega: o endereço PADRÃO já vem marcado, cada endereço em linha inteira.
-      await page.locator('[data-order-fulfillment="delivery"]').locator("visible=true").first().click();
+      await page.locator("[data-order-fulfillment-options]").getByRole("radio", { name: /^Entrega/ }).click();
       await expect(currentStep(page)).toHaveAttribute("aria-label", "4. Endereço, pronta", { timeout: 30_000 });
       const step = page.locator('[data-order-step="address"]');
       const radios = step.getByRole("radio");
