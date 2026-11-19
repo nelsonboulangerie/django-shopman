@@ -49,6 +49,12 @@ watch(authShellRoute, (isAuthRoute, wasAuthRoute) => {
   if (!isAuthRoute && wasAuthRoute) void refreshShellState()
 })
 
+// Loja viva (WP-L04): "aberta" e "fechada" viram sozinhas na hora da virada, e na
+// volta da aba que ficou esquecida. Sem isso o cabeçalho dizia "Aberta" a noite toda.
+if (!courierShell) {
+  useLiveShopStatus(() => shellState.value?.shell?.shop_status, refreshShellState)
+}
+
 // O Nuxt restaura a rolagem do document, mas no PWA iOS o viewport rolável é
 // interno para manter a bottom-nav fora do bug de position:fixed do WebKit.
 // Mudança real de página começa no topo; query local (filtros) não é zerada.

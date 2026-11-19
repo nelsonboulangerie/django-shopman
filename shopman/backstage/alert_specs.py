@@ -35,6 +35,8 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     # O aceite saiu daqui e não chegou ao iFood: no fim do prazo dele (``respond_by``)
     # o iFood cancela sozinho, com a cozinha já trabalhando.
     "ifood_accept_not_delivered": AlertSpec("iFood", "i-lucide-bike", "O aceite não chegou ao iFood", 8),
+    # O iFood cancelou e o pedido segue ativo aqui: parar antes de entregar.
+    "ifood_cancelled_not_applied": AlertSpec("iFood", "i-lucide-bike", "iFood cancelou, pedido segue aqui", 5),
     # Pedido novo parado sem aceite: no iFood, o próprio iFood cancela. Com prazo de
     # aceite da casa (``auto_cancel``), o aviso traz ``respond_by`` = o prazo do pedido,
     # e esta régua só vale para o canal sem prazo (``manual``).

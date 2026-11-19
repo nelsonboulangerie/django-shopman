@@ -38,6 +38,47 @@ describe("useOrderDetail", () => {
     expect(useOrderDetail("WEB-1").order.value).toBeNull();
   });
 
+  // WP-G05 (P1-20): três recusas liam a mesma frase. O composable diz qual foi.
+  it("403 de permissão é `forbidden`; 404 é `notFound`; rede não é nenhum dos dois", () => {
+    env.fetchData.value = null;
+    env.fetchError.value = { statusCode: 403, data: { detail: "Você não tem permissão." } };
+    const denied = useOrderDetail("WEB-403");
+    expect([denied.forbidden.value, denied.notFound.value]).toEqual([true, false]);
+
+    env.fetchError.value = { statusCode: 404, data: { detail: "Pedido não encontrado." } };
+    const missing = useOrderDetail("WEB-404");
+    expect([missing.forbidden.value, missing.notFound.value]).toEqual([false, true]);
+
+    env.fetchError.value = { statusCode: 503 };
+    const offline = useOrderDetail("WEB-503");
+    expect([offline.forbidden.value, offline.notFound.value]).toEqual([false, false]);
+  });
+
+  it("estação travada e sessão caída não são falta de permissão", () => {
+    env.fetchData.value = null;
+    env.fetchError.value = { statusCode: 403, data: { error: { code: "station_locked" } } };
+    expect(useOrderDetail("WEB-LOCK").forbidden.value).toBe(false);
+    env.fetchError.value = { statusCode: 403, data: { error: { code: "not_authenticated" } } };
+    expect(useOrderDetail("WEB-OUT").forbidden.value).toBe(false);
+  });
+
+  // WP-G05 (P1-14): a DANFE no detalhe é o MESMO gesto do cartão do painel.
+  it("printDanfe pede a DANFE deste pedido ao servidor e relê o pedido", async () => {
+    env.fetchData.value = { order: { ref: "DLV-7", actions: [] }, device_agent: { can_print: false, reason: "Sem agente." } };
+    env.fetchMock.mockResolvedValueOnce({ via: "relay", reprint: false, target_label: "Balcão" });
+    const d = useOrderDetail("DLV-7");
+
+    expect(d.danfePrinting.value).toBe(false);
+    expect(await d.printDanfe()).toBe(true);
+
+    const [url, options] = env.fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe("/api/v1/backstage/orders/DLV-7/danfe-escpos/");
+    expect(options).toMatchObject({ method: "POST", body: { local_agent: false } });
+    expect(env.sonner.success).toHaveBeenCalledWith("DANFE do pedido DLV-7 enviada para a impressora de Balcão.");
+    expect(env.refresh).toHaveBeenCalled();
+    expect(d.danfePrinting.value).toBe(false);
+  });
+
   it("confirm posta em /orders/{ref}/confirm/ e reconcilia via refresh", async () => {
     env.fetchData.value = { order: { ref: "WEB-1", actions: fixtureActions({ can_confirm: true }) } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
@@ -183,6 +224,58 @@ describe("useOrderDetail", () => {
     expect(d.managerChallenge.value).toBeNull();
     // O pedido é relido: a tela mostra o cancelado que o servidor gravou.
     expect(env.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("tentar o estorno de novo usa a ação do detalhe, pede o gerente e reenvia a MESMA tentativa", async () => {
+    // WP-G13: não há prévia nem escolha. A ação `refund-retry` do detalhe traz a base
+    // que o comando confere, e a chave da intenção é a chave da tentativa.
+    const base = fixtureActions({ can_confirm: true })[0]!;
+    env.fetchData.value = { order: { ref: "WEB-ER", actions: [{ ...base, ref: "refund-retry", label: "Tentar o estorno de novo", enabled: true, payload_schema: { base_revision: "refund-base", expected_actor_id: 1 } }] } };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 422,
+      data: { detail: "Tentar o estorno de novo pede a autorização de um gerente.", error: { code: "manager_approval_required" } },
+    });
+    const d = useOrderDetail("WEB-ER");
+
+    expect(await d.retryRefund()).toBe(false);
+    expect(env.sonner.error).not.toHaveBeenCalled();
+    expect(d.managerChallenge.value).toMatchObject({ code: "manager_approval_required", action: "refund-retry" });
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/WEB-ER/refund-retry/");
+    const first = env.fetchMock.mock.calls[0]![1];
+    expect(first.method).toBe("POST");
+    expect(first.body).toEqual({ base_revision: "refund-base", expected_actor_id: 1 });
+
+    // O servidor grava a tentativa mesmo quando o gateway recusa: `applied` com o
+    // resultado em `refund`. O composable só diz que a tentativa foi gravada.
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", refund: { outcome: "refused", message: "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte." } });
+    expect(await d.authorize({ username: "joyce", pin: "1234" })).toBe(true);
+    const second = env.fetchMock.mock.calls[1]![1];
+    expect(second.body).toEqual({ base_revision: "refund-base", expected_actor_id: 1, manager_approval: { username: "joyce", pin: "1234" } });
+    // A assinatura não cria uma segunda tentativa: é a mesma chave.
+    expect(second.headers["Idempotency-Key"]).toBe(first.headers["Idempotency-Key"]);
+    expect(d.managerChallenge.value).toBeNull();
+    // O pedido é relido: a linha diz se o dinheiro voltou ou o que o gateway respondeu.
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+    expect(env.sonner.success).not.toHaveBeenCalled();
+
+    // Tentativa nova, depois da recusa: outra chave.
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", refund: { outcome: "refunded" } });
+    expect(await d.retryRefund()).toBe(true);
+    expect(env.fetchMock.mock.calls[2]![1].headers["Idempotency-Key"]).not.toBe(first.headers["Idempotency-Key"]);
+  });
+
+  it("fora do estorno que não saiu, a recusa do servidor vira a frase dele", async () => {
+    const base = fixtureActions({ can_confirm: true })[0]!;
+    env.fetchData.value = { order: { ref: "WEB-EJ", actions: [{ ...base, ref: "refund-retry", enabled: true, payload_schema: { base_revision: "refund-base", expected_actor_id: 1 } }] } };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 409,
+      data: { detail: "O estorno deste pedido já saiu.", error: { code: "refund_retry_not_allowed" }, outcome: "not_applied" },
+    });
+    const d = useOrderDetail("WEB-EJ");
+
+    expect(await d.retryRefund()).toBe(false);
+    expect(d.managerChallenge.value).toBeNull();
+    expect(env.sonner.error).toHaveBeenCalledWith("O estorno deste pedido já saiu.");
   });
 
   it("saveNotes/addComment enviam o corpo e tostam sucesso", async () => {

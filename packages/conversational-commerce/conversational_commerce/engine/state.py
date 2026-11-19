@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
+from conversational_commerce.authority import Offer
 from conversational_commerce.catalog import Situation
-from conversational_commerce.contracts import DeploymentProfile
+from conversational_commerce.contracts import ActionReceipt, Commitment, DeploymentProfile, IdentityEvidence
 from conversational_commerce.contracts.common import Fact
 
 from .acts import CHANGE_ACTS, QUERY_ACTS
+
+# Recusas no ponto de efeito (ou da confirmação) que pedem termos novos e confirmação nova.
+RETERM = frozenset({"terms_changed", "terms_expired", "grant_expired", "confirmation_before_terms",
+                    "revision_conflict"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +36,50 @@ class NeedSpec:
         return self.act in QUERY_ACTS
 
 
+@dataclass(frozen=True, slots=True)
+class Subject:
+    """Quem fala, como o adaptador o resolve a partir do contexto confiável, nunca do texto.
+
+    ``cart_ref``: o carrinho do sujeito no sistema de registro. Sem ele, nenhuma
+    mudança de carrinho nem cotação é proposta (a ação fica inelegível).
+    """
+
+    subject_ref: str | None = None
+    identity_evidence: tuple[IdentityEvidence, ...] = ()
+    cart_ref: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EffectPlan:
+    """O que um movimento de efeito pede: a ação, o alvo, os parâmetros e a base da concessão."""
+
+    action: str
+    target: str
+    parameters: Mapping[str, Any]
+    expected_versions: Mapping[str, int]
+    basis: Literal["confirmation", "line"]
+
+
+@dataclass(frozen=True, slots=True)
+class CommitmentPlan:
+    """O que um movimento de compromisso pede: promessa ou caso, a operação da equipe e a janela do prazo.
+
+    ``operation``: ``ask`` (perguntar à equipe, devolve um tíquete) ou
+    ``open_or_update`` (abrir o caso na equipe). ``handoff``: a posse do episódio
+    sai da automação (``handoff_requested``).
+    """
+
+    type: Literal["promise", "case"]
+    obligation: str
+    criterion: str
+    operation: Literal["ask", "open_or_update"]
+    window: Literal["respond", "accept"]
+    question: str | None = None
+    problem_code: str | None = None
+    requested_resolution: str | None = None
+    handoff: bool = False
+
+
 @dataclass
 class TurnState:
     now: str
@@ -42,11 +91,53 @@ class TurnState:
     fact_facets: dict[str, str] = field(default_factory=dict)
     # Necessidades que já têm pergunta no ar (uma por necessidade).
     open_question_needs: frozenset[str] = frozenset()
+    event_assurance: str = "provider_claimed"
+    subject: Subject = field(default_factory=Subject)
+    # Os termos apresentados, se a pergunta que pede a confirmação deles está no ar nesta época.
+    offer: Offer | None = None
+    # Necessidade que responde à oferta → por que a confirmação não autoriza (``None``: autoriza).
+    confirmation_problems: dict[str, str | None] = field(default_factory=dict)
+    # Termos cotados neste turno, por alvo.
+    terms: dict[str, Any] = field(default_factory=dict)
+    # O que aconteceu no ponto de efeito, por necessidade.
+    receipts: dict[str, ActionReceipt] = field(default_factory=dict)
+    refused: dict[str, str] = field(default_factory=dict)
+    commitments: dict[str, Commitment] = field(default_factory=dict)
+    # Necessidade → o compromisso que a casa assumiu por ela neste turno (F9).
+    commitment_of: dict[str, str] = field(default_factory=dict)
+    # Necessidade → o compromisso aberto sobre o qual se dá notícia (espera, prazo vencido).
+    waiting: dict[str, str] = field(default_factory=dict)
+    # Compromisso → a fila recebeu (``True``) ou recusou (``False``) o pedido.
+    routed: dict[str, bool] = field(default_factory=dict)
+    # Contexto comercial (F10): o item que atende a necessidade declarada, por necessidade, e o que trava ofertas.
+    recommendations: dict[str, str] = field(default_factory=dict)
+    declined_offers: bool = False
+    open_problem: bool = False
+    overdue_commitment: bool = False
+    friction: str = "unknown"
 
     def fact_keys_for(self, need: NeedSpec) -> tuple[str, ...]:
         if need.act == "ask_hours":
             return ("hours",)
         return tuple(f"item.{reading['item']}" for reading in need.readings if reading.get("item"))
+
+    def answers_offer(self, need: NeedSpec) -> bool:
+        """O "sim" desta necessidade é a resposta à pergunta que pede a confirmação dos termos."""
+        return (self.offer is not None and need.act == "affirm"
+                and need.answers_question == self.offer.question_id)
+
+    def wants_terms(self, need: NeedSpec) -> bool:
+        """Esta necessidade pede termos (novos): fechar o pedido, ou confirmação que não valeu mais."""
+        if need.act == "place_order":
+            return True
+        if not self.answers_offer(need):
+            return False
+        code = self.refused.get(need.need_id) or self.confirmation_problems.get(need.need_id)
+        return code in RETERM
+
+    @staticmethod
+    def terms_key(target: str) -> str:
+        return f"terms.{target}"
 
     def situation(self, need: NeedSpec, **fields: Any) -> Situation:
         """A situação comum a toda proposta da necessidade, mais o que o movimento acrescenta."""
@@ -55,7 +146,7 @@ class TurnState:
             "now": self.now,
             "channel": self.channel,
             "identity": self.identity,
-            "event_assurance": "provider_claimed",
+            "event_assurance": self.event_assurance,
             "reading_count": len(need.readings),
             "request_kind": need.request_kind,
             "missing_required_field": need.act == "unknown" or (need.is_query and need.act != "ask_hours"

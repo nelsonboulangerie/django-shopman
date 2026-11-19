@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 class IFoodMerchantSyncHandler:
     topic = IFOOD_MERCHANT_SYNC
 
+    def on_terminal_failure(self, *, message: Directive) -> None:
+        """Esgotou (ou foi recusada de vez): o Gestor fica sabendo, sempre.
+
+        Em 16/11/2026 duas falhas terminais (403) ficaram só no log, e uma delas
+        era o desligamento do canal: a loja seguiu aberta no iFood.
+        """
+        ifood_merchant.alert_store_write_failed(_LastError(message.last_error or ""))
+
     def handle(self, *, message: Directive, ctx: dict) -> None:
         try:
             result = ifood_merchant.sync_store()
@@ -56,6 +64,14 @@ class IFoodMerchantInterruptionHandler:
         except ifood_merchant.MerchantAPIError as exc:
             error = DirectiveTransientError if exc.retryable else DirectiveTerminalError
             raise error(str(exc)) from exc
+
+
+class _LastError(Exception):
+    """O erro da Directive como exceção, para a mesma frase do aviso."""
+
+    def __init__(self, text: str):
+        super().__init__(text)
+        self.status = 403 if "HTTP 403" in text else 0
 
 
 def on_shop_saved(sender, instance, **kwargs) -> None:

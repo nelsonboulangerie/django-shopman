@@ -19,16 +19,23 @@ ACTS: tuple[str, ...] = (
     "ask_price",
     "ask_item",
     "change_quantity",
+    "place_order",
     "cancel_order",
     "complain",
+    "request_human",
+    "ask_recommendation",
+    "decline_offers",
+    "accept_offers",
     "affirm",
     "deny",
     "unknown",
 )
 COURTESY_ACTS = frozenset({"greet", "thank"})
 ANSWER_ACTS = frozenset({"affirm", "deny"})
+# O cliente declara o que quer da casa: vira memória declarada (F10), e a resposta é cortesia.
+DECLARATION_ACTS = frozenset({"decline_offers", "accept_offers"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
-CHANGE_ACTS = frozenset({"change_quantity", "cancel_order"})
+CHANGE_ACTS = frozenset({"change_quantity", "place_order", "cancel_order"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,9 +71,14 @@ TEST_RULES = LocalRules(
         "ask_hours": (r"\bhours?\b", r"\bopen\b"),
         "ask_price": (r"\bprice\b", r"\bhow much\b", r"\bcost\b"),
         "change_quantity": (r"\bmake it\b", r"\bchange\b"),
+        "place_order": (r"\bplace (the |my )?order\b", r"\bcheck ?out\b"),
         "cancel_order": (r"\bcancel\b",),
         "affirm": (r"^\s*(yes|yeah|ok)\b",),
         "deny": (r"^\s*no\b",),
+        "request_human": (r"\b(talk|speak) to (a |an )?(person|human|someone)\b",),
+        "ask_recommendation": (r"\bcan you (suggest|recommend)\b", r"\bwhat do you recommend\b"),
+        "decline_offers": (r"\bno (more )?suggestions\b", r"\bstop suggesting\b"),
+        "accept_offers": (r"\byou can suggest\b",),
     },
     risk={"complain": (r"\bcomplain", r"\bwrong order\b", r"\brefund\b")},
 )

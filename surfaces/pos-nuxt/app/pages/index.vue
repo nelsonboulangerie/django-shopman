@@ -2063,6 +2063,7 @@ onBeforeUnmount(() => {
       v-model:open="cancelSaleDialogOpen"
       v-model:reason="cancelSaleReason"
       :order-ref="result?.orderRef || ''"
+      :total-display="result?.receipt?.totalDisplay || ''"
       :max-age-minutes="saleCorrection?.max_age_minutes || 0"
       :busy="cancellingSale"
       :error="cancelSaleError"
@@ -2117,7 +2118,7 @@ onBeforeUnmount(() => {
         />
       </div>
     </Teleport>
-    <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" @cancelled="onExternalSaleCancelled" />
+    <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" :operator-name="activeOperator?.name || ''" @cancelled="onExternalSaleCancelled" />
     <!-- EDIÇÃO DA ENCOMENDA: a prévia do servidor antes de gravar, e o PIN do
          gerente quando a encomenda paga fica mais barata. -->
     <PosOrderEditReview
@@ -2139,6 +2140,7 @@ onBeforeUnmount(() => {
       v-if="editing"
       :open="editManagerOpen"
       action="order_edit_refund"
+      :amount-q="editPreview?.settlement?.amount_q ?? null"
       :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="editBusy"

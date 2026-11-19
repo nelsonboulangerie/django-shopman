@@ -163,6 +163,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - **Policy-driven promise**: `stock_only` (só ready), `planned_ok` (default, ready+planned), `demand_ok` (sempre aprovado, cria demand hold quant=None).
 - **TTL de materialização**: `realize()` preserva TTL explícito; se hold era contra planejado sem TTL, aplica default ao materializar ("você queria; agora é real; mantenha sessão viva").
 - **`metadata.planned=True`** propaga de `plan()` → Quant → availability.breakdown.
+- **Entrega antes de o lote fechar abate do lote** (#2724): `fulfill` pode baixar de saldo de produção; `realize` (e `carry_deliveries(from_quant, to_quant, limit)`, no início do lote) leva a entrega para o saldo seguinte num par de `Move` soma-zero no `kind` da entrega. A conta é chaveada em `Move.metadata.delivery` (`{hold_id, entry}`), lida por reserva; o `reason` é frase, nunca chave. O lote recebe `+realizado` de produção e `-entregue` de venda; as pernas `MAKE` dizem o realizado inteiro.
 
 **Testes-contrato (PostgreSQL concurrency)**
 - `test_concurrency.TestConcurrentHoldSameSku`: dois threads disputam mesmo quant; apenas um vence — zero over-sell garantido.
@@ -360,7 +361,7 @@ Sinal `order_changed` (de orderman) → `dispatch(order, phase)` → resolve `Ch
 
 | Phase | Ações (em ordem) |
 |-------|------------------|
-| **on_commit** | `customer.ensure()` → availability check (se `check_on_commit`) → `stock.hold()` → `loyalty.redeem()` → `payment.initiate()` se `timing==at_commit` → `fulfillment.create()` se `timing==at_commit` → `_handle_confirmation()` ("order_received" notif salvo `immediate`) |
+| **on_commit** | `customer.ensure()` → availability check (se `check_on_commit`) → `stock.hold()` → `loyalty.redeem()` → `payment.initiate()` se `timing==at_commit` (salvo pedido em `fermata`: a fila da fornada de hoje cobra na confirmação da vaga, `policies/waitlist_charge.py`) → `fulfillment.create()` se `timing==at_commit` → `_handle_confirmation()` ("order_received" notif salvo `immediate`) |
 | **on_confirmed** | `payment.initiate()` se `timing==post_commit` → `stock.fulfill()` se `timing==external` e counter → notif "order_confirmed" |
 | **on_paid** | race guard (cancelled? ⇒ refund + alert) → `stock.fulfill()` → notif "payment_confirmed" |
 | **on_preparing** | `kds.dispatch()` se KDS ativo → notif |

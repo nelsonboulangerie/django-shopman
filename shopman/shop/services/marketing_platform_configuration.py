@@ -60,7 +60,7 @@ WHATSAPP_EVENT_LABELS = {
     "loyalty_earned": "Pontos de fidelidade",
     "stock_arrived": "Produto disponível",
     "purchase_request": "Pedido de compra ao fornecedor",
-    "production_ready": "Produto saiu do forno",
+    "production_ready": "Produto ficou pronto",
 }
 TRANSACTIONAL_WHATSAPP_EVENTS = tuple(
     event for event in WHATSAPP_EVENT_LABELS if event != EVENT

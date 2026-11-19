@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django_ratelimit.core import is_ratelimited
@@ -683,7 +684,10 @@ class StorefrontCartView(ServerTimingMixin, APIView):
             # ``create()`` grava a linha e marca a sessão como modificada, então o
             # SessionMiddleware devolve o ``sessionid`` nesta mesma resposta.
             request.session.create()
-        return Response({"cart": _cart_payload(request)})
+        # ``server_now_iso``: o relógio do servidor, no envelope e não na projeção
+        # (WP-L11). A sacola conta o prazo da reserva por ele: a tela mede a
+        # diferença para o relógio do aparelho na chegada desta resposta.
+        return Response({"cart": _cart_payload(request), "server_now_iso": timezone.now().isoformat()})
 
 
 @extend_schema_view(

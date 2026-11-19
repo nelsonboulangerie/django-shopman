@@ -2,11 +2,13 @@
 import type { OrderHistoryResponse, ReorderConflictProjection } from '~/types/shopman'
 import {
   ORDER_FILTER_OPTIONS,
+  orderOpenIcon,
+  orderOpenLabel,
   orderRowEmphasisClass,
   ordersCountLabel,
+  ordersEmptyCopy,
   orderStatusAccentClass,
   orderStatusDotClass,
-  ordersEmptyCopy,
   reorderActionFrom,
   splitOrdersByActive
 } from '~/presentation/account'
@@ -138,7 +140,7 @@ useSeoMeta({ title: 'Pedidos' })
             <p class="mt-0.5 truncate shop-muted">{{ order.ref }} · {{ order.created_at_display }}</p>
           </div>
           <div class="flex shrink-0 gap-2">
-            <UiButton :to="orderTrackingRoute(order.ref)" variant="outline" size="sm" icon="lucide:radar">Acompanhar</UiButton>
+            <UiButton :to="orderTrackingRoute(order.ref)" variant="outline" size="sm" :icon="orderOpenIcon(order)" data-order-open>{{ orderOpenLabel(order) }}</UiButton>
             <UiButton
               v-if="reorderActionFrom(order)"
               size="sm"
@@ -146,7 +148,7 @@ useSeoMeta({ title: 'Pedidos' })
               :loading="!!reorderPending[order.ref]"
               @click="performAction(reorderActionFrom(order)!)"
             >
-              Refazer
+              {{ reorderActionFrom(order)!.label }}
             </UiButton>
           </div>
           </li>

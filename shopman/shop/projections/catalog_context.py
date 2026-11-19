@@ -143,10 +143,11 @@ def comes_out_of_the_oven(sku: str) -> bool:
     """Este SKU nasce de um lote, ou chega pronto na prateleira?
 
     A resposta é o modo de produção da ficha vigente (``Recipe.production_mode``,
-    ADR-040), lido pelo adapter de produção: só a ficha "Em lote" sai do forno.
-    É também exatamente o conjunto de SKUs que dispara ``production_changed`` (só
-    ficha em lote vira ordem de produção), o evento por trás do aviso "saiu do
-    forno". Ficha "Na hora" é feita quando vende e revenda não tem ficha: as
+    ADR-040), lido pelo adapter de produção: só a ficha "Em lote" tem lote que
+    fica pronto. É também exatamente o conjunto de SKUs que dispara
+    ``production_changed`` (só ficha em lote vira ordem de produção), o evento
+    por trás do aviso de fornada pronta (``production_ready``). Ficha "Na hora"
+    é feita quando vende e revenda não tem ficha: as
     duas ficam no eixo de prateleira (chegada de estoque).
 
     Falha para ``False``: na dúvida o produto é de prateleira, e o eixo de

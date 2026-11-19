@@ -10,10 +10,11 @@
 //     @update:open="notices.onOpen('x', $event)" />
 import { reactive } from "vue";
 
-/** O X do aviso, igual ao das `alerts` do cabeçalho: neutro, discreto, alvo de 32px. */
+/** O X do aviso, igual ao das `alerts` do cabeçalho: neutro, discreto, desenhado com 32 px e
+ *  com 44 px de área de toque (`after:-inset-1.5`; a regra e a trava estão em `app.config.ts`). */
 export const ALERT_CLOSE_PROPS = {
   close: { color: "neutral", variant: "ghost", size: "md" },
-  ui: { close: "size-8" },
+  ui: { close: "size-8 after:-inset-1.5" },
 } as const;
 
 export function useAlertDismissals() {

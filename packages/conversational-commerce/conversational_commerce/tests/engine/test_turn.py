@@ -14,8 +14,10 @@ from .helpers import CTX, SHADOW, WITH_MODEL, engine, message
 
 
 def test_moves_are_discovered_by_module_name():
-    assert sorted(registry()) == ["acknowledge", "ask_clarification", "cover_readings", "inform",
-                                  "inform_limitation"]
+    assert sorted(registry()) == ["acknowledge", "amend_order", "ask_clarification", "cancel_order", "change_cart",
+                                  "commit_order", "cover_readings", "grant_discount", "handoff", "inform",
+                                  "inform_limitation", "open_case", "present_terms", "recommend", "verify_with_staff",
+                                  "wait"]
 
 
 def test_turn_answers_with_the_model_port_down():

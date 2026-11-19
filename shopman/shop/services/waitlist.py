@@ -661,7 +661,7 @@ def _materialized_holds_for_order(order, sku: str, *, for_update: bool = False) 
 
     Uma linha pode ter sido coberta por mais de um hold e um pedido pode esperar
     mais de um SKU. A CTA confirma o PEDIDO inteiro; portanto, abrir a janela
-    quando apenas o SKU que disparou esta chamada saiu do forno prometeria os
+    quando apenas o SKU que disparou esta chamada ficou pronto prometeria os
     demais sem reserva física. Qualquer hold marcado como fila mas
     legado/inválido também bloqueia fechado.
     """

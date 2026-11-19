@@ -421,9 +421,9 @@ def _read_day(day: date, window: tuple[time, time] | None) -> _DayRead:
         # Compara o instante, não o minuto: a venda às 12:47:45 com o lote às 12:47:30
         # é depois do lote, e truncada ao minuto pareceria antes.
         if reached is not None and reached_at is not None and last_out is not None and reached_at < last_out:
-            # A venda alcançou o feito antes de o último lote sair do forno: o que
+            # A venda alcançou o feito antes de o último lote ficar pronto: o que
             # se vendeu antes era estoque de antes, não o lote. Dizer "acabou às
-            # 12:35" com o lote saindo às 12:47 contradiz a linha de cima
+            # 12:35" com o lote pronto só às 12:47 contradiz a linha de cima
             # (beta 05/11, ge:BI-17).
             reached = None
         sold[sku] = total

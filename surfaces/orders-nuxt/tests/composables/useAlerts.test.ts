@@ -144,7 +144,7 @@ describe("useAlerts: o Aceitar do pedido parado", () => {
     expect(options.method).toBe("POST");
     expect(options.body).toMatchObject({ expected_actor_id: 1, base_revision: "rev-1" });
     expect(options.headers["Idempotency-Key"]).toBeTruthy();
-    expect(env.sonner.success).toHaveBeenCalledWith("Pedido WEB-19 aceito.");
+    expect(env.sonner.success).toHaveBeenCalledWith("Pedido 19 aceito.");
   });
 
   it("pedido que já andou: não aceita às cegas, manda abrir o pedido", async () => {
@@ -155,7 +155,7 @@ describe("useAlerts: o Aceitar do pedido parado", () => {
     expect(await a.accept(PARADO)).toBe(false);
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
     expect(env.sonner.error).toHaveBeenCalledWith(
-      "O pedido WEB-19 não espera mais aceite. Abra o pedido para conferir.",
+      "O pedido 19 não espera mais aceite. Abra o pedido para conferir.",
     );
   });
 

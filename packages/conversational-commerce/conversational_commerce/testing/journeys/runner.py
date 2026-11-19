@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -60,11 +60,15 @@ class ScriptedModel:
 
 @dataclass(frozen=True, slots=True)
 class JourneyStep:
-    message: Mapping[str, Any]
+    message: Mapping[str, Any] | None
     expect_moves: tuple[str, ...]
     expect_text: tuple[str, ...] = ()
     expect_state: str | None = None
     understanding: Mapping[str, Any] | None = None
+    # O relógio anda antes do passo (a confirmação é POSTERIOR aos termos, J4).
+    advance_seconds: int = 0
+    # Passo que não é mensagem do cliente (a equipe responde, J3): ``act(engine, ctx)`` devolve o resultado.
+    act: Callable[[Any, TrustedContext], Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +82,9 @@ def run_journey(engine, ctx: TrustedContext, steps: Sequence[JourneyStep]) -> li
     """Roda os passos e devolve, por passo, o que divergiu do esperado (vazio é verde)."""
     out = []
     for step in steps:
-        result = engine.turn(ctx, step.message)
+        if step.advance_seconds:
+            engine.ports.clock.advance(step.advance_seconds)
+        result = step.act(engine, ctx) if step.act is not None else engine.turn(ctx, step.message)
         problems = []
         if tuple(result.chosen_moves) != step.expect_moves:
             problems.append(f"movimentos {result.chosen_moves}, esperado {list(step.expect_moves)}")
@@ -92,4 +98,5 @@ def run_journey(engine, ctx: TrustedContext, steps: Sequence[JourneyStep]) -> li
 
 
 def script_of(steps: Sequence[JourneyStep]) -> dict[str, Mapping[str, Any]]:
-    return {step.message["content_ref"]: step.understanding for step in steps if step.understanding is not None}
+    return {step.message["content_ref"]: step.understanding for step in steps
+            if step.understanding is not None and step.message is not None}

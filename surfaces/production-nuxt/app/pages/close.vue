@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Finalização = o lote sai do forno já classificado (ADR-017 §9 / QC-FORNADA §5):
+// Finalização = o lote fica pronto já classificado (ADR-017 §9 / QC-FORNADA §5):
 // painel de LOTES abertos do dia (o lote traz forno, horário e previsto; é o
 // previsto que fecha o lote normal em poucos toques) e a tela de finalização com
 // partição (QcCloseScreen). A revisão do gestor sobre o lote já fechado mora na

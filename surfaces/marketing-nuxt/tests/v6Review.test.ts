@@ -34,15 +34,16 @@ function item(overrides: Partial<DecisionItem> = {}): DecisionItem {
 }
 
 describe("o fato do lote no cartão de revisão", () => {
-  it("diz quantas unidades saíram e quando, na voz do forno", () => {
-    expect(lotLine(item(), TZ, NOW)).toBe("24 un saíram às 10h01");
-    expect(lotLine(item({ lot_quantity: "2.5", lot_finished_at: null }), TZ, NOW)).toBe("2,5 un saíram");
+  it("diz quantas unidades ficaram prontas e quando", () => {
+    expect(lotLine(item(), TZ, NOW)).toBe("24 un ficaram prontas às 10h01");
+    expect(lotLine(item({ lot_quantity: "2.5", lot_finished_at: null }), TZ, NOW)).toBe("2,5 un ficaram prontas");
+    expect(lotLine(item({ lot_quantity: "1" }), TZ, NOW)).toBe("1 un ficou pronta às 10h01");
     expect(lotLine(item({ lot_quantity: "" }), TZ, NOW)).toBe("");
   });
 
   it("junta o fato do lote ao destino, e sem lote cai no nome da campanha", () => {
-    expect(reviewSubtitle(item(), TZ, NOW)).toMatch(/^24 un saíram às 10h01 · /);
-    expect(reviewSubtitle(item({ lot_quantity: "" }), TZ, NOW)).not.toContain("saíram");
+    expect(reviewSubtitle(item(), TZ, NOW)).toMatch(/^24 un ficaram prontas às 10h01 · /);
+    expect(reviewSubtitle(item({ lot_quantity: "" }), TZ, NOW)).not.toContain("prontas");
   });
 });
 

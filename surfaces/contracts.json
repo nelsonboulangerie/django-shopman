@@ -30,7 +30,7 @@
     "pos": {
       "dir": "pos-nuxt",
       "kind": "operator",
-      "runner": "macos-15",
+      "visualRunner": "macos-15",
       "signatureViews": [
         "preorders-search-390x844-light.png",
         "preorders-week-1440x900-light.png",
@@ -64,7 +64,7 @@
     "marketing": {
       "dir": "marketing-nuxt",
       "kind": "operator",
-      "runner": "macos-15",
+      "visualRunner": "macos-15",
       "browserEngines": "chromium",
       "visualConfig": "playwright.config.ts",
       "pythonMock": true,
@@ -77,7 +77,7 @@
         "simulated-preview__feed__390x844__light.png"
       ],
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e", "a11y": "test:a11y", "browserSuite": "test:browser-contract", "security": "test:security", "npmAudit": true }
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e", "a11y": "test:a11y", "browserSuite": "test:browser-functional", "security": "test:security", "npmAudit": true }
     },
     "bi": {
       "dir": "bi-nuxt",
