@@ -65,6 +65,8 @@ class JourneyStep:
     expect_text: tuple[str, ...] = ()
     expect_state: str | None = None
     understanding: Mapping[str, Any] | None = None
+    # O relógio anda antes do passo (a confirmação é POSTERIOR aos termos, J4).
+    advance_seconds: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +80,8 @@ def run_journey(engine, ctx: TrustedContext, steps: Sequence[JourneyStep]) -> li
     """Roda os passos e devolve, por passo, o que divergiu do esperado (vazio é verde)."""
     out = []
     for step in steps:
+        if step.advance_seconds:
+            engine.ports.clock.advance(step.advance_seconds)
         result = engine.turn(ctx, step.message)
         problems = []
         if tuple(result.chosen_moves) != step.expect_moves:

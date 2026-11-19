@@ -888,10 +888,16 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
     coordenada (``receive``) abria o lote do dia para o perecível, e o pão de
     ontem voltava à vitrine com a validade de hoje (#2604).
 
+    Baixa feita contra saldo de produção cujo lote ainda não fechou (#2724): o
+    mesmo saldo é esse saldo de produção, e a devolução entra na conta da
+    reserva (``Move.metadata.delivery``, que é o que o fechamento lê). Sem a
+    chave o fechamento abateria do lote uma entrega que foi desfeita.
+
     Returns:
         True se devolveu; False se o hold não está FULFILLED.
     """
     from shopman.stockman import Move
+    from shopman.stockman.services.holds import DELIVERY_RETURNED, delivery_entry
     from shopman.stockman.services.movements import StockMovements
 
     hold = _fulfilled_hold(hold_id)
@@ -900,7 +906,17 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
 
     text = f"{reason} (ref: {reference})"
     if hold.quant is not None:
-        StockMovements.receive_into(quantity=qty, quant=hold.quant, reason=text, kind=Move.Kind.RETURN)
+        # Saldo de produção (lote ainda não fechou): a devolução leva a chave da
+        # conta da entrega, que é o que o fechamento lê para não abater do lote
+        # o que foi desfeito. No saldo físico não há conta a acertar.
+        in_production_balance = hold.quant.target_date is not None
+        StockMovements.receive_into(
+            quantity=qty,
+            quant=hold.quant,
+            reason=text,
+            kind=Move.Kind.RETURN,
+            metadata=delivery_entry(hold.pk, DELIVERY_RETURNED) if in_production_balance else None,
+        )
     else:
         # Hold baixado sem saldo ligado não tem lote a que voltar.
         StockMovements.receive(quantity=qty, sku=hold.sku, position=None, reason=text, kind=Move.Kind.RETURN)

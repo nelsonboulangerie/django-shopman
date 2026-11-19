@@ -13,8 +13,10 @@ Payload documentado em docs.machine.global (v1, entregas, "Webhooks > Sobre"):
   request_id, status_code, status_label, stop_id?, will_reopen?, links{request,
   driver?, enterprise?}}``. ``status_code`` traz a letra da corrida
   (D/G/P/S/N/A/E/C/F/U) ou um evento que não é estado: ``AP`` (chegou ao local),
-  ``ER`` (parada finalizada), ``L`` (aguardando liberação), ``R`` (aguardando
-  pagamento). Só a letra de estado entra no funil; o evento é aceito e logado.
+  ``AN`` (nas redondezas), ``AW`` (esperando no local), ``T`` (trocando de
+  entregador), ``ER`` (parada finalizada), ``L`` (aguardando liberação), ``R``
+  (aguardando pagamento). Só a letra de estado entra no funil; AP/AN/AW gravam
+  o andamento e T reabre a mesma corrida; o resto é aceito e logado.
 - **will_reopen** (seção "Campo will_reopen" da doc): no ``C`` em que o
   entregador desistiu, ``true`` diz que a TaOn vai redistribuir a MESMA corrida:
   "não abra outra solicitação". Aqui o ``C`` não cancela nada
@@ -157,11 +159,22 @@ class MachineWebhookView(APIView):
             # A chegada (AP) entra no progresso (na loja antes da coleta, no
             # cliente depois) e pede uma leitura completa já.
             orders = list(Order.objects.filter(data__courier__id_mch=str(ride_ref)).order_by("pk"))
-            if orders and ride_status == "AP":
-                from shopman.shop.services import courier
+            from shopman.shop.services import courier
 
+            if orders and ride_status == "AP":
                 for order in orders:
-                    courier.record_arrival(order, at=_first(event, ("datetime",)) or None)
+                    courier.record_arrival(order, at=at)
+                courier.schedule_sync(orders[0], delay_seconds=0)
+            elif orders and ride_status in courier.PICKUP_EVENTS:
+                # Nas redondezas (AN) ou esperando na loja além do combinado (AW):
+                # o relógio da espera no balcão conta daqui (TAON-12).
+                for order in orders:
+                    courier.record_pickup_event(order, ride_status, at=at)
+            elif orders and ride_status == "T":
+                # A TaOn está trocando o entregador: a MESMA corrida segue, sem
+                # dono por um instante. Nunca é falha nem "chame de novo".
+                for order in orders:
+                    courier.record_reopen(order, at=at, source="webhook", reason=courier.REOPEN_TRANSFER)
                 courier.schedule_sync(orders[0], delay_seconds=0)
             return Response({"status": "ok", "kind": "event", "code": ride_status}, status=http.HTTP_200_OK)
 

@@ -197,6 +197,18 @@ describe("Entregas: cancelar a corrida no detalhe", () => {
     } finally { w.unmount(); }
   });
 
+  it("sem botão de cancelar, o rodapé segue o estado: 'já saiu com as sacolas' só depois da coleta", () => {
+    const atStore = mountDetail({ cancel_action: null, cancel_state: "", picked_up_at: "" });
+    try {
+      expect(atStore.get("[data-ride-footer]").text()).toContain("Para cancelar esta corrida, use a central da TaOn.");
+      expect(atStore.text()).not.toContain("Ele já saiu com as sacolas");
+    } finally { atStore.unmount(); }
+    const onStreet = mountDetail({ cancel_action: null, cancel_state: "", picked_up_at: "2026-11-19T12:00:00-03:00" });
+    try {
+      expect(onStreet.get("[data-ride-footer]").text()).toContain("Ele já saiu com as sacolas");
+    } finally { onStreet.unmount(); }
+  });
+
   it("recusa da TaOn: aviso de erro, e o Cancelar corrida segue disponível", () => {
     const message = "A TaOn não cancelou a corrida B. Cancele pela central da TaOn.";
     const w = mountDetail({ cancel_state: "failed", cancel_message: message });

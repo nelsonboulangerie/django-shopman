@@ -1,6 +1,7 @@
 import { useReadMetadata } from "./useReadMetadata";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
+import { mutationFieldErrors } from "../utils/mutationFieldErrors";
 import { useOrderIntention } from "./useOrderIntention";
 // Order board read-side. Single source for the live queue:
 //   - useFetch the canonical two-zone projection (GET /api/v1/backstage/orders/);
@@ -21,6 +22,7 @@ import {
   zonesView,
   type PreorderGroup,
   type ZoneView,
+  splitRef,
 } from "~/presentation/board";
 import { stationReadyPath, stationRecallPath } from "~/presentation/kitchen";
 import { showTreatableOrderNotification } from "~/utils/treatableNotification";
@@ -566,14 +568,23 @@ export function useOrdersBoard() {
     actionErrors.value = next;
   }
   function clearActionError(ref_: string) {
+    actionErrorFields.delete(ref_);
     if (!actionErrors.value.has(ref_)) return;
     const next = new Map(actionErrors.value);
     next.delete(ref_);
     actionErrors.value = next;
   }
+  // O campo que a recusa do servidor apontou (`field` do dialeto `{detail, field,
+  // errors}`), para o gesto que mora num diálogo marcar o próprio campo (WP-G06). Lido
+  // logo depois da falha, por quem abriu o diálogo; some com o erro.
+  const actionErrorFields = new Map<string, string>();
+  const actionErrorField = (ref_: string) => actionErrorFields.get(ref_) ?? "";
   // A falha diz em que pé o pedido ficou e QUAL gesto não chegou (F8 do laudo do
-  // Gestor; frase do dono, 09/10/2026): "WEB-6 continua novo: o Aceitar não chegou.
-  // Tente de novo." A referência, a situação e o nome do botão vêm da projeção.
+  // Gestor; frase do dono, 09/10/2026): "K42 continua novo: o Aceitar não chegou.
+  // Tente de novo." O pedido vai pelo CÓDIGO que o cartão mostra ("K42"), não pela
+  // referência inteira ("WEB-261118-K42"): é o nome pelo qual quem opera o conhece
+  // (auditoria da prévia do WP-G06, 18/11/2026). A situação e o nome do botão vêm da
+  // projeção.
   function failureMessage(ref_: string, action: string): string {
     const card = [
       ...zones.value.flatMap((zone) => zone.cards),
@@ -585,7 +596,7 @@ export function useOrdersBoard() {
     const situation = situationAfterContinua(card?.status_label);
     if (!label) return "O pedido não foi atualizado. Tente de novo.";
     return card?.ref && situation
-      ? `${card.ref} continua ${situation}: o ${label} não chegou. Tente de novo.`
+      ? `${splitRef(card.ref).code} continua ${situation}: o ${label} não chegou. Tente de novo.`
       : `O ${label} não chegou. Tente de novo.`;
   }
 
@@ -681,6 +692,8 @@ export function useOrdersBoard() {
       // Um lugar só: o aviso no cartão (ou na linha), que fica até a próxima tentativa.
       // O toast repetia a mesma frase ao mesmo tempo (laudo do Gestor, P1-6).
       setActionError(ref_, message);
+      const field = Object.keys(mutationFieldErrors(error))[0];
+      if (field) actionErrorFields.set(ref_, field);
       // Refetch canônico: o estado no servidor pode ter mudado (é justamente o
       // caso do 409) — o painel precisa mostrar a verdade, não a foto velha.
       await refresh();
@@ -822,6 +835,7 @@ export function useOrdersBoard() {
     refresh,
     isBusy,
     actionError,
+    actionErrorField,
     clearActionError,
     confirm,
     advance,

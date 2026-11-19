@@ -21,15 +21,17 @@ Os dez passos da v2 5.3:
 | 3 | Entender | A porta de modelo, se há orçamento e ela responde; senão, a regra local. Ato fora da lista fechada (`ACTS`) vira `unknown`, e a queda é registrada (K05). O risco local **soma** atos, e o modelo nunca os tira |
 | 4 | Montar o snapshot | Necessidades (uma por ato), leituras alternativas, a pergunta no ar do turno anterior, fatos lidos ao vivo com teto de passos. Nada é gravado aqui: nenhuma transação fica aberta enquanto se chama modelo ou porta |
 | 5 | Decidir | Cada movimento registrado propõe para cada necessidade; `policy.decide` (F5) escolhe |
-| 6 | Autorizar e executar | Nenhum movimento do F7 tem efeito; o F8 acrescenta |
+| 6 | Autorizar e executar | Concessão, comando gravado com a intenção de execução, guarda e recibo; recusa refaz a decisão, ligada à anterior (`08-effect.md`) |
 | 7 | Dizer e verificar | `reply.compose` (F6): molde preenchido pelo lastro e verificação de saída |
 | 8 | Gravar numa transação | `commit_transition` com comparar e gravar. Gravam juntos o episódio novo, o evento, o entendimento, o snapshot, a decisão, o plano de resposta, o snapshot depois do turno (a pergunta no ar) e a intenção de envio na caixa de saída. Conflito de versão devolve `superseded`, e a decisão sobre versão que mudou não é executada |
 | 9 | Enviar e registrar a exposição | `channel.send` com a chave `send:<decision_id>`, a mesma da intenção na caixa de saída: o trabalhador que a consumir depois não reenvia. Em `shadow` não há envio (seção 4). Mensagem segurada não sai. Turno revogado por fala nova (`interrupted()`) não envia |
 | 10 | Retomar esperas | `TurnResult.due_waits`: as esperas do episódio já vencidas, para quem agenda |
 
-**Uma transição por turno.** O episódio sobe uma versão por turno, pela máquina (F4) quando o
+**Uma transição por gravação.** O episódio sobe uma versão por gravação, pela máquina (F4) quando o
 estado muda: `question_sent` quando se pergunta e `evidence_arrived` quando a resposta chega.
 Turno sem mudança de estado também sobe a versão, e o registro aponta o evento que o causou.
+O turno com efeito grava duas vezes (F8): antes do efeito, com a intenção de execução, e no
+fim, com o recibo e a resposta.
 
 **A pergunta no ar** sai do snapshot gravado **depois** do turno (`dialogue_state`) e é lida no
 turno seguinte por `store.latest_record`. Um "sim" só se liga a ela na mesma época de posse
@@ -62,10 +64,10 @@ central). Cada módulo define:
 O F8, o F9 e o F10 acrescentam módulos sem editar o laço.
 
 Movimentos do F7: `acknowledge`, `inform`, `cover_readings`, `inform_limitation` e
-`ask_clarification`. `inform_limitation` cobre, até o F8 e o F9 chegarem, o pedido de mudança
-que nada executa, a reclamação e a consulta cujo fato está desconhecido (desconhecido não vira
-frase). Numa mudança ambígua ele não é proposto: pergunta-se antes, porque ainda não se sabe o
-que foi pedido.
+`ask_clarification`. O F8 acrescentou os de efeito (`08-effect.md`, seção 6).
+`inform_limitation` cobre o pedido de mudança que nenhum movimento elegível faz, a reclamação
+(até o F9) e a consulta cujo fato está desconhecido (desconhecido não vira frase). Numa mudança
+ambígua ele não é proposto: pergunta-se antes, porque ainda não se sabe o que foi pedido.
 
 [DECIDIDO] A carga dos módulos não usa `import_module` com nome livre, que o K38 reprova. Ela
 carrega o arquivo `engine/moves/<nome>.py` pelo caminho e recusa qualquer arquivo fora desse

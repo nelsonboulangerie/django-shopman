@@ -267,6 +267,10 @@ def check_store(port: Any, env: HarnessEnv) -> None:
     port.commit_transition(env.ctx, Transition(episode=episode, expected_version=0), (event,), (work,))
     loaded = port.load_episode(env.ctx, "harness-ep")
     _expect(loaded is not None and loaded.version == 1, "load_episode não devolve o que foi confirmado")
+    claim = port.claim_work(env.ctx, "harness", 60)
+    _expect(claim is not None and claim.work.work_id == work.work_id, "a caixa de saída não entrega o trabalho gravado")
+    port.complete_work(env.ctx, work.work_id)
+    _expect(port.claim_work(env.ctx, "harness", 60) is None, "trabalho concluído voltou da caixa de saída")
     _expect_error("revision_conflict", lambda: port.commit_transition(
         env.ctx, Transition(episode=episode, expected_version=0), (), ()))
     latest = port.latest_record(env.ctx, "harness-ep", InteractionEvent.SCHEMA)
