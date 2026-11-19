@@ -330,7 +330,7 @@ for (const device of ["phone", "counter"] as const) {
         await expect(bar.locator('[data-context-entry="fulfillment"] kbd')).toHaveText("F8");
         await expect(bar.locator('[data-context-entry="fulfillment"]')).toContainText("Entrega · Centro");
         await audits(page, "barra da venda", "[data-pos-sale-bar] [data-context-entry] span:not(:has(*))");
-        await capture(page, testInfo, "barra-cliente-quando-recebimento");
+        await capture(page, testInfo, "barra-da-venda-na-ordem-nova");
         // F7 abre o Quando (era o Recebimento) e F8 abre o Recebimento (era o Quando).
         await page.keyboard.press("F7");
         await expect(page.getByRole("dialog", { name: "Quando" })).toBeVisible({ timeout: 30_000 });
