@@ -164,7 +164,7 @@ function urgentAlert() {
 }
 
 // O "vou verificar" da Concierge (WP-07): a pergunta que ela levou à equipe. O cartão
-// nasce com o prazo prometido ao cliente e chega como a pílula invertida na base; em
+// nasce com o prazo prometido ao cliente e chega como aviso de tela no topo; em
 // `concierge-late`, a promessa já venceu e a janela interrompe a tela.
 const verification = { answered: false, takenOver: false };
 // A hora como a casa escreve ("16h12", "9h"), no fuso da loja.
