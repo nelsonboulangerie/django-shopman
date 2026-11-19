@@ -125,7 +125,7 @@ class TestPreorderTracking:
         assert proj.promise.state == "preorder_scheduled"
         assert proj.status_label == "Encomenda confirmada"
         assert proj.when_display == "Amanhã · A partir das 9h"
-        assert "garantido para amanhã · A partir das 9h" in proj.promise.message
+        assert "garantido para amanhã, a partir das 9h." in proj.promise.message
 
     def test_unaccepted_future_order_never_promises_confirmation_or_guarantee(self, order):
         from shopman.orderman.models import Order as _Order
@@ -194,7 +194,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã · A partir das 9h."
+            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã, a partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 
@@ -222,7 +222,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Finalize no ambiente seguro para garantir sua encomenda para amanhã · A partir das 9h."
+            "Finalize no ambiente seguro para garantir sua encomenda para amanhã, a partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 

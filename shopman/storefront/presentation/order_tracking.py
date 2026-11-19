@@ -1087,15 +1087,21 @@ def _promise_copy(
     confere contra as obrigações do dado.
     """
     state = data.state
-    wait_display = when_display or _commitment_date_display(data.fulfillment_wait_until)
+    # O combinado DENTRO de frase vai na forma de frase ("amanhã, a partir das 15h"),
+    # nunca na de rótulo ("amanhã · A partir das 15h"): o ponto do meio e a maiúscula
+    # são do valor que aparece sozinho na tela, e no meio de "A loja confirma sua
+    # encomenda para … e avisa por aqui." quebravam a leitura (#2752). Sem janela
+    # combinada não há forma de frase, e a data sozinha já serve às duas.
+    when_in_sentence = when_phrase or when_display
+    wait_display = when_in_sentence or _commitment_date_display(data.fulfillment_wait_until)
 
     if state == "preorder_scheduled":
         title = copy.title("TRACKING_PROMISE_PREORDER_TITLE", "Encomenda confirmada")
-        if when_display:
+        if when_in_sentence:
             message = copy.message(
                 "TRACKING_PROMISE_PREORDER_MESSAGE",
                 "Pedido garantido para {when}. Preparamos tudo fresco no dia.",
-            ).replace("{when}", when_display)
+            ).replace("{when}", when_in_sentence)
         else:
             message = copy.message(
                 "TRACKING_PROMISE_PREORDER_MESSAGE_NO_DATE",
