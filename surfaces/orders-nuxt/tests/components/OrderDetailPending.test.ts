@@ -218,7 +218,7 @@ describe("OrderDetailPending", () => {
     });
 
     it("o que o meio de pagamento respondeu fica escrito na linha, em tom de erro", () => {
-      const failure = "Última tentativa, em 18/11 às 14h32: O estorno foi recusado (Efí), e nada foi registrado aqui. Resposta (Efí): saldo insuficiente.";
+      const failure = "Última tentativa, em 18/11 às 14h32: O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
       const w = faixa({ pending: [failed({ failure })], money: failedMoney });
       const told = w.get('[data-pending="refund"] [data-pending-failure]');
       expect(told.text()).toBe(failure);

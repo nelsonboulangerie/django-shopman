@@ -1351,7 +1351,7 @@ describe("detalhe do pedido — tentar o estorno de novo", () => {
   });
 
   it("o meio de pagamento recusa de novo: nada de Estornado, e a resposta fica escrita na linha", async () => {
-    const failure = "Última tentativa, em 18/11 às 14h32: O estorno foi recusado (Efí), e nada foi registrado aqui. Resposta (Efí): saldo insuficiente.";
+    const failure = "Última tentativa, em 18/11 às 14h32: O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
     retryRefund.mockImplementationOnce(async () => challenge());
     authorize.mockImplementationOnce(async () => {
       managerChallenge.value = null;

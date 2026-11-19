@@ -98,7 +98,7 @@ describe("refundRetrySentence / refundRetryToast", () => {
 
 describe("pendingLines", () => {
   it("a falha da última tentativa vai com a linha, separada do motivo", () => {
-    const failure = "Última tentativa, em 18/11 às 14h32: O estorno foi recusado (Efí), e nada foi registrado aqui.";
+    const failure = "Última tentativa, em 18/11 às 14h32: O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
     const [line] = pendingLines(
       [{ key: "refund", tone: "error", label: "Estorno não saiu", reason: "A devolução de R$ 22,00 não chegou ao cliente.", failure, actions: [action("refund-retry")] }],
       idle,

@@ -247,7 +247,7 @@ describe("useOrderDetail", () => {
 
     // O servidor grava a tentativa mesmo quando o gateway recusa: `applied` com o
     // resultado em `refund`. O composable só diz que a tentativa foi gravada.
-    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", refund: { outcome: "refused", message: "O estorno foi recusado (Efí)." } });
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", refund: { outcome: "refused", message: "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte." } });
     expect(await d.authorize({ username: "joyce", pin: "1234" })).toBe(true);
     const second = env.fetchMock.mock.calls[1]![1];
     expect(second.body).toEqual({ base_revision: "refund-base", expected_actor_id: 1, manager_approval: { username: "joyce", pin: "1234" } });
