@@ -670,6 +670,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STEP_CANCELLED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Cancelado")},
     },
+    # O dinheiro que voltou, como marco do Histórico do pedido (com valor e hora).
+    "TRACKING_STEP_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
+    },
     "TRACKING_CANCELLED_REASON_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Motivo do cancelamento")},
     },
@@ -975,6 +979,22 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(message="A loja confirma sua encomenda para {when} e avisa por aqui."),
+        },
+    },
+    # A mesma encomenda, já paga: o título diz "Pagamento recebido" e a frase
+    # promete a devolução se a loja não puder confirmar.
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
         },
     },
     "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE": {
