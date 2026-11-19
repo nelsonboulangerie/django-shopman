@@ -102,8 +102,10 @@ def _paid_pix(ref: str, status: str = "cancelled") -> Order:
 def test_nota_recusada_e_pendencia_com_a_resposta_do_emissor_e_o_reprocessar(gerente):
     order = _order("G05-NFCE", "ready")
     Directive.objects.create(
-        topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref},
-        last_error="NFC-e emission failed: Rejeição 778: NCM inexistente.",
+        topic=FISCAL_EMIT_NFCE, status="failed",
+        payload={"order_ref": order.ref, "emitter_answer": "Rejeição 778: NCM inexistente."},
+        # A frase do log muda à vontade: o motivo da tela vem do campo.
+        last_error="Emissão recusada: Rejeição 778: NCM inexistente.",
     )
 
     with patch("shopman.shop.services.fiscal.fiscal_pool.get_backend", return_value=None):
