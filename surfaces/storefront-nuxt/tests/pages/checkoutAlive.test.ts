@@ -235,6 +235,9 @@ describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () =>
     expect(rule!.classList.contains('shop-body')).toBe(true)
     expect(money!.querySelector('p')?.classList.contains('shop-body')).toBe(true)
     expect(document.body.querySelectorAll('[data-review-unclaimed-rule]')).toHaveLength(1)
+    // A revisão abre do começo: o foco inicial não cai no link dos Termos, no fim do
+    // card (o navegador rolaria a folha até ele e esconderia o primeiro item).
+    expect(document.activeElement?.closest('[data-review-before-sending]')).toBeFalsy()
   })
 
   it('no pedido para hoje o card fica só com o dinheiro, sem divisor', async () => {

@@ -509,6 +509,14 @@ function revealStockRefusal () {
 // O fim do fechamento pode chegar antes ou depois de a consulta refeita terminar; a
 // marca vale para as duas ordens e cai quando a revisão abre de novo.
 let reviewClosesIntoStockRefusal = false
+// A revisão abre do começo. Sem isto o foco inicial ia para o primeiro elemento
+// focável do corpo, o link dos Termos, que agora fica no fim do card "Antes de
+// enviar": a folha abria já rolada e escondia o primeiro item. O foco vai para a
+// própria folha (o leitor de tela começa pelo título), sem rolar nada.
+function onReviewOpened (event: Event) {
+  event.preventDefault()
+  ;(event.target as HTMLElement | null)?.focus?.({ preventScroll: true })
+}
 function onReviewClosed (event: Event) {
   if (!reviewClosesIntoStockRefusal) return
   reviewClosesIntoStockRefusal = false
@@ -2520,6 +2528,7 @@ useSeoMeta({
             max-width="md"
             title="Revise seu pedido"
             :description="confirmSheetDescription"
+            @open-auto-focus="onReviewOpened"
             @close-auto-focus="onReviewClosed"
           >
             <!-- Superfície única, diagramação enxuta. O corpo rola; o rodapé fica
