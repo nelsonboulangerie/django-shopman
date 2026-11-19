@@ -47,7 +47,7 @@ export function manyOrdersStep(
   return recommendedActions.length > 0 &&
     recommendedActions.every((action) => action === OPEN_PRODUCTION)
     ? "peça à Produção para planejar"
-    : "avise os clientes e remarque";
+    : "avise os clientes e resolva";
 }
 
 function listed(names: string[]): string {

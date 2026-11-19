@@ -503,7 +503,7 @@ describe("promiseRiskAlert: o aviso de página", () => {
       card({ ref: "NB-261118-W33", promise: atRisk() }), // o mesmo pedido em duas listas conta uma vez
     ])!;
     expect(alert).toMatchObject({
-      title: "Promessa em risco em 2 pedidos: avise os clientes e remarque",
+      title: "Promessa em risco em 2 pedidos: avise os clientes e resolva",
       description: "W33 e C73.",
       actionLabel: "Ver o W33",
       firstRef: "NB-261118-W33",
@@ -514,7 +514,7 @@ describe("promiseRiskAlert: o aviso de página", () => {
   it("muitos pedidos: três códigos e o resto num número com nome", () => {
     const refs = ["A-1", "A-2", "A-3", "A-4", "A-5"];
     const alert = promiseRiskAlert(refs.map((ref) => card({ ref, promise: atRisk() })))!;
-    expect(alert.title).toBe("Promessa em risco em 5 pedidos: avise os clientes e remarque");
+    expect(alert.title).toBe("Promessa em risco em 5 pedidos: avise os clientes e resolva");
     expect(alert.description).toBe("1, 2, 3 e mais 2 pedidos.");
     expect(promiseRiskAlert(refs.slice(0, 4).map((ref) => card({ ref, promise: atRisk() })))!.description).toBe(
       "1, 2, 3 e mais 1 pedido.",
@@ -536,12 +536,12 @@ describe("promiseRiskAlert: o aviso de página", () => {
       card({ ref: "NB-261118-N75", promise: needsProduction() }),
       card({ ref: "NB-261118-K42", promise: atRisk() }),
     ])!;
-    expect(alert.title).toBe("Promessa em risco em 2 pedidos: avise os clientes e remarque");
-    expect(manyOrdersStep(["open-production", "resolve"])).toBe("avise os clientes e remarque");
+    expect(alert.title).toBe("Promessa em risco em 2 pedidos: avise os clientes e resolva");
+    expect(manyOrdersStep(["open-production", "resolve"])).toBe("avise os clientes e resolva");
     expect(manyOrdersStep(["open-production", "open-production"])).toBe("peça à Produção para planejar");
     // Leitura sem recomendação nunca vira pedido à Produção.
-    expect(manyOrdersStep(["", "open-production"])).toBe("avise os clientes e remarque");
-    expect(manyOrdersStep([])).toBe("avise os clientes e remarque");
+    expect(manyOrdersStep(["", "open-production"])).toBe("avise os clientes e resolva");
+    expect(manyOrdersStep([])).toBe("avise os clientes e resolva");
   });
 
   it("um pedido que pede a Produção: a descrição leva a frase do servidor", () => {
