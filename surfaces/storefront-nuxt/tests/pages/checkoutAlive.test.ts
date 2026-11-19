@@ -198,6 +198,48 @@ describe('checkout: a revisão diz o que acontece com o dinheiro', () => {
   })
 })
 
+describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () => {
+  it('a frase do dinheiro fica num card dentro do card da revisão', async () => {
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await openReview(page)
+
+    const notice = document.body.querySelector('[data-review-money-notice]')
+    expect(notice?.classList.contains('shop-surface-faubourg')).toBe(true)
+    expect(notice?.classList.contains('border')).toBe(true)
+  })
+
+  function waitingCart (promise: unknown) {
+    const base = projection()
+    const line = { ...(base.cart.items[0] as Record<string, unknown>), is_awaiting_confirmation: true, planned_for_date: deviceTomorrow, planned_for_notice: 'Previsto para hoje', promise }
+    return projection({ cart: { ...base.cart, items: [line], has_awaiting_confirmation_items: true } })
+  }
+
+  it('linha com a promessa de dia e hora não ganha a frase da lista de espera', async () => {
+    served = waitingCart({ kind: 'batch', date: deviceTomorrow, ready_at: '15:00', day_label: 'hoje', text: 'Fica pronto hoje às 15h' })
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await openReview(page)
+
+    expect(document.body.querySelector('[data-review-line-promise]')?.textContent).toContain('Fica pronto hoje às 15h')
+    expect(document.body.textContent).not.toContain('Itens em lista de espera')
+  })
+
+  it('sem a promessa, a espera continua dita (selo e frase de antes)', async () => {
+    served = waitingCart(null)
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await openReview(page)
+
+    expect(document.body.querySelector('[data-review-line-promise]')).toBeNull()
+    expect(document.body.textContent).toContain('Lista de espera')
+    expect(document.body.textContent).toContain('Itens em lista de espera: avisamos quando ficarem prontos.')
+  })
+})
+
 describe('checkout: faltou estoque no envio', () => {
   it('fecha a revisão, diz qual item e leva à sacola, em vez de um aviso que some', async () => {
     draft('pix')

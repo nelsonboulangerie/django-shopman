@@ -564,8 +564,14 @@ const whenSummary = computed(() => buildWhenSummary(state.delivery_date, selecte
 const fulfillmentSummary = computed(() => buildFulfillmentSummary(fulfillmentLabel.value, whenSummary.value))
 // Lista de espera na revisão: só quando alguma linha realmente disputa a
 // fornada do dia ESCOLHIDO (pedido agendado para outra data não tem fila).
+// "Itens em lista de espera: avisamos quando ficarem prontos." só quando alguma linha em
+// espera NÃO tem a promessa com dia e hora. Com a promessa ("Fica pronto amanhã, sexta, a
+// partir das 15h"), a linha já diz quando: as duas juntas eram duas promessas para o
+// mesmo item.
 const hasReviewWaitlist = computed(() =>
-  (cart.value?.items || []).some(line => reviewWaitlist(line, state.delivery_date, shopToday.value))
+  (cart.value?.items || []).some(line =>
+    reviewWaitlist(line, state.delivery_date, shopToday.value) && !cartLinePromise(line.promise)
+  )
 )
 const phoneDisplay = computed(() => displayBrazilianPhone(state.phone || checkout.value?.customer_phone || '', defaultDdd.value))
 const contactComplete = computed(() => buildContactComplete(state, phoneDisplay.value))
@@ -1668,8 +1674,11 @@ useSeoMeta({
         </UiAlert>
 
         <template v-else-if="checkout">
-          <!-- Faltou estoque no envio: qual item, e o caminho para resolver. -->
-          <UiAlert v-if="stockRefusal" variant="warning" data-checkout-stock-refusal data-focus-target="stock-refusal">
+          <!-- Faltou estoque no envio: qual item, e o caminho para resolver. O aviso é
+               o primeiro bloco da tela quando ela vai até ele, e não um passo do fluxo:
+               para um pouco abaixo do cabeçalho (`scroll-mt-24`), com respiro, em vez de
+               encostar na régua de foco dos passos. -->
+          <UiAlert v-if="stockRefusal" variant="warning" class="scroll-mt-24" data-checkout-stock-refusal data-focus-target="stock-refusal">
             <UiAlertTitle>{{ stockRefusal.message }}</UiAlertTitle>
             <UiAlertDescription>
               <p>Abra a sacola para ver o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
@@ -2616,10 +2625,12 @@ useSeoMeta({
               <!-- O que acontece com o dinheiro, antes de enviar: paga agora, até quando a
                    loja confirma e o que acontece se não confirmar. A frase vem do servidor,
                    com o prazo de aceite do canal (P1-06). -->
-              <p v-if="moneyNotice" class="mt-3 flex items-start gap-2 shop-body" data-review-money-notice>
-                <Icon name="lucide:shield-check" class="mt-0.5 size-4 shrink-0" />
-                <span>{{ moneyNotice }}</span>
-              </p>
+              <!-- Card dentro do card (a superfície Faubourg, a mesma do login): a frase
+                   do dinheiro é um bloco próprio da revisão, não uma linha solta. -->
+              <div v-if="moneyNotice" class="shop-surface-faubourg mt-3 flex items-start gap-3 rounded-lg border p-4" data-review-money-notice>
+                <Icon name="lucide:shield-check" class="mt-0.5 size-5 shrink-0" />
+                <p class="shop-body">{{ moneyNotice }}</p>
+              </div>
             </div>
 
             <!-- Rodapé mínimo: Total em destaque + UM botão full-width. Sem botão amarelo,
