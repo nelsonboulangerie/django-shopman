@@ -83,3 +83,15 @@ só existe pelas baselines visuais e pelo WebKit, que ficam na fila.
   `skipped` **só** no `pull_request`; em qualquer outro evento continua reprovando.
 - `python scripts/check_canonical_docs.py` confere que os 29 obrigatórios seguem
   produzidos em `pull_request` + `merge_group`.
+
+## Cache dos navegadores mora no `main`
+
+O cache do Actions é escopado por ref: um grupo da fila (`gh-readonly-queue/main/pr-N-<sha>`)
+só lê cache do próprio ref e do `main`, e o Surfaces Gate não roda no `main`. Sem isso, todo
+grupo baixava do zero os 140 MB de pacotes apt do WebKit do `production-nuxt` e, com o
+espelho lento, estourava o teto (#2679, #2756, #2757, 19/11/2026). O
+[`playwright-cache-main.yml`](../../.github/workflows/playwright-cache-main.yml) grava no
+`main` as mesmas chaves que o Surfaces Gate restaura (no push que muda lock, script ou
+contrato, de 6 em 6 horas e à mão), uma por combinação de `surface_contract.mjs matrix
+browsers`. O Surfaces Gate só restaura; gravar no ref da fila enchia a cota sem servir a
+ninguém.

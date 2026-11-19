@@ -142,6 +142,24 @@ function scoped(entry) {
   return out;
 }
 
+// Combinações de navegador que a matriz `quality` instala em Linux, uma por chave
+// de cache (motores + dependências de sistema), com um app que as tem. Usada pelo
+// `playwright-cache-main.yml`, que grava o cache no `main`: grupo da fila
+// (`gh-readonly-queue/...`) só lê cache do próprio ref e do `main`.
+function browsers() {
+  const seen = new Map();
+  for (const [, surface] of entries) {
+    const caps = surface.capabilities ?? {};
+    const usesBrowser = caps.visual || caps.geometry || caps.browser || caps.browserSuite || caps.a11y;
+    if (!usesBrowser || surface.runner) continue;
+    const engines = surface.browserEngines ?? "chromium";
+    const withDeps = Boolean(surface.browserWithDeps);
+    const key = `${engines}|${withDeps}`;
+    if (!seen.has(key)) seen.set(key, { dir: surface.dir, browser_engines: engines, browser_with_deps: withDeps });
+  }
+  process.stdout.write(JSON.stringify({ include: [...seen.values()] }));
+}
+
 function run(id, phase) {
   const surface = contract.surfaces[id];
   if (!surface) fail([`app desconhecido: ${id}`]);
@@ -157,6 +175,7 @@ function run(id, phase) {
 
 const [command, ...args] = process.argv.slice(2);
 if (command === "validate") validate();
+else if (command === "matrix" && args[0] === "browsers") browsers();
 else if (command === "matrix") matrix(args[0] ?? "quality");
 else if (command === "run") run(args[0], args[1]);
 else fail(["uso: surface_contract.mjs validate | matrix quality|pwa | run <id> <phase>"]);
