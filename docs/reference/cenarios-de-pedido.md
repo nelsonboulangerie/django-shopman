@@ -93,7 +93,7 @@ O que cada fase faz (`shopman/shop/lifecycle.py:324-737`):
 
 | Fase | Efeitos |
 |---|---|
-| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit`, aviso `order_received` (fora do `immediate`) |
+| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit` (menos para o pedido na fila da fornada de hoje, que só é cobrado quando o cliente confirma a vaga), aviso `order_received` (fora do `immediate`) |
 | `on_accepted` | cobra se o pagamento digital ainda não entrou (Pix nasce **aqui** na loja online); encomenda futura agenda o despertador; KDS (se o preparo começa sozinho); baixa de estoque; aviso `order_accepted` (nunca no balcão já entregue) |
 | `on_paid` | pago depois de cancelado → estorno + alerta; NFC-e do PDV pela regra "na saída"; aviso `payment_confirmed` |
 | `on_preparing` | tickets do KDS; aviso `order_preparing` |

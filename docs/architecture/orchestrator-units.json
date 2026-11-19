@@ -16709,6 +16709,39 @@
       "out_of_extraction": false
     },
     {
+      "id": "waitlist.charge-waits-for-the-queue",
+      "question": "A cobrança deste pedido espera a fila da fornada, ou nasce no fechamento do pedido?",
+      "owner": "waitlist.charge-waits-for-the-queue",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.waitlist_charge:charge_waits_for_the_queue",
+      "authoritative_symbols": [
+        "shopman.shop.policies.waitlist_charge:charge_waits_for_the_queue"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/waitlist_charge.py",
+          "symbols": [
+            "charge_waits_for_the_queue"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_fila_de_hoje_cobra_na_confirmacao.py::test_pedido_na_fila_da_fornada_de_hoje_nao_nasce_cobrado"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.services-substitutes",
       "question": "Quais produtos disponíveis podem substituir este SKU no canal da loja?",
       "owner": "catalog.substitutes",

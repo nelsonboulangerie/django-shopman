@@ -360,7 +360,7 @@ Sinal `order_changed` (de orderman) → `dispatch(order, phase)` → resolve `Ch
 
 | Phase | Ações (em ordem) |
 |-------|------------------|
-| **on_commit** | `customer.ensure()` → availability check (se `check_on_commit`) → `stock.hold()` → `loyalty.redeem()` → `payment.initiate()` se `timing==at_commit` → `fulfillment.create()` se `timing==at_commit` → `_handle_confirmation()` ("order_received" notif salvo `immediate`) |
+| **on_commit** | `customer.ensure()` → availability check (se `check_on_commit`) → `stock.hold()` → `loyalty.redeem()` → `payment.initiate()` se `timing==at_commit` (salvo pedido em `fermata`: a fila da fornada de hoje cobra na confirmação da vaga, `policies/waitlist_charge.py`) → `fulfillment.create()` se `timing==at_commit` → `_handle_confirmation()` ("order_received" notif salvo `immediate`) |
 | **on_confirmed** | `payment.initiate()` se `timing==post_commit` → `stock.fulfill()` se `timing==external` e counter → notif "order_confirmed" |
 | **on_paid** | race guard (cancelled? ⇒ refund + alert) → `stock.fulfill()` → notif "payment_confirmed" |
 | **on_preparing** | `kds.dispatch()` se KDS ativo → notif |

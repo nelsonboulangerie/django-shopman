@@ -491,7 +491,7 @@ relógio; a confirmação, sim.
 
 | Estado | De onde vem | O que significa |
 |--------|-------------|-----------------|
-| `fermata` | **derivado**: hold com `metadata.planned` e `expires_at IS NULL` | Reservado, esperando a fornada. Sem prazo, sem cobrança |
+| `fermata` | **derivado**: hold com `metadata.planned` e `expires_at IS NULL` | Reservado, esperando a fornada. Sem prazo, sem cobrança: o commit não cria o Pix/cartão nem com `payment.timing=at_commit`, e a conferência de pagamento da tela também não (`policies/waitlist_charge.charge_waits_for_the_queue`, #2730) |
 | `confirming` | `waitlist.open_window` (sinal de materialização) | A fornada saiu; o cliente tem `deadline` para confirmar |
 | `confirmed` | `waitlist.confirm` (cliente, via `POST /api/v1/orders/{ref}/waitlist-confirm/`) | Vaga garantida; a cobrança acontece aqui (`charge_at=confirmation`) |
 | `released` | `waitlist.release` (timeout via `sweep_waitlist_windows`, ou recusa) | Saiu da fila; hold liberado, cliente avisado, `OperatorAlert` no Gestor |
