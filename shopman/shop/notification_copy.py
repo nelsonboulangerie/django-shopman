@@ -212,10 +212,10 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     },
     # ── Fila de espera, fidelidade, acesso e produto ─────────────────────
     "waitlist_available": {
-        "subject": "Sua fornada saiu: confirme o pedido {order_ref_short}",
+        "subject": "Chegou a sua vez: confirme o pedido {order_ref_short}",
         "body": (
-            "Oba! 💛✨ Acabou de sair do forno{customer_name_greeting}! "
-            "Confirme o pedido *{order_ref_short}* para garantir: {tracking_url}"
+            "Oi{customer_name_greeting}! A fornada que você esperava ficou pronta. "
+            "Confirme seu pedido *{order_ref_short}* para garantir a sua vaga: {tracking_url}"
         ),
     },
     "waitlist_released": {
@@ -269,10 +269,13 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     },
     # `{availability_note}` nunca vem vazia e vem SEM ponto final (o ponto é daqui:
     # o template da Meta não termina em variável). services/availability_copy.py.
+    # "Fornada pronta", e não "{product_name} ficou pronto": o nome do produto pode
+    # ser feminino (a Tabatière, a Baguette) e "pronto" erraria a concordância. A
+    # fornada é sempre feminina.
     "production_ready": {
-        "subject": "{product_name} saiu do forno",
+        "subject": "Fornada pronta: {product_name}",
         "body": (
-            "Olha só o que acabou de sair do forno: *{product_name}*! {availability_note}.\n"
+            "Olha só a fornada que acabou de ficar pronta: *{product_name}*! {availability_note}.\n"
             "Garanta já o seu: {action_url}{management_note}"
         ),
     },

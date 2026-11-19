@@ -65,27 +65,32 @@ def _notification_texts() -> dict[str, str]:
     }
 
 
-#: O que ainda diz o verbo antigo, e por quê não foi trocado junto com a fila (#2791).
-PENDING = {
-    # Aviso do chamado da fila: tem modelo aprovado na Meta com o mesmo texto
-    # (`fila_vaga_disponivel`, "A fornada que você esperava saiu."). Texto de
-    # modelo aprovado não se edita, reaprova; o texto livre muda junto com ele.
-    "notification:waitlist_available/subject",
-    "notification:waitlist_available/body",
-    # Aviso "saiu do forno" (Marketing): idem, modelo `saiu_do_forno` na Meta.
-    "notification:production_ready/subject",
-    "notification:production_ready/body",
-    # Sacola vazia de manhã e a oferta do próximo lote: fora das telas da fila.
-    "registry:CART_EMPTY/manha/anon/message",
-    "registry:CART_EMPTY/manha/*/message",
-    "registry:KINTSUGI_PLANNED_OFFER/*/*/message",
-}
+def _dynamic_collection_texts() -> dict[str, str]:
+    """Rótulo e descrição das seções vivas do cardápio (``shop/dynamic_collections.py``)."""
+    from shopman.shop import dynamic_collections
+
+    out: dict[str, str] = {}
+    for ref in sorted(dynamic_collections._registry):
+        meta = dynamic_collections._registry[ref].meta
+        out[f"{ref}/label"] = meta.label
+        out[f"{ref}/description"] = meta.description or ""
+    return out
+
+
+#: O que ainda diz o verbo antigo, e por quê. Vazia desde 19/11/2026: o aviso do
+#: chamado da fila e o de fornada pronta nunca tiveram modelo submetido à Meta
+#: (``docs/reference/whatsapp-templates-meta.md``), então os textos mudaram junto
+#: com a sacola vazia, a oferta do próximo lote e a seção viva do cardápio.
+PENDING: set[str] = set()
 
 
 def _offenders() -> set[str]:
     found = {f"registry:{where}" for where, text in _registry_texts().items() if says_out_of_the_oven(text)}
     found |= {
         f"notification:{where}" for where, text in _notification_texts().items() if says_out_of_the_oven(text)
+    }
+    found |= {
+        f"collection:{where}" for where, text in _dynamic_collection_texts().items() if says_out_of_the_oven(text)
     }
     return found
 
@@ -143,3 +148,30 @@ def test_the_queue_phrases_say_ficar_pronta():
         "Pagamento recebido. Sua reserva está na fila de espera da fornada prevista para {when}. "
         "Avisamos quando ficar pronta."
     )
+
+
+def test_the_rest_of_the_house_copy_says_ficar_pronto():
+    from shopman.shop.notification_copy import CUSTOMER_COPY
+
+    registry = _registry_texts()
+    assert registry["CART_EMPTY/manha/anon/message"] == "Pão fresquinho acabou de ficar pronto."
+    assert registry["CART_EMPTY/manha/*/message"] == "Pão fresquinho acabou de ficar pronto."
+    assert registry["KINTSUGI_PLANNED_OFFER/*/*/message"] == (
+        "Fica pronto no próximo lote, fresquinho. Quer garantir o seu?"
+    )
+    # O chamado da fila: a mesma voz do acompanhamento ("Chegou a sua vez!", "vaga").
+    assert CUSTOMER_COPY["waitlist_available"]["subject"] == "Chegou a sua vez: confirme o pedido {order_ref_short}"
+    assert CUSTOMER_COPY["waitlist_available"]["body"] == (
+        "Oi{customer_name_greeting}! A fornada que você esperava ficou pronta. "
+        "Confirme seu pedido *{order_ref_short}* para garantir a sua vaga: {tracking_url}"
+    )
+    # "Fornada pronta", para a concordância não depender do gênero do produto.
+    assert CUSTOMER_COPY["production_ready"]["subject"] == "Fornada pronta: {product_name}"
+    assert "a fornada que acabou de ficar pronta: *{product_name}*" in CUSTOMER_COPY["production_ready"]["body"]
+
+
+def test_the_live_menu_section_has_the_new_name():
+    texts = _dynamic_collection_texts()
+
+    assert texts["fresh_from_oven/label"] == "Acabaram de ficar prontos"
+    assert texts["fresh_from_oven/description"] == "Ficaram prontos nos últimos 60 minutos."

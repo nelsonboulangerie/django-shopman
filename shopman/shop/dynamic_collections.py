@@ -179,13 +179,13 @@ class FeaturedResolver:
 
 
 class FreshFromOvenResolver:
-    """Recém saídos do forno: WorkOrders finalizadas nos últimos 60 minutos."""
+    """Acabaram de ficar prontos: WorkOrders finalizadas nos últimos 60 minutos."""
 
     meta = DynamicCollectionMeta(
         ref="fresh_from_oven",
-        label="Recém saídos do forno",
+        label="Acabaram de ficar prontos",
         icon="schedule",
-        description="Saíram do forno nos últimos 60 minutos.",
+        description="Ficaram prontos nos últimos 60 minutos.",
     )
 
     WINDOW_MINUTES = 60

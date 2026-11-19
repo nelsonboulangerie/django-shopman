@@ -111,7 +111,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         MOMENT_MANHA: {
             AUDIENCE_ANON: CopyEntry(
                 title="Sacola vazia",
-                message="Pão fresquinho acabou de sair do forno.",
+                message="Pão fresquinho acabou de ficar pronto.",
             ),
             AUDIENCE_RETURNING: CopyEntry(
                 title="Vamos montar seu café da manhã?",
@@ -119,7 +119,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
             WILDCARD: CopyEntry(
                 title="Vamos montar seu café da manhã?",
-                message="Pão fresquinho acabou de sair do forno.",
+                message="Pão fresquinho acabou de ficar pronto.",
             ),
         },
         MOMENT_ALMOCO: {
@@ -1893,7 +1893,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar?")},
     },
     "KINTSUGI_PLANNED_OFFER": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Sai fresquinho no próximo lote. Quer garantir o seu?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Fica pronto no próximo lote, fresquinho. Quer garantir o seu?")},
     },
 
     # ── Reorder ──────────────────────────────────────────────────

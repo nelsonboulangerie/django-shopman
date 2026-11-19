@@ -157,7 +157,7 @@ class CatalogSectionProjection:
 
     - ``category`` populated = seção vinda de Collection (estática).
     - ``dynamic_ref`` populado = seção vinda de resolver dinâmico
-      (``Destaques``, ``Recém saídos do forno``, etc.).
+      (``Destaques``, ``Acabaram de ficar prontos``, etc.).
     - ``ref`` (sempre presente) identifica a seção no scroll-spy e na pill.
     - ``skus`` diz quais cards a seção mostra, na ordem da seção. O card mora uma
       vez só, em ``CatalogProjection.items``; a superfície resolve o SKU pelo
@@ -459,7 +459,7 @@ def build_catalog_items_for_products(
 
 
 def fresh_from_oven_skus(channel_ref: str) -> tuple[str, ...]:
-    """SKUs da dinâmica "Recém saídos do forno" (fornadas finalizadas há pouco)."""
+    """SKUs da dinâmica "Acabaram de ficar prontos" (fornadas finalizadas há pouco)."""
     from shopman.shop import dynamic_collections as dyn
 
     section = dyn.resolve("fresh_from_oven", channel_ref=channel_ref)
