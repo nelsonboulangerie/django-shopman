@@ -190,7 +190,7 @@ function verificationAlert(urgent) {
     approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "acknowledges", proof: "",
   });
   return {
-    pk, rev: 0, type: "concierge_verify", type_label: "WhatsApp: cliente esperando confirmação da equipe",
+    pk, rev: 0, type: "concierge_verify", type_label: "WhatsApp: cliente esperando a resposta da equipe",
     severity: "warning", severity_label: "Aviso", audience: "orders",
     message:
       "Pergunta do cliente: “amanhã vai ter pão de forma? queria para entregar”.\n" +

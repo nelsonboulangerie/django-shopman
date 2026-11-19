@@ -32,7 +32,7 @@ function action(kind: string, label: string, path: string) {
 const CARD: AlertProjection = {
   pk: 31,
   type: "concierge_verify",
-  type_label: "WhatsApp: cliente esperando confirmação da equipe",
+  type_label: "WhatsApp: cliente esperando a resposta da equipe",
   severity: "warning",
   severity_label: "Aviso",
   message: "Pergunta do cliente: “vocês têm estacionamento”.\nA Concierge prometeu a resposta em até 10 minutos.",
