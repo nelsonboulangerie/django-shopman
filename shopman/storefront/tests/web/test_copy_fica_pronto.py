@@ -197,7 +197,10 @@ def test_the_queue_phrases_say_ficar_pronta():
     registry = _registry_texts()
 
     assert registry["TRACKING_WAITLIST_WAITING_MESSAGE/*/*/message"] == (
-        "Assim que a fornada ficar pronta, a gente te avisa para confirmar. Nada foi cobrado ainda."
+        "Quando a fornada ficar pronta, avisamos para você confirmar. Nada foi cobrado ainda."
+    )
+    assert registry["TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED/*/*/message"] == (
+        "Sua reserva está na fila de espera da fornada prevista para {when}."
     )
     assert registry["TRACKING_PROMISE_WAITLIST_MESSAGE/*/*/message"] == (
         "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta."

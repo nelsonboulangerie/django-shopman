@@ -942,6 +942,24 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # Com o cartão da fila na tela (fornada de hoje, nada cobrado), a frase principal
+    # diz onde a reserva está e para quando é a fornada; quem promete o aviso é o
+    # cartão, logo abaixo. As duas frases de cima seguem para quando o cartão não
+    # aparece. "Fila de espera" e a data como previsão ficam (COPY-WAITLIST-001).
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera da fornada prevista para {when}.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera da fornada.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID": {
         WILDCARD: {
             WILDCARD: CopyEntry(
@@ -1262,7 +1280,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_WAITLIST_WAITING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Assim que a fornada ficar pronta, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+            message="Quando a fornada ficar pronta, avisamos para você confirmar. Nada foi cobrado ainda.",
         )},
     },
     # O chamado é a frase principal do acompanhamento (título e mensagem da

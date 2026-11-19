@@ -81,8 +81,41 @@ class TestTrackingSpeaksTheQueueWithoutTheNotification:
 
         assert proj.waitlist_state == waitlist.FERMATA
         assert proj.waitlist_deadline is None, "esperar a fornada não tem relógio"
-        assert proj.waitlist_planned_for_display == "amanhã"
         assert "Nada foi cobrado" in proj.copy.waitlist_waiting_message
+
+    def test_waiting_says_each_thing_once(self):
+        """A frase principal e o cartão da fila não repetem um ao outro.
+
+        Os dois ficam na mesma tela. A frase diz onde a reserva está e para
+        quando é a fornada (como previsão, e sempre "fila de espera":
+        COPY-WAITLIST-001); o cartão diz o aviso para confirmar e que nada foi
+        cobrado. Antes os dois prometiam o aviso e os dois diziam a data.
+        """
+        from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+        proj = build_order_tracking(_fermata_order("T-UMA-VOZ"))
+
+        assert proj.promise.message == "Sua reserva está na fila de espera da fornada prevista para amanhã."
+        assert "Avisamos" not in proj.promise.message
+        assert proj.copy.waitlist_waiting_message == (
+            "Quando a fornada ficar pronta, avisamos para você confirmar. Nada foi cobrado ainda."
+        )
+        # A data já está na frase principal: a linha "Fornada prevista para …" do cartão não nasce.
+        assert proj.waitlist_planned_for_display is None
+
+    def test_the_card_keeps_the_batch_date_when_the_main_sentence_does_not_say_it(self):
+        from shopman.storefront.presentation.order_tracking import (
+            _queue_sentence_dates_the_batch,
+            build_copy,
+        )
+
+        copy = build_copy("TRACKING")
+
+        assert _queue_sentence_dates_the_batch(
+            "Sua reserva está na fila de espera da fornada prevista para hoje, 15h às 15h30.", copy
+        )
+        assert not _queue_sentence_dates_the_batch("Sua reserva está na fila de espera da fornada.", copy)
+        assert not _queue_sentence_dates_the_batch("Falta só o pagamento.", copy)
 
     def test_the_open_window_carries_the_deadline_to_the_screen(self):
         from shopman.storefront.presentation.order_tracking import build_order_tracking

@@ -421,6 +421,12 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
     last_updated_display = copy.title("TRACKING_PROMISE_UPDATED_NOW", "Atualizado agora")
     when_display = _when_display(data.commitment_date, data.commitment_slot_label)
     schedule_display = _schedule_display(data, when_display)
+    # Quem espera a fornada tem o cartão da fila logo abaixo da frase principal.
+    # Com os dois na tela, cada um diz uma coisa: a frase diz ONDE a reserva está
+    # e para quando é a fornada; o cartão diz o que acontece depois (o aviso para
+    # confirmar) e que nada foi cobrado. Antes os dois diziam o aviso e a data
+    # (coordenação, 19/11/2026, defeito "prolixo").
+    queue_card = data.waitlist_state == "fermata"
     promise = _present_promise(
         data.promise,
         status=data.status,
@@ -429,6 +435,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         when_display=when_display,
         when_phrase=_when_phrase(data.commitment_date, data.commitment_slot_label),
         payment_confirmed=data.payment_confirmed,
+        queue_card=queue_card,
     )
     return OrderTrackingProjection(
         convenience_pending=data.convenience_pending,
@@ -494,7 +501,12 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         stale_after_seconds=data.stale_after_seconds,
         waitlist_state=data.waitlist_state,
         waitlist_deadline=data.waitlist_deadline,
-        waitlist_planned_for_display=_waitlist_planned_for_display(data.waitlist_planned_for),
+        waitlist_planned_for_display=(
+            # A frase principal já diz para quando é a fornada: o cartão não repete.
+            None
+            if queue_card and _queue_sentence_dates_the_batch(promise.message, copy)
+            else _waitlist_planned_for_display(data.waitlist_planned_for)
+        ),
         mock_payment_enabled=data.can_mock_confirm_payment,
         fiscal_note=_present_fiscal_note(data.fiscal_note),
         subtotal_display=f"R$ {format_money(_list_subtotal_q(data))}",
@@ -993,6 +1005,7 @@ def _present_promise(
     when_display: str | None = None,
     when_phrase: str | None = None,
     payment_confirmed: bool = False,
+    queue_card: bool = False,
 ) -> OrderTrackingPromiseProjection:
     title, message = _promise_copy(
         data,
@@ -1002,6 +1015,7 @@ def _present_promise(
         when_display=when_display,
         when_phrase=when_phrase,
         payment_confirmed=payment_confirmed,
+        queue_card=queue_card,
     )
     footnote = _promise_footnote(data, copy=copy, message=message)
     return OrderTrackingPromiseProjection(
@@ -1080,6 +1094,7 @@ def _promise_copy(
     when_display: str | None = None,
     when_phrase: str | None = None,
     payment_confirmed: bool = False,
+    queue_card: bool = False,
 ) -> tuple[str, str]:
     """Título e mensagem do estado — UMA frase que já cobre as obrigações.
 
@@ -1377,7 +1392,7 @@ def _promise_copy(
             message = (
                 _paid_fulfillment_wait_message(data, copy=copy, wait_display=wait_display, until=until)
                 if payment_confirmed
-                else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until)
+                else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until, queue_card=queue_card)
             )
             return title, message
         if payment_confirmed:
@@ -1400,7 +1415,7 @@ def _promise_copy(
             if _is_fulfillment_wait(data):
                 return (
                     copy.title("TRACKING_PROMISE_CONFIRMED_WAITING", "Pedido aceito"),
-                    _waitlist_message(data, copy=copy, wait_display=wait_display),
+                    _waitlist_message(data, copy=copy, wait_display=wait_display, queue_card=queue_card),
                 )
             return _pair(copy, "TRACKING_PROMISE_CONFIRMED_WAITING",
                          "Pedido aceito",
@@ -1408,7 +1423,7 @@ def _promise_copy(
         if _is_fulfillment_wait(data):
             return (
                 copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
-                _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until),
+                _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until, queue_card=queue_card),
             )
         return (
             copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
@@ -1422,6 +1437,7 @@ def _promise_copy(
             # enquanto a loja não aceitou, que o valor volta se ela não puder.
             message = _waitlist_message(
                 data, copy=copy, wait_display=wait_display, awaiting_store=status == "new", paid=True, until=until,
+                queue_card=queue_card,
             )
             return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
         message = (
@@ -1612,6 +1628,7 @@ def _waitlist_message(
     awaiting_store: bool = False,
     paid: bool = False,
     until: str = "",
+    queue_card: bool = False,
 ) -> str:
     # Encomenda que a loja ainda não aceitou não está "reservada": a Conta diz
     # "Aguardando a loja" e o acompanhamento diz a mesma coisa (laudo 09/11).
@@ -1671,6 +1688,9 @@ def _waitlist_message(
                 "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE",
                 "Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
             ).replace("{when}", wait_display)
+        if queue_card:
+            # O cartão da fila, logo abaixo, é quem promete o aviso.
+            return _queue_sentence(copy).replace("{when}", wait_display)
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE",
             "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
@@ -1680,10 +1700,37 @@ def _waitlist_message(
             "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_NO_DATE",
             "Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
         )
+    if queue_card:
+        return copy.message(
+            "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED_NO_DATE",
+            "Sua reserva está na fila de espera da fornada.",
+        )
     return copy.message(
         "TRACKING_PROMISE_WAITLIST_MESSAGE_NO_DATE",
         "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
     )
+
+
+def _queue_sentence(copy: CopyCatalog) -> str:
+    """A frase principal de quem espera a fornada COM o cartão da fila na tela.
+
+    Mantém "fila de espera" e a data como previsão (COPY-WAITLIST-001); perde só
+    o "Avisamos quando ficar pronta.", que o cartão diz.
+    """
+    return copy.message(
+        "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED",
+        "Sua reserva está na fila de espera da fornada prevista para {when}.",
+    )
+
+
+def _queue_sentence_dates_the_batch(message: str, copy: CopyCatalog) -> bool:
+    """A frase principal é a da fila com a data da fornada?
+
+    Quando é, o cartão da fila não repete "Fornada prevista para …". Quando a
+    frase principal é outra (sem data, ou outro estado), a linha do cartão fica.
+    """
+    before_when, _, after_when = _queue_sentence(copy).partition("{when}")
+    return bool(before_when) and message.startswith(before_when) and message.endswith(after_when)
 
 
 def _payment_wait_message(
@@ -2118,7 +2165,7 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         waitlist_waiting_title=copy.title("TRACKING_WAITLIST_WAITING_TITLE", "Você está na fila"),
         waitlist_waiting_message=copy.message(
             "TRACKING_WAITLIST_WAITING_MESSAGE",
-            "Assim que a fornada ficar pronta, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+            "Quando a fornada ficar pronta, avisamos para você confirmar. Nada foi cobrado ainda.",
         ),
         waitlist_confirm_cta=copy.title("TRACKING_WAITLIST_CONFIRM_CTA", "Confirmar meu pedido"),
         waitlist_confirmed_title=copy.title("TRACKING_WAITLIST_CONFIRMED_TITLE", "Confirmado, já vamos separar"),

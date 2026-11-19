@@ -1219,6 +1219,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED_NO_DATE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_RATE_LIMIT_TITLE": (
         ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
