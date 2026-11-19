@@ -166,6 +166,8 @@ def _window_until(conversation) -> datetime | None:
     try:
         evidence = WindowEvidence.from_value((latest.envelope or {}).get("window_evidence"))
     except Exception:
+        # Prova de janela ilegível: vale a conta pela hora da entrada, nunca o turno caído.
+        logger.warning("concierge.verification.window_evidence_unreadable conversation=%s", conversation.pk)
         evidence = None
     if evidence is not None and evidence.valid_until:
         return evidence.valid_until
