@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -1141,6 +1141,10 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     """
     if context not in DETAIL_CONTEXTS:
         raise ValueError(f"Contexto de detalhe desconhecido: {context!r}")
+    # Um relógio por leitura, como no quadro: o combinado e a hora da Cozinha
+    # falam do mesmo instante.
+    now = timezone.now()
+    today = timezone.localtime(now).date()
     # Itens a preço de tabela e o desconto (cupom, promoção) em linha própria:
     # rateado no preço, o cupom sumia para o operador (beta 06/11).
     items, discount_lines = order_pricing.priced_items(order)
@@ -1218,7 +1222,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         gift_message=str(order.data.get("gift_message", "") or ""),
         gift_hide_values=bool(order.data.get("gift_hide_values")),
         customer_profile=_customer_profile(order),
-        schedule_label=_schedule_label(order),
+        schedule_label=_schedule_label(order, today=today),
         context=context,
         channel_name=_channel_name(order.channel_ref or ""),
         opened_line=f"aberto às {format_clock(order.created_at)}" if order.created_at else "",
@@ -1306,7 +1310,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     operational = operator_orders.operational_actions(order, user=user)
     # A encomenda que ainda espera a hora da Cozinha (WP-G02): o detalhe dá ao
     # gesto o mesmo nome e o mesmo peso do card.
-    kitchen_release_at = _kitchen_clock(order, timezone.now())[0]
+    kitchen_release_at = _kitchen_clock(order, now)[0]
     waits_kitchen = kitchen_release_at is not None
     if waits_kitchen:
         operational = _early_start_actions(operational)
@@ -1319,7 +1323,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             cancel_action=cancel_action,
         ))
     link_fields, link_problem = _payment_link_read(order, method)
-    danfe = order_danfe.card_state(order)
+    danfe = order_danfe.card_state(order, now=now)
     return OperatorOrderProjection(
         **common,
         kitchen_release_label=_kitchen_release_label(kitchen_release_at),
@@ -1628,8 +1632,11 @@ _SCHEDULE_OPEN_STATUSES = frozenset({
 })
 
 
-def _schedule(order: Order) -> tuple[str, str]:
+def _schedule(order: Order, *, today: date | None = None) -> tuple[str, str]:
     """O combinado do pedido, numa frase só, e em que pé está: ``(rótulo, estado)``.
+
+    ``today`` é o dia da leitura: a projeção que monta muitos cartões o lê uma
+    vez e o passa adiante (:func:`build_two_zone_queue`); sem ele, vale o de agora.
 
     A MESMA frase no detalhe, no cartão, na Fila, na Tabela e no sino: uma
     função só, para nenhuma forma dizer o combinado com outras palavras.
@@ -1659,8 +1666,8 @@ def _schedule(order: Order) -> tuple[str, str]:
         commitment = timezone.localtime(promised).date() if promised is not None else None
     if commitment is None:
         return window, ""
-    today = timezone.localdate()
-    day = str(_commitment_date_display(commitment))
+    today = today or timezone.localdate()
+    day = str(_commitment_date_display(commitment, today=today))
     if commitment < today and order.status in _SCHEDULE_OPEN_STATUSES:
         label = f"Era para {day}"
         return (f"{label} · {window}" if window else label), "overdue"
@@ -1672,9 +1679,9 @@ def _schedule(order: Order) -> tuple[str, str]:
     return label, ""
 
 
-def _schedule_label(order: Order) -> str:
+def _schedule_label(order: Order, *, today: date | None = None) -> str:
     """Quando o combinado acontece, para o detalhe: a frase de :func:`_schedule`."""
-    return _schedule(order)[0]
+    return _schedule(order, today=today)[0]
 
 
 #: Letra Machine → label pt-BR do operador (fonte única do gestor).
@@ -2088,8 +2095,17 @@ def board_rail_counts() -> dict[str, int]:
 
 
 def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
-    """Build the operator queue grouped by the next physical action."""
+    """Build the operator queue grouped by the next physical action.
+
+    Um relógio por leitura: ``now`` e ``today`` são lidos aqui, uma vez, e
+    passados a cada cartão e a cada régua. Lido de novo a cada pergunta, a
+    leitura que cruzava a meia-noite via a mesma encomenda "de amanhã" numa
+    lista e "de hoje" na outra, e ela saía das duas por um ciclo.
+    """
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    now = timezone.now()
+    today = timezone.localtime(now).date()
 
     # Balcão é propriedade do PDV/KDS: nunca cria trabalho para o Gestor. O
     # filtro em Python alcança também o pequeno intervalo do commit em que o
@@ -2124,7 +2140,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # A última tentativa de DANFE de cada pedido e o destino: uma leitura só.
     danfe_reads = order_danfe.read_for(all_orders)
     # A saúde da reserva de cada pedido (WP-G08): uma leitura para o painel inteiro.
-    promise_reads = order_promise.read_for(all_orders)
+    promise_reads = order_promise.read_for(all_orders, now=now)
     from shopman.backstage.models import DeliveryDevice
     from shopman.backstage.services.delivery_devices import PREFIX
 
@@ -2156,7 +2172,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # 09/11). Aceita, a encomenda de data futura sai do dia e vai para "Agendados";
     # o despertador (preorder.activate) a devolve ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, now=now, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
@@ -2165,10 +2181,10 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # §15: a Saída da Cozinha mora no Gestor, com o progresso por estação).
     from shopman.backstage.projections.kds import kitchen_station_chips
 
-    kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
+    kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o, today=today)])
     ready_moments = ready_moments_for(ready_orders)
-    expectation = prep_expectation(now=timezone.now())
-    day_cards = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
+    expectation = prep_expectation(now=now)
+    day_cards = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, now=now, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o, today=today))
     # A encomenda do dia que ainda espera a hora da Cozinha não é trabalho do quadro
     # (dono, 18/11/2026): mora na lista "Encomendas", abaixo das colunas, com "Vai
     # para a Cozinha às 17h15", e só entra em "Em preparo" quando chega a hora dela.
@@ -2182,27 +2198,25 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mesmo que a data combinada seja futura.
     future_preorders = [
         o for o in all_orders
-        if o.status in ("accepted", "preparing") and _is_future_preorder(o)
+        if o.status in ("accepted", "preparing") and _is_future_preorder(o, today=today)
     ]
     future_cards = tuple(
-        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user)
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, now=now, user=user)
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     # Hoje primeiro (pela hora em que cada uma chega à Cozinha), depois os próximos dias.
     preorders = (*waiting_today, *future_cards)
     preparing_count = len(prep)
 
-    expedition_pickup = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, now=now, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, now=now, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user, courier_change=courier_change)
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, now=now, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
 
-    from datetime import time, timedelta
-
-    service_day = timezone.localdate()
+    service_day = today
     service_day_ends_at = timezone.make_aware(
         datetime.combine(service_day + timedelta(days=1), time.min),
         timezone.get_current_timezone(),
@@ -2210,12 +2224,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 
     return TwoZoneQueueProjection(
         equipment_out=_equipment_out(user=user, devices=devices),
-        ride_candidates=(ride_candidates := _ride_candidates([*ready_orders, *prep_orders])),
+        ride_candidates=(ride_candidates := _ride_candidates([*ready_orders, *prep_orders], today=today)),
         ride_action=_ride_action_for(ride_candidates, [*ready_orders, *prep_orders], user=user),
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
-            _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, user=user)
+            _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, promise_reads=promise_reads, now=now, user=user)
             for o in all_orders if o.channel_ref == "ifood" and ((o.data or {}).get("ifood") or {}).get("handshake_pending")
         ),
         intake=intake,
@@ -2233,7 +2247,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         service_day_ends_at=service_day_ends_at.isoformat(),
         preorders=preorders,
         preorders_count=len(preorders),
-        awareness=build_queue_awareness(user=user, expectation=expectation),
+        awareness=build_queue_awareness(user=user, now=now, expectation=expectation),
         cancel_reasons=_cancel_reasons(),
     )
 
@@ -2488,17 +2502,23 @@ def _parse_iso(value) -> datetime | None:
     return parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
 
 
-def _is_future_preorder(order: Order) -> bool:
-    """Encomenda = data combinada no futuro (régua do lifecycle)."""
+def _is_future_preorder(order: Order, *, today: date | None = None) -> bool:
+    """Encomenda = data combinada no futuro (régua do lifecycle).
+
+    ``today`` é o dia da leitura de quem chama. Quem pergunta mais de uma vez na
+    mesma projeção passa o mesmo dia: lido de novo a cada pergunta, a leitura que
+    cruza a meia-noite respondia "é de amanhã" numa lista e "é de hoje" na outra,
+    e a encomenda saía das duas.
+    """
     commitment = get_commitment_date(order)
-    return commitment is not None and commitment > timezone.localdate()
+    return commitment is not None and commitment > (today or timezone.localdate())
 
 
-def _commitment_date_display(commitment) -> str:
+def _commitment_date_display(commitment, *, today: date | None = None) -> str:
     """Display curto da data combinada para o badge do card do operador."""
     from shopman.backstage.projections.order_attention import commitment_day_label
 
-    return commitment_day_label(commitment)
+    return commitment_day_label(commitment, today=today)
 
 
 _WAITLIST_LABELS = {
@@ -2622,8 +2642,12 @@ def _build_card(
     ready_moments=None,
     expectation: PrepExpectation | None = None,
     promise_reads=None,
+    now: datetime | None = None,
 ) -> OrderCardProjection:
-    now = timezone.now()
+    # Um relógio por leitura: o quadro lê ``now`` uma vez e o passa a cada cartão
+    # (``build_two_zone_queue``). O "hoje" sai dele, nunca de uma segunda leitura.
+    now = now or timezone.now()
+    today = timezone.localtime(now).date()
     kitchen_release_at, kitchen_released_at = _kitchen_clock(order, now)
     clock_since = kitchen_released_at or order.created_at
     elapsed = max(0.0, (now - clock_since).total_seconds())
@@ -2675,8 +2699,8 @@ def _build_card(
         emit_failed_alert=(order.ref in fiscal_states.failed_alert_refs) if fiscal_states is not None else None,
     )
     commitment = get_commitment_date(order)
-    is_preorder = commitment is not None and commitment > timezone.localdate()
-    schedule_label, schedule_state = _schedule(order)
+    is_preorder = commitment is not None and commitment > today
+    schedule_label, schedule_state = _schedule(order, today=today)
     waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
     danfe = order_danfe.card_state(order, reads=danfe_reads, now=now)
@@ -2778,7 +2802,7 @@ def _build_card(
         # A que espera a hora da Cozinha hoje também mora na lista "Encomendas": o
         # grupo dela precisa do nome do dia ("hoje"), como o das de outro dia.
         commitment_date_display=(
-            _commitment_date_display(commitment) if is_preorder or (kitchen_release_at and commitment) else ""
+            _commitment_date_display(commitment, today=today) if is_preorder or (kitchen_release_at and commitment) else ""
         ),
         schedule_label=schedule_label if schedule_state else "",
         schedule_state=schedule_state,
@@ -2802,6 +2826,7 @@ def _build_card(
     attention = card_attention(
         order, card, channel_config,
         acceptance_timer=deadline if isinstance(deadline, AcceptanceTimer) else None,
+        today=today,
     )
     if expectation is not None:
         eta = ready_eta(order, expectation, channel_config, now=now)
@@ -2956,7 +2981,7 @@ def courier_ride_action(orders, *, user=None) -> Action | None:
     )
 
 
-def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:
+def _ride_candidates(orders, *, today: date | None = None) -> tuple[RideCandidateProjection, ...]:
     """As entregas que podem entrar juntas numa corrida (prontas primeiro, depois em preparo).
 
     A TaOn se chama também antes do pronto (o lembrete de chamar vem no preparo),
@@ -2968,7 +2993,7 @@ def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:
     orders = sorted(orders, key=lambda order: order.status != "ready")
     if len(orders) < 2 or delivery_services.courier_backend() is None:
         return ()
-    rows = [_ride_candidate(order) for order in orders if _rides_with_others(order)]
+    rows = [_ride_candidate(order) for order in orders if _rides_with_others(order, today=today)]
     return tuple(rows) if len(rows) >= 2 else ()
 
 
@@ -2978,10 +3003,10 @@ def _ride_action_for(candidates, orders, *, user=None) -> Action | None:
     return courier_ride_action([order for order in orders if order.ref in refs], user=user) if refs else None
 
 
-def _rides_with_others(order: Order) -> bool:
+def _rides_with_others(order: Order, *, today: date | None = None) -> bool:
     from shopman.shop.services import courier
 
-    return _is_delivery(order) and not _is_future_preorder(order) and not courier.group_refusal(order)
+    return _is_delivery(order) and not _is_future_preorder(order, today=today) and not courier.group_refusal(order)
 
 
 def _ride_candidate(order: Order, *, near: Order | None = None) -> RideCandidateProjection:

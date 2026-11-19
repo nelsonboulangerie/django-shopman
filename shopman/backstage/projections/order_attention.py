@@ -211,11 +211,13 @@ def _stage_attention(order: Order, card) -> str:
 
 def card_attention(
     order: Order, card, channel_config=None, *, acceptance_timer: AcceptanceTimer | None = None,
+    today=None,
 ) -> dict:
     """Os campos de atenção do cartão: o fato, desde quando conta e a meta.
 
     ``acceptance_timer`` é o prazo de aceite já agendado para o pedido novo: com
     ele, a meta e o "desde" saem do próprio timer (``acceptance_timer_goal``).
+    ``today`` é o dia da leitura do quadro (um por projeção); sem ele, o de agora.
     """
     kind = attention_kind(order, card)
     if not kind:
@@ -254,7 +256,7 @@ def card_attention(
         # Conta de quando a reserva perdeu o lastro, quando há esse instante; a
         # meta é o combinado com o cliente, quando há hora combinada.
         since_iso = card.promise.since_iso or _iso(order.accepted_at or order.created_at)
-        agreed = _agreed_goal(order, kind, since_iso, 0, channel_config)
+        agreed = _agreed_goal(order, kind, since_iso, 0, channel_config, today=today)
         return {"attention": kind, "attention_since_iso": since_iso, **(agreed or {"goal_minutes": 0, "goal_label": ""})}
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
         goal, since = acceptance_timer_goal(acceptance_timer) or (
@@ -279,7 +281,7 @@ def card_attention(
     if kind == "handoff":
         # No balcão o relógio é o do pronto ("6 min no balcão").
         since_iso = card.ready_at_iso or _iso(order.ready_at) or _iso(order.created_at)
-    agreed = _agreed_goal(order, kind, since_iso, goal, channel_config)
+    agreed = _agreed_goal(order, kind, since_iso, goal, channel_config, today=today)
     if agreed is not None:
         return {"attention": kind, "attention_since_iso": since_iso, **agreed}
     return {
@@ -294,7 +296,7 @@ def card_attention(
 _AGREED_STAGES = ("start", "station", "mark_ready", "dispatch", "handoff", PROMISE_ATTENTION)
 
 
-def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_config) -> dict | None:
+def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_config, *, today=None) -> dict | None:
     """A meta do pedido com hora combinada: o atraso se mede contra o combinado.
 
     Sem isto, a retirada combinada para as 18h aceita às 10h nascia atrasada às
@@ -321,10 +323,11 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
         return None
     clock = timezone.localtime(promised)
     goal_label = f"combinado para as {format_clock(clock)}"
-    if clock.date() != timezone.localdate():
+    today = today or timezone.localdate()
+    if clock.date() != today:
         # Outro dia diz o dia, com a mesma palavra do selo do combinado
         # ("Era para ontem · ..." ao lado de "combinado para ontem às 15h").
-        goal_label = f"combinado para {commitment_day_label(clock.date())} às {format_clock(clock)}"
+        goal_label = f"combinado para {commitment_day_label(clock.date(), today=today)} às {format_clock(clock)}"
     if kind == "start":
         deadline = promised - timedelta(minutes=stage_goal("station", channel_config))
     elif kind == "handoff":
@@ -338,15 +341,16 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
     }
 
 
-def commitment_day_label(day) -> str:
+def commitment_day_label(day, *, today=None) -> str:
     """O dia do combinado como o operador fala: "hoje", "amanhã", "ontem" ou "qua, 18/11".
 
     Uma régua só para o selo do card (``order_queue._schedule``) e para a meta da
-    Fila: duas leituras do mesmo pedido não podem discordar sobre o dia.
+    Fila: duas leituras do mesmo pedido não podem discordar sobre o dia. ``today``
+    é o dia da leitura de quem chama (um por projeção); sem ele, o de agora.
     """
     from django.utils import formats
 
-    today = timezone.localdate()
+    today = today or timezone.localdate()
     if day == today:
         return "hoje"
     if day == today + timedelta(days=1):
