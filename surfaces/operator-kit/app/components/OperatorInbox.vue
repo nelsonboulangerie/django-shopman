@@ -252,18 +252,44 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             v-for="alert in alerts"
             :key="alert.key"
             :color="alertColor(alert.tone)"
-            :variant="alert.seen ? 'subtle' : 'soft'"
+            :variant="alert.seen && !alert.answer ? 'subtle' : 'soft'"
             :title="alert.eyebrow || undefined"
             :description="inboxAlertDescription(alert)"
             :ui="{ description: 'whitespace-pre-line' }"
             :data-alert-seen="alert.seen ? '' : undefined"
             data-operator-inbox-alert
           >
+            <!-- Visto esmaece o aviso, menos o que ainda espera uma resposta escrita: ele
+                 segue pedindo o gesto, e o tom esmaecido derrubava o contraste da dica
+                 e do contorno (3,2 e 3,55 medidos). -->
+            <!-- O aviso com resposta escrita lê como a janela do aviso: o canal como selo
+                 (ícone e nome) e, embaixo, quem espera; sem repetir gravidade e tipo. -->
+            <template v-if="alert.answer && alert.subject" #title>
+              <span class="flex flex-col gap-0.5" data-operator-inbox-answer-title>
+                <span
+                  v-if="alert.origin"
+                  class="flex items-center gap-1 op-label text-muted-foreground"
+                  data-operator-inbox-origin
+                >
+                  <Icon v-if="alert.originIcon" :name="alert.originIcon" class="size-3.5 shrink-0" />
+                  {{ alert.origin }}
+                </span>
+                <span>{{ alert.subject }}</span>
+              </span>
+            </template>
             <template #actions>
               <!-- O gesto que resolve ali mesmo (P2-19: "Aceitar" no pedido parado).
                    Com ele à vista, ele é o sólido, numa linha só dele, e embaixo ficam
                    "Abrir" (contorno) e "Visto", com os rótulos inteiros. -->
-              <template v-if="alert.actLabel && source?.act">
+              <!-- O aviso que se resolve com uma resposta escrita (a pergunta que a
+                   Concierge levou à equipe): o campo e os dois gestos, no lugar do
+                   gesto direto; "Visto" fica embaixo. -->
+              <OperatorInboxAnswer
+                v-if="alert.answer && source?.answer"
+                :alert="alert"
+                :color="alertColor(alert.tone)"
+              />
+              <template v-else-if="alert.actLabel && source?.act">
                 <NuxtButton
                   class="min-w-0 basis-full justify-center"
                   :color="alertColor(alert.tone)"

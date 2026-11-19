@@ -5682,7 +5682,7 @@
         {
           "path": "shopman/shop/services/availability.py",
           "symbols": [
-            "_availability_kwargs",
+            "availability_kwargs",
             "_check_bundle",
             "_expand_if_bundle",
             "_listing_gate_decision",

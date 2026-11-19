@@ -180,7 +180,10 @@ useSeoMeta({
           :role="reservationNotice.kind === 'lapsed' ? 'status' : undefined"
           :data-cart-reservation="reservationNotice.kind"
         >
-          <Icon :name="reservationNotice.kind === 'held' ? 'lucide:clock' : 'lucide:timer-off'" class="mt-0.5 size-4 shrink-0" />
+          <!-- A sacola, e não outro relógio: a linha de cima já tem um ("fica pronto às…"),
+               e dois relógios empilhados diziam a mesma coisa. Aqui o que se diz é o que
+               está guardado (coordenação, 19/11/2026). -->
+          <Icon :name="reservationNotice.kind === 'held' ? 'lucide:shopping-bag' : 'lucide:timer-off'" class="mt-0.5 size-4 shrink-0" data-cart-reservation-icon />
           {{ reservationNotice.text }}
         </p>
       </div>

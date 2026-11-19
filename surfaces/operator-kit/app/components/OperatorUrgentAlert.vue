@@ -11,10 +11,16 @@
 //
 // Lê a mesma fonte da caixa de Avisos (`provideOperatorInboxAlerts`): o app só precisa
 // mandar `respondByIso` no item. Sem prazo, nada aqui acontece.
+//
+// O aviso que se resolve com resposta escrita (a pergunta que a Concierge levou à equipe,
+// dono, 19/11/2026) chega como aviso de tela no topo (`OperatorPageHeader`,
+// `answerScreenAlerts`), cujo "Responder" abre esta janela; ela só interrompe a tela
+// sozinha quando o prazo vence.
 import { useNow } from "@vueuse/core";
 import { computed, onBeforeUnmount, onMounted } from "vue";
 
 import {
+  useAnswerWindowRequest,
   useOperatorInboxAlerts,
   type OperatorInboxAlert,
 } from "../composables/useSuiteChrome";
@@ -32,7 +38,17 @@ const now = useNow({ interval: 1000 });
 const view = computed(() =>
   urgentAlerts(source.value?.items ?? [], now.value.getTime()),
 );
-const blocking = computed(() => view.value.blocking);
+/** A janela aberta pelo "Responder" do aviso de tela (some quando o aviso sai da fonte). */
+const requestedKey = useAnswerWindowRequest();
+const requested = computed(
+  () => (source.value?.items ?? []).find((item) => item.key === requestedKey.value) ?? null,
+);
+const blocking = computed(() => view.value.blocking ?? requested.value);
+/** A janela veio de um toque, não do prazo: fecha como qualquer janela. */
+const onRequest = computed(() => !view.value.blocking && Boolean(requested.value));
+function closeRequested(open: boolean) {
+  if (!open) requestedKey.value = null;
+}
 const pending = computed(() =>
   blocking.value ? Boolean(source.value?.isPending?.(blocking.value.key)) : false,
 );
@@ -56,6 +72,10 @@ async function seen() {
 /** O app sabe executar o gesto direto deste aviso? */
 const canAct = computed(() =>
   Boolean(blocking.value?.actLabel && source.value?.act),
+);
+/** O aviso se resolve com uma resposta escrita: o campo fica no corpo, e embaixo só "Visto". */
+const answering = computed(() =>
+  Boolean(blocking.value?.answer && source.value?.answer),
 );
 async function actNow() {
   const alert = blocking.value;
@@ -134,14 +154,16 @@ onBeforeUnmount(() => {
 <template>
   <NuxtModal
     :open="Boolean(blocking)"
-    :dismissible="false"
-    :close="false"
+    :dismissible="onRequest"
+    :close="onRequest"
     :title="blocking?.subject || blocking?.eyebrow || 'Aviso com prazo'"
     data-operator-urgent-alert
+    @update:open="closeRequested"
   >
     <!-- 1 origem · 2 assunto: o que é, antes de quanto falta. -->
     <template #header>
-      <div v-if="blocking" class="flex min-w-0 flex-col gap-1">
+      <div v-if="blocking" class="flex w-full items-start gap-2">
+      <div class="flex min-w-0 flex-1 flex-col gap-1">
         <p
           v-if="blocking.origin"
           class="flex items-center gap-1.5 op-label text-muted-foreground"
@@ -157,6 +179,18 @@ onBeforeUnmount(() => {
         <h2 class="text-lg font-semibold text-highlighted" data-operator-urgent-subject>
           {{ blocking.subject || blocking.eyebrow }}
         </h2>
+      </div>
+      <!-- Aberta pelo "Responder" do aviso de tela: fecha, e o aviso continua. -->
+      <NuxtButton
+        v-if="onRequest"
+        icon="i-lucide-x"
+        color="neutral"
+        variant="ghost"
+        square
+        aria-label="Fechar"
+        data-operator-urgent-close
+        @click="requestedKey = null"
+      />
       </div>
     </template>
     <!-- 3 prazo, contado ao vivo · 4 o detalhe. -->
@@ -176,8 +210,15 @@ onBeforeUnmount(() => {
           >
         </p>
         <p class="op-body whitespace-pre-line" data-operator-urgent-message>
-          {{ blocking.message }}
+          {{ blocking.urgentMessage || blocking.message }}
         </p>
+        <!-- Responder ali mesmo: o aviso com prazo que se resolve com uma resposta
+             escrita (a pergunta que a Concierge levou à equipe). -->
+        <OperatorInboxAnswer
+          v-if="answering"
+          :alert="blocking"
+          color="error"
+        />
       </div>
     </template>
     <!-- 5 o que fazer. -->
@@ -185,9 +226,11 @@ onBeforeUnmount(() => {
       <div
         class="grid w-full gap-2"
         :class="
-          canAct
-            ? 'grid-cols-3'
-            : 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
+          answering
+            ? 'grid-cols-1'
+            : canAct
+              ? 'grid-cols-3'
+              : 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
         "
       >
         <NuxtButton
@@ -200,6 +243,7 @@ onBeforeUnmount(() => {
           @click="seen"
         />
         <NuxtButton
+          v-if="!answering"
           block
           :color="canAct ? 'neutral' : 'primary'"
           :variant="canAct ? 'outline' : 'solid'"

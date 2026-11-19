@@ -33,7 +33,7 @@
       "shopman/shop/services/whatsapp_verify.py:start_access_link"
     ],
     "availability.stock-promise-decision": [
-      "shopman/shop/services/availability.py:_availability_kwargs",
+      "shopman/shop/services/availability.py:availability_kwargs",
       "shopman/shop/services/availability.py:_check_bundle",
       "shopman/shop/services/availability.py:_expand_if_bundle",
       "shopman/shop/services/availability.py:_listing_gate_decision",

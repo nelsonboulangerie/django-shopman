@@ -163,8 +163,63 @@ function urgentAlert() {
   };
 }
 
+// O "vou verificar" da Concierge (WP-07): a pergunta que ela levou à equipe. O cartão
+// nasce com o prazo prometido ao cliente e chega como aviso de tela no topo; em
+// `concierge-late`, a promessa já venceu e a janela interrompe a tela.
+const verification = { answered: false, takenOver: false };
+// A hora como a casa escreve ("16h12", "9h"), no fuso da loja.
+function clock(date) {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", hour: "numeric", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = parts.find((p) => p.type === "hour").value;
+  const minute = parts.find((p) => p.type === "minute").value;
+  return minute === "00" ? `${Number(hour)}h` : `${Number(hour)}h${minute}`;
+}
+
+function verificationAlert(late) {
+  const pk = 950;
+  const base = `/api/v1/backstage/alerts/${pk}/concierge-verification`;
+  const gesture = (kind, label, priority, path, schema) => ({
+    ref: `${kind}:${pk}`, kind, label, priority, enabled: true, reason: "", method: "POST",
+    href: `${base}/${path}/`, payload_schema: schema, expected_rev: null,
+    idempotency: { required: false, key_scope: "" },
+    confirmation: { required: false, reason_required: false, title: "", confirm_label: label },
+    approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "resolves", proof: "",
+  });
+  const actions = [
+    gesture("answer_concierge_verification", "Responder ao cliente", 1, "answer", "ConciergeVerificationAnswerRequest"),
+    gesture("take_over_conversation", "Assumir a conversa", 2, "take-over", ""),
+  ];
+  if (!acknowledged.has(pk)) actions.push({
+    ref: `acknowledge:${pk}`, kind: "acknowledge_alert", label: "Visto", priority: 20, enabled: true,
+    reason: "", method: "POST", href: `/api/v1/backstage/alerts/${pk}/ack/`,
+    payload_schema: "AlertAckMutationRequest", expected_rev: 0,
+    idempotency: { required: true, key_scope: `backstage.alert-ack:${pk}` },
+    confirmation: { required: false, reason_required: false, title: "", confirm_label: "Confirmar" },
+    approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "acknowledges", proof: "",
+  });
+  // O cartão nasce com o prazo prometido ao cliente (10 min); `late`: a promessa venceu.
+  const createdAt = new Date(Date.now() - (late ? 13 : 3) * 60_000);
+  const promised = new Date(createdAt.getTime() + 10 * 60_000);
+  return {
+    pk, rev: 0, type: "concierge_verify", type_label: "WhatsApp: cliente espera a resposta da equipe",
+    severity: "warning", severity_label: "Aviso", audience: "orders",
+    message: `“amanhã vai ter pão de forma? queria para entregar”\nPrometemos responder até ${clock(promised)}.`,
+    order_ref: "", created_at_display: `hoje às ${clock(createdAt)}`,
+    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle",
+    subject: "Ana espera a resposta da equipe",
+    respond_by_iso: promised.toISOString(), deadline_kind: "house",
+    actions,
+  };
+}
+
 function alertsPayload() {
   const payload = JSON.parse(JSON.stringify(baseAlerts));
+  if ((scenario === "concierge" || scenario === "concierge-late") && !verification.answered && !verification.takenOver) {
+    payload.alerts = [verificationAlert(scenario === "concierge-late"), ...payload.alerts];
+    payload.counts.active += 1;
+  }
   if (scenario === "gallery") {
     payload.alerts = [urgentAlert(), ...payload.alerts];
     payload.counts.active += 1;
@@ -232,7 +287,7 @@ createServer((req, res) => {
 
   if (path === "/__visual/scenario") {
     const next = url.searchParams.get("set");
-    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); }
+    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); verification.answered = false; verification.takenOver = false; }
     send(res, 200, { scenario });
     return;
   }
@@ -297,6 +352,31 @@ createServer((req, res) => {
   if (path === "/api/v1/backstage/hub/") { send(res, 200, { hub: { tiles: [{"ref":"pos","label":"PDV","icon":"shopping-basket","url":"http://localhost:3002/","kind":"launch","description":"","status_attention":"1 encomenda na próxima hora","status_summary":"Caixa aberto","status_positive":"","next_item":null},{"ref":"kds","label":"Cozinha","icon":"chef-hat","url":"http://localhost:3003/","kind":"launch","description":"","status_attention":"1 atrasado","status_summary":"3 em preparo","status_positive":"","next_item":null},{"ref":"gestor","label":"Gestor de pedidos","icon":"square-kanban","url":"http://localhost:3004/","kind":"launch","description":"","status_attention":"","status_summary":"","status_positive":"","next_item":null},{"ref":"production","label":"Produção","icon":"croissant","url":"http://localhost:3005/","kind":"launch","description":"","status_attention":"","status_summary":"5 lotes hoje","status_positive":"","next_item":null},{"ref":"purchase","label":"Compras","icon":"package","url":"http://localhost:3008/","kind":"launch","description":"","status_attention":"2 entregas para receber","status_summary":"","status_positive":"","next_item":null},{"ref":"marketing","label":"Marketing","icon":"megaphone","url":"http://localhost:3006/","kind":"launch","description":"","status_attention":"1 anúncio para decidir","status_summary":"","status_positive":"","next_item":null},{"ref":"bi","label":"B.I.","icon":"chart-no-axes-combined","url":"http://localhost:3007/","kind":"launch","description":"","status_attention":"","status_summary":"Vendas de ontem","status_positive":"","next_item":null}] } }); return; }
   if (path === "/api/v1/backstage/orders/rail-counts/") { send(res, 200, baseRailCounts); return; }
   if (path === "/api/v1/backstage/alerts/") { send(res, 200, alertsPayload()); return; }
+  const verifyMatch = path.match(/^\/api\/v1\/backstage\/alerts\/950\/concierge-verification\/(answer|take-over)\/$/);
+  if (req.method === "POST" && verifyMatch) {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      let body;
+      try { body = JSON.parse(raw || "{}"); } catch { body = {}; }
+      if (verifyMatch[1] === "take-over") {
+        verification.takenOver = true;
+        send(res, 200, { ok: true, pk: 950, sent_text: "Alguém da equipe continua com você por aqui." });
+        return;
+      }
+      const text = String(body.text || "").trim();
+      if (/janela/i.test(text)) {
+        send(res, 409, {
+          detail: "A janela de 24 horas do WhatsApp fechou: a resposta não sai mais por aqui. Assuma a conversa.",
+          error: { code: "window_closed", text: `A equipe confirmou: ${text}` },
+        });
+        return;
+      }
+      verification.answered = true;
+      send(res, 200, { ok: true, pk: 950, sent_text: `A equipe confirmou: ${text}` });
+    });
+    return;
+  }
   const ackMatch = path.match(/^\/api\/v1\/backstage\/alerts\/(\d+)\/ack\/$/);
   if (req.method === "POST" && ackMatch) {
     acknowledged.add(Number(ackMatch[1]));

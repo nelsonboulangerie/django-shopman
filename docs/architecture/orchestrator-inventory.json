@@ -14965,6 +14965,45 @@
       ]
     },
     {
+      "path": "shopman/shop/conversational/commerce_execute.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "APPLIED",
+            "Done",
+            "EffectSite",
+            "FORMAT",
+            "PORT",
+            "PRODUCER",
+            "RECEIPT_CONTRACT",
+            "REFUSED",
+            "RETENTION_SECONDS",
+            "Reading",
+            "SCOPE_PREFIX",
+            "ShopmanCommerceExecute",
+            "SystemClock",
+            "TERMS_REF",
+            "_body",
+            "_code",
+            "_fingerprint",
+            "_receipt_of",
+            "instant",
+            "logger",
+            "storage_key"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/admin/conversational.py",
       "touchpoints": [
         "admin"
