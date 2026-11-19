@@ -715,7 +715,7 @@ function clearAll() {
         :description="alert.description"
         :actions="alertActions(alert.color, headerAlertActions(alert))"
         :close="{ color: 'neutral', variant: 'ghost', size: 'md' }"
-        :ui="{ close: 'size-8' }"
+        :ui="{ close: 'size-8 after:-inset-1.5' }"
         :role="alert.color === 'error' ? 'alert' : 'status'"
         data-page-header-alert
         @update:open="(open: boolean) => { if (!open) dismissAlert(alert); }"
