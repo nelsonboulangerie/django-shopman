@@ -109,7 +109,9 @@ def _fechar(work_order, qty="10") -> None:
     )
 
 
-def _pedir(channel: str, qty: int, callbacks, *, day=None, key: str = "1", pela_sacola: bool = False) -> Order:
+def _pedir(
+    channel: str, qty: int, callbacks, *, day=None, key: str = "1", pela_sacola: bool = False, method: str = "pix",
+) -> Order:
     """O pedido da loja pelo commit de verdade, com os efeitos pós-commit rodados.
 
     ``pela_sacola``: a reserva da sacola é feita antes (``availability.reserve``),
@@ -117,7 +119,7 @@ def _pedir(channel: str, qty: int, callbacks, *, day=None, key: str = "1", pela_
     não há pão para hoje, e o commit a adota.
     """
     session_key = f"S-{channel}-{key}"
-    data = {"payment": {"method": "pix"}, "fulfillment_type": "pickup", "origin_channel": channel}
+    data = {"payment": {"method": method}, "fulfillment_type": "pickup", "origin_channel": channel}
     if day is not None:
         data["delivery_date"] = day.isoformat()
     Session.objects.create(
@@ -319,4 +321,73 @@ def test_fila_de_lote_de_outro_dia_nao_existe_sem_data_combinada(ficha, channel,
 
     assert order.data.get("is_preorder") is True
     assert charge_waits_for_the_queue(order) is False
+    assert _cobrancas(order) == 1
+
+
+# ── Cartão: a mesma régua ────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def stripe_de_teste(settings):
+    """O cartão da casa é Stripe. Aqui o SDK é o de mentira dos testes de cartão do shop."""
+    from unittest.mock import patch
+
+    from shopman.shop.adapters import payment_stripe
+    from shopman.shop.tests.test_card_authorization_expiry import STRIPE_MANUAL, FakeStripe
+    from shopman.shop.tests.test_stripe_checkout_session import PAYMENT_ADAPTERS_STRIPE_CARD
+
+    settings.SHOPMAN_STRIPE = STRIPE_MANUAL
+    settings.SHOPMAN_PAYMENT_ADAPTERS = PAYMENT_ADAPTERS_STRIPE_CARD
+    settings.DEBUG = False
+    with patch.object(payment_stripe, "_get_stripe", return_value=FakeStripe()):
+        yield
+
+
+@pytest.mark.parametrize("channel", LOJA)
+def test_com_cartao_a_fila_tambem_segura_e_a_confirmacao_faz_a_cobranca_nascer(
+    ficha, channel, stripe_de_teste, django_capture_on_commit_callbacks,
+):
+    lote = _planejar(ficha, _hoje())
+
+    order = _pedir(channel, 4, django_capture_on_commit_callbacks, method="card")
+
+    assert waitlist.state_for(order) == waitlist.FERMATA
+    assert charge_waits_for_the_queue(order) is True
+    assert _pagamento(order).get("method") == "card"
+    assert not _pagamento(order).get("intent_ref")
+    assert _cobrancas(order) == 0, "cartão na fila: nenhuma cobrança nem autorização no fechamento do pedido"
+    assert customer_orders.ensure_payment_intent(order) is False
+    assert _cobrancas(order) == 0
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _fechar(lote)
+    order.refresh_from_db()
+    assert waitlist.state_for(order) == waitlist.CONFIRMING
+    assert _cobrancas(order) == 0
+
+    with django_capture_on_commit_callbacks(execute=True):
+        assert waitlist.confirm(order) is True
+
+    order.refresh_from_db()
+    assert waitlist.state_for(order) == waitlist.CONFIRMED
+    assert _pagamento(order).get("intent_ref"), "confirmou: a cobrança do cartão nasce aqui"
+    assert _cobrancas(order) == 1
+
+
+@pytest.mark.parametrize("channel", LOJA)
+def test_com_cartao_o_pao_pronto_cobra_ao_pedir_como_sempre(
+    ficha, channel, stripe_de_teste, django_capture_on_commit_callbacks,
+):
+    lote = _planejar(ficha, _hoje())
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _fechar(lote)
+
+    order = _pedir(channel, 4, django_capture_on_commit_callbacks, method="card")
+
+    assert waitlist.state_for(order) == waitlist.NONE
+    assert _pagamento(order).get("intent_ref")
     assert _cobrancas(order) == 1
