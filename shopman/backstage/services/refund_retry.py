@@ -74,6 +74,33 @@ _UNCONFIRMED_MESSAGE = (
 )
 
 
+#: Como a Caixa chama o meio de pagamento na frase da recusa.
+_METHOD_SUBJECT = {"pix": "O Pix", "card": "O cartão"}
+_NO_PAYMENT_CODES = frozenset({"not_paid", "no_payment"})
+_NO_WAY_CODES = frozenset({"no_gateway_route", "intent_not_found"})
+_NOTHING_RETURNED = "Nada foi devolvido ao cliente. Chame o suporte."
+
+
+def counter_message(outcome: str, error_code: str, method: str) -> str:
+    """A frase da tentativa que não saiu, para quem está no balcão.
+
+    A resposta do gateway (``PaymentResult.message``) foi escrita para o Admin:
+    fala de gateway, de ambiente e de painel. Na faixa e na linha do tempo do
+    Gestor vai o que a Caixa precisa saber: se o dinheiro voltou e o que fazer.
+    A resposta técnica fica no evento (``gateway_message``) e no log.
+    """
+    if outcome == OUTCOME_UNCONFIRMED:
+        return _UNCONFIRMED_MESSAGE
+    if outcome == OUTCOME_UNRECORDED:
+        return UNRECORDED_REASON
+    subject = _METHOD_SUBJECT.get(str(method or "").lower(), "O meio de pagamento")
+    if error_code in _NO_WAY_CODES or error_code.startswith("refund_route_"):
+        return f"Não foi possível pedir o estorno desta cobrança daqui. {_NOTHING_RETURNED}"
+    if error_code in _NO_PAYMENT_CODES:
+        return f"{subject} diz que não há pagamento para devolver nesta cobrança. {_NOTHING_RETURNED}"
+    return f"{subject} não aceitou o estorno. {_NOTHING_RETURNED}"
+
+
 class RefundRetryRefused(Exception):
     """O pedido não está em "Estorno não saiu" (ou não há por onde estornar daqui)."""
 
@@ -301,7 +328,7 @@ def retry(order: Order, *, actor: str, approved_by: str, attempt_key: str, expec
 
     Devolve ``{outcome, amount_q, refunded_q, message}``: ``outcome`` é
     ``refunded`` só quando o gateway confirmou TUDO o que faltava; senão é o da
-    cobrança que não saiu, e ``message`` é o que o gateway respondeu. Levanta
+    cobrança que não saiu, e ``message`` é a frase do balcão para ela. Levanta
     :class:`RefundRetryStale` (a tela leu outro estorno) e
     :class:`RefundRetryRefused` (o pedido não está em "Estorno não saiu").
     """
@@ -326,10 +353,16 @@ def retry(order: Order, *, actor: str, approved_by: str, attempt_key: str, expec
             )
             error_code = "" if result.success else str(result.error_code or "refused")
             outcome = OUTCOME_REFUNDED if result.success else _OUTCOME_BY_ERROR.get(error_code, OUTCOME_REFUSED)
-            message = ""
+            message = gateway_message = ""
             if not result.success:
-                message = _UNCONFIRMED_MESSAGE if outcome == OUTCOME_UNCONFIRMED else str(result.message or "")
+                # A frase do balcão vai para a tela; a do gateway, para o evento e o log.
+                message = counter_message(outcome, error_code, leg.method)
+                gateway_message = str(result.message or "")
                 failures.append((outcome, message))
+                logger.warning(
+                    "refund_retry order=%s intent=%s outcome=%s code=%s gateway_said=%s",
+                    locked.ref, leg.intent_ref, outcome, error_code, gateway_message,
+                )
             locked.emit_event(
                 EVENT_TYPE,
                 actor=actor,
@@ -341,6 +374,7 @@ def retry(order: Order, *, actor: str, approved_by: str, attempt_key: str, expec
                     "outcome": outcome,
                     "error_code": error_code,
                     "message": message,
+                    "gateway_message": gateway_message,
                     "gateway_key": gateway_key,
                 },
             )

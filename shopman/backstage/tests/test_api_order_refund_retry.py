@@ -335,7 +335,9 @@ def test_o_gateway_recusa_de_novo_a_resposta_diz_o_que_ele_disse_e_a_linha_conti
 
     assert resp.status_code == 200, resp.content
     body = resp.json()
-    answer = (
+    # A frase é a do balcão; a do gateway (escrita para o Admin) fica só no evento.
+    answer = "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte."
+    gateway_said = (
         "O estorno foi recusado (gateway de teste), e nada foi registrado aqui. "
         "Resposta (gateway de teste): saldo insuficiente na conta."
     )
@@ -349,6 +351,8 @@ def test_o_gateway_recusa_de_novo_a_resposta_diz_o_que_ele_disse_e_a_linha_conti
     assert (attempt.payload["outcome"], attempt.payload["approved_by"], attempt.payload["message"]) == (
         "refused", "joyce", answer,
     )
+    assert attempt.payload["gateway_message"] == gateway_said
+    assert "gateway" not in answer.lower()
 
     # A linha continua em "Estorno não saiu", com a falha escrita nela e o gesto de pé.
     assert body["order"]["cancelled_money"]["state"] == "refund_failed"
@@ -393,10 +397,13 @@ def test_cobranca_sem_caminho_ate_o_gateway_recusa_com_a_frase_e_depois_sai(clie
     assert resp.status_code == 200, resp.content
     refund = resp.json()["refund"]
     assert refund["outcome"] == "refused"
-    assert refund["message"].startswith("Não há como chegar ao gateway desta cobrança com a configuração de hoje")
+    no_way = "Não foi possível pedir o estorno desta cobrança daqui. Nada foi devolvido ao cliente. Chame o suporte."
+    assert refund["message"] == no_way
     assert PaymentService.refunded_total("INT-G13-SEM-ROTA") == 0
     line = next(item for item in resp.json()["order"]["pending"] if item["key"] == "refund")
-    assert "Não há como chegar ao gateway desta cobrança" in line["failure"]
+    assert line["failure"].endswith(f": {no_way}")
+    (attempt,) = _attempts(order)
+    assert attempt.payload["gateway_message"].startswith("Não há como chegar ao gateway desta cobrança")
 
     PaymentIntent.objects.filter(ref="INT-G13-SEM-ROTA").update(gateway="mock")
     order.refresh_from_db()
@@ -502,6 +509,25 @@ def test_chave_do_automatico_segue_a_mesma_regra_do_estorno_do_pedido():
         payment_service.order_refund_gateway_key(order, "INT-G13-CHAVE", idempotency_key="return:G13-CHAVE:1")
         == "return:G13-CHAVE:1"
     )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "code", "method", "expected"),
+    [
+        ("refused", "E_DECLINED", "pix", "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte."),
+        ("refused", "card_declined", "card", "O cartão não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte."),
+        ("refused", "refused", "", "O meio de pagamento não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte."),
+        ("refused", "not_paid", "pix", "O Pix diz que não há pagamento para devolver nesta cobrança. Nada foi devolvido ao cliente. Chame o suporte."),
+        ("refused", "no_gateway_route", "pix", "Não foi possível pedir o estorno desta cobrança daqui. Nada foi devolvido ao cliente. Chame o suporte."),
+        ("refused", "refund_route_card_machine", "card", "Não foi possível pedir o estorno desta cobrança daqui. Nada foi devolvido ao cliente. Chame o suporte."),
+    ],
+)
+def test_a_frase_da_recusa_e_a_do_balcao_sem_jargao(outcome, code, method, expected):
+    """A Caixa não lê "gateway", "ambiente" nem "painel": lê se o dinheiro voltou e o que fazer."""
+    phrase = refund_retry.counter_message(outcome, code, method)
+    assert phrase == expected
+    for jargon in ("gateway", "ambiente", "painel", "Payman", "Efí", "Stripe", "—"):
+        assert jargon not in phrase
 
 
 def test_dinheiro_que_saiu_sem_registro_trava_a_tentativa_seguinte(client, operador, gerente):
