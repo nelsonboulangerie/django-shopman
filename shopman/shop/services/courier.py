@@ -1288,7 +1288,8 @@ def _archive_current_ride(block: dict) -> None:
 
 #: O que o entregador que saiu deixou no andamento: vai embora com ele.
 _DRIVER_PROGRESS_KEYS = ("accepted_at", "pickup_eta_at", "pickup_eta_minutes", "pickup_km",
-                         "near_pickup_at", "arrived_pickup_at", "cancelled_at", "cancelled_reason")
+                         "near_pickup_at", "arrived_pickup_at", "waited_pickup_at",
+                         "cancelled_at", "cancelled_reason")
 
 _REOPEN_EVENT = "courier_ride_reopened"
 
@@ -1306,7 +1307,13 @@ def provider_instant(value):
     return moment if moment is not None and moment.tzinfo is not None else None
 
 
-def _reopen(block: dict, *, at: str, source: str) -> str:
+#: Por que a corrida voltou a procurar: o entregador desistiu (``C`` com
+#: ``will_reopen``, ou o aceite que regrediu) ou a TaOn trocou o entregador (``T``).
+REOPEN_WITHDREW = "withdrew"
+REOPEN_TRANSFER = "transfer"
+
+
+def _reopen(block: dict, *, at: str, source: str, reason: str = REOPEN_WITHDREW) -> str:
     """O entregador saiu da corrida e a TaOn voltou a procurar: devolve o nome dele.
 
     A corrida é a mesma (``id_mch``, paradas, custódia, número): só o entregador
@@ -1320,7 +1327,7 @@ def _reopen(block: dict, *, at: str, source: str) -> str:
     status_at = dict(block.get("status_at") or {})
     accepted_at = status_at.pop("A", None)
     status_at.pop("S", None)
-    entry = {"at": at, "driver": name, "source": source}
+    entry = {"at": at, "driver": name, "source": source, "reason": reason}
     if accepted_at:
         entry["accepted_at"] = accepted_at
     block["reopens"] = [*list(block.get("reopens") or []), entry]
@@ -1336,19 +1343,22 @@ def _reopen(block: dict, *, at: str, source: str) -> str:
 
 
 def reopen_view(block: dict) -> dict:
-    """A desistência que ainda vale na tela: ``{"at", "driver"}`` (vazios quando não há).
+    """A desistência que ainda vale na tela: ``{"at", "driver", "reason"}`` (vazios quando não há).
 
     Vale enquanto a TaOn procura outro entregador (D/G/P depois de uma
-    desistência). Aceita de novo, a corrida volta a ter dono e a frase some.
+    desistência ou de uma troca). Aceita de novo, a corrida volta a ter dono e
+    a frase some. ``reason``: :data:`REOPEN_WITHDREW` ou :data:`REOPEN_TRANSFER`.
     """
     reopens = block.get("reopens") if isinstance(block.get("reopens"), list) else []
     last = reopens[-1] if reopens and isinstance(reopens[-1], dict) else None
     if last is None or not block.get("id_mch") or str(block.get("status") or "") not in ("D", "G", "P"):
-        return {"at": "", "driver": ""}
-    return {"at": str(last.get("at") or ""), "driver": str(last.get("driver") or "")}
+        return {"at": "", "driver": "", "reason": ""}
+    return {"at": str(last.get("at") or ""), "driver": str(last.get("driver") or ""),
+            "reason": str(last.get("reason") or REOPEN_WITHDREW)}
 
 
-def record_reopen(order, *, at: str | None = None, source: str = "webhook") -> str:
+def record_reopen(order, *, at: str | None = None, source: str = "webhook",
+                  reason: str = REOPEN_WITHDREW) -> str:
     """O entregador desistiu e a TaOn reabriu a corrida sozinha (``will_reopen``).
 
     A doc da TaOn diz: com ``will_reopen``, "não abra outra solicitação". A
@@ -1382,19 +1392,88 @@ def record_reopen(order, *, at: str | None = None, source: str = "webhook") -> s
                         order.ref, ride_id, previous, source)
             return "stale"
         now_iso = timezone.now().isoformat()
-        name = _reopen(block, at=at or now_iso, source=source)
+        name = _reopen(block, at=at or now_iso, source=source, reason=reason)
         block.update(status="D", last_event_at=now_iso, last_source=source)
         if provider_at:
             block["last_provider_at"] = at
-        order.emit_event(event_type=_REOPEN_EVENT, actor=source, payload={"id_mch": ride_id, "driver": name})
+        order.emit_event(event_type=_REOPEN_EVENT, actor=source,
+                         payload={"id_mch": ride_id, "driver": name, "reason": reason})
         _save_block(order, block, emit={"kind": "reopened", "status": "D"})
     _forget_driver_caches(ride_id)
     return "applied"
 
 
 def _forget_driver_caches(ride_id: str) -> None:
-    """A posição e os links em cache eram do entregador que saiu."""
-    cache.delete_many([f"courier:pos:{ride_id}", f"courier:tracking_links:{ride_id}"])
+    """A posição, os links e a foto em cache eram do entregador que saiu."""
+    cache.delete_many([f"courier:pos:{ride_id}", f"courier:tracking_links:{ride_id}",
+                       *_driver_photo_keys(ride_id)])
+
+
+# ── A foto do entregador: só durante a corrida (decisão do dono, LGPD) ──
+
+#: Teto da vida da foto em cache. O fim da corrida (F, N, C, desistência) apaga
+#: antes; o teto só cobre a corrida que some sem fim registrado.
+DRIVER_PHOTO_SECONDS = 6 * 3600
+
+#: Maior foto aceita (bytes). A da TaOn é um retrato pequeno.
+DRIVER_PHOTO_MAX_BYTES = 512 * 1024
+
+
+def _driver_photo_keys(ride_id: str) -> tuple[str, str]:
+    return f"courier:photo_url:{ride_id}", f"courier:photo:{ride_id}"
+
+
+def remember_driver_photo(ride_id: str, url: str) -> None:
+    """Guarda o endereço da foto do entregador no cache, nunca no pedido.
+
+    O endereço é assinado e é dado pessoal: não vai para ``Order.data`` nem
+    para o log. A foto é baixada na primeira vez que uma tela pede
+    (:func:`driver_photo`) e some com a corrida (:func:`_forget_driver_caches`).
+    """
+    if ride_id and url:
+        cache.set(_driver_photo_keys(ride_id)[0], url, DRIVER_PHOTO_SECONDS)
+
+
+def has_driver_photo(ride_id: str) -> bool:
+    return bool(ride_id) and any(cache.get(key) for key in _driver_photo_keys(ride_id))
+
+
+def driver_photo(ride_id: str) -> tuple[bytes, str] | None:
+    """A foto do entregador desta corrida viva: ``(bytes, content_type)`` ou ``None``.
+
+    Baixada pelo servidor (a tela nunca vê o endereço da TaOn) e guardada só em
+    cache, com o teto de :data:`DRIVER_PHOTO_SECONDS`. Corrida que terminou não
+    tem foto, mesmo que o cache ainda tenha: a regra é a corrida, não o relógio.
+    """
+    if not ride_id or not Order.objects.filter(data__courier__id_mch=str(ride_id)).exclude(
+            data__courier__status__in=list(TERMINAL_STATUSES)).exists():
+        _forget_driver_caches(str(ride_id))
+        return None
+    url_key, bytes_key = _driver_photo_keys(str(ride_id))
+    cached = cache.get(bytes_key)
+    if isinstance(cached, dict) and cached.get("body"):
+        return cached["body"], str(cached.get("type") or "image/jpeg")
+    url = cache.get(url_key)
+    if not url:
+        return None
+    import requests
+
+    try:
+        response = requests.get(url, timeout=5, stream=True, allow_redirects=False)
+        content_type = str(response.headers.get("Content-Type") or "").split(";")[0].strip()
+        body = response.raw.read(DRIVER_PHOTO_MAX_BYTES + 1, decode_content=True)
+        response.close()
+    except Exception:  # silêncio-deliberado: sem foto, a tela mostra a inicial
+        logger.warning("courier.driver_photo_failed id_mch=%s", ride_id)
+        return None
+    if response.status_code != 200 or not content_type.startswith("image/") or not body \
+            or len(body) > DRIVER_PHOTO_MAX_BYTES:
+        logger.warning("courier.driver_photo_refused id_mch=%s status=%s type=%s size=%s",
+                       ride_id, response.status_code, content_type or "-", len(body or b""))
+        cache.delete(url_key)
+        return None
+    cache.set(bytes_key, {"body": body, "type": content_type}, DRIVER_PHOTO_SECONDS)
+    return body, content_type
 
 
 #: Tipo existente (sem migração) e fora da resolução automática da corrida viva:
@@ -1600,7 +1679,9 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
                 _archive_current_ride(block)
             kind = "ride_ended" if failed_ride else "reopened" if went_back else "status"
             _save_block(order, block, emit={"kind": kind, "status": status})
-            if went_back:
+            if went_back or status in TERMINAL_STATUSES:
+                # A foto e a posição eram da corrida: com ela encerrada (ou sem o
+                # entregador que saiu), saem do cache.
                 _forget_driver_caches(ride_id)
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
@@ -1807,15 +1888,12 @@ def _enrich_accepted(block: dict, details: dict | None, *, order_ref: str) -> No
         # A leitura do polling já traz o entregador; o corpo do webhook não
         # (só a letra e os links): aí os detalhes vêm da central.
         info = details if isinstance(details, dict) and "driver" in details else adapter.get_details(block["id_mch"])
-        driver = info.get("driver") or {}
+        from shopman.shop.adapters.courier_machine import driver_from, driver_photo_url
+
+        driver = driver_from(info)
         if driver:
-            block["driver"] = {
-                "name": str(driver.get("name") or ""),
-                "phone": str(driver.get("phone") or ""),
-                "vehicle_plate": str(driver.get("vehicle_plate") or ""),
-                "vehicle_model": str(driver.get("vehicle_model") or ""),
-                "vehicle_color": str(driver.get("vehicle_color") or ""),
-            }
+            block["driver"] = driver
+        remember_driver_photo(block["id_mch"], driver_photo_url(info))
     except CourierError as exc:
         logger.warning("courier.details_failed id_mch=%s: %s", block.get("id_mch"), exc)
     block.update(_tracking_for(order_ref, block, block["id_mch"]))
@@ -2150,7 +2228,9 @@ def progress_view(block: dict) -> dict:
         delivery_eta_at = (base + timedelta(minutes=float(trip_minutes))).isoformat()
     return {
         "pickup_eta_at": pickup_eta_at if status in ("A", "S") else "",
+        "near_pickup_at": str(progress.get("near_pickup_at") or "") if status in ("A", "S") else "",
         "arrived_pickup_at": str(progress.get("arrived_pickup_at") or "") if status in ("A", "S", "E", "F") else "",
+        "waited_pickup_at": str(progress.get("waited_pickup_at") or "") if status in ("A", "S") else "",
         "picked_up_at": picked_up_at,
         "delivery_eta_at": delivery_eta_at,
         "arrived_dropoff_at": str(progress.get("arrived_dropoff_at") or ""),
@@ -2159,11 +2239,141 @@ def progress_view(block: dict) -> dict:
 
 
 def poll_expired(block: dict) -> bool:
-    """A corrida passou da idade em que o polling ainda acompanha."""
+    """A corrida passou da idade em que o polling acompanha de perto."""
     from django.utils.dateparse import parse_datetime
 
     opened = parse_datetime(str(block.get("requested_at") or ""))
     return opened is not None and timezone.now() - opened > timedelta(hours=MAX_POLL_HOURS)
+
+
+#: A batida lenta (ENT-07): a corrida que passou de :data:`MAX_POLL_HOURS`, ou
+#: a casa com o polling desligado (só webhook), ainda é lida a cada 10 min.
+#: Antes a batida parava, e a corrida aberta ficava na tela para sempre, sem
+#: ninguém perguntar à TaOn se ela acabou.
+SLOW_POLL_SECONDS = 600
+
+
+def sync_interval(block: dict) -> int:
+    """Quantos segundos até a próxima leitura desta corrida. Nunca zero."""
+    seconds = poll_seconds()
+    if seconds <= 0 or poll_expired(block):
+        return max(seconds, SLOW_POLL_SECONDS)
+    return seconds
+
+
+def ride_open_too_long(block: dict) -> bool:
+    """A corrida segue aberta além da idade em que uma corrida real dura."""
+    return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES and poll_expired(block)
+
+
+def vehicle_line(driver: dict) -> str:
+    """"Honda CG prata · ABC1D23": o que o balcão confere antes de entregar a sacola."""
+    driver = driver if isinstance(driver, dict) else {}
+    model = str(driver.get("vehicle_model") or "").strip()
+    color = str(driver.get("vehicle_color") or "").strip()
+    body = " ".join(part for part in (model, color.lower() if model else color) if part)
+    if body:
+        body = body[:1].upper() + body[1:]
+    return " · ".join(part for part in (body, str(driver.get("vehicle_plate") or "").strip()) if part)
+
+
+# ── Auto-conclusão da entrega com corrida viva (ENT-14) ──────────────
+
+#: Sem notícia da TaOn há mais que isto, a leitura da corrida está parada.
+STALE_READ_MINUTES = 30
+
+
+def reading_is_fresh(block: dict) -> bool:
+    """A casa sabe onde a corrida está: a leitura dá certo e é recente.
+
+    Falha de leitura em curso (``sync``) ou corrida além da idade acompanhada
+    não é leitura em dia. Com o polling ligado, a batida lê a cada minuto; sem
+    ele (só webhook), vale o último aviso recebido.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    if block.get("sync") or poll_expired(block):
+        return False
+    if poll_seconds() > 0:
+        return True
+    last = parse_datetime(str(block.get("last_event_at") or ""))
+    return last is not None and timezone.now() - last <= timedelta(minutes=STALE_READ_MINUTES)
+
+
+def auto_complete_hold_until(order, *, grace_minutes: int):
+    """Até quando a auto-conclusão espera, porque o entregador ainda está na rua.
+
+    Com a corrida viva (coletada e não finalizada) e a leitura em dia, a TaOn
+    sabe mais que o relógio: a conclusão vai para a entrega prevista por ela
+    mais a folga (no mínimo a folga a partir de agora). ``None`` quando não há
+    o que esperar: sem corrida viva, ou com o dado parado (aí conclui e avisa).
+    """
+    from django.utils.dateparse import parse_datetime
+
+    block = get_block(order)
+    if not block.get("id_mch") or block.get("status") not in ("A", "S", "E"):
+        return None
+    if not reading_is_fresh(block):
+        return None
+    floor = timezone.now() + timedelta(minutes=max(grace_minutes, 1))
+    eta = parse_datetime(progress_view(block).get("delivery_eta_at") or "")
+    if eta is None:
+        return floor
+    return max(floor, eta + timedelta(minutes=grace_minutes))
+
+
+def alert_auto_completed_blind(order) -> None:
+    """A auto-conclusão marcou entregue um pedido com corrida aberta e sem notícia."""
+    from shopman.shop.adapters import alert as alert_adapter
+    from shopman.shop.services.operator_orders import short_ref
+
+    letter = ride_letter(get_block(order).get("ride_number"))
+    name = f"a corrida {letter}" if letter else "a corrida"
+    try:
+        alert_adapter.create(
+            _SYNC_ALERT_TYPE,
+            "warning",
+            f"O pedido {short_ref(order.ref)} foi marcado entregue pelo prazo, mas {name} "
+            "segue aberta e a TaOn não informa o andamento. Confira com o entregador.",
+            order_ref=order.ref,
+        )
+    except Exception:
+        logger.warning("courier.auto_complete_alert_failed order=%s", order.ref, exc_info=True)
+
+
+#: Avisos do webhook que não são estado e que, ANTES da coleta, dizem onde o
+#: entregador está em relação à loja (revisão das Entregas, TAON-12):
+#: ``AN`` está nas redondezas; ``AW`` está esperando no local (a TaOn manda
+#: quando a espera passa do combinado). ``AP`` (chegou) é :func:`record_arrival`.
+PICKUP_EVENTS = {"AN": ("near_pickup_at",), "AW": ("arrived_pickup_at", "waited_pickup_at")}
+
+
+def record_pickup_event(order, code: str, *, at: str | None = None, source: str = "webhook") -> None:
+    """``AN``/``AW`` antes da coleta: grava o marco no andamento, uma vez cada.
+
+    O ``AW`` também grava a chegada (quem espera, chegou), para o relógio da
+    espera contar mesmo que o ``AP`` tenha se perdido. Depois da coleta, ou numa
+    corrida encerrada, nada muda: a espera é no balcão.
+    """
+    keys = PICKUP_EVENTS.get(str(code or "").upper())
+    block = get_block(order)
+    ride_id = block.get("id_mch")
+    if not keys or not ride_id or block.get("status") in TERMINAL_STATUSES or block.get("dispatched_at"):
+        return
+    when = at or timezone.now().isoformat()
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id or block.get("dispatched_at"):
+            return
+        progress = dict(block.get("progress") or {})
+        fresh = {key: when for key in keys if not progress.get(key)}
+        if not fresh:
+            return
+        block["progress"] = {**progress, **fresh}
+        block.update(last_event_at=timezone.now().isoformat(), last_source=source)
+        _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
 
 
 def record_arrival(order, *, at: str | None = None, source: str = "webhook") -> None:

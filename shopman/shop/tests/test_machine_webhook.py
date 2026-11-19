@@ -419,13 +419,13 @@ def test_driver_withdrawal_with_will_reopen_keeps_the_same_ride(shop):
     assert "driver" not in block
     assert "attempts" not in block  # nada foi arquivado
     assert block["reopens"] == [{"at": "2026-10-01T14:32:00Z", "driver": "Entregador Mock", "source": "webhook",
-                                 "accepted_at": "2026-10-01T14:14:00Z"}]
+                                 "reason": "withdrew", "accepted_at": "2026-10-01T14:14:00Z"}]
     assert "A" not in block["status_at"]  # o próximo aceite registra a própria hora
     assert courier.has_active_ride(order)
     returned.assert_not_called()  # o troco e a maquininha seguem separados
     assert not OperatorAlert.objects.filter(order_ref=order.ref, type__in=("courier_ride_cancelled", "courier_not_attended")).exists()
     assert order.events.filter(type="courier_ride_reopened").count() == 1
-    assert courier.reopen_view(block) == {"at": "2026-10-01T14:32:00Z", "driver": "Entregador Mock"}
+    assert courier.reopen_view(block) == {"at": "2026-10-01T14:32:00Z", "driver": "Entregador Mock", "reason": "withdrew"}
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -444,7 +444,7 @@ def test_the_second_driver_acceptance_is_a_new_fact_not_a_replay(shop):
     assert block["status"] == "A"
     assert block["driver"]["name"] == "Léo"
     assert block["status_at"]["A"] == "2026-10-01T14:36:00Z"
-    assert courier.reopen_view(block) == {"at": "", "driver": ""}  # a corrida voltou a ter dono
+    assert courier.reopen_view(block) == {"at": "", "driver": "", "reason": ""}  # a corrida voltou a ter dono
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)

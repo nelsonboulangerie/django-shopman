@@ -2467,6 +2467,32 @@ class DeliveriesCountView(APIView):
         return Response({"waiting": deliveries_waiting_count()})
 
 
+class DeliveryDriverPhotoView(APIView):
+    """A foto do entregador de uma corrida VIVA, servida pelo servidor.
+
+    A tela nunca vê o endereço da TaOn (assinado e pessoal). A foto mora só em
+    cache e só enquanto a corrida vive (decisão do dono, LGPD): corrida
+    encerrada responde 404. ``Cache-Control: no-store`` para o navegador também
+    não guardar.
+    """
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request, ride: str):
+        from django.http import HttpResponse
+
+        from shopman.shop.services import courier
+
+        photo = courier.driver_photo(ride)
+        if photo is None:
+            response = HttpResponse(status=404)
+        else:
+            body, content_type = photo
+            response = HttpResponse(body, content_type=content_type)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
 class OrderRailCountsView(APIView):
     """Os selos do rail fora do quadro (G26): ``{intake, exit}``, a mesma régua do quadro.
     Leve de propósito: o Catálogo, os Clientes e os Canais leem isto em vez do quadro."""
