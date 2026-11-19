@@ -53,10 +53,18 @@ Ela recusa; não escreve a substituição. "maquininha" não é "dispositivo": o
 entregador leva tem nome, e o código já dizia as duas coisas na mesma linha
 ("Maquininha inválida. Atualize os dispositivos disponíveis."). Trocar mecanicamente
 produz "aparelho (maquininha)" virado do avesso — quem escreve lê a linha e escolhe.
+
+## A segunda regra deste arquivo
+
+A casa diz "ficar pronto", nunca "sair do forno" (dono, 16/11/2026). Ela mora no fim
+do arquivo, com o alcance e as exceções dela escritos lá: é regra sobre o texto que o
+OPERADOR lê, não sobre a palavra em qualquer canal.
 """
 
 from __future__ import annotations
 
+import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -114,3 +122,127 @@ def test_a_palavra_da_casa_e_dispositivo(path: Path) -> None:
 def test_the_sweep_actually_reads_something() -> None:
     """Varredura que não varre nada passa sempre; esta tem de ver o repositório."""
     assert len(SOURCES) > 200, f"a varredura achou só {len(SOURCES)} arquivos"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Segunda regra: a casa diz "ficar pronto", nunca "sair do forno" (dono, 16/11/2026).
+#
+# Quando a produção termina, o lote, o produto e as unidades FICAM PRONTOS. Vale para
+# todo tempo do verbo ("sai", "saiu", "saíram", "saindo do forno", "acabou de sair do
+# forno", "saída do forno"). O forno continua tendo nome: "Só é possível retirar do
+# forno um lote aberto." segue certo, porque quem age ali é o operador.
+#
+# ## O sujeito desta regra é o texto de OPERADOR, e por isso o alcance é outro
+#
+# "Aparelho" é palavra que a casa não usa, e a regra de cima varre o arquivo inteiro.
+# Esta é sobre o que o operador LÊ: o rótulo do Admin, a frase da projeção, o aviso do
+# servidor. Então ela lê só os literais de string do código (sem comentário e sem
+# docstring, como a irmã do kit desconta comentário), em ``shopman/backstage`` e em
+# ``shopman/shop``, fora dos testes: fixture não chega a ninguém, e as que dizem a
+# frase são corpo de anúncio, que é texto para o cliente.
+#
+# ## Exceções: a voz do cliente, declarada com o motivo
+#
+# O que a casa escreve PARA o cliente não é este vocabulário. Cada caminho abaixo é
+# texto de cliente que mora dentro de ``shopman/shop``; nenhum é texto de operador.
+OUT_OF_OVEN_ROOTS = ("shopman/backstage", "shopman/shop")
+
+OUT_OF_OVEN_EXEMPT = {
+    # A copy da loja. Tem a regra e a trava dela (#2791), na voz do cliente.
+    "shopman/shop/omotenashi/": "copy da loja ao cliente",
+    # Os avisos que o cliente recebe por WhatsApp, e-mail e SMS.
+    "shopman/shop/notification_copy.py": "avisos ao cliente",
+    # O nome e a descrição das seções vivas do cardápio, que o cliente lê na loja.
+    "shopman/shop/dynamic_collections.py": "seções do cardápio da loja",
+    # Não é frase da casa: é a lista do que a IA pode ter ESCRITO no corpo de um anúncio
+    # e que a conferência precisa reconhecer para barrar ocasião inventada. Tirar a
+    # frase daqui cegaria a conferência justamente para o texto que não se quer.
+    "shopman/shop/services/marketing_ai.py": "frases que a conferência da IA reconhece no anúncio",
+}
+
+_OUT_OF_OVEN_VERB = r"(?:sai|saiu|sair|saem|sa[ií]ram|saindo|sairá|sairão|saía|saíam|saída|saídas|saído|saídos)"
+OUT_OF_OVEN = re.compile(
+    rf"(?<!\w){_OUT_OF_OVEN_VERB}(?:\s+\w+){{0,2}}?\s+dos?\s+fornos?(?!\w)",
+    re.IGNORECASE,
+)
+
+
+def _string_literals(path: Path) -> list[tuple[int, str]]:
+    """Os literais de string do arquivo, sem as docstrings: ``(linha, texto)``."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    return [
+        (node.lineno, node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings
+    ]
+
+
+def _out_of_oven_sources() -> list[Path]:
+    files: list[Path] = []
+    for root in OUT_OF_OVEN_ROOTS:
+        for path in sorted((REPO / root).rglob("*.py")):
+            if {"migrations", "tests", "build"} & set(path.parts):
+                continue
+            relative = path.relative_to(REPO).as_posix()
+            if any(relative.startswith(prefix) for prefix in OUT_OF_OVEN_EXEMPT):
+                continue
+            files.append(path)
+    return files
+
+
+OUT_OF_OVEN_SOURCES = _out_of_oven_sources()
+
+
+def test_the_out_of_oven_detector_knows_the_forms() -> None:
+    for text in (
+        "Produto saiu do forno",
+        "Unidades que não saíram do forno",
+        "O pão acabou de sair do forno!",
+        "o lote sai do forno já classificado",
+        "Saiu agora do forno",
+        "Aviso na saída do forno",
+    ):
+        assert OUT_OF_OVEN.search(text), text
+    for text in (
+        "Só é possível retirar do forno um lote aberto.",
+        "Esta tentativa de forno já pertence a outro lote.",
+        "Saiu para entrega",
+        "Produto ficou pronto",
+        "Reserva na fila de espera. O preparo abre quando o lote ficar pronto.",
+    ):
+        assert not OUT_OF_OVEN.search(text), text
+
+
+def test_nenhum_texto_de_operador_diz_sair_do_forno() -> None:
+    offenders = [
+        f"{path.relative_to(REPO).as_posix()}:{lineno}: {' '.join(text.split())[:120]}"
+        for path in OUT_OF_OVEN_SOURCES
+        for lineno, text in _string_literals(path)
+        if OUT_OF_OVEN.search(text)
+    ]
+    assert offenders == [], (
+        "A casa diz 'ficar pronto', nunca 'sair do forno' (dono, 16/11/2026). O verbo concorda "
+        "com o que ficou pronto: 'Produto ficou pronto', 'Unidades que ficaram prontas'. Se o "
+        "texto é para o CLIENTE, ele não é texto de operador: declare o caminho em "
+        f"OUT_OF_OVEN_EXEMPT, com o motivo. Onde: {offenders}"
+    )
+
+
+def test_the_out_of_oven_sweep_reads_the_operator_side() -> None:
+    """A varredura enxerga os dois lugares que diziam a frase, e as exceções existem."""
+    seen = {path.relative_to(REPO).as_posix() for path in OUT_OF_OVEN_SOURCES}
+    assert "shopman/shop/services/marketing_platform_configuration.py" in seen
+    assert "shopman/shop/services/operator_orders.py" in seen
+    assert "shopman/backstage/projections/production.py" in seen
+    assert len(OUT_OF_OVEN_SOURCES) > 300, f"a varredura achou só {len(OUT_OF_OVEN_SOURCES)} arquivos"
+    for prefix in OUT_OF_OVEN_EXEMPT:
+        assert (REPO / prefix).exists(), f"exceção para um caminho que não existe mais: {prefix}"
