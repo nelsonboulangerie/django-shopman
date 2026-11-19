@@ -63,7 +63,7 @@ Regras do padrão:
   `shopman/storefront/api/shelf_events.py`). A rota **não repassa** o canal
   `stock-<canal>`: cada evento dele é uma venda ou uma entrada de lote com o SKU,
   e aberto ao público entregaria o ritmo da loja (ADR-018 §5.1). Sai só um
-  `shelf-update` sem conteúdo, no máximo um a cada 10 s por conexão. Regra para o
+  `shelf-update` sem conteúdo, no máximo um a cada 5 s por conexão. Regra para o
   próximo stream público: o que ele carrega tem de caber no que a página pública
   já mostra.
 - **Candidatos a migrar/adotar:** KDS, gestor de pedidos, produção/fornadas,

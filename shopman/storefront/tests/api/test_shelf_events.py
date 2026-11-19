@@ -3,7 +3,8 @@
 O canal cru de estoque diz o SKU de cada reserva e de cada movimento: aberto ao
 público, entrega o ritmo da loja (ADR-018 §5.1). A rota da loja entrega só um
 ``shelf-update`` sem conteúdo, com janela. Estes testes provam o filtro: nada do
-canal cru atravessa, nenhuma mudança se perde, e a contagem de eventos some.
+canal cru atravessa, nenhuma mudança se perde, a contagem de eventos some, e o
+aviso devido sai quando a janela vence, mesmo com o canal calado.
 """
 
 from __future__ import annotations
@@ -23,17 +24,12 @@ from shopman.storefront.api.shelf_events import (
 OPEN = ":" + " " * 2048 + "\n\nevent: stream-open\ndata:\n\n"
 KEEP_ALIVE = "event: keep-alive\ndata:\n\n"
 
+#: Janela dos testes: curta para o teste ser rápido, larga para não oscilar.
+WINDOW = 0.15
+
 
 def stock(sku: str, event_id: str = "1") -> str:
     return f'event: stock-update\nid: stock-web:{event_id}\ndata: {{"sku": "{sku}"}}\n\n'
-
-
-class Clock:
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def __call__(self) -> float:
-        return self.now
 
 
 async def _stream(chunks):
@@ -41,16 +37,41 @@ async def _stream(chunks):
         yield chunk
 
 
-def run(chunks, *, clock=None) -> list[str]:
+def run(chunks, *, min_interval: float = WINDOW) -> list[str]:
+    """Roda o filtro sobre um stream que entrega os pedaços e termina."""
+
     async def collect() -> list[str]:
-        return [chunk async for chunk in coarsen(_stream(chunks), clock=clock or Clock())]
+        return [chunk async for chunk in coarsen(_stream(chunks), min_interval=min_interval)]
 
     return asyncio.run(collect())
+
+
+class LiveSource:
+    """Um stream que fica aberto: o teste entrega pedaços quando quer."""
+
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self.closed = False
+
+    def push(self, chunk: str) -> None:
+        self.queue.put_nowait(chunk)
+
+    async def __aiter__(self):
+        try:
+            while True:
+                yield await self.queue.get()
+        finally:
+            self.closed = True
 
 
 def test_route_is_wired_to_the_coarsening_view():
     match = resolve("/api/v1/storefront/shelf/events/")
     assert match.func is storefront_shelf_events_view
+
+
+def test_the_window_is_a_few_seconds():
+    # "Em poucos segundos" é o que a tela promete; a janela é o pior atraso.
+    assert 2.0 <= MIN_INTERVAL_SECONDS <= 10.0
 
 
 @pytest.mark.django_db
@@ -89,26 +110,66 @@ def test_a_burst_in_one_chunk_is_one_notice():
     assert out.count(SHELF_EVENT) == 1
 
 
-def test_events_inside_the_window_are_owed_and_leave_on_the_next_chunk():
-    # O relógio é lido uma vez por pedaço que deve aviso: 1º evento, 2º evento
-    # (3 s depois, dentro da janela) e o keep-alive seguinte (já fora dela).
-    moments = iter([1000.0, 1003.0, 1003.0 + MIN_INTERVAL_SECONDS])
+def test_the_first_event_after_silence_leaves_at_once():
+    async def scenario() -> float:
+        source = LiveSource()
+        stream = coarsen(source, min_interval=WINDOW)
+        loop = asyncio.get_running_loop()
+        source.push(stock("A"))
+        started = loop.time()
+        chunk = await anext(stream)
+        elapsed = loop.time() - started
+        await stream.aclose()
+        assert SHELF_EVENT in chunk
+        return elapsed
 
-    out = run([stock("A", "1"), stock("B", "2"), KEEP_ALIVE], clock=lambda: next(moments))
+    assert asyncio.run(scenario()) < WINDOW / 2
 
-    # 1º evento: sai na hora. 2º: fica devendo, e o pedaço some inteiro. O
-    # keep-alive seguinte carrega o aviso devido: nenhuma mudança se perde.
-    assert len(out) == 2
-    assert out[0].count(SHELF_EVENT) == 1
-    assert "keep-alive" in out[1]
-    assert out[1].count(SHELF_EVENT) == 1
+
+def test_an_event_inside_the_window_leaves_when_the_window_ends_even_if_the_channel_goes_quiet():
+    async def scenario() -> tuple[str, float]:
+        source = LiveSource()
+        stream = coarsen(source, min_interval=WINDOW)
+        loop = asyncio.get_running_loop()
+        source.push(stock("A", "1"))
+        await anext(stream)
+        sent_at = loop.time()
+        # Outra mudança logo em seguida, e depois o canal cala: sem keep-alive,
+        # sem evento. O aviso devido tem de sair sozinho, no fim da janela.
+        source.push(stock("B", "2"))
+        chunk = await asyncio.wait_for(anext(stream), timeout=WINDOW * 10)
+        waited = loop.time() - sent_at
+        await stream.aclose()
+        return chunk, waited
+
+    chunk, waited = asyncio.run(scenario())
+
+    assert chunk.count(SHELF_EVENT) == 1
+    assert "B" not in chunk.replace(SHELF_EVENT, "")
+    # Nem antes da janela (seria contar a segunda venda), nem muito depois dela.
+    assert WINDOW * 0.9 <= waited <= WINDOW * 4
 
 
 def test_the_number_of_sales_does_not_show():
-    # Dez eventos dentro da mesma janela: quem ouve conta um aviso, não dez vendas.
-    out = "".join(run([stock("A", str(i)) for i in range(10)]))
+    async def scenario() -> list[str]:
+        source = LiveSource()
+        stream = coarsen(source, min_interval=WINDOW)
+        out = []
+        source.push(stock("A", "0"))
+        out.append(await anext(stream))
+        # Dez vendas dentro da mesma janela.
+        for i in range(1, 11):
+            source.push(stock("A", str(i)))
+        out.append(await asyncio.wait_for(anext(stream), timeout=WINDOW * 10))
+        # Depois disso, silêncio: nada mais sai.
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(stream), timeout=WINDOW * 3)
+        return out
 
-    assert out.count(SHELF_EVENT) == 1
+    out = "".join(asyncio.run(scenario()))
+
+    # Onze eventos, dois avisos: quem ouve não conta vendas.
+    assert out.count(SHELF_EVENT) == 2
 
 
 def test_a_quiet_stream_emits_nothing():
@@ -132,21 +193,19 @@ def test_bytes_are_accepted():
     assert '"sku"' not in out
 
 
-def test_closing_the_notice_closes_the_source():
-    closed = []
-
-    async def source():
-        try:
-            yield stock("A")
-            yield stock("B")
-        finally:
-            closed.append(True)
-
-    async def consume() -> None:
-        stream = coarsen(source(), clock=Clock())
+def test_closing_the_notice_closes_the_source_even_while_waiting():
+    async def scenario() -> bool:
+        source = LiveSource()
+        stream = coarsen(source, min_interval=WINDOW)
+        source.push(stock("A"))
         await anext(stream)
+        # O cliente sai com o filtro esperando o próximo pedaço.
+        waiting = asyncio.ensure_future(anext(stream))
+        await asyncio.sleep(0.01)
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
         await stream.aclose()
+        return source.closed
 
-    asyncio.run(consume())
-
-    assert closed == [True]
+    assert asyncio.run(scenario()) is True

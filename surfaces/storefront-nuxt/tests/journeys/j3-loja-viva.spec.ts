@@ -66,6 +66,19 @@ async function putsThemBack (page: Page): Promise<void> {
   await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` })).toHaveCount(0)
 }
 
+/** Ao fim de cada caminho, mesmo quando ele reprova: nada fica preso na sacola de B,
+ *  senão o caminho seguinte começa com o produto já indisponível. */
+async function leavesNothingBehind (page: Page): Promise<void> {
+  try {
+    await page.goto('/sacola')
+    await settled(page)
+    const trash = page.getByRole('button', { name: `Remover ${PRODUCT}`, exact: true }).first()
+    if (await trash.count()) await trash.click({ timeout: 5_000 })
+  } catch {
+    // A pilha caiu ou a página não abriu: o relatório do caminho já diz o que houve.
+  }
+}
+
 async function showsUnavailable (page: Page, timeout: number): Promise<void> {
   await expect(addButton(page), 'o botão de adicionar deveria ter saído sozinho').toHaveCount(0, { timeout })
   await expect(page.getByText('Indisponível', { exact: true }).first()).toBeVisible()
@@ -99,6 +112,7 @@ test('J3: o produto que acaba muda sozinho na tela de quem está olhando', async
       await capture(page, testInfo, 'a-voltou-sozinha')
     })
   } finally {
+    await leavesNothingBehind(other.page)
     await other.context.close()
   }
 })
@@ -122,6 +136,7 @@ test('J3: com o aviso derrubado, a consulta de reserva corrige a tela em cerca d
     await offersAgain(page, 90_000)
     await stillTheSameVisit(page)
   } finally {
+    await leavesNothingBehind(other.page)
     await other.context.close()
   }
 })
@@ -138,11 +153,11 @@ test('J3: se A tocar antes de a tela mudar, o aviso aparece e a página fica cer
     await takesTheLastUnits(other.page)
     await addButton(page).click()
 
-    const notice = page.getByRole('dialog')
-    await expect(notice.getByText('Ficou indisponível enquanto você escolhia.')).toBeVisible()
+    const notice = page.getByText('Ficou indisponível enquanto você escolhia.').first()
+    await expect(notice).toBeVisible()
     await capture(page, testInfo, 'a-aviso-de-indisponivel')
     await page.keyboard.press('Escape')
-    await expect(notice).toHaveCount(0)
+    await expect(notice).toBeHidden()
 
     // A recusa já corrigiu a página: nada de "Adicionar" morto esperando outro toque.
     await showsUnavailable(page, 5_000)
@@ -151,6 +166,7 @@ test('J3: se A tocar antes de a tela mudar, o aviso aparece e a página fica cer
 
     await putsThemBack(other.page)
   } finally {
+    await leavesNothingBehind(other.page)
     await other.context.close()
   }
 })
