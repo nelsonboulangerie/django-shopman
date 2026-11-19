@@ -328,10 +328,12 @@ describe("OrderCard iFood", () => {
     // para baixo da dobra sem ajudar a decidir nada.
     expect(w.find("[data-ifood-payment]").exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
-    const blocked = w
-      .findAll("button")
-      .find((button) => button.text().includes("Aguardando iFood"));
-    expect(blocked?.attributes("disabled")).toBeDefined();
+    // A pílula do bloqueio diz o fato (WP-G06), então o nome aparece duas vezes: o
+    // gesto travado é o botão principal do cartão.
+    const blocked = w.get("[data-card-primary]");
+    expect(blocked.text()).toContain("Aguardando iFood");
+    expect(blocked.attributes("disabled")).toBeDefined();
+    expect(w.get('[data-card-notice="block"]').text()).toBe("Aguardando iFood");
     expect(
       w
         .findAll("button")
@@ -483,6 +485,7 @@ describe("OrderCard: a NFC-e que não autorizou", () => {
   it("aparece no card e leva ao pedido, onde está Reprocessar NFC-e", async () => {
     const w = mountCard({
       card: card({
+        ref: "WEB-261105-Z68",
         fiscal_status: "failed",
         fiscal_status_label: "NFC-e não autorizada",
       }),
@@ -490,7 +493,13 @@ describe("OrderCard: a NFC-e que não autorizou", () => {
     await openNotice(w, "fiscal");
     const link = w.get("[data-fiscal-failed]");
     expect(link.text()).toContain("NFC-e não autorizada");
-    expect(link.text()).toContain("reprocessar");
+    expect(link.text()).toContain("O pedido tem o Reprocessar NFC-e.");
+    // O botão só abre o pedido, e diz que abre (laudo P2-13): "Abrir e reprocessar"
+    // prometia o fim do caminho antes do fim.
+    const open = w.get("[data-fiscal-failed-open]");
+    expect(open.text()).toBe("Abrir o pedido");
+    expect(open.attributes("to")).toBe("/WEB-261105-Z68");
+    expect(link.text()).not.toContain("Abrir e reprocessar");
   });
   it("nota em dia não ocupa o card", () => {
     expect(
@@ -509,9 +518,27 @@ describe("OrderCard: por que o botão está travado", () => {
           "Encomenda para uma data futura. O preparo abre no dia combinado.",
       }),
     });
+    // Sem nome de bloqueio do servidor, a pílula pergunta.
+    expect(w.get('[data-card-notice="block"]').text()).toBe("Por que espera");
     await openNotice(w, "block");
     expect(w.get("[data-advance-block]").text()).toContain(
       "Encomenda para uma data futura. O preparo abre no dia combinado.",
+    );
+  });
+  // Laudo do Gestor, P2-16: a pílula "Por que espera" guardava o fato atrás do toque.
+  it("a pílula diz o fato do bloqueio, e o porquê continua a um toque", async () => {
+    const w = mountCard({
+      card: card({
+        advance_block_label: "Cobrança recusada",
+        advance_block_reason: "O cartão do cliente recusou a cobrança no aceite.",
+      }),
+    });
+    const pill = w.get('[data-card-notice="block"]');
+    expect(pill.text()).toBe("Cobrança recusada");
+    expect(w.text()).not.toContain("Por que espera");
+    await pill.trigger("click");
+    expect(w.get("[data-advance-block]").text()).toContain(
+      "O cartão do cliente recusou a cobrança no aceite.",
     );
   });
   // Beta 05/11 (GES-09): o balão dizia só "gerado às 05:51 · expirou às 05:57",

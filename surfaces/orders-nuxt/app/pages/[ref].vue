@@ -1780,6 +1780,7 @@ const outside = useOutsideStore(
       :marketplace="order?.channel_ref === 'ifood'"
       :cancel-reasons="cancelReasons"
       :initial-key="cancelInitialKey"
+      :order="order"
       :money-effect="order?.cancel_money_effect || ''"
       :busy="busy"
       @dirty-change="reasonDirty = $event"
