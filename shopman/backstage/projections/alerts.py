@@ -103,6 +103,12 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             ).values_list("ref", "target_date")
             if target_date is not None
         }
+    # O cartão do "vou verificar" diz no título quem espera ("Ana espera a resposta da
+    # equipe"), pelo nome da conversa dele; os outros tipos ficam com o assunto da spec.
+    from shopman.shop.concierge_verification import ALERT_TYPE as VERIFY_TYPE
+    from shopman.shop.concierge_verification import card_subjects
+
+    verify_subjects = card_subjects(alert.pk for alert in alert_rows if alert.type == VERIFY_TYPE)
     rows = tuple(
         OperatorAlertProjection(
             pk=alert.pk,
@@ -119,7 +125,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             deadline_kind=deadline_kind(alert),
             origin_label=_spec_value(alert, "origin"),
             origin_icon=_spec_value(alert, "origin_icon"),
-            subject=_spec_value(alert, "subject") or alert.get_type_display(),
+            subject=verify_subjects.get(alert.pk) or _spec_value(alert, "subject") or alert.get_type_display(),
             order_schedule_label=schedules.get(alert.order_ref, ("", ""))[0],
             order_schedule_state=schedules.get(alert.order_ref, ("", ""))[1],
             actions=_alert_actions(

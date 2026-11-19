@@ -26,6 +26,9 @@ class AlertSpec:
     #: ``0``: o tipo só interrompe com prazo próprio (``respond_by``); a spec dá a origem
     #: e o assunto.
     deadline_minutes: int
+    #: O prazo próprio (``respond_by``) vencido FICA na tela, dizendo há quanto passou,
+    #: como a régua da casa: é promessa da casa, não decisão do mundo lá fora.
+    own_deadline_stays: bool = False
 
 
 ALERT_SPECS: dict[str, AlertSpec] = {
@@ -50,11 +53,11 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     ),
     # WhatsApp: régua de atendimento de 5 minutos (dono, 08/10/2026).
     "concierge_handoff": AlertSpec("WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5),
-    # "Vou verificar": a pergunta que a Concierge levou à equipe. Interrompe só depois do
-    # primeiro prazo, quando o relógio dela põe o ``respond_by`` (o segundo prazo, WP-06):
-    # sem régua da casa, porque o prazo é contado com a loja aberta, não do relógio.
+    # "Vou verificar": a pergunta que a Concierge levou à equipe. Conta até o prazo que
+    # ela prometeu ao cliente (``respond_by``, contado com a loja aberta, por isso sem
+    # régua da casa) e, vencido, fica na tela: a promessa é da casa.
     "concierge_verify": AlertSpec(
-        "WhatsApp", "i-lucide-message-circle", "Cliente esperando a resposta da equipe", 0,
+        "WhatsApp", "i-lucide-message-circle", "Cliente espera a resposta da equipe", 0, own_deadline_stays=True,
     ),
     # Marketing: disparo com problema antes da hora marcada.
     "marketing_outbox_stuck": AlertSpec("Marketing", "i-lucide-megaphone", "Disparo travado na fila", 30),
@@ -95,7 +98,8 @@ def deadline_kind(alert) -> str:
     """``external``: quem decide no fim é o mundo lá fora, e o aviso sai com o prazo.
     ``house``: régua da casa; vencida, a causa continua e o aviso fica, atrasado."""
     if alert.respond_by:
-        return "external"
+        spec = spec_for(alert.type)
+        return "house" if spec is not None and spec.own_deadline_stays else "external"
     return "house" if _house_applies(alert) else ""
 
 

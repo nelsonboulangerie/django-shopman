@@ -72,7 +72,7 @@ def test_at_the_first_deadline_the_card_goes_urgent_and_the_customer_gets_one_no
     assert outbox.sent[sent:] == [NUDGE], "o aviso sai uma vez só"
     card = _cards().get()
     assert card.severity == "warning", "uma pergunta de cliente não é erro"
-    assert card.respond_by == _due(opened, "handoff_due_at"), "o sino conta até o segundo prazo"
+    assert card.respond_by == due, "um prazo só para quem opera: o prometido ao cliente"
     record = _record(conversation)
     assert record["status"] == verification.OPEN and record["nudged_at"]
     conversation.refresh_from_db()
