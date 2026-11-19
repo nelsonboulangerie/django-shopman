@@ -2,9 +2,10 @@
 
 Proposto quando o que se pede não tem movimento elegível que o faça: o pedido
 de mudança cujo movimento de efeito está inelegível (ou não existe), a
-reclamação (até que o movimento de caso, F9, exista), o "sim" aos termos que
-não autoriza nem pede termos novos, e a consulta cujo fato está desconhecido
-(desconhecido não vira frase, J1). Quando o movimento que faz o pedido é
+reclamação sem caso possível, o pedido de pessoa sem fila declarada, o "sim"
+aos termos que não autoriza nem pede termos novos, e a consulta cujo fato está
+desconhecido sem verificação possível com a equipe (desconhecido não vira
+frase, J1). Quando o movimento que faz o pedido é
 elegível, este não é proposto: ele vem antes no catálogo e venceria o empate.
 """
 
@@ -19,11 +20,15 @@ from ..acts import CHANGE_ACTS
 MOVE = "inform_limitation"
 TEMPLATES = (
     Template("inform_limitation.offer_team", "1", MOVE, "I can't do that here. I can hand you to the team."),
+    # A recusa do cliente segura a oferta até ele mudar de ideia (F10).
+    Template("inform_limitation.offers_declined", "1", MOVE,
+             "You asked me not to make suggestions. Tell me if you'd like them again."),
 )
-LIMITED_ACTS = CHANGE_ACTS | {"complain"}
+LIMITED_ACTS = CHANGE_ACTS | {"complain", "request_human", "ask_recommendation"}
 # O movimento que faz cada pedido de mudança.
 HANDLED_BY = {"change_quantity": ("change_cart",), "place_order": ("present_terms",),
-              "cancel_order": ("cancel_order",)}
+              "cancel_order": ("cancel_order",), "complain": ("open_case",), "request_human": ("handoff",),
+              "ask_recommendation": ("recommend",)}
 
 
 def _fact_missing(state, need) -> bool:
@@ -39,7 +44,12 @@ def _handled(state, need) -> bool:
     from . import registry
 
     moves = registry()
-    names = ("commit_order", "present_terms") if state.answers_offer(need) else HANDLED_BY.get(need.act, ())
+    if state.answers_offer(need):
+        names = ("commit_order", "present_terms")
+    elif _fact_missing(state, need):
+        names = ("verify_with_staff",)
+    else:
+        names = HANDLED_BY.get(need.act, ())
     for name in names:
         module = moves.get(name)
         proposal = module.propose(state, need) if module is not None else None
@@ -60,4 +70,6 @@ def propose(state, need):
 
 
 def reply(state, need):
+    if need.act == "ask_recommendation" and state.declined_offers:
+        return PartSpec(MOVE, "inform_limitation.offers_declined")
     return PartSpec(MOVE, "inform_limitation.offer_team")

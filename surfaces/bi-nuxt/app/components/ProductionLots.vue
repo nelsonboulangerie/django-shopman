@@ -3,7 +3,7 @@
 // embaixo do "Sobrou ou faltou", com um segundo controle de tempo no meio da página
 // (laudo F08); agora é a segunda aba da tela (`?view=lots`), e o cabeçalho da aba
 // tem UM tempo, o período, no lugar de sempre (a página monta o cabeçalho; este
-// componente é o corpo). A série do que saiu do forno, o aproveitamento e o tempo REAL de
+// componente é o corpo). A série do que ficou pronto, o aproveitamento e o tempo REAL de
 // forno (só o par armar→Concluir mede; a cobertura declara o resto, ADR-021 §4).
 //
 // Gráficos e quadros são as peças de leitura do kit: o ponto em leitura serve mouse,
@@ -121,7 +121,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
           title="Perda no período"
           :value="formatInt(lossTotal)"
           :delta="delta(lossTotal, Number(report.previous.loss_total), { downIsGood: true })"
-          hint="Unidades que não saíram do forno"
+          hint="Unidades que não ficaram prontas"
         />
         <OperatorMetric
           title="Aproveitamento do período"
@@ -133,7 +133,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
 
       <OperatorReadingCard
         title="Produção por dia"
-        description="Unidades que saíram do forno; tracejado = período anterior"
+        description="Unidades que ficaram prontas; tracejado = período anterior"
         :csv="readingChartCsv(axisLabel, FINISHED_SERIES, finished)"
       >
         <OperatorReadingChart

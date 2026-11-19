@@ -58,6 +58,14 @@ Regras do padrão:
   (`stock-`), verificação por WhatsApp (`wa-verify-<token>`), PDV
   (`backstage-cash-*`: pedido de troco, devolução pendente, turno) e Marketing
   (`/sse/notifications`: invalidação pessoal seguida de refetch/ETag).
+- **Loja viva (WP-L04, 19/11/2026):** produto, cardápio, busca, coleção e início
+  da loja releem quando chega o aviso público da vitrine (`/sse/loja`,
+  `shopman/storefront/api/shelf_events.py`). A rota **não repassa** o canal
+  `stock-<canal>`: cada evento dele é uma venda ou uma entrada de lote com o SKU,
+  e aberto ao público entregaria o ritmo da loja (ADR-018 §5.1). Sai só um
+  `shelf-update` sem conteúdo, no máximo um a cada 5 s por conexão. Regra para o
+  próximo stream público: o que ele carrega tem de caber no que a página pública
+  já mostra.
 - **Candidatos a migrar/adotar:** KDS, gestor de pedidos, produção/fornadas,
   qualquer badge/contador que hoje faz poll. Migração incremental — cada tela
   ganha o push mantendo o poll como rede de segurança.

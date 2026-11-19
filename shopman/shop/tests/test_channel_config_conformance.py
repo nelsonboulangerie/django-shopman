@@ -49,6 +49,11 @@ def _config(**kwargs) -> ChannelConfig:
     return c
 
 
+#: A régua da fila (#2730). Lê as reservas do pedido no banco; com pedido de
+#: mentira, o teste que afirma o que o commit faz com a cobrança diz a resposta.
+CHARGE_WAITS_FOR_THE_QUEUE = "shopman.shop.policies.waitlist_charge.charge_waits_for_the_queue"
+
+
 def _patch_config(cfg: ChannelConfig):
     """Patch ChannelConfig.for_channel to return cfg."""
     return patch("shopman.shop.lifecycle.ChannelConfig.for_channel", return_value=cfg)
@@ -74,6 +79,7 @@ class TestConfirmationConformance:
 
         order.transition_status.assert_called_with("accepted", actor="auto_confirm")
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     def test_immediate_waits_for_upfront_payment(self):
         """Digital payment cannot be auto-confirmed before capture."""
         from shopman.shop.lifecycle import dispatch
@@ -160,6 +166,7 @@ class TestPaymentConformance:
 
         mock_init.assert_not_called()
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     def test_at_commit_timing_initiates_on_commit(self):
         """payment.timing='at_commit' → payment.initiate called on commit."""
         from shopman.shop.lifecycle import dispatch

@@ -8522,7 +8522,7 @@
       ],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_courier_service.py::test_sync_gives_up_on_a_ride_older_than_the_cap"
+        "shopman/shop/tests/test_courier_service.py::test_sync_slows_down_on_a_ride_older_than_the_cap"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -8719,6 +8719,59 @@
       "config_surface": [],
       "tests": [
         "shopman/backstage/tests/test_deliveries_projection.py::test_the_number_is_freed_when_the_ride_ends"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-in-trouble",
+      "question": "A corrida em apuros: onde o entregador está em relação à loja, quem ele é, quando a entrega pode ser dada por concluída e até quando a casa ainda pergunta à central?",
+      "owner": "delivery.courier-in-trouble",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:auto_complete_hold_until",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:auto_complete_hold_until"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "DRIVER_PHOTO_MAX_BYTES",
+            "DRIVER_PHOTO_SECONDS",
+            "PICKUP_EVENTS",
+            "REOPEN_TRANSFER",
+            "REOPEN_WITHDREW",
+            "SLOW_POLL_SECONDS",
+            "STALE_READ_MINUTES",
+            "_driver_photo_keys",
+            "alert_auto_completed_blind",
+            "auto_complete_hold_until",
+            "driver_photo",
+            "has_driver_photo",
+            "reading_is_fresh",
+            "record_pickup_event",
+            "remember_driver_photo",
+            "ride_open_too_long",
+            "sync_interval",
+            "vehicle_line"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_em_apuros.py::test_auto_complete_waits_while_the_driver_is_on_the_street",
+        "shopman/shop/tests/test_courier_em_apuros.py::test_auto_complete_without_ride_is_the_old_safety_net"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -16725,6 +16778,39 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_order_date_before_batch.py::TestRecusaAntesDoFechamento::test_data_anterior_a_fornada_devolve_a_recusa_com_item_e_dia"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "waitlist.charge-waits-for-the-queue",
+      "question": "A cobrança deste pedido espera a fila da fornada, ou nasce no fechamento do pedido?",
+      "owner": "waitlist.charge-waits-for-the-queue",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.waitlist_charge:charge_waits_for_the_queue",
+      "authoritative_symbols": [
+        "shopman.shop.policies.waitlist_charge:charge_waits_for_the_queue"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/waitlist_charge.py",
+          "symbols": [
+            "charge_waits_for_the_queue"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_fila_de_hoje_cobra_na_confirmacao.py::test_pedido_na_fila_da_fornada_de_hoje_nao_nasce_cobrado"
       ],
       "test_gap_reason": null,
       "policy": true,

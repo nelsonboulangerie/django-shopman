@@ -44,7 +44,7 @@ from shopman.stockman.services.queries import StockQueries
 from shopman.backstage.projections import bi_production
 from shopman.backstage.services import closing, production
 from shopman.shop.models import Channel, QualityDefect, Shop
-from shopman.shop.services import availability, cancellation
+from shopman.shop.services import availability, cancellation, waitlist
 from shopman.shop.services import pos as pos_service
 from shopman.shop.services.operator_orders import confirm_order
 
@@ -273,9 +273,21 @@ def test_baixa_de_tudo_antes_de_fechar_credita_zero(lote, caixa, django_capture_
 
 @override_settings(SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token"})
 @pytest.mark.parametrize("lote_aberto", [False, True], ids=["lote-planejado", "lote-aberto"])
-def test_pedido_da_loja_pago_e_aceito_antes_de_o_lote_fechar(lote, lote_aberto, django_capture_on_commit_callbacks):
-    """Commit, webhook de pagamento e aceite de ponta a ponta, com o lote só planejado
-    e com o lote já aberto (a loja reserva o que está em produção, #2715)."""
+def test_pedido_da_loja_na_fila_so_e_baixado_depois_de_o_lote_fechar(
+    lote, lote_aberto, django_capture_on_commit_callbacks,
+):
+    """O canal remoto não chega mais à baixa antecipada na fornada de hoje.
+
+    Até a #2730 o pedido da loja era cobrado no commit, mesmo na fila: pago e
+    aceito com o lote ainda planejado ou aberto, a baixa caía no saldo de
+    produção (e o fechamento a abatia do lote). Desde a #2730 a fila da fornada
+    de hoje não cobra para garantir vaga: sem pagamento não há aceite, então
+    nada é baixado antes de o lote fechar. A fornada sai, o cliente confirma, o
+    Pix nasce, ele paga, a loja aceita, e a baixa sai do pão que existe.
+
+    A baixa antecipada continua existindo no balcão, que entrega pão de lote
+    aberto: é o que os testes acima cobrem.
+    """
     saldo = "em_producao" if lote_aberto else "planejado"
     if lote_aberto:
         with django_capture_on_commit_callbacks(execute=True):
@@ -293,7 +305,26 @@ def test_pedido_da_loja_pago_e_aceito_antes_de_o_lote_fechar(lote, lote_aberto, 
     order = Order.objects.get(ref=result["order_ref"] if isinstance(result, dict) else result.order_ref)
     hold = _reserva(order)
     assert (_onde(hold), hold.status) == (saldo, HoldStatus.PENDING)
+    assert waitlist.state_for(order) == waitlist.FERMATA
+    assert not order.data["payment"].get("intent_ref"), "na fila, o commit não cobra"
 
+    if not lote_aberto:
+        with django_capture_on_commit_callbacks(execute=True):
+            _iniciar(lote)
+    assert (_saldo("planejado"), _saldo("em_producao")) == (D("0"), D("10")), "nada saiu antes de o lote fechar"
+    assert _onde(hold) == "em_producao"
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _fechar(lote)
+
+    assert _saldo("vitrine") == D("10")
+    assert _onde(hold) == "vitrine"
+    order.refresh_from_db()
+    assert waitlist.state_for(order) == waitlist.CONFIRMING
+
+    with django_capture_on_commit_callbacks(execute=True):
+        assert waitlist.confirm(order) is True
+    order.refresh_from_db()
     intent = PaymentIntent.objects.get(ref=order.data["payment"]["intent_ref"])
     with django_capture_on_commit_callbacks(execute=True):
         response = APIClient().post(
@@ -303,26 +334,22 @@ def test_pedido_da_loja_pago_e_aceito_antes_de_o_lote_fechar(lote, lote_aberto, 
         )
     assert response.status_code == 200
     hold.refresh_from_db()
-    assert hold.status == HoldStatus.PENDING, "o pagamento sozinho não baixa"
+    assert hold.status != HoldStatus.FULFILLED, "o pagamento sozinho não baixa"
 
     order.refresh_from_db()
     with django_capture_on_commit_callbacks(execute=True):
         confirm_order(order, actor="operator")
     hold.refresh_from_db()
     assert hold.status == HoldStatus.FULFILLED, "o aceite do pedido pago baixa na hora"
-    assert _saldo(saldo) == D("6")
-
-    if not lote_aberto:
-        with django_capture_on_commit_callbacks(execute=True):
-            _iniciar(lote)
-    assert (_saldo("planejado"), _saldo("em_producao")) == (D("0"), D("6"))
-
-    with django_capture_on_commit_callbacks(execute=True):
-        _fechar(lote)
 
     assert _saldo("vitrine") == D("6")
     assert (_livre("pdv"), _livre("web")) == (D("6"), D("4"))
     assert _onde(hold) == "vitrine"
+    assert _vendido_no_ledger() == D("-4")
+    # Nenhuma entrega precisou seguir com o lote: a baixa já nasceu nele.
+    assert not Move.objects.filter(
+        quant__sku=SKU, metadata__delivery__entry__in=["carried_out", "carried_in"],
+    ).exists()
 
 
 # ── Quebra, e entrega maior que a produção ───────────────────────────────────
@@ -340,7 +367,7 @@ def test_fechar_com_quebra_tendo_havido_baixa(lote, caixa, django_capture_on_com
 
     lote.refresh_from_db()
     assert (lote.status, lote.finished) == ("finished", D("6"))
-    assert _saldo("vitrine") == D("2"), "6 saíram do forno, 4 já tinham sido entregues"
+    assert _saldo("vitrine") == D("2"), "6 ficaram prontas, 4 já tinham sido entregues"
     assert _saldo("em_producao") == D("0")
     [perda] = Move.objects.filter(quant__sku=SKU, kind=Move.Kind.WASTE)
     assert perda.delta == D("-4"), "a quebra é a do lote: previsto 10, realizado 6"

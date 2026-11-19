@@ -535,6 +535,13 @@ def ensure_payment_intent(order) -> bool:
             refreshed.get("intent_ref")
             and (refreshed.get("copy_paste") or refreshed.get("qr_code"))
         )
+    from shopman.shop.policies.waitlist_charge import charge_waits_for_the_queue
+
+    # A fila da fornada de hoje cobra na confirmação da vaga (política da casa,
+    # 28/08/2026). A conferência da tela é recuperação do que o lifecycle não
+    # fechou, não um segundo caminho: o que o commit segurou ela não cria.
+    if charge_waits_for_the_queue(order):
+        return False
     if method == "pix" and not _payment_can_start(order):
         return False
 

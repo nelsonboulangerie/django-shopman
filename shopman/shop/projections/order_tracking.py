@@ -223,6 +223,11 @@ class TrackingPromiseData:
     # cliente, resolvido aqui pelo mesmo motivo do `next_opening_phrase` (o
     # calendário é lado de escrita; a presentation só lê projections).
     payment_deadline_phrase: str = ""
+    # Até quando a loja responde ao pedido que ainda espera a decisão dela (ISO),
+    # nos dois modos do canal: é o instante em que o ``confirmation.timeout`` do
+    # pedido está agendado (aceite automático no ``auto_confirm``, cancelamento
+    # com devolução no ``auto_cancel``). Só nos estados em que a bola é da loja.
+    acceptance_deadline_at: str | None = None
     # ready_pickup: "hoje às 15h" quando a retirada ainda não pode acontecer
     # agora (a janela combinada não começou ou a loja está fechada). Vazio
     # quando o cliente pode vir já.
@@ -960,6 +965,7 @@ def _promise(
     eta_at: str | None = None,
     next_opening_phrase: str = "",
     payment_deadline_phrase: str = "",
+    acceptance_deadline_at: str | None = None,
     pickup_from_phrase: str = "",
     payment_method: str = "",
     pix_qr_code: str | None = None,
@@ -984,6 +990,7 @@ def _promise(
         eta_at=eta_at,
         next_opening_phrase=next_opening_phrase,
         payment_deadline_phrase=payment_deadline_phrase,
+        acceptance_deadline_at=acceptance_deadline_at,
         pickup_from_phrase=pickup_from_phrase,
         payment_method=payment_method,
         pix_qr_code=pix_qr_code,
@@ -1114,6 +1121,11 @@ def _build_promise(
         return _promise(
             fulfillment_wait_kind=wait_kind,
             fulfillment_wait_until=wait_until,
+            acceptance_deadline_at=(
+                _acceptance_deadline_at(order)
+                if kwargs.get("state") in _STORE_DECISION_STATES
+                else None
+            ),
             **kwargs,
         )
 
@@ -1936,17 +1948,48 @@ def _store_confirmation_is_deferred(
     return store_review_deferred_state(order, state=business_state) is not None
 
 
-def _confirmation_deadline(order) -> datetime | None:
-    directive = (
-        Directive.objects.filter(
-            topic="confirmation.timeout",
-            payload__order_ref=order.ref,
-            payload__action="confirm",
-            status="queued",
-        )
-        .order_by("available_at", "id")
-        .first()
+#: Os estados em que a bola é da loja e o cliente só espera a decisão dela.
+_STORE_DECISION_STATES = frozenset(
+    {"payment_authorized", "payment_confirmed", "store_checking", "store_closed", "received"}
+)
+
+
+def _acceptance_deadline_at(order) -> str | None:
+    """Até quando a loja responde a ESTE pedido (ISO), ou ``None``.
+
+    A fonte é a própria Directive ``confirmation.timeout`` que o lifecycle
+    agendou (``lifecycle._schedule_confirmation_timeout``), qualquer que seja a
+    ação dela: no ``auto_confirm`` o pedido é aceito sozinho nesse instante, no
+    ``auto_cancel`` é cancelado e o dinheiro volta. O prazo não é recalculado
+    aqui: quem conta (tempo de loja aberta, prazo longo da encomenda e da casa
+    fechada) é quem agenda, e a tela lê o que ficou agendado.
+
+    Sem prazo a publicar: pedido que a loja já decidiu (aceito, cancelado, em
+    preparo), pedido sem Directive na fila, e prazo que já venceu (dizer "até
+    8h40" às 8h45 é promessa errada; a frase segue sem o trecho do prazo).
+    """
+    if order.status != "new":
+        return None
+    deadline = _confirmation_deadline(order, action=None)
+    if deadline is None or deadline <= timezone.now():
+        return None
+    return deadline.isoformat()
+
+
+def _confirmation_deadline(order, *, action: str | None = "confirm") -> datetime | None:
+    """O instante agendado do ``confirmation.timeout`` do pedido.
+
+    ``action="confirm"`` é a contagem do aceite automático (``auto_confirm``);
+    ``action=None`` aceita qualquer ação, para o prazo de resposta da loja.
+    """
+    timers = Directive.objects.filter(
+        topic="confirmation.timeout",
+        payload__order_ref=order.ref,
+        status="queued",
     )
+    if action is not None:
+        timers = timers.filter(payload__action=action)
+    directive = timers.order_by("available_at", "id").first()
     if not directive:
         return None
     if directive.available_at:

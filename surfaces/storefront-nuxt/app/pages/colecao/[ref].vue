@@ -39,6 +39,12 @@ const { data, pending, error, refresh } = await useFetch<CatalogResponse>(
   { credentials: 'include', immediate: !dynamicRedirectTarget.value, lazy: true }
 )
 usePageContentPending(pending)
+// Loja viva (WP-L04): os cards da coleção mudam sozinhos.
+useLiveRevalidate(
+  data,
+  () => $fetch<CatalogResponse>(apiPath(`/api/v1/storefront/catalog/${encodeURIComponent(collectionRef.value)}/`), { credentials: 'include' }),
+  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS, scope: () => collectionRef.value }
+)
 
 // Coleção inexistente: 404 de verdade — o endpoint levanta Http404 via
 // ensure_active_collection(); a SSR responde 404 + noindex (error.vue).

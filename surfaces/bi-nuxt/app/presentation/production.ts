@@ -74,7 +74,7 @@ export function bucketAxisLabel(buckets: readonly ProductionBucket[]): string {
 }
 
 export const FINISHED_SERIES: ReadingChartSeries[] = [
-  { key: "finished", label: "Saíram do forno" },
+  { key: "finished", label: "Ficaram prontas" },
   { key: "previous", label: "Período anterior", tone: "neutral" },
 ];
 
@@ -116,7 +116,7 @@ export function productionDayRows(buckets: readonly ProductionBucket[]): Product
 /** O CSV do "Dia a dia": número cru, para quem abre fazer conta. */
 export function productionDaysCsv(buckets: readonly ProductionBucket[]): ReadingCsv {
   return {
-    header: [bucketAxisLabel(buckets), "Previsto", "Saíram do forno", "Período anterior", "Perda", "Aproveitamento (%)", "A preço cheio", "Com desconto"],
+    header: [bucketAxisLabel(buckets), "Previsto", "Ficaram prontas", "Período anterior", "Perda", "Aproveitamento (%)", "A preço cheio", "Com desconto"],
     rows: buckets.map((b) => [b.label, b.started, b.finished, b.previous, b.loss, b.yield ?? "", b.fullPrice, b.discounted]),
   };
 }
