@@ -1,5 +1,16 @@
 # Fontes das prévias da SUITE-UX-V2 (v3, aprovada no geral em 03/10/2026)
 
+> **Registro histórico.** Esta pasta guarda o que foi aprovado na época, como foi aprovado, e
+> não acompanha a tela. Quando a tela muda depois, quem diz a regra vigente são os documentos
+> vivos (`docs/reference/cenarios-de-pedido.md`, `docs/plans/suite-ux-v2/funcoes/*.md`,
+> `docs/plans/SUITE-UX-V2-PLAN.md`) e o código; estas fontes e as imagens geradas delas não se
+> atualizam nem se regeram. Decisão da coordenação em 19/11/2026 (#2777).
+>
+> Diferença conhecida: os protótipos do PDV (`gen-pos3.mjs`, `v4/gen-pos4*.mjs`,
+> `v4/pos-sale4.html`, `src/pos-sale*.html`) desenham a barra da venda como Cliente F6,
+> Recebimento F7, Quando F8. Desde o #2774 (pedido do dono de 19/11/2026, #2754) a ordem é
+> Cliente F6, Quando F7, Recebimento F8.
+
 HTML estático + Tailwind v4 compilado com os tokens reais do `operator-kit`, renderizado em PNG
 pelo Playwright. É o ponto de retorno pedido pelo dono; a tag `suite-ux-proposta-v3` marca o
 commit.
