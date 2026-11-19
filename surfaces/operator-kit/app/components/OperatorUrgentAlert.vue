@@ -57,6 +57,10 @@ async function seen() {
 const canAct = computed(() =>
   Boolean(blocking.value?.actLabel && source.value?.act),
 );
+/** O aviso se resolve com uma resposta escrita: o campo fica no corpo, e embaixo só "Visto". */
+const answering = computed(() =>
+  Boolean(blocking.value?.answer && source.value?.answer),
+);
 async function actNow() {
   const alert = blocking.value;
   if (!alert) return;
@@ -178,6 +182,13 @@ onBeforeUnmount(() => {
         <p class="op-body whitespace-pre-line" data-operator-urgent-message>
           {{ blocking.message }}
         </p>
+        <!-- Responder ali mesmo: o aviso com prazo que se resolve com uma resposta
+             escrita (a pergunta que a Concierge levou à equipe). -->
+        <OperatorInboxAnswer
+          v-if="answering"
+          :alert="blocking"
+          color="error"
+        />
       </div>
     </template>
     <!-- 5 o que fazer. -->
@@ -185,9 +196,11 @@ onBeforeUnmount(() => {
       <div
         class="grid w-full gap-2"
         :class="
-          canAct
-            ? 'grid-cols-3'
-            : 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
+          answering
+            ? 'grid-cols-1'
+            : canAct
+              ? 'grid-cols-3'
+              : 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
         "
       >
         <NuxtButton
@@ -200,6 +213,7 @@ onBeforeUnmount(() => {
           @click="seen"
         />
         <NuxtButton
+          v-if="!answering"
           block
           :color="canAct ? 'neutral' : 'primary'"
           :variant="canAct ? 'outline' : 'solid'"

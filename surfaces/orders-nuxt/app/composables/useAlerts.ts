@@ -10,6 +10,14 @@ import type { AlertProjection, AlertsResponse, OrderDetailResponse } from "~/typ
 import { useOrderIntention } from "./useOrderIntention";
 import { alertMessageWithSchedule, splitRef } from "~/presentation/board";
 import {
+  ANSWER_FAILED,
+  ANSWER_SENT,
+  TAKE_OVER_FAILED,
+  TAKEN_OVER,
+  TAKEN_OVER_NOTICE_NOT_SENT,
+  verificationActions,
+} from "~/presentation/conciergeVerification";
+import {
   openResilientEventSource,
   type ResilientEventSource,
 } from "../../../operator-kit/app/utils/resilientEventSource";
@@ -197,6 +205,49 @@ export function useAlerts() {
     }
   }
 
+  // "Vou verificar" da Concierge (WP-07): responder a pergunta do cliente, ou assumir a
+  // conversa, no próprio cartão. Devolve a frase de erro para o cartão mostrar (o texto
+  // digitado fica lá), ou `null` quando saiu; o cartão some no refresh.
+  const answering = ref<Set<number>>(new Set());
+  function mark(pk: number, on: boolean) {
+    const next = new Set(answering.value);
+    if (on) next.add(pk);
+    else next.delete(pk);
+    answering.value = next;
+  }
+
+  async function verificationPost(
+    alert: AlertProjection,
+    kind: "answer" | "takeOver",
+    body: Record<string, unknown> | undefined,
+    fallback: string,
+  ): Promise<{ error: string | null; data: { warning?: string } | null }> {
+    const action = verificationActions(alert)[kind];
+    if (!action || answering.value.has(alert.pk)) return { error: null, data: null };
+    mark(alert.pk, true);
+    try {
+      const data = await $fetch<{ ok: boolean; warning?: string }>(action.href, { method: "POST", body: body ?? {} });
+      return { error: null, data };
+    } catch (error) {
+      return { error: httpErrorMessage(error, fallback), data: null };
+    } finally {
+      mark(alert.pk, false);
+      await refresh();
+    }
+  }
+
+  async function answerVerification(alert: AlertProjection, text: string): Promise<string | null> {
+    const { error } = await verificationPost(alert, "answer", { text }, ANSWER_FAILED);
+    if (!error) useSonner.success(ANSWER_SENT);
+    return error;
+  }
+
+  async function takeOverVerification(alert: AlertProjection): Promise<string | null> {
+    const { error, data } = await verificationPost(alert, "takeOver", undefined, TAKE_OVER_FAILED);
+    if (!error) useSonner.success(data?.warning ? TAKEN_OVER_NOTICE_NOT_SENT : TAKEN_OVER);
+    return error;
+  }
+
   return {
     alerts,
     readableAlerts,
@@ -208,5 +259,8 @@ export function useAlerts() {
     accept,
     acceptAction,
     isAccepting,
+    answerVerification,
+    takeOverVerification,
+    isAnswering: (pk: number) => answering.value.has(pk),
   };
 }

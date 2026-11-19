@@ -263,7 +263,15 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
               <!-- O gesto que resolve ali mesmo (P2-19: "Aceitar" no pedido parado).
                    Com ele à vista, ele é o sólido, numa linha só dele, e embaixo ficam
                    "Abrir" (contorno) e "Visto", com os rótulos inteiros. -->
-              <template v-if="alert.actLabel && source?.act">
+              <!-- O aviso que se resolve com uma resposta escrita (a pergunta que a
+                   Concierge levou à equipe): o campo e os dois gestos, no lugar do
+                   gesto direto; "Visto" fica embaixo. -->
+              <OperatorInboxAnswer
+                v-if="alert.answer && source?.answer"
+                :alert="alert"
+                :color="alertColor(alert.tone)"
+              />
+              <template v-else-if="alert.actLabel && source?.act">
                 <NuxtButton
                   class="min-w-0 basis-full justify-center"
                   :color="alertColor(alert.tone)"

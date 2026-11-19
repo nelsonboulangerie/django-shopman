@@ -52,6 +52,23 @@ export interface OperatorInboxAlert {
   origin?: string;
   originIcon?: string;
   subject?: string;
+  /** O aviso se resolve com uma resposta escrita (a pergunta que a Concierge levou à
+   *  equipe): o campo, o gesto de enviar e, opcional, o gesto alternativo ("Assumir a
+   *  conversa"). O app executa por `answer`/`answerAlt` da fonte. */
+  answer?: OperatorInboxAnswerSpec;
+}
+
+/** Como o aviso pede a resposta: rótulos e o limite vêm do servidor e do app. */
+export interface OperatorInboxAnswerSpec {
+  /** O gesto de enviar ("Responder ao cliente"). */
+  label: string;
+  /** O que vai no campo vazio ("Escreva a resposta para o cliente"). */
+  placeholder: string;
+  maxLength: number;
+  /** Uma linha sob o campo, que diz como a resposta sai. */
+  hint?: string;
+  /** O gesto alternativo ("Assumir a conversa"); sem ele, só o de enviar. */
+  altLabel?: string;
 }
 
 export interface OperatorInboxAlertSource {
@@ -65,6 +82,11 @@ export interface OperatorInboxAlertSource {
   ack?: (key: string | number) => void | Promise<void>;
   /** Executa o gesto direto do alerta (`actLabel`). Sem ele, o botão não aparece. */
   act?: (key: string | number) => void | Promise<void>;
+  /** Envia a resposta escrita do aviso (`answer`). Devolve a frase de erro para o
+   *  cartão mostrar, ou `null` quando saiu (aí o campo se esvazia). */
+  answer?: (key: string | number, text: string) => Promise<string | null>;
+  /** O gesto alternativo do aviso com resposta (`answer.altLabel`); mesmo retorno. */
+  answerAlt?: (key: string | number) => Promise<string | null>;
   isPending?: (key: string | number) => boolean;
 }
 
