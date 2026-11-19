@@ -220,6 +220,39 @@ def test_cobranca_vencida_e_um_fato_so_com_o_cancelar_e_o_contato_ao_lado(gerent
     assert contact.label == "Chamar no WhatsApp"
     assert contact.href == detail.customer_whatsapp_url != ""
     assert detail.payment_lapsed is True
+    # O resumo do pagamento diz o mesmo fato da faixa (#2705): antes lia
+    # "Pix · Aguardando pagamento" ao lado de "Pix expirado".
+    assert (detail.payment_method_label, detail.payment_status_label) == ("Pix", "Expirado")
+
+
+def test_cobranca_vencida_no_cartao_diz_expirado_e_nao_e_ampulheta(gerente):
+    """O cartão do quadro, a Fila e a Tabela leem o mesmo rótulo: "Pix · Expirado", em tom de erro."""
+    from shopman.backstage.projections.order_queue import build_order_card
+
+    order = _order("G05-PIX-VENCIDO-CARTAO", "accepted", payment={"method": "pix", "intent_ref": "INT-G05-PIX-VC"})
+    _pix_intent(order, created_minutes_ago=30)
+
+    card = build_order_card(Order.objects.get(pk=order.pk), user=gerente)
+
+    assert card.advance_block_label == "Pix expirado"
+    assert (card.payment_method_label, card.payment_status_label, card.payment_tone) == ("Pix", "Expirado", "danger")
+    assert card.payment_lapsed is True
+
+
+def test_link_de_pagamento_vencido_diz_vencido(gerente):
+    from shopman.payman.models import PaymentIntent
+
+    order = _order("G05-LINK-VENCIDO", "accepted", payment={"method": "link", "intent_ref": "INT-G05-LINK-V"})
+    created = timezone.now() - timedelta(minutes=90)
+    intent = PaymentIntent.objects.create(
+        ref="INT-G05-LINK-V", order_ref=order.ref, method="link", amount_q=order.total_q,
+        status="pending", expires_at=created + timedelta(minutes=60),
+    )
+    PaymentIntent.objects.filter(pk=intent.pk).update(created_at=created)
+
+    detail = build_operator_order(Order.objects.get(pk=order.pk), user=gerente)
+
+    assert detail.payment_status_label == "Vencido"
 
 
 def test_pix_dentro_do_prazo_e_espera_saudavel_sem_cor_de_erro():
@@ -231,6 +264,9 @@ def test_pix_dentro_do_prazo_e_espera_saudavel_sem_cor_de_erro():
     assert (line.tone, line.label) == ("info", "Aguardando Pix")
     assert line.reason.endswith("sem pagamento até lá, cancela sozinho.")
     assert line.actions == ()
+    # Quem ainda espera continua dizendo que espera.
+    detail = build_operator_order(Order.objects.get(pk=order.pk))
+    assert detail.payment_status_label == "Aguardando pagamento"
 
 
 def test_o_dia_da_encomenda_e_espera_saudavel_e_diz_o_dia():
