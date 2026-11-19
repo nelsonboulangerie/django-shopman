@@ -51,8 +51,8 @@ describe('pedido não retirado: uma regra, o mesmo texto nos Termos e no checkou
   it('a linha do checkout aparece na encomenda para retirar, e leva aos Termos', () => {
     const checkout = readFileSync(resolve(raiz, 'app/pages/finalizar.vue'), 'utf8')
     expect(checkout).toContain('const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date) && !isTodaySelected.value)')
-    // A frase mora no card "Antes de enviar" da revisão, e só nasce com a regra.
-    expect(checkout).toMatch(/<div v-if="showUnclaimedOrderRule"[^>]*>\s*<Icon [^>]*\/>\s*<p class="shop-body" data-review-unclaimed-rule>/)
+    // A frase é a linha logo abaixo do card "Antes de enviar" da revisão, e só nasce com a regra.
+    expect(checkout).toMatch(/<\/section>\s*(<!--[\s\S]*?-->\s*)?<p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>/)
     expect(checkout.match(/data-review-unclaimed-rule/g)).toHaveLength(1)
     expect(checkout).toContain('to="/termos#pickup-and-delivery"')
     // A âncora do link existe nos Termos.

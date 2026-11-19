@@ -215,7 +215,7 @@ describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () =>
     expect(card?.className).not.toMatch(/warning|destructive|success|amber|yellow|red-/)
   })
 
-  it('na encomenda para retirar, o não retirado entra no mesmo card, com divisor e o link dos Termos dentro', async () => {
+  it('na encomenda para retirar, o não retirado fica fora do card, na linha logo abaixo dele, com o link dos Termos', async () => {
     // Para a loja hoje é hoje: a data do rascunho (amanhã) é uma encomenda.
     served = projection({ today: iso(new Date()) })
     draft('pix')
@@ -224,23 +224,23 @@ describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () =>
     await openReview(page)
 
     const card = document.body.querySelector('[data-review-before-sending]')
-    const rule = card?.querySelector('[data-review-unclaimed-rule]')
-    const money = card?.querySelector('[data-review-money-notice]')
+    const rule = document.body.querySelector('[data-review-unclaimed-rule]')
     expect(rule).toBeTruthy()
-    expect(money).toBeTruthy()
-    expect(card?.querySelector('[data-review-before-sending-divider]')).toBeTruthy()
+    expect(card?.querySelector('[data-review-money-notice]')).toBeTruthy()
+    // Com as duas frases dentro, o card passava da dobra no celular: a regra é a
+    // linha seguinte ao card, em letra de apoio, e o card fica só com o dinheiro.
+    expect(card?.contains(rule)).toBe(false)
+    expect(card?.nextElementSibling).toBe(rule)
+    expect(rule!.classList.contains('shop-meta')).toBe(true)
     expect(rule!.textContent).toContain('Pedido não retirado até o fim do expediente do dia combinado')
     expect(rule!.querySelector('a')?.getAttribute('href')).toBe('/termos#pickup-and-delivery')
-    // As duas frases têm o mesmo peso de leitura, e a regra só aparece uma vez na revisão.
-    expect(rule!.classList.contains('shop-body')).toBe(true)
-    expect(money!.querySelector('p')?.classList.contains('shop-body')).toBe(true)
     expect(document.body.querySelectorAll('[data-review-unclaimed-rule]')).toHaveLength(1)
-    // A revisão abre do começo: o foco inicial não cai no link dos Termos, no fim do
-    // card (o navegador rolaria a folha até ele e esconderia o primeiro item).
-    expect(document.activeElement?.closest('[data-review-before-sending]')).toBeFalsy()
+    // A revisão abre do começo: o foco inicial não cai no link dos Termos, no fim da
+    // revisão (o navegador rolaria a folha até ele e esconderia o primeiro item).
+    expect(document.activeElement?.closest('[data-review-unclaimed-rule]')).toBeFalsy()
   })
 
-  it('no pedido para hoje o card fica só com o dinheiro, sem divisor', async () => {
+  it('no pedido para hoje o card fica só com o dinheiro, sem a regra do não retirado', async () => {
     draft('pix')
     const page = await mountCheckout()
     mounted = page
@@ -249,7 +249,6 @@ describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () =>
     const card = document.body.querySelector('[data-review-before-sending]')
     expect(card?.querySelector('[data-review-money-notice]')).toBeTruthy()
     expect(document.body.querySelector('[data-review-unclaimed-rule]')).toBeNull()
-    expect(card?.querySelector('[data-review-before-sending-divider]')).toBeNull()
   })
 
   function waitingCart (promise: unknown) {
