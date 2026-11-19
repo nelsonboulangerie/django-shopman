@@ -65,6 +65,18 @@ describe("assistente da encomenda: para onde ir quando a regra muda", () => {
     expect(nextOrderSetupStep({ steps: orderSetupSteps("schedule", false), current: "fulfillment", wasReady: true })).toBe("schedule");
   });
 
+  it("retirada já respondida virou entrega: a etapa do endereço nasce e o assistente vai a ela", () => {
+    const born = { current: "fulfillment" as const, wasReady: true, addressIsNew: true };
+    // Sem endereço cadastrado: o endereço nasce pendente.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), ...born })).toBe("address");
+    // Com o padrão do cliente já marcado: nasce pronto, e é lá que se confere.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("", true), ...born })).toBe("address");
+    // Quem revia outra etapa não é arrancado dela.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), current: "schedule", wasReady: true, addressIsNew: true })).toBe("schedule");
+    // Entrega que já era entrega: o endereço não é novo, e rever o recebimento não empurra.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("", true), current: "fulfillment", wasReady: true })).toBe("fulfillment");
+  });
+
   it("o endereço saiu da entrega: quem estava nele continua nele, agora pendente", () => {
     expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), current: "address", wasReady: true })).toBe("address");
   });

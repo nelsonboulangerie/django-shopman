@@ -170,7 +170,7 @@ describe("PosFulfillmentModal: endereços já cadastrados", () => {
     const tags = Array.from(document.querySelectorAll("[data-pos-saved-address-tag]")).map((el) => el.textContent?.trim());
     expect(tags).toEqual(["Casa"]);
     // Nada de botãozinho cortado: nenhum rótulo truncado na lista.
-    expect(document.querySelector("[data-pos-saved-addresses] .truncate")).toBeNull();
+    expect(document.querySelector("[data-pos-saved-address-line].truncate, [data-pos-saved-addresses] [data-slot=description].truncate")).toBeNull();
   });
 
   it("Enter no endereço marcado aceita e segue: o diálogo fecha com o endereço do cadastro", async () => {

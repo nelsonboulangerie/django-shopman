@@ -95,8 +95,14 @@ let currentWasReady = currentStep.value.ready;
 // A regra mudou (o operador escolheu num diálogo, ou desfez algo). Quem decide
 // para onde ir é `nextOrderSetupStep`; o foco só anda quando o diálogo fecha
 // (`focusCurrent`, chamado pela página), para não puxar o foco de trás dele.
-watch(steps, (next) => {
-  current.value = nextOrderSetupStep({ steps: next, current: current.value, wasReady: currentWasReady });
+watch(steps, (next, previous) => {
+  const hasAddress = (list: typeof next) => list.some((step) => step.key === "address");
+  current.value = nextOrderSetupStep({
+    steps: next,
+    current: current.value,
+    wasReady: currentWasReady,
+    addressIsNew: hasAddress(next) && !hasAddress(previous),
+  });
   currentWasReady = next.find((step) => step.key === current.value)?.ready ?? false;
 });
 

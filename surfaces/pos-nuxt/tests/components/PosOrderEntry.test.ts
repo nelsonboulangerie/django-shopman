@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import PosOrderEntry from "~/components/PosOrderEntry.vue";
 import type { SavedAddressProjection } from "~/types/pos";
@@ -51,7 +51,17 @@ const HOME = saved(1, { label: "Casa", label_key: "home", label_custom: "" });
 const OTHER = saved(2);
 
 type Wrapper = Awaited<ReturnType<typeof mountSuspended>>;
-const nav = (w: Wrapper) => w.findAll("[data-order-step-nav]");
+// Cada teste desmonta o que montou. O próximo foco procura o bloco por alguns
+// quadros; um assistente esquecido de pé acharia o bloco do teste SEGUINTE e
+// puxaria o foco para a etapa errada.
+const mounted: Wrapper[] = [];
+async function mount(options: Parameters<typeof mountSuspended<typeof PosOrderEntry>>[1]) {
+  const wrapper = await mountSuspended(PosOrderEntry, options);
+  mounted.push(wrapper);
+  return wrapper;
+}
+afterEach(() => { mounted.splice(0).forEach((wrapper) => wrapper.unmount()); });
+const nav =(w: Wrapper) => w.findAll("[data-order-step-nav]");
 const navLabels = (w: Wrapper) => nav(w).map((b) => b.attributes("aria-label"));
 const navDisabled = (w: Wrapper) => nav(w).map((b) => b.attributes("disabled") !== undefined);
 const currentNav = (w: Wrapper) => nav(w).findIndex((b) => b.attributes("aria-current") === "step");
@@ -66,7 +76,7 @@ describe("assistente da encomenda", () => {
   // A ordem do dono (19/11/2026, #2754): cliente, PARA QUANDO, recebimento e,
   // na entrega, o endereço.
   it("mostra uma etapa por vez, na ordem da regra, com a trilha e o rodapé", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props });
+    const w = await mount({ props });
     expect(navLabels(w)).toEqual(["1. Cliente", "2. Data e horário", "3. Recebimento"]);
     expect(currentNav(w)).toBe(0);
     expect(visibleStep(w)).toEqual(["customer"]);
@@ -79,7 +89,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("bloqueia a etapa seguinte até a anterior estar pronta", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props });
+    const w = await mount({ props });
     expect(navDisabled(w)).toEqual([false, true, true]);
     expect(button(w, "Continuar")!.attributes("disabled")).toBeDefined();
     await nav(w)[2]!.trigger("click");
@@ -89,7 +99,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("depois do cliente pergunta para quando; o dia e o horário se escolhem no cartão e quem segue é o Continuar", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props });
+    const w = await mount({ props });
     await w.setProps({ issue: "schedule" });
     expect(visibleStep(w)).toEqual(["schedule"]);
     expect(footer(w)).toBe("Etapa 2 de 3: Data e horário");
@@ -110,7 +120,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("a data combinada no diálogo Quando já foi confirmada lá: o assistente segue sem outro Continuar", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "schedule" as const } });
+    const w = await mount({ props: { ...props, issue: "schedule" as const } });
     const vm = w.vm as unknown as { scheduleConfirmed: () => void };
     // Sem dia, o diálogo fechado não leva a lugar nenhum.
     vm.scheduleConfirmed();
@@ -124,7 +134,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("retirada é a última etapa: escolhida no cartão, a encomenda fica pronta para montar", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "fulfillment" as const } });
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const } });
     // As formas de receber são os botões da etapa: o toque é a resposta.
     const options = w.findAll("[data-order-fulfillment]");
     expect(options.map((o) => o.text())).toEqual(["RetiradaNo balcão da loja", "EntregaNo endereço do cliente"]);
@@ -140,7 +150,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("entrega sem endereço cadastrado: a etapa do endereço é a quarta e abre o formulário de entrega", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "fulfillment" as const } });
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const } });
     await w.findAll("[data-order-fulfillment]")[1]!.trigger("click");
     expect(w.emitted("pickFulfillment")).toEqual([["delivery"]]);
     await w.setProps({ issue: "address", delivery: true, chosenFulfillment: "delivery" });
@@ -158,13 +168,13 @@ describe("assistente da encomenda", () => {
   });
 
   it("sem dia escolhido, a etapa não mostra horário de dia nenhum", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "schedule" as const } });
+    const w = await mount({ props: { ...props, issue: "schedule" as const } });
     expect(w.find("[data-schedule-waiting-day]").text()).toBe("Escolha o dia para ver os horários.");
     expect(w.find("[data-schedule-slot]").exists()).toBe(false);
   });
 
   it("Voltar e a trilha levam a uma etapa feita; Continuar devolve", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "" as const } });
+    const w = await mount({ props: { ...props, issue: "" as const } });
     expect(visibleStep(w)).toEqual(["fulfillment"]);
     await button(w, "Voltar")!.trigger("click");
     expect(visibleStep(w)).toEqual(["schedule"]);
@@ -176,7 +186,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("o cliente saiu (agendar exige cliente): volta à etapa 1 e fecha as seguintes", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "" as const } });
+    const w = await mount({ props: { ...props, issue: "" as const } });
     expect(currentNav(w)).toBe(2);
     await w.setProps({ issue: "customer" });
     expect(visibleStep(w)).toEqual(["customer"]);
@@ -184,7 +194,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("retirada virou entrega sem endereço: a etapa do endereço aparece pendente no fim; e some na volta", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "" as const } });
+    const w = await mount({ props: { ...props, issue: "" as const } });
     await w.setProps({ issue: "address", delivery: true });
     expect(navLabels(w)).toEqual(["1. Cliente, pronta", "2. Data e horário, pronta", "3. Recebimento, pronta", "4. Endereço"]);
     expect(visibleStep(w)).toEqual(["address"]);
@@ -194,7 +204,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("trocar o dia limpa a janela: a etapa diz que o horário ficou a combinar", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "" as const } });
+    const w = await mount({ props: { ...props, issue: "" as const } });
     expect(w.find("[data-schedule-window-pending]").exists()).toBe(false);
     await w.setProps({ scheduleLabel: "Domingo", scheduleWindow: "" });
     expect(w.find("[data-schedule-window-pending]").text()).toBe("Horário a combinar.");
@@ -204,7 +214,7 @@ describe("assistente da encomenda", () => {
   });
 
   it("um `aria-current` só, e ele anda com a etapa da vez", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props });
+    const w = await mount({ props });
     const marks = () => w.findAll("[aria-current='step']");
     expect(marks()).toHaveLength(1);
     await w.setProps({ issue: "fulfillment" });
@@ -213,11 +223,10 @@ describe("assistente da encomenda", () => {
   });
 
   it("o próximo foco leva a página à ação da etapa da vez", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: { ...props, issue: "fulfillment" as const }, attachTo: document.body });
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const }, attachTo: document.body });
     (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();
     await settled();
     expect(document.activeElement?.getAttribute("data-order-fulfillment")).toBe("pickup");
-    w.unmount();
   });
 });
 
@@ -236,7 +245,7 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
   };
 
   it("lista os endereços do cliente em linha inteira, com o da entrega marcado", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: delivery });
+    const w = await mount({ props: delivery });
     expect(visibleStep(w)).toEqual(["address"]);
     expect(footer(w)).toBe("Etapa 4 de 4: Endereço");
     expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["true", "false"]);
@@ -248,7 +257,7 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
   });
 
   it("ao escolher Entrega, o foco cai no endereço padrão, já marcado", async () => {
-    const w = await mountSuspended(PosOrderEntry, {
+    const w = await mount({
       props: { ...delivery, issue: "fulfillment" as const, delivery: false, chosenFulfillment: "", chosenAddress: "" },
       attachTo: document.body,
     });
@@ -259,18 +268,17 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
     expect(visibleStep(w)).toEqual(["address"]);
     expect(document.activeElement).toBe(radios(w)[0]!.element);
     expect(document.activeElement?.getAttribute("aria-checked")).toBe("true");
-    w.unmount();
   });
 
   it("Enter no endereço marcado aceita e segue: monta a encomenda", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: delivery });
+    const w = await mount({ props: delivery });
     await radios(w)[0]!.trigger("keydown", { key: "Enter" });
     expect(w.emitted("pickAddress")).toBeUndefined();
     expect(w.emitted("complete")).toHaveLength(1);
   });
 
   it("escolher outro endereço avisa o dono do carrinho; Enter nele escolhe e segue", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: delivery });
+    const w = await mount({ props: delivery });
     await radios(w)[1]!.trigger("click");
     expect(w.emitted("pickAddress")).toEqual([[OTHER]]);
     await w.setProps({ chosenAddress: "2" });
@@ -280,7 +288,7 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
   });
 
   it("sem endereço marcado, Enter no primeiro escolhe e só segue com a entrega pronta", async () => {
-    const w = await mountSuspended(PosOrderEntry, {
+    const w = await mount({
       props: { ...delivery, issue: "address" as const, chosenAddress: "", addressSummary: "" },
     });
     expect(w.find("[data-order-step='address']").text()).toContain("Escolha um endereço do cliente ou informe outro.");
@@ -291,7 +299,7 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
   });
 
   it("tira o endereço da entrega sem falar em apagar: o cadastro não entra na frase", async () => {
-    const w = await mountSuspended(PosOrderEntry, { props: delivery });
+    const w = await mount({ props: delivery });
     const clear = w.find("[data-order-address-clear]");
     expect(clear.text()).toBe("Tirar o endereço desta entrega");
     expect(clear.attributes("title")).toBe("O endereço continua no cadastro do cliente");
@@ -306,7 +314,7 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
   });
 
   it("endereço digitado na hora (fora da lista) é dito por extenso", async () => {
-    const w = await mountSuspended(PosOrderEntry, {
+    const w = await mount({
       props: { ...delivery, chosenAddress: "", addressSummary: "Rua Nova, 9 - Centro - Londrina/PR" },
     });
     expect(w.find("[data-order-address-typed]").text()).toBe("Endereço desta entrega: Rua Nova, 9 - Centro - Londrina/PR");

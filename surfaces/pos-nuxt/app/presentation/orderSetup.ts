@@ -74,18 +74,25 @@ const STAYS_WHEN_READY: ReadonlySet<OrderSetupStepKey> = new Set(["schedule"]);
  *   depois de cada diálogo. A exceção é a data (`STAYS_WHEN_READY`).
  * - A etapa aberta deixou de existir (entrega virou retirada) ou ficou fechada
  *   porque uma anterior voltou a pendente (o cliente saiu): volta à pendente.
+ * - O operador estava no recebimento, já respondido com retirada, e trocou para
+ *   entrega: a etapa do endereço acabou de nascer (`addressIsNew`) e a resposta
+ *   dele pede o endereço. Sem isto ele ficaria parado numa etapa "pronta" com a
+ *   entrega sem endereço logo adiante.
  * - Fora isso, fica onde o operador está (ele pode estar revendo uma etapa feita).
  */
 export function nextOrderSetupStep(input: {
   steps: OrderSetupStep[];
   current: OrderSetupStepKey;
   wasReady: boolean;
+  /** A etapa do endereço não existia na leitura anterior (retirada virou entrega). */
+  addressIsNew?: boolean;
 }): OrderSetupStepKey {
   const index = input.steps.findIndex((step) => step.key === input.current);
   if (index < 0 || !orderSetupStepEnabled(input.steps, index)) return firstPendingStep(input.steps);
   if (!input.wasReady && input.steps[index]!.ready && !STAYS_WHEN_READY.has(input.current)) {
     return firstPendingStep(input.steps);
   }
+  if (input.addressIsNew && input.current === "fulfillment" && input.steps[index]!.ready) return "address";
   return input.current;
 }
 
