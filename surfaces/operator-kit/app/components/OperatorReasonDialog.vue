@@ -18,6 +18,12 @@
 // sendo escolhido e entrega `{ reason, key }`. A autorização do gerente fica FORA
 // (`OperatorManagerAuth` sobe por cima, e o motivo digitado continua aqui embaixo).
 //
+// O que decide o gesto fica SEMPRE à vista (WP-G06, laudo P2-29): o confirmar, o que
+// falta para ele acender, a pergunta de descarte e a falha do gesto moram no rodapé do
+// Modal, que não rola. Com oito motivos numa tela de 850 px de altura o botão ficava
+// cortado na base do corpo. A falha (`error`) aparece aqui dentro: o toast e o cartão
+// de quem chamou ficam ATRÁS do diálogo aberto (P1-11).
+//
 // A anatomia inteira usa os componentes oficiais de Modal, RadioGroup, Textarea, Alert
 // e Button do Nuxt UI; os apps consumidores só passam conteúdo e estado.
 import { computed, ref, watch } from "vue";
@@ -39,6 +45,16 @@ const props = withDefaults(
      *  vencido abre com "Pagamento não confirmado"). O operador pode trocar. */
     initialKey?: string;
     busy?: boolean;
+    /** A falha do gesto, dita dentro do diálogo. Quem chama limpa ao tentar de novo. */
+    error?: string;
+    /** O campo que a falha aponta: `key` (o motivo da lista) ou `reason` (o texto). */
+    errorField?: "" | "key" | "reason";
+    /**
+     * Por que ainda não dá para confirmar, quando o motivo não é o que falta (quem
+     * chama ainda lê o que o gesto faz). Vazio libera; com texto, o confirmar apaga e
+     * a linha ao lado dele diz a frase.
+     */
+    blocked?: string;
     reasonLabel?: string;
     placeholder?: string;
     maxlength?: number;
@@ -48,6 +64,9 @@ const props = withDefaults(
     keyedReasons: () => [],
     initialKey: "",
     busy: false,
+    error: "",
+    errorField: "",
+    blocked: "",
     reasonLabel: "Motivo",
     placeholder: "",
     maxlength: undefined,
@@ -116,16 +135,19 @@ function discard() {
   emit("update:open", false);
 }
 
-const canConfirm = computed(() =>
+const hasReason = computed(() =>
   keyed.value ? Boolean(pickedKeyed.value) : !props.required || reason.value.trim() !== "",
 );
+const canConfirm = computed(() => hasReason.value && !props.blocked);
 
 // O Confirmar fica apagado até haver motivo, e apagado sozinho não diz por quê: o
 // toque não fazia nada e a pessoa não sabia o que faltava (beta 05/11, GES-14).
-// A linha diz, ao lado do botão.
+// A linha diz, ao lado do botão. Primeiro o que depende de quem está na tela (o
+// motivo); depois o que quem chama ainda espera (`blocked`).
 const missingHint = computed(() => {
-  if (canConfirm.value) return "";
-  return keyed.value ? "Escolha um motivo para confirmar." : "Escreva o motivo para confirmar.";
+  if (!hasReason.value)
+    return keyed.value ? "Escolha um motivo para confirmar." : "Escreva o motivo para confirmar.";
+  return props.blocked;
 });
 
 function submit() {
@@ -146,12 +168,18 @@ function submit() {
   >
     <template #body>
       <div class="grid gap-3" data-reason-dialog>
+        <!-- Sobre o quê é o gesto e o que ele faz (qual pedido, o destino do dinheiro):
+             conteúdo de quem chama, antes da pergunta do motivo. -->
+        <slot name="summary" />
+
         <template v-if="keyed">
           <NuxtRadioGroup
             v-model="key"
             :items="keyedItems"
             variant="card"
             :legend="reasonLabel"
+            :color="errorField === 'key' ? 'error' : undefined"
+            :aria-invalid="errorField === 'key' ? 'true' : undefined"
             data-reason-keyed
           />
           <!-- O lugar da frase existe desde o início (beta test de 05/11/2026, PDV2-19 e
@@ -169,6 +197,7 @@ function submit() {
           <NuxtFormField
             label="Observação interna (opcional)"
             description="Fica só no histórico do pedido. O cliente não vê."
+            :error="errorField === 'reason'"
           >
             <NuxtTextarea
               v-model="reason"
@@ -180,7 +209,11 @@ function submit() {
           </NuxtFormField>
         </template>
 
-        <NuxtFormField v-else :label="reasonLabel">
+        <NuxtFormField
+          v-else
+          :label="reasonLabel"
+          :error="errorField === 'reason'"
+        >
           <NuxtTextarea
             v-model="reason"
             class="w-full"
@@ -190,6 +223,21 @@ function submit() {
             data-reason-input
           />
         </NuxtFormField>
+      </div>
+    </template>
+
+    <!-- O rodapé não rola: a falha, a pergunta de descarte, o que falta e os dois
+         botões ficam à vista em qualquer altura de tela. -->
+    <template #footer>
+      <div class="grid w-full gap-3" data-reason-footer>
+        <NuxtAlert
+          v-if="error"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          :description="error"
+          :data-reason-error="errorField || 'action'"
+        />
 
         <NuxtAlert
           v-if="discarding"

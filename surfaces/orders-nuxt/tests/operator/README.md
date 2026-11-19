@@ -12,6 +12,7 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 | Spec | Jornada | Papéis |
 |---|---|---|
 | `j1-pedido-de-hoje.spec.ts` | J1: pedido de retirada para hoje, de ponta a ponta | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
+| `j2-recusar-com-motivo.spec.ts` | J2: recusar um pedido pago, lendo o destino do dinheiro antes de confirmar | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
 
 Os papéis vêm de `shopman/shop/management/commands/setup_operators.py` (o `seed` roda o
 comando): Gerente `joyce` (senha `admin`, PIN 1234), Caixa `fran` (PIN 1234), Cozinha

@@ -66,6 +66,8 @@ CONSUMER_SCREENS: dict[str, tuple[str, str]] = {
     "shopman/shop/projections/order_tracking.py": ("Loja", "Acompanhamento do pedido"),
     "shopman/shop/modifiers.py": ("Loja", "Preços e promoções"),
     "shopman/backstage/presentation/status.py": ("Operador", "Rótulos de status"),
+    # O Gestor mostra ao operador a MESMA frase do dinheiro que o cliente lê na loja.
+    "shopman/backstage/projections/order_pending.py": ("Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
 }
 
 UNMAPPED_SURFACE = "Outros"

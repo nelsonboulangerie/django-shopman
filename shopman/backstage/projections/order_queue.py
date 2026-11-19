@@ -30,7 +30,7 @@ from shopman.backstage.presentation.status import (
     status_color,
 )
 from shopman.backstage.projections import ifood as ifood_projection
-from shopman.backstage.projections import order_pricing
+from shopman.backstage.projections import order_pending, order_pricing
 from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
 from shopman.backstage.projections.notification_receipts import (
     NotificationReceiptProjection,
@@ -906,6 +906,21 @@ class OperatorOrderProjection:
     transferred_from_label: str = ""
     # Igual ao do cartão: a cobrança venceu e o avanço não destrava mais sozinho.
     payment_lapsed: bool = False
+    # "O que falta neste pedido" (WP-G05): as pendências, da que pede alguém agora
+    # à que só espera, cada uma com o gesto que já existe para resolvê-la
+    # (``projections/order_pending``). Vazia no contexto ``"pos"``: os gestos são
+    # do Gestor.
+    pending: tuple[order_pending.OrderPendingProjection, ...] = ()
+    # O dinheiro do pedido CANCELADO, lido do mesmo ``payment.cancelled_money``
+    # que o acompanhamento da loja: estorno pedido, estornado ou estorno que não
+    # saiu, com a frase que o cliente lê. ``None`` fora do cancelado digital.
+    cancelled_money: order_pending.CancelledMoneyProjection | None = None
+    # A DANFE da NFC-e, os MESMOS campos do cartão (``services/order_danfe``): o
+    # gesto de imprimir e reimprimir existia só no painel (P1-14).
+    danfe_printable: bool = False
+    danfe_printed: bool = False
+    danfe_state: str = ""
+    danfe_problem: str = ""
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -1133,6 +1148,11 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
     is_delivery = _is_delivery(order)
     delivery_address, delivery_instructions = _delivery_address(order)
+    # Os avisos abertos do pedido e o dinheiro do cancelado: uma leitura, usada no
+    # rótulo do pagamento (as duas telas) e nas pendências (só o Gestor).
+    pending_alerts = order_pending.open_alert_types(order)
+    cancelled_money = order_pending.cancelled_money(order, alerts=pending_alerts)
+    contact = _customer_contact(order, customer_data)
 
     # O que as duas telas leem igual.
     common = dict(
@@ -1142,7 +1162,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         customer_name=customer_name,
-        **_customer_contact(order, customer_data),
+        **contact,
         channel_ref=order.channel_ref or "",
         channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
         fulfillment_label=_fulfillment_label(is_delivery),
@@ -1171,12 +1191,8 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
-        payment_status_label=(
-            ""
-            if order.channel_ref == "ifood"
-            else _money_outside_the_charge_label(order, payment_status)
-            or _order_payment_status_label(order, payment_status)
-        ),
+        payment_status_label=_detail_payment_status_label(order, payment_status, cancelled_money),
+        cancelled_money=cancelled_money,
         fiscal_status=fiscal_status,
         fiscal_status_label=fiscal_status_label,
         fiscal_state=fiscal_state,
@@ -1244,6 +1260,14 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     no_show_action = no_show_detail_action(order, user)
     if no_show_action is not None:
         extra_actions.append(no_show_action)
+    # "Tentar o estorno de novo" (WP-G13): só para o dinheiro do cancelado em
+    # "Estorno não saiu". A régua (quanto, de onde, a base) é de ``services/refund_retry``.
+    refund_retry_plan = None
+    if cancelled_money is not None and cancelled_money.state == order_pending.MONEY_REFUND_FAILED:
+        from shopman.backstage.services import refund_retry
+
+        refund_retry_plan = refund_retry.plan(order)
+        extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -1272,10 +1296,35 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     waits_kitchen = kitchen_release_at is not None
     if waits_kitchen:
         operational = _early_start_actions(operational)
+    actions = (*operational, *extra_actions)
+    link_fields, link_problem = _payment_link_read(order, method)
+    danfe = order_danfe.card_state(order)
     return OperatorOrderProjection(
         **common,
         kitchen_release_label=_kitchen_release_label(kitchen_release_at),
-        actions=(*operational, *extra_actions),
+        actions=actions,
+        pending=order_pending.build_pending(
+            order,
+            actions=actions,
+            fiscal_status=fiscal_status,
+            block=str(bloqueio or ""),
+            block_label=block_label,
+            block_reason=block_reason,
+            payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+            link_problem=link_problem,
+            cancel_capability=cancel_capability,
+            danfe=danfe,
+            awaiting_work_orders=common["awaiting_work_orders"],
+            money=cancelled_money,
+            refund_retry_plan=refund_retry_plan,
+            alerts=pending_alerts,
+            schedule_label=common["schedule_label"],
+            whatsapp_url=contact.get("customer_whatsapp_url", ""),
+        ),
+        danfe_printable=danfe.printable,
+        danfe_printed=danfe.printed,
+        danfe_state=danfe.state,
+        danfe_problem=danfe.problem,
         ifood_negotiations=negotiations(order, user=user),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
@@ -1291,7 +1340,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         courier=courier_block,
         **_courier_change_fields(order),
         **_equipment_fields(order),
-        **_payment_link_fields(order, method),
+        **link_fields,
         **detail_deadline,
         **_ifood_accept_fields(order, accept),
         card_authorization_expires_iso=_card_authorization_expires_iso(
@@ -1306,6 +1355,28 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     )
 
 
+def _detail_payment_status_label(order: Order, payment_status: str, cancelled_money) -> str:
+    """O rótulo do pagamento no resumo do detalhe.
+
+    No cancelado em que dinheiro se moveu, o estado do estorno ("Estorno
+    pedido", "Estornado", "Estorno não saiu"), a mesma palavra do histórico
+    (P2-25). Duas leituras mais específicas vêm antes e continuam valendo: o
+    dinheiro que entrou fora da cobrança, e o "não retirado" que devolveu só uma
+    parte (WP-G11).
+    """
+    if order.channel_ref == "ifood":
+        return ""
+    outside = _money_outside_the_charge_label(order, payment_status)
+    if outside:
+        return outside
+    refund_label = order_pending.payment_label(cancelled_money)
+    if refund_label:
+        from shopman.backstage.projections.order_no_show import payment_outcome_label
+
+        return payment_outcome_label(order) or refund_label
+    return _order_payment_status_label(order, payment_status)
+
+
 #: Os meios que o próprio sistema estorna no gateway, e por onde o dinheiro volta.
 _GATEWAY_REFUND_DESTINATION = {"pix": "ao Pix do cliente", "card": "no cartão do cliente", "link": "no cartão do cliente"}
 
@@ -1316,6 +1387,12 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
     A mesma régua do estorno (``payment.refund``): gateway estorna sozinho;
     dinheiro e maquininha ficam a devolver por alguém da casa; cartão só
     autorizado tem a reserva desfeita, sem cobrança.
+
+    Sem nada recebido, a frase diz isso em QUALQUER meio (WP-G06): o pedido que
+    paga na retirada ou na entrega saía sem frase, e quem recusava não sabia se
+    o silêncio era "nada a devolver" ou "não sei". "Não sei" continua sendo
+    silêncio: ``captured_balance_q`` devolve ``None`` quando um intent não pôde
+    ser lido, e ``None`` não é zero. O iFood também: o dinheiro é dele.
     """
     from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
 
@@ -1341,7 +1418,7 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
             "cancel_money_effect": f"A reserva de {total} no cartão do cliente será desfeita. Nada foi cobrado.",
             "cancel_waits_for_gateway": True,
         }
-    if method in _GATEWAY_REFUND_DESTINATION and captured_q == 0:
+    if captured_q == 0:
         return {**empty, "cancel_money_effect": "Nada foi cobrado do cliente."}
     return empty
 
@@ -3252,28 +3329,56 @@ def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
 
 def _payment_link_fields(order: Order, method: str) -> dict:
     """Só o pedido de LINK paga o custo (uma leitura no Payman + uma Directive)."""
+    return _payment_link_read(order, method)[0]
+
+
+def _payment_link_read(order: Order, method: str) -> tuple[dict, str]:
+    """Os campos do link e, quando o envio não se confirma, a frase do problema.
+
+    A segunda parte alimenta "O que falta neste pedido": link que pode não ter
+    chegado é pendência, com o reenvio ao lado.
+    """
     if method != "link":
-        return {}
+        return {}, ""
     from shopman.shop.services import notification as notification_svc
 
-    return {
+    notice, unconfirmed = _payment_link_delivery(order)
+    fields = {
         "can_resend_payment_link": notification_svc.payment_link_resend_refusal(order) is None,
-        "payment_link_notice": payment_link_notice(order),
+        "payment_link_notice": notice,
     }
+    return fields, notice if unconfirmed else ""
+
+
+#: Motivos de envio omitido em que o link NÃO chegou ao cliente e o pedido segue devendo.
+_LINK_NOT_DELIVERED_REASONS = frozenset({"customer_opt_out", "expected_no_contact"})
 
 
 def payment_link_notice(order: Order) -> str:
     """Describe the delivery evidence; worker completion alone proves no send."""
+    return _payment_link_delivery(order)[0]
+
+
+def _payment_link_delivery(order: Order) -> tuple[str, bool]:
+    """``(frase, o envio não se confirmou)`` do link de pagamento.
+
+    Toda frase nomeia só o que existe na tela: o reenvio ("Reenviar link de
+    pagamento") e o contato do cliente. "Copie o link" e "confira com o
+    responsável" apontavam para um botão e uma pessoa que não existem (P2-22).
+    """
     from django.utils.dateparse import parse_datetime
 
     from shopman.shop.services import notification as notification_svc
 
     directive = notification_svc.latest_delivery(order, notification_svc.PAYMENT_LINK_TEMPLATE)
     if directive is None:
-        return ""
+        return "", False
     delivery = (directive.payload or {}).get("notification_delivery") or {}
     if delivery.get("status") in {"started", "unknown"}:
-        return "Aceite do envio não confirmado. Confira o envio com o responsável antes de reenviar."
+        return (
+            "Envio do link não confirmado pelo provedor. Antes de reenviar, pergunte ao cliente se o link chegou.",
+            True,
+        )
     if delivery.get("status") == "accepted":
         recorded = parse_datetime(str(delivery.get("recorded_at") or ""))
         when = _format_time_of_day(recorded) if recorded and timezone.is_aware(recorded) else ""
@@ -3281,12 +3386,12 @@ def payment_link_notice(order: Order) -> str:
         # "Entregue" só com comprovante do provedor (D3). Ver
         # docs/reference/comprovante-de-entrega.md.
         if delivery.get("proof") == notification_svc.PROOF_RECEIPT and delivery.get("message_id"):
-            return f"Link entregue pelo provedor{at}, com comprovante. Leitura pelo cliente não confirmada."
-        return f"Link aceito pelo provedor{at}, sem comprovante de entrega."
+            return f"Link entregue pelo provedor{at}, com comprovante. Leitura pelo cliente não confirmada.", False
+        return f"Link aceito pelo provedor{at}, sem comprovante de entrega.", False
     if delivery.get("status") == "skipped":
         if delivery.get("reason") == "notification_not_required":
             # Aviso que não se aplica não é envio que deixou de sair: nada a dizer.
-            return ""
+            return "", False
         reason = {
             "customer_opt_out": "o cliente não autorizou notificações",
             "expected_no_contact": "não há contato disponível",
@@ -3296,14 +3401,14 @@ def payment_link_notice(order: Order) -> str:
             "payment_link_expired": "o link venceu",
             "payment_link_unavailable": "o link não está disponível",
         }.get(delivery.get("reason"), "o envio foi omitido")
-        return f"Link não enviado: {reason}."
+        return f"Link não enviado: {reason}.", delivery.get("reason") in _LINK_NOT_DELIVERED_REASONS
     if directive.status == "queued":
-        return "Envio do link na fila."
+        return "Envio do link na fila.", False
     if directive.status == "running":
-        return "Envio do link em processamento; aceite ainda não confirmado."
+        return "Envio do link em processamento; aceite ainda não confirmado.", False
     if directive.status == "done":
-        return "Processamento concluído sem confirmação de envio. Confira o contato antes de reenviar."
-    return "O envio do link falhou. Reenvie ou copie o link."
+        return "Processamento concluído sem confirmação de envio. Confira o contato antes de reenviar.", True
+    return "O envio do link falhou. Reenvie o link.", True
 
 
 def _format_time_of_day(dt) -> str:
@@ -3717,6 +3822,9 @@ _EVENT_LABELS = {
     "payment.repayment_requested": "Novo pagamento pedido ao cliente",
     "payment.method_changed": "Cliente trocou o pagamento para Pix",
     "payment.refunded": "Pagamento estornado",
+    # WP-G13: quem tentou é o autor da linha; quem autorizou e o que o gateway
+    # respondeu vão no detalhe (``_refund_retry_detail``).
+    "payment.refund_retry": "Estorno tentado de novo",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }
 
@@ -3874,7 +3982,12 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             # feio, mas é o caso raro; o que era comum agora tem nome.
             label = event.type.replace("_", " ").capitalize()
 
-        detail = _payment_event_detail(payload) if event.type in _PAYMENT_EVENT_TYPES else _event_detail(payload)
+        if event.type == "payment.refund_retry":
+            detail = _refund_retry_detail(payload)
+        elif event.type in _PAYMENT_EVENT_TYPES:
+            detail = _payment_event_detail(payload)
+        else:
+            detail = _event_detail(payload)
         if not detail and event.type in _STATUS_EVENT_TYPES and new_status == Order.Status.CANCELLED:
             detail = _cancellation_detail(order)
 
@@ -3924,6 +4037,20 @@ def _payment_event_detail(payload: dict) -> str:
     parts = [payment_method_label(method)] if method else []
     if payload.get("amount_q"):
         parts.append(_money(payload.get("amount_q")))
+    return " · ".join(part for part in parts if part)
+
+
+def _refund_retry_detail(payload: dict) -> str:
+    """"Pix · R$ 22,00 · autorizado por Joyce · não saiu: …": a tentativa de estorno do Gestor."""
+    parts = [_payment_event_detail(payload)]
+    approver = str(payload.get("approved_by") or "").strip()
+    if approver:
+        parts.append(f"autorizado por {_actor_names([approver]).get(approver, approver)}")
+    if payload.get("outcome") == "refunded":
+        parts.append("o meio de pagamento confirmou")
+    else:
+        answer = str(payload.get("message") or "").strip()
+        parts.append(f"não saiu: {answer}" if answer else "não saiu")
     return " · ".join(part for part in parts if part)
 
 

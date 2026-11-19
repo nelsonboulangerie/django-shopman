@@ -1032,19 +1032,49 @@ def refund(
     # Não é estorno (nada foi pago); é o intent deixando de contar no saldo.
     if _pays_on_account(payment_data):
         _cancel_open_account_intents(order)
-    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
-
-    intents = [
-        (method, ref)
-        for method, ref in _refundable_intents(order, payment_data=payment_data)
-        if method != "cash" and method not in CARD_MACHINE_METHODS and not _asserted_at_terminal(ref)
-    ]
+    intents = _gateway_refund_intents(order, payment_data=payment_data)
     try:
         _refund_gateway_intents(
             order, intents, amount_q=amount_q, idempotency_key=idempotency_key, _from_directive=_from_directive,
         )
     finally:
         announce_card_machine_refund(order)
+
+
+def _gateway_refund_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
+    """``[(method, intent_ref)]`` que o estorno do pedido devolve pelo gateway.
+
+    Fora: dinheiro, maquininha e o que foi atestado no balcão (não têm gateway).
+    """
+    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
+
+    return [
+        (method, ref)
+        for method, ref in _refundable_intents(order, payment_data=payment_data)
+        if method != "cash" and method not in CARD_MACHINE_METHODS and not _asserted_at_terminal(ref)
+    ]
+
+
+def _intent_refund_key(idempotency_key: str, intents, intent_ref: str) -> str:
+    """A chave de UM intent no estorno do pedido.
+
+    Um intent só mantém a chave histórica (retries antigos continuam
+    deduplicando); com vários, cada estorno tem a sua.
+    """
+    return idempotency_key if len(intents) == 1 else f"{idempotency_key}:{intent_ref}"
+
+
+def order_refund_gateway_key(order, intent_ref: str, *, idempotency_key: str | None = None) -> str:
+    """A chave que o estorno AUTOMÁTICO do pedido apresentou ao gateway para ``intent_ref``.
+
+    É a mesma regra de :func:`refund` (chave padrão ``order-refund:{ref}``, ou a
+    que a directive carregou). Serve a quem precisa REAPRESENTAR aquele estorno
+    em vez de abrir outro: a tentativa que ficou sem resposta do gateway pode
+    ter saído, e só a mesma chave o faz devolver a mesma devolução.
+    """
+    payment_data = (order.data or {}).get("payment", {})
+    base = idempotency_key or f"order-refund:{order.ref}"
+    return _intent_refund_key(base, _gateway_refund_intents(order, payment_data=payment_data), intent_ref)
 
 
 def _refund_gateway_intents(order, intents, *, amount_q, idempotency_key, _from_directive) -> None:
@@ -1057,9 +1087,7 @@ def _refund_gateway_intents(order, intents, *, amount_q, idempotency_key, _from_
             intent_ref=intent_ref,
             method=method,
             amount_q=remaining_q,
-            # Um intent só mantém a chave histórica (retries antigos continuam
-            # deduplicando); com vários, cada estorno tem a sua.
-            idempotency_key=idempotency_key if len(intents) == 1 else f"{idempotency_key}:{intent_ref}",
+            idempotency_key=_intent_refund_key(idempotency_key, intents, intent_ref),
             _from_directive=_from_directive,
         )
         if remaining_q is not None:
@@ -2085,7 +2113,7 @@ _GATEWAY_REFUSALS = {
 
 
 def refund_intent_at_gateway(
-    intent_ref: str, *, amount_q: int, idempotency_key: str, actor: str
+    intent_ref: str, *, amount_q: int, idempotency_key: str, actor: str, origin: str = "Admin"
 ) -> PaymentResult:
     """Devolve ``amount_q`` de UMA cobrança pelo gateway dela (o estorno do Admin).
 
@@ -2103,7 +2131,9 @@ def refund_intent_at_gateway(
     MESMA devolução se a chave voltar, e o Payman deduplica pelo id dela. O duplo
     clique não devolve duas vezes.
 
-    Auditoria: ``actor`` entra no motivo da transação de estorno, que é imutável.
+    Auditoria: ``actor`` entra no motivo da transação de estorno, que é imutável,
+    ao lado de ``origin``: a tela de onde o pedido de estorno saiu (o Admin, ou o
+    Gestor no "Tentar o estorno de novo").
     """
     from shopman.payman import PaymentError, PaymentService
 
@@ -2137,7 +2167,7 @@ def refund_intent_at_gateway(
 
     try:
         result = adapter.refund(
-            intent_ref, amount_q=amount_q, reason=f"Estorno no Admin por {actor}", idempotency_key=idempotency_key
+            intent_ref, amount_q=amount_q, reason=f"Estorno no {origin} por {actor}", idempotency_key=idempotency_key
         )
     except Exception as exc:
         # Timeout/5xx em volta de uma devolução idempotente é AMBÍGUO: o gateway
@@ -2149,7 +2179,7 @@ def refund_intent_at_gateway(
             type="payment_refund_failed",
             severity="critical",
             message=(
-                f"O estorno da cobrança {intent_ref}, pedido no Admin, ficou sem resposta ({gateway}). "
+                f"O estorno da cobrança {intent_ref}, pedido no {origin}, ficou sem resposta ({gateway}). "
                 "O dinheiro pode ter saído sem registro aqui: confira no painel antes de estornar de novo."
             ),
             order_ref=intent.order_ref or "",
