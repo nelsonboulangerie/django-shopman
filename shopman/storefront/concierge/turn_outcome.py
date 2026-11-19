@@ -43,6 +43,8 @@ class TurnOutcome:
     #: (mídia, teto diário): aí o estado fica como estava.
     memory: object | None = None
     memory_memos: list[dict] = field(default_factory=list)
+    #: O turno disse "não entendi": a conversa guarda, e a segunda vez vai para a equipe.
+    unclear: bool = False
 
 
 def current_customer_text(conversation: Conversation) -> str:

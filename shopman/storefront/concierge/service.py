@@ -1127,6 +1127,7 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             assert_turn_authority(conversation, for_mutation=False)
             _save_memory(conversation, outcome)
+            _remember_unclear(conversation, outcome)
             from . import verification
 
             # "Vou verificar" (WP-05): a pergunta à equipe nasce com a resposta, no
@@ -1192,6 +1193,22 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
         ).update(claim_until=None)
     result.pending_more = bool(unanswered_inbound(conversation, binding))
     return result
+
+
+def _remember_unclear(conversation: Conversation, outcome) -> None:
+    """A casa disse "não entendi": a conversa guarda, com o fence do turno (no máximo uma vez)."""
+    if not getattr(outcome, "unclear", False):
+        return
+    from .intents import UNCLEAR_FLAG
+
+    fence = getattr(conversation, "_turn_fence", conversation.turn_fence)
+    locked = Conversation.objects.filter(pk=conversation.pk, turn_fence=fence).first()
+    if locked is None:
+        return
+    flags = dict(locked.flags or {})
+    flags[UNCLEAR_FLAG] = True
+    Conversation.objects.filter(pk=conversation.pk, turn_fence=fence).update(flags=flags)
+    conversation.flags = flags
 
 
 def _save_memory(conversation: Conversation, outcome) -> None:
