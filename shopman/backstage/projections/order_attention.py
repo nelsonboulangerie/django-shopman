@@ -39,6 +39,7 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 from shopman.utils.formatting import format_clock
 
+from shopman.backstage.projections import order_promise
 from shopman.backstage.projections.feeds import ChannelSwitchProjection, ManagerOptionProjection
 from shopman.shop.config import STAGE_GOAL_DEFAULTS
 
@@ -57,7 +58,11 @@ ATTENTION_KINDS = (
     "dispatch",      # despachar a entrega
     "courier_back",  # o entregador voltou com dinheiro ou maquininha
     "settle",        # acertar o dinheiro da entrega
+    "promise",       # promessa em risco (WP-G08): avisar o cliente, remarcar ou cancelar
 )
+
+#: O fato de quem não espera mais nada da etapa, mas teve a promessa quebrada.
+PROMISE_ATTENTION = "promise"
 
 #: Meta padrão do pedido novo (e do bloqueado por pagamento), em minutos, quando o
 #: canal não tem prazo de confirmação próprio.
@@ -151,7 +156,22 @@ def _confirmation_goal(order: Order, channel_config) -> int:
 
 
 def attention_kind(order: Order, card) -> str:
-    """O fato humano que o pedido espera agora (``ATTENTION_KINDS``) ou ``""``."""
+    """O fato humano que o pedido espera agora (``ATTENTION_KINDS``) ou ``""``.
+
+    O fato da etapa vem primeiro (aceitar, iniciar, despachar). Quando a etapa
+    não pede ninguém e a promessa do pedido está em risco (WP-G08), é ela o
+    fato: a encomenda de amanhã que perdeu o lote não tem etapa a cumprir hoje
+    e, mesmo assim, precisa de alguém agora.
+    """
+    kind = _stage_attention(order, card)
+    if kind:
+        return kind
+    promise = getattr(card, "promise", None)
+    return PROMISE_ATTENTION if promise is not None and promise.state == order_promise.STATE_AT_RISK else ""
+
+
+def _stage_attention(order: Order, card) -> str:
+    """O fato humano da ETAPA em que o pedido está, ou ``""``."""
     # Negociação aberta vence tudo: o iFood decide sozinho no prazo, inclusive em
     # pedido já entregue (o cliente reclama depois).
     if any(negotiation.can_respond for negotiation in (card.ifood_negotiations or ())):
@@ -230,6 +250,12 @@ def card_attention(
             "goal_minutes": CONFIRM_GOAL_MINUTES,
             "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
         }
+    if kind == PROMISE_ATTENTION:
+        # Conta de quando a reserva perdeu o lastro, quando há esse instante; a
+        # meta é o combinado com o cliente, quando há hora combinada.
+        since_iso = card.promise.since_iso or _iso(order.accepted_at or order.created_at)
+        agreed = _agreed_goal(order, kind, since_iso, 0, channel_config)
+        return {"attention": kind, "attention_since_iso": since_iso, **(agreed or {"goal_minutes": 0, "goal_label": ""})}
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
         goal, since = acceptance_timer_goal(acceptance_timer) or (
             _confirmation_goal(order, channel_config), order.created_at,
@@ -265,7 +291,7 @@ def card_attention(
 
 
 #: As etapas cujo prazo, num pedido com hora combinada, é a hora combinada.
-_AGREED_STAGES = ("start", "station", "mark_ready", "dispatch", "handoff")
+_AGREED_STAGES = ("start", "station", "mark_ready", "dispatch", "handoff", PROMISE_ATTENTION)
 
 
 def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_config) -> dict | None:

@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
+from shopman.backstage.projections import order_promise
 from shopman.shop.services import payment as payment_svc
 
 TONE_ERROR = "error"
@@ -428,7 +429,7 @@ def _sentence(text: str) -> str:
 
 
 def _block_pending(
-    *, block: str, block_label: str, block_reason: str, schedule_label: str, awaiting_work_orders,
+    *, block: str, block_label: str, block_reason: str, schedule_label: str, awaiting_work_orders, promise=None,
 ):
     """O avanço espera um fato que não é o dinheiro."""
     tone = TONE_WARNING if block in _BLOCKS_NEEDING_SOMEONE else TONE_INFO
@@ -437,10 +438,43 @@ def _block_pending(
     if block == _BLOCK_PREORDER_NOT_DUE and schedule_label:
         reason = f"Combinado: {schedule_label}. O preparo abre nesse dia."
     elif block == _BLOCK_WAITLIST:
+        # A leitura da promessa diz o produto e a hora do lote (P2-19); sem ela,
+        # vale o vínculo do pedido com o lote, como antes.
         reason = " ".join(
-            part for part in ("O preparo abre quando o lote ficar pronto.", _production_lines(awaiting_work_orders)) if part
+            part for part in ("O preparo abre quando o lote ficar pronto.", _lot_lines(promise, awaiting_work_orders)) if part
         )
     return OrderPendingProjection(key="advance", tone=tone, label=label, reason=reason)
+
+
+def _lot_lines(promise, awaiting_work_orders) -> str:
+    """O lote que o pedido espera, numa frase por produto.
+
+    Com a leitura da promessa, o produto, o estado e a hora do lote (P2-19); o
+    item em risco já tem a linha dele e não se repete aqui. Sem ela, vale o
+    vínculo do pedido com o lote (``awaiting_wo_refs``), como antes.
+    """
+    if promise is None:
+        return _production_lines(awaiting_work_orders)
+    return order_promise.batch_lines(promise, causes=(order_promise.CAUSE_BATCH_WAITING,))
+
+
+def _promise_pending(promise):
+    """Promessa em risco: o item que ficou sem lastro, o porquê e as três saídas ao lado."""
+    if promise is None or promise.state != order_promise.STATE_AT_RISK:
+        return None
+    return OrderPendingProjection(
+        key="promise",
+        tone=TONE_ERROR,
+        label=promise.label,
+        reason=order_promise.risk_reason(promise),
+        actions=tuple(
+            OrderPendingActionProjection(
+                ref=action.ref, label=action.label, enabled=bool(action.enabled), reason=action.reason or "",
+                href=action.href or "",
+            )
+            for action in promise.actions
+        ),
+    )
 
 
 def build_pending(
@@ -460,15 +494,21 @@ def build_pending(
     alerts: frozenset[str],
     schedule_label: str = "",
     whatsapp_url: str = "",
+    promise=None,
 ) -> tuple[OrderPendingProjection, ...]:
     """As pendências do pedido, do que pede alguém agora ao que só espera.
 
     Recebe os fatos que :func:`order_queue.build_operator_order` já calculou
     (nada é lido duas vezes) e devolve a lista pronta: a tela desenha, não
-    decide.
+    decide. ``promise`` é a leitura de ``projections/order_promise`` (WP-G08):
+    em risco, abre a lista com "Promessa em risco" e as saídas; esperando o
+    lote, dá à linha da espera o produto e a hora.
     """
     by_ref = {action.ref: action for action in actions}
     pending: list[OrderPendingProjection] = []
+    promise_line = _promise_pending(promise)
+    if promise_line is not None:
+        pending.append(promise_line)
 
     # No pedido NOVO o único bloqueio com frase é o do pagamento que vence (Pix ou link).
     payment_block = bool(block_label or block_reason) and (
@@ -490,12 +530,12 @@ def build_pending(
     elif block_label or block_reason:
         pending.append(_block_pending(
             block=block, block_label=block_label, block_reason=block_reason,
-            schedule_label=schedule_label, awaiting_work_orders=awaiting_work_orders,
+            schedule_label=schedule_label, awaiting_work_orders=awaiting_work_orders, promise=promise,
         ))
 
     # O lote que o pedido espera, quando o avanço não está barrado por ele (P2-20).
     if block != _BLOCK_WAITLIST:
-        production = _production_lines(awaiting_work_orders)
+        production = _lot_lines(promise, awaiting_work_orders)
         if production:
             pending.append(OrderPendingProjection(key="production", tone=TONE_INFO, label="Esperando o lote", reason=production))
 

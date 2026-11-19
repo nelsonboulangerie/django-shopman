@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -489,6 +489,33 @@ export interface CourierReminderProjection {
   short_ref: string;
 }
 
+/** Um produto do pedido cuja promessa pede atenção, ou espera o lote. */
+export interface OrderPromiseItemProjection {
+  sku: string;
+  name: string;
+  reservation: string;
+  cause: string;
+  at_risk: boolean;
+  qty: string;
+  missing_qty: string;
+  label: string;
+  detail: string;
+  batch_date: string;
+  batch_status: string;
+  batch_ready_at_iso: string;
+  work_order_refs: string[];
+}
+
+/** A promessa de um pedido que pede atenção ou espera: o selo e os itens. */
+export interface OrderPromiseProjection {
+  state: string;
+  label: string;
+  items: OrderPromiseItemProjection[];
+  blocks_start: boolean;
+  since_iso: string;
+  actions: Action[];
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -597,6 +624,7 @@ export interface OrderCardProjection {
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
   payment_lapsed: boolean;
+  promise: OrderPromiseProjection | null;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -809,6 +837,7 @@ export interface OperatorOrderProjection {
   danfe_printed: boolean;
   danfe_state: string;
   danfe_problem: string;
+  promise: OrderPromiseProjection | null;
 }
 
 /** Top-level read model for the operator order queue. */
