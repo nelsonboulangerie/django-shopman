@@ -1677,8 +1677,8 @@ conexão do Jev liberada e com chave, grava a sombra do Jev em até 60 mensagens
 mudar nada para o cliente. Lê `ConversationMessage.envelope["triage_shadow"]` (a decisão da regra
 local e a do Jev, gravadas pelo `run_intent_pilot`) e diz quantas concordam, as discordâncias
 mais comuns, onde o Jev escalaria e a regra não, e o tempo do Jev. `--run N` grava a sombra de até
-N mensagens antes; `--days` (padrão 7) e `--examples`. Para o Jev decidir de verdade quando a
-Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
+N mensagens antes; `--days` (padrão 7) e `--examples`. Quando a Concierge atende, quem decide é o
+Jev (com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), e a regra local sensível vence.
 
 ### concierge_verification_sweep
 

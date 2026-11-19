@@ -12,8 +12,10 @@ from shopman.orderman.models import Order, Session
 
 from shopman.shop.models import Conversation, ConversationBinding, OutboundAttempt
 from shopman.shop.tests.ai_support import configure_ai
-from shopman.storefront.concierge import agent, service, tools, transport, webhook
+from shopman.storefront.concierge import service, tools, transport, webhook
 from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome
+from shopman.storefront.concierge.turn_outcome import TurnOutcome
+from shopman.storefront.tests.support.concierge_turn import stub_turn
 from shopman.storefront.tests.test_concierge_engine import surface as surface_fixture
 
 pytestmark = pytest.mark.django_db
@@ -33,7 +35,6 @@ WINDOW = {
 }
 CONFIG = {
     "contract_version": 3,
-    "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
     "enabled": True,
     "channel_ref": "web",
     "connections": {
@@ -60,10 +61,9 @@ CONFIG = {
 def configured(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = CONFIG
     configure_ai("fake")
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **_kwargs: agent.AgentOutcome(reply_text="Resposta inteligente em modo de consulta."),
+    stub_turn(
+        monkeypatch,
+        lambda **_kwargs: TurnOutcome(reply_text="Resposta inteligente em modo de consulta."),
     )
     monkeypatch.setattr(service.timezone, "now", lambda: NOW)
     monkeypatch.setattr(webhook.timezone, "now", lambda: NOW)
@@ -145,9 +145,9 @@ def test_live_field_opens_intelligent_read_reply_without_identity_or_purchase(
         ctx = tools.ToolContext(conversation, conversation.channel_ref)
         menu = tools.search_storefront(ctx, query="Pão Francês")
         blocked["mutation"] = tools.set_item(ctx, "PAO-FRANCES", 2)
-        return agent.AgentOutcome(reply_text=tools.render_result("search_storefront", menu))
+        return TurnOutcome(reply_text=tools.render_result("search_storefront", menu))
 
-    monkeypatch.setattr(agent, "run_agent", read_only_agent)
+    stub_turn(monkeypatch, read_only_agent)
     assert post(client, "2026-09-12 11:29:01.391392").json() == {
         "status": "queued",
         "queued": True,

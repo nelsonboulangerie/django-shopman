@@ -8,18 +8,17 @@ from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
 from shopman.shop.tests.ai_support import configure_ai
-from shopman.storefront.concierge import agent, service
+from shopman.storefront.concierge import intents, service
 from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome, WindowEvidence
+from shopman.storefront.concierge.turn_outcome import TurnOutcome, current_customer_text
 from shopman.storefront.tests.support.concierge_transport_v3 import (
     adapter_class,
     connection,
     event,
     reset_adapter,
 )
+from shopman.storefront.tests.support.concierge_turn import stub_turn
 from shopman.storefront.tests.test_concierge_engine import (
-    ScriptedClient,
-    _response,
-    _text,
     surface,  # noqa: F401
 )
 
@@ -30,7 +29,6 @@ pytestmark = pytest.mark.django_db
 def enabled(settings, monkeypatch):
     configure_ai("test-only")
     settings.SHOPMAN_CONCIERGE = {
-        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "channel_ref": "web",
@@ -63,9 +61,9 @@ def test_late_input_revokes_stale_answer_and_replays_the_whole_context(monkeypat
 
     def respond(**kwargs):
         late.append(inbound("Na verdade, três", "event-2")[2])
-        return agent.AgentOutcome(reply_text="Sacola consultada.")
+        return TurnOutcome(reply_text="Sacola consultada.")
 
-    monkeypatch.setattr(agent, "run_agent", respond)
+    stub_turn(monkeypatch, respond)
     result = service.run_turn(first.conversation_id, binding.pk)
     assert result.fallback == "revoked"
     assert result.processed_message_ids == []
@@ -76,10 +74,9 @@ def test_late_input_revokes_stale_answer_and_replays_the_whole_context(monkeypat
     ]
     assert not ConversationMessage.objects.filter(kind=ConversationMessage.Kind.REPLY).exists()
 
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(reply_text="Entendi a correção para três."),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(reply_text="Entendi a correção para três."),
     )
     replay = service.run_turn(first.conversation_id, binding.pk)
     assert replay.processed_message_ids == [first_message.pk, late[0].pk]
@@ -91,10 +88,9 @@ def test_late_input_revokes_stale_answer_and_replays_the_whole_context(monkeypat
 def test_prepared_attempt_exists_before_remote_effect_and_unknown_is_not_retried(monkeypatch):
     result, binding, _ = inbound()
     effects = []
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(reply_text="Resposta factual"),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(reply_text="Resposta factual"),
     )
 
     def remote(subject, text):
@@ -116,10 +112,9 @@ def test_prepared_attempt_exists_before_remote_effect_and_unknown_is_not_retried
 
 def test_pix_second_block_failure_preserves_first(monkeypatch):
     result, binding, _ = inbound()
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(
             reply_text="Pedido registrado; pagamento pendente.",
             extra_replies=["PIX-CANONICAL"],
             # O recibo do pedido (regra da casa R6: "registrado" só com pedido).
@@ -141,10 +136,9 @@ def test_pix_second_block_failure_preserves_first(monkeypatch):
 def test_extra_reply_uses_the_same_semantic_fragmentation(monkeypatch):
     result, binding, _ = inbound()
     extra = "a" * 2500 + "\n" + "b" * 2500
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(reply_text="Resumo", extra_replies=[extra]),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(reply_text="Resumo", extra_replies=[extra]),
     )
 
     turn = service.run_turn(result.conversation_id, binding.pk)
@@ -159,9 +153,9 @@ def test_kill_switch_during_model_blocks_output_and_preserves_input(monkeypatch,
 
     def respond(**kwargs):
         settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "enabled": False}
-        return agent.AgentOutcome(reply_text="Não pode sair")
+        return TurnOutcome(reply_text="Não pode sair")
 
-    monkeypatch.setattr(agent, "run_agent", respond)
+    stub_turn(monkeypatch, respond)
     assert service.run_turn(result.conversation_id, binding.pk).fallback == "revoked"
     message.refresh_from_db()
     assert message.consumed_by is None
@@ -170,7 +164,7 @@ def test_kill_switch_during_model_blocks_output_and_preserves_input(monkeypatch,
 
 def test_human_escape_without_model_preserves_local_human_ownership(monkeypatch):
     result, binding, _ = inbound("Quero falar com alguém")
-    monkeypatch.setattr(agent, "run_agent", lambda **kwargs: pytest.fail("human request used model"))
+    monkeypatch.setattr(intents, "read_with_model", lambda *a, **k: pytest.fail("human request used model"))
     adapter_class().handoff_outcomes[("manychat-wa", True)] = HandoffOutcome("unknown", "acceptance_unconfirmed")
     turn = service.run_turn(result.conversation_id, binding.pk)
     binding.conversation.refresh_from_db()
@@ -225,7 +219,7 @@ def test_non_v3_input_is_not_replayed(monkeypatch):
         content=[{"type": "text", "text": "sim"}],
         envelope={"version": 2},
     )
-    monkeypatch.setattr(agent, "run_agent", lambda **kwargs: pytest.fail("v2 input replayed"))
+    stub_turn(monkeypatch, lambda **kwargs: pytest.fail("v2 input replayed"))
     turn = service.run_turn(binding.conversation_id, binding.pk)
     stale.refresh_from_db()
     assert not turn.processed_message_ids
@@ -233,36 +227,32 @@ def test_non_v3_input_is_not_replayed(monkeypatch):
 
 
 def test_model_cannot_invent_critical_facts(surface):  # noqa: ARG001
-    result, binding, _ = inbound("Quanto custa o pão?")
-    client = ScriptedClient(
-        _response(
-            _text("O pão custa R$ 999,99. Sem glúten; entregue amanhã. https://evil.test"),
-            stop_reason="end_turn",
-        )
-    )
-    service.run_turn(result.conversation_id, binding.pk, client=client)
+    from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
+
+    result, binding, _ = inbound("Quanto custa o pão? e entrega amanhã?")
+    # A leitura só separa partes: o que ela "diz" não vira resposta; quem responde é o executor.
+    reader = ReaderClient([
+        _act("product_question", "O pão custa R$ 999,99. Sem glúten. https://evil.test", "pão"),
+        _act("hours_delivery", "entregue amanhã"),
+    ])
+    service.run_turn(result.conversation_id, binding.pk, intents_client=reader)
     assert len(adapter_class().sent) == 1
     sent = adapter_class().sent[0][2]
     assert "999" not in sent and "evil" not in sent and "glúten" not in sent
 
 
-def test_history_window_cannot_hide_claimed_input(monkeypatch, settings):
+def test_the_turn_reads_every_claimed_input(monkeypatch, settings):
     result, binding, _ = inbound("item 0", "event-0")
     for index in range(1, 30):
         inbound(f"item {index}", f"event-{index}")
-    settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "window_messages": 2}
     captured = []
 
     def respond(**kwargs):
-        captured.extend(
-            block["text"]
-            for message in kwargs["history"]
-            for block in message["content"]
-            if block.get("type") == "text"
-        )
-        return agent.AgentOutcome(reply_text="Entradas preservadas")
+        # O turno lê o que o claim cobriu, inteiro: é o texto que as partes recebem.
+        captured.extend(current_customer_text(kwargs["conversation"]).split("\n"))
+        return TurnOutcome(reply_text="Entradas preservadas")
 
-    monkeypatch.setattr(agent, "run_agent", respond)
+    stub_turn(monkeypatch, respond)
     turn = service.run_turn(result.conversation_id, binding.pk)
     messages = list(ConversationMessage.objects.filter(kind=ConversationMessage.Kind.INBOUND).order_by("pk"))
     assert turn.processed_message_ids == [message.pk for message in messages[:20]]
@@ -297,10 +287,9 @@ def test_turn_counter_uses_new_local_day_without_losing_input(monkeypatch):
     conversation.turns_day = today - timedelta(days=1)
     conversation.turns_today = 80
     conversation.save(update_fields=["turns_day", "turns_today"])
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(reply_text="Escolhas preservadas"),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(reply_text="Escolhas preservadas"),
     )
     turn = service.run_turn(result.conversation_id, binding.pk)
     conversation.refresh_from_db()

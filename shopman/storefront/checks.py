@@ -131,7 +131,7 @@ def concierge_notices(config: dict | None = None) -> list[tuple[str, str, str]]:
     if not config.get("enabled"):
         return []
     notices: list[tuple[str, str, str]] = []
-    for purpose, what in (("intents", "a leitura de partes"), ("concierge", "o agente com modelo")):
+    for purpose, what in (("intents", "a leitura de partes"),):
         problem = _ai_problem(purpose)
         if problem:
             notices.append((

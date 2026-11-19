@@ -166,8 +166,8 @@ ganha `ConversationMessage.envelope["triage"]` e a conversa guarda a última em
 escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas que ela cobriu, e `at`, ISO 8601). `intent` é uma das 12 referências de
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
-parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default`, `failures` ou `verification` (o "vou verificar" sem resposta no segundo prazo); `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave), `verification_timeout` (a pergunta à equipe passou do segundo prazo sem resposta, `intent=human`, `destination=team`) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
+parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`,
+`jev` (o Jev, com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), `intents` (a leitura em partes), `default`, `failures` ou `verification` (o "vou verificar" sem resposta no segundo prazo); `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave), `verification_timeout` (a pergunta à equipe passou do segundo prazo sem resposta, `intent=human`, `destination=team`) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
 
 Cancelamento pela Concierge (dono, 03/10/2026; `shopman/storefront/concierge/cancellation.py`):
 a pergunta de confirmação fica em `Conversation.flags["pending_cancel"]` = `{order_ref, asked_at,
@@ -179,12 +179,8 @@ Só o "sim" no turno seguinte cancela; qualquer outra fala apaga a chave. O canc
 uma nota na conversa (`ConversationMessage` `kind=note`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
-Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`). Ligadas
-para a coorte que a Concierge já atende em `assist` (OBS0310-R: `allowed_subjects` da connection;
-fora dela nada muda); `SHOPMAN_CONCIERGE["intents_plural"]` (`CONCIERGE_INTENTS_PLURAL`) é
-`cohort` (padrão, sem env), `off` (emergência, desliga para todos), `subjects` (só
-`CONCIERGE_INTENTS_SUBSCRIBERS`, dentro da coorte) ou `all` (dentro da coorte); valor desconhecido
-desliga. A triagem ganha `jev_scores` = `{ref: probabilidade}` que o Jev deu
+Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`): o único
+caminho do turno desde o WP-08 (19/11/2026), sem chave de liga e desliga. A triagem ganha `jev_scores` = `{ref: probabilidade}` que o Jev deu
 neste turno (as 12 intenções e `multiple_parts`, a pergunta "a mensagem traz mais de uma coisa?",
 feita só com a chave ligada; vazio sem Jev). Com parte sensível no turno, a triagem gravada é a do
 turno inteiro: `source=intents`, `intent` a primeira parte de equipe (cancelamento grava
@@ -203,20 +199,20 @@ inclusive o aviso de handoff `purpose=handoff_ack`) grava em `ConversationMessag
 `{version: 1, layer, triage: {classifier, source}, calls: [...], input_tokens, output_tokens,
 cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...}, unpriced_models?}`.
 Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
-`layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
-laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa),
-`agent_handoff` (o agente chamou a equipe) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `anthropic` ou `jev`; `source` como
-`envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
+`layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `intents` (a
+leitura em partes), `context` (a memória resolveu), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa),
+`handoff` (um caminho da casa chamou a equipe: memória, cancelamento, acréscimo) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `jev` (registros anteriores ao WP-08 podem ter `anthropic`, `agent` e `agent_handoff`); `source` como
+`envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: intents|jev, model,
 provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,
 cache_creation_input_tokens, cost_usd}`; os totais somam as linhas. `cost_usd` é estimativa em US$ pela
 tabela de `shop/services/ai_pricing.py` (leitura de cache a 0,1 e escrita a 1,25 do preço de entrada;
 Jev a US$ 0,042/M de entrada), `null` quando algum modelo está fora da tabela (listado em
 `unpriced_models`). `latency_ms` em milissegundos inteiros: `total` (da ÚLTIMA entrada do turno até a
 resposta gravada, inclui a espera `dispatch_delay_seconds` e a fila), `turn` (o processamento no worker),
-e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `agent` (o laço inteiro),
-`model` (soma das idas ao modelo da resposta), `tools` (soma das ferramentas). Os contadores da
-`Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
-como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
+e por etapa, quando houve: `triage` (inclui o Jev da triagem), `jev`, `intents` (a leitura em partes).
+Registros anteriores ao WP-08 trazem também `agent`, `model` e `tools` (o laço do agente). Os contadores da
+`Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) eram do modelo da resposta e
+param no WP-08, que apagou o laço; o gasto do turno mora só aqui. Lida por `concierge_reply_eval --production`.
 Com as intenções no plural (OBS0310-Q): `layer` pode ser `intents` (cada parte pelo executor da
 casa, uma resposta), a etapa `intents` aparece em `latency_ms` (porteiro, leitura e execução) e em
 `calls` (`stage: intents`, a leitura com o modelo pequeno, quando houve), e `usage.intents` =
