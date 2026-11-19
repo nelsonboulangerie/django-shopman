@@ -37,8 +37,8 @@ ninguém cumpre é pega na saída, como qualquer outra resposta.
 
 **Origem da resposta.** ``HOUSE`` é texto montado pelo código a partir dos dados
 (copy da casa, resultado de ferramenta, aviso de alergia); ``MODEL`` é texto
-livre de modelo. Hoje nenhum texto do modelo chega ao cliente (``agent.run_agent``
-só devolve o resultado canônico das ferramentas), então R1 e R5 são cumpridas
+livre de modelo. Nenhum texto do modelo chega ao cliente (o turno é a leitura em
+partes, ``intents.run``, e cada parte sai do executor da casa), então R1 e R5 são cumpridas
 por construção e o verificador delas só reprova texto ``MODEL``: é a trava para a
 redação com marcadores (F6) e a régua que o placar aplica às respostas antigas do
 alpha, que eram do modelo.
@@ -681,7 +681,7 @@ RULES: tuple[HouseRule, ...] = (
         on_violation={HOUSE: Effect.ROUTE_TEAM},
         enforced_by=(
             "handoff.classify_handoff_request → cancellation.self_cancellable → triage.decide; "
-            "cancellation.ask/resolve_pending (agent.run_agent)"
+            "cancellation.ask/resolve_pending (intents.run)"
         ),
         entry_flag=(
             "Quero falar com um atendente",
@@ -789,7 +789,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         on_violation={HOUSE: Effect.FIXED_REPLY},
         enforced_by=(
-            "discount.handle_request, depois house_rules.fixed_reply_for (agent.run_agent, antes do modelo)"
+            "intents._house_fixed_reply e intents.execute: discount.handle_request, depois house_rules.fixed_reply_for"
         ),
         entry_flag=(
             "Faz um desconto pra mim?",
@@ -833,7 +833,7 @@ RULES: tuple[HouseRule, ...] = (
         when="só cumprimento, agradecimento ou despedida",
         demands="frase da casa curta, sem busca nem modelo",
         on_violation={HOUSE: Effect.FIXED_REPLY},
-        enforced_by="small_talk.small_talk_kind → agent.run_agent",
+        enforced_by="small_talk.small_talk_kind → intents.run",
         entry_flag=("Bom dia!", "Obrigada, até amanhã", "boa tarde, tudo bem?"),
         entry_pass=("Bom dia, tem croissant?", "Obrigada, e o pão de forma?"),
         entry_check=_entry_courtesy,
@@ -991,7 +991,7 @@ def review(texts: Iterable[str], ctx: ReplyContext = ReplyContext()) -> Review:
 
 
 def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = False) -> frozenset[str]:
-    """Os recibos do turno, lidos do que os executores fizeram (``AgentOutcome``)."""
+    """Os recibos do turno, lidos do que os executores fizeram (``TurnOutcome``)."""
     receipts: set[str] = set()
     if team_notified:
         receipts.add(TEAM_NOTIFIED)

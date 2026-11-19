@@ -149,9 +149,9 @@ def test_r6_promise_goes_out_only_with_its_receipt():
 
 
 def test_receipts_come_from_what_the_executors_did():
-    from shopman.storefront.concierge.agent import AgentOutcome
+    from shopman.storefront.concierge.turn_outcome import TurnOutcome
 
-    outcome = AgentOutcome(
+    outcome = TurnOutcome(
         reply_text="",
         tool_events=[
             {"name": "set_item", "ok": True},
@@ -160,7 +160,7 @@ def test_receipts_come_from_what_the_executors_did():
         ],
     )
     assert house_rules.receipts_for(outcome) == {CART, house_rules.NOTIFY}
-    assert house_rules.receipts_for(AgentOutcome(reply_text="", order_ref="ORD-1")) == {ORDER}
+    assert house_rules.receipts_for(TurnOutcome(reply_text="", order_ref="ORD-1")) == {ORDER}
     assert house_rules.receipts_for(None, team_notified=True) == {TEAM_NOTIFIED}
 
 
@@ -254,7 +254,7 @@ def test_house_reply_with_a_promise_nobody_keeps_is_held_and_goes_to_the_team(co
     conversation.save()
     _receive(conversation, "tem pão?", "limit-1")
 
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
     assert result.handoff
     assert outbox.sent == [copies["CONCIERGE_HANDOFF_ACK"]]
@@ -280,7 +280,7 @@ def test_house_reply_is_repaired_before_it_goes_out(conversation, outbox, monkey
     )
     _receive(conversation, "https://lookaside.fbsbx.com/x/audio.ogg", "media-1", message_type="audio")
 
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
     assert result.fallback == "media"
     assert outbox.sent == ["Obrigada, ainda não ouço áudios."]

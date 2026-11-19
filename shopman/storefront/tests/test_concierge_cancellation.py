@@ -18,6 +18,7 @@ from shopman.orderman.models import Order
 from shopman.shop.models import Conversation, ConversationMessage
 from shopman.storefront.concierge import cancellation, service, tools
 from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401  (fixtures)
+    CONCIERGE_SETTINGS,
     ScriptedClient,
     _accept_review,
     _binding,
@@ -53,7 +54,7 @@ def _turn(conversation, text: str, django_capture_on_commit_callbacks):  # noqa:
     _receive(conversation, text, f"cancel-{ConversationMessage.objects.count()}-{timezone.now().timestamp()}")
     with django_capture_on_commit_callbacks(execute=True):
         # Roteiro vazio: nenhum destes turnos pode chegar ao modelo.
-        return service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+        return service.run_turn(conversation.pk, _binding(conversation).pk)
 
 
 def test_within_the_window_she_asks_and_cancels_on_yes(placed, conversation, outbox, django_capture_on_commit_callbacks):  # noqa: F811
@@ -214,12 +215,11 @@ def test_payment_line_says_only_what_the_system_did():
 def _plural_turn(conversation, text, reader, django_capture_on_commit_callbacks):  # noqa: F811
     from django.test import override_settings
 
-    from shopman.storefront.tests.test_concierge_intents import PLURAL_SETTINGS
 
     _receive(conversation, text, f"cancel-plural-{ConversationMessage.objects.count()}-{timezone.now().timestamp()}")
-    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS), django_capture_on_commit_callbacks(execute=True):
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS), django_capture_on_commit_callbacks(execute=True):
         return service.run_turn(
-            conversation.pk, _binding(conversation).pk, client=ScriptedClient(), intents_client=reader
+            conversation.pk, _binding(conversation).pk, intents_client=reader
         )
 
 

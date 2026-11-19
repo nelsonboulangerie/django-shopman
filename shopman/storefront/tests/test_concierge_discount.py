@@ -23,8 +23,8 @@ from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel, Coupon, Promotion
 from shopman.shop.services import cart as cart_service
 from shopman.shop.services import promotions
-from shopman.storefront.concierge import agent as agent_module
-from shopman.storefront.concierge import discount, service, tools
+from shopman.storefront.concierge import discount, intents, service, tools, triage
+from shopman.storefront.concierge.turn_outcome import TurnOutcome
 from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401  (fixtures)
     CHANNEL,
     SKU,
@@ -51,11 +51,12 @@ def priced(surface):  # noqa: F811
     return surface
 
 
-def _ask(ctx, text: str) -> agent_module.AgentOutcome:  # noqa: F811
+def _ask(ctx, text: str) -> TurnOutcome:  # noqa: F811
     _create_inbound(ctx.conversation, text, f"ask-{timezone.now().timestamp()}")
     _reclaim(ctx)
-    # Roteiro vazio: se o turno chegasse ao modelo, o teste quebraria.
-    return agent_module.run_agent(conversation=ctx.conversation, history=[], client=ScriptedClient())
+    # Roteiro vazio: se a leitura chamasse o modelo, o teste quebraria.
+    decision = triage.decide(text, channel_ref=CHANNEL)
+    return intents.run(ctx.conversation, binding=None, decision=decision, client=ScriptedClient())
 
 
 def _session(ctx):  # noqa: F811

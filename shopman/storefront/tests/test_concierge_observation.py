@@ -20,7 +20,7 @@ from shopman.shop.management.commands.maintenance_worker import MAINTENANCE_COMM
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage
 from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.admin.concierge import ConversationAdmin
-from shopman.storefront.concierge import agent, service, transport, webhook
+from shopman.storefront.concierge import intents, service, transport, webhook
 
 pytestmark = pytest.mark.django_db
 
@@ -90,7 +90,7 @@ def test_observe_persists_canonical_transcript_without_queue_model_or_output(mon
     def forbidden(*args, **kwargs):
         raise AssertionError("efeito externo")
 
-    monkeypatch.setattr(agent, "build_client", forbidden)
+    monkeypatch.setattr(intents, "build_client", forbidden)
     monkeypatch.setattr(service, "_enqueue_turn", forbidden)
     monkeypatch.setattr(transport, "send_for", forbidden)
     monkeypatch.setattr(transport, "handoff_for", forbidden)
@@ -232,7 +232,6 @@ def test_observed_history_never_becomes_a_future_turn(settings):
 
     assert service.is_allowed(binding)
     assert service.unanswered_inbound(binding.conversation, binding) == []
-    assert agent.history_for(binding.conversation) == []
     assert service.recover_pending() == {"queued": 0, "unknown": 0}
     assert not Directive.objects.exists()
 

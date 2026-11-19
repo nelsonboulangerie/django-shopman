@@ -1,13 +1,13 @@
 """Placar da Concierge contra o conjunto de mensagens reais (golden set).
 
 Invólucro de ``shopman.storefront.concierge.reply_eval``. Sem argumentos, mede o
-caminho de hoje com a regra local, sem rede e sem custo. ``--classifier model``
-ou ``jev`` chama o provedor de verdade com o texto redigido do caso e imprime o
+caminho de hoje com a regra local, sem rede e sem custo. ``--classifier jev``
+chama o provedor de verdade com o texto redigido do caso e imprime o
 custo e o tempo medidos pela régua. ``--production`` resume o que a régua gravou
 nas respostas reais. ``--memory`` mede a memória da conversa (OBS0310-N) nos casos
 que dependem do contexto, antes e depois. Não grava nada no banco.
 
-Rodada com rede custa dinheiro (``--classifier model``, ``--classifier jev``,
+Rodada com rede custa dinheiro (``--classifier jev``,
 ``--plural --reader model``): sem ``--paid`` o comando sai com erro antes de criar
 qualquer cliente. Com ``--paid``, ``--budget-usd`` (default US$ 1) é o teto de gasto
 da rodada inteira, pelo custo de ``LLM_PRICES``, e ``--max-cases`` limita os casos
@@ -53,13 +53,10 @@ class Command(BaseCommand):
             choices=CLASSIFIERS,
             default="rules",
             help=(
-                "Quem propõe a intenção na triagem: rules (padrão, sem rede), model (Anthropic; custa, pede --paid), "
+                "Quem propõe a intenção na triagem: rules (padrão, sem rede), "
                 "jev (custa, pede --paid), ou jev-shadow (a intenção que o Jev deu em sombra no alpha, gravada no "
                 "caso; sem rede)."
             ),
-        )
-        parser.add_argument(
-            "--model", default="", help="Modelo da triagem com --classifier model (default: o da rota de IA triage)."
         )
         parser.add_argument("--golden", default="", help="Outro arquivo de casos (default: concierge/golden_set.json).")
         parser.add_argument("--limit", type=int, default=0, help="Só os N primeiros casos.")
@@ -175,7 +172,6 @@ class Command(BaseCommand):
                     report = run(
                         cases,
                         classifier=options["classifier"],
-                        model=options["model"],
                         budget=budget,
                         max_cases=options["max_cases"],
                     )

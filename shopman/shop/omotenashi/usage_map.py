@@ -160,10 +160,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
     ),
-    "CONCIERGE_GREETING": (
-        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
-        ("shopman/storefront/concierge/prompt.py", "WhatsApp", "Concierge: abertura da conversa"),
-    ),
     "CONCIERGE_HANDOFF_ACK": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),

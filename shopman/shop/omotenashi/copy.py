@@ -1443,15 +1443,8 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # O que o concierge diz SEM o modelo: abertura sugerida ao prompt e as saídas
     # fixas de política (modelo fora, mídia, equipe, teto diário, contato sem
     # telefone). Tudo aqui é lido por ``shopman/storefront/concierge/service.py`` via
-    # ``copy_message(key)``; a conversa em si é do modelo, com o dinheiro nas
-    # ferramentas. Voz da casa: curta, calorosa, sem emoji, sem alarde.
-    # ``{shop_name}`` interpolado pelo prompt do agente (o nome da casa é dado do
-    # ``Shop``, nunca copy fixa; tenant é config, não código).
-    "CONCIERGE_GREETING": {
-        WILDCARD: {WILDCARD: CopyEntry(
-            message="Olá, aqui é a concierge da {shop_name}, uma assistente da casa. O que você gostaria de pedir hoje?",
-        )},
-    },
+    # ``copy_message(key)``; cada parte da conversa sai do executor da casa, com o
+    # dinheiro nas ferramentas. Voz da casa: curta, calorosa, sem emoji, sem alarde.
     # Cortesia sem pergunta ("bom dia", "obrigado", "tchau"): resposta curta, sem
     # cardápio. O "Bom dia!" do começo sai do próprio cliente (small_talk.py).
     "CONCIERGE_SMALL_TALK_OFFER": {

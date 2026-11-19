@@ -6,33 +6,9 @@ from uuid import uuid4
 import pytest
 
 from shopman.shop.models import Conversation, ConversationBinding
-from shopman.shop.tests.ai_support import configure_ai
-from shopman.storefront.concierge import agent, service, tools
+from shopman.storefront.concierge import service, tools
 
 pytestmark = pytest.mark.django_db
-
-
-class ScriptedClient:
-    def __init__(self, *responses):
-        self.responses = list(responses)
-        self.messages = SimpleNamespace(create=self.create)
-
-    def create(self, **kwargs):
-        return self.responses.pop(0)
-
-
-def response(*content, stop_reason):
-    return SimpleNamespace(
-        content=list(content),
-        stop_reason=stop_reason,
-        stop_details=None,
-        usage=SimpleNamespace(
-            input_tokens=0,
-            output_tokens=0,
-            cache_read_input_tokens=0,
-            cache_creation_input_tokens=0,
-        ),
-    )
 
 
 @pytest.fixture
@@ -51,29 +27,23 @@ def causal_conversation():
     return conversation
 
 
-def test_agent_loads_causal_binding_into_tool_context(causal_conversation, monkeypatch, settings):
-    settings.SHOPMAN_CONCIERGE = {"adaptive_thinking": False}
-    configure_ai("k", model="test-model")
+def test_the_turn_loads_the_causal_binding_into_the_tool_context(causal_conversation, monkeypatch):
+    """A leitura em partes monta o contexto do executor com a origem causal, e o canal comercial à parte."""
+    from shopman.storefront.concierge import intents
+
     captured = []
-    monkeypatch.setattr(service, "assert_turn_authority", lambda conversation, **kwargs: conversation)
-    monkeypatch.setattr(
-        "shopman.storefront.concierge.prompt.build_system",
-        lambda *args, **kwargs: [{"type": "text", "text": "system"}],
-    )
 
     def execute(name, arguments, context):
         captured.append(context)
         return {"ok": True, "message": "Cardápio consultado."}
 
     monkeypatch.setattr(tools, "execute", execute)
-    client = ScriptedClient(
-        response(
-            SimpleNamespace(type="tool_use", id="tool-1", name="search_storefront", input={}),
-            stop_reason="tool_use",
-        ),
-        response(SimpleNamespace(type="text", text="Pronto."), stop_reason="end_turn"),
-    )
-    agent.run_agent(conversation=causal_conversation, history=[], client=client)
+    # Só o contexto interessa aqui: a parte sem achado não abre "vou verificar".
+    from shopman.storefront.concierge import verification
+
+    monkeypatch.setattr(verification, "can_verify", lambda conversation: False)
+    found = intents.Plan(acts=[intents.Act("product_question", span="tem croissant?")], source="gate")
+    intents.execute(found, conversation=causal_conversation, channel_ref="web", binding=causal_conversation._binding)
     context = captured[0]
     assert context.channel_ref == "web"
     assert (

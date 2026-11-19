@@ -2,8 +2,9 @@
 
 O ``run_intent_pilot`` grava a sombra sozinho a cada ciclo; este comando lê o
 resultado (``intent_pilot.shadow_report``) e, com ``--run``, grava um lote já.
-Nada muda para o cliente: a Concierge continua decidindo pela regra local até
-``CONCIERGE_TRIAGE_CLASSIFIER=jev``.
+Nada muda para o cliente: com a Concierge atendendo, quem decide é a triagem do
+turno (o Jev, com a regra local sensível vencendo); esta sombra mede o Jev onde ela
+ainda só observa.
 """
 
 from __future__ import annotations

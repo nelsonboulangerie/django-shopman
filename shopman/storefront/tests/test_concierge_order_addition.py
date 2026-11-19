@@ -308,12 +308,12 @@ def test_turn_one_then_yes_adds_through_the_same_service(conversation, customer,
     Conversation.objects.filter(pk=conversation.pk).update(flags={"dialogue": state})
 
     _receive(conversation, "1", "add-1")
-    asked = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    asked = service.run_turn(conversation.pk, _binding(conversation).pk)
     assert asked.replies[0].startswith("Acrescento 2 Pão Francês ao pedido NB-ADD-T")
     assert _unchanged(order)
 
     _receive(conversation, "sim", "add-2")
-    done = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    done = service.run_turn(conversation.pk, _binding(conversation).pk)
     assert done.replies[0].startswith("Pronto, acrescentei 2 Pão Francês ao pedido NB-ADD-T")
     order.refresh_from_db()
     assert order_composition.effective_total_q(order) == 360
@@ -333,7 +333,7 @@ def test_turn_refused_preorder_says_why_and_the_team_is_really_called(conversati
     Conversation.objects.filter(pk=conversation.pk).update(flags={"dialogue": state})
 
     _receive(conversation, "1", "add-e1")
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
     assert result.handoff
     conversation.refresh_from_db()
@@ -380,7 +380,7 @@ def test_addition_part_is_recognised_only_with_an_order_mention():
 def test_plural_turn_adds_through_the_same_path_with_the_confirmation_last(conversation, customer, outbox, settings):
     from django.test import override_settings
 
-    from shopman.storefront.tests.test_concierge_intents import PLURAL_SETTINGS, ReaderClient, _act
+    from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
 
     configure_ai("sk-teste")
     order = _order("NB-ADD-M", customer.ref)
@@ -390,8 +390,8 @@ def test_plural_turn_adds_through_the_same_path_with_the_confirmation_last(conve
     ])
 
     _receive(conversation, "acrescenta 2 pães franceses no meu pedido, e vocês aceitam vale refeição?", "plural-add-1")
-    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
-        asked = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient(),
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        asked = service.run_turn(conversation.pk, _binding(conversation).pk,
                                  intents_client=reader)
     assert not asked.handoff and len(outbox.sent) == 1
     reply = outbox.sent[0]
@@ -404,8 +404,8 @@ def test_plural_turn_adds_through_the_same_path_with_the_confirmation_last(conve
     assert _unchanged(order)
 
     _receive(conversation, "sim", "plural-add-2")
-    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
-        done = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient(),
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        done = service.run_turn(conversation.pk, _binding(conversation).pk,
                                 intents_client=ReaderClient())
     assert done.replies[0].startswith("Pronto, acrescentei 2 Pão Francês ao pedido NB-ADD-M.")
     order.refresh_from_db()

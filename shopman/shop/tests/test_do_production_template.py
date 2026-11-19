@@ -197,7 +197,8 @@ def test_alpha_declares_live_only_envs_and_privacy_receipt_secrets():
     app_envs = {entry["key"]: entry for entry in spec["envs"]}
     assert ALPHA_LIVE_ONLY_APP_ENVS <= app_envs.keys()
     assert all(app_envs[key]["scope"] == "RUN_TIME" for key in ALPHA_LIVE_ONLY_APP_ENVS)
-    assert app_envs["CONCIERGE_TRIAGE_CLASSIFIER"]["scope"] == "RUN_TIME"
+    # O laço do agente e a troca de classificador saíram (WP-08): nada de chave morta.
+    assert not {"CONCIERGE_TRIAGE_CLASSIFIER", "CONCIERGE_INTENTS_PLURAL", "CONCIERGE_MAX_ITERATIONS"} & app_envs.keys()
 
     # Os dois services do Django (mesma imagem) declaram as chaves do recibo: a loja
     # emite o recibo, o operador o confere.
