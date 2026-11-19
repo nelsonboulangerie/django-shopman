@@ -5,12 +5,15 @@ import { describe, expect, it } from 'vitest'
 
 // O pedido não retirado (#2613, decisão do dono de 17 e 18/11/2026).
 //
-// A regra tem um texto só, aprovado pelo dono, e mora em dois lugares: a cláusula dos
-// Termos (que a cliente aceita ao entrar) e a revisão do checkout da encomenda (que ela
-// lê antes de enviar e pagar). A trava de `legalVersion.test.ts` não deixa a constante
-// virar a fonte da cláusula (ela mede o texto do `.vue`), então a frase é escrita nos
-// dois arquivos, e esta trava reprova se uma mudar sem a outra.
+// A regra mora em dois lugares. A cláusula inteira, aprovada pelo dono, fica nos Termos
+// (que a cliente aceita ao entrar). A revisão do checkout da encomenda, que ela lê antes
+// de enviar e pagar, traz o RESUMO, numa oração, com o link para a cláusula (dono,
+// 19/11/2026: no card "Antes de enviar" o texto tem de ser ultra conciso e inequívoco).
+//
+// O resumo pode encurtar, mas não pode esconder a parte que custa à cliente: nem tudo
+// é devolvido. É o "só" da frase, e esta trava reprova se ele sair.
 const REGRA = 'Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a loja.'
+const RESUMO = 'Sem retirada no dia combinado, só devolvemos o que voltar à venda.'
 
 const raiz = resolve(__dirname, '..')
 
@@ -39,20 +42,32 @@ function texto (caminho: string): string {
   return textosDe(arvore, []).join(' ').replace(/\s+/g, ' ').replace(/ ([:;.,])/g, '$1')
 }
 
-describe('pedido não retirado: uma regra, o mesmo texto nos Termos e no checkout', () => {
+describe('pedido não retirado: a cláusula nos Termos, o resumo no checkout', () => {
   it('os Termos trazem a cláusula com o texto aprovado', () => {
     expect(texto('app/pages/termos.vue')).toContain(REGRA)
   })
 
-  it('a revisão do checkout repete a mesma frase, palavra por palavra', () => {
-    expect(texto('app/pages/finalizar.vue')).toContain(REGRA)
+  it('a revisão do checkout traz o resumo, e não uma segunda cópia da cláusula', () => {
+    const revisao = texto('app/pages/finalizar.vue')
+    expect(revisao).toContain(RESUMO)
+    expect(revisao).not.toContain(REGRA)
+  })
+
+  it('o resumo diz as três coisas da cláusula: sem retirada, no dia combinado, e que nem tudo volta', () => {
+    expect(RESUMO).toMatch(/^Sem retirada/)
+    expect(RESUMO).toContain('no dia combinado')
+    // "só devolvemos": o que não puder voltar à venda fica com a loja.
+    expect(RESUMO).toMatch(/\bsó devolvemos\b/)
+    expect(RESUMO).toContain('voltar à venda')
+    expect(REGRA).toContain('voltar à venda')
+    expect(REGRA).toContain('dia combinado')
   })
 
   it('a linha do checkout aparece na encomenda para retirar, e leva aos Termos', () => {
     const checkout = readFileSync(resolve(raiz, 'app/pages/finalizar.vue'), 'utf8')
     expect(checkout).toContain('const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date) && !isTodaySelected.value)')
     // A frase mora no card "Antes de enviar" da revisão, e só nasce com a regra.
-    expect(checkout).toMatch(/<div v-if="showUnclaimedOrderRule"[^>]*>\s*<Icon [^>]*\/>\s*<p class="shop-body" data-review-unclaimed-rule>/)
+    expect(checkout).toMatch(/<div v-if="showUnclaimedOrderRule"[^>]*>\s*<Icon [^>]*\/>\s*<p class="text-sm" data-review-unclaimed-rule>/)
     expect(checkout.match(/data-review-unclaimed-rule/g)).toHaveLength(1)
     expect(checkout).toContain('to="/termos#pickup-and-delivery"')
     // A âncora do link existe nos Termos.
@@ -60,6 +75,7 @@ describe('pedido não retirado: uma regra, o mesmo texto nos Termos e no checkou
   })
 
   it('a regra não usa travessão', () => {
+    expect(RESUMO).not.toMatch(/[—–]/)
     expect(REGRA).not.toMatch(/[—–]/)
   })
 })
