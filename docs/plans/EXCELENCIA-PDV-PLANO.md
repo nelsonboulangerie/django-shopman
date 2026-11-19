@@ -310,11 +310,13 @@ e `docs/reference/backstage-pos-surface-contract.md`.
   `PosScheduleModal.vue`, `PosSchedulePicker.vue`.
 - Fora do escopo: `pages/preorders/[ref].vue` (WP-E5).
 - Pronto quando: (a) roteiro: Fran abre Encomendas e a primeira linha é a "Pronto, a receber";
-  cria uma encomenda escolhendo Retirada e o dia no próprio cartão; (b) vitest de ordenação e
+  cria uma encomenda escolhendo o dia e a Retirada no próprio cartão; (b) vitest de ordenação e
   jornada J5.
 - Muda tela: sim (prévia). Tamanho: M.
-- Brief: "Leia P1-11 e P2-8 e a rodada `T4-pdv-encomenda-assistente.md`. A ordem do fluxo
-  (cliente, recebimento, quando, produtos) é decisão do dono e não muda."
+- Brief: "Leia P1-11 e P2-8 e a rodada `T4-pdv-encomenda-assistente.md`. A ordem do fluxo é
+  decisão do dono." Quando este WP foi escrito a ordem era cliente, recebimento, quando,
+  produtos (16/09/2026); o dono a reviu em 19/11/2026 para cliente, quando, recebimento,
+  produtos, e quem a aplicou foi o WP-E13.
 
 ### WP-E2. Promessa com lastro na encomenda (P0)
 
@@ -424,6 +426,40 @@ e `docs/reference/backstage-pos-surface-contract.md`.
 - Muda tela: sim (prévia). Tamanho: M.
 - Brief: "Leia `docs/reference/omotenashi-copy.md` e a tabela P2 deste plano."
 
+### WP-E13. Encomenda: "pra quando" em segundo e o endereço cadastrado em linha inteira
+
+Entrou depois do laudo, por pedido do dono de 19/11/2026 (issue #2754, compromisso
+DEV-2026-057).
+
+- Objetivo: a encomenda pergunta cliente, para quando, recebimento e, na entrega, o endereço,
+  nessa ordem; e o endereço já cadastrado se escolhe sem mouse e sem adivinhar qual é qual.
+- Fecha: #2754. Dependências: WP-E10 (o assistente no cartão) e WP-E12.
+- Arquivos: `shopman/shop/services/pos_sales_mode.py` (`validate_sales_mode`),
+  `FE/composables/usePosSale.ts` (`orderSetupIssue`, `chooseFulfillment`,
+  `clearDeliveryAddress`), `FE/presentation/orderSetup.ts`, `FE/presentation/savedAddress.ts`,
+  `FE/components/PosOrderEntry.vue`, `PosSavedAddressList.vue`, `PosFulfillmentModal.vue`,
+  `PosTabHeader.vue`, `FE/pages/index.vue`, `FE/presentation/shortcuts.ts`.
+- O que muda:
+  1. A ordem do funil é a mesma nos três donos (servidor, `orderSetupIssue`,
+     `ORDER_SETUP_ORDER`): cliente, data, recebimento, endereço. A etapa da data não anda
+     sozinha quando o dia é escolhido (ainda falta o horário): quem segue é o Continuar.
+  2. A barra da venda vem na mesma ordem e a tecla é da posição: **F6 cliente, F7 quando, F8
+     recebimento** (F7 e F8 trocaram de dono).
+  3. Os endereços já cadastrados do cliente são uma lista de linha inteira (`NuxtRadioGroup`,
+     variante cartão), no assistente e no diálogo de Recebimento. A etiqueta só aparece quando
+     identifica (Casa, Trabalho, o nome que o cliente deu); a que repete o canal ("Entrega", que
+     o sistema põe em todo endereço salvo de pedido de entrega, iFood incluído) não aparece.
+  4. Ao escolher Entrega, o endereço padrão já vem marcado e com o foco: Enter aceita e segue,
+     as setas trocam.
+  5. "Tirar o endereço desta entrega" devolve a entrega a "sem endereço" sem tocar no cadastro
+     do cliente, com aviso e Desfazer.
+- Fora do escopo: `pages/preorders/[ref].vue` e a edição da encomenda (#2765, o PR seguinte).
+- Pronto quando: (a) roteiro em 375 e 1366: encomenda nova pede cliente, depois "para quando",
+  depois recebimento; em Entrega o padrão já está marcado e Enter segue; seta para baixo e
+  Enter escolhe outro; o endereço sai da entrega e volta; (b) pytest do funil, vitest do
+  assistente e da lista, e a jornada J11.
+- Muda tela: sim (prévia em `docs/coordination/EVIDENCE/EXCELENCIA-PDV/E13/`). Tamanho: M.
+
 ## 4. Jornadas a canonizar
 
 Todas em `surfaces/pos-nuxt/tests/e2e-live/`, contra o Django da pilha.
@@ -435,11 +471,12 @@ Todas em `surfaces/pos-nuxt/tests/e2e-live/`, contra o Django da pilha.
 | J2 Balcão em dinheiro | Caixa | dois itens, R$ 50, troco, próxima venda | WP-E8 |
 | J3 Desconto com gerente | Caixa e Gerente | desconto, assinatura, mudança de valor, nova assinatura | WP-E1 |
 | J4 Fornada sem saldo e feito na hora | Caixa, dois dispositivos | última unidade, selo ao vivo, café na Cozinha | WP-E4 |
-| J5 Encomenda de outro dia | Caixa | cliente, retirada, dia, horário, acima do plano, pagamento | WP-E2 (WP-E3 e WP-E10 estendem) |
+| J5 Encomenda de outro dia | Caixa | cliente, dia, horário, retirada, acima do plano, pagamento | WP-E2 (WP-E3, WP-E10 e WP-E13 estendem) |
 | J6 Receber e entregar | Caixa | encomenda pronta, saldo, troco, Tela do cliente | WP-E5 |
 | J7 Cancelar e estornar | Caixa e Gerente | cancelar pela lista, valor na assinatura, devolução | WP-E6 |
 | J9 Troca de operador e trava | Caixa e Gerente | trava por ociosidade, troca, o que cada um vê | WP-E7 |
 | J10 Fechar o caixa | Gerente | pendurados, contagem, diferença | WP-E11 |
+| J11 Encomenda de entrega com endereço do cadastro | Caixa | cliente, dia, entrega, endereço padrão marcado, seta e Enter, tirar o endereço | WP-E13 |
 
 J8 (sem conexão) segue nos specs que já existem; a chave nasce desligada por decisão de 03/11.
 
@@ -453,6 +490,8 @@ Dois WPs da mesma onda nunca tocam o mesmo arquivo.
 - **Onda 3**: WP-E3, WP-E5, WP-E11.
 - **Onda 4**: WP-E8.
 - **Onda 5**: WP-E9.
+- **Fora das ondas**: WP-E13 (pedido do dono de 19/11/2026), depois das correções de estoque
+  #2703 e #2730.
 
 ## 6. Decisões do dono
 

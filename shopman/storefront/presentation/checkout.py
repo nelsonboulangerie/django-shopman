@@ -75,6 +75,18 @@ class StripeTestCardProjection:
 
 
 @dataclass(frozen=True)
+class PaymentMoneyNoticeProjection:
+    """O que acontece com o dinheiro, por forma de pagamento, dito antes de enviar.
+
+    ``method`` é a forma (``pix``, ``card``); ``text`` é a frase inteira, já com
+    o prazo que a loja tem para confirmar o pedido.
+    """
+
+    method: str
+    text: str
+
+
+@dataclass(frozen=True)
 class CheckoutProjection:
     """Full projection for the checkout page.
 
@@ -144,6 +156,14 @@ class CheckoutProjection:
     # Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
     # "Hoje" sai de ``available_dates`` e a tela diz por quê.
     today_over: bool = False
+    # O "hoje" da loja (ISO), no fuso dela. A tela calcula "hoje", "amanhã" e os
+    # limites do calendário a partir daqui, e não do relógio do aparelho. "" se
+    # a leitura falhar (a tela cai no relógio do aparelho).
+    today: str = ""
+    # A frase do dinheiro de cada forma de pagamento, para a revisão do pedido:
+    # paga agora, até quando a loja confirma e o que acontece se não confirmar.
+    # Vazio quando não há prazo a prometer (ver ``_money_notices``).
+    money_notices: tuple[PaymentMoneyNoticeProjection, ...] = ()
 
     # Fulfillment contextual hints shown below the pickup/delivery chips
     pickup_hint: str = ""
@@ -319,6 +339,8 @@ def build_checkout(
         available_dates=available_dates,
         closed_weekdays=closed_weekdays,
         today_over=today_over,
+        today=_shop_today_iso(),
+        money_notices=_money_notices(channel_ref, payment_methods, requested_date),
         is_debug=settings.DEBUG,
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",
@@ -626,6 +648,99 @@ def _delivery_windows(
         for window in context.get("windows") or []
     )
     return windows, earliest
+
+
+def _shop_today_iso() -> str:
+    try:
+        return checkout_projection.shop_today().isoformat()
+    except Exception:
+        logger.debug("checkout_projection_shop_today_failed", exc_info=True)
+        return ""
+
+
+_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def _acceptance_when(window: checkout_projection.AcceptanceWindow, *, today) -> str:
+    """Até quando a loja confirma, do jeito que a frase diz.
+
+    Com o prazo inteiro no expediente em curso: "em até 5 minutos". Fora disso
+    (casa fechada, ou o fechamento chega antes do fim do prazo), o instante em
+    que ele vence: "até amanhã, quinta, às 10h". "Em até 60 minutos" seria
+    mentira para quem pede às 23h.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from shopman.utils.formatting import format_clock
+
+    if window.runs_now:
+        unit = "minuto" if window.minutes == 1 else "minutos"
+        return f"em até {window.minutes} {unit}"
+    deadline = timezone.localtime(window.deadline)
+    day = deadline.date()
+    weekday = _WEEKDAYS[day.weekday()]
+    if day == today:
+        day_label = "hoje"
+    elif day == today + timedelta(days=1):
+        day_label = f"amanhã, {weekday}"
+    else:
+        day_label = f"{weekday}, {day:%d/%m}"
+    article = "à" if deadline.hour == 1 else "às"
+    return f"até {day_label}, {article} {format_clock(deadline)}"
+
+
+def _money_notices(
+    channel_ref: str,
+    payment_methods: tuple[PaymentMethodOptionProjection, ...],
+    requested_date: str,
+    *,
+    now=None,
+) -> tuple[PaymentMoneyNoticeProjection, ...]:
+    """A frase do dinheiro, por forma de pagamento (plano EXCELENCIA-STOREFRONT, P1-06).
+
+    Antes de "Enviar pedido" a cliente não lia que paga agora, que a loja
+    confere em seguida, nem que o valor volta se a loja não confirmar. A frase
+    só existe na loja que cobra ao pedir (``payment.timing == "at_commit"``,
+    ADR-036) e que tem prazo de aceite a prometer: o Pix é pago no pedido e
+    volta inteiro; o cartão é só reservado e a cobrança é o aceite.
+    """
+    from datetime import date
+
+    from django.utils import timezone
+
+    from shopman.shop.config import ChannelConfig
+
+    # Fora de qualquer ``try``: canal sem configuração é defeito de instância e
+    # falha gritando, nunca vira "sem frase" em silêncio.
+    if ChannelConfig.for_channel(channel_ref).payment.timing != "at_commit":
+        return ()
+    try:
+        order_date = date.fromisoformat(requested_date) if requested_date else None
+    except ValueError:
+        # Data ilegível no rascunho: sem data não há prazo a prometer.
+        return ()
+    moment = now or timezone.now()
+    window = checkout_projection.acceptance_window(channel_ref, order_date=order_date, now=moment)
+    if window is None:
+        return ()
+    when = _acceptance_when(window, today=timezone.localdate(moment))
+    texts = {
+        "pix": (
+            f"Você paga agora, pelo Pix. A loja confirma o pedido {when}; "
+            "se não confirmar, o valor volta inteiro para a mesma conta."
+        ),
+        "card": (
+            "O valor fica reservado no cartão agora e só é cobrado quando a loja "
+            f"confirmar o pedido, {when}. Se não confirmar, a reserva é desfeita e "
+            "nada é cobrado."
+        ),
+    }
+    return tuple(
+        PaymentMoneyNoticeProjection(method=method.ref, text=texts[method.ref])
+        for method in payment_methods
+        if method.ref in texts
+    )
 
 
 def _delivery_date_from_context(request: HttpRequest, delivery_date: str | None) -> str:

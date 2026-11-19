@@ -77,15 +77,13 @@ def validate_sales_mode(payload: dict, *, require_ready: bool) -> None:
         return
     if not require_ready:
         return
+    # A ordem do funil é a da tela (`orderSetupIssue` no PDV): cliente, para
+    # quando, recebimento. A data vem em segundo porque é ela que diz o que a
+    # casa pode prometer (decisão do dono, 19/11/2026, #2754).
     if not str(payload.get("customer_ref") or "").strip():
         raise PosIntentError(
             "order_customer_required", "Selecione ou cadastre o cliente antes de adicionar produtos.",
             field="customer_ref", focus="customer",
-        )
-    if fulfillment not in ("pickup", "delivery"):
-        raise PosIntentError(
-            "order_fulfillment_required", "Escolha Entrega ou Retirada antes de adicionar produtos.",
-            field="fulfillment_type", focus="fulfillment",
         )
     try:
         day = date.fromisoformat(str(payload.get("delivery_date") or ""))
@@ -95,6 +93,11 @@ def validate_sales_mode(payload: dict, *, require_ready: bool) -> None:
         raise PosIntentError(
             "order_date_required", "Informe a data da encomenda antes de adicionar produtos.",
             field="delivery_date", focus="schedule",
+        )
+    if fulfillment not in ("pickup", "delivery"):
+        raise PosIntentError(
+            "order_fulfillment_required", "Escolha Entrega ou Retirada antes de adicionar produtos.",
+            field="fulfillment_type", focus="fulfillment",
         )
     from shopman.guestman.models import Customer
 

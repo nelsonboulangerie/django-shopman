@@ -27,17 +27,17 @@ function action(ref: string, label: string, over: Partial<Action> = {}): Action 
 
 function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   return {
-    ref: "WEB-20261003-A47", status: "ready", status_label: "Pronto", status_color: "", channel_ref: "web",
-    channel_icon: "language", customer_name: "Ana", created_at_display: "14:50", created_at_iso: "", server_now_iso: "",
+    ref: "WEB-20261003-A47", status: "ready", status_label: "Pronto", channel_ref: "web", channel_name: "Loja online",
+    channel_icon: "language", customer_name: "Ana", created_at_iso: "", server_now_iso: "",
     elapsed_seconds: 600, timer_class: "timer-ok", items_summary: "2× Pão", items_count: 2, total_display: "R$ 15,00",
-    fulfillment_icon: "storefront", fulfillment_label: "Retirada", fulfillment_type: "pickup", delivery_address: "",
-    delivery_instructions: "", can_confirm: false, can_advance: true, next_status: "completed",
-    next_action_label: "Marcar como retirado", payment_method: "cash", payment_method_label: "Dinheiro",
-    ifood_cancellation_notice: "", ifood_pickup_code: "", ifood_schedule_label: "", ifood_remote_ahead_label: "",
+    fulfillment_label: "Retirada", fulfillment_type: "pickup", delivery_address: "",
+    can_confirm: false, can_advance: true, next_status: "completed",
+    payment_method: "cash", payment_method_label: "Dinheiro",
+    ifood_cancellation_notice: "", ifood_schedule_label: "", ifood_remote_ahead_label: "",
     ifood_negotiations: [], payment_status: "captured", payment_pending: false, can_settle_delivery_cash: false,
-    fiscal_status_label: "", fiscal_status: "", has_kitchen_note: false, has_customer_note: false, is_gift: false,
+    fiscal_status: "", has_customer_note: false, is_gift: false,
     gift_has_recipient: false, assigned_operator: "", awaiting_work_orders: [], confirmation_deadline_iso: "",
-    confirmation_action: "", revisions: {}, actions: [], undo: null,
+    confirmation_action: "", actions: [], undo: null,
     ...over,
   } as OrderCardProjection;
 }
@@ -113,17 +113,16 @@ describe("OrderCard — o sistema fez · desfazer", () => {
 
   it("pronto automático: selo, aviso que espera e Desfazer que emite undo_ready", async () => {
     nowMs.value = NOW;
-    const w = mountCard(card({ undo: autoReady(inSeconds(24)), actions: [action("advance", "Marcar como retirado"), action("undo-ready", "Desfazer", { priority: "secondary" })] }));
+    const w = mountCard(card({ undo: autoReady(inSeconds(24)), actions: [action("advance", "Entregar a Ana"), action("undo-ready", "Desfazer", { priority: "secondary" })] }));
     const row = w.find('[data-undo="auto_ready"]');
     expect(row.text()).toContain("Pronto · automático");
     expect(row.text()).toContain("aviso ao cliente sai em 0:24");
     await row.find("[data-undo-button]").trigger("click");
     expect(w.emitted("action")?.[0]).toEqual(["undo_ready"]);
     // O fato humano do momento continua sendo o botão principal, com o verbo e o nome
-    // (v4: "Entregar a Ana"); o rótulo do servidor fica no title.
+    // (v4: "Entregar a Ana"). O nome é o do servidor: o rótulo da ação, sem tradução.
     const primary = w.get("[data-card-primary]");
-    expect(primary.text()).toMatch(/^Entregar /);
-    expect(primary.attributes("title")).toBe("Marcar como retirado");
+    expect(primary.text()).toBe("Entregar a Ana");
   });
 
   it("pronto automático depois do prazo: sem Desfazer", () => {

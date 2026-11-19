@@ -63,7 +63,7 @@ def test_new_order_needs_a_decision_with_the_confirmation_goal(operator):
     card = cards["ATT-NEW"]
     assert card.attention == "confirm"
     assert card.goal_minutes == 5
-    assert card.goal_label == "meta 5"
+    assert card.goal_label == "meta 5 min"
     assert card.attention_since_iso
 
 
@@ -83,7 +83,7 @@ def test_ready_delivery_waits_the_dispatch_against_the_whole_promise(operator):
     _, cards = _cards(operator)
     card = cards[order.ref]
     assert card.attention == "dispatch"
-    assert card.goal_label == "meta 30"
+    assert card.goal_label == "meta 30 min"
     assert card.attention_since_iso == order.created_at.isoformat()
 
 
@@ -105,7 +105,7 @@ def test_station_goal_on_the_card_is_fifteen_by_default(operator):
     card = cards[preparing.ref]
     assert card.attention == "mark_ready"
     assert card.goal_minutes == 15
-    assert card.goal_label == "meta 15"
+    assert card.goal_label == "meta 15 min"
 
 
 def test_channel_overrides_one_stage_goal_and_inherits_the_rest(operator):
@@ -119,7 +119,7 @@ def test_channel_overrides_one_stage_goal_and_inherits_the_rest(operator):
     ready = _order("ATT-GOAL-RDY", status=Order.Status.READY)
     _, cards = _cards(operator)
     assert cards[delivery.ref].goal_minutes == 40
-    assert cards[delivery.ref].goal_label == "meta 40"
+    assert cards[delivery.ref].goal_label == "meta 40 min"
     assert cards[preparing.ref].goal_minutes == 25
     assert cards[ready.ref].goal_minutes == 10
 
@@ -346,7 +346,7 @@ def test_pix_pago_aos_7_minutos_nao_nasce_atrasado(operator):
 
 
 def test_meta_da_encomenda_agendada_na_vespera_continua_60_no_dia(operator):
-    """O timer contou 60 na véspera; lido no dia combinado, o card não vira "meta 5"."""
+    """O timer contou 60 na véspera; lido no dia combinado, o card não vira "meta 5 min"."""
     from unittest.mock import patch
 
     yesterday_night = timezone.now() - timedelta(days=1)
@@ -358,7 +358,7 @@ def test_meta_da_encomenda_agendada_na_vespera_continua_60_no_dia(operator):
     card = cards[order.ref]
 
     assert card.goal_minutes == 60
-    assert card.goal_label == "meta 60"
+    assert card.goal_label == "meta 60 min"
     deadline = datetime.fromisoformat(card.confirmation_deadline_iso)
     assert datetime.fromisoformat(card.attention_since_iso) == deadline - timedelta(minutes=60)
 

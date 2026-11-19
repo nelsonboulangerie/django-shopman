@@ -1,0 +1,74 @@
+name: Limpeza de cache morto
+
+# Por que existe (medido em 19/11/2026, 15h40): o cache do Actions do repositório
+# estava com 14,6 GB, acima da cota, e 11 GB eram de branches da fila
+# (`gh-readonly-queue/main/pr-N-<sha>`), todos gravados na última hora e meia.
+# Cache é escopado por ref: o que um grupo da fila grava só serve ao próprio
+# grupo, e morre útil quando o grupo termina. Mas fica ocupando a cota, e o
+# Actions despeja por antiguidade de uso. Resultado: o cache de Playwright que o
+# `playwright-cache-main.yml` aquece no `main` (o único que a fila consegue ler)
+# foi despejado em menos de 25 minutos, e o production-nuxt voltou a baixar 140
+# MB de apt do zero no grupo seguinte (run 44552779149, "Cache not found").
+#
+# Este workflow apaga o cache de quem não volta a ler:
+#   - branch da fila que já não existe (grupo terminou, mergeado ou derrubado);
+#   - `refs/pull/N/merge` de PR fechado.
+# Nunca toca no `main`, em branch vivo nem em PR aberto. Roda ao fim de cada
+# workflow da fila (`workflow_run`), de 10 em 10 minutos como rede, e à mão.
+# Regra e números: docs/reference/ci-escopo.md ("Cache dos navegadores mora no main").
+
+"on":
+  workflow_run:
+    workflows:
+      - Surfaces Gate
+      - Runtime Gate
+      - Operator Groups Gate
+      - Production Contract
+      - Security Gate
+      - Omotenashi Gate
+    types: [completed]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  cleanup:
+    name: Apagar cache de ref morto
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          live_queue="$(gh api --paginate "repos/$R/git/matching-refs/heads/gh-readonly-queue/" --jq '.[].ref')"
+          open_prs="$(gh api --paginate "repos/$R/pulls?state=open&per_page=100" --jq '.[].number')"
+          gh api --paginate "repos/$R/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | [.id, .ref, .size_in_bytes] | @tsv' > caches.tsv
+          deleted=0; freed=0
+          while IFS=$'\t' read -r id ref size; do
+            dead=""
+            case "$ref" in
+              refs/heads/gh-readonly-queue/*)
+                grep -qxF "$ref" <<<"$live_queue" || dead=1 ;;
+              refs/pull/*/merge)
+                n="${ref#refs/pull/}"; n="${n%/merge}"
+                grep -qxF "$n" <<<"$open_prs" || dead=1 ;;
+            esac
+            [ -n "$dead" ] || continue
+            if gh api -X DELETE "repos/$R/actions/caches/$id" >/dev/null 2>&1; then
+              deleted=$((deleted + 1)); freed=$((freed + size))
+            fi
+          done < caches.tsv
+          echo "apagados: $deleted caches, $((freed / 1000000)) MB"
+          gh api "repos/$R/actions/cache/usage" --jq '"em uso: \(.active_caches_count) caches, \(.active_caches_size_in_bytes / 1000000 | floor) MB"'

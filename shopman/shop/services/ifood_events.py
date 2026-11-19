@@ -1205,7 +1205,7 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
                 return "deduped"
 
             _record_remote(order, "remote_concluded", event_id)
-            if not conclusion_allowed(order):
+            if not conclusion_allowed(order) and not concluded_there_closes_here(order):
                 # O iFood já encerrou, mas aqui o pedido ainda não chegou à entrega
                 # (entrega própria parada em preparo, retirada ainda não pronta).
                 # A regra de NÃO pular a custódia do entregador continua de pé; o
@@ -1289,6 +1289,28 @@ def conclusion_allowed(order) -> bool:
     return fulfillment_type == "pickup" and order.status == Order.Status.READY
 
 
+def concluded_there_closes_here(order) -> bool:
+    """Com o CON gravado, o pedido pode andar até concluir mesmo sem a entrega local?
+
+    Sim quando o andamento depois do aceite é do iFood: pedido de TESTE (inerte,
+    ninguém daqui vai entregá-lo; medido em 19/11/2026, oito pedidos de teste de
+    07 e 09/11 seguiam "Aceito" doze dias depois de concluídos lá) e entrega com
+    entregador do iFood (decisão do dono, 12/11/2026, pedido 3417). Com
+    entregador da casa ou retirada no balcão, não: a custódia da sacola é daqui,
+    e o CON espera a entrega ou a retirada acontecerem.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import get_fulfillment_type, is_test_order
+
+    if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY):
+        return False
+    if is_test_order(order):
+        return True
+    facts = (order.data or {}).get("ifood") or {}
+    return get_fulfillment_type(order) == "delivery" and str(facts.get("delivered_by") or "").upper() == "IFOOD"
+
+
 def _reconcile_locked(order) -> None:
     """Aplica, pelo caminho legal, o que os fatos do iFood já autorizam.
 
@@ -1302,7 +1324,7 @@ def _reconcile_locked(order) -> None:
     from shopman.shop.services import ifood_cancellation, operator_orders
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
-    for _ in range(4):
+    for _ in range(6):
         if order.status in Order.TERMINAL_STATUSES:
             return
         facts = (order.data or {}).get("ifood") or {}
@@ -1327,6 +1349,14 @@ def _reconcile_locked(order) -> None:
                 operator_orders.advance_order(order, actor="system:ifood")
                 order.refresh_from_db()
             return
+        if facts.get("remote_concluded") and concluded_there_closes_here(order):
+            # O iFood encerrou e quem manda no andamento é ele: o pedido anda
+            # pelos passos de sempre até onde o CON conclui (acima). A saída é
+            # fato de fora (``partner_collects``): não lança troco nem reserva
+            # maquininha, e nenhum aviso ecoa ao iFood (``remote_status_observed``).
+            operator_orders.advance_order(order, actor="system:ifood:CON", partner_collects=True)
+            order.refresh_from_db()
+            continue
         if facts.get("remote_dispatched") and _collected_by_ifood_courier(order):
             # Pronto pelo sistema: ``advance_order`` fecha os tickets abertos do
             # KDS, e o aviso ao iFood não ecoa (``remote_status_observed``).
@@ -1382,7 +1412,7 @@ def run_once() -> dict:
     return process_events(poll())
 
 
-__all__ = ["acknowledge", "conclusion_allowed", "poll", "polling_configured", "process_events", "run_once"]
+__all__ = ["acknowledge", "concluded_there_closes_here", "conclusion_allowed", "poll", "polling_configured", "process_events", "run_once"]
 
 
 def _process_handshake(event: dict, *, settlement: bool) -> str:

@@ -1029,6 +1029,47 @@ def test_two_saved_addresses_offer_the_default_and_let_the_customer_pick(ctx, cu
     assert picked["fulfillment"]["address"].startswith("Avenida Paraná, 500 - Centro")
 
 
+def test_saved_addresses_without_label_are_called_by_the_street(ctx, customer, monkeypatch):
+    """Endereço sem etiqueta (o que o pedido de entrega grava, #2775): quem fala é a rua.
+
+    "entrega" não é nome de nenhum deles: não casa com todos, nem com o primeiro.
+    A Concierge lista e pergunta qual, em vez de escolher no escuro.
+    """
+    _geocode_text(monkeypatch)
+    _saved_address(customer, label="other", label_custom="", route="Avenida Paraná", street_number="500",
+                   is_default=False, formatted_address="Avenida Paraná, 500 - Centro, Londrina - PR")
+    _saved_address(customer, label="other", label_custom="")
+    tools.set_item(ctx, SKU, 1)
+    offer = tools.set_fulfillment(ctx, "delivery", _tomorrow())
+    assert offer["saved_address_labels"] == ["Rua Pará, 120 - Centro", "Avenida Paraná, 500 - Centro"]
+    listed = tools.set_fulfillment(ctx, "delivery", _tomorrow(), list_saved_addresses=True)
+    assert tools.render_result("set_fulfillment", listed) == (
+        "Seus endereços cadastrados: Rua Pará, 120 - Centro; Avenida Paraná, 500 - Centro. Em qual entregamos?"
+    )
+    said_delivery = tools.set_fulfillment(ctx, "delivery", _tomorrow(), saved_address_label="entrega")
+    assert said_delivery["code"] == "saved_addresses"
+    assert tools.render_result("set_fulfillment", said_delivery).startswith("Não achei esse endereço no seu cadastro.")
+    assert tools.view_cart(ctx)["fulfillment"]["type"] == ""
+    picked = tools.set_fulfillment(ctx, "delivery", _tomorrow(), saved_address_label="Avenida Paraná, 500 - Centro")
+    assert picked["ok"], picked
+    assert picked["fulfillment"]["address"].startswith("Avenida Paraná, 500 - Centro")
+
+
+def test_two_saved_addresses_with_the_same_label_ask_which(ctx, customer, monkeypatch):
+    _geocode_text(monkeypatch)
+    _saved_address(customer, route="Avenida Paraná", street_number="500", is_default=False,
+                   formatted_address="Avenida Paraná, 500 - Centro, Londrina - PR")
+    _saved_address(customer)
+    tools.set_item(ctx, SKU, 1)
+    asked = tools.set_fulfillment(ctx, "delivery", _tomorrow(), saved_address_label="casa")
+    assert asked["code"] == "saved_addresses"
+    assert tools.render_result("set_fulfillment", asked) == (
+        "Encontrei mais de um endereço assim no seu cadastro. Seus endereços cadastrados: "
+        "Casa: Rua Pará, 120 - Centro; Casa: Avenida Paraná, 500 - Centro. Em qual entregamos?"
+    )
+    assert tools.view_cart(ctx)["fulfillment"]["type"] == ""
+
+
 def test_saved_addresses_of_another_customer_never_show_up(ctx, monkeypatch):
     from shopman.guestman.models import Customer
     from shopman.guestman.services import customer as customer_service

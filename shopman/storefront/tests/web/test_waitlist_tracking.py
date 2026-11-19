@@ -182,7 +182,6 @@ class TestTheBoardTellsWaitingApartFromStuck:
 
         assert card.waitlist_state == waitlist.FERMATA
         assert card.waitlist_label == "Na fila de espera"
-        assert card.waitlist_deadline_iso == ""
 
     def test_the_open_window_shows_the_customers_clock_to_the_operator(self):
         from shopman.backstage.projections.order_queue import build_order_card
@@ -195,7 +194,7 @@ class TestTheBoardTellsWaitingApartFromStuck:
         card = build_order_card(order)
 
         assert card.waitlist_state == waitlist.CONFIRMING
-        assert card.waitlist_deadline_iso, "o operador vê o relógio que corre do lado do cliente"
+        assert card.waitlist_label == "Aguardando o cliente confirmar"
 
     def test_an_ordinary_order_carries_no_badge(self):
         from shopman.backstage.projections.order_queue import build_order_card

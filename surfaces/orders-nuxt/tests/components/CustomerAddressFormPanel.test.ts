@@ -47,4 +47,21 @@ describe("CustomerAddressFormPanel", () => {
       formattedAddress: "Rua das Flores, 20 - Centro",
     }));
   });
+
+  // #2775: o endereço que o pedido de entrega grava nasce sem etiqueta ("Outro" sem
+  // nome; a projeção manda a etiqueta vazia). Corrigir o complemento não obriga a
+  // inventar um nome, e o título não chama o endereço de "Outro".
+  it("edita um endereço sem etiqueta sem obrigar a dar nome", async () => {
+    const untagged = { ...address, label: "", label_code: "other" };
+    const wrapper = mount(CustomerAddressFormPanel, { props: { open: true, address: untagged } });
+    expect(wrapper.text()).toContain("Editar endereço");
+    expect(wrapper.text()).not.toContain("Editar Outro");
+    await wrapper.get("[data-testid='address-formatted']").setValue("Rua das Flores, 20 - Centro");
+    await wrapper.get("[data-testid='address-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
+      label: "other",
+      labelCustom: "",
+      formattedAddress: "Rua das Flores, 20 - Centro",
+    }));
+  });
 });

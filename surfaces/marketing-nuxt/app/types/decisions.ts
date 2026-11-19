@@ -32,7 +32,7 @@ export interface DecisionItem {
   product_name: string;
   /** A foto que o anúncio leva, ou a do produto; vazia sem foto. */
   image_url: string;
-  /** O fato do lote: quantas unidades e quando saiu ("24 un saíram às 10:01"). */
+  /** O fato do lote: quantas unidades e quando ficou pronto ("24 un ficaram prontas às 10h01"). */
   lot_quantity: string;
   lot_finished_at: string | null;
   /** Falha: as outras plataformas que já entregaram, e quantas pessoas receberam. */

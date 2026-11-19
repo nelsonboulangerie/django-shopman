@@ -8,6 +8,9 @@
 // Cada linha responde, sem abrir o pedido (WP-G03): quando, retirada ou entrega, se
 // está paga e se a produção cobre. A linha abre o pedido; "Remarcar no PDV" abre AQUELA
 // encomenda no PDV, onde mora o remarcar (D-003). O cabeçalho leva à lista do PDV.
+//
+// A encomenda que perdeu o lastro (WP-G08) diz "Promessa em risco", o item sem
+// reserva e o que fazer agora, e a linha abre o pedido já na faixa das saídas.
 import type { PreorderGroup } from "~/presentation/board";
 import {
   preorderFocusKey,
@@ -75,11 +78,12 @@ const rows = computed(() =>
           class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"
           :class="line.ref === highlightRef ? 'bg-elevated' : ''"
           :data-preorder-row="line.ref"
+          :data-preorder-at-risk="line.risk ? '' : undefined"
           :data-focus-target="preorderFocusKey(line.ref)"
           :aria-current="line.ref === highlightRef || undefined"
         >
           <NuxtLink
-            :to="`/${line.ref}`"
+            :to="line.to"
             class="flex min-h-11 min-w-0 flex-1 basis-64 flex-col justify-center gap-0.5 hover:bg-elevated/50"
             :aria-label="`Abrir pedido ${line.ref}`"
             data-focus-control
@@ -98,6 +102,14 @@ const rows = computed(() =>
                 :label="line.kitchenWait.label"
                 data-preorder-kitchen-wait
               />
+              <!-- A promessa em risco: o nome do estado, em vermelho, ao lado do dia. -->
+              <NuxtBadge
+                v-if="line.risk"
+                color="error"
+                icon="i-lucide-package-x"
+                :label="line.risk.label"
+                data-preorder-risk
+              />
               <span class="ms-auto shrink-0 tabular-nums">{{ line.total }}</span>
             </span>
             <!-- Segunda linha: como recebe, o pagamento, a produção e os itens. -->
@@ -108,6 +120,26 @@ const rows = computed(() =>
                 :class="line.awaitingPayment ? 'font-semibold text-highlighted' : ''"
                 data-preorder-payment
                 >{{ line.payment }}</span
+              >
+              <span
+                v-if="line.risk?.items"
+                class="font-semibold text-error"
+                data-preorder-risk-items
+                >{{ line.risk.items }}</span
+              >
+              <!-- O que oferecer no lugar, numa linha só: a linha abre o pedido, onde a
+                   lista e os gestos estão. -->
+              <span
+                v-if="line.risk?.suggestions"
+                class="font-medium text-highlighted"
+                data-preorder-risk-suggestions
+                >{{ line.risk.suggestions }}</span
+              >
+              <span
+                v-if="line.risk?.nextStep"
+                class="font-medium text-highlighted"
+                data-preorder-risk-next-step
+                >{{ line.risk.nextStep }}</span
               >
               <span v-if="line.production" data-preorder-production>{{ line.production }}</span>
               <span

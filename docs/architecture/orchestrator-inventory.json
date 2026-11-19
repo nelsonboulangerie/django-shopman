@@ -180,7 +180,8 @@
             "open_counts",
             "recent_exists",
             "resolve",
-            "resolve_matching"
+            "resolve_matching",
+            "revise"
           ]
         }
       ]
@@ -2790,6 +2791,34 @@
             "oklch_to_css",
             "oklch_to_hex",
             "oklch_to_raw"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/concierge_verification.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "ALERT_TYPE",
+            "Answer",
+            "DeskResult",
+            "TakeOver",
+            "_handlers",
+            "answer",
+            "card_subject",
+            "card_subjects",
+            "register",
+            "take_over"
           ]
         }
       ]
@@ -6609,9 +6638,14 @@
             "ACCESS_BUTTON_COPY",
             "ACCESS_BUTTON_MAX_CHARS",
             "CUSTOMER_COPY",
+            "PROMISE_ITEM_SITUATION",
+            "PROMISE_PROPOSAL_COPY",
+            "PROMISE_REFUND_ROUTE",
+            "PROMISE_REMOVED",
             "_GENERIC_TEMPLATE_LABELS",
             "_gsm_ascii",
             "plain_bodies",
+            "promise_proposal",
             "sms_bodies",
             "subjects",
             "template_label"
@@ -7321,6 +7355,7 @@
             "build_free_delivery_progress",
             "build_minimum_order_progress",
             "logger",
+            "reserved_until",
             "shop_rule_q"
           ]
         }
@@ -7471,9 +7506,12 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "AcceptanceWindow",
+            "acceptance_window",
             "availability_dates",
             "customer_checkout_defaults",
-            "logger"
+            "logger",
+            "shop_today"
           ]
         }
       ]
@@ -14851,7 +14889,8 @@
             "Command",
             "LOOKBACK",
             "_alert_behind",
-            "_latest_fact_at"
+            "_latest_fact_at",
+            "_stale_test_conclusion"
           ]
         }
       ]

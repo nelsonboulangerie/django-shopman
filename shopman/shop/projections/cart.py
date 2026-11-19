@@ -250,6 +250,31 @@ def _empty_cart(session_key: str = "") -> CartProjection:
     )
 
 
+def reserved_until(session_key: str | None):
+    """Até quando a sacola guarda os itens: o menor prazo das reservas vivas da sessão.
+
+    Leitura pura, para a superfície dizer a hora ao cliente ("Guardamos seus
+    itens até 19h18"). Conta só reserva ATIVA e COM prazo: a de fornada futura e
+    a de demanda nascem sem ``expires_at`` e não entram, e a que já venceu deixou
+    de contar no saldo no instante em que venceu (mesma régua de
+    ``availability.bump_session_hold_expiry``, que é quem renova o prazo a cada
+    gesto na sacola). Sem reserva com prazo, ``None``: nada é prometido.
+    """
+    if not session_key:
+        return None
+    try:
+        from django.db.models import Min
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("cart.reserved_until degraded; returning None", exc_info=True)
+        return None
+    return Hold.objects.filter(
+        metadata__reference=session_key,
+        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        expires_at__gt=timezone.now(),
+    ).aggregate(until=Min("expires_at"))["until"]
+
+
 def build_cart(
     session_key: str | None,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,

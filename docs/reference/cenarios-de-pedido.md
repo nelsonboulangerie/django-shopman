@@ -25,7 +25,9 @@ na §8.
   (dono, 16/11/2026, DEV-2026-030; substitui a premissa de 13/10, "não existe entregador da
   casa"). A cobrança na porta vai com quem levar. No iFood quem entrega é o **iFood**, sempre
   (`deliveredBy=IFOOD`).
-- Encomenda: a casa dita o fluxo (cliente → recebimento → quando → produtos).
+- Encomenda: a casa dita o fluxo (cliente → quando → recebimento → produtos). "Pra quando" vem
+  em segundo, logo depois do cliente, porque diz respeito à disponibilidade (dono, 19/11/2026,
+  #2754; revê a ordem de 16/09, que punha o recebimento antes do quando).
 - "Via Recibo primeiro, Nota depois": a NFC-e acompanha a **saída** da mercadoria.
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).
 - Expedição sem NFC-e só avisa, nunca segura a sacola.
@@ -75,7 +77,7 @@ stateDiagram-v2
     accepted --> ready: (existe no mapa; nenhum botão usa)
     preparing --> ready: último ticket Pronto (KDS) · "Marcar pronto" (Gestor)
     ready --> preparing: Desfazer o Pronto · reabrir ticket
-    ready --> completed: RETIRADA: "Marcar como retirado" (Gestor/Saída) · "Entregar" (Encomendas do PDV) · iFood CON
+    ready --> completed: RETIRADA: "Entregar a <nome>" (Gestor/Saída) · "Entregar" (Encomendas do PDV) · iFood CON
     ready --> dispatched: ENTREGA: "Marcar saída" (Gestor/Saída) · TaOn coletou (E) · iFood DSP
     dispatched --> delivered: TaOn finalizou (F) · "Recebi meu pedido" (cliente) · "Marcar como entregue" (Gestor) · prazo de entrega vencido · iFood CON
     delivered --> completed: automático (_complete_after_handoff)
@@ -293,9 +295,10 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 ### 3.1 Caminho feliz, retirada
 
-1. **PDV, Encomendas.** Funil `PosOrderEntry` (`PosOrderEntry.vue:39,148`): **cliente**
-   (cadastro obrigatório, `pos_sales_mode.py:87-113`) → **recebimento** (Retirada) →
-   **quando** (Hoje · horário a combinar) → **Montar encomenda**.
+1. **PDV, Encomendas.** Funil `PosOrderEntry` (`PosOrderEntry.vue`): **cliente** (cadastro
+   obrigatório, `validate_sales_mode` em `pos_sales_mode.py`) → **quando** (Hoje · horário a
+   combinar) → **recebimento** (Retirada) → **Montar encomenda**. A barra da venda repete a
+   ordem, com a tecla pela posição: Cliente F6, Quando F7, Recebimento F8.
 2. **Produtos e cobrança.** Igual ao balcão. A encomenda pode ficar **a receber** (cobrar na
    retirada) ou ser paga agora (R/P/C/D/E/L). Link só aqui (`pos.py:1267`), exige telefone ou
    e-mail.
@@ -310,9 +313,12 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 ### 3.2 Caminho feliz, entrega (TaOn)
 
-1. Funil com **Entrega**: endereço (CEP, número, bairro; geocodifica), taxa calculada pela
-   faixa de distância/zona e mostrada na revisão; CPF opcional (ADR-035); pedido mínimo checado
-   no fechamento (`pos.py:1441`).
+1. Funil com **Entrega** (depois do cliente e do quando): o endereço é a última etapa. O
+   endereço padrão do cliente já vem marcado na lista dos cadastrados, uma linha inteira por
+   endereço (Enter aceita e segue, as setas trocam, e dá para tirar o endereço da entrega sem
+   mexer no cadastro); endereço novo vai ao formulário (CEP, número, bairro; geocodifica). Taxa
+   calculada pela faixa de distância/zona e mostrada na revisão; CPF opcional (ADR-035); pedido
+   mínimo checado no fechamento (`pos.py:1441`).
 2. Pagamento: pago agora, em conta, link, ou **cobrar na entrega** (dinheiro com "troco para",
    ou maquininha que sai com o entregador).
 3. KDS prepara → `ready` → NFC-e da sacola (`lifecycle.py:622`), aviso
@@ -341,7 +347,7 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 | Requisito | Como atende | Onde | Estado |
 |---|---|---|---|
-| Afirmar cliente, recebimento e quando antes dos produtos | funil | `PosOrderEntry.vue` | OK |
+| Afirmar cliente, quando e recebimento, nessa ordem, antes dos produtos | funil | `PosOrderEntry.vue` | OK |
 | "O quanto antes" explícito | "Hoje · a combinar" | `schedule.ts:86` | ATRITO, resolvido #1714 |
 | Endereço e taxa | motor de taxa + linha manual | `pos.py:3541-3646` | OK |
 | Cotação da TaOn à vista | custo interno, no Gestor | `courier.py:227` | ATRITO, resolvido #1715 |
@@ -431,7 +437,7 @@ antecipada pelos marcos invertidos (horário − tempo de chegada) é pós-go-li
 8. **Pago:** o ticket já está na Cozinha, esperando; o operador do posto dá **Iniciar preparo** (o
    Gestor tem o mesmo gesto como atalho; `prep_start=operator`) → em preparo →
    Pronto → `order_ready_pickup`.
-9. **Cliente chega:** Gestor/Saída **Marcar como retirado** → `completed`, NFC-e.
+9. **Cliente chega:** Gestor/Saída **Entregar a <nome>** → `completed`, NFC-e.
 
 ### 5.2 Loja online, entrega (TaOn)
 
@@ -552,7 +558,7 @@ conclui de `ready`. O código de retirada só aparece se o iFood mandar `deliver
 | Ajustar itens/disponibilidade | Gestor, tela de edição com prévia | tela própria | OK |
 | Iniciar preparo | KDS (a verdade) ou o atalho no Gestor, mesmo ato | não | OK |
 | Pronto | KDS (desfazer 5 s; reabrir pelo histórico) ou "Marcar pronto" no Gestor | não | OK; na entrega com ticket aberto fica no menu (à vista desde #1712) |
-| Saída / Marcar como retirado / Marcar como entregue | Gestor ou Saída, desfazer 5 s | diálogo só com troco ou maquininha | OK |
+| Saída / Entregar a <nome> ou Despachar <código> / Marcar como entregue | Gestor ou Saída, desfazer 5 s | diálogo só com troco ou maquininha | OK |
 | Chamar entregador / Chamar de novo / Cancelar corrida / Cotar | Gestor | pergunta com a custódia | OK; cedo e no PDV desde #1712 e #1711; Cancelar a corrida e Entregador voltou também no PDV desde #1765 |
 | Entregador voltou / Acertar entrega | Gestor | diálogo | OK |
 | Cancelar | Gestor/PDV | motivo (opcional) + gerente se pago ou adiantado | ATRITO: motivo vai literal ao cliente (P1-10), resolvido #1730 |

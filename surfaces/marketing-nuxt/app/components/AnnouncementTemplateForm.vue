@@ -313,7 +313,7 @@ function submit() {
         v-model="name"
         type="text"
         :maxlength="100"
-        placeholder="Saiu do forno"
+        placeholder="Ficou pronto agora"
         class="w-full"
       />
     </NuxtFormField>
@@ -325,7 +325,7 @@ function submit() {
           v-model="body"
           :rows="4"
           autoresize
-          placeholder="O pão acabou de sair do forno!"
+          placeholder="O pão acabou de ficar pronto!"
           class="w-full"
         />
       </NuxtFormField>

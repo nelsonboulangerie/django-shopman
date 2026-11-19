@@ -340,6 +340,7 @@
       "shopman/shop/services/ifood_cancellation.py:requires_remote_decision"
     ],
     "ifood.remote-conclusion-eligibility": [
+      "shopman/shop/services/ifood_events.py:concluded_there_closes_here",
       "shopman/shop/services/ifood_events.py:conclusion_allowed"
     ],
     "marketing.approval-ceremony-threshold": [

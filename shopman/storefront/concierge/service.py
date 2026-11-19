@@ -1135,6 +1135,11 @@ def run_turn(
             assert_turn_authority(conversation, for_mutation=False)
             _persist_outcome(conversation, outcome)
             _save_memory(conversation, outcome)
+            from . import verification
+
+            # "Vou verificar" (WP-05): a pergunta à equipe nasce com a resposta, no
+            # mesmo fence; turno revogado não grava nem cria cartão.
+            verifying = verification.record_turn(conversation, outcome)
             prepared = []
             for index, text in enumerate(texts):
                 prepared.append(
@@ -1188,6 +1193,7 @@ def run_turn(
         result.processed_message_ids = ids
         for message in prepared:
             _dispatch_reply(conversation, message)
+        verification.notify_team(conversation, verifying)
         result.replies = texts
     except TurnRevoked:
         result.fallback = "revoked"
@@ -1460,6 +1466,41 @@ def _send_reply(
     )
 
 
+def send_out_of_turn(
+    conversation: Conversation, text: str, *, purpose: str = "reply", receipts=frozenset()
+) -> ConversationMessage | None:
+    """Uma mensagem da casa ao cliente FORA de um turno, pelo mesmo caminho da resposta.
+
+    A resposta da equipe a uma verificação (WP-05) e os avisos dos prazos (WP-06):
+    nada aqui é texto de modelo. Vale tudo o que vale para a resposta do turno: as
+    regras da casa (``_prepare_reply``, com os ``receipts`` de quem chama), a conversa
+    ativa (``handoff_ack`` só com ela na equipe), o vínculo liberado e a janela de 24
+    horas do WhatsApp (``transport.response_authorization``), com a prova de janela
+    da última entrada do cliente. Não mexe no ``turn_fence``: um turno em andamento
+    segue valendo. Devolve a mensagem com o desfecho do envio (``transport_state`` e
+    ``envelope["code"]``), ou ``None`` quando a conversa não tem entrada por vínculo ativo.
+    """
+    with transaction.atomic():
+        current = Conversation.objects.select_for_update().get(pk=conversation.pk)
+        inbound = list(
+            current.messages.filter(
+                kind=ConversationMessage.Kind.INBOUND,
+                binding__status=ConversationBinding.Status.ACTIVE,
+            ).order_by("-pk")[:20]
+        )
+        if not inbound:
+            return None
+        binding = ConversationBinding.objects.get(pk=inbound[0].binding_id)
+        evidence = _best_window_evidence(
+            binding, [message for message in inbound if message.binding_id == binding.pk], purpose=purpose
+        )
+        current._inbound_max_id = inbound[0].pk
+        message = _prepare_reply(
+            current, binding, text, purpose=purpose, window_evidence=evidence, receipts=frozenset(receipts)
+        )
+    return _dispatch_reply(current, message)
+
+
 # ── Handoff ───────────────────────────────────────────────────────────
 
 
@@ -1497,6 +1538,7 @@ def mark_handoff(
     meter=None,
     house_rules_held=None,
     ack_text: str = "",
+    notify_team: bool = True,
 ) -> bool:
     """Transfere a posse local e sincroniza cada vínculo ativo.
 
@@ -1509,6 +1551,9 @@ def mark_handoff(
     ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
     ``house_rules_held`` é a resposta que as regras da casa seguraram
     (``house_rules.Review.as_envelope``), gravada no envelope do aviso.
+
+    ``notify_team=False`` quando quem passa a conversa à equipe JÁ é a equipe (alguém
+    assumiu pelo cartão da verificação): sem cartão de "cliente esperando atendente".
     """
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
@@ -1557,7 +1602,9 @@ def mark_handoff(
     for binding in bindings:
         outcome = _execute_handoff(binding, True)
         accepted &= outcome.state == "accepted"
-    if triage is not None:
+    if not notify_team:
+        pass
+    elif triage is not None:
         _triage_alert(current, triage, synced=accepted)
     else:
         _alert(

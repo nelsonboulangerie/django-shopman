@@ -7,9 +7,11 @@ chosen SKU is unavailable — they replace, never recommend.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from decimal import Decimal
 
 from django.conf import settings
+from django.utils import timezone
 from shopman.utils.monetary import format_money
 
 from shopman.shop.adapters import get_adapter
@@ -20,7 +22,14 @@ STOREFRONT_CHANNEL_REF: str = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 logger = logging.getLogger(__name__)
 
 
-def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, limit: int = 4) -> list[dict]:
+def find(
+    sku: str,
+    *,
+    qty: Decimal = Decimal("1"),
+    channel: str | None = None,
+    limit: int = 4,
+    target_date: date | None = None,
+) -> list[dict]:
     """
     Busca substitutos disponíveis para o canal.
     Ponto único de consumo para todos os contextos.
@@ -33,6 +42,15 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
     ``target_qty`` is ``min(requested_qty, sub.available_qty)`` — the amount
     the client should add when the shopper accepts this substitute in a
     1-click swap. Minimum of 1 so the button always does something useful.
+
+    ``target_date`` é a data da ENCOMENDA que o substituto vai atender. Com data
+    futura, a régua deixa de ser o que há hoje e passa a ser o lote DA DATA
+    menos o que dele já está prometido (``stock.plan_backing_on``, a mesma conta
+    do PDV): a sobra de hoje não lastreia encomenda (dono, 18/11/2026), então o
+    pão que há na loja agora não é alternativa para amanhã. Candidato sem lote
+    planejado na data, ou sem nada livre nele, sai; ``available_qty`` e
+    ``target_qty`` são os da data, e ``can_order`` diz se cabe o pedido inteiro.
+    Sem ``target_date`` (ou com a data de hoje), nada muda.
     """
     catalog = get_adapter("catalog")
     if not catalog:
@@ -54,9 +72,24 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
 
     channel_ref = channel or STOREFRONT_CHANNEL_REF
 
+    # Encomenda de data futura: quem responde é o lote da data, não o estoque de hoje.
+    for_future_date = target_date is not None and target_date > timezone.localdate()
+    date_backing: dict[str, dict[str, Decimal]] = {}
+    if for_future_date:
+        try:
+            from shopman.shop.services import stock
+
+            date_backing = stock.plan_backing_on([p.sku for p in candidates], target_date, channel_ref=channel_ref)
+        except Exception as e:
+            # Sem saber o que o lote da data tem livre, não se oferece nada.
+            logger.warning("substitutes_date_backing_failed date=%s: %s", target_date, e, exc_info=True)
+            return []
+        if not date_backing:
+            return []
+
     # Build availability map for all candidates in one batch query
     avail_map: dict[str, dict | None] = {}
-    if HAS_STOCKMAN:
+    if HAS_STOCKMAN and not for_future_date:
         try:
             from shopman.stockman.services.availability import availability_for_skus
 
@@ -103,12 +136,18 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         if len(result) >= limit:
             break
 
-        raw_avail = avail_map.get(product.sku)
-        can_order, available_qty = _resolve_availability(raw_avail, product, qty)
+        if for_future_date:
+            unclaimed = date_backing.get(product.sku, {}).get("unclaimed_qty", Decimal("0"))
+            if not product.is_sellable or unclaimed <= 0:
+                continue
+            can_order, available_qty = unclaimed >= Decimal(str(qty or 1)), unclaimed
+        else:
+            raw_avail = avail_map.get(product.sku)
+            can_order, available_qty = _resolve_availability(raw_avail, product, qty)
 
-        # Skip if not orderable and stockman is active
-        if HAS_STOCKMAN and raw_avail is not None and not can_order:
-            continue
+            # Skip if not orderable and stockman is active
+            if HAS_STOCKMAN and raw_avail is not None and not can_order:
+                continue
 
         list_q = price_map[product.sku] if product.sku in price_map else product.base_price_q
         # O preço que o cardápio cobra HOJE, promoção automática incluída. Era o de

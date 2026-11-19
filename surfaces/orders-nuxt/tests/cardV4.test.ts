@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   agoLabel,
+  cardAffordances,
   cardClock,
   cardSeal,
   customerFirstName,
   exitGesture,
   nextOutRef,
-  primaryVerb,
   kitchenWaiting,
   productionLines,
   stripSummary,
@@ -131,46 +131,24 @@ describe("cardClock e agoLabel", () => {
   });
 });
 
-describe("primaryVerb", () => {
-  const advance = {
-    ref: "advance" as const,
-    label: "Marcar como retirado",
-    disabled: false,
-  };
-  it("retirada pronta: entregar à pessoa, pelo primeiro nome", () => {
-    expect(primaryVerb(card(), advance)).toBe("Entregar a Ana");
+describe("o nome do gesto é o do servidor (WP-G09)", () => {
+  // "Entregar a Ana" e "Despachar U13" eram montados na tela, e a Tabela e o detalhe
+  // diziam "Marcar como retirado" do mesmo gesto. Agora o servidor nomeia
+  // (`order_queue._exit_gesture_actions`) e toda forma lê o rótulo da ação.
+  const server = (label: string, enabled = true) =>
+    [{ ref: "advance", label, enabled, priority: "primary", reason: enabled ? "" : "Pix pendente" }] as never;
+
+  it("o botão do cartão escreve o rótulo da ação, sem trocar palavra", () => {
+    for (const label of ["Entregar a Ana", "Entregar U13", "Despachar U13", "Iniciar preparo"]) {
+      const [primary] = cardAffordances(card({ actions: server(label) }));
+      expect(primary).toMatchObject({ ref: "advance", label, priority: "primary" });
+    }
   });
-  it("sem nome (ou telefone no lugar do nome): o código", () => {
-    expect(
-      primaryVerb(card({ customer_name: "(43) 99444-4444" }), advance),
-    ).toBe("Entregar U13");
+
+  it("o primeiro nome só serve ao gesto do polegar, que leva o código junto", () => {
+    expect(customerFirstName("(43) 99444-4444")).toBe("");
     expect(customerFirstName("")).toBe("");
-  });
-  it("saída para entrega: despachar o código", () => {
-    expect(
-      primaryVerb(
-        card({ fulfillment_type: "delivery", next_status: "dispatched" }),
-        { ...advance, label: "Marcar saída para entrega" },
-      ),
-    ).toBe("Despachar U13");
-  });
-  it("os outros passos e o gesto travado seguem com o rótulo do servidor", () => {
-    expect(
-      primaryVerb(card({ status: "accepted" }), {
-        ...advance,
-        label: "Iniciar preparo",
-      }),
-    ).toBe("Iniciar preparo");
-    expect(primaryVerb(card(), { ...advance, disabled: true })).toBe(
-      "Marcar como retirado",
-    );
-    expect(
-      primaryVerb(card(), {
-        ref: "confirm",
-        label: "Aceitar",
-        disabled: false,
-      }),
-    ).toBe("Aceitar");
+    expect(customerFirstName("Ana Souza")).toBe("Ana");
   });
 });
 

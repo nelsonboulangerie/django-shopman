@@ -551,6 +551,10 @@ def _apply_address(address, data: dict, *, creating: bool) -> None:
     unknown = sorted(set(data) - _ADDRESS_FIELDS - {"expectedRevision"})
     if unknown:
         raise _mutation_error(f"Campo desconhecido: {unknown[0]}.", field=unknown[0])
+    # O endereço sem etiqueta ("Outro" sem nome, como o que o pedido de entrega
+    # grava, #2775) pode ser editado sem ganhar um nome à força; quem ESCOLHE
+    # "Outro" agora é que precisa dar o nome.
+    was_untagged = not creating and address.label == AddressLabel.OTHER and not address.label_custom
     if creating or "label" in data:
         label = _text(data, "label") or AddressLabel.HOME
         if label not in AddressLabel.values:
@@ -586,7 +590,7 @@ def _apply_address(address, data: dict, *, creating: bool) -> None:
             setattr(address, target, value)
     address.state_code = address.state_code.upper()
     if address.label == AddressLabel.OTHER:
-        if not address.label_custom:
+        if not address.label_custom and not was_untagged:
             raise _mutation_error("Dê um nome ao endereço.", field="labelCustom")
     else:
         address.label_custom = ""

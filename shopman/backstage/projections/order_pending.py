@@ -20,8 +20,9 @@ Três regras desta lista:
 
 Nada aqui grava, e nada aqui inventa ação: toda ``ref`` de ação ou está em
 ``actions`` do detalhe (``requeue-fiscal``, ``resend-payment-link``, ``cancel``,
-``refund-retry``) ou é um gesto de tela que já existia (``print-danfe``,
-``contact-customer``).
+``refund-retry``), ou é um gesto de tela que já existia (``print-danfe``,
+``contact-customer``), ou é uma saída do aviso "Promessa em risco" (``resolve``,
+que abre o diálogo, e ``open-production``; ``order_promise``).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
+from shopman.backstage.projections import order_promise
 from shopman.shop.services import payment as payment_svc
 
 TONE_ERROR = "error"
@@ -92,7 +94,13 @@ class OrderPendingActionProjection:
     ``ref`` é uma ação de ``actions`` do detalhe ou um gesto de tela
     (:data:`ACTION_PRINT_DANFE`, :data:`ACTION_CONTACT_CUSTOMER`). ``enabled`` e
     ``reason`` são os da própria ação: a faixa nunca oferece o que o servidor
-    recusaria. ``href`` só existe na conversa com o cliente.
+    recusaria. ``href`` só existe no que leva para fora do Gestor (a conversa
+    com o cliente, a Produção); o gesto que abre um diálogo (``resolve``, da
+    promessa em risco) não leva endereço.
+
+    ``priority`` é o peso que a linha declara para o gesto: ``primary`` (o
+    recomendado, o único cheio da linha), ``secondary`` ou ``danger``. Vazio, a
+    linha não declara nada e a tela trata o primeiro gesto como o principal.
     """
 
     ref: str
@@ -100,6 +108,7 @@ class OrderPendingActionProjection:
     enabled: bool = True
     reason: str = ""
     href: str = ""
+    priority: str = ""
 
 
 @dataclass(frozen=True)
@@ -108,6 +117,8 @@ class OrderPendingProjection:
 
     ``tone``: ``error`` (alguém precisa agir), ``warning`` (confira) ou ``info``
     (espera que se resolve sozinha). ``key`` é estável, para a tela e os testes.
+    ``next_step`` é o que fazer agora, numa frase, quando a linha tem mais de
+    uma saída e uma delas é a certa (a promessa em risco).
     ``failure``: o que deu errado na última vez que alguém tentou o gesto desta
     linha (hoje, só o estorno tentado de novo). A tela escreve na própria linha,
     em tom de erro; vazio quando ninguém tentou ou a última tentativa deu certo.
@@ -118,6 +129,7 @@ class OrderPendingProjection:
     label: str
     reason: str = ""
     actions: tuple[OrderPendingActionProjection, ...] = ()
+    next_step: str = ""
     failure: str = ""
 
 
@@ -484,7 +496,7 @@ def _sentence(text: str) -> str:
 
 
 def _block_pending(
-    *, block: str, block_label: str, block_reason: str, schedule_label: str, awaiting_work_orders,
+    *, block: str, block_label: str, block_reason: str, schedule_label: str, awaiting_work_orders, promise=None,
 ):
     """O avanço espera um fato que não é o dinheiro."""
     tone = TONE_WARNING if block in _BLOCKS_NEEDING_SOMEONE else TONE_INFO
@@ -493,10 +505,50 @@ def _block_pending(
     if block == _BLOCK_PREORDER_NOT_DUE and schedule_label:
         reason = f"Combinado: {schedule_label}. O preparo abre nesse dia."
     elif block == _BLOCK_WAITLIST:
+        # A leitura da promessa diz o produto e a hora do lote (P2-19); sem ela,
+        # vale o vínculo do pedido com o lote, como antes.
         reason = " ".join(
-            part for part in ("O preparo abre quando o lote ficar pronto.", _production_lines(awaiting_work_orders)) if part
+            part for part in ("O preparo abre quando o lote ficar pronto.", _lot_lines(promise, awaiting_work_orders)) if part
         )
     return OrderPendingProjection(key="advance", tone=tone, label=label, reason=reason)
+
+
+def _lot_lines(promise, awaiting_work_orders) -> str:
+    """O lote que o pedido espera, numa frase por produto.
+
+    Com a leitura da promessa, o produto, o estado e a hora do lote (P2-19); o
+    item em risco já tem a linha dele e não se repete aqui. Sem ela, vale o
+    vínculo do pedido com o lote (``awaiting_wo_refs``), como antes.
+    """
+    if promise is None:
+        return _production_lines(awaiting_work_orders)
+    return order_promise.batch_lines(promise, causes=(order_promise.CAUSE_BATCH_WAITING,))
+
+
+def _promise_pending(promise):
+    """Promessa em risco: o item que ficou sem lastro, o porquê, o que fazer e as saídas ao lado.
+
+    As mesmas saídas do aviso (``order_queue._promise_actions``): "Resolver",
+    que abre o diálogo com as escolhas e a mensagem ao cliente, e "Abrir a
+    Produção" quando ela ainda resolve e a conta a opera. A principal vem
+    primeiro e é a única ``primary``.
+    """
+    if promise is None or promise.state != order_promise.STATE_AT_RISK:
+        return None
+    return OrderPendingProjection(
+        key="promise",
+        tone=TONE_ERROR,
+        label=promise.label,
+        reason=order_promise.risk_reason(promise),
+        next_step=promise.next_step,
+        actions=tuple(
+            OrderPendingActionProjection(
+                ref=action.ref, label=action.label, enabled=bool(action.enabled), reason=action.reason or "",
+                href=action.href or "", priority=action.priority or "secondary",
+            )
+            for action in promise.actions
+        ),
+    )
 
 
 def build_pending(
@@ -516,16 +568,22 @@ def build_pending(
     alerts: frozenset[str],
     schedule_label: str = "",
     whatsapp_url: str = "",
+    promise=None,
     refund_retry_plan=None,
 ) -> tuple[OrderPendingProjection, ...]:
     """As pendências do pedido, do que pede alguém agora ao que só espera.
 
     Recebe os fatos que :func:`order_queue.build_operator_order` já calculou
     (nada é lido duas vezes) e devolve a lista pronta: a tela desenha, não
-    decide.
+    decide. ``promise`` é a leitura de ``projections/order_promise`` (WP-G08):
+    em risco, abre a lista com "Promessa em risco" e as saídas; esperando o
+    lote, dá à linha da espera o produto e a hora.
     """
     by_ref = {action.ref: action for action in actions}
     pending: list[OrderPendingProjection] = []
+    promise_line = _promise_pending(promise)
+    if promise_line is not None:
+        pending.append(promise_line)
 
     # No pedido NOVO o único bloqueio com frase é o do pagamento que vence (Pix ou link).
     payment_block = bool(block_label or block_reason) and (
@@ -547,12 +605,12 @@ def build_pending(
     elif block_label or block_reason:
         pending.append(_block_pending(
             block=block, block_label=block_label, block_reason=block_reason,
-            schedule_label=schedule_label, awaiting_work_orders=awaiting_work_orders,
+            schedule_label=schedule_label, awaiting_work_orders=awaiting_work_orders, promise=promise,
         ))
 
     # O lote que o pedido espera, quando o avanço não está barrado por ele (P2-20).
     if block != _BLOCK_WAITLIST:
-        production = _production_lines(awaiting_work_orders)
+        production = _lot_lines(promise, awaiting_work_orders)
         if production:
             pending.append(OrderPendingProjection(key="production", tone=TONE_INFO, label="Esperando o lote", reason=production))
 
