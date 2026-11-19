@@ -35,12 +35,15 @@ Derivado de: v2 5.4 e plano do framework, seção 3.3.
 | `commerce_read` | `search_catalog`, `read_item`, `promise`, `quote`, `read_order`, `read_customer`, `read_policy`, `knowledge`, `scarcity` | fato com fonte e validade; autorização por objeto (`object_forbidden`); consulta não é reserva; a promessa traz quatro leituras (`factual`, `expected`, `planned`, `promisable`), nunca "reservado" (K27); cotação devolve `TermsDocument` selado; `scarcity` opcional, padrão `Unavailable` | `fact_validity_seconds`, `object_authorization`, `promise_is_not_reservation` |
 | `commerce_execute` | `execute`, `locate`, `reconcile` | o contrato de efeito inteiro (v2 4.7): guarda chamada na unidade atômica do efeito; mesma chave e mesmo conteúdo devolvem o mesmo recibo; mesma chave com outro conteúdo é `idempotency_conflict` e o recibo não muda; resposta perdida é `effect_unknown` | `atomic_effect_guard`, `idempotency_retention_seconds`, `reconciliation` |
 | `staff` | `ask`, `open_or_update`, `assign`, `record_acceptance`, `record_fulfillment`, `return_conversation`, `promote_answer` | roteado não é aceito (`ask` nunca nomeia quem aceitou); dono e prazo, ou o motivo da ausência; resposta entra como fato com autoria e validade; época de posse só cresce | `nominal_acceptance`, `answer_is_authored_fact` |
-| `store` | `record_event_once`, `load_episode`, `commit_transition`, `claim_work`, `append_receipt` | evento com identidade estável grava uma vez (sem identidade, nunca deduplica, K02); comparar e gravar (`revision_conflict`); estado, registros e caixa de saída juntos; isolamento por inquilino | `compare_and_set`, `transactional_outbox`, `tenant_isolation`, `real_concurrency` |
+| `store` | `record_event_once`, `load_episode`, `latest_episode`, `latest_record`, `commit_transition`, `claim_work`, `append_receipt` | evento com identidade estável grava uma vez (sem identidade, nunca deduplica, K02); comparar e gravar (`revision_conflict`); estado, registros e caixa de saída juntos; isolamento por inquilino | `compare_and_set`, `transactional_outbox`, `tenant_isolation`, `real_concurrency` |
 | `clock` | `now`, `new_id`, `schedule`, `cancel`, `business_hours` | relógio não volta; ids únicos; prazo vencido vira trabalho reivindicável, não laço | `deterministic`, `monotonic` |
 | `outcomes` | `harvest` | fonte independente do agente; janela aberta é `censored`; correção chega com `supersedes`; desconhecido explícito | `independent_source`, `censoring`, `supersession` |
 
 Convenções de `store`: episódio novo é confirmado com `expected_version = 0` e `version = 1`;
-toda transição incrementa a versão em um.
+toda transição incrementa a versão em um. `latest_episode(subject)` devolve o episódio mais
+recente do sujeito (para a correlação), e `latest_record(episode_id, schema)` devolve o último
+registro de um contrato gravado no episódio (o turno lê ali a pergunta no ar do turno
+anterior). As duas entraram com o F7.
 
 ## 3. A autoridade não é porta: a guarda
 
