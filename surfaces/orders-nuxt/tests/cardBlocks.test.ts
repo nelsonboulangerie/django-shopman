@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { Affordance } from "../app/presentation/board";
-import {
-  OPEN_ORDER_LABEL,
-  blockedReasonLines,
-  cardNoticeView,
-} from "../app/presentation/cardBlocks";
+import { blockPillLabel, blockedReasonLines } from "../app/presentation/cardBlocks";
 
-// WP-G06 (laudo do Gestor, P1-12, P2-13, P2-16): o motivo do botão travado vai escrito,
-// a pílula diz o fato e o botão que só abre o pedido diz que abre.
+// WP-G06 (laudo do Gestor, P1-12 e P2-16): o motivo do botão travado vai escrito, e a
+// pílula do bloqueio diz o fato.
 
 const aff = (over: Partial<Affordance> = {}): Affordance => ({
   ref: "confirm", label: "Aceitar", icon: "lucide:check", priority: "primary",
@@ -102,36 +98,21 @@ describe("blockedReasonLines: por que o botão está travado, escrito", () => {
   });
 });
 
-describe("cardNoticeView: a pílula diz o fato", () => {
-  const block = (over: Record<string, unknown> = {}) => ({
-    key: "block", label: "Por que espera", title: "Pix expirado", ...over,
+describe("blockPillLabel: a pílula do bloqueio diz o fato (P2-16)", () => {
+  it("o bloqueio aparece pelo nome que o servidor deu, não pela pergunta", () => {
+    expect(blockPillLabel("Pix expirado")).toBe("Pix expirado");
+    expect(blockPillLabel("Cobrança recusada")).toBe("Cobrança recusada");
   });
 
-  it("o bloqueio aparece pelo nome, não pela pergunta (P2-16)", () => {
-    expect(cardNoticeView(block()).label).toBe("Pix expirado");
-    expect(cardNoticeView(block({ title: "Cobrança recusada" })).label).toBe("Cobrança recusada");
+  it("as reticências do rótulo de espera não vão para a pílula", () => {
+    expect(blockPillLabel("Aguardando Pix…")).toBe("Aguardando Pix");
+    expect(blockPillLabel("Aguardando o dia da encomenda…")).toBe("Aguardando o dia da encomenda");
   });
 
-  it("sem nome de bloqueio do servidor, fica a pergunta: 'Bloqueado' repetiria o selo", () => {
-    expect(cardNoticeView(block({ title: "Bloqueado" })).label).toBe("Por que espera");
-    expect(cardNoticeView(block({ title: "" })).label).toBe("Por que espera");
-  });
-
-  it("o botão do aviso da NFC-e só abre o pedido, e diz que abre (P2-13)", () => {
-    const shown = cardNoticeView({
-      key: "fiscal", label: "NFC-e não autorizada", title: "NFC-e não autorizada",
-      actions: [{ label: "Abrir e reprocessar", to: "/NB-261118-W33", "data-fiscal-failed-open": "" }],
-    });
-    expect(shown.actions).toEqual([
-      { label: OPEN_ORDER_LABEL, to: "/NB-261118-W33", "data-fiscal-failed-open": "" },
-    ]);
-    expect(OPEN_ORDER_LABEL).toBe("Abrir o pedido");
-  });
-
-  it("os outros avisos passam como vieram", () => {
-    const danfe = { key: "danfe", label: "DANFE não impressa", title: "DANFE não impressa", actions: [{ label: "Imprimir DANFE" }] };
-    expect(cardNoticeView(danfe)).toBe(danfe);
-    const reminder = { key: "courier-reminder", label: "Chamar entregador?", title: "Em preparo há 12 min", actions: [{ label: "Chamar entregador", to: "/NB-1#call" }] };
-    expect(cardNoticeView(reminder)).toBe(reminder);
+  it("sem nome de bloqueio do servidor, fica a pergunta", () => {
+    expect(blockPillLabel("")).toBe("Por que espera");
+    expect(blockPillLabel("  ")).toBe("Por que espera");
+    expect(blockPillLabel(undefined)).toBe("Por que espera");
+    expect(blockPillLabel(null)).toBe("Por que espera");
   });
 });

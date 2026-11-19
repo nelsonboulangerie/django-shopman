@@ -3,8 +3,7 @@
 // Dois defeitos do laudo do Gestor moravam aqui:
 //   - o botão travado só dizia o porquê no `title`, que não existe no toque (P1-12);
 //   - a pílula "Por que espera" guardava o fato ("Cobrança recusada") atrás do toque
-//     (P2-16), e o aviso da NFC-e prometia "Abrir e reprocessar" num botão que só
-//     abre o pedido (P2-13).
+//     (P2-16).
 // Quem decide o que trava, e por quê, é o servidor: aqui só se escolhe o que vai
 // escrito, e onde.
 import type { Affordance } from "./board";
@@ -70,41 +69,17 @@ function listed(labels: string[]): string {
   return `${labels.slice(0, -1).join(", ")} e ${labels.at(-1)}`;
 }
 
-/** O aviso do cartão, como o `OrderCard` o monta (pílula + Popover). */
-export interface CardNoticeLike {
-  key: string;
-  label: string;
-  title: string;
-  /** As ações do aviso (`ButtonProps` do Nuxt UI): aqui só importam o rótulo e o destino. */
-  actions?: Array<{ label?: string; to?: unknown }>;
-}
-
-/** O título que o cartão põe quando o servidor não nomeou o bloqueio. */
-const UNNAMED_BLOCK = "Bloqueado";
-/** O gesto que existe na tela: o botão do aviso da NFC-e só abre o pedido. */
-export const OPEN_ORDER_LABEL = "Abrir o pedido";
+/** O que a pílula do bloqueio diz quando o servidor não nomeou o bloqueio. */
+const UNNAMED_BLOCK_PILL = "Por que espera";
 
 /**
- * O aviso como a pílula o mostra.
+ * O rótulo da pílula do bloqueio no cartão (laudo do Gestor, P2-16).
  *
- * - **Bloqueio**: a pílula diz o FATO ("Pix expirado", "Cobrança recusada"), não a
- *   pergunta "Por que espera". O porquê continua a um toque. Sem nome de bloqueio do
- *   servidor, fica a pergunta: "Bloqueado" repetiria o selo do cartão sem dizer nada.
- * - **NFC-e não autorizada**: o botão só abre o pedido, então diz "Abrir o pedido". O
- *   reprocessar é gesto do detalhe, e só lá o botão leva esse verbo.
+ * A pílula diz o FATO, pelo nome que o servidor deu ao bloqueio ("Pix expirado",
+ * "Cobrança recusada"); o porquê continua a um toque, no Popover. Só quando o
+ * servidor não nomeou o bloqueio fica a pergunta "Por que espera". As reticências
+ * do rótulo de espera ("Aguardando Pix…") não vão para a pílula.
  */
-export function cardNoticeView<T extends CardNoticeLike>(notice: T): T {
-  if (notice.key === "block") {
-    const fact = String(notice.title ?? "").trim();
-    return fact && fact !== UNNAMED_BLOCK ? { ...notice, label: fact } : notice;
-  }
-  if (notice.key === "fiscal" && notice.actions?.length) {
-    return {
-      ...notice,
-      actions: notice.actions.map((action) =>
-        action.to ? { ...action, label: OPEN_ORDER_LABEL } : action,
-      ),
-    } as T;
-  }
-  return notice;
+export function blockPillLabel(blockLabel: string | null | undefined): string {
+  return String(blockLabel ?? "").replace(/…$/, "").trim() || UNNAMED_BLOCK_PILL;
 }

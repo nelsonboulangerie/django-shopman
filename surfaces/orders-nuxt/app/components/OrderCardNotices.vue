@@ -1,23 +1,16 @@
 <script setup lang="ts">
 // Os avisos do cartão do pedido (dono, 07/10/2026): a pílula com a cor e o nome; o
 // texto e o gesto no Popover. Um lugar só para o cartão inteiro e o enxuto do Painel.
-//
-// A pílula diz o fato, não uma pergunta (WP-G06): o bloqueio aparece pelo nome ("Pix
-// expirado"), e o botão que só abre o pedido diz que abre (`cardNoticeView`).
-import { computed } from "vue";
-
 import type { CardNotice } from "./OrderCard.vue";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
-import { cardNoticeView } from "~/presentation/cardBlocks";
 
-const props = defineProps<{ notices: CardNotice[] }>();
-const shown = computed(() => props.notices.map(cardNoticeView));
+defineProps<{ notices: CardNotice[] }>();
 </script>
 
 <template>
-  <div v-if="shown.length" class="flex flex-wrap gap-1.5" data-card-notices>
+  <div v-if="notices.length" class="flex flex-wrap gap-1.5" data-card-notices>
     <NuxtPopover
-      v-for="notice in shown"
+      v-for="notice in notices"
       :key="notice.key"
       :content="{ side: 'bottom', align: 'start' }"
     >
