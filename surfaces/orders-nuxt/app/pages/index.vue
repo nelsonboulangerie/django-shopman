@@ -834,7 +834,11 @@ onBeforeUnmount(() => {
 // O nome do recebimento no recorte ativo ("Recebimento: Entrega") e no escopo da seleção.
 const FULFILLMENT_LABELS: Record<string, string> = { delivery: "Entrega", pickup: "Retirada" };
 const channelLabel = (ref: string) => channels.value.find((option) => option.ref === ref)?.label ?? ref;
-const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
+// O relógio do painel é o do servidor: ancora no `generated_at` da última leitura
+// boa. Ancorava no primeiro pedido novo, e sem pedido novo (a maior parte do dia) caía
+// no relógio do dispositivo: um tablet adiantado dava todo mundo por atrasado.
+const serverNow = computed(() => readMetadata.value?.generated_at ?? "");
+const nowMs = useNowTick(() => serverNow.value);
 function zoneNext(zone: ZoneView): string {
   return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
 }
@@ -1927,7 +1931,7 @@ function compactClear() {
             v-if="showSystemBand"
             :lines="systemUndoLines"
             :busy="isBusy"
-            :server-now="queue?.intake[0]?.server_now_iso"
+            :server-now="serverNow || undefined"
             @undo="(ref_) => onAction(ref_, 'undo_ready')"
           />
         </div>

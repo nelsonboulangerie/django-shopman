@@ -67,17 +67,28 @@ describe("Em andamento e o excedente", () => {
 describe("Na Cozinha é só o que foi para a cozinha (beta 05/11: GES-13, PDV2-03)", () => {
   it("aceito sem ticket ainda pede Iniciar preparo: não está na cozinha", () => {
     const waiting = card({ ref: "W-M99", attention: "", status: "accepted", kitchen: null });
-    expect(inKitchen(waiting, NOW)).toBe(false);
+    expect(inKitchen(waiting)).toBe(false);
     expect(inProgress([waiting], NOW)[0]).toMatchObject({ key: "kitchen", count: 0 });
     expect(workingOrders([waiting], NOW).kitchen).toEqual([]);
   });
 
   it("encomenda de amanhã não entra na cozinha de hoje, nem em preparo", () => {
     const tomorrow = card({ ref: "PDV-N84", attention: "", status: "preparing", is_preorder: true, commitment_date: "2026-10-05" });
-    const today = card({ ref: "PDV-N85", attention: "", status: "preparing", is_preorder: true, commitment_date: "2026-10-04" });
-    expect(inKitchen(tomorrow, NOW)).toBe(false);
-    expect(inKitchen(today, NOW)).toBe(true);
+    // De hoje: o servidor já não a chama de encomenda de outro dia (`is_preorder`).
+    const today = card({ ref: "PDV-N85", attention: "", status: "preparing", is_preorder: false, commitment_date: "2026-10-04" });
+    expect(inKitchen(tomorrow)).toBe(false);
+    expect(inKitchen(today)).toBe(true);
     expect(workingOrders([tomorrow, today], NOW).kitchen.map((w) => w.card.ref)).toEqual(["PDV-N85"]);
+  });
+
+  it("o dia é o do servidor: o relógio e o fuso do dispositivo não entram na conta (WP-G09, P2-06)", () => {
+    // A data combinada é o "hoje" de um tablet adiantado, e o servidor diz que é de outro dia.
+    const deviceToday = new Date().toISOString().slice(0, 10);
+    const other = card({ ref: "PDV-N86", attention: "", status: "preparing", is_preorder: true, commitment_date: deviceToday });
+    expect(inKitchen(other)).toBe(false);
+    // E o contrário: a data parece futura ao dispositivo, e o servidor diz que é de hoje.
+    const mine = card({ ref: "PDV-N87", attention: "", status: "preparing", is_preorder: false, commitment_date: "2999-01-01" });
+    expect(inKitchen(mine)).toBe(true);
   });
 });
 

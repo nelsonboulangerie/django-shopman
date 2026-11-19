@@ -253,21 +253,18 @@ export interface ProgressLine {
 
 const ROAD = new Set(["dispatched", "delivered"]);
 
-/** A data local de `nowMs` em "AAAA-MM-DD", o formato de `commitment_date`. */
-function localDay(nowMs: number): string {
-  const d = new Date(nowMs);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
 /** O pedido está DE FATO na Cozinha? Em preparo, ou aceito com ticket já aberto
  *  numa estação (preparo automático). Aceito sem ticket ainda pede "Iniciar preparo"
  *  e não foi para a cozinha (lifecycle: o aceito NÃO vai sozinho), e a encomenda de
  *  outro dia só entra na cozinha no dia dela: contar qualquer um dos dois em "Na
- *  Cozinha" mentia sobre o mesmo pedido que a Fila mostra esperando você. */
-export function inKitchen(card: OrderCardProjection, nowMs: number): boolean {
-  if (card.is_preorder && card.commitment_date && card.commitment_date > localDay(nowMs))
-    return false;
+ *  Cozinha" mentia sobre o mesmo pedido que a Fila mostra esperando você.
+ *
+ *  Quem diz que a encomenda é de outro dia é o servidor (`is_preorder`, medido contra
+ *  o `service_day` da mesma leitura). A tela comparava a data com o "hoje" do
+ *  dispositivo, e um tablet em outro fuso (ou com o relógio errado) contava a encomenda
+ *  de amanhã como "Na Cozinha" (laudo do Gestor, P2-06). */
+export function inKitchen(card: OrderCardProjection): boolean {
+  if (card.is_preorder) return false;
   if (card.status === "preparing") return true;
   return card.status === "accepted" && (card.kitchen?.stations?.length ?? 0) > 0;
 }
@@ -287,7 +284,7 @@ export function inProgress(
     );
     return ages.length ? Math.max(...ages) : 0;
   };
-  const kitchen = quiet.filter((card) => inKitchen(card, nowMs));
+  const kitchen = quiet.filter((card) => inKitchen(card));
   const road = quiet.filter((card) => ROAD.has(card.status));
   const detail = (count: number, seconds: number) =>
     count ? `o mais antigo há ${minutesLabel(seconds)}` : "";
@@ -558,7 +555,7 @@ export function workingOrders(
   const age = (card: OrderCardProjection, since: string) =>
     secondsSince(since, nowMs) ?? card.elapsed_seconds ?? 0;
   const kitchen = unique
-    .filter((card) => inKitchen(card, nowMs))
+    .filter((card) => inKitchen(card))
     .map((card) => {
       const stations = (card.kitchen?.stations ?? []).map(stationLine);
       const done = stations.filter((s) => s.tone === "success").length;
