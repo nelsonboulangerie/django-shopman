@@ -2145,6 +2145,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("dispatched", "delivered")
     )
 
+    # O dia de serviço é o dia civil da loja (laudo do Gestor, P2-08): a casa que
+    # fecha depois da meia-noite vê as encomendas de "amanhã" entrarem no turno em
+    # curso à 0h. A régua do dia mora no shop e no Core (o lifecycle, o commit e
+    # ``is_preorder`` medem "hoje" pelo dia civil), e mudá-la só aqui faria o
+    # Gestor discordar da Cozinha e do PDV. Quando o shop tiver o dia de serviço
+    # (a hora de corte da loja), ele entra por ``today``, que é lido uma vez só.
     service_day = today
     service_day_ends_at = timezone.make_aware(
         datetime.combine(service_day + timedelta(days=1), time.min),

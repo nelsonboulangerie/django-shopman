@@ -75,7 +75,7 @@ stateDiagram-v2
     accepted --> ready: (existe no mapa; nenhum botão usa)
     preparing --> ready: último ticket Pronto (KDS) · "Marcar pronto" (Gestor)
     ready --> preparing: Desfazer o Pronto · reabrir ticket
-    ready --> completed: RETIRADA: "Marcar como retirado" (Gestor/Saída) · "Entregar" (Encomendas do PDV) · iFood CON
+    ready --> completed: RETIRADA: "Entregar a <nome>" (Gestor/Saída) · "Entregar" (Encomendas do PDV) · iFood CON
     ready --> dispatched: ENTREGA: "Marcar saída" (Gestor/Saída) · TaOn coletou (E) · iFood DSP
     dispatched --> delivered: TaOn finalizou (F) · "Recebi meu pedido" (cliente) · "Marcar como entregue" (Gestor) · prazo de entrega vencido · iFood CON
     delivered --> completed: automático (_complete_after_handoff)
@@ -431,7 +431,7 @@ antecipada pelos marcos invertidos (horário − tempo de chegada) é pós-go-li
 8. **Pago:** o ticket já está na Cozinha, esperando; o operador do posto dá **Iniciar preparo** (o
    Gestor tem o mesmo gesto como atalho; `prep_start=operator`) → em preparo →
    Pronto → `order_ready_pickup`.
-9. **Cliente chega:** Gestor/Saída **Marcar como retirado** → `completed`, NFC-e.
+9. **Cliente chega:** Gestor/Saída **Entregar a <nome>** → `completed`, NFC-e.
 
 ### 5.2 Loja online, entrega (TaOn)
 
@@ -552,7 +552,7 @@ conclui de `ready`. O código de retirada só aparece se o iFood mandar `deliver
 | Ajustar itens/disponibilidade | Gestor, tela de edição com prévia | tela própria | OK |
 | Iniciar preparo | KDS (a verdade) ou o atalho no Gestor, mesmo ato | não | OK |
 | Pronto | KDS (desfazer 5 s; reabrir pelo histórico) ou "Marcar pronto" no Gestor | não | OK; na entrega com ticket aberto fica no menu (à vista desde #1712) |
-| Saída / Marcar como retirado / Marcar como entregue | Gestor ou Saída, desfazer 5 s | diálogo só com troco ou maquininha | OK |
+| Saída / Entregar a <nome> ou Despachar <código> / Marcar como entregue | Gestor ou Saída, desfazer 5 s | diálogo só com troco ou maquininha | OK |
 | Chamar entregador / Chamar de novo / Cancelar corrida / Cotar | Gestor | pergunta com a custódia | OK; cedo e no PDV desde #1712 e #1711; Cancelar a corrida e Entregador voltou também no PDV desde #1765 |
 | Entregador voltou / Acertar entrega | Gestor | diálogo | OK |
 | Cancelar | Gestor/PDV | motivo (opcional) + gerente se pago ou adiantado | ATRITO: motivo vai literal ao cliente (P1-10), resolvido #1730 |
