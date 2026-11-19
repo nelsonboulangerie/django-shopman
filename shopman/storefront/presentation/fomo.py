@@ -123,7 +123,11 @@ def _low_stock(sku: str, availability: dict, channel_config: dict) -> list[FomoB
 
 
 def _fresh(sku: str, production: dict | None, now: datetime) -> list[FomoBadge]:
-    """F5 — "Saiu do forno há X min", válido por ``FRESH_WINDOW_MINUTES``."""
+    """F5 — "Fornada pronta há X min", válido por ``FRESH_WINDOW_MINUTES``.
+
+    "Fornada pronta", e não "ficou pronto": o selo vale para qualquer produto, e o
+    nome dele pode ser feminino. A casa diz "ficar pronto", nunca "sair do forno".
+    """
     if not production:
         return []
     finished_at = _parse_dt(production.get("finished_at"))
@@ -134,7 +138,7 @@ def _fresh(sku: str, production: dict | None, now: datetime) -> list[FomoBadge]:
     if minutes_ago > FRESH_WINDOW_MINUTES:
         return []
 
-    label = "Saiu do forno agora" if minutes_ago < 1 else f"Saiu do forno há {minutes_ago} min"
+    label = "Fornada pronta agora" if minutes_ago < 1 else f"Fornada pronta há {minutes_ago} min"
     expires_at = finished_at + timedelta(minutes=FRESH_WINDOW_MINUTES)
     return [
         FomoBadge(

@@ -715,7 +715,7 @@ useSeoMeta({ title: 'Segurança e dados' })
         <div>
           <h2 class="shop-heading">Seu número</h2>
           <p class="shop-muted">
-            É por ele que você entra e recebe o aviso de que o pão saiu do forno.
+            É por ele que você entra e recebe o aviso de que o pão ficou pronto.
           </p>
         </div>
 

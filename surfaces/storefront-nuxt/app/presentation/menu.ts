@@ -39,14 +39,14 @@ export const FILTERED_SECTION_VALUE = 'filtered'
 
 const COLLECTION_LABEL_BY_REF: Record<string, string> = {
   featured: 'Destaques',
-  fresh_from_oven: 'Recém saídos do forno',
+  fresh_from_oven: 'Acabaram de ficar prontos',
   new_arrivals: 'Novidades',
   favorites: 'Seus favoritos'
 }
 
 const PUBLIC_DYNAMIC_SECTION_SLUG_BY_REF: Record<string, string> = {
   featured: 'destaques',
-  fresh_from_oven: 'recem-saidos-do-forno',
+  fresh_from_oven: 'acabaram-de-ficar-prontos',
   new_arrivals: 'novidades',
   favorites: 'favoritos'
 }

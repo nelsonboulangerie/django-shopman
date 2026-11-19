@@ -41,7 +41,7 @@ class StockAlertSubscription(models.Model):
 
     class AlertType(models.TextChoices):
         STOCK_BACK = "stock_back", "voltou ao estoque"
-        PRODUCTION_READY = "production_ready", "saiu do forno"
+        PRODUCTION_READY = "production_ready", "fornada pronta"
 
     ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     sku = RefField(ref_type="SKU", max_length=64, db_index=True)

@@ -111,7 +111,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         MOMENT_MANHA: {
             AUDIENCE_ANON: CopyEntry(
                 title="Sacola vazia",
-                message="Pão fresquinho acabou de sair do forno.",
+                message="Pão fresquinho acabou de ficar pronto.",
             ),
             AUDIENCE_RETURNING: CopyEntry(
                 title="Vamos montar seu café da manhã?",
@@ -119,7 +119,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
             WILDCARD: CopyEntry(
                 title="Vamos montar seu café da manhã?",
-                message="Pão fresquinho acabou de sair do forno.",
+                message="Pão fresquinho acabou de ficar pronto.",
             ),
         },
         MOMENT_ALMOCO: {
@@ -931,7 +931,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_WAITLIST_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+                message="Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
             ),
         },
     },
@@ -942,12 +942,30 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # Com o cartão da fila na tela (fornada de hoje, nada cobrado), a frase principal
+    # diz onde a reserva está e para quando é a fornada; quem promete o aviso é o
+    # cartão, logo abaixo. As duas frases de cima seguem para quando o cartão não
+    # aparece. "Fila de espera" e a data como previsão ficam (COPY-WAITLIST-001).
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera da fornada prevista para {when}.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera da fornada.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID": {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message=(
                     "Pagamento recebido. Sua reserva está na fila de espera da fornada "
-                    "prevista para {when}. Avisamos quando sair."
+                    "prevista para {when}. Avisamos quando ficar pronta."
                 ),
             ),
         },
@@ -1262,7 +1280,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_WAITLIST_WAITING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+            message="Quando a fornada ficar pronta, avisamos para você confirmar. Nada foi cobrado ainda.",
         )},
     },
     # O chamado é a frase principal do acompanhamento (título e mensagem da
@@ -1945,7 +1963,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar?")},
     },
     "KINTSUGI_PLANNED_OFFER": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Sai fresquinho no próximo lote. Quer garantir o seu?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Fica pronto no próximo lote, fresquinho. Quer garantir o seu?")},
     },
 
     # ── Reorder ──────────────────────────────────────────────────

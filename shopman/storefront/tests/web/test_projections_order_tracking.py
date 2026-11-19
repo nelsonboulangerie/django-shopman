@@ -1489,7 +1489,7 @@ class TestStatusColours:
         # dizê-la — como PREVISÃO, que é o que o COPY-WAITLIST-001 permite.
         assert proj.promise.message == (
             "Sua reserva está na fila de espera da fornada prevista para hoje. "
-            "Avisamos quando sair."
+            "Avisamos quando ficar pronta."
         )
         assert "começar o preparo" not in proj.promise.message.lower()
         assert "fila da fornada" not in proj.promise.message.lower()
