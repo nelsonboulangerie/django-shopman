@@ -227,6 +227,7 @@ describe("OperatorPageHeader: a pergunta que espera resposta vira aviso de tela"
     useOperatorInboxAlerts().value = { items: [question(-1)], count: 1, answer: vi.fn() };
     mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
     expect(alert()!.outerHTML).toMatch(/error/);
+    expect(alert()!.textContent).toMatch(/Ana espera a resposta da equipe\s·\spassou\sdo\sprazo\shá\s1\smin/);
   });
 
   it("o X dispensa nesta montagem e o aviso volta na próxima, enquanto ninguém responde", async () => {

@@ -129,6 +129,7 @@ for (const viewport of VIEWPORTS) {
       await dialog.getByRole("button", { name: "Visto" }).click();
       await expect(dialog).toBeHidden();
       await expect(notice).toBeVisible();
+      await expect(notice).toContainText(/Ana espera a resposta da equipe\s·\spassou\sdo\sprazo\shá\s\d+\smin/);
       await shot(page, `${id}-5b-vencido-aviso`);
       await audit(page, "[data-page-header-alerts]", `${id}-5b-vencido-aviso`);
     });

@@ -310,7 +310,7 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
       { key: 3, respondByIso: at(1) },
     ];
     expect(answerScreenAlerts(items, NOW, clock)).toEqual([
-      { key: 2, id: "answer:2:late", title: "Ana espera a resposta da equipe\u00a0·\u00a0até\u00a014h59", color: "error" },
+      { key: 2, id: "answer:2:late", title: "Ana espera a resposta da equipe\u00a0·\u00a0passou\u00a0do\u00a0prazo\u00a0há\u00a01\u00a0min", color: "error" },
       { key: 1, id: "answer:1:open", title: "Bia espera a resposta da equipe\u00a0·\u00a0até\u00a015h09", color: "warning" },
     ]);
     expect(answerScreenAlerts([{ key: 3, respondByIso: at(1) }], NOW, clock)).toEqual([]);

@@ -474,12 +474,17 @@ export function answerScreenAlerts<T extends Answerable>(
     .map(({ item, deadline }) => {
       const late = Number.isFinite(deadline) && deadline <= nowMs;
       const subject = item.subject || item.eyebrow || item.message || "Aviso";
-      const until = Number.isFinite(deadline) ? clock(item.respondByIso!) : "";
+      // Correndo, até que horas; vencido, há quanto passou, como a janela diz.
+      const when = !Number.isFinite(deadline)
+        ? ""
+        : late
+          ? `passou do prazo há ${spanLabel(nowMs - deadline)}`
+          : `até ${clock(item.respondByIso!)}`;
       return {
         key: item.key,
         id: `answer:${item.key}:${late ? "late" : "open"}`,
         // Espaço que não quebra: o prazo fica junto do fim do assunto ("equipe · até 16h04").
-        title: until ? `${subject}\u00a0·\u00a0até\u00a0${until}` : subject,
+        title: when ? `${subject}\u00a0·\u00a0${when.replaceAll(" ", "\u00a0")}` : subject,
         color: late ? ("error" as const) : ("warning" as const),
       };
     });
