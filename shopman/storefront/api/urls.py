@@ -57,6 +57,7 @@ from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
 from .geocode import ReverseGeocodeView
 from .payment import OrderPaymentMockConfirmView
+from .shelf_events import storefront_shelf_events_view
 from .surface import (
     CartCouponView,
     CartLineNotesView,
@@ -188,6 +189,10 @@ urlpatterns = [
         {"format-channels": ["fomo-{sku}"]},
         name="api-fomo-events",
     ),
+    # Loja viva (WP-L04): aviso público, sem conteúdo, de que a vitrine pode ter
+    # mudado. O canal cru de estoque não sai daqui (ADR-018 §5.1): a rota entrega só
+    # ``shelf-update``, com janela, e a página refaz a leitura canônica (ADR-016).
+    path("storefront/shelf/events/", storefront_shelf_events_view, name="api-storefront-shelf-events"),
     # Catalog
     path("catalog/products/", ProductListView.as_view(), name="api-catalog-products"),
     path("catalog/products/<str:sku>/", ProductDetailView.as_view(), name="api-catalog-product-detail"),

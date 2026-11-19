@@ -112,6 +112,26 @@ describe('useCartState', () => {
     expect(store.cartIssue.value?.error_code).toBe('insufficient_supply')
   })
 
+  it('a recusa do servidor faz as páginas abertas relerem na hora (WP-L04)', async () => {
+    const { useLiveStore, resetLiveStoreForTests } = await import('~/composables/useLiveStore')
+    resetLiveStoreForTests()
+    const onChange = vi.fn()
+    const live = useLiveStore(onChange)
+    live.start()
+    fetchMock
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_supply', sku: 'CROISSANT', requested_qty: 1, available_qty: 0 }))
+      .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) })
+    const store = await loadStore()
+
+    await expect(store.setSkuQty(meta, 1)).rejects.toThrow()
+
+    // O produto e os cards não esperam aviso nem janela: a recusa já é a verdade.
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('refusal')
+    live.stop()
+    resetLiveStoreForTests()
+  })
+
   it('429 captures rate-limit recovery with retry-after', async () => {
     fetchMock
       .mockRejectedValueOnce(fetchError(429, { detail: 'Muitas tentativas.', retry_after_seconds: 12 }))

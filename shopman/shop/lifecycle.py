@@ -923,10 +923,22 @@ def _should_initiate_payment_on_commit(order, config: ChannelConfig) -> bool:
     if config.payment.timing == "external":
         return False
     if config.payment.timing == "at_commit":
-        return True
-    if config.payment.timing == "post_commit":
-        return _payment_method(order, config) == "card"
-    return False
+        wanted = True
+    elif config.payment.timing == "post_commit":
+        wanted = _payment_method(order, config) == "card"
+    else:
+        wanted = False
+    if not wanted:
+        return False
+    # Fornada de hoje não cobra para garantir vaga (política da casa,
+    # 28/08/2026): o pedido que entrou na fila da fornada de HOJE não nasce
+    # cobrado; a cobrança nasce quando o cliente confirma a vaga
+    # (``waitlist.confirm``). Roda depois de ``stock.hold``: é a reserva que
+    # diz se o pedido está na fila. A encomenda não está na fila e segue
+    # cobrando aqui.
+    from shopman.shop.policies.waitlist_charge import charge_waits_for_the_queue
+
+    return not charge_waits_for_the_queue(order)
 
 
 def _requires_captured_payment_before_confirmation(order, config: ChannelConfig) -> bool:

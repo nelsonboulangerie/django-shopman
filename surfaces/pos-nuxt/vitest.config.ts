@@ -35,6 +35,26 @@ export default defineConfig({
           environment: "nuxt",
           globals: true,
           setupFiles: ["./tests/support/componentSetup.ts"],
+          // O teto dos HOOKS é declarado, com a conta (#2762, medido em 19/11/2026
+          // nos runners gratuitos do GitHub). O teto de cada TESTE fica no padrão
+          // do Vitest (5 s) de propósito: teste não espera ambiente.
+          //
+          // O `beforeAll` do `@nuxt/test-utils` sobe o app Nuxt em cada arquivo e
+          // não aceita teto próprio: vale o `hookTimeout` do projeto, 10 s no
+          // padrão. Com o Vite já quente ele leva em torno de 0,6 s (p90 de 1,5 s).
+          // No primeiro arquivo que chega a ele, com o Vite frio, levou 6,0 s,
+          // 9,4 s e 9,5 s em três execuções no `ubuntu-latest`, e passou de 10 s em
+          // quatro execuções da CI, que caíram com "Hook timed out in 10000ms"
+          // (uma no `ubuntu-latest` e duas no `macos-15` em 19/11, uma no
+          // `macos-15` em 16/11).
+          //
+          // A conta: o arranque a frio fica em 5,5% da duração do passo. São 9,5 s
+          // no passo de 168 s do `ubuntu-latest`, onde a fila roda desde o #2651, e
+          // 17 s projetados para o passo mais lento já medido (314 s, no `macos-15`
+          // em que a fila rodava até então). 60 s é seis vezes o maior valor medido
+          // e três vezes e meia o projetado. O mesmo teto cobre o aquecimento da
+          // montagem (`tests/support/mountWarmup.ts`), que mediu 1,2 a 1,9 s.
+          hookTimeout: 60_000,
           include: [
             "tests/components/**/*.test.ts",
             "tests/composables/**/*.test.ts",

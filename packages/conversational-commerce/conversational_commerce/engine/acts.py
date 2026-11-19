@@ -22,6 +22,7 @@ ACTS: tuple[str, ...] = (
     "place_order",
     "cancel_order",
     "complain",
+    "request_human",
     "affirm",
     "deny",
     "unknown",
@@ -69,6 +70,7 @@ TEST_RULES = LocalRules(
         "cancel_order": (r"\bcancel\b",),
         "affirm": (r"^\s*(yes|yeah|ok)\b",),
         "deny": (r"^\s*no\b",),
+        "request_human": (r"\b(talk|speak) to (a |an )?(person|human|someone)\b",),
     },
     risk={"complain": (r"\bcomplain", r"\bwrong order\b", r"\brefund\b")},
 )
