@@ -455,11 +455,39 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
                 claim_until=None,
             )
             ConversationBinding.objects.filter(pk=binding.pk).update(last_inbound_at=event.received_at)
-        if conversation.state != Conversation.State.ACTIVE:
-            return IntakeResult(conversation.pk, message.pk, False, "handoff")
-        # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
-        _enqueue_turn(conversation, binding)
+        with_team = conversation.state != Conversation.State.ACTIVE
+        if not with_team:
+            # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
+            _enqueue_turn(conversation, binding)
+    if with_team:
+        if created and conversation.state == Conversation.State.HANDOFF:
+            _wrote_while_with_team(conversation, binding)
+        return IntakeResult(conversation.pk, message.pk, False, "handoff")
     return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
+
+
+#: O cartão de quando o cliente escreve com a conversa na equipe (o sino do Gestor).
+WROTE_WHILE_WITH_TEAM = (
+    "O cliente escreveu de novo, e a conversa está com a equipe. Responda pelo Live Chat "
+    "do ManyChat, ou devolva a conversa ao concierge no Admin."
+)
+
+
+def _wrote_while_with_team(conversation: Conversation, binding: ConversationBinding) -> None:
+    """Mensagem nova com a conversa na equipe: nunca cai em silêncio.
+
+    Se a mensagem chegou aqui, o fornecedor a mandou para o bot: a marca de atendimento
+    humano dele (``concierge_handoff``) não está ligada, ou foi desligada fora daqui. A
+    posse continua da equipe (só ela, ou a devolução no Admin, a devolve à Concierge):
+    a marca volta a ser ligada, para a próxima mensagem ir ao Live Chat, e o cartão no
+    sino diz que o cliente escreveu. Fora da transação da entrada: é chamada de rede.
+    """
+    outcome = _execute_handoff(binding, True)
+    if outcome.state != "accepted":
+        logger.warning(
+            "concierge.handoff.reassert_unconfirmed conversation=%s binding=%s", conversation.pk, binding.pk
+        )
+    _alert(conversation, "concierge_handoff", WROTE_WHILE_WITH_TEAM)
 
 
 def _enqueue_turn(conversation: Conversation, binding: ConversationBinding) -> None:
