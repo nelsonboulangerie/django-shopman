@@ -52,19 +52,23 @@ def acceptance_window(
     outro dia e no pedido que chega com a casa fechada; e o vencimento sai de
     ``business_calendar.next_operational_deadline``, o mesmo que agenda o
     cancelamento. ``None`` quando não há prazo a prometer (outro modo, canal
-    sem prazo, casa sem próxima abertura) ou quando a leitura falha: a tela não
-    promete o que não sabe.
+    sem prazo, casa sem próxima abertura) ou quando a leitura do calendário
+    falha: a tela não promete o que não sabe.
+
+    A configuração do canal é lida FORA do ``try``: canal sem configuração é
+    defeito de instância e falha gritando, nunca vira "sem prazo" em silêncio
+    (``test_instance_runtime_config``).
     """
+    from django.utils import timezone
+
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services import business_calendar
+
+    confirmation = ChannelConfig.for_channel(channel_ref).confirmation
+    if confirmation.mode != "auto_cancel":
+        return None
     try:
-        from django.utils import timezone
-
-        from shopman.shop.config import ChannelConfig
-        from shopman.shop.services import business_calendar
-
         moment = now or timezone.now()
-        confirmation = ChannelConfig.for_channel(channel_ref).confirmation
-        if confirmation.mode != "auto_cancel":
-            return None
         state = business_calendar.current_business_state(now=moment)
         preorder = order_date is not None and order_date > timezone.localdate(moment)
         minutes = confirmation.acceptance_timeout_minutes(long_deadline=preorder or state.is_closed)
