@@ -563,7 +563,7 @@ class TestCartReconcileIntegration:
         assert call_kwargs["sku"] == "X"
         assert call_kwargs["new_qty"] == Decimal("5")
         assert call_kwargs["session_key"] == "sess-test-1"
-        mock_availability.bump_session_hold_expiry.assert_called_once_with("sess-test-1")
+        mock_availability.bump_session_hold_expiry.assert_called_once_with("sess-test-1", channel_ref="web")
 
     @patch("shopman.shop.services.cart.session_service")
     @patch("shopman.shop.services.cart.availability")
@@ -626,7 +626,7 @@ class TestCartReconcileIntegration:
         call_kwargs = mock_availability.reconcile.call_args.kwargs
         assert call_kwargs["sku"] == "X"
         assert call_kwargs["new_qty"] == Decimal("0")
-        mock_availability.bump_session_hold_expiry.assert_called_once_with("sess-test-1")
+        mock_availability.bump_session_hold_expiry.assert_called_once_with("sess-test-1", channel_ref="web")
         mock_session_service.modify_session.assert_called_once()
 
     @patch("shopman.shop.services.cart.session_service")
@@ -660,4 +660,4 @@ class TestCartReconcileIntegration:
             unit_price_q=1000,
         )
 
-        mock_availability.bump_session_hold_expiry.assert_called_once_with("sess-test-1")
+        mock_availability.bump_session_hold_expiry.assert_called_once_with("sess-test-1", channel_ref="web")
