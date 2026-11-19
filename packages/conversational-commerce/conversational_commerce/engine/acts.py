@@ -19,6 +19,7 @@ ACTS: tuple[str, ...] = (
     "ask_price",
     "ask_item",
     "change_quantity",
+    "place_order",
     "cancel_order",
     "complain",
     "affirm",
@@ -28,7 +29,7 @@ ACTS: tuple[str, ...] = (
 COURTESY_ACTS = frozenset({"greet", "thank"})
 ANSWER_ACTS = frozenset({"affirm", "deny"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
-CHANGE_ACTS = frozenset({"change_quantity", "cancel_order"})
+CHANGE_ACTS = frozenset({"change_quantity", "place_order", "cancel_order"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +65,7 @@ TEST_RULES = LocalRules(
         "ask_hours": (r"\bhours?\b", r"\bopen\b"),
         "ask_price": (r"\bprice\b", r"\bhow much\b", r"\bcost\b"),
         "change_quantity": (r"\bmake it\b", r"\bchange\b"),
+        "place_order": (r"\bplace (the |my )?order\b", r"\bcheck ?out\b"),
         "cancel_order": (r"\bcancel\b",),
         "affirm": (r"^\s*(yes|yeah|ok)\b",),
         "deny": (r"^\s*no\b",),

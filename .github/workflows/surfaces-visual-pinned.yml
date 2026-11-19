@@ -1,0 +1,158 @@
+name: Retratos presos ao macOS
+
+# Retrato de pixel (baseline visual) que foi gravado num navegador/SO específico
+# (`visualRunner` em surfaces/contracts.json; hoje pos-nuxt e marketing-nuxt, em
+# macos-15 + Chromium do Playwright). Medido em 17/11/2026: os runners macOS do
+# GitHub são poucos, e os jobs `pos-nuxt`/`marketing-nuxt` do Surfaces Gate
+# esperavam 19 a 20 min por máquina na fila (mediana), até 88 e 126 min, e a fila
+# derrubou PRs inteiros por tempo (#2589, #2531, #2602, #2605). Nada nesses dois
+# apps exige WebKit nem macOS além do retrato: unit, lint, typecheck, e2e,
+# geometria e a11y rodam em Linux no check obrigatório de cada app.
+#
+# Este workflow NÃO é check obrigatório. Ele roda:
+#   - no PR que toca o app, a layer ou o próprio contrato (`paths:` pode, porque
+#     não é obrigatório): sinal cedo, sem travar a fila;
+#   - toda noite no `main`, e uma falha abre (ou comenta) a issue
+#     "Retratos presos ao macOS reprovaram no main";
+#   - à mão (`workflow_dispatch`), para regerar ou conferir baseline.
+# Regra e motivo: docs/reference/ci-escopo.md. Baseline: docs/reference/operator-visual-baselines.md.
+
+"on":
+  pull_request:
+    paths:
+      - surfaces/pos-nuxt/**
+      - surfaces/marketing-nuxt/**
+      - surfaces/operator-kit/**
+      - surfaces/contracts.json
+      - scripts/surface_contract.mjs
+      - scripts/install_playwright_browsers.mjs
+      - .github/workflows/surfaces-visual-pinned.yml
+  schedule:
+    - cron: "0 6 * * *" # 03:00 em Brasília
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Retratos — matriz
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.m.outputs.include }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - id: m
+        run: echo "include=$(node scripts/surface_contract.mjs matrix visual-pinned)" >> "$GITHUB_OUTPUT"
+
+  visual:
+    name: Retratos macOS — ${{ matrix.dir }}
+    needs: matrix
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.include) }}
+    defaults:
+      run:
+        working-directory: surfaces/${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            surfaces/${{ matrix.dir }}/package-lock.json
+            surfaces/operator-kit/package-lock.json
+
+      - name: Set up Python for declared browser mock
+        if: matrix.python_mock
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install operator-kit layer deps
+        if: matrix.install_layer
+        working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve Playwright cache key
+        id: playwright
+        env:
+          ENGINES: ${{ matrix.browser_engines }}
+        run: |
+          version="$(npx --no-install playwright --version | awk '{print $2}')"
+          engines="$(echo "$ENGINES" | tr ' ' '-')"
+          echo "key=playwright-${ImageOS:-$RUNNER_OS}-${RUNNER_ARCH}-${version}-${engines}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.playwright.outputs.key }}
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+
+      - name: Install declared browser engines
+        timeout-minutes: 25
+        run: node ../../scripts/install_playwright_browsers.mjs "${{ matrix.browser_engines }}"
+
+      - name: Save Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.playwright.outputs.key }}
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+
+      - name: Visual and responsive contract
+        env:
+          MARKETING_E2E_MANAGED: "1"
+          MARKETING_E2E_USERNAME: operadora-e2e
+          MARKETING_E2E_PASSWORD: senha-sintetica-ci
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" visual
+
+      - name: Upload visual evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}-visual-pinned-evidence
+          path: surfaces/${{ matrix.dir }}/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Falha na rodada noturna não pode virar silêncio: o retrato saiu do caminho
+  # da fila, então quem avisa é esta issue.
+  report:
+    name: Retratos — aviso de falha no main
+    needs: visual
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Retratos presos ao macOS reprovaram no main"
+          n="$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')"
+          body="A rodada noturna dos retratos (pos-nuxt / marketing-nuxt, macos-15) reprovou: $RUN_URL. Separe regressão real de retrato velho antes de regerar (docs/reference/operator-visual-baselines.md)."
+          if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh issue create --title "$title" --body "$body"; fi

@@ -1411,3 +1411,61 @@ def test_rate_limited_dispatch_gives_up_loudly_after_too_many_waits(shop):
     assert OperatorAlert.objects.filter(type="courier_dispatch_failed", order_ref=order.ref).exists()
     assert len(courier_mock.rides()) == 0
 
+
+
+
+# ── ENT-LIM-15: encomenda de outro dia não se chama hoje ─────────────────────
+
+
+def _future(order, days=1):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    day = timezone.localdate() + timedelta(days=days)
+    order.data = {**order.data, "delivery_date": day.isoformat()}
+    order.save(update_fields=["data"])
+    return day
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_preorder_for_tomorrow_is_refused_with_the_day(shop):
+    from shopman.shop.services.operator_orders import short_ref
+
+    order = _delivery_order(ref="ENC-1")
+    day = _future(order)
+    code = short_ref(order.ref)
+
+    expected = f"A encomenda {code} é para amanhã, {day:%d/%m}. O entregador se chama no dia."
+    assert courier.not_today_refusal(order) == expected
+    assert courier.group_refusal(order) == expected
+    # O lifecycle não chama; a chamada manual recusa com a frase.
+    assert courier.request_dispatch(order, actor="lifecycle.on_ready") is None
+    with pytest.raises(ValueError, match="O entregador se chama no dia"):
+        courier.redispatch(order, actor="operator:ana")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_preorder_further_away_names_only_the_date(shop):
+    order = _delivery_order(ref="ENC-2")
+    day = _future(order, days=3)
+    assert courier.not_today_refusal(order).endswith(f"é para {day:%d/%m}. O entregador se chama no dia.")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_an_order_for_today_or_without_date_is_callable(shop):
+    order = _delivery_order(ref="ENC-3")
+    assert courier.not_today_refusal(order) == ""
+    _future(order, days=0)
+    assert courier.not_today_refusal(order) == ""
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_order_panel_refuses_calling_a_preorder_with_the_same_phrase(shop):
+    from shopman.backstage.projections.order_queue import _courier_block
+
+    order = _delivery_order(ref="ENC-4")
+    _future(order)
+    block = _courier_block(order)
+    assert block["can_dispatch"] is False
+    assert block["not_today"] == courier.not_today_refusal(order)

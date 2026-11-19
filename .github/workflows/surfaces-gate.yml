@@ -333,7 +333,7 @@ jobs:
           MARKETING_E2E_PASSWORD: senha-sintetica-ci
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" a11y
 
-      - name: Shared browser contract (functional, a11y, visual)
+      - name: Shared browser contract
         if: matrix.browser_suite
         env:
           MARKETING_E2E_MANAGED: "1"

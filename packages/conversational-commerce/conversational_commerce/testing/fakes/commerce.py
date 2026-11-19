@@ -181,6 +181,8 @@ class FakeCommerceExecute(FakeBase):
         # Época de posse vigente por episódio (o teste muda quando a pessoa assume).
         self.epochs = epochs if epochs is not None else {}
         self.effects = 0
+        # Aceitos e ainda em execução no provedor (``EFFECT_PENDING``): ``complete_pending`` os conclui.
+        self.pending: dict[str, ActionCommand] = {}
 
     def capabilities(self) -> Capabilities:
         return Capabilities(port="commerce_execute", operations=execute_port.OPERATIONS,
@@ -204,6 +206,9 @@ class FakeCommerceExecute(FakeBase):
             self.state.orders[order_ref] = {"ref": order_ref, "subject": subject, "terms_hash": command.terms_hash,
                                             "state": "placed"}
             return order_ref
+        if command.action == "change_cart":
+            cart = self.state.carts.setdefault(command.targets[0], {})
+            cart[command.parameters["item"]] = command.parameters["quantity"]
         for target in command.targets:
             self.state.versions[target] = self.state.versions.get(target, 0) + 1
             self.state.current_terms.pop(target, None)  # mudou o alvo: termos velhos não valem
@@ -236,16 +241,25 @@ class FakeCommerceExecute(FakeBase):
         if fault is Fault.EFFECT_PENDING:
             receipt = self._pending(ctx, command, "pending")
             self.by_key[key] = (command.content_hash, receipt)
+            self.pending[command.command_id] = command
             return receipt
         ref = self._apply(command)
         self.applied[command.command_id] = ref
         receipt = self._receipt(ctx, command, status="success", effect="applied", domain_refs={"effect": ref},
                                 observed_versions={t: self.state.versions.get(t, 0) for t in command.targets})
-        if fault is Fault.CRASH_AFTER_EFFECT:
-            # O efeito existe; a resposta se perdeu. Só a reconciliação acha o recibo.
-            raise PortError(ErrorCode.EFFECT_UNKNOWN, "caiu depois do efeito; reconcilie com a mesma chave")
+        # Efeito, chave e recibo na mesma unidade atômica do provedor.
         self.by_key[key] = (command.content_hash, receipt)
+        if fault is Fault.CRASH_AFTER_EFFECT:
+            # O efeito existe; a resposta se perdeu. A mesma chave acha o recibo.
+            raise PortError(ErrorCode.EFFECT_UNKNOWN, "caiu depois do efeito; reconcilie com a mesma chave")
         return receipt
+
+    def complete_pending(self, command_id: str) -> str:
+        """O provedor conclui um efeito que tinha aceitado (``EFFECT_PENDING``). A guarda já foi chamada."""
+        command = self.pending.pop(command_id)
+        ref = self._apply(command)
+        self.applied[command_id] = ref
+        return ref
 
     def locate(self, ctx: TrustedContext, scope: str, key: str) -> ActionReceipt | None:
         self._fault("locate")

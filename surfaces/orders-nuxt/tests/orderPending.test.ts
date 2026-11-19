@@ -5,6 +5,8 @@ import {
   pendingButton,
   pendingLines,
   pendingTone,
+  refundRetrySentence,
+  refundRetryToast,
   settledMoney,
 } from "../app/presentation/orderPending";
 
@@ -51,14 +53,67 @@ describe("pendingButton", () => {
   });
 });
 
+// WP-G13: "Tentar o estorno de novo" na linha "Estorno não saiu".
+describe("pendingButton: tentar o estorno de novo", () => {
+  const retry = action("refund-retry", { label: "Tentar o estorno de novo" });
+
+  it("parado, é o gesto da linha, com o ícone de voltar", () => {
+    expect(pendingButton(retry, { ...idle, lead: true })).toMatchObject({
+      label: "Tentar o estorno de novo", icon: "i-lucide-rotate-ccw", color: "primary", variant: "solid", disabled: false, loading: false,
+    });
+  });
+
+  it("enquanto o estorno vai ao meio de pagamento, o botão diz isso e não aceita outro toque", () => {
+    expect(pendingButton(retry, { busy: true, danfePrinting: false, refundRetrying: true, lead: true })).toMatchObject({
+      label: "Tentando o estorno…", disabled: true, loading: true,
+    });
+    // Outro gesto da faixa não vira "tentando": só trava pela gravação em andamento.
+    expect(pendingButton(action("requeue-fiscal"), { busy: true, danfePrinting: false, refundRetrying: true, lead: false })).toMatchObject({
+      label: "requeue-fiscal", disabled: true, loading: false,
+    });
+  });
+
+  it("quem não pode vê o botão desligado, com o motivo escrito", () => {
+    const reason = "Identifique uma pessoa com permissão para gerenciar pedidos.";
+    expect(pendingButton({ ...retry, enabled: false, reason }, { ...idle, lead: true })).toMatchObject({ disabled: true, blockedReason: reason });
+  });
+});
+
+describe("refundRetrySentence / refundRetryToast", () => {
+  const money = (state: string, amount = "R$ 22,00") => ({ state, label: "", amount_display: amount, customer_line: "", settled: state === "refunded" });
+
+  it("o gerente lê o valor antes de assinar; sem valor, a frase do ato assume", () => {
+    expect(refundRetrySentence(money("refund_failed"))).toBe("Estorno de R$ 22,00, pedido de novo ao meio de pagamento.");
+    expect(refundRetrySentence(money("refund_failed", ""))).toBe("");
+    expect(refundRetrySentence(null)).toBe("");
+  });
+
+  it("só diz Estornado com a confirmação; a tentativa que não saiu não vira aviso solto", () => {
+    expect(refundRetryToast(money("refunded"))).toBe("Estornado: o meio de pagamento confirmou a devolução.");
+    expect(refundRetryToast(money("refund_requested"))).toBe("Estorno pedido. O pedido mostra quando ele for confirmado.");
+    expect(refundRetryToast(money("refund_failed"))).toBe("");
+    expect(refundRetryToast(null)).toBe("");
+  });
+});
+
 describe("pendingLines", () => {
+  it("a falha da última tentativa vai com a linha, separada do motivo", () => {
+    const failure = "Última tentativa, em 18/11 às 14h32: O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
+    const [line] = pendingLines(
+      [{ key: "refund", tone: "error", label: "Estorno não saiu", reason: "A devolução de R$ 22,00 não chegou ao cliente.", failure, actions: [action("refund-retry")] }],
+      idle,
+    );
+    expect(line!.failure).toBe(failure);
+    expect(line!.reason).toBe("A devolução de R$ 22,00 não chegou ao cliente.");
+  });
+
   it("o gesto principal é o da primeira linha que pede alguém, pulando a espera", () => {
     const lines = pendingLines(
       [
-        { key: "payment", tone: "info", label: "Aguardando pagamento", reason: "", actions: [action("resend-payment-link")] },
-        { key: "phase", tone: "error", label: "Etapa automática travada", reason: "", actions: [] },
-        { key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", actions: [action("requeue-fiscal")] },
-        { key: "danfe", tone: "warning", label: "DANFE não impressa", reason: "", actions: [action("print-danfe")] },
+        { key: "payment", tone: "info", label: "Aguardando pagamento", reason: "", failure: "", actions: [action("resend-payment-link")] },
+        { key: "phase", tone: "error", label: "Etapa automática travada", reason: "", failure: "", actions: [] },
+        { key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", failure: "", actions: [action("requeue-fiscal")] },
+        { key: "danfe", tone: "warning", label: "DANFE não impressa", reason: "", failure: "", actions: [action("print-danfe")] },
       ],
       idle,
     );
@@ -68,7 +123,7 @@ describe("pendingLines", () => {
   it("junta os motivos das ações travadas sem repetir", () => {
     const reason = "Identifique uma pessoa com permissão para gerenciar pedidos.";
     const [line] = pendingLines(
-      [{ key: "payment", tone: "error", label: "Pix expirado", reason: "", actions: [
+      [{ key: "payment", tone: "error", label: "Pix expirado", reason: "", failure: "", actions: [
         action("cancel", { enabled: false, reason }),
         action("resend-payment-link", { enabled: false, reason }),
       ] }],

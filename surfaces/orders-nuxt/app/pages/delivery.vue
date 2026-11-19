@@ -17,10 +17,12 @@ import type { MapLiveRide, MapPoint } from "~/components/CourierDeliveriesMap.vu
 import { rideColor } from "~/presentation/ridePalette";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
+  backCheck,
   needsMachine,
   nextFreeNumber,
   rideCalls,
   rideLetter,
+  toggleStop,
   type EditingRide,
 } from "~/presentation/deliveries";
 
@@ -75,16 +77,12 @@ watch(waitingAll, (list) => {
 const activeRide = computed(() => editing.value.find((ride) => ride.number === active.value));
 const rideOf = (ref: string) => editing.value.find((ride) => ride.refs.includes(ref));
 function toggle(ref: string) {
-  ensureEditing();
-  const mine = activeRide.value!;
-  const at = rideOf(ref);
-  if (at === mine) {
-    mine.refs = mine.refs.filter((item) => item !== ref);
-    return;
-  }
-  if (mine.refs.length >= maxStops.value) return;
-  if (at) at.refs = at.refs.filter((item) => item !== ref);
-  mine.refs = [...mine.refs, ref];
+  // A regra mora em `toggleStop`: pedido recusado não entra, e a corrida cheia
+  // manda o pedido para a próxima, sempre dizendo o que fez.
+  const result = toggleStop(editing.value, active.value, ref, waitingAll.value, maxStops.value, freeNumbers.value);
+  editing.value = result.editing;
+  active.value = result.active;
+  if (result.notice) useSonner.info(result.notice);
 }
 function fill(place: string) {
   ensureEditing();
@@ -202,6 +200,25 @@ async function call() {
   }
 }
 
+// "Chamar de novo": a última chamada ficou sem resposta. O primeiro toque arma a
+// confirmação com a frase do servidor (um toque nunca chama); o segundo libera a
+// tentativa pendente e chama outra, a MESMA ação do Painel do pedido.
+const armedAgain = ref("");
+const againBusy = ref("");
+async function dispatchAgain(stop: DeliveryStopProjection) {
+  armedAgain.value = "";
+  againBusy.value = stop.ref;
+  try {
+    await intentions.execute(stop.ref, "courier-dispatch-again", stop.dispatch_again_action ?? undefined, {});
+    useSonner.success(`${stop.code}: chamada de novo. A TaOn avisa quando alguém aceitar.`);
+  } catch (err) {
+    useSonner.error(httpErrorMessage(err, "Não foi possível chamar de novo. Atualize e tente outra vez."));
+  } finally {
+    againBusy.value = "";
+    await refresh();
+  }
+}
+
 // ── corridas: detalhe e gestos ───────────────────────────────────────────────
 const openKey = computed(() => String(route.query.ride || ""));
 // A corrida aberta se identifica pela chave dela (`ride.key`), não pelo número: o
@@ -221,7 +238,7 @@ async function rideAction(ride: DeliveryRideProjection, operation: "courier-back
     // Cancelar só chega aqui pela confirmação do detalhe (`CourierCancelConfirm`);
     // depois do aceite ela já traz o motivo, que vai à TaOn como `reason_id`.
     await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : {});
-    useSonner.success(operation === "courier-back" ? "Saída fechada." : "Pedido de cancelamento enviado à TaOn.");
+    useSonner.success(operation === "courier-back" ? `Corrida ${ride.letter} encerrada.` : "Pedido de cancelamento enviado à TaOn.");
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível. Atualize e tente de novo."));
   } finally {
@@ -231,6 +248,22 @@ async function rideAction(ride: DeliveryRideProjection, operation: "courier-back
 }
 function cancelOpenRide(reasonId?: number) {
   if (openRide.value) void rideAction(openRide.value, "courier-cancel", reasonId);
+}
+// "Entregador voltou" fecha dinheiro, troco e maquininha: nunca num toque só. Abre a
+// mesma conferência da Fila (`CourierBackDialog`); "Voltou diferente" leva ao pedido,
+// onde mora o acerto à mão.
+const backRide = ref<DeliveryRideProjection | null>(null);
+const backCard = computed(() => (backRide.value ? backCheck(backRide.value) : null));
+async function confirmBack() {
+  const ride = backRide.value;
+  if (!ride) return;
+  await rideAction(ride, "courier-back");
+  backRide.value = null;
+}
+function backDifferent() {
+  const ride = backRide.value;
+  backRide.value = null;
+  if (ride) void navigateTo(`/${encodeURIComponent(ride.lead_ref)}`);
 }
 
 // ── mapa ────────────────────────────────────────────────────────────────────
@@ -315,7 +348,31 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
             </div>
             <ul class="mt-2 flex flex-col">
               <li v-for="stop in waiting" :key="stop.ref">
-                <NuxtButton color="neutral" variant="ghost" block class="justify-start gap-2.5 text-left" @click="toggle(stop.ref)">
+                <!-- Chamada sem resposta: a linha não entra em corrida; o gesto é conferir e chamar de novo. -->
+                <div v-if="stop.dispatch_again_action" class="flex flex-col gap-2 rounded-lg bg-elevated/60 px-2 py-2" data-waiting-again>
+                  <div class="flex items-center gap-2.5">
+                    <span class="grid size-6 shrink-0 place-items-center rounded-full bg-warning/15 text-warning"><NuxtIcon name="i-lucide-circle-help" class="size-3.5" /></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate op-body"><span class="font-medium text-highlighted">{{ stop.code }} · {{ stop.customer }}</span> <span class="text-muted">· {{ stop.place }}</span></span>
+                      <!-- Armado, a confirmação embaixo já diz o que aconteceu e o que conferir. -->
+                      <span v-if="armedAgain !== stop.ref" class="block op-micro text-toned">{{ stop.error }}</span>
+                    </span>
+                    <NuxtButton v-if="armedAgain !== stop.ref" color="neutral" variant="outline" icon="i-lucide-rotate-cw" :label="stop.dispatch_again_action.label" :disabled="!stop.dispatch_again_action.enabled" :title="stop.dispatch_again_action.reason || undefined" @click="armedAgain = stop.ref" />
+                  </div>
+                  <div v-if="armedAgain === stop.ref" class="flex flex-wrap items-center gap-2 pl-8.5" data-waiting-again-confirm>
+                    <p class="min-w-0 flex-1 op-micro text-toned">{{ (stop.dispatch_again_action.confirmation as { description?: string })?.description }}</p>
+                    <NuxtButton color="neutral" variant="ghost" label="Agora não" @click="armedAgain = ''" />
+                    <NuxtButton color="primary" icon="i-lucide-rotate-cw" :label="`Chamar ${stop.code} de novo`" :loading="againBusy === stop.ref" @click="dispatchAgain(stop)" />
+                  </div>
+                </div>
+                <div v-else-if="stop.group_refusal" class="flex items-center gap-2.5 px-2 py-2" data-waiting-refused>
+                  <span class="grid size-6 shrink-0 place-items-center rounded-full border-2 border-dashed border-default text-dimmed"><NuxtIcon name="i-lucide-minus" class="size-3.5" /></span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate op-body"><span class="font-medium text-highlighted">{{ stop.code }} · {{ stop.customer }}</span> <span class="text-muted">· {{ stop.place }}</span></span>
+                    <span class="block op-micro text-toned">{{ stop.group_refusal }}</span>
+                  </span>
+                </div>
+                <NuxtButton v-else color="neutral" variant="ghost" block class="justify-start gap-2.5 text-left" @click="toggle(stop.ref)">
                   <span class="grid size-6 shrink-0 place-items-center rounded-full border-2 bg-white text-toned" style="border-color: #b9a888"><NuxtIcon name="i-lucide-plus" class="size-3.5" /></span>
                   <span class="min-w-0 flex-1">
                     <span class="block truncate op-body"><span class="font-medium text-highlighted">{{ stop.code }} · {{ stop.customer }}</span> <span class="text-muted">· {{ stop.place }}</span></span>
@@ -385,7 +442,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
                 :ride="ride"
                 :now="now"
                 :busy="busyRide === ride.key"
-                @back="rideAction(ride, 'courier-back')"
+                @back="backRide = ride"
               />
             </div>
           </section>
@@ -428,10 +485,19 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
           :now="now"
           :busy="busyRide === openRide.key"
           @close="close"
-          @back="rideAction(openRide, 'courier-back')"
+          @back="backRide = openRide"
           @cancel="cancelOpenRide"
         />
       </template>
     </NuxtSlideover>
+
+    <!-- Entregador voltou: confere e só então encerra a corrida inteira. -->
+    <CourierBackDialog
+      :card="backCard"
+      :busy="Boolean(backRide && busyRide === backRide.key)"
+      @confirm="confirmBack"
+      @different="backDifferent"
+      @close="backRide = null"
+    />
   </main>
 </template>

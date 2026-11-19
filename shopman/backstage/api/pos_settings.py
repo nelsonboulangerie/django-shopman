@@ -8,7 +8,8 @@ Seções do POST:
 - ``printer``: ``{terminal_ref, roll_width_mm, cut_mode}``
 - ``card_machine``: ``{ref?, label, identification?, active}`` (sem ``ref`` = nova)
 - ``kitchen_station``: ``{station_ref, auto_fire}``
-- ``shortcuts``: ``{terminal_ref, favorite_collection_refs: [...]}``
+- ``shortcuts``: ``{terminal_ref?, favorite_collection_refs: [...]}``, sempre no terminal da
+  estação deste dispositivo (``terminal_ref`` só confirma)
 
 A régua de leitura é a do balcão (``cashman.operate_pos``). Impressora e
 maquininha gravam só com ``pos_settings.SETUP_PERMISSION`` (Gerente e Dono;
@@ -34,6 +35,28 @@ def _terminal(request):
 
     ref = station_trust.station_ref(request)
     return Terminal.objects.filter(ref=ref, is_active=True).first() if ref else None
+
+
+def _shortcuts_terminal_ref(request, body: dict) -> str:
+    """Os atalhos gravam no terminal DESTE dispositivo, nunca no que o corpo escolher (P2-13).
+
+    A leitura já vinha da estação (``_terminal``); a gravação lia ``terminal_ref`` do
+    corpo, e quem tem só ``operate_pos`` mudava a grade de outro balcão. O corpo pode
+    confirmar o terminal, nunca selecionar outro.
+    """
+    terminal = _terminal(request)
+    if terminal is None:
+        raise pos_settings.PosSettingsError(
+            "Vincule este dispositivo a um posto antes de mudar os atalhos.", field="terminal_ref",
+            code="pos_station_required",
+        )
+    asserted = str(body.get("terminal_ref") or "").strip()
+    if asserted and asserted != terminal.ref:
+        raise pos_settings.PosSettingsError(
+            "Estes atalhos são de outro terminal. Atualize a tela e escolha de novo.", field="terminal_ref",
+            code="pos_terminal_mismatch",
+        )
+    return terminal.ref
 
 
 def _error(exc: pos_settings.PosSettingsError) -> Response:
@@ -88,7 +111,7 @@ class POSSettingsView(APIView):
                 )
             elif section == "shortcuts":
                 pos_settings.set_favorite_collections(
-                    terminal_ref=str(body.get("terminal_ref") or ""),
+                    terminal_ref=_shortcuts_terminal_ref(request, body),
                     refs=body.get("favorite_collection_refs"),
                     actor=actor,
                 )

@@ -68,8 +68,8 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
   },
   {
     arquivo: "composables/usePosCashSession.ts",
-    trecho: "toast.error(`${httpErrorMessage(error, causa)} ${saida}`)",
-    porque: "a saída chega por argumento dos nove chamadores; coberto pelo §1",
+    trecho: "const message = `${httpErrorMessage(error, causa)} ${saida}`",
+    porque: "a saída chega por argumento dos nove chamadores (aviso no diálogo ou toast); coberto pelo §1",
   },
   {
     arquivo: "composables/usePosCashSession.ts",

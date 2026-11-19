@@ -1282,6 +1282,14 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     no_show_action = no_show_detail_action(order, user)
     if no_show_action is not None:
         extra_actions.append(no_show_action)
+    # "Tentar o estorno de novo" (WP-G13): só para o dinheiro do cancelado em
+    # "Estorno não saiu". A régua (quanto, de onde, a base) é de ``services/refund_retry``.
+    refund_retry_plan = None
+    if cancelled_money is not None and cancelled_money.state == order_pending.MONEY_REFUND_FAILED:
+        from shopman.backstage.services import refund_retry
+
+        refund_retry_plan = refund_retry.plan(order)
+        extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -1337,6 +1345,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             danfe=danfe,
             awaiting_work_orders=common["awaiting_work_orders"],
             money=cancelled_money,
+            refund_retry_plan=refund_retry_plan,
             alerts=pending_alerts,
             schedule_label=common["schedule_label"],
             whatsapp_url=contact.get("customer_whatsapp_url", ""),
@@ -1520,7 +1529,8 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
     extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
         enabled=authorized and courier_block["can_dispatch"],
         reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-            "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+            "" if courier_block["can_dispatch"] else
+            courier_block.get("not_today") or "Confira o estado do pedido e da corrida antes de despachar."),
         method="POST", idempotency="required",
         confirmation={"required": True, "description": _courier_dispatch_question(order)},
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
@@ -1760,9 +1770,11 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, unresolved_dispatch
+        from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
+        # A encomenda de outro dia: chamar recusa com a frase (a régua do servidor).
+        not_today = not_today_refusal(order) if order_can_ride and not active else ""
         # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
         # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
@@ -1808,7 +1820,8 @@ def _courier_block(order: Order) -> dict | None:
             "position": position,
             "error": error,
             "can_quote": can_quote(order),
-            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
+            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None and not not_today,
+            "not_today": not_today,
             "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and courier_can_cancel(order, cancel),
             # Em que pé está o cancelamento pedido: ``{state, message, at}``
@@ -1822,7 +1835,7 @@ def _courier_block(order: Order) -> dict | None:
             # Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais
             # perto primeiro. Só enquanto este pedido pode ser chamado.
             "ride_offer": (_ride_offer(order) if adapter_on and house and not active and order_can_ride
-                           and unresolved is None else []),
+                           and unresolved is None and not not_today else []),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
             "charge_outdated": charge_outdated(order),
@@ -4008,6 +4021,9 @@ _EVENT_LABELS = {
     "payment.repayment_requested": "Novo pagamento pedido ao cliente",
     "payment.method_changed": "Cliente trocou o pagamento para Pix",
     "payment.refunded": "Pagamento estornado",
+    # WP-G13: quem tentou é o autor da linha; quem autorizou e o que o gateway
+    # respondeu vão no detalhe (``_refund_retry_detail``).
+    "payment.refund_retry": "Estorno tentado de novo",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
 }
 
@@ -4167,8 +4183,12 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
 
         if event.type == _PRODUCTION_HOLD_LOST_EVENT:
             detail = _production_hold_lost_detail(payload)
+        elif event.type == "payment.refund_retry":
+            detail = _refund_retry_detail(payload)
+        elif event.type in _PAYMENT_EVENT_TYPES:
+            detail = _payment_event_detail(payload)
         else:
-            detail = _payment_event_detail(payload) if event.type in _PAYMENT_EVENT_TYPES else _event_detail(payload)
+            detail = _event_detail(payload)
         if not detail and event.type in _STATUS_EVENT_TYPES and new_status == Order.Status.CANCELLED:
             detail = _cancellation_detail(order)
 
@@ -4237,6 +4257,20 @@ def _production_hold_lost_detail(payload: dict) -> str:
     item = f"{qty}x {name}" if qty and name else name
     lot = f"lote de {_short_date(payload.get('date'))}" if payload.get("date") else ""
     return " · ".join(part for part in (item, lot) if part)
+
+
+def _refund_retry_detail(payload: dict) -> str:
+    """"Pix · R$ 22,00 · autorizado por Joyce · não saiu: …": a tentativa de estorno do Gestor."""
+    parts = [_payment_event_detail(payload)]
+    approver = str(payload.get("approved_by") or "").strip()
+    if approver:
+        parts.append(f"autorizado por {_actor_names([approver]).get(approver, approver)}")
+    if payload.get("outcome") == "refunded":
+        parts.append("o meio de pagamento confirmou")
+    else:
+        answer = str(payload.get("message") or "").strip()
+        parts.append(f"não saiu: {answer}" if answer else "não saiu")
+    return " · ".join(part for part in parts if part)
 
 
 def _event_detail(payload: dict) -> str:

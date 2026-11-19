@@ -734,6 +734,7 @@ export interface OrderPendingProjection {
   reason: string;
   actions: OrderPendingActionProjection[];
   next_step: string;
+  failure: string;
 }
 
 /** O destino do dinheiro de um pedido cancelado, como o Gestor o lê. */
@@ -1275,6 +1276,8 @@ export interface DeliveryStopProjection {
   group_refusal: string;
   error: string;
   dispatch_action: Action | null;
+  dispatch_again_action: Action | null;
+  charge_outdated: Record<string, unknown> | null;
 }
 
 /** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str') */
@@ -1312,6 +1315,7 @@ export interface DeliveryRideProjection {
   reopened_driver: string;
   cancel_state: string;
   cancel_message: string;
+  sync_since: string;
 }
 
 /** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */

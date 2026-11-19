@@ -20,7 +20,7 @@ const action = (ref: string, label: string, over: Record<string, unknown> = {}) 
   ref, label, enabled: true, reason: "", href: "", ...over,
 });
 const pending = (over: Partial<OrderPendingProjection> = {}): OrderPendingProjection => ({
-  key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", actions: [], ...over,
+  key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", actions: [], failure: "", ...over,
 });
 const money = (over: Partial<CancelledMoneyProjection> = {}): CancelledMoneyProjection => ({
   state: "refunded", label: "Estornado", amount_display: "R$ 18,70",
@@ -179,6 +179,65 @@ describe("OrderDetailPending", () => {
     expect(row.text()).toContain("Precisa de alguém: Estorno não saiu");
     expect(w.find("[data-order-money]").exists()).toBe(false);
     expect(w.text()).not.toContain("O cliente lê na loja");
+  });
+
+  // WP-G13: a linha "Estorno não saiu" ganha o gesto, e a falha fica escrita nela.
+  describe("tentar o estorno de novo", () => {
+    const failed = (over: Partial<OrderPendingProjection> = {}) => pending({
+      key: "refund", label: "Estorno não saiu",
+      reason: "A devolução de R$ 22,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez ao Pix do cliente, com a autorização de um gerente.",
+      actions: [action("refund-retry", "Tentar o estorno de novo")],
+      ...over,
+    });
+    const failedMoney = money({ state: "refund_failed", label: "Estorno não saiu", amount_display: "R$ 22,00", customer_line: "", settled: false });
+
+    it("o botão mora na linha, é o gesto principal e o toque sobe com a ação", async () => {
+      const w = faixa({ pending: [failed()], money: failedMoney });
+      const row = w.get('[data-pending="refund"]');
+      expect(row.attributes("data-pending-tone")).toBe("error");
+      expect(row.text()).toContain("pede esse estorno outra vez ao Pix do cliente");
+      expect(row.text()).not.toContain("suporte");
+      expect(row.find("[data-pending-failure]").exists()).toBe(false);
+      const button = w.get('[data-pending-action="refund-retry"]');
+      expect(button.text()).toBe("Tentar o estorno de novo");
+      expect(button.attributes("variant")).toBe("solid");
+      expect(button.attributes("color")).toBe("primary");
+
+      await button.trigger("click");
+      expect(w.emitted("act")).toEqual([["refund-retry"]]);
+    });
+
+    it("enquanto o estorno vai ao meio de pagamento, o botão diz isso e não aceita outro toque", async () => {
+      const w = faixa({ pending: [failed()], money: failedMoney, busy: true, refundRetrying: true });
+      const button = w.get('[data-pending-action="refund-retry"]');
+      expect(button.text()).toBe("Tentando o estorno…");
+      expect(w.getComponent('[data-pending-action="refund-retry"]').props("loading")).toBe(true);
+      expect(button.attributes("disabled")).toBeDefined();
+      await button.trigger("click");
+      expect(w.emitted("act")).toBeUndefined();
+    });
+
+    it("o que o meio de pagamento respondeu fica escrito na linha, em tom de erro", () => {
+      const failure = "Última tentativa, em 18/11 às 14h32: O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
+      const w = faixa({ pending: [failed({ failure })], money: failedMoney });
+      const told = w.get('[data-pending="refund"] [data-pending-failure]');
+      expect(told.text()).toBe(failure);
+      expect(told.classes()).toContain("text-error");
+      expect(told.attributes("role")).toBe("status");
+      // O gesto continua de pé: uma tentativa nova é permitida.
+      expect(w.get('[data-pending-action="refund-retry"]').attributes("disabled")).toBeUndefined();
+      expect(w.text()).not.toMatch(/[—–]/);
+    });
+
+    it("quem não pode vê o botão desligado, com o motivo escrito", () => {
+      const reason = "Identifique uma pessoa com permissão para gerenciar pedidos.";
+      const w = faixa({
+        pending: [failed({ actions: [action("refund-retry", "Tentar o estorno de novo", { enabled: false, reason })] })],
+        money: failedMoney,
+      });
+      expect(w.get('[data-pending-action="refund-retry"]').attributes("disabled")).toBeDefined();
+      expect(w.get("[data-pending-blocked]").text()).toBe(reason);
+    });
   });
 
   it("nenhum texto da faixa usa travessão", () => {
