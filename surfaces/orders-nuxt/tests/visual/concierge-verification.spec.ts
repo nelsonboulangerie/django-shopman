@@ -88,34 +88,43 @@ async function shot(page: Page, name: string) {
 
 for (const viewport of VIEWPORTS) {
   test(`prévia vou verificar · ${viewport.id}`, async ({ page }) => {
+    // O cartão nasce com o prazo prometido: a janela do aviso interrompe a tela.
     await open(page, "concierge", viewport);
-    await openBell(page);
-    await shot(page, `${viewport.id}-1-cartao`);
-
-    const field = page.locator("[data-operator-inbox-panel] textarea").first();
-    await field.fill("Amanhã tem sim, fica pronto às 9h. A entrega sai a partir das 10h.");
-    await shot(page, `${viewport.id}-2-resposta-digitada`);
-    await audit(page, "[data-operator-inbox-panel]", `${viewport.id}-2-resposta-digitada`);
-
-    await page.locator("[data-operator-inbox-answer-send]").click();
-    await expect(page.getByText("Resposta enviada ao cliente.").first()).toBeVisible();
-    await shot(page, `${viewport.id}-3-resposta-enviada`);
-
-    await open(page, "concierge", viewport);
-    await openBell(page);
-    await field.fill("Teste de janela fechada");
-    await page.locator("[data-operator-inbox-answer-send]").click();
-    await expect(page.locator("[data-operator-inbox-answer-error]")).toBeVisible();
-    await expect(field).toHaveValue("Teste de janela fechada");
-    await shot(page, `${viewport.id}-4-erro-de-envio`);
-    await audit(page, "[data-operator-inbox-panel]", `${viewport.id}-4-erro-de-envio`);
-
-    await open(page, "concierge-urgent", viewport);
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("[data-operator-inbox-answer]")).toBeVisible();
-    await dialog.locator("textarea").fill("Amanhã tem sim, fica pronto às 9h.");
-    await shot(page, `${viewport.id}-5-janela-com-prazo`);
-    await audit(page, "[role=dialog]", `${viewport.id}-5-janela-com-prazo`);
+    await shot(page, `${viewport.id}-1-janela`);
+    await audit(page, "[role=dialog]", `${viewport.id}-1-janela`);
+
+    await dialog.locator("textarea").fill("Amanhã tem sim, fica pronto às 9h. A entrega sai a partir das 10h.");
+    await shot(page, `${viewport.id}-2-resposta-digitada`);
+
+    await dialog.locator("[data-operator-inbox-answer-send]").click();
+    await expect(page.getByText("Resposta enviada ao cliente.").first()).toBeVisible();
+    await expect(dialog).toBeHidden();
+    await shot(page, `${viewport.id}-3-resposta-enviada`);
+
+    // Visto na janela: o cartão segue na caixa de Avisos, respondível de lá.
+    await open(page, "concierge", viewport);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Visto" }).click();
+    await expect(dialog).toBeHidden();
+    await openBell(page);
+    await shot(page, `${viewport.id}-4-cartao-na-caixa`);
+    await audit(page, "[data-operator-inbox-panel]", `${viewport.id}-4-cartao-na-caixa`);
+
+    const field = page.locator("[data-operator-inbox-panel] textarea").first();
+    await field.fill("Teste de janela fechada");
+    await page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer-send]").click();
+    await expect(page.locator("[data-operator-inbox-answer-error]")).toBeVisible();
+    await expect(field).toHaveValue("Teste de janela fechada");
+    await shot(page, `${viewport.id}-5-erro-de-envio`);
+    await audit(page, "[data-operator-inbox-panel]", `${viewport.id}-5-erro-de-envio`);
+
+    // A promessa venceu: a janela fica e diz há quanto passou.
+    await open(page, "concierge-late", viewport);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/Passou do prazo/)).toBeVisible();
+    await shot(page, `${viewport.id}-6-promessa-vencida`);
   });
 }

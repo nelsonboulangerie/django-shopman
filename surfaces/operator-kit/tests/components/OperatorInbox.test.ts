@@ -260,6 +260,20 @@ describe("OperatorInbox", () => {
     expect(document.querySelector("[data-alert-ack]")).not.toBeNull();
   });
 
+  it("o aviso com resposta diz o canal como selo e quem espera no título, sem gravidade nem tipo", async () => {
+    useOperatorInboxAlerts().value = {
+      items: [{ ...VERIFICAR, origin: "WhatsApp", originIcon: "i-lucide-message-circle", subject: "Ana espera a resposta da equipe" }],
+      count: 1,
+      answer: vi.fn(),
+    };
+    await mount();
+    await openPanel();
+    const title = document.querySelector("[data-operator-inbox-answer-title]")!;
+    expect(document.querySelector("[data-operator-inbox-origin]")!.textContent).toContain("WhatsApp");
+    expect(title.textContent).toContain("Ana espera a resposta da equipe");
+    expect(panel()!.textContent).not.toContain("Aviso · WhatsApp");
+  });
+
   it("respondeu: a resposta sai e o campo se esvazia", async () => {
     const answer = vi.fn().mockResolvedValue(null);
     useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, answer };

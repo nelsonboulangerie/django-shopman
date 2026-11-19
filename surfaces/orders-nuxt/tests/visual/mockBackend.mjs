@@ -163,11 +163,21 @@ function urgentAlert() {
   };
 }
 
-// O "vou verificar" da Concierge (WP-07): a pergunta que ela levou à equipe. No cenário
-// `concierge`, o cartão sem prazo (caixa de Avisos); em `concierge-urgent`, depois do
-// primeiro prazo (sobe a urgente, com o segundo prazo: a janela interrompe a tela).
+// O "vou verificar" da Concierge (WP-07): a pergunta que ela levou à equipe. O cartão
+// nasce com o prazo prometido ao cliente e interrompe a tela; em `concierge-late`, a
+// promessa já venceu e a janela diz há quanto passou.
 const verification = { answered: false, takenOver: false };
-function verificationAlert(urgent) {
+// A hora como a casa escreve ("16h12", "9h"), no fuso da loja.
+function clock(date) {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", hour: "numeric", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = parts.find((p) => p.type === "hour").value;
+  const minute = parts.find((p) => p.type === "minute").value;
+  return minute === "00" ? `${Number(hour)}h` : `${Number(hour)}h${minute}`;
+}
+
+function verificationAlert(late) {
   const pk = 950;
   const base = `/api/v1/backstage/alerts/${pk}/concierge-verification`;
   const gesture = (kind, label, priority, path, schema) => ({
@@ -189,26 +199,25 @@ function verificationAlert(urgent) {
     confirmation: { required: false, reason_required: false, title: "", confirm_label: "Confirmar" },
     approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "acknowledges", proof: "",
   });
+  // O cartão nasce com o prazo prometido ao cliente (10 min); `late`: a promessa venceu.
+  const createdAt = new Date(Date.now() - (late ? 13 : 3) * 60_000);
+  const promised = new Date(createdAt.getTime() + 10 * 60_000);
   return {
-    pk, rev: 0, type: "concierge_verify", type_label: "WhatsApp: cliente esperando a resposta da equipe",
+    pk, rev: 0, type: "concierge_verify", type_label: "WhatsApp: cliente espera a resposta da equipe",
     severity: "warning", severity_label: "Aviso", audience: "orders",
-    message:
-      "Pergunta do cliente: “amanhã vai ter pão de forma? queria para entregar”.\n" +
-      "A Concierge prometeu a resposta em até 10 minutos.\nCliente: Ana.",
-    order_ref: "", created_at_display: "19/11 às 16h02",
+    message: `“amanhã vai ter pão de forma? queria para entregar”\nPrometemos responder até ${clock(promised)}.`,
+    order_ref: "", created_at_display: `hoje às ${clock(createdAt)}`,
     origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle",
-    subject: "Cliente esperando a resposta da equipe",
-    ...(urgent
-      ? { respond_by_iso: new Date(Date.now() + 18 * 60_000).toISOString(), deadline_kind: "external" }
-      : {}),
+    subject: "Ana espera a resposta da equipe",
+    respond_by_iso: promised.toISOString(), deadline_kind: "house",
     actions,
   };
 }
 
 function alertsPayload() {
   const payload = JSON.parse(JSON.stringify(baseAlerts));
-  if ((scenario === "concierge" || scenario === "concierge-urgent") && !verification.answered && !verification.takenOver) {
-    payload.alerts = [verificationAlert(scenario === "concierge-urgent"), ...payload.alerts];
+  if ((scenario === "concierge" || scenario === "concierge-late") && !verification.answered && !verification.takenOver) {
+    payload.alerts = [verificationAlert(scenario === "concierge-late"), ...payload.alerts];
     payload.counts.active += 1;
   }
   if (scenario === "gallery") {

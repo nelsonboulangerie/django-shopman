@@ -259,6 +259,21 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             :data-alert-seen="alert.seen ? '' : undefined"
             data-operator-inbox-alert
           >
+            <!-- O aviso com resposta escrita lê como a janela do aviso: o canal como selo
+                 (ícone e nome) e, embaixo, quem espera; sem repetir gravidade e tipo. -->
+            <template v-if="alert.answer && alert.subject" #title>
+              <span class="flex flex-col gap-0.5" data-operator-inbox-answer-title>
+                <span
+                  v-if="alert.origin"
+                  class="flex items-center gap-1 op-label text-muted-foreground"
+                  data-operator-inbox-origin
+                >
+                  <Icon v-if="alert.originIcon" :name="alert.originIcon" class="size-3.5 shrink-0" />
+                  {{ alert.origin }}
+                </span>
+                <span>{{ alert.subject }}</span>
+              </span>
+            </template>
             <template #actions>
               <!-- O gesto que resolve ali mesmo (P2-19: "Aceitar" no pedido parado).
                    Com ele à vista, ele é o sólido, numa linha só dele, e embaixo ficam
