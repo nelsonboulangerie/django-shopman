@@ -284,12 +284,19 @@ export interface CartItemProjection {
   unit_price_q: number
   total_price_q: number
   price_display: string
-  total_display: string
   image_url: string | null
   discount_label: string | null
   // Preço por unidade da promoção da linha (o mesmo do cardápio); a linha mostra
   // price_display riscado e este ao lado. null sem promoção (cupom fica no resumo).
   promo_price_display: string | null
+  // O total da linha como a cliente paga e o cheio para riscar ao lado (decisão
+  // do dono 1, 16/11/2026). Com promoção do produto: o total com desconto e o
+  // cheio; sem promoção: o total cheio e null. Cupom não entra (mora no resumo).
+  line_total_display: string
+  line_total_struck_display: string | null
+  // Preço de lista por unidade, em centavos: refaz o total da linha enquanto a
+  // resposta da troca de quantidade não chega.
+  list_price_q: number
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
@@ -321,13 +328,15 @@ export interface CartItemProjection {
   // SEMPRE pela `line_id`: duas linhas podem ter o mesmo SKU.
   options_summary?: string
   has_options?: boolean
-  // O total da linha como a cliente paga e o cheio para riscar ao lado (decisão
-  // do dono 1, 16/11/2026). Com promoção do produto: o total com desconto e o
-  // cheio; sem promoção: o total cheio e null. Cupom não entra (mora no resumo).
-  line_total_display?: string
-  line_total_struck_display?: string | null
   // Quando fica pronto: a mesma promessa do card e do produto (ver ReadyPromise).
   promise?: ReadyPromise | null
+}
+
+export interface CartDiscountLine {
+  label: string
+  amount_q: number
+  amount_display: string
+  requires_pickup?: boolean
 }
 
 export interface CartProjection {
@@ -342,11 +351,23 @@ export interface CartProjection {
   subtotal_q: number
   subtotal_display: string
   original_subtotal_q: number
-  original_subtotal_display: string
   discount_total_q: number
   discount_total_display: string
   has_discount: boolean
-  discount_lines: Array<{ label: string, amount_q: number, amount_display: string, requires_pickup?: boolean }>
+  // Todo desconto do pedido, um por origem. É o dado (o checkout lê
+  // `requires_pickup` daqui); o que o resumo SUBTRAI é `order_discount_lines`.
+  discount_lines: CartDiscountLine[]
+  // O resumo como a cliente lê (decisão do dono 1, 16/11/2026): a promoção do
+  // produto já abateu na linha. `lines_subtotal_*` é o Subtotal (a soma das
+  // linhas como a tela as mostra); `promo_savings_display` diz quanto as
+  // promoções já abateram (informa, não subtrai; null sem promoção);
+  // `order_discount_lines` são as linhas que o resumo subtrai (cupom, pontos,
+  // desconto de pedido).
+  lines_subtotal_q: number
+  lines_subtotal_display: string
+  promo_savings_q: number
+  promo_savings_display: string | null
+  order_discount_lines: CartDiscountLine[]
   delivery_fee_q: number | null
   delivery_fee_display: string | null
   delivery_is_free: boolean

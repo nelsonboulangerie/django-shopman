@@ -36,6 +36,7 @@ import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
   collectionsForFulfillment,
+  overPlanSummary,
   orderPaymentGuidance,
   paymentCollectionLabel,
   injectableMethods as toInjectableMethods,
@@ -296,6 +297,17 @@ const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabili
 const savedAddresses = computed(() => props.customerLookup?.saved_addresses || []);
 const needsReview = computed(() => !props.review);
 const approvalBlocking = computed(() => !!props.review?.requires_manager_approval && !props.managerApproved);
+// ENCOMENDA ACIMA DO PLANO (D-041, WP-E2): bloqueia e só o gerente libera, vendo
+// os dois números. Os números são do servidor (`review.preorder_over_plan`).
+const overPlanLines = computed(() =>
+  props.review?.approval_reasons?.includes("preorder_over_plan") ? (props.review.preorder_over_plan ?? []) : [],
+);
+const overPlanText = computed(() => overPlanSummary(overPlanLines.value));
+// Os outros motivos seguem a copy do diálogo (`managerAuthReason`); o do plano
+// fala pelos números, no próprio aviso e no contexto do diálogo.
+const otherApprovalReasons = computed(() =>
+  (props.review?.approval_reasons ?? []).filter((reason) => reason !== "preorder_over_plan"),
+);
 const managerThresholdQ = computed(() => props.review?.manager_approval_threshold_q || 0);
 // O desconto MANUAL (linha + venda) que o teto mede: é o número que o gerente assina.
 const manualDiscountQ = computed(() => (props.review?.line_discount_q || 0) + (props.review?.order_discount_q || 0));
@@ -368,9 +380,14 @@ const reviewWarnings = computed(() => {
 // As ressalvas de item: a venda vale, é para conferir depois. Um chip só, com a frase
 // no toque, e o ⚠ no item da conta (pelo `sku` que a review manda).
 const REMARK_CODES = new Set(["item_low_stock", "item_not_ready"]);
-const remarks = computed(() =>
-  (props.review?.warnings ?? []).filter((w) => REMARK_CODES.has(w.code)),
-);
+// A linha acima do plano já fala no bloqueio do Validar, com os dois números:
+// a ressalva dela não se repete no chip (nada é dito duas vezes na mesma tela).
+const remarks = computed(() => {
+  const overPlanSkus = new Set(overPlanLines.value.map((line) => line.sku));
+  return (props.review?.warnings ?? []).filter(
+    (w) => REMARK_CODES.has(w.code) && !(w.code === "item_low_stock" && w.sku && overPlanSkus.has(w.sku)),
+  );
+});
 const remarkBySku = computed(() => {
   const map = new Map<string, string>();
   for (const remark of remarks.value) if (remark.sku) map.set(remark.sku, remark.message);
@@ -667,10 +684,13 @@ const labelledMethods = computed(() =>
 // forma é o gesto de TODA venda; era o único do checkout que exigia o mouse.
 const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, labelledMethods.value)));
+// Encomenda de outro dia não oferece "Na retirada" (D-041): é a mesma régua da
+// cozinha que espera a data (`kitchenDeferred`).
 const deliveryCollections = computed(() => collectionsForFulfillment(
   props.paymentCollections,
   props.fulfillmentType,
   props.salesMode,
+  kitchenDeferred.value,
 ));
 const paymentGuidance = computed(() => orderPaymentGuidance({
   salesMode: props.salesMode,
@@ -1137,20 +1157,27 @@ const notices = computed<CheckoutNotice[]>(() => {
     // Sem botão próprio de propósito: o caminho É o botão do rodapé, que neste
     // estado se chama "Pedir autorização". Um segundo botão fazendo o mesmo
     // gesto duplicaria a ação mais delicada da tela — a que chama um gerente.
+    // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
+    // o diálogo já os traduz; o aviso os ignorava, e o operador tinha de
+    // chamar o gerente para só então descobrir o motivo.
+    const others = otherApprovalReasons.value.length
+      ? managerAuthReason({
+        reasons: otherApprovalReasons.value,
+        thresholdQ: managerThresholdQ.value,
+        discountQ: manualDiscountQ.value,
+        houseAccountLimit: props.review?.house_account_limit,
+      })
+      : "";
     notes.push({
       key: "auth",
       tone: "block",
       icon: "lucide:shield-check",
-      message: "Esta venda precisa de um gerente.",
-      // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
-      // o diálogo já os traduz; o aviso os ignorava, e o operador tinha de
-      // chamar o gerente para só então descobrir o motivo.
-      hint: managerAuthReason({
-        reasons: props.review?.approval_reasons,
-        thresholdQ: managerThresholdQ.value,
-        discountQ: manualDiscountQ.value,
-        houseAccountLimit: props.review?.house_account_limit,
-      }),
+      // Acima do plano, o aviso nomeia o porquê e os números (D-041): "200 pedidas,
+      // 22 planejadas para 17/11". Só o gerente libera.
+      message: overPlanLines.value.length
+        ? "A encomenda passa do plano. Só o gerente libera."
+        : "Esta venda precisa de um gerente.",
+      hint: [overPlanText.value, others].filter(Boolean).join(" "),
     });
   }
   // Nada trava: entra quanto pedir à pessoa da vez. É a frase que o operador
@@ -1756,9 +1783,12 @@ defineExpose({
               class="flex flex-wrap items-center gap-3 rounded-md border border-warning bg-warning/10 p-3 text-warning"
             >
               <Icon :name="note.icon" class="size-6 shrink-0" :class="note.accent || ''" />
+              <!-- O porquê leva os números (os dois do plano, o valor do desconto): letra
+                   menor, nunca mais clara. Com `opacity-80` o âmbar sobre o âmbar dava
+                   3,7:1, abaixo do mínimo (auditoria da prévia do WP-E2). -->
               <span class="min-w-0 flex-1">
                 <span class="block text-lg leading-snug font-semibold">{{ note.message }}</span>
-                <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
+                <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug">{{ note.hint }}</span>
               </span>
               <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do aviso. -->
               <div v-if="noticeActions(note).length" class="flex w-full flex-wrap gap-2">
@@ -2587,12 +2617,28 @@ defineExpose({
     action="sale_approval"
     :threshold-q="managerThresholdQ"
     :discount-q="manualDiscountQ"
-    :reasons="review?.approval_reasons"
+    :reasons="otherApprovalReasons"
     :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"
     :managers="managers"
     :busy="loading || managerCheckBusy"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"
-  />
+  >
+    <!-- Encomenda acima do plano: o gerente vê os dois números de cada linha
+         ANTES de assinar (D-041). O carimbo vale só para eles. -->
+    <template v-if="overPlanLines.length" #context>
+      <div class="grid gap-1 rounded-md border border-warning/50 bg-warning/10 px-3 py-2" data-over-plan-context>
+        <p class="text-sm font-semibold text-foreground">A encomenda passa do plano</p>
+        <p
+          v-for="line in overPlanLines"
+          :key="line.sku"
+          class="text-sm text-foreground tabular-nums"
+          data-over-plan-line
+        >
+          {{ overPlanSummary([line]) }}
+        </p>
+      </div>
+    </template>
+  </OperatorManagerAuth>
 </template>

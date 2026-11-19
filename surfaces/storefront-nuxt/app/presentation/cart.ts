@@ -41,10 +41,12 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     unit_price_q: meta.price_q,
     total_price_q: meta.price_q * qty,
     price_display: meta.price_display,
-    total_display: formatCentavos(meta.price_q * qty),
     image_url: meta.image_url,
     discount_label: null,
     promo_price_display: null,
+    line_total_display: formatCentavos(meta.price_q * qty),
+    line_total_struck_display: null,
+    list_price_q: meta.price_q,
     is_available: true,
     availability_warning: null,
     available_qty: null,
@@ -64,12 +66,17 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
   }
 }
 
+// A linha com promoção do produto é a que traz o cheio para riscar: nela o
+// total acompanha o unitário com desconto. Nas outras o total é o cheio, mesmo
+// quando um desconto de pedido foi rateado no preço cobrado (`unit_price_q`).
 function withQty (line: CartItemProjection, qty: number): CartItemProjection {
+  const hasPromo = line.line_total_struck_display != null
   return {
     ...line,
     qty,
     total_price_q: line.unit_price_q * qty,
-    total_display: formatCentavos(line.unit_price_q * qty)
+    line_total_display: formatCentavos((hasPromo ? line.unit_price_q : line.list_price_q) * qty),
+    line_total_struck_display: hasPromo ? formatCentavos(line.list_price_q * qty) : null
   }
 }
 
@@ -79,12 +86,36 @@ export function cartItemsCount (items: CartItemProjection[]): number {
 
 // Preço por unidade da linha, na mesma dupla do cardápio: com promoção, o cheio
 // riscado (`original`) e o da promoção (`current`); sem promoção, só o cheio.
-// O total da linha segue cheio, para a soma das linhas fechar com o Subtotal.
 export function linePrice (line: Pick<CartItemProjection, 'price_display' | 'promo_price_display'>): { original: string | null, current: string } {
   const promo = line.promo_price_display?.trim()
   return promo && promo !== line.price_display
     ? { original: line.price_display, current: promo }
     : { original: null, current: line.price_display }
+}
+
+// O total da linha, na mesma dupla do unitário (decisão do dono 1, 16/11/2026):
+// com promoção do produto, o total com desconto (`current`) e o cheio para
+// riscar (`original`); sem promoção, só o total. A soma dos `current` é o
+// Subtotal do resumo.
+export function lineTotal (line: Pick<CartItemProjection, 'line_total_display' | 'line_total_struck_display'>): { original: string | null, current: string } {
+  const struck = line.line_total_struck_display?.trim()
+  return struck && struck !== line.line_total_display
+    ? { original: struck, current: line.line_total_display }
+    : { original: null, current: line.line_total_display }
+}
+
+// A nota sob o Subtotal: quanto as promoções de produto já abateram nas linhas.
+// Informa, não subtrai: o Subtotal já é a soma das linhas com desconto.
+export function promoSavingsNote (cart: Pick<CartProjection, 'promo_savings_display'>): string {
+  const saved = cart.promo_savings_display?.trim()
+  return saved ? `Já com ${saved} de desconto em promoções.` : ''
+}
+
+// O sinal do desconto no resumo: "R$ 2,00" → "- R$ 2,00".
+export function discountDisplay (amount: string): string {
+  const value = amount.trim()
+  if (!value) return ''
+  return value.startsWith('-') ? value : `- ${value}`
 }
 
 // Planned-hold (AVAILABILITY-PLAN §8): a linha ou aguarda confirmação da
@@ -94,13 +125,13 @@ export function linePrice (line: Pick<CartItemProjection, 'price_display' | 'pro
 
 // 'reserved': a linha segura reserva planejada, mas o pedido não entra em fila
 // na data em que ele vai sair (data anterior com saldo, ou pedido para depois
-// da fornada). Mesma regra de `reviewWaitlist`: sem selo de espera nem
-// "Previsto para", e a linha também não aparece como indisponível.
+// da fornada). Mesma regra de `reviewWaitlist`: sem aviso de espera, e a linha
+// também não aparece como indisponível. Quando o item fica pronto é a promessa
+// da linha que diz (`cartLinePromise`), não este estado.
 export type CartLineHold = {
   kind: 'awaiting' | 'ready' | 'reserved'
   deadlineIso: string | null
   deadlineDisplay: string | null
-  plannedForNotice: string | null
 }
 
 type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_ready_for_confirmation' | 'confirmation_deadline_iso' | 'confirmation_deadline_display' | 'planned_for_notice'>
@@ -109,8 +140,8 @@ type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_read
 /** O estado de reserva da linha na sacola. `deliveryDate` é a data em que o
  *  pedido vai sair: na sacola, ainda sem escolha, é o piso que o checkout vai
  *  pré-selecionar (`cartBatchFloor`). A espera segue a MESMA regra da revisão
- *  (`reviewWaitlist`): o "Previsto para sexta" não pode aparecer na sacola e
- *  sumir no "Finalizar" para a mesma data (beta 09/11). */
+ *  (`reviewWaitlist`): a espera não pode aparecer na sacola e sumir no
+ *  "Finalizar" para a mesma data (beta 09/11). */
 export function lineHoldState (
   line: HoldFields,
   deliveryDate: string = '',
@@ -126,12 +157,11 @@ export function lineHoldState (
   // duas coisas. Calar a espera porque o item é preparado na hora tiraria da
   // tela justamente o "quando".
   if (line.is_ready_for_confirmation) {
-    return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display, plannedForNotice: null }
+    return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display }
   }
   if (line.is_awaiting_confirmation) {
     const wait = reviewWaitlist({ ...line, planned_for_date: line.planned_for_date ?? null }, deliveryDate, today)
-    if (!wait) return { kind: 'reserved', deadlineIso: null, deadlineDisplay: null, plannedForNotice: null }
-    return { kind: 'awaiting', deadlineIso: null, deadlineDisplay: null, plannedForNotice: wait.notice || null }
+    return { kind: wait ? 'awaiting' : 'reserved', deadlineIso: null, deadlineDisplay: null }
   }
   return null
 }
