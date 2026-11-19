@@ -93,7 +93,7 @@ test.describe('cenários variados', () => {
     await login(page)
     await page.goto('/conta/pedidos', { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2500)
-    const refazer = page.getByRole('button', { name: /Refazer/i }).first()
+    const refazer = page.getByRole('button', { name: /Repetir pedido/i }).first()
     console.log('[report] botão refazer count:', await refazer.count())
     if (await refazer.count()) {
       await refazer.click()

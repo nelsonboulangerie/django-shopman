@@ -37,6 +37,17 @@ Definida no Product (`shopman.offerman`), respeitada pelo Stockman:
 - `planned_ok` — aceita produção planejada
 - `demand_ok` — aceita holds sem estoque (demanda)
 
+### Validade e margem
+O saldo conta para uma data-alvo enquanto estiver válido nela. A validade tem duas fontes, e as duas valem juntas (a mais restritiva ganha):
+- **Lote datado** — `Batch.expiry_date`.
+- **Saldo sem lote** — validade implícita: dia de produção + `shelf_life_days` do produto. É o caso de toda fornada planejada (`Quant.target_date` preenchido) e do que está em produção.
+
+`expiry_margin_days` (parâmetro de `quants_eligible_for`, das leituras de disponibilidade e do `hold`) pede que o saldo ainda tenha N dias de validade DEPOIS da data-alvo, e alcança as duas fontes. A fornada planejada para a própria data-alvo sempre conta, com qualquer validade. Margem 0 (o default) é "válido na data basta".
+
+O "dia de produção" de um saldo físico é o do lote dele (`Batch.production_date`), quando o lote o declara; o `created_at` do saldo é só o dia em que ele entrou no estoque. Com margem, o saldo físico de um lote é julgado pela data de produção do lote, pela mesma régua da fornada planejada: o lote de sexta fechado na quinta à noite conta para sexta, e o lote de quinta não. A janela histórica sobre o `created_at` (sem margem) continua valendo para ele. Lote nomeado sem `Batch`, ou com `Batch` sem data de produção, não declara nada: a margem cai sobre o `created_at`. A consulta do escopo passa os lotes ao `filter_valid_quants(lots=...)`; a leitura em lote passa `lot_production_date` ao `is_valid_for_date`, sem consulta a mais.
+
+`availability_for_skus_on_dates` aceita `expiry_margin_days_by_date` para quem lê, numa varredura só, datas que pedem margens diferentes. O orquestrador usa isso para a regra da casa: sobra de hoje não lastreia encomenda (`shopman/shop/policies/promise_expiry_margin.py`).
+
 ## Modelos
 
 ### Position
@@ -118,6 +129,14 @@ Definida no Product (`shopman.offerman`), respeitada pelo Stockman:
 | `expiry_date` | DateField(null) | Data de validade |
 | `supplier` | CharField(200) | Fornecedor |
 | `notes` | TextField | Observações |
+
+**Lote, sem lote e o marcador de produção.** `Quant.batch` é uma referência textual, e três coisas diferentes moram nela:
+
+- vazio: saldo sem lote (o planejado, por exemplo);
+- o ref de um `Batch`: lote de verdade, com validade e grau de qualidade;
+- `"started"` num saldo com `target_date`: o MARCADOR do que já entrou em produção (`services.scope.STARTED_BATCH`, escrito pela ponte do Craftsman). Não é lote e não existe `Batch` com esse ref.
+
+O canal que lê com lista de graus (`allowed_quality_grade_refs`) só aceita lote de verdade com grau permitido: lote nomeado sem `Batch`, ou com `Batch` sem grau, fica de fora, na leitura, na reserva e na baixa. O marcador de produção passa como o saldo sem lote (`scope.is_in_production`), porque ainda não foi inspecionado; no fechamento, o `realize` só leva a reserva para o pão cujo grau a lista dela aceita.
 
 ### StockAlert
 

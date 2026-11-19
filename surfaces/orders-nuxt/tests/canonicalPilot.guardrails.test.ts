@@ -206,8 +206,15 @@ function alertActionViolations(): string[] {
 
 describe("Gestor canônico em Nuxt UI", () => {
   it("não mantém controles HTML ou wrappers visuais paralelos", () => {
+    // "Tem mais abaixo" é a peça da suíte para conteúdo que passa da dobra (CLAUDE.md,
+    // "Tem mais abaixo (site-wide)"), e o chevron dela é um botão nativo translúcido por
+    // decisão do dono, registrada no próprio componente: um `NuxtButton` ali se leria
+    // como controle pesado. Admitida PELO NOME, sem curinga (WP-G03): qualquer outro
+    // controle HTML continua reprovando.
     expect(
-      runtimeOffenders(/<(?:button|input|select|textarea|form|table)\b/i),
+      runtimeOffenders(/<(?:button|input|select|textarea|form|table)\b/i).filter(
+        (file) => file !== "operator-kit/MoreBelow.vue",
+      ),
     ).toEqual([]);
     // Os cinco campos de data e hora da suíte são o cânone por decisão do dono (brief
     // do WP-OPERADOR-NUXTUI-ONDAS, #1529): camadas finas sobre InputDate, InputTime e

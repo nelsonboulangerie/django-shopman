@@ -1201,6 +1201,8 @@ export interface DeliveryStopProjection {
   group_refusal: string;
   error: string;
   dispatch_action: Action | null;
+  dispatch_again_action: Action | null;
+  charge_outdated: Record<string, unknown> | null;
 }
 
 /** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str', photo_url: 'str' = '') */
@@ -1244,6 +1246,7 @@ export interface DeliveryRideProjection {
   open_too_long: boolean;
   cancel_state: string;
   cancel_message: string;
+  sync_since: string;
 }
 
 /** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */

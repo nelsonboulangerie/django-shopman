@@ -1755,6 +1755,7 @@
             "_MAX_PARTIAL_HOLDS",
             "_copied",
             "_free_by_eligible_quant",
+            "_fulfilled_hold",
             "_get_product",
             "_return_remainder_to_cart",
             "create_hold",
@@ -1766,6 +1767,7 @@
             "get_availability_for_skus",
             "get_channel_scope",
             "hold_backing",
+            "hold_lot_facts",
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
@@ -1778,7 +1780,8 @@
             "retag_hold_reference",
             "return_fulfilled_hold",
             "return_hold_remainder",
-            "stock_error_code"
+            "stock_error_code",
+            "waste_fulfilled_hold"
           ]
         }
       ]
@@ -2200,6 +2203,7 @@
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
             "GoogleMerchantRegistrationForm",
+            "MAX_NO_SHOW_MINUTES",
             "MAX_PREORDER_KITCHEN_MINUTES",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
@@ -6989,6 +6993,34 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/no_show_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.no-show-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/no_show_reason.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show-customer-copy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/order_date_before_batch.py",
       "touchpoints": [
         "outro"
@@ -8011,6 +8043,20 @@
       "out_of_extraction": false,
       "unit_ids": [
         "shop.preorder-kitchen-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/promise_expiry_margin.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.promise-expiry-margin"
       ],
       "responsibilities": [
         "decisão"
@@ -14673,6 +14719,28 @@
           "symbols": [
             "ALERT_TYPE",
             "OPEN_STATUSES"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/no_show.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
           ]
         }
       ]

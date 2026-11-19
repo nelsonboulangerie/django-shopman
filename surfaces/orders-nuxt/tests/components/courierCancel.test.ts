@@ -142,7 +142,7 @@ describe("Painel do pedido: cancelar a corrida", () => {
 const stop = (ref: string) => ({
   ref, code: ref.slice(-3), customer: "Ana", place: "Centro", address: "Rua das Flores, 123", latitude: null,
   longitude: null, stage: "Pronto", volumes: 1, done: false, change_out_suggested_q: 0, needs_machine: false,
-  change_label: "", group_refusal: "", error: "", dispatch_action: null,
+  change_label: "", group_refusal: "", error: "", dispatch_action: null, dispatch_again_action: null, charge_outdated: null,
 });
 function ride(over: Partial<DeliveryRideProjection> = {}): DeliveryRideProjection {
   return {

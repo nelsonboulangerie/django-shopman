@@ -153,6 +153,38 @@ describe("useOrderDetail", () => {
     expect(d.managerChallenge.value).toBeNull();
   });
 
+  it("não retirado usa a ação da prévia, pede o gerente e reenvia com a assinatura", async () => {
+    // WP-G11: a ação `no-show` do detalhe só abre a porta (rótulo, se já pode); quem
+    // leva a base que o comando confere é a da prévia (`no-show/preview/`).
+    const base = fixtureActions({ can_confirm: true })[0]!;
+    env.fetchData.value = { order: { ref: "WEB-NR", actions: [{ ...base, ref: "no-show", priority: "menu", payload_schema: { base_revision: "detail-base", expected_actor_id: 1 } }] } };
+    const contract = { ...base, ref: "no-show", label: "Encerrar como não retirado", enabled: true, payload_schema: { base_revision: "no-show-base", expected_actor_id: 1 } };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 422,
+      data: { detail: "Não retirado pede a autorização de um gerente.", error: { code: "manager_approval_required" } },
+    });
+    const d = useOrderDetail("WEB-NR");
+
+    expect(await d.markNotPickedUp(contract)).toBe(false);
+    // Desafio não é falha: nenhum toast de erro, e o diálogo do PIN sabe o ato.
+    expect(env.sonner.error).not.toHaveBeenCalled();
+    expect(d.managerChallenge.value).toMatchObject({ code: "manager_approval_required", action: "no-show" });
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/WEB-NR/no-show/");
+    const first = env.fetchMock.mock.calls[0]![1];
+    expect(first.method).toBe("POST");
+    expect(first.body).toEqual({ base_revision: "no-show-base", expected_actor_id: 1 });
+
+    expect(await d.authorize({ username: "joyce", pin: "1234" })).toBe(true);
+    const second = env.fetchMock.mock.calls[1]![1];
+    expect(String(env.fetchMock.mock.calls[1]![0])).toBe("/api/v1/backstage/orders/WEB-NR/no-show/");
+    expect(second.body).toEqual({ base_revision: "no-show-base", expected_actor_id: 1, manager_approval: { username: "joyce", pin: "1234" } });
+    // A mesma intenção: a assinatura não cria um segundo encerramento.
+    expect(second.headers["Idempotency-Key"]).toBe(first.headers["Idempotency-Key"]);
+    expect(d.managerChallenge.value).toBeNull();
+    // O pedido é relido: a tela mostra o cancelado que o servidor gravou.
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("saveNotes/addComment enviam o corpo e tostam sucesso", async () => {
     env.fetchData.value = { order: { actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "notes", payload_schema: { base_revision: "note-base" } }, { ...fixtureActions({ can_advance: true })[0], ref: "comment", payload_schema: { base_revision: "comment-base" } }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });

@@ -18,6 +18,9 @@ Filters applied, in order:
    :func:`availability_scope_for_channel`.
 4. Batch expiry: quants whose batch expires before ``target`` plus the
    caller's ``expiry_margin_days`` are excluded (0 = only already-expired).
+   The same margin reaches batchless stock in step 2, through its implicit
+   validity (production day + ``shelf_life_days``); planned production for
+   ``target`` itself always counts.
 5. Batch quality: ``allowed_quality_grade_refs`` is an opaque allowlist
    resolved by channel policy. Motivo remains orthogonal and is never used
    to infer a grade. ``include_nonconforming`` remains a compatibility gate
@@ -34,6 +37,22 @@ from django.utils import timezone
 from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.queries import _resolve_stock_profile
 from shopman.stockman.shelflife import filter_valid_quants
+
+#: O que já entrou em produção e ainda não saiu. Quem move a quantidade do
+#: planejado para cá (a ponte do Craftsman, no início do lote) escreve este
+#: valor em ``Quant.batch`` de um saldo com ``target_date``. É um MARCADOR de
+#: etapa, não um lote: não existe ``Batch`` com esse ref, e nunca existirá.
+STARTED_BATCH = "started"
+
+
+def in_production_q() -> Q:
+    """Os saldos em produção: o marcador ``started`` num saldo PLANEJADO."""
+    return Q(batch=STARTED_BATCH, target_date__isnull=False)
+
+
+def is_in_production(quant) -> bool:
+    """:func:`in_production_q` para um quant já carregado."""
+    return quant.batch == STARTED_BATCH and quant.target_date is not None
 
 
 def quants_eligible_for(
@@ -63,7 +82,9 @@ def quants_eligible_for(
             allowlist. Applied after ``allowed_positions``.
         expiry_margin_days: Also exclude lots expiring within this many days
             AFTER ``target_date`` (near-expiry). 0 keeps the historical gate
-            (only lots already expired at ``target_date`` are out).
+            (only lots already expired at ``target_date`` are out). Batchless
+            perishable stock follows the same margin through its implicit
+            validity (see :mod:`shopman.stockman.shelflife`).
         include_nonconforming: Compatibility gate. When ``False`` and no
             explicit grade allowlist is supplied, lots with a frozen markdown
             percentage are excluded. A reason alone is informational and
@@ -99,7 +120,17 @@ def quants_eligible_for(
     # Validity precedence: shelf_life_days (relative window) and Batch.expiry_date
     # (absolute lot date) are applied as an AND — a quant must pass both. The most
     # restrictive signal wins. Locked by TestShelflifeBatchPrecedence.
-    qs = filter_valid_quants(qs, product_ns, target)
+    #
+    # O dia de produção de um saldo físico de lote é o do lote, não o do
+    # ``created_at``: com margem, o lote de amanhã fechado hoje conta para
+    # amanhã, e o pão de hoje segue fora (ver :mod:`shopman.stockman.shelflife`).
+    qs = filter_valid_quants(
+        qs,
+        product_ns,
+        target,
+        margin_days=expiry_margin_days,
+        lots=Batch.objects.filter(sku=sku) if expiry_margin_days > 0 else None,
+    )
 
     if allowed_positions is not None:
         qs = qs.filter(position__ref__in=allowed_positions)
@@ -127,7 +158,15 @@ def quants_eligible_for(
         # only when its Batch fact exists for this SKU and carries an allowed
         # grade.  The empty coordinate remains distinct: it is genuinely
         # batchless stock and must not acquire a made-up QC classification.
-        qs = qs.filter(Q(batch="") | Q(batch__in=allowed_batch_refs))
+        #
+        # O que está EM PRODUÇÃO passa como o planejado sem lote: ainda não
+        # foi inspecionado, então não há grau a comparar. O marcador não abre
+        # a porta para lote nomeado sem ``Batch``: só vale num saldo com data
+        # (nunca no físico), e quem decide se a reserva acompanha o pão que
+        # sair é o ``realize``, pelo grau da inspeção. Sem isto o canal com
+        # lista de graus prometia o lote planejado e deixava de prometê-lo no
+        # instante em que ele começava (#2715).
+        qs = qs.filter(Q(batch="") | in_production_q() | Q(batch__in=allowed_batch_refs))
     elif not include_nonconforming:
         nonconforming_refs = list(Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True))
         if nonconforming_refs:

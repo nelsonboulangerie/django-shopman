@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from shopman.shop.policies import no_show_reason
+
 OTHER = "other"
 
 
@@ -135,7 +137,19 @@ AUTOMATIC_CANCEL_REASONS: tuple[CancelReason, ...] = (
     ),
 )
 
-_BY_KEY = {reason.key: reason for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)}
+_BY_KEY = {
+    reason.key: reason
+    for reason in (
+        *OPERATOR_CANCEL_REASONS,
+        *AUTOMATIC_CANCEL_REASONS,
+        # "Não retirado" (WP-G11): fora das duas listas de propósito. Não é motivo
+        # que o operador escolhe em "Cancelar pedido" nem cancelamento automático;
+        # é gesto próprio, assinado por um Gerente (``policies/no_show_reason``).
+        CancelReason(
+            key=no_show_reason.KEY, label=no_show_reason.LABEL, customer_text=no_show_reason.BASE_TEXT,
+        ),
+    )
+}
 _OPERATOR_KEYS = frozenset(reason.key for reason in OPERATOR_CANCEL_REASONS)
 
 # Códigos de máquina dos cancelamentos automáticos → chave da lista.
@@ -201,7 +215,11 @@ def payment_deadline_reason_key(method: str) -> str:
 
 def customer_text(order_data: dict | None) -> str:
     """O texto que o cliente lê sobre o motivo do cancelamento deste pedido."""
-    return _BY_KEY[reason_key_of(order_data)].customer_text
+    key = reason_key_of(order_data)
+    if key == no_show_reason.KEY:
+        # O "Não retirado" completa a frase com o destino do dinheiro.
+        return no_show_reason.customer_text((order_data or {}).get("no_show"))
+    return _BY_KEY[key].customer_text
 
 
 __all__ = [

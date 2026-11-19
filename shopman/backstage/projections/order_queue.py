@@ -127,6 +127,14 @@ def _order_payment_status_label(order, payment_status: str) -> str:
         return CARD_CAPTURE_FAILED_LABEL
     if payment_status not in _PAYMENT_COMPLETE and payment_svc.awaiting_repayment(order) is not None:
         return AWAITING_REPAYMENT_LABEL
+    if (order.data or {}).get("no_show"):
+        # Pedido não retirado (WP-G11): só parte do valor volta. "Reembolsado"
+        # sozinho mentiria sobre o que ficou com a loja.
+        from shopman.backstage.projections.order_no_show import payment_outcome_label
+
+        outcome = payment_outcome_label(order)
+        if outcome:
+            return outcome
     return payment_status_label(payment_status)
 
 
@@ -1229,6 +1237,13 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         confirmation={"required": True, "manager_approval": cancel_capability["cancel_requires_approval"]},
     )
     extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
+    # "Não retirado" (WP-G11): só para pedido pronto, de retirada, fora do iFood e
+    # do balcão. A régua (quem, a hora, o motivo) é de ``projections/order_no_show``.
+    from shopman.backstage.projections.order_no_show import detail_action as no_show_detail_action
+
+    no_show_action = no_show_detail_action(order, user)
+    if no_show_action is not None:
+        extra_actions.append(no_show_action)
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -1406,7 +1421,8 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
     extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
         enabled=authorized and courier_block["can_dispatch"],
         reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-            "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+            "" if courier_block["can_dispatch"] else
+            courier_block.get("not_today") or "Confira o estado do pedido e da corrida antes de despachar."),
         method="POST", idempotency="required",
         confirmation={"required": True, "description": _courier_dispatch_question(order)},
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
@@ -1646,9 +1662,11 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, unresolved_dispatch
+        from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
+        # A encomenda de outro dia: chamar recusa com a frase (a régua do servidor).
+        not_today = not_today_refusal(order) if order_can_ride and not active else ""
         # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
         # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
@@ -1696,7 +1714,8 @@ def _courier_block(order: Order) -> dict | None:
             "position": position,
             "error": error,
             "can_quote": can_quote(order),
-            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
+            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None and not not_today,
+            "not_today": not_today,
             "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and courier_can_cancel(order, cancel),
             # Em que pé está o cancelamento pedido: ``{state, message, at}``
@@ -1710,7 +1729,7 @@ def _courier_block(order: Order) -> dict | None:
             # Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais
             # perto primeiro. Só enquanto este pedido pode ser chamado.
             "ride_offer": (_ride_offer(order) if adapter_on and house and not active and order_can_ride
-                           and unresolved is None else []),
+                           and unresolved is None and not not_today else []),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
             "charge_outdated": charge_outdated(order),
@@ -3819,6 +3838,15 @@ def _cancellation_detail(order: Order) -> str:
     reason = cancel_reasons.cancel_reason(data.get("cancellation_reason_key"))
     label = reason.label if reason else ""
     note = str(data.get("cancellation_internal_note") or "").strip()
+    if data.get("no_show"):
+        # Não retirado (WP-G11): o gesto é assinado por um Gerente, e quem chega
+        # no turno seguinte lê quem assinou ao lado do motivo.
+        from shopman.backstage.projections.order_no_show import approver_username
+
+        approver = approver_username(order)
+        if approver:
+            name = _actor_names([approver]).get(approver, approver)
+            label = f"{label} · autorizado por {name}" if label else f"Autorizado por {name}"
     if label and note:
         return f"{label}: {note}"
     return label or note

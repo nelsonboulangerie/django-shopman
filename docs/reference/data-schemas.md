@@ -333,7 +333,7 @@ for key in (
 | `customer_ref` | `string` | CustomerIdentificationHandler | CheckoutInferDefaultsHandler | Ref do Customer criado/encontrado |
 | `fulfillment_created` | `bool` | FulfillmentCreateHandler | FulfillmentCreateHandler (idempotência) | Flag: Fulfillment object criado |
 | `cancellation_reason` | `string` | PixTimeoutHandler, PaymentTimeoutHandler, ConfirmationTimeoutHandler, OrderCancelView, GestorOrderRejectView | hooks._on_cancelled, `fiscal.cancel` (justificativa) | Motivo (auditoria): `"pix_timeout"`, `"card_timeout"`, `"confirmation_timeout"`, `"customer_requested"`, o rótulo do motivo escolhido pelo operador (cancelar) ou o texto da recusa / a descrição do iFood. **Pode conter código de máquina — nunca exibir ao cliente.** |
-| `cancellation_reason_key` | `string` | `cancellation.cancel` (sempre: a do operador, ou a derivada do código de máquina por `cancel_reasons.reason_key_for`) | `lifecycle._on_cancelled`, `notification._status_note`, `order_tracking` | Chave estável do motivo, da lista única `shopman/shop/services/cancel_reasons.py`: `out_of_stock`, `cannot_deliver`, `high_demand`, `duplicate_order`, `customer_request`, `payment_not_confirmed`, `store_closing`, `other` (dono, 07/11/2026: uma lista só para recusar e cancelar, nada configurável no Admin). O cliente lê o **texto revisado da chave** na notificação `order_cancelled` (`{status_note}`) e na página do pedido (lá, `other` e Pix vencido não mostram motivo). Obrigatória no cancelar e no recusar do operador (`OrderCancelView`, `OrderRejectView`, erro `{detail, field: "reason_key", errors}`), em qualquer canal; o aviso `order_rejected` também leva o texto revisado dela, e a observação livre vai para `cancellation_internal_note`. No iFood, `customer_request` e `payment_not_confirmed` não são oferecidos (`cancel_reasons.IFOOD_HIDDEN_KEYS`) e o `cancellationCode` sai da chave por `ifood_callbacks.DEFAULT_REASON_CODES` (fixo no código), gravado em `ifood_cancellation_code`. Automáticos: prazo de pagamento vencido (`payment.timeout`) grava `pix_expired` no Pix e `payment_deadline_passed` nos outros meios (só do sistema; `pix_timeout` → `pix_expired`, `payment_timeout`/`card_timeout` → `payment_deadline_passed`): a frase diz que nada foi cobrado e como pedir de novo, e é o ÚNICO aviso do vencimento (P1-9); `customer_requested` → `customer_request`; `confirmation_timeout` → `store_did_not_confirm` (só do sistema, fora da lista do operador: "Não conseguimos confirmar seu pedido dentro do prazo."); o resto → `other` |
+| `cancellation_reason_key` | `string` | `cancellation.cancel` (sempre: a do operador, ou a derivada do código de máquina por `cancel_reasons.reason_key_for`) | `lifecycle._on_cancelled`, `notification._status_note`, `order_tracking` | Chave estável do motivo, da lista única `shopman/shop/services/cancel_reasons.py`: `out_of_stock`, `cannot_deliver`, `high_demand`, `duplicate_order`, `customer_request`, `payment_not_confirmed`, `store_closing`, `other` (dono, 07/11/2026: uma lista só para recusar e cancelar, nada configurável no Admin). O cliente lê o **texto revisado da chave** na notificação `order_cancelled` (`{status_note}`) e na página do pedido (lá, `other` e Pix vencido não mostram motivo). Obrigatória no cancelar e no recusar do operador (`OrderCancelView`, `OrderRejectView`, erro `{detail, field: "reason_key", errors}`), em qualquer canal; o aviso `order_rejected` também leva o texto revisado dela, e a observação livre vai para `cancellation_internal_note`. No iFood, `customer_request` e `payment_not_confirmed` não são oferecidos (`cancel_reasons.IFOOD_HIDDEN_KEYS`) e o `cancellationCode` sai da chave por `ifood_callbacks.DEFAULT_REASON_CODES` (fixo no código), gravado em `ifood_cancellation_code`. Automáticos: prazo de pagamento vencido (`payment.timeout`) grava `pix_expired` no Pix e `payment_deadline_passed` nos outros meios (só do sistema; `pix_timeout` → `pix_expired`, `payment_timeout`/`card_timeout` → `payment_deadline_passed`): a frase diz que nada foi cobrado e como pedir de novo, e é o ÚNICO aviso do vencimento (P1-9); `customer_requested` → `customer_request`; `confirmation_timeout` → `store_did_not_confirm` (só do sistema, fora da lista do operador: "Não conseguimos confirmar seu pedido dentro do prazo."); o resto → `other`. Fora das duas listas: `not_picked_up` ("Não retirado", WP-G11), gravada só por `no_show.mark_not_picked_up`; a chave e o texto dela moram em `shopman/shop/policies/no_show_reason.py`, e o texto ganha a frase do dinheiro a partir de `no_show` |
 | `cancellation_internal_note` | `string` | `operator_orders.cancel_order` (via OrderCancelView `internal_note`) | auditoria (histórico do pedido) | Observação livre do operador no cancelar. **Interna: nunca vai ao cliente** (nem na notificação, nem na página do pedido). Ausente quando o operador não escreveu nada |
 | `rejected_by` | `string` | GestorOrderRejectView | — | Username do operador que rejeitou |
 | `card_authorization_expired_at` | `string` | `services/card_authorization.expire` (Directive `payment.card_authorization_watch`) | auditoria | ISO datetime em que o pedido foi cancelado porque a autorização do cartão (captura manual) venceu no Stripe sem aceite. Vem com `cancellation_reason="card_authorization_expired"` e `cancellation_note` (o motivo que o cliente lê). Nada foi cobrado: o intent fica `cancelled` no Payman |
@@ -345,6 +345,7 @@ for key in (
 | `kds_started` | `dict[str, dict]` | `shop.services.kds._record_ticket_start` (primeiro "Iniciar preparo" do ticket na estação) | KDSTicketProjection (`started_by` = o primeiro nome da conta, `started_at_display`: "iniciado por Rafael às 21:56" no card e no detalhe do ticket) | Quem iniciou cada ticket do KDS e quando: `{"<ticket_pk>": {at, by}}` (`at` ISO, `by` = username). Só o PRIMEIRO início conta (replay e recall não sobrescrevem). Ticket de comanda ainda sem pedido (Session) não registra aqui; o marco que vale para TODO ticket, com ou sem pedido, é `KDSTicket.started_at`/`started_by`/`open_tickets_at_start` (campos do ticket, gravados no mesmo primeiro início: o ticket sobrevive ao commit pelo `session_key`), e é de lá que o B.I. mede o preparo real (`bi_delivery_timing`). Lido também pelo Histórico de hoje da estação (`GET kds/<ref>/history/`, "iniciado 21:42 Rafael" e o tempo de preparo). O Pronto desfeito NÃO mora aqui: fica no próprio ticket, `KDSTicket.reopenings` = `[{completed_at, completed_by, completed_via, undone_at, undone_by}]` (datas ISO, logins), gravado por `KDSTicket.undo_completion` nas duas portas que reabrem (a estação e o desfazer do pronto automático do Gestor), porque o ticket de comanda também se reabre e a Session não leva o registro ao pedido. A ciência do cancelamento grava quem em `KDSTicket.acknowledged_by` |
 | `assignment` | `dict` | OrderAssignView (operator_orders.assign_order) | OrderCardProjection (`assigned_operator`) | Operador que assumiu o pedido ("estou atendendo"): `{operator_id, operator_name, at}`. Removido por OrderUnassignView |
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
+| `no_show` | `dict` | `shop.services.no_show.mark_not_picked_up` (API `POST orders/<ref>/no-show/`), sob lock do pedido, ANTES da transição a `cancelled` | `stock.revert_fulfilled` (`no_show.stock_plan`), `payment.retained_q`/`refund_ceiling_q`, `policies/no_show_reason.customer_text` (por `cancel_reasons.customer_text`), conciliação (`financial_reconciliation`), prévia do Gestor | Pedido de retirada pronto que o cliente não veio buscar (WP-G11): o destino de cada linha e do dinheiro. Só existe em pedido cancelado com `cancellation_reason_key = "not_picked_up"` (ver detalhamento) |
 | `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
 | `nfce_access_key` | `string` | NFCeEmitHandler | NFCeEmitHandler (idempotência), ReturnService | Chave de acesso NFCe |
 | `nfce_authorized_at` | `string` | NFCeEmitHandler (`_record`, de `data_autorizacao` da Focus) | `services.fiscal.cancellation_path` | ISO datetime da **Autorização de Uso** na SEFAZ — não da emissão nem da gravação. É o instante de onde conta o prazo de cancelamento (RICMS/PR, Anexo III, Subanexo I, art. 35: 30 minutos). Vazio quando a Focus não devolveu a data: aí o prazo **não é chutado**, o operador é avisado de que não deu para medir |
@@ -369,7 +370,7 @@ for key in (
 | `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação. No commit sem portão de estoque (PDV, marketplace), `lifecycle._on_commit` grava `decisions` a partir das reservas (`stock.availability_decisions_from_holds`): `available_qty` é o que tem lastro, `demand_qty` o que ficou como demanda sem fornada, e `reason_code: "demand_over_plan"` quando há demanda (#2559) |
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer.self_cancel"` (o cliente, pelo site), `"concierge"` (a Concierge, a pedido do cliente, pela mesma régua do site) ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
-| `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry rastreada: `{sku, hold_id, qty}`. SKU sem ledger usa exclusivamente `{sku, hold_id: null, qty: 0, is_tracked: false}`. |
+| `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry rastreada: `{sku, hold_id, qty}`. SKU sem ledger usa exclusivamente `{sku, hold_id: null, qty: 0, is_tracked: false}`. Um SKU pode ter várias entries: a reserva é uma por saldo. Na encomenda acima do plano da data (#2685), as primeiras entries são o que a fornada da data cobre (reserva presa ao saldo) e a última é o resto, como demanda sem fornada (`Hold.quant` nulo). |
 | `adjustment` | `dict` | `shop/services/order_composition.record()`, pelo caminho único `shop/services/order_edit.apply_final_items` — chamado pelo iFood (`ifood_events._apply_patch`, `ORDER_PATCHED`, `source: "ifood:ORDER_PATCHED"`) e pela edição da encomenda no balcão (`order_edit.edit`, API `POST orders/<ref>/edit/`, `source: "pos:edit"`, `event_id: "pos-edit:<ref>:<revision>"`) e pela Concierge acrescentando itens a pedido do cliente (`concierge/order_addition.apply` → `order_edit.edit(source="concierge:add")`, `event_id: "concierge-edit:<ref>:<revision>"`, só aumento de itens) | **TODO consumidor de item ou total de pedido**, via `shop/services/order_composition`: `kds._order_to_lines`, `stock.revert`/`reconcile_to_items`, `fiscal._build_fiscal_items`, `views/fiscal_danfe`, `handlers/returns`, `projections/order_tracking`, `backstage/projections/order_queue`, `backstage/projections/kds`, `backstage/services/receipt_escpos`, `backstage/services/closing`, `backstage/bi/sources/orderman` | **O pedido depois de o cliente alterá-lo.** `{source, event_id, revision, applied_at, items, total_q, sealed_total_q}`. Existe porque `Order.total_q` e `Order.snapshot` são `SEALED_FIELDS`: o estado novo não tem onde ser escrito por cima, então vive ao lado. ⚠️ **`items` é a lista FINAL, absoluta** (relida com `ifood_orders.fetch_order`), nunca um delta — um ajuste novo SUBSTITUI o anterior, e `revision` conta quantas vezes o pedido mudou. `total_q` é o total que a fonte paga (o `orderAmount` do iFood; na edição do balcão, o total vigente mais a diferença das linhas que mudaram — nenhuma regra promocional é reavaliada). Na edição, item novo ganha `line_id` `E<revision>-<n>` e `meta.added_by` = a origem (`"pos:edit"` ou `"concierge:add"`); a peça vendida por peso que entra na edição é uma linha por peça, com quantidade em kg e `meta.weighed` no mesmo formato da venda (`{entry, weight_g, price_per_kg_q, total_q, label_q?}`, `weighed_sale.WeighedLine.as_meta`), e a peça que já estava não muda de peso; a taxa de entrega é a linha `__DELIVERY_FEE__` (`meta.type = "delivery_fee"`, `line_id` `E<revision>-FEE` quando nasce na edição); `sealed_total_q` guarda o `Order.total_q` original, que é o que permite dizer "era X, virou Y". ⚠️ **Ninguém soma isto por conta própria**: quem lê item ou total de pedido chama `order_composition.effective_items()` / `effective_total_q()`, porque duas telas somando cada uma do seu jeito é divergência garantida entre o que a cozinha faz e o que o B.I. fatura |
 | `stock_ceded_holds` | `list[dict]` | `StockService.hold(order)` (caminho otimista, venda consumada fora: `payment.timing == "external"`, data de hoje) | operador/auditoria | Reservas de CARRINHO que cederam a esta venda quando o livre não bastava (`adapters/stock.reserve_ceding_cart_holds`). Cada entry: `{sku, hold_id, reference, qty, ceded_qty, remainder_hold_id}` — `reference` é a sessão que perdeu, `ceded_qty` o que esta venda levou, `remainder_hold_id` a reserva nova com o troco devolvido à sacola (ou `null`). O hold cedido carrega `metadata.ceded_to = "order:<ref>"`. Ausente quando nada cedeu. Reserva de pedido (`order:`) nunca aparece aqui |
 | `lifecycle` | `dict` | `lifecycle.dispatch()` via `_mark_phase_complete` | `sweep_stuck_orders`, `LifecyclePhaseHandler`, `phase_complete()` | Conclusão do handler de fase, `{on_commit: "done", on_accepted: "done", on_paid: "done", on_preparing: "done", on_ready: "done", on_dispatched: "done", on_delivered: "done", on_completed: "done", on_cancelled: "done", on_returned: "done"}`; apenas fases efetivamente retornadas com sucesso. Não prova conclusão remota dos filhos. Chaves históricas desconhecidas são preservadas. preparing/ready/dispatched/delivered/completed/returned ganham Directive no commit da transição; falha do marcador mantém a tarefa recuperável. Estado avançado não cria marcador por inferência. |
@@ -649,6 +650,48 @@ Registro legado já `refund_processed=true` é preservado, sem novo recebimento.
 legado incompleto sem versão fica pendente de inventário/autorização: um Move antigo pode
 já existir, e não é seguro receber outra vez. A fase returned delega estoque/estorno ao
 ReturnHandler quando existe registro de devolução; não recebe todos os itens novamente.
+
+### no_show — detalhamento
+
+```json
+{
+  "at": "2026-11-18T19:05:00-03:00",
+  "actor": "operador@loja.com",
+  "approved_by": "gerente",
+  "lines": [
+    {"line_id": "L1", "sku": "CROIS-01", "name": "Croissant", "qty": "2", "destiny": "restock", "reason": "", "value_q": 1870},
+    {"line_id": "L2", "sku": "CAFE-ESP", "name": "Espresso", "qty": "1", "destiny": "loss", "reason": "made_to_order", "value_q": 900}
+  ],
+  "paid_q": 2770,
+  "refund_q": 1870,
+  "retained_q": 900
+}
+```
+
+Regra numa frase: **o dinheiro segue o produto**. Quem registra é o Gestor
+(`POST /api/v1/backstage/orders/<ref>/no-show/`, prévia em `GET .../no-show/preview/`),
+sempre com o PIN de um Gerente: `approved_by` é o `username` verificado de quem assinou.
+O bloco é gravado antes da transição, junto de `cancellation_reason = "not_picked_up"` e
+`cancellation_reason_key = "not_picked_up"`; o `on_cancelled` do lifecycle não muda, e os
+services que ele chama leem o bloco.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `at` | `string` (ISO datetime) | Quando o gesto foi feito |
+| `actor` | `string` | Quem operava a tela |
+| `approved_by` | `string` | O Gerente que assinou (PIN ou crachá) |
+| `lines[].destiny` | `"restock"` \| `"loss"` | `restock`: a linha volta à venda, no MESMO lote de onde saiu, e o cliente recebe `value_q`. `loss`: vira perda de estoque com motivo, e a loja fica com `value_q`. Decidido pelo servidor (`no_show.decide_destiny`) |
+| `lines[].reason` | `string` | Por que é perda: `made_to_order` (ficha vigente "Na hora"), `no_stock` (sem reserva de estoque baixada: não há o que devolver ao balcão), `lot_expired` (o lote venceu na hora do gesto). Vazio em `restock` |
+| `lines[].qty` | `string` (decimal) | A quantidade da linha |
+| `lines[].value_q` | `int` | O valor da linha: `unit_price_q × qty` sobre `order_composition.effective_items` (o mesmo cálculo da devolução) |
+| `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
+| `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
+| `retained_q` | `int` | `paid_q − refund_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
+
+Pedido não pago: `paid_q = refund_q = retained_q = 0`. A validade do lote é lida de
+`Batch.expiry_date` (pelo `Quant.batch`); sem lote com validade, do `shelf_life_days` do
+produto contado do dia do saldo; sem nenhum dos dois, a linha é `restock`. O insumo da linha
+feita na hora é acertado por `made_to_order.settle_cancellation`, não por este bloco.
 
 ### Exemplo completo (Order.data)
 
@@ -1486,6 +1529,7 @@ Lido por: `hooks._build_directive_payload`, `hooks._maybe_schedule_card_timeout`
 | `allowed_positions` | `list[str] \| None` | `None` | Posições de estoque aceitas. None = todas vendáveis |
 | `allow_untracked` | `bool` | `true` | SKU fora do CATÁLOGO pode entrar em pedido sem reserva (seam de integração/smoke). Canais de CLIENTE declaram `false` — typo de SKU falha limpo no gate de commit (`ValidationError(unknown_sku)`, sem pedido, sem hold). Produto que existe no catálogo mas não é rastreado pelo Stockman segue passando |
 | `default_lead_time_hours` | `int` | `0` | Antecedência mínima (horas) para registrar DEMANDA (encomenda sem fornada planejada) quando o produto não declara `Product.metadata.lead_time_hours`. `0` = sem exigência. Lido por `shop/services/lead_time.py` |
+| `expiry_margin_days` | `int` | `0` | Margem de validade do canal: não oferece saldo a menos de N dias do vencimento. Vale para o lote datado (`Batch.expiry_date`) e para o saldo sem lote, pela validade implícita (dia de produção + `shelf_life_days`). `0` = só o vencido fica de fora. ⚠️ Esta é a margem da venda de HOJE. Para data FUTURA a margem efetiva ganha um dia em todo canal (`policies/promise_expiry_margin.expiry_margin_for_target`, regra do dono de 18/11/2026, #2693): o que estará no último dia de validade na data não lastreia a promessa para ela, e a fornada planejada para a própria data sempre conta, como conta o lote que declara essa data de produção, mesmo fechado na véspera. Não é campo novo nem configuração: a regra é do alvo, não do canal |
 
 Lido por: `StockHoldHandler`, `confirmation.py` helpers, `apps._validate_hold_ttl`.
 
@@ -1830,6 +1874,23 @@ chaves do bloco são preservadas. Na tela, o preparo por SKU se escreve como
 | `preorder_kitchen.lead_minutes` | `int` (>= 0) | `15` | Antecedência somada ao preparo |
 | `preorder_kitchen.default_prep_minutes` | `int` (>= 0) | `30` | Fallback declarado: o preparo do SKU sem tempo próprio |
 | `preorder_kitchen.prep_minutes_by_sku` | `dict[str, int]` | `{}` | Preparo pré-configurado por SKU. Pedido com várias linhas usa o MAIOR (as estações trabalham em paralelo) |
+
+### Pedido não retirado — `Shop.defaults["no_show"]`
+
+Quando o Gestor passa a oferecer "Não retirado" num pedido de retirada que ficou pronto
+(WP-G11). Source-of-truth tipado em `shopman/shop/policies/no_show_policy.py`
+(`NoShowPolicy`); lido por `no_show.release_gate`. Valor inválido cai no padrão.
+
+Editado no Admin em **Configurações › Pedidos e entrega › Pedido não retirado**
+(`ShopOrderingAdmin`, campos `defaults_no_show_*`). O form grava as três chaves sempre (em
+branco = padrão declarado) e recusa minutos fora de 0 a 1440; outras chaves do bloco são
+preservadas.
+
+| Chave | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `no_show.tolerance_minutes` | `int` (>= 0) | `60` | Pedido NÃO pago libera em `hora combinada + tolerância`; sem hora combinada, em `ready_at + tolerância` |
+| `no_show.cutoff_minutes_before_close` | `int` (>= 0) | `0` | Pedido PAGO libera no corte do dia combinado: o fechamento da loja naquele dia (`business_calendar.selling_hours_for`) menos estes minutos. Dia combinado já passado: liberado. Dia sem expediente declarado: vale a régua do não pago |
+| `no_show.paid_waits_cutoff` | `bool` | `true` | `false`: o pago segue a mesma régua do não pago |
 
 ### Produção — `Shop.defaults["production"]`
 

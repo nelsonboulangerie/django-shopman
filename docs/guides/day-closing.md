@@ -13,7 +13,7 @@ especial de véspera.
 3. **A sobra não se move.** O que decide o destino é o lote de cada quant:
    - lote **não conforme** → write-off imediato (`perda_nao_conformidade:<data>`);
    - lote **vencido** para a data do fechamento (ou produto do dia sem lote, `shelf_life_days == 0`) → write-off (`perda_vencido:<data>`);
-   - lote **com validade** → **fica onde está**, como lote datado na própria vitrine. No dia seguinte, o gate de validade por canal (`expiry_margin_days`, `sells_nonconforming`) e o preço por lote (`percent_for_lot`) decidem o que cada canal oferece e por quanto.
+   - lote **com validade** → **fica onde está**, como lote datado na própria vitrine. No dia seguinte, o gate de validade por canal (`expiry_margin_days`, `sells_nonconforming`) e o preço por lote (`percent_for_lot`) decidem o que cada canal oferece e por quanto. Esse lote só vale para a VENDA do dia: ele nunca lastreia encomenda (`shop/policies/promise_expiry_margin.py`, #2693). Quem encomenda para uma data recebe da fornada planejada para ela.
 4. Cada SKU fecha com uma **classificação**: `keep` (tudo fica), `expired` (tudo virou perda) ou `mixed` — o POS mostra "Fica / Parte vence / Vira perda".
 
 ---

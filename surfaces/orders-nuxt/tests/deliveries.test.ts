@@ -6,6 +6,7 @@ import type {
   DeliveryStopProjection,
 } from "~/generated/ordersContract";
 import {
+  backCheck,
   bagsWord,
   beforeHandoff,
   cancelConfirmation,
@@ -14,7 +15,10 @@ import {
   rideCalls,
   rideLetter,
   rideLine,
+  rideChargeNotices,
   rideNotice,
+  rideStale,
+  toggleStop,
   whatsappLink,
 } from "~/presentation/deliveries";
 import { metroLines } from "~/presentation/metroLines";
@@ -23,7 +27,8 @@ function stop(ref: string, extra: Partial<DeliveryStopProjection> = {}): Deliver
   return {
     ref, code: ref.slice(-3), customer: "Ana", place: "Centro", address: "", latitude: 0, longitude: 0,
     stage: "Pronto", volumes: 1, done: false, change_out_suggested_q: 0, needs_machine: false,
-    change_label: "", group_refusal: "", error: "", dispatch_action: null, ...extra,
+    change_label: "", group_refusal: "", error: "", dispatch_action: null, dispatch_again_action: null,
+    charge_outdated: null, ...extra,
   };
 }
 
@@ -33,7 +38,7 @@ function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjecti
     called_at: "", called_by: "", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "", delivery_eta_at: "",
     tracking_url: "", cost_display: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
     back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", reopened_at: "", reopened_driver: "",
-    near_pickup_at: "", waited_pickup_at: "", reopened_reason: "", custody_line: "", open_too_long: false, ...extra,
+    near_pickup_at: "", waited_pickup_at: "", reopened_reason: "", custody_line: "", open_too_long: false, sync_since: "", ...extra,
   };
 }
 
@@ -180,7 +185,7 @@ describe("a corrida numa linha", () => {
       now,
     );
     expect(line.title).toBe("Rita chega em 6 min");
-    expect(line.hint).toBe("Separe 3 sacolas no balcão de saída");
+    expect(line.hint).toBe("Separe 3 sacolas para Rita");
   });
 
   it("pedido sem sacolas declaradas aparece pelo nome", () => {
@@ -318,5 +323,116 @@ describe("rotas como linhas de metrô", () => {
       { id: 2, points: [{ x: 0, y: 0 }, { x: 0, y: 100 }] },
     ];
     expect(metroLines(lines, 5)).toEqual(lines);
+  });
+});
+
+describe("F4a: o toque em Aguardando", () => {
+  const stops = [stop("NB-A01"), stop("NB-A02"), stop("NB-A03"), stop("NB-A04"), stop("NB-A05")];
+  const free = [1, 2, 3];
+
+  it("o primeiro toque abre a corrida e põe o pedido nela", () => {
+    const result = toggleStop([], 0, "NB-A01", stops, 4, free);
+    expect(result.editing).toEqual([{ number: 1, refs: ["NB-A01"] }]);
+    expect(result.active).toBe(1);
+    expect(result.notice).toBe("");
+  });
+
+  it("tocar de novo tira o pedido", () => {
+    const result = toggleStop([{ number: 1, refs: ["NB-A01"] }], 1, "NB-A01", stops, 4, free);
+    expect(result.editing[0]!.refs).toEqual([]);
+  });
+
+  it("o quinto toque não some: vai para a corrida B, e a frase diz", () => {
+    const full = [{ number: 1, refs: ["NB-A01", "NB-A02", "NB-A03", "NB-A04"] }];
+    const result = toggleStop(full, 1, "NB-A05", stops, 4, free);
+    expect(result.editing).toEqual([
+      { number: 1, refs: ["NB-A01", "NB-A02", "NB-A03", "NB-A04"] },
+      { number: 2, refs: ["NB-A05"] },
+    ]);
+    expect(result.active).toBe(2);
+    expect(result.notice).toBe("A corrida A já tem 4 pedidos. A05 foi para a corrida B.");
+  });
+
+  it("sem letra livre, a corrida cheia pede para tirar um", () => {
+    const full = [{ number: 1, refs: ["NB-A01", "NB-A02", "NB-A03", "NB-A04"] }];
+    const result = toggleStop(full, 1, "NB-A05", stops, 4, [1]);
+    expect(result.editing).toEqual(full);
+    expect(result.notice).toBe("A corrida A já tem 4 pedidos. Tire um para pôr A05.");
+  });
+
+  it("pedido recusado não entra, e o motivo vem do servidor", () => {
+    const refused = [stop("NB-A01", { group_refusal: "O pedido A01 tem uma chamada sem resposta da TaOn. Confira na central antes." })];
+    const result = toggleStop([], 0, "NB-A01", refused, 4, free);
+    expect(result.editing).toEqual([]);
+    expect(result.notice).toBe("O pedido A01 tem uma chamada sem resposta da TaOn. Confira na central antes.");
+  });
+
+  it("não muda a edição recebida (a tela troca pelo resultado)", () => {
+    const editing = [{ number: 1, refs: ["NB-A01"] }];
+    toggleStop(editing, 1, "NB-A02", stops, 4, free);
+    expect(editing).toEqual([{ number: 1, refs: ["NB-A01"] }]);
+  });
+});
+
+describe("F4a: o que o Painel diz, a página diz", () => {
+  const now = Date.parse("2026-11-18T14:20:00-03:00");
+
+  it("ninguém aceitou: com os minutos", () => {
+    expect(rideLine(ride({ state: "late", called_at: "2026-11-18T14:08:00-03:00" }), now).title).toBe(
+      "Ninguém aceitou em 12 min",
+    );
+    expect(rideLine(ride({ state: "late", called_at: "" }), now).title).toBe("Ninguém aceitou ainda");
+  });
+
+  it("separe as sacolas para quem vem buscar", () => {
+    const coming = ride({ state: "coming", bags: 3, driver: { name: "Diego", phone: "", vehicle: "" } });
+    expect(rideLine(coming, now).hint).toBe("Separe 3 sacolas para Diego");
+    expect(rideLine(ride({ state: "coming", bags: 2 }), now).hint).toBe("Separe 2 sacolas no balcão de saída");
+  });
+
+  it("a TaOn parou de informar: a frase do Painel", () => {
+    expect(rideStale(ride({ sync_since: "2026-11-18T14:05:00-03:00" }))).toBe(
+      "A TaOn não informa a corrida desde 14h05.",
+    );
+    expect(rideStale(ride({ sync_since: "" }))).toBe("");
+    expect(rideStale(ride({ state: "back", sync_since: "2026-11-18T14:05:00-03:00" }))).toBe("");
+  });
+
+  it("a cobrança que ficou para trás, por parada", () => {
+    const outdated = { sent: "Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00", current: "Cobrar R$ 58,00 em dinheiro", collected: true };
+    const notices = rideChargeNotices(
+      ride({ stops: [stop("NB-A01", { charge_outdated: outdated }), stop("NB-A02"), stop("NB-A03", { charge_outdated: outdated, done: true })] }),
+    );
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.code).toBe("A01");
+    expect(notices[0]!.title).toBe("A01: o pedido mudou depois da chamada");
+    expect(notices[0]!.description).toContain("ligue para ele");
+  });
+
+  it("o retorno confere os pedidos da corrida e o que volta na mão", () => {
+    expect(backCheck(ride({ stops: [stop("NB-A01"), stop("NB-A02")], back_lines: ["R$ 50,00 em dinheiro"] }))).toEqual({
+      courier_return_orders: ["NB-A01", "NB-A02"],
+      courier_return_lines: ["R$ 50,00 em dinheiro"],
+    });
+  });
+});
+
+describe("F4a: um toque nunca encerra nem cancela a corrida", () => {
+  const page = readFileSync(new URL("../app/pages/delivery.vue", import.meta.url), "utf8");
+
+  it("Entregador voltou passa pela conferência", () => {
+    expect(page).toContain("<CourierBackDialog");
+    expect(page).toMatch(/@back="backRide = ride"/);
+    expect(page).not.toMatch(/@back="rideAction\(/);
+  });
+
+  it("Chamar de novo arma antes de chamar", () => {
+    expect(page).toMatch(/@click="armedAgain = stop\.ref"/);
+    expect(page).toContain("data-waiting-again-confirm");
+  });
+
+  it("a corrida encerrada se diz pela letra", () => {
+    expect(page).not.toContain("Saída fechada");
+    expect(page).toContain("encerrada.");
   });
 });
