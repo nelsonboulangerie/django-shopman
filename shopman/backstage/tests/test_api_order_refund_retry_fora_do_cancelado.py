@@ -200,8 +200,7 @@ def test_devolucao_que_falhou_ganha_o_gesto_com_o_valor_da_devolucao(client, ope
     detail, line = _refund_line(order, operador)
     assert (line.tone, line.label) == ("error", "Estorno não saiu")
     assert line.reason == (
-        "A devolução de R$ 10,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez "
-        "ao Pix do cliente, com a autorização de um gerente."
+        "A devolução de R$ 10,00 não chegou ao Pix do cliente."
     )
     assert NO_SUPPORT not in line.reason
     assert [(action.ref, action.enabled) for action in line.actions] == [("refund-retry", True)]
@@ -284,8 +283,7 @@ def test_encomenda_editada_que_ficou_mais_barata_ganha_o_gesto_com_a_diferenca(c
     assert payment_service.overpaid_q(order) == 1000
     _detail, line = _refund_line(order, operador)
     assert line.reason == (
-        "A devolução de R$ 10,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez "
-        "ao Pix do cliente, com a autorização de um gerente."
+        "A devolução de R$ 10,00 não chegou ao Pix do cliente."
     )
     assert [(action.ref, action.enabled) for action in line.actions] == [("refund-retry", True)]
     assert payment_service.REFUND_FAILED_RETRY_HERE in _bell(order)

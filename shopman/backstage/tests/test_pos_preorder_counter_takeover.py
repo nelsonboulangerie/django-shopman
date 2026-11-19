@@ -398,7 +398,7 @@ def test_pix_tardio_que_o_gateway_recusou_devolver_ganha_o_gesto_do_gestor(balca
     assert (current.block_reason, current.amount_q, current.method) == ("", 3600, "pix")
     assert [leg.intent_ref for leg in current.legs] == [booked.ref]
     line = {item.key: item for item in build_operator_order(order, user=operator).pending}["refund"]
-    assert line.reason.startswith("A devolução de R$ 36,00 não chegou ao cliente. Tentar de novo pede")
+    assert line.reason == "A devolução de R$ 36,00 não chegou ao Pix do cliente."
     assert [(action.ref, action.enabled) for action in line.actions] == [("refund-retry", True)]
     alert = OperatorAlert.objects.get(type="payment_refund_failed", order_ref=order.ref)
     assert payment_svc.REFUND_FAILED_RETRY_HERE in alert.message

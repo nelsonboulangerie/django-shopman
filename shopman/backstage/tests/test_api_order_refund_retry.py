@@ -615,8 +615,7 @@ def test_a_linha_do_estorno_que_nao_saiu_ganha_o_gesto_e_diz_o_valor_e_o_que_ele
 
     assert (line.tone, line.label) == ("error", "Estorno não saiu")
     assert line.reason == (
-        "A devolução de R$ 22,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez "
-        "ao Pix do cliente, com a autorização de um gerente."
+        "A devolução de R$ 22,00 não chegou ao Pix do cliente."
     )
     assert "suporte" not in line.reason
     (action,) = line.actions

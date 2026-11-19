@@ -1290,7 +1290,7 @@ describe("detalhe do pedido — tentar o estorno de novo", () => {
   const failedMoney = { state: "refund_failed", label: "Estorno não saiu", amount_display: "R$ 22,00", customer_line: "", settled: false };
   const retryLine = (failure = "") => ({
     key: "refund", tone: "error", label: "Estorno não saiu", failure,
-    reason: "A devolução de R$ 22,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez ao Pix do cliente, com a autorização de um gerente.",
+    reason: "A devolução de R$ 22,00 não chegou ao Pix do cliente.",
     actions: [{ ref: "refund-retry", label: "Tentar o estorno de novo", enabled: true, reason: "", href: "" }],
   });
   const cancelled = (over: Partial<OperatorOrderProjection> = {}) => order({

@@ -232,7 +232,7 @@ def _quoted(line: str) -> str:
     return f" O cliente lê na loja: “{line}”" if line else ""
 
 
-#: Por onde o estorno tentado de novo volta, no fim de "pede esse estorno outra vez…".
+#: Para onde a devolução volta, no fim de "A devolução de R$ 22,00 não chegou ao Pix do cliente.".
 _RETRY_DESTINATION = {"pix": " ao Pix do cliente", "card": " ao cartão do cliente"}
 
 
@@ -253,18 +253,16 @@ def _refund_retry_pending(order: Order, plan, by_ref: dict, *, amount_display: s
 
     action = by_ref.get(refund_retry.ACTION_REF)
     amount = f" de {amount_display}" if amount_display else ""
-    parts = [f"A devolução{amount} não chegou ao cliente."]
+    # O fato e para onde o dinheiro devia ter ido; o botão ao lado diz o gesto, e o
+    # diálogo dele pede o gerente (coordenação, 19/11/2026: a frase não descreve o
+    # botão, defeito "prolixo").
+    parts = [f"A devolução{amount} não chegou{_RETRY_DESTINATION.get(plan.method, ' ao cliente')}."]
     if plan.block_reason:
         # Sem caminho daqui: a frase diz por quê, e não promete um botão que não age.
         parts.append(plan.block_reason)
-    else:
-        # Quase sempre é o valor inteiro que falta; quando só parte dele volta por
-        # gateway, a frase diz quanto o botão pede.
-        asked = "esse estorno" if _money(plan.amount_q) == amount_display else _money(plan.amount_q)
-        parts.append(
-            f"Tentar de novo pede {asked} outra vez{_RETRY_DESTINATION.get(plan.method, '')}, "
-            "com a autorização de um gerente."
-        )
+    elif _money(plan.amount_q) != amount_display:
+        # Só parte do valor volta pelo meio de pagamento: a frase diz quanto o botão pede.
+        parts.append(f"Tentar de novo pede {_money(plan.amount_q)}.")
     failure = ""
     attempt = refund_retry.last_attempt(order)
     if attempt is not None and attempt.message and attempt.outcome != refund_retry.OUTCOME_UNRECORDED:
