@@ -46,7 +46,6 @@ from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
 
 pytestmark = pytest.mark.django_db
 
-PLURAL_SETTINGS = {**CONCIERGE_SETTINGS, "intents_plural": "subjects", "intents_subjects": [SUBJECT]}
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
 PARKING = "vocês têm estacionamento? me liga no (43) 99876-5432"
@@ -59,7 +58,7 @@ def plural(request, monkeypatch):
     monkeypatch.setattr(intents, "_model", lambda: "modelo-de-teste")
     if "conversation" in request.fixturenames:
         request.getfixturevalue("conversation")
-        request.getfixturevalue("settings").SHOPMAN_CONCIERGE = PLURAL_SETTINGS
+        request.getfixturevalue("settings").SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
 
 
 def _receive(conversation, text: str, event_id: str, *, window_hours: int = 24):  # noqa: F811
@@ -453,7 +452,7 @@ def test_asks_for_news(text, expected):
     assert verification.asks_for_news(text) is expected
 
 
-@override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS)
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_the_memory_sees_the_open_verification_as_verifying(conversation, outbox):  # noqa: F811
     from shopman.storefront.concierge import dialogue
 
