@@ -462,6 +462,32 @@ def test_a_linha_de_estado_do_bloco_concorda_com_a_fila(client):
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_encomenda_de_hoje_antes_da_hora_da_cozinha_nao_conta_como_ativa(client, monkeypatch):
+    """A Central usa a régua do quadro do Gestor: quem espera a hora da Cozinha não é trabalho do dia."""
+    from shopman.shop.lifecycle import KITCHEN_RELEASED_AT_KEY
+
+    today = timezone.localdate()
+    morning = timezone.make_aware(datetime.combine(today, time(10, 0)))
+    monkeypatch.setattr(timezone, "now", lambda: morning)
+    order = Order.objects.create(
+        ref="WEB-20261118-ENC17", channel_ref="web", status="accepted", total_q=3600,
+        data={
+            "customer": {"name": "Café Parisiense"}, "fulfillment_type": "pickup", "is_preorder": True,
+            "delivery_date": today.isoformat(), "delivery_time_slot": "17:00-17:30",
+        },
+    )
+    admin = User.objects.create_superuser("hub-q-espera", "a@b.c", "pw")
+
+    tile = {tile["ref"]: tile for tile in _hub(client, admin)["tiles"]}["gestor"]
+    assert tile["status_summary"] == "0 ativos"
+
+    # A hora chegou (o despertador carimbou a chegada à Cozinha): agora é trabalho do dia.
+    order.data = {**order.data, KITCHEN_RELEASED_AT_KEY: morning.isoformat()}
+    order.save(update_fields=["data", "updated_at"])
+    tile = {tile["ref"]: tile for tile in _hub(client, admin)["tiles"]}["gestor"]
+    assert tile["status_summary"] == "1 ativo"
+
+
 def test_staff_sem_app_recebe_fila_vazia(client):
     _order_to_accept()
     plain = _operator("hub-q-plain")

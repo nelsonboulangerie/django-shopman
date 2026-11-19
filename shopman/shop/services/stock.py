@@ -226,6 +226,65 @@ def _qty_text(value: Decimal) -> str:
     return format(value.normalize(), "f").replace(".", ",")
 
 
+def plan_backing_on(skus, day, *, channel_ref: str | None = None) -> dict[str, dict[str, Decimal]]:
+    """O lastro de cada SKU numa data de ENCOMENDA: o lote planejado e o que dele está sem encomenda.
+
+    ``planned_qty`` é o lote planejado para a data; ``unclaimed_qty``, o que desse
+    lote ainda não está preso a outra encomenda (nunca maior que o planejado). A
+    régua é só o plano DA DATA: a sobra de hoje e a vitrine não lastreiam
+    encomenda (dono, 18/11/2026: "não oferecemos pães de um dia para o outro!").
+    SKU sem lote planejado na data fica de fora (data sem plano, WP-E3).
+
+    É o que o PDV mostra na linha da encomenda e o que decide se a encomenda
+    passa do plano (WP-E2, D-041). Hoje não é encomenda: devolve vazio.
+    ``channel_ref`` não recorta: o plano da data é da casa, não do canal.
+    """
+    wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
+    if day is None or day <= timezone.localdate() or not wanted:
+        return {}
+    backing: dict[str, dict[str, Decimal]] = {}
+    for sku, info in get_adapter("stock").planned_on_date(wanted, day).items():
+        planned = info["planned_qty"]
+        if planned <= 0:
+            continue
+        unclaimed = min(planned, max(Decimal("0"), planned - info["held_qty"]))
+        backing[sku] = {"planned_qty": planned, "unclaimed_qty": unclaimed}
+    return backing
+
+
+def over_plan_lines(lines, day, *, channel_ref: str | None = None) -> list[dict]:
+    """As linhas da encomenda que passam do plano da data, com os números.
+
+    ``lines`` é ``[(sku, nome, quantidade)]``; o mesmo SKU em duas linhas soma.
+    Passa do plano quando o pedido é maior que o que o lote da data ainda tem sem
+    encomenda: duas encomendas de 20 contra 22 planejadas não passam as duas sem
+    gerente. Encomenda acima do plano BLOQUEIA e só o gerente libera, vendo os
+    números (D-041).
+    """
+    requested: dict[str, Decimal] = {}
+    names: dict[str, str] = {}
+    for sku, name, qty in lines:
+        if not sku or qty is None:
+            continue
+        requested[sku] = requested.get(sku, Decimal("0")) + Decimal(str(qty))
+        names.setdefault(sku, str(name or sku))
+    backing = plan_backing_on(list(requested), day, channel_ref=channel_ref)
+    over = []
+    for sku, qty in requested.items():
+        info = backing.get(sku)
+        if info is None or qty <= info["unclaimed_qty"]:
+            continue
+        over.append({
+            "sku": sku,
+            "name": names[sku],
+            "requested_qty": qty,
+            "planned_qty": info["planned_qty"],
+            "unclaimed_qty": info["unclaimed_qty"],
+            "date": day.isoformat(),
+        })
+    return over
+
+
 def _items_to_hold(order) -> list[dict]:
     """As linhas que a reserva cobre: as que VALEM agora.
 
@@ -751,11 +810,19 @@ def revert_fulfilled(order) -> None:
     ``order.data['reverted_hold_ids']`` para nunca devolver o mesmo estoque
     duas vezes (o RETURN move não muda o status do hold, então sem essa marca
     um on_cancelled re-disparado creditaria o estoque de novo).
+
+    Pedido NÃO RETIRADO (``order.data["no_show"]``, WP-G11): o estoque segue a
+    linha. O que é de linha ``restock`` volta ao lote de onde saiu; o que é de
+    linha ``loss`` vira perda com motivo, no mesmo saldo
+    (``no_show.stock_plan``). Sem o bloco, tudo volta, como sempre.
     """
     hold_ids = (order.data or {}).get("hold_ids", [])
     if not hold_ids:
         return
 
+    from shopman.shop.services import no_show
+
+    plan = no_show.stock_plan(order)
     already = set((order.data or {}).get("reverted_hold_ids") or [])
     adapter = get_adapter("stock")
     reverted: list[str] = []
@@ -764,13 +831,27 @@ def revert_fulfilled(order) -> None:
         qty = entry.get("qty")
         if not hold_id or not qty or hold_id in already:
             continue
+        back, lost = Decimal(str(qty)), Decimal("0")
+        reason = f"Cancelamento pós-baixa do pedido {order.ref}"
+        if plan is not None:
+            back, lost = plan.get(hold_id, (back, lost))
+            reason = f"Pedido não retirado {order.ref}: volta à venda"
         try:
-            if adapter.return_fulfilled_hold(
-                hold_id,
-                Decimal(str(qty)),
-                reference=f"cancel:{order.ref}",
-                reason=f"Cancelamento pós-baixa do pedido {order.ref}",
-            ):
+            done = False
+            # A perda primeiro: ela é idempotente pelo ledger, e a devolução
+            # não. Se a devolução falhar, a nova tentativa não repete a perda.
+            if lost > 0:
+                done = adapter.waste_fulfilled_hold(
+                    hold_id,
+                    lost,
+                    reason=f"Perda: pedido não retirado ({order.ref})",
+                    metadata={"source": no_show.MOVE_SOURCE, "order_ref": order.ref, "sku": entry.get("sku")},
+                )
+            if back > 0:
+                done = adapter.return_fulfilled_hold(
+                    hold_id, back, reference=f"cancel:{order.ref}", reason=reason,
+                ) or done
+            if done:
                 reverted.append(hold_id)
         except Exception as exc:
             logger.warning(

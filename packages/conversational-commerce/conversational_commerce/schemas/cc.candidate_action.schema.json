@@ -1,0 +1,322 @@
+{
+  "$defs": {
+    "Estimate": {
+      "additionalProperties": false,
+      "description": "Estimativa com método, população e versão. ``value`` é decimal em texto.",
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "population": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "status": {
+          "const": "estimate"
+        },
+        "value": {
+          "pattern": "^(?!-0$)-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "method",
+        "population",
+        "version"
+      ],
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "Qualquer valor JSON, sem número de ponto flutuante."
+    },
+    "PreconditionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "unknown"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "result"
+      ],
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "Unavailable": {
+      "additionalProperties": false,
+      "description": "Sem estimativa. Nunca zero no lugar de desconhecido (N21).",
+      "properties": {
+        "reason": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Contrato CandidateAction. Contrato de observação: campo desconhecido só com MENOR acima; o leitor o guarda em extensions.",
+  "properties": {
+    "authority_required": {
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5"
+      ],
+      "type": "string"
+    },
+    "candidate_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confirmation_required": {
+      "type": "boolean"
+    },
+    "content": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "type": "object"
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expected_effects": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "kind": {
+      "const": "CandidateAction"
+    },
+    "move": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "move_version": {
+      "minLength": 1,
+      "pattern": "^\\S(.*\\S)?$",
+      "type": "string"
+    },
+    "need_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "preconditions": {
+      "items": {
+        "$ref": "#/$defs/PreconditionResult"
+      },
+      "type": "array"
+    },
+    "prediction": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Estimate"
+        },
+        {
+          "$ref": "#/$defs/Unavailable"
+        }
+      ]
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reversibility": {
+      "enum": [
+        "none_needed",
+        "reversible",
+        "compensable",
+        "irreversible"
+      ],
+      "type": "string"
+    },
+    "schema": {
+      "const": "cc.candidate_action"
+    },
+    "schema_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "valid_until": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "candidate_id",
+    "need_id",
+    "move",
+    "move_version",
+    "content",
+    "preconditions",
+    "reversibility",
+    "authority_required",
+    "confirmation_required",
+    "prediction"
+  ],
+  "title": "CandidateAction",
+  "type": "object",
+  "x-contract-version": "1.0"
+}

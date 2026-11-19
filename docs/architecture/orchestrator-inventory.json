@@ -1753,6 +1753,7 @@
             "_MAX_PARTIAL_HOLDS",
             "_copied",
             "_free_by_eligible_quant",
+            "_fulfilled_hold",
             "_get_product",
             "_return_remainder_to_cart",
             "create_hold",
@@ -1764,10 +1765,12 @@
             "get_availability_for_skus",
             "get_channel_scope",
             "hold_backing",
+            "hold_lot_facts",
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
             "logger",
+            "planned_on_date",
             "receive_return",
             "release_holds",
             "release_holds_for_reference",
@@ -1775,7 +1778,8 @@
             "retag_hold_reference",
             "return_fulfilled_hold",
             "return_hold_remainder",
-            "stock_error_code"
+            "stock_error_code",
+            "waste_fulfilled_hold"
           ]
         }
       ]
@@ -2197,6 +2201,7 @@
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
             "GoogleMerchantRegistrationForm",
+            "MAX_NO_SHOW_MINUTES",
             "MAX_PREORDER_KITCHEN_MINUTES",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
@@ -4154,7 +4159,6 @@
             "_payment_is_authorized",
             "_payment_is_captured",
             "_payment_method",
-            "_physical_work_deferred",
             "_prep_starts_automatically",
             "_record_availability_decision",
             "_record_coupon_use",
@@ -4167,6 +4171,7 @@
             "_stamp_kitchen_released",
             "_verify_holds",
             "acceptance_timeout_minutes",
+            "awaits_kitchen_release",
             "kitchen_release_at",
             "logger",
             "release_preorder_now"
@@ -6979,6 +6984,34 @@
       "out_of_extraction": false,
       "unit_ids": [
         "marketing.public-link"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/no_show_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.no-show-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/no_show_reason.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show-customer-copy"
       ],
       "responsibilities": [
         "decisão"
@@ -14674,25 +14707,23 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/reconcile_ifood_orders.py",
+      "path": "shopman/shop/services/no_show.py",
       "touchpoints": [
-        "outro"
+        "service"
       ],
       "out_of_extraction": false,
-      "unit_ids": [],
+      "unit_ids": [
+        "order.no-show"
+      ],
       "responsibilities": [
+        "composição",
         "infraestrutura"
       ],
       "support_claims": [
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "ALERT_TYPE",
-            "APPLY_WINDOW",
-            "Command",
-            "LOOKBACK",
-            "_alert_behind",
-            "_latest_fact_at"
+            "logger"
           ]
         }
       ]
@@ -14760,6 +14791,30 @@
             "_LinkView",
             "_REFUSALS",
             "_private"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/reconcile_ifood_orders.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "APPLY_WINDOW",
+            "Command",
+            "LOOKBACK",
+            "_alert_behind",
+            "_latest_fact_at"
           ]
         }
       ]

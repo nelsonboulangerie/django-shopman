@@ -14,9 +14,10 @@ import type {
   TwoZoneQueueProjection,
 } from "~/types/orders";
 import {
+  attentionKeyRef,
   preorderGroups,
   situationAfterContinua,
-  treatableOrderRefs,
+  treatableAttentionKeys,
   zonesView,
   type PreorderGroup,
   type ZoneView,
@@ -80,7 +81,9 @@ export function gestorAttentionDecision(
   previousSignature: string,
   serviceDay: string,
 ): { signature: string; firstUnseen: string; shouldStop: boolean } {
-  const refs = [...treatableOrderRefs(queue)].sort();
+  // Chaves, não refs: a encomenda que chega à Cozinha é um fato novo do mesmo pedido
+  // (`treatableAttentionKeys`). No pedido comum a chave é o próprio ref.
+  const refs = [...treatableAttentionKeys(queue).keys()].sort();
   const signature = `${serviceDay}:${refs.join("|")}`;
   const noUnseen = refs.every((ref_) => seenRefs.has(ref_));
   if (signature === previousSignature) {
@@ -114,6 +117,39 @@ export function gestorServiceDayBoundaryDelay(
 
 export const gestorAttentionStorageKey = (serviceDay: string) =>
   `gestor_seen_${serviceDay}`;
+
+/** O dia anterior a "AAAA-MM-DD", no mesmo formato; "" quando a data não se lê. Conta
+ *  em UTC de propósito: é aritmética de calendário, sem fuso do tablet no meio. */
+export function previousServiceDay(serviceDay: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(serviceDay);
+  if (!match) return "";
+  const at = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) - 1);
+  return Number.isFinite(at) ? new Date(at).toISOString().slice(0, 10) : "";
+}
+
+/**
+ * O que já foi visto e vale para `serviceDay`: o do dia e o da véspera.
+ *
+ * A memória é guardada por dia, e à meia-noite a chave muda. Lendo só a do dia novo,
+ * todo pedido aberto de ontem voltava a tocar o aviso às 00:00 para quem já estava
+ * diante da tela (WP-G02, P1-04). `read` devolve o texto guardado na chave, ou `null`.
+ */
+export function gestorSeenKeys(
+  read: (storageKey: string) => string | null,
+  serviceDay: string,
+): Set<string> {
+  const seen = new Set<string>();
+  const previous = previousServiceDay(serviceDay);
+  for (const day of previous ? [previous, serviceDay] : [serviceDay]) {
+    try {
+      const value = JSON.parse(read(gestorAttentionStorageKey(day)) || "[]");
+      if (Array.isArray(value)) for (const key of value) seen.add(String(key));
+    } catch {
+      // Memória ilegível de um dia não apaga a do outro.
+    }
+  }
+  return seen;
+}
 
 // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
 // O SSE só dispara o refetch; a mudança da projection para ação liberada avisa.
@@ -235,10 +271,15 @@ export function useOrdersBoard() {
   function seenTreatableRefs(day: string): Set<string> {
     if (!import.meta.client) return new Set();
     try {
-      const value = JSON.parse(
-        localStorage.getItem(gestorAttentionStorageKey(day)) || "[]",
-      );
-      return new Set(Array.isArray(value) ? value.map(String) : []);
+      const seen = gestorSeenKeys((key) => localStorage.getItem(key), day);
+      // A véspera passa para o dia novo na primeira leitura: sem isso, o pedido visto
+      // anteontem e ainda aberto voltaria a tocar na segunda virada.
+      if (seen.size && localStorage.getItem(gestorAttentionStorageKey(day)) === null)
+        localStorage.setItem(
+          gestorAttentionStorageKey(day),
+          JSON.stringify([...seen].slice(-500)),
+        );
+      return seen;
     } catch {
       return new Set();
     }
@@ -353,13 +394,15 @@ export function useOrdersBoard() {
     if (decision.firstUnseen) {
       const seen = seenTreatableRefs(day);
       pendingAttentionRefs = new Set(
-        [...treatableOrderRefs(queue.value)].filter((ref_) => !seen.has(ref_)),
+        [...treatableAttentionKeys(queue.value).keys()].filter(
+          (key) => !seen.has(key),
+        ),
       );
       pendingAttentionDay = day;
       pendingAttentionHeard = false;
       attentionPending.value = pendingAttentionRefs.size > 0;
-      attentionRef.value = decision.firstUnseen;
-      announceTreatableOrder(decision.firstUnseen);
+      attentionRef.value = attentionKeyRef(decision.firstUnseen);
+      announceTreatableOrder(attentionKeyRef(decision.firstUnseen));
     }
   }
 

@@ -1,0 +1,480 @@
+{
+  "$defs": {
+    "Estimate": {
+      "additionalProperties": false,
+      "description": "Estimativa com método, população e versão. ``value`` é decimal em texto.",
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "population": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "status": {
+          "const": "estimate"
+        },
+        "value": {
+          "pattern": "^(?!-0$)-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "method",
+        "population",
+        "version"
+      ],
+      "type": "object"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "description": "O que se supõe, com confiança. Nunca vira fato.",
+      "properties": {
+        "claim": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "confidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Estimate"
+            },
+            {
+              "$ref": "#/$defs/Unavailable"
+            }
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "claim",
+        "value",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    "IdentityClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "assurance": {
+          "enum": [
+            "anonymous",
+            "transported",
+            "weak_verified",
+            "strong_verified"
+          ],
+          "type": "string"
+        },
+        "subject_ref": {
+          "oneOf": [
+            {
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "assurance"
+      ],
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "Qualquer valor JSON, sem número de ponto flutuante."
+    },
+    "Known": {
+      "additionalProperties": false,
+      "description": "Fato conhecido: valor com fonte, instante da observação e validade.",
+      "properties": {
+        "observed_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "source_version": {
+          "oneOf": [
+            {
+              "minLength": 1,
+              "pattern": "^\\S(.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "const": "known"
+        },
+        "valid_until": {
+          "oneOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "observed_at"
+      ],
+      "type": "object"
+    },
+    "NeedView": {
+      "additionalProperties": false,
+      "properties": {
+        "need_id": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "open",
+            "blocked",
+            "satisfied",
+            "withdrawn"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "need_id",
+        "type",
+        "state"
+      ],
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "Unavailable": {
+      "additionalProperties": false,
+      "description": "Sem estimativa. Nunca zero no lugar de desconhecido (N21).",
+      "properties": {
+        "reason": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    "Unknown": {
+      "additionalProperties": false,
+      "description": "Fato desconhecido. Vencido é ``Unknown(stale)``, nunca o valor velho.",
+      "properties": {
+        "reason": {
+          "enum": [
+            "source_failed",
+            "stale",
+            "not_supported",
+            "forbidden",
+            "not_found"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "const": "unknown"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    "VersionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Contrato ContextSnapshot. Contrato de observação: campo desconhecido só com MENOR acima; o leitor o guarda em extensions.",
+  "properties": {
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dialogue_state": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "type": "object"
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "episode_version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "facts": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/Known"
+          },
+          {
+            "$ref": "#/$defs/Unknown"
+          }
+        ]
+      },
+      "propertyNames": {
+        "minLength": 1
+      },
+      "type": "object"
+    },
+    "hash": {
+      "oneOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "hypotheses": {
+      "items": {
+        "$ref": "#/$defs/Hypothesis"
+      },
+      "type": "array"
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "identity": {
+      "$ref": "#/$defs/IdentityClaim"
+    },
+    "kind": {
+      "const": "ContextSnapshot"
+    },
+    "needs": {
+      "items": {
+        "$ref": "#/$defs/NeedView"
+      },
+      "type": "array"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "open_commitments": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "ownership_epoch": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "policy_ref": {
+      "$ref": "#/$defs/VersionRef"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "profile_ref": {
+      "$ref": "#/$defs/VersionRef"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "relationship_state": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "type": "object"
+    },
+    "schema": {
+      "const": "cc.context_snapshot"
+    },
+    "schema_version": {
+      "pattern": "^1\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "unknowns": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "episode_version",
+    "ownership_epoch",
+    "identity",
+    "facts",
+    "dialogue_state",
+    "relationship_state",
+    "profile_ref",
+    "policy_ref",
+    "hash"
+  ],
+  "title": "ContextSnapshot",
+  "type": "object",
+  "x-contract-version": "1.0"
+}

@@ -22,7 +22,7 @@ test.beforeEach(async ({ context, page, baseURL }) => {
 
 test.describe("Entregas: cancelar a corrida", () => {
   test("antes do aceite: um toque arma, o segundo confirma, e o pedido aparece na tela", async ({ page }) => {
-    await page.goto("/deliveries?ride=776753301");
+    await page.goto("/delivery?ride=776753301");
     const detail = page.locator("[data-ride-detail]");
     await detail.locator("[data-ride-cancel]").click();
     expect(await sent(page)).toEqual([]);
@@ -44,7 +44,7 @@ test.describe("Entregas: cancelar a corrida", () => {
   });
 
   test("depois do aceite: o motivo é o próprio botão e vai como reason_id", async ({ page }) => {
-    await page.goto("/deliveries?ride=776753302");
+    await page.goto("/delivery?ride=776753302");
     const detail = page.locator("[data-ride-detail]");
     await detail.locator("[data-ride-cancel]").click();
     const confirm = detail.locator("[data-courier-cancel-confirm]");
@@ -62,7 +62,7 @@ test.describe("Entregas: cancelar a corrida", () => {
   });
 
   test("cancelamento pendente e recusa da TaOn aparecem na lista e no detalhe", async ({ page }) => {
-    await page.goto("/deliveries");
+    await page.goto("/delivery");
     const mirrors = page.locator("[data-ride-mirror]");
     await expect(mirrors.nth(2).locator("[data-ride-mirror-cancel]")).toHaveText(
       "Pedido de cancelamento enviado. Esperando a TaOn confirmar.",

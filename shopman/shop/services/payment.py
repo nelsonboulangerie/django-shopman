@@ -1018,6 +1018,12 @@ def refund(
     if idempotency_key is None:
         idempotency_key = f"order-refund:{order.ref}"
 
+    # Pedido não retirado: "devolve tudo" vira "devolve o que não ficou com a
+    # loja" (:func:`retained_q`). Quem passa ``amount_q`` (devolução parcial,
+    # retry da directive com o valor já decidido) segue mandando.
+    if amount_q is None:
+        amount_q = refund_ceiling_q(order)
+
     # Todo intent capturado do pedido, não só o ``payment.intent_ref``: a venda
     # mista do terminal tem um intent por método, e o cancel dela devolve todos.
     # A fonte é o Payman (livro), não o JSON: pedido antigo sem tenders com
@@ -1136,6 +1142,42 @@ def _returned_q(order) -> int:
     )
 
 
+def retained_q(order) -> int:
+    """Quanto do capturado FICA com a loja num pedido encerrado como não retirado.
+
+    A régua é uma só e mora no bloco ``order.data["no_show"]`` (WP-G11, "o
+    dinheiro segue o produto"): o valor das linhas que se perderam. Sem o
+    bloco, zero: um cancelado comum devolve tudo, como sempre.
+    """
+    block = (order.data or {}).get("no_show")
+    if not isinstance(block, dict):
+        return 0
+    try:
+        return max(0, int(block.get("retained_q") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def refund_ceiling_q(order, *, payment_reads=None) -> int | None:
+    """O teto do que AINDA volta ao cliente num pedido com valor retido.
+
+    ``capturado líquido − retido``, nunca negativo: cada estorno que sai baixa o
+    capturado, então o teto encolhe sozinho e a segunda chamada não devolve de
+    novo. ``None`` quando não há retido (sem teto: o pedido devolve tudo).
+
+    Payman mudo devolve ``0``: sem saber quanto entrou, não se devolve o que
+    pode ser da loja. A conciliação do dia acusa o saldo que sobrar.
+    """
+    kept_q = retained_q(order)
+    if kept_q <= 0:
+        return None
+    captured = captured_balance_q(order, payment_reads=payment_reads)
+    if captured is None:
+        logger.warning("payment.refund_ceiling_unreadable order=%s", order.ref)
+        return 0
+    return max(0, captured - kept_q)
+
+
 def refund_reason(order) -> str:
     """Por que o dinheiro do pedido volta ao cliente.
 
@@ -1243,11 +1285,17 @@ def cancelled_money(order) -> CancelledMoney | None:
         paid = [intent for intent, captured, _ in totals if captured > 0]
         money_method = "pix" if str(paid[0].method or "") == "pix" else "card"
         late_pix = any((intent.gateway_data or {}).get("booked_by") == "pix_confirmation" for intent in paid)
-        if refunded_q >= captured_q:
-            return CancelledMoney("refunded", amount_q=captured_q, method=money_method, late_pix=late_pix)
+        # Não retirado: o que volta é o capturado menos o que ficou com a loja.
+        # Quando nada volta, não há devolução a contar: quem explica é o texto
+        # do motivo (``policies/no_show_reason``).
+        returnable_q = captured_q - min(captured_q, retained_q(order))
+        if returnable_q <= 0:
+            return None
+        if refunded_q >= returnable_q:
+            return CancelledMoney("refunded", amount_q=returnable_q, method=money_method, late_pix=late_pix)
         return CancelledMoney(
             "refund_requested",
-            amount_q=captured_q - refunded_q,
+            amount_q=returnable_q - refunded_q,
             method=money_method,
             late_pix=late_pix,
         )
@@ -1482,6 +1530,11 @@ def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashR
         reason = refund_reason(order)
         if str(order.status) not in _REFUND_ALL_STATUSES:
             balance_q = min(balance_q, overpaid_q(order))
+        else:
+            # Não retirado: só o devolvível sai da gaveta; o retido fica.
+            ceiling_q = refund_ceiling_q(order)
+            if ceiling_q is not None:
+                balance_q = min(balance_q, ceiling_q)
         if balance_q <= 0:
             continue
         data = order.data or {}
@@ -1561,6 +1614,8 @@ def card_machine_refund_due(order, *, intents=None) -> tuple[int, list[str]]:
 
     - venda cancelada ou devolvida inteira: o pedido não vale nada, volta tudo
       o que entrou pela maquininha;
+    - pedido não retirado (``order.data["no_show"]``): volta só o devolvível
+      (:func:`refund_ceiling_q`); o retido fica com a loja;
     - pedido vivo: vale o total efetivo (``order_composition``, a encomenda
       editada) menos as devoluções parciais. O que entrou acima disso volta.
       O que o gateway (Pix, cartão online) já devolveu saiu do capturado, e o
@@ -1576,8 +1631,11 @@ def card_machine_refund_due(order, *, intents=None) -> tuple[int, list[str]]:
     if held_q <= 0:
         return 0, []
     if str(order.status) in _REFUND_ALL_STATUSES:
-        return held_q, refs
-    due_q = overpaid_q(order)
+        due_q = refund_ceiling_q(order)
+        if due_q is None:
+            return held_q, refs
+    else:
+        due_q = overpaid_q(order)
     if due_q <= 0:
         return 0, []
     from shopman.payman.models import PaymentIntent
@@ -1798,7 +1856,8 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
     ]
     # Venda cancelada devolve tudo; encomenda viva (editada, mais barata)
     # devolve só o que passou do total — nunca o dinheiro do que ela ainda vale.
-    limit_q = None if str(order.status) in _REFUND_ALL_STATUSES else overpaid_q(order)
+    # O não retirado é a exceção do cancelado: só o devolvível sai (o retido fica).
+    limit_q = refund_ceiling_q(order) if str(order.status) in _REFUND_ALL_STATUSES else overpaid_q(order)
     with db_transaction.atomic():
         # Trava os intents em dinheiro ANTES de ler saldo e contador: dois
         # "Devolvi em dinheiro" simultâneos (dois dispositivos, duplo toque com

@@ -1,0 +1,386 @@
+{
+  "$defs": {
+    "Adjustment": {
+      "additionalProperties": false,
+      "description": "Valor que entra no total fora das linhas: frete, taxa, desconto (negativo).",
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/Money"
+        },
+        "code": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "amount"
+      ],
+      "type": "object"
+    },
+    "Condition": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "Fulfillment": {
+      "additionalProperties": false,
+      "properties": {
+        "address_ref": {
+          "oneOf": [
+            {
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "window_end": {
+          "oneOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window_start": {
+          "oneOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      ],
+      "description": "Qualquer valor JSON, sem número de ponto flutuante."
+    },
+    "Money": {
+      "additionalProperties": false,
+      "description": "Dinheiro: inteiro na menor unidade da moeda. Nunca float.",
+      "properties": {
+        "amount_minor": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount_minor",
+        "currency"
+      ],
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "Quantity": {
+      "additionalProperties": false,
+      "description": "Quantidade: decimal em texto normalizado, com unidade. Nunca float.",
+      "properties": {
+        "unit": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^(?!-0$)-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "unit"
+      ],
+      "type": "object"
+    },
+    "Recipient": {
+      "additionalProperties": false,
+      "properties": {
+        "contact_ref": {
+          "oneOf": [
+            {
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subject_ref": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject_ref"
+      ],
+      "type": "object"
+    },
+    "TermsItem": {
+      "additionalProperties": false,
+      "properties": {
+        "line_total": {
+          "$ref": "#/$defs/Money"
+        },
+        "quantity": {
+          "$ref": "#/$defs/Quantity"
+        },
+        "ref": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "unit_price": {
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "ref",
+        "quantity",
+        "unit_price",
+        "line_total"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Contrato TermsDocument. Contrato estrito: campo desconhecido e versão não suportada são recusados.",
+  "properties": {
+    "adjustments": {
+      "items": {
+        "$ref": "#/$defs/Adjustment"
+      },
+      "type": "array"
+    },
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conditions": {
+      "items": {
+        "$ref": "#/$defs/Condition"
+      },
+      "type": "array"
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fulfillment": {
+      "$ref": "#/$defs/Fulfillment"
+    },
+    "hash": {
+      "oneOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/TermsItem"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "const": "TermsDocument"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "recipient": {
+      "$ref": "#/$defs/Recipient"
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "const": "cc.terms_document"
+    },
+    "schema_version": {
+      "enum": [
+        "1.0"
+      ]
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "terms_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "total": {
+      "$ref": "#/$defs/Money"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "valid_until": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "version": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "terms_id",
+    "version",
+    "items",
+    "total",
+    "recipient",
+    "fulfillment",
+    "valid_until",
+    "hash"
+  ],
+  "title": "TermsDocument",
+  "type": "object",
+  "x-contract-version": "1.0"
+}
