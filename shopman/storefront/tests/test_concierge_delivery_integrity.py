@@ -306,3 +306,34 @@ def test_turn_counter_uses_new_local_day_without_losing_input(monkeypatch):
     conversation.refresh_from_db()
     assert conversation.turns_day == today and conversation.turns_today == 1
     assert turn.processed_message_ids == [message.pk] and not turn.fallback
+
+
+def test_a_message_while_with_the_team_never_falls_into_silence(monkeypatch):
+    """O fornecedor mandou ao bot uma mensagem de conversa que está com a equipe.
+
+    Medido em 19/11/2026: a marca de atendimento humano do ManyChat voltou a 0 fora daqui,
+    a conversa seguia em HANDOFF, e a mensagem do cliente era gravada e mais nada. Agora a
+    marca volta a ser ligada (a próxima vai ao Live Chat) e o sino diz que ele escreveu.
+    A posse continua da equipe: nada de turno da Concierge.
+    """
+    result, binding, _ = inbound("Quero falar com alguém")
+    Conversation.objects.filter(pk=result.conversation_id).update(state=Conversation.State.HANDOFF)
+    alerts = []
+    monkeypatch.setattr(service, "_alert", lambda conversation, kind, message: alerts.append((kind, message)))
+    reset_adapter()
+
+    again = service.receive_inbound(
+        event(account="test-account", subject="wa-subject", text="Oi? Alguém aí?", event_id="event-2")
+    )
+
+    assert (again.queued, again.reason) == (False, "handoff")
+    assert adapter_class().handoffs == [("manychat-wa", "wa-subject", True)]
+    assert alerts == [("concierge_handoff", service.WROTE_WHILE_WITH_TEAM)]
+    binding.refresh_from_db()
+    assert binding.handoff_sync_state == "accepted"
+    assert Conversation.objects.get(pk=result.conversation_id).state == Conversation.State.HANDOFF
+    assert not adapter_class().sent  # a Concierge não responde
+
+    # A mesma entrada de novo (retry do fornecedor) não liga a marca nem o cartão outra vez.
+    service.receive_inbound(event(account="test-account", subject="wa-subject", text="Oi? Alguém aí?", event_id="event-2"))
+    assert len(adapter_class().handoffs) == 1 and len(alerts) == 1
