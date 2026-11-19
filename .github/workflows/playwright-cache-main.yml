@@ -1,4 +1,4 @@
-name: Cache do Playwright no main
+name: Cache do main (Playwright e npm)
 
 # Por que existe (medido em 19/11/2026, run 44505942253): o production-nuxt caiu
 # na fila três vezes no mesmo dia (#2679, #2756, #2757) no passo "Install
@@ -19,6 +19,10 @@ name: Cache do Playwright no main
 # motores, `-deps`), uma por combinação que a matriz usa
 # (`surface_contract.mjs matrix browsers`). Fora do caminho da fila, com teto
 # folgado. Não é check obrigatório e não testa nada: só aquece.
+#
+# Desde 19/11/2026 (tarde) aquece também o cache do npm de cada app (job
+# `npm`): a fila só restaura o npm, não grava mais (ver surfaces-gate.yml,
+# "Restore npm cache"), então o `main` é de novo a única fonte que ela lê.
 #
 # Roda: no push do `main` que muda lock, script ou contrato; de 6 em 6 horas,
 # para pegar imagem nova do runner (a chave muda com o ImageOS) e manter o cache
@@ -54,6 +58,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       include: ${{ steps.m.outputs.include }}
+      quality: ${{ steps.q.outputs.quality }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -61,6 +66,8 @@ jobs:
           node-version: "22"
       - id: m
         run: echo "include=$(node scripts/surface_contract.mjs matrix browsers)" >> "$GITHUB_OUTPUT"
+      - id: q
+        run: echo "quality=$(node scripts/surface_contract.mjs matrix quality)" >> "$GITHUB_OUTPUT"
 
   warm:
     name: Cache — ${{ matrix.browser_engines }}${{ matrix.browser_with_deps && ' + deps' || '' }}
@@ -134,3 +141,49 @@ jobs:
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
             ~/.cache/playwright-apt
+
+  # O cache do npm que o app-quality e o PWA do Surfaces Gate restauram. Chave
+  # IGUAL à de lá (lock do app + lock do operator-kit); se uma mudar, a outra
+  # muda junto.
+  npm:
+    name: Cache npm — ${{ matrix.dir }}
+    needs: combos
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.combos.outputs.quality) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Look up npm cache
+        id: npm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('surfaces/{0}/package-lock.json', matrix.dir), 'surfaces/operator-kit/package-lock.json') }}
+          lookup-only: true
+
+      # Só o download importa: `--ignore-scripts` enche o ~/.npm sem o
+      # `nuxt prepare` do postinstall.
+      - name: Fill npm cache
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        env:
+          DIR: ${{ matrix.dir }}
+          LAYER: ${{ matrix.install_layer }}
+        run: |
+          if [ "$LAYER" = "true" ] && [ "$DIR" != "operator-kit" ]; then
+            (cd surfaces/operator-kit && npm ci --ignore-scripts)
+          fi
+          cd "surfaces/$DIR" && npm ci --ignore-scripts
+
+      - name: Save npm cache
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
