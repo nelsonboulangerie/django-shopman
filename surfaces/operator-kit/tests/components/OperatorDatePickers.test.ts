@@ -63,6 +63,15 @@ describe("OperatorDayPicker (Tipo 1)", () => {
     expect(wrapper.emitted("update:modelValue")).toEqual([["2026-10-03"]]);
   });
 
+  it("o escolhido tem borda e tingido do latão, e o nome escreve com a tinta AA (#2826)", async () => {
+    const wrapper = await mount(OperatorDayPicker, { props: { modelValue: "2026-10-02", today: TODAY } });
+    const chosen = wrapper.get('[data-day-option="tomorrow"]');
+    expect(chosen.classes()).toEqual(expect.arrayContaining(["border-primary", "bg-primary/5"]));
+    expect(chosen.get("span").classes()).toContain("text-(--primary-ink)");
+    const other = wrapper.get('[data-day-option="today"]');
+    expect(other.get("span").classes()).not.toContain("text-(--primary-ink)");
+  });
+
   it("dia fechado aparece, não se escolhe, e diz o motivo", async () => {
     const wrapper = await mount(OperatorDayPicker, {
       props: { modelValue: "", today: TODAY, availableDates: ["2026-10-01", "2026-10-03"] },
