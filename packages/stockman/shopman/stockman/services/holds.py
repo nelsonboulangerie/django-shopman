@@ -29,6 +29,19 @@ QUALITY_GRADE_POLICY_VERSION_METADATA_KEY = "_quality_grade_policy_version"
 QUALITY_GRADE_POLICY_VERSION = 1
 
 
+def delivery_reason(hold_pk: int, note: str = "") -> str:
+    """Motivo dos ``Move`` da entrega de uma reserva: a conta dela no ledger.
+
+    Sem ``note`` é a baixa (``fulfill``). Com ``note`` é outro lançamento da
+    mesma conta, no mesmo saldo: a entrega que segue com o lote, a devolução de
+    um cancelamento. O líquido da conta num saldo de produção é o que ele ainda
+    deve ao lote (``planning._early_deliveries``, #2724). Quem escreve nela usa
+    esta função, nunca um texto copiado.
+    """
+    base = f"Entrega hold:{hold_pk}"
+    return f"{base} {note}" if note else base
+
+
 def _parse_hold_id(hold_id: str) -> int:
     """Extract PK from hold_id."""
     if hold_id and hold_id.startswith("hold:"):
@@ -437,7 +450,7 @@ class StockHolds:
 
                 consume_qty = quantity if quantity is not None else hold.quantity
                 move = Move.objects.create(
-                    quant=quant, delta=-consume_qty, reason=f"Entrega hold:{hold.pk}", kind=kind, user=user
+                    quant=quant, delta=-consume_qty, reason=delivery_reason(hold.pk), kind=kind, user=user
                 )
 
                 _actor = actor or user

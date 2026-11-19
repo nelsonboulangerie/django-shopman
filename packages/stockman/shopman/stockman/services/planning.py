@@ -24,9 +24,75 @@ from shopman.stockman.services.holds import (
     QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
     QUALITY_GRADE_POLICY_VERSION,
     QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    delivery_reason,
 )
 
 logger = logging.getLogger("shopman.stockman")
+
+
+def _carried_reason(hold_pk: int) -> str:
+    """Motivo da perna que devolve ao saldo de produção uma entrega que seguiu adiante."""
+    return delivery_reason(hold_pk, "segue com o lote")
+
+
+def _early_deliveries(quant, *, limit):
+    """Entregas feitas contra este saldo de produção que ainda não chegaram ao lote.
+
+    O fato é do ledger. ``fulfill`` baixa a reserva do quant em que ela está,
+    mesmo quando ele ainda é saldo de produção, e a reserva fica ``fulfilled``
+    ancorada ali. O que esse saldo deve ao lote é o líquido, por reserva, da
+    conta da entrega (:func:`delivery_reason`): a baixa, menos o que já seguiu
+    adiante, menos o que foi devolvido. Nenhum contador além dos ``Move``.
+
+    Devolve ``[(hold, quantidade, kind, quita)]`` na ordem das entregas, até
+    ``limit``. Entrega maior que o que cabe segue em parte, e o resto continua
+    devido ao mesmo saldo (a reserva só muda de quant quando quita).
+    """
+    holds = list(quant.holds.filter(status=HoldStatus.FULFILLED).order_by("resolved_at", "pk"))
+    if not holds:
+        return []
+
+    accounts = {delivery_reason(hold.pk): hold.pk for hold in holds}
+    in_account = Q()
+    for base in accounts:
+        in_account |= Q(reason=base) | Q(reason__startswith=f"{base} ")
+    owed = dict.fromkeys(accounts.values(), Decimal("0"))
+    kinds = {}
+    ledger = Move.objects.filter(in_account, quant=quant).order_by("pk")
+    for reason, delta, kind in ledger.values_list("reason", "delta", "kind"):
+        hold_pk = next(pk for base, pk in accounts.items() if reason == base or reason.startswith(f"{base} "))
+        owed[hold_pk] -= delta
+        kinds.setdefault(hold_pk, kind)
+
+    room = Decimal(str(limit))
+    deliveries = []
+    for hold in holds:
+        if room <= 0:
+            break
+        pending = owed[hold.pk]
+        if pending <= 0:
+            continue
+        part = min(pending, room)
+        deliveries.append((hold, part, kinds[hold.pk], part == pending))
+        room -= part
+    return deliveries
+
+
+def _return_early_deliveries(quant, deliveries, *, user=None) -> Decimal:
+    """Perna de origem: o saldo de produção recebe de volta o que segue adiante."""
+    for hold, quantity, kind, _settles in deliveries:
+        Move.objects.create(quant=quant, delta=quantity, reason=_carried_reason(hold.pk), kind=kind, user=user)
+    return sum((quantity for _hold, quantity, _kind, _settles in deliveries), Decimal("0"))
+
+
+def _charge_early_deliveries(quant, deliveries, *, user=None) -> None:
+    """Perna de destino: a entrega passa a pesar em ``quant``, e a reserva o acompanha."""
+    for hold, quantity, kind, settles in deliveries:
+        Move.objects.create(quant=quant, delta=-quantity, reason=delivery_reason(hold.pk), kind=kind, user=user)
+        if settles:
+            hold.quant = quant
+            hold.save(update_fields=["quant"])
+
 
 # Default TTL for holds after stock materializes (minutes).
 #
@@ -81,6 +147,52 @@ class StockPlanning:
         StockMovements.adjust(quant, quantity, reason, user)
         quant.refresh_from_db()
         return quant
+
+    @classmethod
+    def carry_deliveries(cls, from_quant, to_quant, *, limit, user=None) -> Decimal:
+        """Leva de um saldo de produção para o seguinte o que já foi entregue contra ele.
+
+        É o passo de quem move a contribuição de um lote entre saldos de
+        produção (o "Iniciar": do planejado para o que está em produção). A
+        entrega feita contra a origem acompanha a contribuição, até ``limit``;
+        sem isso o destino nasce cheio e oferece de novo o que já saiu. O
+        ``realize`` faz o mesmo ao fechar, do saldo de produção para o lote.
+
+        Par de pernas que soma zero, no ``kind`` da entrega original: a venda
+        continua contada uma vez só, agora no saldo que de fato a pagou.
+
+        Returns:
+            Quantidade levada.
+
+        Raises:
+            StockError('INVALID_CARRY'): origem não é saldo de produção, ou
+                origem e destino não são saldos distintos do mesmo SKU.
+        """
+        if from_quant.target_date is None or from_quant.pk == to_quant.pk or from_quant.sku != to_quant.sku:
+            raise StockError("INVALID_CARRY", from_quant=from_quant.pk, to_quant=to_quant.pk)
+
+        with transaction.atomic():
+            locked = {
+                quant.pk: quant
+                for quant in Quant.objects.select_for_update()
+                .filter(pk__in=[from_quant.pk, to_quant.pk])
+                .order_by("pk")
+            }
+            source, destination = locked[from_quant.pk], locked[to_quant.pk]
+            early = _early_deliveries(source, limit=limit)
+            carried = _return_early_deliveries(source, early, user=user)
+            _charge_early_deliveries(destination, early, user=user)
+            if carried:
+                logger.info(
+                    "stock.carry_deliveries",
+                    extra={
+                        "sku": source.sku,
+                        "from_quant": source.pk,
+                        "to_quant": destination.pk,
+                        "qty": str(carried),
+                    },
+                )
+            return carried
 
     @classmethod
     def realize(
@@ -189,7 +301,15 @@ class StockPlanning:
             # Rendimento MAIOR que o planejado (forno rendeu 55 de 50): o
             # débito é limitado ao saldo planejado e o físico recebe o total
             # real — o excedente é ganho de produção, nunca perda do lote.
-            planned_balance = Decimal(str(locked_quant.quantity))
+            #
+            # Saldo MENOR que o realizado também acontece quando parte do lote
+            # foi entregue antes de ele fechar (#2724). Não é ganho: a entrega
+            # segue para o lote (o saldo de produção a recebe de volta aqui, o
+            # lote a paga logo abaixo), as pernas de produção continuam dizendo
+            # o realizado inteiro e a vitrine recebe só o que ainda não saiu.
+            early = _early_deliveries(locked_quant, limit=actual_quantity)
+            delivered_early = _return_early_deliveries(locked_quant, early, user=user)
+            planned_balance = Decimal(str(locked_quant.quantity)) + delivered_early
             planned_debit = min(actual_quantity, max(planned_balance, Decimal("0")))
             if planned_debit > 0:
                 Move.objects.create(
@@ -203,6 +323,7 @@ class StockPlanning:
                 kind=kind,
                 user=user,
             )
+            _charge_early_deliveries(physical_quant, early, user=user)
 
             # Transfer holds up to actual_quantity. The pool covers the holds
             # anchored on the planned quant AND floating demand holds
@@ -216,7 +337,9 @@ class StockPlanning:
             #
             # Holds that were against planned stock get a TTL now
             # (the clock starts when stock materializes).
-            transferred = Decimal("0")
+            #
+            # O que já foi entregue ocupa o lote antes de qualquer reserva.
+            transferred = delivered_early
             materialized_hold_ids = []
             now = timezone.now()
             hold_ttl_minutes = getattr(
