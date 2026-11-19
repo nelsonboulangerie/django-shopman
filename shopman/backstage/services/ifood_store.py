@@ -38,7 +38,11 @@ def write_opening_hours(*, now: datetime | None = None) -> None:
 
     Levanta ``MerchantAPIError`` com a recusa do iFood (400 de turno sobreposto, 403).
     """
-    ifood_merchant.sync_store(now=now)
+    result = ifood_merchant.sync_store(now=now)
+    if result.hours_error is not None:
+        # O ``sync_store`` engole a recusa do horário para a pausa não depender dele
+        # (DEV-2026-041); quem pediu para gravar o horário precisa ouvir a recusa.
+        raise result.hours_error
 
 
 __all__ = ["PauseNotRemovable", "remove_portal_interruption", "write_opening_hours"]
