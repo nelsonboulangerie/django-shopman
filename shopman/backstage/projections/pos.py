@@ -1443,7 +1443,9 @@ def _fulfillment_options(fulfillment_types: tuple[str, ...]) -> tuple[POSFulfill
             options.append(POSFulfillmentOptionProjection(
                 ref="delivery",
                 label="Entrega",
-                description="Entrega local com endereço informado pelo operador.",
+                # O que acontece com o pedido, em paralelo com a retirada; quem digita
+                # o endereço não é assunto do cartão (#2814).
+                description="O pedido vai até o endereço do cliente.",
                 requires_address=True,
             ))
         elif ref == "pickup":
