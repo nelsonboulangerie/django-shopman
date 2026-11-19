@@ -20,6 +20,7 @@ import { enterAdvances, paymentFailed, pendingPixBadge, pixAwaiting } from "~/pr
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { kitchenBoundSkus, kitchenRoutedSkus } from "~/presentation/kitchen";
+import { overPlanSummary } from "~/presentation/payment";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
@@ -177,6 +178,7 @@ const {
   deliveryWindowLabel,
   deliveryDateEffective,
   scheduleToday,
+  planBySku,
   scheduleAvailableDates,
   scheduleBottleneckName,
   scheduleReadyAt,
@@ -1744,6 +1746,8 @@ onBeforeUnmount(() => {
               :auto-fire="autoFireOn"
               :auto-fire-skus="autoFireSkuList"
               :auto-fire-busy="autoFireBusy"
+              :plan-by-sku="planBySku"
+              :plan-date="cart.deliveryDate"
               :offline="offlineSales.isOnline.value === false"
               :sale-blocked-reason="saleBlockedReason"
               :items="cart.items"
@@ -1965,7 +1969,7 @@ onBeforeUnmount(() => {
       action="sale_approval"
       :threshold-q="closeRecheckApproval?.threshold_q || 0"
       :discount-q="closeRecheckApproval?.discount_q || 0"
-      :reasons="closeRecheckApproval?.reasons"
+      :reasons="(closeRecheckApproval?.reasons || []).filter((reason) => reason !== 'preorder_over_plan')"
       :house-account-limit="closeRecheckApproval?.house_account_limit"
       :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
@@ -1974,7 +1978,17 @@ onBeforeUnmount(() => {
       data-close-guard-manager
       @update:open="(value) => { if (!value) dismissCloseRecheckApproval(); }"
       @authorize="recheckWithManager"
-    />
+    >
+      <!-- Encomenda acima do plano: os dois números, como no Pagamento (WP-E2). -->
+      <template v-if="closeRecheckApproval?.over_plan?.length" #context>
+        <div class="grid gap-1 rounded-md border border-warning/50 bg-warning/10 px-3 py-2" data-over-plan-context>
+          <p class="text-sm font-semibold text-foreground">A encomenda passa do plano</p>
+          <p v-for="line in closeRecheckApproval.over_plan" :key="line.sku" class="text-sm text-foreground tabular-nums">
+            {{ overPlanSummary([line]) }}
+          </p>
+        </div>
+      </template>
+    </OperatorManagerAuth>
 
     <PosOfflineSalesDialog
       v-model:open="offlineSalesOpen"

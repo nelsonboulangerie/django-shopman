@@ -1768,6 +1768,7 @@
             "hold_target_date",
             "is_cart_hold",
             "logger",
+            "planned_on_date",
             "receive_return",
             "release_holds",
             "release_holds_for_reference",
@@ -4154,7 +4155,6 @@
             "_payment_is_authorized",
             "_payment_is_captured",
             "_payment_method",
-            "_physical_work_deferred",
             "_prep_starts_automatically",
             "_record_availability_decision",
             "_record_coupon_use",
@@ -4167,6 +4167,7 @@
             "_stamp_kitchen_released",
             "_verify_holds",
             "acceptance_timeout_minutes",
+            "awaits_kitchen_release",
             "kitchen_release_at",
             "logger",
             "release_preorder_now"
@@ -5714,7 +5715,8 @@
           "symbols": [
             "Command",
             "DEFAULT_MIN_INTERVAL_HOURS",
-            "RETRY_AFTER_FAILURE_HOURS"
+            "RETRY_AFTER_FAILURE_HOURS",
+            "logger"
           ]
         }
       ]
@@ -12794,6 +12796,33 @@
             "get_payment_status",
             "has_sufficient_captured_payment",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/pickup_turn.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CACHE_KEY",
+            "CACHE_TTL_SECONDS",
+            "CLOSED",
+            "OPEN",
+            "TRIGGER",
+            "current_phase",
+            "logger",
+            "resend_on_turn",
+            "visible_skus"
           ]
         }
       ]

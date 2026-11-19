@@ -6,6 +6,7 @@
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
+  kitchenWait,
   secondsSince,
   splitRef,
   type Affordance,
@@ -58,6 +59,9 @@ export interface QueueItem {
   urgency: number;
   /** Segundos até o sistema CANCELAR sozinho (prazo duro); ``null`` sem prazo de perda. */
   cancelsIn: number | null;
+  /** "Vai para a Cozinha às 16h15": a encomenda do dia que ainda espera a hora dela.
+   *  Sem relógio e sem meta; a Fila mostra a frase no lugar do tempo. */
+  waits: string;
 }
 
 /** Minutos inteiros, como a prévia escreve ("27 min", "1h 5 min"). */
@@ -121,10 +125,32 @@ export function liveAge(
   return { label: item.timeLabel, tone: item.tone };
 }
 
+/** De quando o relógio do pedido conta: a chegada à Cozinha, na encomenda; a criação, no
+ *  pedido de agora (`clock_since_iso`). Contar a encomenda desde a compra fazia a Fila
+ *  dizer "3d 4h" e "o mais antigo há 3d" como tempo de preparo (WP-G02, P1-05). */
+export function clockSince(
+  card: Pick<OrderCardProjection, "clock_since_iso" | "created_at_iso">,
+): string {
+  return card.clock_since_iso || card.created_at_iso;
+}
+
 function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
+  const wait = kitchenWait(card);
+  if (!card.attention && wait)
+    return {
+      card,
+      kind: "",
+      seconds: 0,
+      timeLabel: wait.label,
+      goalLabel: card.status_label,
+      tone: timeTone("on_time"),
+      urgency: 0,
+      cancelsIn: null,
+      waits: wait.label,
+    };
   if (!card.attention) {
     const seconds =
-      secondsSince(card.created_at_iso, nowMs) ?? card.elapsed_seconds ?? 0;
+      secondsSince(clockSince(card), nowMs) ?? card.elapsed_seconds ?? 0;
     return {
       card,
       kind: "",
@@ -134,6 +160,7 @@ function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
       tone: timeTone("on_time"),
       urgency: 0,
       cancelsIn: null,
+      waits: "",
     };
   }
   const seconds =
@@ -148,6 +175,7 @@ function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
     tone: goalTone(seconds, goal),
     urgency: goal ? seconds / (goal * 60) : 0,
     cancelsIn: cancelSeconds(card, nowMs),
+    waits: "",
   };
 }
 
@@ -270,7 +298,7 @@ export function inProgress(
       detail: kitchenDetail(
         kitchen,
         nowMs,
-        oldest(kitchen, (card) => card.created_at_iso),
+        oldest(kitchen, clockSince),
       ),
     },
     {
@@ -471,7 +499,7 @@ export function workingOrders(
     .map((card) => {
       const stations = (card.kitchen?.stations ?? []).map(stationLine);
       const done = stations.filter((s) => s.tone === "success").length;
-      const seconds = age(card, card.created_at_iso);
+      const seconds = age(card, clockSince(card));
       return {
         card,
         stations,

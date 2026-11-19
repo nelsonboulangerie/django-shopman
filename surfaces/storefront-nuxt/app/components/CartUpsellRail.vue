@@ -50,7 +50,9 @@ function productRoute (sku: string) {
                 </NuxtLink>
               </UiItemHeader>
               <UiItemContent class="min-w-0">
-                <UiItemTitle class="w-full truncate">{{ upsell.name }}</UiItemTitle>
+                <!-- O nome quebra em até duas linhas: cortado em uma ("Queijo Camembert
+                     Ile d…"), a cliente não sabia o que estava sendo oferecido. -->
+                <UiItemTitle class="line-clamp-2 w-full" data-upsell-name>{{ upsell.name }}</UiItemTitle>
                 <UiItemDescription class="line-clamp-1">{{ upsell.price_display }}</UiItemDescription>
               </UiItemContent>
               <UiItemFooter class="w-full">

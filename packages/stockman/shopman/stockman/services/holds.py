@@ -20,7 +20,7 @@ from shopman.stockman.models.move import Move
 from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.availability import promise_for_sku
 from shopman.stockman.services.queries import _resolve_stock_profile
-from shopman.stockman.services.scope import quants_eligible_for
+from shopman.stockman.services.scope import is_in_production, quants_eligible_for
 
 logger = logging.getLogger("shopman.stockman")
 
@@ -419,7 +419,10 @@ class StockHolds:
                     )
 
                 allowed_grades = (hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
-                if allowed_grades is not None and quant.batch:
+                # O saldo em produção não é lote (não há grau a conferir): a
+                # mesma leitura do escopo, para a baixa não negar o que a
+                # reserva aceitou.
+                if allowed_grades is not None and quant.batch and not is_in_production(quant):
                     from shopman.stockman.models import Batch
 
                     grade_ref = (

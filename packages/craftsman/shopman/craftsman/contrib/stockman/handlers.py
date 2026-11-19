@@ -7,9 +7,15 @@ stockman write path for the stock ledger (there is no InventoryProtocol write
 backend — that seam is read-only, for ingredient-availability validation).
 
 - planned: Create planned Quant (future stock) for finished goods
+- started: Move the started quantity to the ``started`` Quant, and the
+  reservations with it
 - finished: Consume the recipe's ingredients (kind=MAKE) and realize the
   planned output into the saleable position (kind=MAKE)
 - voided: Cancel planned Quant for the WorkOrder
+
+Whenever quantity moves between the two production Quants of a SKU/date (the
+plain planned one and the ``started`` one), the reservations are re-seated by
+``StockPlanning.settle_holds`` — see :func:`_settle_production_holds`.
 
 All output and ingredient moves are emitted with ``Move.Kind.MAKE`` — the two
 legs (ingredients out, finished goods in) of a single production event.
@@ -249,6 +255,47 @@ def _find_planned_quant(work_order, product_ref, date):
     return quant
 
 
+def _settle_production_holds(work_order, product_ref, date, *, planned_quant=None, started_quant=None):
+    """As reservas acompanham o saldo de produção quando a quantidade muda de lugar.
+
+    O plano de um SKU numa data mora em dois quants: o planejado sem lote e o
+    ``batch='started'`` (o que já entrou em produção). Cada reserva ancora em UM
+    deles, e o ``realize`` do fechamento só materializa as reservas do quant de
+    onde o lote sai. Antes, o início movia a QUANTIDADE para o ``started`` e
+    deixava as reservas no planejado: o lote fechava, o pão ia para a vitrine
+    sem reserva, e a encomenda ficava presa a um saldo zerado (a leitura a
+    ignorava e a baixa falhava). Medido em 18/11/2026, issue #2709.
+
+    Aqui a ponte só diz QUAIS são os dois saldos e em que ordem são servidos
+    (o lote aberto antes do só planejado). A regra de quem vai para onde é do
+    Stockman (``StockPlanning.settle_holds``): a mesma ordem de atendimento do
+    ``realize``, reserva inteira, 1 hold : 1 quant. Reserva que não cabe em
+    nenhum dos dois fica onde está; o cancelamento a solta e avisa o pedido
+    (``shop.handlers._stock_receivers.on_production_voided``).
+    """
+    from shopman.stockman.services.planning import StockPlanning
+    from shopman.stockman.services.queries import StockQueries
+
+    if planned_quant is None:
+        planned_quant = _find_planned_quant(work_order, product_ref, date)
+    if started_quant is None:
+        started_quant = StockQueries.get_quant(
+            product_ref,
+            target_date=date,
+            position=_resolve_position(work_order.position_ref),
+            batch=STARTED_BATCH,
+        )
+    moved = StockPlanning.settle_holds([started_quant, planned_quant])
+    if moved:
+        logger.info(
+            "Production holds re-seated: sku=%s target_date=%s moved=%s ref=%s",
+            product_ref,
+            date,
+            len(moved),
+            work_order.ref,
+        )
+
+
 def _handle_planned(work_order, product_ref, date):
     """Create a planned Quant for the finished goods output."""
     if not work_order or not date:
@@ -341,6 +388,9 @@ def _handle_adjusted(work_order, product_ref, date, previous_quantity=None):
             new_total,
             reason=f"Ajuste WO {work_order.ref} (Δ {delta:+})",
         )
+        # O plano encolheu ou cresceu: a reserva que deixou de caber aqui vai
+        # para o lote aberto que a cobre, e a que estava sem lugar volta.
+        _settle_production_holds(work_order, product_ref, date, planned_quant=quant)
     logger.info(
         "Planned quant adjusted (delta): sku=%s qty=%s prev=%s target_date=%s ref=%s",
         product_ref,
@@ -358,6 +408,9 @@ def _handle_started(work_order, product_ref, date):
     The remaining quantity stays as plain planned supply. This lets Stockman
     distinguish what is merely planned from what is already expected because it
     effectively entered production.
+
+    The reservations follow the quantity (:func:`_settle_production_holds`):
+    the lot that opened is the first to be served.
     """
     if not work_order or not date:
         logger.warning(
@@ -385,7 +438,7 @@ def _handle_started(work_order, product_ref, date):
             reason=f"Entrada em produção: {work_order.ref}",
         )
 
-    StockMovements.receive(
+    started_quant = StockMovements.receive(
         quantity=started_qty,
         sku=product_ref,
         position=position,
@@ -394,6 +447,14 @@ def _handle_started(work_order, product_ref, date):
         reason=f"Produção do lote: {work_order.ref}",
         kind="make",  # Move.Kind.MAKE
     )
+    if planned_quant is not None:
+        _settle_production_holds(
+            work_order,
+            product_ref,
+            date,
+            planned_quant=planned_quant,
+            started_quant=started_quant,
+        )
     logger.info(
         "Started supply materialized: sku=%s started=%s target_date=%s position=%s ref=%s",
         product_ref,
@@ -462,6 +523,17 @@ def _handle_voided(work_order, product_ref, date):
             started_quant,
             new_quantity=new_started,
             reason=f"WO cancelada após início: {work_order.ref} (−{started_qty})",
+        )
+    # O que este lote cobria pode caber no outro saldo de produção da data (o
+    # lote aberto de outra WO, ou o que segue planejado). Só o que não couber
+    # em nenhum fica sem lastro, e é isso que o cancelamento solta.
+    if quant is not None and started_quant is not None:
+        _settle_production_holds(
+            work_order,
+            product_ref,
+            date,
+            planned_quant=quant,
+            started_quant=started_quant,
         )
     logger.info(
         "Planned/started quants cancelled: sku=%s target_date=%s ref=%s",
