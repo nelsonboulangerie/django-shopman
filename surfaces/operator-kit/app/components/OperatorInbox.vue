@@ -252,13 +252,16 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             v-for="alert in alerts"
             :key="alert.key"
             :color="alertColor(alert.tone)"
-            :variant="alert.seen ? 'subtle' : 'soft'"
+            :variant="alert.seen && !alert.answer ? 'subtle' : 'soft'"
             :title="alert.eyebrow || undefined"
             :description="inboxAlertDescription(alert)"
             :ui="{ description: 'whitespace-pre-line' }"
             :data-alert-seen="alert.seen ? '' : undefined"
             data-operator-inbox-alert
           >
+            <!-- Visto esmaece o aviso, menos o que ainda espera uma resposta escrita: ele
+                 segue pedindo o gesto, e o tom esmaecido derrubava o contraste da dica
+                 e do contorno (3,2 e 3,55 medidos). -->
             <!-- O aviso com resposta escrita lê como a janela do aviso: o canal como selo
                  (ícone e nome) e, embaixo, quem espera; sem repetir gravidade e tipo. -->
             <template v-if="alert.answer && alert.subject" #title>

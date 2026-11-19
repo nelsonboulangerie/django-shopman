@@ -56,6 +56,9 @@ export interface OperatorInboxAlert {
    *  equipe): o campo, o gesto de enviar e, opcional, o gesto alternativo ("Assumir a
    *  conversa"). O app executa por `answer`/`answerAlt` da fonte. */
   answer?: OperatorInboxAnswerSpec;
+  /** A mensagem na janela do aviso com prazo, quando ela difere da caixa: lá o relógio
+   *  já diz o prazo, e a linha que o repete sai. Sem ela, vale `message`. */
+  urgentMessage?: string;
 }
 
 /** Como o aviso pede a resposta: rótulos e o limite vêm do servidor e do app. */

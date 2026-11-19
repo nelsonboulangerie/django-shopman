@@ -29,11 +29,28 @@ export function verificationActions(alert: AlertProjection): { answer: Action | 
  * O que o cartão de verificação acrescenta ao aviso da caixa: o campo de resposta e o
  * "Assumir a conversa", no lugar do gesto direto. Aviso de outro tipo: nada.
  */
-export function verificationInbox(alert: AlertProjection): { answer?: OperatorInboxAnswerSpec; actLabel?: undefined } {
+/** A linha do prazo prometido ("Prometemos responder até 16h12."). */
+const PROMISE_LINE = /^Prometemos responder até .+$/;
+
+/** A mensagem sem a linha do prazo: na janela, o relógio já diz a hora. */
+export function withoutPromiseLine(message: string): string {
+  return message
+    .split("\n")
+    .filter((line) => !PROMISE_LINE.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
+export function verificationInbox(alert: AlertProjection): {
+  answer?: OperatorInboxAnswerSpec;
+  actLabel?: undefined;
+  urgentMessage?: string;
+} {
   const { answer, takeOver } = verificationActions(alert);
   if (!answer) return {};
   return {
     actLabel: undefined,
+    ...(alert.respond_by_iso ? { urgentMessage: withoutPromiseLine(alert.message) } : {}),
     answer: {
       label: answer.label,
       placeholder: ANSWER_PLACEHOLDER,

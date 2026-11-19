@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
           >
         </p>
         <p class="op-body whitespace-pre-line" data-operator-urgent-message>
-          {{ blocking.message }}
+          {{ blocking.urgentMessage || blocking.message }}
         </p>
         <!-- Responder ali mesmo: o aviso com prazo que se resolve com uma resposta
              escrita (a pergunta que a Concierge levou à equipe). -->

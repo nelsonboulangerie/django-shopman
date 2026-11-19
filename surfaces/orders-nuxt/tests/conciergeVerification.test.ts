@@ -67,6 +67,17 @@ describe("cartão de verificação da Concierge", () => {
     expect(takeOver?.href).toBe("/api/v1/backstage/alerts/31/concierge-verification/take-over/");
   });
 
+  it("na janela do aviso, a linha do prazo sai: o relógio já diz a hora", () => {
+    const card: AlertProjection = {
+      ...CARD,
+      message: "“amanhã vai ter pão de forma?”\nPrometemos responder até 16h12.",
+      respond_by_iso: "2026-11-19T19:12:00Z",
+    };
+    const item = verificationInbox(card);
+    expect(item.urgentMessage).toBe("“amanhã vai ter pão de forma?”");
+    expect(verificationInbox(CARD).urgentMessage).toBeUndefined();
+  });
+
   it("aviso de outro tipo fica como estava", () => {
     const other: AlertProjection = { ...CARD, type: "stale_new_order", actions: [CARD.actions[2]!] };
     expect(verificationInbox(other)).toEqual({});
