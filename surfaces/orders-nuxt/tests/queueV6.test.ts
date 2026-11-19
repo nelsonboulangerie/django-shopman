@@ -25,7 +25,7 @@ const ahead = (s: number) => new Date(NOW + s * 1000).toISOString();
 function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   return {
     ref: "WEB-261004-R7K", status: "ready", status_label: "Pronto", attention: "dispatch", attention_since_iso: ago(27 * 60),
-    goal_minutes: 30, goal_label: "meta 30", elapsed_seconds: 1620, created_at_iso: ago(1620), dispatched_at_iso: "",
+    goal_minutes: 30, goal_label: "meta 30 min", elapsed_seconds: 1620, created_at_iso: ago(1620), dispatched_at_iso: "",
     fulfillment_type: "delivery", fulfillment_label: "Entrega", delivery_address: "", customer_name: "João",
     actions: [], confirmation_deadline_iso: "", confirmation_action: "", ready_eta_iso: "",
     ...over,

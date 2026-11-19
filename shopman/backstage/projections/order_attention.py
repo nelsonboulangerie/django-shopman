@@ -155,6 +155,15 @@ def _confirmation_goal(order: Order, channel_config) -> int:
     return min(candidates) if candidates else goal
 
 
+def goal_minutes_label(minutes: int) -> str:
+    """A meta da etapa como a Fila a escreve: "meta 5 min".
+
+    Com a unidade: "meta 5" ao lado de "27 min" obrigava a completar o sentido
+    (5 o quê?). A Central já escrevia "meta 10 min" da mesma grandeza.
+    """
+    return f"meta {minutes} min"
+
+
 def attention_kind(order: Order, card) -> str:
     """O fato humano que o pedido espera agora (``ATTENTION_KINDS``) ou ``""``.
 
@@ -250,7 +259,7 @@ def card_attention(
             "attention": kind,
             "attention_since_iso": _iso(order.created_at),
             "goal_minutes": CONFIRM_GOAL_MINUTES,
-            "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
+            "goal_label": goal_minutes_label(CONFIRM_GOAL_MINUTES),
         }
     if kind == PROMISE_ATTENTION:
         # Conta de quando a reserva perdeu o lastro, quando há esse instante; a
@@ -272,7 +281,7 @@ def card_attention(
             "start": released or order.accepted_at or order.created_at,
             "station": order.preparing_at or order.created_at,
             "mark_ready": order.preparing_at or order.created_at,
-            # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30").
+            # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30 min").
             "dispatch": order.created_at,
             "courier_back": order.dispatched_at or order.created_at,
             "settle": order.delivered_at or order.dispatched_at or order.created_at,
@@ -288,7 +297,7 @@ def card_attention(
         "attention": kind,
         "attention_since_iso": since_iso,
         "goal_minutes": goal,
-        "goal_label": "no balcão" if kind == "handoff" else f"meta {goal}",
+        "goal_label": "no balcão" if kind == "handoff" else goal_minutes_label(goal),
     }
 
 
@@ -300,7 +309,7 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
     """A meta do pedido com hora combinada: o atraso se mede contra o combinado.
 
     Sem isto, a retirada combinada para as 18h aceita às 10h nascia atrasada às
-    10h05 ("iniciar, meta 5"), e a entrega das 18h ficava vermelha 30 min depois
+    10h05 ("iniciar, meta 5 min"), e a entrega das 18h ficava vermelha 30 min depois
     de chegar. A régua é a da Cozinha (``kds._build_ticket``): com hora combinada,
     o prazo é ela (``fulfillment_window.promised_at``). O "desde" continua o da
     etapa (o número diz há quanto tempo o pedido está nela); só a meta se estica

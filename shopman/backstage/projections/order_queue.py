@@ -596,7 +596,7 @@ class OrderCardProjection:
     dispatched_at_iso: str = ""
     # A Fila "Precisa de você" (V4-G4, ``order_attention``): o fato humano que o
     # pedido espera (``""`` = nada, está em andamento), desde quando o relógio da
-    # etapa conta e a meta dela ("meta 30", "no balcão").
+    # etapa conta e a meta dela ("meta 30 min", "no balcão").
     attention: str = ""
     attention_since_iso: str = ""
     goal_minutes: int = 0

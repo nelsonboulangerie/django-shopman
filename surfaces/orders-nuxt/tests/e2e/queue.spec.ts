@@ -17,7 +17,7 @@ test("o desktop abre no Painel; a Fila vem por urgência, com a coluna de consci
   await expect(items.first()).toHaveAttribute("data-queue-item", "blocked");
   await expect(items.first().locator("[data-queue-primary]")).toBeDisabled();
   await expect(items.nth(1).getByRole("button", { name: "Iniciar preparo" })).toBeEnabled();
-  await expect(items.nth(1).locator("[data-queue-goal]")).toHaveText("meta 5");
+  await expect(items.nth(1).locator("[data-queue-goal]")).toHaveText("meta 5 min");
   // O resto vira contagem com nome (sem "+N" somando grandezas); o agregado, o que o
   // sistema fez e o cardápio ao lado.
   // Só o que está em preparo conta: o iFood agendado, aceito e esperando o horário,

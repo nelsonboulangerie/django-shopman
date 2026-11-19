@@ -60,7 +60,7 @@ const CARD = {
   attention: "start",
   attention_since_iso: new Date(Date.now() - 3 * 60_000).toISOString(),
   goal_minutes: 5,
-  goal_label: "meta 5",
+  goal_label: "meta 5 min",
 };
 
 const QUEUE = {

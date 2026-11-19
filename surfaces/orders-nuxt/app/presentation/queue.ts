@@ -54,7 +54,7 @@ export interface QueueItem {
   seconds: number;
   /** "27 min" */
   timeLabel: string;
-  /** "meta 30" · "no balcão" · o estado ("Em preparo") de quem não pede ninguém */
+  /** "meta 30 min" · "no balcão" · o estado ("Em preparo") de quem não pede ninguém */
   goalLabel: string;
   tone: QueueTone;
   /** Fração da meta já gasta (1 = venceu). Ordena a Fila. */

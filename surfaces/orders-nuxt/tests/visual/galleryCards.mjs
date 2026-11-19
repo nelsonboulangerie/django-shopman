@@ -49,7 +49,7 @@ export function galleryQueue(base) {
     attention: "",
     attention_since_iso: iso(-420),
     goal_minutes: 10,
-    goal_label: "meta 10",
+    goal_label: "meta 10 min",
     ...over,
   });
 

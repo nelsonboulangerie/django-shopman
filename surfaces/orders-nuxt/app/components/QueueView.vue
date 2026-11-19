@@ -2,7 +2,7 @@
 // A Fila "Precisa de você" (V4-G4, prévia v4 `gestor-fila4.html`):
 //
 //   PRECISA DE VOCÊ 4                         Mais urgente primeiro (tempo contra a meta)
-//   [R7K  27 min meta 30 | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
+//   [R7K  27 min meta 30 min | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
 //   …
 //   Mais 3 pedem você · Seguem sozinhos: 5 na cozinha, 2 na rua            Ver todos ›
 //

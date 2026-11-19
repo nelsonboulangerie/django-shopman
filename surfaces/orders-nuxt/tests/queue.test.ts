@@ -11,7 +11,7 @@ const action = (ref: string, over: Record<string, unknown> = {}) => ({ ref, labe
 
 function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   return {
-    ref: "WEB-261004-R7K", status: "ready", attention: "dispatch", attention_since_iso: ago(27 * 60), goal_minutes: 30, goal_label: "meta 30",
+    ref: "WEB-261004-R7K", status: "ready", attention: "dispatch", attention_since_iso: ago(27 * 60), goal_minutes: 30, goal_label: "meta 30 min",
     elapsed_seconds: 1620, created_at_iso: ago(1620), dispatched_at_iso: "", fulfillment_type: "delivery", fulfillment_label: "Entrega",
     delivery_address: "Rua Paranaguá, 800", customer_name: "João Oliveira", actions: [action("advance", { label: "Marcar saída para entrega" })],
     can_settle_delivery_cash: false, equipment_back_pending: false, next_status: "dispatched",
@@ -22,13 +22,13 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
 describe("queueItems", () => {
   it("só entra o que espera alguém, o mais urgente primeiro", () => {
     const items = queueItems([
-      card({ ref: "A-1-NEW", attention: "confirm", attention_since_iso: ago(120), goal_minutes: 5, goal_label: "meta 5" }),
+      card({ ref: "A-1-NEW", attention: "confirm", attention_since_iso: ago(120), goal_minutes: 5, goal_label: "meta 5 min" }),
       card({ ref: "A-1-R7K" }),
       card({ ref: "A-1-KIT", attention: "", status: "preparing" }),
       card({ ref: "A-1-F15", attention: "handoff", attention_since_iso: ago(360), goal_minutes: 10, goal_label: "no balcão" }),
     ], NOW);
     expect(items.map((i) => i.card.ref)).toEqual(["A-1-R7K", "A-1-F15", "A-1-NEW"]);
-    expect(items[0]).toMatchObject({ timeLabel: "27 min", goalLabel: "meta 30", tone: "warning" });
+    expect(items[0]).toMatchObject({ timeLabel: "27 min", goalLabel: "meta 30 min", tone: "warning" });
     // Passou da metade da meta: atenção, como o iFood (dono, 13/11/2026).
     expect(items[1]).toMatchObject({ timeLabel: "6 min", goalLabel: "no balcão", tone: "warning" });
   });
