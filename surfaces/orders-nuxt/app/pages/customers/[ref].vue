@@ -546,13 +546,13 @@ const phoneHeaderActions = computed(() => [
             <ul v-if="customer.addresses.length" class="mt-1 space-y-1 text-sm">
               <li v-for="address in customer.addresses" :key="address.id" class="flex items-start justify-between gap-2 rounded-md border border-border p-2">
                 <div>
-                  <span class="font-medium">{{ address.label }}</span>
-                  <NuxtBadge v-if="address.is_default" class="ms-2" color="neutral" label="Padrão" />
+                  <span v-if="address.label" class="font-medium">{{ address.label }}</span>
+                  <NuxtBadge v-if="address.is_default" :class="address.label ? 'ms-2' : ''" color="neutral" label="Padrão" />
                   <p>{{ address.formatted_address }}</p>
                   <p v-if="address.complement" class="text-xs text-muted-foreground">{{ address.complement }}</p>
                   <p v-if="!address.is_verified" class="text-xs text-muted-foreground">Ainda não verificado</p>
                 </div>
-                <NuxtButton v-if="customer.is_active" icon="i-lucide-pencil" color="neutral" variant="ghost" square :aria-label="`Editar ${address.label}`" @click="editAddress(address)" />
+                <NuxtButton v-if="customer.is_active" icon="i-lucide-pencil" color="neutral" variant="ghost" square :aria-label="address.label ? `Editar ${address.label}` : `Editar ${address.formatted_address}`" @click="editAddress(address)" />
               </li>
             </ul>
             <p v-else class="mt-1 text-sm text-muted-foreground">

@@ -907,6 +907,16 @@ def refund_route(intent) -> str:
     if method in CARD_MACHINE_METHODS:
         return ROUTE_CARD_MACHINE
     if not intent.gateway:
+        from shopman.shop.services.payment import booked_outside_charge
+
+        # O dinheiro que chegou depois de a cobrança morrer (o Pix pago no QR
+        # velho, o cartão pago depois de o balcão receber) também mora num intent
+        # sem gateway, mas volta pelo gateway da cobrança que ele substitui
+        # (``payment._adapter_for_persisted_intent``): lido como maquininha, o
+        # estorno pelo gateway era recusado e o PDV pedia um estorno na maquininha
+        # de um dinheiro que nunca passou por ela.
+        if booked_outside_charge(intent):
+            return ROUTE_GATEWAY
         # Pix/cartão ATESTADOS no balcão (venda mista): não há gateway, a prova
         # é o papel da maquininha — e o estorno também.
         return ROUTE_CARD_MACHINE

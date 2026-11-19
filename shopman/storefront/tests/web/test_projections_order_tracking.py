@@ -1822,3 +1822,141 @@ def test_historical_customer_cancellation_event_is_read_in_portuguese_without_re
     assert any(item.label == "Cancelamento solicitado" for item in customer.timeline)
     assert any(item.label == "Cliente solicitou o cancelamento" for item in operator)
     assert list(order.events.values("id", "type", "payload")) == before
+
+
+# ── A fila chama: a frase principal pede a confirmação (#2771) ───────────────
+
+
+@pytest.mark.channels("web")
+class TestWaitlistCallIsTheMainSentence:
+    """Em ``confirming`` quem age é a cliente, com prazo correndo.
+
+    A frase principal dizia "Estamos conferindo a disponibilidade. Avisamos em
+    seguida." ao lado do cartão da fila que pedia a confirmação: duas mensagens
+    para o mesmo momento, e a primeira mandava esperar.
+    """
+
+    @staticmethod
+    def _order(ref: str, *, state: str = "confirming"):
+        from decimal import Decimal
+
+        from shopman.shop.services import waitlist
+        from shopman.storefront.tests.web.test_waitlist_tracking import SKU, _fermata_order, _materialize
+
+        order = _fermata_order(ref)
+        # Fila da fornada de hoje: a cobrança nasce NA confirmação, então ainda
+        # não há intent nem código de pagamento.
+        order.data["payment"] = {"method": "pix"}
+        order.save(update_fields=["data"])
+        if state == "confirming":
+            _materialize(order)
+            waitlist.open_window(SKU, qty_available=Decimal("5"))
+            order.refresh_from_db()
+        return order
+
+    def test_confirming_without_a_charge_asks_for_the_confirmation_with_the_deadline(self):
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+
+        order = self._order("FILA-CHAMA-1")
+
+        proj = build_order_tracking(order)
+
+        assert proj.waitlist_state == "confirming"
+        assert proj.promise.state == "waitlist_confirming"
+        assert proj.promise.tone == "info"
+        # O título fala da cliente, não da fornada (que é da casa).
+        assert proj.promise.title == "Chegou a sua vez!"
+        clock = format_clock(timezone.localtime(parse_datetime(proj.waitlist_deadline)))
+        assert proj.promise.message == (
+            f"Confirme seu pedido até {clock} para garantir a sua vaga. "
+            "Depois desse horário, ela passa para a próxima pessoa da fila."
+        )
+        # A frase não manda esperar quando quem age é a cliente.
+        assert "conferindo" not in proj.promise.message
+        assert "Avisamos" not in proj.promise.message
+
+    def test_the_promise_carries_the_same_deadline_the_queue_card_counts(self):
+        order = self._order("FILA-CHAMA-2")
+
+        proj = build_order_tracking(order)
+
+        assert proj.promise.deadline_at == proj.waitlist_deadline
+        assert proj.promise.deadline_kind == "waitlist"
+        assert proj.promise.deadline_action == "release_waitlist_slot"
+        # Uma contagem só na tela: a do cartão da fila, ao lado do botão.
+        assert proj.promise.timer_mode == "none"
+
+    def test_the_payment_block_stays_on_screen_during_the_call(self):
+        """O total e a forma de pagar não somem quando a loja chama.
+
+        A tela só desenha o bloco de pagamento quando a promessa diz a forma.
+        Antes do degrau do chamado, o Pix sem código caía em ``store_checking``
+        com ``payment_method="pix"``; o degrau novo tem de carregar o mesmo.
+        """
+        waiting = build_order_tracking(self._order("FILA-CHAMA-7", state="fermata"))
+        calling = build_order_tracking(self._order("FILA-CHAMA-8"))
+
+        assert waiting.promise.payment_method == "pix"
+        assert calling.promise.state == "waitlist_confirming"
+        assert calling.promise.payment_method == "pix"
+        assert not calling.promise.pix_copy_paste
+
+    def test_the_queue_card_keeps_only_the_button(self):
+        order = self._order("FILA-CHAMA-3")
+
+        copy = build_order_tracking(order).copy
+
+        assert copy.waitlist_confirm_cta == "Confirmar meu pedido"
+        # O chamado é da frase principal; o cartão não o repete com outras palavras.
+        assert not hasattr(copy, "waitlist_confirm_title")
+        assert not hasattr(copy, "waitlist_confirm_message")
+
+    def test_while_waiting_for_the_batch_the_main_sentence_is_not_the_call(self):
+        order = self._order("FILA-CHAMA-4", state="fermata")
+
+        proj = build_order_tracking(order)
+
+        assert proj.waitlist_state == "fermata"
+        assert proj.promise.state != "waitlist_confirming"
+
+    def test_after_confirming_the_call_gives_way(self):
+        from unittest.mock import patch as _patch
+
+        from shopman.shop.services import waitlist
+
+        order = self._order("FILA-CHAMA-5")
+        with _patch("shopman.shop.services.payment.initiate"), _patch("shopman.shop.services.notification.send"):
+            assert waitlist.confirm(order) is True
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert proj.waitlist_state == "confirmed"
+        assert proj.promise.state != "waitlist_confirming"
+
+    def test_an_expired_or_missing_deadline_never_leaves_a_hole_in_the_sentence(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        order = self._order("FILA-CHAMA-6")
+        order.data["waitlist"]["deadline"] = (timezone.now() - timedelta(minutes=1)).isoformat()
+        order.save(update_fields=["data"])
+
+        message = build_order_tracking(order).promise.message
+
+        assert message == "Confirme seu pedido para garantir a sua vaga na fila."
+        assert "{" not in message
+
+    def test_the_call_speaks_the_house_words(self):
+        order = self._order("FILA-CHAMA-7")
+
+        promise = build_order_tracking(order).promise
+        text = f"{promise.title} {promise.message}".lower()
+
+        # "Ficar pronto", nunca "sair"; sem travessão; a palavra da fila é "vaga".
+        assert "saiu" not in text and "sair" not in text
+        assert "—" not in text and "–" not in text
+        assert "vaga" in text and "lugar" not in text
+        assert "fornada" not in text, "a fornada é da casa; o título fala da vez da cliente"

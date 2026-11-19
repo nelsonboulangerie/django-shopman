@@ -87,11 +87,13 @@ def _dispatch(client, ref, **body):
     return client.post(reverse("api-backstage-order-advance", args=[ref]), advance_payload(client, ref, **body), content_type="application/json")
 
 
-def test_botao_de_saida_diz_a_maquininha_so_quando_o_pagamento_na_porta_pede(client, operator, machines):
+def test_a_saida_pede_a_maquininha_so_quando_o_pagamento_na_porta_pede(client, operator, machines):
     _order("DLV-CARD")
     _order("DLV-CASH", method="cash")
-    assert _action(client, "DLV-CARD", "advance")["label"] == "Saiu com a maquininha"
-    assert _action(client, "DLV-CASH", "advance")["label"] == "Marcar saída para entrega"
+    # O gesto da saída tem um nome só em toda forma do pedido (WP-G09): "Despachar
+    # <código>". Quem diz que a maquininha vai junto é ``dispatch_needs_machine``.
+    assert _action(client, "DLV-CARD", "advance")["label"] == "Despachar CARD"
+    assert _action(client, "DLV-CASH", "advance")["label"] == "Despachar CASH"
     card = _card(client, "DLV-CARD")
     assert card["dispatch_needs_machine"] is True
     assert _card(client, "DLV-CASH")["dispatch_needs_machine"] is False
@@ -104,7 +106,7 @@ def test_sem_maquininha_livre_o_botao_continua_vivo_e_o_dialogo_sabe_onde_ela_es
     first, _ = _order("DLV-0415"), _order("DLV-0418")
     assert _dispatch(client, "DLV-0415", equipment=[PREFIX + str(azul.ref)]).status_code == 200
     action = _action(client, "DLV-0418", "advance")
-    assert (action["label"], action["enabled"]) == ("Saiu com a maquininha", True)
+    assert (action["label"], action["enabled"]) == ("Despachar 0418", True)
     options = _card(client, "DLV-0418")["equipment_options"]
     assert [(o["label"], o["enabled"], o["order_ref"], o["reason"]) for o in options] == [
         ("Azul", False, "DLV-0415", "Na rua com o pedido 0415")]

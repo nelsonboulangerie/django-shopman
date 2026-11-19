@@ -94,6 +94,18 @@ describe("refundRetrySentence / refundRetryToast", () => {
     expect(refundRetryToast(money("refund_failed"))).toBe("");
     expect(refundRetryToast(null)).toBe("");
   });
+
+  it("fora do cancelado (#2727) o valor vem da própria ação, e o Estornado da linha que sumiu", () => {
+    const action = { confirmation: { required: true, manager_approval: true, description: "Estorno de R$ 10,00, pedido de novo ao meio de pagamento." } };
+    expect(refundRetrySentence(null, action)).toBe("Estorno de R$ 10,00, pedido de novo ao meio de pagamento.");
+    expect(refundRetrySentence(null, { confirmation: { required: true } })).toBe("");
+    // No cancelado, o dinheiro do pedido continua mandando.
+    expect(refundRetrySentence(money("refund_failed"), action)).toBe("Estorno de R$ 22,00, pedido de novo ao meio de pagamento.");
+
+    expect(refundRetryToast(null, [{ key: "fiscal" }])).toBe("Estornado: o meio de pagamento confirmou a devolução.");
+    expect(refundRetryToast(null, [{ key: "refund" }])).toBe("");
+    expect(refundRetryToast(null)).toBe("");
+  });
 });
 
 describe("pendingLines", () => {

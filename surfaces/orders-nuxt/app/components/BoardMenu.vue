@@ -140,7 +140,7 @@ const items = computed(() => {
     : [];
 
   return [
-    [{ type: "label" as const, slot: "freshness", label: "Leitura da fila" }],
+    [{ type: "label" as const, slot: "freshness", label: "Leitura dos pedidos" }],
     primary,
     ...(full.length ? [full] : props.sortInMenu ? [sortGroup] : []),
     [
@@ -150,7 +150,7 @@ const items = computed(() => {
         onSelect: () => emit("export"),
       },
       {
-        label: "Imprimir fila",
+        label: "Imprimir pedidos",
         icon: "i-lucide-printer",
         onSelect: () => emit("print"),
       },
@@ -164,7 +164,7 @@ const items = computed(() => {
   <OperatorMoreMenu
     v-if="mode === 'dropdown'"
     :items="items"
-    label="Mais ações da fila"
+    label="Mais ações dos pedidos"
     data-board-more
   >
     <template #freshness>
@@ -174,6 +174,6 @@ const items = computed(() => {
 
   <div v-else data-board-menu>
     <ReadFreshness :metadata="metadata" :failed="failed" />
-    <ActionList :items="items" aria-label="Ações da fila" />
+    <ActionList :items="items" aria-label="Ações dos pedidos" />
   </div>
 </template>

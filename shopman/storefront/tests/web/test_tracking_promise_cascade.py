@@ -21,7 +21,7 @@ from shopman.shop.projections import order_tracking
 from shopman.shop.projections.order_tracking import build_tracking
 
 # Estados em que a bola é do cliente: ele precisa agir (pagar/tentar) AGORA.
-CUSTOMER_BALL_STATES = {"payment_pix_ready", "payment_card_ready", "payment_retry"}
+CUSTOMER_BALL_STATES = {"payment_pix_ready", "payment_card_ready", "payment_retry", "waitlist_confirming"}
 
 
 @pytest.fixture

@@ -497,7 +497,7 @@ const SAVED_ITEMS = new Map();
 // O rastro da comanda nova criada pelo Transferir (ref nova -> ref de origem).
 const TRANSFERRED_FROM = new Map();
 // Prévia do ENDEREÇO DE ENTREGA (`MOCK_ADDRESS=1`): a comanda 12 vira encomenda com
-// entrega para amanhã, e o F7 abre o Recebimento direto no endereço. `MOCK_MAPS=1`
+// entrega para amanhã, e o F8 abre o Recebimento direto no endereço. `MOCK_MAPS=1`
 // liga a busca do Google e a confirmação do ponto no mapa (a página de prévia injeta
 // um Google falso: a chave aqui não é de verdade). Sem as variáveis, nada muda.
 const ADDRESS = SALE && process.env.MOCK_ADDRESS === "1";

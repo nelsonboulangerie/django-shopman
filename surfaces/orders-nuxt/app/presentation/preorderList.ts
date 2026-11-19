@@ -6,6 +6,10 @@
 // "Precisa de você", aparecia justamente em quem esperava um fato de fora (o pagamento).
 // Os fatos já estão no cartão (o combinado do WP-G01, o pagamento, a produção): aqui só
 // se escolhe o que a linha diz e com que palavras.
+//
+// A encomenda de data futura que perdeu o lastro mora AQUI, e não no quadro (WP-G08): a
+// linha diz "Promessa em risco", o item que falta e as sugestões, conta como
+// "Precisa de você" e abre o pedido na faixa que tem as saídas.
 import type {
   OrderCardProjection,
   TwoZoneQueueProjection,
@@ -16,6 +20,11 @@ import {
   splitRef,
   type KitchenWait,
 } from "./board";
+import {
+  promiseRisk,
+  promiseRiskSummary,
+  promiseSuggestionGroups,
+} from "./orderPromise";
 
 type LineSource = Pick<
   OrderCardProjection,
@@ -31,7 +40,15 @@ type LineSource = Pick<
   | "attention"
   | "awaiting_work_orders"
 > &
-  Partial<Pick<OrderCardProjection, "kitchen_release_label">>;
+  Partial<
+    Pick<
+      OrderCardProjection,
+      "kitchen_release_label" | "promise" | "status" | "advance_block_reason"
+    >
+  >;
+
+/** A âncora da faixa "O que falta neste pedido" na linha da promessa (o detalhe a lê). */
+export const PROMISE_HASH = "#promise";
 
 export interface PreorderLine {
   ref: string;
@@ -49,10 +66,17 @@ export interface PreorderLine {
   payment: string;
   /** O pagamento ainda não caiu: a linha diz isso com nome, sem pedir gesto. */
   awaitingPayment: boolean;
-  /** "Produção de Kuro Pan: planejada", quando o pedido espera um lote. */
+  /** "Produção de Kuro Pan: não começou", quando o pedido espera um lote. Vazio na
+   *  promessa em risco: o item que falta já diz o que há com o lote. */
   production: string;
+  /** A promessa em risco: o nome do estado, o item que falta, as sugestões do que
+   *  oferecer no lugar (numa linha só: a lista com marcador mora no pedido) e a frase
+   *  do servidor, quando há. `null` em quem tem lastro. */
+  risk: { label: string; items: string; suggestions: string; nextStep: string } | null;
   /** Há um gesto que só uma pessoa faz (nunca o pagamento que ainda não caiu). */
   needsYou: boolean;
+  /** Para onde a linha leva: o pedido; em risco, o pedido na faixa das saídas. */
+  to: string;
   items: string;
   total: string;
 }
@@ -65,6 +89,7 @@ export function preorderLine(card: LineSource): PreorderLine {
   const method = String(card.payment_method_label ?? "").trim();
   const status = String(card.payment_status_label ?? "").trim();
   const paid = [method, status].filter(Boolean).join(" · ");
+  const risk = promiseRisk(card);
   return {
     ref: card.ref,
     code: splitRef(card.ref).code,
@@ -80,9 +105,21 @@ export function preorderLine(card: LineSource): PreorderLine {
     production: productionLines(card)
       .map((line) => line.text)
       .join(" · "),
+    risk: risk
+      ? {
+          label: risk.label,
+          items: promiseRiskSummary(risk),
+          suggestions: promiseSuggestionGroups(risk)
+            .map((group) => `${group.heading} ${group.options.join("; ")}`)
+            .join(" "),
+          nextStep: risk.nextStep,
+        }
+      : null,
     // "Precisa de você" é de quem espera um gesto. O pagamento que ainda não caiu é
-    // fato de fora: avança sozinho, e a linha já diz "Aguardando pagamento".
-    needsYou: Boolean(card.attention) && !awaitingPayment,
+    // fato de fora: avança sozinho, e a linha já diz "Aguardando pagamento". A
+    // promessa em risco pede alguém mesmo assim: avisar, remarcar ou cancelar.
+    needsYou: Boolean(risk) || (Boolean(card.attention) && !awaitingPayment),
+    to: risk ? `/${card.ref}${PROMISE_HASH}` : `/${card.ref}`,
     items: card.items_summary,
     total: card.total_display,
   };

@@ -42,7 +42,6 @@ def test_fiscal_evidence_is_batched_for_the_whole_board():
     assert len(alert_queries) == 1
     assert len(board.expedition_pickup) == 20
     assert all(card.fiscal_status == "failed" for card in board.expedition_pickup)
-    assert all(card.fiscal_state == "failed" for card in board.expedition_pickup)
 
 
 # ── A copy da pill segue o PONTO em que a nota nasce ─────────────────────

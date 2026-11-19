@@ -113,8 +113,8 @@ export function destinationsLine(
 }
 
 /**
- * O fato do lote (v4, cartão do lote): "24 un saíram às 10:01". É a voz do forno, não
- * a do sistema: o pão sai do forno, o anúncio é que se publica ou se envia.
+ * O fato do lote (v4, cartão do lote): "24 un ficaram prontas às 10h01". A casa diz
+ * "ficar pronto" (dono, 16/11/2026); o anúncio é que se publica ou se envia.
  */
 export function lotLine(
   item: Pick<DecisionItem, "lot_quantity" | "lot_finished_at">,
@@ -124,7 +124,8 @@ export function lotLine(
   if (!item.lot_quantity) return "";
   const quantity = item.lot_quantity.replace(".", ",");
   const at = item.lot_finished_at ? ` ${pastAtLabel(item.lot_finished_at, timeZone, nowMs)}` : "";
-  return `${quantity} un saíram${at}`;
+  const ready = Number(item.lot_quantity) === 1 ? "ficou pronta" : "ficaram prontas";
+  return `${quantity} un ${ready}${at}`;
 }
 
 /** A linha de baixo do cartão de revisão: o fato do lote e para onde vai. */

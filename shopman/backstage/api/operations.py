@@ -3079,6 +3079,37 @@ class OrderReturnPreviewView(OperationalObservationMixin, APIView):
 
 
 @extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Promise at risk: the choices of the \"Resolver\" dialog and the message to the customer",
+        responses={
+            200: OpenApiResponse(description="Facts, choices (swap, reschedule, remove, cancel) and the customer message."),
+            404: OpenApiResponse(description="Order not found."),
+            409: OpenApiResponse(description="The order's promise is not at risk anymore: {detail}."),
+        },
+    ),
+)
+class OrderPromiseResolutionView(OperationalObservationMixin, APIView):
+    """O diálogo "Resolver" da promessa em risco (WP-G08): o fato, as escolhas, o que
+    acontece com o dinheiro e a mensagem ao cliente de cada uma, lidos na hora em que
+    o diálogo abre. Nada é gravado nem enviado."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_promise_resolution import NOT_AT_RISK, build_promise_resolution
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        resolution = build_promise_resolution(order, user=request.user)
+        if resolution is None:
+            return Response({"detail": NOT_AT_RISK}, status=409)
+        return Response(projection_data(resolution))
+
+
+@extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
         summary="Register a return after the sale (items, reason and the manager's PIN)",
@@ -3257,7 +3288,7 @@ class OrderNoShowView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Ask the gateway again for the refund that failed on a cancelled order (manager's PIN)",
+        summary="Ask the gateway again for a refund that failed (manager's PIN)",
         responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
     ),
 )
@@ -3265,8 +3296,9 @@ class OrderRefundRetryView(_OrderActionBase):
     """Tentar o estorno de novo (WP-G13, decisão 3 do dono, 17/11/2026).
 
     ``POST {base_revision, expected_actor_id, manager_approval}``. Só existe para o
-    pedido cancelado cujo dinheiro está em "Estorno não saiu"; em qualquer outro
-    estado, 409 com a frase do motivo. Sempre com o PIN de um Gerente escolhido da
+    pedido em "Estorno não saiu": o cancelado e, desde a #2727, a devolução, a
+    encomenda editada que ficou mais barata e o pagamento que chegou depois do
+    balcão (``refund_retry.plan``); em qualquer outro estado, 409 com a frase do motivo. Sempre com o PIN de um Gerente escolhido da
     lista (ou o crachá), a mesma assinatura do cancelamento de pedido pago. O valor
     e as cobranças são do servidor (``refund_retry.plan``); a tela não escolhe nada.
 

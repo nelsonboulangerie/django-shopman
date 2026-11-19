@@ -5,10 +5,12 @@
 // desenho: o ícone e a palavra de cada tom, o peso de cada botão e a linha do dinheiro
 // que já voltou. Nenhuma régua de negócio mora neste arquivo.
 import type {
+  Action,
   CancelledMoneyProjection,
   OrderPendingActionProjection,
   OrderPendingProjection,
 } from "~/generated/ordersContract";
+import { OPEN_PRODUCTION, RESOLVE } from "./orderPromise";
 
 export type PendingTone = "error" | "warning" | "info";
 
@@ -41,10 +43,27 @@ const ACTION_ICONS: Record<string, string> = {
   "resend-payment-link": "i-lucide-send",
   "print-danfe": "i-lucide-printer",
   "contact-customer": "i-lucide-message-circle",
+  [RESOLVE]: "i-lucide-list-checks",
+  [OPEN_PRODUCTION]: "i-lucide-croissant",
   "refund-retry": "i-lucide-rotate-ccw",
   cancel: "i-lucide-ban",
 };
 
+/** Os atalhos que abrem OUTRO app de operador, na janela dele: a Produção, quando ela
+ *  ainda resolve o item. */
+const CROSS_APP_ACTIONS = new Set([OPEN_PRODUCTION]);
+/**
+ * As ações que são atalho para fora do Gestor: a conversa com o cliente e a Produção.
+ * Pela `ref`, e não por ter `href`: o cancelar é a ação de gravar do detalhe, e o
+ * endereço que ela carrega é o da rota de gravação, não um link. "Resolver" (a
+ * promessa em risco) também não é link: sobe para a página, que abre o diálogo.
+ */
+const LINK_ACTIONS = new Set(["contact-customer", ...CROSS_APP_ACTIONS]);
+
+/** A chave do próximo foco de uma linha da faixa (`data-focus-target`). */
+export const pendingFocusKey = (key: string) => `pending:${key}`;
+/** A linha da promessa em risco: quem chega com `#promise` é levado até ela. */
+export const PROMISE_PENDING_KEY = "promise";
 /** Tentar o estorno de novo (WP-G13): a ação da linha "Estorno não saiu". */
 export const REFUND_RETRY = "refund-retry";
 
@@ -59,8 +78,10 @@ export interface PendingButton {
   loading: boolean;
   /** Por que não pode agora: aparece escrito, não só no `title`. */
   blockedReason: string;
-  /** Só a conversa com o cliente: abre fora do Gestor. */
+  /** A conversa com o cliente e a Produção: abrem fora do Gestor. Vazio no que grava. */
   href: string;
+  /** O atalho abre outro app de operador (a Produção), na janela dele. */
+  crossApp: boolean;
 }
 
 export interface PendingButtonState {
@@ -83,7 +104,7 @@ export function pendingButton(
 ): PendingButton {
   const printing = action.ref === "print-danfe" && options.danfePrinting;
   const retrying = action.ref === REFUND_RETRY && options.refundRetrying === true;
-  const isLink = action.ref === "contact-customer";
+  const isLink = LINK_ACTIONS.has(action.ref);
   return {
     ref: action.ref,
     label: printing ? "Imprimindo…" : retrying ? "Tentando o estorno…" : action.label,
@@ -93,7 +114,10 @@ export function pendingButton(
     disabled: !action.enabled || printing || retrying || (!isLink && options.busy),
     loading: retrying,
     blockedReason: action.enabled ? "" : action.reason,
-    href: isLink ? action.href : "",
+    // Atalho que o servidor desligou não leva a lugar nenhum: vira botão travado, com
+    // o motivo escrito.
+    href: isLink && action.enabled ? action.href : "",
+    crossApp: CROSS_APP_ACTIONS.has(action.ref),
   };
 }
 
@@ -105,6 +129,8 @@ export interface PendingLine {
   spoken: string;
   label: string;
   reason: string;
+  /** O que fazer agora, numa frase do servidor; vazio na linha de um gesto só. */
+  nextStep: string;
   /** O que deu errado na última tentativa do gesto da linha, escrito NA linha. */
   failure: string;
   buttons: PendingButton[];
@@ -123,10 +149,16 @@ export function pendingLines(
   )?.key;
   return pending.map((item) => {
     const tone = pendingTone(item.tone);
+    // Na linha que declara o peso dos gestos (`priority`, a promessa em risco), o
+    // principal é o que o servidor recomenda; sem recomendado, nenhum é cheio. Na
+    // linha que não declara nada, o primeiro gesto é o principal, como sempre foi.
+    const declares = item.actions.some((action) => action.priority);
     const buttons = item.actions.map((action, index) =>
       pendingButton(action, {
         ...state,
-        lead: item.key === leadKey && index === 0,
+        lead:
+          item.key === leadKey &&
+          (declares ? action.priority === "primary" : index === 0),
       }),
     );
     return {
@@ -135,6 +167,7 @@ export function pendingLines(
       ...PENDING_TONES[tone],
       label: item.label,
       reason: item.reason,
+      nextStep: String(item.next_step ?? "").trim(),
       failure: item.failure ?? "",
       buttons,
       blockedReasons: [
@@ -163,14 +196,18 @@ export function settledMoney(
 
 /**
  * O que o gerente lê antes de assinar o estorno de novo: o valor que volta ao cliente.
- * Sem o valor (o servidor não soube dizer), devolve "" e o diálogo usa a frase do ato.
+ * No cancelado, o valor é o do dinheiro do pedido; fora dele (devolução, encomenda
+ * editada, #2727), é a frase que a própria ação traz (`confirmation.description`).
+ * Sem nenhum dos dois, devolve "" e o diálogo usa a frase do ato.
  */
 export function refundRetrySentence(
   money: CancelledMoneyProjection | null | undefined,
+  action?: Pick<Action, "confirmation"> | null,
 ): string {
-  return money?.amount_display
-    ? `Estorno de ${money.amount_display}, pedido de novo ao meio de pagamento.`
-    : "";
+  if (money?.amount_display)
+    return `Estorno de ${money.amount_display}, pedido de novo ao meio de pagamento.`;
+  const described = action?.confirmation?.description;
+  return typeof described === "string" ? described : "";
 }
 
 /**
@@ -180,10 +217,15 @@ export function refundRetrySentence(
  */
 export function refundRetryToast(
   money: CancelledMoneyProjection | null | undefined,
+  pending: readonly Pick<OrderPendingProjection, "key">[] | null | undefined = undefined,
 ): string {
   if (money?.state === "refunded")
     return "Estornado: o meio de pagamento confirmou a devolução.";
   if (money?.state === "refund_requested")
     return "Estorno pedido. O pedido mostra quando ele for confirmado.";
+  // Fora do cancelado não há estado do dinheiro: a linha "Estorno não saiu" só some
+  // quando o servidor viu o estorno confirmado e nada mais a devolver.
+  if (!money && pending && !pending.some((item) => item.key === "refund"))
+    return "Estornado: o meio de pagamento confirmou a devolução.";
   return "";
 }

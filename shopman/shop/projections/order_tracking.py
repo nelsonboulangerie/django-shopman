@@ -1282,6 +1282,35 @@ def _build_promise(
             return _payment_retry_promise(order, method=method)
         # Pix sem código ainda → não é a bola do cliente; cai para a loja.
 
+    # ── 3b. BOLA DO CLIENTE — a loja está chamando a fila (#2771) ───
+    # A fornada ficou pronta e a vaga é do cliente por um prazo curto: quem age
+    # é ele, pelo botão do cartão da fila. Sem este degrau a cascata caía em
+    # ``store_checking`` e a frase principal dizia "Estamos conferindo a
+    # disponibilidade. Avisamos em seguida." ao lado do chamado com relógio:
+    # duas mensagens para o mesmo momento, e a primeira mandava esperar.
+    #
+    # Vem depois dos degraus de pagar: código de pagamento na tela é gesto mais
+    # concreto que o chamado. Na prática os dois não se cruzam, porque a
+    # cobrança da fila nasce NA confirmação.
+    waitlist_calling, waitlist_call_deadline = _waitlist_call(order)
+    if waitlist_calling:
+        return promise(
+            state="waitlist_confirming",
+            tone="info",
+            deadline_at=waitlist_call_deadline,
+            deadline_kind="waitlist" if waitlist_call_deadline else None,
+            # Sem ``timer_mode="countdown"``: quem conta o tempo na tela é o cartão
+            # da fila, ao lado do botão. Duas contagens seriam ruído.
+            deadline_action="release_waitlist_slot" if waitlist_call_deadline else "none",
+            requires_active_notification=True,
+            notification_topic="waitlist_available",
+            # O bloco "Total · Pix · o prazo para pagar começa quando o código
+            # aparecer" segue na tela durante o chamado, como estava antes deste
+            # degrau existir: é ele que diz quanto e como ela paga DEPOIS de
+            # confirmar. Sem a forma de pagamento na promessa o bloco sumia.
+            payment_method="pix" if payment_open and method == "pix" and not has_pix_code else None,
+        )
+
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
     if card_authorized:
         # A cobrança no aceite foi recusada (autorização vencida ou negada pelo
@@ -2138,6 +2167,25 @@ def _parse_datetime(value) -> datetime | None:
 
 
 _WAITLIST_NONE = {"waitlist_state": "none", "waitlist_deadline": None, "waitlist_planned_for": None}
+
+
+def _waitlist_call(order) -> tuple[bool, str | None]:
+    """A loja está chamando este pedido da fila? E até quando vale o chamado (ISO).
+
+    Mesma verdade de :func:`_waitlist_info` (``waitlist.state_for``), lida aqui
+    para a promessa. A consulta ao estado só acontece quando o bloco gravado já
+    diz ``confirming``: pedido fora da fila não paga por ela.
+    """
+    from shopman.shop.services import waitlist
+
+    if order.status not in {"new", "accepted"}:
+        return False, None
+    block = (order.data or {}).get(waitlist.WAITLIST_KEY) or {}
+    if block.get("state") != waitlist.CONFIRMING:
+        return False, None
+    if waitlist.state_for(order) != waitlist.CONFIRMING:
+        return False, None
+    return True, block.get("deadline") or None
 
 
 def _waitlist_info(order, *, payment_unsettled: bool) -> dict:

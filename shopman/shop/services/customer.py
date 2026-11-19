@@ -400,13 +400,16 @@ def _save_delivery_address(customer: dict, order) -> None:
         lat = structured.get("latitude")
         lng = structured.get("longitude")
         coordinates = (float(lat), float(lng)) if lat and lng else None
-        # Etiqueta neutra: nem todo endereço de entrega é a "Casa" do cliente.
-        # Ele renomeia depois (etiqueta-DEPOIS do ADDRESS-UX). Os dados
-        # estruturados — place_id e lat/lng — nunca são descartados.
+        # Sem etiqueta: nem todo endereço de entrega é a "Casa" do cliente, e
+        # uma etiqueta igual em todos ("Entrega", que só repete o canal) não
+        # distingue um endereço do outro (#2775). Sem etiqueta, quem fala nas
+        # telas é o próprio endereço; o cliente etiqueta depois, se quiser
+        # (etiqueta-DEPOIS do ADDRESS-UX). Os dados estruturados (place_id e
+        # lat/lng) nunca são descartados.
         adapter.create_address(
             customer_ref=customer_ref,
             label="other",
-            label_custom="Entrega",
+            label_custom="",
             formatted_address=delivery_address,
             place_id=structured.get("place_id") or None,
             components={

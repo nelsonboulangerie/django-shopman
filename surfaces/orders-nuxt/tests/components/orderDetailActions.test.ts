@@ -30,6 +30,8 @@ const markNotPickedUp = vi.fn();
 // Tentar o estorno de novo (WP-G13).
 const retryRefund = vi.fn();
 const authorize = vi.fn();
+// A releitura do pedido (o diálogo "Resolver" a pede quando o pedido muda).
+const refreshDetail = vi.fn();
 const managerChallenge = ref<{ code: string; message: string; action: string } | null>(null);
 const readError = ref<unknown>(null);
 // Por que a leitura falhou (P1-20): a conta não abre o detalhe, ou o pedido não existe.
@@ -84,7 +86,7 @@ vi.stubGlobal("useOrderDetail", () => ({
   notFound: readNotFound,
   printDanfe,
   danfePrinting,
-  refresh: vi.fn(),
+  refresh: refreshDetail,
   busy: ref(false),
   confirm: confirmFn,
   advance: advanceFn,
@@ -111,12 +113,14 @@ vi.stubGlobal("useOrderDetail", () => ({
 const { default: OrderDetailPage } = await import("../../app/pages/[ref].vue");
 const { default: OperatorScreenState } = await import("../../../operator-kit/app/components/OperatorScreenState.vue");
 
-function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjection {
+/** `advance_label`: o nome que o servidor dá ao avanço (o rótulo da ação `advance`). */
+function order(
+  { advance_label, ...over }: Partial<OperatorOrderProjection> & { advance_label?: string } = {},
+): OperatorOrderProjection {
   return {
     ref: "WEB-20260625-0007",
     status: "new",
     status_label: "Novo",
-    status_color: "",
     customer_name: "Ana",
     customer_phone: "",
     customer_phone_uri: "",
@@ -143,7 +147,6 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     payment_status: "pending",
     can_confirm: true,
     can_advance: false,
-    next_action_label: "",
     advance_block_label: "",
     advance_block_reason: "",
     can_settle_delivery_cash: false,
@@ -159,7 +162,6 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     cancel_reasons: [],
     kitchen_note_tags: [],
     equipment_options: [],
-    equipment_out: [],
     equipment_label: "",
     equipment_back_pending: false,
     dispatch_needs_machine: false,
@@ -180,7 +182,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     danfe_state: "",
     danfe_problem: "",
     revisions: {},
-    actions: fixtureActions({ can_confirm: true, ...over }),
+    actions: fixtureActions({ can_confirm: true, advance_label, ...over }),
     ...over,
   } as OperatorOrderProjection;
 }
@@ -229,6 +231,7 @@ const stubs = {
   OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
   OrderNoShowDialog: defineComponent({ name: "OrderNoShowDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, busy: Boolean }, emits: ["update:open", "confirm"], template: "<div />" }),
+  OrderPromiseResolveDialog: defineComponent({ name: "OrderPromiseResolveDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, managers: { type: Array, default: () => [] } }, emits: ["update:open", "changed", "cancel"], template: "<div />" }),
   OperatorManagerAuth: defineComponent({ name: "OperatorManagerAuth", props: { open: Boolean, action: { type: String, default: "" }, detail: { type: String, default: "" } }, emits: ["update:open", "authorize", "authorize-badge"], template: "<div />" }),
   CourierBackDialog: defineComponent({ name: "CourierBackDialog", props: { card: { type: Object, default: null }, busy: Boolean }, template: "<div />" }),
   UiDialog: { template: "<div><slot /></div>" },
@@ -287,7 +290,7 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
       status: "accepted",
       can_confirm: false,
       can_advance: true,
-      next_action_label: "Iniciar preparo",
+      advance_label: "Iniciar preparo",
     }));
 
     expect(w.find('[data-action="confirm"]').exists()).toBe(false);
@@ -296,14 +299,14 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   });
 
   it("encomenda que espera a hora da Cozinha: \"Adiantar\" à vista, nunca como botão principal (WP-G02)", () => {
-    const actions = fixtureActions({ can_advance: true, next_action_label: "Adiantar" }).map((action) =>
+    const actions = fixtureActions({ can_advance: true, advance_label: "Adiantar" }).map((action) =>
       action.ref === "advance" ? { ...action, priority: "secondary" } : action,
     );
     const w = abrir(order({
       status: "accepted",
       can_confirm: false,
       can_advance: true,
-      next_action_label: "Adiantar",
+      advance_label: "Adiantar",
       kitchen_release_label: "Vai para a Cozinha às 16h15",
       actions,
     }));
@@ -314,7 +317,7 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   });
 
   it("pedido que não espera a Cozinha: nenhum selo de espera", () => {
-    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, next_action_label: "Iniciar preparo" }));
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, advance_label: "Iniciar preparo" }));
 
     expect(w.find("[data-detail-kitchen-wait]").exists()).toBe(false);
   });
@@ -870,7 +873,7 @@ describe("nota da cozinha vai junto com o gesto do momento", () => {
       detalhe.value = { ...detalhe.value!, kitchen_note: text };
       return true;
     });
-    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, next_action_label: "Iniciar preparo" }));
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, advance_label: "Iniciar preparo" }));
     await w.get("#order-notes").setValue("Sem gergelim");
     await w.get('[data-action="advance"]').trigger("click");
     await flushPromises();
@@ -1230,7 +1233,7 @@ describe("detalhe do pedido — o que falta, com o gesto ao lado", () => {
 
   it("espera saudável: sem cor de erro, e o botão travado guarda o nome do gesto (P2-26)", () => {
     // Como o servidor manda: a ação travada guarda o nome do gesto, e o motivo vai em `reason`.
-    const actions = fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo" }).map((action) =>
+    const actions = fixtureActions({ can_advance: true, advance_label: "Iniciar preparo" }).map((action) =>
       action.ref === "advance"
         ? { ...action, enabled: false, reason: "Encomenda para uma data futura. O preparo abre no dia combinado." }
         : action,
@@ -1290,7 +1293,7 @@ describe("detalhe do pedido — tentar o estorno de novo", () => {
   const failedMoney = { state: "refund_failed", label: "Estorno não saiu", amount_display: "R$ 22,00", customer_line: "", settled: false };
   const retryLine = (failure = "") => ({
     key: "refund", tone: "error", label: "Estorno não saiu", failure,
-    reason: "A devolução de R$ 22,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez ao Pix do cliente, com a autorização de um gerente.",
+    reason: "A devolução de R$ 22,00 não chegou ao Pix do cliente.",
     actions: [{ ref: "refund-retry", label: "Tentar o estorno de novo", enabled: true, reason: "", href: "" }],
   });
   const cancelled = (over: Partial<OperatorOrderProjection> = {}) => order({
@@ -1392,6 +1395,118 @@ describe("detalhe do pedido — tentar o estorno de novo", () => {
 
 // P1-20: quem só expede abre um pedido pelo sino. O servidor recusa o detalhe (403 de
 // permissão), e a tela dizia "Pedido não encontrado ou falha ao carregar".
+// WP-G08: a promessa em risco no detalhe. A lista de Encomendas e o aviso do painel
+// chegam com `#promise`; o diálogo "Resolver" do painel chega com `#cancel` (cancelar o
+// pedido inteiro). Na linha da promessa, na faixa "O que falta neste pedido", o gesto é
+// "Resolver", que abre o diálogo das escolhas.
+describe("detalhe do pedido — promessa em risco", () => {
+  const promiseLine = (over: Record<string, unknown> = {}) => ({
+    key: "promise", tone: "error", label: "Promessa em risco",
+    reason: "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.",
+    next_step: "Nenhum produto parecido livre para amanhã.",
+    actions: [{ ref: "resolve", label: "Resolver", enabled: true, reason: "", href: "", priority: "primary" }],
+    ...over,
+  });
+  const emRisco = (over: Partial<OperatorOrderProjection> = {}) =>
+    order({ status: "accepted", can_confirm: false, can_cancel: true, pending: [promiseLine()] as never, ...over });
+  const resolver = (w: ReturnType<typeof abrir>) => w.getComponent({ name: "OrderPromiseResolveDialog" });
+  beforeEach(() => {
+    reveal.mockClear();
+    routeHash.value = "";
+  });
+
+  it("a linha diz o item e o porquê, com UM gesto: \"Resolver\"", () => {
+    const w = abrir(emRisco());
+    const row = w.get('[data-pending="promise"]');
+    expect(row.text()).toContain("Promessa em risco");
+    expect(row.text()).toContain("Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.");
+    expect(row.get("[data-pending-next-step]").text()).toBe("Nenhum produto parecido livre para amanhã.");
+    expect(row.findAll("[data-pending-action]").map((button) => [button.text(), button.attributes("variant")])).toEqual([
+      ["Resolver", "solid"],
+    ]);
+    w.unmount();
+  });
+
+  it("o diálogo \"Resolver\" é montado uma vez, fechado, com o pedido desta página e os gerentes dele", () => {
+    const managers = [{ username: "ana", name: "Ana" }];
+    const w = abrir(emRisco({ managers } as never));
+    expect(w.findAllComponents({ name: "OrderPromiseResolveDialog" })).toHaveLength(1);
+    expect(resolver(w).props()).toMatchObject({ open: false, orderRef: "WEB-1", managers });
+    w.unmount();
+  });
+
+  it("\"Resolver\" abre o diálogo das escolhas; fechar devolve a página como estava", async () => {
+    const w = abrir(emRisco());
+    await w.get('[data-pending-action="resolve"]').trigger("click");
+    expect(resolver(w).props("open")).toBe(true);
+    // Abrir o diálogo não abre o cancelar nem grava nada.
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    resolver(w).vm.$emit("update:open", false);
+    await flushPromises();
+    expect(resolver(w).props("open")).toBe(false);
+    w.unmount();
+  });
+
+  it("\"Cancelar o pedido inteiro\" no diálogo abre o MESMO cancelar do menu, sem motivo marcado", async () => {
+    const w = abrir(emRisco());
+    await w.get('[data-pending-action="resolve"]').trigger("click");
+    resolver(w).vm.$emit("update:open", false);
+    resolver(w).vm.$emit("cancel", "WEB-1");
+    await flushPromises();
+    const dialog = w.get("order-reason-dialog-stub");
+    expect(dialog.attributes("open")).toBe("true");
+    expect(dialog.attributes("initial-key") ?? "").toBe("");
+    expect(resolver(w).props("open")).toBe(false);
+    w.unmount();
+  });
+
+  it("o diálogo avisa que o pedido mudou: a página relê o pedido", async () => {
+    const w = abrir(emRisco());
+    refreshDetail.mockClear();
+    resolver(w).vm.$emit("changed");
+    await flushPromises();
+    expect(refreshDetail).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("chega com #promise: a página vai à linha da promessa", async () => {
+    routeHash.value = "#promise";
+    const w = abrir(emRisco());
+    await flushPromises();
+    expect(reveal).toHaveBeenCalledWith("pending:promise");
+    expect(w.get('[data-pending="promise"]').attributes("data-focus-target")).toBe("pending:promise");
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    w.unmount();
+  });
+
+  it("#promise num pedido que já não está em risco não rola a página", async () => {
+    routeHash.value = "#promise";
+    const w = abrir(order({ status: "accepted", can_confirm: false, pending: [] as never }));
+    await flushPromises();
+    expect(reveal).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("chega com #cancel: o diálogo de cancelar abre", async () => {
+    routeHash.value = "#cancel";
+    const w = abrir(emRisco());
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).toBe("true");
+    expect(reveal).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("#cancel num pedido que não pode ser cancelado leva à linha da promessa, onde está o \"Resolver\"", async () => {
+    routeHash.value = "#cancel";
+    const w = abrir(emRisco({ can_cancel: false }));
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    expect(reveal).toHaveBeenCalledWith("pending:promise");
+    expect(w.get('[data-pending-action="resolve"]').text()).toBe("Resolver");
+    w.unmount();
+  });
+});
+
 describe("detalhe do pedido — a leitura que falhou diz por quê", () => {
   const sessao = (role: string) => vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 }, surface_role: role }) }));
   beforeEach(() => {

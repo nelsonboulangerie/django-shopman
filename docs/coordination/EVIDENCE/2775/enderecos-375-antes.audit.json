@@ -1,0 +1,85 @@
+{
+  "page_scroll_x": false,
+  "rows": [
+    {
+      "text": "Entrega\nPadrão",
+      "font_px": 16,
+      "weight": "600",
+      "contrast": 12.76,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Rua Pará, 120 - Centro, Londrina - PR, 86010-100",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Apto 42",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Entrega",
+      "font_px": 16,
+      "weight": "600",
+      "contrast": 12.76,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Avenida Higienópolis, 1100 - Centro, Londrina - PR, 86020-080",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Entrega",
+      "font_px": 16,
+      "weight": "600",
+      "contrast": 12.76,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Rua Quintino Bocaiúva, 455 - Vila Brasil, Londrina - PR, 86010-560",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Casa",
+      "font_px": 16,
+      "weight": "600",
+      "contrast": 12.76,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Rua Belo Horizonte, 88 - Centro, Londrina - PR, 86020-060",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Apto 12",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
+    }
+  ]
+}

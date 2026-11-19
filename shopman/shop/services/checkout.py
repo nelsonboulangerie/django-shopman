@@ -416,7 +416,8 @@ def persist_new_address(intent) -> None:
     address_service.add_address(
         customer_ref=customer_obj.ref,
         label=label.get("key", "other"),
-        label_custom=label.get("custom", "Entrega"),
+        # Sem etiqueta escolhida, nasce sem etiqueta (#2775): o endereço fala.
+        label_custom=label.get("custom", ""),
         formatted_address=intent.delivery_address,
         place_id=structured.get("place_id") or None,
         components=components,
