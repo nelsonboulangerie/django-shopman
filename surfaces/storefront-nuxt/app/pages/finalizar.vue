@@ -498,18 +498,20 @@ const pixLimitRefusal = ref<{ message: string, totalQ: number } | null>(null)
 // Faltou estoque no envio (`insufficient_supply`): o servidor diz qual item, e a tela
 // guarda isso para o aviso com saída (plano EXCELENCIA-STOREFRONT, P1-11).
 const stockRefusal = ref<{ sku: string, name: string, message: string } | null>(null)
-let revealAfterReviewCloses: (() => void) | null = null
 function revealStockRefusal () {
   reveal(() => document.querySelector('[data-checkout-stock-refusal]'), { align: 'start', focus: true })
 }
-// Fim do fechamento da folha de revisão. Com um aviso esperando, o foco vai para
-// ele, e não de volta ao botão "Revisar pedido".
+// A folha de revisão, ao terminar de fechar, devolve o foco ao botão que a abriu
+// ("Revisar pedido"), e o navegador rola até ele. Quando ela fecha por causa de uma
+// recusa com aviso, o foco é do aviso: a devolução é cancelada e a tela vai até ele.
+// O fim do fechamento pode chegar antes ou depois de a consulta refeita terminar; a
+// marca vale para as duas ordens e cai quando a revisão abre de novo.
+let reviewClosesIntoStockRefusal = false
 function onReviewClosed (event: Event) {
-  const pending = revealAfterReviewCloses
-  revealAfterReviewCloses = null
-  if (!pending) return
+  if (!reviewClosesIntoStockRefusal) return
+  reviewClosesIntoStockRefusal = false
   event.preventDefault()
-  pending()
+  revealStockRefusal()
 }
 const pixLimitRefusalActive = computed(() =>
   !!pixLimitRefusal.value && state.payment_method === 'pix' &&
@@ -1293,6 +1295,7 @@ function continueFromPayment () {
 }
 
 function openConfirmSheet () {
+  reviewClosesIntoStockRefusal = false
   if (!validate()) { revealFirstError(); return }
   // Defesa em profundidade: entrega numa zona recusada nunca chega à revisão
   // com o envio liberado e total sem taxa (beta SMS-06).
@@ -1549,15 +1552,12 @@ async function submitCheckout () {
         message: serverError.value
       }
       serverError.value = ''
-      // A folha, ao terminar de fechar, devolve o foco ao botão que a abriu, e o
-      // navegador rola até ele: o aviso ficava fora da tela no computador. A tela
-      // vai até o aviso nesse instante (`onReviewClosed`), e não antes.
-      revealAfterReviewCloses = revealStockRefusal
+      // O foco é do aviso, não do botão que abriu a revisão (`onReviewClosed`).
+      reviewClosesIntoStockRefusal = true
       confirmOpen.value = false
       await refresh()
       await nextTick()
-      // Folha que não avisou o fim do fechamento: a tela vai ao aviso mesmo assim.
-      if (revealAfterReviewCloses) { revealAfterReviewCloses = null; revealStockRefusal() }
+      revealStockRefusal()
       return
     }
     if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {
