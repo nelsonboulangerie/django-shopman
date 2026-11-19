@@ -367,7 +367,7 @@ def test_fechar_com_quebra_tendo_havido_baixa(lote, caixa, django_capture_on_com
 
     lote.refresh_from_db()
     assert (lote.status, lote.finished) == ("finished", D("6"))
-    assert _saldo("vitrine") == D("2"), "6 saíram do forno, 4 já tinham sido entregues"
+    assert _saldo("vitrine") == D("2"), "6 ficaram prontas, 4 já tinham sido entregues"
     assert _saldo("em_producao") == D("0")
     [perda] = Move.objects.filter(quant__sku=SKU, kind=Move.Kind.WASTE)
     assert perda.delta == D("-4"), "a quebra é a do lote: previsto 10, realizado 6"
