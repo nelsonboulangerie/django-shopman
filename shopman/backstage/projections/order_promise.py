@@ -432,6 +432,22 @@ def _products(skus: set[str]) -> dict[str, tuple[str, str]]:
     }
 
 
+def _offered_without_ceiling(sku: str, policy: str) -> bool:
+    """O Stockman vende este produto sem teto (o feito na hora)?
+
+    Quem decide "até quanto se pode prometer" é a promessa do Stockman
+    (Constituição C5): aqui se pergunta a ela, com a política lida do catálogo,
+    em vez de comparar a política por conta própria. Sem teto, a reserva sem
+    saldo é o desenho do produto, e não uma falta.
+    """
+    if not policy:
+        return False
+    from shopman.stockman.services.availability import decision_from_availability
+
+    decision = decision_from_availability(sku, Decimal("1"), {"availability_policy": policy, "is_tracked": True})
+    return decision.orderable_ceiling is None
+
+
 def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromiseProjection]:
     """``{ref: promessa}`` dos pedidos que têm o que dizer. Uma leitura para o painel inteiro."""
     from shopman.stockman.models import Hold, HoldStatus, Quant
@@ -549,7 +565,7 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
             continue
         anchored = hold.quant_id is not None
         claim.day = hold.quant.target_date if anchored else hold.target_date
-        if not anchored and products.get(claim.sku, ("", ""))[1] == "demand_ok":
+        if not anchored and _offered_without_ceiling(claim.sku, products.get(claim.sku, ("", ""))[1]):
             continue  # feito na hora: a reserva sem saldo é o desenho, não uma falta
         key = (claim.sku, claim.day)
         if gap > 0:

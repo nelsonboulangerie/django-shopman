@@ -8,11 +8,6 @@ import OrderDetailPending from "~/components/OrderDetailPending.vue";
 import { useGestorAccess } from "~/composables/useGestorAccess";
 import { orderDetailDenial } from "~/presentation/gestorSections";
 import { danfeLine } from "~/presentation/danfe";
-import {
-  REFUND_RETRY,
-  refundRetrySentence,
-  refundRetryToast,
-} from "~/presentation/orderPending";
 // Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
 // observação, nota da cozinha, histórico) são do `OperatorOrderDetail` do kit — a
 // MESMA tela do detalhe da encomenda no PDV (decisão do dono, 28/09/2026). Aqui
@@ -44,6 +39,9 @@ import { PROMISE_HASH } from "~/presentation/preorderList";
 import {
   pendingFocusKey,
   PROMISE_PENDING_KEY,
+  REFUND_RETRY,
+  refundRetrySentence,
+  refundRetryToast,
 } from "~/presentation/orderPending";
 import { contactRequestNotice } from "~/presentation/contactRequest";
 import { ifoodChatNotice } from "~/presentation/ifoodWidget";
