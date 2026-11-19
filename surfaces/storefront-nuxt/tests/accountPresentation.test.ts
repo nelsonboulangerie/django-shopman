@@ -313,3 +313,28 @@ describe('profileActionIsExternal', () => {
     expect(profileActionIsExternal({ kind: 'link', href: '/entrar?next=/conta/perfil' })).toBe(false)
   })
 })
+
+// WP-L06 (P2-03): pedido encerrado não tem o que acompanhar, e o gesto de repetir
+// tem um nome só, que vem do servidor.
+describe('account presentation: o botão que abre o pedido', () => {
+  it('"Acompanhar" só no pedido que ainda está andando', async () => {
+    const { orderOpenLabel, orderOpenIcon } = await import('~/presentation/account')
+    expect(orderOpenLabel({ is_active: true })).toBe('Acompanhar')
+    expect(orderOpenLabel({ is_active: false })).toBe('Ver pedido')
+    expect(orderOpenLabel({})).toBe('Ver pedido')
+    expect(orderOpenIcon({ is_active: true })).toBe('lucide:radar')
+    expect(orderOpenIcon({ is_active: false })).toBe('lucide:receipt-text')
+  })
+
+  it('as telas da conta usam o rótulo do servidor para repetir, nunca "Refazer"', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    for (const page of ['app/pages/conta/pedidos.vue', 'app/pages/conta/index.vue']) {
+      const source = readFileSync(resolve(__dirname, '..', page), 'utf8')
+      const template = source.slice(source.indexOf('<template>'))
+      expect(template).not.toContain('Refazer')
+      expect(template).toContain('.label }}')
+      expect(template).toContain('orderOpenLabel(')
+    }
+  })
+})

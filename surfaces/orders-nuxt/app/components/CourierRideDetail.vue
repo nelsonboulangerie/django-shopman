@@ -11,7 +11,7 @@ import type {
   DeliveryRideProjection,
 } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
-import { rideLine, rideNotice, whatsappLink } from "~/presentation/deliveries";
+import { rideChargeNotices, rideLine, rideNotice, rideStale, whatsappLink } from "~/presentation/deliveries";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
@@ -69,11 +69,28 @@ function confirmCancel(reasonId?: number) {
 
 // O cancelamento pedido: espera, dúvida ou recusa da TaOn. Dispensável, e volta
 // se o estado mudar (a recusa depois da espera é outro aviso).
+// Sem o botão de cancelar, o rodapé diz por quê SEGUNDO o estado: "já saiu com as
+// sacolas" só depois da coleta. Antes dela, o botão some por outro motivo (o serviço
+// não cancela por aqui), e a frase da coleta contradiria "Entregador na loja".
+const noCancelLine = computed(() =>
+  props.ride.picked_up_at
+    ? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn."
+    : "Para cancelar esta corrida, use a central da TaOn.",
+);
 const cancelState = computed(() => courierCancelNotice(props.ride.cancel_state, props.ride.cancel_message));
 const cancelDismissed = ref("");
 const showCancelState = computed(
   () => Boolean(cancelState.value) && cancelDismissed.value !== `${props.ride.key}:${props.ride.cancel_state}`,
 );
+
+// O que o Painel do pedido também diz (paridade): a TaOn parou de informar a
+// corrida, e a cobrança que o entregador leu ficou para trás. Os dois se
+// dispensam e voltam se a causa mudar.
+const stale = computed(() => rideStale(props.ride));
+const staleDismissed = ref("");
+const charges = computed(() => rideChargeNotices(props.ride));
+const chargeDismissed = ref<string[]>([]);
+const chargeKey = (charge: { code: string; description: string }) => `${charge.code}:${charge.description}`;
 </script>
 
 <template>
@@ -115,6 +132,34 @@ const showCancelState = computed(
           @update:open="cancelDismissed = `${ride.key}:${ride.cancel_state}`"
         />
       </div>
+      <div v-if="stale && staleDismissed !== ride.sync_since" class="mx-5 mt-4">
+        <NuxtAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-cloud-off"
+          :title="stale"
+          description="O que está aqui pode ter mudado. Confira na central da TaOn ou ligue para o entregador."
+          close
+          role="status"
+          data-ride-stale
+          @update:open="staleDismissed = ride.sync_since"
+        />
+      </div>
+      <template v-for="charge in charges" :key="chargeKey(charge)">
+        <div v-if="!chargeDismissed.includes(chargeKey(charge))" class="mx-5 mt-4">
+          <NuxtAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-banknote"
+            :title="charge.title"
+            :description="charge.description"
+            close
+            role="status"
+            data-ride-charge-outdated
+            @update:open="chargeDismissed = [...chargeDismissed, chargeKey(charge)]"
+          />
+        </div>
+      </template>
       <div v-if="located.length" class="relative mx-5 mt-4 h-48 overflow-hidden rounded-xl ring-1 ring-default">
         <CourierDeliveriesMap
           :origin="mapOrigin"
@@ -131,10 +176,12 @@ const showCancelState = computed(
       <p v-if="located.length && ride.position" class="mx-5 mt-1 op-micro text-muted" data-ride-position-source>Posição do entregador pela TaOn</p>
 
       <div v-if="ride.driver" class="mx-5 mt-4 flex items-center gap-3 rounded-xl bg-elevated/60 p-3">
-        <NuxtAvatar :text="ride.driver.name.slice(0, 1)" size="lg" />
+        <!-- A foto só existe enquanto a corrida vive (servidor, sem cache); sem ela, a inicial. -->
+        <NuxtAvatar :src="ride.driver.photo_url || undefined" :alt="ride.driver.name" :text="ride.driver.name.slice(0, 1)" size="lg" data-ride-driver-photo />
         <div class="min-w-0 flex-1">
           <p class="op-label font-semibold text-highlighted">{{ ride.driver.name }}</p>
           <p class="op-micro text-muted">{{ ride.driver.vehicle }}</p>
+          <p v-if="ride.custody_line" class="op-micro font-semibold text-highlighted" data-ride-custody-line>{{ ride.custody_line }}</p>
         </div>
         <template v-if="ride.driver.phone">
           <NuxtButton icon="i-lucide-phone" color="neutral" variant="outline" label="Ligar" :to="`tel:${ride.driver.phone.replace(/\D/g, '')}`" external />
@@ -174,9 +221,11 @@ const showCancelState = computed(
         <p class="op-micro font-semibold text-muted">O que aconteceu</p>
         <ul class="mt-2 flex flex-col gap-1.5 op-body">
           <li v-if="ride.called_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.called_at) }}</span><span class="text-highlighted">Corrida chamada</span></li>
-          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_driver || "O entregador" }} desistiu</span></li>
+          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_reason === "transfer" ? "A TaOn trocou o entregador" : `${ride.reopened_driver || "O entregador"} desistiu` }}</span></li>
           <li v-if="ride.pickup_eta_at && ride.state === 'coming'" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.pickup_eta_at) }}</span><span class="text-highlighted">Chegada prevista na loja</span></li>
+          <li v-if="ride.near_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.near_pickup_at) }}</span><span class="text-highlighted">Perto da loja</span></li>
           <li v-if="ride.arrived_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.arrived_pickup_at) }}</span><span class="text-highlighted">Chegou na loja</span></li>
+          <li v-if="ride.waited_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.waited_pickup_at) }}</span><span class="font-semibold text-highlighted">A espera passou do combinado</span></li>
           <li v-if="ride.picked_up_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.picked_up_at) }}</span><span class="text-highlighted">Saiu com as sacolas</span></li>
           <li v-if="ride.delivery_eta_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.delivery_eta_at) }}</span><span class="text-highlighted">Término previsto da rota</span></li>
         </ul>
@@ -207,7 +256,7 @@ const showCancelState = computed(
         </template>
       </template>
       <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da TaOn antes de pedir o cancelamento de novo.</p>
-      <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn." }}</p>
+      <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? noCancelLine }}</p>
     </footer>
   </aside>
 </template>

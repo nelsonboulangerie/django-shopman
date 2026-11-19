@@ -93,7 +93,7 @@ O que cada fase faz (`shopman/shop/lifecycle.py:324-737`):
 
 | Fase | Efeitos |
 |---|---|
-| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit`, aviso `order_received` (fora do `immediate`) |
+| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit` (menos para o pedido na fila da fornada de hoje, que só é cobrado quando o cliente confirma a vaga), aviso `order_received` (fora do `immediate`) |
 | `on_accepted` | cobra se o pagamento digital ainda não entrou (Pix nasce **aqui** na loja online); encomenda futura agenda o despertador; KDS (se o preparo começa sozinho); baixa de estoque; aviso `order_accepted` (nunca no balcão já entregue) |
 | `on_paid` | pago depois de cancelado → estorno + alerta; NFC-e do PDV pela regra "na saída"; aviso `payment_confirmed` |
 | `on_preparing` | tickets do KDS; aviso `order_preparing` |
@@ -557,6 +557,7 @@ conclui de `ready`. O código de retirada só aparece se o iFood mandar `deliver
 | Entregador voltou / Acertar entrega | Gestor | diálogo | OK |
 | Cancelar | Gestor/PDV | motivo (opcional) + gerente se pago ou adiantado | ATRITO: motivo vai literal ao cliente (P1-10), resolvido #1730 |
 | Reprocessar NFC-e / Imprimir DANFE | Gestor | não | OK |
+| Tentar o estorno de novo | Gestor, na linha "Estorno não saiu" do pedido cancelado | PIN de gerente | OK (WP-G13): pede de novo ao gateway só o que falta voltar, nunca acima do teto do "não retirado"; a recusa do gateway fica escrita na linha |
 | Imprimir Via Pedido | PDV e Gestor | — | ATRITO (P2-19), resolvido #1752 |
 | Declarar volumes | Gestor, Saída, KDS | não | OK |
 | Ligar / WhatsApp ao cliente; ligar ao entregador | detalhe do pedido | não | OK |

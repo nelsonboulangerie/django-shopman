@@ -670,6 +670,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STEP_CANCELLED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Cancelado")},
     },
+    # O dinheiro que voltou, como marco do Histórico do pedido (com valor e hora).
+    "TRACKING_STEP_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
+    },
     "TRACKING_CANCELLED_REASON_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Motivo do cancelamento")},
     },
@@ -972,9 +976,51 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE": {
+    # Encomenda esperando a loja. Até quando a loja confirma ({until} = "até 8h40",
+    # "até amanhã, sexta, às 10h") e para quando é a encomenda são frases
+    # separadas (#2749): juntas, "A loja confirma sua encomenda para amanhã, a
+    # partir das 15h" lia como se a confirmação fosse amanhã às 15h. Sem prazo
+    # publicado há duas frases do aceite: ``_NO_UNTIL`` quando o dia da encomenda
+    # vem logo depois (em ``..._IS_FOR``) e, por isso, não nomeia a encomenda; e
+    # ``_NO_DATE`` quando não há dia combinado, e a frase a nomeia.
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_UNTIL": {
         WILDCARD: {
-            WILDCARD: CopyEntry(message="A loja confirma sua encomenda para {when} e avisa por aqui."),
+            WILDCARD: CopyEntry(message="A loja confirma {until} e avisa por aqui."),
+        },
+    },
+    # A mesma encomenda, já paga: o título diz "Pagamento recebido" e a frase
+    # promete a devolução se a loja não puder confirmar.
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma e avisa por aqui."),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    # Para quando é ({when} = "amanhã, a partir das 15h"), em frase própria.
+    "TRACKING_PROMISE_PREORDER_IS_FOR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua encomenda é para {when}.")},
+    },
+    "TRACKING_PROMISE_ORDER_IS_FOR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido é para {when}.")},
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
         },
     },
     "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE": {
@@ -982,10 +1028,17 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             WILDCARD: CopyEntry(message="A loja confirma sua encomenda e avisa por aqui."),
         },
     },
-    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": {
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento recebido. A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
+                message="Pagamento recebido. A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pagamento recebido. A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
             ),
         },
     },
@@ -1108,17 +1161,29 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE": {
+    # Cartão reservado esperando a loja: o prazo vai nesta frase, e o dia do
+    # pedido em ``TRACKING_PROMISE_ORDER_IS_FOR`` (#2749). O verbo é "confirmar",
+    # como na revisão do checkout e nas frases do Pix: um ato, um verbo só.
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para {when}.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
+            ),
+        },
+    },
+    # Sem prazo publicado e com o dia do pedido na frase seguinte: não nomeia o
+    # pedido, para o substantivo não se repetir. Sem dia combinado, ``_NO_DATE``.
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar seu pedido.",
             ),
         },
     },

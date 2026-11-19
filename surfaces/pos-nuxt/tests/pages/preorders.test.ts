@@ -13,6 +13,11 @@ import { answerConfirm, useConfirmState } from "../../../operator-kit/app/compos
 import { toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
 
 import { makeProjection } from "../composables/_posSaleHarness";
+import { warmUpMount } from "../support/mountWarmup";
+
+// Este arquivo roda no primeiro lote, com o Vite frio: o primeiro mount paga a
+// raiz do app num hook, fora do primeiro teste (ver `mountWarmup.ts`).
+warmUpMount();
 
 // A tela única das Encomendas (busca no topo, Dia | Semana, filtros, o lote das
 // vias que faltam) e o detalhe — que imprime a Via Pedido e oferece cada gesto (entregar,

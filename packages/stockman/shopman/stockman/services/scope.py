@@ -18,6 +18,9 @@ Filters applied, in order:
    :func:`availability_scope_for_channel`.
 4. Batch expiry: quants whose batch expires before ``target`` plus the
    caller's ``expiry_margin_days`` are excluded (0 = only already-expired).
+   The same margin reaches batchless stock in step 2, through its implicit
+   validity (production day + ``shelf_life_days``); planned production for
+   ``target`` itself always counts.
 5. Batch quality: ``allowed_quality_grade_refs`` is an opaque allowlist
    resolved by channel policy. Motivo remains orthogonal and is never used
    to infer a grade. ``include_nonconforming`` remains a compatibility gate
@@ -79,7 +82,9 @@ def quants_eligible_for(
             allowlist. Applied after ``allowed_positions``.
         expiry_margin_days: Also exclude lots expiring within this many days
             AFTER ``target_date`` (near-expiry). 0 keeps the historical gate
-            (only lots already expired at ``target_date`` are out).
+            (only lots already expired at ``target_date`` are out). Batchless
+            perishable stock follows the same margin through its implicit
+            validity (see :mod:`shopman.stockman.shelflife`).
         include_nonconforming: Compatibility gate. When ``False`` and no
             explicit grade allowlist is supplied, lots with a frozen markdown
             percentage are excluded. A reason alone is informational and
@@ -115,7 +120,17 @@ def quants_eligible_for(
     # Validity precedence: shelf_life_days (relative window) and Batch.expiry_date
     # (absolute lot date) are applied as an AND — a quant must pass both. The most
     # restrictive signal wins. Locked by TestShelflifeBatchPrecedence.
-    qs = filter_valid_quants(qs, product_ns, target)
+    #
+    # O dia de produção de um saldo físico de lote é o do lote, não o do
+    # ``created_at``: com margem, o lote de amanhã fechado hoje conta para
+    # amanhã, e o pão de hoje segue fora (ver :mod:`shopman.stockman.shelflife`).
+    qs = filter_valid_quants(
+        qs,
+        product_ns,
+        target,
+        margin_days=expiry_margin_days,
+        lots=Batch.objects.filter(sku=sku) if expiry_margin_days > 0 else None,
+    )
 
     if allowed_positions is not None:
         qs = qs.filter(position__ref__in=allowed_positions)

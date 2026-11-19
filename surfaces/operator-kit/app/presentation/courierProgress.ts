@@ -20,6 +20,8 @@ export interface CourierProgressInput {
   /** O entregador desistiu e a TaOn procura outro para a MESMA corrida (`courier.reopen_view`). */
   reopened_at?: string;
   reopened_driver?: string;
+  /** `withdrew` (desistiu) ou `transfer` (a TaOn está trocando o entregador). */
+  reopened_reason?: string;
 }
 
 export interface CourierProgressView {
@@ -41,6 +43,10 @@ const EMPTY: CourierProgressView = { pickup: "", delivery: "", stale: "", waitin
 
 /** O que a TaOn faz depois da desistência: a mesma corrida, outro entregador. */
 export const REOPENED_HINT = "A TaOn já procura outro";
+
+/** A TaOn trocou o entregador (``T``): a mesma corrida, sem dono por um instante. */
+export const TRANSFER_TITLE = "A TaOn está trocando de entregador";
+export const TRANSFER_HINT = "A corrida continua a mesma";
 
 /** A TaOn juntou a corrida a outra, que já tem entregador (letra U). */
 export const GROUPED_TITLE = "A TaOn juntou com outra corrida";
@@ -77,7 +83,10 @@ export function courierProgress(
   const reopened = epoch(courier.reopened_at);
   if (courier.status === "U") view.waiting = `${GROUPED_TITLE}. ${GROUPED_HINT}.`;
   else if (reopened !== null && !ended)
-    view.waiting = `${withdrawalTitle(courier.reopened_driver, reopened)}. ${REOPENED_HINT}.`;
+    view.waiting =
+      courier.reopened_reason === "transfer"
+        ? `${TRANSFER_TITLE}. ${TRANSFER_HINT}.`
+        : `${withdrawalTitle(courier.reopened_driver, reopened)}. ${REOPENED_HINT}.`;
 
   const arrived = epoch(courier.arrived_pickup_at);
   const pickupEta = epoch(courier.pickup_eta_at);

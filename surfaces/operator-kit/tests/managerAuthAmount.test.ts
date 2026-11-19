@@ -88,3 +88,35 @@ describe("managerAuth: devolução no Gestor", () => {
     expect(managerAuthReason({ action: "order_return" })).toBe("Volta dinheiro ou produto do cliente.");
   });
 });
+
+// Não retirado, no Gestor (WP-G11): o Gerente lê o que volta ao cliente e o que
+// fica com a loja, na frase que a prévia do servidor montou (`money_sentence`).
+describe("managerAuth: não retirado no Gestor", () => {
+  it("o ato tem nome, e o motivo é a frase do dinheiro da prévia", () => {
+    expect(managerAuthTitle("order_no_show")).toBe("Autorizar encerrar como não retirado");
+    const sentence = "R$ 12,00 serão estornados ao Pix do cliente. R$ 8,00 ficam com a loja, pelo que se perdeu.";
+    expect(managerAuthReason({ action: "order_no_show", detail: sentence })).toBe(sentence);
+  });
+
+  it("sem a frase do dinheiro, a frase fixa do ato, sem travessão", () => {
+    const fixed = managerAuthReason({ action: "order_no_show" });
+    expect(fixed).toBe("O cliente não veio buscar o pedido.");
+    expect(`${managerAuthTitle("order_no_show")} ${fixed}`).not.toMatch(/[—–]/);
+  });
+});
+
+// Tentar o estorno de novo, no Gestor (WP-G13): o Gerente lê o valor que volta ao
+// cliente, na frase que a tela monta com o valor do servidor.
+describe("managerAuth: tentar o estorno de novo no Gestor", () => {
+  it("o ato tem nome, e o motivo é a frase do valor", () => {
+    expect(managerAuthTitle("refund_retry")).toBe("Autorizar tentar o estorno de novo");
+    const sentence = "Estorno de R$ 22,00, pedido de novo ao meio de pagamento.";
+    expect(managerAuthReason({ action: "refund_retry", detail: sentence })).toBe(sentence);
+  });
+
+  it("sem o valor, a frase fixa do ato, sem travessão", () => {
+    const fixed = managerAuthReason({ action: "refund_retry" });
+    expect(fixed).toBe("O estorno do pedido cancelado não saiu.");
+    expect(`${managerAuthTitle("refund_retry")} ${fixed}`).not.toMatch(/[—–]/);
+  });
+});

@@ -37,3 +37,18 @@ export function useStorefrontHome () {
     }
   )
 }
+
+/**
+ * Loja viva (WP-L04): a home relê em segundo plano quando a vitrine muda, sem
+ * passar por "carregando". A sacola que vem junto é a do servidor (a verdade), e
+ * quem a aplica continua sendo o `setFromServer` da página, que respeita as
+ * mutações em voo.
+ */
+export function useLiveStorefrontHome (data: Ref<HomeResponse | null | undefined>) {
+  const apiPath = useShopmanApiPath()
+  return useLiveRevalidate(
+    data,
+    () => $fetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), { credentials: 'include' }),
+    { minIntervalMs: LIVE_HOME_MIN_INTERVAL_MS }
+  )
+}

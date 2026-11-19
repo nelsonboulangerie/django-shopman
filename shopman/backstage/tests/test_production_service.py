@@ -1551,7 +1551,7 @@ def test_partition_declared_loss_becomes_waste_with_reason(recipe, monkeypatch):
     """Perda declarada (loss=True) vira WASTE com o motivo, sem grau e sem lote.
 
     A aritmética do quiosque: previsto = a preço cheio + com desconto + perda
-    (QC-FORNADA §4). A perda não passa por veto — é o que não saiu do forno,
+    (QC-FORNADA §4). A perda não passa por veto — é o que não ficou pronto,
     e pede motivo mesmo quando o defeito não é de segurança alimentar.
     """
     recipe.meta = {"requires_batch_tracking": True, "shelf_life_days": 1}

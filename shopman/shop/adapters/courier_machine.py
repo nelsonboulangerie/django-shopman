@@ -480,6 +480,36 @@ def _driver(name, phone, plate, model, color="") -> dict | None:
     return driver if driver["name"] else None
 
 
+def driver_from(payload: dict) -> dict | None:
+    """O entregador de um corpo da TaOn (aviso de aceite ou ``GET /request/{id}``).
+
+    A doc manda o veículo à parte, em ``vehicle{model, color, vehicle_plate}``; o
+    ``driver`` traz nome e telefone. Antes só se lia ``driver.vehicle_*``, que a
+    TaOn não manda, e a placa e a cor se perdiam (revisão das Entregas, TAON-14).
+    ``driver.vehicle_*`` segue como segunda via.
+    """
+    payload = payload if isinstance(payload, dict) else {}
+    raw = payload.get("driver") if isinstance(payload.get("driver"), dict) else {}
+    vehicle = payload.get("vehicle") if isinstance(payload.get("vehicle"), dict) else {}
+    if not vehicle and isinstance(raw.get("vehicle"), dict):
+        vehicle = raw["vehicle"]
+    return _driver(
+        raw.get("name"),
+        raw.get("phone"),
+        vehicle.get("vehicle_plate") or vehicle.get("plate") or raw.get("vehicle_plate"),
+        vehicle.get("model") or raw.get("vehicle_model"),
+        vehicle.get("color") or raw.get("vehicle_color"),
+    )
+
+
+def driver_photo_url(payload: dict) -> str:
+    """O endereço da foto do entregador no corpo da TaOn (só ``https``), ou vazio."""
+    payload = payload if isinstance(payload, dict) else {}
+    raw = payload.get("driver") if isinstance(payload.get("driver"), dict) else {}
+    url = _text(raw.get("photo_url") or payload.get("photo_url"))
+    return url if url.startswith("https://") else ""
+
+
 def snapshot_from_details(payload: dict) -> dict:
     """``GET /v1/request/{id}`` → a leitura normalizada da corrida.
 
@@ -490,7 +520,6 @@ def snapshot_from_details(payload: dict) -> dict:
     payload = payload if isinstance(payload, dict) else {}
     progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
     finished = payload.get("finished") if isinstance(payload.get("finished"), dict) else {}
-    raw_driver = payload.get("driver") if isinstance(payload.get("driver"), dict) else {}
     cancellations = [c for c in payload.get("cancellation") or [] if isinstance(c, dict)]
 
     status = _status_letter(payload.get("short_code"), payload.get("full_code"))
@@ -513,8 +542,7 @@ def snapshot_from_details(payload: dict) -> dict:
     cancelled = cancellations[-1] if cancellations else {}
     return {
         "status": status,
-        "driver": _driver(raw_driver.get("name"), raw_driver.get("phone"),
-                          raw_driver.get("vehicle_plate"), raw_driver.get("vehicle_model")),
+        "driver": driver_from(payload),
         "progress": {
             "accepted_at": accepted_at,
             "pickup_eta_at": _iso_plus_seconds(accepted_at, eta_seconds),

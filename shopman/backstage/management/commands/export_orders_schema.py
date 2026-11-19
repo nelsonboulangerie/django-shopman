@@ -111,6 +111,11 @@ from shopman.backstage.projections.order_history import (
     OrderHistoryProjection,
     OrderHistoryRowProjection,
 )
+from shopman.backstage.projections.order_pending import (
+    CancelledMoneyProjection,
+    OrderPendingActionProjection,
+    OrderPendingProjection,
+)
 from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
@@ -196,6 +201,9 @@ CONTRACT_DATACLASSES = (
     PreorderRescheduleProjection,
     PreorderEditProjection,
     CounterOrderProjection,
+    OrderPendingActionProjection,
+    OrderPendingProjection,
+    CancelledMoneyProjection,
     OperatorOrderProjection,
     OrderQueueProjection,
     SystemActionProjection,
@@ -254,6 +262,7 @@ def render_orders_contract_ts() -> str:
             " + shopman/backstage/projections/order_history.py"
             " + shopman/backstage/projections/order_attention.py"
             " + shopman/backstage/projections/deliveries.py"
+            " + shopman/backstage/projections/order_pending.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,
