@@ -78,6 +78,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # Provas do concierge dependem de locks, conexões independentes e migrações
     # reais; skips do lote SQLite precisam executar neste gate estrito.
     "shopman/storefront/tests/test_concierge_authority.py",
+    # O executor do contrato de efeito do framework conversacional (N6): chave, guarda,
+    # efeito e recibo numa transação, e dois trabalhadores na mesma chave (K08 a K16).
+    "shopman/shop/tests/test_conversational_execute_postgres.py",
     "shopman/storefront/tests/test_concierge_commercial_races.py",
     "shopman/storefront/tests/test_concierge_consent_race.py",
     "shopman/storefront/tests/test_concierge_payment_race.py",
