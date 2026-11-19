@@ -29,17 +29,34 @@ QUALITY_GRADE_POLICY_VERSION_METADATA_KEY = "_quality_grade_policy_version"
 QUALITY_GRADE_POLICY_VERSION = 1
 
 
-def delivery_reason(hold_pk: int, note: str = "") -> str:
-    """Motivo dos ``Move`` da entrega de uma reserva: a conta dela no ledger.
+#: ``Move.metadata[DELIVERY_METADATA_KEY]`` = ``{"hold_id": "hold:N", "entry": ...}``:
+#: a conta da entrega de uma reserva no ledger (ver :func:`delivery_entry`).
+DELIVERY_METADATA_KEY = "delivery"
+DELIVERY_FULFILLED = "fulfilled"
+DELIVERY_CARRIED_OUT = "carried_out"
+DELIVERY_CARRIED_IN = "carried_in"
+DELIVERY_RETURNED = "returned"
 
-    Sem ``note`` é a baixa (``fulfill``). Com ``note`` é outro lançamento da
-    mesma conta, no mesmo saldo: a entrega que segue com o lote, a devolução de
-    um cancelamento. O líquido da conta num saldo de produção é o que ele ainda
-    deve ao lote (``planning._early_deliveries``, #2724). Quem escreve nela usa
-    esta função, nunca um texto copiado.
+
+def delivery_entry(hold_pk: int, entry: str) -> dict:
+    """``Move.metadata`` de um lançamento na conta da entrega de uma reserva.
+
+    A conta é a CHAVE do que foi entregue contra um saldo: a baixa
+    (``fulfilled``, escrita pelo ``fulfill``), a entrega que segue com o lote
+    (``carried_out`` no saldo que ela deixa, ``carried_in`` no que passa a
+    pagá-la) e a devolução de um cancelamento (``returned``). O líquido da
+    conta num saldo de produção é o que ele ainda deve ao lote
+    (``planning._early_deliveries``, #2724).
+
+    É por aqui, e só por aqui, que a conta é lida. O ``reason`` do ``Move`` é
+    frase para gente: pode ser reescrito sem mudar o estoque.
     """
-    base = f"Entrega hold:{hold_pk}"
-    return f"{base} {note}" if note else base
+    return {DELIVERY_METADATA_KEY: {"hold_id": f"hold:{hold_pk}", "entry": entry}}
+
+
+def delivery_reason(hold_pk: int) -> str:
+    """A frase do ``Move`` que baixa uma reserva. Texto para gente, nunca chave."""
+    return f"Entrega hold:{hold_pk}"
 
 
 def _parse_hold_id(hold_id: str) -> int:
@@ -450,7 +467,12 @@ class StockHolds:
 
                 consume_qty = quantity if quantity is not None else hold.quantity
                 move = Move.objects.create(
-                    quant=quant, delta=-consume_qty, reason=delivery_reason(hold.pk), kind=kind, user=user
+                    quant=quant,
+                    delta=-consume_qty,
+                    reason=delivery_reason(hold.pk),
+                    kind=kind,
+                    user=user,
+                    metadata=delivery_entry(hold.pk, DELIVERY_FULFILLED),
                 )
 
                 _actor = actor or user

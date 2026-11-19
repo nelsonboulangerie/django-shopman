@@ -24,10 +24,20 @@ from types import SimpleNamespace
 
 import pytest
 from django.db.models import Sum
+from django.utils import timezone
 from shopman.stockman import StockError, stock
 from shopman.stockman.models import Hold, Move, Quant
 from shopman.stockman.models.enums import HoldStatus
-from shopman.stockman.services.holds import delivery_reason
+from shopman.stockman.services import holds as holds_module
+from shopman.stockman.services import planning as planning_module
+from shopman.stockman.services.holds import (
+    DELIVERY_CARRIED_IN,
+    DELIVERY_CARRIED_OUT,
+    DELIVERY_FULFILLED,
+    DELIVERY_RETURNED,
+    delivery_entry,
+    delivery_reason,
+)
 from shopman.stockman.services.planning import StockPlanning
 
 pytestmark = pytest.mark.django_db
@@ -75,6 +85,20 @@ def _realize(baguete, qty, day, *, to, source, from_batch="", **kwargs) -> Quant
     return stock.realize(
         baguete, day, D(str(qty)), to, from_position=source, from_batch=from_batch, reason="lote", **kwargs,
     )
+
+
+def _give_back(quant: Quant, hold: Hold, qty) -> None:
+    """A devolução de um pedido cancelado, no saldo de produção e na conta da entrega."""
+    Move.objects.create(
+        quant=quant, delta=D(str(qty)), reason="Cancelamento pós-baixa", kind=Move.Kind.RETURN,
+        metadata=delivery_entry(hold.pk, DELIVERY_RETURNED),
+    )
+
+
+def _account(quant: Quant, hold: Hold) -> Decimal:
+    """Líquido da conta da entrega de ``hold`` em ``quant``, lido pela chave do metadata."""
+    moves = Move.objects.filter(quant=quant, metadata__delivery__hold_id=hold.hold_id)
+    return moves.aggregate(total=Sum("delta"))["total"] or D("0")
 
 
 def _qty(quant: Quant) -> Decimal:
@@ -203,9 +227,7 @@ def test_delivered_beyond_the_output_never_goes_negative_nor_vanishes(baguete, p
     assert _qty(lot) == D("0")
     assert _qty(started) == D("6"), "10 iniciadas menos 4 entregues: nada some"
     assert _where(pedido) == started.pk, "enquanto não quita, a reserva segue no saldo que deve"
-    entrega = delivery_reason(pedido.pk)
-    owed = Move.objects.filter(quant=started, reason__startswith=entrega).aggregate(total=Sum("delta"))["total"]
-    assert owed == D("-1")
+    assert _account(started, pedido) == D("-1"), "a conta da entrega neste saldo ainda deve 1"
     assert _total(Move.Kind.SELL) == D("-4")
 
 
@@ -305,10 +327,7 @@ def test_a_delivery_given_back_to_the_production_balance_is_not_owed(baguete, pr
     _deliver(cancelado)
     _deliver(alterado)
     for hold, qty in ((cancelado, 4), (alterado, 1)):
-        stock.receive(
-            D(str(qty)), SKU, producao, target_date=today, kind=Move.Kind.RETURN,
-            reason=delivery_reason(hold.pk, "devolvida: pedido cancelado"),
-        )
+        _give_back(planned, hold, qty)
     assert _qty(planned) == D("8")
 
     lot = _realize(baguete, 10, today, to=vitrine, source=producao)
@@ -321,23 +340,100 @@ def test_a_delivery_given_back_to_the_production_balance_is_not_owed(baguete, pr
 
 
 def test_the_account_of_one_hold_never_reads_another(baguete, producao, vitrine, today):
-    """``Entrega hold:1`` não é a conta de ``Entrega hold:12``: a devolução de outra
-    reserva, cujo número começa pelo desta, não quita a entrega desta."""
-    _plan(baguete, 10, today, producao)
+    """A devolução lançada na conta de outra reserva não quita a entrega desta."""
+    planned = _plan(baguete, 10, today, producao)
     pedido = _hold(baguete, 1, today)
+    outro = _hold(baguete, 1, today)
     _deliver(pedido)
-    outra = int(f"{pedido.pk}2")
-    assert delivery_reason(outra).startswith(delivery_reason(pedido.pk))
-    stock.receive(
-        D("1"), SKU, producao, target_date=today, kind=Move.Kind.RETURN,
-        reason=delivery_reason(outra, "devolvida: pedido cancelado"),
-    )
+    _give_back(planned, outro, 1)
 
     lot = _realize(baguete, 10, today, to=vitrine, source=producao)
 
     assert _where(pedido) == lot.pk
     assert _ledger(lot)[1] == (D("-1"), "sell", delivery_reason(pedido.pk))
     assert _qty(lot) == D("9")
+
+
+# ── A chave da conta é o metadata, nunca a frase ─────────────────────────────
+
+
+def test_every_entry_of_the_account_carries_the_structured_key(baguete, producao, vitrine, today):
+    planned = _plan(baguete, 10, today, producao)
+    pedido = _hold(baguete, 4, today)
+    _deliver(pedido)
+    started = _start(planned, 10, producao)
+    lot = _realize(baguete, 10, today, to=vitrine, source=producao, from_batch=STARTED)
+
+    def entries(quant):
+        return [
+            (move.delta, move.metadata["delivery"]["entry"])
+            for move in Move.objects.filter(quant=quant, metadata__delivery__hold_id=pedido.hold_id).order_by("pk")
+        ]
+
+    assert delivery_entry(pedido.pk, DELIVERY_FULFILLED) == {
+        "delivery": {"hold_id": pedido.hold_id, "entry": "fulfilled"},
+    }
+    assert entries(planned) == [(D("-4"), DELIVERY_FULFILLED), (D("4"), DELIVERY_CARRIED_OUT)]
+    assert entries(started) == [(D("-4"), DELIVERY_CARRIED_IN), (D("4"), DELIVERY_CARRIED_OUT)]
+    assert entries(lot) == [(D("-4"), DELIVERY_CARRIED_IN)]
+
+
+def test_rewriting_the_reason_text_does_not_turn_the_rule_off(baguete, producao, vitrine, today, monkeypatch):
+    """A frase do ``Move`` é para gente. Trocada por qualquer outra (varredura de copy,
+    tradução), o abatimento continua certo: a conta é lida pelo metadata."""
+    monkeypatch.setattr(holds_module, "delivery_reason", lambda hold_pk: "Saiu com o cliente")
+    monkeypatch.setattr(planning_module, "delivery_reason", lambda hold_pk: "Uma frase qualquer")
+    planned = _plan(baguete, 10, today, producao)
+    pedido = _hold(baguete, 4, today)
+    cancelado = _hold(baguete, 2, today)
+    _deliver(pedido)
+    _deliver(cancelado)
+    _give_back(planned, cancelado, 2)
+
+    started = _start(planned, 10, producao)
+    assert _qty(started) == D("6")
+    lot = _realize(baguete, 10, today, to=vitrine, source=producao, from_batch=STARTED)
+
+    assert _qty(lot) == D("6")
+    assert (_qty(planned), _qty(started)) == (D("0"), D("0"))
+    assert _where(pedido) == lot.pk
+    assert {reason for _, _, reason in _ledger(planned)} >= {"Saiu com o cliente", "Uma frase qualquer segue com o lote"}
+    assert not Move.objects.filter(quant__sku=SKU, reason__startswith="Entrega hold:").exists()
+
+
+def test_a_move_with_the_delivery_text_but_without_the_key_is_not_in_the_account(
+    baguete, producao, vitrine, today,
+):
+    """Mesma frase, sem a chave: não é lançamento da conta. Nem a "baixa" a mais
+    aumenta o que o lote paga, nem a "devolução" só de texto o diminui."""
+    planned = _plan(baguete, 10, today, producao)
+    pedido = _hold(baguete, 4, today)
+    _deliver(pedido)
+    frase = delivery_reason(pedido.pk)
+    Move.objects.create(quant=planned, delta=D("-1"), reason=frase, kind=Move.Kind.SELL)
+    Move.objects.create(quant=planned, delta=D("4"), reason=f"{frase} segue com o lote", kind=Move.Kind.SELL)
+    assert _account(planned, pedido) == D("-4")
+
+    lot = _realize(baguete, 10, today, to=vitrine, source=producao)
+
+    assert _qty(lot) == D("6"), "o lote paga as 4 da conta, nem 5 nem 0"
+    assert _where(pedido) == lot.pk
+
+
+def test_a_delivery_written_without_the_key_is_not_a_known_early_delivery(baguete, producao, vitrine, today):
+    """Sem legado: baixa gravada antes da chave existir (só a frase) não entra na conta.
+    O lote fecha inteiro e a reserva fica onde estava. Não há leitura pelo texto antigo."""
+    planned = _plan(baguete, 10, today, producao)
+    antiga = _hold(baguete, 4, today)
+    stock.confirm(antiga.hold_id)
+    Move.objects.create(quant=planned, delta=D("-4"), reason=delivery_reason(antiga.pk), kind=Move.Kind.SELL)
+    Hold.objects.filter(pk=antiga.pk).update(status=HoldStatus.FULFILLED, resolved_at=timezone.now())
+
+    lot = _realize(baguete, 10, today, to=vitrine, source=producao)
+
+    assert _qty(lot) == D("10")
+    assert _where(antiga) == planned.pk
+    assert not Move.objects.filter(quant=lot, kind=Move.Kind.SELL).exists()
 
 
 def test_released_or_active_holds_are_not_deliveries(baguete, producao, vitrine, today):

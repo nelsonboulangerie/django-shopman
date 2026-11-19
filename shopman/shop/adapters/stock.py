@@ -872,15 +872,16 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
     "sem posição" sumiria da vitrine.
 
     Baixa feita contra saldo de produção cujo lote ainda não fechou (#2724): a
-    devolução desfaz a entrega nesse mesmo saldo, na conta da reserva. Num quant
-    físico ela viraria pão pronto que ainda não existe, e o fechamento abateria
-    do lote uma entrega que foi desfeita.
+    devolução desfaz a entrega nesse MESMO saldo, na conta da reserva
+    (``Move.metadata.delivery``, que é o que o fechamento lê). Num quant físico
+    ela viraria pão pronto que ainda não existe, e o fechamento abateria do lote
+    uma entrega que foi desfeita.
 
     Returns:
         True se devolveu; False se o hold não está FULFILLED.
     """
     from shopman.stockman import Hold, HoldStatus, Move
-    from shopman.stockman.services.holds import delivery_reason
+    from shopman.stockman.services.holds import DELIVERY_RETURNED, delivery_entry
     from shopman.stockman.services.movements import StockMovements
 
     try:
@@ -893,14 +894,12 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
 
     quant = hold.quant
     if quant is not None and quant.target_date is not None:
-        StockMovements.receive(
-            quantity=qty,
-            sku=hold.sku,
-            position=quant.position,
-            target_date=quant.target_date,
-            batch=quant.batch,
-            reason=delivery_reason(pk, f"devolvida: {reason} (ref: {reference})"),
+        Move.objects.create(
+            quant=quant,
+            delta=qty,
+            reason=f"{reason} (ref: {reference})",
             kind=Move.Kind.RETURN,
+            metadata=delivery_entry(pk, DELIVERY_RETURNED),
         )
         return True
 

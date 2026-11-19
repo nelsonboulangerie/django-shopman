@@ -21,18 +21,17 @@ from shopman.stockman.models.hold import Hold
 from shopman.stockman.models.move import Move
 from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.holds import (
+    DELIVERY_CARRIED_IN,
+    DELIVERY_CARRIED_OUT,
+    DELIVERY_METADATA_KEY,
     QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
     QUALITY_GRADE_POLICY_VERSION,
     QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    delivery_entry,
     delivery_reason,
 )
 
 logger = logging.getLogger("shopman.stockman")
-
-
-def _carried_reason(hold_pk: int) -> str:
-    """Motivo da perna que devolve ao saldo de produção uma entrega que seguiu adiante."""
-    return delivery_reason(hold_pk, "segue com o lote")
 
 
 def _early_deliveries(quant, *, limit):
@@ -41,8 +40,13 @@ def _early_deliveries(quant, *, limit):
     O fato é do ledger. ``fulfill`` baixa a reserva do quant em que ela está,
     mesmo quando ele ainda é saldo de produção, e a reserva fica ``fulfilled``
     ancorada ali. O que esse saldo deve ao lote é o líquido, por reserva, da
-    conta da entrega (:func:`delivery_reason`): a baixa, menos o que já seguiu
-    adiante, menos o que foi devolvido. Nenhum contador além dos ``Move``.
+    conta da entrega: a baixa, menos o que já seguiu adiante, menos o que foi
+    devolvido. Nenhum contador além dos ``Move``.
+
+    A conta é lida SÓ pela chave estruturada de ``Move.metadata``
+    (:func:`~shopman.stockman.services.holds.delivery_entry`), nunca pelo
+    ``reason``: a frase pode mudar sem desligar o abatimento, e um ``Move`` sem
+    a chave não é entrega conhecida, tenha a frase que tiver.
 
     Devolve ``[(hold, quantidade, kind, quita)]`` na ordem das entregas, até
     ``limit``. Entrega maior que o que cabe segue em parte, e o resto continua
@@ -52,15 +56,15 @@ def _early_deliveries(quant, *, limit):
     if not holds:
         return []
 
-    accounts = {delivery_reason(hold.pk): hold.pk for hold in holds}
-    in_account = Q()
-    for base in accounts:
-        in_account |= Q(reason=base) | Q(reason__startswith=f"{base} ")
-    owed = dict.fromkeys(accounts.values(), Decimal("0"))
+    account_of = {hold.hold_id: hold.pk for hold in holds}
+    owed = dict.fromkeys(account_of.values(), Decimal("0"))
     kinds = {}
-    ledger = Move.objects.filter(in_account, quant=quant).order_by("pk")
-    for reason, delta, kind in ledger.values_list("reason", "delta", "kind"):
-        hold_pk = next(pk for base, pk in accounts.items() if reason == base or reason.startswith(f"{base} "))
+    ledger = Move.objects.filter(
+        quant=quant,
+        **{f"metadata__{DELIVERY_METADATA_KEY}__hold_id__in": list(account_of)},
+    ).order_by("pk")
+    for metadata, delta, kind in ledger.values_list("metadata", "delta", "kind"):
+        hold_pk = account_of[metadata[DELIVERY_METADATA_KEY]["hold_id"]]
         owed[hold_pk] -= delta
         kinds.setdefault(hold_pk, kind)
 
@@ -81,14 +85,28 @@ def _early_deliveries(quant, *, limit):
 def _return_early_deliveries(quant, deliveries, *, user=None) -> Decimal:
     """Perna de origem: o saldo de produção recebe de volta o que segue adiante."""
     for hold, quantity, kind, _settles in deliveries:
-        Move.objects.create(quant=quant, delta=quantity, reason=_carried_reason(hold.pk), kind=kind, user=user)
+        Move.objects.create(
+            quant=quant,
+            delta=quantity,
+            reason=f"{delivery_reason(hold.pk)} segue com o lote",
+            kind=kind,
+            user=user,
+            metadata=delivery_entry(hold.pk, DELIVERY_CARRIED_OUT),
+        )
     return sum((quantity for _hold, quantity, _kind, _settles in deliveries), Decimal("0"))
 
 
 def _charge_early_deliveries(quant, deliveries, *, user=None) -> None:
     """Perna de destino: a entrega passa a pesar em ``quant``, e a reserva o acompanha."""
     for hold, quantity, kind, settles in deliveries:
-        Move.objects.create(quant=quant, delta=-quantity, reason=delivery_reason(hold.pk), kind=kind, user=user)
+        Move.objects.create(
+            quant=quant,
+            delta=-quantity,
+            reason=delivery_reason(hold.pk),
+            kind=kind,
+            user=user,
+            metadata=delivery_entry(hold.pk, DELIVERY_CARRIED_IN),
+        )
         if settles:
             hold.quant = quant
             hold.save(update_fields=["quant"])

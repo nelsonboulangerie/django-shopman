@@ -465,6 +465,8 @@ def test_pedido_cancelado_antes_de_o_lote_fechar_devolve_ao_saldo_de_producao(
         assert cancellation.cancel(order, reason="Cliente desistiu", actor="pos:marina") is True
 
     assert _saldo("em_producao") == D("10")
+    [devolucao] = Move.objects.filter(quant__sku=SKU, kind=Move.Kind.RETURN)
+    assert devolucao.metadata["delivery"] == {"hold_id": _reserva(order).hold_id, "entry": "returned"}
     assert not Quant.objects.filter(sku=SKU, target_date__isnull=True).exists(), "nenhum pão pronto antes da hora"
     assert _livre("pdv") == D("10")
 
@@ -492,6 +494,38 @@ def test_pedido_cancelado_depois_de_o_lote_fechar_devolve_a_vitrine(lote, caixa,
     assert _saldo("vitrine") == D("10")
     assert _livre("pdv") == D("10")
     assert not Quant.objects.filter(sku=SKU, _quantity__gt=0).exclude(position__ref="vitrine").exists()
+
+
+# ── A chave da conta não é a frase ───────────────────────────────────────────
+
+
+def test_a_frase_do_movimento_pode_mudar_sem_desligar_o_abatimento(
+    lote, caixa, monkeypatch, django_capture_on_commit_callbacks,
+):
+    """A conta da entrega é lida de ``Move.metadata.delivery``. Com a frase do ``Move``
+    reescrita (varredura de copy, tradução), a vitrine continua recebendo só o que sobra,
+    na venda, no "Iniciar", no fechamento e no cancelamento."""
+    from shopman.stockman.services import holds as stock_holds
+    from shopman.stockman.services import planning as stock_planning
+
+    monkeypatch.setattr(stock_holds, "delivery_reason", lambda hold_pk: "Saiu com o cliente")
+    monkeypatch.setattr(stock_planning, "delivery_reason", lambda hold_pk: "Outra frase")
+    with django_capture_on_commit_callbacks(execute=True):
+        _vender_no_balcao(caixa, 4, key="venda-1")
+        desfeita = _vender_no_balcao(caixa, 2, key="venda-2")
+    desfeita.refresh_from_db()
+    with django_capture_on_commit_callbacks(execute=True):
+        assert cancellation.cancel(desfeita, reason="Cliente desistiu", actor="pos:marina") is True
+    assert _saldo("planejado") == D("6")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    assert _saldo("em_producao") == D("6")
+    with django_capture_on_commit_callbacks(execute=True):
+        _fechar(lote)
+
+    assert _saldo("vitrine") == D("6")
+    assert not Move.objects.filter(quant__sku=SKU, reason__startswith="Entrega hold:").exists()
 
 
 # ── As reservas ainda ativas seguem para a vitrine ───────────────────────────
