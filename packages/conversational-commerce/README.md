@@ -5,9 +5,11 @@ portas, política, contrato de efeito, resposta com prova, adaptadores falsos
 e a suíte de conformidade. Qualquer canal, qualquer modelo, qualquer sistema
 de comércio por trás.
 
-**Estado:** contratos (F1). Os 17 contratos, a forma canônica, o hash, o
+**Estado:** contratos (F1) e catálogo e perfil (F2). Os 17 contratos, a forma canônica, o hash, o
 JSON Schema gerado e os vetores existem (`conversational_commerce/contracts/`,
-`spec/01-contracts.md`). Portas, política e comportamento chegam nos WPs F2 a
+`spec/01-contracts.md`); os 16 movimentos, os níveis, a leitura do perfil e o
+perfil de teste também (`catalog/`, `profile/`, `spec/02-catalog-profile.md`).
+Portas, política e comportamento chegam nos WPs F3 a
 F11 do plano do framework, `docs/plans/COMERCIO-CONVERSACIONAL-FRAMEWORK-PLANO.md`.
 
 ## O que o pacote é
