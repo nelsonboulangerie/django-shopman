@@ -1218,9 +1218,9 @@ class QCOrderCardProjection:
     # Perda média por lote da mesma receita nos 28 dias anteriores; "" sem
     # histórico suficiente (menos de 3 lotes). É a referência para decidir.
     typical_loss_qty: str = ""
-    # Pessoas na fila "Me avise" (saiu do forno) do SKU, que a confirmação
-    # libera. Teto: o canal ainda pode barrar. None quando a fila não pôde
-    # ser lida (a tela cala em vez de dizer zero).
+    # Pessoas na fila "Me avise" (o aviso de que ficou pronto) do SKU, que a
+    # confirmação libera. Teto: o canal ainda pode barrar. None quando a fila
+    # não pôde ser lida (a tela cala em vez de dizer zero).
     alert_waiting_count: int | None = None
     # Unidade canônica do que o lote produz (``un``, ``g``, ``kg``, ``l``...),
     # pela mesma precedência da ficha (Product, depois Material, depois

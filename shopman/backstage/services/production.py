@@ -1954,7 +1954,7 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
 
     - ``partition`` explícita (``[{quantity, quality_grade_ref,
       quality_defect_ref, loss}]``): cada grupo vira linha de OUTPUT; grupo com
-      ``loss=True`` é perda declarada pelo operador (o que não saiu do forno) e
+      ``loss=True`` é perda declarada pelo operador (o que não ficou pronto) e
       vira WASTE com o motivo, sem grau e sem lote; grupo cujo defeito tem
       ``forces_discard`` também vira WASTE (o veto é resolvido AQUI, antes do
       craft.finish — o core nunca interpreta o defeito).

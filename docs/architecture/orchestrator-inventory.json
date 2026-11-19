@@ -521,6 +521,8 @@
             "cancel",
             "cancel_reason_for",
             "dispatch",
+            "driver_from",
+            "driver_photo_url",
             "estimate",
             "get_details",
             "get_position",
@@ -7077,6 +7079,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/waitlist_charge.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "waitlist.charge-waits-for-the-queue"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/pool_liveness.py",
       "touchpoints": [
         "outro"
@@ -7716,7 +7732,9 @@
             "TrackingTimelineEventData",
             "_COURIER_ENDED_STATUSES",
             "_DIGITAL_PAYMENT_METHODS",
+            "_STORE_DECISION_STATES",
             "_WAITLIST_NONE",
+            "_acceptance_deadline_at",
             "_action",
             "_active_progress_key",
             "_bill_line_of",
@@ -9294,6 +9312,7 @@
         "delivery.courier-charge-staleness",
         "delivery.courier-dispatch-eligibility",
         "delivery.courier-handoff-charge",
+        "delivery.courier-in-trouble",
         "delivery.courier-quote",
         "delivery.courier-return",
         "delivery.courier-ride-number",

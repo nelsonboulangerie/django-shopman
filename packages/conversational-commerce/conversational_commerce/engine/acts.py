@@ -22,12 +22,18 @@ ACTS: tuple[str, ...] = (
     "place_order",
     "cancel_order",
     "complain",
+    "request_human",
+    "ask_recommendation",
+    "decline_offers",
+    "accept_offers",
     "affirm",
     "deny",
     "unknown",
 )
 COURTESY_ACTS = frozenset({"greet", "thank"})
 ANSWER_ACTS = frozenset({"affirm", "deny"})
+# O cliente declara o que quer da casa: vira memória declarada (F10), e a resposta é cortesia.
+DECLARATION_ACTS = frozenset({"decline_offers", "accept_offers"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
 CHANGE_ACTS = frozenset({"change_quantity", "place_order", "cancel_order"})
 
@@ -69,6 +75,10 @@ TEST_RULES = LocalRules(
         "cancel_order": (r"\bcancel\b",),
         "affirm": (r"^\s*(yes|yeah|ok)\b",),
         "deny": (r"^\s*no\b",),
+        "request_human": (r"\b(talk|speak) to (a |an )?(person|human|someone)\b",),
+        "ask_recommendation": (r"\bcan you (suggest|recommend)\b", r"\bwhat do you recommend\b"),
+        "decline_offers": (r"\bno (more )?suggestions\b", r"\bstop suggesting\b"),
+        "accept_offers": (r"\byou can suggest\b",),
     },
     risk={"complain": (r"\bcomplain", r"\bwrong order\b", r"\brefund\b")},
 )

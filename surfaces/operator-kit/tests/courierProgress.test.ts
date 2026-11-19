@@ -67,6 +67,14 @@ describe("courierProgress", () => {
     expect(courierProgress({ status: "C", reopened_at: "2026-10-13T17:32:00+00:00" }, NOW).waiting).toBe("");
   });
 
+  it("a TaOn trocou o entregador (T): a mesma corrida, nunca falha", () => {
+    const view = courierProgress(
+      { status: "D", reopened_at: "2026-10-13T17:32:00+00:00", reopened_driver: "Diego", reopened_reason: "transfer" },
+      NOW,
+    );
+    expect(view.waiting).toBe("A TaOn está trocando de entregador. A corrida continua a mesma.");
+  });
+
   it("a TaOn juntou com outra corrida: já tem entregador", () => {
     expect(courierProgress({ status: "U" }, NOW).waiting).toBe(
       "A TaOn juntou com outra corrida. Ela já tem entregador.",

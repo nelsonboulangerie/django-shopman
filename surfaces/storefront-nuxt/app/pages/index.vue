@@ -22,6 +22,9 @@ const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
 const { data, pending, error, refresh } = await useStorefrontHome()
 usePageContentPending(pending)
 await siteSeoReady
+// Loja viva (WP-L04): destaques e o estado da casa não ficam velhos na home, que
+// promete "disponibilidade em tempo real".
+useLiveStorefrontHome(data)
 
 watch(() => data.value, value => {
   session.setFromHome(value?.home)

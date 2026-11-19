@@ -6,14 +6,18 @@
 3. **Entender.** A porta de modelo, se há orçamento e ela responde; senão, regra
    local. Ato fora da lista vira ``unknown`` e a queda é registrada.
 4. **Montar o snapshot.** Necessidades, pergunta no ar e fatos lidos ao vivo, com
-   teto de passos. Nada fica aberto enquanto se chama modelo ou porta: a única
+   teto de passos; o contexto comercial (problema aberto, atrito, compromisso
+   vencido, a recusa na memória declarada) e o item que atende a necessidade
+   declarada (F10). Nada fica aberto enquanto se chama modelo ou porta: a única
    gravação é a do passo 8.
 5. **Decidir.** ``policy.decide`` sobre as propostas dos movimentos registrados.
 6. **Autorizar e executar** (F8). Para o movimento de efeito escolhido: a
    concessão (o núcleo emite, nunca o modelo), o comando gravado junto com a
    intenção de execução na caixa de saída (N13), a execução pela guarda do
-   ponto de efeito e o recibo. Recusado no ponto de efeito, decide-se de novo,
-   numa decisão nova ligada à primeira (N14).
+   ponto de efeito e o recibo. Depois, os compromissos (F9): a promessa ou o
+   caso com dono e prazo, e a equipe chamada; sem dono possível, não se promete.
+   Recusado no ponto de efeito ou sem dono, decide-se de novo, numa decisão
+   nova ligada à primeira (N14).
 7. **Dizer e verificar.** Molde preenchido pelo lastro e verificação de saída (F6).
 8. **Gravar numa transação:** o episódio novo, os registros do turno e a
    intenção de envio, com comparar e gravar.
@@ -59,6 +63,7 @@ from conversational_commerce.contracts import (
     ExposureEvent,
     InteractionEvent,
     Known,
+    MemoryItem,
     Producer,
     Understanding,
     Unknown,
@@ -66,14 +71,31 @@ from conversational_commerce.contracts import (
     seal,
     sha256_hash,
 )
-from conversational_commerce.ledger import ReceiptLedger, Settled, Settler
+from conversational_commerce.contracts.commitment import DeadlineSet
+from conversational_commerce.ledger import (
+    ESCALATION_LINE,
+    CommitmentLedger,
+    CommitmentRefused,
+    ExposureLedger,
+    ReceiptLedger,
+    Settled,
+    Settler,
+    make_commitment,
+    staff_deadline,
+    staff_owner,
+)
+from conversational_commerce.ledger.commitments import window_seconds
+from conversational_commerce.memory import MemoryStore
 from conversational_commerce.policy import DecisionInput, decide
+from conversational_commerce.policy.advisor import adheres_to_declared_need
 from conversational_commerce.ports import (
     Budget,
+    HandoffRequest,
     InterpretRequest,
     ModelRequest,
     PortError,
     PreparedMessage,
+    StaffQuestion,
     Transition,
     TrustedContext,
     WorkItem,
@@ -93,7 +115,7 @@ from conversational_commerce.workflow import (
     transition,
 )
 
-from .acts import ACTS, ANSWER_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
+from .acts import ACTS, ANSWER_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
 from .budget import TurnBudget
 from .format import DEFAULT_FORMATTERS
 from .moves import registry, templates
@@ -103,6 +125,8 @@ PRODUCER = Producer(name="conversational-commerce", version="engine-1")
 LOCAL_READER = Producer(name="local-rules", version="1")
 FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 INACTIVITY_LINE = "episode.inactivity_window_seconds"
+# Memória declarada (F10): o cliente pediu para não receber sugestões.
+OFFERS_DECLINED = "offers.declined"
 
 Outcome = Literal["answered", "duplicate", "held", "revoked", "shadow", "superseded"]
 
@@ -185,6 +209,9 @@ class Engine:
     subject_of: Callable[[TrustedContext, InteractionEvent], Subject] = default_subject
     revocations: Revocations = field(default_factory=Revocations)
     ledger: ReceiptLedger = field(default_factory=ReceiptLedger)
+    commitments: CommitmentLedger = field(default_factory=CommitmentLedger)
+    memory: MemoryStore = field(default_factory=MemoryStore)
+    exposures: ExposureLedger = field(default_factory=ExposureLedger)
     _turns: int = 0
 
     # ── envelope ────────────────────────────────────────────────────────────
@@ -202,7 +229,8 @@ class Engine:
         window = read_line(self.profile, INACTIVITY_LINE)
         inactivity = window.value if window.usable else 0
         decision = correlate(subject=subject, now=self.ports.clock.now(), episodes=[latest] if latest else [],
-                             inactivity_seconds=inactivity)
+                             inactivity_seconds=inactivity,
+                             open_commitments=self.commitments.open_episodes(ctx.tenant))
         if decision.action == "continue" and latest is not None:
             return latest
         episode = open_episode(record_id=self.ports.clock.new_id("eprec"), episode_id=self.ports.clock.new_id("ep"),
@@ -419,6 +447,164 @@ class Engine:
                                     "rule_ref": "effect.reconciliation_deadline_seconds"},
                           fulfillment_criterion="a terminal receipt for the command", state="open")
 
+    # ── contexto comercial e memória declarada (F10) ────────────────────────
+    def _commercial_context(self, ctx: TrustedContext, state: TurnState, episode: Episode,
+                            understanding: Understanding, budget: TurnBudget) -> None:
+        """O que trava ou permite a recomendação, e o item que atende a necessidade declarada.
+
+        Problema aberto: caso aberto no episódio, ou reclamação nesta mensagem.
+        Compromisso vencido: prazo de compromisso aberto do episódio já passado. A
+        recusa vem da memória declarada. O item é o primeiro do catálogo que atende
+        cada exigência declarada (restrição de conselheiro); o nome e o preço são lidos
+        do item, com passo do teto.
+        """
+        now = state.now
+        mine = [e for e in self.commitments.open_entries(ctx.tenant, ctx.environment)
+                if e.commitment.episode_id == episode.episode_id]
+        state.open_problem = any(e.commitment.type == "case" for e in mine) or any(
+            need.act == "complain" for need in state.needs)
+        state.overdue_commitment = any(isinstance(e.commitment.deadline, DeadlineSet) and e.commitment.deadline.at
+                                       <= now for e in mine)
+        state.declined_offers = self.memory.value(episode.subject or "unknown", OFFERS_DECLINED, now) is True
+        state.friction = getattr(understanding.signals, "friction", "unknown")
+        from .moves.recommend import declared_need
+
+        for need in state.needs:
+            declared = declared_need(need) if need.act == "ask_recommendation" else {}
+            if not declared or not budget.take_step("read:catalog"):
+                continue
+            try:
+                items = self.ports.commerce_read.search_catalog(ctx, "")
+            except PortError:
+                continue
+            match = next((item for item in items if adheres_to_declared_need(
+                declared, {"unit": item.unit, "ref": item.ref})), None)
+            if match is None:
+                continue
+            key = f"item.{match.ref}"
+            if key not in state.facts and budget.take_step(f"read:{key}"):
+                try:
+                    state.facts[key] = self.ports.commerce_read.read_item(ctx, match.ref)
+                except PortError:
+                    state.facts[key] = Unknown(reason="source_failed")
+            if isinstance(state.facts.get(key), Known):
+                state.recommendations[need.need_id] = match.ref
+
+    def _remember(self, ctx: TrustedContext, state: TurnState, decision: DecisionRecord, by_need, event,
+                  episode: Episode, trace_id: str, unwritten: list) -> None:
+        """O que o cliente declarou vira memória declarada, com fonte; a mudança de ideia substitui (K28).
+
+        Em ``shadow`` nada se guarda.
+        """
+        if ctx.environment == "shadow":
+            return
+        subject = episode.subject or "unknown"
+        for need in state.needs:
+            if need.act not in DECLARATION_ACTS:
+                continue
+            current = self.memory.recall(subject, state.now, OFFERS_DECLINED)
+            item = MemoryItem(**self._envelope(ctx, "mem", episode.episode_id, trace_id, event.id),
+                              memory_id=self.ports.clock.new_id("memory"), subject_ref=subject,
+                              category=OFFERS_DECLINED, value=need.act == "decline_offers",
+                              evidence_state="declared", source=event.id, purpose="service",
+                              sensitivity="ordinary", supersedes=current[-1].memory_id if current else None)
+            unwritten.append(self.memory.declare(item))
+
+    # ── passo 6, compromissos (F9) ──────────────────────────────────────────
+    def _hours(self, now: str):
+        try:
+            return self.ports.clock.business_hours(now)
+        except PortError:
+            return Unknown(reason="source_failed")
+
+    def _promise(self, ctx: TrustedContext, state: TurnState, decision: DecisionRecord, by_need, event,
+                 episode: Episode, trace_id: str, unwritten: list, fallbacks: list[str]) -> list[tuple[str, Wait]]:
+        """Assume os compromissos dos movimentos escolhidos e devolve os passos do episódio (encaminhar).
+
+        Sem dono possível, a promessa não é feita (N04): a necessidade fica recusada e
+        a decisão refeita diz a limitação. A fila que recusa uma pergunta também
+        tira o dono; a que recusa uma transferência deixa o compromisso com a
+        automação, monitorado, com a contingência do perfil (K20). Em ``shadow``,
+        a equipe não é chamada e nada entra no livro.
+        """
+        clock, staff, moves = self.ports.clock, self.ports.staff, registry()
+        shadow = ctx.environment == "shadow"
+        steps: list[tuple[str, Wait]] = []
+        for candidate in (decision.candidates[i] for i in decision.chosen):
+            module = moves[candidate.move]
+            if not getattr(module, "COMMITS", False) or candidate.need_id in state.commitment_of:
+                continue
+            need = by_need[candidate.need_id]
+            plan = module.commitment(state, need)
+            now = clock.now()
+            deadline = staff_deadline(self.profile, self._hours(now), now, plan.window)
+            try:
+                commitment = make_commitment(
+                    record=self._envelope(ctx, "cmt", episode.episode_id, trace_id, decision.id),
+                    commitment_id=clock.new_id("commitment"), type=plan.type, obligation=plan.obligation,
+                    owner=staff_owner(self.profile, plan.operation), deadline=deadline, criterion=plan.criterion,
+                    problem_code=plan.problem_code, requested_resolution=plan.requested_resolution)
+            except CommitmentRefused as refused:
+                state.refused[need.need_id] = refused.code
+                fallbacks.append(f"commitment_refused:{refused.code}")
+                continue
+            ticket, routed = None, True
+            if shadow:
+                fallbacks.append(f"shadow:staff_not_called:{candidate.move}")
+            else:
+                respond_by = deadline.at if isinstance(deadline, DeadlineSet) else \
+                    _later(now, window_seconds(self.profile, plan.window))
+                try:
+                    if plan.operation == "ask":
+                        ticket = staff.ask(ctx, StaffQuestion(episode_id=episode.episode_id, question=plan.question,
+                                                              respond_by=respond_by))
+                        routed = ticket.state != "rejected"
+                except PortError as error:
+                    state.refused[need.need_id] = f"staff_failed:{error.code.value}"
+                    fallbacks.append(f"staff_failed:{error.code.value}")
+                    continue
+            accept_by = _later(now, window_seconds(self.profile, "accept"))
+            if not routed:
+                if not plan.handoff:
+                    # A fila recusou a pergunta: ninguém vai responder, e a promessa não é feita.
+                    state.refused[need.need_id] = "queue_rejected"
+                    fallbacks.append("commitment_refused:queue_rejected")
+                    continue
+                # K20: ninguém assumiu. A automação monitora, com a contingência do perfil; nada afirma aceite.
+                commitment = dataclasses.replace(commitment, owner="core", deadline=DeadlineSet(
+                    at=accept_by, rule_ref="staff_queue.accept_within_seconds"))
+            if not shadow:
+                try:
+                    staff.open_or_update(ctx, commitment)
+                except PortError as error:
+                    state.refused[need.need_id] = f"staff_failed:{error.code.value}"
+                    fallbacks.append(f"staff_failed:{error.code.value}")
+                    continue
+                self.commitments.open(commitment, move=candidate.move, need=need, binding=event.channel_binding,
+                                      recipient=episode.subject or "unknown", identity=state.identity,
+                                      ticket_id=ticket.ticket_id if ticket is not None else None)
+                if not routed:
+                    self.commitments.note("contingency", commitment.commitment_id, now,
+                                          self.profile.staff_queue.after_hours_contingency)
+            state.commitments[commitment.commitment_id] = commitment
+            state.commitment_of[need.need_id] = commitment.commitment_id
+            state.routed[commitment.commitment_id] = routed
+            unwritten.append(commitment)
+            if plan.handoff:
+                steps.append(("handoff_requested", Wait(condition="a person accepts the conversation", owner="queue",
+                                                        deadline=accept_by)))
+                if not routed:
+                    contingency = self.profile.staff_queue.after_hours_contingency
+                    steps.append(("handoff_not_accepted", Wait(condition=f"contingency: {contingency}", owner="core",
+                                                               deadline=accept_by)))
+                elif not shadow:
+                    try:
+                        self.ports.channel.request_handoff(ctx, HandoffRequest(
+                            binding=event.channel_binding, reason="customer_request", requested_at=now))
+                    except PortError as error:
+                        fallbacks.append(f"channel_handoff_failed:{error.code.value}")
+        return steps
+
     @staticmethod
     def _to_active(episode: Episode, *, offer_confirmed: bool) -> list[tuple[str, Wait | None]]:
         if episode.state == "waiting_input":
@@ -432,8 +618,9 @@ class Engine:
         now = self.ports.clock.now()
         record_id = self.ports.clock.new_id("eprec")
         current = episode
-        for kind, wait in steps:
-            current = transition(current, EpisodeEvent(kind=kind, at=now, cause_id=cause_id, wait=wait),
+        for kind, wait, *holder in steps:
+            current = transition(current, EpisodeEvent(kind=kind, at=now, cause_id=cause_id, wait=wait,
+                                                       holder_ref=holder[0] if holder else None),
                                  expected_version=current.version, record_id=record_id)
         return dataclasses.replace(current, version=episode.version + 1)
 
@@ -470,6 +657,7 @@ class Engine:
                 state.confirmation_problems[need.need_id] = confirmation_problem(
                     offer, self._confirmation(ctx, event, subject, epoch), state.now)
         self._read_facts(ctx, state, budget)
+        self._commercial_context(ctx, state, episode, understanding, budget)
         self._quote(ctx, state, budget)
         dialogue = answered(previous_dialogue) if answered_question else previous_dialogue
         answered_offer = offer is not None and answered_question == offer.question_id
@@ -486,6 +674,8 @@ class Engine:
         effects: dict[str, list] = {"grants": [], "commands": [], "receipts": [], "settled": []}
         episode = self._execute(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks,
                                 effects)
+        promised = self._promise(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks)
+        self._remember(ctx, state, decision, by_need, event, episode, trace_id, unwritten)
         if state.refused:
             self._quote(ctx, state, budget)
             snapshot = self._snapshot(ctx, episode, trace_id, decision.id, state, dialogue)
@@ -539,6 +729,7 @@ class Engine:
             else:
                 post.append(("receipt_open", Wait(condition="reconciliation returns a terminal receipt",
                                                   owner="core", deadline=receipt.reconciliation.deadline)))
+        post.extend(promised)
         executed = bool(effects["commands"])
         new_episode = self._next_episode(episode, event, asked is not None, post=post, terms_wait=terms_wait,
                                          invalidate=answered_offer and not executed)
@@ -571,7 +762,7 @@ class Engine:
                                    recipient=episode.subject or "unknown", binding=event.channel_binding,
                                    body_ref=f"reply:{reply.plan.id}")
         try:
-            exposure = self.ports.channel.send(ctx, prepared, f"send:{decision_id}")
+            exposure = self.exposures.record(self.ports.channel.send(ctx, prepared, f"send:{decision_id}"))
         except PortError as error:
             # Nada se sabe enviado; o trabalho de envio segue na caixa de saída, com a mesma chave.
             return TurnResult("answered", **{**result, "fallbacks": (*result["fallbacks"],
@@ -664,13 +855,164 @@ class Engine:
                                                 expected_version=episode.version), (), ())
         return settled
 
+    # ── retomadas de compromisso (F9) ───────────────────────────────────────
+    def _resume_state(self, entry, now: str) -> TurnState:
+        return TurnState(now=now, channel=entry.binding.channel, identity=entry.identity, profile=self.profile,
+                         needs=(entry.need,), subject=Subject(subject_ref=entry.recipient))
+
+    def _respond(self, ctx: TrustedContext, entry, episode: Episode, state: TurnState, *, cause_id: str,
+                 only: tuple[str, ...], records: tuple = (), steps=()) -> TurnResult:
+        """Decide, diz, grava e envia fora de um turno do cliente: a retomada de um compromisso.
+
+        A mesma cadeia do turno (snapshot, decisão, molde verificado, uma gravação, envio),
+        restrita aos movimentos ``only``. A mensagem vai ao vínculo de canal em que o
+        compromisso nasceu, mesmo depois de a conversa ter acabado (K21).
+        """
+        clock, store = self.ports.clock, self.ports.store
+        trace_id = clock.new_id("trace")
+        previous = store.latest_record(ctx, episode.episode_id, ContextSnapshot.SCHEMA)
+        dialogue = dict(previous.dialogue_state) if previous is not None else {}
+        snapshot = self._snapshot(ctx, episode, trace_id, cause_id, state, dialogue)
+        moves = registry()
+        proposals = [proposal for need in state.needs for name in only
+                     if (proposal := moves[name].propose(state, need)) is not None]
+        decision = decide(DecisionInput(decision_id=clock.new_id("dec"), record_id=clock.new_id("decrec"),
+                                        trace_id=trace_id, occurred_at=clock.now(), turn=self._turns,
+                                        snapshot=snapshot, profile=self.profile, proposals=tuple(proposals)))
+        by_need = {need.need_id: need for need in state.needs}
+        chosen = [decision.candidates[i] for i in decision.chosen]
+        reply = None
+        if chosen:
+            reply = compose(specs=[moves[c.move].reply(state, by_need[c.need_id]) for c in chosen],
+                            templates=templates(), formatters=self.formatters,
+                            evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
+                                              commitments=state.commitments),
+                            decision_id=decision.decision_id,
+                            record=self._envelope(ctx, "reply", episode.episode_id, trace_id, decision.id))
+        held = reply is None or reply.verification.result == "hold"
+        new_episode = self._walk(episode, cause_id, steps) if steps else dataclasses.replace(
+            episode, id=clock.new_id("eprec"), cause_id=cause_id, occurred_at=clock.now(), recorded_at=None,
+            version=episode.version + 1)
+        outbox = () if held else (WorkItem(work_id=f"send:{decision.decision_id}", kind="send",
+                                           payload={"decision_id": decision.decision_id}, due_at=clock.now()),)
+        committed = store.commit_transition(
+            ctx, Transition(episode=new_episode, expected_version=episode.version),
+            tuple(r for r in (snapshot, decision, *records, reply.plan if reply else None) if r is not None), outbox)
+        result = {"event": None, "episode": committed, "snapshot": snapshot, "decision": decision, "reply": reply,
+                  "decisions": (decision,)}
+        if held:
+            return TurnResult("held", **result)
+        prepared = PreparedMessage(decision_id=decision.decision_id, content_hash=sha256_hash({"text": reply.text}),
+                                   recipient=entry.recipient, binding=entry.binding, body_ref=f"reply:{reply.plan.id}")
+        try:
+            exposure = self.exposures.record(self.ports.channel.send(ctx, prepared, f"send:{decision.decision_id}"))
+        except PortError as error:
+            return TurnResult("answered", fallbacks=(f"send_failed:{error.code.value}",), **result)
+        return TurnResult("answered", exposure=exposure, **result)
+
+    def _advance(self, ctx: TrustedContext, entry, cause_id: str, **changes) -> Commitment:
+        clock = self.ports.clock
+        return self.commitments.advance(entry.commitment_id, record_id=clock.new_id("cmt"), at=clock.now(),
+                                        cause_id=cause_id, **changes)
+
+    def staff_answered(self, ctx: TrustedContext, commitment_id: str) -> TurnResult:
+        """A equipe respondeu: a resposta entra como fato com autoria e validade, e volta ao cliente (J3).
+
+        O compromisso se cumpre com a resposta como evidência. O fato da equipe é
+        lido como qualquer fato: vencido, não se diz.
+        """
+        entry = self.commitments.entries[commitment_id]
+        if not entry.is_open or entry.ticket_id is None:
+            raise CommitmentRefused("not_open", commitment_id)
+        fact = self.ports.staff.promote_answer(ctx, entry.ticket_id)
+        state = self._resume_state(entry, self.ports.clock.now())
+        for key in state.fact_keys_for(entry.need):
+            state.facts[key] = fact
+        episode = self.ports.store.load_episode(ctx, entry.commitment.episode_id)
+        fulfilled = self._advance(ctx, entry, entry.ticket_id, state="fulfilled", evidence=(entry.ticket_id,))
+        try:
+            self.ports.staff.record_fulfillment(ctx, commitment_id, entry.ticket_id)
+        except PortError:
+            pass  # a equipe guarda o que guarda; o livro do núcleo já registrou o cumprimento
+        return self._respond(ctx, entry, episode, state, cause_id=entry.ticket_id,
+                             only=("inform", "inform_limitation"), records=(fulfilled,))
+
+    def staff_accepted(self, ctx: TrustedContext, commitment_id: str) -> Commitment:
+        """Alguém aceitou, nominalmente. Na transferência, o episódio passa à posse dessa pessoa.
+
+        A fila que recusou não tem aceite a registrar: o erro da porta sobe, e nada
+        muda (K20).
+        """
+        entry = self.commitments.entries[commitment_id]
+        ticket = self.ports.staff.record_acceptance(ctx, entry.ticket_id)
+        accepted = self._advance(ctx, entry, ticket.ticket_id, state="accepted", owner=ticket.accepted_by)
+        store = self.ports.store
+        episode = store.load_episode(ctx, entry.commitment.episode_id)
+        steps = []
+        if entry.move == "handoff" and episode.state == "awaiting_handoff":
+            steps.append(("handoff_accepted", None, ticket.accepted_by))
+        new_episode = self._walk(episode, ticket.ticket_id, steps) if steps else dataclasses.replace(
+            episode, id=self.ports.clock.new_id("eprec"), cause_id=ticket.ticket_id,
+            occurred_at=self.ports.clock.now(), recorded_at=None, version=episode.version + 1)
+        store.commit_transition(ctx, Transition(episode=new_episode, expected_version=episode.version),
+                                (accepted,), ())
+        return accepted
+
+    def tick(self, ctx: TrustedContext) -> tuple[TurnResult, ...]:
+        """Prazos de compromisso vencidos: cada um vira evento, escala conforme o perfil e avisa o cliente UMA vez (K22).
+
+        Escalar (linha ``commitment.escalation``): o compromisso passa ao dono que a
+        linha diz, com prazo novo, e o episódio vai a pessoa (``handoff_requested``).
+        Sem a linha, não se inventa a quem escalar: o prazo vencido fica registrado
+        e o cliente é avisado. Prazo escalado que vence de novo quebra a promessa.
+        """
+        clock, store = self.ports.clock, self.ports.store
+        now = clock.now()
+        line = read_line(self.profile, ESCALATION_LINE)
+        results = []
+        for entry in self.commitments.due(now, ctx.tenant, ctx.environment):
+            cid = entry.commitment_id
+            self.commitments.note("deadline_passed", cid, now, entry.commitment.deadline.at)
+            episode = store.load_episode(ctx, entry.commitment.episode_id)
+            records, steps = [], []
+            if entry.escalated:
+                records.append(self._advance(ctx, entry, cid, state="broken"))
+            elif line.usable:
+                deadline = staff_deadline(self.profile, self._hours(now), now, "respond")
+                records.append(self._advance(ctx, entry, cid, owner=str(line.value), deadline=deadline))
+                entry.escalated = True
+                self.commitments.note("escalated", cid, now, str(line.value))
+                if episode.state not in ("awaiting_handoff", "human_owned", "resolved"):
+                    steps.append(("handoff_requested", Wait(
+                        condition="a person takes over the overdue commitment", owner="queue",
+                        deadline=deadline.at if isinstance(deadline, DeadlineSet) else
+                        _later(now, window_seconds(self.profile, "accept")))))
+            else:
+                self.commitments.note("escalation_absent", cid, now, line.code)
+            if entry.notified:
+                if records or steps:
+                    new_episode = self._walk(episode, cid, steps) if steps else dataclasses.replace(
+                        episode, id=clock.new_id("eprec"), cause_id=cid, occurred_at=now, recorded_at=None,
+                        version=episode.version + 1)
+                    store.commit_transition(ctx, Transition(episode=new_episode, expected_version=episode.version),
+                                            tuple(records), ())
+                continue
+            entry.notified = True
+            self.commitments.note("customer_notified", cid, now)
+            state = self._resume_state(entry, now)
+            state.commitments[cid] = entry.commitment
+            state.waiting[entry.need.need_id] = cid
+            results.append(self._respond(ctx, entry, episode, state, cause_id=cid, only=("wait",),
+                                         records=tuple(records), steps=steps))
+        return tuple(results)
+
     def _due(self, episode: Episode) -> tuple[Wait, ...]:
         now = self.ports.clock.now()
         return tuple(wait for wait in episode.waits if wait.deadline <= now)
 
     def observe_delivery(self, ctx: TrustedContext, exposure_id: str) -> ExposureEvent:
         """Consulta a entrega. Entregue não é lida; canal sem leitura nunca diz "lida" (K18)."""
-        return self.ports.channel.delivery_status(ctx, exposure_id)
+        return self.exposures.record(self.ports.channel.delivery_status(ctx, exposure_id))
 
 
 def fact_value(fact: Any) -> Any:

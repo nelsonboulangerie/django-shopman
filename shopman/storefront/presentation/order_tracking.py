@@ -1094,6 +1094,9 @@ def _promise_copy(
     # combinada não há forma de frase, e a data sozinha já serve às duas.
     when_in_sentence = when_phrase or when_display
     wait_display = when_in_sentence or _commitment_date_display(data.fulfillment_wait_until)
+    # Até quando a loja responde ("até 8h40"), vazio quando o servidor não
+    # publicou prazo: a frase segue sem esse trecho, nunca com buraco.
+    until = _acceptance_until(data.acceptance_deadline_at)
 
     if state == "preorder_scheduled":
         title = copy.title("TRACKING_PROMISE_PREORDER_TITLE", "Encomenda confirmada")
@@ -1290,29 +1293,46 @@ def _promise_copy(
             # O que existe é dinheiro reservado no cartão, cobrado quando a loja
             # aceitar. "Sua reserva está na fila de espera" soava como produto em
             # lista de espera (beta 06/11).
-            if wait_display:
-                if status == "new":
-                    message = copy.message(
-                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE",
-                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para {when}.",
+            if status == "new":
+                # Duas coisas, duas frases (#2749): até quando a loja confirma, e
+                # para quando é o pedido. Juntas ("...seu pedido para amanhã, a
+                # partir das 15h") liam como se a loja fosse confirmar amanhã às 15h.
+                # Sem prazo publicado, a frase só nomeia o pedido quando a frase do
+                # dia não vem logo depois: "...seu pedido. Seu pedido é para..."
+                # repetia o substantivo.
+                #
+                # O verbo é "confirmar", o mesmo da revisão do checkout e das
+                # frases do Pix: um ato da loja, um verbo só (dono, 19/11/2026).
+                if until:
+                    acceptance = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
+                    ).replace("{until}", until)
+                elif wait_display:
+                    acceptance = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar.",
                     )
                 else:
-                    message = copy.message(
-                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED",
-                        "Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
-                    )
-                message = message.replace("{when}", wait_display)
-            else:
-                if status == "new":
-                    message = copy.message(
+                    acceptance = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE",
-                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar seu pedido.",
                     )
-                else:
-                    message = copy.message(
-                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE",
-                        "Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
-                    )
+                message = _with_commitment(
+                    acceptance,
+                    copy.message("TRACKING_PROMISE_ORDER_IS_FOR", "Seu pedido é para {when}."),
+                    wait_display,
+                )
+            elif wait_display:
+                message = copy.message(
+                    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED",
+                    "Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
+                ).replace("{when}", wait_display)
+            else:
+                message = copy.message(
+                    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE",
+                    "Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
+                )
             return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
         message = (
             copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_NEW",
@@ -1331,9 +1351,9 @@ def _promise_copy(
         title = copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido")
         if _is_fulfillment_wait(data):
             message = (
-                _paid_fulfillment_wait_message(data, copy=copy, wait_display=wait_display)
+                _paid_fulfillment_wait_message(data, copy=copy, wait_display=wait_display, until=until)
                 if payment_confirmed
-                else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True)
+                else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until)
             )
             return title, message
         if payment_confirmed:
@@ -1364,7 +1384,7 @@ def _promise_copy(
         if _is_fulfillment_wait(data):
             return (
                 copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
-                _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True),
+                _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until),
             )
         return (
             copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
@@ -1377,7 +1397,7 @@ def _promise_copy(
             # O título já diz "Pagamento recebido"; a frase diz quem confirma e,
             # enquanto a loja não aceitou, que o valor volta se ela não puder.
             message = _waitlist_message(
-                data, copy=copy, wait_display=wait_display, awaiting_store=status == "new", paid=True,
+                data, copy=copy, wait_display=wait_display, awaiting_store=status == "new", paid=True, until=until,
             )
             return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
         message = (
@@ -1492,6 +1512,54 @@ def _pair(copy: CopyCatalog, key: str, fallback_title: str, fallback_message: st
     return copy.title(key, fallback_title), copy.message(key, fallback_message)
 
 
+#: Dia da semana em minúscula, na ordem de ``date.weekday()``.
+_ACCEPTANCE_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def _acceptance_until(deadline_iso: str | None) -> str:
+    """Até quando a loja responde, na forma que cabe na frase: "até 8h40".
+
+    Prazo de hoje diz só a hora. Prazo que cai em outro dia diz o dia, como a
+    revisão do checkout diz antes de enviar: "até amanhã, sexta, às 10h";
+    depois de amanhã, com a data ("até segunda, 23/11, às 10h"). Sem prazo
+    publicado, ou com ele já vencido, vazio: a frase não promete hora nenhuma.
+    """
+    if not deadline_iso:
+        return ""
+    try:
+        from datetime import timedelta
+
+        deadline = parse_datetime(deadline_iso)
+        if deadline is None:
+            return ""
+        if timezone.is_naive(deadline):
+            deadline = timezone.make_aware(deadline)
+        if deadline <= timezone.now():
+            return ""
+        local = timezone.localtime(deadline)
+        clock = format_clock(local)
+        if not clock:
+            return ""
+        today = timezone.localdate()
+        if local.date() == today:
+            return f"até {clock}"
+        weekday = _ACCEPTANCE_WEEKDAYS[local.weekday()]
+        article = "à" if local.hour == 1 else "às"
+        if local.date() == today + timedelta(days=1):
+            return f"até amanhã, {weekday}, {article} {clock}"
+        return f"até {weekday}, {local:%d/%m}, {article} {clock}"
+    except Exception:
+        logger.debug("order_tracking._acceptance_until degraded", exc_info=True)
+        return ""
+
+
+def _with_commitment(acceptance: str, commitment_template: str, when: str | None) -> str:
+    """A frase do aceite e, em frase própria, para quando é o pedido."""
+    if not when:
+        return acceptance
+    return f"{acceptance} {commitment_template.replace('{when}', when)}"
+
+
 def _is_fulfillment_wait(data: TrackingPromiseData) -> bool:
     return data.fulfillment_wait_kind in {"planned_batch", "preorder"}
 
@@ -1519,30 +1587,59 @@ def _waitlist_message(
     wait_display: str | None,
     awaiting_store: bool = False,
     paid: bool = False,
+    until: str = "",
 ) -> str:
     # Encomenda que a loja ainda não aceitou não está "reservada": a Conta diz
     # "Aguardando a loja" e o acompanhamento diz a mesma coisa (laudo 09/11).
     # Paga, a frase promete a devolução, como a frase irmã do pedido do dia
     # (plano EXCELENCIA-STOREFRONT, P1-07: quem pagou não lia que o valor volta).
+    #
+    # Até quando a loja confirma e para quando é a encomenda são duas frases
+    # (#2749): "A loja confirma sua encomenda para amanhã, a partir das 15h"
+    # lia como se a confirmação fosse amanhã às 15h.
     if awaiting_store and paid and data.fulfillment_wait_kind == "preorder":
-        if wait_display:
-            return copy.message(
-                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID",
-                "A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
-            ).replace("{when}", wait_display)
-        return copy.message(
-            "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE",
-            "A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+        # Sem prazo publicado, a frase do aceite só nomeia a encomenda quando a
+        # frase do dia não vem logo depois (o substantivo não se repete).
+        if until:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_UNTIL",
+                "A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ).replace("{until}", until)
+        elif wait_display:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_UNTIL",
+                "A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        else:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE",
+                "A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        return _with_commitment(
+            acceptance,
+            copy.message("TRACKING_PROMISE_PREORDER_IS_FOR", "Sua encomenda é para {when}."),
+            wait_display,
         )
     if awaiting_store and data.fulfillment_wait_kind == "preorder":
-        if wait_display:
-            return copy.message(
-                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE",
-                "A loja confirma sua encomenda para {when} e avisa por aqui.",
-            ).replace("{when}", wait_display)
-        return copy.message(
-            "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE",
-            "A loja confirma sua encomenda e avisa por aqui.",
+        if until:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_UNTIL",
+                "A loja confirma {until} e avisa por aqui.",
+            ).replace("{until}", until)
+        elif wait_display:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_UNTIL",
+                "A loja confirma e avisa por aqui.",
+            )
+        else:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE",
+                "A loja confirma sua encomenda e avisa por aqui.",
+            )
+        return _with_commitment(
+            acceptance,
+            copy.message("TRACKING_PROMISE_PREORDER_IS_FOR", "Sua encomenda é para {when}."),
+            wait_display,
         )
     if wait_display:
         if data.fulfillment_wait_kind == "preorder":
@@ -1612,17 +1709,29 @@ def _paid_fulfillment_wait_message(
     *,
     copy: CopyCatalog,
     wait_display: str | None,
+    until: str = "",
 ) -> str:
     """Pago e a loja ainda não aceitou (``store_checking``/``new``)."""
     if data.fulfillment_wait_kind == "preorder":
-        if wait_display:
-            return copy.message(
-                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID",
-                "Pagamento recebido. A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
-            ).replace("{when}", wait_display)
-        return copy.message(
-            "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE",
-            "Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+        if until:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_UNTIL",
+                "Pagamento recebido. A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ).replace("{until}", until)
+        elif wait_display:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_UNTIL",
+                "Pagamento recebido. A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        else:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE",
+                "Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        return _with_commitment(
+            acceptance,
+            copy.message("TRACKING_PROMISE_PREORDER_IS_FOR", "Sua encomenda é para {when}."),
+            wait_display,
         )
 
     if wait_display:

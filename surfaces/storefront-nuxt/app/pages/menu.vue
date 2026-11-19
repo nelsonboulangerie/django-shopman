@@ -58,6 +58,13 @@ const {
   lazy: import.meta.client || !canonicalOnServer
 })
 await siteSeoReady
+// Loja viva (WP-L04): disponibilidade e preço dos cards mudam sozinhos. A estrutura
+// (seções, ordem) segue no ritmo próprio do snapshot; aqui só a leitura canônica.
+useLiveRevalidate(
+  data,
+  () => $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include' }),
+  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS }
+)
 
 const catalog = computed(() => data.value?.catalog || structureCatalog.value || null)
 const pending = computed(() => !catalog.value && (canonicalPending.value || continuum?.pending.value))
@@ -100,6 +107,10 @@ const allItems = computed(() => catalog.value?.items || [])
 const uniqueItems = computed(() => uniqueItemsBySku(allItems.value))
 const favoriteRef = computed(() => catalog.value?.favorite_category_ref || '')
 const hasAppliedFilters = computed(() => appliedFilterKeys.value.length > 0)
+// Enquanto a leitura canônica não chega, o topo do cardápio (a chave de disponíveis
+// e as seções vivas) fica guardado, para o conteúdo não saltar quando ela chegar.
+// Só na visão inteira: com seção ou filtro escolhido, o topo é outro.
+const reservesTop = computed(() => confirmingCatalog.value && activeSection.value === 'all' && !hasAppliedFilters.value)
 const sectionsBySku = computed(() => buildSectionsBySku(sections.value))
 // Cartões de escolha (mesmo `choice_group`): o grupo inteiro do cardápio, para o
 // cartão abrir a mesma escolha em qualquer seção onde aparece.
@@ -579,16 +590,7 @@ useHead({
 
     <div class="shop-section">
       <div class="shop-container shop-stack-block">
-        <div v-if="pending" class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
-          <div v-for="n in 6" :key="n" class="flex gap-3 border-b py-3">
-            <div class="min-w-0 flex-1 space-y-2 self-center">
-              <UiSkeleton class="h-4 w-3/4" />
-              <UiSkeleton class="h-3 w-full" />
-              <UiSkeleton class="h-4 w-1/4" />
-            </div>
-            <UiSkeleton class="size-28 shrink-0 rounded-lg" />
-          </div>
-        </div>
+        <MenuSkeletonRows v-if="pending" />
 
         <UiAlert v-else-if="error" variant="destructive">
           <UiAlertTitle>Não conseguimos abrir o cardápio agora</UiAlertTitle>
@@ -633,6 +635,21 @@ useHead({
                 @update:model-value="setAvailableOnly(Boolean($event))"
               />
             </div>
+            <!-- A chave depende da disponibilidade, que só chega com a leitura canônica.
+                 Enquanto ela não chega, o lugar da chave fica guardado com a MESMA
+                 marcação (texto invisível), para a altura bater por construção. -->
+            <div
+              v-else-if="reservesTop"
+              class="relative rounded-lg border bg-card p-3"
+              aria-hidden="true"
+              data-menu-available-only-placeholder
+            >
+              <div class="invisible min-w-0">
+                <p class="shop-body font-semibold">Mostrar só disponíveis</p>
+                <p class="shop-meta">{{ availableOnlyHint(false, 0) }}</p>
+              </div>
+              <UiSkeleton class="absolute inset-3" />
+            </div>
 
             <!-- Filtro de preferências (WP-5): off por padrão, transparente e
                  reversível; só aparece quando o cliente tem preferências ativas. -->
@@ -653,6 +670,24 @@ useHead({
             <MenuFavoritesShelf :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" :available-only="availableOnly" />
 
             <div v-if="activeSections.length" class="shop-stack-section">
+              <!-- O cardápio não salta (P2-01). "Destaques" e as outras seções vivas
+                   dependem do estoque e só chegam com a leitura canônica; antes delas a
+                   tela já mostra as seções fixas do snapshot, e a chegada empurrava tudo
+                   para baixo. O topo fica guardado por um esqueleto da altura da tela:
+                   as seções fixas nascem abaixo da dobra, e o que troca na frente da
+                   cliente é esqueleto por conteúdo, no mesmo lugar. -->
+              <div
+                v-if="reservesTop"
+                class="min-h-svh space-y-1"
+                aria-hidden="true"
+                data-menu-live-sections-placeholder
+              >
+                <div class="shop-stack-micro">
+                  <UiSkeleton class="h-7 w-40" />
+                  <UiSkeleton class="h-5 w-64 max-w-full" />
+                </div>
+                <MenuSkeletonRows />
+              </div>
               <div
                 v-for="section in activeSections"
                 :id="sectionDomId(section.ref)"

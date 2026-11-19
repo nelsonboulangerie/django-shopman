@@ -60,6 +60,26 @@ class EffectPlan:
     basis: Literal["confirmation", "line"]
 
 
+@dataclass(frozen=True, slots=True)
+class CommitmentPlan:
+    """O que um movimento de compromisso pede: promessa ou caso, a operação da equipe e a janela do prazo.
+
+    ``operation``: ``ask`` (perguntar à equipe, devolve um tíquete) ou
+    ``open_or_update`` (abrir o caso na equipe). ``handoff``: a posse do episódio
+    sai da automação (``handoff_requested``).
+    """
+
+    type: Literal["promise", "case"]
+    obligation: str
+    criterion: str
+    operation: Literal["ask", "open_or_update"]
+    window: Literal["respond", "accept"]
+    question: str | None = None
+    problem_code: str | None = None
+    requested_resolution: str | None = None
+    handoff: bool = False
+
+
 @dataclass
 class TurnState:
     now: str
@@ -83,6 +103,18 @@ class TurnState:
     receipts: dict[str, ActionReceipt] = field(default_factory=dict)
     refused: dict[str, str] = field(default_factory=dict)
     commitments: dict[str, Commitment] = field(default_factory=dict)
+    # Necessidade → o compromisso que a casa assumiu por ela neste turno (F9).
+    commitment_of: dict[str, str] = field(default_factory=dict)
+    # Necessidade → o compromisso aberto sobre o qual se dá notícia (espera, prazo vencido).
+    waiting: dict[str, str] = field(default_factory=dict)
+    # Compromisso → a fila recebeu (``True``) ou recusou (``False``) o pedido.
+    routed: dict[str, bool] = field(default_factory=dict)
+    # Contexto comercial (F10): o item que atende a necessidade declarada, por necessidade, e o que trava ofertas.
+    recommendations: dict[str, str] = field(default_factory=dict)
+    declined_offers: bool = False
+    open_problem: bool = False
+    overdue_commitment: bool = False
+    friction: str = "unknown"
 
     def fact_keys_for(self, need: NeedSpec) -> tuple[str, ...]:
         if need.act == "ask_hours":
