@@ -582,7 +582,7 @@ def decide(
 
     adapter = get_adapter("stock")
     scope = adapter.get_channel_scope(channel_ref)
-    info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope, target_date))
+    info = adapter.get_availability(sku, target_date=target_date, **availability_kwargs(scope, target_date))
     from shopman.stockman.services.availability import decision_from_availability
 
     return _promise_payload(decision_from_availability(sku, qty_d, info, target_date=target_date))
@@ -638,7 +638,7 @@ def decide_many(
     ]
     if to_read:
         scope = adapter.get_channel_scope(channel_ref)
-        kwargs = _availability_kwargs(scope, target_date)
+        kwargs = availability_kwargs(scope, target_date)
         bulk_read = getattr(adapter, "get_availability_for_skus", None)
         if bulk_read is not None:
             infos = bulk_read(to_read, target_date=target_date, **kwargs)
@@ -662,7 +662,7 @@ def decide_many(
     return decisions
 
 
-def _availability_kwargs(scope: dict, target_date: date | None) -> dict:
+def availability_kwargs(scope: dict, target_date: date | None) -> dict:
     """O recorte do canal nos argumentos da leitura de estoque do adapter.
 
     A margem de validade é a da DATA lida (``expiry_margin_for_target``): a

@@ -190,11 +190,11 @@ class ShopmanCommerceRead:
             from shopman.stockman.services.availability import decision_from_availability
 
             from shopman.shop.adapters import get_adapter
-            from shopman.shop.services.availability import _availability_kwargs
+            from shopman.shop.services.availability import availability_kwargs
 
             adapter = get_adapter("stock")
             scope = adapter.get_channel_scope(self.channel_ref)
-            info = adapter.get_availability(ref, target_date=target, **_availability_kwargs(scope, target))
+            info = adapter.get_availability(ref, target_date=target, **availability_kwargs(scope, target))
             return decision_from_availability(ref, Decimal(quantity.value), info, target_date=target)
         except Exception:  # noqa: BLE001
             logger.warning("conversational.promise: leitura do estoque falhou", exc_info=True)
