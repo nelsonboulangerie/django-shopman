@@ -1,7 +1,7 @@
 """A comanda virtual da edição de encomenda — a tela de venda do PDV em modo edição.
 
 Decisão do dono (28/09/2026): o editor de itens É a própria tela de venda
-(carrinho, grade, F7 recebimento, F8 data, cliente), não um editor novo. Para a
+(carrinho, grade, F7 data, F8 recebimento, cliente), não um editor novo. Para a
 tela funcionar como funciona — autosave, prévia de taxa, chips de recebimento e
 data —, ela precisa de uma sessão aberta; esta é ela.
 
@@ -122,7 +122,7 @@ def cart_payload(order) -> dict:
     Os itens são os VIGENTES (``order_composition``), com o ``line_id`` do pedido
     — é por ele que a edição reconhece "o que já estava" e mantém o preço
     vendido. A taxa de entrega não entra como item: na tela ela sai do
-    recebimento (F7), como na venda.
+    recebimento (F8), como na venda.
     """
     from shopman.shop.services import order_composition
     from shopman.shop.services.order_helpers import json_quantity
@@ -402,7 +402,7 @@ def _fit_schedule(payload: dict) -> str:
     if payload.get("delivery_time_slot") and payload.get("delivery_date"):
         if not schedule_refusal({**payload, "delivery_time_slot": ""}):
             payload["delivery_time_slot"] = ""
-            return f"{reason} A comanda veio sem horário: confirme a janela com o cliente (F8)."
+            return f"{reason} A comanda veio sem horário: confirme a janela com o cliente (F7)."
     today = timezone.localdate()
     for offset in range(preorder_dates.max_preorder_days() + 1):
         day = today + timedelta(days=offset)
@@ -412,7 +412,7 @@ def _fit_schedule(payload: dict) -> str:
         payload["delivery_time_slot"] = ""
         return (
             f"{reason} A comanda veio para {day.strftime('%d/%m')}, sem horário: "
-            "confirme a data com o cliente (F8)."
+            "confirme a data com o cliente (F7)."
         )
     raise PosIntentError(
         code="no_preorder_date",

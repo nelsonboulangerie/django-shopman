@@ -152,11 +152,21 @@ export default defineAppConfig({
     // tamanho do texto. A régua é a tela e não o aviso: `@container` no aviso fixa a
     // largura dele, e o aviso dentro de um popover (o "Por que espera" do quadro do
     // Gestor) encolhia a zero e sumia.
+    //
+    // O fechar tem 44 px de área de toque (#2746). O oficial desenha o X com 20 px e
+    // sem preenchimento (`p-0`): medido no navegador, o alvo efetivo era de 18 px, e
+    // no tablet do balcão o toque errava. O ícone continua pequeno; quem cresce é a
+    // área que recebe o toque (`after:-inset-3`: 12 px para cada lado, 20 + 24 = 44).
+    // `ms-1.5` afasta o X da ação vizinha, para a área maior não roubar o toque dela.
+    // Quem desenha o fechar com outro tamanho (`size-8`, 32 px, na faixa do cabeçalho
+    // e no `useAlertDismissals`) ajusta a sobra (`after:-inset-1.5`). A trava é
+    // `tests/alertCloseTarget.test.ts`.
     alert: {
       slots: {
         description: "opacity-100",
         root: "max-sm:flex-wrap max-sm:items-start",
         actions: "max-sm:basis-full max-sm:flex-col max-sm:items-stretch",
+        close: "relative ms-1.5 after:absolute after:-inset-3",
       },
       compoundVariants: [
         {

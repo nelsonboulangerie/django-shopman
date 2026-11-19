@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  ORDER_SETUP_ORDER,
   firstPendingStep,
   nextOrderSetupStep,
   orderSetupStepEnabled,
@@ -13,21 +14,24 @@ const keys = (issue: Parameters<typeof orderSetupSteps>[0], delivery: boolean) =
   orderSetupSteps(issue, delivery).map((s) => `${s.key}:${s.ready ? "pronta" : "pendente"}`);
 
 describe("assistente da encomenda: etapas", () => {
-  it("segue a ordem da regra: cliente, recebimento, endereço (só na entrega) e data", () => {
-    expect(keys("customer", false)).toEqual(["customer:pendente", "fulfillment:pendente", "schedule:pendente"]);
-    expect(keys("fulfillment", false)).toEqual(["customer:pronta", "fulfillment:pendente", "schedule:pendente"]);
-    expect(keys("schedule", false)).toEqual(["customer:pronta", "fulfillment:pronta", "schedule:pendente"]);
-    expect(keys("", false)).toEqual(["customer:pronta", "fulfillment:pronta", "schedule:pronta"]);
-    expect(keys("address", true)).toEqual(["customer:pronta", "fulfillment:pronta", "address:pendente", "schedule:pendente"]);
-    expect(keys("schedule", true)).toEqual(["customer:pronta", "fulfillment:pronta", "address:pronta", "schedule:pendente"]);
+  // A ordem do dono (19/11/2026, #2754): "pra quando" vem em SEGUNDO, logo depois
+  // do cliente, porque diz respeito à disponibilidade.
+  it("segue a ordem da regra: cliente, data, recebimento e endereço (só na entrega)", () => {
+    expect(ORDER_SETUP_ORDER).toEqual(["customer", "schedule", "fulfillment", "address"]);
+    expect(keys("customer", false)).toEqual(["customer:pendente", "schedule:pendente", "fulfillment:pendente"]);
+    expect(keys("schedule", false)).toEqual(["customer:pronta", "schedule:pendente", "fulfillment:pendente"]);
+    expect(keys("fulfillment", false)).toEqual(["customer:pronta", "schedule:pronta", "fulfillment:pendente"]);
+    expect(keys("", false)).toEqual(["customer:pronta", "schedule:pronta", "fulfillment:pronta"]);
+    expect(keys("address", true)).toEqual(["customer:pronta", "schedule:pronta", "fulfillment:pronta", "address:pendente"]);
+    expect(keys("", true)).toEqual(["customer:pronta", "schedule:pronta", "fulfillment:pronta", "address:pronta"]);
   });
 
   it("o endereço pendente aparece mesmo sem a dica de entrega: quem manda é o issue", () => {
-    expect(keys("address", false)).toEqual(["customer:pronta", "fulfillment:pronta", "address:pendente", "schedule:pendente"]);
+    expect(keys("address", false)).toEqual(["customer:pronta", "schedule:pronta", "fulfillment:pronta", "address:pendente"]);
   });
 
   it("uma etapa só abre com todas as anteriores prontas", () => {
-    const steps = orderSetupSteps("fulfillment", true);
+    const steps = orderSetupSteps("schedule", true);
     expect(steps.map((_, i) => orderSetupStepEnabled(steps, i))).toEqual([true, true, false, false]);
     const done = orderSetupSteps("", true);
     expect(done.map((_, i) => orderSetupStepEnabled(done, i))).toEqual([true, true, true, true]);
@@ -36,27 +40,49 @@ describe("assistente da encomenda: etapas", () => {
   it("a vez é a primeira pendente; com tudo pronto, a última", () => {
     expect(firstPendingStep(orderSetupSteps("customer", false))).toBe("customer");
     expect(firstPendingStep(orderSetupSteps("address", true))).toBe("address");
-    expect(firstPendingStep(orderSetupSteps("", false))).toBe("schedule");
+    expect(firstPendingStep(orderSetupSteps("", false))).toBe("fulfillment");
+    expect(firstPendingStep(orderSetupSteps("", true))).toBe("address");
   });
 });
 
 describe("assistente da encomenda: para onde ir quando a regra muda", () => {
   it("a etapa aberta ficou pronta: segue para a próxima pendente", () => {
-    expect(nextOrderSetupStep({ steps: orderSetupSteps("fulfillment", false), current: "customer", wasReady: false })).toBe("fulfillment");
-    // Escolheu entrega sem endereço: o assistente vai ao endereço, não à data.
+    // Identificou o cliente: a pergunta seguinte é "para quando".
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("schedule", false), current: "customer", wasReady: false })).toBe("schedule");
+    // Escolheu entrega sem endereço: o assistente vai ao endereço.
     expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), current: "fulfillment", wasReady: false })).toBe("address");
+    // Escolheu retirada: é a última etapa, e o assistente fica nela para montar.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("", false), current: "fulfillment", wasReady: false })).toBe("fulfillment");
+  });
+
+  it("a data NÃO anda sozinha: escolhido o dia, a etapa ainda pergunta o horário", () => {
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("fulfillment", false), current: "schedule", wasReady: false })).toBe("schedule");
   });
 
   it("uma anterior voltou a pendente (o cliente saiu): volta a ela", () => {
-    expect(nextOrderSetupStep({ steps: orderSetupSteps("customer", false), current: "schedule", wasReady: true })).toBe("customer");
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("customer", false), current: "fulfillment", wasReady: true })).toBe("customer");
+    // O dia apagado devolve a data a quem já estava no recebimento.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("schedule", false), current: "fulfillment", wasReady: true })).toBe("schedule");
   });
 
-  it("retirada virou entrega sem endereço: quem revia a data volta ao endereço", () => {
-    expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), current: "schedule", wasReady: true })).toBe("address");
+  it("retirada já respondida virou entrega: a etapa do endereço nasce e o assistente vai a ela", () => {
+    const born = { current: "fulfillment" as const, wasReady: true, addressIsNew: true };
+    // Sem endereço cadastrado: o endereço nasce pendente.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), ...born })).toBe("address");
+    // Com o padrão do cliente já marcado: nasce pronto, e é lá que se confere.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("", true), ...born })).toBe("address");
+    // Quem revia outra etapa não é arrancado dela.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), current: "schedule", wasReady: true, addressIsNew: true })).toBe("schedule");
+    // Entrega que já era entrega: o endereço não é novo, e rever o recebimento não empurra.
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("", true), current: "fulfillment", wasReady: true })).toBe("fulfillment");
+  });
+
+  it("o endereço saiu da entrega: quem estava nele continua nele, agora pendente", () => {
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("address", true), current: "address", wasReady: true })).toBe("address");
   });
 
   it("entrega virou retirada: a etapa do endereço some e o assistente não fica nela", () => {
-    expect(nextOrderSetupStep({ steps: orderSetupSteps("", false), current: "address", wasReady: true })).toBe("schedule");
+    expect(nextOrderSetupStep({ steps: orderSetupSteps("", false), current: "address", wasReady: true })).toBe("fulfillment");
   });
 
   it("revendo uma etapa feita que continua feita, fica onde o operador está", () => {

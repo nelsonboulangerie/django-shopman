@@ -56,7 +56,7 @@ def pending_alert_count(sku: str) -> int:
 
 
 def pending_bake_alert_counts(skus: Iterable[str]) -> dict[str, int]:
-    """Pessoas que esperam o aviso "saiu do forno" de cada SKU.
+    """Pessoas que esperam o aviso de fornada pronta (``production_ready``) de cada SKU.
 
     É a fila que a confirmação de qualidade de um lote libera (``review_bake_ready``
     só olha ``production_ready``): a tela de Qualidade mostra o número ANTES do

@@ -265,7 +265,7 @@ def test_projection_data_is_json_safe(rule):
 
 
 def test_review_card_carries_the_lot_fact_and_the_product_photo(rule):
-    """V6-MKT (v4 pinos 2 e 3): "24 un saíram às 10:01" e a foto do produto na miniatura."""
+    """V6-MKT (v4 pinos 2 e 3): "24 un ficaram prontas às 10h01" e a foto do produto na miniatura."""
     from shopman.offerman.models import Product
 
     Product.objects.create(sku="CRO-001", name="Croissant", base_price_q=1200, image_url="https://cdn.example/cro.jpg")

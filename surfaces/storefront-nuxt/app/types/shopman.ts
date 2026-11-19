@@ -393,6 +393,13 @@ export interface CartProjection {
   has_ready_for_confirmation_items: boolean
   unavailable_banner: string
   awaiting_confirmation_notice: string
+  // Reserva com prazo à vista (WP-L11): até quando a sacola guarda os itens. É o
+  // menor prazo das reservas vivas da sessão; null quando nada tem prazo correndo
+  // (sacola vazia, só item de fornada futura). `reserved_until_display` já vem no
+  // formato da casa ("19h18"). O prazo é contado pelo relógio do servidor, que vem
+  // no envelope da leitura da sacola (`CartResponse.server_now_iso`).
+  reserved_until_iso: string | null
+  reserved_until_display: string | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
@@ -798,6 +805,8 @@ export interface ProductResponse {
 
 export interface CartResponse {
   cart: CartProjection
+  // O relógio do servidor na hora da resposta (só na leitura da sacola).
+  server_now_iso?: string
 }
 
 export interface ReorderConflictItemProjection {

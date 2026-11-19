@@ -174,21 +174,12 @@ describe("o sistema não sai: ele envia, publica ou dispara", () => {
   // dono abrindo a tela. Instância consertada sem trava volta.
   const LEAVES = /\b(sai|saiu|saem|sair|sairá|sairão|saíram|saía)\b/i;
 
-  /** O que PODE dizer "sair", com o motivo. Lista que só encolhe.
-   *
-   *  A regra é sobre o SISTEMA agindo. A padaria continua tendo forno, e pão continua
-   *  saindo dele: quando a frase é a voz do padeiro, e não a do sistema, "sair" é a
-   *  palavra certa e trocá-la produziria um português que ninguém fala. */
-  const ALLOWED = [
-    // Exemplo de mensagem no formulário de modelo — é o texto que o PADEIRO escreve.
-    "acabou de sair do forno",
-    // Exemplo de NOME de modelo, no mesmo formulário e pela mesma razão: quem nomeia
-    // é o padeiro, e o que sai do forno é o pão.
-    "Saiu do forno",
-    // O fato do lote na fila (v4, V6-MKT): "24 un saíram às 10:01". Quem sai é o pão,
-    // do forno; o anúncio continua se publicando ou se enviando.
-    "un saíram",
-  ];
+  /** O que PODE dizer "sair", com o motivo. Lista que só encolhe, e está vazia desde
+   *  19/11/2026: as três liberações eram a voz do forno (os dois exemplos do formulário
+   *  de modelo e o fato do lote no cartão), e a casa diz "ficar pronto", nunca "sair do
+   *  forno" (dono, 16/11/2026). A trava dessa regra para os apps de operador mora em
+   *  `operator-kit/tests/guardrails.vocabulary.test.ts`. */
+  const ALLOWED: string[] = [];
 
   it("nenhum texto de tela diz que alguma coisa 'sai'", () => {
     const appRoot = new URL("../app", import.meta.url).pathname;

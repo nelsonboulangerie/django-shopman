@@ -10,7 +10,9 @@ import { resolveAffordance } from "~/presentation/actions";
 import { openShiftGate, requiresOpenShiftForSale } from "~/presentation/cash";
 import { stationReadinessAlert } from "~/presentation/stationReadiness";
 import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
+import { draftFromDeliveryState, draftSummaryLine } from "~/presentation/address";
 import { wantsNewOrder } from "~/presentation/orderSetup";
+import { chosenSavedAddressValue } from "~/presentation/savedAddress";
 import { redoTabLabel } from "~/presentation/preorderActions";
 import type { PreorderRedoResponse } from "~/types/preorders";
 import type { PosSettingsResponse } from "~/types/settings";
@@ -225,6 +227,10 @@ const {
   openTab,
   openTabFromDialog,
   applySavedAddress,
+  clearDeliveryAddress,
+  restoreDeliveryAddress,
+  canRestoreDeliveryAddress,
+  chooseFulfillment,
   lookupCustomer,
   resolveCustomer,
   customerDecision,
@@ -609,7 +615,7 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 // checkout, "/" focuses product search when not editing, "?" opens the help).
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
 const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
-const orderEntryRef = ref<{ focusCurrent: () => void } | null>(null);
+const orderEntryRef = ref<{ focusCurrent: () => void; scheduleConfirmed: () => void } | null>(null);
 function focusOrderEntry() {
   if (orderSetupPending.value) void nextTick(() => orderEntryRef.value?.focusCurrent());
 }
@@ -617,21 +623,29 @@ const tabHeaderRef = ref<{ openCustomer: (seed?: string) => void; askRelease: ()
 
 // O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
 // comanda), não só no checkout. O estado mora aqui porque as duas superfícies
-// abrem a MESMA caixa — o checkout tem o seu próprio, para o F7 continuar
+// abrem a MESMA caixa — o checkout tem o seu próprio, para o F8 continuar
 // funcionando lá dentro sem passar por cima desta.
 const fulfillmentSheetOpen = ref(false);
-// QUANDO — terceira caixa da barra, irmã de Cliente e Recebimento. Vive na tela
+// QUANDO — segunda caixa da barra, irmã de Cliente e Recebimento. Vive na tela
 // de venda porque agendar acontece na ABERTURA do atendimento (o operador está no
 // telefone), não no fim. O checkout abre a MESMA caixa.
 const scheduleSheetOpen = ref(false);
+// O "Quando" tem o seu próprio Confirmar: fechado, o assistente não pede outro
+// Continuar na etapa da data (`scheduleConfirmed`). Ele pode ter sido aberto de
+// dentro do Recebimento, e por isso a lembrança dura até os dois fecharem.
+let scheduleSheetWasUsed = false;
 watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
-  if (!fulfillment && !schedule) focusOrderEntry();
+  if (schedule) scheduleSheetWasUsed = true;
+  if (fulfillment || schedule) return;
+  if (scheduleSheetWasUsed) orderEntryRef.value?.scheduleConfirmed();
+  scheduleSheetWasUsed = false;
+  focusOrderEntry();
 });
 
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
-// da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
+// da tela de pagamento (mesmo componente, outro estado) — assim F8 e o chip
 // nunca abrem duas caixas diferentes.
-// NO BALCÃO os dois chips existem (v4: "Consumir aqui F7", "Agora F8") e são a
+// NO BALCÃO os dois chips existem ("Agora F7", "Consumir aqui F8") e são a
 // porta para a encomenda: entregar ou agendar É encomenda, então o gesto troca o
 // modo e abre a mesma pergunta já no modo certo. Se a troca for recusada (edição
 // de encomenda), nada abre.
@@ -737,10 +751,17 @@ function leaveCounterThen(next: () => void) {
   requestSalesMode("order");
   if (cart.salesMode === "order") next();
 }
+// NA ENCOMENDA AINDA POR COMBINAR, o chip respeita o funil (cliente, para quando,
+// recebimento): quem pede o Recebimento sem cliente cai no cliente, e sem data
+// cai no "Quando", que vem antes (decisão do dono, 19/11/2026, #2754).
 function openFulfillmentHere() {
   if (cart.salesMode === "counter") { leaveCounterThen(openFulfillmentHere); return; }
   if (orderSetupPending.value && orderSetupIssue.value === "customer") {
     tabHeaderRef.value?.openCustomer();
+    return;
+  }
+  if (orderSetupPending.value && orderSetupIssue.value === "schedule") {
+    openScheduleHere();
     return;
   }
   if (checkoutMode.value) paymentWorkspaceRef.value?.openFulfillment();
@@ -783,8 +804,8 @@ watch(customerFocusNonce, () => {
 // `openFulfillmentHere`).
 function openScheduleHere() {
   if (cart.salesMode === "counter") { leaveCounterThen(openScheduleHere); return; }
-  if (orderSetupPending.value && ["customer", "fulfillment", "address"].includes(orderSetupIssue.value)) {
-    openFulfillmentHere();
+  if (orderSetupPending.value && orderSetupIssue.value === "customer") {
+    tabHeaderRef.value?.openCustomer();
     return;
   }
   // A grade do dia só é buscada quando alguém vai agendar de fato — a venda
@@ -793,13 +814,34 @@ function openScheduleHere() {
   if (checkoutMode.value) paymentWorkspaceRef.value?.openSchedule();
   else scheduleSheetOpen.value = true;
 }
-// O ASSISTENTE DA ENCOMENDA pergunta no próprio cartão (P2-8): retirada ou
-// entrega é um toque na etapa, e o dia e o horário são o mesmo `PosSchedulePicker`
-// do diálogo "Quando", com a mesma resposta da agenda. Entrega sem endereço segue
-// para a etapa do endereço, que abre o formulário de entrega.
-function pickFulfillmentInOrderEntry(type: "pickup" | "delivery") {
-  cart.fulfillmentType = type;
-  cart.fulfillmentConfirmed = true;
+// O ASSISTENTE DA ENCOMENDA pergunta no próprio cartão (P2-8): o dia e o horário
+// são o mesmo `PosSchedulePicker` do diálogo "Quando", com a mesma resposta da
+// agenda, e retirada ou entrega é um toque na etapa (`chooseFulfillment`). Na
+// entrega, o endereço padrão do cliente já vem marcado na lista da etapa do
+// endereço; só o endereço novo abre o formulário de entrega.
+const deliveryAddressState = computed(() => ({
+  route: cart.deliveryAddress,
+  streetNumber: cart.deliveryStreetNumber,
+  neighborhood: cart.deliveryNeighborhood,
+  complement: cart.deliveryComplement,
+  instructions: cart.deliveryInstructions,
+  structured: cart.deliveryAddressStructured,
+}));
+const savedAddresses = computed(() => customerLookup.value?.saved_addresses || []);
+/** Qual endereço do cadastro é o desta entrega ("" quando nenhum). */
+const chosenSavedAddress = computed(() => chosenSavedAddressValue(savedAddresses.value, deliveryAddressState.value));
+/** O endereço desta entrega numa linha ("" enquanto não há). */
+const deliveryAddressSummary = computed(() =>
+  (cart.deliveryAddress.trim() ? draftSummaryLine(draftFromDeliveryState(deliveryAddressState.value)) : ""));
+// Tirar e devolver o endereço NO ASSISTENTE: o botão tocado some com o gesto, e o
+// foco segue para a etapa (a lista de endereços, ou "Informar endereço").
+function clearAddressInOrderEntry() {
+  clearDeliveryAddress();
+  focusOrderEntry();
+}
+function restoreAddressInOrderEntry() {
+  restoreDeliveryAddress();
+  focusOrderEntry();
 }
 const orderEntrySchedule = computed(() => ({
   today: scheduleToday.value,
@@ -857,7 +899,7 @@ const fulfillmentChipLabel = computed(() => {
 // A BARRA DO TOPO da venda é a da suíte (`OperatorPageHeader`, fase 2): o título da
 // tela, o ao vivo e os estados da venda na segunda linha, e as ações como dados no ⋯
 // "Mais ações" (no celular, Últimas vendas ganha a vaga de ícone). A barra da venda
-// (cliente F6, recebimento F7, quando F8) é a carta branca do PDV: ocupa o lugar da
+// (cliente F6, quando F7, recebimento F8) é a carta branca do PDV: ocupa o lugar da
 // toolbar enquanto a comanda está aberta (`#below`).
 const saleHeaderTitle = computed(() => (inSaleView.value && !checkoutMode.value && !editing.value && !result.value ? "Venda" : screenTitle.value));
 const saleOpen = computed(() => inSaleView.value && !checkoutMode.value && !result.value);
@@ -873,18 +915,19 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
         onSelect: () => requestSalesMode(toOrder ? "order" : "counter"),
       });
     }
+    // Na ordem da barra e das teclas: quando (F7), depois recebimento (F8).
     list.push(
-      {
-        label: cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel.value}` : "Consumir aqui (entregar vira encomenda)",
-        icon: cart.salesMode === "order" ? "i-lucide-store" : "i-lucide-utensils",
-        kbds: ["F7"],
-        onSelect: () => openFulfillmentHere(),
-      },
       {
         label: cart.salesMode === "order" ? `Quando: ${scheduleChipLabel.value}` : "Agendar (vira encomenda)",
         icon: "i-lucide-clock",
-        kbds: ["F8"],
+        kbds: ["F7"],
         onSelect: () => openScheduleHere(),
+      },
+      {
+        label: cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel.value}` : "Consumir aqui (entregar vira encomenda)",
+        icon: cart.salesMode === "order" ? "i-lucide-store" : "i-lucide-utensils",
+        kbds: ["F8"],
+        onSelect: () => openFulfillmentHere(),
       },
     );
   }
@@ -1192,12 +1235,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     // ── F6·F7·F8 — OS TRÊS FATOS DO PEDIDO, na ordem dos chips da barra ──
     //
-    // Quem compra · como recebe · quando quer. É a ordem da conversa do balcão,
-    // é a ordem em que os três aparecem no topo da tela, e agora é a ordem das
-    // teclas. O "Quando" era o único dos três sem tecla — nasceu depois dos
-    // outros dois e ficou órfão —, então ele entra no F8 e as duas ações do
-    // checkout (desconto, CPF) andam uma casa. Pré-go-live, ninguém decorou
-    // nada, e o dicionário (tecla `?`) é quem ensina.
+    // Quem compra · quando quer · como recebe. É a ordem do funil da encomenda
+    // (decisão do dono, 19/11/2026, #2754: "pra quando" vem em segundo, porque
+    // diz respeito à disponibilidade), é a ordem em que os três aparecem no topo
+    // da tela, e a tecla acompanha a POSIÇÃO: F6 cliente, F7 quando, F8
+    // recebimento. Pré-go-live, ninguém decorou nada, e o dicionário (tecla `?`)
+    // é quem ensina.
     //
     // Os três valem na VENDA também: são fatos decididos na abertura do
     // atendimento, revistos de relance daí em diante — não são assunto do
@@ -1205,12 +1248,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F7":
       if (!inSaleView.value) return;
       event.preventDefault();
-      openFulfillmentHere();
+      openScheduleHere();
       return;
     case "F8":
       if (!inSaleView.value) return;
       event.preventDefault();
-      openScheduleHere();
+      openFulfillmentHere();
       return;
     // ── F9·F10 — AS DUAS AÇÕES DA TELA EM QUE SE ESTÁ ───────────────────
     //
@@ -1543,7 +1586,7 @@ onBeforeUnmount(() => {
         :manager-check-busy="managerCheckBusy"
         @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
         @manager-auth-dismissed="managerApprovalError = ''"
-        v-model:fulfillment-type="cart.fulfillmentType"
+        :fulfillment-type="cart.fulfillmentType"
         v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
         v-model:payment-collection="cart.paymentCollection"
         v-model:customer-name="cart.customerName"
@@ -1565,6 +1608,7 @@ onBeforeUnmount(() => {
         :delivery-fee-q="deliveryFeeQ"
         :delivery-fee-source="deliveryFeeSource"
         :delivery-distance-km="deliveryDistanceKm"
+        :can-restore-address="canRestoreDeliveryAddress"
         :delivery-slots="deliverySlots"
         :canonical-delivery-slots="canonicalDeliverySlots"
         :delivery-slots-pending="deliverySlotsPending"
@@ -1647,7 +1691,10 @@ onBeforeUnmount(() => {
         @apply-customer-favorite="applyCustomerFavorite"
         @apply-preference="applyCustomerPreference"
         @repeat-customer-last-order="repeatCustomerLastOrder"
+        @update:fulfillment-type="chooseFulfillment"
         @pick-saved-address="applySavedAddress"
+        @clear-address="clearDeliveryAddress"
+        @restore-address="restoreDeliveryAddress"
       />
       </div>
 
@@ -1697,7 +1744,6 @@ onBeforeUnmount(() => {
           :delivery="cart.fulfillmentConfirmed && cart.fulfillmentType === 'delivery'"
           :item-count="itemCount"
           :customer-name="cart.customerName"
-          :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :schedule-window="deliveryWindowLabel"
           :loading="busy"
@@ -1706,9 +1752,16 @@ onBeforeUnmount(() => {
           v-model:schedule-date="cart.deliveryDate"
           v-model:schedule-time-slot="cart.deliveryTimeSlot"
           :schedule="orderEntrySchedule"
+          :saved-addresses="savedAddresses"
+          :chosen-address="chosenSavedAddress"
+          :address-summary="deliveryAddressSummary"
+          :can-restore-address="canRestoreDeliveryAddress"
           @customer="tabHeaderRef?.openCustomer()"
           @fulfillment="openFulfillmentHere"
-          @pick-fulfillment="pickFulfillmentInOrderEntry"
+          @pick-fulfillment="chooseFulfillment"
+          @pick-address="applySavedAddress"
+          @clear-address="clearAddressInOrderEntry"
+          @restore-address="restoreAddressInOrderEntry"
           @schedule="refreshSchedule"
           @complete="completeOrderSetup"
         />
@@ -1799,7 +1852,6 @@ onBeforeUnmount(() => {
          checkout abre — o operador não reaprende nada. -->
     <PosFulfillmentModal
       v-model:open="fulfillmentSheetOpen"
-      v-model:fulfillment-type="cart.fulfillmentType"
       v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
       v-model:delivery-address="cart.deliveryAddress"
       v-model:delivery-address-structured="cart.deliveryAddressStructured"
@@ -1810,8 +1862,9 @@ onBeforeUnmount(() => {
       v-model:delivery-fee-override="cart.deliveryFeeOverride"
       v-model:delivery-fee-override-input="cart.deliveryFeeOverrideInput"
       v-model:order-notes="cart.orderNotes"
+      :fulfillment-type="cart.fulfillmentType"
       :fulfillment-options="pos?.fulfillment_options || []"
-      :saved-addresses="customerLookup?.saved_addresses || []"
+      :saved-addresses="savedAddresses"
       :address-autocomplete="addressAutocomplete"
       :schedule-label="scheduleChipLabel"
       :delivery-fee-q="deliveryFeeQ"
@@ -1819,7 +1872,11 @@ onBeforeUnmount(() => {
       :delivery-fee-waiver="deliveryFeeWaiver"
       :delivery-fee-status="deliveryFeeStatus"
       :delivery-distance-km="deliveryDistanceKm"
+      :can-restore-address="canRestoreDeliveryAddress"
+      @update:fulfillment-type="chooseFulfillment"
       @pick-saved-address="applySavedAddress"
+      @clear-address="clearDeliveryAddress"
+      @restore-address="restoreDeliveryAddress"
       @open-schedule="openScheduleHere"
     />
 
