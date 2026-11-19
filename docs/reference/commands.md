@@ -94,6 +94,7 @@ DigitalOcean ou do Sentry.
 | [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede, sombra do Jev); roda no `maintenance_worker` |
 | [`concierge_triage_shadow`](#concierge_triage_shadow) | storefront | Concierge | O Jev decidindo a intenção em sombra: onde ele e a regra local discordam |
 | [`concierge_verification_sweep`](#concierge_verification_sweep) | storefront | Concierge | Os prazos do "vou verificar": aviso ao cliente no primeiro, conversa para a equipe no segundo (no `maintenance_worker`) |
+| [`concierge_shadow_decisions`](#concierge_shadow_decisions) | storefront | Concierge | A decisão em sombra: o que o framework conversacional faria com cada entrada, e os pedidos do cliente em 24 h e 7 dias; nunca envia nem escreve no comércio |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -1692,6 +1693,17 @@ cliente recebe UM aviso ("Ainda estou confirmando com a equipe..."); no segundo
 handoff, e o cliente recebe "Alguém da equipe continua com você por aqui.". Os prazos contam só tempo de loja
 aberta, e com a casa fechada nada corre. Cada passo é reivindicado sob trava antes do envio: sai uma vez só.
 Custo zero, nenhuma chamada de modelo. Imprime as contagens do ciclo em JSON.
+
+### concierge_shadow_decisions
+
+**Propósito:** A decisão em sombra (N5 do [plano do adaptador da Nice](../plans/COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md),
+seção 6). Desligado pelo campo `Shop.conversational_shadow_enabled` (nasce desligado), não toca em nada. Ligado,
+pega as entradas da Concierge ainda sem decisão (`--limit`, 200 por padrão) e, para cada uma, faz os passos 1 a 5
+do turno do framework sobre as portas de leitura do Shopman, com o leitor local por regra e o perfil da Nice, em
+`environment=shadow`. Grava o `DecisionRecord` em `ConversationalDecision`: uma linha por entrada, sem texto do
+cliente. Depois junta, por decisão, os pedidos do cliente em 24 horas e em 7 dias em `ConversationalOutcome`:
+janela aberta é `censored` e a madura substitui a censurada. Nunca envia, nunca escreve no comércio, nunca chama
+modelo; o que deriva de uma entrada observada sai com ela no `purge_observations`. Imprime as contagens em JSON.
 
 ### run_alias_benchmark
 
