@@ -272,6 +272,58 @@ export function cartHoldBanner (cart: Pick<CartProjection, 'has_ready_for_confir
   return null
 }
 
+// Reserva com prazo à vista (WP-L11, decisão do dono 4 de 16/11/2026): a sacola
+// diz até quando guarda os itens, numa linha calma perto do resumo. Sem
+// cronômetro: a hora vem pronta do servidor, no formato da casa, e cada gesto na
+// sacola a renova (a resposta da mutação já traz a hora nova).
+//
+// - 'held': há reserva com prazo correndo. "Guardamos seus itens até 19h18."
+// - 'lapsed': o prazo passou com a cliente olhando a tela. A sacola foi relida, e
+//   as linhas já dizem o que continua disponível; a frase só explica o que houve.
+//
+// Sacola vazia, ou só com item de fornada futura (reserva sem relógio): nada.
+export type CartReservationNotice = { kind: 'held' | 'lapsed', text: string }
+
+type ReservationFields = Pick<CartProjection, 'is_empty' | 'reserved_until_iso' | 'reserved_until_display' | 'server_now_iso'>
+
+/** O instante em que a reserva vence, em ms; null sem prazo ou com prazo ilegível. */
+export function reservationDeadlineMs (cart: Pick<CartProjection, 'reserved_until_iso'>): number | null {
+  if (!cart.reserved_until_iso) return null
+  const deadline = Date.parse(cart.reserved_until_iso)
+  return Number.isNaN(deadline) ? null : deadline
+}
+
+/**
+ * `serverNowMs` é o agora da tela já alinhado ao relógio do servidor; 0 enquanto
+ * a tela ainda não tem relógio (no servidor e na hidratação), e aí vale a hora
+ * que veio com a própria sacola. `lapsedDisplay` é a hora da reserva que a tela
+ * viu vencer, guardada pela página depois de reler a sacola. `shownElsewhereIso`
+ * é um prazo que a tela já diz em outro lugar (o aviso "Tudo pronto! Confirme
+ * até..."): o mesmo prazo não é dito duas vezes.
+ */
+export function cartReservationNotice (
+  cart: ReservationFields,
+  serverNowMs: number,
+  lapsedDisplay: string | null = null,
+  shownElsewhereIso: string | null = null
+): CartReservationNotice | null {
+  if (cart.is_empty) return null
+  const deadline = reservationDeadlineMs(cart)
+  const now = serverNowMs || Date.parse(cart.server_now_iso) || 0
+  if (deadline !== null && cart.reserved_until_display) {
+    if (deadline > now) {
+      if (shownElsewhereIso && Date.parse(shownElsewhereIso) === deadline) return null
+      return { kind: 'held', text: `Guardamos seus itens até ${cart.reserved_until_display}.` }
+    }
+    return { kind: 'lapsed', text: reservationLapsedText(cart.reserved_until_display) }
+  }
+  return lapsedDisplay ? { kind: 'lapsed', text: reservationLapsedText(lapsedDisplay) } : null
+}
+
+function reservationLapsedText (display: string): string {
+  return `A reserva valia até ${display} e já venceu. A sacola mostra o que continua disponível.`
+}
+
 // Cor segue a semântica do estado (semáforo): "tudo pronto" é positivo (success);
 // "aguardando confirmação" é um estado de espera/atenção (warning). Sem hardcode
 // de variant no template — a cor é derivada do kind.

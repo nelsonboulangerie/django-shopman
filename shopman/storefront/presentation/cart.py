@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from django.utils import timezone
 from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money
 
@@ -266,6 +267,17 @@ class CartProjection:
     draft_context: str = ""
     # Economia do grupo (texto por grupo, Admin). Vazia quando não houve.
     group_savings_message: str = ""
+    # Reserva com prazo à vista (WP-L11, decisão do dono 4 de 16/11/2026): até
+    # quando a sacola guarda os itens. É o menor prazo das reservas vivas da
+    # sessão; cada gesto na sacola renova, e a resposta já traz a hora nova.
+    # ``None`` quando nada tem prazo correndo (sacola vazia, só item de fornada
+    # futura): a tela não promete hora nenhuma. ``reserved_until_display`` é a
+    # hora no formato da casa ("19h18"). ``server_now_iso`` é o relógio do
+    # servidor na hora da resposta: a tela conta o prazo por ele, não pelo do
+    # aparelho.
+    reserved_until_iso: str | None = None
+    reserved_until_display: str | None = None
+    server_now_iso: str = ""
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -321,7 +333,11 @@ def build_cart(
 
     from shopman.storefront.identity import checkout_draft_context
     context = checkout_draft_context(request, session_key)
+    reserved_until = None if data.is_empty else cart_data.reserved_until(session_key)
     return CartProjection(
+        reserved_until_iso=_iso(reserved_until),
+        reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
+        server_now_iso=timezone.now().isoformat(),
         revision=data.revision,
         draft_context=context,
         items=items,

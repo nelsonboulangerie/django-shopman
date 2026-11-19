@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cartBatchFloor, cartHoldBanner, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice } from '~/presentation/cart'
+import { cartBatchFloor, cartHoldBanner, cartReservationNotice, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice, reservationDeadlineMs } from '~/presentation/cart'
 import { cartLinePromise, cartReadyLine } from '~/presentation/promise'
 import { metaForCartLine } from '~/composables/useCartState'
 import type { CartItemProjection } from '~/types/shopman'
@@ -10,6 +10,7 @@ const {
   cart,
   rateLimitRecovery,
   hasPendingMutations,
+  clockOffsetMs,
   setSkuQty,
   setLineQty,
   refreshCart
@@ -28,9 +29,38 @@ const holdBanner = computed(() => cartHoldBanner(cart.value))
 const nowMs = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 let holdPollTimer: ReturnType<typeof setInterval> | null = null
+// Todo prazo desta tela é contado pelo relógio do servidor (P2-07): o do aparelho
+// pode estar errado, e a contagem derrapava com ele. 0 enquanto a tela não tem
+// relógio (antes de montar).
+const serverNowMs = computed(() => nowMs.value ? nowMs.value + clockOffsetMs.value : 0)
 const bannerCountdown = computed(() => holdBanner.value?.kind === 'ready'
-  ? holdCountdown(holdBanner.value.deadlineIso, nowMs.value)
+  ? holdCountdown(holdBanner.value.deadlineIso, serverNowMs.value)
   : null)
+
+// Reserva com prazo à vista (WP-L11): "Guardamos seus itens até 19h18." Quando o
+// prazo passa com a cliente na tela, a sacola é relida uma vez; as linhas dizem o
+// que continua disponível, e a frase conta o que houve até o próximo gesto (que
+// reserva de novo e traz a hora nova).
+const lapsedReservationDisplay = ref<string | null>(null)
+const reservationNotice = computed(() => cartReservationNotice(
+  cart.value,
+  serverNowMs.value,
+  lapsedReservationDisplay.value,
+  holdBanner.value?.kind === 'ready' ? holdBanner.value.deadlineIso : null
+))
+watch(() => reservationNotice.value?.kind, async (kind) => {
+  if (kind === 'held') {
+    lapsedReservationDisplay.value = null
+    return
+  }
+  // Venceu agora, e a sacola na tela ainda é a de antes: guarda a hora e relê.
+  if (kind !== 'lapsed' || reservationDeadlineMs(cart.value) === null) return
+  lapsedReservationDisplay.value = cart.value.reserved_until_display
+  if (!hasPendingMutations.value) await refreshCart().catch(() => null)
+})
+watch(() => cart.value.is_empty, (empty) => {
+  if (empty) lapsedReservationDisplay.value = null
+})
 
 onMounted(() => {
   // O shell global já trouxe a sacola e a página pode abrir imediatamente.
@@ -384,6 +414,16 @@ useSeoMeta({
             <div class="mt-2" :class="cart.summary_pending ? 'opacity-60 transition-opacity' : 'transition-opacity'">
               <CartSummaryBreakdown :cart="cart" flat />
             </div>
+            <!-- Até quando a sacola guarda os itens: uma linha calma, sem cronômetro. -->
+            <p
+              v-if="reservationNotice"
+              class="mt-3 flex items-start gap-2 shop-meta"
+              :role="reservationNotice.kind === 'lapsed' ? 'status' : undefined"
+              :data-cart-reservation="reservationNotice.kind"
+            >
+              <Icon :name="reservationNotice.kind === 'held' ? 'lucide:clock' : 'lucide:timer-off'" class="mt-0.5 size-4 shrink-0" />
+              <span>{{ reservationNotice.text }}</span>
+            </p>
             <div class="mt-4 hidden flex-col gap-2 md:flex">
               <UiButton
                 :to="checkoutTarget"

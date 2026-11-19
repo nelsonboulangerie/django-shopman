@@ -1,5 +1,6 @@
 import { couponAppliedToast } from '~/utils/checkoutFlow'
 import { applyLineQty, applySkuQty, cartQtyForSku, isOptimisticLine, substituteSwapPlan } from '~/presentation/cart'
+import { serverClockOffsetMs } from '~/presentation/deadline'
 import type { CartItemProjection, CartMutationResponse, CartProjection, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
 
 export interface CartIssue {
@@ -106,6 +107,9 @@ function emptyCart (): CartProjection {
     has_ready_for_confirmation_items: false,
     unavailable_banner: '',
     awaiting_confirmation_notice: '',
+    reserved_until_iso: null,
+    reserved_until_display: null,
+    server_now_iso: '',
     minimum_order_progress: null,
     delivery_minimum_progress: null,
     free_delivery_progress: null,
@@ -253,6 +257,7 @@ export function useCartState () {
   const lastError = useState<string | null>('storefront-cart-error', () => null)
   const cartIssue = useState<CartIssue | null>('storefront-cart-issue', () => null)
   const rateLimitRecovery = useState<RateLimitRecovery | null>('storefront-cart-rate-limit', () => null)
+  const clockOffsetMs = useState<number>('storefront-cart-clock-offset', () => 0)
   const lastMutation = useState<CartMutationSnapshot | null>('storefront-cart-last-mutation', () => null)
   // Última projeção confirmada durante uma rajada. Serve apenas para desfazer a
   // UI otimista se até a reconciliação falhar; nunca é enviada ao servidor.
@@ -280,9 +285,19 @@ export function useCartState () {
     cart.value = { ...next, summary_pending: false }
   }
 
+  // Relógio do servidor (WP-L11): a diferença para o relógio do aparelho, medida
+  // na chegada de uma resposta buscada AGORA (leitura da sacola, mutação). A
+  // sacola que veio no HTML ou guardada no estado não serve de régua: o
+  // `server_now_iso` dela é de quando foi montada.
+  function noteServerClock (next: CartProjection | null | undefined) {
+    if (!import.meta.client || !next?.server_now_iso) return
+    clockOffsetMs.value = serverClockOffsetMs(next.server_now_iso, Date.now())
+  }
+
   // Caminho de mutação bem-sucedida: a verdade do servidor chegou e qualquer
   // aviso pendente (issue/rate-limit) está resolvido — pode limpar.
   function applyServerCart (next: CartProjection) {
+    noteServerClock(next)
     setCartProjection(next)
     rollbackCart.value = null
     cartIssue.value = null
@@ -328,6 +343,7 @@ export function useCartState () {
     })
     // Reconciliação passiva (revert do otimista no catch, poll de holds): preserva
     // cartIssue para o banner de substitutos não sumir enquanto o cliente decide.
+    noteServerClock(response.cart)
     if (queueDepth === 0 && mutationEpoch === epochAtDispatch) setCartProjection(response.cart)
     return response.cart
   }
@@ -580,6 +596,7 @@ export function useCartState () {
     cartIssue,
     rateLimitRecovery,
     lastMutation,
+    clockOffsetMs,
     setFromServer,
     clearCart,
     refreshCart,
