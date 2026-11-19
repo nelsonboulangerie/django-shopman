@@ -32,6 +32,35 @@ class DeskResult:
     sent_text: str = ""
 
 
+#: O tipo do cartão no sino (``OperatorAlert.type``).
+ALERT_TYPE = "concierge_verify"
+
+
+def card_subject(name: str) -> str:
+    """O título do cartão: quem espera, e o quê ("Ana espera a resposta da equipe").
+
+    Só o primeiro nome; sem nome, "Cliente". Lido pela projeção do sino e pela Concierge.
+    """
+    first = (name or "").strip().split(" ")[0]
+    return f"{first or 'Cliente'} espera a resposta da equipe"
+
+
+def card_subjects(alert_pks) -> dict[int, str]:
+    """O título de cada cartão de verificação, pelo nome da conversa dele."""
+    from shopman.shop.models import Conversation
+
+    pks = [int(pk) for pk in alert_pks]
+    if not pks:
+        return {}
+    names = {
+        int((flags or {}).get("verification", {}).get("alert_pk") or 0): name
+        for name, flags in Conversation.objects.filter(flags__verification__alert_pk__in=pks).values_list(
+            "customer_name", "flags"
+        )
+    }
+    return {pk: card_subject(names.get(pk, "")) for pk in pks}
+
+
 Answer = Callable[..., DeskResult]
 TakeOver = Callable[..., DeskResult]
 

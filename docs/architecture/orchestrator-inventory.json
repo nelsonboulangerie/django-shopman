@@ -2809,11 +2809,14 @@
         {
           "responsibility": "contrato",
           "symbols": [
+            "ALERT_TYPE",
             "Answer",
             "DeskResult",
             "TakeOver",
             "_handlers",
             "answer",
+            "card_subject",
+            "card_subjects",
             "register",
             "take_over"
           ]
