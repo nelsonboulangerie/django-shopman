@@ -647,6 +647,7 @@ def availability_for_sku(
         from shopman.stockman.services.availability import availability_for_sku as _availability_for_sku
 
         from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
         from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
@@ -659,7 +660,8 @@ def availability_for_sku(
                 safety_margin=scope["safety_margin"],
                 allowed_positions=scope["allowed_positions"],
                 excluded_positions=scope.get("excluded_positions"),
-                expiry_margin_days=scope.get("expiry_margin_days", 0),
+                # A margem é a da DATA lida, como em toda leitura e reserva.
+                expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), on_date),
                 include_nonconforming=scope.get("sells_nonconforming", True),
                 allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             )

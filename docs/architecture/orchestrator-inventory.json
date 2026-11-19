@@ -8048,6 +8048,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/promise_expiry_margin.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.promise-expiry-margin"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/realtime.py",
       "touchpoints": [
         "outro"
@@ -14791,6 +14805,30 @@
             "_LinkView",
             "_REFUSALS",
             "_private"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/reconcile_ifood_orders.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "APPLY_WINDOW",
+            "Command",
+            "LOOKBACK",
+            "_alert_behind",
+            "_latest_fact_at"
           ]
         }
       ]
