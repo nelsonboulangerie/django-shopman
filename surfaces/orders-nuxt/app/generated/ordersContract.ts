@@ -489,6 +489,13 @@ export interface CourierReminderProjection {
   short_ref: string;
 }
 
+/** Um produto que a casa pode oferecer no lugar do item em risco. */
+export interface OrderPromiseAlternativeProjection {
+  sku: string;
+  name: string;
+  available_display: string;
+}
+
 /** Um produto do pedido cuja promessa pede atenção, ou espera o lote. */
 export interface OrderPromiseItemProjection {
   sku: string;
@@ -504,6 +511,8 @@ export interface OrderPromiseItemProjection {
   batch_status: string;
   batch_ready_at_iso: string;
   work_order_refs: string[];
+  next_step: string;
+  alternatives: OrderPromiseAlternativeProjection[];
 }
 
 /** A promessa de um pedido que pede atenção ou espera: o selo e os itens. */
@@ -514,6 +523,8 @@ export interface OrderPromiseProjection {
   blocks_start: boolean;
   since_iso: string;
   actions: Action[];
+  next_step: string;
+  recommended_action: string;
 }
 
 /** O cartão de um pedido no quadro do Gestor (Painel, Fila, Tabela, Encomendas). */
@@ -697,6 +708,7 @@ export interface OrderPendingActionProjection {
   enabled: boolean;
   reason: string;
   href: string;
+  priority: string;
 }
 
 /** Uma linha de "O que falta neste pedido": o fato, o motivo e o que fazer. */
@@ -706,6 +718,8 @@ export interface OrderPendingProjection {
   label: string;
   reason: string;
   actions: OrderPendingActionProjection[];
+  next_step: string;
+  failure: string;
 }
 
 /** O destino do dinheiro de um pedido cancelado, como o Gestor o lê. */
@@ -1235,6 +1249,8 @@ export interface DeliveryStopProjection {
   group_refusal: string;
   error: string;
   dispatch_action: Action | null;
+  dispatch_again_action: Action | null;
+  charge_outdated: Record<string, unknown> | null;
 }
 
 /** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str') */
@@ -1272,6 +1288,7 @@ export interface DeliveryRideProjection {
   reopened_driver: string;
   cancel_state: string;
   cancel_message: string;
+  sync_since: string;
 }
 
 /** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */

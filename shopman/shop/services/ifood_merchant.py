@@ -515,6 +515,9 @@ class SyncResult:
     created: int = 0
     removed: int = 0
     failed: int = 0
+    #: O iFood recusou o horário de vez. A Directive segue (a pausa já saiu) e o
+    #: aviso já foi criado; o gesto "gravar horário" da tela relança este erro.
+    hours_error: MerchantAPIError | None = None
 
 
 def enqueue_sync(reason: str) -> None:
@@ -545,16 +548,58 @@ def sync_store(*, now: datetime | None = None) -> SyncResult:
         return SyncResult(skipped="sem grade semanal")
     result = SyncResult()
 
-    if governs(shop):
-        desired = desired_shifts(shop)
-        if not shifts_match(desired, get_opening_hours()):
-            put_opening_hours(desired)
-            result.hours_written = True
-            logger.info("ifood_merchant.sync: horário gravado no iFood (%s turnos)", len(desired))
-
+    # A pausa vem PRIMEIRO. Em 16/11/2026 o iFood recusou o horário (403) e a
+    # exceção abortou a gravação antes do calendário: a pausa do Gestor nunca
+    # saiu, e a loja seguiu aberta no iFood com a casa achando que fechou.
     _reconcile_calendar(shop, now, result, off=off)
+
+    if governs(shop):
+        try:
+            desired = desired_shifts(shop)
+            if not shifts_match(desired, get_opening_hours()):
+                put_opening_hours(desired)
+                result.hours_written = True
+                logger.info("ifood_merchant.sync: horário gravado no iFood (%s turnos)", len(desired))
+        except MerchantAPIError as exc:
+            if exc.retryable:
+                raise
+            result.failed += 1
+            result.hours_error = exc
+            alert_store_write_failed(exc, what="o horário de funcionamento", now=now)
+
     _status_row(update={"synced_at": now})
     return result
+
+
+def alert_store_write_failed(
+    exc: Exception, *, what: str = "a pausa e o horário", now: datetime | None = None,
+) -> None:
+    """Gravação na loja do iFood recusada de vez: aviso no Gestor, nunca só no log.
+
+    Cobre o que falha ANTES de existir uma interrupção para apontar (ler as
+    pausas, gravar o horário) e a Directive que esgotou as tentativas.
+    """
+    from shopman.shop.services.observability import create_operator_alert
+
+    status = getattr(exc, "status", 0) or 0
+    why = (
+        "O iFood negou a permissão desta loja ao aplicativo (HTTP 403): autorize o aplicativo no Portal do Parceiro."
+        if status == 403
+        else f"O iFood recusou a gravação ({exc})."
+    )
+    off = channel_off(now=now)
+    create_operator_alert(
+        type=ALERT_SYNC_FAILED,
+        severity="critical" if off else "error",
+        message=(
+            f"Não foi possível gravar {what} no iFood. {why}"
+            + (" O iFood está DESLIGADO aqui, mas pode continuar aberto lá: pause pelo Portal ou pelo widget."
+               if off else "")
+        ),
+        dedupe_key=f"{ALERT_SYNC_FAILED}:store:{status}:{'off' if off else 'on'}",
+        debounce_minutes=DIVERGENCE_ALERT_WINDOW_MINUTES,
+        http_status=status,
+    )
 
 
 def _reconcile_calendar(shop, now: datetime, result: SyncResult, *, off: bool = False) -> None:
@@ -826,6 +871,10 @@ def check_store(*, now: datetime | None = None) -> StoreCheck | None:
     except MerchantAPIError as exc:
         _status_row(update={"last_error": str(exc)[:500]})
         logger.warning("ifood_merchant.check: status ilegível — %s", exc)
+        if not exc.retryable:
+            # Ler o status recusado de vez (403) é a conferência cega: de 12 a
+            # 16/11/2026 ela parou sem aviso, e a pausa que não chegou passou batida.
+            _alert_status_unreadable(exc, now=now)
         return None
 
     available, worst, problems = summarize_status(operations)
@@ -857,6 +906,32 @@ def check_store(*, now: datetime | None = None) -> StoreCheck | None:
         # regravar é barato (lê antes, só escreve o que difere).
         enqueue_sync("check")
     return StoreCheck(available=available, expected_available=expected, state=worst, problems=problems, alerted=alerted)
+
+
+ALERT_STATUS_UNREADABLE_WINDOW_MINUTES = 6 * 60
+
+
+def _alert_status_unreadable(exc: MerchantAPIError, *, now: datetime) -> None:
+    from shopman.shop.services.observability import create_operator_alert
+
+    why = (
+        "o iFood negou a permissão desta loja ao aplicativo (HTTP 403); autorize o aplicativo no Portal do Parceiro"
+        if exc.status == 403
+        else f"o iFood recusou a leitura (HTTP {exc.status})"
+    )
+    off = channel_off(now=now)
+    create_operator_alert(
+        type=ALERT_SYNC_FAILED,
+        severity="critical" if off else "error",
+        message=(
+            f"A casa não consegue conferir se a loja está aberta no iFood: {why}. "
+            "Pausa e horário também não chegam lá enquanto isso durar."
+            + (" O iFood está DESLIGADO aqui: pause pelo Portal ou pelo widget." if off else "")
+        ),
+        dedupe_key=f"{ALERT_SYNC_FAILED}:status:{exc.status}",
+        debounce_minutes=ALERT_STATUS_UNREADABLE_WINDOW_MINUTES,
+        http_status=exc.status,
+    )
 
 
 def problem_copy(problems: list[dict]) -> list[str]:

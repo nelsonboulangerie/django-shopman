@@ -437,7 +437,7 @@ class TestPickupTabShowsTheChosenTime:
 
         assert pickup is not None
         assert pickup.address == "Rua das Flores, 100, Londrina"
-        assert pickup.when_display == "hoje · 19h30 às 20h"
+        assert pickup.when_display == "Hoje · 19h30 às 20h"
 
     def test_preorder_pickup_shows_the_house_turn(self, order, shop_instance):
         shop_instance.formatted_address = "Rua das Flores, 100, Londrina"
@@ -448,7 +448,7 @@ class TestPickupTabShowsTheChosenTime:
         pickup = build_order_tracking(order).pickup_info
 
         assert pickup is not None
-        assert pickup.when_display == "amanhã · A partir das 15h"
+        assert pickup.when_display == "Amanhã · A partir das 15h"
 
     def test_pickup_without_a_chosen_time_does_not_invent_one(self, order, shop_instance):
         shop_instance.formatted_address = "Rua das Flores, 100, Londrina"

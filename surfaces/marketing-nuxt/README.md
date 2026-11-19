@@ -112,8 +112,9 @@ npm run test:security
 npm audit --audit-level=high
 ```
 
-O job `Marketing — cadeia completa` executa essa cadeia com Node 22, `npm ci`,
-Chromium e runner fixados. O contrato Django v2, o OpenAPI e o cliente TypeScript são
+O job `marketing-nuxt` do Surfaces Gate executa essa cadeia em Linux, com Node 22,
+`npm ci` e Chromium fixado; o `test:visual` roda à parte, em `macos-15`, no workflow
+`surfaces-visual-pinned.yml` (PR que toca o app, toda noite e à mão). O contrato Django v2, o OpenAPI e o cliente TypeScript são
 regenerados juntos por `python manage.py export_marketing_client`; o Runtime Gate usa
 `--check` e reprova qualquer deriva.
 

@@ -2,9 +2,10 @@
 //
 // Quem decide se a promessa do pedido tem lastro é o servidor
 // (`shopman/backstage/projections/order_promise.py`): o estado, o nome dele, a frase de
-// cada item e as saídas chegam prontos em `card.promise`. Aqui só se escolhe o que o
-// cartão, a Fila, a Tabela e a lista de Encomendas desenham, com as palavras que
-// vieram. Nenhuma conta de reserva, de lote ou de hora mora neste arquivo.
+// cada item, o PRÓXIMO PASSO (o que fazer, com o que a casa pode oferecer no lugar) e
+// as saídas, com a recomendada marcada, chegam prontos em `card.promise`. Aqui só se
+// escolhe o que o cartão, a Fila, a Tabela e a lista de Encomendas desenham, com as
+// palavras que vieram. Nenhuma conta de reserva, de lote ou de hora mora neste arquivo.
 import type {
   Action,
   OrderPromiseProjection,
@@ -38,12 +39,18 @@ export interface PromiseExit {
   /** Cancelar: vermelho, como no menu do pedido. */
   danger: boolean;
   disabled: boolean;
+  /** A saída que o servidor recomenda (`priority: "primary"`): o único botão cheio. */
+  recommended: boolean;
 }
 
 export interface PromiseRisk {
   /** "Promessa em risco", o nome que o servidor deu ao estado. */
   label: string;
   items: PromiseRiskItem[];
+  /** O que fazer agora, numa frase do servidor ("Avise o cliente e ofereça: …"). */
+  nextStep: string;
+  /** A `ref` da saída que a situação pede, mesmo quando esta conta não a recebe. */
+  recommendedAction: string;
   exits: PromiseExit[];
   /** Por que uma saída não pode agora, escrito (o `title` não existe no toque). */
   blockedReasons: string[];
@@ -52,8 +59,12 @@ export interface PromiseRisk {
 const EXIT_ICONS: Record<string, string> = {
   "contact-customer": "i-lucide-message-circle",
   "reschedule-at-pos": "i-lucide-calendar-clock",
+  "open-production": "i-lucide-croissant",
   cancel: "i-lucide-ban",
 };
+
+/** A saída que abre o plano do dia na Produção, quando ela ainda resolve. */
+export const OPEN_PRODUCTION = "open-production";
 
 function exit(action: Action): PromiseExit {
   const href = action.enabled ? String(action.href ?? "") : "";
@@ -66,6 +77,7 @@ function exit(action: Action): PromiseExit {
     danger: action.ref === "cancel",
     // Atalho sem destino não é botão que se toca: o servidor diz o porquê em `reason`.
     disabled: !action.enabled || !href,
+    recommended: action.priority === "primary",
   };
 }
 
@@ -73,7 +85,8 @@ function exit(action: Action): PromiseExit {
  * A promessa em risco do pedido, pronta para desenhar; `null` quando não há risco.
  *
  * Os itens são os que o servidor marcou em risco, na ordem dele, com as frases dele.
- * As saídas são as três ações que vieram em `promise.actions` (no cartão, atalhos).
+ * As saídas são as ações que vieram em `promise.actions` (no cartão, atalhos), na ordem
+ * do servidor: a recomendada primeiro.
  */
 export function promiseRisk(source: PromiseSource): PromiseRisk | null {
   const promise = source.promise;
@@ -84,6 +97,8 @@ export function promiseRisk(source: PromiseSource): PromiseRisk | null {
     items: (promise.items ?? [])
       .filter((item) => item.at_risk)
       .map((item) => ({ key: item.sku, label: item.label, detail: item.detail })),
+    nextStep: String(promise.next_step ?? "").trim(),
+    recommendedAction: String(promise.recommended_action ?? ""),
     exits: actions.map(exit),
     blockedReasons: reasonLines(
       actions
@@ -138,26 +153,28 @@ export function promiseWaitLines(
 }
 
 /**
- * Onde as saídas aparecem, o que decide o peso de cada botão:
- * - `alert`: dentro do aviso do cartão, na cor do aviso (a regra do kit, D8);
- * - `lead`: na Fila, quando a promessa em risco é O fato que o pedido espera: a
- *   primeira saída é o gesto principal da linha;
- * - `plain`: ao lado de outro gesto principal (a etapa do pedido vem antes).
+ * Onde as saídas aparecem, o que decide a COR do botão recomendado:
+ * - `alert`: dentro do aviso do cartão, tudo na cor do aviso (a regra do kit, D8);
+ * - `row`: numa linha (a Fila, a Tabela), na cor principal.
  */
-export type ExitTone = "alert" | "lead" | "plain";
+export type ExitTone = "alert" | "row";
 
 export interface ExitButton extends PromiseExit {
   color: "primary" | "neutral" | "error";
   variant: "solid" | "outline";
 }
 
-/** O botão de cada saída. Um principal por grupo, no máximo; cancelar é sempre vermelho. */
+/**
+ * O botão de cada saída. Cheio é só o que o servidor recomenda (`recommended`); sem
+ * recomendada entre as saídas, nenhum é cheio e a frase do próximo passo diz o que
+ * fazer. Saída travada nunca é cheia; cancelar é sempre vermelho.
+ */
 export function exitButtons(
   exits: readonly PromiseExit[],
   tone: ExitTone,
 ): ExitButton[] {
-  return exits.map((item, index) => {
-    const lead = index === 0 && tone !== "plain" && !item.disabled;
+  return exits.map((item) => {
+    const lead = item.recommended && !item.disabled;
     if (tone === "alert")
       return { ...item, color: "error", variant: lead ? "solid" : "outline" };
     return {

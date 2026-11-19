@@ -17,6 +17,7 @@ import type { OperatorActionBarAction } from "../../../../operator-kit/app/prese
 // organização (quais cards, em que ordem, com que destaque) é pura, em
 // `presentation/cash`; a página só abre o que o card nomeia.
 import { toast } from "vue-sonner";
+import { formatBRL } from "~/utils/posIntent";
 
 import {
   amountEcho,
@@ -64,6 +65,8 @@ const {
   busy,
   movementKinds,
   managerChallenge,
+  cashFailure,
+  dismissCashFailure,
   openCashShift,
   closeCashShift,
   offlineReviewSales,
@@ -697,6 +700,8 @@ const justClosedShift = ref(false);
 // lista cada item, e o servidor só fecha com o gerente. A recusa abre "Quem
 // autoriza?" e a MESMA contagem é reenviada com a assinatura.
 const offlineReviewNotice = computed(() => offlineReviewClosingNotice(offlineReviewSales.value));
+// O valor contado, como o gerente o lê no diálogo da assinatura (P1-6).
+const closingManagerAmount = computed(() => formatBRL(amountToQ(closingAmount.value) ?? 0));
 async function confirmClose(managerApproval: ManagerApproval | null = null) {
   if (!canClose.value) return;
   managerIntent.value = { action: "close_shift" };
@@ -936,6 +941,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
               />
             </li>
           </ul>
+          <PosCashFailureNotice :failure="cashFailure" gesture="refund_cash" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             O dinheiro sai desta gaveta e fica registrado no turno e no pedido, com quem devolveu e quando. Um gerente autoriza com o PIN.
           </p>
@@ -981,6 +987,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
               />
             </li>
           </ul>
+          <PosCashFailureNotice :failure="cashFailure" gesture="card_machine_refund" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido com quem fez e quando.
           </p>
@@ -1309,14 +1316,17 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
         </div>
       </template>
       <template #footer>
-        <NuxtButton
-          size="xl"
-          block
-          label="Registrar movimento"
-          :disabled="busy || !canSubmitMovement"
-          :loading="busy"
-          @click="submitMovement()"
-        />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice :failure="cashFailure" gesture="movement" @dismiss="dismissCashFailure" />
+          <NuxtButton
+            size="xl"
+            block
+            label="Registrar movimento"
+            :disabled="busy || !canSubmitMovement"
+            :loading="busy"
+            @click="submitMovement()"
+          />
+        </div>
       </template>
     </NuxtModal>
 
@@ -1485,25 +1495,28 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
              fecha: ele arma a confirmação. O tile lá fora já se chama "Fechar
              caixa" (porta com nome do destino); repetir o verbo do ato aqui
              ensinava a apertar no automático. -->
-        <NuxtButton
-          v-if="!confirmingClose"
-          size="xl"
-          block
-          color="error"
-          label="Conferir e fechar"
-          :disabled="busy || !canClose"
-          @click="confirmingClose = true"
-        />
-        <div v-else class="grid w-full gap-2 rounded-md bg-error/10 p-3" data-close-shift-confirm>
-          <!-- O eco do valor: a última leitura antes de a contagem virar
-               a única palavra do operador no livro. -->
-          <p class="text-sm font-medium">
-            Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
-          </p>
-          <div class="grid grid-cols-2 gap-2">
-            <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
-            <!-- O degrau que PRATICA o ato é o único que o diz. -->
-            <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose()" />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice :failure="cashFailure" gesture="close_shift" @dismiss="dismissCashFailure" />
+          <NuxtButton
+            v-if="!confirmingClose"
+            size="xl"
+            block
+            color="error"
+            label="Conferir e fechar"
+            :disabled="busy || !canClose"
+            @click="confirmingClose = true"
+          />
+          <div v-else class="grid w-full gap-2 rounded-md bg-error/10 p-3" data-close-shift-confirm>
+            <!-- O eco do valor: a última leitura antes de a contagem virar
+                 a única palavra do operador no livro. -->
+            <p class="text-sm font-medium">
+              Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
+            </p>
+            <div class="grid grid-cols-2 gap-2">
+              <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
+              <!-- O degrau que PRATICA o ato é o único que o diz. -->
+              <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose()" />
+            </div>
           </div>
         </div>
       </template>
@@ -1520,6 +1533,28 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
       @authorize="onManagerAuthorize"
       @authorize-badge="onManagerBadge"
-    />
+    >
+      <!-- Fechar com venda a conferir: o gerente assina o fechamento E as vendas
+           que o catálogo não explica. O diálogo dizia só "Há venda sem conexão a
+           conferir", e ele assinava sem ver o valor contado nem o que foi cobrado
+           (P1-6). -->
+      <template v-if="managerIntent.action === 'close_shift'" #context>
+        <div class="grid gap-2" data-close-shift-manager-context>
+          <p class="text-base font-semibold text-highlighted">
+            Fechar o caixa com <span class="tabular-nums">{{ closingManagerAmount }}</span> contados
+          </p>
+          <ul v-if="offlineReviewSales.length" class="grid gap-1 text-sm text-muted-foreground">
+            <li
+              v-for="(sale, index) in offlineReviewSales"
+              :key="`${sale.order_ref}-${index}`"
+              class="tabular-nums"
+              data-close-shift-manager-review-line
+            >
+              {{ offlineReviewLine(sale) }}
+            </li>
+          </ul>
+        </div>
+      </template>
+    </OperatorManagerAuth>
   </main>
 </template>

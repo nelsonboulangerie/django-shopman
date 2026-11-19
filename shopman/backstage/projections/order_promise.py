@@ -46,6 +46,26 @@ Por pedido, só quando há o que dizer (:class:`OrderPromiseProjection`):
 Pedido com a reserva inteira num lote de data FUTURA não aparece aqui: está
 como deve estar.
 
+## O próximo passo
+
+Aviso que não diz o que fazer não é aviso (regra de omotenashi do dono,
+19/11/2026). Cada item em risco traz ``next_step``, a frase do que o operador
+faz agora, pela causa; a promessa traz a frase do pedido inteiro e
+``recommended_action``, a saída que resolve:
+
+- o item não vai existir (lote cancelado, fechado com menos, reserva de fora,
+  estoque menor, reserva solta): avisar o cliente. Quando a casa tem o que
+  oferecer no lugar, a frase diz o quê e quanto (``alternatives``), pelo MESMO
+  mecanismo de substitutos da loja (``shop/services/substitutes.find``); para a
+  encomenda de outro dia, a conta é a do lote da data, nunca a sobra de hoje.
+  Sem alternativa, remarcar para o próximo lote: a frase não promete o que não há;
+- o lote está atrasado: avisar do atraso (a leitura não conhece hora nova, e
+  não inventa uma);
+- a Produção ainda pode resolver (sem lote planejado, plano que não cobre):
+  pedir à Produção, e a saída recomendada é abrir o plano daquele dia.
+
+"Esperando o lote" não tem próximo passo: é espera, ninguém precisa agir.
+
 ## Custo
 
 Uma leitura por painel, com um número FIXO de consultas, qualquer que seja o
@@ -53,6 +73,11 @@ número de pedidos (as reservas dos pedidos; as reservas que disputam os mesmos
 saldos; os saldos de produção; os lotes; os nomes; a hora de prontidão). Com
 todas as reservas já baixadas, que é o caso do pedido de agora, é uma consulta
 só. Nada aqui grava.
+
+As alternativas custam uma busca de substitutos por item EM RISCO distinto
+(produto, quanto falta, canal e data), nunca por pedido do painel: doze
+encomendas que perderam o mesmo lote com a mesma quantidade custam uma busca.
+Painel sem pedido em risco não busca nada.
 """
 
 from __future__ import annotations
@@ -113,10 +138,39 @@ BATCH_NOT_OUT = frozenset({CAUSE_BATCH_WAITING, CAUSE_BATCH_LATE})
 #: Causas que não falam de lote nenhum: o item não ganha dia de lote.
 _NO_BATCH_CAUSES = frozenset({CAUSE_STOCK_SHORT, CAUSE_HOLD_RELEASED})
 
-#: As três saídas de uma promessa em risco, na ordem em que a tela as oferece.
+#: As saídas de uma promessa em risco. A recomendada vem primeiro
+#: (``order_queue._promise_card_actions``); "Abrir a Produção" só existe quando o
+#: item ainda pode ser produzido e para quem opera a Produção.
 ACTION_CONTACT_CUSTOMER = "contact-customer"
 ACTION_RESCHEDULE_AT_POS = "reschedule-at-pos"
+ACTION_OPEN_PRODUCTION = "open-production"
 ACTION_CANCEL = "cancel"
+
+#: Causas que a Produção ainda resolve: planejar o lote, ou aumentá-lo.
+PRODUCTION_CAUSES = frozenset({CAUSE_NO_BATCH, CAUSE_PLAN_SHORT})
+#: Causas em que o item não vai existir como combinado: a casa oferece outro no lugar.
+_ALTERNATIVE_CAUSES = frozenset({
+    CAUSE_BATCH_CANCELLED, CAUSE_BATCH_SHORT, CAUSE_BATCH_CLOSED, CAUSE_STOCK_SHORT, CAUSE_HOLD_RELEASED,
+})
+#: A ordem das frases do pedido: primeiro o que protege o cliente, depois o que
+#: se pede à Produção.
+_NEXT_STEP_ORDER = (
+    CAUSE_BATCH_CANCELLED,
+    CAUSE_BATCH_SHORT,
+    CAUSE_BATCH_CLOSED,
+    CAUSE_STOCK_SHORT,
+    CAUSE_HOLD_RELEASED,
+    CAUSE_BATCH_LATE,
+    CAUSE_PLAN_SHORT,
+    CAUSE_NO_BATCH,
+)
+#: Quantas alternativas a frase oferece, no máximo.
+ALTERNATIVES_LIMIT = 3
+
+STEP_RESCHEDULE = "Avise o cliente e remarque para o próximo lote."
+STEP_LATE = "Avise o cliente do atraso."
+STEP_PLAN = "Peça à Produção para planejar."
+STEP_PLAN_MORE = "Peça à Produção para aumentar o lote."
 
 #: O bloqueio do preparo de quem espera o lote, nas palavras que o cartão já usa.
 BATCH_WAIT_BLOCK_LABEL = "Esperando o lote…"
@@ -125,6 +179,22 @@ BATCH_WAIT_BLOCK_REASON = "O preparo abre quando o lote ficar pronto."
 _LOT_STATUS_PHRASE = {"planned": "não começou", "started": "está em andamento"}
 _ORDER_REFERENCE_PREFIX = "order:"
 _ZERO = Decimal("0")
+
+
+@dataclass(frozen=True)
+class OrderPromiseAlternativeProjection:
+    """Um produto que a casa pode oferecer no lugar do item em risco.
+
+    Vem de ``shop/services/substitutes.find``, o mesmo mecanismo da loja.
+    ``available_display`` diz quanto há e para quando: "12 livres para amanhã"
+    (o que o lote da data ainda tem sem encomenda) ou "8 disponíveis hoje".
+    Só o que a frase do próximo passo escreve: o preço fica de fora, porque
+    nenhuma tela o lê (entra quando o PDV abrir a troca pré-montada, #2765).
+    """
+
+    sku: str
+    name: str
+    available_display: str
 
 
 @dataclass(frozen=True)
@@ -143,6 +213,11 @@ class OrderPromiseItemProjection:
     o estado dele (``planned`` | ``started`` | ``finished`` | ``void`` | "");
     ``batch_ready_at_iso`` quando ele deve ficar pronto (a hora de prontidão do
     produto, ``product_readiness``), vazio quando a casa não sabe a hora.
+
+    ``next_step`` é o que o operador faz agora por este item, numa frase; vazio
+    em quem só espera o lote. ``alternatives``, o que a casa pode oferecer no
+    lugar (até :data:`ALTERNATIVES_LIMIT`), quando o item não vai existir como
+    combinado; a frase de ``next_step`` já as cita.
     """
 
     sku: str
@@ -158,6 +233,8 @@ class OrderPromiseItemProjection:
     batch_status: str = ""
     batch_ready_at_iso: str = ""
     work_order_refs: tuple[str, ...] = ()
+    next_step: str = ""
+    alternatives: tuple[OrderPromiseAlternativeProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -169,8 +246,16 @@ class OrderPromiseProjection:
     o lote de um item reservado ainda não ficou pronto. ``since_iso``: desde
     quando a promessa está em risco, quando há um instante para dizer (a
     reserva solta, o lote fechado com menos). ``actions`` só existe no risco:
-    avisar o cliente, remarcar no PDV, cancelar (preenchidas por quem monta o
-    cartão ou o detalhe, :func:`with_actions`).
+    avisar o cliente, remarcar no PDV, abrir a Produção, cancelar (preenchidas
+    por quem monta o cartão ou o detalhe, :func:`with_actions`).
+
+    ``next_step`` é o que o operador faz agora pelo pedido inteiro, numa frase
+    (vazia em quem só espera o lote). ``recommended_action`` é a ``ref`` da
+    saída que a situação pede: ``contact-customer`` quando algum item não vai
+    existir como combinado ou está atrasado; ``open-production`` quando tudo o
+    que falta a Produção ainda resolve. Em ``actions`` ela vem primeiro, com
+    ``priority="primary"``; quem não pode abrir a Produção não recebe a ação, e
+    a frase segue dizendo o que fazer.
     """
 
     state: str
@@ -179,6 +264,8 @@ class OrderPromiseProjection:
     blocks_start: bool = False
     since_iso: str = ""
     actions: tuple[Action, ...] = ()
+    next_step: str = ""
+    recommended_action: str = ""
 
 
 # ── Leitura ──────────────────────────────────────────────────────────────────
@@ -496,6 +583,8 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
             by_item[(claim.order_ref, claim.sku)].append(claim)
 
     status_by_ref = {order.ref: order.status for order in orders}
+    order_by_ref = {order.ref: order for order in orders}
+    alternatives = _AlternativeFinder(today)
     items_by_order: dict[str, list[tuple[OrderPromiseItemProjection, datetime | None]]] = defaultdict(list)
     for (order_ref, sku), item_claims in by_item.items():
         lead = min(item_claims, key=lambda claim: _CAUSE_ORDER.index(claim.cause))
@@ -510,6 +599,9 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
                 day=lead.day,
                 lots=lots[(sku, lead.day)] if lead.day is not None and lead.cause not in _NO_BATCH_CAUSES else [],
                 ready_at=ready_at.get(lead.pk),
+                alternatives_for=lambda missing, order_ref=order_ref, sku=sku: alternatives.find(
+                    order_by_ref[order_ref], sku, missing,
+                ),
             ),
             min(moments) if moments else None,
         ))
@@ -520,6 +612,7 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
         at_risk = any(item.at_risk for item in items)
         state = STATE_AT_RISK if at_risk else STATE_WAITING_BATCH
         moments = [since for item, since in entries if item.at_risk and since is not None]
+        next_step, recommended_action = _order_guidance(items)
         promises[order_ref] = OrderPromiseProjection(
             state=state,
             label=_STATE_LABELS[state],
@@ -529,8 +622,138 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
                 and any(item.cause in BATCH_NOT_OUT for item in items)
             ),
             since_iso=min(moments).isoformat() if moments else "",
+            next_step=next_step,
+            recommended_action=recommended_action,
         )
     return promises
+
+
+# ── O próximo passo ──────────────────────────────────────────────────────────
+
+
+class _AlternativeFinder:
+    """O que a casa oferece no lugar de um item em risco, com memória dentro da leitura.
+
+    Uma busca por (produto, quanto falta, canal, data): os pedidos que perderam
+    o mesmo lote com a mesma quantidade dividem a resposta.
+    """
+
+    def __init__(self, today: date) -> None:
+        self._today = today
+        self._found: dict[tuple, tuple[OrderPromiseAlternativeProjection, ...]] = {}
+
+    def find(self, order, sku: str, missing: Decimal) -> tuple[OrderPromiseAlternativeProjection, ...]:
+        from shopman.shop.services.order_helpers import get_commitment_date
+
+        commitment = get_commitment_date(order)
+        # Só a encomenda de outro dia mede o lote da data; a de hoje, o que há agora.
+        target = commitment if commitment is not None and commitment > self._today else None
+        key = (sku, missing, order.channel_ref, target)
+        if key not in self._found:
+            self._found[key] = self._search(sku, missing, order.channel_ref, target)
+        return self._found[key]
+
+    @staticmethod
+    def _search(sku: str, missing: Decimal, channel_ref: str, target: date | None):
+        from shopman.shop.services import substitutes
+
+        try:
+            found = substitutes.find(
+                sku, qty=missing if missing > 0 else Decimal("1"), channel=channel_ref or None,
+                limit=ALTERNATIVES_LIMIT, target_date=target,
+            )
+        except Exception:
+            # Sem saber o que há para oferecer, a frase não oferece nada.
+            logger.warning("order_promise: alternativas indisponíveis sku=%s", sku, exc_info=True)
+            return ()
+        return tuple(
+            OrderPromiseAlternativeProjection(
+                sku=row["sku"],
+                name=row["name"],
+                available_display=_available_display(int(row.get("available_qty") or 0), target, requested=missing),
+            )
+            for row in found[:ALTERNATIVES_LIMIT]
+        )
+
+
+def _available_display(available: int, target: date | None, *, requested: Decimal = _ZERO) -> str:
+    """ "12 livres para amanhã" (o lote da data) ou "8 disponíveis hoje".
+
+    Na leitura de hoje, o produto sem teto (feito na hora, ou fora do ledger)
+    volta de ``substitutes.find`` com a própria quantidade pedida, porque "cabe o
+    que se pediu". Esse número não é contagem: a frase diz só "disponível hoje",
+    em vez de afirmar uma quantidade que ninguém contou.
+    """
+    if target is not None:
+        return f"{available} {'livre' if available == 1 else 'livres'} para {_day_label(target)}"
+    if available <= 0 or available == int(requested):
+        return "disponível hoje"
+    return f"{available} {'disponível' if available == 1 else 'disponíveis'} hoje"
+
+
+def _one_of(parts: list[str]) -> str:
+    """ "A", "A ou B", "A, B ou C"."""
+    if len(parts) <= 1:
+        return "".join(parts)
+    return f"{', '.join(parts[:-1])} ou {parts[-1]}"
+
+
+def _all_of(parts: list[str]) -> str:
+    """ "A", "A e B", "A, B e C"."""
+    if len(parts) <= 1:
+        return "".join(parts)
+    return f"{', '.join(parts[:-1])} e {parts[-1]}"
+
+
+def next_step_for(cause: str, *, missing: Decimal = _ZERO, alternatives=()) -> str:
+    """O que o operador faz agora por um item em risco, numa frase. ``""`` em quem só espera."""
+    if cause == CAUSE_BATCH_WAITING:
+        return ""
+    if cause == CAUSE_BATCH_LATE:
+        return STEP_LATE
+    if cause == CAUSE_NO_BATCH:
+        return STEP_PLAN
+    if cause == CAUSE_PLAN_SHORT:
+        return STEP_PLAN_MORE
+    offer = _one_of([f"{option.name} ({option.available_display})" for option in alternatives])
+    if cause == CAUSE_BATCH_SHORT:
+        head = f"Avise o cliente: {'falta' if missing < 2 else 'faltam'} {_qty_text(missing)}."
+        return f"{head} Ofereça: {offer}." if offer else f"{head} Remarque o que faltou ou devolva a diferença."
+    return f"Avise o cliente e ofereça: {offer}." if offer else STEP_RESCHEDULE
+
+
+def _order_guidance(items) -> tuple[str, str]:
+    """A frase do pedido inteiro e a saída recomendada, dos itens em risco.
+
+    Um passo só, a frase é a dele. Passos diferentes, cada um leva o nome do
+    produto na frente ("Baguete: avise o cliente…"), primeiro o que protege o
+    cliente e depois o que se pede à Produção, sem repetir a mesma frase.
+    """
+    risky = sorted(
+        (item for item in items if item.at_risk and item.next_step),
+        key=lambda item: _NEXT_STEP_ORDER.index(item.cause),
+    )
+    if not risky:
+        return "", ""
+    names_by_step: dict[str, list[str]] = {}
+    for item in risky:
+        names_by_step.setdefault(item.next_step, []).append(item.name)
+    if len(names_by_step) == 1:
+        next_step = risky[0].next_step
+    else:
+        next_step = " ".join(f"{_all_of(names)}: {_after_colon(step)}" for step, names in names_by_step.items())
+    recommended = (
+        ACTION_OPEN_PRODUCTION if all(item.cause in PRODUCTION_CAUSES for item in risky) else ACTION_CONTACT_CUSTOMER
+    )
+    return next_step, recommended
+
+
+def production_day(promise: OrderPromiseProjection) -> str:
+    """O dia (ISO) do plano que a Produção precisa abrir: o do primeiro item que ela ainda resolve."""
+    return next(
+        (item.batch_date for item in promise.items if item.at_risk and item.cause in PRODUCTION_CAUSES and item.batch_date),
+        "",
+    )
 
 
 # ── Frases ───────────────────────────────────────────────────────────────────
@@ -544,9 +767,10 @@ def _day_label(day: date) -> str:
 
 def _item(
     *, sku: str, name: str, qty: Decimal, missing: Decimal, cause: str, day: date | None, lots: list[dict],
-    ready_at: datetime | None,
+    ready_at: datetime | None, alternatives_for=None,
 ) -> OrderPromiseItemProjection:
     missing = min(max(missing, _ZERO), qty) if qty > 0 else max(missing, _ZERO)
+    alternatives = alternatives_for(missing) if alternatives_for is not None and cause in _ALTERNATIVE_CAUSES else ()
     if missing <= 0:
         reservation, label = RESERVATION_WHOLE, f"{_qty_text(qty)}x {name}"
     elif missing >= qty:
@@ -567,6 +791,8 @@ def _item(
         batch_status=_lot_status(lots),
         batch_ready_at_iso=ready_at.isoformat() if ready_at is not None else "",
         work_order_refs=tuple(sorted(lot["ref"] for lot in lots)),
+        next_step=next_step_for(cause, missing=missing, alternatives=alternatives),
+        alternatives=alternatives,
     )
 
 

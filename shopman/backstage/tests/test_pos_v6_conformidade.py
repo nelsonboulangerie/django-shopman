@@ -27,6 +27,7 @@ from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.pos import build_open_tab, build_pos_tabs
 from shopman.backstage.projections.seating import build_seating
 from shopman.backstage.services.pos_seating import link_tab_to_spot
+from shopman.backstage.tests.pos_test_runtime import bind_station
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import pos as pos_service
 from shopman.shop.services.kds import kitchen_routes_for_skus
@@ -202,6 +203,7 @@ def test_ajustes_le_e_grava_cada_aba(loja, client):
     assert post({"section": "kitchen_station", "station_ref": "forno", "auto_fire": True}).status_code == 200
     assert KDSInstance.objects.get(ref="forno").config["auto_fire"] is True
 
+    bind_station(client, "balcao")
     response = post({"section": "shortcuts", "terminal_ref": "balcao", "favorite_collection_refs": ["doces", "fantasma"]})
     assert response.status_code == 200
     terminal.refresh_from_db()
@@ -243,6 +245,12 @@ def test_a_caixa_nao_grava_maquininha_nem_impressora(loja, client):
     assert "hardware" not in terminal.metadata
 
     Collection.objects.create(ref="doces", name="Doces")
+    # Os atalhos são do terminal DESTE dispositivo (P2-13): sem posto, não gravam.
+    unbound = _post_settings(client, {"section": "shortcuts", "terminal_ref": "balcao",
+                                      "favorite_collection_refs": ["doces"]})
+    assert unbound.status_code == 400
+    assert unbound.json()["field"] == "terminal_ref"
+    bind_station(client, "balcao")
     shortcuts = _post_settings(client, {"section": "shortcuts", "terminal_ref": "balcao",
                                         "favorite_collection_refs": ["doces"]})
     assert shortcuts.status_code == 200

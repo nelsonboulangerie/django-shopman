@@ -26,6 +26,7 @@ export type ManagerAction =
   | "cancel_order"
   | "order_return"
   | "order_no_show"
+  | "refund_retry"
   | "order_edit_refund"
   | "card_machine_refund"
   | "settle_account"
@@ -89,6 +90,13 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   order_no_show: {
     title: "Autorizar encerrar como não retirado",
     reason: "O cliente não veio buscar o pedido.",
+  },
+  // O estorno do pedido cancelado que o meio de pagamento recusou, pedido de novo no
+  // Gestor (WP-G13, decisão do dono de 17/11/2026). O valor vem pronto em `detail`,
+  // da faixa do pedido.
+  refund_retry: {
+    title: "Autorizar tentar o estorno de novo",
+    reason: "O estorno do pedido cancelado não saiu.",
   },
   order_edit_refund: {
     title: "Autorizar a devolução",
@@ -227,6 +235,7 @@ export function managerAuthReason(input: ManagerAuthReasonInput): string {
       || input.action === "cancel_order"
       || input.action === "order_return"
       || input.action === "order_no_show"
+      || input.action === "refund_retry"
     )
   )
     return detail;

@@ -210,6 +210,8 @@ export interface CardNotice {
   actions?: ButtonProps[];
   /** Os fatos do aviso, um por linha, no lugar da descrição (o item e o porquê). */
   lines?: Array<{ key: string; label: string; detail?: string }>;
+  /** O que fazer agora, numa frase do servidor, escrito sob as linhas. */
+  nextStep?: string;
   /** Por que uma saída do aviso não pode agora, escrito sob as linhas. */
   notes?: string[];
   /** As saídas que são atalhos (a promessa em risco), no lugar de `actions`. */
@@ -313,9 +315,10 @@ const notices = computed<CardNotice[]>(() => {
     });
   }
   // Promessa em risco (WP-G08): um item do pedido ficou sem lastro (o lote foi
-  // cancelado, fechou com menos, atrasou). O servidor diz o item, o porquê e as três
-  // saídas; aqui são atalhos, porque o contato do cliente e o cancelar com motivo
-  // moram no detalhe, e remarcar mora no PDV.
+  // cancelado, fechou com menos, atrasou). O servidor diz o item, o porquê, o que
+  // fazer agora e as saídas, com a recomendada marcada; aqui são atalhos, porque o
+  // contato do cliente e o cancelar com motivo moram no detalhe, remarcar mora no PDV
+  // e o plano, na Produção.
   const risk = promiseRisk(card);
   if (risk)
     out.push({
@@ -325,6 +328,7 @@ const notices = computed<CardNotice[]>(() => {
       label: risk.label,
       title: risk.label,
       lines: risk.items,
+      nextStep: risk.nextStep,
       notes: risk.blockedReasons,
       exits: risk.exits,
       code: code.value.code,

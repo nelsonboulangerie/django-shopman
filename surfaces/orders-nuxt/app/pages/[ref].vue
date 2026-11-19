@@ -8,6 +8,11 @@ import OrderDetailPending from "~/components/OrderDetailPending.vue";
 import { useGestorAccess } from "~/composables/useGestorAccess";
 import { orderDetailDenial } from "~/presentation/gestorSections";
 import { danfeLine } from "~/presentation/danfe";
+import {
+  REFUND_RETRY,
+  refundRetrySentence,
+  refundRetryToast,
+} from "~/presentation/orderPending";
 // Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
 // observação, nota da cozinha, histórico) são do `OperatorOrderDetail` do kit — a
 // MESMA tela do detalhe da encomenda no PDV (decisão do dono, 28/09/2026). Aqui
@@ -94,6 +99,7 @@ const {
   cancel,
   returnOrder,
   markNotPickedUp,
+  retryRefund,
   settleCash,
   equipmentBack,
   courierBack,
@@ -122,6 +128,7 @@ function onPendingAction(ref_: string) {
   if (ref_ === "requeue-fiscal") void requeueFiscal();
   else if (ref_ === "resend-payment-link") void resendPaymentLink();
   else if (ref_ === "print-danfe") void printDanfe();
+  else if (ref_ === REFUND_RETRY) void submitRefundRetry();
   else if (ref_ === "cancel")
     void openDialog("cancel", {
       reasonKey: order.value?.payment_lapsed ? PAYMENT_NOT_CONFIRMED : "",
@@ -575,23 +582,59 @@ function onNoShowDone() {
   useSonner.success("Pedido encerrado como não retirado.");
 }
 
+// Tentar o estorno de novo (WP-G13): o botão mora na linha "Estorno não saiu" da faixa.
+// Não há diálogo próprio: o valor é do servidor, e o gerente o lê no MESMO
+// `OperatorManagerAuth`. `true` do gesto diz que a tentativa foi gravada; se o dinheiro
+// voltou, quem diz é o pedido relido. A recusa do meio de pagamento não vira aviso
+// solto: o servidor a escreve na própria linha (`failure`).
+const refundRetrying = ref(false);
+async function submitRefundRetry() {
+  refundRetrying.value = true;
+  try {
+    if (await retryRefund()) onRefundRetryDone();
+  } finally {
+    refundRetrying.value = false;
+  }
+}
+function onRefundRetryDone() {
+  const told = refundRetryToast(order.value?.cancelled_money);
+  if (told) useSonner.success(told);
+}
+
 // O ato que o gerente assina e a frase que ele lê, pelo gesto que pediu a assinatura.
 const managerAuthAction = computed<ManagerAction>(() => {
   if (managerChallenge.value?.action === "return") return "order_return";
   if (managerChallenge.value?.action === "no-show") return "order_no_show";
+  if (managerChallenge.value?.action === REFUND_RETRY) return "refund_retry";
   return "cancel_order";
 });
 const managerAuthDetail = computed(() => {
   if (managerChallenge.value?.action === "return") return returnMoneySentence.value;
   if (managerChallenge.value?.action === "no-show") return noShowMoneySentence.value;
+  if (managerChallenge.value?.action === REFUND_RETRY)
+    return refundRetrySentence(order.value?.cancelled_money);
   return order.value?.cancel_money_effect || "";
+});
+// A espera longa que o gerente não vê: o gesto fala com o meio de pagamento.
+const managerAuthBusyText = computed(() => {
+  if (managerAuthAction.value === "refund_retry")
+    return "Pedindo o estorno ao meio de pagamento. Leva alguns segundos.";
+  if (managerAuthAction.value === "cancel_order" && order.value?.cancel_waits_for_gateway)
+    return "Cancelando e falando com o meio de pagamento. Leva alguns segundos.";
+  return "";
 });
 
 async function signed(approval: Record<string, string>) {
   // O desafio some quando a assinatura vale: o gesto assinado se lê antes.
   const signedAction = managerChallenge.value?.action;
-  if (!(await authorize(approval))) return;
+  refundRetrying.value = signedAction === REFUND_RETRY;
+  try {
+    if (!(await authorize(approval))) return;
+  } finally {
+    refundRetrying.value = false;
+  }
   if (signedAction === "no-show") onNoShowDone();
+  else if (signedAction === REFUND_RETRY) onRefundRetryDone();
   else dialog.value = "";
 }
 async function signWithPin(username: string, pin: string) {
@@ -1517,6 +1560,7 @@ const outside = useOutsideStore(
         :money="order.cancelled_money"
         :busy="busy"
         :danfe-printing="danfePrinting"
+        :refund-retrying="refundRetrying"
         @act="onPendingAction"
       />
 
@@ -2017,11 +2061,7 @@ const outside = useOutsideStore(
       :detail="managerAuthDetail"
       :managers="order?.managers || []"
       :busy="busy"
-      :busy-text="
-        managerAuthAction === 'cancel_order' && order?.cancel_waits_for_gateway
-          ? 'Cancelando e falando com o meio de pagamento. Leva alguns segundos.'
-          : ''
-      "
+      :busy-text="managerAuthBusyText"
       :error="
         managerChallenge?.code === 'manager_approval_invalid'
           ? managerChallenge.message

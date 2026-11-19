@@ -226,6 +226,58 @@ describe("useOrderDetail", () => {
     expect(env.refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("tentar o estorno de novo usa a ação do detalhe, pede o gerente e reenvia a MESMA tentativa", async () => {
+    // WP-G13: não há prévia nem escolha. A ação `refund-retry` do detalhe traz a base
+    // que o comando confere, e a chave da intenção é a chave da tentativa.
+    const base = fixtureActions({ can_confirm: true })[0]!;
+    env.fetchData.value = { order: { ref: "WEB-ER", actions: [{ ...base, ref: "refund-retry", label: "Tentar o estorno de novo", enabled: true, payload_schema: { base_revision: "refund-base", expected_actor_id: 1 } }] } };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 422,
+      data: { detail: "Tentar o estorno de novo pede a autorização de um gerente.", error: { code: "manager_approval_required" } },
+    });
+    const d = useOrderDetail("WEB-ER");
+
+    expect(await d.retryRefund()).toBe(false);
+    expect(env.sonner.error).not.toHaveBeenCalled();
+    expect(d.managerChallenge.value).toMatchObject({ code: "manager_approval_required", action: "refund-retry" });
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/WEB-ER/refund-retry/");
+    const first = env.fetchMock.mock.calls[0]![1];
+    expect(first.method).toBe("POST");
+    expect(first.body).toEqual({ base_revision: "refund-base", expected_actor_id: 1 });
+
+    // O servidor grava a tentativa mesmo quando o gateway recusa: `applied` com o
+    // resultado em `refund`. O composable só diz que a tentativa foi gravada.
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", refund: { outcome: "refused", message: "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte." } });
+    expect(await d.authorize({ username: "joyce", pin: "1234" })).toBe(true);
+    const second = env.fetchMock.mock.calls[1]![1];
+    expect(second.body).toEqual({ base_revision: "refund-base", expected_actor_id: 1, manager_approval: { username: "joyce", pin: "1234" } });
+    // A assinatura não cria uma segunda tentativa: é a mesma chave.
+    expect(second.headers["Idempotency-Key"]).toBe(first.headers["Idempotency-Key"]);
+    expect(d.managerChallenge.value).toBeNull();
+    // O pedido é relido: a linha diz se o dinheiro voltou ou o que o gateway respondeu.
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+    expect(env.sonner.success).not.toHaveBeenCalled();
+
+    // Tentativa nova, depois da recusa: outra chave.
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", refund: { outcome: "refunded" } });
+    expect(await d.retryRefund()).toBe(true);
+    expect(env.fetchMock.mock.calls[2]![1].headers["Idempotency-Key"]).not.toBe(first.headers["Idempotency-Key"]);
+  });
+
+  it("fora do estorno que não saiu, a recusa do servidor vira a frase dele", async () => {
+    const base = fixtureActions({ can_confirm: true })[0]!;
+    env.fetchData.value = { order: { ref: "WEB-EJ", actions: [{ ...base, ref: "refund-retry", enabled: true, payload_schema: { base_revision: "refund-base", expected_actor_id: 1 } }] } };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 409,
+      data: { detail: "O estorno deste pedido já saiu.", error: { code: "refund_retry_not_allowed" }, outcome: "not_applied" },
+    });
+    const d = useOrderDetail("WEB-EJ");
+
+    expect(await d.retryRefund()).toBe(false);
+    expect(d.managerChallenge.value).toBeNull();
+    expect(env.sonner.error).toHaveBeenCalledWith("O estorno deste pedido já saiu.");
+  });
+
   it("saveNotes/addComment enviam o corpo e tostam sucesso", async () => {
     env.fetchData.value = { order: { actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "notes", payload_schema: { base_revision: "note-base" } }, { ...fixtureActions({ can_advance: true })[0], ref: "comment", payload_schema: { base_revision: "comment-base" } }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });

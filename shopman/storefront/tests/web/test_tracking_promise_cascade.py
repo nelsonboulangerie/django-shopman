@@ -569,6 +569,9 @@ def test_preorder_not_accepted_yet_is_not_called_reserved(state, paid, when):
         assert when in message
     if paid and state == "store_checking":
         assert message.startswith("Pagamento recebido.")
+    if paid:
+        # Pago e ainda não aceito: nas duas frases o cliente lê que o valor volta
+        # (WP-L06, P1-07; o estado ``payment_confirmed`` não prometia).
         assert "devolvemos o valor" in message
 
 

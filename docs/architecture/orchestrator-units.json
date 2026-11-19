@@ -1834,7 +1834,8 @@
         {
           "path": "shopman/shop/handlers/ifood_merchant.py",
           "symbols": [
-            "IFoodMerchantSyncHandler"
+            "IFoodMerchantSyncHandler",
+            "_LastError"
           ]
         }
       ],
@@ -1851,7 +1852,7 @@
       ],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_ifood_merchant.py::test_grade_recusada_pelo_ifood_nao_repete",
+        "shopman/shop/tests/test_ifood_merchant.py::test_grade_recusada_pelo_ifood_nao_repete_e_avisa",
         "shopman/shop/tests/test_ifood_merchant.py::test_sem_resposta_do_ifood_a_directive_repete"
       ],
       "test_gap_reason": null,
@@ -1943,7 +1944,10 @@
         {
           "path": "shopman/shop/handlers/ifood_status.py",
           "symbols": [
-            "IFoodStatusCallbackHandler"
+            "IFoodStatusCallbackHandler",
+            "STATUS_NOT_DELIVERED_ALERT",
+            "_STEP_COPY",
+            "alert_status_not_delivered"
           ]
         }
       ],
@@ -8771,7 +8775,8 @@
         {
           "path": "shopman/shop/services/courier.py",
           "symbols": [
-            "group_refusal"
+            "group_refusal",
+            "not_today_refusal"
           ]
         }
       ],
@@ -10079,7 +10084,9 @@
             "KEY",
             "TERMINAL_STATUSES",
             "REFUSED_ALERT_TYPE",
-            "_REASON_KEYS"
+            "_REASON_KEYS",
+            "NOT_DELIVERED_ALERT_TYPE",
+            "record_not_delivered"
           ]
         }
       ],
@@ -10270,7 +10277,17 @@
             "_ACK_BATCH",
             "_CHANGE_TYPE_LABEL",
             "_BLOCK_EXPLANATION",
-            "_RECONCILING"
+            "_RECONCILING",
+            "CANCELLED_NOT_APPLIED_ALERT",
+            "_CAN_CODE_KEYS",
+            "_CAN_ORIGIN_COPY",
+            "_CAN_ORIGIN_KEYS",
+            "_CAN_REASON_KEYS",
+            "_alert_cancelled_not_applied",
+            "_first_text",
+            "_record_cancellation_facts",
+            "cancellation_facts",
+            "cancellation_reason_copy"
           ]
         }
       ],
@@ -10627,7 +10644,10 @@
             "expected_available",
             "check_store",
             "problem_copy",
-            "_alert_divergence"
+            "_alert_divergence",
+            "ALERT_STATUS_UNREADABLE_WINDOW_MINUTES",
+            "_alert_status_unreadable",
+            "alert_store_write_failed"
           ]
         }
       ],
@@ -16705,6 +16725,41 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_order_date_before_batch.py::TestRecusaAntesDoFechamento::test_data_anterior_a_fornada_devolve_a_recusa_com_item_e_dia"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "stock.promise-expiry-margin",
+      "question": "Quantos dias de validade o saldo precisa ter depois da data que se lê ou reserva?",
+      "owner": "stock.promise-expiry-margin",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.promise_expiry_margin:expiry_margin_for_target",
+      "authoritative_symbols": [
+        "shopman.shop.policies.promise_expiry_margin:expiry_margin_for_target"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/promise_expiry_margin.py",
+          "symbols": [
+            "FUTURE_TARGET_EXPIRY_MARGIN_DAYS",
+            "expiry_margin_for_target"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_sobra_de_hoje_nao_lastreia_encomenda.py::TestTheRule::test_today_keeps_the_channel_margin",
+        "shopman/shop/tests/test_sobra_de_hoje_nao_lastreia_encomenda.py::TestTheRule::test_future_target_asks_for_one_more_day_of_validity"
       ],
       "test_gap_reason": null,
       "policy": true,

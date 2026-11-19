@@ -21,6 +21,7 @@ import {
   waitsForBatch,
 } from "../app/presentation/orderPromise";
 import {
+  manyOrdersStep,
   orderFocusKeys,
   promiseRiskAlert,
 } from "../app/presentation/promiseAlert";
@@ -31,7 +32,7 @@ import {
   queueGesture,
   queueItems,
 } from "../app/presentation/queue";
-import { pendingButton, pendingFocusKey } from "../app/presentation/orderPending";
+import { pendingButton, pendingFocusKey, pendingLines } from "../app/presentation/orderPending";
 import type { OrderCardProjection } from "../app/types/orders";
 
 const PERMISSION = "Identifique uma pessoa com permissão para gerenciar pedidos.";
@@ -41,31 +42,54 @@ const link = (ref: string, label: string, href: string, over: Partial<Action> = 
   ref, kind: "link", label, priority: "secondary", enabled: true, reason: "", href,
   method: "", payload_schema: {}, idempotency: "none", confirmation: {}, ...over,
 });
-/** As três saídas do CARTÃO, como `_promise_card_actions` as manda. */
+/** As três saídas do CARTÃO, como `_promise_card_actions` as manda: a recomendada
+ *  primeiro e `primary`, as outras `secondary`, cancelar `danger`. */
 const cardExits = (ref: string): Action[] => [
   link("contact-customer", "Avisar o cliente", `/${ref}#promise`, { priority: "primary" }),
   link("reschedule-at-pos", "Remarcar no PDV", `https://pdv.example.test/preorders/${ref}`),
   link("cancel", "Cancelar pedido", `/${ref}#cancel`, { priority: "danger" }),
 ];
+const RESCHEDULE_STEP = "Avise o cliente e remarque para o próximo lote.";
+const PLAN_STEP = "Peça à Produção para planejar.";
+const openProduction = (over: Partial<Action> = {}) =>
+  link("open-production", "Abrir a Produção", "https://producao.example.test/plan?date=2026-11-18", {
+    priority: "primary", ...over,
+  });
+/** O item que a Produção ainda resolve: sem lote planejado para o dia. */
+const noBatchItem = () =>
+  item({
+    cause: "no_batch", detail: "Não há lote planejado para hoje.", batch_date: "2026-11-18", batch_status: "",
+    work_order_refs: [], next_step: PLAN_STEP,
+  });
+/** A promessa que pede a Produção. `operates`: a conta abre a Produção e recebe a ação. */
+const needsProduction = (ref = "HOJE-PLANEJAR", operates = true): OrderPromiseProjection => ({
+  state: "at_risk", label: "Promessa em risco", items: [noBatchItem()], blocks_start: false, since_iso: "",
+  next_step: PLAN_STEP, recommended_action: "open-production",
+  actions: operates
+    ? [openProduction(), ...cardExits(ref).map((action) => (action.ref === "cancel" ? action : { ...action, priority: "secondary" }))]
+    : cardExits(ref).map((action) => (action.ref === "cancel" ? action : { ...action, priority: "secondary" })),
+});
 const item = (over: Partial<OrderPromiseItemProjection> = {}): OrderPromiseItemProjection => ({
   sku: "BAGUETE", name: "Baguete de tradição", reservation: "lost", cause: "batch_cancelled",
   at_risk: true, qty: "4", missing_qty: "4", label: "4x Baguete de tradição sem reserva",
   detail: "O lote de amanhã foi cancelado.", batch_date: "2026-11-19", batch_status: "void",
-  batch_ready_at_iso: "", work_order_refs: ["WO-1"], ...over,
+  batch_ready_at_iso: "", work_order_refs: ["WO-1"], next_step: "Avise o cliente e remarque para o próximo lote.",
+  alternatives: [], ...over,
 });
 const waitingItem = (over: Partial<OrderPromiseItemProjection> = {}) =>
   item({
     reservation: "whole", cause: "batch_waiting", at_risk: false, missing_qty: "0",
     label: "4x Baguete de tradição", detail: "O lote de hoje não começou. Fica pronto às 12h.",
-    batch_status: "planned", ...over,
+    batch_status: "planned", next_step: "", ...over,
   });
 const atRisk = (ref = "ENC-CANCELADA", over: Partial<OrderPromiseProjection> = {}): OrderPromiseProjection => ({
   state: "at_risk", label: "Promessa em risco", items: [item()], blocks_start: false,
-  since_iso: "", actions: cardExits(ref), ...over,
+  since_iso: "", actions: cardExits(ref), next_step: "Avise o cliente e remarque para o próximo lote.",
+  recommended_action: "contact-customer", ...over,
 });
 const waiting = (over: Partial<OrderPromiseProjection> = {}): OrderPromiseProjection => ({
   state: "waiting_batch", label: "Esperando o lote", items: [waitingItem()], blocks_start: true,
-  since_iso: "", actions: [], ...over,
+  since_iso: "", actions: [], next_step: "", recommended_action: "", ...over,
 });
 const BATCH_REASON =
   "O preparo abre quando o lote ficar pronto. Baguete de tradição: o lote de hoje não começou. Fica pronto às 12h.";
@@ -146,29 +170,79 @@ describe("promiseRisk: o estado, os itens e as saídas, com as palavras do servi
 
 describe("exitButtons: o peso de cada saída", () => {
   const exits = promiseRisk({ promise: atRisk() })!.exits;
+  const look = (list: typeof exits, tone: "alert" | "row") =>
+    exitButtons(list, tone).map((button) => [button.ref, button.color, button.variant]);
 
-  it("no aviso do cartão, as três na cor do aviso: a primeira cheia, as outras contornadas", () => {
-    expect(exitButtons(exits, "alert").map((button) => [button.color, button.variant])).toEqual([
-      ["error", "solid"], ["error", "outline"], ["error", "outline"],
+  it("no aviso do cartão, todas na cor do aviso: a recomendada cheia, as outras contornadas", () => {
+    expect(look(exits, "alert")).toEqual([
+      ["contact-customer", "error", "solid"], ["reschedule-at-pos", "error", "outline"], ["cancel", "error", "outline"],
     ]);
   });
 
-  it("na Fila, quando a promessa é o fato do pedido, a primeira saída é o gesto principal", () => {
-    expect(exitButtons(exits, "lead").map((button) => [button.color, button.variant])).toEqual([
-      ["primary", "solid"], ["neutral", "outline"], ["error", "outline"],
+  it("numa linha (Fila, Tabela), a recomendada é o único botão cheio; cancelar segue vermelho", () => {
+    expect(look(exits, "row")).toEqual([
+      ["contact-customer", "primary", "solid"], ["reschedule-at-pos", "neutral", "outline"], ["cancel", "error", "outline"],
     ]);
   });
 
-  it("ao lado de outro gesto principal, nenhuma é cheia; cancelar segue vermelho", () => {
-    expect(exitButtons(exits, "plain").map((button) => [button.color, button.variant])).toEqual([
-      ["neutral", "outline"], ["neutral", "outline"], ["error", "outline"],
+  it("o cheio segue o que o servidor recomenda, e não a posição: \"Abrir a Produção\" quando ela resolve", () => {
+    const production = promiseRisk({ promise: needsProduction() })!.exits;
+    expect(look(production, "row")).toEqual([
+      ["open-production", "primary", "solid"], ["contact-customer", "neutral", "outline"],
+      ["reschedule-at-pos", "neutral", "outline"], ["cancel", "error", "outline"],
     ]);
+    // A recomendada fora do primeiro lugar continua sendo a cheia.
+    expect(look([...production].reverse(), "alert").filter((button) => button[2] === "solid")).toEqual([
+      ["open-production", "error", "solid"],
+    ]);
+  });
+
+  it("sem saída recomendada (quem não abre a Produção), nenhum botão é cheio", () => {
+    const withoutProduction = promiseRisk({ promise: needsProduction("HOJE-PLANEJAR", false) })!.exits;
+    expect(look(withoutProduction, "row")).toEqual([
+      ["contact-customer", "neutral", "outline"], ["reschedule-at-pos", "neutral", "outline"], ["cancel", "error", "outline"],
+    ]);
+    expect(look(withoutProduction, "alert").every((button) => button[2] === "outline")).toBe(true);
   });
 
   it("saída travada nunca é o botão cheio", () => {
     const locked = exits.map((exit) => ({ ...exit, disabled: true, href: "" }));
-    expect(exitButtons(locked, "lead")[0]).toMatchObject({ color: "neutral", variant: "outline" });
+    expect(exitButtons(locked, "row")[0]).toMatchObject({ color: "neutral", variant: "outline" });
     expect(exitButtons(locked, "alert")[0]).toMatchObject({ color: "error", variant: "outline" });
+  });
+});
+
+describe("o próximo passo: o aviso diz o que fazer", () => {
+  it("a frase é a do servidor, sem reescrever", () => {
+    expect(promiseRisk({ promise: atRisk() })!.nextStep).toBe(RESCHEDULE_STEP);
+    const offer = "Avise o cliente e ofereça: Fendu (6 livres para amanhã) ou Pain de Campagne (8 livres para amanhã).";
+    expect(promiseRisk({ promise: atRisk("X", { next_step: offer }) })!.nextStep).toBe(offer);
+  });
+
+  it("quando a Produção resolve, a frase pede a Produção e a saída dela abre o plano do dia, fora do Gestor", () => {
+    const risk = promiseRisk({ promise: needsProduction() })!;
+    expect(risk.nextStep).toBe(PLAN_STEP);
+    expect(risk.recommendedAction).toBe("open-production");
+    expect(risk.exits[0]).toMatchObject({
+      ref: "open-production", label: "Abrir a Produção", href: "https://producao.example.test/plan?date=2026-11-18",
+      external: true, recommended: true, disabled: false, icon: "i-lucide-croissant",
+    });
+  });
+
+  it("quem não abre a Produção não recebe a saída, e a frase segue dizendo o que fazer", () => {
+    const risk = promiseRisk({ promise: needsProduction("HOJE-PLANEJAR", false) })!;
+    expect(risk.nextStep).toBe(PLAN_STEP);
+    expect(risk.exits.map((exit) => exit.ref)).toEqual(["contact-customer", "reschedule-at-pos", "cancel"]);
+    expect(risk.exits.some((exit) => exit.recommended)).toBe(false);
+  });
+
+  it("leitura antiga, sem os campos novos, não quebra a tela", () => {
+    const old = { ...atRisk() } as Partial<OrderPromiseProjection>;
+    delete old.next_step;
+    delete old.recommended_action;
+    const risk = promiseRisk({ promise: old as OrderPromiseProjection })!;
+    expect(risk.nextStep).toBe("");
+    expect(risk.recommendedAction).toBe("");
   });
 });
 
@@ -284,7 +358,9 @@ describe("cardFooter: o ⋮ não fica sozinho numa linha (#2710)", () => {
 describe("lista de Encomendas: a encomenda em risco mora aqui", () => {
   it("a linha diz \"Promessa em risco\" e o item, conta como \"Precisa de você\" e abre a faixa das saídas", () => {
     const line = preorderLine(card({ attention: "promise", promise: atRisk() }));
-    expect(line.risk).toEqual({ label: "Promessa em risco", items: "4x Baguete de tradição sem reserva" });
+    expect(line.risk).toEqual({
+      label: "Promessa em risco", items: "4x Baguete de tradição sem reserva", nextStep: RESCHEDULE_STEP,
+    });
     expect(line.needsYou).toBe(true);
     expect(line.to).toBe("/ENC-CANCELADA#promise");
   });
@@ -316,11 +392,12 @@ describe("promiseRiskAlert: o aviso de página", () => {
     expect(promiseRiskAlert([card(), card({ ref: "B", promise: waiting() })])).toBeNull();
   });
 
-  it("um pedido: diz qual, o item e o porquê, e abre o pedido", () => {
+  it("um pedido: diz qual, o item, o porquê e o que fazer, e abre o pedido", () => {
     const alert = promiseRiskAlert([card(), card({ ref: "NB-261118-W33", promise: atRisk("NB-261118-W33") })])!;
     expect(alert).toMatchObject({
       title: "Promessa em risco no pedido W33",
-      description: "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado.",
+      description:
+        "4x Baguete de tradição sem reserva. O lote de amanhã foi cancelado. Avise o cliente e remarque para o próximo lote.",
       actionLabel: "Abrir o pedido",
       firstRef: "NB-261118-W33",
       opensOrder: true,
@@ -339,7 +416,7 @@ describe("promiseRiskAlert: o aviso de página", () => {
       card({ ref: "NB-261118-W33", promise: atRisk() }), // o mesmo pedido em duas listas conta uma vez
     ])!;
     expect(alert).toMatchObject({
-      title: "Promessa em risco em 2 pedidos",
+      title: "Promessa em risco em 2 pedidos: avise os clientes e remarque",
       description: "W33 e C73.",
       actionLabel: "Ver o W33",
       firstRef: "NB-261118-W33",
@@ -350,10 +427,41 @@ describe("promiseRiskAlert: o aviso de página", () => {
   it("muitos pedidos: três códigos e o resto num número com nome", () => {
     const refs = ["A-1", "A-2", "A-3", "A-4", "A-5"];
     const alert = promiseRiskAlert(refs.map((ref) => card({ ref, promise: atRisk() })))!;
-    expect(alert.title).toBe("Promessa em risco em 5 pedidos");
+    expect(alert.title).toBe("Promessa em risco em 5 pedidos: avise os clientes e remarque");
     expect(alert.description).toBe("1, 2, 3 e mais 2 pedidos.");
     expect(promiseRiskAlert(refs.slice(0, 4).map((ref) => card({ ref, promise: atRisk() })))!.description).toBe(
       "1, 2, 3 e mais 1 pedido.",
+    );
+  });
+
+  it("vários que só a Produção resolve: o título pede a Produção", () => {
+    const alert = promiseRiskAlert([
+      card({ ref: "NB-261118-N75", promise: needsProduction("NB-261118-N75") }),
+      // Quem não abre a Produção lê o mesmo passo: a recomendação é do pedido, não da conta.
+      card({ ref: "NB-261118-K42", promise: needsProduction("NB-261118-K42", false) }),
+    ])!;
+    expect(alert.title).toBe("Promessa em risco em 2 pedidos: peça à Produção para planejar");
+    expect(alert.description).toBe("N75 e K42.");
+  });
+
+  it("misto: falar com os clientes vence, porque protege quem comprou", () => {
+    const alert = promiseRiskAlert([
+      card({ ref: "NB-261118-N75", promise: needsProduction("NB-261118-N75") }),
+      card({ ref: "NB-261118-K42", promise: atRisk("NB-261118-K42") }),
+    ])!;
+    expect(alert.title).toBe("Promessa em risco em 2 pedidos: avise os clientes e remarque");
+    expect(manyOrdersStep(["open-production", "contact-customer"])).toBe("avise os clientes e remarque");
+    expect(manyOrdersStep(["open-production", "open-production"])).toBe("peça à Produção para planejar");
+    // Leitura sem recomendação nunca vira pedido à Produção.
+    expect(manyOrdersStep(["", "open-production"])).toBe("avise os clientes e remarque");
+    expect(manyOrdersStep([])).toBe("avise os clientes e remarque");
+  });
+
+  it("um pedido que pede a Produção: a descrição leva a frase do servidor", () => {
+    const alert = promiseRiskAlert([card({ ref: "NB-261118-N75", promise: needsProduction("NB-261118-N75") })])!;
+    expect(alert.title).toBe("Promessa em risco no pedido N75");
+    expect(alert.description).toBe(
+      "4x Baguete de tradição sem reserva. Não há lote planejado para hoje. Peça à Produção para planejar.",
     );
   });
 
@@ -467,6 +575,56 @@ describe("detalhe: as saídas da promessa na faixa \"O que falta neste pedido\""
 
   it("a linha da promessa é alvo do próximo foco", () => {
     expect(pendingFocusKey("promise")).toBe("pending:promise");
+  });
+
+  it("\"Abrir a Produção\" é atalho para outro app de operador", () => {
+    const button = pendingButton(
+      action("open-production", { href: "https://producao.example.test/plan?date=2026-11-18" }),
+      idle,
+    );
+    expect(button).toMatchObject({
+      href: "https://producao.example.test/plan?date=2026-11-18", crossApp: true, icon: "i-lucide-croissant",
+    });
+  });
+
+  const promiseLine = (actions: Array<Record<string, unknown>>) =>
+    [{ key: "promise", tone: "error", label: "Promessa em risco", reason: "…", next_step: PLAN_STEP, actions }] as never;
+  const weights = (actions: Array<Record<string, unknown>>) =>
+    pendingLines(promiseLine(actions), { busy: false, danfePrinting: false })[0]!.buttons.map((button) => [
+      button.ref, button.color, button.variant,
+    ]);
+
+  it("a linha escreve o próximo passo, e o gesto cheio é o que o servidor recomenda", () => {
+    const [line] = pendingLines(
+      promiseLine([
+        action("open-production", { href: "https://producao.example.test/plan", priority: "primary" }),
+        action("contact-customer", { href: "https://wa.me/55", priority: "secondary" }),
+        action("cancel", { priority: "danger" }),
+      ]),
+      { busy: false, danfePrinting: false },
+    );
+    expect(line!.nextStep).toBe(PLAN_STEP);
+    expect(line!.buttons.map((button) => [button.ref, button.color, button.variant])).toEqual([
+      ["open-production", "primary", "solid"], ["contact-customer", "neutral", "outline"], ["cancel", "error", "outline"],
+    ]);
+  });
+
+  it("linha que declara os pesos e não tem recomendado: nenhum gesto cheio", () => {
+    expect(
+      weights([
+        action("contact-customer", { href: "https://wa.me/55", priority: "secondary" }),
+        action("reschedule-at-pos", { href: "https://pdv.example.test/x", priority: "secondary" }),
+        action("cancel", { priority: "danger" }),
+      ]),
+    ).toEqual([
+      ["contact-customer", "neutral", "outline"], ["reschedule-at-pos", "neutral", "outline"], ["cancel", "error", "outline"],
+    ]);
+  });
+
+  it("linha que não declara peso nenhum segue como era: o primeiro gesto é o principal", () => {
+    expect(weights([action("requeue-fiscal"), action("cancel")])).toEqual([
+      ["requeue-fiscal", "primary", "solid"], ["cancel", "error", "outline"],
+    ]);
   });
 });
 
