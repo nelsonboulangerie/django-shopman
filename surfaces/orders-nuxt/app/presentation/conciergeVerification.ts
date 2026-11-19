@@ -18,6 +18,12 @@ export const TAKEN_OVER_NOTICE_NOT_SENT =
 export const ANSWER_FAILED = "A resposta não saiu. O texto continua aqui: tente de novo.";
 export const TAKE_OVER_FAILED = "Não deu para assumir a conversa. Tente de novo.";
 
+/** Os desfechos em que tentar de novo não adianta: só resta assumir a conversa. */
+const FINAL_ANSWER_ERRORS = new Set(["window_closed"]);
+export function isFinalAnswerError(code: string | undefined | null): boolean {
+  return Boolean(code && FINAL_ANSWER_ERRORS.has(code));
+}
+
 type Action = AlertProjection["actions"][number];
 
 export function verificationActions(alert: AlertProjection): { answer: Action | null; takeOver: Action | null } {

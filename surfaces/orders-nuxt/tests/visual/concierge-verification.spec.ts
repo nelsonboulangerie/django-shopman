@@ -118,6 +118,9 @@ for (const viewport of VIEWPORTS) {
     await page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer-send]").click();
     await expect(page.locator("[data-operator-inbox-answer-error]")).toBeVisible();
     await expect(field).toHaveValue("Teste de janela fechada");
+    // Janela fechada: tentar de novo não adianta; Assumir vira o principal.
+    await expect(page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer-send]")).toBeDisabled();
+    await expect(page.locator("[data-operator-inbox-panel] [data-operator-inbox-answer-primary]")).toBeVisible();
     await shot(page, `${viewport.id}-5-erro-de-envio`);
     await audit(page, "[data-operator-inbox-panel]", `${viewport.id}-5-erro-de-envio`);
 

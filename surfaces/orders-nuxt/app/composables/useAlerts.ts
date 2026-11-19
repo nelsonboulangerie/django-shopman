@@ -15,6 +15,7 @@ import {
   TAKE_OVER_FAILED,
   TAKEN_OVER,
   TAKEN_OVER_NOTICE_NOT_SENT,
+  isFinalAnswerError,
   verificationActions,
 } from "~/presentation/conciergeVerification";
 import {
@@ -221,25 +222,33 @@ export function useAlerts() {
     kind: "answer" | "takeOver",
     body: Record<string, unknown> | undefined,
     fallback: string,
-  ): Promise<{ error: string | null; data: { warning?: string } | null }> {
+  ): Promise<{ error: string | null; final: boolean; data: { warning?: string } | null }> {
     const action = verificationActions(alert)[kind];
-    if (!action || answering.value.has(alert.pk)) return { error: null, data: null };
+    if (!action || answering.value.has(alert.pk)) return { error: null, final: false, data: null };
     mark(alert.pk, true);
     try {
       const data = await $fetch<{ ok: boolean; warning?: string }>(action.href, { method: "POST", body: body ?? {} });
-      return { error: null, data };
+      return { error: null, final: false, data };
     } catch (error) {
-      return { error: httpErrorMessage(error, fallback), data: null };
+      // A janela de 24 horas fechou: tentar de novo não adianta, só assumir a conversa.
+      const code = (httpError(error).data as { error?: { code?: string } } | null)?.error?.code;
+      return { error: httpErrorMessage(error, fallback), final: isFinalAnswerError(code), data: null };
     } finally {
       mark(alert.pk, false);
       await refresh();
     }
   }
 
-  async function answerVerification(alert: AlertProjection, text: string): Promise<string | null> {
-    const { error } = await verificationPost(alert, "answer", { text }, ANSWER_FAILED);
-    if (!error) useSonner.success(ANSWER_SENT);
-    return error;
+  async function answerVerification(
+    alert: AlertProjection,
+    text: string,
+  ): Promise<{ message: string; final: boolean } | null> {
+    const { error, final } = await verificationPost(alert, "answer", { text }, ANSWER_FAILED);
+    if (!error) {
+      useSonner.success(ANSWER_SENT);
+      return null;
+    }
+    return { message: error, final };
   }
 
   async function takeOverVerification(alert: AlertProjection): Promise<string | null> {

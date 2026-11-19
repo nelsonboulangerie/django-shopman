@@ -74,6 +74,12 @@ export interface OperatorInboxAnswerSpec {
   altLabel?: string;
 }
 
+/** O erro do envio, quando quem chama sabe que tentar de novo não adianta. */
+export interface OperatorInboxAnswerFailure {
+  message: string;
+  final?: boolean;
+}
+
 export interface OperatorInboxAlertSource {
   /** Título da seção ("Gerais"; o Marketing diz "Decisões"). */
   title?: string;
@@ -86,8 +92,10 @@ export interface OperatorInboxAlertSource {
   /** Executa o gesto direto do alerta (`actLabel`). Sem ele, o botão não aparece. */
   act?: (key: string | number) => void | Promise<void>;
   /** Envia a resposta escrita do aviso (`answer`). Devolve a frase de erro para o
-   *  cartão mostrar, ou `null` quando saiu (aí o campo se esvazia). */
-  answer?: (key: string | number, text: string) => Promise<string | null>;
+   *  cartão mostrar, ou `null` quando saiu (aí o campo se esvazia). Com `final`, tentar
+   *  de novo não adianta (a janela de 24 horas fechou): o envio se desliga e o gesto
+   *  alternativo vira o principal; o texto digitado fica. */
+  answer?: (key: string | number, text: string) => Promise<string | OperatorInboxAnswerFailure | null>;
   /** O gesto alternativo do aviso com resposta (`answer.altLabel`); mesmo retorno. */
   answerAlt?: (key: string | number) => Promise<string | null>;
   isPending?: (key: string | number) => boolean;

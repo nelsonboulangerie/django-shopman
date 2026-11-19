@@ -299,6 +299,19 @@ describe("OperatorInbox", () => {
     expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Temos sim, duas vagas.");
   });
 
+  it("erro definitivo (janela fechada): o envio se desliga e Assumir vira o principal, com o texto mantido", async () => {
+    const answer = vi.fn().mockResolvedValue({ message: "A janela de 24 horas do WhatsApp fechou.", final: true });
+    useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, answer, answerAlt: vi.fn() };
+    await mount();
+    await openPanel();
+    await type("Temos sim, duas vagas.");
+    await click("[data-operator-inbox-answer-send]");
+    await nextTick();
+    expect(sendButton().disabled).toBe(true);
+    expect(document.querySelector("[data-operator-inbox-answer-alt]")!.hasAttribute("data-operator-inbox-answer-primary")).toBe(true);
+    expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Temos sim, duas vagas.");
+  });
+
   it("assumiu: o gesto alternativo vai ao app", async () => {
     const answerAlt = vi.fn().mockResolvedValue(null);
     useOperatorInboxAlerts().value = { items: [VERIFICAR], count: 1, answer: vi.fn(), answerAlt };

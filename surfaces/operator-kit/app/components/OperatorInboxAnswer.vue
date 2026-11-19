@@ -20,6 +20,8 @@ const props = defineProps<{
 const source = useOperatorInboxAlerts();
 const draft = useState<string>(`operator-inbox-answer:${props.alert.key}`, () => "");
 const error = ref("");
+/** Tentar de novo não adianta: o envio se desliga e o gesto alternativo vira o principal. */
+const final = ref(false);
 const sending = ref<"" | "answer" | "alt">("");
 
 const spec = computed(() => props.alert.answer!);
@@ -39,7 +41,8 @@ async function run(kind: "answer" | "alt") {
   try {
     const failure = await handler();
     if (failure) {
-      error.value = failure;
+      error.value = typeof failure === "string" ? failure : failure.message;
+      final.value = typeof failure !== "string" && Boolean(failure.final);
       return;
     }
     draft.value = "";
@@ -81,11 +84,12 @@ async function run(kind: "answer" | "alt") {
     <div class="flex flex-wrap gap-2">
       <NuxtButton
         class="min-w-0 basis-full justify-center"
+        :class="final ? 'order-2' : ''"
         :color="color"
-        variant="solid"
+        :variant="final ? 'outline' : 'solid'"
         icon="i-lucide-send"
         :label="spec.label"
-        :disabled="!text || busy"
+        :disabled="!text || busy || final"
         :loading="sending === 'answer'"
         data-operator-inbox-answer-send
         @click="run('answer')"
@@ -93,12 +97,14 @@ async function run(kind: "answer" | "alt") {
       <NuxtButton
         v-if="spec.altLabel && source?.answerAlt"
         class="min-w-0 basis-full justify-center"
+        :class="final ? 'order-1' : ''"
         :color="color"
-        variant="outline"
+        :variant="final ? 'solid' : 'outline'"
         icon="i-lucide-user-round"
         :label="spec.altLabel"
         :disabled="busy"
         :loading="sending === 'alt'"
+        :data-operator-inbox-answer-primary="final ? '' : undefined"
         data-operator-inbox-answer-alt
         @click="run('alt')"
       />

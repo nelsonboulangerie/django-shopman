@@ -10,6 +10,7 @@ import {
   ANSWER_MAX_LENGTH,
   ANSWER_PLACEHOLDER,
   ANSWER_SENT,
+  isFinalAnswerError,
   TAKE_OVER_FAILED,
   TAKEN_OVER,
   TAKEN_OVER_NOTICE_NOT_SENT,
@@ -76,6 +77,13 @@ describe("cartão de verificação da Concierge", () => {
     const item = verificationInbox(card);
     expect(item.urgentMessage).toBe("“amanhã vai ter pão de forma?”");
     expect(verificationInbox(CARD).urgentMessage).toBeUndefined();
+  });
+
+  it("só a janela fechada é erro definitivo", () => {
+    expect(isFinalAnswerError("window_closed")).toBe(true);
+    for (const code of ["not_sent", "house_rule_held", "empty_answer", undefined, null]) {
+      expect(isFinalAnswerError(code)).toBe(false);
+    }
   });
 
   it("aviso de outro tipo fica como estava", () => {
