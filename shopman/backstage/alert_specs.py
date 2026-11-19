@@ -23,6 +23,8 @@ class AlertSpec:
     origin_icon: str
     subject: str
     #: Régua da casa: minutos desde a criação, quando o aviso não traz prazo próprio.
+    #: ``0``: o tipo só interrompe com prazo próprio (``respond_by``); a spec dá a origem
+    #: e o assunto.
     deadline_minutes: int
 
 
@@ -48,6 +50,12 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     ),
     # WhatsApp: régua de atendimento de 5 minutos (dono, 08/10/2026).
     "concierge_handoff": AlertSpec("WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5),
+    # "Vou verificar": a pergunta que a Concierge levou à equipe. Interrompe só depois do
+    # primeiro prazo, quando o relógio dela põe o ``respond_by`` (o segundo prazo, WP-06):
+    # sem régua da casa, porque o prazo é contado com a loja aberta, não do relógio.
+    "concierge_verify": AlertSpec(
+        "WhatsApp", "i-lucide-message-circle", "Cliente esperando a resposta da equipe", 0,
+    ),
     # Marketing: disparo com problema antes da hora marcada.
     "marketing_outbox_stuck": AlertSpec("Marketing", "i-lucide-megaphone", "Disparo travado na fila", 30),
     "marketing_readiness_stale": AlertSpec("Marketing", "i-lucide-megaphone", "Canal de disparo sem prontidão", 30),
@@ -74,8 +82,10 @@ def spec_for(alert_type: str) -> AlertSpec | None:
 def _house_applies(alert) -> bool:
     from django.utils import timezone
 
+    spec = spec_for(alert.type)
     return (
-        spec_for(alert.type) is not None
+        spec is not None
+        and spec.deadline_minutes > 0
         and alert.created_at is not None
         and timezone.now() - alert.created_at <= HOUSE_DEADLINE_WINDOW
     )

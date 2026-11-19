@@ -287,7 +287,7 @@ até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` (
 nenhuma verificação é gravada, e a Concierge diz quando a equipe volta); `nudge_due_at` e
 `handoff_due_at` são ISO 8601, os dois prazos do `ChannelConfig.confirmation` contados pelo calendário
 da casa; `nudged_at` é ISO 8601 do primeiro prazo, gravado ANTES do aviso ao cliente (o aviso sai uma vez
-só, mesmo que o envio falhe); no primeiro prazo o cartão vira severidade `error` com `respond_by` = `handoff_due_at`;
+só, mesmo que o envio falhe); no primeiro prazo o cartão ganha `respond_by` = `handoff_due_at` (a severidade segue `warning`);
 no segundo, a triagem do handoff grava `source=verification`, `escalated_by=verification_timeout`, `intent=human`;
 `alert_pk` é o `OperatorAlert` `concierge_verify` (sino do Gestor de pedidos, público `orders`);
 `closed_at` ISO 8601, `closed_by` quem respondeu ou assumiu (usuário do Gestor) e `answer` o texto da

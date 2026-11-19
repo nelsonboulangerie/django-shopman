@@ -1686,7 +1686,7 @@ Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
 [plano da Concierge](../plans/CONCIERGE-PLANO-DE-ACAO.md)). Roda no `maintenance_worker`, logo depois do
 `recover_concierge`. Para cada verificação aberta (`Conversation.flags["verification"]`): no primeiro prazo
 (`ChannelConfig.confirmation.concierge_verify_nudge_minutes`, 10 por padrão) sem resposta da equipe, o cartão
-`concierge_verify` sobe a urgente no sino do Gestor (severidade `error`, `respond_by` = o segundo prazo) e o
+`concierge_verify` sobe a urgente no sino do Gestor (`respond_by` = o segundo prazo: a janela do aviso interrompe a tela; a severidade segue de aviso) e o
 cliente recebe UM aviso ("Ainda estou confirmando com a equipe..."); no segundo
 (`concierge_verify_handoff_minutes`, 30), a conversa vai para a equipe, com a pergunta no cartão de
 handoff, e o cliente recebe "Alguém da equipe continua com você por aqui.". Os prazos contam só tempo de loja
