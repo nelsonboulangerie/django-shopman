@@ -259,6 +259,14 @@ describe('checkout: faltou estoque no envio', () => {
     expect(alert.text()).not.toContain('carrinho')
     const bag = alert.findAll('a').find(link => link.text().includes('Abrir a sacola'))
     expect(bag?.attributes('href')).toBe('/sacola')
+    // O título é a frase inteira: quebra em linhas, não corta com reticências.
+    const title = alert.find('[data-slot="alert-title"]')
+    expect(title.classes()).toContain('line-clamp-none')
+    expect(title.classes()).not.toContain('line-clamp-1')
+    // O alvo do foco é a moldura, na régua canônica; o respiro de cima mora dentro dela.
+    const frame = page.find('[data-focus-target="stock-refusal"]')
+    expect(frame.classes()).toEqual(expect.arrayContaining(['pt-4', '-mt-4']))
+    expect(frame.find('[data-checkout-stock-refusal]').exists()).toBe(true)
     // A revisão fechou: a recusa tem um lugar só.
     await vi.waitFor(() => { expect(document.body.querySelector('[data-review-items]')).toBeNull() })
   })

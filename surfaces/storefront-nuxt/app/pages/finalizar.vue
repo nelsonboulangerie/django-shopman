@@ -1674,19 +1674,23 @@ useSeoMeta({
         </UiAlert>
 
         <template v-else-if="checkout">
-          <!-- Faltou estoque no envio: qual item, e o caminho para resolver. O aviso é
-               o primeiro bloco da tela quando ela vai até ele, e não um passo do fluxo:
-               para um pouco abaixo do cabeçalho (`scroll-mt-24`), com respiro, em vez de
-               encostar na régua de foco dos passos. -->
-          <UiAlert v-if="stockRefusal" variant="warning" class="scroll-mt-24" data-checkout-stock-refusal data-focus-target="stock-refusal">
-            <UiAlertTitle>{{ stockRefusal.message }}</UiAlertTitle>
-            <UiAlertDescription>
-              <p>Abra a sacola para ver o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
-              <UiButton size="sm" icon="lucide:shopping-bag" class="mt-2" to="/sacola" data-focus-control>
-                Abrir a sacola
-              </UiButton>
-            </UiAlertDescription>
-          </UiAlert>
+          <!-- Faltou estoque no envio: qual item, e o caminho para resolver. O alvo do
+               foco é a moldura, que para na régua canônica (sob o cabeçalho); o respiro
+               de cima mora dentro dela (`pt-4`, compensado por `-mt-4`), então o aviso
+               não encosta no cabeçalho e nenhuma linha do texto de cima sobra cortada. -->
+          <div v-if="stockRefusal" class="-mt-4 pt-4" data-focus-target="stock-refusal">
+            <UiAlert variant="warning" data-checkout-stock-refusal>
+              <!-- O título é a frase inteira ("X ficou indisponível antes de..."): quebra
+                   em linhas no celular, em vez de cortar com reticências. -->
+              <UiAlertTitle class="line-clamp-none leading-snug">{{ stockRefusal.message }}</UiAlertTitle>
+              <UiAlertDescription>
+                <p>Abra a sacola para ver o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
+                <UiButton size="sm" icon="lucide:shopping-bag" class="mt-2" to="/sacola" data-focus-control>
+                  Abrir a sacola
+                </UiButton>
+              </UiAlertDescription>
+            </UiAlert>
+          </div>
 
           <UiAlert v-if="pickupSwapOffer" variant="warning" data-checkout-pickup-swap>
             <UiAlertTitle>{{ serverError || 'Ainda não entregamos nesse endereço' }}</UiAlertTitle>
