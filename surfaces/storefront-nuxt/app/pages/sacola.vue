@@ -170,6 +170,19 @@ useSeoMeta({
           <Icon name="lucide:clock" class="mt-0.5 size-4 shrink-0" />
           {{ readyLine }}
         </p>
+        <!-- Até quando a sacola guarda os itens (WP-L11): no alto, junto de quando o
+             pedido fica pronto, porque as duas respondem "quando". Mesmo texto de
+             apoio da linha de cima, nas duas larguras; sem ela, ocupa o lugar
+             sozinha. É a única linha de prazo da tela. -->
+        <p
+          v-if="reservationNotice"
+          class="mt-1 flex items-start gap-2 shop-body"
+          :role="reservationNotice.kind === 'lapsed' ? 'status' : undefined"
+          :data-cart-reservation="reservationNotice.kind"
+        >
+          <Icon :name="reservationNotice.kind === 'held' ? 'lucide:clock' : 'lucide:timer-off'" class="mt-0.5 size-4 shrink-0" />
+          {{ reservationNotice.text }}
+        </p>
       </div>
 
       <template v-if="cart">
@@ -414,16 +427,6 @@ useSeoMeta({
             <div class="mt-2" :class="cart.summary_pending ? 'opacity-60 transition-opacity' : 'transition-opacity'">
               <CartSummaryBreakdown :cart="cart" flat />
             </div>
-            <!-- Até quando a sacola guarda os itens: uma linha calma, sem cronômetro. -->
-            <p
-              v-if="reservationNotice"
-              class="mt-3 flex items-start gap-2 shop-meta"
-              :role="reservationNotice.kind === 'lapsed' ? 'status' : undefined"
-              :data-cart-reservation="reservationNotice.kind"
-            >
-              <Icon :name="reservationNotice.kind === 'held' ? 'lucide:clock' : 'lucide:timer-off'" class="mt-0.5 size-4 shrink-0" />
-              <span>{{ reservationNotice.text }}</span>
-            </p>
             <div class="mt-4 hidden flex-col gap-2 md:flex">
               <UiButton
                 :to="checkoutTarget"

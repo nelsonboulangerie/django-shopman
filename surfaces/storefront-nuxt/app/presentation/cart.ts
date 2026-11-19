@@ -273,7 +273,8 @@ export function cartHoldBanner (cart: Pick<CartProjection, 'has_ready_for_confir
 }
 
 // Reserva com prazo à vista (WP-L11, decisão do dono 4 de 16/11/2026): a sacola
-// diz até quando guarda os itens, numa linha calma perto do resumo. Sem
+// diz até quando guarda os itens, numa linha calma no alto da página, junto de
+// quando o pedido fica pronto (as duas respondem "quando"). Sem
 // cronômetro: a hora vem pronta do servidor, no formato da casa, e cada gesto na
 // sacola a renova (a resposta da mutação já traz a hora nova).
 //

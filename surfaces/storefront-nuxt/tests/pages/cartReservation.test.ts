@@ -131,7 +131,7 @@ beforeEach(() => { document.cookie = 'csrftoken=local-test'; serverNow = () => D
 afterEach(() => { mounted?.unmount(); mounted = null })
 
 describe('sacola: reserva com prazo à vista', () => {
-  it('diz até quando guarda os itens, perto do resumo, sem cronômetro', async () => {
+  it('diz até quando guarda os itens, no alto da sacola, sem cronômetro', async () => {
     const page = await openCart(() => cart({ reserved_until_iso: inMinutes(18), reserved_until_display: '19h18' }))
     mounted = page
 
@@ -140,8 +140,30 @@ describe('sacola: reserva com prazo à vista', () => {
     expect(notice.text()).toBe('Guardamos seus itens até 19h18.')
     // Uma linha calma: a hora, e nenhuma contagem regressiva.
     expect(notice.text()).not.toMatch(/\d{1,2}:\d{2}/)
-    // Fica no bloco do resumo.
-    expect(notice.element.closest('aside')?.textContent).toContain('Resumo')
+    // No alto, no bloco do título; sem a linha do "fica pronto", ocupa o lugar sozinha.
+    expect(notice.element.parentElement?.querySelector('h1')?.textContent).toBe('Sua sacola')
+    expect(page.find('[data-cart-ready-line]').exists()).toBe(false)
+    // É a única linha de prazo da tela: nada sobrou abaixo do resumo.
+    expect(page.findAll('[data-cart-reservation]')).toHaveLength(1)
+    expect(page.find('aside [data-cart-reservation]').exists()).toBe(false)
+  })
+
+  it('fica logo depois de "Seu pedido fica pronto", com o mesmo texto de apoio', async () => {
+    const tomorrowBatch = line({
+      promise: { kind: 'batch', date: '2099-01-01', ready_at: '15:00', day_label: 'amanhã, sexta', text: 'Fica pronto amanhã, sexta, a partir das 15h' }
+    })
+    const page = await openCart(() => cart({ items: [tomorrowBatch], reserved_until_iso: inMinutes(18), reserved_until_display: '19h18' }))
+    mounted = page
+
+    const ready = page.find('[data-cart-ready-line]')
+    const notice = page.find('[data-cart-reservation="held"]')
+    expect(ready.exists()).toBe(true)
+    expect(ready.text()).toContain('Seu pedido fica pronto')
+    // A linha do prazo é a irmã seguinte, com as mesmas classes de texto.
+    expect(ready.element.nextElementSibling).toBe(notice.element)
+    expect(notice.classes().sort()).toEqual(ready.classes().sort())
+    expect(notice.find('svg, span, i').classes()).toEqual(ready.find('svg, span, i').classes())
+    expect(page.findAll('[data-cart-reservation]')).toHaveLength(1)
   })
 
   it('conta o prazo pelo relógio do servidor: aparelho adiantado não vence a reserva', async () => {
@@ -188,6 +210,10 @@ describe('sacola: reserva com prazo à vista', () => {
     const notice = page.find('[data-cart-reservation="lapsed"]')
     expect(notice.text()).toBe('A reserva valia até 19h18 e já venceu. A sacola mostra o que continua disponível.')
     expect(notice.attributes('role')).toBe('status')
+    // O prazo vencido fica no mesmo lugar da hora: no alto, e uma linha só.
+    expect(notice.element.parentElement?.querySelector('h1')?.textContent).toBe('Sua sacola')
+    expect(page.findAll('[data-cart-reservation]')).toHaveLength(1)
+    expect(page.find('aside [data-cart-reservation]').exists()).toBe(false)
     // A sacola continua lá, com o item.
     expect(page.text()).toContain('Croissant')
     // E não fica relendo em laço.
