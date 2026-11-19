@@ -402,7 +402,7 @@ function promiseResolution(variant) {
       PROMISE_MESSAGES.swapFendu, promiseConclude("link", "Trocar no PDV", { href: swapHref })),
     // O nome do contrato termina em "fornada"; a trava de vocabulário do kit reprova a
     // palavra nos apps de operador (o objeto na tela é "lote"). Ver `tests/support/promiseResolution.ts`.
-    promiseChoice("reschedule", "reschedule", "Remarcar para outro dia ou lote", "",
+    promiseChoice("reschedule", "reschedule", "Remarcar para outro dia ou outro lote", "",
       PROMISE_MESSAGES.reschedule, promiseConclude("link", "Remarcar no PDV", { href: `${PROMISE_PDV}/preorders/${PROMISE_REF}` })),
     promiseChoice("remove", "remove", "Tirar só o item que falta e devolver a diferença", "R$ 44,00 serão estornados ao Pix do cliente.",
       PROMISE_MESSAGES.remove, promiseConclude("edit", "Tirar o item", { items: PROMISE_EDIT_ITEMS, payload_schema: PROMISE_EDIT_PAYLOAD })),

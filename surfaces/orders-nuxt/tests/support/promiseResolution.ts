@@ -54,7 +54,7 @@ export function swapChoice(over: Partial<PromiseResolutionChoice> = {}): Promise
 // o escreve em lugar nenhum; o exemplo daqui usa "lote" até a coordenação decidir o nome.
 export function rescheduleChoice(over: Partial<PromiseResolutionChoice> = {}): PromiseResolutionChoice {
   return {
-    key: "reschedule", kind: "reschedule", label: "Remarcar para outro dia ou lote", detail: "", enabled: true,
+    key: "reschedule", kind: "reschedule", label: "Remarcar para outro dia ou outro lote", detail: "", enabled: true,
     reason: "", message: RESCHEDULE_MESSAGE, whatsapp_url: whatsapp(RESCHEDULE_MESSAGE),
     conclude: concludeOf({ kind: "link", label: "Remarcar no PDV", href: `https://pdv.example.test/preorders/${RESOLUTION_REF}` }),
     requires_manager_approval: false, ...over,

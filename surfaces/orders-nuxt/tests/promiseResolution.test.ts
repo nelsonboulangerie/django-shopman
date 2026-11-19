@@ -53,7 +53,7 @@ describe("choiceItems: uma escolha por linha, na ordem do servidor", () => {
   it("trocas primeiro, depois remarcar, tirar e cancelar, com o nome e o detalhe do servidor", () => {
     expect(choiceItems(resolution().choices).map((item) => [item.label, item.description])).toEqual([
       ["Trocar por Campagne Passas & Castanhas", "6 disponíveis hoje"],
-      ["Remarcar para outro dia ou lote", undefined],
+      ["Remarcar para outro dia ou outro lote", undefined],
       ["Tirar só o item que falta e devolver a diferença", "R$ 44,00 serão estornados ao Pix do cliente."],
       ["Cancelar o pedido inteiro", "R$ 62,00 serão estornados ao Pix do cliente."],
     ]);
@@ -93,7 +93,7 @@ describe("pickedChoice: quem decide é a pessoa", () => {
   });
 
   it("a escolha marcada é a da chave; a travada nunca conta", () => {
-    expect(pickedChoice(resolution(), "reschedule")?.label).toBe("Remarcar para outro dia ou lote");
+    expect(pickedChoice(resolution(), "reschedule")?.label).toBe("Remarcar para outro dia ou outro lote");
     const locked = resolution({ choices: [closed(removeChoice(), "x")] });
     expect(pickedChoice(locked, "remove")).toBeNull();
     expect(pickedChoice(resolution(), "nao-existe")).toBeNull();

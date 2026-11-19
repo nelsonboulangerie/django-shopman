@@ -63,7 +63,7 @@ POS_NOT_CONFIGURED = "O endereço do PDV não está configurado."
 ONLY_ITEM = "É o único item do pedido: cancele o pedido."
 LINES_NOT_FOUND = "O que falta não é uma linha deste pedido. Troque, remarque ou cancele."
 
-LABEL_RESCHEDULE = "Remarcar para outro dia ou fornada"
+LABEL_RESCHEDULE = "Remarcar para outro dia ou outro lote"
 LABEL_REMOVE = "Tirar só o item que falta e devolver a diferença"
 LABEL_CANCEL = "Cancelar o pedido inteiro"
 
@@ -291,7 +291,7 @@ def _swap_choices(reading: _Reading) -> list[OrderPromiseChoiceProjection]:
 
 
 def _reschedule_choice(reading: _Reading) -> OrderPromiseChoiceProjection:
-    """ "Remarcar para outro dia ou fornada": o pedido aberto no PDV, onde mora o remarcar (D-003)."""
+    """ "Remarcar para outro dia ou outro lote": o pedido aberto no PDV, onde mora o remarcar (D-003)."""
     from shopman.shop.services import reschedule
 
     href = reading.pos_href()

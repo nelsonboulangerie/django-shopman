@@ -243,7 +243,7 @@ def test_o_dialogo_traz_o_fato_as_quatro_familias_na_ordem_e_a_mensagem_de_cada_
             {
                 "key": "reschedule",
                 "kind": "reschedule",
-                "label": "Remarcar para outro dia ou fornada",
+                "label": "Remarcar para outro dia ou outro lote",
                 "detail": "",
                 "enabled": True,
                 "reason": "",

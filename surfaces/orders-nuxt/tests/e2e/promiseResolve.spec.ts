@@ -31,7 +31,7 @@ const CHOICES = [
     href: `https://pdv.example.test/preorders/${REF}?swap=FOCACCIA-CBT`,
   },
   {
-    radio: /^Remarcar para outro dia ou lote/,
+    radio: /^Remarcar para outro dia ou outro lote/,
     message: `${HELLO} Posso remarcar o seu pedido para outro dia? Me diz qual fica melhor para você ✨`,
     conclude: "Remarcar no PDV",
     href: `https://pdv.example.test/preorders/${REF}`,

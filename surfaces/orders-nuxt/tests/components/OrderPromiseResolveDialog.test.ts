@@ -187,7 +187,7 @@ describe("OrderPromiseResolveDialog: o conteúdo, de cima para baixo", () => {
       radio.get('[data-slot="label"]').text(), radio.find('[data-slot="description"]').exists() ? radio.get('[data-slot="description"]').text() : "",
     ])).toEqual([
       ["Trocar por Campagne Passas & Castanhas", "6 disponíveis hoje"],
-      ["Remarcar para outro dia ou lote", ""],
+      ["Remarcar para outro dia ou outro lote", ""],
       ["Tirar só o item que falta e devolver a diferença", "R$ 44,00 serão estornados ao Pix do cliente."],
       ["Cancelar o pedido inteiro", "R$ 62,00 serão estornados ao Pix do cliente."],
     ]);
