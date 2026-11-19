@@ -58,15 +58,11 @@ async function takesTheLastUnits (page: Page): Promise<void> {
   }
 }
 
-/** B desiste: tira o produto da sacola, e as unidades voltam à vitrine. */
+/** B desiste: tira o produto da sacola (a lixeira da linha), e as unidades voltam à vitrine. */
 async function putsThemBack (page: Page): Promise<void> {
   await page.goto('/sacola')
   await settled(page)
-  const quantity = page.getByRole('group', { name: `Quantidade de ${PRODUCT}` }).first()
-  for (let qty = LAST_UNITS; qty >= 1; qty -= 1) {
-    await quantity.getByRole('button', { name: new RegExp(`^(Diminuir|Remover) ${PRODUCT}$`) }).click()
-    if (qty > 1) await expect(quantity).toContainText(String(qty - 1))
-  }
+  await page.getByRole('button', { name: `Remover ${PRODUCT}`, exact: true }).first().click()
   await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` })).toHaveCount(0)
 }
 
