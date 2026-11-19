@@ -10,19 +10,29 @@ import { describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (path: string) => readFileSync(join(here, path), "utf8");
 
-/** O arquivo sem comentários: o que vale é o código. Repete até não sobrar marcador:
- *  tirar um comentário pode juntar as pontas de outro (`<!-<!-- x -->-`). */
+/** Tira os blocos entre `open` e `close`, procurando as pontas pelo índice (sem
+ *  expressão regular): repete enquanto houver abertura, porque tirar um bloco pode
+ *  juntar as pontas de outro. Abertura sem fecho leva o resto do texto junto. */
+function withoutBlocks(text: string, open: string, close: string): string {
+  let rest = text;
+  for (;;) {
+    const start = rest.indexOf(open);
+    if (start < 0) return rest;
+    const end = rest.indexOf(close, start + open.length);
+    rest = rest.slice(0, start) + (end < 0 ? "" : rest.slice(end + close.length));
+  }
+}
+
+/** O arquivo sem comentários: o que vale é o código. */
 function code(path: string): string {
-  let text = read(path);
-  let before: string;
-  do {
-    before = text;
-    text = text
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/<!--[\s\S]*?-->/g, "")
-      .replace(/(^|\s)\/\/[^\n]*/g, "$1");
-  } while (text !== before);
-  return text;
+  return withoutBlocks(withoutBlocks(read(path), "/*", "*/"), "<!--", "-->")
+    .split("\n")
+    .map((line) => {
+      // Comentário de linha: `//` no começo ou depois de espaço (não o de `https://`).
+      const at = line.search(/(^|\s)\/\//);
+      return at < 0 ? line : line.slice(0, at);
+    })
+    .join("\n");
 }
 
 describe("o relógio do painel ancora na leitura do servidor", () => {
