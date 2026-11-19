@@ -863,7 +863,7 @@ const primary = computed(() => {
     return advance.enabled
       ? {
           key: "advance" as const,
-          label: o.next_action_label || advance.label,
+          label: advance.label,
           icon: "lucide:arrow-right",
           enabled: true,
           reason: "",

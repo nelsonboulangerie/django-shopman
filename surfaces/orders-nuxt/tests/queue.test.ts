@@ -105,7 +105,9 @@ describe("queueGesture", () => {
   });
 
   it("quem e para onde", () => {
-    expect(queueWho(card(), "PDV")).toEqual({ name: "João Oliveira", rest: "Entrega · Rua Paranaguá, 800 · PDV" });
+    expect(queueWho(card({ channel_name: "PDV" }))).toEqual({ name: "João Oliveira", rest: "Entrega · Rua Paranaguá, 800 · PDV" });
+    // Sem canal, nada no lugar: nem travessão, nem ponto sobrando.
+    expect(queueWho(card({ channel_name: "" }))).toEqual({ name: "João Oliveira", rest: "Entrega · Rua Paranaguá, 800" });
   });
 });
 

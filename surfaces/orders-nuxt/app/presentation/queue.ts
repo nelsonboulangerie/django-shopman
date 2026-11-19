@@ -480,14 +480,12 @@ export function queueBlockedReasons(item: QueueItem): string[] {
   });
 }
 
-/** "João Oliveira" e o resto da linha ("Entrega · Rua Paranaguá, 800 · iFood"). */
-export function queueWho(
-  card: OrderCardProjection,
-  channel: string,
-): { name: string; rest: string } {
+/** "João Oliveira" e o resto da linha ("Entrega · Rua Paranaguá, 800 · iFood"). O nome
+ *  do canal é o do servidor (`channel_name`). */
+export function queueWho(card: OrderCardProjection): { name: string; rest: string } {
   const parts = [card.fulfillment_label];
   if (card.delivery_address) parts.push(card.delivery_address);
-  if (channel) parts.push(channel);
+  if (card.channel_name) parts.push(card.channel_name);
   return {
     name: card.customer_name || "Sem cliente",
     rest: parts.filter(Boolean).join(" · "),

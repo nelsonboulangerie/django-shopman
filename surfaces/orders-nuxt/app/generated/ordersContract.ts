@@ -516,18 +516,16 @@ export interface OrderPromiseProjection {
   actions: Action[];
 }
 
-/** A single order card in the operator queue. */
+/** O cartão de um pedido no quadro do Gestor (Painel, Fila, Tabela, Encomendas). */
 export interface OrderCardProjection {
   ref: string;
   status: string;
   actions: Action[];
-  revisions: Record<string, string>;
   status_label: string;
-  status_color: string;
   channel_ref: string;
+  channel_name: string;
   channel_icon: string;
   customer_name: string;
-  created_at_display: string;
   created_at_iso: string;
   server_now_iso: string;
   elapsed_seconds: number;
@@ -535,15 +533,12 @@ export interface OrderCardProjection {
   items_summary: string;
   items_count: number;
   total_display: string;
-  fulfillment_icon: string;
   fulfillment_label: string;
   fulfillment_type: string;
   delivery_address: string;
-  delivery_instructions: string;
   can_confirm: boolean;
   can_advance: boolean;
   next_status: string;
-  next_action_label: string;
   payment_method: string;
   payment_method_label: string;
   payment_status: string;
@@ -553,10 +548,7 @@ export interface OrderCardProjection {
   advance_block_label: string;
   advance_block_reason: string;
   can_settle_delivery_cash: boolean;
-  fiscal_status_label: string;
   fiscal_status: string;
-  fiscal_state: string;
-  has_kitchen_note: boolean;
   has_customer_note: boolean;
   is_gift: boolean;
   gift_has_recipient: boolean;
@@ -566,7 +558,6 @@ export interface OrderCardProjection {
   confirmation_action: string;
   card_authorization_expires_iso: string;
   channel_display_id: string;
-  courier_status: string;
   courier_status_label: string;
   is_preorder: boolean;
   commitment_date: string;
@@ -577,14 +568,11 @@ export interface OrderCardProjection {
   kitchen_release_label: string;
   kitchen_released_at_iso: string;
   clock_since_iso: string;
-  change_for_q: number;
   change_out_suggested_q: number;
   change_out_q: number;
   change_back_pending: boolean;
-  change_back_q: number;
   change_label: string;
   equipment_options: EquipmentOptionProjection[];
-  equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
   dispatch_needs_machine: boolean;
@@ -592,10 +580,8 @@ export interface OrderCardProjection {
   courier_return_orders: string[];
   courier_return_lines: string[];
   waitlist_state: string;
-  waitlist_deadline_iso: string;
   waitlist_label: string;
   ifood_cancellation_notice: string;
-  ifood_pickup_code: string;
   ifood_pickup_code_label: string;
   ifood_logistics_label: string;
   ifood_schedule_label: string;
@@ -614,7 +600,6 @@ export interface OrderCardProjection {
   volumes: number;
   volumes_checked: number;
   volumes_to_check: number;
-  volume_check_label: string;
   ready_at_iso: string;
   dispatched_at_iso: string;
   attention: string;
@@ -739,7 +724,6 @@ export interface OperatorOrderProjection {
   actions: Action[];
   revisions: Record<string, string>;
   status_label: string;
-  status_color: string;
   customer_name: string;
   customer_phone: string;
   customer_phone_uri: string;
@@ -770,7 +754,6 @@ export interface OperatorOrderProjection {
   can_cancel: boolean;
   cancel_requires_approval: boolean;
   cancel_block_label: string;
-  next_action_label: string;
   advance_block_label: string;
   advance_block_reason: string;
   can_settle_delivery_cash: boolean;
@@ -788,14 +771,11 @@ export interface OperatorOrderProjection {
   kitchen_note_tags: string[];
   customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;
-  change_for_q: number;
   change_out_suggested_q: number;
   change_out_q: number;
   change_back_pending: boolean;
-  change_back_q: number;
   change_label: string;
   equipment_options: EquipmentOptionProjection[];
-  equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
   dispatch_needs_machine: boolean;

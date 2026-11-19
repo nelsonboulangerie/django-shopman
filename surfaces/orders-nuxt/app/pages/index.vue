@@ -24,6 +24,7 @@ import {
   nextOutRef,
   nextSort,
   oneTapDispatch,
+  paymentLabel,
   realtimeIndicator,
   resolveShortcut,
   rideChoices,
@@ -2391,10 +2392,10 @@ function compactClear() {
                     · {{ row.original.card.delivery_address }}</template
                   >
                 </dd>
-                <template v-if="row.original.card.payment_method_label">
+                <template v-if="paymentLabel(row.original.card)">
                   <dt class="text-muted-foreground">Pagamento</dt>
                   <dd>
-                    {{ row.original.card.payment_method_label
+                    {{ paymentLabel(row.original.card)
                     }}<template v-if="row.original.card.change_label">
                       · {{ row.original.card.change_label }}</template
                     >

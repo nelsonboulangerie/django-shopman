@@ -732,7 +732,8 @@ test("identified machine dispatch recovers a lost response and return does not c
     } else await route.continue();
   });
   await page.goto(`/${lab.device_order_ref}`);
-  await page.getByRole("button", { name: "Marcar saída para entrega", exact: true }).click();
+  // O gesto da saída tem um nome só, o do servidor: "Despachar <código>" (WP-G09).
+  await page.getByRole("button", { name: /^Despachar \S+$/ }).click();
   await page.getByLabel("Maquininha azul laboratório", { exact: true }).check();
   await page.screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/device-dispatch.png", import.meta.url)), fullPage: true });
   await page.getByRole("button", { name: "Saiu para entrega", exact: true }).click();

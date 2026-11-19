@@ -24,11 +24,11 @@ import type {
 } from "~/types/orders";
 import type { AffordanceRef } from "~/presentation/board";
 import {
-  channelLabel,
   cardAuthorizationNotice,
   cardDeadlineLabel,
   confirmationRemainingLabel,
   kitchenWait,
+  paymentLabel,
   schedulePromise,
   splitRef,
   undoLine,
@@ -346,12 +346,12 @@ function switchHint(row: {
           >
             <p class="op-body">
               <span class="font-semibold">{{
-                queueWho(item.card, channelLabel(item.card.channel_ref)).name
+                queueWho(item.card).name
               }}</span>
               <span class="text-muted-foreground">
                 ·
                 {{
-                  queueWho(item.card, channelLabel(item.card.channel_ref)).rest
+                  queueWho(item.card).rest
                 }}</span
               >
             </p>
@@ -383,7 +383,7 @@ function switchHint(row: {
             <p
               v-if="
                 item.card.change_label ||
-                (item.card.payment_method_label && item.kind !== 'blocked')
+                (paymentLabel(item.card) && item.kind !== 'blocked')
               "
               class="flex items-start gap-1.5 op-micro text-muted-foreground"
               data-queue-payment
@@ -395,7 +395,7 @@ function switchHint(row: {
                 class="mt-px size-3.5 shrink-0"
               />
               <span>{{
-                item.card.change_label || item.card.payment_method_label
+                item.card.change_label || paymentLabel(item.card)
               }}</span>
             </p>
             <!-- Promessa em risco (WP-G08): o item que ficou sem reserva, o porquê e as
