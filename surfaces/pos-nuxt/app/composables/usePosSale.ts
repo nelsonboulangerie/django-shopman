@@ -2594,12 +2594,34 @@ export function usePosSale(deps: PosSaleDeps) {
   /**
    * Tira o endereço DESTA entrega: ela volta a "sem endereço" e o funil volta a
    * pedi-lo. O cadastro do cliente não é tocado; o endereço continua na lista.
-   * O aviso diz as duas coisas e traz o Desfazer: um endereço digitado na hora
-   * não está em cadastro nenhum, e sem a volta ele teria de ser ditado de novo.
+   *
+   * O que saiu fica guardado para o Desfazer: um endereço digitado na hora não
+   * está em cadastro nenhum, e sem a volta ele teria de ser ditado de novo. O
+   * Desfazer mora na tela, ao lado de onde o endereço estava, e não num aviso
+   * passageiro: o gesto também existe dentro do diálogo de Recebimento, e por
+   * cima de um diálogo o aviso passageiro não recebe toque.
    */
+  const removedDeliveryAddress = ref<{
+    tabSessionKey: string;
+    address: string;
+    structured: StructuredAddressProjection;
+    streetNumber: string;
+    neighborhood: string;
+    complement: string;
+    instructions: string;
+  } | null>(null);
+  /** Há um endereço recém-tirado DESTA comanda para devolver, e nada no lugar dele. */
+  const canRestoreDeliveryAddress = computed(() => removedDeliveryAddress.value?.tabSessionKey === cart.tabSessionKey
+    && cart.fulfillmentType === "delivery"
+    && !hasDeliveryAddress());
+  // Outro endereço entrou no lugar: o que saiu antes deixa de ser "o último".
+  watch(() => hasDeliveryAddress(), (has) => {
+    if (has) removedDeliveryAddress.value = null;
+  });
   function clearDeliveryAddress() {
     if (!hasDeliveryAddress()) return;
-    const before = {
+    removedDeliveryAddress.value = {
+      tabSessionKey: cart.tabSessionKey,
       address: cart.deliveryAddress,
       structured: { ...cart.deliveryAddressStructured },
       streetNumber: cart.deliveryStreetNumber,
@@ -2607,29 +2629,23 @@ export function usePosSale(deps: PosSaleDeps) {
       complement: cart.deliveryComplement,
       instructions: cart.deliveryInstructions,
     };
-    const tabSessionKey = cart.tabSessionKey;
     cart.deliveryAddress = "";
     cart.deliveryAddressStructured = {};
     cart.deliveryStreetNumber = "";
     cart.deliveryNeighborhood = "";
     cart.deliveryComplement = "";
     cart.deliveryInstructions = "";
-    toast.info("Endereço tirado desta entrega.", {
-      description: "O cadastro do cliente não mudou.",
-      action: {
-        label: "Desfazer",
-        onClick: () => {
-          // Só devolve à MESMA comanda, e só se ninguém pôs outro endereço no lugar.
-          if (cart.tabSessionKey !== tabSessionKey || hasDeliveryAddress()) return;
-          cart.deliveryAddress = before.address;
-          cart.deliveryAddressStructured = before.structured;
-          cart.deliveryStreetNumber = before.streetNumber;
-          cart.deliveryNeighborhood = before.neighborhood;
-          cart.deliveryComplement = before.complement;
-          cart.deliveryInstructions = before.instructions;
-        },
-      },
-    });
+  }
+  function restoreDeliveryAddress() {
+    const before = removedDeliveryAddress.value;
+    if (!before || !canRestoreDeliveryAddress.value) return;
+    cart.deliveryAddress = before.address;
+    cart.deliveryAddressStructured = before.structured;
+    cart.deliveryStreetNumber = before.streetNumber;
+    cart.deliveryNeighborhood = before.neighborhood;
+    cart.deliveryComplement = before.complement;
+    cart.deliveryInstructions = before.instructions;
+    removedDeliveryAddress.value = null;
   }
 
   /** Entrega sem endereço e cliente com cadastro: o endereço padrão já vem escolhido. */
@@ -4903,6 +4919,8 @@ export function usePosSale(deps: PosSaleDeps) {
     openTabFromDialog,
     applySavedAddress,
     clearDeliveryAddress,
+    restoreDeliveryAddress,
+    canRestoreDeliveryAddress,
     chooseFulfillment,
     lookupCustomer,
     resolveCustomer,

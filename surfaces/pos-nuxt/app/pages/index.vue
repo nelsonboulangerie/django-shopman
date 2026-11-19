@@ -228,6 +228,8 @@ const {
   openTabFromDialog,
   applySavedAddress,
   clearDeliveryAddress,
+  restoreDeliveryAddress,
+  canRestoreDeliveryAddress,
   chooseFulfillment,
   lookupCustomer,
   resolveCustomer,
@@ -831,6 +833,16 @@ const chosenSavedAddress = computed(() => chosenSavedAddressValue(savedAddresses
 /** O endereço desta entrega numa linha ("" enquanto não há). */
 const deliveryAddressSummary = computed(() =>
   (cart.deliveryAddress.trim() ? draftSummaryLine(draftFromDeliveryState(deliveryAddressState.value)) : ""));
+// Tirar e devolver o endereço NO ASSISTENTE: o botão tocado some com o gesto, e o
+// foco segue para a etapa (a lista de endereços, ou "Informar endereço").
+function clearAddressInOrderEntry() {
+  clearDeliveryAddress();
+  focusOrderEntry();
+}
+function restoreAddressInOrderEntry() {
+  restoreDeliveryAddress();
+  focusOrderEntry();
+}
 const orderEntrySchedule = computed(() => ({
   today: scheduleToday.value,
   availableDates: scheduleAvailableDates.value,
@@ -1596,6 +1608,7 @@ onBeforeUnmount(() => {
         :delivery-fee-q="deliveryFeeQ"
         :delivery-fee-source="deliveryFeeSource"
         :delivery-distance-km="deliveryDistanceKm"
+        :can-restore-address="canRestoreDeliveryAddress"
         :delivery-slots="deliverySlots"
         :canonical-delivery-slots="canonicalDeliverySlots"
         :delivery-slots-pending="deliverySlotsPending"
@@ -1681,6 +1694,7 @@ onBeforeUnmount(() => {
         @update:fulfillment-type="chooseFulfillment"
         @pick-saved-address="applySavedAddress"
         @clear-address="clearDeliveryAddress"
+        @restore-address="restoreDeliveryAddress"
       />
       </div>
 
@@ -1741,11 +1755,13 @@ onBeforeUnmount(() => {
           :saved-addresses="savedAddresses"
           :chosen-address="chosenSavedAddress"
           :address-summary="deliveryAddressSummary"
+          :can-restore-address="canRestoreDeliveryAddress"
           @customer="tabHeaderRef?.openCustomer()"
           @fulfillment="openFulfillmentHere"
           @pick-fulfillment="chooseFulfillment"
           @pick-address="applySavedAddress"
-          @clear-address="clearDeliveryAddress"
+          @clear-address="clearAddressInOrderEntry"
+          @restore-address="restoreAddressInOrderEntry"
           @schedule="refreshSchedule"
           @complete="completeOrderSetup"
         />
@@ -1856,9 +1872,11 @@ onBeforeUnmount(() => {
       :delivery-fee-waiver="deliveryFeeWaiver"
       :delivery-fee-status="deliveryFeeStatus"
       :delivery-distance-km="deliveryDistanceKm"
+      :can-restore-address="canRestoreDeliveryAddress"
       @update:fulfillment-type="chooseFulfillment"
       @pick-saved-address="applySavedAddress"
       @clear-address="clearDeliveryAddress"
+      @restore-address="restoreDeliveryAddress"
       @open-schedule="openScheduleHere"
     />
 

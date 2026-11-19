@@ -77,6 +77,8 @@ const props = defineProps<{
   deliveryFeeStatus?: "resolved" | "calculating" | "failed" | "at_payment";
   deliveryDistanceKm: number | null;
   orderNotes: string;
+  /** O endereço acabou de ser tirado da entrega e ainda dá para devolver. */
+  canRestoreAddress?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -95,6 +97,8 @@ const emit = defineEmits<{
   pickSavedAddress: [SavedAddressProjection];
   /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
   clearAddress: [];
+  /** Desfaz o tirar: o endereço volta para a entrega. */
+  restoreAddress: [];
   openSchedule: [];
 }>();
 
@@ -284,13 +288,20 @@ function onSavedAddressPicked(address: SavedAddressProjection) {
 }
 
 // TIRAR O ENDEREÇO DESTA ENTREGA: ela volta a "sem endereço" e a busca volta a
-// ser a vez. O cadastro do cliente não é tocado (quem diz isso ao operador, com
-// o Desfazer, é o dono do carrinho).
+// ser a vez. O cadastro do cliente não é tocado, e a frase que fica no lugar do
+// endereço diz isso, com o Desfazer ao lado (aqui dentro, porque por cima de um
+// diálogo o aviso passageiro não recebe toque).
 function clearAddress() {
   fieldErrors.value = {};
   searchQuery.value = "";
   emit("clearAddress");
   reveal(fieldKey("search"), { align: "center" });
+}
+function restoreAddress() {
+  fieldErrors.value = {};
+  emit("restoreAddress");
+  // O botão tocado some com o gesto: o foco volta para o endereço devolvido.
+  void nextTick(focusDeliveryStart);
 }
 
 function goPast(after: DeliveryAddressField | null, values = deliveryValuesFromDraft(draft.value)) {
@@ -495,6 +506,10 @@ function onMapCancel() {
               data-pos-address-clear
               @click="clearAddress"
             />
+          </div>
+          <div v-else-if="canRestoreAddress" class="flex flex-wrap items-center gap-x-2 gap-y-1" role="status" data-pos-address-removed>
+            <p class="min-w-0 flex-1 text-sm">Endereço tirado desta entrega. O cadastro do cliente não mudou.</p>
+            <NuxtButton color="neutral" variant="ghost" label="Desfazer" data-pos-address-restore @click="restoreAddress" />
           </div>
           <NuxtFormField label="Rua" :error="fieldErrors.route" :data-focus-target="fieldKey('route')">
             <NuxtInput data-focus-control class="w-full" autocomplete="off" :model-value="deliveryAddress" @update:model-value="setField('route', $event)" @keydown.enter="onFieldEnter('route', $event)" />

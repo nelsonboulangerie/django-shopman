@@ -3,6 +3,7 @@
 // anterior por inteiro; e dá para tirar o endereço DA ENTREGA sem tocar no
 // cadastro do cliente.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import { toast } from "vue-sonner";
 
 import type { SavedAddressProjection } from "~/types/pos";
@@ -111,9 +112,10 @@ describe("usePosSale: o endereço da entrega", () => {
     expect(sale.cart.deliveryAddressStructured.delivery_instructions).toBe("");
   });
 
-  it("tirar o endereço da entrega volta a 'sem endereço', avisa que o cadastro não mudou e deixa desfazer", () => {
+  it("tirar o endereço da entrega volta a 'sem endereço', não toca no cadastro e deixa desfazer", () => {
     const { sale } = orderWaitingFulfillment();
     sale.chooseFulfillment("delivery");
+    expect(sale.canRestoreDeliveryAddress.value).toBe(false);
     sale.clearDeliveryAddress();
     expect(sale.cart.deliveryAddress).toBe("");
     expect(sale.cart.deliveryStreetNumber).toBe("");
@@ -127,32 +129,63 @@ describe("usePosSale: o endereço da entrega", () => {
     // O cadastro do cliente não foi tocado: os dois endereços seguem na lista.
     expect(sale.customerLookup.value?.saved_addresses).toEqual([HOME, OTHER]);
 
-    const [message, options] = vi.mocked(toast.info).mock.calls.at(-1) as unknown as
-      [string, { description: string; action: { label: string; onClick: () => void } }];
-    expect(message).toBe("Endereço tirado desta entrega.");
-    expect(options.description).toBe("O cadastro do cliente não mudou.");
-    expect(options.action.label).toBe("Desfazer");
-    options.action.onClick();
+    // O Desfazer mora na tela (no assistente e no diálogo de Recebimento), não
+    // num aviso passageiro: por cima de um diálogo o aviso não recebe toque.
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(sale.canRestoreDeliveryAddress.value).toBe(true);
+    sale.restoreDeliveryAddress();
     expect(sale.cart.deliveryAddress).toBe("Rua 1");
+    expect(sale.cart.deliveryStreetNumber).toBe("100");
     expect(sale.cart.deliveryComplement).toBe("apto 12");
+    expect(sale.cart.deliveryInstructions).toBe("Portaria");
     expect(sale.cart.deliveryAddressStructured.postal_code).toBe("86010-000");
     expect(sale.orderSetupIssue.value).toBe("");
+    expect(sale.canRestoreDeliveryAddress.value).toBe(false);
   });
 
-  it("o Desfazer não passa por cima de um endereço posto depois", () => {
+  it("o endereço digitado na hora também volta no Desfazer", () => {
+    const { sale } = orderWaitingFulfillment([]);
+    sale.chooseFulfillment("delivery");
+    sale.cart.deliveryAddress = "Rua Nova";
+    sale.cart.deliveryStreetNumber = "9";
+    sale.cart.deliveryAddressStructured = { route: "Rua Nova", postal_code: "86015-000" };
+    sale.clearDeliveryAddress();
+    expect(sale.orderSetupIssue.value).toBe("address");
+    sale.restoreDeliveryAddress();
+    expect(sale.cart.deliveryAddress).toBe("Rua Nova");
+    expect(sale.cart.deliveryStreetNumber).toBe("9");
+    expect(sale.cart.deliveryAddressStructured.postal_code).toBe("86015-000");
+  });
+
+  it("o Desfazer não passa por cima de um endereço posto depois", async () => {
     const { sale } = orderWaitingFulfillment();
     sale.chooseFulfillment("delivery");
     sale.clearDeliveryAddress();
-    const [, options] = vi.mocked(toast.info).mock.calls.at(-1) as unknown as [string, { action: { onClick: () => void } }];
     sale.applySavedAddress(OTHER);
-    options.action.onClick();
+    expect(sale.canRestoreDeliveryAddress.value).toBe(false);
+    sale.restoreDeliveryAddress();
+    expect(sale.cart.deliveryAddress).toBe("Rua 2");
+    // E o que saiu antes deixa de ser "o último": tirar o novo devolve o novo.
+    await nextTick();
+    sale.clearDeliveryAddress();
+    sale.restoreDeliveryAddress();
     expect(sale.cart.deliveryAddress).toBe("Rua 2");
   });
 
-  it("sem endereço na entrega, tirar não faz nada nem avisa", () => {
+  it("o Desfazer é da entrega: virou retirada, não há o que devolver", () => {
+    const { sale } = orderWaitingFulfillment();
+    sale.chooseFulfillment("delivery");
+    sale.clearDeliveryAddress();
+    sale.chooseFulfillment("pickup");
+    expect(sale.canRestoreDeliveryAddress.value).toBe(false);
+    sale.restoreDeliveryAddress();
+    expect(sale.cart.deliveryAddress).toBe("");
+  });
+
+  it("sem endereço na entrega, tirar não faz nada", () => {
     const { sale } = orderWaitingFulfillment([]);
     sale.chooseFulfillment("delivery");
     sale.clearDeliveryAddress();
-    expect(toast.info).not.toHaveBeenCalled();
+    expect(sale.canRestoreDeliveryAddress.value).toBe(false);
   });
 });

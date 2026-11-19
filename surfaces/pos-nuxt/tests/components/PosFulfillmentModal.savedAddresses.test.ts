@@ -52,6 +52,7 @@ interface State {
   instructions: string;
   structured: StructuredAddressProjection;
   cleared: number;
+  removed: SavedAddressProjection | null;
 }
 
 async function mountModal(initial: Partial<State> = {}, addresses = [HOME, IFOOD, NO_CEP]) {
@@ -66,6 +67,7 @@ async function mountModal(initial: Partial<State> = {}, addresses = [HOME, IFOOD
     instructions: "",
     structured: {},
     cleared: 0,
+    removed: null,
     ...initial,
   });
   function apply(address: SavedAddressProjection) {
@@ -117,15 +119,24 @@ async function mountModal(initial: Partial<State> = {}, addresses = [HOME, IFOOD
       "onUpdate:deliveryNeighborhood": (value: string) => { state.neighborhood = value; },
       "onUpdate:deliveryComplement": (value: string) => { state.complement = value; },
       "onUpdate:deliveryInstructions": (value: string) => { state.instructions = value; },
-      onPickSavedAddress: apply,
+      canRestoreAddress: Boolean(state.removed) && !state.address,
+      onPickSavedAddress: (address: SavedAddressProjection) => { state.removed = null; apply(address); },
+      // `clearDeliveryAddress` e `restoreDeliveryAddress`: o que saiu fica guardado
+      // para o Desfazer, e volta inteiro.
       onClearAddress: () => {
         state.cleared += 1;
+        state.removed = { ...state.structured } as SavedAddressProjection;
         state.structured = {};
         state.address = "";
         state.number = "";
         state.neighborhood = "";
         state.complement = "";
         state.instructions = "";
+      },
+      onRestoreAddress: () => {
+        if (!state.removed) return;
+        apply(state.removed);
+        state.removed = null;
       },
     }),
   });
@@ -226,6 +237,43 @@ describe("PosFulfillmentModal: endereços já cadastrados", () => {
     expect(radios()).toHaveLength(3);
     expect(document.querySelector("[data-pos-address-clear]")).toBeNull();
     await vi.waitFor(() => expect(document.activeElement).toBe(search()));
+  });
+
+  it("o Desfazer mora dentro do diálogo, onde o endereço estava, e devolve o endereço inteiro", async () => {
+    const { state } = await mountModal();
+    typeButton("Entrega").click();
+    await vi.waitFor(() => expect(checked()).toEqual(["true", "false", "false"]));
+    expect(document.querySelector("[data-pos-address-removed]")).toBeNull();
+    document.querySelector<HTMLElement>("[data-pos-address-clear]")!.click();
+    const removed = await vi.waitFor(() => {
+      const note = document.querySelector<HTMLElement>("[data-pos-address-removed]");
+      expect(note).not.toBeNull();
+      return note!;
+    });
+    // Dentro do diálogo: por cima dele o aviso passageiro não receberia o toque.
+    expect(removed.closest("[role='dialog']")).not.toBeNull();
+    expect(removed.querySelector("p")!.textContent?.trim()).toBe("Endereço tirado desta entrega. O cadastro do cliente não mudou.");
+    const undo = removed.querySelector<HTMLElement>("[data-pos-address-restore]")!;
+    expect(undo.textContent?.trim()).toBe("Desfazer");
+    undo.click();
+    await vi.waitFor(() => expect(checked()).toEqual(["true", "false", "false"]));
+    expect(state.address).toBe("Rua 1");
+    expect(state.complement).toBe("apto 12");
+    expect(state.structured.postal_code).toBe("86010-000");
+    expect(document.querySelector("[data-pos-address-removed]")).toBeNull();
+    // O botão tocado sumiu com o gesto: o foco volta para o endereço devolvido.
+    await vi.waitFor(() => expect(document.activeElement).toBe(radios()[0]));
+  });
+
+  it("escolher outro endereço depois de tirar apaga a oferta de desfazer", async () => {
+    await mountModal();
+    typeButton("Entrega").click();
+    await vi.waitFor(() => expect(checked()).toEqual(["true", "false", "false"]));
+    document.querySelector<HTMLElement>("[data-pos-address-clear]")!.click();
+    await vi.waitFor(() => expect(document.querySelector("[data-pos-address-removed]")).not.toBeNull());
+    radios()[1]!.click();
+    await vi.waitFor(() => expect(checked()).toEqual(["false", "true", "false"]));
+    expect(document.querySelector("[data-pos-address-removed]")).toBeNull();
   });
 
   it("sem endereço cadastrado, a entrega abre na busca, como sempre", async () => {

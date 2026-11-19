@@ -14,13 +14,14 @@
 //      celular, o toque na linha escolhe e "Montar encomenda" segue;
 //   4. a barra da venda vem na ordem cliente, quando, recebimento, com F6, F7 e F8;
 //   5. no Recebimento (F8), "Tirar o endereço desta entrega" devolve a entrega a
-//      "sem endereço", avisa que o cadastro não mudou e deixa desfazer.
+//      "sem endereço", diz que o cadastro não mudou e deixa desfazer ali mesmo.
 // Como rodar: README.md desta pasta.
 import { capture, expect, settled, test, type Page } from "./support/operator";
 
 const CUSTOMER = process.env.PDV_LIVE_ADDRESS_CUSTOMER || "Maria Santos";
 const CUSTOMER_PHONE = process.env.PDV_LIVE_ADDRESS_PHONE || "43991111111";
-// Os três endereços do seed (`config/management/commands/seed.py`, `_seed_addresses`).
+// Os três endereços do seed (`config/management/commands/seed.py`, `_seed_addresses`),
+// na ordem do cadastro: o padrão, o salvo de pedido de entrega e o do trabalho.
 const HOME = "Rua Belo Horizonte, 540, Apto 12";
 const WORK = "Av. Higienópolis, 350, Sala 201";
 const FROM_DELIVERY = "Rua Sergipe, 890";
@@ -275,7 +276,7 @@ for (const device of ["phone", "counter"] as const) {
       const radios = step.getByRole("radio");
       await expect(radios).toHaveCount(3);
       await expect(radios.nth(0)).toBeChecked();
-      await expect(step.locator("[data-pos-saved-address-line]")).toHaveText([HOME, WORK, FROM_DELIVERY]);
+      await expect(step.locator("[data-pos-saved-address-line]")).toHaveText([HOME, FROM_DELIVERY, WORK]);
       // A etiqueta que identifica aparece; a que só repete o canal ("Entrega"), não.
       await expect(step.locator("[data-pos-saved-address-tag]")).toHaveText(["Casa", "Trabalho"]);
       await expect(step.locator("[data-pos-saved-addresses]")).not.toContainText("Entrega");
@@ -311,7 +312,7 @@ for (const device of ["phone", "counter"] as const) {
         expect(order).toEqual(["customer", "schedule", "fulfillment"]);
         await expect(bar.locator('[data-context-entry="schedule"] kbd')).toHaveText("F7");
         await expect(bar.locator('[data-context-entry="fulfillment"] kbd')).toHaveText("F8");
-        await expect(bar.locator('[data-context-entry="fulfillment"]')).toContainText("Entrega · Higienópolis");
+        await expect(bar.locator('[data-context-entry="fulfillment"]')).toContainText("Entrega · Centro");
         await audits(page, "barra da venda", "[data-pos-sale-bar] [data-context-entry] span:not(:has(*))");
         await capture(page, testInfo, "barra-cliente-quando-recebimento");
         // F7 abre o Quando (era o Recebimento) e F8 abre o Recebimento (era o Quando).
@@ -356,26 +357,29 @@ for (const device of ["phone", "counter"] as const) {
       await expect(dialogRadios.nth(1)).not.toBeChecked();
       await expect(dialogRadios.nth(2)).not.toBeChecked();
       await expect(dialogRadios).toHaveCount(3);
-      const notice = page.locator("[data-sonner-toast]").filter({ hasText: "Endereço tirado desta entrega." });
-      await expect(notice).toBeVisible({ timeout: 30_000 });
-      await expect(notice).toContainText("O cadastro do cliente não mudou.");
+      // A frase fica no lugar do endereço, dentro do diálogo, com o Desfazer ao lado.
+      const removed = dialog.locator("[data-pos-address-removed]");
+      await expect(removed).toBeVisible({ timeout: 30_000 });
+      await expect(removed.locator("p")).toHaveText("Endereço tirado desta entrega. O cadastro do cliente não mudou.");
+      await removed.scrollIntoViewIfNeeded();
       await still(page);
-      await audits(page, "aviso do endereço tirado", "[data-sonner-toast] [data-title], [data-sonner-toast] [data-description], [data-sonner-toast] [data-button]");
+      await audits(page, "endereço tirado", "[data-pos-address-removed] p, [data-pos-address-restore]");
       await capture(page, testInfo, "endereco-tirado-da-entrega");
 
       // 9 · O Desfazer devolve o endereço, e o diálogo continua aberto.
-      await notice.getByRole("button", { name: "Desfazer" }).click();
+      await removed.locator("[data-pos-address-restore]").click();
       await expect(dialogRadios.nth(1)).toBeChecked({ timeout: 30_000 });
+      await expect(removed).toBeHidden();
       await expect(dialog).toBeVisible();
-      // O endereço salvo de pedido de entrega se escolhe pela rua: não tem etiqueta.
+      // Outro endereço, agora pelo toque na linha: o do trabalho.
       await dialog.locator("[data-pos-saved-address-line]").nth(2).click();
       await expect(dialogRadios.nth(2)).toBeChecked();
       await still(page);
-      await capture(page, testInfo, "endereco-sem-etiqueta-escolhido-pela-rua");
+      await capture(page, testInfo, "outro-endereco-escolhido-no-recebimento");
       await dialog.locator("[data-pos-fulfillment-confirm]").click();
       await expect(dialog).toBeHidden({ timeout: 30_000 });
       if (keyboard) {
-        await expect(page.locator('[data-pos-sale-bar] [data-context-entry="fulfillment"]')).toContainText("Entrega · Centro");
+        await expect(page.locator('[data-pos-sale-bar] [data-context-entry="fulfillment"]')).toContainText("Entrega · Higienópolis");
       }
     });
   });

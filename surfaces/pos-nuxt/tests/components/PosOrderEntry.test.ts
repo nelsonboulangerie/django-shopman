@@ -303,14 +303,39 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
     const clear = w.find("[data-order-address-clear]");
     expect(clear.text()).toBe("Tirar o endereço desta entrega");
     expect(clear.attributes("title")).toBe("O endereço continua no cadastro do cliente");
+    expect(w.find("[data-order-address-restore]").exists()).toBe(false);
     await clear.trigger("click");
     expect(w.emitted("clearAddress")).toHaveLength(1);
     // Sem endereço, a etapa volta a pendente e o gesto some: não há o que tirar.
-    await w.setProps({ issue: "address", chosenAddress: "", addressSummary: "" });
+    await w.setProps({ issue: "address", chosenAddress: "", addressSummary: "", canRestoreAddress: true });
     expect(visibleStep(w)).toEqual(["address"]);
     expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["false", "false"]);
     expect(w.find("[data-order-address-clear]").exists()).toBe(false);
     expect(button(w, "Montar encomenda")!.attributes("disabled")).toBeDefined();
+    // A etapa diz o que houve e o alcance, e o Desfazer mora ao lado.
+    expect(w.find("[data-order-address-removed]").text()).toBe("Endereço tirado desta entrega. O cadastro do cliente não mudou.");
+    expect(w.find("[data-order-step='address']").text()).not.toContain("Escolha um endereço do cliente ou informe outro.");
+    const undo = w.find("[data-order-address-restore]");
+    expect(undo.text()).toBe("Desfazer");
+    await undo.trigger("click");
+    expect(w.emitted("restoreAddress")).toHaveLength(1);
+    await w.setProps({ issue: "", chosenAddress: "1", addressSummary: "Rua 1, 100 - Centro - Londrina/PR", canRestoreAddress: false });
+    expect(w.find("[data-order-address-removed]").exists()).toBe(false);
+    expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["true", "false"]);
+  });
+
+  it("cliente sem endereço cadastrado: o endereço digitado sai e volta pelo mesmo gesto", async () => {
+    const typed = { ...delivery, savedAddresses: [], chosenAddress: "", addressSummary: "Rua Nova, 9 - Centro - Londrina/PR" };
+    const w = await mount({ props: typed });
+    expect(w.find("[data-order-step='address']").text()).toContain("Rua Nova, 9 - Centro - Londrina/PR");
+    await w.find("[data-order-address-clear]").trigger("click");
+    expect(w.emitted("clearAddress")).toHaveLength(1);
+    await w.setProps({ issue: "address", addressSummary: "", canRestoreAddress: true });
+    expect(w.find("[data-order-address-removed]").exists()).toBe(true);
+    expect(w.find("[data-order-step='address']").text()).not.toContain("Falta o endereço de entrega.");
+    expect(button(w, "Informar endereço")).toBeDefined();
+    await w.find("[data-order-address-restore]").trigger("click");
+    expect(w.emitted("restoreAddress")).toHaveLength(1);
   });
 
   it("endereço digitado na hora (fora da lista) é dito por extenso", async () => {

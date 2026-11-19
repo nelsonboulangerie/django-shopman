@@ -54,6 +54,8 @@ const props = defineProps<{
   chosenAddress?: string;
   /** O endereço da entrega em edição, numa linha ("" enquanto não há). */
   addressSummary?: string;
+  /** O endereço acabou de ser tirado da entrega e ainda dá para devolver. */
+  canRestoreAddress?: boolean;
   /** O dia e a janela escolhidos (vazios até o operador escolher). */
   scheduleDate?: string;
   scheduleTimeSlot?: string;
@@ -77,6 +79,8 @@ const emit = defineEmits<{
   pickAddress: [SavedAddressProjection];
   /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
   clearAddress: [];
+  /** Desfaz o tirar: o endereço volta para a entrega. */
+  restoreAddress: [];
   /** Retirada ou entrega, escolhida no cartão. */
   pickFulfillment: ["pickup" | "delivery"];
   /** A etapa da data ficou à vista: a agenda precisa ser buscada. */
@@ -275,9 +279,12 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
           @accept="acceptAddress"
         />
         <p v-if="typedAddress" class="text-sm" data-order-address-typed>Endereço desta entrega: {{ typedAddress }}</p>
-        <p v-else-if="!isReady('address')" class="text-sm text-muted-foreground">Escolha um endereço do cliente ou informe outro.</p>
+        <p v-else-if="!isReady('address') && !canRestoreAddress" class="text-sm text-muted-foreground">Escolha um endereço do cliente ou informe outro.</p>
       </template>
-      <p v-else class="text-sm text-muted-foreground">{{ isReady('address') ? addressSummary : "Falta o endereço de entrega." }}</p>
+      <p v-else-if="!canRestoreAddress" class="text-sm text-muted-foreground">{{ isReady('address') ? addressSummary : "Falta o endereço de entrega." }}</p>
+      <!-- O endereço acabou de sair DESTA entrega: a frase diz o alcance (o
+           cadastro não mudou) e o Desfazer mora ao lado, na própria etapa. -->
+      <p v-if="canRestoreAddress" class="text-sm" role="status" data-order-address-removed>Endereço tirado desta entrega. O cadastro do cliente não mudou.</p>
       <div class="flex flex-wrap gap-2">
         <NuxtButton
           :data-focus-control="hasSavedAddresses ? undefined : ''"
@@ -287,6 +294,14 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
           data-order-address-other
           @click="act('address')"
         >{{ hasSavedAddresses ? "Informar outro endereço" : isReady('address') ? "Trocar endereço" : "Informar endereço" }}</NuxtButton>
+        <NuxtButton
+          v-if="canRestoreAddress"
+          color="neutral"
+          variant="ghost"
+          :disabled="loading"
+          data-order-address-restore
+          @click="emit('restoreAddress')"
+        >Desfazer</NuxtButton>
         <NuxtButton
           v-if="isReady('address')"
           color="neutral"

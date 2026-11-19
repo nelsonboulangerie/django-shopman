@@ -153,6 +153,8 @@ const props = defineProps<{
   customerEmail: string;
   deliveryAddress: string;
   deliveryAddressStructured: StructuredAddressProjection;
+  /** O endereço acabou de ser tirado da entrega e ainda dá para devolver. */
+  canRestoreAddress?: boolean;
   deliveryStreetNumber: string;
   deliveryNeighborhood: string;
   deliveryComplement: string;
@@ -283,6 +285,8 @@ const emit = defineEmits<{
   pickSavedAddress: [SavedAddressProjection];
   /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
   clearAddress: [];
+  /** Desfaz o tirar: o endereço volta para a entrega. */
+  restoreAddress: [];
 }>();
 
 // TOTAL QUE AINDA PODE MUDAR NÃO APARECE COMO TOTAL (regra do dono). Sem a
@@ -2320,6 +2324,7 @@ defineExpose({
     :delivery-fee-status="review ? 'resolved' : reviewFailed ? 'failed' : 'calculating'"
     :delivery-distance-km="deliveryDistanceKm"
     :order-notes="orderNotes"
+    :can-restore-address="canRestoreAddress"
     @update:fulfillment-type="$emit('update:fulfillmentType', $event)"
     @update:delivery-address="$emit('update:deliveryAddress', $event)"
     @update:delivery-address-structured="$emit('update:deliveryAddressStructured', $event)"
@@ -2332,6 +2337,7 @@ defineExpose({
     @update:order-notes="$emit('update:orderNotes', $event)"
     @pick-saved-address="$emit('pickSavedAddress', $event)"
     @clear-address="$emit('clearAddress')"
+    @restore-address="$emit('restoreAddress')"
     @open-schedule="scheduleSheetOpen = true"
   />
 
