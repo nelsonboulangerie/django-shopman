@@ -110,12 +110,14 @@ const isOpen = computed({
 // RETIRADA OU ENTREGA, como opções de um grupo de rádio. Nenhuma marcada até o
 // operador escolher ("" e não `undefined`: o grupo continua controlado por aqui).
 type FulfillmentRef = "pickup" | "delivery";
+// O valor é texto (e não o tipo estreito "pickup" | "delivery") para o "" de nenhuma
+// escolha caber no mesmo tipo do grupo.
 const fulfillmentItems = computed(() => props.fulfillmentOptions.map((option) => ({
-  value: option.ref,
+  value: String(option.ref),
   label: option.label,
   description: option.description,
 })));
-const chosenFulfillment = computed(() => (props.fulfillmentConfirmed ? props.fulfillmentType : ""));
+const chosenFulfillment = computed<string>(() => (props.fulfillmentConfirmed ? props.fulfillmentType : ""));
 function pickFulfillment(value: unknown) {
   const ref = String(value ?? "");
   if (ref !== "pickup" && ref !== "delivery") return;
