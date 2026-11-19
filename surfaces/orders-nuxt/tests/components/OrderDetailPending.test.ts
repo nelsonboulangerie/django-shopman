@@ -185,7 +185,7 @@ describe("OrderDetailPending", () => {
   describe("tentar o estorno de novo", () => {
     const failed = (over: Partial<OrderPendingProjection> = {}) => pending({
       key: "refund", label: "Estorno não saiu",
-      reason: "A devolução de R$ 22,00 não chegou ao cliente. Tentar de novo pede esse estorno outra vez ao Pix do cliente, com a autorização de um gerente.",
+      reason: "A devolução de R$ 22,00 não chegou ao Pix do cliente.",
       actions: [action("refund-retry", "Tentar o estorno de novo")],
       ...over,
     });
@@ -195,7 +195,9 @@ describe("OrderDetailPending", () => {
       const w = faixa({ pending: [failed()], money: failedMoney });
       const row = w.get('[data-pending="refund"]');
       expect(row.attributes("data-pending-tone")).toBe("error");
-      expect(row.text()).toContain("pede esse estorno outra vez ao Pix do cliente");
+      expect(row.text()).toContain("não chegou ao Pix do cliente.");
+      // A frase não descreve o botão: o gesto e o gerente moram nele e no diálogo.
+      expect(row.text()).not.toContain("Tentar de novo pede");
       expect(row.text()).not.toContain("suporte");
       expect(row.find("[data-pending-failure]").exists()).toBe(false);
       const button = w.get('[data-pending-action="refund-retry"]');

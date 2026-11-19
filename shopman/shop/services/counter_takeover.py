@@ -367,6 +367,31 @@ def skip_pending_payment_notices(order) -> int:
 # ── A corrida tardia: o provedor confirma depois do balcão ────────────────
 
 
+def late_refund_key(booked_ref: str) -> str:
+    """A chave do estorno automático do pagamento que chegou depois do balcão.
+
+    Estável por intent: a reentrega do webhook devolve o MESMO estorno, e quem
+    tenta de novo pelo Gestor reapresenta esta chave antes de abrir outra
+    (``backstage.services.refund_retry``).
+    """
+    return f"counter-takeover-refund:{booked_ref}"
+
+
+def late_payment_of_takeover(order, intent) -> bool:
+    """Este intent é o pagamento digital que chegou DEPOIS de o balcão receber?
+
+    É o dinheiro registrado fora da cobrança (``payment.booked_outside_charge``)
+    cuja cobrança substituída o balcão cancelou ao assumir. O cliente pagou duas
+    vezes, e este dinheiro volta inteiro, no mesmo meio (:func:`refund_late_payment`).
+    """
+    from shopman.shop.services.payment import booked_outside_charge
+
+    if not booked_outside_charge(intent):
+        return False
+    superseded = str((intent.gateway_data or {}).get("superseded_intent_ref") or "")
+    return cancelled_by_takeover(order, superseded)
+
+
 def refund_late_payment(order, *, booked_ref: str, adapter, method: str) -> bool:
     """Estorna, no MESMO meio, o pagamento digital que chegou depois do balcão.
 
@@ -392,7 +417,7 @@ def refund_late_payment(order, *, booked_ref: str, adapter, method: str) -> bool
             booked_ref,
             amount_q=refundable_q,
             reason=SKIP_REASON,
-            idempotency_key=f"counter-takeover-refund:{booked_ref}",
+            idempotency_key=late_refund_key(booked_ref),
         )
     except Exception as exc:
         # Falha transiente: o provedor reentrega o webhook e a chave estável

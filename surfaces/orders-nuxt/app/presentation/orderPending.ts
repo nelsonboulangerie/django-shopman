@@ -5,6 +5,7 @@
 // desenho: o ícone e a palavra de cada tom, o peso de cada botão e a linha do dinheiro
 // que já voltou. Nenhuma régua de negócio mora neste arquivo.
 import type {
+  Action,
   CancelledMoneyProjection,
   OrderPendingActionProjection,
   OrderPendingProjection,
@@ -195,14 +196,18 @@ export function settledMoney(
 
 /**
  * O que o gerente lê antes de assinar o estorno de novo: o valor que volta ao cliente.
- * Sem o valor (o servidor não soube dizer), devolve "" e o diálogo usa a frase do ato.
+ * No cancelado, o valor é o do dinheiro do pedido; fora dele (devolução, encomenda
+ * editada, #2727), é a frase que a própria ação traz (`confirmation.description`).
+ * Sem nenhum dos dois, devolve "" e o diálogo usa a frase do ato.
  */
 export function refundRetrySentence(
   money: CancelledMoneyProjection | null | undefined,
+  action?: Pick<Action, "confirmation"> | null,
 ): string {
-  return money?.amount_display
-    ? `Estorno de ${money.amount_display}, pedido de novo ao meio de pagamento.`
-    : "";
+  if (money?.amount_display)
+    return `Estorno de ${money.amount_display}, pedido de novo ao meio de pagamento.`;
+  const described = action?.confirmation?.description;
+  return typeof described === "string" ? described : "";
 }
 
 /**
@@ -212,10 +217,15 @@ export function refundRetrySentence(
  */
 export function refundRetryToast(
   money: CancelledMoneyProjection | null | undefined,
+  pending: readonly Pick<OrderPendingProjection, "key">[] | null | undefined = undefined,
 ): string {
   if (money?.state === "refunded")
     return "Estornado: o meio de pagamento confirmou a devolução.";
   if (money?.state === "refund_requested")
     return "Estorno pedido. O pedido mostra quando ele for confirmado.";
+  // Fora do cancelado não há estado do dinheiro: a linha "Estorno não saiu" só some
+  // quando o servidor viu o estorno confirmado e nada mais a devolver.
+  if (!money && pending && !pending.some((item) => item.key === "refund"))
+    return "Estornado: o meio de pagamento confirmou a devolução.";
   return "";
 }

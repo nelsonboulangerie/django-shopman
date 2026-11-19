@@ -362,7 +362,7 @@ def test_estorno_que_nao_saiu_e_o_terceiro_estado_e_pede_alguem():
     assert detail.payment_status_label == "Estorno não saiu"
     refund = _pending(detail)["refund"]
     assert (refund.tone, refund.label) == ("error", "Estorno não saiu")
-    assert refund.reason.startswith("A devolução de R$ 22,00 não chegou ao cliente.")
+    assert refund.reason.startswith("A devolução de R$ 22,00 não chegou ao Pix do cliente.")
     assert detail.pending[0].key == "refund"
 
 
