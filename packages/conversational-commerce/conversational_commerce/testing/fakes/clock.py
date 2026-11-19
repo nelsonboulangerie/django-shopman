@@ -17,6 +17,12 @@ def parse_instant(text: str) -> datetime:
     return datetime.strptime(text, FORMAT).replace(tzinfo=UTC)
 
 
+def _minute_of_day(hhmm: str) -> int:
+    """``"08:00"`` → 480. O expediente sintético é dado em HH:MM, lido por código."""
+    hours, minutes = hhmm.split(":")
+    return int(hours) * 60 + int(minutes)
+
+
 def format_instant(moment: datetime) -> str:
     return moment.astimezone(UTC).strftime(FORMAT)
 
@@ -64,8 +70,10 @@ class FakeClock:
 
     def business_hours(self, at: str) -> Known:
         moment = parse_instant(at)
-        clock = moment.strftime("%H:%M")
+        # Comparação em minutos do dia: horário técnico, nunca texto de tela.
+        minute = moment.hour * 60 + moment.minute
+        is_open = _minute_of_day(OPENING) <= minute < _minute_of_day(CLOSING)
         day_end = moment.replace(hour=int(CLOSING[:2]), minute=0, second=0, microsecond=0)
         valid_until = format_instant(day_end if moment < day_end else day_end + timedelta(days=1))
-        return Known(value={"open": OPENING <= clock < CLOSING, "opens": OPENING, "closes": CLOSING},
+        return Known(value={"open": is_open, "opens": OPENING, "closes": CLOSING},
                      source="fake-clock", observed_at=at, valid_until=valid_until)
