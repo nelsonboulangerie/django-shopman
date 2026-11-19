@@ -724,13 +724,11 @@ def _money_notices(
         return ()
     when = _acceptance_when(window, today=timezone.localdate(moment))
     # Uma oração cada (dono, 19/11/2026: "ultra conciso e inequívoco"). Cada uma
-    # diz o prazo e o destino do dinheiro se a loja não confirmar: no Pix o
-    # dinheiro já saiu e volta; no cartão ele só sai se a loja confirmar. O verbo
-    # é um só em toda a loja, "confirmar", com o objeto dito ("seu pedido"): o
-    # dono leu "a loja aceita" e perguntou "aceitar o quê?".
+    # diz o prazo do aceite e o destino do dinheiro se ele não vier: no Pix o
+    # dinheiro já saiu e volta; no cartão ele só sai se a loja aceitar.
     texts = {
-        "pix": f"Se a loja não confirmar seu pedido {when}, o Pix volta inteiro.",
-        "card": f"O cartão só é cobrado se a loja confirmar seu pedido {when}.",
+        "pix": f"Se a loja não aceitar {when}, o Pix volta inteiro.",
+        "card": f"O cartão só é cobrado se a loja aceitar, {when}.",
     }
     return tuple(
         PaymentMoneyNoticeProjection(method=method.ref, text=texts[method.ref])

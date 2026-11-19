@@ -2639,12 +2639,11 @@ useSeoMeta({
                      enviar e de pagar (#2613). Aqui vai o RESUMO, numa oração (dono,
                      19/11/2026); a cláusula inteira mora nos Termos, a um toque. O "só" é a
                      parte que custa à cliente (o que se perdeu fica com a loja) e não pode
-                     sair; "o valor" diz que o que volta é dinheiro, não o item.
-                     `tests/legalUnclaimedOrder.test.ts` segura o resumo e o link. -->
+                     sair: `tests/legalUnclaimedOrder.test.ts` segura o resumo e o link. -->
                 <div v-if="showUnclaimedOrderRule" class="flex items-start gap-3" :class="moneyNotice ? '' : 'mt-2'">
                   <Icon name="lucide:calendar-clock" class="size-5 shrink-0" />
                   <p class="text-sm" data-review-unclaimed-rule>
-                    Não retirou no dia combinado? Devolvemos só o valor do que ainda puder ser vendido.
+                    Sem retirada no dia combinado, só devolvemos o que voltar à venda.
                     <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos</NuxtLink>
                   </p>
                 </div>
