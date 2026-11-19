@@ -107,6 +107,11 @@ class TestCopyCoversObligations:
                 },
             ),
             ("payment_retry", {"actions": (_action("retry_payment"),)}),
+            # O chamado da fila: prazo com consequência (a vaga passa adiante) e aviso.
+            (
+                "waitlist_confirming",
+                {"deadline_action": "release_waitlist_slot", "requires_active_notification": True},
+            ),
             ("payment_preparing", {"requires_active_notification": True}),
             ("dispatched", {"actions": (_action("confirm_received"),), "requires_active_notification": True}),
             ("delivered", {}),

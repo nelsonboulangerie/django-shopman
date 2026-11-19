@@ -439,8 +439,6 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     card_security_note = serializers.CharField()
     waitlist_waiting_title = serializers.CharField()
     waitlist_waiting_message = serializers.CharField()
-    waitlist_confirm_title = serializers.CharField()
-    waitlist_confirm_message = serializers.CharField()
     waitlist_confirm_cta = serializers.CharField()
     waitlist_confirmed_title = serializers.CharField()
     waitlist_released_title = serializers.CharField()

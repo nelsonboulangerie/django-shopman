@@ -7819,6 +7819,7 @@
             "_stale_after_seconds",
             "_step_was_reached",
             "_store_confirmation_is_deferred",
+            "_waitlist_call",
             "_waitlist_info",
             "as_customer_sees",
             "build_tracking",

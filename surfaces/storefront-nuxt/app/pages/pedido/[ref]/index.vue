@@ -16,7 +16,7 @@ import {
   trackingPanelIconClass,
   trackingStatusPanelActions
 } from '~/presentation/orderTracking'
-import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs } from '~/presentation/deadline'
+import { countdownPct, deadlineCountdown, isCountdownUrgent, remainingPhrase, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
 import { isHostedCheckout, showsPaymentBlock } from '~/presentation/payment'
 import {
@@ -504,10 +504,9 @@ const waitlistDeadlineLeft = computed(() => {
   if (!deadline || waitlistState.value !== 'confirming') return ''
   const ms = new Date(deadline).getTime() - nowMs.value
   if (!Number.isFinite(ms) || ms <= 0) return ''
-  const totalSeconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+  // Por extenso ("Faltam 14 min 45 s"): a frase principal, logo acima, diz o
+  // horário do prazo ("até 13h27"), e "14:45" ao lado dele se leria como hora.
+  return remainingPhrase(Math.floor(ms / 1000))
 })
 
 async function confirmWaitlistSlot () {
@@ -700,10 +699,11 @@ useSeoMeta({
                   class="mt-2 space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm"
                   data-waitlist="confirming"
                 >
-                  <p class="font-semibold">{{ tracking.copy.waitlist_confirm_title }}</p>
-                  <p>{{ tracking.copy.waitlist_confirm_message }}</p>
+                  <!-- O chamado (a fornada ficou pronta, o que fazer e até quando) é a
+                       frase principal do painel, logo acima; aqui ficam só o relógio e
+                       o botão. Antes o cartão repetia o chamado com outras palavras. -->
                   <p v-if="waitlistDeadlineLeft" class="tabular-nums font-semibold" aria-live="polite">
-                    Confirme em {{ waitlistDeadlineLeft }}
+                    {{ waitlistDeadlineLeft }}
                   </p>
                   <UiButton
                     :disabled="waitlistPending"
