@@ -18,6 +18,10 @@ from shopman.stockman.protocols.sku import PromiseReasonCode
 from shopman.shop.config import ChannelConfig
 from shopman.shop.lifecycle import dispatch, ensure_confirmable
 
+#: A régua da fila (#2730). Lê as reservas do pedido no banco; com pedido de
+#: mentira, o teste que afirma o que o commit faz com a cobrança diz a resposta.
+CHARGE_WAITS_FOR_THE_QUEUE = "shopman.shop.policies.waitlist_charge.charge_waits_for_the_queue"
+
 
 @pytest.fixture(autouse=True)
 def isolate_phase_marker_for_coordination_tests():
@@ -207,6 +211,7 @@ class TestOnCommit:
             Order.Status.ACCEPTED, actor="auto_confirm",
         )
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle._create_alert")
     @patch("shopman.shop.lifecycle.notification")
@@ -352,6 +357,7 @@ class TestOnCommit:
         dispatch(order, "on_commit")
         order.transition_status.assert_not_called()
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
     @patch("shopman.shop.lifecycle.payment")
@@ -367,6 +373,27 @@ class TestOnCommit:
         order = _make_order()
         dispatch(order, "on_commit")
         mock_payment.initiate.assert_called_once_with(order)
+
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: True)
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.payment")
+    @patch("shopman.shop.lifecycle.loyalty")
+    @patch("shopman.shop.lifecycle.customer")
+    @patch("shopman.shop.lifecycle.stock")
+    def test_payment_at_commit_waits_for_the_queue(
+        self, mock_stock, mock_customer, mock_loyalty, mock_payment, mock_notification, mock_cc,
+    ):
+        """Fornada de hoje não cobra para garantir vaga (#2730): na fila, o commit
+        reserva e avisa, mas não inicia o pagamento."""
+        mock_cc.for_channel.return_value = _config(
+            confirmation_mode="manual", payment_timing="at_commit",
+        )
+        order = _make_order()
+        dispatch(order, "on_commit")
+        mock_stock.hold.assert_called_once_with(order)
+        mock_payment.initiate.assert_not_called()
+        mock_notification.send.assert_called_once_with(order, "order_received")
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
