@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import { ref } from 'vue'
-import { BASE_DELAY_MS, MAX_ATTEMPTS_NEVER_OPENED } from '~/composables/useOrderTrackingStream'
+import { BASE_DELAY_MS, MAX_ATTEMPTS_NEVER_OPENED, STABLE_MS } from '~/composables/useOrderTrackingStream'
 import {
   LIVE_STORE_MIN_INTERVAL_MS,
   LIVE_STORE_FALLBACK_POLL_MS,
@@ -154,12 +154,40 @@ describe('useLiveStore', () => {
     last().open()
     expect(onChange).not.toHaveBeenCalled()
 
+    // Um stream que já estava firme cai no meio: o navegador reconecta sozinho.
+    vi.advanceTimersByTime(STABLE_MS)
     last().blip()
     last().open()
     vi.advanceTimersByTime(0)
 
+    expect(FakeEventSource.instances).toHaveLength(1)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange).toHaveBeenCalledWith('reopen')
+  })
+
+  it('stream que abre e cai em seguida não vira laço de releitura', () => {
+    const onChange = vi.fn()
+    useLiveStore(onChange).start()
+    // Um proxy que responde 200 e fecha: sem freio, o navegador reabriria a cada
+    // 3 s para sempre, e cada reabertura releria a página.
+    let reopened = 0
+    for (let i = 0; i < 400 && reopened < 12; i += 1) {
+      const current = last()
+      if (!current.closed && current.readyState !== 1) {
+        current.open()
+        reopened += 1
+        current.blip()
+      }
+      vi.advanceTimersByTime(1_000)
+    }
+    const elapsedMs = 400 * 1_000
+
+    // O backoff daqui assume: as tentativas se espaçam até uma por minuto. A
+    // página relê nas reaberturas e na consulta de reserva (uma por minuto), e só.
+    expect(reopened).toBeLessThan(12)
+    expect(elapsedMs / reopened).toBeGreaterThan(30_000)
+    const reserveTicks = Math.ceil(elapsedMs / LIVE_STORE_FALLBACK_POLL_MS)
+    expect(onChange.mock.calls.length).toBeLessThanOrEqual(reopened + reserveTicks)
   })
 
   it('depois de um 502 que fecha o stream, abre um EventSource novo com backoff', () => {

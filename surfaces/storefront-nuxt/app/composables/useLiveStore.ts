@@ -184,7 +184,13 @@ function open () {
     streamOpen = false
     // CLOSED = o navegador desistiu (status não-200). Fora isso ele mesmo
     // reconecta, e a reserva segura a tela no meio tempo.
-    if (created.readyState === CLOSED) scheduleReconnect()
+    //
+    // Stream que abre e cai em seguida (um proxy que responde 200 e fecha) faria o
+    // navegador reabrir a cada 3 s para sempre, e cada reabertura é uma releitura
+    // da página. Queda antes de o stream se firmar entra no backoff daqui, que só
+    // zera depois de um stream estável: o laço vira uma tentativa por minuto.
+    const shortLived = openedAt > 0 && Date.now() - openedAt < STABLE_MS
+    if (created.readyState === CLOSED || shortLived) scheduleReconnect()
   }
 }
 
