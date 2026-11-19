@@ -665,13 +665,8 @@ envs:
   scope: RUN_TIME
   value: assist
   type: GENERAL
-- key: CONCIERGE_TRIAGE_CLASSIFIER
-  scope: RUN_TIME
-  value: jev
-  type: GENERAL
-# Intenções no plural (OBS0310-Q/R): sem chave aqui de propósito. O padrão do código
-# (`cohort`) já liga para a coorte atendida (CONCIERGE_ALLOWED_SUBSCRIBERS) e só para
-# ela; o app vivo também não tem a chave. Emergência: CONCIERGE_INTENTS_PLURAL=off.
+# A triagem e as intenções no plural não têm chave aqui: o Jev é o único classificador
+# e a leitura em partes, o único caminho (WP-08).
 - key: CONCIERGE_OBSERVATION_ENABLED
   scope: RUN_TIME
   value: 'true'

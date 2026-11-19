@@ -14,7 +14,7 @@
     "JEV"
   ],
   "totals": {
-    "settings": 310,
+    "settings": 308,
     "env": 24,
     "settings_env": 170
   },
@@ -483,16 +483,10 @@
     "shopman/storefront/checks.py": {
       "settings": 2
     },
-    "shopman/storefront/concierge/agent.py": {
-      "settings": 1
-    },
     "shopman/storefront/concierge/dialogue.py": {
       "settings": 1
     },
     "shopman/storefront/concierge/intent_pilot.py": {
-      "settings": 1
-    },
-    "shopman/storefront/concierge/intents.py": {
       "settings": 1
     },
     "shopman/storefront/concierge/reply_eval.py": {

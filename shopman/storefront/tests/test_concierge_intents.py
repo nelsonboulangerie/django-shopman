@@ -39,8 +39,6 @@ from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401 (fixt
     surface,
 )
 
-PLURAL_SETTINGS = {**CONCIERGE_SETTINGS, "intents_plural": "subjects", "intents_subjects": [SUBJECT]}
-
 
 def _gate(text, jev=None):
     rules_intent, rules_source = triage.classify_rules(text)
@@ -241,45 +239,18 @@ def test_default_copy_of_the_parts_obeys_the_house_rules():
         assert house_rules.check(message, house_rules.ReplyContext(receipts=receipts)) == [], key
 
 
-# ── 4. A chave e o Jev ────────────────────────────────────────────────
+# ── 4. O caminho único e o Jev ──────────────────────────────────────
 
 
-COHORT_SETTINGS = {key: value for key, value in CONCIERGE_SETTINGS.items() if key != "intents_plural"}
-
-
-@pytest.mark.django_db
-def test_without_env_the_plural_serves_the_attended_cohort_and_nobody_else(conversation):  # noqa: F811 (fixtures)
-    """OBS0310-R: sem env nenhuma, vale para quem a Concierge já atende em ``assist``."""
-    binding = _binding(conversation)
-    stranger = SimpleNamespace(**{f: getattr(binding, f) for f in (
-        "provider", "account", "transport_channel", "connection_key", "status")}, subject="outro-cliente")
-    with override_settings(SHOPMAN_CONCIERGE=COHORT_SETTINGS):
-        assert intents.mode() == "cohort"
-        assert intents.enabled_for(binding)
-        assert not intents.enabled_for(stranger)
-        assert not intents.enabled_for(None)
-    with override_settings(SHOPMAN_CONCIERGE={**COHORT_SETTINGS, "operation_mode": "observe"}):
-        assert not intents.enabled_for(binding)  # observação: ninguém é atendido
-
-
-@pytest.mark.django_db
-def test_off_is_the_emergency_switch_and_subjects_only_narrows_the_cohort(conversation):  # noqa: F811 (fixtures)
-    binding = _binding(conversation)
-    with override_settings(SHOPMAN_CONCIERGE={**COHORT_SETTINGS, "intents_plural": "off"}):
-        assert not intents.enabled_for(binding)
-    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
-        assert intents.enabled_for(binding)
-    with override_settings(SHOPMAN_CONCIERGE={**PLURAL_SETTINGS, "intents_subjects": ["outro-cliente"]}):
-        assert not intents.enabled_for(binding)
-    with override_settings(SHOPMAN_CONCIERGE={**COHORT_SETTINGS, "intents_plural": "talvez"}):
-        assert intents.mode() == "off"  # valor desconhecido desliga
-
-
-def test_the_default_of_the_setting_is_the_cohort():
+def test_the_parts_are_the_only_path_of_the_turn():
+    """WP-08: sem interruptor nem laço de agente; quem a Concierge atende passa pelas partes."""
     import config.settings as project_settings
+    from shopman.storefront.concierge import service as concierge_service
 
     source = open(project_settings.__file__, encoding="utf-8").read()
-    assert 'os.environ.get("CONCIERGE_INTENTS_PLURAL", "cohort")' in source
+    assert "CONCIERGE_INTENTS_PLURAL" not in source and "CONCIERGE_MAX_ITERATIONS" not in source
+    assert not hasattr(intents, "enabled_for") and not hasattr(intents, "mode")
+    assert not hasattr(concierge_service, "answers_with_model")
 
 
 @pytest.mark.django_db
@@ -288,9 +259,9 @@ def test_jev_gets_one_more_question_and_the_scores_stay_with_the_triage():
 
     jev = FakeJev({"product_question": 0.8, intents.MULTIPLE_PARTS: 0.9})
     with override_settings(
-        SHOPMAN_CONCIERGE={**PLURAL_SETTINGS, "triage_with_model": True, "triage_classifier": "jev"}
+        SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "triage_with_model": True}
     ):
-        decision = triage.decide("tem croissant? e vocês abrem domingo?", client=jev)
+        decision = triage.decide("tem croissant? e vocês abrem domingo?", contender=jev)
 
     assert decision.jev_scores[intents.MULTIPLE_PARTS] == 0.9
     assert decision.jev_scores["product_question"] == 0.8
@@ -301,9 +272,9 @@ def test_jev_gets_one_more_question_and_the_scores_stay_with_the_triage():
 
 def _turn(conversation, text, event_id, reader):  # noqa: F811 (fixtures)
     _receive(conversation, text, event_id)
-    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
         return service.run_turn(
-            conversation.pk, _binding(conversation).pk, client=ScriptedClient(), intents_client=reader
+            conversation.pk, _binding(conversation).pk, intents_client=reader
         )
 
 
@@ -366,11 +337,11 @@ def test_only_team_parts_keep_the_house_handoff_notice(conversation, outbox, mon
 
 
 @pytest.mark.django_db
-def test_switch_off_keeps_today_path(conversation, outbox):  # noqa: F811 (fixtures)
+def test_a_team_only_turn_never_asks_the_reader(conversation, outbox):  # noqa: F811 (fixtures)
     reader = ReaderClient([_act("product_question", "tem pão francês?", "pão francês")])
     _receive(conversation, "quero falar com um atendente", "plural-4")
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
-        result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient(), intents_client=reader)
+        result = service.run_turn(conversation.pk, _binding(conversation).pk, intents_client=reader)
 
     assert result.handoff and reader.requests == []
 
@@ -421,10 +392,10 @@ def test_triage_does_not_call_the_nudge_a_complaint_but_keeps_the_explicit_one()
     from shopman.storefront.tests.test_concierge_triage_jev import FakeJev
 
     jev = FakeJev({"complaint": 0.92})
-    settings_ = {**PLURAL_SETTINGS, "triage_with_model": True, "triage_classifier": "jev"}
+    settings_ = {**CONCIERGE_SETTINGS, "triage_with_model": True}
     with override_settings(SHOPMAN_CONCIERGE=settings_):
-        nudge = triage.decide("e a minha pergunta?", client=jev)
-        complaint = triage.decide("que absurdo, vocês não respondem", client=jev)
+        nudge = triage.decide("e a minha pergunta?", contender=jev)
+        complaint = triage.decide("que absurdo, vocês não respondem", contender=jev)
 
     assert (nudge.intent, nudge.destination) != ("complaint", "team")
     assert not nudge.escalates

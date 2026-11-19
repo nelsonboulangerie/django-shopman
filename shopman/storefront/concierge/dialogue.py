@@ -982,22 +982,6 @@ class TurnMemory:
     state: dict
     facts: Facts
 
-    def prompt_lines(self) -> str:
-        """O estado em prosa curta para o prompt do agente (o modelo lê, não decide)."""
-        lines = []
-        note = _context_note(self.state)
-        if note:
-            lines.append(note)
-        if self.facts.open_order:
-            lines.append(f"Pedido aberto do cliente: {self.facts.open_order.label} ({self.facts.open_order.status}).")
-        if self.facts.recent_order:
-            order = self.facts.recent_order
-            lines.append(
-                f"Pedido recente: {order.label}, {CLOSED_STATUS_LABEL.get(order.status, order.status)}. "
-                "Não aceita mais item: acréscimo é pedido novo."
-            )
-        return "\n".join(lines)
-
 
 def for_turn(conversation, *, now: datetime | None = None, channel_ref: str = "") -> TurnMemory:
     from . import verification

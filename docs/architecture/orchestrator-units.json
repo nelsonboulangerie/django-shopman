@@ -10596,7 +10596,7 @@
         "SHOPMAN_IFOOD"
       ],
       "tests": [
-        "shopman/storefront/tests/test_concierge_engine.py::test_run_agent_stops_offering_orders_when_the_channel_is_switched_off"
+        "shopman/storefront/tests/test_concierge_engine.py::test_the_turn_stops_offering_orders_when_the_channel_is_switched_off"
       ],
       "test_gap_reason": null,
       "policy": true,
