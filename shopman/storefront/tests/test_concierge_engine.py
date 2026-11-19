@@ -2187,14 +2187,16 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
     assert alert.audience == "orders"
     assert alert.message.startswith("Falar com uma pessoa, urgência: agora.")
 
-    # Com a equipe na conversa, a próxima mensagem fica na transcrição e o bot cala.
+    # Com a equipe na conversa, a próxima mensagem fica na transcrição e o bot cala; a
+    # marca do Live Chat é ligada de novo (ela chegou ao bot, então estava desligada).
     later = _receive(conversation, "oi?", "m2")
     assert later.reason == "handoff" and not later.queued
+    assert outbox.flags == [True, True]
     assert service.run_turn(conversation.pk, binding.pk, client=client).replies == []
 
     assert service.return_to_concierge(conversation) is False
     conversation.refresh_from_db()
-    assert conversation.state == Conversation.State.HANDOFF and outbox.flags == [True]
+    assert conversation.state == Conversation.State.HANDOFF and outbox.flags == [True, True]
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
