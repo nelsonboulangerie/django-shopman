@@ -284,7 +284,7 @@ export function cartHoldBanner (cart: Pick<CartProjection, 'has_ready_for_confir
 // Sacola vazia, ou só com item de fornada futura (reserva sem relógio): nada.
 export type CartReservationNotice = { kind: 'held' | 'lapsed', text: string }
 
-type ReservationFields = Pick<CartProjection, 'is_empty' | 'reserved_until_iso' | 'reserved_until_display' | 'server_now_iso'>
+type ReservationFields = Pick<CartProjection, 'is_empty' | 'reserved_until_iso' | 'reserved_until_display'>
 
 /** O instante em que a reserva vence, em ms; null sem prazo ou com prazo ilegível. */
 export function reservationDeadlineMs (cart: Pick<CartProjection, 'reserved_until_iso'>): number | null {
@@ -295,8 +295,8 @@ export function reservationDeadlineMs (cart: Pick<CartProjection, 'reserved_unti
 
 /**
  * `serverNowMs` é o agora da tela já alinhado ao relógio do servidor; 0 enquanto
- * a tela ainda não tem relógio (no servidor e na hidratação), e aí vale a hora
- * que veio com a própria sacola. `lapsedDisplay` é a hora da reserva que a tela
+ * a tela ainda não tem relógio (no servidor e na hidratação), e aí o prazo que
+ * veio com a sacola vale como está. `lapsedDisplay` é a hora da reserva que a tela
  * viu vencer, guardada pela página depois de reler a sacola. `shownElsewhereIso`
  * é um prazo que a tela já diz em outro lugar (o aviso "Tudo pronto! Confirme
  * até..."): o mesmo prazo não é dito duas vezes.
@@ -309,9 +309,8 @@ export function cartReservationNotice (
 ): CartReservationNotice | null {
   if (cart.is_empty) return null
   const deadline = reservationDeadlineMs(cart)
-  const now = serverNowMs || Date.parse(cart.server_now_iso) || 0
   if (deadline !== null && cart.reserved_until_display) {
-    if (deadline > now) {
+    if (deadline > serverNowMs) {
       if (shownElsewhereIso && Date.parse(shownElsewhereIso) === deadline) return null
       return { kind: 'held', text: `Guardamos seus itens até ${cart.reserved_until_display}.` }
     }

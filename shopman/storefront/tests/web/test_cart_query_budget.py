@@ -216,13 +216,7 @@ def test_put_answers_with_the_state_after_the_mutation(catalog):
         assert put.status_code == 200, put.content[:300]
         fresh = client.get("/api/v1/storefront/cart/")
         assert fresh.status_code == 200
-        # ``server_now_iso`` é o relógio do servidor na hora de CADA resposta (WP-L11):
-        # é o único campo que tem de diferir entre as duas. Todo o resto, inclusive
-        # o prazo da reserva, é o mesmo estado.
-        put_cart = {k: v for k, v in put.json()["cart"].items() if k != "server_now_iso"}
-        fresh_cart = {k: v for k, v in fresh.json()["cart"].items() if k != "server_now_iso"}
-        assert put_cart == fresh_cart
-        assert put.json()["cart"]["server_now_iso"] <= fresh.json()["cart"]["server_now_iso"]
+        assert put.json()["cart"] == fresh.json()["cart"]
         line = next(line for line in put.json()["cart"]["items"] if line["sku"] == PAES[0])
         assert line["qty"] == qty
 

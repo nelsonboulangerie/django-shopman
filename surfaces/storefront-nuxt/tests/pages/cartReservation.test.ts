@@ -87,7 +87,6 @@ function cart (overrides: Partial<CartProjection> = {}): CartProjection {
     awaiting_confirmation_notice: '',
     reserved_until_iso: null,
     reserved_until_display: null,
-    server_now_iso: new Date().toISOString(),
     minimum_order_progress: null,
     delivery_minimum_progress: null,
     free_delivery_progress: null,
@@ -106,10 +105,12 @@ function inMinutes (minutes: number, from = Date.now()): string {
 
 let served: Array<() => CartProjection> = []
 let reads = 0
+// O relógio do servidor vem no envelope da leitura da sacola; por padrão, igual ao do aparelho.
+let serverNow: () => number = () => Date.now()
 registerEndpoint('/api/v1/storefront/cart/', () => {
   const answer = served[Math.min(reads, served.length - 1)]!
   reads += 1
-  return { cart: answer() }
+  return { cart: answer(), server_now_iso: new Date(serverNow()).toISOString() }
 })
 
 async function openCart (...answers: Array<() => CartProjection>) {
@@ -126,7 +127,7 @@ async function openCart (...answers: Array<() => CartProjection>) {
 }
 
 let mounted: Awaited<ReturnType<typeof openCart>> | null = null
-beforeEach(() => { document.cookie = 'csrftoken=local-test' })
+beforeEach(() => { document.cookie = 'csrftoken=local-test'; serverNow = () => Date.now() })
 afterEach(() => { mounted?.unmount(); mounted = null })
 
 describe('sacola: reserva com prazo à vista', () => {
@@ -146,10 +147,9 @@ describe('sacola: reserva com prazo à vista', () => {
   it('conta o prazo pelo relógio do servidor: aparelho adiantado não vence a reserva', async () => {
     // Para o servidor é uma hora mais cedo do que o aparelho diz. Pelo aparelho o
     // prazo (daqui a 20 min no relógio do servidor) já teria passado há 40.
-    const serverNow = Date.now() - 60 * 60_000
+    serverNow = () => Date.now() - 60 * 60_000
     const page = await openCart(() => cart({
-      server_now_iso: new Date(serverNow).toISOString(),
-      reserved_until_iso: inMinutes(20, serverNow),
+      reserved_until_iso: inMinutes(20, serverNow()),
       reserved_until_display: '19h18'
     }))
     mounted = page

@@ -13,7 +13,6 @@ function cart (overrides: Partial<Parameters<typeof cartReservationNotice>[0]> =
     is_empty: false,
     reserved_until_iso: '2026-11-19T19:18:00-03:00',
     reserved_until_display: '19h18',
-    server_now_iso: SERVER_NOW,
     ...overrides
   }
 }
@@ -82,7 +81,7 @@ describe('cartReservationNotice', () => {
     expect(cartReservationNotice(cart(), deviceNowMs + offset)?.kind).toBe('held')
   })
 
-  it('antes de a tela ter relógio, vale a hora que veio com a sacola', () => {
+  it('antes de a tela ter relógio, o prazo que veio com a sacola vale como está', () => {
     // No servidor e na hidratação o agora da tela é 0: a frase não some nem vence.
     expect(cartReservationNotice(cart(), 0)?.kind).toBe('held')
   })

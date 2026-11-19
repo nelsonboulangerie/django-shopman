@@ -109,7 +109,6 @@ function emptyCart (): CartProjection {
     awaiting_confirmation_notice: '',
     reserved_until_iso: null,
     reserved_until_display: null,
-    server_now_iso: '',
     minimum_order_progress: null,
     delivery_minimum_progress: null,
     free_delivery_progress: null,
@@ -286,18 +285,17 @@ export function useCartState () {
   }
 
   // Relógio do servidor (WP-L11): a diferença para o relógio do aparelho, medida
-  // na chegada de uma resposta buscada AGORA (leitura da sacola, mutação). A
-  // sacola que veio no HTML ou guardada no estado não serve de régua: o
-  // `server_now_iso` dela é de quando foi montada.
-  function noteServerClock (next: CartProjection | null | undefined) {
-    if (!import.meta.client || !next?.server_now_iso) return
-    clockOffsetMs.value = serverClockOffsetMs(next.server_now_iso, Date.now())
+  // na chegada da leitura da sacola, que traz a hora do servidor no envelope. A
+  // sacola abre relendo, então a régua é sempre de agora; a diferença não muda
+  // de um gesto para o outro.
+  function noteServerClock (serverNowIso: string | null | undefined) {
+    if (!import.meta.client || !serverNowIso) return
+    clockOffsetMs.value = serverClockOffsetMs(serverNowIso, Date.now())
   }
 
   // Caminho de mutação bem-sucedida: a verdade do servidor chegou e qualquer
   // aviso pendente (issue/rate-limit) está resolvido — pode limpar.
   function applyServerCart (next: CartProjection) {
-    noteServerClock(next)
     setCartProjection(next)
     rollbackCart.value = null
     cartIssue.value = null
@@ -338,12 +336,12 @@ export function useCartState () {
     // A época vale a do DISPARO: conferir só `queueDepth` na chegada deixava passar
     // a leitura que saiu antes de uma mutação que já drenou.
     const epochAtDispatch = mutationEpoch
-    const response = await $fetch<{ cart: CartProjection }>(apiPath('/api/v1/storefront/cart/'), {
+    const response = await $fetch<{ cart: CartProjection, server_now_iso?: string }>(apiPath('/api/v1/storefront/cart/'), {
       credentials: 'include'
     })
     // Reconciliação passiva (revert do otimista no catch, poll de holds): preserva
     // cartIssue para o banner de substitutos não sumir enquanto o cliente decide.
-    noteServerClock(response.cart)
+    noteServerClock(response.server_now_iso)
     if (queueDepth === 0 && mutationEpoch === epochAtDispatch) setCartProjection(response.cart)
     return response.cart
   }

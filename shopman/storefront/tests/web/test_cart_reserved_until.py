@@ -116,16 +116,30 @@ class TestCartSaysUntilWhenItHoldsTheItems:
         assert cart["reserved_until_iso"] is not None
         assert cart["reserved_until_display"]
 
-    def test_server_clock_comes_with_the_cart(self, client, ready):
+    def test_server_clock_comes_with_the_cart_read(self, client, ready):
         _set_qty(client, ready.sku, 1)
         before = timezone.now()
 
-        cart = _cart(client)
+        body = client.get("/api/v1/storefront/cart/").json()
 
-        server_now = datetime.fromisoformat(cart["server_now_iso"])
+        server_now = datetime.fromisoformat(body["server_now_iso"])
         assert before <= server_now <= timezone.now()
         # O prazo está no futuro PELO relógio do servidor: a tela não depende do aparelho.
-        assert datetime.fromisoformat(cart["reserved_until_iso"]) > server_now
+        assert datetime.fromisoformat(body["cart"]["reserved_until_iso"]) > server_now
+
+    def test_the_cart_itself_carries_no_clock(self, client, ready):
+        """A projeção é o estado: duas leituras do mesmo estado saem iguais.
+
+        Um relógio dentro dela quebraria quem compara ou guarda a sacola (o replay
+        de uma oferta, o gêmeo público da home). O relógio mora no envelope.
+        """
+        _set_qty(client, ready.sku, 1)
+
+        first = client.get("/api/v1/storefront/cart/").json()
+        second = client.get("/api/v1/storefront/cart/").json()
+
+        assert first["cart"] == second["cart"]
+        assert "server_now_iso" not in first["cart"]
 
     def test_every_gesture_renews_the_hour(self, client, ready):
         _set_qty(client, ready.sku, 1)
