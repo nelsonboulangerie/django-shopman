@@ -82,7 +82,7 @@ defineExpose({ focusTarget });
         <span data-pos-saved-address-line>{{ item.label }}</span>
       </template>
       <template #description="{ item }">
-        <NuxtBadge v-if="item.tag" color="neutral" variant="soft" :label="item.tag" data-pos-saved-address-tag />
+        <NuxtBadge v-if="item.tag" color="neutral" :label="item.tag" data-pos-saved-address-tag />
         <span v-if="item.description" data-pos-saved-address-detail>{{ item.description }}</span>
       </template>
     </NuxtRadioGroup>
