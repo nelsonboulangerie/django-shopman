@@ -497,7 +497,14 @@ def test_sync_handler_stops_on_terminal_status(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def test_sync_handler_respects_poll_disabled(shop):
+def test_poll_disabled_still_keeps_a_slow_heartbeat(shop):
+    """ENT-07: só webhook não é "nunca perguntar". A batida fica lenta, mas existe.
+
+    Antes, com ``courier_poll_seconds = 0`` o despacho não agendava leitura
+    nenhuma: um aviso perdido deixava a corrida aberta na tela para sempre.
+    """
+    from django.utils import timezone
+
     shop.defaults = {"delivery": {"courier_poll_seconds": 0}}
     shop.save()
     from shopman.shop.models.shop import SHOP_CACHE_KEY
@@ -507,8 +514,9 @@ def test_sync_handler_respects_poll_disabled(shop):
     order = _delivery_order()
     courier.request_dispatch(order, actor="test")
     _run_dispatch(order)
-    # com polling desligado o despacho não agenda heartbeat
-    assert not Directive.objects.filter(topic=COURIER_SYNC, payload__order_ref=order.ref).exists()
+    beat = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref)
+    assert courier.sync_interval(courier.get_block(order)) == courier.SLOW_POLL_SECONDS
+    assert beat.available_at > timezone.now()
 
 
 def _beat(order):
@@ -690,7 +698,8 @@ def test_unchanged_reading_does_not_rewrite_the_order(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def test_sync_gives_up_on_a_ride_older_than_the_cap(shop):
+def test_sync_slows_down_on_a_ride_older_than_the_cap(shop):
+    """ENT-07: a corrida antiga não perde a batida, só a pressa (antes ela parava de vez)."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -700,9 +709,8 @@ def test_sync_gives_up_on_a_ride_older_than_the_cap(shop):
     block["requested_at"] = (timezone.now() - timedelta(hours=courier.MAX_POLL_HOURS + 1)).isoformat()
     courier._save_block(order, block)
     _beat(order)
-    assert not Directive.objects.filter(
-        topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED
-    ).exists()
+    beat = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED)
+    assert beat.available_at >= timezone.now() + timedelta(seconds=courier.SLOW_POLL_SECONDS - 5)
 
 
 # ── cotação ─────────────────────────────────────────────────────────
