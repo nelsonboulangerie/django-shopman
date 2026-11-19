@@ -7,7 +7,9 @@ import { mount } from "@vue/test-utils";
 
 import OrderPreorderList from "../../app/components/OrderPreorderList.vue";
 import type { PreorderGroup } from "../../app/presentation/board";
+import { coverageByDate } from "../../app/presentation/preorderCoverage";
 import type { OrderCardProjection } from "../../app/types/orders";
+import { coveredDay, day } from "../support/preorderCoverage";
 
 vi.stubGlobal("computed", computed);
 const posUrl = { value: "https://pdv.exemplo" };
@@ -37,6 +39,7 @@ const groups = (...cards: OrderCardProjection[]): PreorderGroup[] => [
 const stubs = {
   NuxtLink: { props: ["to"], template: '<a :href="to"><slot /></a>' },
   OperatorCountChip: { props: ["count"], template: "<span data-count>{{ count }}</span>" },
+  Icon: { props: ["name"], template: '<i :data-icon="name" />' },
 };
 const mountList = (props: Record<string, unknown>) =>
   mount(OrderPreorderList, { props, global: { stubs } });
@@ -120,5 +123,73 @@ describe("OrderPreorderList: a encomenda recém-aceita", () => {
     expect(row.attributes("data-focus-target")).toBe("preorder:NB-261116-C73");
     expect(row.attributes("aria-current")).toBe("true");
     expect(w.get('[data-preorder-row="NB-261116-D10"]').attributes("aria-current")).toBeUndefined();
+  });
+});
+
+// WP-G10: a agenda com cobertura. O cabeçalho de cada dia diz se a Produção cobre as
+// encomendas dele; a cobertura é outra leitura, e a lista não depende dela.
+describe("OrderPreorderList: a cobertura de cada dia", () => {
+  const twoDays = (): PreorderGroup[] => [
+    { date: "2026-11-19", label: "amanhã", cards: [card()] },
+    { date: "2026-11-21", label: "sáb, 21/11", cards: [card({ ref: "NB-261116-D10" })] },
+  ];
+  const coverage = () => coverageByDate({ days: [coveredDay(), day()] });
+
+  it("cada dia recebe a cobertura da data dele", () => {
+    const w = mountList({ groups: twoDays(), count: 2, coverage: coverage() });
+    const tomorrow = w.get('[data-preorder-day="2026-11-19"]');
+    const saturday = w.get('[data-preorder-day="2026-11-21"]');
+
+    expect(tomorrow.get("h3").text()).toBe("Amanhã");
+    expect(tomorrow.get("[data-coverage-headline]").text()).toBe("A produção cobre as encomendas.");
+    expect(saturday.get("h3").text()).toBe("Sáb, 21/11");
+    expect(saturday.get("[data-coverage-headline]").text()).toBe(
+      "Faltam 6 Baguete de tradição. Sem lote para Ciabatta.",
+    );
+    expect(saturday.get('[data-coverage-production="header"]').attributes("href")).toBe(
+      "https://producao.exemplo/plan?date=2026-11-21",
+    );
+  });
+
+  it("dia sem cobertura lida fica só com o nome, e as linhas seguem iguais", () => {
+    const w = mountList({ groups: twoDays(), count: 2, coverage: coverageByDate({ days: [day()] }) });
+
+    expect(w.findAll("h3").map((h) => h.text())).toEqual(["Amanhã", "Sáb, 21/11"]);
+    expect(w.findAll("[data-coverage-headline]")).toHaveLength(1);
+    expect(w.findAll("[data-preorder-row]")).toHaveLength(2);
+  });
+
+  it("sem a leitura (ou antes dela) a lista é a de sempre, sem aviso", () => {
+    const w = mountList({ groups: twoDays(), count: 2 });
+
+    expect(w.find("[data-coverage-headline]").exists()).toBe(false);
+    expect(w.find("[data-coverage-failed]").exists()).toBe(false);
+    expect(w.findAll("[data-preorder-row]")).toHaveLength(2);
+  });
+
+  it("a leitura falhou: a lista segue inteira e a seção oferece tentar de novo", async () => {
+    const w = mountList({ groups: twoDays(), count: 2, coverage: {}, coverageFailed: true });
+    const failed = w.get("[data-coverage-failed]");
+
+    expect(failed.text()).toContain("Não foi possível ler se a produção cobre as encomendas.");
+    expect(w.findAll("[data-preorder-row]")).toHaveLength(2);
+    expect(w.find("[data-coverage-headline]").exists()).toBe(false);
+
+    const retry = failed.get("[data-coverage-retry]");
+    expect(retry.text()).toBe("Tentar de novo");
+    await retry.trigger("click");
+    expect(w.emitted("retry-coverage")).toHaveLength(1);
+  });
+
+  it("enquanto relê, o \"Tentar de novo\" fica pendente", () => {
+    const w = mountList({
+      groups: twoDays(),
+      count: 2,
+      coverage: {},
+      coverageFailed: true,
+      coverageReading: true,
+    });
+
+    expect(w.get("[data-coverage-retry]").attributes("disabled")).toBeDefined();
   });
 });

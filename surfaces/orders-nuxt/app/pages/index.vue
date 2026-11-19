@@ -74,6 +74,10 @@ import {
   PROMISE_HASH,
   type AcceptedPreorder,
 } from "~/presentation/preorderList";
+import {
+  coverageByDate,
+  coverageSignature,
+} from "~/presentation/preorderCoverage";
 import { promiseRisk, waitsForBatch } from "~/presentation/orderPromise";
 import {
   orderFocusKey,
@@ -441,6 +445,21 @@ const triagedPreorders = computed(() =>
 );
 const preordersCount = computed(() =>
   triagedPreorders.value.reduce((n, g) => n + g.cards.length, 0),
+);
+// A agenda com cobertura (WP-G10): por dia, o prometido ao lado do que a Produção
+// planejou. Leitura à parte da fila, relida quando as encomendas da lista mudam (todas,
+// sem os filtros da tela: a cobertura é do dia, não do recorte) e num poll calmo. Se
+// ela falhar, a lista segue; o cabeçalho do dia só não mostra a cobertura.
+const {
+  coverage: preorderCoverage,
+  failed: preorderCoverageFailed,
+  reading: preorderCoverageReading,
+  retry: retryPreorderCoverage,
+} = usePreorderCoverage(
+  computed(() => coverageSignature(preorders.value.flatMap((g) => g.cards))),
+);
+const preorderCoverageByDate = computed(() =>
+  coverageByDate(preorderCoverage.value),
 );
 
 // ── bulk selection (Arc 4) ──────────────────────────────────────────────────
@@ -2517,6 +2536,10 @@ function compactClear() {
           :groups="triagedPreorders"
           :count="preordersCount"
           :highlight-ref="acceptedPreorder?.ref"
+          :coverage="preorderCoverageByDate"
+          :coverage-failed="preorderCoverageFailed"
+          :coverage-reading="preorderCoverageReading"
+          @retry-coverage="retryPreorderCoverage"
         />
       </template>
       <!-- Tem mais abaixo: a lista de Encomendas fica depois do painel de altura cheia.

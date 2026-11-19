@@ -14,6 +14,7 @@ import type {
   CustomerProfileProjection as CustomerProfileContract,
   OperatorOrderProjection as OperatorOrderContract,
   OrderCardProjection as OrderCardContract,
+  PreorderCoverageProjection,
   RideCandidateProjection,
   TwoZoneQueueProjection as TwoZoneQueueContract,
 } from "~/generated/ordersContract";
@@ -27,6 +28,9 @@ export type {
   CancelReasonProjection,
   OrderItemProjection,
   TimelineEventProjection,
+  PreorderCoverageProjection,
+  PreorderCoverageDayProjection,
+  PreorderCoverageProductProjection,
 } from "~/generated/ordersContract";
 
 export type OrderTimerClass =
@@ -140,6 +144,11 @@ export interface StationDeviceAgent {
 export interface OrderQueueResponse extends ReadMetadata {
   queue: TwoZoneQueueProjection;
   device_agent?: StationDeviceAgent;
+}
+
+/** `GET orders/preorder-coverage/`: a agenda com cobertura da lista de Encomendas (WP-G10). */
+export interface PreorderCoverageResponse extends ReadMetadata {
+  coverage: PreorderCoverageProjection;
 }
 
 export interface OrderDetailResponse extends ReadMetadata {

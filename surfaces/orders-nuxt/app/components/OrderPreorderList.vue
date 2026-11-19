@@ -11,7 +11,16 @@
 //
 // A encomenda que perdeu o lastro (WP-G08) diz "Promessa em risco" e o item sem
 // reserva, e a linha abre o pedido já na faixa das três saídas.
+//
+// O cabeçalho de cada dia diz se a Produção cobre as encomendas dele (WP-G10,
+// `PreorderDayCoverage`). A cobertura é outra leitura: sem ela, ou se ela falhar, a
+// lista é a mesma, o dia só não a mostra, e a seção oferece "Tentar de novo".
 import type { PreorderGroup } from "~/presentation/board";
+import {
+  COVERAGE_READ_FAILED,
+  COVERAGE_RETRY_LABEL,
+  type DayCoverageView,
+} from "~/presentation/preorderCoverage";
 import {
   preorderFocusKey,
   preorderGroupLabel,
@@ -19,13 +28,21 @@ import {
   preorderRescheduleHref,
 } from "~/presentation/preorderList";
 import { useOperatorAppLink } from "../../../operator-kit/app/composables/useOperatorAppLink";
+import PreorderDayCoverage from "./PreorderDayCoverage.vue";
 
 const props = defineProps<{
   groups: PreorderGroup[];
   count: number;
   /** A encomenda recém-aceita, para quem veio do aviso achar a linha de relance. */
   highlightRef?: string;
+  /** A cobertura de cada dia, pela data do grupo. Sem leitura, vazio. */
+  coverage?: Record<string, DayCoverageView>;
+  /** A leitura da cobertura falhou: a lista segue e oferece tentar de novo. */
+  coverageFailed?: boolean;
+  /** A cobertura está sendo lida (o "Tentar de novo" gira). */
+  coverageReading?: boolean;
 }>();
+const emit = defineEmits<{ "retry-coverage": [] }>();
 
 const config = useRuntimeConfig();
 const posUrl = computed(() => String(config.public.posUrl || ""));
@@ -40,6 +57,7 @@ const rows = computed(() =>
   props.groups.map((group) => ({
     date: group.date,
     label: preorderGroupLabel(group.label),
+    coverage: props.coverage?.[group.date] ?? null,
     lines: group.cards.map((card) => {
       const href = preorderRescheduleHref(posUrl.value, card.ref);
       return { ...preorderLine(card), href, link: attrsFor(href) };
@@ -67,10 +85,27 @@ const rows = computed(() =>
         data-preorders-open
       />
     </div>
+    <!-- A cobertura não veio: a lista segue inteira, e a leitura tem saída aqui mesmo,
+         sem recarregar a página. -->
+    <div
+      v-if="coverageFailed"
+      class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 op-micro text-muted"
+      role="status"
+      data-coverage-failed
+    >
+      <span class="min-w-0">{{ COVERAGE_READ_FAILED }}</span>
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-rotate-cw"
+        :label="COVERAGE_RETRY_LABEL"
+        :loading="coverageReading"
+        data-coverage-retry
+        @click="emit('retry-coverage')"
+      />
+    </div>
     <div v-for="group in rows" :key="group.date" class="mt-3">
-      <h3 class="op-micro font-semibold text-muted-foreground">
-        {{ group.label }}
-      </h3>
+      <PreorderDayCoverage :label="group.label" :coverage="group.coverage" />
       <ul class="mt-1 divide-y divide-default">
         <li
           v-for="line in group.lines"
