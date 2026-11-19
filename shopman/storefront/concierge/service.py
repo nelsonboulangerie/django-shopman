@@ -26,7 +26,6 @@ from django.db import IntegrityError, transaction
 from django.db.models import Exists, F, Max, OuterRef, Q
 from django.utils import timezone
 
-from shopman.shop.ai import AINotConfigured
 from shopman.shop.models import (
     Conversation,
     ConversationBinding,
@@ -97,13 +96,6 @@ def disabled_reason() -> str:
     if not config().get("enabled"):
         return "switch_off"
     return ""
-
-
-def answers_with_model() -> bool:
-    """O agente com modelo (propósito ``concierge``) pode responder agora? Freio incluso."""
-    from shopman.shop import ai
-
-    return ai.is_configured("concierge")
 
 
 def is_enabled() -> bool:
@@ -463,11 +455,39 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
                 claim_until=None,
             )
             ConversationBinding.objects.filter(pk=binding.pk).update(last_inbound_at=event.received_at)
-        if conversation.state != Conversation.State.ACTIVE:
-            return IntakeResult(conversation.pk, message.pk, False, "handoff")
-        # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
-        _enqueue_turn(conversation, binding)
+        with_team = conversation.state != Conversation.State.ACTIVE
+        if not with_team:
+            # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
+            _enqueue_turn(conversation, binding)
+    if with_team:
+        if created and conversation.state == Conversation.State.HANDOFF:
+            _wrote_while_with_team(conversation, binding)
+        return IntakeResult(conversation.pk, message.pk, False, "handoff")
     return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
+
+
+#: O cartão de quando o cliente escreve com a conversa na equipe (o sino do Gestor).
+WROTE_WHILE_WITH_TEAM = (
+    "O cliente escreveu de novo, e a conversa está com a equipe. Responda pelo Live Chat "
+    "do ManyChat, ou devolva a conversa ao concierge no Admin."
+)
+
+
+def _wrote_while_with_team(conversation: Conversation, binding: ConversationBinding) -> None:
+    """Mensagem nova com a conversa na equipe: nunca cai em silêncio.
+
+    Se a mensagem chegou aqui, o fornecedor a mandou para o bot: a marca de atendimento
+    humano dele (``concierge_handoff``) não está ligada, ou foi desligada fora daqui. A
+    posse continua da equipe (só ela, ou a devolução no Admin, a devolve à Concierge):
+    a marca volta a ser ligada, para a próxima mensagem ir ao Live Chat, e o cartão no
+    sino diz que o cliente escreveu. Fora da transação da entrada: é chamada de rede.
+    """
+    outcome = _execute_handoff(binding, True)
+    if outcome.state != "accepted":
+        logger.warning(
+            "concierge.handoff.reassert_unconfirmed conversation=%s binding=%s", conversation.pk, binding.pk
+        )
+    _alert(conversation, "concierge_handoff", WROTE_WHILE_WITH_TEAM)
 
 
 def _enqueue_turn(conversation: Conversation, binding: ConversationBinding) -> None:
@@ -897,9 +917,7 @@ def _best_window_evidence(
 
 
 @_observed("turn")
-def run_turn(
-    conversation_id: int, binding_id: int, *, client=None, triage_client=None, intents_client=None
-) -> TurnResult:
+def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, intents_client=None) -> TurnResult:
     """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
     conversation, binding, inbound = _claim(conversation_id, binding_id)
     result = TurnResult(
@@ -910,7 +928,7 @@ def run_turn(
         return result
     ids = [message.pk for message in inbound]
     window_evidence = _best_window_evidence(binding, inbound)
-    from shopman.storefront.concierge import agent as agent_module
+    from .turn_outcome import TurnOutcome
 
     # A régua (OBS0310-K): custo e tempo do turno, gravados no primeiro bloco
     # da resposta. O relógio de ponta a ponta parte da última entrada do turno,
@@ -925,9 +943,8 @@ def run_turn(
         assert_turn_authority(conversation, for_mutation=False)
         from . import triage as triage_module
 
-        # Triagem (D32): toda entrada ganha intenção, urgência e destino ANTES
-        # do modelo de resposta. O que não é para o bot responder sai daqui
-        # para a equipe (ou para a outra mesa), com o resumo gravado.
+        # Triagem (D32): toda entrada ganha intenção, urgência e destino antes da
+        # leitura em partes, pela regra local e pelo Jev (sem modelo de texto).
         turn_text = "\n".join(message.text for message in inbound if message.text)
         previous_triage = (conversation.flags or {}).get("triage")
         from . import cancellation
@@ -946,7 +963,7 @@ def run_turn(
                 previous=previous_triage,
                 message_ids=ids,
                 commercial_authority=bool(conversation._commercial_authority),
-                client=metrics.triage_client_for(meter, triage_client),
+                contender=metrics.triage_contender_for(meter, triage_client),
                 channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
                 concierge_answers=concierge_answers,
             )
@@ -955,18 +972,9 @@ def run_turn(
         result.triage = decision
         from . import intents as intents_module
 
-        # Intenções no plural (OBS0310-Q), atrás da chave: a parte sensível não cala as
-        # outras. A decisão de equipe vai junto para o turno, que responde as dúvidas
-        # simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
-        # Sem conexão de IA (ou com o freio cortando), o turno vai pelo caminho sem
-        # modelo das intenções no plural: a Concierge existe sem chave (WP-03).
-        plural = intents_module.enabled_for(binding) or not answers_with_model()
-        if decision.escalates and not plural:
-            meter.layer = metrics.LAYER_TEAM
-            mark_handoff(
-                conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision, meter=meter
-            )
-            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids, triage=decision)
+        # Intenções no plural (OBS0310-Q), o único caminho (WP-08): a parte sensível não
+        # cala as outras. A decisão de equipe vai junto para o turno, que responde as
+        # dúvidas simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
         if (
             binding.identity_assurance
             != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
@@ -984,36 +992,21 @@ def run_turn(
             (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES
             for message in inbound
         ):
-            outcome = agent_module.AgentOutcome(
+            outcome = TurnOutcome(
                 reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"), layer=metrics.LAYER_MEDIA
             )
             result.fallback = "media"
         elif _bump_turn_counter(conversation) > int(config().get("max_turns_per_day") or 80):
-            outcome = agent_module.AgentOutcome(
+            outcome = TurnOutcome(
                 reply_text=copy_message("CONCIERGE_TURN_LIMIT"), layer=metrics.LAYER_TURN_LIMIT
             )
             result.fallback = "turn_limit"
         else:
             try:
-                if plural:
-                    outcome = intents_module.run(
-                        conversation, binding=binding, decision=decision, client=intents_client
-                    )
-                    meter.intents = getattr(outcome, "intents", {}) or {}
-                else:
-                    try:
-                        with meter.stage("agent"):
-                            outcome = agent_module.run_agent(
-                                conversation=conversation,
-                                history=agent_module.history_for(conversation),
-                                client=meter.wrap(client, "model", factory=agent_module.build_client),
-                            )
-                    except AINotConfigured:
-                        # O freio cortou no meio do turno: vale o caminho sem modelo.
-                        outcome = intents_module.run(
-                            conversation, binding=binding, decision=decision, client=intents_client
-                        )
-                        meter.intents = getattr(outcome, "intents", {}) or {}
+                outcome = intents_module.run(
+                    conversation, binding=binding, decision=decision, client=intents_client
+                )
+                meter.intents = getattr(outcome, "intents", {}) or {}
             except TurnRevoked:
                 raise
             except Exception:
@@ -1048,7 +1041,7 @@ def run_turn(
                     "concierge_unavailable",
                     "Resposta automática indisponível; contexto preservado.",
                 )
-                outcome = agent_module.AgentOutcome(
+                outcome = TurnOutcome(
                     reply_text=copy_message("CONCIERGE_UNAVAILABLE"), layer=metrics.LAYER_ERROR
                 )
                 result.fallback = "error"
@@ -1077,7 +1070,7 @@ def run_turn(
                     )
                     ack_text = "" if reviewed_ack.held else reviewed_ack.texts[0]
             else:
-                meter.layer = metrics.LAYER_AGENT_HANDOFF
+                meter.layer = metrics.LAYER_HANDOFF
                 # Quem chamou a equipe pode ter montado o aviso com o motivo (a
                 # Concierge recusando o acréscimo numa encomenda): ele substitui o
                 # padrão e passa pelas regras da casa em ``_prepare_reply``.
@@ -1133,7 +1126,6 @@ def run_turn(
         with transaction.atomic():
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             assert_turn_authority(conversation, for_mutation=False)
-            _persist_outcome(conversation, outcome)
             _save_memory(conversation, outcome)
             from . import verification
 
@@ -1184,10 +1176,6 @@ def run_turn(
                 consecutive_failures=(
                     0 if not result.fallback else F("consecutive_failures")
                 ),
-                input_tokens=F("input_tokens") + int(outcome.usage.get("input_tokens") or 0),
-                output_tokens=F("output_tokens") + int(outcome.usage.get("output_tokens") or 0),
-                cache_read_tokens=F("cache_read_tokens")
-                + int(outcome.usage.get("cache_read_input_tokens") or 0),
                 last_order_ref=outcome.order_ref or conversation.last_order_ref,
             )
         result.processed_message_ids = ids
@@ -1218,25 +1206,6 @@ def _save_memory(conversation: Conversation, outcome) -> None:
         ref for ref, status in memory.facts.order_status.items() if status in dialogue.OPEN_ORDER_STATUSES
     ]
     dialogue.save_turn(conversation, memos, previous=memory.state, open_order_refs=open_refs)
-
-
-def _persist_outcome(conversation: Conversation, outcome) -> None:
-    kinds = {
-        "assistant": ConversationMessage.Kind.TOOL_CALL,
-        "user": ConversationMessage.Kind.TOOL_RESULT,
-    }
-    for message in outcome.messages:
-        role = message["role"]
-        content = message["content"]
-        if role == "assistant" and not any(block.get("type") == "tool_use" for block in content):
-            continue
-        ConversationMessage.objects.create(
-            conversation=conversation,
-            role=role,
-            kind=kinds[role],
-            content=content,
-            text="",
-        )
 
 
 def _prepare_reply(

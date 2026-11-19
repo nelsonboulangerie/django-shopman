@@ -37,6 +37,7 @@ from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401  (fix
     outbox,
     surface,
 )
+from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
 
 TZ = ZoneInfo(django_settings.TIME_ZONE)
 NOW = datetime(2026, 10, 3, 10, 0, tzinfo=TZ)  # sábado
@@ -278,62 +279,39 @@ def test_turn_writes_the_list_and_the_next_turn_resolves_the_ordinal(conversatio
     configure_ai("sk-teste")
     _listed("PAIN-CHOC", "Pain au Chocolat", description="Folhado amanteigado com chocolate", stock="5")
     _receive(conversation, "tem folhado amanteigado?", "d1")
-    first = ScriptedClient(
-        _response(_tool("search_storefront", {"query": "folhado amanteigado"}), stop_reason="tool_use"),
-        _response(_text("."), stop_reason="end_turn"),
-    )
-    service.run_turn(conversation.pk, _binding(conversation).pk, client=first)
+    reader = ReaderClient([_act("product_question", "tem folhado amanteigado?", "folhado amanteigado")])
+    service.run_turn(conversation.pk, _binding(conversation).pk, intents_client=reader)
     conversation.refresh_from_db()
     state = conversation.flags["dialogue"]
     names = [item["name"] for item in state["listed"]]
     assert len(names) >= 2 and state["pending"]["kind"] == dialogue.CHOOSE
 
     _receive(conversation, "o segundo", "d2")
-    second = ScriptedClient(_response(_text("."), stop_reason="end_turn"))
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=second)
+    # A memória resolve "o segundo" no produto; a leitura lê o nome dele como pergunta de produto.
+    chosen = ReaderClient([_act("product_question", names[1], names[1])])
+    result = service.run_turn(conversation.pk, _binding(conversation).pk, intents_client=chosen)
     assert names[1] in result.replies[0] and names[0] not in result.replies[0]
-    system = second.requests[0]["system"]
-    assert any("Memória da conversa" in block["text"] for block in system)
     conversation.refresh_from_db()
     assert conversation.flags["dialogue"]["focus"]["name"] == names[1]
 
 
 @pytest.mark.django_db(transaction=True)
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
-def test_yes_after_no_match_calls_the_team_without_the_model(conversation, outbox):
-    configure_ai("sk-teste")
-    _receive(conversation, "vocês vendem bicicletas?", "t1")
-    first = ScriptedClient(
-        _response(_tool("search_storefront", {"query": "bicicleta"}), stop_reason="tool_use"),
-        _response(_text("."), stop_reason="end_turn"),
-    )
-    reply = service.run_turn(conversation.pk, _binding(conversation).pk, client=first).replies[0]
-    assert "Posso chamar a equipe" in reply
-    _receive(conversation, "sim", "t2")
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
-    assert result.handoff
-    conversation.refresh_from_db()
-    assert conversation.state == Conversation.State.HANDOFF
-
-
-@pytest.mark.django_db(transaction=True)
-@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
 def test_revoked_turn_does_not_write_memory(conversation, outbox):
     configure_ai("sk-teste")
-    _receive(conversation, "tem pão?", "r1")
+    _receive(conversation, "tem pão? e vocês abrem domingo?", "r1")
 
-    class NewInputDuringModel(ScriptedClient):
+    class NewInputDuringReading(ReaderClient):
         def _create(self, **kwargs):
             response = super()._create(**kwargs)
-            if len(self.requests) == 2:
-                Conversation.objects.filter(pk=conversation.pk).update(turn_fence=999)
+            # Chegou mensagem nova enquanto a leitura respondia: o turno perde a vez.
+            Conversation.objects.filter(pk=conversation.pk).update(turn_fence=999)
             return response
 
-    client = NewInputDuringModel(
-        _response(_tool("search_storefront", {"query": "pão"}), stop_reason="tool_use"),
-        _response(_text("."), stop_reason="end_turn"),
-    )
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=client)
+    reader = NewInputDuringReading([
+        _act("product_question", "tem pão?", "pão"), _act("hours_delivery", "vocês abrem domingo?"),
+    ])
+    result = service.run_turn(conversation.pk, _binding(conversation).pk, intents_client=reader)
     assert result.fallback == "revoked"
     conversation.refresh_from_db()
     assert "dialogue" not in conversation.flags

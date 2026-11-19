@@ -35,13 +35,9 @@ O caminho de um turno:
 5. **Composição** (``compose``): uma mensagem, as partes na ordem do cliente, uma pergunta
    só no fim. As regras da casa (``house_rules``) passam sobre o resultado em ``service``.
 
-Liberação (OBS0310-R, 03/10/2026): valem para quem a Concierge JÁ atende. Em ``assist``,
-a coorte atendida é a lista fechada da connection (``allowed_subjects``, hoje o dono), e
-quem está fora dela só é observado; então ligar as intenções para a coorte é ligar para
-quem conversa com ela, sem tocar em env nem no spec do app. A chave
-``SHOPMAN_CONCIERGE["intents_plural"]`` (``CONCIERGE_INTENTS_PLURAL``) fica como
-interruptor: ``cohort`` (padrão: a coorte atendida), ``off`` (emergência: desliga para
-todos), ``subjects`` (só quem está em ``intents_subjects``, dentro da coorte) ou ``all``.
+É o único caminho do turno (WP-08, 19/11/2026): o laço do agente com ferramentas saiu,
+e a triagem não chama modelo (ficam a regra local e o Jev). Sem conexão de IA, a leitura
+segue pela regra local e pelos executores da casa.
 """
 
 from __future__ import annotations
@@ -52,8 +48,6 @@ import re
 import time
 import unicodedata
 from dataclasses import asdict, dataclass, field
-
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -142,47 +136,6 @@ def _fold(text: str) -> str:
         char for char in unicodedata.normalize("NFKD", str(text or "").casefold())
         if not unicodedata.combining(char)
     )
-
-
-# ── Chave de liberação ────────────────────────────────────────────────
-
-
-def _config() -> dict:
-    return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
-
-
-#: Os valores da chave. ``cohort`` é o padrão: sem env nenhuma, vale para a coorte atendida.
-OFF, COHORT, SUBJECTS, ALL = "off", "cohort", "subjects", "all"
-MODES = (OFF, COHORT, SUBJECTS, ALL)
-
-
-def mode() -> str:
-    """O valor da chave; valor desconhecido desliga (falha fechada, com aviso no log)."""
-    current = str(_config().get("intents_plural") or COHORT).strip().casefold()
-    if current not in MODES:
-        logger.warning("concierge.intents.unknown_mode value=%s", current[:20])
-        return OFF
-    return current
-
-
-def enabled_for(binding) -> bool:
-    """Intenções no plural para esta conversa?
-
-    Só para quem a Concierge atende agora: modo ``assist`` e o cliente na coorte da
-    connection (``service.is_allowed``). Fora dela nada muda, qualquer que seja a chave.
-    ``off`` desliga para todos; ``subjects`` estreita a coorte para ``intents_subjects``.
-    """
-    from . import service
-
-    current = mode()
-    if current == OFF or binding is None:
-        return False
-    if service.operation_mode() != "assist" or not service.is_allowed(binding):
-        return False
-    if current == SUBJECTS:
-        allowed = {str(value).strip() for value in _config().get("intents_subjects") or () if str(value).strip()}
-        return str(binding.subject or "").strip() in allowed
-    return True
 
 
 # ── Atos ──────────────────────────────────────────────────────────────
@@ -522,7 +475,7 @@ def reading_note(memory) -> str:
     """O estado da conversa para a leitura: sem número de pedido e sem nome (WP-03).
 
     A leitura só separa partes; o rótulo do pedido (número, dia, faixa) não a ajuda e
-    é dado que não sai. O agente com modelo segue com ``prompt_lines``.
+    é dado que não sai.
     """
     from .dialogue import CLOSED_STATUS_LABEL, _context_note
 
@@ -615,7 +568,14 @@ def plan(
         from .small_talk import strip_small_talk
 
         courtesy = [act for act in local_acts(text) if act.act in COURTESY]
-        acts = [*courtesy, Act(decided.intent, span=strip_small_talk(text) or text.strip(), qty=_qty(text))]
+        span = strip_small_talk(text) or text.strip()
+        # O mesmo refino da divisão local: "quero cancelar meu pedido" é cancelamento, e
+        # "faz um preço melhor" é pedido de exceção (R7), mesmo que a intenção seja pedido.
+        refined = _act_for_text(_fold(span), decided.intent).act
+        if refined == CANCEL:
+            # A nota do cancelamento cita a fala como o cliente escreveu (a fala é uma parte só).
+            span = text.strip()[:300]
+        acts = [*courtesy, Act(refined, span=span, qty=_qty(text))]
         found = Plan(acts=acts, source="gate", reason=decided.reason, jev=dict(jev_scores or {}))
         found.acts = _with_rules(found.acts, text, rules_intent)
         return found
@@ -771,7 +731,13 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
     team_in_turn = bool(run.team)
     texts = " ".join(act.span for act in plan_.acts)
-    run.salutation = opening_salutation(texts) if any(a.act == GREET for a in plan_.acts) else ""
+    if any(a.act == GREET for a in plan_.acts):
+        # O cumprimento sai da fala do cliente: o trecho das partes já vem sem ele.
+        from .turn_outcome import current_customer_text
+
+        run.salutation = opening_salutation(texts) or (
+            opening_salutation(current_customer_text(conversation)) if conversation is not None else ""
+        )
 
     def context(text: str) -> ToolContext:
         return ToolContext(
@@ -1052,32 +1018,48 @@ def team_triage(run: Execution, decision):
 
 
 def run(conversation, *, binding, decision, client=None):
-    """Um turno inteiro pelas intenções no plural. Devolve o ``AgentOutcome`` do turno.
+    """Um turno inteiro pelas intenções no plural. Devolve o ``TurnOutcome`` do turno.
 
-    A ordem de quem responde primeiro é a do agente: memória da conversa ("sim", "o
+    A ordem de quem responde primeiro: memória da conversa ("sim", "o
     segundo"), cortesia sozinha, e então as partes. A conversa vai para a equipe sem
     resposta só quando TODAS as partes são da equipe; com parte simples junto, a resposta
     leva as dúvidas respondidas e diz que a equipe foi chamada (decisão do dono).
     """
     from . import dialogue, small_talk, triage
-    from .agent import AgentOutcome, _current_customer_text
-    from .agent import _config as agent_config
     from .metrics import LAYER_CONTEXT, LAYER_COURTESY
+    from .service import config
+    from .turn_outcome import TurnOutcome, current_customer_text
 
-    channel_ref = str(conversation.channel_ref or agent_config().get("channel_ref") or "")
-    customer_text = _current_customer_text(conversation)
+    channel_ref = str(conversation.channel_ref or config().get("channel_ref") or "")
+    if channel_ref:
+        from shopman.shop.services.channel_switch import is_channel_active
+
+        if not is_channel_active(channel_ref):
+            # Canal desligado no Gestor: a Concierge segue respondendo, mas não concede
+            # desconto nem fecha pedido. O commit recusaria de qualquer jeito; aqui a
+            # conversa não chega a prometer.
+            conversation._channel_off = True
+            conversation._commercial_authority = False
+    customer_text = current_customer_text(conversation)
     memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
 
-    # O "sim"/"não" à pergunta de cancelamento (#1445): antes de tudo, como no agente.
+    # O "sim"/"não" à pergunta de cancelamento (#1445): antes de tudo.
     # Qualquer outra fala desfaz a pergunta.
+    if getattr(decision, "escalated_by", "") == "allergy_offer_accepted":
+        # O "sim" à oferta da equipe para alergia grave (dono, 03/10/2026): a equipe, agora,
+        # com a triagem do turno no cartão. Antes da memória, que leria o "sim" como outra coisa.
+        from .metrics import LAYER_TEAM
+
+        return TurnOutcome(reply_text="", handoff=True, handoff_reason=decision.reason_line(),
+                           team_triage=decision, layer=LAYER_TEAM, memory=memory)
     cancel_turn = _cancellation().resolve_pending(conversation, customer_text)
     if cancel_turn is not None:
-        from .agent import CANCEL_HANDOFF_REASON
         from .metrics import LAYER_HOUSE_RULE
+        from .turn_outcome import CANCEL_HANDOFF_REASON
 
         if cancel_turn.code == "refused":
-            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
-        return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+            return TurnOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
+        return TurnOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
 
     # "E aí?" com uma pergunta à equipe em espera ("vou verificar", WP-05): a resposta é
     # o estado da espera, sem cartão novo e sem buscar de novo.
@@ -1087,7 +1069,7 @@ def run(conversation, *, binding, decision, client=None):
         from .metrics import LAYER_CONTEXT as _LAYER_CONTEXT
 
         if verification.asks_for_news(customer_text):
-            waiting = AgentOutcome(reply_text=verification.waiting_reply(verifying), layer=_LAYER_CONTEXT,
+            waiting = TurnOutcome(reply_text=verification.waiting_reply(verifying), layer=_LAYER_CONTEXT,
                                    memory=memory)
             waiting.verification = {"waiting": True}
             return waiting
@@ -1101,13 +1083,13 @@ def run(conversation, *, binding, decision, client=None):
 
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
-    from .agent import addition_outcome
+    from .turn_outcome import addition_outcome
 
     addition = addition_outcome(conversation, resolution, memory=memory, memos=memos)
     if addition is not None:
         return addition
     if resolution.answers_without_model:
-        return AgentOutcome(
+        return TurnOutcome(
             reply_text=resolution.reply,
             handoff=resolution.outcome == "handoff",
             handoff_reason=resolution.handoff_reason,
@@ -1118,19 +1100,27 @@ def run(conversation, *, binding, decision, client=None):
     text = resolution.text or customer_text
     courtesy = small_talk.small_talk_kind(text)
     if courtesy:
-        from shopman.shop.models import ConversationMessage
-
-        from .prompt import _shop
+        from shopman.shop.models import ConversationMessage, Shop
 
         first = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
-        return AgentOutcome(
+        return TurnOutcome(
             reply_text=small_talk.reply_for(
-                text, kind=courtesy, shop_name=(getattr(_shop(), "name", "") or "").strip(), is_first_turn=first
+                text, kind=courtesy, shop_name=(getattr(Shop.load(), "name", "") or "").strip(), is_first_turn=first
             ),
             layer=LAYER_COURTESY,
             memory=memory,
             memory_memos=memos,
         )
+    fixed = _house_fixed_reply(conversation, text, channel_ref=channel_ref, memory=memory, memos=memos)
+    if fixed is not None:
+        return fixed
+    # A alergia sobre a fala inteira só quando ela é uma parte só; com outras partes junto,
+    # a alergia é uma das partes (``execute``), e as outras também recebem resposta.
+    allergy = _allergy_outcome(conversation, text, channel_ref=channel_ref) if len(split_local(text)) < 2 else None
+    if allergy is not None:
+        allergy.memory = memory
+        allergy.memory_memos = memos
+        return allergy
 
     rules_intent, rules_source = triage.classify_rules(text)
     meter = getattr(conversation, "_meter", None)
@@ -1160,6 +1150,80 @@ def run(conversation, *, binding, decision, client=None):
     return _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
 
 
+def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos):
+    """As regras de entrada com frase fixa sobre a mensagem inteira (R7, R8), antes das partes.
+
+    Pedido de desconto (R7, dono, 03/10/2026): até o teto da casa a Concierge concede pelo
+    mesmo cupom do site, e o valor é do sistema; quando não dá (teto 0, sem autoridade,
+    cupom recusado), a frase fixa. "Você é um robô?" (R8): a frase de assistente da casa.
+    Sem modelo nem busca. ``None`` quando a mensagem não é nenhuma das duas.
+    """
+    from shopman.shop.models import Shop
+
+    from . import discount, house_rules
+    from .metrics import LAYER_HOUSE_RULE
+    from .turn_outcome import TurnOutcome
+
+    rule, fixed = house_rules.fixed_reply_for(text, shop_name=(getattr(Shop.load(), "name", "") or "").strip())
+    if rule == "R7":
+        granted = discount.handle_request(conversation=conversation, channel_ref=channel_ref, customer_text=text)
+        if granted.text:
+            return TurnOutcome(reply_text=granted.text, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
+    if fixed:
+        return TurnOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
+    return None
+
+
+def _earlier_customer_text(conversation) -> str:
+    """A fala do cliente antes deste turno (a que recebeu "a que é a alergia?")."""
+    from shopman.shop.models import ConversationMessage
+
+    inbound_ids = tuple(getattr(conversation, "_inbound_ids", ()) or ())
+    return (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND)
+        .exclude(pk__in=inbound_ids)
+        .exclude(text="")
+        .order_by("-pk")
+        .values_list("text", flat=True)
+        .first()
+        or ""
+    )
+
+
+def _allergy_outcome(conversation, customer_text: str, *, channel_ref: str):
+    """Alergia (dono, 03/10/2026, ``allergens.py``): a resposta sai das fontes, sem modelo.
+
+    Nada aqui pode ser parafraseado em "sem leite": a resposta é o aviso da casa, os
+    alérgenos declarados do produto citado e a oferta da equipe; ou a pergunta "a quê?",
+    e a resposta a ela ("a ovo") lida junto com a fala de antes. O que a Concierge não
+    pode responder vai para a equipe. ``None`` quando a fala não é de alergia.
+    """
+    from . import allergens
+    from . import tools as tools_module
+    from .turn_outcome import TurnOutcome
+
+    stamp = (conversation.flags or {}).get("triage") or {}
+    inbound_ids = set(getattr(conversation, "_inbound_ids", ()) or ())
+    # Só vale a triagem DESTE turno: a de um turno anterior não diz nada desta fala.
+    this_turn = bool(inbound_ids & set(stamp.get("message_ids") or ()))
+    answered_by = (stamp.get("answered_by") or "") if this_turn else ""
+    catalog_ref = tools_module._catalog_channel_ref(channel_ref)
+    if answered_by not in allergens.ANSWERED_BY:
+        answered_by = allergens.decision(customer_text, channel_ref=catalog_ref)
+    if not answered_by:
+        return None
+    if answered_by == allergens.ASK_WHICH:
+        reply = allergens.ask_which(customer_text)
+    else:
+        text = customer_text
+        if answered_by == allergens.NOTICE_AFTER_ASK:
+            text = f"{_earlier_customer_text(conversation)}\n{customer_text}"
+        reply = allergens.reply_for(text, channel_ref=catalog_ref) if answered_by != allergens.TEAM else ""
+    if reply:
+        return TurnOutcome(reply_text=reply)
+    return TurnOutcome(reply_text="", handoff=True, handoff_reason="alergia")
+
+
 def _parts_memo(run_: Execution) -> dict:
     """O que a memória guarda das partes do turno: o ato, o trecho (redigido) e o que houve."""
     rows = []
@@ -1183,12 +1247,12 @@ def _parts_memo(run_: Execution) -> dict:
 
 
 def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text: str, lead: str = ""):
-    """O ``AgentOutcome`` de um turno lido em partes (normal ou pergunta repetida)."""
+    """O ``TurnOutcome`` de um turno lido em partes (normal ou pergunta repetida)."""
     from . import triage
-    from .agent import AgentOutcome
     from .metrics import LAYER_INTENTS, LAYER_TEAM
+    from .turn_outcome import TurnOutcome
 
-    outcome = AgentOutcome(
+    outcome = TurnOutcome(
         reply_text="",
         layer=LAYER_INTENTS,
         tool_events=executed.tool_events,
@@ -1269,9 +1333,9 @@ def _earlier_question(conversation) -> str:
 def _answer_again(conversation, *, binding, decision, memory, channel_ref: str, client=None):
     """A pergunta repetida: responde de novo o que ficou pendente, com um pedido de desculpa."""
     from . import triage
-    from .agent import AgentOutcome
     from .metrics import LAYER_INTENTS
     from .service import copy_message as copy
+    from .turn_outcome import TurnOutcome
 
     acts = _pending_parts(memory)
     text = ""
@@ -1280,7 +1344,7 @@ def _answer_again(conversation, *, binding, decision, memory, channel_ref: str, 
     else:
         text = _earlier_question(conversation)
         if not text:
-            return AgentOutcome(reply_text=copy(REPEAT_ASK_COPY_KEY), layer=LAYER_INTENTS, memory=memory,
+            return TurnOutcome(reply_text=copy(REPEAT_ASK_COPY_KEY), layer=LAYER_INTENTS, memory=memory,
                                 intents={"acts": [], "source": "memory", "reason": "asked_again_nothing"})
         rules_intent, rules_source = triage.classify_rules(text)
         has_key = _ai_ready()

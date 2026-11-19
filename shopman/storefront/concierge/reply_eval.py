@@ -1,7 +1,7 @@
 """Placar da Concierge contra o conjunto de mensagens reais (golden set).
 
 Fatia 1 do estudo ``docs/plans/completed/CONCIERGE-ARQUITETURA-ALVO.md`` (seção 6.3). Roda o
-caminho de HOJE (``service.run_turn``: triagem, mídia, cortesia, agente) sobre
+caminho de HOJE (``service.run_turn``: triagem, mídia, cortesia, partes) sobre
 cada caso de ``golden_set.json`` até o ponto em que ele decide quem responde, e
 compara com o rótulo conferido:
 
@@ -15,7 +15,7 @@ compara com o rótulo conferido:
 - **custo e tempo** da triagem, medidos pela régua (``metrics.TurnMeter``), e o
   tempo das respostas do alpha gravado no caso (``alpha.reply_ms``).
 
-Sem rede por padrão (``classifier="rules"``). Com ``model`` ou ``jev`` a triagem
+Sem rede por padrão (``classifier="rules"``). Com ``jev`` a triagem
 chama o provedor de verdade com o texto já redigido do caso. Rodada com rede custa
 dinheiro: o comando só a aceita com ``--paid`` (``network_reason``), e ``Budget`` é o
 teto de gasto, pelo custo da tabela ``LLM_PRICES``, que vale para todas as repetições.
@@ -24,9 +24,9 @@ teto de gasto, pelo custo da tabela ``LLM_PRICES``, que vale para todas as repet
 N": um modelo que acha a equipe em 2 de 3 rodadas perde a equipe de verdade uma vez em
 três, e a média esconde isso.
 
-O agente (laço com o modelo e as ferramentas) não roda aqui: ele precisa do
-catálogo e da sacola vivos. O custo e o tempo dele saem do que a régua grava em
-produção (``production_summary``).
+A camada ``agent`` dos rótulos é a "conversa solta" da arquitetura alvo (C6), não um
+caminho de código: o turno de hoje é a leitura em partes (``run_plural``). O custo e o
+tempo de produção saem do que a régua grava (``production_summary``).
 """
 
 from __future__ import annotations
@@ -65,9 +65,9 @@ TODAY_LABELS = {
 TARGET_MODEL_LAYERS = frozenset({"answer", "agent"})
 #: ``jev-shadow`` não chama ninguém: usa a intenção que o Jev deu em sombra no
 #: alpha, gravada no caso (``alpha.jev``), e mede só os casos observados.
-CLASSIFIERS = ("rules", "model", "jev", "jev-shadow")
+CLASSIFIERS = ("rules", "jev", "jev-shadow")
 #: Classificadores que chamam um provedor (custam). ``jev-shadow`` lê o caso, não a rede.
-NETWORK_CLASSIFIERS = frozenset({"model", "jev"})
+NETWORK_CLASSIFIERS = frozenset({"jev"})
 
 
 class PaidRunRefused(ValueError):
@@ -266,7 +266,6 @@ def run(
     cases: list[dict],
     *,
     classifier: str = "rules",
-    model: str = "",
     client=None,
     budget: Budget | None = None,
     max_cases: int = 0,
@@ -286,24 +285,23 @@ def run(
         return _run_shadow(cases)
     config = {
         **(getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}),
-        "triage_classifier": "jev" if classifier == "jev" else "anthropic",
         "triage_with_model": classifier != "rules",
     }
-    report = Report(classifier=classifier if not model else f"{classifier}:{model}")
-    with override_settings(SHOPMAN_CONCIERGE=config), triage.model_override(model):
+    report = Report(classifier=classifier)
+    with override_settings(SHOPMAN_CONCIERGE=config):
         for case in cases:
             report.stopped = _stop_reason(budget, max_cases, measured=len(report.results), total=len(cases))
             if report.stopped:
                 break
             meter = metrics.TurnMeter()
             context = [(line["who"], line["text"]) for line in case.get("previous", [])]
-            triage_client = metrics.triage_client_for(meter, client) if classifier != "rules" else None
-            if classifier != "rules" and triage_client is None:
+            contender = metrics.triage_contender_for(meter, client) if classifier != "rules" else None
+            if classifier != "rules" and contender is None:
                 raise ValueError(
                     f"triagem por {classifier} indisponível neste ambiente (credencial ou aprovação do provedor)."
                 )
             with meter.stage("triage"):
-                decision = triage.decide(case["text"], context=context, client=triage_client)
+                decision = triage.decide(case["text"], context=context, contender=contender)
             usage = meter.as_usage()
             if budget is not None:
                 budget.charge(usage["cost_usd"])

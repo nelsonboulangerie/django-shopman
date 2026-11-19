@@ -248,6 +248,9 @@ POLICY: dict[str, Rule] = {
     "shop.Conversation": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ConversationBinding": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ConversationMessage": _purge("conversas do ensaio (WhatsApp)"),
+    # A decisão em sombra (N5) deriva da entrada: sai com a conversa, como a própria entrada.
+    "shop.ConversationalDecision": _purge("decisão em sombra das conversas do ensaio (WhatsApp)"),
+    "shop.ConversationalOutcome": _purge("decisão em sombra das conversas do ensaio (WhatsApp)"),
     "shop.OutboundAttempt": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ContactRelease": _purge("conversas do ensaio (WhatsApp)"),
     "shop.PrivacyRequestReceipt": _purge(_CUSTOMER),

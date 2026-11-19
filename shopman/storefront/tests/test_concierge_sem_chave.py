@@ -36,7 +36,6 @@ from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401 (fixt
 )
 from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
 
-PLURAL_SETTINGS = {**CONCIERGE_SETTINGS, "intents_plural": "subjects", "intents_subjects": [SUBJECT]}
 CUSTOMER_NAME = "Maria Souza"
 
 #: (fala, trechos que não podem sair). Uma linha por categoria da frase pública.
@@ -104,19 +103,17 @@ def without_ai(monkeypatch):
 @pytest.mark.django_db
 def test_without_ai_connection_the_concierge_is_not_disabled(conversation, without_ai):  # noqa: F811 (fixtures)
     assert service.disabled_reason() == ""
-    assert service.answers_with_model() is False
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("plural", ["off", "cohort"])
 def test_without_ai_connection_a_whole_turn_answers_courtesy_and_product(
-    conversation, outbox, without_ai, plural  # noqa: F811 (fixtures)
+    conversation, outbox, without_ai  # noqa: F811 (fixtures)
 ):
-    """Mesmo com as intenções no plural desligadas, sem chave vale o caminho sem modelo."""
-    with override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "intents_plural": plural}):
-        _receive(conversation, "bom dia", f"sem-chave-1-{plural}")
+    """Sem chave, a leitura em partes responde sem modelo."""
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _receive(conversation, "bom dia", "sem-chave-1")
         first = service.run_turn(conversation.pk, _binding(conversation).pk)
-        _receive(conversation, "tem pão francês?", f"sem-chave-2-{plural}")
+        _receive(conversation, "tem pão francês?", "sem-chave-2")
         second = service.run_turn(conversation.pk, _binding(conversation).pk)
 
     assert not first.handoff and not second.handoff
@@ -129,17 +126,16 @@ def test_without_ai_connection_a_whole_turn_answers_courtesy_and_product(
 
 
 @pytest.mark.django_db
-def test_the_brake_cutting_the_agent_mid_turn_falls_to_the_path_without_model(
+def test_the_brake_cutting_the_reading_mid_turn_falls_to_the_path_without_model(
     conversation, outbox, monkeypatch  # noqa: F811 (fixtures)
 ):
-    """Com chave, mas o freio corta (``AINotConfigured``) quando o agente vai responder."""
+    """Com chave, mas o freio corta (``AINotConfigured``) quando a leitura vai chamar o modelo."""
     from shopman.shop.ai import AINotConfigured
-    from shopman.storefront.concierge import agent
 
-    def braked(**kwargs):
+    def braked(*args, **kwargs):
         raise AINotConfigured("freio: teto do dia")
 
-    monkeypatch.setattr(agent, "run_agent", braked)
+    monkeypatch.setattr("shopman.shop.ai.anthropic_client", braked)
     _receive(conversation, "tem pão francês?", "freio-1")
     result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
@@ -188,7 +184,7 @@ def test_a_whole_turn_sends_neither_the_name_nor_personal_data_to_jev_or_reading
     text = "Maria aqui, meu CPF é 123.456.789-09. tem pão francês? e vocês aceitam vale refeição?"
     _receive(conversation, text, "nome-no-turno")
     with override_settings(
-        SHOPMAN_CONCIERGE={**PLURAL_SETTINGS, "triage_with_model": True, "triage_classifier": "jev"}
+        SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "triage_with_model": True}
     ):
         service.run_turn(conversation.pk, _binding(conversation).pk, triage_client=jev, intents_client=reader)
 
@@ -221,7 +217,7 @@ def test_the_state_note_does_not_carry_the_order_number_nor_the_name():
         open_order=SimpleNamespace(label="pedido ABC123, retirada hoje", status="new"),
         recent_order=SimpleNamespace(label="pedido XYZ987, entrega ontem", status="completed"),
     )
-    memory = SimpleNamespace(state={}, facts=facts, prompt_lines=lambda: "")
+    memory = SimpleNamespace(state={}, facts=facts)
     note = intents.reading_note(memory)
     assert "ABC123" not in note and "XYZ987" not in note
     assert "pedido em aberto" in note
@@ -258,7 +254,7 @@ def test_the_allergy_warning_still_reads_the_original_allergen(conversation, out
     ])
     text = "tem croissant? minha filha é alérgica a leite"
     _receive(conversation, text, "alergia-original")
-    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS):
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
         service.run_turn(conversation.pk, _binding(conversation).pk, intents_client=reader)
 
     _assert_without(("leite",), str(reader.requests[0]["messages"]), "A leitura de partes")

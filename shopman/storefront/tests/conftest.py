@@ -32,3 +32,19 @@ def pickup_grid_clock(monkeypatch):
         return original(day, now=now, shop=shop)
 
     monkeypatch.setattr(business_calendar, "delivery_slots_for", pinned)
+
+
+@pytest.fixture(autouse=True)
+def concierge_reading_without_network(request, monkeypatch):
+    """A leitura da Concierge nunca abre conexão em teste.
+
+    Sem leitor injetado (``intents_client``), ``intents.build_client`` criaria o cliente
+    de verdade com a chave de teste e chamaria a rede. Aqui ele não existe: a leitura
+    segue pela divisão local, como quando a loja não tem conexão de IA. Quem mede a
+    leitura injeta o leitor; quem prova o freio troca ``ai.anthropic_client``.
+    """
+    if not request.node.module.__name__.rsplit(".", 1)[-1].startswith("test_concierge"):
+        return
+    from shopman.storefront.concierge import intents
+
+    monkeypatch.setattr(intents, "build_client", lambda: None)

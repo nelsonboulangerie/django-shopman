@@ -41,9 +41,7 @@ def _sem_conexoes(db, settings):
         **(getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}),
         "enabled": True,
         "operation_mode": "assist",
-        "intents_plural": "cohort",
         "triage_with_model": True,
-        "triage_classifier": "anthropic",
     }
 
 
@@ -249,28 +247,20 @@ def test_concierge_desligada_so_o_jev_continua_declarado(settings):
     assert list(_por_nome()) == ["TypeSafe"]
 
 
-def test_laco_antigo_so_conta_quando_a_chave_o_liga(settings):
+def test_o_laco_e_a_triagem_por_modelo_nao_mandam_nada(settings):
+    """WP-08: o laço do agente e a triagem por modelo de texto saíram; a rota sozinha não declara nada."""
     _deepseek_e_jev()
-    _rotas({"default": {"connection": "anthropic-catalogo"}, "concierge": {"connection": "deepseek"}})
+    _rotas(
+        {
+            "default": {"connection": "anthropic-catalogo"},
+            "concierge": {"connection": "deepseek"},
+            "triage": {"connection": "deepseek"},
+        }
+    )
 
-    # Padrão (`cohort`): o turno vai pela leitura de partes, o laço antigo não roda.
     assert active_ai_processors() == ()
-
-    _concierge(settings, intents_plural="off")
-    assert _por_nome()["DeepSeek"].shares == ai_role_and_shares({"concierge"})[1]
-    assert "o seu nome" in _por_nome()["DeepSeek"].shares
-
-
-def test_triagem_por_modelo_so_conta_sem_o_jev_no_lugar(settings):
-    _deepseek_e_jev()
-    _rotas({"default": {"connection": "anthropic-catalogo"}, "triage": {"connection": "deepseek"}})
-    assert list(_por_nome()) == ["DeepSeek"]
-
-    _concierge(settings, triage_classifier="jev")
-    assert active_ai_processors() == ()
-
-    _concierge(settings, triage_classifier="anthropic", triage_with_model=False)
-    assert active_ai_processors() == ()
+    assert not {"concierge", "triage"} & set(USOS)
+    assert not {"concierge", "triage"} & set(_customer_text_purposes())
 
 
 # ── A frase é a que o código monta ───────────────────────────────────────
@@ -363,40 +353,6 @@ def test_a_leitura_nao_recebe_dado_pessoal():
     _sem((*TRECHOS_PESSOAIS, "ABC123"), enviado, "A leitura de partes")
 
 
-def test_a_triagem_recebe_a_mensagem_e_as_seis_anteriores():
-    from shopman.storefront.concierge import triage
-
-    contexto = [("Cliente", "bom dia"), ("Casa", "Bom dia! Em que posso ajudar?")]
-    prompt = triage.build_prompt(FALA, contexto)
-
-    assert USOS["triage"].redacts is False
-    assert FALA in prompt and "Em que posso ajudar" in prompt
-    assert "seis" in " ".join(USOS["triage"].sends)
-    assert triage.context_for.__kwdefaults__["limit"] == 6
-
-
-def test_o_laco_antigo_recebe_o_nome_e_o_ultimo_pedido():
-    from shopman.storefront.concierge import prompt
-
-    conversa = SimpleNamespace(
-        customer_name="Maria Souza",
-        phone="+5543999990000",
-        quote={},
-        last_order_ref="ABC123",
-        _commercial_authority=False,
-        _channel_off=False,
-    )
-    bloco = prompt.dynamic_block(conversa, is_first_turn=False, cart_summary="2 croissants", greeting="")
-
-    assert "Maria Souza" in bloco and "ABC123" in bloco and "2 croissants" in bloco
-    shares = " ".join(USOS["concierge"].sends)
-    assert "o seu nome" in shares and "sacola" in shares and "último pedido" in shares
-    # As ferramentas do laço tocam o cadastro: a frase dele não promete que nada fica.
-    assert USOS["concierge"].keeps_profile is False
-    _role, frase = ai_role_and_shares({"concierge"})
-    assert not frase.startswith("só") and "não vão" not in frase
-
-
 # ── O texto que o cliente lê ─────────────────────────────────────────────
 
 
@@ -415,18 +371,11 @@ def test_a_frase_dos_leitores_e_a_do_dono():
 
 def test_o_que_nao_vai_vem_logo_depois_do_so():
     """Decisão do dono (16/11): o cliente lê primeiro o limite e o que NÃO vai."""
-    for purposes in ({"decision"}, {"triage"}):
+    for purposes in ({"decision"}, {"intents"}):
         _role, shares = ai_role_and_shares(purposes)
         frases = shares.split(". ")
         assert frases[0].startswith("só "), shares
         assert "não vão" in frases[1] or "não são enviados" in frases[1], shares
-
-
-def test_quem_recebe_um_caminho_cru_e_um_redigido_fica_com_a_frase_crua():
-    _role, shares = ai_role_and_shares({"decision", "triage"})
-    assert "como você escreveu" in shares
-    assert "não são enviados" not in shares
-    assert shares.count("o texto da sua mensagem") == 1
 
 
 def test_frases_de_ia_sem_travessao_nem_jargao():

@@ -9,14 +9,16 @@ from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
 from shopman.shop.tests.ai_support import configure_ai
-from shopman.storefront.concierge import agent, service
+from shopman.storefront.concierge import service
 from shopman.storefront.concierge.contracts import SendOutcome
+from shopman.storefront.concierge.turn_outcome import TurnOutcome
 from shopman.storefront.tests.support.concierge_transport_v3 import (
     adapter_class,
     connection,
     event,
     reset_adapter,
 )
+from shopman.storefront.tests.support.concierge_turn import stub_turn
 
 pytestmark = pytest.mark.django_db
 
@@ -24,7 +26,6 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def conversation(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = {
-        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "account_id": "adversarial-account",
@@ -81,10 +82,9 @@ def new_event(text, event_id):
 @pytest.mark.parametrize("first_state", ["not_applied", "unknown"])
 def test_dependent_payment_block_waits_for_accepted_summary(conversation, monkeypatch, first_state):
     binding = binding_for(conversation)
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(
             reply_text="Pedido registrado; pagamento pendente.",
             extra_replies=["PIX-COPYABLE-BLOCK"],
             # O recibo do pedido (regra da casa R6: "registrado" só com pedido).
@@ -248,10 +248,9 @@ def test_identity_change_inside_commit_boundary_cannot_create_order(conversation
 def test_multiblock_review_is_offered_only_after_last_primary_block(conversation, monkeypatch):
     binding = binding_for(conversation)
     text = "\n".join("Linha factual " + str(index) + ": " + "a" * 750 for index in range(8))
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(reply_text=text, quote_token="review-full"),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(reply_text=text, quote_token="review-full"),
     )
     service.run_turn(conversation.pk, binding.pk)
     replies = list(conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).order_by("pk"))

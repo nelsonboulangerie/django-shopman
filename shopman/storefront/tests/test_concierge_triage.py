@@ -4,9 +4,10 @@ Protege quatro coisas, todas sem rede:
 
 1. **A taxonomia é a aprovada.** 12 intenções (as de 23/09), 3 urgências, e a
    tabela intenção → destino da proposta. Nada fora disso sai da triagem, nem do
-   modelo.
+   Jev (a triagem não chama modelo de texto desde o WP-08).
 2. **O sensível escala sempre.** Pessoa, reclamação, alergia e encomenda especial
-   reconhecidas pela regra local vão para a equipe mesmo que o modelo discorde.
+   reconhecidas pela regra local vão para a equipe mesmo que o Jev discorde
+   (``test_concierge_triage_jev``).
 3. **O operador vê o cartão no lugar certo.** Equipe → sino do Gestor de pedidos
    (mesmo sem pedido na conversa); outra mesa → Admin, sem acordar o balcão.
 4. **Ligado e incompleto, a subida avisa.** O system check do Concierge acusa o
@@ -16,8 +17,6 @@ Protege quatro coisas, todas sem rede:
 from __future__ import annotations
 
 import io
-import json
-from types import SimpleNamespace
 
 import pytest
 from django.core.management import call_command
@@ -30,11 +29,8 @@ from shopman.storefront.concierge import service, triage
 from shopman.storefront.tests import test_concierge_engine as engine
 from shopman.storefront.tests.test_concierge_engine import (
     CONCIERGE_SETTINGS,
-    ScriptedClient,
     _binding,
     _receive,
-    _response,
-    _text,
 )
 
 # O cenário do motor (loja, cliente, conversa, transporte hermético), reaproveitado.
@@ -44,28 +40,6 @@ conversation = engine.conversation
 outbox = engine.outbox
 
 pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture
-def triage_connection():
-    """A conexão de IA da triagem: o cliente é injetado, o modelo vem dela."""
-    return configure_ai("sk-teste", model="claude-sonnet-5")
-
-
-class JsonClient:
-    """Cliente do modelo de triagem: devolve um texto fixo e guarda o pedido."""
-
-    def __init__(self, payload):
-        self.payload = payload
-        self.requests: list[dict] = []
-        self.messages = SimpleNamespace(create=self._create)
-
-    def _create(self, **kwargs):
-        self.requests.append(kwargs)
-        if isinstance(self.payload, Exception):
-            raise self.payload
-        text = self.payload if isinstance(self.payload, str) else json.dumps(self.payload)
-        return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)])
 
 
 # ── 1. Taxonomia ─────────────────────────────────────────────────────
@@ -114,53 +88,6 @@ def test_rules_never_invent_an_intent():
 # ── 2. Decisão ───────────────────────────────────────────────────────
 
 
-def test_sensitive_rule_wins_over_the_model(triage_connection):
-    client = JsonClient({"intent": "product_question", "urgency": "can_wait", "summary": "Pergunta de pão."})
-    decision = triage.decide("sou celíaca, tem glúten no pão?", client=client)
-    assert (decision.intent, decision.urgency, decision.destination) == ("allergy", "now", "team")
-    assert decision.summary == "Pergunta de pão."
-
-
-def test_model_proposes_intent_urgency_and_summary(triage_connection):
-    client = JsonClient({"intent": "order", "urgency": "today", "summary": "Quer encomendar pães para sábado."})
-    decision = triage.decide("dá pra separar umas coisas pra sábado?", client=client)
-    assert (decision.intent, decision.urgency, decision.destination, decision.source) == (
-        "order", "today", "answer", "model",
-    )
-    assert decision.summary == "Quer encomendar pães para sábado."
-    prompt = client.requests[0]["messages"][0]["content"]
-    for ref in triage.INTENTS:
-        assert f"- {ref}:" in prompt
-
-
-def test_model_sensitive_proposal_escalates_too(triage_connection):
-    client = JsonClient({"intent": "complaint", "urgency": "can_wait", "summary": "Cobrança errada."})
-    decision = triage.decide("olha, a conta de ontem ficou estranha", client=client)
-    assert (decision.intent, decision.urgency, decision.destination) == ("complaint", "now", "team")
-
-
-@pytest.mark.parametrize("payload", [
-    {"intent": "invented_intent", "urgency": "now", "summary": "x"},
-    "não é JSON",
-    RuntimeError("rede caiu"),
-])
-def test_unreadable_or_failing_model_falls_back_to_rules(payload, triage_connection):
-    decision = triage.decide("que horas vocês fecham?", client=JsonClient(payload))
-    assert (decision.intent, decision.source, decision.destination) == ("hours_delivery", "rules", "answer")
-    assert "que horas vocês fecham?" in decision.summary
-
-
-def test_model_urgency_outside_the_three_is_discarded(triage_connection):
-    client = JsonClient({"intent": "hours_delivery", "urgency": "urgentissimo", "summary": "Horário."})
-    assert triage.decide("abre amanhã?", client=client).urgency == "today"
-
-
-def test_other_desk_never_wakes_anyone_even_if_the_model_says_now(triage_connection):
-    client = JsonClient({"intent": "job", "urgency": "now", "summary": "Procura vaga."})
-    decision = triage.decide("tem vaga de padeiro?", client=client)
-    assert (decision.destination, decision.urgency) == ("other_desk", "can_wait")
-
-
 def test_second_order_turn_the_chat_cannot_close_goes_to_the_team():
     previous = {"intent": "order", "destination": "answer", "message_ids": [1]}
     decision = triage.decide("quero mesmo assim, 2 baguetes", previous=previous, message_ids=[2])
@@ -179,12 +106,6 @@ def test_a_replayed_turn_does_not_count_as_a_second_attempt():
     assert decision.destination == "answer"
 
 
-def test_model_is_off_without_the_switch(settings):
-    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS}
-    configure_ai("sk-teste")
-    assert triage.classify_with_model("oi", []) is None
-
-
 def test_rules_summary_is_redacted():
     summary = triage.rules_summary("human", "quero falar com alguém, meu cpf é 123.456.789-09")
     assert "123.456.789-09" not in summary
@@ -196,8 +117,7 @@ def test_rules_summary_is_redacted():
 
 def test_answered_turn_records_triage_on_message_and_conversation(conversation, outbox):
     _receive(conversation, "que horas vocês abrem amanhã?", "t1")
-    client = ScriptedClient(_response(_text("Abrimos às 7h."), stop_reason="end_turn"))
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=client)
+    result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
     assert not result.handoff and result.triage.intent == "hours_delivery"
     conversation.refresh_from_db()
@@ -212,7 +132,7 @@ def test_complaint_card_reaches_the_orders_bell_without_an_order(conversation, o
     from shopman.backstage.services import alerts as alert_service
 
     _receive(conversation, "meu pedido veio queimado", "t2")
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
     assert result.handoff
     conversation.refresh_from_db()
@@ -232,7 +152,7 @@ def test_job_goes_to_the_other_desk_and_stays_out_of_the_bell(conversation, outb
     from shopman.backstage.services import alerts as alert_service
 
     _receive(conversation, "boa tarde, vocês estão contratando? tenho currículo", "t3")
-    result = service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
     assert result.handoff and result.triage.destination == "other_desk"
     alert = OperatorAlert.objects.get(type="concierge_other_desk")
@@ -242,17 +162,6 @@ def test_job_goes_to_the_other_desk_and_stays_out_of_the_bell(conversation, outb
     conversation.refresh_from_db()
     assert conversation.flags["triage"]["destination"] == "other_desk"
     assert list(Conversation.objects.filter(flags__triage__destination="other_desk")) == [conversation]
-
-
-def test_triage_model_is_injected_per_turn(conversation, outbox):
-    _receive(conversation, "olha, sobre a conta de ontem", "t4")
-    triage_client = JsonClient({"intent": "complaint", "urgency": "now", "summary": "Contesta a conta de ontem."})
-    result = service.run_turn(
-        conversation.pk, _binding(conversation).pk, client=ScriptedClient(), triage_client=triage_client
-    )
-    assert result.handoff and result.triage.source == "model"
-    conversation.refresh_from_db()
-    assert conversation.summary == "Contesta a conta de ontem."
 
 
 # ── 4. O check do Concierge ──────────────────────────────────────────
@@ -370,13 +279,3 @@ def test_concierge_check_ids_do_not_collide_with_the_shop_checks():
     shop_checks = (pathlib.Path(__file__).resolve().parents[2] / "shop" / "checks.py").read_text(encoding="utf-8")
     used_in_shop = set(re.findall(r'id="(SHOPMAN_[EW]\d+)"', shop_checks))
     assert used_in_shop and {"SHOPMAN_W022", "SHOPMAN_W023"}.isdisjoint(used_in_shop)
-
-
-def test_model_override_changes_the_triage_model_only_inside_the_block(monkeypatch):
-    from shopman.storefront.concierge import triage
-
-    monkeypatch.setattr("shopman.shop.ai.resolve", lambda purpose: type("R", (), {"model": "rota"})())
-    assert triage._model_name() == "rota"
-    with triage.model_override("claude-haiku-4-5"):
-        assert triage._model_name() == "claude-haiku-4-5"
-    assert triage._model_name() == "rota"

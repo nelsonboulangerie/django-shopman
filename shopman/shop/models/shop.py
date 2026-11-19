@@ -456,6 +456,18 @@ class Shop(models.Model):
         ),
     )
 
+    # ── Framework conversacional: decisão em sombra (N5, ADR-042) ──
+    conversational_shadow_enabled = models.BooleanField(
+        "decisão em sombra da Concierge",
+        default=False,
+        help_text=(
+            "Liga a varredura que, a cada entrada da Concierge, registra o que o framework de "
+            "comércio conversacional faria. Não envia nada, não escreve no comércio e não chama "
+            "modelo: só grava a decisão e, depois, os pedidos do cliente em 24 horas e em 7 dias. "
+            "Desligada, nada é varrido."
+        ),
+    )
+
     # ── PDV: venda sem conexão (decisão do dono, 03/11/2026) ──
     pos_offline_sale_enabled = models.BooleanField(
         "venda sem conexão",

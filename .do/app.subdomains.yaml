@@ -448,7 +448,7 @@ envs:
     scope: RUN_TIME
     type: GENERAL
   - key: CONCIERGE_HUMAN_RETURN_ENABLED
-    value: "false"
+    value: "true"
     scope: RUN_TIME
     type: GENERAL
   - key: CONCIERGE_OUTPUT_RETRY_ENABLED
