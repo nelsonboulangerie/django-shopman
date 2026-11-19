@@ -51,6 +51,18 @@ class FakeStore(FakeBase):
         self._fault("load_episode")
         return self.episodes.get((ctx.tenant, episode_id))
 
+    def latest_episode(self, ctx: TrustedContext, subject: str) -> Episode | None:
+        self._fault("latest_episode")
+        mine = [e for (tenant, _), e in self.episodes.items() if tenant == ctx.tenant and e.subject == subject]
+        return max(mine, key=lambda e: (e.occurred_at, e.version), default=None)
+
+    def latest_record(self, ctx: TrustedContext, episode_id: str, schema: str) -> Record | None:
+        self._fault("latest_record")
+        for tenant, record in reversed(self.records):
+            if tenant == ctx.tenant and record.episode_id == episode_id and type(record).SCHEMA == schema:
+                return record
+        return None
+
     def commit_transition(self, ctx: TrustedContext, transition: Transition, records: tuple[Record, ...],
                           outbox: tuple[WorkItem, ...]) -> Episode:
         fault = self._fault("commit_transition")

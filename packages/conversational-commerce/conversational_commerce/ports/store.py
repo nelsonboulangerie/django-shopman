@@ -22,7 +22,15 @@ from conversational_commerce.contracts.common import (
 
 from .common import Capabilities, TrustedContext
 
-OPERATIONS = ("record_event_once", "load_episode", "commit_transition", "claim_work", "append_receipt")
+OPERATIONS = (
+    "record_event_once",
+    "load_episode",
+    "latest_episode",
+    "latest_record",
+    "commit_transition",
+    "claim_work",
+    "append_receipt",
+)
 
 
 @dataclass(**CONTRACT_DATACLASS)
@@ -64,6 +72,14 @@ class StorePort(Protocol):
     def record_event_once(self, ctx: TrustedContext, event: InteractionEvent) -> tuple[InteractionEvent, bool]: ...
 
     def load_episode(self, ctx: TrustedContext, episode_id: str) -> Episode | None: ...
+
+    def latest_episode(self, ctx: TrustedContext, subject: str) -> Episode | None:
+        """O episódio mais recente do sujeito (para a correlação), resolvido ou não."""
+        ...
+
+    def latest_record(self, ctx: TrustedContext, episode_id: str, schema: str) -> Record | None:
+        """O último registro de um contrato gravado no episódio (o snapshot do turno anterior, por exemplo)."""
+        ...
 
     def commit_transition(
         self,
