@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-060",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Pedidos de teste do iFood ficam presos no Gestor. Exemplo: IFOOD-261107-9197",
+  "dono": "Engenharia",
+  "criado": "2026-11-19",
+  "revisar_em": "2026-11-26",
+  "gatilho": "-",
+  "estado": "EM_ANDAMENTO",
+  "prova": "CON do iFood fecha pedido de teste e de entregador do iFood; manutenção recupera os de teste presos. Fora: #2812 (3417 real), #2813 (K76)."
+}

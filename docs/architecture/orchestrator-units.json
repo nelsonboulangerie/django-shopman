@@ -10280,6 +10280,7 @@
         {
           "path": "shopman/shop/services/ifood_events.py",
           "symbols": [
+            "concluded_there_closes_here",
             "conclusion_allowed"
           ]
         }
@@ -10295,7 +10296,8 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_ifood_conclusion.py::test_remote_conclusion_eligibility_respects_handoff"
+        "shopman/shop/tests/test_ifood_conclusion.py::test_remote_conclusion_eligibility_respects_handoff",
+        "shopman/shop/tests/test_ifood_concluido_fecha.py::test_pedido_real_com_custodia_da_casa_continua_esperando"
       ],
       "test_gap_reason": null,
       "policy": true,
