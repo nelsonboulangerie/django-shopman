@@ -334,3 +334,161 @@ class TestMarginByDate:
             )
 
         assert len(mapped.captured_queries) == len(plain.captured_queries)
+
+
+# ── O dia de produção do saldo físico de lote é o do lote ────────────────────
+#
+# O ``created_at`` do saldo é o dia em que ele entrou no estoque. O lote de
+# amanhã fechado hoje à noite é pão de amanhã: com margem, julgá-lo pelo
+# ``created_at`` o tirava da encomenda de amanhã (a falha que tirou o #2703 da
+# fila, em ``test_iniciar_lote_leva_a_reserva``). A margem de um saldo físico de
+# lote é julgada na ``production_date`` do lote, pela régua da fornada planejada.
+
+
+class TestTheLotAnswersForItsProductionDay:
+    def test_the_predicate_judges_the_margin_on_the_lot_date(self, hoje):
+        pao = SimpleNamespace(shelf_life_days=1)
+        amanha = hoje + DAY
+        quant = _physical()
+
+        assert is_valid_for_date(quant, pao, amanha, margin_days=1) is False, "sem lote: pão de hoje"
+        assert is_valid_for_date(quant, pao, amanha, margin_days=1, lot_production_date=amanha) is True
+        assert is_valid_for_date(quant, pao, amanha, margin_days=1, lot_production_date=hoje) is False
+
+    def test_the_unmargined_window_on_created_at_still_holds(self, hoje):
+        """O lote declara a data, mas o saldo entrou há dois dias: fora, como sempre foi."""
+        pao = SimpleNamespace(shelf_life_days=1)
+        velho = _physical(created_days_ago=2)
+
+        assert is_valid_for_date(velho, pao, hoje + DAY, margin_days=1, lot_production_date=hoje + DAY) is False
+        assert is_valid_for_date(velho, pao, hoje + DAY, margin_days=0) is False
+
+    def test_without_margin_the_lot_date_changes_nothing(self, hoje):
+        pao = SimpleNamespace(shelf_life_days=1)
+        for created_days_ago, lot_offset in cartesian((0, 1, 2), (-2, -1, 0, 1, 2)):
+            quant = _physical(created_days_ago)
+            for target_offset in (-1, 0, 1, 2):
+                target = hoje + target_offset * DAY
+                with_lot = is_valid_for_date(quant, pao, target, lot_production_date=hoje + lot_offset * DAY)
+                assert with_lot is is_valid_for_date(quant, pao, target), (created_days_ago, lot_offset, target_offset)
+
+    @pytest.fixture
+    def vespera(self, hoje, vitrine_pos, producao_pos):
+        """Hoje à noite: a fornada de hoje na vitrine, a de amanhã já fechada, e os desvios."""
+        sku = "PAO-1D"
+        amanha = hoje + DAY
+        Batch.objects.create(sku=sku, ref="PAO-HOJE", production_date=hoje, expiry_date=amanha)
+        Batch.objects.create(sku=sku, ref="PAO-AMANHA", production_date=amanha, expiry_date=amanha + DAY)
+        # Fechado pela tela sem validade na ficha: o lote só declara a produção.
+        Batch.objects.create(sku=sku, ref="PAO-AMANHA-SEM-VALIDADE", production_date=amanha)
+        Batch.objects.create(sku=sku, ref="PAO-SEM-DATA")
+        return SimpleNamespace(
+            sku=sku,
+            hoje=_quant(sku, vitrine_pos, 22, batch="PAO-HOJE"),
+            amanha=_quant(sku, vitrine_pos, 10, batch="PAO-AMANHA"),
+            amanha_sem_validade=_quant(sku, vitrine_pos, 4, batch="PAO-AMANHA-SEM-VALIDADE"),
+            sem_data=_quant(sku, vitrine_pos, 3, batch="PAO-SEM-DATA"),
+            sem_batch=_quant(sku, vitrine_pos, 5, batch="LOTE-SEM-CADASTRO"),
+            sem_lote=_quant(sku, vitrine_pos, 2),
+            planejado_hoje=_quant(sku, producao_pos, 6, target=hoje),
+            no_forno=_quant(sku, producao_pos, 7, target=hoje, batch=STARTED_BATCH),
+        )
+
+    def test_tomorrows_lot_closed_today_counts_for_tomorrow(self, vespera, hoje):
+        amanha = hoje + DAY
+
+        eligible = {q.pk for q in quants_eligible_for(vespera.sku, target_date=amanha, expiry_margin_days=1)}
+
+        assert eligible == {vespera.amanha.pk, vespera.amanha_sem_validade.pk}
+        info = availability_for_sku(vespera.sku, target_date=amanha, expiry_margin_days=1)
+        assert info["total_promisable"] == Decimal("14")
+        assert info["breakdown"] == {"ready": Decimal("14"), "in_production": Decimal("0"), "planned": Decimal("0")}
+
+    def test_todays_bread_stays_out_of_tomorrow(self, vespera, hoje):
+        eligible = {q.pk for q in quants_eligible_for(vespera.sku, target_date=hoje + DAY, expiry_margin_days=1)}
+
+        assert vespera.hoje.pk not in eligible, "lote de hoje: sai pela data do lote"
+        assert vespera.sem_lote.pk not in eligible, "físico sem lote: sai pelo created_at"
+
+    def test_the_eve_planned_batch_stays_out_of_tomorrow(self, vespera, hoje):
+        eligible = {q.pk for q in quants_eligible_for(vespera.sku, target_date=hoje + DAY, expiry_margin_days=1)}
+
+        assert vespera.planejado_hoje.pk not in eligible
+        assert vespera.no_forno.pk not in eligible
+
+    def test_a_lot_that_declares_nothing_gets_no_pass(self, vespera, hoje):
+        """Lote nomeado sem ``Batch`` e ``Batch`` sem data de produção: a margem cai no ``created_at``."""
+        eligible = {q.pk for q in quants_eligible_for(vespera.sku, target_date=hoje + DAY, expiry_margin_days=1)}
+
+        assert vespera.sem_batch.pk not in eligible
+        assert vespera.sem_data.pk not in eligible
+
+    def test_today_reads_everything_as_before(self, vespera, hoje):
+        eligible = {q.pk for q in quants_eligible_for(vespera.sku, target_date=hoje)}
+
+        assert eligible == {
+            vespera.hoje.pk, vespera.amanha.pk, vespera.amanha_sem_validade.pk, vespera.sem_data.pk,
+            vespera.sem_batch.pk, vespera.sem_lote.pk, vespera.planejado_hoje.pk, vespera.no_forno.pk,
+        }
+
+    def test_the_scope_query_and_the_batch_read_give_the_same_number(self, vespera, hoje):
+        """A consulta do escopo (a da reserva) e a leitura em lote, data a data e margem a margem."""
+        for offset, margin in cartesian(range(-1, 4), (0, 1, 2)):
+            target = hoje + offset * DAY
+            by_scope = sum(
+                (q.quantity for q in quants_eligible_for(vespera.sku, target_date=target, expiry_margin_days=margin)),
+                Decimal("0"),
+            )
+            single = availability_for_sku(vespera.sku, target_date=target, expiry_margin_days=margin)
+            batch = availability_for_skus([vespera.sku], target_date=target, expiry_margin_days=margin)[vespera.sku]
+            on_dates = availability_for_skus_on_dates(
+                [vespera.sku], [target], expiry_margin_days_by_date={target: margin},
+            )[target][vespera.sku]
+            numbers = {
+                "escopo": by_scope,
+                "uma data": single["total_promisable"],
+                "em lote": batch["total_promisable"],
+                "por datas": on_dates["total_promisable"],
+            }
+            assert len(set(numbers.values())) == 1, (offset, margin, numbers)
+
+    def test_queryset_filter_and_python_predicate_agree_with_lots(self, vespera, hoje):
+        every = Quant.objects.filter(sku=vespera.sku)
+        lots = Batch.objects.filter(sku=vespera.sku)
+        production = dict(lots.exclude(production_date=None).values_list("ref", "production_date"))
+        ns = SimpleNamespace(sku=vespera.sku, shelf_life_days=1)
+
+        for margin, offset in cartesian((0, 1, 2), range(-1, 4)):
+            target = hoje + offset * DAY
+            by_queryset = set(
+                filter_valid_quants(every, ns, target, margin_days=margin, lots=lots).values_list("pk", flat=True)
+            )
+            by_python = {
+                q.pk
+                for q in every
+                if is_valid_for_date(q, ns, target, margin_days=margin, lot_production_date=production.get(q.batch))
+            }
+            assert by_queryset == by_python, (margin, offset)
+
+    def test_the_hold_for_tomorrow_anchors_on_tomorrows_lot(self, vespera, hoje):
+        from shopman.stockman.exceptions import StockError
+
+        product = SimpleNamespace(sku=vespera.sku, shelf_life_days=1)
+
+        hold_id = stock.hold(Decimal("8"), product, target_date=hoje + DAY, expiry_margin_days=1)
+
+        hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
+        assert hold.quant_id == vespera.amanha.pk
+        with pytest.raises(StockError):
+            stock.hold(Decimal("7"), product, target_date=hoje + DAY, expiry_margin_days=1)
+
+    def test_the_lots_cost_no_extra_query(self, vespera, hoje):
+        dates = [hoje, hoje + DAY, hoje + 2 * DAY]
+        with CaptureQueriesContext(connection) as plain:
+            availability_for_skus_on_dates([vespera.sku], dates)
+        with CaptureQueriesContext(connection) as mapped:
+            availability_for_skus_on_dates(
+                [vespera.sku], dates, expiry_margin_days_by_date=dict.fromkeys(dates[1:], 1),
+            )
+
+        assert len(mapped.captured_queries) == len(plain.captured_queries)

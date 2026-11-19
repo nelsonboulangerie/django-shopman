@@ -120,7 +120,17 @@ def quants_eligible_for(
     # Validity precedence: shelf_life_days (relative window) and Batch.expiry_date
     # (absolute lot date) are applied as an AND — a quant must pass both. The most
     # restrictive signal wins. Locked by TestShelflifeBatchPrecedence.
-    qs = filter_valid_quants(qs, product_ns, target, margin_days=expiry_margin_days)
+    #
+    # O dia de produção de um saldo físico de lote é o do lote, não o do
+    # ``created_at``: com margem, o lote de amanhã fechado hoje conta para
+    # amanhã, e o pão de hoje segue fora (ver :mod:`shopman.stockman.shelflife`).
+    qs = filter_valid_quants(
+        qs,
+        product_ns,
+        target,
+        margin_days=expiry_margin_days,
+        lots=Batch.objects.filter(sku=sku) if expiry_margin_days > 0 else None,
+    )
 
     if allowed_positions is not None:
         qs = qs.filter(position__ref__in=allowed_positions)

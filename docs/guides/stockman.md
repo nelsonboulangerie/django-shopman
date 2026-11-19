@@ -44,6 +44,8 @@ O saldo conta para uma data-alvo enquanto estiver válido nela. A validade tem d
 
 `expiry_margin_days` (parâmetro de `quants_eligible_for`, das leituras de disponibilidade e do `hold`) pede que o saldo ainda tenha N dias de validade DEPOIS da data-alvo, e alcança as duas fontes. A fornada planejada para a própria data-alvo sempre conta, com qualquer validade. Margem 0 (o default) é "válido na data basta".
 
+O "dia de produção" de um saldo físico é o do lote dele (`Batch.production_date`), quando o lote o declara; o `created_at` do saldo é só o dia em que ele entrou no estoque. Com margem, o saldo físico de um lote é julgado pela data de produção do lote, pela mesma régua da fornada planejada: o lote de sexta fechado na quinta à noite conta para sexta, e o lote de quinta não. A janela histórica sobre o `created_at` (sem margem) continua valendo para ele. Lote nomeado sem `Batch`, ou com `Batch` sem data de produção, não declara nada: a margem cai sobre o `created_at`. A consulta do escopo passa os lotes ao `filter_valid_quants(lots=...)`; a leitura em lote passa `lot_production_date` ao `is_valid_for_date`, sem consulta a mais.
+
 `availability_for_skus_on_dates` aceita `expiry_margin_days_by_date` para quem lê, numa varredura só, datas que pedem margens diferentes. O orquestrador usa isso para a regra da casa: sobra de hoje não lastreia encomenda (`shopman/shop/policies/promise_expiry_margin.py`).
 
 ## Modelos
