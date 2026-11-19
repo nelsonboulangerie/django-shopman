@@ -1723,7 +1723,7 @@ class TestShareSummary:
         from django.utils import formats
 
         today = timezone.localdate()
-        assert f"Entrega: {formats.date_format(today, 'l')}, {formats.date_format(today, 'd/m')} · 19h30 às 20h" in text
+        assert f"Entrega: {formats.date_format(today, 'l').lower()}, {formats.date_format(today, 'd/m')} · 19h30 às 20h" in text
         assert "hoje" not in text
         assert "Endereço: Rua Pará, 100 - Centro - Londrina/PR" in text
         assert "http" not in text

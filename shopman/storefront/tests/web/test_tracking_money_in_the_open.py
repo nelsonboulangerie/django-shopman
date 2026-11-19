@@ -186,7 +186,7 @@ class TestShareTextDatesAreAbsolute:
 
         text = self._share(order_items, delivery_date=tomorrow.isoformat(), delivery_time_slot="09:00-09:30")
 
-        expected = f"{formats.date_format(tomorrow, 'l')}, {formats.date_format(tomorrow, 'd/m')}"
+        expected = f"{formats.date_format(tomorrow, 'l').lower()}, {formats.date_format(tomorrow, 'd/m')}"
         assert f"Retirada: {expected} · " in text
         assert "amanhã" not in text and "hoje" not in text
 
@@ -195,7 +195,7 @@ class TestShareTextDatesAreAbsolute:
 
         text = self._share(order_items, delivery_date=today.isoformat(), delivery_time_slot="19:30-20:00")
 
-        expected = f"{formats.date_format(today, 'l')}, {formats.date_format(today, 'd/m')}"
+        expected = f"{formats.date_format(today, 'l').lower()}, {formats.date_format(today, 'd/m')}"
         assert f"Retirada: {expected} · 19h30 às 20h" in text
         assert "hoje" not in text
 

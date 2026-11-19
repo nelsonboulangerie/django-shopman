@@ -572,13 +572,14 @@ def _share_when(data: TrackingData) -> str | None:
 
         if data.commitment_date and (data.commitment_slot_label or data.is_preorder):
             day = date.fromisoformat(data.commitment_date)
-            day_part = f"{formats.date_format(day, 'l')}, {formats.date_format(day, 'd/m')}"
+            # O dia da semana em minúscula, como no resto da loja ("sexta-feira, 20/11").
+            day_part = f"{formats.date_format(day, 'l').lower()}, {formats.date_format(day, 'd/m')}"
             return f"{day_part} · {data.commitment_slot_label}" if data.commitment_slot_label else day_part
         eta = parse_datetime(data.eta_at) if data.eta_at else None
         if eta is None:
             return None
         local = timezone.localtime(eta)
-        return f"{formats.date_format(local, 'l')}, {local:%d/%m}, às {format_clock(local)}"
+        return f"{formats.date_format(local, 'l').lower()}, {local:%d/%m}, às {format_clock(local)}"
     except Exception:
         logger.debug("order_tracking._share_when degraded", exc_info=True)
         return None
