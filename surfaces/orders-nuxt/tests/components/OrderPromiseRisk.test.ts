@@ -216,6 +216,23 @@ describe("OrderCard: promessa em risco", () => {
     ]);
   });
 
+  for (const compact of [false, true])
+    it(`com saída recomendada, o gesto da etapa fica em contorno: um botão cheio só (${compact ? "cartão enxuto" : "cartão inteiro"})`, () => {
+      const advance = [act({ ref: "advance", label: "Iniciar preparo" })];
+      const leads = mountCard({ card: card({ ...risky, actions: advance }), compact }).get("[data-card-primary]");
+      // O preparo continua possível (decisão de 18/11), só não é o que a tela recomenda.
+      expect(leads.attributes("disabled")).toBeUndefined();
+      expect([leads.attributes("color"), leads.attributes("variant")]).toEqual(["neutral", "outline"]);
+      expect(leads.attributes("data-card-primary-weight")).toBe("secondary");
+
+      // Sem risco, e com risco sem saída recomendada, o gesto da etapa segue cheio.
+      for (const promise of [null, needsProduction("NB-261118-W33", false)]) {
+        const plain = mountCard({ card: card({ actions: advance, promise }), compact }).get("[data-card-primary]");
+        expect([plain.attributes("color"), plain.attributes("variant")]).toEqual(["primary", "solid"]);
+        expect(plain.attributes("data-card-primary-weight")).toBeUndefined();
+      }
+    });
+
   it("quando a Produção resolve e a conta não a opera: a frase diz o que fazer e nenhum botão é cheio", async () => {
     const w = mountCard({ card: card({ attention: "promise", promise: needsProduction("NB-261118-W33", false) }) });
     await openNotice(w, "promise");
@@ -406,6 +423,23 @@ describe("QueueView: a Fila", () => {
       ["primary", "solid"], ["neutral", "outline"], ["error", "outline"],
     ]);
     expect(row.find("[data-queue-primary]").exists()).toBe(false);
+  });
+
+  it("com saída recomendada, o gesto da etapa da linha fica em contorno: um botão cheio só", () => {
+    const advance = [act({ ref: "advance", label: "Iniciar preparo" })];
+    const row = (promise: OrderPromiseProjection | null) =>
+      mountQueue([
+        // O pedido aceito e pronto para iniciar entra na Fila pelo gesto da etapa ("start"),
+        // e a promessa em risco vem escrita na mesma linha.
+        card({ attention: "start", attention_since_iso: "2026-11-18T11:50:00Z", promise, actions: advance }),
+      ]).get("[data-queue-primary]");
+
+    const leads = row(atRisk("NB-261118-W33"));
+    expect([leads.attributes("color"), leads.attributes("variant")]).toEqual(["neutral", "outline"]);
+    expect(leads.attributes("data-queue-primary-weight")).toBe("secondary");
+    const plain = row(null);
+    expect([plain.attributes("color"), plain.attributes("variant")]).toEqual(["primary", "solid"]);
+    expect(plain.attributes("data-queue-primary-weight")).toBeUndefined();
   });
 
   it("a que a Produção resolve: a frase pede a Produção e o botão cheio abre o plano do dia", () => {

@@ -50,7 +50,7 @@ import {
   type QueueScope,
   type QueueSort,
 } from "~/presentation/queue";
-import { promiseRisk } from "~/presentation/orderPromise";
+import { promiseRisk, promiseRiskLeads } from "~/presentation/orderPromise";
 import { orderFocusKey } from "~/presentation/promiseAlert";
 import OrderCardMenu from "./OrderCardMenu.vue";
 import OrderPromiseExits from "./OrderPromiseExits.vue";
@@ -245,9 +245,7 @@ function switchHint(row: {
 // continua na linha, em contorno. Iniciar o preparo de um pedido sem lastro não é o
 // próximo passo (dono, 19/11/2026: o aviso diz o que fazer).
 function riskLeads(item: { card: OrderCardProjection }): boolean {
-  return Boolean(
-    promiseRisk(item.card)?.exits.some((exit) => exit.recommended && !exit.disabled),
-  );
+  return promiseRiskLeads(item.card);
 }
 </script>
 
