@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-005",
+  "tipo": "decisao",
+  "origem": "#2069",
+  "compromisso": "Aprovar ou recusar o modo compacto x padrão (KDS, PDV, Gestor, Receber)",
+  "dono": "Pablo",
+  "criado": "2026-11-02",
+  "revisar_em": "2026-11-14",
+  "gatilho": "resposta do dono à prévia",
+  "estado": "ABERTO",
+  "prova": "-"
+}

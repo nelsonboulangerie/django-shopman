@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-054",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Cuide para concatenar e para que esse tipo de atraso não aconteça ok!",
+  "dono": "Engenharia",
+  "criado": "2026-11-18",
+  "revisar_em": "2026-11-25",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

@@ -8,6 +8,7 @@ import { useOperatorResourceKey } from "./useOperatorResourceKey";
 // marketing e B.I. ficam no Admin, onde alguém pode agir.
 import type { AlertProjection, AlertsResponse, OrderDetailResponse } from "~/types/orders";
 import { useOrderIntention } from "./useOrderIntention";
+import { alertMessageWithSchedule } from "~/presentation/board";
 import {
   openResilientEventSource,
   type ResilientEventSource,
@@ -33,6 +34,12 @@ export function useAlerts() {
   );
 
   const alerts = computed<AlertProjection[]>(() => data.value?.alerts ?? []);
+  // Os avisos como o sino os diz: o pedido com data ou hora combinada leva a frase do
+  // cartão à frente ("Encomenda · Amanhã · A partir das 15h."), para quem toca
+  // "Aceitar" ler para quando está prometendo (WP-G01).
+  const readableAlerts = computed<AlertProjection[]>(() =>
+    alerts.value.map((alert) => ({ ...alert, message: alertMessageWithSchedule(alert) })),
+  );
   const activeCount = computed(() => data.value?.counts?.active ?? 0);
   const criticalCount = computed(() => data.value?.counts?.critical ?? 0);
 
@@ -192,6 +199,7 @@ export function useAlerts() {
 
   return {
     alerts,
+    readableAlerts,
     activeCount,
     criticalCount,
     refresh,

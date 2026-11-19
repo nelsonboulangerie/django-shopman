@@ -191,13 +191,13 @@ def maybe_measure(*, force: bool = False, llm_models=DEFAULT_LLM_MODELS) -> Meas
         return Measurement(None, f"último placar de {last.created_at:%d/%m}; o próximo sai em até 7 dias")
     categories = load_categories()
     contenders, skipped = build_contenders(("regex", "embed", "llm", "jev"), llm_models=list(llm_models))
-    prices, _unpriced = prices_for(contenders)
+    prices, unpriced = prices_for(contenders)
     boards = run(samples, categories, contenders, prices=prices)
     report = IntentPilotReport.objects.create(
         samples=len(samples),
         contenders=", ".join(board.contender for board in boards)[:240],
         skipped="\n".join(f"{name}: {reason}" for name, reason in skipped),
-        report=render_report(boards, samples, categories),
+        report=render_report(boards, samples, categories, unpriced=unpriced),
     )
     return Measurement(report, "medido")
 

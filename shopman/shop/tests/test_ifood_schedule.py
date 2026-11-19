@@ -221,7 +221,7 @@ def test_delivery_date_uses_shop_timezone_and_exact_gate_overrides_delivery_day(
         due = datetime(2026, 9, 15, 2, 30, tzinfo=UTC)
         with patch.object(ifood_schedule.timezone, "now", return_value=due):
             assert timezone.localdate().isoformat() == "2026-09-14"
-            assert lifecycle._physical_work_deferred(order) is False
+            assert lifecycle.awaits_kitchen_release(order) is False
         earlier_window = {**schedule, "preparation_start_at": "2026-09-15T01:00:00Z",
                           "delivery_start_at": "2026-09-15T02:00:00Z"}
         assert ifood_schedule.delivery_date_from_payload(earlier_window).isoformat() == "2026-09-14"

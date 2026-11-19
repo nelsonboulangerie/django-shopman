@@ -84,6 +84,14 @@ class TrackingItemData:
     qty: int
     unit_price_q: int
     line_total_q: int
+    # A linha como a conta a mostra (dono, 16/11/2026, #2570 decisão 1): com a
+    # promoção do produto já abatida e o valor cheio riscado ao lado. O cupom não
+    # entra na linha: ele sai uma vez só, embaixo, no resumo. ``bill_*`` é o
+    # cobrado mais o cupom desta linha; ``full_line_total_q`` é o preço de lista
+    # (o riscado), zero quando a linha não tem promoção.
+    bill_unit_price_q: int = 0
+    bill_line_total_q: int = 0
+    full_line_total_q: int = 0
 
 
 @dataclass(frozen=True)
@@ -349,7 +357,7 @@ def _slot_label(slot_ref: str | None) -> str | None:
         return None
     from shopman.shop.services.fulfillment_window import window_label
 
-    return window_label(slot_ref) or None
+    return window_label(slot_ref, for_customer=True) or None
 
 
 def as_customer_sees(order):
@@ -535,7 +543,11 @@ def _sealed_discount_lines(order) -> tuple[Any, ...]:
     if order_composition.adjustment(order) is not None:
         return ()
     pricing = (order.snapshot or {}).get("pricing") or {}
-    return _discount_lines(pricing.get("discount") or {}, pricing)
+    # A promoção do produto já está na linha (com o cheio riscado); embaixo sai
+    # só o que é da conta: cupom, pontos e os modificadores do pedido.
+    discount = dict(pricing.get("discount") or {})
+    discount["items"] = [d for d in discount.get("items") or [] if isinstance(d, dict) and d.get("type") == "coupon"]
+    return _discount_lines(discount, pricing)
 
 
 def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
@@ -1009,7 +1021,7 @@ def _pix_payload(payment: dict) -> tuple[str | None, str | None]:
 def _commitment_info(order):
     """Commitment date + preorder flag, on the lifecycle's own ruler.
 
-    Same predicate as ``lifecycle._physical_work_deferred``: the order is a
+    Same predicate as ``lifecycle.awaits_kitchen_release``: the order is a
     preorder while its commitment date is in the future — on the day it
     rejoins the normal flow (KDS, preparing, ready).
     """
@@ -1705,17 +1717,66 @@ def _build_items(order) -> tuple[TrackingItemData, ...]:
     # Pedido + ajustes: o acompanhamento mostra o pedido que vale agora.
     from shopman.shop.services import order_composition
 
-    return tuple(
-        TrackingItemData(
-            sku=item.sku,
-            name=item.name or item.sku,
-            qty=int(item.qty),
-            unit_price_q=int(item.unit_price_q),
-            line_total_q=int(item.line_total_q),
+    # Pedido editado depois não tem conta selada que valha: a linha mostra o
+    # cobrado, sem cupom devolvido e sem riscado (o mesmo de ``_sealed_discount_lines``).
+    sealed = order_composition.adjustment(order) is None
+    pricing = (order.snapshot or {}).get("pricing") or {}
+    discount_records = [d for d in (pricing.get("discount") or {}).get("items") or [] if isinstance(d, dict)]
+
+    items = []
+    for item in order_composition.effective_items(order):
+        if item.sku == "__DELIVERY_FEE__":
+            continue
+        if sealed:
+            bill_unit_q, bill_total_q, full_total_q = _bill_line_of(item, discount_records)
+        else:
+            bill_unit_q, bill_total_q, full_total_q = int(item.unit_price_q), int(item.line_total_q), 0
+        items.append(
+            TrackingItemData(
+                sku=item.sku,
+                name=item.name or item.sku,
+                qty=int(item.qty),
+                unit_price_q=int(item.unit_price_q),
+                line_total_q=int(item.line_total_q),
+                bill_unit_price_q=bill_unit_q,
+                bill_line_total_q=bill_total_q,
+                full_line_total_q=full_total_q,
+            )
         )
-        for item in order_composition.effective_items(order)
-        if item.sku != "__DELIVERY_FEE__"
-    )
+    return tuple(items)
+
+
+def _bill_line_of(item, discount_records: list[dict]) -> tuple[int, int, int]:
+    """A linha da conta: (unitário, total, total cheio riscado ou 0).
+
+    Todo desconto selado já saiu do preço da linha. A conta devolve à linha o
+    CUPOM (que o resumo subtrai uma vez só, embaixo) e deixa nela a promoção do
+    produto, com o preço de lista riscado ao lado. O preço de lista vem do
+    ``meta._list_q`` (a fonte da sacola) ou, sem ele, do registro selado.
+    """
+    from decimal import ROUND_HALF_UP, Decimal
+
+    def _round(value: Decimal) -> int:
+        return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    charged_q = int(item.line_total_q)
+    qty = Decimal(str(item.qty))
+    records = [d for d in discount_records if item.line_id and d.get("line_id") == item.line_id]
+    if not records:
+        records = [d for d in discount_records if not d.get("line_id") and d.get("sku") == item.sku]
+
+    def _off(rows: list[dict]) -> int:
+        return sum(int(d.get("discount_q", 0) or 0) * int(d.get("qty", 0) or 0) for d in rows)
+
+    coupon_q = _off([d for d in records if d.get("type") == "coupon"])
+    bill_total_q = charged_q + coupon_q
+    listed = (item.meta or {}).get("_list_q")
+    if listed is not None:
+        full_q = _round(qty * int(listed))
+    else:
+        full_q = bill_total_q + _off([d for d in records if d.get("type") != "coupon"])
+    bill_unit_q = _round(Decimal(bill_total_q) / qty) if qty else int(item.unit_price_q)
+    return bill_unit_q, bill_total_q, (full_q if full_q > bill_total_q else 0)
 
 
 def _carrier_tracking_url(carrier: str, tracking_code: str) -> str | None:
@@ -2100,7 +2161,9 @@ def _cancellation_customer_text(order_data: dict) -> str:
     reason = cancel_reasons.cancel_reason(cancel_reasons.reason_key_of(order_data))
     if reason is None or reason.key == cancel_reasons.OTHER:
         return ""
-    return reason.customer_text
+    # Pela função, não pelo campo: o "Não retirado" completa a frase com o
+    # destino do dinheiro (``order.data["no_show"]``).
+    return cancel_reasons.customer_text(order_data)
 
 
 def _note_says_card_hold_released(order_data: dict, money_outcome) -> bool:

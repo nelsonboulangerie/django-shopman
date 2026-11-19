@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-028",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "quero que um modelo mais avançado revise o app que eu indicar, de forma que eleve ele um patamar acima como produto de excelência (UX/UI, contrato, segurança, omotenashi-first, mobile-first). Aplicar o quanto antes: PDV, Gestor de pedidos (ênfase em Encomendas / Pedidos Agendados), Storefront",
+  "dono": "Engenharia",
+  "criado": "2026-11-16",
+  "revisar_em": "2026-11-23",
+  "gatilho": "-",
+  "estado": "EM_EXECUCAO",
+  "prova": "-"
+}

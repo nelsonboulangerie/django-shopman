@@ -19,7 +19,9 @@ import type {
   POSWeighedEntry,
   POSReceiptIdentityChoice,
   POSProjection,
+  POSOverPlanLine,
   POSSaleReviewProjection,
+  POSPlanBacking,
   POSScheduleResponse,
   POSSaleReviewResponse,
   PosFiscalState,
@@ -30,6 +32,7 @@ import type {
 } from "~/types/pos";
 import {
   actionHref,
+  approvalPortrait,
   buildPosSaleIntent,
   cartTotalQ,
   concreteActionHref,
@@ -48,6 +51,7 @@ import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } fro
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
 import { lastBookableDate, resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
+  collectionsForFulfillment,
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
   paymentProofView,
@@ -127,6 +131,49 @@ interface CloseGuardMarker {
    * não nasceu. Sem ele (marcador antigo) só resta a conferência manual.
    */
   body?: Record<string, unknown>;
+  /**
+   * A venda precisava de gerente. O corpo acima NÃO leva a assinatura (o PIN não
+   * fica no `localStorage`, P1-4): a conferência pede o gerente de novo, e este é
+   * o valor que ele vê no diálogo. Só números e códigos, nada que autorize.
+   */
+  approval?: CloseGuardApprovalView;
+}
+
+/** O que o diálogo do gerente mostra ao reconferir uma venda que pedia gerente. */
+export interface CloseGuardApprovalView {
+  discount_q: number;
+  threshold_q: number;
+  reasons: string[];
+  house_account_limit: POSSaleReviewProjection["house_account_limit"] | null;
+  /** Encomenda acima do plano: as linhas com os dois números que o gerente vê. */
+  over_plan: POSOverPlanLine[];
+}
+
+const NO_APPROVAL_FIGURES: CloseGuardApprovalView = {
+  discount_q: 0, threshold_q: 0, reasons: [], house_account_limit: null, over_plan: [],
+};
+
+function closeGuardApprovalView(raw: unknown): CloseGuardApprovalView | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const view = raw as Partial<CloseGuardApprovalView>;
+  return {
+    discount_q: Number(view.discount_q) || 0,
+    threshold_q: Number(view.threshold_q) || 0,
+    reasons: Array.isArray(view.reasons) ? view.reasons.filter((reason) => typeof reason === "string") : [],
+    house_account_limit: view.house_account_limit && typeof view.house_account_limit === "object"
+      ? view.house_account_limit
+      : null,
+    over_plan: Array.isArray(view.over_plan)
+      ? view.over_plan.filter((line): line is POSOverPlanLine => !!line && typeof line === "object" && typeof line.sku === "string")
+      : [],
+  };
+}
+
+/** O corpo do fechamento SEM a assinatura do gerente: é o que pode ir ao disco. */
+function withoutManagerApproval(body: Record<string, unknown>): Record<string, unknown> {
+  if (!("manager_approval" in body)) return body;
+  const { manager_approval: _signature, ...rest } = body;
+  return rest;
 }
 
 interface CloseGuardRead {
@@ -143,13 +190,26 @@ function readCloseOutcomeUncertain(): CloseGuardRead {
     const parsed = JSON.parse(raw) as Partial<CloseGuardMarker>;
     // Marcadores da primeira versão não tinham state/owner. Eles continuam
     // bloqueando como outcome incerto e só saem por reconciliação explícita.
+    const approval = closeGuardApprovalView(parsed.approval);
     const marker: CloseGuardMarker = {
       client_request_id: typeof parsed.client_request_id === "string" ? parsed.client_request_id : "",
       owner_id: typeof parsed.owner_id === "string" ? parsed.owner_id : "",
       state: parsed.state === "pending" ? "pending" : "uncertain",
       recorded_at: typeof parsed.recorded_at === "string" ? parsed.recorded_at : "",
-      ...(isReplayableCloseBody(parsed.body, parsed.client_request_id) ? { body: parsed.body } : {}),
+      ...(isReplayableCloseBody(parsed.body, parsed.client_request_id) ? { body: withoutManagerApproval(parsed.body) } : {}),
+      ...(approval ? { approval } : {}),
     };
+    // O marcador gravado antes do WP-E1 levava o PIN do gerente no corpo. Ele sai
+    // do disco na primeira leitura; a conferência daquela venda pede o gerente.
+    if (parsed.body && typeof parsed.body === "object" && "manager_approval" in parsed.body) {
+      marker.approval ||= { ...NO_APPROVAL_FIGURES };
+      try {
+        storage.setItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY, JSON.stringify(marker));
+      } catch {
+        // silêncio-deliberado: a leitura continua valendo (o corpo em memória já
+        // está sem o PIN) e a próxima leitura tenta regravar de novo.
+      }
+    }
     return { marker, storageAvailable: true };
   } catch {
     // Falha fechada: sem conseguir ler o marcador, não há prova de que uma
@@ -415,13 +475,15 @@ export function usePosSale(deps: PosSaleDeps) {
     return probeCloseLockHolder();
   }
 
-  function establishCloseGuard(body: Record<string, unknown>): CloseGuardMarker | null {
+  function establishCloseGuard(body: Record<string, unknown>, approval?: CloseGuardApprovalView): CloseGuardMarker | null {
     const marker: CloseGuardMarker = {
       client_request_id: cart.clientRequestId,
       owner_id: newClientRequestId(),
       state: "pending",
       recorded_at: new Date().toISOString(),
-      ...(isReplayableCloseBody(body, cart.clientRequestId) ? { body } : {}),
+      // O guarda vai ao `localStorage`: nunca com a assinatura do gerente.
+      ...(isReplayableCloseBody(body, cart.clientRequestId) ? { body: withoutManagerApproval(body) } : {}),
+      ...(approval ? { approval } : {}),
     };
     closeOutcomeUncertain.value = true;
     closeGuardPending.value = true;
@@ -530,7 +592,19 @@ export function usePosSale(deps: PosSaleDeps) {
       || (typeof data?.error?.message === "string" && data.error.message !== "");
   }
 
-  async function recheckUncertainClose(): Promise<"resolved" | "unknown" | "unavailable"> {
+  // A venda que ficou sem resposta pedia gerente: o corpo guardado não tem a
+  // assinatura (P1-4), e a conferência só sai com o gerente assinando de novo.
+  // Enquanto isto não é `null`, a página mostra o diálogo dele com este valor.
+  const closeRecheckApproval = ref<CloseGuardApprovalView | null>(null);
+  const closeRecheckApprovalError = ref("");
+  function dismissCloseRecheckApproval() {
+    closeRecheckApproval.value = null;
+    closeRecheckApprovalError.value = "";
+  }
+
+  async function recheckUncertainClose(
+    approval?: { username: string; pin: string },
+  ): Promise<"resolved" | "unknown" | "unavailable" | "approval"> {
     if (closeRecheckBusy.value || closeInFlight.value) return "unavailable";
     const lockManager = globalThis.navigator?.locks;
     if (!lockManager?.request) {
@@ -552,13 +626,50 @@ export function usePosSale(deps: PosSaleDeps) {
           closeRecheckAvailable.value = false;
           return "unavailable" as const;
         }
+        if (marker.approval && !approval) {
+          closeRecheckApproval.value = marker.approval;
+          closeRecheckApprovalError.value = "";
+          return "approval" as const;
+        }
+        // O PIN é conferido no diálogo e vira o carimbo (#2558) dos números que o
+        // gerente viu, para a comanda do corpo gravado. O carimbo viaja só no
+        // POST abaixo e não volta ao disco.
+        let signature: { token: string } | null = null;
+        if (approval) {
+          const shown = marker.approval || NO_APPROVAL_FIGURES;
+          try {
+            const token = await requestSaleApprovalToken(approval.username, approval.pin, {
+              tab_ref: typeof marker.body.tab_ref === "string" ? marker.body.tab_ref : "",
+              reasons: shown.reasons,
+              discount_q: shown.discount_q,
+              account_over_q: shown.house_account_limit?.over_q || 0,
+              over_plan: shown.over_plan,
+            });
+            if (token) signature = { token };
+          } catch (error) {
+            const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
+            closeRecheckApproval.value = shown;
+            closeRecheckApprovalError.value = failure?.recovery || failure?.message
+              || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+            return "approval" as const;
+          }
+        }
         let raw: unknown;
         try {
           raw = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
-            { body: marker.body, timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS },
+            {
+              body: signature ? { ...marker.body, manager_approval: signature } : marker.body,
+              timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS,
+            },
           );
         } catch (error) {
+          const code = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error;
+          if (code?.code === "manager_approval_invalid" || code?.code === "manager_approval_required") {
+            closeRecheckApproval.value = marker.approval || { ...NO_APPROVAL_FIGURES };
+            closeRecheckApprovalError.value = code.recovery || code.message || "Aprovação gerencial inválida.";
+            return "approval" as const;
+          }
           // A reenvio não prova nada além do "ok": nem um 4xx (a regra pode ter
           // mudado depois que a primeira tentativa fechou). A trava fica.
           if (linkLost(error)) {
@@ -584,6 +695,7 @@ export function usePosSale(deps: PosSaleDeps) {
         closeGuardPending.value = false;
         closeGuardFailureMessage.value = "";
         closeRecheckAvailable.value = false;
+        dismissCloseRecheckApproval();
         serverError.value = "";
         // A venda ainda está na tela (o carrinho não foi zerado): a tela de
         // resultado sobe como no caminho feliz. Recarregou e o carrinho é outro:
@@ -607,7 +719,10 @@ export function usePosSale(deps: PosSaleDeps) {
   // link não precisa de toque nenhum.
   if (import.meta.client) {
     connectivity.onReconnect(async () => {
-      if (closeOutcomeUncertain.value && readCloseOutcomeUncertain().marker?.body) await recheckUncertainClose();
+      // A que pedia gerente espera alguém tocar em "Conferir agora": sem o
+      // gerente na frente do balcão, o reenvio sem assinatura só seria recusado.
+      const marker = readCloseOutcomeUncertain().marker;
+      if (closeOutcomeUncertain.value && marker?.body && !marker.approval) await recheckUncertainClose();
     });
   }
 
@@ -999,13 +1114,6 @@ export function usePosSale(deps: PosSaleDeps) {
     discountType: "percent" as "percent" | "fixed",
     discountValue: "",
     discountReason: "",
-    /**
-     * O CARIMBO da autorização do gerente (#2558), nunca o PIN. O servidor o
-     * emite no diálogo, preso a esta comanda e aos números que o gerente viu, e o
-     * fechamento o gasta uma vez: valor diferente do assinado é recusa, e o
-     * diálogo volta com o valor novo.
-     */
-    managerApprovalToken: "",
     clientRequestId: "",
     /**
      * Comanda aberta SEM CONEXÃO: só o número, na tela, sem sessão no servidor
@@ -1116,6 +1224,56 @@ export function usePosSale(deps: PosSaleDeps) {
   const deliveryFeeOverrideQ = computed<number | null>(
     () => (cart.deliveryFeeOverride ? moneyInputToQ(cart.deliveryFeeOverrideInput) : null),
   );
+
+  // A ASSINATURA DO GERENTE (P0-1 e P1-4, WP-E1). Vale para um retrato (a comanda,
+  // os itens, o desconto, a forma) e para nenhum outro: a Caixa voltava da
+  // maquininha, trocava R$ 6 por R$ 30 e a venda fechava em nome de quem só viu
+  // R$ 6. O que fica aqui é o CARIMBO que o servidor emite no diálogo (#2558),
+  // nunca o PIN, e ele mora só na memória desta aba, fora do carrinho: não vai ao
+  // autosave, à revisão, ao guarda do fechamento nem à fila sem conexão. Sai
+  // quando o retrato muda, quando a venda acaba e depois de cada tentativa de
+  // fechar (a retentativa pede a assinatura de novo). O servidor confere o mesmo
+  // do lado dele: carimbo de outro valor ou de outra comanda é recusa.
+  const managerSignature = shallowRef<{ token: string; portrait: string } | null>(null);
+  const currentApprovalPortrait = computed(() => approvalPortrait({
+    tabRef: cart.localTab ? "" : cart.tabRef,
+    tabSessionKey: cart.tabSessionKey,
+    items: cart.items,
+    discountType: cart.discountType,
+    discountValue: cart.discountValue,
+    paymentCollection: cart.paymentCollection,
+    paymentTenders: cart.paymentTenders,
+    customerRef: cart.customerRef,
+    deliveryFeeOverrideQ: deliveryFeeOverrideQ.value,
+    deliveryDate: cart.deliveryDate,
+  }));
+  /** O gerente assinou ESTE retrato. É o que libera "Validar". */
+  const managerApproved = computed(() => managerSignature.value?.portrait === currentApprovalPortrait.value);
+  // A assinatura não espera o próximo fechamento para sumir: mudou o retrato, sai agora.
+  watch(currentApprovalPortrait, (portrait) => {
+    if (managerSignature.value && managerSignature.value.portrait !== portrait) managerSignature.value = null;
+  });
+  function forgetManagerApproval() {
+    managerSignature.value = null;
+  }
+  /** A assinatura que acompanha o POST do fechamento, se ainda vale para a tela. */
+  function signedManagerApproval(): { token: string } | null {
+    const signature = managerSignature.value;
+    if (!signature || signature.portrait !== currentApprovalPortrait.value) return null;
+    return { token: signature.token };
+  }
+  /** O que o gerente vê, guardado no marcador quando a venda pedia gerente. */
+  function approvalViewForGuard(): CloseGuardApprovalView | undefined {
+    const shown = review.value;
+    if (!shown?.requires_manager_approval) return undefined;
+    return {
+      discount_q: (shown.line_discount_q || 0) + (shown.order_discount_q || 0),
+      threshold_q: shown.manager_approval_threshold_q || 0,
+      reasons: [...(shown.approval_reasons || [])],
+      house_account_limit: shown.house_account_limit ?? null,
+      over_plan: [...(shown.preorder_over_plan || [])],
+    };
+  }
   const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
   const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
   const deliveryFeeWaiver = computed(() => review.value?.delivery_fee_waiver ?? null);
@@ -1209,6 +1367,12 @@ export function usePosSale(deps: PosSaleDeps) {
   // daquele dia (`productsForOrderDate`).
   const gridProducts = computed(() => productsForOrderDate(pos.value?.products || [], schedule.value, cart.deliveryDate));
   const scheduleToday = computed(() => schedule.value?.today || pos.value?.delivery_today || "");
+  /** O lastro da data da encomenda, por SKU (WP-E2): só a resposta DESTA data. */
+  const planBySku = computed<Record<string, POSPlanBacking>>(() => {
+    const answer = schedule.value;
+    if (!answer || answer.is_today || !cart.deliveryDate || answer.date !== cart.deliveryDate) return {};
+    return answer.plan_by_sku ?? {};
+  });
   const scheduleAvailableDates = computed(() => schedule.value?.available_dates ?? []);
   const scheduleBottleneckName = computed(() => schedule.value?.bottleneck_name || "");
   const scheduleReadyAt = computed(() => schedule.value?.ready_at || "");
@@ -1595,10 +1759,18 @@ export function usePosSale(deps: PosSaleDeps) {
   // ele fazia o watcher abaixo reescrever "Na entrega" para "No caixa" em
   // silêncio numa comanda reaberta com `payment_method: "pix"`. Os tenders são a
   // verdade, e o workspace já valida cada linha contra a coleta (`blockedForDelivery`).
+  // Encomenda de outro dia não fica "Na retirada" (D-041): a mesma regra do
+  // Pagamento (`collectionsForFulfillment`), e o watch abaixo tira a escolha que
+  // deixou de valer quando a data muda.
+  const preorderOtherDay = computed(
+    () => Boolean(scheduleToday.value) && (deliveryDateEffective.value || "") > scheduleToday.value,
+  );
   const availablePaymentCollections = computed(() =>
-    (pos.value?.payment_collections || []).filter((collection) =>
-      collection.fulfillment_types.includes(cart.fulfillmentType)
-      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order"),
+    collectionsForFulfillment(
+      pos.value?.payment_collections || [],
+      cart.fulfillmentType,
+      cart.salesMode,
+      preorderOtherDay.value,
     ),
   );
 
@@ -2043,7 +2215,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.discountType = "percent";
     cart.discountValue = "";
     cart.discountReason = "";
-    cart.managerApprovalToken = "";
+    forgetManagerApproval();
     cart.clientRequestId = "";
     cart.localTab = false;
     customerLookup.value = null;
@@ -2125,7 +2297,7 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.discountType = "percent";
       cart.discountValue = "";
       cart.discountReason = "";
-      cart.managerApprovalToken = "";
+      forgetManagerApproval();
     }
     if (!sameTab || !receiptIdentityChoices.value.length) cart.clientRequestId = "";
     if (!cart.customerRef) customerLookup.value = null;
@@ -2333,7 +2505,6 @@ export function usePosSale(deps: PosSaleDeps) {
     const manualDiscount = discountValueNum > 0
       ? { type: cart.discountType, value: discountValueNum, reason: cart.discountReason || "cortesia" }
       : null;
-    const managerApproval = cart.managerApprovalToken ? { token: cart.managerApprovalToken } : null;
     const resolvedPayment = resolvePayment(cart.paymentTenders, paymentTotalQ.value);
     return {
       // A comanda aberta sem conexão não existe no servidor: a venda sobe como
@@ -2394,7 +2565,6 @@ export function usePosSale(deps: PosSaleDeps) {
       saveReceiptTaxIdConfirmed: cart.confirmReceiptTaxId,
       receiptIdentityChoices: receiptIdentityChoices.value,
       manualDiscount,
-      managerApproval,
       clientRequestId: cart.clientRequestId || newClientRequestId(),
     };
   }
@@ -2618,29 +2788,53 @@ export function usePosSale(deps: PosSaleDeps) {
   // diálogo guardava o PIN e fechava, e o PIN errado só voltava no fechamento,
   // depois de o operador já ter confirmado "Recebi o Pix" com o cliente. A
   // conferência é a mesma do fechamento, com a mesma trava; não grava nada.
+  /**
+   * Confere o PIN no servidor e devolve o CARIMBO (#2558): preso ao operador, à
+   * comanda e aos números que o diálogo mostrou ao gerente. Só o gatilho que
+   * chamou o gerente leva número; o outro vai zero, como o servidor confere.
+   * Lança o erro do servidor (PIN errado, trava) para quem chamou mostrar.
+   */
+  async function requestSaleApprovalToken(
+    username: string,
+    pin: string,
+    shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number; over_plan?: POSOverPlanLine[] },
+  ): Promise<string> {
+    const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
+    const scope = {
+      tab_ref: shown.tab_ref,
+      discount_q: shown.reasons.includes("discount_over_threshold") ? shown.discount_q : 0,
+      account_over_q: shown.reasons.includes("house_account_over_limit") ? shown.account_over_q : 0,
+      // A encomenda acima do plano: as linhas com o pedido, a fornada e o livre
+      // que o diálogo mostrou. O carimbo vale só para esses números.
+      over_plan: shown.reasons.includes("preorder_over_plan") ? (shown.over_plan ?? []) : [],
+    };
+    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
+    return typeof answer?.token === "string" ? answer.token : "";
+  }
+
   const managerCheckBusy = ref(false);
   async function checkManagerApproval(username: string, pin: string): Promise<boolean> {
     if (managerCheckBusy.value) return false;
     managerCheckBusy.value = true;
     managerApprovalError.value = "";
+    // O retrato é o do momento em que o gerente olhou o diálogo, não o da volta
+    // da conferência: um toque feito durante a ida já não é o que ele assinou.
+    const portrait = currentApprovalPortrait.value;
     try {
-      const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
-      // O que o gerente VIU no diálogo vai junto, e o carimbo que volta vale só
-      // para isso (#2558): o PIN não fica no carrinho.
+      // O que o gerente VIU no diálogo vai junto (#2558), e o carimbo que volta
+      // vale só para isso. O PIN fica no diálogo; o carimbo mora na memória da
+      // aba, preso ao retrato (`managerSignature`).
       const current = review.value;
-      const reasons = current?.approval_reasons || [];
-      const scope = {
+      const token = await requestSaleApprovalToken(username, pin, {
         tab_ref: cart.localTab ? "" : cart.tabRef,
-        discount_q: reasons.includes("discount_over_threshold")
-          ? (current?.line_discount_q || 0) + (current?.order_discount_q || 0)
-          : 0,
-        account_over_q: reasons.includes("house_account_over_limit")
-          ? current?.house_account_limit?.over_q || 0
-          : 0,
-      };
-      const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
-      cart.managerApprovalToken = answer?.token || "";
-      return !!cart.managerApprovalToken;
+        reasons: current?.approval_reasons || [],
+        discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
+        account_over_q: current?.house_account_limit?.over_q || 0,
+        over_plan: current?.preorder_over_plan || [],
+      });
+      if (!token) return false;
+      managerSignature.value = { token, portrait };
+      return currentApprovalPortrait.value === portrait;
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
       managerApprovalError.value = failure?.recovery || failure?.message
@@ -3601,13 +3795,18 @@ export function usePosSale(deps: PosSaleDeps) {
           return { kind: "blocked" };
         }
         const closeBody = withExpectedTotal(buildCurrentIntent(), expectedTotalQ);
-        const marker = establishCloseGuard(closeBody);
+        // A assinatura entra SÓ no POST, nunca no corpo que o guarda grava. E é
+        // gasta aqui: a tentativa seguinte, qualquer que seja o motivo, pede o
+        // gerente de novo.
+        const signature = signedManagerApproval();
+        forgetManagerApproval();
+        const marker = establishCloseGuard(closeBody, approvalViewForGuard());
         if (!marker) return { kind: "blocked" };
         closeInFlight.value = true;
         try {
           const rawResponse = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
-            { body: closeBody, timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS },
+            { body: signature ? { ...closeBody, manager_approval: signature } : closeBody, timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS },
           );
           const response = rawResponse && typeof rawResponse === "object"
             ? rawResponse as Partial<POSCloseSaleResponse>
@@ -3776,9 +3975,9 @@ export function usePosSale(deps: PosSaleDeps) {
         }
       }
       if (failure?.code === "manager_approval_invalid" || failure?.code === "manager_approval_required") {
-        // Aprovação recusada: limpa o gerente/PIN e reabre o diálogo com a mensagem,
-        // em vez de deixar o CTA reenviar as mesmas credenciais erradas.
-        cart.managerApprovalToken = "";
+        // Aprovação recusada: a assinatura já foi gasta na tentativa; o diálogo
+        // reabre com a mensagem, em vez de o CTA reenviar credencial errada.
+        forgetManagerApproval();
         managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
       } else if (failure?.focus === "customer") {
         // Recusa que se resolve identificando o cliente (ex.: agendado sem
@@ -4035,7 +4234,12 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function newClientRequestId(): string {
-    const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    // `randomUUID` só existe em contexto seguro (HTTPS ou localhost); o
+    // `getRandomValues` existe em qualquer um. `Math.random` não entra: a chave e
+    // o dono do marcador andam junto da assinatura do gerente (CodeQL
+    // js/insecure-randomness, WP-E1).
+    const random = globalThis.crypto.randomUUID?.()
+      || Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
     return `pos:${random}`;
   }
 
@@ -4504,6 +4708,7 @@ export function usePosSale(deps: PosSaleDeps) {
     lookupBusy,
     serverError,
     managerApprovalError,
+    managerApproved,
     managerCheckBusy,
     checkManagerApproval,
     gridProducts,
@@ -4525,6 +4730,9 @@ export function usePosSale(deps: PosSaleDeps) {
     acknowledgeUncertainClose,
     recheckUncertainClose,
     closeRecheckBusy,
+    closeRecheckApproval,
+    closeRecheckApprovalError,
+    dismissCloseRecheckApproval,
     pendingPixOrderRefs,
     reopenablePixOrderRefs: computed(() => pendingPixOrderRefs.value.filter((ref) => parkedPixResults.value.has(ref))),
     reopenPendingPix,
@@ -4583,6 +4791,7 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryWindowLabel,
     deliveryDateEffective,
     scheduleToday,
+    planBySku,
     scheduleAvailableDates,
     scheduleBottleneckName,
     scheduleReadyAt,

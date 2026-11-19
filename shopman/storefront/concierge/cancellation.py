@@ -239,8 +239,10 @@ def _execute(conversation, state: dict) -> Outcome:
     from shopman.shop.services import customer_orders
     from shopman.shop.services import payment as payment_service
 
+    from .effect_authority import lock_turn_authority
     from .service import assert_turn_authority
 
+    # Sem posse, nem a leitura do pedido segue; a conferência que vale é a do bloco abaixo.
     assert_turn_authority(conversation, for_mutation=True)
     order = self_cancellable(conversation, order_ref=state["order_ref"])
     if order is None:
@@ -257,6 +259,9 @@ def _execute(conversation, state: dict) -> Outcome:
     # O cancelamento e o registro dele são um gesto só: sem o registro, não cancela.
     # O lifecycle (estorno, estoque, nota, aviso) roda no commit deste bloco.
     with transaction.atomic():
+        # Reconferida com a conversa travada, na transação que cancela: se a equipe
+        # assumiu depois da conferência acima, o pedido segue como está (#2625).
+        lock_turn_authority(conversation)
         if not customer_orders.cancel(order, actor=ACTOR):
             return Outcome("refused", order_ref=order.ref)
         order.emit_event(

@@ -16,9 +16,9 @@ RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
-SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman
+SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman:$(CURDIR)/packages/conversational-commerce
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow constitution-guards deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-conversational-commerce test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow constitution-guards deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -71,19 +71,20 @@ install: ## Instala deps + apps da suite em modo editável
 	$(PYTHON) -m pip install -c constraints.txt -e packages/buyman
 	$(PYTHON) -m pip install -c constraints.txt -e packages/fiscalman
 	$(PYTHON) -m pip install -c constraints.txt -e packages/cashman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/conversational-commerce
 	$(PYTHON) -m pip install -c constraints.txt -e .
 	@echo "✓ Dependências instaladas"
 
 # ── Testes ────────────────────────────────────────────────────────────
 
-# Os 13 pacotes independentes juntos. Existe para a matriz do CI ter um alvo só com
+# Os 14 pacotes independentes juntos. Existe para a matriz do CI ter um alvo só com
 # tudo que é rápido — na prática ~1 min somado, contra ~12 do framework. Sem
 # ele, ou o CI listava treze entradas de matriz (treze `make install`, cada um
 # custando mais que o teste) ou os cores voltavam a esperar o framework.
-test-cores: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman ## Todos os pacotes do Core
+test-cores: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-conversational-commerce ## Todos os pacotes do Core
 	@echo "✓ Cores passaram"
 
-test: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-framework test-counter-agent ## Roda todos os testes
+test: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-conversational-commerce test-framework test-counter-agent ## Roda todos os testes
 	@echo "✓ Todos os testes passaram"
 
 # ── Por que NÃO tem `-x` (fail-fast) em nenhum alvo ───────────────────────
@@ -113,6 +114,15 @@ test-utils: ## Testes do shopman.utils
 test-watchman: ## Testes do shopman.watchman
 	@echo "── Watchman ──"
 	cd packages/watchman && $(PYTHON) -m pytest -q
+
+# Pacote puro, sem Django (ADR-049). `PYTHONPATH` fixo no próprio pacote: a
+# `.venv` pode ter uma instalação editável apontando para OUTRO checkout, e a
+# suíte passaria testando o código errado. `-p no:django`: a `.venv` tem
+# pytest-django, e carregá-lo aqui apagaria a prova de que o pacote não precisa
+# de Django. A suíte bloqueia a rede (conftest do pacote).
+test-conversational-commerce: ## Testes do conversational_commerce (sem Django, sem rede)
+	@echo "── Conversational commerce ──"
+	cd packages/conversational-commerce && PYTHONPATH="$(CURDIR)/packages/conversational-commerce" $(PYTHON) -m pytest -q -p no:django
 
 test-offerman: ## Testes do shopman.offering
 	@echo "── Offerman ──"
@@ -737,23 +747,31 @@ inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branche
 	@bash scripts/inflight.sh
 
 # ── Compromissos: o que o repo deve, com dono, prazo e prova ──────────
-# O ledger é docs/coordination/COMMITMENTS.md. `intake` registra a fala do
-# dono ANTES do primeiro edit e devolve o ID que o PR cita. `commitments`
-# mostra o que venceu, incluindo as decisões legadas de DECISIONS.md.
+# O ledger é um arquivo por entrada em docs/coordination/commitments/
+# (DEV-AAAA-NNN.json): dois PRs nunca tocam o mesmo arquivo, e o merge de um não
+# deixa o outro CONFLICTING. `intake` registra a fala do dono ANTES do primeiro
+# edit e devolve o ID que o PR cita; o ID pula os que estão em PR aberto, branch
+# local ou worktree, e sem `gh` o intake falha em vez de chutar (offline=1 força).
+# `commitments` mostra o que venceu, incluindo as decisões legadas de
+# DECISIONS.md; `commitments-index` imprime a tabela legível (gerada, nunca
+# commitada).
 dono ?= Engenharia
 tipo ?= solicitacao
 origem ?= chat
 gatilho ?= -
 
-.PHONY: commitments intake commitments-pr
+.PHONY: commitments commitments-index intake commitments-pr
 
 commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas (issues=1 inclui issues com label; não falha por vencido)
 	@echo "── Compromissos ──"
 	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
 
-intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...]
-	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD]' >&2; exit 2)
-	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",)
+commitments-index: ## Tabela legível de todas as entradas do ledger (gerada na hora, não se commita)
+	@$(PYTHON) scripts/check_commitments.py --format table
+
+intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...] [offline=1]
+	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD] [offline=1]' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",) $(if $(offline),--offline,)
 
 commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [created=YYYY-MM-DD] [author=login]
 	@test -n "$(body)" || (echo 'uso: make commitments-pr body=<arquivo>' >&2; exit 2)

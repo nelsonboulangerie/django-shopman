@@ -2,7 +2,7 @@
 // O ESPELHO da corrida: uma linha que diz o momento dela e, quando o gesto é de
 // quem está no balcão, o botão pronto. Mora na parte "Corridas" da página Entregas
 // (e, no próximo passo, no Painel). Tocar na linha abre o detalhe da corrida
-// (`/deliveries?ride=<chave da corrida>`).
+// (`/delivery?ride=<chave da corrida>`).
 import type { DeliveryRideProjection } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
 import { beforeHandoff, bagsWord, rideLine } from "~/presentation/deliveries";
@@ -15,16 +15,21 @@ const showBags = computed(() => beforeHandoff(props.ride));
 </script>
 
 <template>
-  <NuxtLink
-    :to="{ path: '/deliveries', query: { ride: ride.key } }"
-    class="group flex items-center gap-3 rounded-xl border border-default bg-default py-2.5 pr-2.5 pl-3 shadow-xs transition hover:border-accented hover:shadow-sm focus-visible:outline-2 focus-visible:outline-primary"
+  <!-- O botão do balcão mora AO LADO do link, nunca dentro dele (botão dentro de link
+       é dois alvos num só para o leitor de tela e no toque). -->
+  <div
+    class="group flex items-center gap-2 rounded-xl border border-default bg-default py-2.5 pr-2.5 pl-3 shadow-xs transition hover:border-accented hover:shadow-sm"
     :style="{ borderLeft: `6px solid ${tone.bg}` }"
     data-ride-mirror
+  >
+  <NuxtLink
+    :to="{ path: '/delivery', query: { ride: ride.key } }"
+    class="flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-primary"
   >
     <span class="grid size-8 shrink-0 place-items-center rounded-lg op-label font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.letter }}</span>
     <span class="min-w-0 flex-1">
       <span class="flex items-center gap-1.5 op-body font-semibold text-highlighted">
-        <NuxtIcon :name="line.icon" class="size-4 shrink-0 text-muted" :class="ride.state === 'searching' || ride.state === 'reopened' ? 'animate-pulse' : ''" />
+        <NuxtIcon :name="line.icon" class="size-4 shrink-0 text-muted" :class="ride.state === 'searching' || ride.state === 'reopened' ? 'motion-safe:animate-pulse' : ''" />
         <span class="truncate">{{ line.title }}</span>
       </span>
       <span class="flex flex-wrap items-center gap-x-1.5 op-micro text-muted">
@@ -38,6 +43,8 @@ const showBags = computed(() => beforeHandoff(props.ride));
         <NuxtIcon name="i-lucide-package-check" class="size-4" />Entregue {{ ride.bags === 1 ? "a sacola" : `as ${bagsWord(ride.bags)}` }} {{ ride.driver?.name ? `para ${ride.driver.name}` : "para o entregador" }}
       </span>
     </span>
+    <NuxtIcon v-if="!ride.back_action" name="i-lucide-chevron-right" class="size-5 shrink-0 text-dimmed transition group-hover:text-toned" />
+  </NuxtLink>
     <NuxtButton
       v-if="ride.back_action"
       color="primary"
@@ -45,8 +52,7 @@ const showBags = computed(() => beforeHandoff(props.ride));
       :label="ride.back_action.label"
       :loading="busy"
       :disabled="!ride.back_action.enabled"
-      @click.stop.prevent="emit('back')"
+      @click="emit('back')"
     />
-    <NuxtIcon v-else name="i-lucide-chevron-right" class="size-5 shrink-0 text-dimmed transition group-hover:text-toned" />
-  </NuxtLink>
+  </div>
 </template>

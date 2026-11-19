@@ -288,6 +288,42 @@
               "equipment": [
                 "card_machine"
               ]
+            },
+            "lifecycle": {
+              "transitions": {
+                "new": [
+                  "accepted",
+                  "cancelled"
+                ],
+                "accepted": [
+                  "preparing",
+                  "ready",
+                  "cancelled"
+                ],
+                "preparing": [
+                  "ready",
+                  "cancelled"
+                ],
+                "ready": [
+                  "preparing",
+                  "dispatched",
+                  "completed",
+                  "cancelled"
+                ],
+                "dispatched": [
+                  "delivered",
+                  "returned"
+                ],
+                "delivered": [
+                  "completed",
+                  "returned"
+                ],
+                "completed": [
+                  "returned"
+                ],
+                "cancelled": [],
+                "returned": []
+              }
             }
           }
         }
@@ -335,6 +371,42 @@
             },
             "pricing": {
               "listing_from": "web"
+            },
+            "lifecycle": {
+              "transitions": {
+                "new": [
+                  "accepted",
+                  "cancelled"
+                ],
+                "accepted": [
+                  "preparing",
+                  "ready",
+                  "cancelled"
+                ],
+                "preparing": [
+                  "ready",
+                  "cancelled"
+                ],
+                "ready": [
+                  "preparing",
+                  "dispatched",
+                  "completed",
+                  "cancelled"
+                ],
+                "dispatched": [
+                  "delivered",
+                  "returned"
+                ],
+                "delivered": [
+                  "completed",
+                  "returned"
+                ],
+                "completed": [
+                  "returned"
+                ],
+                "cancelled": [],
+                "returned": []
+              }
             }
           }
         }

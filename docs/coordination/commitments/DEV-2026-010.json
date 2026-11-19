@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-010",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "BRIEF ID3A: infraestrutura de IA do Django Shopman. Sua tarefa é produzir um plano de desenvolvimento da ID3A, não código.",
+  "dono": "Engenharia",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-19",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

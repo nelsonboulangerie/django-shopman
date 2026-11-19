@@ -90,9 +90,13 @@ function resumo (): string {
  * nos Estados Unidos) e a frase da Anthropic passou a dizer nome e endereço da
  * entrega. A lista sai de `shopman/shop/privacy_inventory.py`, não dos `.vue`: o
  * resumo do texto fica o mesmo, mas o cliente lê terceiro novo, então a versão muda.
+ *
+ * 2026-11-18: os termos ganharam a cláusula do pedido não retirado, em "Retirada e
+ * entrega" (#2613, texto aprovado pelo dono): o que ainda puder voltar à venda é
+ * devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a loja.
  */
-const RESUMO_PUBLICADO = '5474a59ea5b890e1'
-const VERSAO_PUBLICADA = '2026-11-12'
+const RESUMO_PUBLICADO = '35c9893b5eeb2169'
+const VERSAO_PUBLICADA = '2026-11-18'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {
@@ -134,7 +138,7 @@ describe('páginas legais — o relógio', () => {
 const CHAVES_DECLARADAS: Record<string, string> = {
   'shopman-checkout-draft': 'RASCUNHO DO CHECKOUT — guarda PII; descrito na política',
   'storefront-pwa-install-dismissed-until': 'só a data em que o convite foi dispensado',
-  'shopman-order-secured': 'marca de que este navegador já concluiu um pedido; não guarda dado pessoal',
+  'shopman-order-secured': 'marca de que um pedido foi enviado nesta visita (sessionStorage); não guarda dado pessoal',
   'shopman-intention:': 'chave de idempotência de uma ação; não guarda dado pessoal',
   'shop-marketing-prompt': 'marca de convite já visto; não guarda dado pessoal'
 }

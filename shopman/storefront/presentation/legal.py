@@ -41,8 +41,8 @@ class LegalProjection:
 #: A versão vigente dos documentos legais. **Mexeu no texto de `privacidade.vue` ou de
 #: `termos.vue`? Mexa aqui.** `surfaces/storefront-nuxt/tests/legalVersion.test.ts`
 #: reprova se um mudar sem o outro — foi a promessa quebrada que originou a trava.
-LEGAL_VERSION = "2026-11-12"
-LEGAL_UPDATED_AT = "12 de novembro de 2026"
+LEGAL_VERSION = "2026-11-18"
+LEGAL_UPDATED_AT = "18 de novembro de 2026"
 
 
 #: Cópias permanentes das versões publicadas: versão → SHA-256 de cada arquivo em
@@ -79,6 +79,14 @@ LEGAL_ARCHIVE: dict[str, dict[str, str]] = {
     "2026-11-06": {
         "privacy": "732a7dc3aeb0bbb482e2969ebf21ec71bb30c8a5b054dfe7acb3c2059b34509d",
         "terms": "a23914f2d0119ebcd5f5a8dccbae6b95572647614e184720ff60b7bcc84d0f5f",
+    },
+    "2026-11-12": {
+        "privacy": "ceb7d1e62cf2c8055611ad6c18f35ae1ba14394753df1030869d5c1ca27e7732",
+        "terms": "7c13ca2185415c993c9a6a1d567ff81ea6c3cfcddbb2606f750f5a877ef56c54",
+    },
+    "2026-11-18": {
+        "privacy": "6c8c239500a0260d3f4f0f19b473d43d9aeec965b9ba9a77fad70abf4aea554f",
+        "terms": "d90bf86f45a4f3a4fc71f6a58b24fad922729269549830e76b2c5fe5cafa8557",
     },
 }
 

@@ -71,3 +71,29 @@ export function buildStorefrontManifest (shop: PwaShopSource = {}) {
     categories: ['food', 'shopping']
   }
 }
+
+// O app das rotas do entregador da casa (DEV-2026-030, M2): o mesmo domínio da loja, outro
+// app instalado. `id` e `scope` em `/rota/` separam os dois na tela inicial, e o nome diz
+// de quem é. Neutro como a página (preto e branco), retrato e paisagem (suporte da moto).
+export function buildCourierManifest () {
+  return {
+    id: '/rota/',
+    name: 'Rotas · Nelson',
+    short_name: 'Rotas',
+    description: 'As corridas do entregador da casa.',
+    lang: 'pt-BR',
+    dir: 'ltr',
+    start_url: '/rota/',
+    scope: '/rota/',
+    display: 'standalone',
+    display_override: ['standalone'],
+    orientation: 'any',
+    theme_color: '#000000',
+    background_color: '#ffffff',
+    icons: [
+      { src: '/pwa/pwa-192x192.png?v=7', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/pwa-512x512.png?v=7', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/maskable-512x512.png?v=7', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+    ]
+  }
+}

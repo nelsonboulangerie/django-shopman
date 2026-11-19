@@ -184,6 +184,14 @@ O comando devolve `DEV-AAAA-NNN` e a linha `Compromisso: DEV-AAAA-NNN`. O PR cit
 a CI reprova PR novo sem ela. O relatório final lista os IDs tocados e o estado de
 cada um. Solicitação que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
 
+**Um arquivo por entrada, nunca uma tabela única.** O ledger mora em
+`docs/coordination/commitments/DEV-AAAA-NNN.json` (regras no `README.md` da pasta).
+Até 18/11/2026 era uma tabela em `COMMITMENTS.md`, e cada merge deixava os PRs
+seguintes CONFLICTING (oito saíram da fila num dia). A tabela está congelada; não
+crie índice commitado (`make commitments-index` gera na hora). O `intake` pula IDs
+que já estão em PR aberto, branch local ou worktree, e sem `gh` falha em vez de
+chutar (`offline=1` força, sabendo do risco).
+
 **Adiamento tem gate próprio.** A seção `## Ficou de fora` do template declara o
 que ficou, e cada item vira issue aberta com label `ficou-de-fora` (check
 "Ficou de fora declarado"). O ledger indexa a issue com dono, prazo e prova; não
@@ -210,7 +218,9 @@ packages/               13 apps pip-instaláveis (sem dependência entre si)
 ├── buyman/             Compras: fornecedores, materiais, custos (procurement, Fase 1) [shopman-buyman]
 ├── fiscalman/          Fiscal: classificação NFC-e (schema em Product.metadata)      [shopman-fiscalman]
 ├── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
-└── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
+├── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
+└── conversational-commerce/  Núcleo de comércio conversacional: Python PURO, zero dependência, fora da
+                        família dos cores; o K38 reprova import fora da stdlib (ADR-049)  [conversational-commerce]
 
 shopman/                Namespace package (PEP 420) — sem __init__.py
 ├── shop/               Orquestrador (app Django, label="shop") — health/readiness views [django-shopman]

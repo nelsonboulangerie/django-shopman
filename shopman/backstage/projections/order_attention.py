@@ -236,9 +236,12 @@ def card_attention(
         )
     else:
         goal = stage_goal(kind, channel_config)
+        # A encomenda só passa a pedir "Iniciar preparo" quando chega à Cozinha
+        # (WP-G02): o relógio conta dali, não do aceite de dias atrás.
+        released = _parse(getattr(card, "kitchen_released_at_iso", ""))
         since = {
             "blocked": order.accepted_at or order.created_at,
-            "start": order.accepted_at or order.created_at,
+            "start": released or order.accepted_at or order.created_at,
             "station": order.preparing_at or order.created_at,
             "mark_ready": order.preparing_at or order.created_at,
             # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30").
@@ -291,6 +294,11 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
     if promised is None or since is None:
         return None
     clock = timezone.localtime(promised)
+    goal_label = f"combinado para as {format_clock(clock)}"
+    if clock.date() != timezone.localdate():
+        # Outro dia diz o dia, com a mesma palavra do selo do combinado
+        # ("Era para ontem · ..." ao lado de "combinado para ontem às 15h").
+        goal_label = f"combinado para {commitment_day_label(clock.date())} às {format_clock(clock)}"
     if kind == "start":
         deadline = promised - timedelta(minutes=stage_goal("station", channel_config))
     elif kind == "handoff":
@@ -300,8 +308,26 @@ def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_con
     minutes = max(1, math.ceil((deadline - since).total_seconds() / 60))
     return {
         "goal_minutes": minutes,
-        "goal_label": "no balcão" if kind == "handoff" else f"combinado para as {format_clock(clock)}",
+        "goal_label": "no balcão" if kind == "handoff" else goal_label,
     }
+
+
+def commitment_day_label(day) -> str:
+    """O dia do combinado como o operador fala: "hoje", "amanhã", "ontem" ou "qua, 18/11".
+
+    Uma régua só para o selo do card (``order_queue._schedule``) e para a meta da
+    Fila: duas leituras do mesmo pedido não podem discordar sobre o dia.
+    """
+    from django.utils import formats
+
+    today = timezone.localdate()
+    if day == today:
+        return "hoje"
+    if day == today + timedelta(days=1):
+        return "amanhã"
+    if day == today - timedelta(days=1):
+        return "ontem"
+    return f"{formats.date_format(day, 'D')}, {formats.date_format(day, 'd/m')}"
 
 
 # ── "Na Cozinha · próximo pronto em ~4 min" (G10) ───────────────────────

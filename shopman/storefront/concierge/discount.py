@@ -166,8 +166,14 @@ def _grant(*, conversation, session, channel_ref: str, percent: Decimal, custome
     if discount_q <= 0:
         return Outcome("unavailable")
 
+    from .effect_authority import lock_turn_authority
+    from .service import TurnRevoked
+
     try:
         with transaction.atomic():
+            # O cupom e a marca na sacola nascem aqui: a posse é reconferida na mesma
+            # transação, com a conversa travada contra a transferência (#2625).
+            lock_turn_authority(conversation, channel_ref=channel_ref)
             code = promotions.issue_concierge_coupon(
                 value_q=discount_q,
                 min_order_q=min_order_for(discount_q, percent),
@@ -200,6 +206,9 @@ def _grant(*, conversation, session, channel_ref: str, percent: Decimal, custome
             )
     except _NotApplied:
         return Outcome("unavailable")
+    except TurnRevoked:
+        # A equipe assumiu antes do cupom: nada foi concedido, e quem responde é ela.
+        raise
     except Exception:
         logger.warning("concierge.discount: grant failed conversation=%s", conversation.pk, exc_info=True)
         return Outcome("unavailable")

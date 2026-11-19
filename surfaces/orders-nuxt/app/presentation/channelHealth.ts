@@ -45,6 +45,11 @@ export function itemAction(
             href: `${bases.djangoBase}${item.action_path}`,
           }
         : null;
+    case "external":
+      // Endereço completo fora do sistema (o Merchant Center): só https, como veio.
+      return item.action_path.startsWith("https://")
+        ? { kind: "external", label: item.action_label, href: item.action_path }
+        : null;
     case "pair":
       return { kind: "pair", label: item.action_label };
     case "collections":

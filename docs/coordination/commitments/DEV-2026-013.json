@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-013",
+  "tipo": "decisao",
+  "origem": "chat 2026-11-12",
+  "compromisso": "Aceite dos pedidos iFood: o sistema aceita sozinho na chegada (fim do cancelamento por prazo) ou segue manual no Gestor de pedidos com 8 min",
+  "dono": "Pablo",
+  "criado": "2026-11-12",
+  "revisar_em": "-",
+  "gatilho": "-",
+  "estado": "FEITO",
+  "prova": "chat 2026-11-12, Pablo: \"Fica manual\" (aceite segue manual no Gestor de pedidos, 8 min)"
+}

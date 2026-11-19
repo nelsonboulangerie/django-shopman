@@ -1232,6 +1232,58 @@
           }
         },
         {
+          "id": "channel-reviews",
+          "source_files": [
+            "app/pages/channels/[ref]/reviews.vue"
+          ],
+          "routes": [
+            "/channels/:ref/reviews"
+          ],
+          "variants": [
+            "list",
+            "detail",
+            "reply"
+          ],
+          "families": [
+            "action",
+            "field",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
+          "id": "channel-ifood-store",
+          "source_files": [
+            "app/pages/channels/[ref]/store.vue"
+          ],
+          "routes": [
+            "/channels/:ref/store"
+          ],
+          "variants": [
+            "now",
+            "hours",
+            "registry"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
           "id": "customers",
           "source_files": [
             "app/pages/customers/index.vue"
@@ -1403,10 +1455,10 @@
         {
           "id": "deliveries",
           "source_files": [
-            "app/pages/deliveries.vue"
+            "app/pages/delivery.vue"
           ],
           "routes": [
-            "/deliveries"
+            "/delivery"
           ],
           "variants": [
             "map",

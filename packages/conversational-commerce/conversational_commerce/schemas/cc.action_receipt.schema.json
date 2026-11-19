@@ -1,0 +1,256 @@
+{
+  "$defs": {
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "pattern": "^\\S(.*\\S)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "ReceiptError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "unsupported_schema",
+            "invalid_content",
+            "capability_missing",
+            "identity_insufficient",
+            "object_forbidden",
+            "fact_unavailable",
+            "terms_changed",
+            "revision_conflict",
+            "authority_revoked",
+            "grant_expired",
+            "confirmation_required",
+            "idempotency_conflict",
+            "effect_pending",
+            "effect_unknown",
+            "budget_exhausted",
+            "provider_unavailable"
+          ],
+          "type": "string"
+        },
+        "retry": {
+          "enum": [
+            "never",
+            "same_key",
+            "after_reconcile"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "retry"
+      ],
+      "type": "object"
+    },
+    "Reconciliation": {
+      "additionalProperties": false,
+      "properties": {
+        "deadline": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        "owner": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deadline",
+        "owner"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Contrato ActionReceipt. Contrato estrito: campo desconhecido e versão não suportada são recusados.",
+  "properties": {
+    "cause_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "command_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "domain_refs": {
+      "additionalProperties": {
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "propertyNames": {
+        "minLength": 1
+      },
+      "type": "object"
+    },
+    "effect": {
+      "enum": [
+        "applied",
+        "not_applied",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "shadow",
+        "live"
+      ],
+      "type": "string"
+    },
+    "episode_id": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ReceiptError"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "kind": {
+      "const": "ActionReceipt"
+    },
+    "observed_versions": {
+      "additionalProperties": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "propertyNames": {
+        "minLength": 1
+      },
+      "type": "object"
+    },
+    "occurred_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "reconciliation": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Reconciliation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "recorded_at": {
+      "oneOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "const": "cc.action_receipt"
+    },
+    "schema_version": {
+      "enum": [
+        "1.0"
+      ]
+    },
+    "status": {
+      "enum": [
+        "success",
+        "failure",
+        "pending",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "supersedes": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tenant": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    },
+    "trace_id": {
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "schema_version",
+    "id",
+    "tenant",
+    "environment",
+    "trace_id",
+    "occurred_at",
+    "producer",
+    "command_id",
+    "status",
+    "effect"
+  ],
+  "title": "ActionReceipt",
+  "type": "object",
+  "x-contract-version": "1.0"
+}

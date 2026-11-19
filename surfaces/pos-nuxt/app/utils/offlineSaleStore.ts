@@ -42,7 +42,13 @@ function done(tx: IDBTransaction): Promise<void> {
  * JSON por construção (é o corpo de um POST), então a cópia JSON é exata.
  */
 function plain(sale: OfflineSale): OfflineSale {
-  return JSON.parse(JSON.stringify(sale)) as OfflineSale;
+  const copy = JSON.parse(JSON.stringify(sale)) as OfflineSale;
+  // A assinatura do gerente nunca vai ao disco (P1-4, WP-E1). A venda sem conexão
+  // não tem desconto (`offlineSaleBlockers`), então nem deveria trazê-la; se um
+  // dia trouxer, o reenvio é recusado e pede o gerente, em vez de o PIN ficar
+  // em claro no IndexedDB do dispositivo.
+  if (copy.body && typeof copy.body === "object") delete (copy.body as Record<string, unknown>).manager_approval;
+  return copy;
 }
 
 export function memoryOfflineSaleStore(): OfflineSaleStore {

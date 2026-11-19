@@ -43,14 +43,23 @@ describe("PosPaymentWorkspace: o PIN do gerente é conferido antes de seguir", (
     expect(w.emitted("submit")).toBeUndefined();
   });
 
-  it("PIN conferido: fecha e segue, sem o PIN sair do diálogo (#2558)", async () => {
+  it("PIN conferido: fecha e segue, e o PIN não sobe para o carrinho", async () => {
     const { w, dialog, done } = await autorizar("4321");
     done(true);
     await w.vm.$nextTick();
-    // O carimbo do servidor mora no carrinho; o PIN não vira estado da tela.
-    expect(Object.keys(w.emitted()).filter((e) => /manager(Pin|Username)/.test(e))).toEqual([]);
+    // Quem guarda a assinatura, presa ao retrato, é o `usePosSale` (WP-E1).
+    expect(Object.keys(w.emitted()).filter((name) => name.startsWith("update:manager"))).toEqual([]);
     expect(dialog.props("open")).toBe(false);
     expect(w.emitted("submit")).toHaveLength(1);
+  });
+
+  it("o retrato mudou depois da assinatura: o aviso e 'Pedir autorização' voltam", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: { ...props(), managerApproved: true } });
+    expect(w.text()).not.toContain("Esta venda precisa de um gerente.");
+    expect(w.text()).toContain("Validar");
+    await w.setProps({ managerApproved: false });
+    expect(w.text()).toContain("Esta venda precisa de um gerente.");
+    expect(w.text()).toContain("Pedir autorização");
   });
 
   it("fechar o diálogo com erro na tela pede para limpar o erro", async () => {

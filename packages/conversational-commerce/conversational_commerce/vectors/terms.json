@@ -1,0 +1,1003 @@
+{
+  "format": "cc.vectors/1",
+  "contract": "cc.terms_document",
+  "cases": [
+    {
+      "name": "terms-basic",
+      "description": "Um item, retirada, sem ajuste.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216"
+      },
+      "expect": {
+        "result": "valid",
+        "canonical": "{\"cause_id\":\"evt-0001\",\"environment\":\"test\",\"episode_id\":\"ep-0001\",\"fulfillment\":{\"mode\":\"pickup\"},\"id\":\"rec-terms-0001\",\"items\":[{\"line_total\":{\"amount_minor\":1500,\"currency\":\"BRL\"},\"quantity\":{\"unit\":\"unit\",\"value\":\"2\"},\"ref\":\"SKU-A\",\"unit_price\":{\"amount_minor\":750,\"currency\":\"BRL\"}}],\"kind\":\"TermsDocument\",\"occurred_at\":\"2026-11-18T14:00:00.000000Z\",\"producer\":{\"name\":\"reference-commerce\",\"version\":\"1.0\"},\"recipient\":{\"subject_ref\":\"customer-0001\"},\"schema\":\"cc.terms_document\",\"schema_version\":\"1.0\",\"tenant\":\"tenant-a\",\"terms_id\":\"terms-0001\",\"total\":{\"amount_minor\":1500,\"currency\":\"BRL\"},\"trace_id\":\"trace-0001\",\"valid_until\":\"2026-11-18T14:30:00.000000Z\",\"version\":1}",
+        "hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216"
+      }
+    },
+    {
+      "name": "terms-rich",
+      "description": "Duas linhas (uma em kg, decimal em texto), frete e desconto como ajuste, janela de entrega, condições com booleano, texto não ASCII com quebra de linha e objeto com null.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0002",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0002",
+        "version": 3,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          },
+          {
+            "ref": "SKU-B",
+            "quantity": {
+              "value": "0.35",
+              "unit": "kg"
+            },
+            "unit_price": {
+              "amount_minor": 8990,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 3147,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 4947,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001",
+          "contact_ref": "contact-0001"
+        },
+        "fulfillment": {
+          "mode": "delivery",
+          "address_ref": "address-0001",
+          "window_start": "2026-11-18T17:00:00.000000Z",
+          "window_end": "2026-11-18T18:00:00.000000Z"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "adjustments": [
+          {
+            "code": "delivery_fee",
+            "amount": {
+              "amount_minor": 800,
+              "currency": "BRL"
+            }
+          },
+          {
+            "code": "discount",
+            "amount": {
+              "amount_minor": -500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "conditions": [
+          {
+            "code": "no_returns_on_perishables",
+            "value": true
+          },
+          {
+            "code": "note",
+            "value": "Entrega até às 18h\nSem troca: café & pão ☕"
+          },
+          {
+            "code": "substitution",
+            "value": {
+              "allowed": false,
+              "max_items": 0,
+              "fallback": null
+            }
+          }
+        ],
+        "hash": "sha256:88cdc4b1d4c49c3aaf581e7ee2d9dcf3c333933cd22b8e2ddd2e05db587e269d"
+      },
+      "expect": {
+        "result": "valid",
+        "canonical": "{\"adjustments\":[{\"amount\":{\"amount_minor\":800,\"currency\":\"BRL\"},\"code\":\"delivery_fee\"},{\"amount\":{\"amount_minor\":-500,\"currency\":\"BRL\"},\"code\":\"discount\"}],\"cause_id\":\"evt-0001\",\"conditions\":[{\"code\":\"no_returns_on_perishables\",\"value\":true},{\"code\":\"note\",\"value\":\"Entrega até às 18h\\nSem troca: café & pão ☕\"},{\"code\":\"substitution\",\"value\":{\"allowed\":false,\"fallback\":null,\"max_items\":0}}],\"environment\":\"test\",\"episode_id\":\"ep-0001\",\"fulfillment\":{\"address_ref\":\"address-0001\",\"mode\":\"delivery\",\"window_end\":\"2026-11-18T18:00:00.000000Z\",\"window_start\":\"2026-11-18T17:00:00.000000Z\"},\"id\":\"rec-terms-0002\",\"items\":[{\"line_total\":{\"amount_minor\":1500,\"currency\":\"BRL\"},\"quantity\":{\"unit\":\"unit\",\"value\":\"2\"},\"ref\":\"SKU-A\",\"unit_price\":{\"amount_minor\":750,\"currency\":\"BRL\"}},{\"line_total\":{\"amount_minor\":3147,\"currency\":\"BRL\"},\"quantity\":{\"unit\":\"kg\",\"value\":\"0.35\"},\"ref\":\"SKU-B\",\"unit_price\":{\"amount_minor\":8990,\"currency\":\"BRL\"}}],\"kind\":\"TermsDocument\",\"occurred_at\":\"2026-11-18T14:00:00.000000Z\",\"producer\":{\"name\":\"reference-commerce\",\"version\":\"1.0\"},\"recipient\":{\"contact_ref\":\"contact-0001\",\"subject_ref\":\"customer-0001\"},\"schema\":\"cc.terms_document\",\"schema_version\":\"1.0\",\"tenant\":\"tenant-a\",\"terms_id\":\"terms-0002\",\"total\":{\"amount_minor\":4947,\"currency\":\"BRL\"},\"trace_id\":\"trace-0001\",\"valid_until\":\"2026-11-18T14:30:00.000000Z\",\"version\":3}",
+        "hash": "sha256:88cdc4b1d4c49c3aaf581e7ee2d9dcf3c333933cd22b8e2ddd2e05db587e269d"
+      }
+    },
+    {
+      "name": "terms-basic-recorded",
+      "description": "O mesmo documento de terms-basic depois da fronteira de persistência: recorded_at fica fora do hash, e o hash é o mesmo.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216",
+        "recorded_at": "2026-11-18T14:00:01.250000Z"
+      },
+      "expect": {
+        "result": "valid",
+        "canonical": "{\"cause_id\":\"evt-0001\",\"environment\":\"test\",\"episode_id\":\"ep-0001\",\"fulfillment\":{\"mode\":\"pickup\"},\"id\":\"rec-terms-0001\",\"items\":[{\"line_total\":{\"amount_minor\":1500,\"currency\":\"BRL\"},\"quantity\":{\"unit\":\"unit\",\"value\":\"2\"},\"ref\":\"SKU-A\",\"unit_price\":{\"amount_minor\":750,\"currency\":\"BRL\"}}],\"kind\":\"TermsDocument\",\"occurred_at\":\"2026-11-18T14:00:00.000000Z\",\"producer\":{\"name\":\"reference-commerce\",\"version\":\"1.0\"},\"recipient\":{\"subject_ref\":\"customer-0001\"},\"schema\":\"cc.terms_document\",\"schema_version\":\"1.0\",\"tenant\":\"tenant-a\",\"terms_id\":\"terms-0001\",\"total\":{\"amount_minor\":1500,\"currency\":\"BRL\"},\"trace_id\":\"trace-0001\",\"valid_until\":\"2026-11-18T14:30:00.000000Z\",\"version\":1}",
+        "hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216"
+      }
+    },
+    {
+      "name": "terms-float-amount",
+      "description": "Preço como número de ponto flutuante (750.0): dinheiro é inteiro na menor unidade.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750.0,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "items.0.unit_price.amount_minor"
+      }
+    },
+    {
+      "name": "terms-float-quantity",
+      "description": "Quantidade como número (0.35) e não como decimal em texto.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0002",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0002",
+        "version": 3,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          },
+          {
+            "ref": "SKU-B",
+            "quantity": {
+              "value": 0.35,
+              "unit": "kg"
+            },
+            "unit_price": {
+              "amount_minor": 8990,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 3147,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 4947,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001",
+          "contact_ref": "contact-0001"
+        },
+        "fulfillment": {
+          "mode": "delivery",
+          "address_ref": "address-0001",
+          "window_start": "2026-11-18T17:00:00.000000Z",
+          "window_end": "2026-11-18T18:00:00.000000Z"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "adjustments": [
+          {
+            "code": "delivery_fee",
+            "amount": {
+              "amount_minor": 800,
+              "currency": "BRL"
+            }
+          },
+          {
+            "code": "discount",
+            "amount": {
+              "amount_minor": -500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "conditions": [
+          {
+            "code": "no_returns_on_perishables",
+            "value": true
+          },
+          {
+            "code": "note",
+            "value": "Entrega até às 18h\nSem troca: café & pão ☕"
+          },
+          {
+            "code": "substitution",
+            "value": {
+              "allowed": false,
+              "max_items": 0,
+              "fallback": null
+            }
+          }
+        ],
+        "hash": "sha256:88cdc4b1d4c49c3aaf581e7ee2d9dcf3c333933cd22b8e2ddd2e05db587e269d"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "items.1.quantity.value"
+      }
+    },
+    {
+      "name": "terms-quantity-not-normalized",
+      "description": "Decimal em texto fora da forma normalizada (zero à direita).",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0002",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0002",
+        "version": 3,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          },
+          {
+            "ref": "SKU-B",
+            "quantity": {
+              "value": "0.350",
+              "unit": "kg"
+            },
+            "unit_price": {
+              "amount_minor": 8990,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 3147,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 4947,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001",
+          "contact_ref": "contact-0001"
+        },
+        "fulfillment": {
+          "mode": "delivery",
+          "address_ref": "address-0001",
+          "window_start": "2026-11-18T17:00:00.000000Z",
+          "window_end": "2026-11-18T18:00:00.000000Z"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "adjustments": [
+          {
+            "code": "delivery_fee",
+            "amount": {
+              "amount_minor": 800,
+              "currency": "BRL"
+            }
+          },
+          {
+            "code": "discount",
+            "amount": {
+              "amount_minor": -500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "conditions": [
+          {
+            "code": "no_returns_on_perishables",
+            "value": true
+          },
+          {
+            "code": "note",
+            "value": "Entrega até às 18h\nSem troca: café & pão ☕"
+          },
+          {
+            "code": "substitution",
+            "value": {
+              "allowed": false,
+              "max_items": 0,
+              "fallback": null
+            }
+          }
+        ],
+        "hash": "sha256:d2d8f2636f737d73bc9de037c3f4845974579aaa1b959206cff038b6077538d2"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "items.1.quantity.value"
+      }
+    },
+    {
+      "name": "terms-tampered",
+      "description": "Preço da linha trocado depois do hash: o hash não confere.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 700,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1400,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1400,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "hash": "sha256:2be725ad16e10f6fca738960579d2e09c7c8b3551850bc9221089f9e267b8216"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "hash"
+      }
+    },
+    {
+      "name": "terms-missing-hash",
+      "description": "Documento de termos sem hash.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "hash"
+      }
+    },
+    {
+      "name": "terms-unknown-field",
+      "description": "Campo desconhecido num contrato estrito, mesmo com o hash recalculado.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "gift_wrap": true,
+        "hash": "sha256:75669ecefefacadc1b5367cc90be83ee4f38b3b68381049259f11900ecfbd3a8"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": ""
+      }
+    },
+    {
+      "name": "terms-minor-above",
+      "description": "MENOR acima (1.1) num contrato estrito: versão não suportada.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.1",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "hash": "sha256:a326b62b74f5d775438ae6184e229749116c69708af753040633bef1ddd5adf9"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "unsupported_schema",
+        "path": "schema_version"
+      }
+    },
+    {
+      "name": "terms-major-above",
+      "description": "MAIOR acima (2.0).",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "2.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "hash": "sha256:4a75c4e53c4bd45a94714c060c3c58052a03762c0b11520eb0a04ad0b3e1636a"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "unsupported_schema",
+        "path": "schema_version"
+      }
+    },
+    {
+      "name": "terms-total-mismatch",
+      "description": "Total diferente de linhas mais ajustes.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0002",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0002",
+        "version": 3,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          },
+          {
+            "ref": "SKU-B",
+            "quantity": {
+              "value": "0.35",
+              "unit": "kg"
+            },
+            "unit_price": {
+              "amount_minor": 8990,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 3147,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 4900,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001",
+          "contact_ref": "contact-0001"
+        },
+        "fulfillment": {
+          "mode": "delivery",
+          "address_ref": "address-0001",
+          "window_start": "2026-11-18T17:00:00.000000Z",
+          "window_end": "2026-11-18T18:00:00.000000Z"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "adjustments": [
+          {
+            "code": "delivery_fee",
+            "amount": {
+              "amount_minor": 800,
+              "currency": "BRL"
+            }
+          },
+          {
+            "code": "discount",
+            "amount": {
+              "amount_minor": -500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "conditions": [
+          {
+            "code": "no_returns_on_perishables",
+            "value": true
+          },
+          {
+            "code": "note",
+            "value": "Entrega até às 18h\nSem troca: café & pão ☕"
+          },
+          {
+            "code": "substitution",
+            "value": {
+              "allowed": false,
+              "max_items": 0,
+              "fallback": null
+            }
+          }
+        ],
+        "hash": "sha256:0d779c437496e8b01ebbc6c2964291ba68a7e574607b0f1e285992ca63ec51c4"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "total"
+      }
+    },
+    {
+      "name": "terms-mixed-currency",
+      "description": "Uma linha em outra moeda.",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "USD"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "USD"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00.000000Z",
+        "hash": "sha256:9042a395bc5a4b726165400dbd9871b7d836cfc89c5bcc1c8aee1c1e723b1bb2"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "items.0.line_total.currency"
+      }
+    },
+    {
+      "name": "terms-instant-without-microseconds",
+      "description": "Instante fora da forma canônica (sem os seis dígitos de microssegundo).",
+      "document": {
+        "schema": "cc.terms_document",
+        "kind": "TermsDocument",
+        "id": "rec-terms-0001",
+        "tenant": "tenant-a",
+        "environment": "test",
+        "trace_id": "trace-0001",
+        "cause_id": "evt-0001",
+        "occurred_at": "2026-11-18T14:00:00.000000Z",
+        "producer": {
+          "name": "reference-commerce",
+          "version": "1.0"
+        },
+        "episode_id": "ep-0001",
+        "schema_version": "1.0",
+        "terms_id": "terms-0001",
+        "version": 1,
+        "items": [
+          {
+            "ref": "SKU-A",
+            "quantity": {
+              "value": "2",
+              "unit": "unit"
+            },
+            "unit_price": {
+              "amount_minor": 750,
+              "currency": "BRL"
+            },
+            "line_total": {
+              "amount_minor": 1500,
+              "currency": "BRL"
+            }
+          }
+        ],
+        "total": {
+          "amount_minor": 1500,
+          "currency": "BRL"
+        },
+        "recipient": {
+          "subject_ref": "customer-0001"
+        },
+        "fulfillment": {
+          "mode": "pickup"
+        },
+        "valid_until": "2026-11-18T14:30:00Z",
+        "hash": "sha256:c028e9300c15bd1c0be010fc800b03c307d98b81aabe343e5b3547539c91d01f"
+      },
+      "expect": {
+        "result": "rejected",
+        "code": "invalid_content",
+        "path": "valid_until"
+      }
+    }
+  ]
+}

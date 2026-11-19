@@ -1324,7 +1324,8 @@
       ],
       "domains": [
         "offerman",
-        "orderman"
+        "orderman",
+        "stockman"
       ],
       "ports": [
         "shopman.offerman.protocols.projection"
@@ -6212,6 +6213,41 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_services_semantic_units_a_m.py::test_weekly_windows_returns_only_valid_declared_windows"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": true
+    },
+    {
+      "id": "calendar.day-shifts",
+      "question": "Em quais turnos a loja vende neste dia, descontados os intervalos?",
+      "owner": "calendar.day-shifts",
+      "responsibility": "leitura",
+      "public_entrypoint": "shopman.shop.services.business_calendar:shifts_for",
+      "authoritative_symbols": [
+        "shopman.shop.services.business_calendar:shifts_for"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/business_calendar.py",
+          "symbols": [
+            "_day_shifts",
+            "shifts_for",
+            "weekly_shifts"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_turnos_por_dia.py::test_o_intervalo_parte_o_dia_em_turnos"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -14194,7 +14230,9 @@
             "_GATEWAY_NAMES",
             "_GATEWAY_REFUSALS",
             "_REFUND_ALL_STATUSES",
-            "_PAYMAN_REFUND_REASONS"
+            "_PAYMAN_REFUND_REASONS",
+            "retained_q",
+            "refund_ceiling_q"
           ]
         }
       ],
@@ -14836,6 +14874,13 @@
           "symbols": [
             "build_session_ops",
             "validate_manager_approval",
+            "_payload_over_plan",
+            "over_plan_scope",
+            "_scope_qty",
+            "_over_plan_numbers",
+            "_over_plan_recovery",
+            "pay_at_pickup_other_day",
+            "_refuse_pay_at_pickup_other_day",
             "validate_manager_override",
             "_MANAGER_PIN_VERDICTS",
             "manager_pin_checked_before_transaction",
@@ -16537,6 +16582,8 @@
             "availability_decisions_from_holds",
             "alert_demand_over_plan",
             "_qty_text",
+            "plan_backing_on",
+            "over_plan_lines",
             "hold",
             "fulfill",
             "release",
@@ -19296,6 +19343,159 @@
       "test_gap_reason": null,
       "policy": true,
       "out_of_extraction": false
+    },
+    {
+      "entrypoint_kind": "symbol",
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "test_gap_reason": null,
+      "out_of_extraction": false,
+      "id": "shop.no-show-policy",
+      "question": "A partir de quando o Gestor pode encerrar como não retirado um pedido de retirada que ficou pronto (tolerância, corte do pago)?",
+      "owner": "order.no-show-policy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.no_show_policy:resolve_no_show_policy",
+      "authoritative_symbols": [
+        "shopman.shop.policies.no_show_policy:NoShowPolicy"
+      ],
+      "sources": [
+        {
+          "path": "shopman/shop/policies/no_show_policy.py",
+          "symbols": [
+            "DEFAULT_TOLERANCE_MINUTES",
+            "DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE",
+            "DEFAULT_PAID_WAITS_CUTOFF",
+            "BLOCK",
+            "NoShowPolicy",
+            "_minutes",
+            "resolve_no_show_policy"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_no_show_service.py::test_policy_reads_the_shop_block_and_ignores_garbage"
+      ],
+      "policy": true
+    },
+    {
+      "entrypoint_kind": "symbol",
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "test_gap_reason": null,
+      "out_of_extraction": false,
+      "id": "order.no-show-customer-copy",
+      "question": "O que o cliente lê quando o pedido dele é encerrado como não retirado, e o que a frase diz sobre o dinheiro?",
+      "owner": "order.no-show-customer-copy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.no_show_reason:customer_text",
+      "authoritative_symbols": [
+        "shopman.shop.policies.no_show_reason:customer_text"
+      ],
+      "sources": [
+        {
+          "path": "shopman/shop/policies/no_show_reason.py",
+          "symbols": [
+            "KEY",
+            "LABEL",
+            "BASE_TEXT",
+            "customer_text",
+            "_amount"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_no_show_service.py::test_preview_says_everything_before_the_gesture_and_writes_nothing"
+      ],
+      "policy": true
+    },
+    {
+      "entrypoint_kind": "symbol",
+      "domains": [
+        "orderman"
+      ],
+      "ports": [
+        "adapter:catalog",
+        "adapter:stock"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "test_gap_reason": null,
+      "out_of_extraction": false,
+      "id": "order.no-show",
+      "question": "O pedido de retirada pronto que o cliente não veio buscar: quem pode encerrá-lo, a partir de quando, o que volta à venda, o que é perda e quanto do dinheiro volta ao cliente?",
+      "owner": "order.no-show",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.no_show:mark_not_picked_up",
+      "authoritative_symbols": [
+        "shopman.shop.services.no_show:mark_not_picked_up",
+        "shopman.shop.services.no_show:decide_destiny"
+      ],
+      "sources": [
+        {
+          "path": "shopman/shop/services/no_show.py",
+          "symbols": [
+            "ORDER_DATA_KEY",
+            "REASON",
+            "RESTOCK",
+            "LOSS",
+            "WHY_MADE_TO_ORDER",
+            "WHY_NO_STOCK",
+            "WHY_LOT_EXPIRED",
+            "MOVE_SOURCE",
+            "_GATEWAY_REFUND_DESTINATION",
+            "NoShowRefused",
+            "NoShowStale",
+            "LineFacts",
+            "decide_destiny",
+            "_decimal",
+            "_decimal_text",
+            "_merchandise_items",
+            "_components",
+            "_hold_entries",
+            "_line_facts",
+            "next_selling_day",
+            "line_decisions",
+            "money_split",
+            "_refund_destination",
+            "money_sentence",
+            "is_candidate",
+            "eligibility_reason",
+            "_paid_q",
+            "_commitment_day",
+            "release_gate",
+            "_when",
+            "block_reason",
+            "_plan",
+            "_revision",
+            "revision",
+            "preview",
+            "mark_not_picked_up",
+            "stock_plan"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",
+        "shopman/shop/tests/test_no_show_service.py::test_destiny_is_decided_from_facts_in_one_place",
+        "shopman/shop/tests/test_no_show_stock.py::test_the_whole_gesture_moves_the_stock_through_the_cancellation"
+      ],
+      "policy": false
     },
     {
       "id": "preorder.closed-day-orders",

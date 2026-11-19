@@ -80,6 +80,11 @@ from shopman.shop.operator_capacity_policy import (
     SUSTAIN_MINUTES_CEILING,
     SUSTAIN_MINUTES_FLOOR,
 )
+from shopman.shop.policies.no_show_policy import (
+    DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE,
+    DEFAULT_TOLERANCE_MINUTES,
+    NoShowPolicy,
+)
 from shopman.shop.policies.preorder_kitchen_policy import (
     DEFAULT_LEAD_MINUTES,
     DEFAULT_PREP_MINUTES,
@@ -371,6 +376,56 @@ def _dynamic_collection_choices() -> tuple[tuple[str, str], ...]:
     return tuple(choices)
 
 
+OPENING_BREAKS_HELP = (
+    "Intervalos dentro do horário, separados por vírgula (ex.: 12:00-13:00, 16:00-17:00). "
+    "Cada intervalo divide o dia em turnos; a loja, o checkout e o iFood ficam fechados nele."
+)
+
+
+def _format_breaks(entry) -> str:
+    breaks = entry.get("breaks") if isinstance(entry, dict) else None
+    if not isinstance(breaks, list):
+        return ""
+    return ", ".join(
+        f"{_format_admin_time(item.get('start'))}-{_format_admin_time(item.get('end'))}"
+        for item in breaks
+        if isinstance(item, dict)
+    )
+
+
+def _parse_breaks(raw: str, *, opens_at, closes_at, label: str) -> list[dict]:
+    """``"12:00-13:00, 16:00-17:00"`` → ``[{"start": "12:00", "end": "13:00"}, ...]``.
+
+    Recusa o que o iFood recusaria (turno sobreposto) e o que não forma turno:
+    pausa fora do horário do dia, que encosta na abertura ou no fechamento, ou
+    que se sobrepõe a outra.
+    """
+    from datetime import time as time_type
+
+    parsed: list[tuple] = []
+    for chunk in [part.strip() for part in (raw or "").split(",") if part.strip()]:
+        try:
+            start_raw, end_raw = (piece.strip() for piece in chunk.split("-"))
+            start, end = time_type.fromisoformat(start_raw), time_type.fromisoformat(end_raw)
+        except ValueError:
+            raise forms.ValidationError(
+                f"Em {label}, o intervalo “{chunk}” não está no formato 12:00-13:00."
+            ) from None
+        if start >= end:
+            raise forms.ValidationError(f"Em {label}, o intervalo “{chunk}” termina antes de começar.")
+        if opens_at and closes_at and not (opens_at < start and end < closes_at):
+            raise forms.ValidationError(
+                f"Em {label}, o intervalo “{chunk}” precisa ficar dentro do horário, "
+                "sem encostar na abertura nem no fechamento."
+            )
+        parsed.append((start, end))
+    parsed.sort()
+    for (_, previous_end), (start, _) in zip(parsed, parsed[1:], strict=False):
+        if start < previous_end:
+            raise forms.ValidationError(f"Em {label}, dois intervalos se sobrepõem.")
+    return [{"start": _format_admin_time(start), "end": _format_admin_time(end)} for start, end in parsed]
+
+
 def _format_admin_time(value) -> str:
     if isinstance(value, time):
         return value.strftime("%H:%M")  # hora-ok: valor de campo de formulário e do JSON salvo
@@ -500,6 +555,7 @@ def _parse_markup_by_collection(raw: str) -> dict[str, int]:
 
 #: Teto de cada tempo da encomenda na Cozinha (preparo, antecedência), em minutos.
 MAX_PREORDER_KITCHEN_MINUTES = 720
+MAX_NO_SHOW_MINUTES = 1440
 
 
 def _parse_prep_minutes_by_sku(raw: str) -> dict[str, int]:
@@ -1026,6 +1082,39 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             "usa o maior preparo entre eles. Produto fora da lista usa o preparo padrão."
         ),
     )
+    fields["defaults_no_show_tolerance_minutes"] = forms.IntegerField(
+        label="Tolerância depois da hora combinada (min)",
+        required=False,
+        min_value=0,
+        max_value=MAX_NO_SHOW_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_TOLERANCE_MINUTES)}),
+        help_text=(
+            "Quanto a casa espera antes de poder marcar um pedido como não retirado. Com 60 min, a "
+            "retirada combinada para as 17h libera às 18h. Pedido sem hora combinada conta a partir "
+            f"de quando ficou pronto. Em branco = {DEFAULT_TOLERANCE_MINUTES} min."
+        ),
+    )
+    fields["defaults_no_show_cutoff_minutes_before_close"] = forms.IntegerField(
+        label="Corte do pedido pago: minutos antes de fechar",
+        required=False,
+        min_value=0,
+        max_value=MAX_NO_SHOW_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE)}),
+        help_text=(
+            "Pedido pago só pode ser marcado como não retirado a partir do corte do dia combinado: "
+            "o fechamento da loja menos estes minutos. "
+            f"Em branco = {DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE} (o corte é o fechamento)."
+        ),
+    )
+    fields["defaults_no_show_paid_waits_cutoff"] = forms.BooleanField(
+        label="Pedido pago espera o corte do dia",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=(
+            "Ligado, o pedido pago só libera no corte do dia combinado, como dizem os Termos "
+            "(\"até o fim do expediente\"). Desligado, o pago segue a mesma tolerância do não pago."
+        ),
+    )
     fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
         label="Mínimo de pessoas elegíveis numa campanha de WhatsApp",
         required=False,
@@ -1404,6 +1493,48 @@ class ShopForm(forms.ModelForm):
         input_formats=["%H:%M"],
         widget=UnfoldAdminTimeWidget(format="%H:%M"),
     )
+    opening_hours_monday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_tuesday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_wednesday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_thursday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_friday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_saturday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_sunday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
 
     # Lista de URLs editada como inputs add/remove (ArrayWidget). Declarado
     # explicitamente para entregar a lista crua ao widget — o JSONField default
@@ -1466,6 +1597,7 @@ class ShopForm(forms.ModelForm):
                 self.fields[_opening_field(day, "status")].initial = "open" if opens_at and closes_at else "closed"
                 self.fields[_opening_field(day, "open")].initial = opens_at
                 self.fields[_opening_field(day, "close")].initial = closes_at
+                self.fields[_opening_field(day, "breaks")].initial = _format_breaks(entry)
 
         self._set_defaults_initial(_shop_defaults(self.instance))
         self._set_integrations_initial(getattr(self.instance, "integrations", None) or {})
@@ -1697,6 +1829,12 @@ class ShopForm(forms.ModelForm):
                 f"{sku}: {minutes}" for sku, minutes in sorted(kitchen.prep_minutes_by_sku.items())
             )
 
+        if self._has("defaults_no_show_tolerance_minutes"):
+            no_show = NoShowPolicy.from_defaults(defaults)
+            self.fields["defaults_no_show_tolerance_minutes"].initial = no_show.tolerance_minutes
+            self.fields["defaults_no_show_cutoff_minutes_before_close"].initial = no_show.cutoff_minutes_before_close
+            self.fields["defaults_no_show_paid_waits_cutoff"].initial = no_show.paid_waits_cutoff
+
         if self._has("defaults_purchase_resale_markup_pct"):
             markup = ResaleMarkup.from_defaults(defaults)
             self.fields["defaults_purchase_resale_markup_pct"].initial = markup.default_pct
@@ -1740,6 +1878,12 @@ class ShopForm(forms.ModelForm):
                     raise forms.ValidationError(
                         f"Em {label}, o horário de abertura precisa ser anterior ao fechamento."
                     )
+                cleaned_data[_opening_field(day, "breaks")] = _parse_breaks(
+                    cleaned_data.get(_opening_field(day, "breaks")) or "",
+                    opens_at=opens_at,
+                    closes_at=closes_at,
+                    label=label,
+                )
         self._clean_defaults(cleaned_data)
         return cleaned_data
 
@@ -1880,6 +2024,11 @@ class ShopForm(forms.ModelForm):
                 day: {
                     "open": _format_admin_time(self.cleaned_data.get(_opening_field(day, "open"))),
                     "close": _format_admin_time(self.cleaned_data.get(_opening_field(day, "close"))),
+                    **(
+                        {"breaks": self.cleaned_data[_opening_field(day, "breaks")]}
+                        if self.cleaned_data.get(_opening_field(day, "breaks"))
+                        else {}
+                    ),
                 }
                 for day, _label in OPENING_HOUR_DAYS
                 if self.cleaned_data.get(_opening_field(day, "status")) == "open"
@@ -2349,6 +2498,17 @@ class ShopForm(forms.ModelForm):
             ) or {}
             defaults["preorder_kitchen"] = kitchen_cfg
 
+        if self._has("defaults_no_show_tolerance_minutes"):
+            no_show_cfg = dict(defaults.get("no_show") if isinstance(defaults.get("no_show"), dict) else {})
+            tolerance = self.cleaned_data.get("defaults_no_show_tolerance_minutes")
+            cutoff = self.cleaned_data.get("defaults_no_show_cutoff_minutes_before_close")
+            no_show_cfg["tolerance_minutes"] = int(tolerance) if tolerance is not None else DEFAULT_TOLERANCE_MINUTES
+            no_show_cfg["cutoff_minutes_before_close"] = (
+                int(cutoff) if cutoff is not None else DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE
+            )
+            no_show_cfg["paid_waits_cutoff"] = bool(self.cleaned_data.get("defaults_no_show_paid_waits_cutoff"))
+            defaults["no_show"] = no_show_cfg
+
         return defaults
 
 
@@ -2540,13 +2700,13 @@ _OPERATION_FIELDSETS = (
             "fields": (
                 "currency",
                 "timezone",
-                ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close"),
-                ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close"),
-                ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close"),
-                ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close"),
-                ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close"),
-                ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close"),
-                ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close"),
+                ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close", "opening_hours_monday_breaks"),
+                ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close", "opening_hours_tuesday_breaks"),
+                ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close", "opening_hours_wednesday_breaks"),
+                ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close", "opening_hours_thursday_breaks"),
+                ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close", "opening_hours_friday_breaks"),
+                ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close", "opening_hours_saturday_breaks"),
+                ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close", "opening_hours_sunday_breaks"),
                 ("staff_hours_start", "staff_hours_end"),
             ),
             "description": (
@@ -2634,6 +2794,19 @@ _ORDERING_FIELDSETS = (
                 "No dia da encomenda, o card chega à Cozinha na hora combinada menos o preparo e a "
                 "antecedência. Chegar não é começar: o posto ainda toca em Iniciar. Encomenda sem "
                 "hora combinada chega na abertura da loja."
+            ),
+        },
+    ),
+    (
+        "Pedido não retirado",
+        {
+            "fields": (
+                ("defaults_no_show_tolerance_minutes", "defaults_no_show_cutoff_minutes_before_close"),
+                "defaults_no_show_paid_waits_cutoff",
+            ),
+            "description": (
+                "Quando o Gestor passa a oferecer Não retirado num pedido de retirada que ficou pronto. "
+                "O que ainda pode voltar à venda é devolvido ao cliente; o que se perdeu fica com a loja."
             ),
         },
     ),

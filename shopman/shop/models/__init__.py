@@ -37,6 +37,7 @@ from .campaign import (
 from .catalog_binding import CatalogBinding, CatalogSnapshot
 from .catalog_sync import CatalogImageUpload, CatalogSyncState, SyncStatus
 from .channel import Channel
+from .channel_addon import ChannelAddon, ChannelAddonGroup
 from .concierge import (
     Conversation,
     ConversationBinding,
@@ -132,6 +133,8 @@ __all__ = [
     "CatalogSnapshot",
     "CatalogSyncState",
     "CatalogImageUpload",
+    "ChannelAddon",
+    "ChannelAddonGroup",
     "SyncStatus",
     "NotificationTemplate",
     "QualityDefect",

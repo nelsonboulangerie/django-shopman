@@ -34,7 +34,7 @@ jobs:
   # Quality, meia-correção e os agregadores rodam sempre.
   scope:
     name: Escopo do PR
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -55,7 +55,7 @@ jobs:
 
   quality:
     name: Quality + deploy contract
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -141,8 +141,9 @@ jobs:
           python scripts/check_canonical_docs.py
 
       # Gate de nascimento dos compromissos: PR que adia trabalho numa seção
-      # "Fora deste PR / Seguimento / Pendências" precisa citar um C-AAAA-NNN
-      # que exista em docs/coordination/COMMITMENTS.md. Sem isto, o adiamento
+      # "Fora deste PR / Seguimento / Pendências" precisa citar um DEV-AAAA-NNN
+      # que exista em docs/coordination/commitments/ (um arquivo por entrada;
+      # a tabela COMMITMENTS.md está congelada até 25/11). Sem isto, o adiamento
       # morre no merge (foi o #2298: dois itens reais, sem ID, dono ou data).
       # No merge_group não há corpo de PR; o PR já passou por aqui antes.
       - name: "Compromissos: adiamento tem ID, dono, prazo e prova"
@@ -304,7 +305,7 @@ jobs:
   # repositório trava para sempre.
   silent-swallow-gate:
     name: Gate da meia-correção
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -344,7 +345,7 @@ jobs:
     needs: scope
     # Escopo que falha (saída vazia) RODA: só `false` explícito pula.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.python != 'false') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     steps:
@@ -383,7 +384,7 @@ jobs:
     if: ${{ !cancelled() }}
     env:
       RUN_SUITE: ${{ github.event_name != 'pull_request' || needs.scope.outputs.python != 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ O relógio do step precisa de folga sobre a suíte mais lenta: em
     # 27/08 o test-backstage passou VERDE em 20min04s e o timeout de 20 min
     # derrubou o job — suíte verde virou check vermelho e a fila de merge
@@ -467,7 +468,7 @@ jobs:
     name: Backstage ${{ matrix.shard }}
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -509,7 +510,7 @@ jobs:
   # trocar o contexto obrigatório antes — ver o comentário acima.
   tests-backstage:
     name: Testes (test-backstage)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     needs: tests-backstage-shards
     if: always()
     timeout-minutes: 5
@@ -544,7 +545,7 @@ jobs:
     name: Shop ${{ matrix.shard }}
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -586,7 +587,7 @@ jobs:
   # trocar o contexto obrigatório antes.
   tests-shop:
     name: Testes (test-shop)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     needs: tests-shop-shards
     if: always()
     timeout-minutes: 5
@@ -612,7 +613,7 @@ jobs:
     # Pesado: só na fila. No PR o job inteiro é pulado (verde, mesmo nome);
     # fora dele, `always()` mantém a conferência explícita dos shards abaixo.
     if: always() && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Todos os shards de teste passaram
@@ -666,7 +667,7 @@ jobs:
     name: Docker deploy image
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.
@@ -719,7 +720,7 @@ jobs:
     name: PostgreSQL + Redis runtime stress gate
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.

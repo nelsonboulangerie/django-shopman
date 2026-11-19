@@ -22,8 +22,8 @@ from shopman.orderman.models import Directive, Order, OrderItem
 from shopman.shop import lifecycle
 from shopman.shop.directives import PREORDER_ACTIVATE
 from shopman.shop.lifecycle import (
-    _physical_work_deferred,
     activate_preorder,
+    awaits_kitchen_release,
     preorder_activation_at,
     release_preorder_now,
 )
@@ -145,9 +145,9 @@ def test_on_the_day_the_preorder_waits_until_its_time(day):
 
     with patch("django.utils.timezone.localdate", return_value=day):
         with patch("django.utils.timezone.now", return_value=_at(day, 16, 14)):
-            assert _physical_work_deferred(order) is True
+            assert awaits_kitchen_release(order) is True
         with patch("django.utils.timezone.now", return_value=_at(day, 16, 15)):
-            assert _physical_work_deferred(order) is False
+            assert awaits_kitchen_release(order) is False
 
 
 def test_same_day_order_without_alarm_goes_to_kitchen_on_accept(day):
@@ -157,7 +157,7 @@ def test_same_day_order_without_alarm_goes_to_kitchen_on_accept(day):
     with patch("django.utils.timezone.localdate", return_value=day), patch(
         "django.utils.timezone.now", return_value=_at(day, 9)
     ):
-        assert _physical_work_deferred(order) is False
+        assert awaits_kitchen_release(order) is False
 
 
 def test_accepting_a_future_preorder_arms_the_alarm_at_kitchen_time(day):

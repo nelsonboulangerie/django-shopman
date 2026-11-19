@@ -23,6 +23,7 @@ type Result = { outcome?: string; detail?: string; count?: number } & Omit<
 const ORDER_OPERATION_SUBJECT: Record<string, string> = {
   cancel: "o cancelamento foi gravado",
   return: "a devolução foi gravada",
+  "no-show": "o pedido foi encerrado como não retirado",
   reject: "a recusa foi gravada",
   confirm: "o aceite foi gravado",
   advance: "o avanço do pedido foi gravado",

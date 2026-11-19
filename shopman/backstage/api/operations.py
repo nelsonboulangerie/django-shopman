@@ -607,6 +607,22 @@ def _delivery_fee_waiver_payload(waiver: dict | None) -> dict | None:
     }
 
 
+def _qty_number(value) -> int | float:
+    number = Decimal(str(value or 0))
+    return int(number) if number == number.to_integral_value() else float(number)
+
+
+def _over_plan_line_payload(line: dict) -> dict:
+    return {
+        "sku": line["sku"],
+        "name": line["name"],
+        "date": line["date"],
+        "requested_qty": _qty_number(line["requested_qty"]),
+        "planned_qty": _qty_number(line["planned_qty"]),
+        "unclaimed_qty": _qty_number(line["unclaimed_qty"]),
+    }
+
+
 def _pos_sale_review_payload(review) -> dict:
     return {
         "intent_version": review.intent_version,
@@ -640,6 +656,9 @@ def _pos_sale_review_payload(review) -> dict:
         # Conta na casa acima do limite: saldo de hoje, limite e quanto passa,
         # para o aviso e o diálogo do gerente dizerem o que ele assina.
         "house_account_limit": review.house_account_limit,
+        # Encomenda acima do plano da data (D-041): por linha, o pedido, a fornada
+        # planejada e o que dela segue sem encomenda, para o Validar travar e o gerente ver os números.
+        "preorder_over_plan": [_over_plan_line_payload(line) for line in review.preorder_over_plan],
         "receipt_channels": list(review.receipt_channels),
         "fiscal_tax_id_requested": review.fiscal_tax_id_requested,
         "warnings": list(review.warnings),
@@ -3122,6 +3141,91 @@ class OrderReturnView(_OrderActionBase):
         return self._context_response(
             request, order, "return", {"items": items, "reason": reason}, execute, prepare=prepare,
         )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="No-show preview: what goes back on sale, what is lost and where the money goes",
+        responses={200: OpenApiResponse(description="No-show preview.")},
+    ),
+)
+class OrderNoShowPreviewView(OperationalObservationMixin, APIView):
+    """A prévia do "Não retirado" (WP-G11): o destino de cada linha, quanto volta ao
+    cliente e por onde, quanto fica com a loja, o texto que o cliente vai ler e a ação
+    com a base que o comando confere."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_no_show import build_order_no_show
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(build_order_no_show(order, user=request.user))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Close a ready pickup order the customer never collected (manager's PIN)",
+        responses={200: OpenApiResponse(description="Order closed as not picked up.")},
+    ),
+)
+class OrderNoShowView(_OrderActionBase):
+    """Encerrar como não retirado (WP-G11): o dinheiro segue o produto.
+
+    ``POST {base_revision, expected_actor_id, manager_approval}``. Sempre com o PIN de
+    um Gerente escolhido da lista (ou o crachá): o gesto decide dinheiro do cliente e
+    perda de estoque. Não há corpo a escolher: o destino de cada linha é do servidor
+    (``no_show.decide_destiny``), e a base confere que o Gerente assinou o que a prévia
+    mostrou. O comando é ``no_show.mark_not_picked_up``; estoque, estorno e aviso saem
+    do cancelamento de sempre, lendo ``order.data["no_show"]``.
+    """
+
+    intention_operation = "no-show"
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import no_show
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        prepared: dict = {}
+
+        def prepare():
+            blocked = no_show.block_reason(order)
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "no_show_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_no_show",
+                    message="Não retirado pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            try:
+                block = no_show.mark_not_picked_up(
+                    order,
+                    actor=_actor(request),
+                    approved_by=prepared["approver"].get_username(),
+                    expected_revision=base,
+                )
+            except no_show.NoShowStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except no_show.NoShowRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund_q": block["refund_q"], "retained_q": block["retained_q"]}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(request, order, "no-show", {}, execute, prepare=prepare)
 
 
 @extend_schema_view(

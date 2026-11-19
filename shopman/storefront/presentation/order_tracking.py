@@ -26,6 +26,7 @@ from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.copy import CopyCatalog, build_copy
+from shopman.shop.projections.opening_hours import entry_shifts, format_shifts
 from shopman.shop.projections.order_tracking import (
     TrackingData,
     TrackingFulfillmentData,
@@ -517,8 +518,9 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
 
 
 def _list_subtotal_q(data: TrackingData) -> int:
-    """Os itens pelo preço de etiqueta: o que vem antes dos descontos na conta."""
-    return sum(item.line_total_q for item in data.items) + sum(line.amount_q for line in data.discount_lines)
+    """A soma das linhas da conta (com a promoção já abatida): o que vem antes
+    do cupom, dos pontos e da entrega."""
+    return sum(item.bill_line_total_q or item.line_total_q for item in data.items)
 
 
 def _schedule_display(data: TrackingData, when_display: str | None) -> str | None:
@@ -1555,8 +1557,9 @@ def _present_items(data: TrackingData) -> tuple[OrderItemProjection, ...]:
             sku=item.sku,
             name=item.name,
             qty=item.qty,
-            unit_price_display=f"R$ {format_money(item.unit_price_q)}",
-            total_display=f"R$ {format_money(item.line_total_q)}",
+            unit_price_display=f"R$ {format_money(item.bill_unit_price_q or item.unit_price_q)}",
+            total_display=f"R$ {format_money(item.bill_line_total_q or item.line_total_q)}",
+            full_total_display=f"R$ {format_money(item.full_line_total_q)}" if item.full_line_total_q else "",
         )
         for item in data.items
     )
@@ -1669,14 +1672,11 @@ def _format_opening_hours(opening_hours: dict) -> str:
     if not opening_hours:
         return ""
 
-    def _fmt_time(value: str) -> str:
-        return format_clock(value if ":" in value else f"{value}:00")
-
     day_hours: list[tuple[str, str]] = []
     for day in DAY_ORDER:
-        info = opening_hours.get(day)
-        if info and info.get("open") and info.get("close"):
-            day_hours.append((day, f"{_fmt_time(info['open'])} às {_fmt_time(info['close'])}"))
+        shifts = entry_shifts(opening_hours.get(day))
+        if shifts:
+            day_hours.append((day, format_shifts(shifts)))
         else:
             day_hours.append((day, "Fechado"))
 
