@@ -52,6 +52,32 @@ export interface OperatorInboxAlert {
   origin?: string;
   originIcon?: string;
   subject?: string;
+  /** O aviso se resolve com uma resposta escrita (a pergunta que a Concierge levou à
+   *  equipe): o campo, o gesto de enviar e, opcional, o gesto alternativo ("Assumir a
+   *  conversa"). O app executa por `answer`/`answerAlt` da fonte. */
+  answer?: OperatorInboxAnswerSpec;
+  /** A mensagem na janela do aviso com prazo, quando ela difere da caixa: lá o relógio
+   *  já diz o prazo, e a linha que o repete sai. Sem ela, vale `message`. */
+  urgentMessage?: string;
+}
+
+/** Como o aviso pede a resposta: rótulos e o limite vêm do servidor e do app. */
+export interface OperatorInboxAnswerSpec {
+  /** O gesto de enviar ("Responder ao cliente"). */
+  label: string;
+  /** O que vai no campo vazio ("Escreva a resposta para o cliente"). */
+  placeholder: string;
+  maxLength: number;
+  /** Uma linha sob o campo, que diz como a resposta sai. */
+  hint?: string;
+  /** O gesto alternativo ("Assumir a conversa"); sem ele, só o de enviar. */
+  altLabel?: string;
+}
+
+/** O erro do envio, quando quem chama sabe que tentar de novo não adianta. */
+export interface OperatorInboxAnswerFailure {
+  message: string;
+  final?: boolean;
 }
 
 export interface OperatorInboxAlertSource {
@@ -65,6 +91,13 @@ export interface OperatorInboxAlertSource {
   ack?: (key: string | number) => void | Promise<void>;
   /** Executa o gesto direto do alerta (`actLabel`). Sem ele, o botão não aparece. */
   act?: (key: string | number) => void | Promise<void>;
+  /** Envia a resposta escrita do aviso (`answer`). Devolve a frase de erro para o
+   *  cartão mostrar, ou `null` quando saiu (aí o campo se esvazia). Com `final`, tentar
+   *  de novo não adianta (a janela de 24 horas fechou): o envio se desliga e o gesto
+   *  alternativo vira o principal; o texto digitado fica. */
+  answer?: (key: string | number, text: string) => Promise<string | OperatorInboxAnswerFailure | null>;
+  /** O gesto alternativo do aviso com resposta (`answer.altLabel`); mesmo retorno. */
+  answerAlt?: (key: string | number) => Promise<string | null>;
   isPending?: (key: string | number) => boolean;
 }
 
@@ -104,6 +137,14 @@ export function useSharedCapacity() {
 /** A fonte de alertas que o app registrou (ou nenhuma: só a caixa pessoal). */
 export function useOperatorInboxAlerts() {
   return chromeState().inboxAlerts;
+}
+
+/**
+ * Qual aviso com resposta escrita alguém pediu para responder agora (o "Responder" do
+ * aviso de tela): o `OperatorUrgentAlert` abre a janela dele com o campo.
+ */
+export function useAnswerWindowRequest() {
+  return useState<string | number | null>("operator-answer-window-request", () => null);
 }
 
 /**

@@ -414,13 +414,18 @@ export interface UrgentAlertsView<T> {
   reminders: T[];
 }
 
-type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string };
+type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string; answer?: unknown };
 
 /**
  * Quais avisos interrompem a tela: os que têm prazo. Vencido o prazo do mundo lá fora
  * (`external`, ex.: o iFood), a decisão já saiu e o aviso sai da tela; vencida a régua
  * da casa (`house`), a causa continua e o aviso fica, atrasado. Entre os não vistos,
  * o de prazo mais curto primeiro.
+ *
+ * O aviso que se resolve com uma resposta escrita (`answer`, a pergunta que a Concierge
+ * levou à equipe) tem degraus (dono, 19/11/2026): primeiro o aviso de tela no topo
+ * (`answerScreenAlerts`), que volta depois do X; a janela só quando o prazo vence. Não
+ * vira lembrete passageiro: o aviso de tela é o lembrete dele.
  */
 export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: number): UrgentAlertsView<T> {
   const running = items
@@ -431,9 +436,58 @@ export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: numbe
     )
     .sort((a, b) => a.deadline - b.deadline);
   return {
-    blocking: running.find(({ item }) => !item.seen)?.item ?? null,
-    reminders: running.filter(({ item }) => item.seen).map(({ item }) => item),
+    blocking:
+      running.find(({ item, deadline }) => !item.seen && (!item.answer || deadline <= nowMs))?.item ?? null,
+    reminders: running.filter(({ item }) => item.seen && !item.answer).map(({ item }) => item),
   };
+}
+
+type Answerable = Urgent & { key: string | number; subject?: string; eyebrow?: string; message?: string };
+
+/** O aviso de tela da pergunta que espera resposta, sem a ação (quem monta põe "Responder"). */
+export interface AnswerScreenAlert {
+  key: string | number;
+  id: string;
+  title: string;
+  color: "warning" | "error";
+}
+
+/**
+ * A pergunta que espera resposta escrita como aviso de tela, no topo, na cor da atenção
+ * (dono, 19/11/2026): "Ana espera a resposta da equipe · até 16h04", âmbar; vencido o
+ * prazo, vermelho. O X do aviso dispensa só nesta montagem (regra do kit), e ele volta
+ * enquanto ninguém responde nem assume. O `id` leva a pergunta e o degrau: outra pergunta
+ * é aviso novo, e a mesma volta uma vez quando o prazo vence. Mais antiga primeiro.
+ */
+export function answerScreenAlerts<T extends Answerable>(
+  items: readonly T[],
+  nowMs: number,
+  clock: (iso: string) => string,
+): AnswerScreenAlert[] {
+  return items
+    .filter((item) => item.answer)
+    .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
+    .sort(
+      (a, b) =>
+        (Number.isFinite(a.deadline) ? a.deadline : Infinity) - (Number.isFinite(b.deadline) ? b.deadline : Infinity),
+    )
+    .map(({ item, deadline }) => {
+      const late = Number.isFinite(deadline) && deadline <= nowMs;
+      const subject = item.subject || item.eyebrow || item.message || "Aviso";
+      // Correndo, até que horas; vencido, há quanto passou, como a janela diz.
+      const when = !Number.isFinite(deadline)
+        ? ""
+        : late
+          ? `passou do prazo há ${spanLabel(nowMs - deadline)}`
+          : `até ${clock(item.respondByIso!)}`;
+      return {
+        key: item.key,
+        id: `answer:${item.key}:${late ? "late" : "open"}`,
+        // Espaço que não quebra: o prazo fica junto do fim do assunto ("equipe · até 16h04").
+        title: when ? `${subject}\u00a0·\u00a0${when.replaceAll(" ", "\u00a0")}` : subject,
+        color: late ? ("error" as const) : ("warning" as const),
+      };
+    });
 }
 
 /** "6 min" · "menos de 1 min" · "2 h" · "3 dias": quanto, num relance. */
