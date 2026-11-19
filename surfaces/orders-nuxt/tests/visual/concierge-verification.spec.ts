@@ -1,9 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Prévia do "vou verificar" da Concierge no Gestor (WP-07): a pergunta chega como a pílula
-// invertida na base (dono, 19/11/2026), o X a dispensa e ela volta, "Responder" abre a
-// janela com o campo, respondida tudo some, e vencido o prazo a janela interrompe a tela.
-// Nos dois temas, porque a pílula é a cor oposta ao tema. Só roda quando alguém pede a prévia (`PREVIA_DIR` = onde
+// Prévia do "vou verificar" da Concierge no Gestor (WP-07): a pergunta chega como aviso de
+// tela no topo, na cor da atenção (dono, 19/11/2026); o X o dispensa nesta tela e ele volta
+// na próxima; "Responder" abre a janela com o campo; respondida, tudo some; vencido o
+// prazo, a janela interrompe a tela e o aviso fica vermelho. Nos dois temas. Só roda quando alguém pede a prévia (`PREVIA_DIR` = onde
 // gravar as capturas): é a evidência para o dono, não uma baseline da matriz.
 const BACKEND = "http://127.0.0.1:" + process.env.ORDERS_VISUAL_BACKEND_PORT;
 const OUT = process.env.PREVIA_DIR || "";
@@ -52,7 +52,7 @@ async function audit(page: Page, scope: string, name: string) {
     const out: Array<Record<string, unknown>> = [];
     const box = document.querySelector(root);
     if (!box) return out;
-    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-operator-attention-pill] *")) {
+    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-page-header-alert] *")) {
       const text = (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim()))
         ? el.textContent!.trim().slice(0, 50) : "";
       if (!text && el.tagName !== "TEXTAREA") continue;
@@ -86,48 +86,51 @@ for (const viewport of VIEWPORTS) {
         },
         [theme, "orders-nuxt-color-mode"],
       );
-      await page.clock.install();
-
-      // 1. A pergunta chega: a pílula invertida na base, sem janela por cima.
+      // 1. A pergunta chega: o aviso no topo, âmbar, sem janela por cima.
       await open(page, "concierge", viewport);
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /light/);
-      const pill = page.locator("[data-operator-answer-pill]");
+      const notice = page.locator("[data-page-header-alert]", { hasText: "Ana espera a resposta da equipe" });
       const dialog = page.getByRole("dialog");
-      await expect(pill).toBeVisible();
-      await expect(pill).toContainText("Ana espera a resposta da equipe");
-      await expect(pill).toContainText(/até \d{1,2}h(\d{2})?/);
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText(/Ana espera a resposta da equipe\s·\saté\s\d{1,2}h(\d{2})?/);
       await expect(dialog).toBeHidden();
-      await shot(page, `${id}-1-pilula-chegando`);
-      await audit(page, "[data-operator-answer-pill]", `${id}-1-pilula-chegando`);
+      await shot(page, `${id}-1-aviso-chegando`);
+      await audit(page, "[data-page-header-alerts]", `${id}-1-aviso-chegando`);
 
-      // 2. O X dispensa; ela volta no ritmo dos lembretes (faltam 7 min: em ~2 min).
-      await pill.locator("[data-operator-answer-pill-close]").click();
-      await expect(pill).toBeHidden();
-      await page.clock.fastForward("02:05");
-      await expect(pill).toBeVisible();
-      await shot(page, `${id}-2-pilula-voltou`);
+      // 2. O X dispensa nesta tela; na próxima (aqui, a volta à fila), o aviso volta.
+      await notice.getByRole("button", { name: /fechar|close/i }).click();
+      await expect(notice).toBeHidden();
+      await shot(page, `${id}-2a-aviso-dispensado`);
+      await page.goto("/history");
+      await page.goto("/");
+      await expect(page.locator("[data-orders-app]")).toBeVisible();
+      await expect(notice).toBeVisible();
+      await shot(page, `${id}-2b-aviso-voltou`);
 
-      // 3. "Responder" abre a janela com o campo (fecha sem responder: a pílula fica).
-      await pill.locator("[data-operator-answer-pill-open]").click();
+      // 3. "Responder" abre a janela com o campo.
+      await notice.getByRole("button", { name: "Responder" }).click();
       await expect(dialog.locator("[data-operator-inbox-answer]")).toBeVisible();
       await shot(page, `${id}-3-janela-pelo-responder`);
       await audit(page, "[role=dialog]", `${id}-3-janela-pelo-responder`);
 
-      // 4. Respondida: a pergunta sai, e não sobra aviso nenhum na base.
+      // 4. Respondida: a pergunta sai, e não sobra aviso.
       await dialog.locator("textarea").fill("Amanhã tem sim, fica pronto às 9h. A entrega sai a partir das 10h.");
       await dialog.locator("[data-operator-inbox-answer-send]").click();
       await expect(page.getByText("Resposta enviada ao cliente.").first()).toBeVisible();
       await expect(dialog).toBeHidden();
-      await expect(pill).toBeHidden();
-      await page.clock.fastForward("05:00");
-      await expect(pill).toBeHidden();
+      await expect(notice).toBeHidden();
       await shot(page, `${id}-4-respondido-sem-aviso`);
 
-      // 5. A promessa venceu: a janela interrompe a tela, o último degrau.
+      // 5. A promessa venceu: a janela interrompe a tela; depois do Visto, o aviso fica vermelho.
       await open(page, "concierge-late", viewport);
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText(/Passou do prazo/)).toBeVisible();
-      await shot(page, `${id}-5-prazo-vencido`);
+      await shot(page, `${id}-5a-vencido-janela`);
+      await dialog.getByRole("button", { name: "Visto" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(notice).toBeVisible();
+      await shot(page, `${id}-5b-vencido-aviso`);
+      await audit(page, "[data-page-header-alerts]", `${id}-5b-vencido-aviso`);
     });
   }
 }

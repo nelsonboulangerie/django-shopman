@@ -423,9 +423,9 @@ type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string; an
  * o de prazo mais curto primeiro.
  *
  * O aviso que se resolve com uma resposta escrita (`answer`, a pergunta que a Concierge
- * levou à equipe) tem degraus (dono, 19/11/2026): primeiro a pílula invertida
- * (`answerPill`), que volta depois do X; a janela só quando o prazo vence. Nenhum dos
- * dois vira lembrete passageiro: a pílula é o lembrete dele.
+ * levou à equipe) tem degraus (dono, 19/11/2026): primeiro o aviso de tela no topo
+ * (`answerScreenAlerts`), que volta depois do X; a janela só quando o prazo vence. Não
+ * vira lembrete passageiro: o aviso de tela é o lembrete dele.
  */
 export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: number): UrgentAlertsView<T> {
   const running = items
@@ -442,32 +442,47 @@ export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: numbe
   };
 }
 
-type Answerable = Urgent & { key: string | number };
+type Answerable = Urgent & { key: string | number; subject?: string; eyebrow?: string; message?: string };
 
-/**
- * A pílula invertida do aviso que espera resposta escrita: aparece quando ele chega e
- * só some de vez quando alguém responde ou assume (o aviso sai da fonte). O X dispensa
- * até `hiddenUntil[key]`; a janela, quando está na tela, fala por ela. Mais antigo primeiro.
- */
-export function answerPill<T extends Answerable>(
-  items: readonly T[],
-  nowMs: number,
-  hiddenUntil: ReadonlyMap<string | number, number>,
-  showing: string | number | null = null,
-): T | null {
-  return (
-    items
-      .filter((item) => item.answer && item.key !== showing && (hiddenUntil.get(item.key) ?? 0) <= nowMs)
-      .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
-      .sort((a, b) => (Number.isFinite(a.deadline) ? a.deadline : Infinity) - (Number.isFinite(b.deadline) ? b.deadline : Infinity))[0]
-      ?.item ?? null
-  );
+/** O aviso de tela da pergunta que espera resposta, sem a ação (quem monta põe "Responder"). */
+export interface AnswerScreenAlert {
+  key: string | number;
+  id: string;
+  title: string;
+  color: "warning" | "error";
 }
 
-/** Quando a pílula dispensada volta: o ritmo dos lembretes (`reminderIntervalMs`). */
-export function answerPillReturnAt(respondByIso: string | undefined, nowMs: number): number {
-  const deadline = Date.parse(respondByIso ?? "");
-  return nowMs + reminderIntervalMs(Number.isFinite(deadline) ? deadline - nowMs : 0);
+/**
+ * A pergunta que espera resposta escrita como aviso de tela, no topo, na cor da atenção
+ * (dono, 19/11/2026): "Ana espera a resposta da equipe · até 16h04", âmbar; vencido o
+ * prazo, vermelho. O X do aviso dispensa só nesta montagem (regra do kit), e ele volta
+ * enquanto ninguém responde nem assume. O `id` leva a pergunta e o degrau: outra pergunta
+ * é aviso novo, e a mesma volta uma vez quando o prazo vence. Mais antiga primeiro.
+ */
+export function answerScreenAlerts<T extends Answerable>(
+  items: readonly T[],
+  nowMs: number,
+  clock: (iso: string) => string,
+): AnswerScreenAlert[] {
+  return items
+    .filter((item) => item.answer)
+    .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
+    .sort(
+      (a, b) =>
+        (Number.isFinite(a.deadline) ? a.deadline : Infinity) - (Number.isFinite(b.deadline) ? b.deadline : Infinity),
+    )
+    .map(({ item, deadline }) => {
+      const late = Number.isFinite(deadline) && deadline <= nowMs;
+      const subject = item.subject || item.eyebrow || item.message || "Aviso";
+      const until = Number.isFinite(deadline) ? clock(item.respondByIso!) : "";
+      return {
+        key: item.key,
+        id: `answer:${item.key}:${late ? "late" : "open"}`,
+        // Espaço que não quebra: o prazo fica junto do fim do assunto ("equipe · até 16h04").
+        title: until ? `${subject}\u00a0·\u00a0até\u00a0${until}` : subject,
+        color: late ? ("error" as const) : ("warning" as const),
+      };
+    });
 }
 
 /** "6 min" · "menos de 1 min" · "2 h" · "3 dias": quanto, num relance. */

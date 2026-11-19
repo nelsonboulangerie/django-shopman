@@ -20,8 +20,7 @@ import {
   inboxAlertDescription,
   operatorAlertToInbox,
   urgentAlerts,
-  answerPill,
-  answerPillReturnAt,
+  answerScreenAlerts,
   deadlineLeftLabel,
   respondInLabel,
   reminderIntervalMs,
@@ -291,7 +290,6 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     expect(view.reminders.map((item) => item.key)).toEqual([2]);
   });
 
-  const min = 60_000;
   it("a pergunta que espera resposta só vira janela quando o prazo vence", () => {
     const answer = { label: "Responder", placeholder: "", maxLength: 300 };
     const running = urgentAlerts([{ key: 1, respondByIso: at(7), seen: false, deadlineKind: "house", answer }], NOW);
@@ -303,25 +301,19 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     expect(seen).toEqual({ blocking: null, reminders: [] });
   });
 
-  it("a pílula mostra a pergunta mais antiga, some no X e volta no ritmo dos lembretes", () => {
+  it("a pergunta vira aviso de tela no topo: âmbar, vermelho no prazo vencido, a mais antiga primeiro", () => {
     const answer = { label: "Responder", placeholder: "", maxLength: 300 };
+    const clock = (iso: string) => `${new Date(iso).getUTCHours()}h${String(new Date(iso).getUTCMinutes()).padStart(2, "0")}`;
     const items = [
-      { key: 1, respondByIso: at(9), answer },
-      { key: 2, respondByIso: at(4), answer },
+      { key: 1, respondByIso: at(9), answer, subject: "Bia espera a resposta da equipe" },
+      { key: 2, respondByIso: at(-1), answer, subject: "Ana espera a resposta da equipe" },
       { key: 3, respondByIso: at(1) },
     ];
-    expect(answerPill(items, NOW, new Map())?.key).toBe(2);
-    // A janela na tela fala pela pergunta dela.
-    expect(answerPill(items, NOW, new Map(), 2)?.key).toBe(1);
-    const back = answerPillReturnAt(at(4), NOW);
-    expect(back - NOW).toBe(min);
-    const hidden = new Map([[2, back]]);
-    expect(answerPill(items, NOW, hidden)?.key).toBe(1);
-    expect(answerPill(items, back, hidden)?.key).toBe(2);
-    // Sem pergunta aberta, sem pílula.
-    expect(answerPill([{ key: 3, respondByIso: at(1) }], NOW, new Map())).toBeNull();
-    // Vencido o prazo, volta a cada 5 min.
-    expect(answerPillReturnAt(at(-2), NOW) - NOW).toBe(5 * min);
+    expect(answerScreenAlerts(items, NOW, clock)).toEqual([
+      { key: 2, id: "answer:2:late", title: "Ana espera a resposta da equipe\u00a0·\u00a0até\u00a014h59", color: "error" },
+      { key: 1, id: "answer:1:open", title: "Bia espera a resposta da equipe\u00a0·\u00a0até\u00a015h09", color: "warning" },
+    ]);
+    expect(answerScreenAlerts([{ key: 3, respondByIso: at(1) }], NOW, clock)).toEqual([]);
   });
 
   it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {

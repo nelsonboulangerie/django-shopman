@@ -140,11 +140,11 @@ export function useOperatorInboxAlerts() {
 }
 
 /**
- * A pílula da pergunta que espera resposta (`OperatorUrgentAlert`) está na base da tela?
- * Quem tem outra pílula ali (o Gestor, o pedido que pede atenção) sobe a dele.
+ * Qual aviso com resposta escrita alguém pediu para responder agora (o "Responder" do
+ * aviso de tela): o `OperatorUrgentAlert` abre a janela dele com o campo.
  */
-export function useAnswerPillShown() {
-  return useState<boolean>("operator-answer-pill-shown", () => false);
+export function useAnswerWindowRequest() {
+  return useState<string | number | null>("operator-answer-window-request", () => null);
 }
 
 /**

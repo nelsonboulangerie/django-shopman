@@ -1,5 +1,5 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 
 import OperatorPageHeader from "../../app/components/OperatorPageHeader.vue";
@@ -193,5 +193,55 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
     expect(document.querySelector("[data-page-header-alert]")?.textContent).toContain(
       "2 pedidos passaram do horário",
     );
+  });
+});
+
+describe("OperatorPageHeader: a pergunta que espera resposta vira aviso de tela", () => {
+  const NOW = Date.now();
+  const question = (minutes: number) => ({
+    key: 31,
+    tone: "warning" as const,
+    message: "“Amanhã tem croissant?”",
+    subject: "Ana espera a resposta da equipe",
+    respondByIso: new Date(NOW + minutes * 60_000).toISOString(),
+    deadlineKind: "house" as const,
+    answer: { label: "Responder ao cliente", placeholder: "", maxLength: 300 },
+  });
+  afterEach(() => {
+    useOperatorInboxAlerts().value = null;
+    useAnswerWindowRequest().value = null;
+  });
+  const alert = () => document.querySelector<HTMLElement>("[data-page-header-alert]");
+  const props = { title: "Pedidos", search: false, inbox: false, alerts: [{ id: "x", color: "info" as const, title: "Outro aviso" }] };
+
+  it("no topo, antes dos da tela, na cor da atenção, com Responder; vencida, vermelho", async () => {
+    useOperatorInboxAlerts().value = { items: [question(7)], count: 1, answer: vi.fn() };
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    expect(alert()!.textContent).toMatch(/Ana espera a resposta da equipe\s·\saté\s\d{1,2}h(\d{2})?/);
+    expect(alert()!.outerHTML).toMatch(/warning/);
+    const reply = [...alert()!.querySelectorAll("button")].find((b) => b.textContent?.includes("Responder"))!;
+    reply.click();
+    await nextTick();
+    expect(useAnswerWindowRequest().value).toBe(31);
+    mounted.unmount();
+    useOperatorInboxAlerts().value = { items: [question(-1)], count: 1, answer: vi.fn() };
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    expect(alert()!.outerHTML).toMatch(/error/);
+  });
+
+  it("o X dispensa nesta montagem e o aviso volta na próxima, enquanto ninguém responde", async () => {
+    useOperatorInboxAlerts().value = { items: [question(7)], count: 1, answer: vi.fn() };
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    const close = [...alert()!.querySelectorAll("button")].find((b) => !b.textContent?.trim())!;
+    close.click();
+    await nextTick();
+    expect(document.body.textContent).not.toContain("Ana espera a resposta da equipe");
+    mounted.unmount();
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    expect(alert()!.textContent).toContain("Ana espera a resposta da equipe");
+    // Respondida, a pergunta sai da fonte e o aviso some.
+    useOperatorInboxAlerts().value = { items: [], count: 0, answer: vi.fn() };
+    await nextTick();
+    expect(document.body.textContent).not.toContain("Ana espera a resposta da equipe");
   });
 });

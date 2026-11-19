@@ -13,20 +13,18 @@
 // mandar `respondByIso` no item. Sem prazo, nada aqui acontece.
 //
 // O aviso que se resolve com resposta escrita (a pergunta que a Concierge levou à equipe,
-// dono, 19/11/2026) sobe em degraus: chega como a pílula invertida na base, com
-// "Responder" (abre esta janela) e X; o X dispensa e ela volta no ritmo dos lembretes
-// enquanto ninguém responde nem assume; vencido o prazo, a janela interrompe a tela.
+// dono, 19/11/2026) chega como aviso de tela no topo (`OperatorPageHeader`,
+// `answerScreenAlerts`), cujo "Responder" abre esta janela; ela só interrompe a tela
+// sozinha quando o prazo vence.
 import { useNow } from "@vueuse/core";
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted } from "vue";
 
 import {
-  useAnswerPillShown,
+  useAnswerWindowRequest,
   useOperatorInboxAlerts,
   type OperatorInboxAlert,
 } from "../composables/useSuiteChrome";
 import {
-  answerPill,
-  answerPillReturnAt,
   reminderIntervalMs,
   respondInLabel,
   urgentAlerts,
@@ -40,8 +38,8 @@ const now = useNow({ interval: 1000 });
 const view = computed(() =>
   urgentAlerts(source.value?.items ?? [], now.value.getTime()),
 );
-/** A janela aberta pelo "Responder" da pílula (some quando o aviso sai da fonte). */
-const requestedKey = ref<string | number | null>(null);
+/** A janela aberta pelo "Responder" do aviso de tela (some quando o aviso sai da fonte). */
+const requestedKey = useAnswerWindowRequest();
 const requested = computed(
   () => (source.value?.items ?? []).find((item) => item.key === requestedKey.value) ?? null,
 );
@@ -50,22 +48,6 @@ const blocking = computed(() => view.value.blocking ?? requested.value);
 const onRequest = computed(() => !view.value.blocking && Boolean(requested.value));
 function closeRequested(open: boolean) {
   if (!open) requestedKey.value = null;
-}
-
-const pillHidden = reactive(new Map<string | number, number>());
-const pill = computed(() =>
-  answerPill(source.value?.items ?? [], now.value.getTime(), pillHidden, blocking.value?.key ?? null),
-);
-const pillShown = useAnswerPillShown();
-watch(pill, (item) => {
-  pillShown.value = Boolean(item);
-}, { immediate: true });
-function dismissPill() {
-  const item = pill.value;
-  if (item) pillHidden.set(item.key, answerPillReturnAt(item.respondByIso, Date.now()));
-}
-function answerFromPill() {
-  if (pill.value) requestedKey.value = pill.value.key;
 }
 const pending = computed(() =>
   blocking.value ? Boolean(source.value?.isPending?.(blocking.value.key)) : false,
@@ -166,37 +148,10 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer);
-  pillShown.value = false;
 });
 </script>
 
 <template>
-  <!-- A pílula da pergunta que espera resposta: na base, acima da barra do shell. -->
-  <div
-    v-if="pill"
-    class="fixed inset-x-3 bottom-[calc(var(--operator-quick-bar-inset,0px)+1rem)] z-40 md:inset-x-auto md:left-1/2 md:w-[min(36rem,calc(100vw-2rem))] md:-translate-x-1/2"
-    role="status"
-    data-operator-answer-pill
-  >
-    <OperatorAttentionPill
-      :icon="pill.originIcon || 'i-lucide-message-circle'"
-      :title="pill.subject || pill.eyebrow || 'Aviso'"
-      :detail="pill.respondByIso ? `até ${clock(pill.respondByIso)}` : ''"
-      inline
-      :close-attrs="{ 'data-operator-answer-pill-close': true }"
-      @close="dismissPill"
-    >
-      <NuxtButton
-        icon="i-lucide-reply"
-        label="Responder"
-        color="neutral"
-        variant="outline"
-        class="min-h-11"
-        data-operator-answer-pill-open
-        @click="answerFromPill"
-      />
-    </OperatorAttentionPill>
-  </div>
   <NuxtModal
     :open="Boolean(blocking)"
     :dismissible="onRequest"
@@ -225,7 +180,7 @@ onBeforeUnmount(() => {
           {{ blocking.subject || blocking.eyebrow }}
         </h2>
       </div>
-      <!-- Aberta pelo "Responder" da pílula: fecha, e a pílula continua. -->
+      <!-- Aberta pelo "Responder" do aviso de tela: fecha, e o aviso continua. -->
       <NuxtButton
         v-if="onRequest"
         icon="i-lucide-x"
