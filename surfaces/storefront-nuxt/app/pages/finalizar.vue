@@ -2631,20 +2631,21 @@ useSeoMeta({
                 <!-- O dinheiro: o que acontece com ele, até quando a loja confirma e o que
                      acontece se não confirmar. A frase vem do servidor (P1-06). -->
                 <div v-if="moneyNotice" class="mt-2 flex items-start gap-3" data-review-money-notice>
-                  <Icon name="lucide:shield-check" class="size-5 shrink-0" />
-                  <p class="text-sm">{{ moneyNotice }}</p>
+                  <Icon name="lucide:shield-check" class="mt-0.5 size-5 shrink-0" />
+                  <p class="shop-body">{{ moneyNotice }}</p>
                 </div>
                 <UiSeparator v-if="moneyNotice && showUnclaimedOrderRule" class="my-3" data-review-before-sending-divider />
                 <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
-                     enviar e de pagar (#2613). Aqui vai o RESUMO, numa oração (dono,
-                     19/11/2026); a cláusula inteira mora nos Termos, a um toque. O "só" é a
-                     parte que custa à cliente (o que se perdeu fica com a loja) e não pode
-                     sair: `tests/legalUnclaimedOrder.test.ts` segura o resumo e o link. -->
+                     enviar e de pagar (#2613, decisão do dono de 18/11/2026). A frase é a da
+                     cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
+                     reprova se uma mudar sem a outra. -->
                 <div v-if="showUnclaimedOrderRule" class="flex items-start gap-3" :class="moneyNotice ? '' : 'mt-2'">
-                  <Icon name="lucide:calendar-clock" class="size-5 shrink-0" />
-                  <p class="text-sm" data-review-unclaimed-rule>
-                    Sem retirada no dia combinado, só devolvemos o que voltar à venda.
-                    <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos</NuxtLink>
+                  <Icon name="lucide:calendar-clock" class="mt-0.5 size-5 shrink-0" />
+                  <p class="shop-body" data-review-unclaimed-rule>
+                    Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
+                    voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
+                    loja.
+                    <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
                   </p>
                 </div>
               </section>
