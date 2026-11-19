@@ -44,6 +44,15 @@ export interface ManagerApproval {
   badge?: string;
 }
 
+/** Os gestos de caixa cujo erro mora DENTRO do diálogo (ver `PosCashFailureNotice`). */
+export type CashGesture = "movement" | "close_shift" | "refund_cash" | "card_machine_refund";
+
+/** A falha do último gesto, com a frase inteira (causa e saída). */
+export interface CashFailure {
+  gesture: CashGesture;
+  message: string;
+}
+
 export function usePosCashSession({ pos, actions, refresh, action }: CashSessionDeps) {
   const busy = ref(false);
   // O id do último lançamento (sangria/suprimento) aceito pelo servidor — é
@@ -89,12 +98,19 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // tinha gravado e devolve o mesmo lançamento), ele sai da tela: "não entrou no
   // livro-caixa" ao lado de "R$ 50,00 saiu da gaveta" seriam duas verdades.
   let failureToast: string | number | null = null;
+  // A falha do gesto que tem diálogo aberto: o aviso mora no diálogo, não num toast
+  // atrás do véu dele (auditoria da prévia do WP-E6).
+  const cashFailure = ref<CashFailure | null>(null);
+  function dismissCashFailure() {
+    cashFailure.value = null;
+  }
 
   async function run(
     path: string,
     body: Record<string, unknown>,
     causa: string,
     saida: string,
+    gesture?: CashGesture,
   ): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
@@ -105,6 +121,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       chaves.settled(); // gesto concluído: o próximo é outro lançamento
       if (failureToast != null) toast.dismiss(failureToast);
       failureToast = null;
+      if (cashFailure.value && cashFailure.value.gesture === gesture) cashFailure.value = null;
       await refresh();
       return true;
     } catch (error) {
@@ -119,8 +136,14 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // A saída vive FORA do `httpErrorMessage`: ele substitui o fallback pelo
       // `detail` do servidor, então gesto escrito dentro da causa some exatamente
       // quando o servidor explica o que houve — que é quando ele mais importa.
+      const message = `${httpErrorMessage(error, causa)} ${saida}`;
+      if (gesture) {
+        // Um aviso só: o do diálogo. O toast não aparece por trás do véu.
+        cashFailure.value = { gesture, message };
+        return false;
+      }
       if (failureToast != null) toast.dismiss(failureToast);
-      failureToast = toast.error(`${httpErrorMessage(error, causa)} ${saida}`);
+      failureToast = toast.error(message);
       return false;
     } finally {
       busy.value = false;
@@ -167,6 +190,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       body,
       "O caixa não fechou.",
       "O turno segue aberto e a contagem continua na tela. Tente de novo: repetir não fecha duas vezes.",
+      "close_shift",
     );
   }
 
@@ -191,6 +215,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       body,
       "O movimento não entrou no livro-caixa.",
       "A gaveta não abriu e o valor segue na tela. Tente de novo agora: a mesma tentativa não vira dois lançamentos.",
+      "movement",
     ).then((ok) => {
       // Só abre depois do servidor aceitar: gaveta aberta por um movimento que
       // foi recusado (PIN errado, caixa fechado) é dinheiro exposto sem lastro.
@@ -401,6 +426,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       body,
       "A devolução não foi registrada.",
       "O dinheiro não saiu da gaveta e a devolução segue pendente. Tente de novo: a devolução não sai duas vezes.",
+      "refund_cash",
     ).then((ok) => {
       // A gaveta abre para entregar as notas, e só depois do `ok`: devolução
       // recusada (PIN errado, já devolvida) não pode abrir a gaveta.
@@ -429,6 +455,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       body,
       "O estorno não foi registrado.",
       "O estorno segue pendente. Confira na maquininha se ele saiu antes de registrar de novo.",
+      "card_machine_refund",
     );
   }
 
@@ -473,6 +500,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     movementKinds,
     shiftRequiredForSale,
     managerChallenge,
+    // O erro do gesto com diálogo aberto, para o aviso dentro dele.
+    cashFailure,
+    dismissCashFailure,
     openCashShift,
     closeCashShift,
     offlineReviewSales,

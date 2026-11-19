@@ -73,12 +73,15 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("falha vira toast e devolve false (sem engolir silenciosamente)", async () => {
+  it("falha vira aviso no diálogo e devolve false (sem engolir silenciosamente)", async () => {
     const actionCall = vi.fn().mockRejectedValue(new Error("boom"));
     const { session, refresh } = makeCashSession({ actionCall });
     const ok = await session.closeCashShift({ amount: "10", notes: "" });
     expect(ok).toBe(false);
-    expect(toast.error).toHaveBeenCalled();
+    // O diálogo do fechamento está aberto: o aviso mora nele, não num toast atrás do véu.
+    expect(session.cashFailure.value?.gesture).toBe("close_shift");
+    expect(session.cashFailure.value?.message).toContain("O caixa não fechou.");
+    expect(toast.error).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
     expect(session.busy.value).toBe(false);
   });
@@ -521,6 +524,26 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     const keys = actionCall.mock.calls.map((call) => (call[1].body as Record<string, unknown>).client_request_id);
     expect(new Set(keys).size).toBe(1);
     expect(actionCall.mock.calls[1]![1].body.manager_approval).toEqual({ username: "joyce", pin: "1234" });
+  });
+
+  it("o aviso da saída aparece na falha e some quando a repetição confirma", async () => {
+    const actionCall = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("rede caiu"))
+      .mockResolvedValueOnce({ entry_id: 7 })
+      .mockResolvedValue({ payload_b64: "", title: "" });
+    const { session } = makeCashSession({ actionCall });
+    const movement = { kind: "sangria", amount: "50,00", reason: "Sangria" };
+
+    expect(await session.registerCashMovement(movement)).toBe(false);
+    expect(session.cashFailure.value).toEqual({
+      gesture: "movement",
+      message: expect.stringContaining("Tente de novo agora"),
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+
+    expect(await session.registerCashMovement(movement)).toBe(true);
+    expect(session.cashFailure.value).toBeNull();
   });
 
   it("depois do SUCESSO a chave é descartada — duas sangrias iguais são duas linhas", async () => {

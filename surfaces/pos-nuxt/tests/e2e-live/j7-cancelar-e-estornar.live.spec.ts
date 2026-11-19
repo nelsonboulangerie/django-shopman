@@ -125,6 +125,12 @@ async function audits(page: Page, label: string, selector: string) {
           right: Math.round(box.right),
           clipped: (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1,
           inside: box.left >= 0 && box.right <= window.innerWidth + 0.5,
+          // Nenhuma camada por cima (véu de diálogo, toast, banner): o ponto do meio
+          // do texto, na tela, é o próprio texto.
+          covered: (() => {
+            const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+            return !(top && (top === el || el.contains(top)));
+          })(),
         };
       });
     return { rows, unparsed: [...new Set(unparsed)] };
@@ -137,6 +143,7 @@ async function audits(page: Page, label: string, selector: string) {
     expect(row.fontPx, `${label}: letra de "${row.text}"`).toBeGreaterThanOrEqual(12);
     expect(row.inside, `${label}: "${row.text}" fora da tela`).toBe(true);
     expect(row.clipped, `${label}: "${row.text}" cortado`).toBe(false);
+    expect(row.covered, `${label}: "${row.text}" encoberto por outra camada`).toBe(false);
   }
   return rows;
 }
@@ -280,6 +287,15 @@ for (const device of ["phone", "counter"] as const) {
       await managerSigns(page, "Autorizar retirada da gaveta");
       await expect(outDialog).toBeHidden({ timeout: 60_000 });
       await expect.poll(() => cutOnce, { timeout: 60_000 }).toBe(true);
+      // O erro mora DENTRO do diálogo da saída, junto do botão que repete, e não num
+      // toast atrás do véu: um aviso só, legível, com X.
+      const failure = page.getByRole("dialog", { name: "Saída de caixa" }).locator("[data-cash-failure]");
+      await expect(failure).toBeVisible({ timeout: 30_000 });
+      await expect(failure).toHaveAttribute("role", "alert");
+      await expect(failure).toContainText("O movimento não entrou no livro-caixa.");
+      await expect(page.getByText(/O movimento não entrou no livro-caixa/)).toHaveCount(1);
+      await still(page);
+      await audits(page, "erro da saída", "[data-cash-failure] [data-slot='title']");
       await capture(page, testInfo, "rede-caiu-depois-de-gravar");
 
       // A Fran toca de novo, sem chamar o gerente outra vez.
@@ -289,6 +305,9 @@ for (const device of ["phone", "counter"] as const) {
       await expect
         .poll(async () => recorded.filter((r) => r.status === 200).length === 2 || (await outDialog.isVisible()), { timeout: 60_000 })
         .toBe(true);
+      // Confirmado o mesmo lançamento, o aviso do diálogo some e o diálogo fecha.
+      await expect(failure).toHaveCount(0, { timeout: 30_000 });
+      await expect(page.getByRole("dialog", { name: "Saída de caixa" })).toBeHidden({ timeout: 30_000 });
       await still(page);
       await capture(page, testInfo, "repetir-depois-da-rede");
       console.log(`J7 saída: ${JSON.stringify(recorded)}`);

@@ -65,6 +65,8 @@ const {
   busy,
   movementKinds,
   managerChallenge,
+  cashFailure,
+  dismissCashFailure,
   openCashShift,
   closeCashShift,
   offlineReviewSales,
@@ -939,6 +941,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
               />
             </li>
           </ul>
+          <PosCashFailureNotice :failure="cashFailure" gesture="refund_cash" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             O dinheiro sai desta gaveta e fica registrado no turno e no pedido, com quem devolveu e quando. Um gerente autoriza com o PIN.
           </p>
@@ -984,6 +987,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
               />
             </li>
           </ul>
+          <PosCashFailureNotice :failure="cashFailure" gesture="card_machine_refund" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido com quem fez e quando.
           </p>
@@ -1312,14 +1316,17 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
         </div>
       </template>
       <template #footer>
-        <NuxtButton
-          size="xl"
-          block
-          label="Registrar movimento"
-          :disabled="busy || !canSubmitMovement"
-          :loading="busy"
-          @click="submitMovement()"
-        />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice :failure="cashFailure" gesture="movement" @dismiss="dismissCashFailure" />
+          <NuxtButton
+            size="xl"
+            block
+            label="Registrar movimento"
+            :disabled="busy || !canSubmitMovement"
+            :loading="busy"
+            @click="submitMovement()"
+          />
+        </div>
       </template>
     </NuxtModal>
 
@@ -1488,25 +1495,28 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
              fecha: ele arma a confirmação. O tile lá fora já se chama "Fechar
              caixa" (porta com nome do destino); repetir o verbo do ato aqui
              ensinava a apertar no automático. -->
-        <NuxtButton
-          v-if="!confirmingClose"
-          size="xl"
-          block
-          color="error"
-          label="Conferir e fechar"
-          :disabled="busy || !canClose"
-          @click="confirmingClose = true"
-        />
-        <div v-else class="grid w-full gap-2 rounded-md bg-error/10 p-3" data-close-shift-confirm>
-          <!-- O eco do valor: a última leitura antes de a contagem virar
-               a única palavra do operador no livro. -->
-          <p class="text-sm font-medium">
-            Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
-          </p>
-          <div class="grid grid-cols-2 gap-2">
-            <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
-            <!-- O degrau que PRATICA o ato é o único que o diz. -->
-            <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose()" />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice :failure="cashFailure" gesture="close_shift" @dismiss="dismissCashFailure" />
+          <NuxtButton
+            v-if="!confirmingClose"
+            size="xl"
+            block
+            color="error"
+            label="Conferir e fechar"
+            :disabled="busy || !canClose"
+            @click="confirmingClose = true"
+          />
+          <div v-else class="grid w-full gap-2 rounded-md bg-error/10 p-3" data-close-shift-confirm>
+            <!-- O eco do valor: a última leitura antes de a contagem virar
+                 a única palavra do operador no livro. -->
+            <p class="text-sm font-medium">
+              Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
+            </p>
+            <div class="grid grid-cols-2 gap-2">
+              <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
+              <!-- O degrau que PRATICA o ato é o único que o diz. -->
+              <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose()" />
+            </div>
           </div>
         </div>
       </template>
