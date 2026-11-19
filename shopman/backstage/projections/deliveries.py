@@ -69,6 +69,14 @@ class DeliveryStopProjection:
     error: str = ""
     #: "Chamar sozinho" (``courier-dispatch``), com a revisão e quem chama.
     dispatch_action: Action | None = None
+    #: A última chamada ficou sem resposta da TaOn: "Chamar de novo"
+    #: (``courier-dispatch-again``), a MESMA ação do Painel do pedido. Com ela, o
+    #: "Chamar sozinho" some (o servidor recusaria) e o pedido não entra em corrida.
+    dispatch_again_action: Action | None = None
+    #: Numa parada de corrida: o pedido mudou depois da chamada e a cobrança que o
+    #: entregador leu ficou para trás (``courier.charge_outdated``):
+    #: ``{sent, current, collected}``, ou ``None``.
+    charge_outdated: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +129,9 @@ class DeliveryRideProjection:
     #: (``courier.cancel_state``, a mesma fonte do Painel do pedido) e a frase.
     cancel_state: str = ""
     cancel_message: str = ""
+    #: Desde quando a TaOn não informa a corrida (``courier.progress_view``, o
+    #: mesmo do Painel); vazio com a leitura em dia.
+    sync_since: str = ""
 
 
 @dataclass(frozen=True)
@@ -171,7 +182,12 @@ def _action(ref: str, label: str, revision: str, user, *, confirm: bool = True,
 
 
 def _stop(order: Order, *, with_asks: bool = False, user=None) -> DeliveryStopProjection:
-    from shopman.backstage.projections.order_queue import _courier_change_fields, _declared_volumes
+    from shopman.backstage.projections.order_queue import (
+        COURIER_DISPATCH_AGAIN_CONFIRMATION,
+        COURIER_NO_ANSWER_MESSAGE,
+        _courier_change_fields,
+        _declared_volumes,
+    )
     from shopman.shop.services import courier, operator_orders
 
     data = order.data or {}
@@ -184,6 +200,13 @@ def _stop(order: Order, *, with_asks: bool = False, user=None) -> DeliveryStopPr
     change_q = int(asks.get("change_out_suggested_q") or 0)
     block = courier.get_block(order)
     error = block.get("error") if isinstance(block.get("error"), dict) else {}
+    message = str(error.get("message") or "")
+    callable_here = with_asks and courier.is_enabled_for(order) and not courier.has_active_ride(order)
+    # A chamada sem resposta trava qualquer outra (não se sabe se a corrida abriu
+    # lá): a mesma regra e a mesma frase do Painel (``order_queue._courier_block``).
+    unresolved = courier.unresolved_dispatch(order) is not None if callable_here else False
+    if unresolved:
+        message = COURIER_NO_ANSWER_MESSAGE
     return DeliveryStopProjection(
         ref=order.ref,
         code=operator_orders.short_ref(order.ref),
@@ -199,9 +222,14 @@ def _stop(order: Order, *, with_asks: bool = False, user=None) -> DeliveryStopPr
         needs_machine=bool(asks.get("needs_machine")),
         change_label=_courier_change_fields(order).get("change_label", "") if change_q else "",
         group_refusal=courier.group_refusal(order) if with_asks else "",
-        error=str(error.get("message") or "") if with_asks else "",
+        error=message if with_asks else "",
         dispatch_action=_action("courier-dispatch", "Chamar sozinho", courier.dispatch_revision(order), user)
-        if with_asks and courier.is_enabled_for(order) and not courier.has_active_ride(order) else None,
+        if callable_here and not unresolved else None,
+        dispatch_again_action=_action(
+            "courier-dispatch-again", "Chamar de novo", courier.dispatch_revision(order), user,
+            confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+        ) if unresolved else None,
+        charge_outdated=None if with_asks else courier.charge_outdated(order),
     )
 
 
@@ -316,6 +344,7 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         cancel_message=cancel["message"],
         reopened_at=reopened["at"],
         reopened_driver=reopened["driver"],
+        sync_since=progress.get("sync_since", ""),
     )
 
 

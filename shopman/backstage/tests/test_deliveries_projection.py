@@ -322,3 +322,88 @@ def test_a_refused_cancellation_says_so_and_matches_the_order_panel(shop, monkey
     order.refresh_from_db()
     panel = _courier_block(order)["cancel_state"]
     assert (panel["state"], panel["message"]) == (ride.cancel_state, ride.cancel_message)
+
+
+
+# ── F4a: a página Entregas sabe o mesmo que o Painel do pedido ───────────────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_call_without_answer_offers_call_again_never_call_alone(shop):
+    """ENT-SEC-06: com a chamada sem resposta, o "Chamar sozinho" que o servidor
+    recusaria some; no lugar, o "Chamar de novo" do Painel, com a mesma frase."""
+    from shopman.orderman.models import Directive
+
+    from shopman.backstage.projections.order_queue import (
+        COURIER_DISPATCH_AGAIN_CONFIRMATION,
+        COURIER_NO_ANSWER_MESSAGE,
+        _courier_block,
+    )
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    order = _at("EN-A", -23.30, -51.16)
+    Directive.objects.create(topic=COURIER_DISPATCH, status="failed",
+        payload={"order_ref": order.ref, "actor": "lab", "dispatch_attempt": {"state": "unknown"}})
+
+    (stop,) = build_deliveries().waiting
+
+    assert stop.dispatch_action is None
+    assert stop.dispatch_again_action is not None
+    assert stop.dispatch_again_action.ref == "courier-dispatch-again"
+    assert stop.dispatch_again_action.confirmation == {
+        "required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION}
+    assert stop.error == COURIER_NO_ANSWER_MESSAGE
+    # Não entra em corrida com outros, e diz por quê.
+    assert stop.group_refusal
+    # Paridade com o Painel: a mesma condição decide os dois gestos.
+    block = _courier_block(order)
+    assert block["can_dispatch"] is False and block["can_dispatch_again"] is True
+    assert block["error"]["message"] == stop.error
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_normal_waiting_order_offers_call_alone_and_matches_the_panel(shop):
+    from shopman.backstage.projections.order_queue import _courier_block
+
+    order = _at("EN-A", -23.30, -51.16)
+
+    (stop,) = build_deliveries().waiting
+
+    assert stop.dispatch_action is not None and stop.dispatch_again_action is None
+    assert stop.error == "" and stop.group_refusal == ""
+    block = _courier_block(order)
+    assert block["can_dispatch"] is True and block["can_dispatch_again"] is False
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_ride_says_when_the_provider_stopped_answering(shop):
+    """O dado parado: a mesma fonte do Painel (``courier.progress_view``)."""
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    block = courier.get_block(order)
+    block["sync"] = {"failing_since": "2026-11-18T14:05:00-03:00"}
+    order.data = {**order.data, "courier": block}
+    order.save(update_fields=["data"])
+
+    (ride,) = build_deliveries().rides
+
+    assert ride.sync_since == "2026-11-18T14:05:00-03:00"
+    assert courier.progress_view(courier.get_block(order))["sync_since"] == ride.sync_since
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_stop_whose_charge_changed_after_the_call_says_so(shop):
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _at("EN-A", -23.30, -51.16,
+                payment={"method": "cash", "collection": "on_delivery", "change_for_q": 10000})
+    _call(order)
+    (ride,) = build_deliveries().rides
+    assert ride.stops[0].charge_outdated is None
+
+    merge_order_data(order, {"payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}})
+    order.refresh_from_db()
+
+    (ride,) = build_deliveries().rides
+    assert ride.stops[0].charge_outdated == courier.charge_outdated(order)
+    assert ride.stops[0].charge_outdated["collected"] is False
