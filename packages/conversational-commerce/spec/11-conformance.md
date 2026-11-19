@@ -1,6 +1,6 @@
 # Conformidade: como um adaptador roda a suíte, e a matriz
 
-> **Estado:** rascunho
+> **Estado:** vigente
 > **Dono:** F3 cria, F11 fecha
 
 Responde: como um adaptador prova que implementa as portas, como cada teste K declara o que
@@ -62,16 +62,34 @@ python -m conversational_commerce.testing.matrix --check          # falha se fal
 Gerada dos decoradores, nunca escrita à mão (decisão 9): nenhuma lista central para os WPs
 editarem. Sem `--check`, ela lista e só falha em problema de forma: K desconhecido, escopo
 inválido, argumento não literal ou escopo diferente do exigido. Com `--check`, falha também
-se faltar algum K. O `--check` passa a ser exigido pelo F11; até lá a listagem diz o que
-falta.
+se faltar algum K.
 
-Estado ao fim do F3: K38 marcado (F0, `core`). O K39 está provado no F2
-(`tests/catalog/test_k39_profile_lines.py`, PR do F2) e ganha o decorador quando os dois PRs
-estiverem no `main`. Os demais são dos WPs F4 a F10.
+Desde o F11 os 40 estão marcados no núcleo, e o `--check` roda dentro da suíte
+(`tests/test_d1_exit.py`).
 
-## 5. A fechar no F11
+## 5. O critério de saída do D1 (F11)
 
-- `--check` dentro da suíte, com os 40 marcados.
-- Um K de escopo `adapter` ou `real_mechanism` precisa do teste correspondente no adaptador
-  (`--path`) para a matriz fechar no adaptador.
-- Rede bloqueada e as seis jornadas juntas.
+`tests/test_d1_exit.py` é o critério, como teste:
+
+| Prova | Como |
+|---|---|
+| A matriz fecha | `report` sem problema nem K faltando, e `matrix --check` devolve 0 |
+| A checagem reprova o que deve | o teste do teste: K sem escopo, K desconhecido, escopo diferente do exigido e K faltando (a suíte sem o arquivo do K39) |
+| As seis jornadas juntas | J1 a J6 no mesmo núcleo e sobre os mesmos falsos, cada uma no seu episódio |
+| A especificação vigente | os doze arquivos de `spec/` com `Estado: vigente` |
+
+A rede bloqueada é a fixture `autouse` do `conftest.py`, e vale para toda a suíte; o K38 é
+`test_k38_no_infrastructure.py`; o wheel limpo é `python scripts/wheel_suite.py
+conversational-commerce`, na raiz do monorepo.
+
+[DECIDIDO] As jornadas J3 e J5 conferem o texto da promessa sem o instante do prazo, porque
+o prazo é o da fila a partir do relógio, e o relógio depende de quantas jornadas rodaram
+antes. O instante exato fica provado nos testes do F9 (`tests/commitments/`).
+
+## 6. O que fica para o adaptador
+
+Os K de escopo `adapter` (K01, K02, K03, K06 a K10, K15 a K18, K20, K22, K23, K24, K27,
+K33, K35, K36, K39) e `real_mechanism` (K11 a K14) passam no núcleo sobre os falsos, mas só
+valem para uma implementação quando o adaptador roda o teste correspondente no mecanismo
+dele e a matriz fecha com `--path <testes do adaptador>`. Até lá, a matriz do núcleo fechada
+é o D1, não a prova do adaptador.

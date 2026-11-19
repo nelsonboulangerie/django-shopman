@@ -34,8 +34,10 @@ def test_matrix_lists_marked_and_missing(capsys):
     assert "Faltam:" in out and "K01" in out
 
 
-def test_matrix_check_fails_while_tests_are_missing():
-    assert main(["--check"]) == 1
+def test_matrix_check_passes_with_the_forty_marked(capsys):
+    """Desde o F11 nenhum K falta; o caminho que reprova está em ``test_d1_exit.py``."""
+    assert main(["--check"]) == 0
+    capsys.readouterr()
 
 
 def test_matrix_flags_wrong_scope_and_non_literal(tmp_path):

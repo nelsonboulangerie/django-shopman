@@ -25,8 +25,8 @@ COMPLAINT_AND_QUESTION = JourneyStep(
     understanding={"acts": [{"act": "complain", "fields": {"problem": "wrong_order", "resolution": "replacement"}},
                             {"act": "ask_hours"}]},
     expect_moves=("open_case", "inform"),
-    expect_text=("I'm sorry about this. Our attendant will look into it and get back to you by "
-                 "2026-01-05T09:30:00.000000Z.",
+    # O prazo é o da fila a partir de agora; o instante exato é conferido nos testes do F9.
+    expect_text=("I'm sorry about this. Our attendant will look into it and get back to you by ",
                  "We are open from 08:00 to 18:00."),
     expect_state="active",
 )

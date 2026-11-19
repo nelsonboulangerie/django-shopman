@@ -11,6 +11,7 @@ from conversational_commerce.catalog import CATALOG, evaluate_catalog, evaluate_
 from conversational_commerce.contracts import DeploymentProfile, ProfileLine
 from conversational_commerce.profile import IneligibilityCode, read_line
 from conversational_commerce.profile.test_profile import TEST_LINES, build_test_profile
+from conversational_commerce.testing.conformance import conformance
 
 from .situations import happy
 
@@ -22,6 +23,7 @@ def _replace_line(profile: DeploymentProfile, line_id: str, **changes) -> Deploy
     return dataclasses.replace(profile, lines=lines)
 
 
+@conformance("K39", scope="adapter")
 @pytest.mark.parametrize("move", ["cancel_order", "amend_order", "grant_discount"])
 def test_absent_line_makes_the_dependent_action_ineligible_with_code(move):
     situation, profile = happy(move)

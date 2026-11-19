@@ -21,7 +21,8 @@ def test_k19_complaint_and_question_two_needs_question_answered_case_owned_no_of
     # O caso: código do problema, solução pedida, dono e prazo.
     case = only_open(turn_engine).commitment
     assert case.type == "case" and case.problem_code == "wrong_order" and case.requested_resolution == "replacement"
-    assert case.owner == "attendant" and case.deadline.status == "set"
+    assert case.owner == "attendant" and case.deadline.at == "2026-01-05T09:30:00.000000Z"
+    assert "get back to you by 2026-01-05T09:30:00.000000Z." in result.text
     assert world.staff.commitments[case.commitment_id].type == "case"
     # Nenhuma oferta: nada da família comercial escolhido.
     assert all(MOVES[move].family != "commerce" for move in result.chosen_moves)
