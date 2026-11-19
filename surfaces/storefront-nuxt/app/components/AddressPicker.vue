@@ -1089,8 +1089,8 @@ function onLabelResolved () {
                 {{ savedAddressLines(address).title }}
                 <UiBadge v-if="address.is_default" variant="secondary">Padrão</UiBadge>
               </UiFieldTitle>
-              <UiFieldDescription v-if="savedAddressLines(address).detail || address.complement">
-                {{ [savedAddressLines(address).detail, address.complement].filter(Boolean).join(' · ') }}
+              <UiFieldDescription v-if="savedAddressLines(address).lines.length">
+                <span v-for="(line, index) in savedAddressLines(address).lines" :key="index" class="block">{{ line }}</span>
               </UiFieldDescription>
             </UiFieldContent>
             <UiButton

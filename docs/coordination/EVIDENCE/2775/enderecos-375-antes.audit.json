@@ -72,6 +72,14 @@
       "contrast": 6.09,
       "clipped": false,
       "overflows_card": false
+    },
+    {
+      "text": "Apto 12",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
     }
   ]
 }

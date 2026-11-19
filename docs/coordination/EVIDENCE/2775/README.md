@@ -3,11 +3,13 @@
 - `enderecos-375-antes.png`: a página do `origin/main` com o dado de hoje. Os três
   endereços gravados por pedido de entrega dizem "Entrega", e só a linha de baixo
   distingue um do outro.
-- `enderecos-375-depois.png`: a página deste branch com o dado depois da `shop.0123`
-  (os mesmos três sem etiqueta). Quem fala é a rua com o número; embaixo, bairro e
-  cidade, como o PDV lista o mesmo endereço. O endereço com etiqueta ("Casa") não muda.
+- `enderecos-375-depois.png`: a página deste branch com o dado depois da `shop.0123`.
+  Uma função só (`savedAddressLines`) monta as linhas, no formato do PDV: a rua com o
+  número e o complemento ("Rua Belo Horizonte, 88, Apto 12") e, embaixo, o bairro e a
+  cidade ("Centro · Londrina/PR"), sem o CEP. Com etiqueta são três linhas (a etiqueta,
+  a rua, o bairro e a cidade); sem etiqueta, duas (quem fala é o endereço).
 - `*.audit.json`: medição de cada linha dos cartões (tamanho, peso, contraste contra o
-  fundo do cartão, corte, transbordo). Título 16 px/600 com contraste 12,76; linha de
+  fundo do cartão, corte, transbordo). Título 16 px/600 com contraste 12,76; linhas de
   baixo 14 px com 6,09 (a mesma classe `shop-muted` de antes). Nada cortado, nada
   transbordando, sem rolagem lateral.
 

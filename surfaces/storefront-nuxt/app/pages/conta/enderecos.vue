@@ -160,8 +160,7 @@ useSeoMeta({ title: 'Endereços' })
                 {{ savedAddressLines(address).title }}
                 <UiBadge v-if="address.is_default" variant="secondary">Padrão</UiBadge>
               </div>
-              <p v-if="savedAddressLines(address).detail" class="mt-0.5 shop-muted">{{ savedAddressLines(address).detail }}</p>
-              <p v-if="address.complement" class="shop-muted">{{ address.complement }}</p>
+              <p v-for="(line, index) in savedAddressLines(address).lines" :key="index" class="shop-muted" :class="index === 0 ? 'mt-0.5' : ''">{{ line }}</p>
             </div>
           </div>
           <div class="flex flex-wrap gap-2 border-t pt-3">

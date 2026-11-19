@@ -2,7 +2,7 @@
   "page_scroll_x": false,
   "rows": [
     {
-      "text": "Rua Pará, 120\nPadrão",
+      "text": "Rua Pará, 120, Apto 42\nPadrão",
       "font_px": 16,
       "weight": "600",
       "contrast": 12.76,
@@ -11,14 +11,6 @@
     },
     {
       "text": "Centro · Londrina/PR",
-      "font_px": 14,
-      "weight": "400",
-      "contrast": 6.09,
-      "clipped": false,
-      "overflows_card": false
-    },
-    {
-      "text": "Apto 42",
       "font_px": 14,
       "weight": "400",
       "contrast": 6.09,
@@ -66,7 +58,15 @@
       "overflows_card": false
     },
     {
-      "text": "Rua Belo Horizonte, 88 - Centro, Londrina - PR, 86020-060",
+      "text": "Rua Belo Horizonte, 88, Apto 12",
+      "font_px": 14,
+      "weight": "400",
+      "contrast": 6.09,
+      "clipped": false,
+      "overflows_card": false
+    },
+    {
+      "text": "Centro · Londrina/PR",
       "font_px": 14,
       "weight": "400",
       "contrast": 6.09,

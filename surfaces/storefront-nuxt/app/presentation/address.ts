@@ -195,18 +195,30 @@ export function savedAddressTag (address: Pick<SavedAddressProjection, 'label' |
   return (address.label || '').trim()
 }
 
-// As duas linhas de um endereço salvo numa lista. Com etiqueta: a etiqueta e,
-// embaixo, o endereço. Sem etiqueta: a rua com o número e, embaixo, o bairro e a
-// cidade, como o PDV lista o mesmo endereço (#2775). Cadastro sem a rua separada
-// (ou reduzido, sem rua): a linha é o endereço inteiro.
-export function savedAddressLines (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom' | 'formatted_address' | 'route' | 'street_number' | 'neighborhood' | 'city' | 'state_code'>): { title: string, detail: string } {
-  const place = (address.formatted_address || '').trim()
+// As linhas de um endereço salvo numa lista, montadas num lugar só para a conta e
+// para o checkout (#2775), no mesmo formato em que o PDV lista o mesmo endereço:
+// a rua com o número e o complemento ("Rua Belo Horizonte, 540, Apto 12") e, embaixo,
+// o bairro e a cidade ("Centro · Londrina/PR"). O CEP não aparece.
+//   com etiqueta: a etiqueta, a rua, o bairro e a cidade (três linhas);
+//   sem etiqueta: a rua, o bairro e a cidade (duas linhas; quem fala é o endereço).
+// Cadastro sem a rua separada (antigo, ou reduzido, sem rua): a linha da rua é o
+// endereço inteiro, com o complemento, e não há linha de bairro e cidade.
+export function savedAddressLines (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom' | 'formatted_address' | 'complement' | 'route' | 'street_number' | 'neighborhood' | 'city' | 'state_code'>): { title: string, lines: string[] } {
+  const clean = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim()
+  const complement = clean(address.complement)
+  const route = clean(address.route)
+  let street: string
+  let place = ''
+  if (route) {
+    street = [route, clean(address.street_number), complement].filter(Boolean).join(', ')
+    const cityState = [clean(address.city), clean(address.state_code)].filter(Boolean).join('/')
+    place = [clean(address.neighborhood), cityState].filter(Boolean).join(' · ')
+  } else {
+    street = [clean(address.formatted_address), complement].filter(Boolean).join(', ')
+  }
   const tag = savedAddressTag(address)
-  if (tag) return { title: tag, detail: place }
-  const street = [address.route, address.street_number].map(part => (part || '').trim()).filter(Boolean).join(', ')
-  if (!(address.route || '').trim()) return { title: place, detail: '' }
-  const cityState = [address.city, address.state_code].map(part => (part || '').trim()).filter(Boolean).join('/')
-  return { title: street, detail: [(address.neighborhood || '').trim(), cityState].filter(Boolean).join(' · ') }
+  const all = [tag, street, place].filter(Boolean)
+  return { title: all[0] || '', lines: all.slice(1) }
 }
 
 // A frase da busca por CEP sem resultado (beta SMS-01). "Não achamos" só quando o
