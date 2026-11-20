@@ -1753,7 +1753,14 @@ def _triage_alert(conversation: Conversation, triage, *, synced: bool) -> None:
     alert_type = "concierge_other_desk" if triage.destination == OTHER_DESK else "concierge_handoff"
     # O handoff traz só a fala do cliente: o título (quem e por quê) a projeção escreve,
     # e o botão diz onde responder. A outra mesa segue com o resumo para o Admin.
-    message = handoff_message(conversation) if alert_type == "concierge_handoff" else alert_message(conversation, triage)
+    if alert_type != "concierge_handoff":
+        message = alert_message(conversation, triage)
+    elif triage.escalated_by == "verification_timeout":
+        # O prazo do "vou verificar" venceu: o motivo e a pergunta do cliente, juntos
+        # (coordenação, 20/11/2026), pelo resumo que a verificação já escreve.
+        message = triage.summary
+    else:
+        message = handoff_message(conversation)
     if not synced:
         message = "\n".join(
             line for line in (message, "O ManyChat não confirmou que a conversa passou para a equipe.") if line
