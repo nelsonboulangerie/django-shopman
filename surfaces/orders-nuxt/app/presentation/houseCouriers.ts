@@ -45,6 +45,8 @@ export interface CarrierChip {
   /** "R$ 11,00", "Sem cotação agora", "Cotando…", ou vazio. */
   value: string;
   busy: boolean;
+  /** O marcado: leva o ✔ no fim da linha, como a cotação juntas×separadas (dono, 16/11). */
+  chosen: boolean;
 }
 
 /** O que a casa respondeu ao enviar a corrida. */
@@ -75,7 +77,13 @@ export function onShift(crew: HouseCrew | null | undefined): HouseCourier[] {
  */
 export function carrierChips(
   crew: HouseCrew | null | undefined,
-  ride: { quoteQ: number | null; quoting: boolean; values?: Readonly<Record<string, string>> },
+  ride: {
+    quoteQ: number | null;
+    quoting: boolean;
+    values?: Readonly<Record<string, string>>;
+    /** O chip marcado (`DEFAULT_CARRIER` ou o `ref` da pessoa). */
+    chosen?: string;
+  },
 ): CarrierChip[] {
   const people = onShift(crew);
   if (!people.length) return [];
@@ -85,6 +93,7 @@ export function carrierChips(
     state: "",
     value: ride.quoting ? "Cotando…" : ride.quoteQ !== null ? money(ride.quoteQ) : "Sem cotação agora",
     busy: false,
+    chosen: (ride.chosen ?? DEFAULT_CARRIER) === DEFAULT_CARRIER,
   };
   return [
     service,
@@ -94,8 +103,45 @@ export function carrierChips(
       state: courier.state_label,
       value: ride.values?.[courier.ref] ?? courier.value,
       busy: courier.state === "busy",
+      chosen: ride.chosen === courier.ref,
     })),
   ];
+}
+
+/** A linha de baixo do chip: "Livre · R$ 15,00", com o ✔ no fim quando é o marcado. */
+export function chipLine(chip: CarrierChip): string {
+  const line = [chip.state, chip.value].filter(Boolean).join(" · ");
+  return chip.chosen ? `${line} ✔` : line;
+}
+
+/**
+ * Quanto custa a corrida para quem leva: a casa pela tabela, o serviço pela cotação.
+ * `null` quando o valor de quem leva ainda não existe (nunca o de outro serviço).
+ */
+export function rideValueQ(ride: {
+  house: boolean;
+  houseValueQ?: number | null;
+  quoteQ?: number | null;
+}): number | null {
+  const value = ride.house ? ride.houseValueQ : ride.quoteQ;
+  return typeof value === "number" ? value : null;
+}
+
+/**
+ * "2 pedidos em 1 corrida · R$ 15,00": o total soma o valor de CADA corrida pelo
+ * serviço que a leva (TaOn pela cotação, a casa pela tabela). Faltou um, sem total:
+ * soma com buraco mente.
+ */
+export function callSummaryByCarrier(orders: number, rides: number, values: readonly (number | null)[]): string {
+  const head = `${orders} ${orders === 1 ? "pedido" : "pedidos"} em ${rides} ${rides === 1 ? "corrida" : "corridas"}`;
+  if (!values.length || values.length !== rides || values.some((value) => value === null)) return head;
+  return `${head} · ${money(values.reduce<number>((sum, value) => sum + (value ?? 0), 0))}`;
+}
+
+/** O total do sheet quando alguma corrida é da casa: uma linha, a soma por quem leva. */
+export function mixedTotalLines(values: readonly (number | null)[]): QuoteLine[] {
+  if (!values.length || values.some((value) => value === null)) return [];
+  return [{ text: `Total: ${money(values.reduce<number>((sum, value) => sum + (value ?? 0), 0))}`, strong: true }];
 }
 
 /** O chip marcado: a escolha do operador, se a pessoa ainda está na escala; senão o padrão. */

@@ -6,7 +6,11 @@ import type { DeliveryStopProjection } from "~/generated/ordersContract";
 import {
   DEFAULT_CARRIER,
   busyNotice,
+  callSummaryByCarrier,
   carrierChips,
+  chipLine,
+  mixedTotalLines,
+  rideValueQ,
   chosenCarrier,
   houseQuoteLines,
   houseRideAction,
@@ -61,6 +65,39 @@ describe("os chips de quem leva", () => {
     expect(chosenCarrier(people, "diego")?.name).toBe("Diego");
     expect(chosenCarrier(people, "rui")).toBeNull();
     expect(chosenCarrier(people, DEFAULT_CARRIER)).toBeNull();
+  });
+});
+
+describe("o ✔ marca quem leva", () => {
+  const people = crew([person("diego", "Diego")]);
+  const lines = (chosen: string) =>
+    carrierChips(people, { quoteQ: 1650, quoting: false, values: { diego: "R$ 15,00" }, chosen }).map(chipLine);
+
+  it("vem no padrão e anda com a escolha, nunca em dois", () => {
+    expect(lines(DEFAULT_CARRIER)).toEqual(["R$ 16,50 ✔", "Livre · R$ 15,00"]);
+    expect(lines("diego")).toEqual(["R$ 16,50", "Livre · R$ 15,00 ✔"]);
+  });
+});
+
+describe("o total segue quem leva cada corrida", () => {
+  it("a casa conta pela tabela, a TaOn pela cotação", () => {
+    expect(rideValueQ({ house: true, houseValueQ: 1500, quoteQ: 1650 })).toBe(1500);
+    expect(rideValueQ({ house: false, houseValueQ: 1500, quoteQ: 1650 })).toBe(1650);
+    // Sem o valor de quem leva, nada: nunca o de outro serviço no lugar.
+    expect(rideValueQ({ house: true, houseValueQ: undefined, quoteQ: 1650 })).toBeNull();
+  });
+
+  it("com Diego, o rodapé diz o valor da tabela, não a cotação da TaOn", () => {
+    expect(callSummaryByCarrier(2, 1, [rideValueQ({ house: true, houseValueQ: 1500, quoteQ: 1650 })])).toBe(
+      "2 pedidos em 1 corrida · R$ 15,00",
+    );
+  });
+
+  it("corridas misturadas somam o valor de cada uma; faltou um, sem total", () => {
+    expect(callSummaryByCarrier(3, 2, [1500, 1250])).toBe("3 pedidos em 2 corridas · R$ 27,50");
+    expect(callSummaryByCarrier(3, 2, [1500, null])).toBe("3 pedidos em 2 corridas");
+    expect(mixedTotalLines([1500, 1250])).toEqual([{ text: "Total: R$ 27,50", strong: true }]);
+    expect(mixedTotalLines([1500, null])).toEqual([]);
   });
 });
 

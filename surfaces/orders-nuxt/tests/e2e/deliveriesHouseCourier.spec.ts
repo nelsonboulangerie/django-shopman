@@ -30,12 +30,21 @@ test.describe("Entregas: quem leva", () => {
     const who = sheet.getByRole("radiogroup", { name: "Quem leva a corrida C" });
     await expect(who.getByRole("radio")).toHaveCount(2);
     await expect(who.getByRole("radio", { name: /TaOn/ })).toHaveAttribute("aria-checked", "true");
-    await expect(who).toContainText("Livre · R$ 15,00");
+    // O ✔ marca o escolhido, como na cotação: só um dos dois o tem.
+    await expect(who.getByText("R$ 16,50 ✔", { exact: true })).toBeVisible();
+    await expect(who.getByText("Livre · R$ 15,00", { exact: true })).toBeVisible();
     await expect(sheet.getByText("Juntas: R$ 16,50 · 24 min · 5,7 km ✔", { exact: true }).first()).toBeVisible();
+    const footer = page.getByText("2 pedidos em 1 corrida · R$", { exact: false }).first();
+    await expect(footer).toContainText("R$ 16,50");
 
     await who.getByText("Diego", { exact: true }).click();
     await expect(who.getByRole("radio", { name: /Diego/ })).toHaveAttribute("aria-checked", "true");
+    await expect(who.getByText("Livre · R$ 15,00 ✔", { exact: true })).toBeVisible();
+    await expect(who.getByText("R$ 16,50", { exact: true })).toBeVisible();
     await expect(sheet.getByText("Valor da tabela: R$ 15,00", { exact: true })).toBeVisible();
+    // O rodapé da chamada segue quem leva: o valor da tabela, nunca a cotação da TaOn.
+    await expect(footer).toContainText("R$ 15,00");
+    await expect(footer).not.toContainText("R$ 16,50");
     await expect(sheet.getByText(/Juntas:|Separadas/)).toHaveCount(0);
     await expect(sheet.getByRole("button", { name: "Enviar para Diego: A47 e C03", exact: true })).toBeVisible();
   });

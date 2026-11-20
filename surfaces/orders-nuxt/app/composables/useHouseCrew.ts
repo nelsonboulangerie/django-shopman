@@ -17,6 +17,8 @@ export function useHouseCrew(rides: Ref<readonly { number: number; refs: string[
   });
   /** `{numero da corrida: {ref do entregador: "R$ 15,00"}}`. */
   const values = ref<Record<number, Record<string, string>>>({});
+  /** Os mesmos valores em centavos, para o total da chamada seguir quem leva. */
+  const valuesQ = ref<Record<number, Record<string, number | null>>>({});
   const asked = new Map<number, string>();
   const timers: Record<number, ReturnType<typeof setTimeout>> = {};
 
@@ -30,6 +32,8 @@ export function useHouseCrew(rides: Ref<readonly { number: number; refs: string[
           asked.delete(Number(key));
           const { [Number(key)]: _gone, ...rest } = values.value;
           values.value = rest;
+          const { [Number(key)]: _goneQ, ...restQ } = valuesQ.value;
+          valuesQ.value = restQ;
         }
       }
       if (!people) return;
@@ -47,6 +51,10 @@ export function useHouseCrew(rides: Ref<readonly { number: number; refs: string[
             values.value = {
               ...values.value,
               [number]: Object.fromEntries(answer.couriers.map((courier) => [courier.ref, courier.value])),
+            };
+            valuesQ.value = {
+              ...valuesQ.value,
+              [number]: Object.fromEntries(answer.couriers.map((courier) => [courier.ref, courier.value_q])),
             };
           } catch {
             // Sem o valor, o chip mostra só o estado: chamar continua possível.
@@ -70,5 +78,5 @@ export function useHouseCrew(rides: Ref<readonly { number: number; refs: string[
     }
   }
 
-  return { crew, values, refresh, toggleShift, toggling };
+  return { crew, values, valuesQ, refresh, toggleShift, toggling };
 }

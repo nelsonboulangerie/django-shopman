@@ -21,7 +21,6 @@ import {
   assignMachines,
   backCheck,
   callAllLabel,
-  callSummary,
   changeValue,
   failureStops,
   machineShortfall,
@@ -47,7 +46,10 @@ import {
   DEFAULT_CARRIER,
   HOUSE_RIDE_PATH,
   busyNotice,
+  callSummaryByCarrier,
   carrierChips,
+  mixedTotalLines,
+  rideValueQ,
   chosenCarrier,
   houseQuoteLines,
   houseRideAction,
@@ -212,7 +214,7 @@ const linesOf = (ride: EditingRide) => {
 // O padrão do Admin vem marcado; quem da casa está na escala aparece como opção. A
 // escolha é por corrida, só da tela, e vale até chamar.
 const crewRides = computed(() => ready.value.map((ride) => ({ number: ride.number, refs: routeOf(ride).map((stop) => stop.ref) })));
-const { crew, values: houseValues, refresh: refreshCrew, toggleShift, toggling } = useHouseCrew(crewRides);
+const { crew, values: houseValues, valuesQ: houseValuesQ, refresh: refreshCrew, toggleShift, toggling } = useHouseCrew(crewRides);
 watch(data, () => void refreshCrew());
 const carrier = ref<Record<number, string>>({});
 const carrierOf = (number: number) => chosenCarrier(crew.value, carrier.value[number]);
@@ -234,9 +236,21 @@ const chipsOf = (ride: EditingRide) => {
     quoteQ: state?.quote?.value_q ?? null,
     quoting: Boolean(state?.pending),
     values: houseValues.value[ride.number],
+    chosen: carrierOf(ride.number)?.ref ?? DEFAULT_CARRIER,
   });
 };
 const shift = computed(() => shiftChips(crew.value));
+// O valor de cada corrida pelo serviço que a leva: a casa pela tabela, a TaOn pela
+// cotação (a viva; no sheet, a do plano enquanto a viva não chega).
+function valueOf(ride: EditingRide, planQ: number | null = null): number | null {
+  const who = carrierOf(ride.number);
+  const live = quotes.value[ride.number]?.quote?.value_q;
+  return rideValueQ({
+    house: Boolean(who),
+    houseValueQ: who ? houseValuesQ.value[ride.number]?.[who.ref] : null,
+    quoteQ: typeof live === "number" ? live : planQ,
+  });
+}
 
 // ── maquininha de cada corrida (P1-12) ──────────────────────────────────────
 const machines = computed(() => data.value?.machines ?? []);
@@ -305,8 +319,9 @@ const callLabel = computed(() => {
 });
 const machineMissing = computed(() => needing.value.some((number) => !assigned.value[number]));
 const canCall = computed(() => ready.value.length > 0 && !sending.value && !machineMissing.value);
+// O total segue quem leva cada corrida (a casa pela tabela, a TaOn pela cotação).
 const summary = computed(() =>
-  callSummary(editingCount.value, ready.value.length, ready.value.map((ride) => quotes.value[ride.number]?.quote ?? null)),
+  callSummaryByCarrier(editingCount.value, ready.value.length, ready.value.map((ride) => valueOf(ride))),
 );
 const callAction = computed<OperatorActionBarAction>(() => ({
   label: callLabel.value,
@@ -560,8 +575,18 @@ const sheetLines = computed(() => {
   const list = sheetRides.value
     .map((ride) => suggestionOf(editing.value.find((item) => item.number === ride.number)?.refs ?? []))
     .filter(Boolean) as RideSuggestion[];
-  // O total compara cotações da TaOn: com alguma corrida da casa, ele não vale.
-  if (sheetRides.value.some((ride) => ride.carrier !== DEFAULT_CARRIER)) return [];
+  // O juntas×separadas compara cotações da TaOn: com alguma corrida da casa, o total
+  // vira a soma por quem leva cada uma (com uma corrida só, a linha dela já diz tudo).
+  if (sheetRides.value.some((ride) => ride.carrier !== DEFAULT_CARRIER)) {
+    if (sheetRides.value.length < 2) return [];
+    return mixedTotalLines(
+      sheetRides.value.map((ride) => {
+        const editingRide = editing.value.find((item) => item.number === ride.number);
+        const plan = editingRide ? suggestionOf(editingRide.refs) : undefined;
+        return editingRide ? valueOf(editingRide, (plan as RideSuggestion | undefined)?.together_q ?? null) : null;
+      }),
+    );
+  }
   return list.length === sheetRides.value.length ? suggestionsHeadline(list).lines : [];
 });
 const sheetMachineMissing = computed(() => sheetRides.value.some((ride) => ride.needsMachine && !ride.machine));

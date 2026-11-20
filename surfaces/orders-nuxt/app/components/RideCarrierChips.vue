@@ -2,7 +2,7 @@
 // "Quem leva" (M3, #2526): uma linha de opções por corrida. O serviço padrão do Admin vem
 // primeiro e marcado; cada pessoa da casa na escala vem depois, com o estado e o valor
 // da tabela. Um toque troca. A página é dona da escolha: aqui só se desenha e devolve.
-import { DEFAULT_CARRIER, type CarrierChip } from "~/presentation/houseCouriers";
+import { DEFAULT_CARRIER, chipLine, type CarrierChip } from "~/presentation/houseCouriers";
 
 const props = defineProps<{
   chips: CarrierChip[];
@@ -19,7 +19,8 @@ const items = computed(() =>
   props.chips.map((chip) => ({
     value: chip.key === DEFAULT_CARRIER ? SERVICE : chip.key,
     label: chip.label,
-    description: [chip.state, chip.value].filter(Boolean).join(" · "),
+    // O marcado leva o ✔ (como a cotação juntas×separadas): TaOn e Diego nunca se parecem.
+    description: chipLine(chip),
   })),
 );
 const selected = computed(() => (props.modelValue === DEFAULT_CARRIER ? SERVICE : props.modelValue));
@@ -35,7 +36,7 @@ const selected = computed(() => (props.modelValue === DEFAULT_CARRIER ? SERVICE 
       orientation="horizontal"
       variant="card"
       indicator="hidden"
-      class="tabular-nums"
+      class="tabular-nums [font-variant-emoji:text]"
       @update:model-value="(value: unknown) => emit('update:modelValue', value === SERVICE ? DEFAULT_CARRIER : String(value))"
     />
     <p v-if="notice" class="op-micro text-warning" data-ride-carrier-notice>{{ notice }}</p>
