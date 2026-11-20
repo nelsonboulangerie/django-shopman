@@ -109,8 +109,8 @@ def test_no_comparison_when_one_separate_quote_is_missing(shop, client):
     _at("ED-B", -23.335, -51.158)
     real = courier.estimate_for_order
 
-    def flaky(order, **kwargs):
-        return None if order.ref == "ED-B" else real(order, **kwargs)
+    def flaky(order):
+        return None if order.ref == "ED-B" else real(order)
 
     with mock.patch.object(courier, "estimate_for_order", side_effect=flaky):
         body = client.get(QUOTE, {"refs": ["ED-A", "ED-B"]}).json()["estimate"]
@@ -134,7 +134,7 @@ def test_a_joined_ride_shows_the_route_quote_never_the_old_single_one(shop):
     far = _at("ED-A", -23.31, -51.16)
     near = _at("ED-B", -23.335, -51.158)
     # Antes de juntar, o operador cotou A sozinho no Painel: R$ 12,50.
-    courier.estimate_for_order(far, store=True)
+    courier.store_estimate(far, courier.estimate_for_order(far), expected_revision=courier.dispatch_revision(far))
     directive = courier.request_group_dispatch([far, near], actor="operator:ana")
     CourierDispatchHandler().handle(message=directive, ctx={})
 

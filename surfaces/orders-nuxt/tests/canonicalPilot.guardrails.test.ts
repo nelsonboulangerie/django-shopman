@@ -577,8 +577,10 @@ describe("Gestor canônico em Nuxt UI", () => {
     // O posto Saída usa o mesmo painel de filtros; não há cabeçalho de coluna na toolbar.
     expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
     expect(board).toContain(':heading="!exitPostView"');
+    // As colunas em abas são a última barra do topo: moram no `#below` do cabeçalho, e o
+    // aviso da tela vem depois delas (dono, 20/11/2026, DEV-2026-063).
     expect(board).toMatch(
-      /<OperatorToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="items-end pt-2 pb-0"/,
+      /<template v-if="boardAsTabs && view === 'board' && zones\.length" #below>\s*<OperatorToolbar class="items-end pt-2 pb-0" data-board-zone-bar>/,
     );
     const header = board.slice(
       board.indexOf("<OperatorPageHeader"),
@@ -589,7 +591,12 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(header).not.toMatch(
       /<NuxtTabs\b(?=[^>]*data-view-switch)[^>]*color="neutral"/s,
     );
-    expect(runtimeOffenders(/#below\b/)).toEqual([]);
+    // O `#below` é a navegação secundária (as colunas em abas), dentro do cabeçalho; o
+    // sinal do canal mora no `#feedback`, nunca ali.
+    expect(header).toContain("data-board-zone-bar");
+    expect(runtimeOffenders(/<template\b[^>]*#below\b/)).toEqual(["pages/index.vue"]);
+    const below = header.slice(header.indexOf("#below>"), header.indexOf("</OperatorToolbar>", header.indexOf("#below>")));
+    expect(below).not.toContain("ChannelQueueSignal");
     expect(
       componentTags("Tabs", sources)
         .filter(({ tag }) => !/:content="false"/.test(tag))

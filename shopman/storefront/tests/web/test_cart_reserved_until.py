@@ -16,6 +16,7 @@ import pytest
 from django.utils import timezone
 from shopman.stockman import stock
 from shopman.stockman.models import Hold, Position, PositionKind
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.projections import cart as cart_data
 from shopman.storefront.tests.web.conftest import _ensure_listing_item
@@ -214,11 +215,107 @@ class TestCartSaysUntilWhenItHoldsTheItems:
         assert datetime.fromisoformat(_cart(client)["reserved_until_iso"]) == mine.expires_at
 
 
+class TestCartSaysTheReservationLapsed:
+    """Quem abre a sacola depois do prazo lê que a reserva venceu (#2767).
+
+    Até o #2767 a frase só existia para quem estava com a sacola aberta na hora em
+    que o prazo passou: a tela guardava a hora que viu vencer. Quem voltava depois
+    via as linhas normais e nenhuma palavra sobre a reserva.
+    """
+
+    def _lapse(self, client, *, ago=timedelta(minutes=5)):
+        expired_at = timezone.now() - ago
+        _timed_holds(client).update(expires_at=expired_at)
+        return expired_at
+
+    def test_live_reservation_says_nothing_about_lapsing(self, client, ready):
+        _set_qty(client, ready.sku, 1)
+
+        assert _cart(client)["reservation_lapsed_display"] is None
+
+    def test_reservation_past_its_deadline_says_until_when_it_held(self, client, ready):
+        _set_qty(client, ready.sku, 2)
+        expired_at = self._lapse(client)
+
+        cart = _cart(client)
+
+        assert cart["reserved_until_iso"] is None
+        assert cart["reservation_lapsed_display"] == format_clock(expired_at)
+
+    def test_reservation_released_by_the_sweep_still_says_it_lapsed(self, client, ready):
+        from shopman.stockman.services.holds import StockHolds
+
+        _set_qty(client, ready.sku, 2)
+        expired_at = self._lapse(client)
+        assert StockHolds.release_expired() >= 1
+
+        cart = _cart(client)
+
+        assert [item["sku"] for item in cart["items"]] == [ready.sku]
+        assert cart["reservation_lapsed_display"] == format_clock(expired_at)
+
+    def test_reservation_from_another_day_carries_the_date(self, client, ready):
+        _set_qty(client, ready.sku, 1)
+        expired_at = self._lapse(client, ago=timedelta(days=1))
+
+        display = _cart(client)["reservation_lapsed_display"]
+
+        assert display == format_local(expired_at, "%d/%m às {clock}")
+        assert " às " in display
+
+    def test_a_gesture_reserves_again_and_the_lapsed_hour_goes_away(self, client, ready):
+        _set_qty(client, ready.sku, 1)
+        self._lapse(client)
+        assert _cart(client)["reservation_lapsed_display"]
+
+        renewed = _set_qty(client, ready.sku, 2).json()["cart"]
+
+        assert renewed["reserved_until_iso"] is not None
+        assert renewed["reservation_lapsed_display"] is None
+
+    def test_reservation_released_before_its_deadline_is_not_a_lapse(self, client, ready):
+        _set_qty(client, ready.sku, 1)
+        # Solta antes do prazo (não foi o relógio): a sacola não diz que venceu.
+        _timed_holds(client).update(status="released", resolved_at=timezone.now())
+
+        assert _cart(client)["reservation_lapsed_display"] is None
+
+    def test_only_items_still_in_the_bag_count(self, client, ready, channel, croissant):
+        _ensure_listing_item(channel, croissant, price_q=120)
+        _receive_ready(croissant, "20")
+        _set_qty(client, ready.sku, 1)
+        _set_qty(client, croissant.sku, 1)
+        session_key = _session_key(client)
+        # A do pão venceu pelo relógio; a do croissant foi solta antes do prazo.
+        _timed_holds(client).filter(sku=ready.sku).update(expires_at=timezone.now() - timedelta(minutes=5))
+        _timed_holds(client).filter(sku=croissant.sku).update(status="released", resolved_at=timezone.now())
+
+        assert cart_data.reservation_lapsed_at(session_key, [croissant.sku]) is None
+        assert cart_data.reservation_lapsed_at(session_key, [ready.sku]) is not None
+
+        # Tirado da sacola o último item, a sacola vazia não fala de reserva.
+        _set_qty(client, ready.sku, 0)
+        _set_qty(client, croissant.sku, 0)
+        cart = _cart(client)
+        assert cart["is_empty"] is True
+        assert cart["reservation_lapsed_display"] is None
+
+    def test_future_batch_reservation_never_lapses(self, client, batch_tomorrow):
+        _set_qty(client, batch_tomorrow.sku, 1)
+
+        assert _cart(client)["reservation_lapsed_display"] is None
+
+
 class TestReservedUntilFacade:
     def test_no_session_no_deadline(self):
         assert cart_data.reserved_until(None) is None
         assert cart_data.reserved_until("") is None
         assert cart_data.reserved_until("sessao-que-nao-existe") is None
+
+    def test_lapsed_needs_a_session_and_an_item(self):
+        assert cart_data.reservation_lapsed_at(None, ["PAO"]) is None
+        assert cart_data.reservation_lapsed_at("sessao", []) is None
+        assert cart_data.reservation_lapsed_at("sessao-que-nao-existe", ["PAO"]) is None
 
     def test_released_reservation_does_not_count(self, client, ready):
         _set_qty(client, ready.sku, 1)
