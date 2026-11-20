@@ -518,7 +518,12 @@ const newCustomerNote = computed(() => {
     </template>
     <template #body>
       <div>
-        <div class="grid gap-5">
+        <!-- `grid-cols-1` (uma coluna `minmax(0, 1fr)`), não a coluna `auto` implícita:
+             coluna `auto` não fica menor que o conteúdo mínimo dos itens, e um texto que
+             corta com reticências (`truncate`) conta a frase inteira como mínimo. Com o
+             contato longo (telefone, CPF e e-mail) o diálogo do balcão crescia 124 px para
+             fora (#2885). A coluna fica na largura do diálogo; quem não cabe quebra ou corta. -->
+        <div class="grid grid-cols-1 gap-5">
           <!-- 1 · A PERGUNTA — e ela vem antes do resto porque é o que trava
                a venda. Duas situações, uma forma: o sistema NÃO decide sozinho.
 
@@ -847,21 +852,26 @@ const newCustomerNote = computed(() => {
                existente e novo. O selo (e o tom) é a única diferença nítida —
                abas "buscar × cadastrar" faziam o operador escolher um modo
                antes de saber se a pessoa já tinha cadastro. -->
+          <!-- O cartão mede a si mesmo (`@container`), não a janela (#2885): no celular
+               o selo com o nome e o "Remover cliente" não cabem lado a lado, e a linha
+               que não quebrava empurrava o diálogo inteiro 90 px para fora da tela.
+               Estreito, o botão desce para baixo do selo e o selo quebra linha em vez
+               de cortar o nome; largo (o balcão), tudo como sempre foi. -->
           <div
             v-if="!isReceiptDecision"
-            class="grid gap-3 rounded-md border p-4"
+            class="@container grid grid-cols-1 gap-3 rounded-md border p-4"
             :class="hasCustomer ? 'border-primary bg-primary/5' : 'bg-muted/30'"
             data-customer-state
           >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
+            <div class="flex flex-col items-start gap-3 @sm:flex-row @sm:justify-between" data-customer-state-header>
+              <div class="min-w-0 self-stretch @sm:self-auto">
                 <p class="flex items-center gap-1.5 text-base font-semibold" role="status">
                   <Icon
                     :name="hasCustomer ? 'lucide:user-check' : 'lucide:user-round-plus'"
                     class="size-4 shrink-0"
                     :class="hasCustomer ? 'text-primary' : 'text-muted-foreground'"
                   />
-                  <span class="truncate">{{ stateBadge }}</span>
+                  <span class="min-w-0 wrap-anywhere @sm:truncate">{{ stateBadge }}</span>
                   <span
                     v-if="newCustomerNote"
                     class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
@@ -870,7 +880,7 @@ const newCustomerNote = computed(() => {
                     {{ newCustomerNote }}
                   </span>
                 </p>
-                <p v-if="hasCustomer && identityChips.length" class="mt-0.5 truncate text-sm tabular-nums text-muted-foreground">
+                <p v-if="hasCustomer && identityChips.length" class="mt-0.5 text-sm tabular-nums text-muted-foreground wrap-anywhere @sm:truncate">
                   {{ identityChips.join(" · ") }}
                 </p>
                 <p v-else-if="!hasCustomer" class="mt-0.5 text-sm text-muted-foreground">
@@ -910,7 +920,7 @@ const newCustomerNote = computed(() => {
               >
                 <Icon name="lucide:tag" /> {{ customerLookup.group_discount_label }}
               </UiBadge>
-              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-2xl border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                 🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
               </span>
               <span v-else-if="customerLookup?.is_birthday_month" class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">

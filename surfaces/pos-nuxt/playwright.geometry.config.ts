@@ -39,7 +39,9 @@ export default defineConfig({
       timeout: 30_000,
       // `MOCK_ADDRESS`: a comanda 12 abre como encomenda com entrega, para a trava do
       // endereço (`deliveryAddress.spec.ts`); a 13, da trava da comanda, não muda.
-      env: { MOCK_PORT: String(backendPort), MOCK_TODAY: "2026-09-29", MOCK_SCENARIO: "sale", MOCK_ADDRESS: "1" },
+      // `MOCK_CUSTOMER`: a busca de cliente acha a Maria Santos, com o diálogo Cliente
+      // cheio, para a trava do transbordo a 375 px (`customerModal.spec.ts`, #2885).
+      env: { MOCK_PORT: String(backendPort), MOCK_TODAY: "2026-09-29", MOCK_SCENARIO: "sale", MOCK_ADDRESS: "1", MOCK_CUSTOMER: "1" },
     },
     {
       command:
