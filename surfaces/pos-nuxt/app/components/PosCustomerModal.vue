@@ -383,8 +383,47 @@ async function cancelDecision() {
   input.value?.inputRef?.focus();
 }
 
+// ESCOLHIDO O CADASTRO, O FOCO VAI AO GESTO QUE SEGUE (#2825). Pelo teclado (F6,
+// telefone, seta, Enter), o foco ficava na busca, e o "Concluir" estava a 11 Tabs,
+// atrás do formulário inteiro. O cadastro escolhido chega pelo lookup do shell: quando
+// ele chega, o foco vai ao "Concluir"; se chegou com uma pergunta (a decisão), vai à
+// pergunta, que se responde antes de fechar. O diálogo NÃO fecha sozinho: o operador
+// confere quem escolheu (o selo, o formulário, os alertas) e o Enter conclui.
+// Só move o foco que ainda está onde o gesto o deixou (a busca, ou lugar nenhum): se o
+// operador já foi a outro campo enquanto o cadastro chegava, o foco é dele.
+const { reveal } = useNextFocus();
+const pickedRef = ref("");
+const concludeRef = ref<{ $el?: HTMLElement } | null>(null);
+const decisionPanelRef = ref<HTMLElement | null>(null);
+function focusStillAtPick() {
+  const active = document.activeElement;
+  return !active || active === document.body || active.matches("input[aria-label='Buscar cliente']");
+}
+watch(
+  () => [pickedRef.value, props.lookupBusy, props.customerLookup?.ref, props.customerDecision] as const,
+  ([picked, busy, lookupRef, decision]) => {
+    if (!picked || busy) return;
+    if (!decision && lookupRef !== picked) return;
+    pickedRef.value = "";
+    if (!focusStillAtPick()) return;
+    if (decision) {
+      // A pergunta do documento tem o próprio foco (o título); a de contato, o primeiro gesto.
+      if (decision.kind !== "receipt_identity") {
+        reveal(() => decisionPanelRef.value?.querySelector<HTMLButtonElement>("button:not(:disabled)"), { align: "center" });
+      }
+      return;
+    }
+    reveal(() => {
+      const button = concludeRef.value?.$el as HTMLButtonElement | undefined;
+      return button && !button.disabled ? button : null;
+    }, { align: "center" });
+  },
+  { flush: "post" },
+);
+
 function onSelect(result: POSCustomerSearchResult) {
   markCommitted();
+  pickedRef.value = result.ref;
   emit("selectResult", result);
 }
 const concludePending = ref(false);
@@ -527,6 +566,7 @@ const newCustomerNote = computed(() => {
           </div>
           <div
             v-if="customerDecision && decisionCopy && !isReceiptDecision"
+            ref="decisionPanelRef"
             class="grid gap-3 rounded-md border border-warning/60 bg-warning/10 p-4"
             role="alertdialog"
             aria-live="assertive"
@@ -958,6 +998,7 @@ const newCustomerNote = computed(() => {
     </template>
     <template v-if="!isReceiptDecision" #footer>
       <NuxtButton
+        ref="concludeRef"
         size="xl"
         block
         color="primary"
