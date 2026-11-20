@@ -5,6 +5,7 @@ junto com os models (ADR-019).
 """
 
 from shopman.storefront.admin.concierge import ConversationAdmin  # noqa: F401
+from shopman.storefront.admin.corpus import ConversationCorpusEntryAdmin  # noqa: F401
 from shopman.storefront.admin.favorites import CustomerFavoriteAdmin  # noqa: F401
 from shopman.storefront.admin.intents import IntentCategoryAdmin, MessageIntentSampleAdmin  # noqa: F401
 from shopman.storefront.admin.stock_alerts import (  # noqa: F401

@@ -1294,6 +1294,9 @@ def _prepare_reply(
             "window_evidence": window_evidence,
             "content_hash": hashlib.sha256(text.encode()).hexdigest(),
             "house_rules": rules_envelope,
+            # O que de fato aconteceu no turno (``house_rules``: verify, handoff, order...). O
+            # corpus anonimizado lê daqui o resultado da conversa (``concierge/corpus``).
+            "receipts": sorted(receipts),
         },
         usage=_turn_usage(meter),
     )
