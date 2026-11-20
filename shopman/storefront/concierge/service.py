@@ -477,7 +477,7 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
 #: O cartão de quando o cliente escreve com a conversa na equipe (o sino do Gestor).
 WROTE_WHILE_WITH_TEAM = (
     "O cliente escreveu de novo, e a conversa está com a equipe. Responda pelo Live Chat "
-    "do ManyChat, ou devolva a conversa ao concierge no Admin."
+    "do ManyChat, ou devolva a conversa ao concierge."
 )
 
 
@@ -1729,6 +1729,9 @@ def return_to_concierge(conversation: Conversation) -> bool:
             "Retorno não confirmado em todos os vínculos. Atendimento humano mantido.",
         )
     conversation.refresh_from_db()
+    if synced:
+        # Voltou à Concierge: o cartão de atendimento humano desta conversa acabou.
+        _close_card(conversation, "concierge_handoff", actor="concierge")
     return synced
 
 

@@ -504,8 +504,5 @@ def alert_message(conversation, triage: Triage) -> str:
         lines.append(f"Cliente: {who}.")
     if conversation.last_order_ref:
         lines.append(f"Último pedido: {conversation.last_order_ref}.")
-    lines.append(
-        "Responda pelo Live Chat do ManyChat. Transcrição no Admin: "
-        f"/admin/shop/conversation/{conversation.pk}/change/"
-    )
+    lines.append("Responda pelo Live Chat do ManyChat.")
     return "\n".join(line for line in lines if line)

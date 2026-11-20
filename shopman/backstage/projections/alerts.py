@@ -297,8 +297,33 @@ def _admin_link(path: str) -> str:
     return f"http://127.0.0.1:8000{path}" if settings.DEBUG else ""
 
 
+#: Os cartões da Concierge que se resolvem na conversa: o botão abre a conversa no Admin.
+_CONVERSATION_CARDS = frozenset({
+    "concierge_handoff", "concierge_other_desk", "concierge_unavailable", "concierge_handoff_sync",
+    "concierge_output_blocked", "concierge_output_pending", "concierge_empty_output",
+    "concierge_identity_conflict",
+})
+
+
+def _conversation_home(alert) -> tuple[str, str] | None:
+    """(caminho no Admin, rótulo) da conversa dona do cartão (``Conversation.flags["alerts"]``)."""
+    from django.urls import reverse
+
+    from shopman.shop.models import Conversation
+
+    owner = (
+        Conversation.objects.filter(**{f"flags__alerts__{alert.type}": alert.pk}).values_list("pk", flat=True).first()
+    )
+    if owner is None:
+        return None
+    return reverse("admin:shop_conversation_change", args=[owner]), "Abrir conversa"
+
+
 def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
+    if alert.type in _CONVERSATION_CARDS:
+        found = _conversation_home(alert)
+        return ("admin", *found) if found else None
     if alert.type == "concierge_no_model":
         found = _NO_MODEL_CAUSE.search(alert.message or "")
         path, label = _no_model_home(found.group(1) if found else "")
