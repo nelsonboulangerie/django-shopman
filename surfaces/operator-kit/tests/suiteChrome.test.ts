@@ -321,11 +321,14 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     const view = operatorAlertToInbox({
       pk: 77, type_label: "WhatsApp: Concierge sem modelo", severity: "error", severity_label: "Erro",
       message: "A Concierge está atendendo sem modelo.", created_at_display: "hoje às 21h10",
-      subject: "Concierge sem modelo", origin_label: "WhatsApp", on_screen: true, actions: [],
+      subject: "Concierge sem modelo", origin_label: "WhatsApp", on_screen: true,
+      actions: [{ kind: "open_alert_context", enabled: true, label: "Abrir conexões de IA",
+        href: "https://admin.exemplo/admin/shop/aiconnection/" }],
     });
     expect(view.onScreen).toBe(true);
     expect(inboxScreenAlerts([view, { key: 8, tone: "warning", message: "outro" }])).toEqual([
-      { key: 77, id: "alert:77", title: "Concierge sem modelo", description: "A Concierge está atendendo sem modelo.", color: "error" },
+      { key: 77, id: "alert:77", title: "Concierge sem modelo", description: "A Concierge está atendendo sem modelo.", color: "error",
+        action: { label: "Abrir conexões de IA", to: "https://admin.exemplo/admin/shop/aiconnection/" } },
     ]);
   });
 

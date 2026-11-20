@@ -254,7 +254,8 @@ describe("OperatorPageHeader: o alerta da operação que pede o topo", () => {
 
   it("aparece no topo, na cor de erro, antes dos avisos da tela", async () => {
     useOperatorInboxAlerts().value = {
-      items: [{ key: 77, tone: "critical" as const, message: "A Concierge está atendendo sem modelo.", subject: "Concierge sem modelo", onScreen: true }],
+      items: [{ key: 77, tone: "critical" as const, message: "A Concierge está atendendo sem modelo.", subject: "Concierge sem modelo", onScreen: true,
+        href: "https://admin.exemplo/admin/shop/aiconnection/", hrefLabel: "Abrir conexões de IA" }],
       count: 1,
     };
     mounted = await mountSuspended(OperatorPageHeader, {
@@ -265,5 +266,7 @@ describe("OperatorPageHeader: o alerta da operação que pede o topo", () => {
     expect(first.textContent).toContain("Concierge sem modelo");
     expect(first.textContent).toContain("atendendo sem modelo");
     expect(first.outerHTML).toMatch(/error/);
+    const button = [...first.querySelectorAll("a")].find((a) => a.textContent?.includes("Abrir conexões de IA"));
+    expect(button?.getAttribute("href")).toBe("https://admin.exemplo/admin/shop/aiconnection/");
   });
 });

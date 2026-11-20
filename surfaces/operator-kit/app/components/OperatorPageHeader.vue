@@ -332,6 +332,8 @@ const operationAlerts = computed<OperatorScreenAlert[]>(() =>
     title: alert.title,
     description: alert.description,
     color: alert.color,
+    // O aviso traz o botão que resolve a causa (dono, 20/11/2026: aviso sem ação é defeito).
+    ...(alert.action ? { action: alert.action } : {}),
   })),
 );
 const screenAlerts = computed(() => [...operationAlerts.value, ...answerAlerts.value, ...props.alerts]);

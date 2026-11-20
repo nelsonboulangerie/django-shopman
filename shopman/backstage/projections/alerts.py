@@ -258,8 +258,38 @@ def _ifood_binding_href(alert) -> str:
     return f"{path}?{urlencode({'q': needle})}" if needle else path
 
 
+#: A Concierge sem modelo (``concierge_no_model``): a tela do Admin que resolve cada causa,
+#: com o rótulo do botão (dono, 20/11/2026: o aviso leva até lá, não ensina o caminho).
+_AI_CONNECTIONS = ("/admin/shop/aiconnection/", "Abrir conexões de IA")
+_NO_MODEL_HOMES = {
+    "brake": ("/admin/shop/shop/", "Abrir freio de IA"),
+    "ambiguous": ("/admin/shop/shop/", "Abrir rotas de IA"),
+}
+_NO_MODEL_CAUSE = re.compile(r"Dedupe: concierge:no_model:(\w+)")
+
+
+def _admin_link(path: str) -> str:
+    """O endereço absoluto de ``path`` no Admin, que mora noutro host que os apps.
+
+    Sem ``SHOPMAN_ADMIN_HOST``, cai no host da API do operador, onde /admin/ também
+    responde; em DEBUG sem nenhum dos dois, no Django de desenvolvimento.
+    """
+    from django.conf import settings
+
+    host = str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip() or str(
+        getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or ""
+    ).strip()
+    if host:
+        return f"https://{host}{path}"
+    return f"http://127.0.0.1:8000{path}" if settings.DEBUG else ""
+
+
 def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
+    if alert.type == "concierge_no_model":
+        found = _NO_MODEL_CAUSE.search(alert.message or "")
+        path, label = _NO_MODEL_HOMES.get(found.group(1) if found else "", _AI_CONNECTIONS)
+        return ("admin", path, label)
     catalog_href = _catalog_product_href(alert)
     if catalog_href:
         return ("orders", catalog_href, "Conferir o GTIN no Catálogo")
@@ -298,6 +328,9 @@ def alert_context_href(alert, *, surface: str, target_date: str = "") -> tuple[s
     if home is None:
         return ("", "")
     home_surface, path, label = home
+    if home_surface == "admin":
+        href = _admin_link(path)
+        return (href, label) if href else ("", "")
     if not surface or surface == home_surface:
         return (path, label)
     from shopman.backstage.projections.hub import surface_link

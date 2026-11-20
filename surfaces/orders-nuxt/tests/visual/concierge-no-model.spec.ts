@@ -91,6 +91,10 @@ for (const viewport of VIEWPORTS) {
       const notice = page.locator("[data-page-header-alert]", { hasText: "Concierge sem modelo" });
       await expect(notice).toBeVisible();
       await expect(notice).toContainText("Causa:");
+      await expect(notice).not.toContainText("(Admin");
+      await expect(notice.getByRole("link", { name: "Abrir conexões de IA" })).toHaveAttribute(
+        "href", "https://admin.boulangerie.com.br/admin/shop/aiconnection/",
+      );
       await shot(page, `${id}-1-aviso-no-topo`);
       await audit(page, "[data-page-header-alerts]", `${id}-1-aviso-no-topo`);
 
@@ -113,6 +117,7 @@ for (const viewport of VIEWPORTS) {
         await trigger.click();
       }
       await expect(panel).toContainText("Concierge sem modelo");
+      await expect(panel.getByRole("link", { name: /Abrir conexões de IA/ }).first()).toBeVisible();
       await shot(page, `${id}-3-cartao-no-sino`);
     });
   }

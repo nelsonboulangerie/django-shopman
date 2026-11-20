@@ -116,3 +116,33 @@ def test_the_alert_asks_for_the_top_of_the_screen():
     projection = build_operator_alerts_projection(alerts=_open(), counts=alert_service.active_counts(scope="orders"))
     [row] = projection.alerts
     assert row.on_screen is True and row.subject == "Concierge sem modelo" and row.origin_label == "WhatsApp"
+
+
+def test_the_alert_carries_the_button_that_solves_the_cause(settings, monkeypatch):
+    """Dono, 20/11/2026: o aviso leva até a tela que resolve, não ensina o caminho."""
+    from shopman.backstage.projections.alerts import build_operator_alerts_projection
+    from shopman.backstage.services import alerts as alert_service
+
+    settings.SHOPMAN_ADMIN_HOST = "admin.exemplo.com.br"
+    configure_ai("")
+    reading_health.sync_alert()
+    counts = alert_service.active_counts(scope="orders")
+    [row] = build_operator_alerts_projection(alerts=_open(), counts=counts, surface="orders").alerts
+    [action] = [a for a in row.actions if a.kind == "open_alert_context"]
+    assert (action.label, action.href) == ("Abrir conexões de IA", "https://admin.exemplo.com.br/admin/shop/aiconnection/")
+    assert "(Admin" not in row.message and "Conexões de IA)" not in row.message
+
+    configure_ai("sk-teste")
+
+    def braked(purpose):
+        from shopman.shop import ai_governor
+
+        raise ai_governor.AIDisabled("a IA está desligada na loja")
+
+    from shopman.shop import ai_governor
+
+    monkeypatch.setattr(ai_governor, "check", braked)
+    reading_health.sync_alert()
+    [row] = build_operator_alerts_projection(alerts=_open(), counts=counts, surface="orders").alerts
+    [action] = [a for a in row.actions if a.kind == "open_alert_context"]
+    assert (action.label, action.href) == ("Abrir freio de IA", "https://admin.exemplo.com.br/admin/shop/shop/")

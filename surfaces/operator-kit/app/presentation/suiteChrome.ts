@@ -397,7 +397,10 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
   };
 }
 
-type OnScreen = { key: string | number; onScreen?: boolean; tone?: string; subject?: string; eyebrow?: string; message?: string };
+type OnScreen = {
+  key: string | number; onScreen?: boolean; tone?: string; subject?: string; eyebrow?: string; message?: string;
+  href?: string; hrefLabel?: string;
+};
 
 /** O aviso de tela de um alerta que pede o topo (sem a ação: quem monta põe). */
 export interface InboxScreenAlert {
@@ -406,6 +409,8 @@ export interface InboxScreenAlert {
   title: string;
   description: string;
   color: "error" | "warning" | "info";
+  /** O botão que resolve a causa ("Abrir conexões de IA"), quando o servidor oferece. */
+  action?: { label: string; to: string };
 }
 
 /**
@@ -422,6 +427,7 @@ export function inboxScreenAlerts<T extends OnScreen>(items: readonly T[]): Inbo
       title: item.subject || item.eyebrow || "Aviso",
       description: item.message || "",
       color: item.tone === "critical" ? ("error" as const) : item.tone === "warning" ? ("warning" as const) : ("info" as const),
+      ...(item.href ? { action: { label: item.hrefLabel || "Abrir", to: item.href } } : {}),
     }));
 }
 

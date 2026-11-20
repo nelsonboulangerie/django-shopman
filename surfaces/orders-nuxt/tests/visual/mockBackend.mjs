@@ -220,18 +220,24 @@ function noModelAlert() {
   return {
     pk: 960, rev: 0, type: "concierge_no_model", type_label: "WhatsApp: Concierge sem modelo",
     severity: "error", severity_label: "Erro", audience: "orders",
-    message: "A Concierge está atendendo sem modelo: responde o simples e manda para a equipe o que não entende. Causa: a conexão de IA da leitura está sem chave (Admin, Conexões de IA).",
+    message: "A Concierge está atendendo sem modelo: responde o simples e manda para a equipe o que não entende. Causa: a conexão de IA da leitura está sem chave.",
     order_ref: "", created_at_display: "hoje às 21h10",
     origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Concierge sem modelo",
     on_screen: true, respond_by_iso: "", deadline_kind: "",
-    actions: acknowledged.has(960) ? [] : [{
+    actions: [{
+      ref: "open_alert_context:960", kind: "open_alert_context", label: "Abrir conexões de IA", priority: 10,
+      enabled: true, reason: "", method: "GET", href: "https://admin.boulangerie.com.br/admin/shop/aiconnection/",
+      payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
+      approval_requirement: null, source_alert_ref: "960", source_alert_effect: "context", proof: "",
+    }, ...(acknowledged.has(960) ? [] : [{
       ref: "acknowledge:960", kind: "acknowledge_alert", label: "Visto", priority: 20, enabled: true,
       reason: "", method: "POST", href: "/api/v1/backstage/alerts/960/ack/",
       payload_schema: "AlertAckMutationRequest", expected_rev: 0,
       idempotency: { required: true, key_scope: "backstage.alert-ack:960" },
       confirmation: { required: false, reason_required: false, title: "", confirm_label: "Confirmar" },
       approval_requirement: null, source_alert_ref: "960", source_alert_effect: "acknowledges", proof: "",
-    }],
+    }])],
   };
 }
 

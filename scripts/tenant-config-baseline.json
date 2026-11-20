@@ -14,7 +14,7 @@
     "JEV"
   ],
   "totals": {
-    "settings": 308,
+    "settings": 310,
     "env": 24,
     "settings_env": 170
   },
@@ -94,6 +94,9 @@
     },
     "shopman/backstage/middleware_2fa.py": {
       "settings": 1
+    },
+    "shopman/backstage/projections/alerts.py": {
+      "settings": 2
     },
     "shopman/backstage/projections/bi_profiles.py": {
       "settings": 1

@@ -33,12 +33,12 @@ _FAILURES_TTL = 60 * 60
 
 #: A causa, dita para quem opera (o aviso no Gestor; sem travessão, sem jargão).
 CAUSE_TEXT = {
-    "no_connection": "não há conexão de IA ativa para a leitura (Admin, Conexões de IA)",
-    "ambiguous": "há mais de uma conexão de IA e a loja não disse qual usar (Loja, rotas de IA)",
-    "no_key": "a conexão de IA da leitura está sem chave (Admin, Conexões de IA)",
+    "no_connection": "não há conexão de IA ativa para a leitura",
+    "ambiguous": "há mais de uma conexão de IA e a loja não disse qual usar",
+    "no_key": "a conexão de IA da leitura está sem chave",
     "not_approved": "a conexão de IA da leitura não está liberada para mensagem de cliente",
     "no_model": "a conexão de IA da leitura está sem modelo",
-    "brake": "o freio de gasto de IA cortou a leitura (Loja, Inteligência artificial)",
+    "brake": "o freio de gasto de IA cortou a leitura",
     "provider_failing": "as últimas leituras falharam no provedor de IA",
     "not_configured": "a leitura está sem conexão de IA utilizável",
 }
