@@ -181,6 +181,7 @@
             "recent_exists",
             "resolve",
             "resolve_matching",
+            "resolve_pk",
             "revise"
           ]
         }
