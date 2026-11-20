@@ -11,6 +11,7 @@
 // Barra inferior do celular (regra única do kit, `quickBarLayout`): as seções do chão
 // (`GESTOR_FLOOR_SECTIONS`) vão para baixo; o resto, para a gaveta.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
+import { UNKNOWN_COUNT } from "../../../operator-kit/app/presentation/countChip";
 
 export interface GestorSectionsInput {
   // Rótulo de atenção de Canais ("1 desligado"); vazio quando está tudo normal.
@@ -34,8 +35,10 @@ export interface GestorSectionsInput {
   catalogOnly?: boolean;
   // Contagens do painel para os selos do rail (vazias fora do painel).
   intakeCount?: number;
-  // Entregas do dia sem corrida chamada: o selo de Entregas.
-  deliveriesWaiting?: number;
+  // Entregas do dia sem corrida chamada: o selo de Entregas. `null` é a contagem que
+  // falhou (o servidor devolve `null`, ou a leitura não voltou): o selo mostra "?",
+  // nunca um zero que diria "nada aguardando".
+  deliveriesWaiting?: number | null;
 }
 
 /** `?columns=expedition`: o painel abre como balcão de saída (o mesmo parâmetro que o
@@ -55,7 +58,22 @@ export const SETTINGS_ROUTES = [
 /** As telas da operação, no rail: não acendem Ajustes. */
 const RAIL_ROUTES = ["/history", "/customers", "/catalog", "/feeds", "/channels"];
 
-function badge(count: number | undefined) {
+/**
+ * O que o selo de Entregas mostra, a partir da resposta de `deliveries/count/`:
+ * o número; `null` ("?") quando o servidor não conseguiu contar ou a leitura falhou;
+ * `undefined` (nenhum selo) enquanto a primeira resposta não chegou.
+ */
+export function deliveriesWaitingBadge(
+  response: { waiting?: number | null } | null | undefined,
+  failed: boolean,
+): number | null | undefined {
+  // A última leitura manda: se ela falhou, o número que ficou de antes já não vale.
+  if (failed || response?.waiting === null) return null;
+  return typeof response?.waiting === "number" ? response.waiting : undefined;
+}
+
+function badge(count: number | null | undefined) {
+  if (count === null) return { badge: UNKNOWN_COUNT };
   return count ? { badge: String(count) } : {};
 }
 

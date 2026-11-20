@@ -420,6 +420,7 @@ export interface RideCandidateProjection {
   stage: string;
   distance_label: string;
   change_label: string;
+  suggested: boolean;
 }
 
 /** Ouvidoria aberta: o cliente pediu para falar com o responsável. */
@@ -944,6 +945,7 @@ export interface TwoZoneQueueProjection {
   equipment_available: EquipmentOptionProjection[];
   ride_candidates: RideCandidateProjection[];
   ride_action: Action | null;
+  ride_suggestions: number;
   ifood_negotiation_orders: OrderCardProjection[];
   cancel_reasons: CancelReasonProjection[];
   awareness: QueueAwarenessProjection | null;
@@ -1299,6 +1301,9 @@ export interface DeliveryStopProjection {
   dispatch_action: Action | null;
   dispatch_again_action: Action | null;
   charge_outdated: Record<string, unknown> | null;
+  fiscal_status: string;
+  danfe_state: string;
+  danfe_problem: string;
 }
 
 /** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str', photo_url: 'str' = '') */
@@ -1346,7 +1351,41 @@ export interface DeliveryRideProjection {
   sync_since: string;
 }
 
-/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None) */
+/** Uma corrida que a casa sugere juntar (``ride_plan``), no topo de Aguardando. */
+export interface RideSuggestionProjection {
+  key: string;
+  refs: string[];
+  codes: string[];
+  places: string;
+  quoted: boolean;
+  suggested: boolean;
+  late_code: string;
+  late_minutes: number;
+  together_q: number | null;
+  minutes: number | null;
+  km: number | null;
+  with_return: boolean;
+  separate_q: number | null;
+  saving_q: number | null;
+}
+
+/** DeliveryServiceOptionProjection(ref: 'str', name: 'str', kind: 'str', is_default: 'bool') */
+export interface DeliveryServiceOptionProjection {
+  ref: string;
+  name: string;
+  kind: string;
+  is_default: boolean;
+}
+
+/** O plano das corridas (``ride_plan``): o MESMO do Painel e do ``ride_offer``. */
+export interface RidePlanProjection {
+  suggestions: RideSuggestionProjection[];
+  service: string;
+  service_reason: string;
+  service_options: DeliveryServiceOptionProjection[];
+}
+
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None, ride_plan: 'RidePlanProjection | None' = None) */
 export interface DeliveriesProjection {
   origin: DeliveryPointProjection | null;
   waiting: DeliveryStopProjection[];
@@ -1358,4 +1397,5 @@ export interface DeliveriesProjection {
   group_action: Action | null;
   free_numbers: number[];
   next_number: number | null;
+  ride_plan: RidePlanProjection | null;
 }

@@ -546,17 +546,66 @@ def stranded_companions(order) -> tuple[str, list]:
     return status, stuck
 
 
-def unresolved_dispatch(order, *, exclude_pk=None):
-    """Pure receipt read. Unknown/start never authorizes another provider POST."""
+#: Recibos de despacho que ainda podem estar abertos lá (:func:`unresolved_dispatch`).
+_RECEIPT_STATES = ("started", "unknown", "accepted")
+
+#: A tarefa de despacho que ainda vai (ou está indo) à central.
+_LIVE_TASK_STATUSES = (Directive.Status.QUEUED, Directive.Status.RUNNING)
+
+
+def dispatch_tasks_for(orders) -> dict[str, list[Directive]]:
+    """As tarefas de despacho de vários pedidos numa consulta só, por pedido.
+
+    Só as que alguma leitura pergunta: as vivas (:func:`ride_is_live`) e as que têm
+    recibo (:func:`unresolved_dispatch`). A tarefa da corrida de várias paradas
+    entra em cada pedido dela (``payload.order_ref`` e ``payload.ride_members``).
+    Quem lê uma lista de pedidos passa o resultado para essas duas funções, e a
+    leitura deixa de fazer uma consulta por pedido.
+    """
+    from django.db.models import Q
+
     from shopman.shop.directives import COURIER_DISPATCH
 
-    tasks = Directive.objects.filter(dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
-        payload__dispatch_attempt__state__in=["started", "unknown", "accepted"])
-    if exclude_pk is not None:
-        tasks = tasks.exclude(pk=exclude_pk)
+    refs = [order.ref for order in orders]
+    found: dict[str, list[Directive]] = {ref: [] for ref in refs}
+    if not refs:
+        return found
+    tasks = Directive.objects.filter(
+        Q(payload__order_ref__in=refs) | Q(payload__ride_members__has_any_keys=refs),
+        Q(status__in=_LIVE_TASK_STATUSES) | Q(payload__dispatch_attempt__state__in=_RECEIPT_STATES),
+        topic=COURIER_DISPATCH,
+    ).order_by("-pk")
+    for task in tasks:
+        payload = task.payload or {}
+        members = payload.get("ride_members") if isinstance(payload.get("ride_members"), dict) else {}
+        for ref in {str(payload.get("order_ref") or ""), *members}:
+            if ref in found:
+                found[ref].append(task)
+    return found
+
+
+def unresolved_dispatch(order, *, exclude_pk=None, tasks: dict[str, list[Directive]] | None = None):
+    """Pure receipt read. Unknown/start never authorizes another provider POST.
+
+    ``tasks``: as tarefas já lidas em lote (:func:`dispatch_tasks_for`).
+    """
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    if tasks is None:
+        candidates = Directive.objects.filter(dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
+            payload__dispatch_attempt__state__in=list(_RECEIPT_STATES))
+        if exclude_pk is not None:
+            candidates = candidates.exclude(pk=exclude_pk)
+        candidates = candidates.order_by("-pk")
+    else:
+        candidates = [
+            task for task in tasks.get(order.ref, [])
+            if ((task.payload or {}).get("dispatch_attempt") or {}).get("state") in _RECEIPT_STATES
+            and task.pk != exclude_pk
+        ]
     block = get_block(order)
     known = {block.get("id_mch"), *[attempt.get("id_mch") for attempt in block.get("attempts", [])]}
-    for task in tasks.order_by("-pk"):
+    for task in candidates:
         receipt = (task.payload or {}).get("dispatch_attempt", {})
         if receipt.get("state") == "accepted" and receipt.get("courier_ref") in known:
             continue
@@ -638,11 +687,12 @@ RIDE_LETTERS = 26
 _RIDE_NUMBER_LOCK = 0x52494445  # "RIDE"
 
 
-def ride_is_live(order) -> bool:
+def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None) -> bool:
     """A corrida deste pedido ainda ocupa uma letra (e uma cor) na tela.
 
     Viva: chamada à espera da TaOn, corrida aberta ainda não terminada, ou
     terminada com o entregador ainda devendo voltar (troco, dinheiro, maquininha).
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
     """
     block = get_block(order)
     if not block.get("ride_number"):
@@ -656,11 +706,12 @@ def ride_is_live(order) -> bool:
         from shopman.shop.services import operator_orders
 
         return bool(operator_orders.courier_return_members(order))
+    if tasks is not None:
+        return any(task.status in _LIVE_TASK_STATUSES for task in tasks.get(order.ref, []))
     from shopman.shop.directives import COURIER_DISPATCH
 
     return Directive.objects.filter(
-        dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
-        status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        dispatch_task_filter(order.ref), topic=COURIER_DISPATCH, status__in=_LIVE_TASK_STATUSES,
     ).exists()
 
 
@@ -681,9 +732,11 @@ def _live_ride_numbers(exclude_refs=()) -> dict[int, str]:
     """Os números ocupados por corridas vivas, cada um com a chamada mais antiga."""
     live: dict[int, str] = {}
     statuses = (*RIDE_ORDER_STATUSES, Order.Status.DISPATCHED, Order.Status.DELIVERED)
-    for order in Order.objects.filter(status__in=statuses, data__courier__has_key="ride_number").exclude(ref__in=list(exclude_refs)):
+    orders = list(Order.objects.filter(status__in=statuses, data__courier__has_key="ride_number").exclude(ref__in=list(exclude_refs)))
+    tasks = dispatch_tasks_for([order for order in orders if not get_block(order).get("id_mch")])
+    for order in orders:
         number = get_block(order).get("ride_number")
-        if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= RIDE_LETTERS and ride_is_live(order):
+        if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= RIDE_LETTERS and ride_is_live(order, tasks=tasks):
             called = str(get_block(order).get("called_at") or "")
             live[number] = min(live.get(number, called), called)
     return live
@@ -760,8 +813,11 @@ def not_today_refusal(order) -> str:
     return f"A encomenda {short_ref(order.ref)} é para {day}. O entregador se chama no dia."
 
 
-def group_refusal(order) -> str:
-    """Por que este pedido não entra numa corrida com outros ("" quando entra)."""
+def group_refusal(order, *, tasks: dict[str, list[Directive]] | None = None) -> str:
+    """Por que este pedido não entra numa corrida com outros ("" quando entra).
+
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
+    """
     from shopman.shop.services.operator_orders import short_ref
 
     code = short_ref(order.ref)
@@ -777,7 +833,7 @@ def group_refusal(order) -> str:
         return f"O pedido {code} não está esperando entregador."
     if has_active_ride(order):
         return f"O pedido {code} já tem corrida."
-    if unresolved_dispatch(order) is not None:
+    if unresolved_dispatch(order, tasks=tasks) is not None:
         return f"O pedido {code} tem uma chamada sem resposta da TaOn. Confira na central antes."
     return ""
 

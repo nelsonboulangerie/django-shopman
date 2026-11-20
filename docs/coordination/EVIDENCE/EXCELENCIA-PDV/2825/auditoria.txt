@@ -1,0 +1,22 @@
+# Auditoria por script do #2825 (PDV de verdade: Django semeado + PDV compilado, a Caixa com PIN)
+# Roteiro pelo teclado: na encomenda nova, Enter em "Identificar cliente"; no diálogo Cliente,
+# o telefone 43991111111, seta para baixo e Enter (Maria Santos). Para cada passo: o elemento
+# ativo (document.activeElement), :focus-visible, o contorno ou anel, a altura, e os Tabs até
+# o "Concluir" (com o caminho de cada Tab no antes).
+
+==================== ANTES (main 5b0664cdd) ====================
+ 375 px  cadastro escolhido: combobox "Buscar cliente" | :focus-visible | contorno none 1px | altura 32 px
+ 375 px  Tabs até Concluir: 11 ["button \"Remover cliente\"","button \"Favorito\"","input \"Nome no balcão\"","input \"(43) 99999-0000\"","input \"Documento do cadastro\"","input \"cliente@email.com\"","switch \"CPF na nota\"","switch \"Nota por e-mail\"","input \"Ex: alérgico a nozes\"","textarea \"Ex: prefere pão bem assado; busca às 17h\"","button \"Concluir\""]
+ 375 px  no Concluir: button "Concluir" | :focus-visible | contorno solid 3px | altura 40 px
+1366 px  cadastro escolhido: combobox "Buscar cliente" | :focus-visible | contorno none 1px | altura 32 px
+1366 px  Tabs até Concluir: 11 ["button \"Remover cliente\"","button \"Favorito\"","input \"Nome no balcão\"","input \"(43) 99999-0000\"","input \"Documento do cadastro\"","input \"cliente@email.com\"","switch \"CPF na nota\"","switch \"Nota por e-mail\"","input \"Ex: alérgico a nozes\"","textarea \"Ex: prefere pão bem assado; busca às 17h\"","button \"Concluir\""]
+1366 px  no Concluir: button "Concluir" | :focus-visible | contorno solid 3px | altura 40 px
+
+==================== DEPOIS (este PR) ====================
+ 375 px  cadastro escolhido: button "Concluir" | :focus-visible | anel | à vista | altura 40 px
+ 375 px  Tabs até Concluir: 0
+1366 px  cadastro escolhido: button "Concluir" | :focus-visible | anel | à vista | altura 40 px
+1366 px  Tabs até Concluir: 0
+
+==================== FORA DA RÉGUA DESTE PR (igual no antes e no depois, #2885) ====================
+SONDA 375 diálogo Cliente: {"viewport":375,"dialog":{"left":16,"right":359,"width":343},"body":{"scrollWidth":433,"clientWidth":343},"wide":["div \"\" right=449","div \"\" right=449","input[input] \"Buscar cliente\" right=449","div \"Cadastro existente · Maria Santos+554399\" right=449","div \"Cadastro existente · Maria Santos+554399\" right=432","button[base] \"Remover cliente\" right=432","div \"29 pedidos Favorito\" right=432","div \"🎂 Aniversário HOJE · Parabéns! Desconto\" right=432"]}

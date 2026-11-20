@@ -25,6 +25,13 @@ export const COUNT_CHIP_COLOR: CountChipColor = "warning";
 /** O tamanho do chip numerado: o `4xl` do kit (16 px), porque o `3xl` não lê dois dígitos. */
 export const COUNT_CHIP_SIZE = "4xl" as const;
 
+/**
+ * A contagem que o servidor não conseguiu fazer (F10 da revisão das Entregas, 20/11/2026):
+ * o chip escreve "?". Zero diria "nada a fazer", e seria mentira; sem chip, o operador
+ * não saberia que a conta falhou. Quem monta a seção passa `badge: UNKNOWN_COUNT`.
+ */
+export const UNKNOWN_COUNT = "?";
+
 /** Acima de 99 o chip escreve "99+" (decisão de 08/10/2026, PR #1539). */
 export function countChipText(count: number): string {
   return count > 99 ? "99+" : String(count);
@@ -86,6 +93,13 @@ export function countChipProps(
   color: CountChipColor = COUNT_CHIP_COLOR,
 ): { color: CountChipColor; text: string; size: typeof COUNT_CHIP_SIZE; inset: false; ui: { base: string } } {
   return { color, text: countChipText(count), size: COUNT_CHIP_SIZE, inset: false, ui: { base: COUNT_CHIP_INVERT_CLASSES } };
+}
+
+/** O chip da contagem desconhecida, no canto do ícone: o mesmo desenho, com "?". */
+export function unknownCountChipProps(
+  color: CountChipColor = COUNT_CHIP_COLOR,
+): { color: CountChipColor; text: string; size: typeof COUNT_CHIP_SIZE; inset: false; ui: { base: string } } {
+  return { color, text: UNKNOWN_COUNT, size: COUNT_CHIP_SIZE, inset: false, ui: { base: COUNT_CHIP_INVERT_CLASSES } };
 }
 
 /** O ponto de estado no canto do ícone: a mesma inversão do número. */

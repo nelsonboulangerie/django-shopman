@@ -14,7 +14,7 @@
     "JEV"
   ],
   "totals": {
-    "settings": 310,
+    "settings": 311,
     "env": 24,
     "settings_env": 170
   },
@@ -82,6 +82,9 @@
     },
     "shopman/backstage/admin/navigation.py": {
       "settings": 6
+    },
+    "shopman/backstage/api/alerts.py": {
+      "settings": 1
     },
     "shopman/backstage/api/catalog_bindings.py": {
       "settings": 1

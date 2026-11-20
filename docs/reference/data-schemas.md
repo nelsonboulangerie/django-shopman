@@ -1866,6 +1866,26 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 | `pos.cash_tolerance` | `dict` `{percent: str, min_q: int, max_q: int}` | `cash_tolerance.shop_policy` (`backstage/services/cash_tolerance.py`) | **Tolerância do caixa** (decisão do dono, 04/10/2026): a diferença do fechamento que vira só registro, sem alerta. `percent` do dinheiro do dia (vendas, acertos de entrega e de conta em dinheiro do turno), preso entre `min_q` e `max_q` (centavos). Ausente ou chave ausente = **padrão do dono: `0.5`%, `200` (R$ 2), `2000` (R$ 20)**. Valor ilegível cai no padrão, nunca desliga a régua. Editado no ShopAdmin (Ponto de venda → "Tolerância do caixa", mínima e máxima, em % e R$). Cada terminal pode sobrescrever (`Terminal.metadata["cash_tolerance"]`). O operador nunca vê o veredito: o fechamento continua cego |
 | `pos.late_fiscal_emission_days` | `int` (dias) | `late_emission_days` (`shop/services/fiscal.py`) | Quantos dias DEPOIS do dia da venda a emissão avulsa da NFC-e (Últimas vendas do PDV, com gerente) ainda vale. Conta por dia de operação no fuso da loja (`TIME_ZONE`), não por 24 h corridas. **`0` ou ausente = só no mesmo dia** (padrão). Valor ilegível cai no mesmo dia, nunca em "sem limite". Editado no ShopAdmin (PDV e alertas → "Emissão avulsa de NFC-e: dias depois da venda"). ⚠️ A nota sai com a data e a hora da emissão, não da venda. A lista Últimas vendas estica a janela (24 h) até o primeiro dia do prazo, para a venda não sumir antes de vencer |
 
+### Sugestão de juntar corridas — `Shop.defaults["delivery"]["ride_suggestion"]`
+
+Os parâmetros do plano das corridas (`shop/services/ride_plan.py`, P1-9 da revisão das
+Entregas, frente F5): quem a casa sugere juntar numa corrida e quando a sugestão já vem
+marcada. Decididos pelo dono em 16/11/2026 como palpites até o B.I. medir. Editados no
+ShopAdmin (Pedido e entrega → "Sugestão de juntar corridas"). Chave ausente ou ilegível =
+o padrão; nenhuma desliga o freio de preço.
+
+| Chave | Tipo/default | Lido por | Descrição |
+|---|---|---|---|
+| `delivery.ride_suggestion.detour_km` | `float`, `2.5` | `ride_plan.params` → `plan_groups` | O percurso junto passa da maior perna sozinha em no máximo isto (e em no máximo 40% dela, fixo no código). |
+| `delivery.ride_suggestion.saving_min_q` | `int` (centavos), `300` | `ride_plan._quote` | Economia mínima, em centavos, para a sugestão vir marcada. |
+| `delivery.ride_suggestion.saving_min_percent` | `int`, `15` | `ride_plan._quote` | Economia mínima em % das corridas separadas. Vale junto com `saving_min_q` (as duas). |
+| `delivery.ride_suggestion.extra_wait_minutes` | `int`, `10` | `ride_plan._fits` | O cliente que mais espera a mais espera no máximo isto. A espera a mais é estimada pelo desvio a 20 km/h mais 2 min por parada antes (fixos no código). |
+
+O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
+deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o
+"Vai junto nesta corrida?" do Painel do pedido (`courier.ride_offer[].suggested` e
+`courier.ride_suggestion`) e a contagem `ride_suggestions` do quadro.
+
 ### Marketing — `Shop.defaults["marketing"]`
 
 Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketing_policy.py`

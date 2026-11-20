@@ -517,7 +517,48 @@ const DELIVERIES = {
   machines: [],
   courier_on: true,
   maps_key: "",
+  // A corrida em grupo pelo protocolo de intenção: quem a tela leu e a revisão de cada um.
+  group_action: {
+    ref: "courier-ride", kind: "mutation", label: "Chamar corrida", enabled: true, reason: "",
+    method: "POST", idempotency: "required", confirmation: {},
+    payload_schema: {
+      expected_actor_id: 1,
+      base_revisions: { "WEB-20261116-0A47": "r-a47", "WEB-20261116-0C03": "r-c03", "WEB-20261116-0D12": "r-d12" },
+    },
+  },
+  // O plano da casa (`ride_plan`, F5): A47 e C03, prontos e vizinhos, cotados e mais
+  // baratos juntos. D12 está em preparo e nunca entra.
+  ride_plan: {
+    suggestions: [{
+      key: "WEB-20261116-0A47+WEB-20261116-0C03",
+      refs: ["WEB-20261116-0A47", "WEB-20261116-0C03"], codes: ["A47", "C03"], places: "Gleba Palhano",
+      quoted: true, suggested: true, late_code: "C03", late_minutes: 6,
+      together_q: 1650, minutes: 24, km: 5.7, with_return: false, separate_q: 2500, saving_q: 850,
+    }],
+    service: "taon", service_reason: "default",
+    service_options: [{ ref: "taon", name: "TaOn", kind: "machine", is_default: true }],
+  },
 };
+/** As corridas em grupo que a tela chamou (`POST /orders/courier-ride/`), na ordem. */
+const ridePosts = [];
+
+// A F10 (`deliveriesFiscal.spec.ts`, cookie `e2e_f10`): `fiscal` põe a NFC-e não
+// autorizada na parada de Flora (corrida B) e a DANFE por imprimir na de Bia (corrida
+// A), com os MESMOS campos do cartão; `countfail` faz o selo receber `waiting: null`.
+// Sem o cookie, o selo conta as três de Aguardando e nenhuma parada tem aviso.
+function f10Deliveries() {
+  const patch = (stop) => {
+    if (stop.ref === "WEB-20261116-0F09") return { ...stop, fiscal_status: "failed", danfe_state: "", danfe_problem: "" };
+    if (stop.ref === "WEB-20261116-0B12") {
+      return {
+        ...stop, fiscal_status: "authorized", danfe_state: "not_printed",
+        danfe_problem: "A impressora de Balcão recusou a DANFE. Confira o papel e imprima de novo.",
+      };
+    }
+    return stop;
+  };
+  return { ...DELIVERIES, rides: DELIVERIES.rides.map((ride) => ({ ...ride, stops: ride.stops.map(patch) })) };
+}
 
 // A prévia da F4a (`MOCK_F4A=1`): o que a página passou a saber igual ao Painel.
 // Uma chamada sem resposta em Aguardando, a corrida que a TaOn parou de informar
@@ -641,9 +682,26 @@ const server = createServer((req, res) => {
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   const cancelScenario = /(?:^|;\s*)e2e_deliveries=cancel(?:;|$)/.test(req.headers.cookie || "");
   if (cancelScenario && /\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, deliveriesProjection());
+  const f10Scenario = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_f10=(fiscal|countfail)(?:;|$)/)?.[1] ?? "";
+  if (/\/backstage\/deliveries\/count\/?(\?|$)/.test(url)) {
+    return json(res, 200, { waiting: f10Scenario === "countfail" ? null : DELIVERIES.waiting.length });
+  }
+  if (f10Scenario === "fiscal" && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, f10Deliveries());
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });
+  if (/\/e2e\/deliveries\/rides\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") ridePosts.length = 0;
+    return json(res, 200, { rides: ridePosts });
+  }
+  if (/\/orders\/courier-ride\/?(\?|$)/.test(url)) {
+    if (req.method !== "POST") return json(res, 200, { outcome: "not_found" });
+    return void readBody(req).then((body) => {
+      ridePosts.push(body);
+      json(res, 200, { outcome: "applied", refs: body.refs, directive_id: ridePosts.length, status: "queued",
+        ride_number: body.ride_number ?? null, ride_letter: "" });
+    });
+  }
   const promiseVariant = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_promise=(risk|closed)(?:;|$)/)?.[1] ?? "";
   const promiseScenario = Boolean(promiseVariant);
   if (promiseScenario && /\/e2e\/promise\/reset\/?(\?|$)/.test(url)) {

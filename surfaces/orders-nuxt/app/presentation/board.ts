@@ -1618,73 +1618,13 @@ export function equipmentOutLine(
 /** Quantos pedidos uma corrida leva (espelho de `courier.MAX_RIDE_STOPS`). */
 export const MAX_RIDE_STOPS = 4;
 
-/** "3 entregas podem ir na mesma corrida.": quantas o operador pode juntar. */
-export function courierRideLabel(count: number): string {
-  return `${count} entregas podem ir na mesma corrida.`;
-}
-
-/** Uma entrega na escolha da corrida: "Pedido A47 · Maria". */
-export function courierRideLine(
-  card: Pick<OrderCardProjection, "ref" | "customer_name">,
-): string {
-  return joinFacts(`Pedido ${splitRef(card.ref).code}`, card.customer_name);
-}
-
-/** Uma entrega da escolha da corrida: o que o servidor diz dela e o card (as maquininhas). */
-export type RideChoice = RideCandidateProjection & {
-  card: OrderCardProjection;
-};
-
-/** As candidatas do servidor com o card de cada uma (a que sumiu da fila fica de fora). */
-export function rideChoices(
-  candidates: readonly RideCandidateProjection[],
-  cards: readonly OrderCardProjection[],
-): RideChoice[] {
-  return candidates.flatMap((candidate) => {
-    const card = cards.find((item) => item.ref === candidate.ref);
-    return card ? [{ ...candidate, card }] : [];
-  });
-}
-
-/** O troco sugerido de cada escolhida que pede troco, no formato do campo. */
-export function rideChangeDefaults(
-  choices: readonly RideChoice[],
-): Record<string, string> {
-  return Object.fromEntries(
-    choices
-      .filter((choice) => choice.change_out_suggested_q > 0)
-      .map((choice) => [
-        choice.card.ref,
-        moneyInput(choice.change_out_suggested_q),
-      ]),
-  );
-}
-
 /**
- * O pedido da corrida: o troco só dos escolhidos que pedem troco (campo vazio
- * vai como zero, "levou sem troco") e a maquininha só quando algum é de cartão.
+ * O atalho do Painel para a página Entregas, onde se juntam as corridas (F5):
+ * "Montar corridas (2 sugeridas)", com quantas o plano da casa sugere agora.
  */
-export function courierRideBody(
-  picked: readonly string[],
-  choices: readonly RideChoice[],
-  changeOut: Record<string, string>,
-  machineRef: string | undefined,
-): { refs: string[]; change_out: Record<string, string>; machine: string } {
-  const chosen = choices.filter((choice) => picked.includes(choice.card.ref));
-  return {
-    refs: [...picked],
-    change_out: Object.fromEntries(
-      chosen
-        .filter((choice) => choice.change_out_suggested_q > 0)
-        .map((choice) => [
-          choice.card.ref,
-          (changeOut[choice.card.ref] ?? "").trim() || "0",
-        ]),
-    ),
-    machine: chosen.some((choice) => choice.needs_machine)
-      ? (machineRef ?? "")
-      : "",
-  };
+export function buildRidesLabel(suggested: number): string {
+  if (suggested < 1) return "Montar corridas";
+  return `Montar corridas (${suggested} ${suggested === 1 ? "sugerida" : "sugeridas"})`;
 }
 
 /** "Chamar uma corrida para 3 pedidos" (com a maquininha, quando ela vai). */
