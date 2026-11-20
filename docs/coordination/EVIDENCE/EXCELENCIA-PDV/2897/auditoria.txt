@@ -1,0 +1,37 @@
+#2897 · auditoria da prévia (gerada pela jornada J6, rodadas do Pix, 20/11/2026)
+Régua: contraste >= 4,5:1, letra >= 12 px, dentro da tela, nada cortado, nada encoberto, transbordo horizontal 0.
+Resultado: 0 reprovações em 375 px e 1366 px.
+
+## pix na tela (375 px)
+  - "Encomenda PDV-261120-W62": contraste 6.09:1; letra 12 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento PIX · R$ 26,00": contraste 5.56:1; letra 14 px; x 53..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código PIX": contraste 12.76:1; letra 14 px; x 25..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix na tela
+  0
+
+## pix na tela (1366 px)
+  - "Encomenda PDV-261120-R29": contraste 6.09:1; letra 12 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento PIX · R$ 26,00": contraste 5.56:1; letra 14 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código PIX": contraste 12.76:1; letra 14 px; x 584..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix na tela
+  0
+
+## aviso do Pix (375 px)
+  - "Encomenda PDV-261120-M60": contraste 6.09:1; letra 12 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código PIX": contraste 12.76:1; letra 14 px; x 25..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Gerar outro Pix": contraste 4.95:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não; sob a dica de rolagem, que some ao chegar ao fim
+
+## aviso do Pix (1366 px)
+  - "Encomenda PDV-261120-E34": contraste 6.09:1; letra 12 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código PIX": contraste 12.76:1; letra 14 px; x 584..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Gerar outro Pix": contraste 4.95:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
