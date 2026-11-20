@@ -26,7 +26,10 @@ def test_confirmation_uses_domain_availability_and_actor_on_both_surfaces(allowe
     user = actor(allowed)
     card = build_order_card(order, user=user)
     detail = build_operator_order(order, user=user)
-    assert card.actions == tuple(action for action in detail.actions if action.ref != "cancel")
+    # Só o detalhe tem o cancelar e o "Avisar o cliente" (WP-G07): o diálogo do aviso
+    # lê o contato do cliente, que o cartão não leva (#2434).
+    detail_only = {"cancel", "customer-notice"}
+    assert card.actions == tuple(action for action in detail.actions if action.ref not in detail_only)
     cancel = next(action for action in detail.actions if action.ref == "cancel")
     assert cancel.enabled is allowed
     assert cancel.confirmation["required"] is True
