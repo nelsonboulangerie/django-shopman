@@ -256,6 +256,19 @@ describe("assistente da encomenda", () => {
 describe("assistente da encomenda: sem mouse", () => {
   const onSchedule = { ...props, issue: "fulfillment" as const, scheduleDate: "2099-09-11" };
 
+  // A CHEGADA (#2824): a encomenda nova abre na etapa do cliente, e o gesto dela tem o
+  // foco. Antes, o foco morria no `body` e "Identificar cliente" só vinha pelo F6 ou
+  // pelo Tab desde o topo da página.
+  it("a encomenda nova chega com o foco em Identificar cliente, a etapa da vez", async () => {
+    const w = await mount({ props: { ...props, customerName: "" }, attachTo: document.body });
+    expect(active()).toBe(document.body);
+    (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();
+    await settled();
+    expect(active()?.textContent?.trim()).toBe("Identificar cliente");
+    expect(active()?.hasAttribute("data-focus-control")).toBe(true);
+    expect(active()?.closest("[data-order-step]")?.getAttribute("data-order-step")).toBe("customer");
+  });
+
   it("chegando na data, o foco está no dia (a parada de Tab do grupo de dias)", async () => {
     const w = await mount({ props: { ...props, issue: "schedule" as const }, attachTo: document.body });
     (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();

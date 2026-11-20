@@ -1,0 +1,32 @@
+# Auditoria por script do #2824 (PDV de verdade: Django semeado + PDV compilado, a Caixa com PIN)
+# Para cada passo: o elemento ativo (document.activeElement), se casa com :focus-visible,
+# o contorno do foco, a altura do alvo, e os Tabs até "Identificar cliente".
+# Roteiro: Encomendas, Nova encomenda; no diálogo, Tab até "Iniciar encomenda" e Enter.
+
+==================== ANTES (main 5b0664cdd) ====================
+ 375 px  diálogo aberto: button "Voltar sem iniciar" | sem :focus-visible | contorno none 3px | altura 31 px
+ 375 px  um Tab no diálogo: button "Iniciar encomenda" | :focus-visible | contorno solid 3px | altura 31 px
+ 375 px  logo depois do diálogo: input "Mesa, nome ou referência" | :focus-visible | contorno none 1px | altura 32 px
+ 375 px  encomenda aberta: body
+ 375 px  Tabs até Identificar cliente: 2 ["button \"1. Cliente\"","button \"Identificar cliente\""]
+1366 px  diálogo aberto: button "Voltar sem iniciar" | sem :focus-visible | contorno none 3px | altura 30 px
+1366 px  um Tab no diálogo: button "Iniciar encomenda" | :focus-visible | contorno solid 3px | altura 31 px
+1366 px  logo depois do diálogo: input "Mesa, nome ou referência" | :focus-visible | contorno none 1px | altura 32 px
+1366 px  encomenda aberta: body
+1366 px  Tabs até Identificar cliente: 2 ["button \"1. Cliente\"","button \"Identificar cliente\""]
+
+==================== DEPOIS (este PR) ====================
+ 375 px  aberta a encomenda: button "Identificar cliente" | :focus-visible | anel | à vista | altura 32 px
+ 375 px  Tabs até Identificar cliente: 0
+1366 px  aberta a encomenda: button "Identificar cliente" | :focus-visible | anel | à vista | altura 32 px
+1366 px  Tabs até Identificar cliente: 0
+ 375 px  diálogo aberto: button "Voltar sem iniciar" | sem :focus-visible | contorno none 3px | altura 30 px
+ 375 px  um Tab no diálogo: button "Iniciar encomenda" | :focus-visible | contorno solid 3px | altura 31 px
+ 375 px  logo depois do diálogo: body
+ 375 px  encomenda aberta: button "Identificar cliente" | :focus-visible | contorno solid 3px | altura 32 px
+ 375 px  Tabs até Identificar cliente: 0 []
+1366 px  diálogo aberto: button "Voltar sem iniciar" | sem :focus-visible | contorno none 3px | altura 30 px
+1366 px  um Tab no diálogo: button "Iniciar encomenda" | :focus-visible | contorno solid 3px | altura 31 px
+1366 px  logo depois do diálogo: body
+1366 px  encomenda aberta: button "Identificar cliente" | :focus-visible | contorno solid 3px | altura 32 px
+1366 px  Tabs até Identificar cliente: 0 []

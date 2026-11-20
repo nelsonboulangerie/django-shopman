@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 
@@ -180,5 +184,45 @@ describe("Nova encomenda abandonada não prende a comanda", () => {
     await h.sale.openNewOrder();
     expect(h.sale.showTabs.value).toBe(false);
     expect(h.sale.inSaleView.value).toBe(true);
+  });
+});
+
+// A CHEGADA AO ASSISTENTE (#2824). O `openNewOrder` diz se a encomenda abriu; quem
+// mostra o assistente (a tela de venda) leva o foco à etapa da vez, "Identificar
+// cliente". Antes ninguém levava: o diálogo "Iniciar nova encomenda?" devolvia o foco
+// à busca do quadro de comandas, o quadro saía da tela, e o foco morria no `body`.
+describe("Nova encomenda: o foco chega à etapa da vez", () => {
+  const opened = { tab_ref: "2", tab_display: "2", session_key: "sess-2", tab_session_key: "sess-2" };
+
+  it("o sim não devolve o foco ao quadro, que sai da tela: quem abre a encomenda o leva", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    await h.sale.openNewOrder();
+    expect(confirmNewOrder).toHaveBeenCalledWith(expect.objectContaining({ returnFocusOnConfirm: false }));
+  });
+
+  it("diz que abriu, e só quando abriu", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    confirmNewOrder.mockResolvedValueOnce(false);
+    await expect(h.sale.openNewOrder()).resolves.toBe(false);
+    await expect(h.sale.openNewOrder()).resolves.toBe(true);
+    await nextTick();
+    expect(h.sale.orderSetupPending.value).toBe(true);
+    // A encomenda vazia reaproveitada também chega ao assistente.
+    h.sale.showTabs.value = true;
+    await expect(h.sale.openNewOrder()).resolves.toBe(true);
+  });
+
+  it("a comanda que não abriu não diz que abriu", async () => {
+    const h = sale([tab("2", "empty")], opened);
+    h.handles.actionCall.mockRejectedValueOnce(new Error("offline"));
+    await expect(h.sale.openNewOrder()).resolves.toBe(false);
+  });
+
+  it("a tela de venda leva o foco ao assistente depois de abrir, pelos dois caminhos", () => {
+    const page = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../app/pages/index.vue"), "utf8");
+    const after = (name: string) => page.slice(page.indexOf(`async function ${name}()`), page.indexOf(`async function ${name}()`) + 400);
+    // A Nova encomenda das Encomendas (`/?new=order`) e a da tela de resultado.
+    expect(after("startNewOrder")).toContain("if (await openNewOrder()) focusOrderEntry();");
+    expect(after("startNextOrder")).toContain("if (await openNewOrder()) focusOrderEntry();");
   });
 });
