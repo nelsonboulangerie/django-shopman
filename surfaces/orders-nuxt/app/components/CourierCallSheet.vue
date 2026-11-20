@@ -99,7 +99,7 @@ const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops
             <ul class="flex flex-col gap-1">
               <li v-for="stop in ride.stops" :key="stop.ref" class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="min-w-0 flex-1 op-body"><span class="font-medium text-highlighted">{{ stop.code }} · {{ stop.customer }}</span> <span class="text-muted">· {{ stop.place }}</span></span>
-                <label v-if="stop.change_out_suggested_q > 0" class="flex items-center gap-2" data-call-sheet-change>
+                <label v-if="stop.change_out_suggested_q > 0" class="flex min-h-11 items-center gap-2" data-call-sheet-change>
                   <span class="op-micro text-toned">Troco</span>
                   <NuxtInput
                     :model-value="stop.change"
