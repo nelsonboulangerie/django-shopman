@@ -331,10 +331,12 @@ async function openRedoTab(ref: string) {
   }
 }
 
-/** Abre a encomenda nova e limpa a URL (recarregar não abre outra comanda). */
+/** Abre a encomenda nova e limpa a URL (recarregar não abre outra comanda). Aberta,
+ *  o foco vai à etapa da vez do assistente ("Identificar cliente"), sem F6 nem Tab
+ *  (#2824): a confirmação não devolve o foco ao quadro, que sai da tela. */
 async function startNewOrder() {
   try {
-    await openNewOrder();
+    if (await openNewOrder()) focusOrderEntry();
   } finally {
     void router.replace({ path: "/", query: {} });
   }
@@ -1067,7 +1069,7 @@ async function startNextSale() {
 // comanda livre já no modo Encomendas, o mesmo gesto da seção Encomendas.
 async function startNextOrder() {
   dismissResult();
-  await openNewOrder();
+  if (await openNewOrder()) focusOrderEntry();
 }
 
 // "Ver a nota" na tela de resultado: só para quem o servidor deixa.

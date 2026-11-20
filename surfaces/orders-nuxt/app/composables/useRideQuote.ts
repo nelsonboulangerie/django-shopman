@@ -63,3 +63,83 @@ export function useRideQuote(refs: Ref<string[]>, waitMs = 350) {
 
   return { quote, pending, failure };
 }
+
+export interface EditingQuoteState {
+  quote: (RideQuote & { separate_value_q?: number; saving_q?: number }) | null;
+  pending: boolean;
+  failure: string;
+}
+
+/**
+ * A cotação de CADA corrida em edição na página Entregas (P1-10): de 1 a 4 pedidos,
+ * com a comparação "juntas contra separadas" quando o servidor a tem. Uma resposta
+ * velha (a corrida mudou de pedidos no meio) nunca sobrescreve a nova, e a corrida
+ * que saiu da edição sai daqui.
+ */
+export function useEditingQuotes(
+  rides: Ref<readonly { number: number; refs: string[] }[]>,
+  waitMs = 350,
+) {
+  const quotes = ref<Record<number, EditingQuoteState>>({});
+  const asked = new Map<number, string>();
+  const timers: Record<number, ReturnType<typeof setTimeout>> = {};
+
+  watch(
+    rides,
+    (list) => {
+      const alive = new Set(list.map((ride) => ride.number));
+      const next: Record<number, EditingQuoteState> = {};
+      for (const [key, state] of Object.entries(quotes.value)) {
+        const number = Number(key);
+        if (alive.has(number)) next[number] = state;
+        else {
+          clearTimeout(timers[number]);
+          asked.delete(number);
+        }
+      }
+      for (const ride of list) {
+        const key = ride.refs.join("|");
+        if (asked.get(ride.number) === key) continue;
+        asked.set(ride.number, key);
+        clearTimeout(timers[ride.number]);
+        if (!ride.refs.length) {
+          next[ride.number] = { quote: null, pending: false, failure: "" };
+          continue;
+        }
+        next[ride.number] = { quote: null, pending: true, failure: "" };
+        const refs = [...ride.refs];
+        const number = ride.number;
+        timers[number] = setTimeout(async () => {
+          let state: EditingQuoteState;
+          try {
+            const answer = await $fetch<{ estimate: EditingQuoteState["quote"]; detail?: string }>(
+              "/api/v1/backstage/orders/courier-ride/quote/",
+              { query: { refs } },
+            );
+            state = {
+              quote: answer.estimate,
+              pending: false,
+              failure: answer.estimate ? "" : (answer.detail ?? ""),
+            };
+          } catch (error) {
+            state = {
+              quote: null,
+              pending: false,
+              failure: httpErrorMessage(
+                error,
+                "Não foi possível cotar a corrida agora. Dá para chamar mesmo assim.",
+              ),
+            };
+          }
+          if (asked.get(number) !== key) return;
+          quotes.value = { ...quotes.value, [number]: state };
+        }, waitMs);
+      }
+      quotes.value = next;
+    },
+    { deep: true, immediate: true },
+  );
+  onScopeDispose(() => Object.values(timers).forEach((timer) => clearTimeout(timer)));
+
+  return quotes;
+}

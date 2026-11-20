@@ -94,9 +94,13 @@ function resumo (): string {
  * 2026-11-18: os termos ganharam a cláusula do pedido não retirado, em "Retirada e
  * entrega" (#2613, texto aprovado pelo dono): o que ainda puder voltar à venda é
  * devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a loja.
+ *
+ * 2026-11-20: a política ganhou o uso da cópia anonimizada das mensagens do WhatsApp
+ * para melhorar o atendimento, e o prazo dela (#2851, pedido do dono): sem nome,
+ * contato, documento, data nem hora exata; amostra conferida toda semana.
  */
-const RESUMO_PUBLICADO = '35c9893b5eeb2169'
-const VERSAO_PUBLICADA = '2026-11-18'
+const RESUMO_PUBLICADO = 'b0c48179e6b736a1'
+const VERSAO_PUBLICADA = '2026-11-20'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {

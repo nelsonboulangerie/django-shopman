@@ -407,3 +407,24 @@ def test_a_stop_whose_charge_changed_after_the_call_says_so(shop):
     (ride,) = build_deliveries().rides
     assert ride.stops[0].charge_outdated == courier.charge_outdated(order)
     assert ride.stops[0].charge_outdated["collected"] is False
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_waiting_brings_the_house_suggestion_and_the_badge_never_asks_the_central(shop):
+    _at("EN-A", -23.310, -51.160)
+    _at("EN-B", -23.305, -51.160)
+
+    plan = build_deliveries().ride_plan
+
+    [suggestion] = plan.suggestions
+    assert suggestion.refs == ("EN-A", "EN-B")
+    assert suggestion.places == "Centro"
+    assert (suggestion.quoted, suggestion.suggested) == (True, True)
+    assert (suggestion.together_q, suggestion.separate_q, suggestion.saving_q) == (1650, 2500, 850)
+    assert suggestion.late_code == "B" and suggestion.late_minutes >= 1
+    # O selo do menu nunca monta o plano (nem pergunta à central).
+    from unittest import mock
+
+    from shopman.shop.services import ride_plan
+    with mock.patch.object(ride_plan, "ride_plan", side_effect=AssertionError("o selo montou o plano")):
+        assert deliveries_waiting_count() == 2

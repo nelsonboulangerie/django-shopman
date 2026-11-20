@@ -730,7 +730,7 @@ def courier_quote(order) -> dict:
 
     if not courier.can_quote(order):
         raise OrderError("Confira o estado do pedido e da corrida antes de cotar.")
-    estimate = courier.estimate_for_order(order, store=False)
+    estimate = courier.estimate_for_order(order)
     if estimate is None:
         raise OrderError(
             "Cotação indisponível. Verifique o endereço do pedido e a "

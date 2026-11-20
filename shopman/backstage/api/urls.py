@@ -12,6 +12,7 @@ from .alerts import (
     AlertAckView,
     AlertListView,
     ConciergeVerificationAnswerView,
+    ConciergeVerificationPromoteView,
     ConciergeVerificationTakeOverView,
 )
 from .backup import BackupExportView
@@ -1081,6 +1082,12 @@ urlpatterns = [
         "alerts/<int:pk>/concierge-verification/take-over/",
         ConciergeVerificationTakeOverView.as_view(),
         name="api-backstage-alert-concierge-verification-take-over",
+    ),
+    # WP-15: a pergunta respondida vira rascunho de pergunta frequente (não publicado).
+    path(
+        "alerts/<int:pk>/concierge-verification/promote-faq/",
+        ConciergeVerificationPromoteView.as_view(),
+        name="api-backstage-alert-concierge-verification-promote-faq",
     ),
     # Suporte (helpdesk interno)
     path(

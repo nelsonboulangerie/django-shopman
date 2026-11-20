@@ -239,3 +239,67 @@ describe("useAlerts: tempo real que reconecta", () => {
     }
   });
 });
+
+// Promover a pergunta frequente (WP-15): a resposta enviada traz o gesto no aviso, e o
+// gesto cria o rascunho (promoveu, já existia, erro).
+describe("useAlerts · promover a pergunta frequente", () => {
+  const PROMOTE = "/api/v1/backstage/alerts/31/concierge-verification/promote-faq/";
+  const verifyCard = {
+    pk: 31,
+    type: "concierge_verify",
+    type_label: "WhatsApp: cliente esperando a resposta da equipe",
+    severity: "warning",
+    severity_label: "Aviso",
+    message: "Pergunta do cliente: “vocês têm estacionamento”.",
+    order_ref: "",
+    created_at_display: "20/11 às 14:00",
+    actions: [{
+      ref: "answer_concierge_verification:31", kind: "answer_concierge_verification", label: "Responder ao cliente",
+      enabled: true, href: "/api/v1/backstage/alerts/31/concierge-verification/answer/", source_alert_effect: "resolves",
+    }],
+  } as unknown as AlertProjection;
+  let withAction: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    env.reset();
+    withAction = vi.fn();
+    Object.assign(env.sonner, { withAction });
+  });
+
+  it("a resposta enviada oferece promover, e o gesto cria o rascunho com o link do Admin", async () => {
+    env.fetchMock.mockResolvedValueOnce({ ok: true, promote_href: PROMOTE });
+    const a = useAlerts();
+
+    expect(await a.answerVerification(verifyCard, "Temos na rua de trás.")).toBeNull();
+
+    const [color, title, options] = withAction.mock.calls[0]!;
+    expect([color, title, options.action.label]).toEqual(["success", "Resposta enviada ao cliente.", "Promover a pergunta frequente"]);
+    env.fetchMock.mockResolvedValueOnce({ ok: true, already: false, admin_url: "https://admin.x/admin/shop/faqentry/9/change/", warning: "" });
+    await options.action.onClick();
+    expect(String(env.fetchMock.mock.calls.at(-1)![0])).toBe(PROMOTE);
+    const [, promoted, promotedOptions] = withAction.mock.calls.at(-1)!;
+    expect(promoted).toContain("Virou rascunho em Perguntas frequentes");
+    expect(promotedOptions.action).toEqual({ label: "Abrir no Admin", to: "https://admin.x/admin/shop/faqentry/9/change/" });
+  });
+
+  it("já promovida diz que o rascunho existe", async () => {
+    env.fetchMock.mockResolvedValueOnce({ ok: true, already: true, admin_url: "", warning: "" });
+    const a = useAlerts();
+
+    await a.promoteToFaq(PROMOTE);
+
+    const [color, title, options] = withAction.mock.calls[0]!;
+    expect([color, title]).toEqual(["info", "Esta pergunta já é um rascunho em Perguntas frequentes."]);
+    expect(options.action).toBeUndefined(); // sem endereço do Admin, sem botão quebrado
+  });
+
+  it("erro ao promover vira aviso de erro, e nada mais", async () => {
+    env.fetchMock.mockRejectedValueOnce(new Error("boom"));
+    const a = useAlerts();
+
+    expect(await a.promoteToFaq(PROMOTE)).toBeNull();
+
+    expect(env.sonner.error).toHaveBeenCalledTimes(1);
+    expect(withAction).not.toHaveBeenCalled();
+  });
+});

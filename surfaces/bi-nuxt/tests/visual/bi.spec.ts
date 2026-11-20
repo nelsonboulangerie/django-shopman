@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 // Sem baseline de retrato: a captura com `toHaveScreenshot` só entra quando a
 // matriz rodar no browser da CI (regra do CLAUDE.md sobre retratos).
 
-const BACKEND = "http://127.0.0.1:" + (process.env.BI_VISUAL_BACKEND_PORT || "38794");
+const BACKEND = "http://127.0.0.1:" + (process.env.BI_VISUAL_BACKEND_PORT || "28794");
 
 const ROUTES = ["/", "/?view=lots", "/sales", "/cash", "/customers", "/profiles", "/explore", "/forecast", "/scenarios"];
 

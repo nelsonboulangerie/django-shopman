@@ -9,7 +9,7 @@ import { expectNoOperatorOverlap } from "../../../operator-kit/visual/playwright
 // nele antes de cada navegação.
 const WIDTHS = [1440, 1360, 1280, 1024, 768, 390] as const;
 
-const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_OVERLAP_BACKEND_PORT || "41808");
+const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_OVERLAP_BACKEND_PORT || "21808");
 
 const SCREENS = [
   { route: "/", scenario: "normal", ready: "[data-purchase-panel]" },
