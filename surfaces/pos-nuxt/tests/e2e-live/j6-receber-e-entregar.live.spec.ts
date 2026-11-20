@@ -5,8 +5,8 @@
 // quando a cliente chega. "Receber R$ X e entregar" abre a MESMA tela de Pagamento
 // da venda, com o saldo como total. O que a jornada prova, no celular (375 px) e no
 // balcão (1366 px):
-//   1. o Pagamento abre com o saldo no lugar do total, as formas que a entrega
-//      recebe (dinheiro, débito, crédito) e a encomenda na coluna do pedido;
+//   1. o Pagamento abre com o saldo no lugar do total, as formas do saldo
+//      (dinheiro, débito, crédito e Pix, #2897) e a encomenda na coluna do pedido;
 //   2. a Tela do cliente (outra janela do mesmo navegador) mostra o valor a pagar;
 //   3. R$ 9.000,00 recebidos pedem a MESMA conferência da venda (troco alto, #2212);
 //   4. uma nota de R$ 100,00 vira o troco grande, e Receber e entregar conclui: a
@@ -17,7 +17,7 @@
 // Como rodar: README.md desta pasta.
 import type { Page } from "@playwright/test";
 
-import { capture, cast, expect, settled, test } from "./support/operator";
+import { capture, cast, expect, settled, stack, test } from "./support/operator";
 
 const PRODUCT = process.env.PDV_LIVE_J6_PRODUCT || "Baguette de Tradition";
 const CUSTOMER = process.env.PDV_LIVE_J6_CUSTOMER || "Ana Ferreira";
@@ -341,7 +341,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(hero).toContainText("A receber");
       await expect(hero).toContainText(due);
       const methods = await payment.locator("[data-payment-method]").evaluateAll((els) => els.map((el) => el.getAttribute("data-payment-method")));
-      expect(methods.sort()).toEqual(["cash", "credit", "debit"]);
+      expect(methods.sort()).toEqual(["cash", "credit", "debit", "pix"]);
       await expect(page.locator("[data-balance-summary]")).toContainText(`Encomenda ${ref}`);
       // A coluna da encomenda fecha a conta: itens, desconto (quando há) e o total.
       await expect(page.locator("[data-balance-totals]")).toContainText("Total da encomenda");
@@ -449,6 +449,137 @@ for (const device of ["phone", "counter"] as const) {
       if (await confirm.isVisible({ timeout: 2000 }).catch(() => false)) await confirm.click();
       await expect(page.getByText("Encomenda cancelada.").first()).toBeVisible({ timeout: 60_000 });
       await capture(page, testInfo, "cancelada");
+    });
+  });
+}
+
+// ── O SALDO EM PIX (#2897) ──────────────────────────────────────────────────
+//
+// O Pix entra pela MESMA tela: escolhido sozinho, "Receber e entregar" gera a
+// cobrança Pix do pedido e mostra o QR da venda, na tela e na Tela do cliente; a
+// espera é a da venda. Pagamento só no simulador local (`payment_mock`), nunca a
+// Efí. Duas rodadas, porque o simulador confirma (ou não) por configuração da pilha:
+//   PDV_LIVE_J6_PIX=pago    com SHOPMAN_MOCK_PIX_AUTO_CONFIRM=1: o banco confirma
+//                           sozinho em segundos, e a encomenda é entregue;
+//   PDV_LIVE_J6_PIX=nao-chega sem confirmação e com o Pix do canal `pdv` em 1 minuto
+//                           (ajuste declarado do banco local): o Pix vence, o aviso
+//                           traz "Gerar outro Pix", e o operador recebe em dinheiro,
+//                           o que cancela o Pix antes.
+const PIX_ROUND = process.env.PDV_LIVE_J6_PIX || "";
+
+async function choosesPixAndReceives(page: Page) {
+  const payment = page.locator("[data-preorder-balance-payment]");
+  await payment.locator('[data-payment-method="pix"]').click();
+  const cta = page.locator("[data-payment-cta]");
+  await expect(cta).toBeEnabled();
+  const pixRequest = page.waitForResponse((r) => /\/pos\/preorders\/[^/]+\/pix\/$/.test(new URL(r.url()).pathname) && r.request().method() === "POST", { timeout: 60_000 });
+  await cta.click();
+  const response = await pixRequest;
+  expect(response.status()).toBe(200);
+  return (await response.json()) as { payment: { intent_ref: string; amount_display: string } };
+}
+
+for (const device of ["phone", "counter"] as const) {
+  test.describe(`J6 Pix no saldo · ${device === "phone" ? "375 px" : "1366 px"}`, () => {
+    test.use({ device });
+
+    test("o saldo em Pix: o QR da venda, na tela e na Tela do cliente, e a entrega quando o banco confirma", async (
+      { cashierAtCounter: page },
+      testInfo,
+    ) => {
+      test.skip(PIX_ROUND !== "pago", "rodada do Pix confirmado (PDV_LIVE_J6_PIX=pago)");
+      test.setTimeout(10 * 60_000);
+
+      await opensOrder(page);
+      await identifiesCustomer(page);
+      await schedulesTodayPickup(page);
+      await orders(page, 2);
+      const ref = await closesOrder(page, true);
+      const display = await page.context().newPage();
+      await display.goto("/display");
+      await settled(display);
+
+      await opensFromList(page, ref);
+      const handOver = page.locator("[data-preorder-hand-over], [data-preorder-hand-over-bar] button").locator("visible=true").first();
+      await handOver.click();
+      await expect(page.locator("[data-preorder-balance-payment]")).toBeVisible({ timeout: 30_000 });
+      await page.locator('[data-preorder-balance-payment] [data-payment-method="pix"]').click();
+      await still(page);
+      await capture(page, testInfo, "pix-escolhido");
+      await page.locator("[data-preorder-balance-payment]").locator('button[aria-label^="Remover Pix"]').click();
+
+      const { payment } = await choosesPixAndReceives(page);
+      const pix = page.locator("[data-balance-pix]");
+      await expect(pix).toBeVisible({ timeout: 30_000 });
+      await expect(pix.locator('img[alt="QR Code PIX"]')).toBeVisible();
+      await expect(pix).toContainText("A confirmação chega aqui sozinha.");
+      // A Tela do cliente: o MESMO QR da venda em Pix.
+      await expect(display.locator('img[alt="QR Code PIX"], img[alt*="QR"]').first()).toBeVisible({ timeout: 15_000 });
+      await still(page);
+      await capture(page, testInfo, "pix-qr-na-tela");
+      await audits(page, "pix na tela", "[data-balance-pix] header p, [data-balance-pix] p.text-sm, [data-balance-pix] button");
+      await noSideScroll(page, "pix na tela");
+      await display.screenshot({ path: testInfo.outputPath("tela-do-cliente-pix.png") });
+      if (stack.shots) await display.screenshot({ path: `${stack.shots}/${device}-tela-do-cliente-pix.png` });
+
+      // O banco confirma (simulador, em segundos): a encomenda é entregue sozinha.
+      await expect(page.getByText(`Pix de ${payment.amount_display} confirmado. Encomenda entregue.`).first()).toBeVisible({ timeout: 120_000 });
+      await expect(page).toHaveURL(/\/preorders(\?|$)/, { timeout: 30_000 });
+      await expect(display.getByText("Que bom ter você aqui.")).toBeVisible({ timeout: 15_000 });
+      await still(page);
+      await capture(page, testInfo, "pix-confirmado-entregue");
+      await display.close();
+    });
+
+    test("o Pix que não chega: o aviso traz Gerar outro Pix, e receber em dinheiro cancela o Pix antes", async (
+      { cashierAtCounter: page },
+      testInfo,
+    ) => {
+      test.skip(PIX_ROUND !== "nao-chega", "rodada do Pix que não chega (PDV_LIVE_J6_PIX=nao-chega)");
+      test.setTimeout(12 * 60_000);
+
+      await opensOrder(page);
+      await identifiesCustomer(page);
+      await schedulesTodayPickup(page);
+      await orders(page, 2);
+      const ref = await closesOrder(page, true);
+      await opensFromList(page, ref);
+      const handOver = page.locator("[data-preorder-hand-over], [data-preorder-hand-over-bar] button").locator("visible=true").first();
+      await expect(handOver).toContainText(/^Receber R\$ [\d.,]+ e entregar$/, { timeout: 30_000 });
+      const dueQ = cents(money((await handOver.textContent()) || ""));
+      await handOver.click();
+      await expect(page.locator("[data-preorder-balance-payment]")).toBeVisible({ timeout: 30_000 });
+      const { payment } = await choosesPixAndReceives(page);
+      await expect(page.locator("[data-balance-pix]")).toBeVisible({ timeout: 30_000 });
+
+      // O Pix vence (1 minuto no canal de teste, mais a folga da espera da venda).
+      const alert = page.getByText("O Pix não foi confirmado.").first();
+      await expect(alert).toBeVisible({ timeout: 4 * 60_000 });
+      await expect(page.getByRole("button", { name: "Gerar outro Pix" }).first()).toBeVisible();
+      await still(page);
+      await capture(page, testInfo, "pix-nao-confirmado");
+      await audits(page, "aviso do Pix", "[data-balance-pix] header p, [data-balance-pix] button");
+
+      // O operador recebe em dinheiro: a rota da entrega cancela o Pix antes.
+      await page.locator("[data-balance-pix-leave]").click();
+      await expect(page.locator("[data-payment-cta]")).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-preorder-balance-payment] [data-payment-method="cash"]').click();
+      await page.getByRole("button", { name: /^Recebi nota de R\$\s100,00$/ }).locator("visible=true").first().click();
+      await expect(page.locator("[data-pos-total]")).toContainText(brl(10000 - dueQ));
+      await still(page);
+      await capture(page, testInfo, "recebe-em-dinheiro-depois-do-pix");
+      const handedOver = page.waitForResponse((r) => r.url().includes(`/pos/preorders/${ref}/hand-over/`) && r.request().method() === "POST", { timeout: 90_000 });
+      await page.locator("[data-payment-cta]").click();
+      expect((await handedOver).status()).toBe(200);
+      await expect(page.getByText(/Encomenda entregue\./).first()).toBeVisible({ timeout: 30_000 });
+      // O Pix vencido ficou cancelado no servidor: o status do pedido diz que ele morreu.
+      const status = await page.evaluate(async (orderRef) => {
+        const response = await fetch(`/api/v1/backstage/pos/payment/${orderRef}/status/`, { credentials: "include" });
+        return response.ok ? await response.json() : null;
+      }, ref);
+      console.log(`J6 Pix que não chega: intent ${payment.intent_ref}, status depois do dinheiro ${JSON.stringify(status)}`);
+      await still(page);
+      await capture(page, testInfo, "entregue-em-dinheiro");
     });
   });
 }
