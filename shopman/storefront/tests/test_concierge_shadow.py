@@ -203,3 +203,45 @@ def test_entries_that_always_fail_never_starve_the_new_ones(entry, monkeypatch):
     assert ConversationalDecision.objects.filter(message=entry).exists()
     # Um aviso só no ciclo, com a contagem; nunca um por entrada.
     assert warning.call_count == 1 and warning.call_args.args[1] == 3
+
+
+# ── A junção que anda (segunda passada em produção, 20/11/2026, 15h40Z) ───────────
+
+
+def test_the_join_moves_on_instead_of_rereading_the_same_oldest_decisions(entry):
+    """Com mais decisões do que o teto, as novas ganham resultado no ciclo seguinte."""
+    old = [_observed_entry(phone="", subject=f"77{n:08d}", external_id=f"mc-o{n}", ago=timedelta(days=30))
+           for n in range(3)]
+    shadow.sweep(limit=10)
+    total = ConversationalDecision.objects.count()
+    assert total == 4  # as três antigas e a da fixture
+    first = shadow.join_outcomes(limit=2)
+    second = shadow.join_outcomes(limit=2)
+    assert first["recorded"] > 0 and second["recorded"] > 0
+    with_outcome = ConversationalDecision.objects.filter(outcomes__isnull=False).distinct().count()
+    assert with_outcome == total
+    # As antigas, com as duas janelas fechadas, têm resultado final e não voltam ao lote.
+    for message in old:
+        decision = ConversationalDecision.objects.get(message=message)
+        assert {o.observation for o in decision.outcomes.filter(superseded_by__isnull=True)} == {"observed"}
+    assert not shadow.pending_outcomes(timezone.now()).filter(message__in=old).exists()
+
+
+def test_unknown_with_a_closed_window_is_final(entry):
+    """Sem identidade e com a janela fechada, não há mais o que medir: a decisão sai do lote."""
+    message = _observed_entry(phone="", subject="7700000099", external_id="mc-anon", ago=timedelta(days=30))
+    Conversation.objects.filter(pk=message.conversation_id).update(customer_ref="")
+    shadow.sweep(limit=10)
+    shadow.join_outcomes()
+    decision = ConversationalDecision.objects.get(message=message)
+    assert {o.observation for o in decision.outcomes.filter(superseded_by__isnull=True)} == {"unknown"}
+    assert not shadow.pending_outcomes(timezone.now()).filter(pk=decision.pk).exists()
+
+
+def test_an_open_window_comes_back_until_it_closes(entry):
+    run()
+    decision = ConversationalDecision.objects.get(message=entry)
+    assert shadow.pending_outcomes(timezone.now()).filter(pk=decision.pk).exists()  # janela aberta, censored
+    later = decision.entry_at + timedelta(days=8)
+    shadow.join_outcomes(now=later)
+    assert not shadow.pending_outcomes(later).filter(pk=decision.pk).exists()
