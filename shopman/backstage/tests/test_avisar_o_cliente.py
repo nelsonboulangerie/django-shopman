@@ -139,6 +139,7 @@ def test_status_note_do_aviso_nunca_fica_vazio(shop):
 
 
 def test_send_enfileira_o_aviso_com_a_frase(shop):
+    Channel.objects.create(ref="web", name="Loja", is_active=True, config={})
     order = _order("AV-SEND")
     directive = customer_notice.send(order, customer_notice.DELAYED, "hoje, às 16h30")
     assert directive.payload["template"] == "order_delayed"
