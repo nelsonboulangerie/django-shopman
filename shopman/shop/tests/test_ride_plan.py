@@ -205,7 +205,7 @@ def test_admin_edits_the_four_params_and_saves_only_what_differs(shop):
     assert ShopForm(instance=saved).fields[names[1]].initial == 5
 
     data = _shop_form_data(saved)
-    data.update({name: "" for name in names})
+    data.update(dict.fromkeys(names, ""))
     form = ShopForm(data=data, instance=saved)
     assert form.is_valid(), form.errors
     assert "ride_suggestion" not in (form.save().defaults.get("delivery") or {})

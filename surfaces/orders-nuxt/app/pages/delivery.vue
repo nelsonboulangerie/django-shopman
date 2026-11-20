@@ -142,12 +142,14 @@ const callAll = computed(() => callAllLabel(suggestions.value));
 // As corridas que vieram de sugestões e esperam a confirmação no sheet.
 const sheetNumbers = ref<number[]>([]);
 function acceptSuggestions(list: RideSuggestion[], { call: withSheet }: { call: boolean }) {
-  const rides = ridesFromSuggestions(list, freeNumbers.value, editing.value);
+  // A corrida vazia ("Montar uma corrida" sem pedido ainda) não segura a letra.
+  const kept = editing.value.filter((ride) => ride.refs.length);
+  const rides = ridesFromSuggestions(list, freeNumbers.value, kept);
   if (!rides) {
     useSonner.info("Não há letras livres agora. Chame ou desfaça uma corrida antes.");
     return;
   }
-  editing.value = [...editing.value, ...rides];
+  editing.value = [...kept, ...rides];
   active.value = rides[0]!.number;
   if (withSheet) sheetNumbers.value = rides.map((ride) => ride.number);
 }
