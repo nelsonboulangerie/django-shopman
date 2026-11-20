@@ -465,3 +465,17 @@ def test_the_memory_sees_the_open_verification_as_verifying(conversation, outbox
     assert "verifying" not in (conversation.flags or {}).get(dialogue.FLAG_KEY, {}), (
         "o estado da espera não é gravado na memória: vem da verificação"
     )
+
+
+def test_the_card_message_is_only_what_the_team_reads_and_it_resolves_by_its_pk(conversation, outbox):  # noqa: F811
+    """Dono, 20/11/2026 (alert 3077): "Dedupe: concierge:2:verify:…" é nota de engenheiro, sai."""
+    _ask_parking(conversation)
+    card = _cards().get()
+    assert "Dedupe" not in card.message and "concierge:" not in card.message
+    assert card.message.startswith("“")
+
+    result = verification.answer(card.pk, "Temos estacionamento na rua de trás.", actor="ana")
+
+    assert result.ok, result
+    card.refresh_from_db()
+    assert card.resolved_at is not None and card.resolved_by == "ana"
