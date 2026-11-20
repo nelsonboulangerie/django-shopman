@@ -172,6 +172,11 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "preorder_reminder": (*_CUSTOMER, *_ORDER_BUTTON),
     "order_rescheduled": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "order_updated": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    # "Avisar o cliente" (WP-G07): `pedido_atrasado`, `pedido_item_em_falta`,
+    # `pedido_remarcar`. O nome é o {{1}}, o final do ref o {{2}}, a frase o {{3}}.
+    "order_delayed": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    "order_item_missing": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    "order_reschedule_needed": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "fiscal_note_ready": _ORDER_BUTTON,
     "payment_requested": (*_CUSTOMER, *_ORDER_BUTTON),
     # Variante do `payment_requested` no novo pagamento depois da cobrança de cartão

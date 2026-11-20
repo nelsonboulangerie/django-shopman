@@ -3646,6 +3646,112 @@ def _order_edit_preview_data(order, result) -> dict:
     }
 
 
+def _customer_notice_inputs(request) -> tuple[dict | None, Response | None]:
+    """A escolha do "Avisar o cliente": o aviso, a hora nova ou o que vai faltar."""
+    data = request.data
+    kind = str(data.get("kind") or "").strip()
+    eta = str(data.get("eta") or "").strip()
+    raw_lines = data.get("lines") or []
+    if not isinstance(raw_lines, list) or len(raw_lines) > 100 or len(eta) > 64:
+        message = "A escolha dos itens veio num formato que a tela não manda."
+        return None, Response({"detail": message, "field": "lines", "errors": {"lines": [message]}}, status=400)
+    lines = []
+    for entry in raw_lines:
+        if not isinstance(entry, dict):
+            message = "A escolha dos itens veio num formato que a tela não manda."
+            return None, Response({"detail": message, "field": "lines", "errors": {"lines": [message]}}, status=400)
+        lines.append({"line_id": str(entry.get("line_id") or "")[:64], "qty": str(entry.get("qty") or "")[:32]})
+    return {"kind": kind, "eta": eta, "lines": lines}, None
+
+
+def _customer_notice_refusal(exc: OrderError) -> Response:
+    code = getattr(exc, "code", "")
+    field = getattr(exc, "field", "")
+    body = {"detail": str(exc), "code": code, "error": {"code": code, "message": str(exc)}}
+    if field:
+        body.update({"field": field, "errors": {field: [str(exc)]}})
+    return Response(body, status=400)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="The three 'tell the customer' notices of an order: what each needs and why one is closed",
+        responses={200: OpenApiResponse(description="Options and the base_revision the send must carry.")},
+    ),
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Preview a 'tell the customer' notice: the message as the customer reads it",
+        responses={
+            200: OpenApiResponse(description="Preview: nothing is written or sent."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code}."),
+        },
+    ),
+)
+class OrderCustomerNoticePreviewView(APIView):
+    """O "Avisar o cliente" antes de enviar (WP-G07): as escolhas e a mensagem pronta."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        options = orders_service.customer_notice_options(order)
+        # O que o envio exige, no formato das outras ações do Gestor (``payload_schema``).
+        return Response({
+            "ref": order.ref,
+            "notices": options["notices"],
+            "payload_schema": {"base_revision": options["base_revision"], "expected_actor_id": request.user.pk},
+        })
+
+    def post(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        inputs, err = _customer_notice_inputs(request)
+        if err:
+            return err
+        try:
+            preview = orders_service.preview_customer_notice(order, **inputs)
+        except OrderError as exc:
+            return _customer_notice_refusal(exc)
+        return Response({"ok": True, "ref": order.ref, **preview})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Send a 'tell the customer' notice (delayed, item missing, reschedule) through the notification chain",
+        responses={
+            200: OpenApiResponse(description="Notice queued; the receipt shows on the order."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code}."),
+            409: OpenApiResponse(description="The order changed, or the previous notice is still going out / too recent."),
+        },
+    ),
+)
+class OrderCustomerNoticeView(_OrderActionBase):
+    """Avisar o cliente com um toque, pela API (WP-G07; decisão 4 do dono, 17/11/2026)."""
+
+    intention_operation = "customer-notice"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        inputs, err = _customer_notice_inputs(request)
+        if err:
+            return err
+
+        def execute(base):
+            directive, message = orders_service.notify_customer(order, expected_revision=base, **inputs)
+            return {"detail": "Aviso na fila de envio.", "effect_status": "queued", "directive_id": directive.pk,
+                "kind": inputs["kind"], "message": message}
+
+        return self._context_response(request, order, "customer-notice", inputs, execute)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],

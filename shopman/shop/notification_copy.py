@@ -144,6 +144,43 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
+    # ── "Avisar o cliente" (WP-G07) ──────────────────────────────────────
+    # O Caixa avisa com um toque, no detalhe do pedido (``services/customer_notice``).
+    # Notícia ruim que a casa dá antes de o cliente perceber: a voz é a do diálogo
+    # "Resolver" ("Aqui é da … 💛 … e sinto muito por isso"), aprovada em 19/11, e o
+    # texto é o que o dono aprovou em 20/11/2026. O modelo da Meta é o mesmo texto,
+    # com o link no botão ``Acompanhar pedido``
+    # (``docs/reference/whatsapp-templates-meta.md``). ``{status_note}``, sem ponto
+    # final: a nova hora ("hoje, às 16h30"), o que vai faltar ("Focaccia (2
+    # unidades)") ou a data combinada ("retirada amanhã, a partir das 9h").
+    "order_delayed": {
+        "subject": "Pedido {order_ref_short}: nova previsão",
+        "body": (
+            "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛 Seu pedido *{order_ref_short}* "
+            "vai atrasar um pouco: a nova previsão é {status_note}, e sinto muito por isso. "
+            "Qualquer dúvida, é só responder aqui.\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
+    "order_item_missing": {
+        "subject": "Pedido {order_ref_short}: item em falta",
+        "body": (
+            "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛 No seu pedido *{order_ref_short}*, "
+            "vai faltar o item {status_note}, e sinto muito por isso. Posso trocar por outro "
+            "produto ou devolver esse valor. Me responde aqui como fica melhor para você.\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
+    "order_reschedule_needed": {
+        "subject": "Pedido {order_ref_short}: precisamos remarcar",
+        "body": (
+            "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛 Não vamos conseguir aprontar "
+            "seu pedido *{order_ref_short}* para {status_note}, como combinamos, e sinto muito "
+            "por isso. Posso remarcar para outro dia ou cancelar e devolver o valor. Me responde "
+            "aqui como fica melhor para você.\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
     "fiscal_note_ready": {
         "subject": "Nota fiscal do pedido {order_ref_short}",
         "body": "A nota fiscal do pedido *{order_ref_short}* está disponível: {danfe_url}{fiscal_test_note}",
