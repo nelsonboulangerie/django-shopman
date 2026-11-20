@@ -348,11 +348,16 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-2 border-t pt-4">
+    <!-- O rodapé mede a si mesmo (`@container`), não a janela: no rodapé estreito
+         (o celular) a etapa ganha linha própria acima de Voltar e do botão que
+         segue; espremida entre os dois, "Etapa 3 de 3: Recebimento" quebrava em
+         três linhas e encostava no botão (#2827). Com 32rem de rodapé ou mais (o
+         balcão), uma linha só: Voltar, a etapa e o botão, como sempre. -->
+    <div data-order-footer class="@container flex flex-wrap items-center gap-x-2 gap-y-3 border-t pt-4">
       <NuxtButton v-if="currentIndex > 0" variant="outline" :disabled="loading" @click="goToStep(currentIndex - 1)">Voltar</NuxtButton>
-      <span class="min-w-0 flex-1 text-center text-xs text-muted-foreground" role="status">Etapa {{ currentIndex + 1 }} de {{ steps.length }}: {{ currentStep.label }}</span>
-      <NuxtButton v-if="!isLast" data-order-continue :disabled="loading || !currentStep.ready" @click="goToStep(currentIndex + 1)">Continuar</NuxtButton>
-      <NuxtButton v-else data-order-complete :disabled="loading || !allReady" @click="emit('complete')">Montar encomenda <Icon name="lucide:arrow-right" class="ml-2 size-4" /></NuxtButton>
+      <span data-order-footer-step class="order-first basis-full text-center text-xs text-muted-foreground @lg:order-none @lg:min-w-0 @lg:flex-1 @lg:basis-auto" role="status">Etapa {{ currentIndex + 1 }} de {{ steps.length }}: {{ currentStep.label }}</span>
+      <NuxtButton v-if="!isLast" data-order-continue class="ml-auto" :disabled="loading || !currentStep.ready" @click="goToStep(currentIndex + 1)">Continuar</NuxtButton>
+      <NuxtButton v-else data-order-complete class="ml-auto" :disabled="loading || !allReady" @click="emit('complete')">Montar encomenda <Icon name="lucide:arrow-right" class="ml-2 size-4" /></NuxtButton>
     </div>
   </section>
 </template>

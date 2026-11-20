@@ -124,6 +124,23 @@ describe("assistente da encomenda", () => {
     expect(footer(w)).toBe("Etapa 3 de 3: Recebimento");
   });
 
+  // #2827: a 375 px a etapa, espremida entre Voltar e "Montar encomenda", quebrava
+  // em três linhas e encostava no botão. O rodapé mede a si mesmo: estreito, a
+  // etapa sobe para uma linha própria (só a ordem visual muda; quem lê a tela
+  // ouve Voltar, a etapa e o botão, como antes); largo, uma linha só.
+  it("o rodapé dá linha própria à etapa quando é estreito e mantém Voltar, etapa e botão na ordem de leitura", async () => {
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const, scheduleDate: "2099-09-11", scheduleTimeSlot: "slot-10" } });
+    await nav(w)[2]!.trigger("click");
+    const bar = w.find("[data-order-footer]");
+    expect(bar.classes()).toContain("@container");
+    const order = bar.element.children;
+    expect(Array.from(order).map((el) => (el.textContent || "").trim()))
+      .toEqual(["Voltar", "Etapa 3 de 3: Recebimento", "Montar encomenda"]);
+    const step = w.find("[data-order-footer-step]");
+    expect(step.classes()).toEqual(expect.arrayContaining(["order-first", "basis-full", "@lg:order-none", "@lg:flex-1", "@lg:basis-auto"]));
+    expect(w.find("[data-order-complete]").classes()).toContain("ml-auto");
+  });
+
   it("a data combinada no diálogo Quando já foi confirmada lá: o assistente segue sem outro Continuar", async () => {
     const w = await mount({ props: { ...props, issue: "schedule" as const } });
     const vm = w.vm as unknown as { scheduleConfirmed: () => void };
