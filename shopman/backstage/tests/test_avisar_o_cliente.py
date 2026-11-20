@@ -138,6 +138,14 @@ def test_status_note_do_aviso_nunca_fica_vazio(shop):
         assert notification_svc._status_note(order, template, None, note="hoje, às 16h30") == "hoje, às 16h30"
 
 
+def test_send_enfileira_o_aviso_com_a_frase(shop):
+    order = _order("AV-SEND")
+    directive = customer_notice.send(order, customer_notice.DELAYED, "hoje, às 16h30")
+    assert directive.payload["template"] == "order_delayed"
+    assert directive.payload["status_note"] == "hoje, às 16h30"
+    assert directive.dedupe_key.endswith(":order_delayed:1")
+
+
 def test_atraso_recusa_hora_que_ja_passou(shop):
     order = _order()
     past = (timezone.now() - timedelta(minutes=5)).isoformat()
