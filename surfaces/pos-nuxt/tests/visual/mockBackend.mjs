@@ -576,7 +576,7 @@ const ALUNO = {
   group_discount_label: "Aliança Francesa · 10%",
 };
 // `MOCK_CUSTOMER=1`: a cliente da casa com tudo o que o diálogo Cliente mostra
-// (cadastro existente, 29 pedidos, favorito, último pedido, aniversário HOJE com a
+// (cadastro existente, 29 pedidos, favorito, último pedido, aniversário hoje com a
 // promoção ativa, e-mail comprido), para a trava de geometria do diálogo a 375 px
 // (#2885). A busca devolve a Maria para qualquer termo. Sem a variável, nada muda.
 const CUSTOMER_FULL = SALE && process.env.MOCK_CUSTOMER === "1";

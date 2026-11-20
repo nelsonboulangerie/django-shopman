@@ -10,7 +10,7 @@ async function capture(page: Page, name: string) {
 // "Remover cliente", o selo de aniversário e os campos ficavam cortados. A trava mede a
 // geometria, não o pixel: o corpo não rola para o lado e nenhum elemento à vista passa da
 // borda direita do diálogo. A cliente do mock (`MOCK_CUSTOMER=1`) traz tudo o que o
-// diálogo mostra: 29 pedidos, Favorito, Último pedido e o aniversário de HOJE com a promoção.
+// diálogo mostra: 29 pedidos, Favorito, Último pedido e o aniversário de hoje com a promoção.
 for (const size of [{ width: 375, height: 812 }, { width: 1366, height: 768 }] as const) {
   test(`diálogo Cliente sem transbordo lateral em ${size.width}`, async ({ page }) => {
     await page.setViewportSize(size);
@@ -26,7 +26,7 @@ for (const size of [{ width: 375, height: 812 }, { width: 1366, height: 768 }] a
     await search.fill("Maria");
     await dialog.getByRole("option", { name: /Maria Santos/ }).first().click();
     await expect(dialog.getByText("Cadastro existente · Maria Santos")).toBeVisible();
-    await expect(dialog.getByText(/Aniversário HOJE/)).toBeVisible();
+    await expect(dialog.getByText(/Aniversário hoje/)).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Remover cliente" })).toBeVisible();
     // O convite da busca cabe no campo: a frase curta no celular, a inteira no balcão.
     await expect(search).toHaveAttribute("placeholder", size.width < 640 ? "Nome, telefone, CPF ou e-mail" : "Buscar por nome, telefone, CPF ou e-mail");
