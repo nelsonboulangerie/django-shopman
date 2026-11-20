@@ -37,7 +37,7 @@ explicitamente. A topologia e as setas físicas continuam em
   `project_supply`, `reconcile_stock`.
 - **Estados e sinais:** hold `pending`, `confirmed`, `fulfilled`, `released`; uma decisão
   de promessa distingue saldo disponível, esperado, planejado, pausa e motivo da recusa.
-- **Eventos:** `holds_materialized`; movimentos e mudanças de holds permanecem fatos do
+- **Eventos:** `holds_materialized`, `holds_expired` (o `release_expired` soltou reservas vencidas); movimentos e mudanças de holds permanecem fatos do
   ledger mesmo quando não são publicados como signals Django.
 - **Evidência:** [`PromiseDecision`](../../packages/stockman/shopman/stockman/protocols/sku.py),
   [`HoldStatus`](../../packages/stockman/shopman/stockman/models/enums.py) e

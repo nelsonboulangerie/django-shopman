@@ -142,7 +142,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `adjust(quant, new_quantity, reason)→Move`.
 - `hold(quantity, product, target_date, expires_at, allowed_positions, excluded_positions, **meta)→"hold:{pk}"`.
 - `confirm(hold_id)`, `release(hold_id, reason)`, `fulfill(hold_id, user)→Move`.
-- `release_expired()→int` (batch com `skip_locked=True`).
+- `release_expired()→int` (batch com `skip_locked=True`); emite `holds_expired(skus)` em `on_commit` quando solta alguma reserva.
 - `find_by_reference/find_active_by_reference/retag_reference`.
 - `plan(quantity, product, target_date, position, reason, user, **meta)→Quant`.
 - `replan`, `realize(product, target_date, actual_quantity, to_position, from_position, from_batch)` — materializa holds; holds sem TTL ganham `DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES=30`; emite signal `holds_materialized`.
@@ -152,7 +152,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 
 **Scope gate canônico**: `quants_eligible_for(sku, channel_ref, target_date, allowed_positions, excluded_positions)` — aplicado por availability reads E hold finding; filtros na ordem: (1) sku+`_quantity>0`, (2) `filter_valid_quants()` shelflife, (3) allowed/excluded positions, (4) batch expiry. `expiry_margin_days` vale nos passos (2) e (4): lote datado pelo `Batch.expiry_date`, saldo sem lote pela validade implícita (produção + `shelf_life_days`); a fornada planejada para a própria data-alvo sempre conta, e o saldo físico de lote é julgado pela data de produção que o lote declara (`Batch.production_date`), não pelo `created_at` (o lote de amanhã fechado hoje conta para amanhã). O orquestrador soma um dia à margem quando a data é futura (`shop/policies/promise_expiry_margin.py`, #2693): sobra de hoje não lastreia encomenda.
 
-**Signal**: `holds_materialized(hold_ids, sku, target_date, to_position)`.
+**Signals**: `holds_materialized(hold_ids, sku, target_date, to_position)`; `holds_expired(skus)`.
 
 **Protocol**: `SkuValidator.validate_sku/validate_skus/get_sku_info/search_skus` (implementado por Offerman).
 

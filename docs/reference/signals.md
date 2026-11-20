@@ -6,7 +6,7 @@
 
 ## Visão Geral
 
-O projeto define **17 sinais custom** do Django. Destes, **5 estão ativamente conectados** a receivers no orquestrador (`shopman/`), e **12 estão definidos** para uso por extensões e integrações futuras.
+O projeto define **18 sinais custom** do Django. Destes, **6 estão ativamente conectados** a receivers no orquestrador (`shopman/`), e **12 estão definidos** para uso por extensões e integrações futuras.
 
 | Sinal | Módulo | Status | Receivers |
 |-------|--------|--------|-----------|
@@ -16,6 +16,7 @@ O projeto define **17 sinais custom** do Django. Destes, **5 estão ativamente c
 | [`customer_created`](#customer_created) | guestman | Disponível | — |
 | [`customer_updated`](#customer_updated) | guestman | Disponível | — |
 | [`holds_materialized`](#holds_materialized) | stockman | **Ativo** | shop→notificação de disponibilidade |
+| [`holds_expired`](#holds_expired) | stockman | **Ativo** | shop→aviso de estoque (SSE) |
 | [`order_changed`](#order_changed) | orderman | **Ativo** | channels→lifecycle pipeline |
 | [`customer_authenticated`](#customer_authenticated) | doorman | Disponível | — |
 | [`access_link_created`](#access_link_created) | doorman | Disponível | — |
@@ -36,6 +37,7 @@ Além dos sinais custom, o projeto usa **2 sinais built-in** do Django (`post_sa
 |--------|-------------|----------|--------|
 | `order_changed` | `ShopmanConfig.ready()` | `hooks.on_order_lifecycle` | Lê pipeline do canal, cria directives |
 | `holds_materialized` | `setup._register_stock_signals()` | `_stock_receivers.on_holds_materialized` | Notifica sessões afetadas; nunca cria Order |
+| `holds_expired` | `_sse_emitters._connect()` | `_sse_emitters._on_holds_expired` | Publica `stock-update` por SKU solto; a vitrine e a sacola abertas releem |
 | `production_changed` | `setup._register_stock_signals()` | `_stock_receivers.on_production_voided` | Libera demand holds quando produção é anulada |
 | `production_changed` | `CraftingStockingConfig.ready()` | `craftsman.contrib.stockman.handlers` | Gerencia quants planejados/realizados |
 | `post_save(Directive)` | `OrderingConfig.ready()` | `ordering.dispatch` | Auto-despacha directive para handler |
@@ -123,6 +125,26 @@ Registrado por: `ShopmanConfig.ready()` via `setup.register_all()` → `_registe
 criar `Order` exige nova revisão explícita e `CommitSeal` de uma superfície real.
 
 **Guia:** [stockman.md](../guides/stockman.md), [lifecycle.md](../guides/lifecycle.md)
+
+#### holds_expired
+
+Emitido pelo `release_expired()` depois que ele solta reservas cujo prazo passou. A soltura é
+um `update` em lote, que não dispara `post_save`; sem este sinal, quem acompanha a
+disponibilidade só via o saldo voltar no próximo gesto (#2785).
+
+| Campo | Valor |
+|-------|-------|
+| **Sender** | `StockHolds` |
+| **Payload** | `skus` (list[str], ordenada, um SKU por entrada) |
+
+Emitido em `transaction.on_commit` (ADR-025) e só quando alguma reserva foi solta.
+
+**Receiver:** `_on_holds_expired()` em `shopman/shop/handlers/_sse_emitters.py`
+Registrado por: `_sse_emitters._connect()` (via `register_all()`)
+
+**Efeito:** para cada SKU, o mesmo `stock-update` que a reserva salva publica (`stock-<canal>`,
+`stock-catalog`, invalidação do cache de disponibilidade). A loja recebe só o aviso público
+sem conteúdo (`shelf-update`, WP-L04) e relê a página.
 
 ---
 
