@@ -33,7 +33,7 @@ test.describe("Entregas: quem leva", () => {
     await expect(who).toContainText("Livre · R$ 15,00");
     await expect(sheet.getByText("Juntas: R$ 16,50 · 24 min · 5,7 km ✔", { exact: true }).first()).toBeVisible();
 
-    await who.getByRole("radio", { name: /Diego/ }).click();
+    await who.getByText("Diego", { exact: true }).click();
     await expect(who.getByRole("radio", { name: /Diego/ })).toHaveAttribute("aria-checked", "true");
     await expect(sheet.getByText("Valor da tabela: R$ 15,00", { exact: true })).toBeVisible();
     await expect(sheet.getByText(/Juntas:|Separadas/)).toHaveCount(0);
@@ -44,7 +44,7 @@ test.describe("Entregas: quem leva", () => {
     await page.goto("/delivery");
     await page.getByRole("button", { name: "Chamar juntas", exact: true }).click();
     const sheet = page.getByRole("dialog", { name: "Chamar a corrida C" });
-    await sheet.getByRole("radiogroup", { name: "Quem leva a corrida C" }).getByRole("radio", { name: /Diego/ }).click();
+    await sheet.getByRole("radiogroup", { name: "Quem leva a corrida C" }).getByText("Diego", { exact: true }).click();
     const popup = context.waitForEvent("page");
     await sheet.getByRole("button", { name: "Enviar para Diego: A47 e C03", exact: true }).click();
     const tab = await popup;
@@ -67,11 +67,21 @@ test.describe("Entregas: quem leva", () => {
     const card = page.locator("[data-ride-quote]");
     await expect(card.getByRole("radio", { name: /TaOn/ })).toHaveAttribute("aria-checked", "true");
     await expect(card.locator("[data-ride-carrier]")).toContainText("Livre · R$ 12,00");
-    await card.getByRole("radio", { name: /Diego/ }).click();
+    await card.getByText("Diego", { exact: true }).click();
     await expect(card.getByText("Valor da tabela: R$ 12,00", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Enviar para Diego: A47", exact: true }).first()).toBeVisible();
-    await card.getByRole("radio", { name: /TaOn/ }).click();
+    await card.getByText("TaOn", { exact: true }).click();
     await expect(page.getByRole("button", { name: "Chamar a corrida C", exact: true }).first()).toBeVisible();
+  });
+
+  test("a escolha sai com a corrida: Voltar e montar de novo traz a TaOn marcada", async ({ page }) => {
+    await page.goto("/delivery");
+    await page.getByRole("button", { name: "Chamar juntas", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Chamar a corrida C" });
+    await sheet.getByRole("radiogroup", { name: "Quem leva a corrida C" }).getByText("Diego", { exact: true }).click();
+    await sheet.getByRole("button", { name: "Voltar", exact: true }).click();
+    await page.getByRole("button", { name: /A47 · Ana/ }).click();
+    await expect(page.locator("[data-ride-quote]").getByRole("radio", { name: /TaOn/ })).toHaveAttribute("aria-checked", "true");
   });
 
   test("Entregadores de hoje: um toque põe Rui na escala e ele vira opção", async ({ page }) => {

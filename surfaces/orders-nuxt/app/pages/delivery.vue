@@ -219,6 +219,15 @@ const carrierOf = (number: number) => chosenCarrier(crew.value, carrier.value[nu
 function chooseCarrier(number: number, key: string) {
   carrier.value = { ...carrier.value, [number]: key };
 }
+// A corrida que saiu da edição (Voltar, desfazer, chamada) leva a escolha junto: a
+// próxima com a mesma letra nasce com o padrão marcado.
+watch(
+  () => editing.value.map((ride) => ride.number).join("|"),
+  () => {
+    const alive = new Set(editing.value.map((ride) => ride.number));
+    carrier.value = Object.fromEntries(Object.entries(carrier.value).filter(([number]) => alive.has(Number(number))));
+  },
+);
 const chipsOf = (ride: EditingRide) => {
   const state = quotes.value[ride.number];
   return carrierChips(crew.value, {
@@ -401,8 +410,6 @@ async function call(only?: number[]) {
   const done = new Set(called);
   editing.value = editing.value.filter((ride) => !ride.refs.some((ref) => done.has(ref)));
   if (!editing.value.some((ride) => ride.number === active.value)) active.value = editing.value[0]?.number ?? 0;
-  const alive = new Set(editing.value.map((ride) => ride.number));
-  carrier.value = Object.fromEntries(Object.entries(carrier.value).filter(([number]) => alive.has(Number(number))));
   sending.value = false;
   await refresh();
 }
