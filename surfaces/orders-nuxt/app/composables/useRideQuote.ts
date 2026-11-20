@@ -81,7 +81,7 @@ export function useEditingQuotes(
   waitMs = 350,
 ) {
   const quotes = ref<Record<number, EditingQuoteState>>({});
-  const asked: Record<number, string> = {};
+  const asked = new Map<number, string>();
   const timers: Record<number, ReturnType<typeof setTimeout>> = {};
 
   watch(
@@ -94,13 +94,13 @@ export function useEditingQuotes(
         if (alive.has(number)) next[number] = state;
         else {
           clearTimeout(timers[number]);
-          delete asked[number];
+          asked.delete(number);
         }
       }
       for (const ride of list) {
         const key = ride.refs.join("|");
-        if (asked[ride.number] === key) continue;
-        asked[ride.number] = key;
+        if (asked.get(ride.number) === key) continue;
+        asked.set(ride.number, key);
         clearTimeout(timers[ride.number]);
         if (!ride.refs.length) {
           next[ride.number] = { quote: null, pending: false, failure: "" };
@@ -131,7 +131,7 @@ export function useEditingQuotes(
               ),
             };
           }
-          if (asked[number] !== key) return;
+          if (asked.get(number) !== key) return;
           quotes.value = { ...quotes.value, [number]: state };
         }, waitMs);
       }
