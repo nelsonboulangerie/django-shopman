@@ -1040,7 +1040,7 @@ def set_fulfillment(
         locked = Session.objects.select_for_update().get(pk=session.pk)
         if locked.rev != base_revision or locked.state != "open":
             return _error("revision_conflict", "A sacola mudou. Confira as escolhas atuais antes de alterar a entrega.")
-        _assert_authority(ctx)
+        _assert_authority(ctx, for_mutation=CART_LEVEL)
         cart_service.set_delivery_draft(
             session_key=session.session_key, channel_ref=ctx.channel_ref,
             fulfillment_type=fulfillment_type, delivery_address_structured=structured,
@@ -1197,6 +1197,10 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         }
         ctx.conversation.save(update_fields=["quote", "updated_at"])
         result["quote_token"] = token
+        if not getattr(ctx.conversation, "_commercial_authority", False):
+            # Sem identificador de mensagem (ADR-050), o "sim" não prova que veio depois
+            # deste resumo: a confirmação leva o código deste orçamento.
+            result["confirmation_code"] = confirmation_code(token)
     return result
 
 
@@ -1276,6 +1280,45 @@ def _confirmation(ctx: ToolContext, token: str):
     return messages[-1]
 
 
+def confirmation_code(token: str) -> str:
+    """O código curto deste orçamento (ADR-050): quatro dígitos tirados do ``quote_token``.
+
+    Muda quando a sacola, a entrega ou o pagamento mudam (o token muda), então um "sim"
+    a um resumo antigo nunca confirma o novo.
+    """
+    return f"{int(hashlib.sha256(str(token).encode()).hexdigest(), 16) % 10_000:04d}"
+
+
+def _code_confirmation(ctx: ToolContext, token: str):
+    """A confirmação sem identificador de mensagem: o cliente devolve o código do resumo.
+
+    Toda mensagem depois do resumo tem de ser a confirmação com o código DESTE orçamento
+    ("confirmo 4821" ou só "4821"); outra fala no meio invalida, como no ``_confirmation``.
+    Repetida (reenvio), é a mesma confirmação: o pedido é um só pelo ``quote_token``.
+    """
+    from shopman.shop.models import ConversationMessage as Message
+
+    offered = Message.objects.filter(
+        conversation=ctx.conversation, kind=Message.Kind.REPLY,
+        transport_state="accepted", envelope__quote_token=token,
+    ).order_by("-pk").first()
+    if offered is None:
+        return None
+    inbound = Message.objects.filter(conversation=ctx.conversation, kind=Message.Kind.INBOUND, pk__gt=offered.pk)
+    limit = getattr(ctx.conversation, "_inbound_max_id", None)
+    if limit is not None:
+        inbound = inbound.filter(pk__lte=limit)
+    messages = list(inbound.order_by("pk"))
+    if not messages:
+        return None
+    code = confirmation_code(token)
+    accepted = {code, f"confirmo {code}", f"confirmar {code}", f"sim {code}", f"sim, {code}", f"sim, confirmo {code}"}
+    for message in messages:
+        if " ".join(_fold(message.text).rstrip(".! ").split()) not in accepted:
+            return None
+    return messages[-1]
+
+
 def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_notes: str = "") -> dict:
     """Compra autorizada por revisão oferecida; recibo e efeito local compartilham commit."""
     from shopman.orderman.models import Order, Session
@@ -1286,7 +1329,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     from shopman.shop.services.customer_orders import customer_identity_filter
     from shopman.storefront.concierge.service import TurnRevoked
 
-    _assert_authority(ctx)
+    _assert_authority(ctx, for_mutation=CART_LEVEL)
     conversation = ctx.conversation
     current = Conversation.objects.get(pk=conversation.pk)
     if current.customer_ref != conversation.customer_ref or current.phone != conversation.phone or current.channel_ref != ctx.channel_ref:
@@ -1331,7 +1374,11 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         return _error("quote_stale", "A revisão mudou. Confira a sacola antes de confirmar.")
     if payment_method != quote.get("payment_method"):
         return _error("revision_conflict", "A forma de pagamento mudou. Confira uma nova revisão.")
-    confirmation = _confirmation(ctx, quote_token)
+    if getattr(ctx.conversation, "_commercial_authority", False):
+        confirmation = _confirmation(ctx, quote_token)
+    else:
+        # Sem identificador de mensagem (ADR-050): só o código deste orçamento confirma.
+        confirmation = _code_confirmation(ctx, quote_token)
     if confirmation is None:
         return _error("confirmation_required", "Confira o resumo enviado e confirme o pedido em uma nova mensagem.")
     if quote.get("phone") != current.phone or quote.get("customer_ref") != current.customer_ref:
@@ -1385,7 +1432,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             if (latest.quote or {}).get("token") != quote_token:
                 return _error("revision_conflict", "A revisão mudou. Confira o resumo atual."), 409
             locked = Session.objects.select_for_update().get(pk=session.pk)
-            _assert_authority(ctx)
+            _assert_authority(ctx, for_mutation=CART_LEVEL)
             if locked.state != "open" or quote_token != _quote_token(locked):
                 return _error("revision_conflict", "A sacola mudou. Suas escolhas estão preservadas; confira o novo resumo."), 409
             fresh = _cart_payload(ctx, locked)
@@ -1431,7 +1478,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             # commit do Orderman: a posse é reconferida ali, na mesma transação (#2625).
             from .effect_authority import lock_turn_authority
 
-            lock_turn_authority(conversation, channel_ref=ctx.channel_ref)
+            lock_turn_authority(conversation, channel_ref=ctx.channel_ref, level=CART_LEVEL)
 
         try:
             result = checkout_service.process(
@@ -1837,16 +1884,32 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
         "resource_ref": str(subscription.ref)}
 
 
+#: O nível de autoridade da sacola; o mesmo valor de ``service.CART_AUTHORITY`` (ADR-050).
+CART_LEVEL = "cart"
+#: O que só lê. Não pede autoridade de mudança.
+READ_TOOLS = frozenset({"search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots"})
+#: Sacola e fechamento pelo código (ADR-050): valem com a autoridade de sacola. O
+#: ``place_order`` sem a autoridade completa exige o código do orçamento.
+CART_TOOLS = frozenset({"set_item", "set_fulfillment", "review_order", "place_order"})
+
+
+def _authority_level(name: str):
+    if name in READ_TOOLS:
+        return False
+    return CART_LEVEL if name in CART_TOOLS else True
+
+
 def _guard(handler):
     @wraps(handler)
     def guarded(ctx, *args, **kwargs):
+        level = _authority_level(handler.__name__)
         try:
-            _assert_authority(ctx, for_mutation=handler.__name__ not in {"search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots"})
+            _assert_authority(ctx, for_mutation=level)
             if handler.__name__ in {"set_item", "review_order"}:
                 from shopman.orderman.models import Session
                 with transaction.atomic():
                     current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
-                    _assert_authority(ctx)
+                    _assert_authority(ctx, for_mutation=level)
                     ctx.conversation.session_key = current.session_key
                     if current.session_key:
                         Session.objects.select_for_update().filter(session_key=current.session_key, channel_ref=ctx.channel_ref).first()
@@ -1929,7 +1992,9 @@ def render_result(name: str, result: dict) -> str:
             methods = ", ".join(p["label"] for p in result.get("payment_methods", []))
             rows.append(f"Pagamento: {PAYMENT_LABELS.get(result.get('payment_method'), '') or methods}.")
             if result.get("ready"):
-                rows.append("Confira o resumo. Ao confirmar, seu pedido será registrado; pagamento é uma etapa separada. Responda ‘confirmo’ para registrar.")
+                # Sem identificador de mensagem (ADR-050), a confirmação leva o código do resumo.
+                reply = f"confirmo {result['confirmation_code']}" if result.get("confirmation_code") else "confirmo"
+                rows.append(f"Confira o resumo. Ao confirmar, seu pedido será registrado; pagamento é uma etapa separada. Responda ‘{reply}’ para registrar.")
             else:
                 labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "corrigir o CPF ou CNPJ da nota (ou seguir sem ele)", "delivery_address_details": "completar o endereço da entrega (rua, número, bairro e CEP)", "cart": "conferir a sacola"}
                 if result.get("address_missing"):

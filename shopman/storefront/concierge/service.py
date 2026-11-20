@@ -824,6 +824,10 @@ class TurnRevoked(Exception):
     """O claim não tem mais autoridade; preservar entradas e efeitos."""
 
 
+#: O nível de autoridade da sacola (ADR-050), para ``assert_turn_authority(for_mutation=...)``.
+CART_AUTHORITY = "cart"
+
+
 def assert_turn_authority(conversation, *, for_mutation=True):
     from . import transport
 
@@ -847,7 +851,11 @@ def assert_turn_authority(conversation, *, for_mutation=True):
         raise TurnRevoked("new_input")
     if not current.claim_until or current.claim_until <= timezone.now():
         raise TurnRevoked("claim_expired")
-    if for_mutation and not getattr(conversation, "_commercial_authority", False):
+    if for_mutation == CART_AUTHORITY:
+        # Sacola (ADR-050): a autoridade comercial completa serve, e a de sacola também.
+        if not (getattr(conversation, "_commercial_authority", False) or getattr(conversation, "_cart_authority", False)):
+            raise TurnRevoked("commercial_authority_missing")
+    elif for_mutation and not getattr(conversation, "_commercial_authority", False):
         raise TurnRevoked("commercial_authority_missing")
     return current
 
@@ -888,6 +896,13 @@ def _claim(conversation_id: int, binding_id: int):
         )
         conversation._commercial_authority = bool(
             not conversation._limited_event_assurance
+            and binding.identity_assurance == "verified_customer"
+        )
+        # Autoridade de SACOLA (ADR-050): mudança reversível e em valor absoluto, que um
+        # reenvio repete sem dobrar. Basta cliente verificado e conexão que não seja só
+        # leitura, mesmo sem identificador de mensagem. Fechar pedido pede mais (o código).
+        conversation._cart_authority = bool(
+            not (config().get("read_only") or (connection and connection.options.get("read_only")))
             and binding.identity_assurance == "verified_customer"
         )
         return conversation, binding, inbound
@@ -953,7 +968,14 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
 
         # Triagem (D32): toda entrada ganha intenção, urgência e destino antes da
         # leitura em partes, pela regra local e pelo Jev (sem modelo de texto).
-        turn_text = "\n".join(message.text for message in inbound if message.text)
+        from .turn_outcome import collapse_repeats
+
+        turn_text = "\n".join(
+            collapse_repeats(
+                (message.text for message in inbound),
+                limited=bool(getattr(conversation, "_limited_event_assurance", False)),
+            )
+        )
         previous_triage = (conversation.flags or {}).get("triage")
         from . import cancellation
 
@@ -995,6 +1017,7 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                 conversation.customer_ref
                 and binding.identity_assurance == "verified_customer"
             )
+            conversation._cart_authority = conversation._cart_authority or conversation._commercial_authority
         assert_turn_authority(conversation, for_mutation=False)
         if all(
             (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES
