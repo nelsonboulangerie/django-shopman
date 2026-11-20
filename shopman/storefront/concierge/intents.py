@@ -1129,7 +1129,8 @@ def run(conversation, *, binding, decision, client=None):
             memory=memory,
             memory_memos=memos,
         )
-    fixed = _house_fixed_reply(conversation, text, channel_ref=channel_ref, memory=memory, memos=memos)
+    fixed = _house_fixed_reply(conversation, text, channel_ref=channel_ref, memory=memory, memos=memos,
+                               team_decided=getattr(decision, "escalates", False))
     if fixed is not None:
         return fixed
     # A alergia sobre a fala inteira só quando ela é uma parte só; com outras partes junto,
@@ -1168,7 +1169,7 @@ def run(conversation, *, binding, decision, client=None):
     return _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
 
 
-def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos):
+def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos, team_decided=False):
     """As regras de entrada com frase fixa sobre a mensagem inteira (R7, R8), antes das partes.
 
     Pedido de desconto (R7, dono, 03/10/2026): até o teto da casa a Concierge concede pelo
@@ -1187,6 +1188,10 @@ def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, mem
         granted = discount.handle_request(conversation=conversation, channel_ref=channel_ref, customer_text=text)
         if granted.text:
             return TurnOutcome(reply_text=granted.text, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
+    if rule == "R8" and team_decided:
+        # A triagem já mandou o turno à equipe (alergia junto, pedido de atendimento): a
+        # frase de assistente não cala a parte da equipe; as partes seguem.
+        return None
     if fixed:
         return TurnOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
     return None

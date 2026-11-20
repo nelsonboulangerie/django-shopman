@@ -275,6 +275,37 @@ def reserved_until(session_key: str | None):
     ).aggregate(until=Min("expires_at"))["until"]
 
 
+def reservation_lapsed_at(session_key: str | None, skus):
+    """Até quando valia a reserva que venceu, para a sacola dizer o que houve (#2767).
+
+    Leitura pura, irmã de :func:`reserved_until`. Quem abre a sacola depois do
+    prazo (voltou no dia seguinte, recarregou a página) vê as linhas normais; sem
+    esta leitura, nada diria que a reserva acabou. Conta a reserva com prazo de um
+    item que ainda está na sacola (``skus``) e que venceu pelo relógio: a ainda
+    viva com o prazo já passado e a que o ``release_expired`` soltou depois do
+    prazo (``resolved_at`` no prazo ou depois). A que a cliente soltou tirando o
+    item sai antes do prazo e não conta. Item que já tem reserva viva (renovada
+    por um gesto, ou de fornada futura, sem relógio) também não conta: está
+    guardado. Devolve o prazo mais tarde entre as vencidas, ou ``None``.
+    """
+    skus = [sku for sku in (skus or ()) if sku]
+    if not session_key or not skus:
+        return None
+    from django.db.models import F, Max, Q
+    from shopman.stockman import Hold, HoldStatus
+
+    now = timezone.now()
+    live = [HoldStatus.PENDING, HoldStatus.CONFIRMED]
+    mine = Hold.objects.filter(metadata__reference=session_key, sku__in=skus)
+    held = mine.filter(status__in=live).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+    return (
+        mine.exclude(sku__in=held.values("sku"))
+        .filter(expires_at__lte=now)
+        .filter(Q(status__in=live) | Q(status=HoldStatus.RELEASED, resolved_at__gte=F("expires_at")))
+        .aggregate(at=Max("expires_at"))["at"]
+    )
+
+
 def build_cart(
     session_key: str | None,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,

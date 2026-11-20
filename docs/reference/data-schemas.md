@@ -128,7 +128,11 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
 [plano do adaptador da Nice](../plans/COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md)) não são JSON de
 sessão: são tabelas só de acréscimo. O campo `document` da decisão é o `DecisionRecord` do framework
 (`packages/conversational-commerce/spec/01-contracts.md`), e o resultado segue o `OutcomeEvent` de lá. A forma
-mora no contrato do framework e não se redefine aqui. Nenhuma chave nova em `Session.data`, `Order.data` ou
+mora no contrato do framework e não se redefine aqui. O armazenamento do framework (N8) usa outras
+três tabelas, também só de documentos do contrato: `ConversationalEpisode` (o `Episode` vigente,
+uma linha por episódio, com comparar e gravar), `ConversationalRecord` (cada registro gravado no
+episódio, só acréscimo, com a identidade do evento única) e `ConversationalWork` (a caixa de
+saída, gravada na mesma transação do estado). Nenhuma chave nova em `Session.data`, `Order.data` ou
 `Directive.payload`.
 
 ### Concierge de WhatsApp
@@ -176,7 +180,7 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`,
-`jev` (o Jev, com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), `intents` (a leitura em partes), `default`, `failures` ou `verification` (o "vou verificar" sem resposta no segundo prazo); `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave), `verification_timeout` (a pergunta à equipe passou do segundo prazo sem resposta, `intent=human`, `destination=team`) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
+`jev` (o Jev, com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), `intents` (a leitura em partes), `default`, `failures` ou `verification` (o "vou verificar" sem resposta no segundo prazo); `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave), `verification_timeout` (a pergunta à equipe passou do segundo prazo sem resposta, `intent=human`, `destination=team`) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento) ou `identity` (pergunta de quem atende, "com quem eu falo?", "é robô?": a frase fixa da R8, `intent=house_info`, `destination=answer`, sem consultar o Jev).
 
 Cancelamento pela Concierge (dono, 03/10/2026; `shopman/storefront/concierge/cancellation.py`):
 a pergunta de confirmação fica em `Conversation.flags["pending_cancel"]` = `{order_ref, asked_at,
@@ -287,8 +291,10 @@ a segunda parte não entendida, com modelo, vai para a equipe. Sem modelo, a par
 nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
 conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
 marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
-equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff) ou `handed_off` (o segundo prazo
-passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06); `fence` é o
+equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
+passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06) ou
+`returned` (com `returned_at`: depois do `handed_off`, o cliente escreveu de novo e a conversa voltou sozinha
+à Concierge, dono 20/11/2026, #2836; a `taken_over` nunca volta sozinha); `fence` é o
 `turn_fence` do turno que abriu (gravada na mesma transação da resposta: turno revogado não grava);
 `questions` = `[{text, product, at}]`, até 5, `text` a fala do cliente REDIGIDA (`triage._redacted`,
 até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` ("em até 10 minutos"),
