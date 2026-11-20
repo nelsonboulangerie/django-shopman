@@ -15067,6 +15067,52 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/admin/ai_routes.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "DEFAULT_ROUTE",
+            "ROUTE_KEYS",
+            "ROUTE_LABELS",
+            "Readiness",
+            "SHADOW_OFF",
+            "SHADOW_ON",
+            "VENDOR_HOSTS",
+            "_connection_host",
+            "_connection_label",
+            "_empty_connection_label",
+            "_fix_for",
+            "_protocol",
+            "_routes_of",
+            "_shop",
+            "_vendor_host",
+            "build",
+            "clean",
+            "connection_choices",
+            "connection_field",
+            "form_fields",
+            "model_choices",
+            "model_field",
+            "readiness",
+            "record_shadow_change",
+            "set_initial",
+            "shadow_history",
+            "status_html",
+            "warnings"
+          ]
+        }
+      ]
     }
   ]
 }
