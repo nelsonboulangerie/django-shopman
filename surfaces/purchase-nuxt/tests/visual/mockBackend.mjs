@@ -14,7 +14,7 @@ import { countFixture, purchaseFixture, receivingFixture } from "./fixtures.mjs"
 //   error      a leitura da base falha (500).
 // Os POSTs respondem `ok` com a mesma projeção: a tela anda, nada é gravado.
 
-const port = Number(process.env.MOCK_PORT || 35031);
+const port = Number(process.env.MOCK_PORT || 25031);
 let scenario = process.env.PURCHASE_MOCK_SCENARIO || "normal";
 
 function projection() {

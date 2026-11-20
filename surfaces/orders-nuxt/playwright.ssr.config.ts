@@ -5,8 +5,8 @@ import { defineConfig, devices } from "@playwright/test";
 // nunca viu a hidratação; foi assim que a Fila presa no esqueleto e a toolbar sumida
 // no celular (09/10/2026) chegaram ao alpha. Rode `npm run build` antes.
 
-const appPort = Number(process.env.ORDERS_SSR_PORT || 34816);
-const backendPort = Number(process.env.ORDERS_SSR_MOCK_PORT || 34895);
+const appPort = Number(process.env.ORDERS_SSR_PORT || 24816);
+const backendPort = Number(process.env.ORDERS_SSR_MOCK_PORT || 24895);
 
 export default defineConfig({
   testDir: "./tests/ssr",
