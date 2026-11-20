@@ -208,7 +208,7 @@ export function routeOrder<T extends RoutePoint>(
 
 /** "R$ 15,00" com espaço comum, como o `display` que o servidor manda na mesma linha. */
 function money(amountQ: number): string {
-  return formatBRL(amountQ).replace(/ /g, " ");
+  return formatBRL(amountQ).replace(/\u00a0/g, " ");
 }
 
 export interface EditingQuote {
