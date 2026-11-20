@@ -517,7 +517,30 @@ const DELIVERIES = {
   machines: [],
   courier_on: true,
   maps_key: "",
+  // A corrida em grupo pelo protocolo de intenção: quem a tela leu e a revisão de cada um.
+  group_action: {
+    ref: "courier-ride", kind: "mutation", label: "Chamar corrida", enabled: true, reason: "",
+    method: "POST", idempotency: "required", confirmation: {},
+    payload_schema: {
+      expected_actor_id: 1,
+      base_revisions: { "WEB-20261116-0A47": "r-a47", "WEB-20261116-0C03": "r-c03", "WEB-20261116-0D12": "r-d12" },
+    },
+  },
+  // O plano da casa (`ride_plan`, F5): A47 e C03, prontos e vizinhos, cotados e mais
+  // baratos juntos. D12 está em preparo e nunca entra.
+  ride_plan: {
+    suggestions: [{
+      key: "WEB-20261116-0A47+WEB-20261116-0C03",
+      refs: ["WEB-20261116-0A47", "WEB-20261116-0C03"], codes: ["A47", "C03"], places: "Gleba Palhano",
+      quoted: true, suggested: true, late_code: "C03", late_minutes: 6,
+      together_q: 1650, minutes: 24, km: 5.7, with_return: false, separate_q: 2500, saving_q: 850,
+    }],
+    service: "taon", service_reason: "default",
+    service_options: [{ ref: "taon", name: "TaOn", kind: "machine", is_default: true }],
+  },
 };
+/** As corridas em grupo que a tela chamou (`POST /orders/courier-ride/`), na ordem. */
+const ridePosts = [];
 
 // A prévia da F4a (`MOCK_F4A=1`): o que a página passou a saber igual ao Painel.
 // Uma chamada sem resposta em Aguardando, a corrida que a TaOn parou de informar
@@ -644,6 +667,18 @@ const server = createServer((req, res) => {
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });
+  if (/\/e2e\/deliveries\/rides\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") ridePosts.length = 0;
+    return json(res, 200, { rides: ridePosts });
+  }
+  if (/\/orders\/courier-ride\/?(\?|$)/.test(url)) {
+    if (req.method !== "POST") return json(res, 200, { outcome: "not_found" });
+    return void readBody(req).then((body) => {
+      ridePosts.push(body);
+      json(res, 200, { outcome: "applied", refs: body.refs, directive_id: ridePosts.length, status: "queued",
+        ride_number: body.ride_number ?? null, ride_letter: "" });
+    });
+  }
   const promiseVariant = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_promise=(risk|closed)(?:;|$)/)?.[1] ?? "";
   const promiseScenario = Boolean(promiseVariant);
   if (promiseScenario && /\/e2e\/promise\/reset\/?(\?|$)/.test(url)) {

@@ -625,3 +625,131 @@ export function toggleStop(
   mine.refs = [...mine.refs, ref];
   return { editing: rides, active, notice: "" };
 }
+
+// ── sugestões da casa (ride_plan, F5) ───────────────────────────────────────
+
+/** A sugestão do plano, como a página a lê (`RideSuggestionProjection`). */
+export interface RideSuggestion {
+  key: string;
+  refs: readonly string[];
+  codes: readonly string[];
+  places: string;
+  quoted: boolean;
+  suggested: boolean;
+  late_code: string;
+  late_minutes: number;
+  together_q: number | null;
+  minutes: number | null;
+  km: number | null;
+  with_return: boolean;
+  separate_q: number | null;
+  saving_q: number | null;
+}
+
+function kmText(km: number): string {
+  return `${km.toFixed(1).replace(".", ",")} km`;
+}
+
+/** "R$ 11,00 · 18 min · 7,4 km · ida e volta": o mesmo desenho da cotação da corrida. */
+function togetherDisplay(valueQ: number, minutes: number | null, km: number | null, withReturn: boolean): string {
+  return [
+    money(valueQ),
+    minutes !== null ? `${minutes} min` : "",
+    km !== null ? kmText(km) : "",
+    withReturn ? "ida e volta" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * A cotação da sugestão em duas linhas, a junta em destaque com o ✔ e a separada
+ * esmaecida (regra do dono, 16/11). Só leitura: quem decide é o gesto. Sem cotação,
+ * nenhuma linha (a tela diz que a central não cotou).
+ */
+export function suggestionQuoteLines(suggestion: RideSuggestion): QuoteLine[] {
+  if (!suggestion.quoted || suggestion.together_q === null || suggestion.separate_q === null) return [];
+  return quoteLines(
+    {
+      value_q: suggestion.together_q,
+      display: togetherDisplay(suggestion.together_q, suggestion.minutes, suggestion.km, suggestion.with_return),
+      stops: [...suggestion.refs],
+      separate_value_q: suggestion.separate_q,
+      saving_q: suggestion.saving_q ?? undefined,
+    },
+    suggestion.refs.length,
+  );
+}
+
+/** "C03 chega uns 6 min depois.": quem mais espera a mais por ir junto. */
+export function suggestionLate(suggestion: Pick<RideSuggestion, "late_code" | "late_minutes">): string {
+  if (!suggestion.late_code || suggestion.late_minutes < 1) return "";
+  return `${suggestion.late_code} chega uns ${suggestion.late_minutes} min depois.`;
+}
+
+/**
+ * As sugestões que a tela mostra: nenhuma com pedido que o operador já pôs numa
+ * corrida (aceitar soma, nunca apaga) e nenhuma que ele dispensou ("Agora não").
+ */
+export function visibleSuggestions(
+  suggestions: readonly RideSuggestion[],
+  editing: readonly EditingRide[],
+  dismissed: readonly string[],
+): RideSuggestion[] {
+  const taken = new Set(editing.flatMap((ride) => ride.refs));
+  return suggestions.filter(
+    (suggestion) => !dismissed.includes(suggestion.key) && suggestion.refs.every((ref) => !taken.has(ref)),
+  );
+}
+
+/**
+ * O título do cartão: "2 corridas sugeridas: 5 pedidos." Com mais de uma e TODAS
+ * cotadas, o total em duas linhas (juntas × separadas); soma com buraco mente.
+ */
+export function suggestionsHeadline(suggestions: readonly RideSuggestion[]): { title: string; lines: QuoteLine[] } {
+  const orders = suggestions.reduce((sum, item) => sum + item.refs.length, 0);
+  const rides = suggestions.length;
+  const title = `${rides} ${rides === 1 ? "corrida sugerida" : "corridas sugeridas"}: ${orders} pedidos.`;
+  if (rides < 2 || suggestions.some((item) => !item.quoted || item.together_q === null || item.separate_q === null))
+    return { title, lines: [] };
+  const together = suggestions.reduce((sum, item) => sum + item.together_q!, 0);
+  const separate = suggestions.reduce((sum, item) => sum + item.separate_q!, 0);
+  return {
+    title,
+    lines: quoteLines(
+      {
+        value_q: together,
+        display: money(together),
+        stops: suggestions.flatMap((item) => [...item.refs]),
+        separate_value_q: separate,
+        saving_q: separate - together,
+      },
+      orders,
+    ),
+  };
+}
+
+/** "Chamar as 2 corridas": só com mais de uma e todas cotadas e marcadas. */
+export function callAllLabel(suggestions: readonly RideSuggestion[]): string {
+  if (suggestions.length < 2 || suggestions.some((item) => !item.suggested)) return "";
+  return `Chamar as ${suggestions.length} corridas`;
+}
+
+/**
+ * As sugestões aceitas viram corridas em edição, cada uma com a próxima letra livre,
+ * SOMADAS às que o operador já monta. `null` quando faltam letras.
+ */
+export function ridesFromSuggestions(
+  suggestions: readonly RideSuggestion[],
+  free: readonly number[],
+  editing: readonly EditingRide[],
+): EditingRide[] | null {
+  const taken = editing.map((ride) => ride.number);
+  const rides: EditingRide[] = [];
+  for (const suggestion of suggestions) {
+    const number = nextFreeNumber(free, [...taken, ...rides.map((ride) => ride.number)]);
+    if (number === null) return null;
+    rides.push({ number, refs: [...suggestion.refs] });
+  }
+  return rides;
+}
