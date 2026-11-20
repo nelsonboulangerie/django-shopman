@@ -101,7 +101,7 @@ def connection_choices(key: str, current: str) -> list[tuple[str, str]]:
     choices = [("", _empty_connection_label(key))]
     choices += [(connection.ref, _connection_label(connection, key)) for connection in active]
     if current and current not in {ref for ref, _label in choices}:
-        choices.append((current, f"{current} (inativa, apagada ou de outro formato)"))
+        choices.append((current, f"{current} ({why_unusable(key, current)})"))
     return choices
 
 
@@ -123,6 +123,56 @@ def model_choices(key: str, current: str) -> list[tuple[str, str]]:
     if current and current not in known:
         known.append(current)
     return [("", "O modelo da conexão"), *((model, model) for model in known)]
+
+
+#: O nome curto de cada formato, para dizer qual é o da conexão e qual a função pede.
+PROTOCOL_NAMES = {"anthropic": "Anthropic", "jev": "Jev"}
+
+
+def why_unusable(key: str, ref: str) -> str:
+    """A causa que vale para ESTA conexão: não existe mais, é de outro formato, ou está inativa.
+
+    ``ai.explain`` junta as três numa frase só ("que não existe, está inativa ou é de outro
+    formato"), e quem lê teria de adivinhar qual. Aqui a conexão é lida e a causa é uma.
+    """
+    from shopman.shop.models import AIConnection
+
+    connection = AIConnection.objects.filter(ref=ref).first()
+    if connection is None:
+        return "não existe mais"
+    wanted = _protocol(key)
+    if connection.protocol != wanted:
+        have = PROTOCOL_NAMES.get(connection.protocol, connection.protocol)
+        return f"é do formato {have}, não {PROTOCOL_NAMES.get(wanted, wanted)}"
+    if not connection.is_active:
+        return "está inativa"
+    return "não pode ser usada"
+
+
+def _route_ref(purpose: str) -> str:
+    """A conexão da rota que vale para a função: a dela, ou a padrão (nunca para o Jev)."""
+    routes = _routes_of(_shop())
+    for key in (purpose, DEFAULT_ROUTE):
+        route = routes.get(key)
+        if key == DEFAULT_ROUTE and purpose == "decision":
+            continue
+        if isinstance(route, dict) and route.get("connection"):
+            return str(route["connection"])
+    return ""
+
+
+def concrete_reason(purpose: str, reason: str) -> str:
+    """O motivo de ``ai.explain`` com a causa concreta e sem a chave interna da função."""
+    ref = _route_ref(purpose)
+    if ref and f"aponta para a conexão '{ref}'" in reason:
+        return f"a rota aponta para a conexão '{ref}', que {why_unusable(purpose, ref)}"
+    reason = reason.replace(f"a rota de IA '{purpose}' aponta", "a rota aponta")
+    # O caminho escrito sai: o botão ao lado já leva lá. O formato sai com o nome, não a chave.
+    reason = reason.replace(" (Admin → Conexões de IA)", "")
+    reason = reason.replace("; diga qual usar em Loja → rotas de IA", "; escolha qual na lista desta função")
+    for key, name in PROTOCOL_NAMES.items():
+        reason = reason.replace(f"no formato {key}", f"no formato {name}")
+    return reason
 
 
 def set_initial(form) -> None:
@@ -251,8 +301,7 @@ def readiness(purpose: str) -> Readiness:
         return Readiness(purpose, False, str(stopped), "Ajustar o freio de IA", "#id_ai_limits")
     except ai.AINotConfigured as reason:
         label, url = _fix_for(purpose)
-        # O motivo é o de ``ai.explain``, sem a chave interna da função: a tela já diz qual é.
-        text = str(reason).replace(f"a rota de IA '{purpose}' aponta", "a rota aponta")
+        text = concrete_reason(purpose, str(reason))
         return Readiness(purpose, False, text, label, url)
     from shopman.shop.models import AIConnection
 

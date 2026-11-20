@@ -15153,6 +15153,7 @@
           "responsibility": "configuração",
           "symbols": [
             "DEFAULT_ROUTE",
+            "PROTOCOL_NAMES",
             "ROUTE_KEYS",
             "ROUTE_LABELS",
             "Readiness",
@@ -15164,11 +15165,13 @@
             "_empty_connection_label",
             "_fix_for",
             "_protocol",
+            "_route_ref",
             "_routes_of",
             "_shop",
             "_vendor_host",
             "build",
             "clean",
+            "concrete_reason",
             "connection_choices",
             "connection_field",
             "form_fields",
@@ -15179,7 +15182,8 @@
             "set_initial",
             "shadow_history",
             "status_html",
-            "warnings"
+            "warnings",
+            "why_unusable"
           ]
         }
       ]

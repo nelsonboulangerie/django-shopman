@@ -166,7 +166,7 @@ def test_a_route_to_an_inactive_connection_is_a_warning_on_top_with_the_button(a
     assert reverse("admin:shop_aiconnection_change", args=[off.pk]) in body
     # A rota gravada continua visível na lista, marcada, para não sumir em silêncio.
     choices = dict(_form(shop).fields[ai_routes.connection_field("concierge")].choices)
-    assert choices["desligada"].endswith("(inativa, apagada ou de outro formato)")
+    assert choices["desligada"] == "desligada (está inativa)"
 
 
 def test_a_function_never_turned_on_is_not_a_warning(shop):
@@ -201,3 +201,43 @@ def test_the_manager_reads_the_page_without_raw_names(client, shop):
     body = client.get(_url(shop)).content.decode()
     assert "Ai route" not in body
     assert ai.PURPOSES["concierge"] in body
+
+
+@pytest.mark.parametrize(
+    ("setup", "cause"),
+    [
+        ("apagada", "não existe mais"),
+        ("inativa", "está inativa"),
+        ("jev", "é do formato Jev, não Anthropic"),
+    ],
+)
+def test_the_reason_says_the_one_cause_that_holds_for_that_connection(admin_client, shop, setup, cause):
+    """Defeito "o leitor escolhe entre leituras": a frase de ai.explain junta três causas."""
+    _connection("anthropic")
+    if setup == "inativa":
+        _connection("alvo", active=False)
+    elif setup == "jev":
+        jev = _connection("alvo")
+        jev.protocol = AIProtocol.JEV
+        jev.save()
+    shop.ai_routes = {"concierge": {"connection": "alvo"}}
+    shop.save()
+
+    expected = f"a rota aponta para a conexão 'alvo', que {cause}"
+    assert ai_routes.readiness("concierge").text == expected
+    assert ai_routes.warnings()[0]["reason"] == expected
+    assert "ou é de outro formato" not in admin_client.get(_url(shop)).content.decode()
+    label = dict(_form(shop).fields[ai_routes.connection_field("concierge")].choices)["alvo"]
+    assert label == f"alvo ({cause})"
+
+
+def test_the_reason_has_no_written_path_and_names_the_format(shop):
+    """O botão leva à tela; o texto não descreve o caminho ("Admin → …") nem mostra a chave do formato."""
+    _connection("anthropic")
+    _connection("outra")
+    text = ai_routes.readiness("decision").text
+    assert text == "nenhuma conexão de IA ativa no formato Jev"
+    ambiguous = ai_routes.readiness("copy")
+    assert ambiguous.text.endswith("; escolha qual na lista desta função")
+    assert ambiguous.fix_url == f"#id_{ai_routes.connection_field('copy')}"
+    assert "→" not in text + ambiguous.text
