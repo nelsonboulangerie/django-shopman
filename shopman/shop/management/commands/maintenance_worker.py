@@ -21,6 +21,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   concierge_verification_sweep — prazos do "vou verificar": aviso ao cliente e passagem à equipe
   concierge_reading_check   — Concierge atendendo sem modelo vira aviso no Gestor (um por causa)
+  concierge_corpus_copy     — cópia anonimizada das mensagens para o aprendizado (antes da retenção)
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   check_stock_alert_delivery_sla — aviso ao cliente travado/incerto alerta o Gestor
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
@@ -190,6 +191,9 @@ MAINTENANCE_COMMANDS = (
     # A Concierge sem modelo (dono, 19/11/2026): aviso no topo do Gestor, um por causa;
     # resolve sozinho quando o modelo volta. Lê a configuração, não chama modelo.
     "concierge_reading_check",
+    # O corpus anonimizado (dono, 20/11/2026, #2851): ANTES da limpeza de retenção, para a
+    # observação ser copiada antes de vencer. Sem nada que ligue à pessoa.
+    "concierge_corpus_copy",
     # A retenção é executada automaticamente; o comando só toca mensagens
     # inelegíveis cujo prazo aprovado já venceu.
     "cleanup_concierge_observations",

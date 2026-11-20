@@ -181,6 +181,7 @@
             "recent_exists",
             "resolve",
             "resolve_matching",
+            "resolve_pk",
             "revise"
           ]
         }
@@ -7361,6 +7362,7 @@
             "build_free_delivery_progress",
             "build_minimum_order_progress",
             "logger",
+            "reservation_lapsed_at",
             "reserved_until",
             "shop_rule_q"
           ]
@@ -9356,6 +9358,7 @@
         "delivery.cancelled-order-ride-disposition",
         "delivery.courier-auto-dispatch",
         "delivery.courier-charge-staleness",
+        "delivery.courier-customer-wait",
         "delivery.courier-dispatch-eligibility",
         "delivery.courier-handoff-charge",
         "delivery.courier-in-trouble",
@@ -15063,7 +15066,128 @@
           "responsibility": "configuração",
           "symbols": [
             "ConversationalDecision",
-            "ConversationalOutcome"
+            "ConversationalEpisode",
+            "ConversationalOutcome",
+            "ConversationalRecord",
+            "ConversationalWork"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/clock.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FACT_VALIDITY_SECONDS",
+            "ShopmanClock"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/outcomes.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "PRODUCER",
+            "SOURCE",
+            "ShopmanOutcomes"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/store.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FORMAT",
+            "ShopmanStore",
+            "_dedupe_key",
+            "_scope",
+            "instant",
+            "moment",
+            "records_of"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/admin/ai_routes.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "DEFAULT_ROUTE",
+            "MODEL_VENDORS",
+            "PROTOCOL_NAMES",
+            "ROUTE_KEYS",
+            "ROUTE_LABELS",
+            "Readiness",
+            "SHADOW_OFF",
+            "SHADOW_ON",
+            "_connection_label",
+            "_connection_vendor",
+            "_empty_connection_label",
+            "_fix_for",
+            "_known_vendors",
+            "_model_vendor",
+            "_protocol",
+            "_route_ref",
+            "_routes_of",
+            "_shop",
+            "_vendor_of_host",
+            "build",
+            "clean",
+            "concrete_reason",
+            "connection_choices",
+            "connection_field",
+            "form_fields",
+            "model_choices",
+            "model_field",
+            "readiness",
+            "record_shadow_change",
+            "set_initial",
+            "shadow_history",
+            "status_html",
+            "warnings",
+            "why_unusable"
           ]
         }
       ]

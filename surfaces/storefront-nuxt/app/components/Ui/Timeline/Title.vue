@@ -1,7 +1,8 @@
+<!-- O título é o nome do passo ("Recebido", "Aceito"): conteúdo, não enfeite. Sem
+     aria-hidden, como o Item; só o Indicator e o Separator são decorativos (#2609). -->
 <template>
   <Primitive
     data-slot="timeline-title"
-    aria-hidden="true"
     v-bind="forwarded"
     :class="styles({ class: normalizeClass(props.class) || undefined })"
   >

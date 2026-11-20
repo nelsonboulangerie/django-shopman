@@ -281,6 +281,7 @@ from .operations import (
     POSPreorderPaymentCheckView,
     POSPreorderRedoTabView,
     POSPreorderSearchView,
+    POSPreorderSwapView,
     POSRecentSalesView,
     POSResendFiscalEmailView,
     POSResendPaymentLinkView,
@@ -1392,6 +1393,7 @@ urlpatterns = [
     # ⚠️ ANTES de `pos/preorders/<str:ref>/`: `search` casaria com o ref.
     path("pos/preorders/search/", POSPreorderSearchView.as_view(), name="api-backstage-pos-preorder-search"),
     path("pos/preorders/<str:ref>/", POSPreorderDetailView.as_view(), name="api-backstage-pos-preorder-detail"),
+    path("pos/preorders/<str:ref>/swap/", POSPreorderSwapView.as_view(), name="api-backstage-pos-preorder-swap"),
     path(
         "pos/preorders/<str:ref>/payment/check/",
         POSPreorderPaymentCheckView.as_view(),

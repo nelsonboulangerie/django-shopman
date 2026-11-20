@@ -2439,14 +2439,22 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  /** A próxima comanda livre só entra em uso depois da confirmação explícita. */
+  /**
+   * A próxima comanda livre só entra em uso depois da confirmação explícita.
+   *
+   * Responde se a encomenda abriu (ou se a vazia de antes voltou à tela): é a deixa
+   * de quem mostra o assistente para levar o foco à etapa da vez (#2824). Antes, o
+   * diálogo "Iniciar nova encomenda?" devolvia o foco a quem o tinha na abertura (a
+   * busca do quadro de comandas), o quadro saía da tela com a encomenda aberta, e o
+   * foco morria no `body`.
+   */
   let openingNewOrder = false;
-  async function openNewOrder() {
-    if (openingNewOrder || busy.value) return;
+  async function openNewOrder(): Promise<boolean> {
+    if (openingNewOrder || busy.value) return false;
     // Reabrir a encomenda vazia existente não cria outra comanda.
     if (isAbandonedOrderTab()) {
       showTabs.value = false;
-      return;
+      return true;
     }
     openingNewOrder = true;
     try {
@@ -2456,11 +2464,15 @@ export function usePosSale(deps: PosSaleDeps) {
         description: "A próxima comanda livre ficará em uso para montar esta encomenda. O pedido só será registrado ao finalizar.",
         confirmLabel: "Iniciar encomenda",
         cancelLabel: "Voltar sem iniciar",
-      }))) return;
+        // O sim troca a tela: o foco vai à etapa da vez do assistente (quem abre a
+        // encomenda o leva), e não de volta à busca do quadro, que sai da tela.
+        returnFocusOnConfirm: false,
+      }))) return false;
       // A fila pode mudar enquanto o operador decide. Escolhe pela leitura atual.
       const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
-      if (!tabRef) return;
+      if (!tabRef) return false;
       await openTab(tabRef, { salesMode: "order" });
+      return cart.tabRef === tabRef;
     } finally {
       openingNewOrder = false;
     }

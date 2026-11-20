@@ -323,8 +323,50 @@ def record_turn(conversation, outcome, *, now: datetime | None = None) -> dict |
     return {**record, "_new": is_new}
 
 
-def _dedupe_key(conversation, record: dict) -> str:
-    return f"concierge:{conversation.pk}:verify:{record.get('id', '')}"
+def open_for(conversation, question: str, *, product: str = "", actor: str = "", now: datetime | None = None) -> dict | None:
+    """Abre (ou estende) a verificação FORA do turno: a porta de equipe do framework (N7).
+
+    O ``record_turn`` roda dentro da transação da resposta, com o fence do claim do turno.
+    Aqui não há turno: a conversa é travada (``select_for_update``), a promessa é a de
+    agora (``promise_for``) e o fence é o da conversa travada, então um turno em andamento
+    não sobrescreve o registro (ele espera a trava e relê). Depois da transação, o cartão
+    (``notify_team``). ``actor`` fica em ``opened_by`` quando a verificação nasce aqui.
+
+    ``None`` sem pergunta, com a conversa fora da Concierge (HANDOFF, encerrada) ou quando
+    a casa não pode prometer resposta dentro da janela (``no_promise``): quem chama decide
+    o que dizer ao cliente nesse caso.
+    """
+    from types import SimpleNamespace
+
+    from shopman.shop.models import Conversation
+
+    text = question_text(SimpleNamespace(span=str(question or ""), product=str(product or "")))
+    if not text:
+        return None
+    now = now or _now()
+    with transaction.atomic():
+        locked = Conversation.objects.select_for_update().filter(pk=conversation.pk).first()
+        if locked is None or locked.state != Conversation.State.ACTIVE:
+            return None
+        promise = promise_for(locked, now=now)
+        if promise.get("kind") == NO_PROMISE:
+            return None
+        locked._turn_fence = locked.turn_fence
+        outcome = SimpleNamespace(verification={
+            "requests": [{"text": text, "product": str(product or "")[:80]}],
+            "promise": promise,
+        })
+        record = record_turn(locked, outcome, now=now)
+        if record and record.get("_new") and actor:
+            flags = dict(locked.flags or {})
+            flags[FLAG_KEY] = {**flags[FLAG_KEY], "opened_by": str(actor)[:100]}
+            Conversation.objects.filter(pk=locked.pk).update(flags=flags)
+            locked.flags = flags
+            record = {**record, "opened_by": str(actor)[:100]}
+    if record:
+        conversation.flags = locked.flags
+        notify_team(conversation, record)
+    return record
 
 
 def promised_label(record: dict) -> str:
@@ -355,7 +397,7 @@ def alert_message(conversation, record: dict) -> str:
         asked = "; ".join(f"{i}) “{q}”" for i, q in enumerate(questions, 1))
     when = promised_label(record)
     promised = f"Prometemos responder até {when}." if when else "A Concierge não prometeu prazo."
-    return f"{asked}\n{promised}\n\nDedupe: {_dedupe_key(conversation, record)}"
+    return f"{asked}\n{promised}"
 
 
 def notify_team(conversation, record: dict | None) -> None:
@@ -374,7 +416,9 @@ def notify_team(conversation, record: dict | None) -> None:
                 type=ALERT_TYPE,
                 severity="warning",
                 message=message,
-                dedupe_key=_dedupe_key(conversation, record),
+                # Um cartão por verificação, guardado em ``alert_pk``: a mensagem é só o que
+                # a equipe lê, sem o marcador de engenheiro (dono, 20/11/2026).
+                stamp_dedupe=False,
                 order_ref=getattr(conversation, "last_order_ref", "") or "",
                 conversation_id=conversation.pk,
                 owner_role="atendimento",
@@ -429,7 +473,8 @@ def _resolve_card(conversation, record: dict, *, actor: str) -> None:
     from shopman.shop.adapters import alert as alert_adapter
 
     try:
-        alert_adapter.resolve_matching(ALERT_TYPE, message_contains=_dedupe_key(conversation, record), actor=actor)
+        if record.get("alert_pk"):
+            alert_adapter.resolve_pk(int(record["alert_pk"]), actor=actor)
     except Exception:
         logger.warning("concierge.verification.resolve_failed conversation=%s", conversation.pk, exc_info=True)
 

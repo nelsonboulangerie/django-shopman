@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cartLinkName } from '~/presentation/cart'
 import { headerCollapsed } from '~/presentation/scroll'
 import { headerStatusParts } from '~/presentation/shopStatus'
 import { accountNavEntry } from '~/utils/accountNavEntry'
@@ -197,11 +198,13 @@ onBeforeUnmount(() => {
         size="icon"
         class="relative -mr-2 ml-auto size-11 rounded-full text-foreground"
         :class="cartPulse ? 'scale-105' : ''"
-        aria-label="Ver sacola"
+        :aria-label="cartLinkName(cart)"
+        data-header-cart-link
       >
         <Icon name="lucide:shopping-bag" class="size-6" />
         <UiBadge
           v-if="!cart.is_empty"
+          aria-hidden="true"
           variant="default"
           size="sm"
           class="absolute -right-1 -top-1 size-5 min-w-5 rounded-md p-0 text-xs font-semibold tabular-nums ring-2 ring-background"

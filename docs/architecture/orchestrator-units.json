@@ -8778,6 +8778,43 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-customer-wait",
+      "question": "O que o cliente lê sobre o entregador entre a chamada e a coleta: chamado, demorando, a caminho, na loja ou desistiu?",
+      "owner": "delivery.customer-wait",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.courier:customer_wait",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:customer_wait"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "LATE_SEARCH_MINUTES",
+            "customer_wait",
+            "driver_first_name"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/web/test_tracking_courier_wait.py::test_customer_wait_never_reads_the_raw_letter_without_the_service"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "delivery.courier-stop-tracking-link",
       "question": "Qual link de rastreio é o da parada deste pedido, e quando ele não pode ser mostrado ao cliente?",
       "owner": "delivery.stop-tracking-link",

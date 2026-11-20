@@ -1,0 +1,49 @@
+{
+  "alert_title": "Ana espera a resposta da equipe · até 13h28Responder",
+  "alert_top": 129,
+  "alert_bottom": 223,
+  "alert_left": 248,
+  "alert_right": 1342,
+  "viewport_w": 1366,
+  "page_scroll_w": 1366,
+  "bars": [
+    {
+      "bar": "[data-operator-page-header]",
+      "top": 0,
+      "bottom": 64
+    },
+    {
+      "bar": "[data-page-header-actions]",
+      "top": 12,
+      "bottom": 52
+    },
+    {
+      "bar": "[data-page-header-filters]",
+      "top": 72,
+      "bottom": 112
+    }
+  ],
+  "last_bar_bottom": 112,
+  "alert_below_all_bars": true,
+  "overlaps": [],
+  "inside_viewport": true,
+  "min_contrast": 5.88,
+  "texts": [
+    {
+      "text": "Ana espera a resposta da equipe · até 13h28",
+      "font_px": 14,
+      "contrast": 11.04
+    },
+    {
+      "text": "Responder",
+      "font_px": 14,
+      "contrast": 5.88
+    }
+  ],
+  "close_target": {
+    "box_w": 32,
+    "box_h": 32,
+    "alvo_w": 44,
+    "alvo_h": 44
+  }
+}

@@ -64,6 +64,19 @@ describe('cartReservationNotice', () => {
     })
   })
 
+  it('quem abre a sacola depois do prazo lê a frase com a hora que o servidor publica (#2767)', () => {
+    const opened = cart({ reserved_until_iso: null, reserved_until_display: null, reservation_lapsed_display: '18/11 às 19h18' })
+    expect(cartReservationNotice(opened, 0)).toEqual({
+      kind: 'lapsed',
+      text: 'A reserva valia até 18/11 às 19h18 e já venceu. A sacola mostra o que continua disponível.'
+    })
+    // Reserva viva: a hora dela, nunca a da vencida.
+    const renewed = cart({ reserved_until_iso: '2026-11-19T19:50:00-03:00', reserved_until_display: '19h50', reservation_lapsed_display: '19h18' })
+    expect(cartReservationNotice(renewed, serverNowMs)?.kind).toBe('held')
+    // Sacola vazia: nada.
+    expect(cartReservationNotice({ ...opened, is_empty: true }, 0)).toBeNull()
+  })
+
   it('um gesto reserva de novo: a hora nova vence a frase do prazo vencido', () => {
     const renewed = cart({ reserved_until_iso: '2026-11-19T19:50:00-03:00', reserved_until_display: '19h50' })
     expect(cartReservationNotice(renewed, Date.parse('2026-11-19T19:20:00-03:00'), '19h18')).toEqual({

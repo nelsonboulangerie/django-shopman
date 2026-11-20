@@ -9,7 +9,7 @@ import { selectedOperatorViewports } from "../../../operator-kit/visual/matrix";
 // rodar só um estado. Sem baseline de pixel: o gate é o scanner de geometria do kit
 // (nada estoura a largura, nenhum alvo de toque pequeno, nenhum texto cortado).
 
-const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "35021");
+const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "25021");
 
 const SCREENS = [
   { surface: "purchase-panel", route: "/", scenario: "normal", state: "normal", ready: "[data-purchase-panel]" },

@@ -1287,7 +1287,29 @@ Carregando, vazio, erro e sem conexão, com UMA frase por estado
 ### Aviso da tela (`alerts` do `OperatorPageHeader`)
 
 O que a tela precisa que a pessoa saiba agora tem **um lugar só**: as `alerts` do
-cabeçalho, logo abaixo da toolbar.
+cabeçalho, logo abaixo da última barra do topo.
+
+**O aviso vem depois de TODAS as barras do topo e é o primeiro item do conteúdo, em todo
+tamanho** (dono, 20/11/2026, DEV-2026-063). As barras são a de 56 px (ou a linha do chão
+no celular), as abas e os recortes (as colunas do Gestor no celular: "Novos · Em preparo ·
+Prontos"), a linha dos controles e a dos filtros. O cabeçalho desenha o aviso por último,
+depois de todas as linhas dele, inclusive o `#below`; o que ele não controla é a barra
+que a tela monta FORA dele. Por isso:
+
+- Barra da tela que não cabe nos slots de controle (`#actions`, `#filters-primary`,
+  `#filters`, `#filter-panel`, `#selection`) mora no **`#below`**: é ali que "as barras
+  acabam", e o aviso vem logo depois. Barra do celular que a linha do chão leva junto
+  (o período das Encomendas, as abas dos Ajustes do PDV) pode morar ANTES do cabeçalho,
+  como hoje.
+- Nunca depois do `</OperatorPageHeader>`: ali ela fica embaixo do aviso. Foi o defeito
+  do Gestor de pedidos a 375 px, onde as abas das colunas vinham depois do "Ana espera a
+  resposta da equipe".
+- Sem `order` no CSS: a ordem visual é a do documento (o invólucro do cabeçalho é
+  `contents`, os filhos seguem na coluna da página).
+- Travas: `tests/components/OperatorPageHeaderAlertOrder.test.ts` (o kit: o aviso depois
+  de barra, controles, filtros, seleção e `#below`) e `tests/guardrails.alertsAfterBars.test.ts`
+  (os apps: nenhuma barra logo depois do `</OperatorPageHeader>` ou de um cabeçalho que o
+  embrulha).
 
 ```vue
 <OperatorPageHeader
@@ -1956,6 +1978,12 @@ Contrato:
   (`usePosPreorderMove`: "Mudar para qui, 01/10" / "Manter a data").
 - **Ficar é o padrão seguro.** O foco nasce em "Continuar editando"; Esc responde ficar;
   toque fora não responde nada (é `AlertDialog`). Só o botão destrutivo descarta.
+- **O sim que troca a tela leva o foco adiante (`returnFocusOnConfirm: false`).** Ao fechar,
+  a caixa devolve o foco a quem o tinha na abertura. Quando o sim troca a tela, esse
+  elemento está de saída e o foco morreria no `body`; com `returnFocusOnConfirm: false` o
+  sim não devolve o foco a ninguém, e quem pediu o leva ao gesto que segue quando ele
+  aparecer. O não devolve sempre. Consumidor: a "Nova encomenda" do PDV (`openNewOrder`),
+  que leva o foco a "Identificar cliente" (#2824).
 - **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
   gatilhos do mesmo gesto (o Esc do campo e o Esc do popover) não empilham caixas.
 - **Abre sobre o diálogo do app.** O kit faz `dedupe` do `reka-ui` (`nuxt.config.ts`), para

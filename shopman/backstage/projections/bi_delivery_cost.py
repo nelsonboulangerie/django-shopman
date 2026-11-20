@@ -101,9 +101,13 @@ def ride_cost_q(ride: dict) -> tuple[int, bool] | None:
     final = ride.get("final_value_q")
     if final is not None:
         return int(final), False
-    # A cotação é de uma parada só: na corrida com várias, ela não vale.
-    if ride.get("status") == "F" and not ride.get("ride_orders"):
+    # Na corrida com várias paradas, só vale a cotação da ROTA (gravada com as
+    # paradas na chamada); a de um pedido sozinho não diz o custo da corrida.
+    if ride.get("status") == "F":
         estimate = ride.get("estimate") or {}
+        members = ride.get("ride_orders")
+        if members and sorted(estimate.get("stops") or []) != sorted(members):
+            return None
         if estimate.get("value_q") is not None:
             return int(estimate["value_q"]), True
     return None

@@ -84,6 +84,15 @@ export function cartItemsCount (items: CartItemProjection[]): number {
   return items.reduce((total, line) => total + line.qty, 0)
 }
 
+// Nome do link da sacola para o leitor de tela: "Sacola" e, com itens, a contagem
+// que o selo mostra ("Sacola, 2 itens"). O selo é aria-hidden; o número vive aqui.
+// Um nome só para a barra de baixo (celular) e o cabeçalho (desktop), #2609.
+export function cartLinkName (cart: Pick<CartProjection, 'is_empty' | 'items_count'>): string {
+  if (cart.is_empty) return 'Sacola'
+  const count = cart.items_count
+  return `Sacola, ${count} ${count === 1 ? 'item' : 'itens'}`
+}
+
 // Preço por unidade da linha, na mesma dupla do cardápio: com promoção, o cheio
 // riscado (`original`) e o da promoção (`current`); sem promoção, só o cheio.
 export function linePrice (line: Pick<CartItemProjection, 'price_display' | 'promo_price_display'>): { original: string | null, current: string } {
@@ -279,13 +288,16 @@ export function cartHoldBanner (cart: Pick<CartProjection, 'has_ready_for_confir
 // sacola a renova (a resposta da mutação já traz a hora nova).
 //
 // - 'held': há reserva com prazo correndo. "Guardamos seus itens até 19h18."
-// - 'lapsed': o prazo passou com a cliente olhando a tela. A sacola foi relida, e
+// - 'lapsed': o prazo passou. Com a cliente olhando a tela, a sacola foi relida, e
 //   as linhas já dizem o que continua disponível; a frase só explica o que houve.
+//   Quem abre a sacola depois do prazo lê a mesma frase, com a hora que o servidor
+//   publica (`reservation_lapsed_display`, #2767).
 //
 // Sacola vazia, ou só com item de fornada futura (reserva sem relógio): nada.
 export type CartReservationNotice = { kind: 'held' | 'lapsed', text: string }
 
 type ReservationFields = Pick<CartProjection, 'is_empty' | 'reserved_until_iso' | 'reserved_until_display'>
+  & Partial<Pick<CartProjection, 'reservation_lapsed_display'>>
 
 /** O instante em que a reserva vence, em ms; null sem prazo ou com prazo ilegível. */
 export function reservationDeadlineMs (cart: Pick<CartProjection, 'reserved_until_iso'>): number | null {
@@ -298,7 +310,8 @@ export function reservationDeadlineMs (cart: Pick<CartProjection, 'reserved_unti
  * `serverNowMs` é o agora da tela já alinhado ao relógio do servidor; 0 enquanto
  * a tela ainda não tem relógio (no servidor e na hidratação), e aí o prazo que
  * veio com a sacola vale como está. `lapsedDisplay` é a hora da reserva que a tela
- * viu vencer, guardada pela página depois de reler a sacola. `shownElsewhereIso`
+ * viu vencer, guardada pela página depois de reler a sacola; sem ela, vale a hora
+ * que o servidor publica da reserva vencida. `shownElsewhereIso`
  * é um prazo que a tela já diz em outro lugar (o aviso "Tudo pronto! Confirme
  * até..."): o mesmo prazo não é dito duas vezes.
  */
@@ -317,7 +330,8 @@ export function cartReservationNotice (
     }
     return { kind: 'lapsed', text: reservationLapsedText(cart.reserved_until_display) }
   }
-  return lapsedDisplay ? { kind: 'lapsed', text: reservationLapsedText(lapsedDisplay) } : null
+  const lapsed = lapsedDisplay || cart.reservation_lapsed_display
+  return lapsed ? { kind: 'lapsed', text: reservationLapsedText(lapsed) } : null
 }
 
 function reservationLapsedText (display: string): string {

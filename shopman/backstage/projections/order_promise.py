@@ -698,9 +698,15 @@ def alternatives_for(
             (item for item in (promise.items if promise is not None else ()) if item.sku == sku and item.at_risk),
             None,
         )
-        if at_risk is not None and at_risk.cause in _ALTERNATIVE_CAUSES:
+        if at_risk is not None and at_risk.cause in _ALTERNATIVE_CAUSES and at_risk.alternatives:
             return at_risk.alternatives
-        missing = _ordered_qty(order, sku)
+        # Lista vazia na promessa não distingue "não há" de "não deu para
+        # procurar" (o aviso só cala): procura de novo, com o que falta do item.
+        missing = (
+            _decimal(at_risk.missing_qty.replace(",", "."))
+            if at_risk is not None and at_risk.cause in _ALTERNATIVE_CAUSES
+            else _ordered_qty(order, sku)
+        )
     target = _alternatives_date(order, today or timezone.localdate())
     return _search_alternatives(sku, missing, order.channel_ref, target)
 
