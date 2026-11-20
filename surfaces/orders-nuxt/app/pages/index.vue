@@ -27,7 +27,7 @@ import {
   paymentLabel,
   realtimeIndicator,
   resolveShortcut,
-  rideChoices,
+  buildRidesLabel,
   rowsToCsv,
   schedulePromise,
   SORT_OPTIONS,
@@ -268,15 +268,9 @@ watch(
 const negotiationCards = computed(
   () => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[],
 );
-// As entregas prontas que podem ir juntas numa corrida, como cards (ordem da fila).
-// A corrida junta pedido pronto e em preparo: o card de cada um vem da Saída
-// ou do Preparo.
-const rideCandidates = computed(() =>
-  rideChoices(queue.value?.ride_candidates ?? [], [
-    ...(queue.value?.expedition_delivery ?? []),
-    ...(queue.value?.prep ?? []),
-  ]),
-);
+// As entregas que podem ir juntas numa corrida: com duas ou mais, o Painel leva à
+// página Entregas, onde as corridas se montam (F5).
+const rideCandidates = computed(() => queue.value?.ride_candidates ?? []);
 const allCards = computed<OrderCardProjection[]>(() =>
   zones.value.flatMap((z) => z.cards),
 );
@@ -1762,13 +1756,16 @@ function compactClear() {
             @click="boardLayout.showAll()"
           />
         </template>
-        <!-- Uma corrida da TaOn para várias entregas prontas: some com menos de duas. -->
-        <CourierRideMenu
-          v-if="!(view === 'board' && !boardAsTabs && boardLayout.isOpen('expedition'))"
-          :choices="rideCandidates"
-          :action="queue?.ride_action"
-          @done="refresh()"
-          @stale="refresh()"
+        <!-- Juntar entregas numa corrida mora na página Entregas (F5): o atalho leva
+             para lá com quantas a casa sugere. Some com menos de duas. -->
+        <NuxtButton
+          v-if="rideCandidates.length >= 2 && !(view === 'board' && !boardAsTabs && boardLayout.isOpen('expedition'))"
+          to="/delivery"
+          icon="i-lucide-route"
+          :label="buildRidesLabel(queue?.ride_suggestions ?? 0)"
+          color="neutral"
+          variant="outline"
+          data-build-rides
         />
         <!-- Onde está a maquininha: some quando todas estão na loja (no Painel, mora na
              linha de baixo). -->
@@ -2164,7 +2161,15 @@ function compactClear() {
                 <!-- Uma corrida da TaOn para várias entregas prontas, na coluna delas:
                      some com menos de duas. -->
                 <template v-if="zone.key === 'expedition'" #heading-actions>
-                  <CourierRideMenu :choices="rideCandidates" :action="queue?.ride_action" @done="refresh()" @stale="refresh()" />
+                  <NuxtButton
+                    v-if="rideCandidates.length >= 2"
+                    to="/delivery"
+                    icon="i-lucide-route"
+                    :label="buildRidesLabel(queue?.ride_suggestions ?? 0)"
+                    color="neutral"
+                    variant="outline"
+                    data-build-rides
+                  />
                 </template>
               </OrderBoardColumn>
               <OrderBoardStrip

@@ -181,3 +181,31 @@ def test_without_a_courier_service_there_is_no_plan(shop):
     a, b = _at("CR-A", -23.310, -51.160), _at("CR-B", -23.305, -51.160)
     with override_settings(SHOPMAN_COURIER_ADAPTER=None):
         assert ride_plan.ride_plan([a, b])["suggestions"] == []
+
+
+def test_admin_edits_the_four_params_and_saves_only_what_differs(shop):
+    from shopman.shop.admin.shop import _ORDERING_FIELDSETS, ShopForm
+    from shopman.shop.tests.test_admin import _shop_form_data
+
+    names = ("defaults_delivery_ride_detour_km", "defaults_delivery_ride_saving_min_q",
+             "defaults_delivery_ride_saving_min_percent", "defaults_delivery_ride_extra_wait_minutes")
+    fields = [f for _, opts in _ORDERING_FIELDSETS for row in opts["fields"]
+              for f in (row if isinstance(row, tuple) else (row,))]
+    assert set(names) <= set(fields)
+
+    data = _shop_form_data(shop)
+    data.update({names[0]: "1.5", names[1]: "5.00", names[2]: "20", names[3]: "8"})
+    form = ShopForm(data=data, instance=shop)
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    assert saved.defaults["delivery"]["ride_suggestion"] == {
+        "detour_km": 1.5, "saving_min_q": 500, "saving_min_percent": 20, "extra_wait_minutes": 8}
+    assert ride_plan.params(saved) == {"detour_km": 1.5, "saving_min_q": 500, "saving_min_percent": 20,
+                                       "extra_wait_minutes": 8}
+    assert ShopForm(instance=saved).fields[names[1]].initial == 5
+
+    data = _shop_form_data(saved)
+    data.update({name: "" for name in names})
+    form = ShopForm(data=data, instance=saved)
+    assert form.is_valid(), form.errors
+    assert "ride_suggestion" not in (form.save().defaults.get("delivery") or {})

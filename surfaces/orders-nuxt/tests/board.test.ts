@@ -2,6 +2,7 @@ import { fixtureActions } from "./support/orderActions";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildRidesLabel,
   alertMessageWithSchedule,
   schedulePromise,
   appendTag,
@@ -11,12 +12,7 @@ import {
   cardAffordances,
   channelOptions,
   elapsedLabel,
-  courierRideLabel,
-  courierRideBody,
   courierRideCallLabel,
-  courierRideLine,
-  rideChangeDefaults,
-  rideChoices,
   rideOfferLine,
   courierRideQuestion,
   equipmentOutLabel,
@@ -1013,76 +1009,15 @@ describe("maquininhas na rua", () => {
 });
 
 describe("uma corrida para várias entregas", () => {
-  it("diz quantas entregas juntam e quem é cada uma", () => {
-    expect(courierRideLabel(3)).toBe("3 entregas podem ir na mesma corrida.");
-    expect(courierRideLine({ ref: "WEB-A47", customer_name: "Maria" })).toBe(
-      "Pedido A47 · Maria",
-    );
+  it("o Painel leva às Entregas dizendo quantas a casa sugere", () => {
     expect(MAX_RIDE_STOPS).toBe(4);
+    expect(buildRidesLabel(0)).toBe("Montar corridas");
+    expect(buildRidesLabel(1)).toBe("Montar corridas (1 sugerida)");
+    expect(buildRidesLabel(2)).toBe("Montar corridas (2 sugeridas)");
   });
 });
 
-describe("a corrida conjunta pergunta o troco e a maquininha", () => {
-  const card = (ref_: string) =>
-    ({ ref: ref_, customer_name: "" }) as unknown as OrderCardProjection;
-  const candidate = (
-    ref_: string,
-    change_out_suggested_q: number,
-    needs_machine: boolean,
-  ) => ({
-    ref: ref_,
-    change_out_suggested_q,
-    needs_machine,
-    label: "",
-    place: "",
-    stage: "",
-    distance_label: "",
-    change_label: "",
-  });
-  const choices = rideChoices(
-    [
-      candidate("WEB-A", 0, true),
-      candidate("WEB-B", 2600, false),
-      candidate("WEB-GONE", 0, false),
-    ],
-    [card("WEB-A"), card("WEB-B"), card("WEB-C")],
-  );
-
-  it("liga cada candidata ao seu card e sugere o troco", () => {
-    expect(choices.map((choice) => choice.card.ref)).toEqual([
-      "WEB-A",
-      "WEB-B",
-    ]);
-    expect(rideChangeDefaults(choices)).toEqual({ "WEB-B": "26,00" });
-  });
-
-  it("manda troco só de quem pede e a maquininha só com pedido de cartão", () => {
-    expect(
-      courierRideBody(
-        ["WEB-A", "WEB-B"],
-        choices,
-        { "WEB-B": " " },
-        "card_machine:1",
-      ),
-    ).toEqual({
-      refs: ["WEB-A", "WEB-B"],
-      change_out: { "WEB-B": "0" },
-      machine: "card_machine:1",
-    });
-    expect(
-      courierRideBody(
-        ["WEB-B"],
-        choices,
-        { "WEB-B": "30,00" },
-        "card_machine:1",
-      ),
-    ).toEqual({
-      refs: ["WEB-B"],
-      change_out: { "WEB-B": "30,00" },
-      machine: "",
-    });
-  });
-
+describe("a corrida conjunta diz a maquininha", () => {
   it("o botão diz a maquininha que vai", () => {
     expect(courierRideCallLabel(3)).toBe("Chamar uma corrida para 3 pedidos");
     expect(courierRideCallLabel(2, "Azul")).toBe(
