@@ -233,7 +233,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
 
       <section v-if="ride.cost_display || ride.back_lines.length" class="mx-5 mt-5 mb-5 flex flex-col gap-2">
         <div v-if="ride.cost_display" class="rounded-xl bg-elevated/60 p-3">
-          <p class="op-micro text-muted">A corrida, paga pela casa</p>
+          <p class="op-micro text-muted">{{ ride.cost_label }}</p>
           <p class="op-title font-semibold tabular-nums text-highlighted">{{ ride.cost_display }}</p>
         </div>
         <div v-if="ride.back_lines.length" class="rounded-xl bg-elevated/60 p-3">

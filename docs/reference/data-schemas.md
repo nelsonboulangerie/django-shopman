@@ -467,6 +467,9 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "tracking_match": "id",          // a prova do casamento do link com a parada: "id" (a entrada da TaOn nomeia o pedido por `id_externo`/`numero_pedido`) | "stop" (pelo `stop_id` gravado) | "single" (corrida de um pedido só) | "position" (uma entrada por parada, na ordem de `ride_orders`, tamanhos iguais). Sem esta chave o link e o código são tratados como ausentes (falha fechada); sai no arquivamento
   "stop_id": "",                   // id da parada deste pedido na TaOn (`parada_id`); hoje só LIDO pelo casamento do link. Quem grava é a entrega por parada (#2428)
   "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": true},  // custo interno (centavos); `with_return` = cotada com `com_retorno`, o mesmo `retorno` que a abertura pede (`courier.needs_return`: cobrança na porta ou maquininha da casa)
+  //   corrida com várias paradas: a chamada grava no pedido que a abriu a cotação da ROTA inteira, com
+  //   `"stops": ["REF-1", "REF-2"]` (as paradas na ordem do percurso). O custo que a tela e o B.I. afirmam para a
+  //   corrida juntada só usa uma cotação cujas `stops` são as paradas dela (J13): a cotação sozinha de antes de juntar nunca vale
   "final_value_q": null,           // finished.final_value convertido p/ centavos (corrida com várias paradas: o valor da corrida inteira, repetido em cada pedido)
   "ride_orders": ["WEB-A47", "WEB-A51"],  // só na corrida com várias paradas: os pedidos dela na ordem das paradas; a leitura (`courier.sync`) roda no primeiro e aplica a todos; sai no arquivamento
   "door_charge": {"cash_q": 5800, "change_for_q": 10000, "card_q": 0},  // cobrança na porta registrada na coleta (E); a mesma régua da observação da corrida (`courier.door_charge`)
