@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
@@ -94,6 +95,11 @@ def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
 def _fold(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or "").casefold())
     return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def word_stem(word: str) -> str:
+    """A palavra sem o plural: "doces" e "doce" são a mesma busca."""
+    return word[:-1] if len(word) > 3 and word.endswith("s") else word
 
 
 def _operational_faq(
@@ -243,7 +249,7 @@ def search_public_faq(
     needle = _fold(query).strip()
     if not needle:
         return items[:limit]
-    terms = {term for term in needle.split() if len(term) >= 3}
+    terms = {word_stem(term) for term in re.findall(r"[a-z0-9]+", needle) if len(term) >= 3}
     ranked: list[tuple[int, int, FAQItemProjection]] = []
     for index, item in enumerate(items):
         extra_terms = _OPERATIONAL_SEARCH_TERMS.get(item.ref, ())
@@ -252,7 +258,10 @@ def search_public_faq(
                 term.strip() for term in curated_search_terms.get(item.ref, "").split(",") if term.strip()
             )
         haystack = _fold(f"{item.question} {item.answer} {' '.join(extra_terms)}")
-        score = (10 if needle in haystack else 0) + sum(1 for term in terms if term in haystack)
+        # Palavra inteira, nunca pedaço: "padaria" dentro de "Somos uma padaria" levava a
+        # resposta do glúten a quem perguntou de pets (conversa real, 20/11/2026).
+        words = {word_stem(word) for word in re.findall(r"[a-z0-9]+", haystack)}
+        score = (10 if needle in haystack else 0) + sum(1 for term in terms if term in words)
         if score:
             ranked.append((-score, index, item))
     ranked.sort()

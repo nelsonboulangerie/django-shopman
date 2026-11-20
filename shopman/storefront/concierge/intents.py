@@ -688,6 +688,83 @@ def _search_text(act: Act) -> str:
     return act.product or strip_small_talk(act.span) or act.span
 
 
+#: As palavras de "tem?" e "quanto custa?": presença e preço, que a linha do cardápio já
+#: responde. O que sobra na pergunta além delas e do nome do produto é um atributo
+#: ("é doce?", "é grande?"), e atributo só sai da ficha do produto.
+_PLAIN_PRODUCT_WORDS = frozenset({
+    "ainda", "custa", "custam", "disponivel", "disponiveis", "fica", "hoje", "preco", "precos",
+    "quanto", "quantos", "sai", "temos", "tem", "tinha", "valor", "vende", "vendem", "voces",
+    "amanha", "agora", "unidade", "unidades",
+})
+#: "Ele é doce?" sem o produto resolvido: de quem se fala a busca não sabe.
+_REFERENT_WORDS = frozenset({"ele", "ela", "eles", "elas", "esse", "essa", "esses", "essas", "este", "esta", "isso"})
+SHEET_ITEMS = 3
+
+
+def _own_source(act: Act, result: dict) -> dict:
+    """Cada parte com a sua fonte, nunca o texto vizinho.
+
+    Produto (e pedido) pelo cardápio; a casa (horário, entrega, como funciona) pelas
+    perguntas frequentes. Quando a busca achou as duas coisas, a outra sai: "quanto custa o
+    pain perdu?" recebia o preço, o texto do glúten e o do cancelamento (20/11/2026).
+    """
+    if not result.get("ok") or not result.get("found"):
+        return result
+    if act.act in {PRODUCT, ORDER} and result.get("items") and result.get("answers"):
+        return {**result, "answers": [], "links": []}
+    if act.act in {HOURS, HOUSE} and result.get("answers"):
+        # A pergunta da casa recebe a resposta que melhor casou, só ela: "quanto custa a
+        # entrega?" levava junto o texto de acompanhar pedido, que também diz "entrega".
+        return {**result, "answers": result["answers"][:1], "items": [], "count": 0,
+                "available_count": 0, "truncated": False}
+    return result
+
+
+def _sheet_reply(act: Act, result: dict) -> str | None:
+    """A pergunta sobre um atributo do produto, respondida pela ficha dele.
+
+    ``None``: não é pergunta de atributo (presença, preço): vale a linha do cardápio.
+    ``""``: é, e nenhuma ficha achada fala daquilo (ou não se sabe de que produto): sem
+    fato, a casa verifica. Texto: o nome, a seção, a descrição e o preço de cada produto
+    cuja ficha fala do atributo, sem a Concierge concluir nada por conta própria ("O
+    pain perdu é doce ou salgado?" mostra a seção Doces e o caramelo salgado da ficha).
+    """
+    from shopman.storefront.presentation.public_information import word_stem
+
+    from . import tools as tools_module
+    from .small_talk import strip_small_talk
+
+    if not result.get("ok") or not result.get("found") or result.get("overview"):
+        return None
+    items = list(result.get("items") or [])
+    named = {word_stem(word) for word in tools_module._public_search_terms(act.product)}
+    for item in items:
+        named.update(word_stem(word) for word in tools_module._public_search_terms(item.get("name") or ""))
+    asked = [
+        word for word in tools_module._public_search_terms(strip_small_talk(act.span) or act.span)
+        if word not in _PLAIN_PRODUCT_WORDS
+    ]
+    attributes = {word_stem(word) for word in asked if word_stem(word) not in named and word not in _REFERENT_WORDS}
+    if not attributes:
+        return None
+    span_words = set(re.findall(r"[a-z0-9]+", _fold(act.span)))
+    names_product = bool(act.product) or any(
+        set(re.findall(r"[a-z0-9]+", _fold(item.get("name") or ""))) <= span_words for item in items
+    )
+    if not names_product and span_words & _REFERENT_WORDS:
+        return ""
+    rows = []
+    for item in items:
+        sheet = _fold(" ".join(str(item.get(key) or "") for key in ("name", "collection", "description")))
+        if attributes & {word_stem(word) for word in re.findall(r"[a-z0-9]+", sheet)} and item.get("description"):
+            section = f" ({tools_module._display_text(item['collection'])})" if item.get("collection") else ""
+            description = tools_module._display_text(item["description"]).rstrip(".")
+            rows.append(f"{tools_module._display_name(item['name'])}{section}: {description}. {item['price']}.")
+        if len(rows) == SHEET_ITEMS:
+            break
+    return "\n".join(rows)
+
+
 def _cancellation():
     """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``).
 
@@ -763,10 +840,14 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         from . import dialogue
 
         query = _search_text(act)
-        result = tools_module.execute("search_storefront", {}, context(query))
+        result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
+        sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
+        if sheet == "":
+            # Pergunta sobre o produto que a ficha não responde: sem fato.
+            result = {**result, "found": False}
         if result.get("ok") and result.get("found"):
-            reply.text = tools_module.render_result("search_storefront", result)
+            reply.text = sheet or tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
         elif consult and verifiable and verification.question_text(act):
             # Sem fato numa consulta: a casa não inventa e não larga o cliente. Diz que
