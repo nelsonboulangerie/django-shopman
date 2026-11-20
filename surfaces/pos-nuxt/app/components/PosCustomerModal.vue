@@ -433,6 +433,15 @@ const nameInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const phoneInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const emailInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+// Ao FECHAR, quem diz para onde o foco vai é quem abriu (`PosTabHeader` devolve ao
+// chip e avisa a página, que leva o foco à etapa seguinte do assistente;
+// `PosPaymentWorkspace` volta à entrada do cliente). O Reka devolveria o foco,
+// DEPOIS da animação de saída, a quem estava com ele na abertura, e passaria por
+// cima dessa escolha: no assistente da encomenda, aberto pelo chip, o foco voltava
+// ao chip em vez de ir ao dia (#2778).
+function onCloseAutoFocus(event: Event) {
+  event.preventDefault();
+}
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
@@ -460,7 +469,7 @@ const newCustomerNote = computed(() => {
     :open="open"
     :title="isReceiptDecision ? receiptTitle : 'Cliente'"
     :description="isReceiptDecision ? undefined : 'Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.'"
-    :content="{ onOpenAutoFocus, ...({ onKeydownCapture: onReceiptKey } as object) }"
+    :content="{ onOpenAutoFocus, onCloseAutoFocus, ...({ onKeydownCapture: onReceiptKey } as object) }"
     :ui="{ content: isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg', title: isReceiptDecision ? 'pr-4 text-left' : undefined }"
     data-pos-customer-modal
     @update:open="$emit('update:open', Boolean($event))"

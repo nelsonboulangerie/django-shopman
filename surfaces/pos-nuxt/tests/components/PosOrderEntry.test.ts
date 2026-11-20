@@ -70,7 +70,12 @@ const visibleStep = (w: Wrapper) =>
 const footer = (w: Wrapper) => w.find("[role='status']").text();
 const button = (w: Wrapper, text: string) => w.findAll("button").find((b) => b.text().includes(text));
 const radios = (w: Wrapper) => w.findAll("[data-order-step='address'] [role='radio']");
+// Retirada e Entrega: o cartão com rádio do diálogo Recebimento (#2815). O cartão
+// inteiro é o alvo do toque, e o rádio dentro dele leva o estado.
+const fulfillmentCards = (w: Wrapper) => w.findAll("[data-order-fulfillment-options] [data-slot='item']");
+const fulfillmentRadios = (w: Wrapper) => w.findAll("[data-order-fulfillment-options] [role='radio']");
 const settled = () => new Promise((resolve) => setTimeout(resolve, 50));
+const active = () => document.activeElement as HTMLElement | null;
 
 describe("assistente da encomenda", () => {
   // A ordem do dono (19/11/2026, #2754): cliente, PARA QUANDO, recebimento e,
@@ -135,12 +140,11 @@ describe("assistente da encomenda", () => {
 
   it("retirada é a última etapa: escolhida no cartão, a encomenda fica pronta para montar", async () => {
     const w = await mount({ props: { ...props, issue: "fulfillment" as const } });
-    // As formas de receber são os botões da etapa: o toque é a resposta.
-    const options = w.findAll("[data-order-fulfillment]");
-    expect(options.map((o) => o.text())).toEqual(["RetiradaNo balcão da loja", "EntregaNo endereço do cliente"]);
-    expect(options.map((o) => o.attributes("aria-checked"))).toEqual(["false", "false"]);
+    // As formas de receber são as opções da etapa: o toque é a resposta.
+    expect(fulfillmentCards(w).map((o) => o.text())).toEqual(["RetiradaNo balcão da loja", "EntregaNo endereço do cliente"]);
+    expect(fulfillmentRadios(w).map((o) => o.attributes("aria-checked"))).toEqual(["false", "false"]);
     expect(button(w, "Montar encomenda")!.attributes("disabled")).toBeDefined();
-    await options[0]!.trigger("click");
+    await fulfillmentRadios(w)[0]!.trigger("click");
     expect(w.emitted("pickFulfillment")).toEqual([["pickup"]]);
     expect(w.emitted("fulfillment")).toBeUndefined();
     await w.setProps({ issue: "", chosenFulfillment: "pickup" });
@@ -151,7 +155,7 @@ describe("assistente da encomenda", () => {
 
   it("entrega sem endereço cadastrado: a etapa do endereço é a quarta e abre o formulário de entrega", async () => {
     const w = await mount({ props: { ...props, issue: "fulfillment" as const } });
-    await w.findAll("[data-order-fulfillment]")[1]!.trigger("click");
+    await fulfillmentRadios(w)[1]!.trigger("click");
     expect(w.emitted("pickFulfillment")).toEqual([["delivery"]]);
     await w.setProps({ issue: "address", delivery: true, chosenFulfillment: "delivery" });
     expect(visibleStep(w)).toEqual(["address"]);
@@ -226,7 +230,139 @@ describe("assistente da encomenda", () => {
     const w = await mount({ props: { ...props, issue: "fulfillment" as const }, attachTo: document.body });
     (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();
     await settled();
-    expect(document.activeElement?.getAttribute("data-order-fulfillment")).toBe("pickup");
+    expect(active()).toBe(fulfillmentRadios(w)[0]!.element);
+  });
+});
+
+// O GESTO QUE SEGUE TEM O FOCO (#2778): uma encomenda de retirada se monta do
+// começo ao fim sem mouse e sem Tab perdido.
+describe("assistente da encomenda: sem mouse", () => {
+  const onSchedule = { ...props, issue: "fulfillment" as const, scheduleDate: "2099-09-11" };
+
+  it("chegando na data, o foco está no dia (a parada de Tab do grupo de dias)", async () => {
+    const w = await mount({ props: { ...props, issue: "schedule" as const }, attachTo: document.body });
+    (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();
+    await settled();
+    expect(active()?.getAttribute("data-day-option")).toBe("today");
+    expect(active()?.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("a agenda chegou depois do foco: o foco desce do bloco da etapa para o dia", async () => {
+    const waiting = { ...props.schedule, today: "", availableDates: [], windows: [], pending: true };
+    const w = await mount({ props: { ...props, issue: "schedule" as const, schedule: waiting }, attachTo: document.body });
+    (w.vm as unknown as { focusCurrent: () => void }).focusCurrent();
+    await settled();
+    expect(active()?.getAttribute("data-order-step")).toBe("schedule");
+    await w.setProps({ schedule: props.schedule });
+    await settled();
+    expect(active()?.getAttribute("data-day-option")).toBe("today");
+  });
+
+  it("escolhido o horário, o foco vai para o Continuar e a etapa NÃO anda sozinha", async () => {
+    const w = await mount({ props: onSchedule, attachTo: document.body });
+    await nav(w)[1]!.trigger("click");
+    expect(visibleStep(w)).toEqual(["schedule"]);
+    await w.find("[data-schedule-slot='slot-10']").trigger("click");
+    await settled();
+    expect(w.emitted("update:scheduleTimeSlot")).toContainEqual(["slot-10"]);
+    expect(visibleStep(w)).toEqual(["schedule"]);
+    expect(active()).toBe(button(w, "Continuar")!.element);
+  });
+
+  it("trocar o dia limpa o horário, mas não é escolha de horário: o foco fica no dia", async () => {
+    const w = await mount({ props: onSchedule, attachTo: document.body });
+    await nav(w)[1]!.trigger("click");
+    const day = w.find("[data-order-step='schedule'] [data-day-option='today']");
+    (day.element as HTMLElement).focus();
+    await day.trigger("click");
+    await settled();
+    expect(w.emitted("update:scheduleTimeSlot")).toContainEqual([""]);
+    expect(active()).toBe(day.element);
+  });
+
+  it("Enter no Continuar (a ativação do botão) avança, e o foco cai na Retirada", async () => {
+    const w = await mount({ props: onSchedule, attachTo: document.body });
+    await nav(w)[1]!.trigger("click");
+    await w.find("[data-schedule-slot='slot-10']").trigger("click");
+    await settled();
+    expect(active()?.textContent).toContain("Continuar");
+    // O Enter num botão é o clique dele (o navegador faz; a jornada ao vivo prova).
+    active()!.click();
+    await settled();
+    expect(visibleStep(w)).toEqual(["fulfillment"]);
+    expect(active()).toBe(fulfillmentRadios(w)[0]!.element);
+  });
+
+  it("tocada a Retirada (a última etapa), o foco vai para Montar encomenda", async () => {
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const }, attachTo: document.body });
+    (fulfillmentRadios(w)[0]!.element as HTMLElement).focus();
+    await fulfillmentRadios(w)[0]!.trigger("click");
+    expect(w.emitted("pickFulfillment")).toEqual([["pickup"]]);
+    // O dono do carrinho responde no mesmo gesto (`chooseFulfillment`).
+    await w.setProps({ issue: "", chosenFulfillment: "pickup" });
+    await settled();
+    const montar = button(w, "Montar encomenda")!;
+    expect(montar.attributes("disabled")).toBeUndefined();
+    expect(active()).toBe(montar.element);
+  });
+
+  it("Enter na Retirada em foco a escolhe e leva o foco a Montar encomenda", async () => {
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const }, attachTo: document.body });
+    const pickup = fulfillmentRadios(w)[0]!;
+    (pickup.element as HTMLElement).focus();
+    await pickup.trigger("keydown", { key: "Enter" });
+    expect(w.emitted("pickFulfillment")).toEqual([["pickup"]]);
+    await w.setProps({ issue: "", chosenFulfillment: "pickup" });
+    await settled();
+    expect(active()).toBe(button(w, "Montar encomenda")!.element);
+  });
+
+  it("Retirada com o carrinho ainda sem responder: o foco não vai para um botão desabilitado", async () => {
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const }, attachTo: document.body });
+    const pickup = fulfillmentRadios(w)[0]!;
+    (pickup.element as HTMLElement).focus();
+    await pickup.trigger("click");
+    await settled();
+    expect(button(w, "Montar encomenda")!.attributes("disabled")).toBeDefined();
+    expect(active()).toBe(pickup.element);
+  });
+});
+
+// A ESCOLHA SE LÊ DE RELANCE (#2815): Retirada e Entrega são o cartão com rádio
+// do diálogo Recebimento, não um par de botões que só muda a borda.
+describe("assistente da encomenda: Retirada ou Entrega", () => {
+  it("é um grupo de rádio com nome, nada marcado antes do toque, sem botão apertado", async () => {
+    const w = await mount({ props: { ...props, issue: "fulfillment" as const } });
+    const group = w.find("[data-order-fulfillment-options] [role='radiogroup']");
+    expect(group.attributes("aria-label")).toBe("Como o cliente recebe");
+    expect(fulfillmentRadios(w).map((r) => r.attributes("aria-checked"))).toEqual(["false", "false"]);
+    expect(w.find("[data-order-step='fulfillment'] [aria-pressed]").exists()).toBe(false);
+  });
+
+  it("a escolha está em aria-checked, e o rádio marcado é o da escolha", async () => {
+    const w = await mount({ props: { ...props, issue: "" as const, chosenFulfillment: "pickup" } });
+    expect(fulfillmentRadios(w).map((r) => r.attributes("aria-checked"))).toEqual(["true", "false"]);
+    expect(fulfillmentRadios(w)[0]!.attributes("data-state")).toBe("checked");
+    await w.setProps({ issue: "address", delivery: true, chosenFulfillment: "delivery" });
+    expect(fulfillmentRadios(w).map((r) => r.attributes("aria-checked"))).toEqual(["false", "true"]);
+  });
+
+  it("o mesmo cartão do diálogo Recebimento e da lista de endereços: as mesmas classes de escolha", async () => {
+    const w = await mount({ props: { ...props, issue: "" as const, delivery: true, chosenFulfillment: "delivery", savedAddresses: [HOME], chosenAddress: "1" } });
+    const signal = (el: Element) => el.className.split(/\s+/).filter((name) => name.includes("data-[state=checked]")).sort();
+    const card = fulfillmentCards(w)[1]!.element;
+    const address = w.find("[data-pos-saved-addresses] [data-slot='item']").element;
+    expect(signal(card).length).toBeGreaterThan(0);
+    expect(signal(card)).toEqual(signal(address));
+  });
+
+  it("voltando à etapa já respondida, o foco cai na opção marcada", async () => {
+    const w = await mount({ props: { ...props, issue: "" as const, chosenFulfillment: "pickup" }, attachTo: document.body });
+    await w.setProps({ issue: "address", delivery: true, chosenFulfillment: "delivery" });
+    await nav(w)[2]!.trigger("click");
+    await settled();
+    expect(visibleStep(w)).toEqual(["fulfillment"]);
+    expect(active()).toBe(fulfillmentRadios(w)[1]!.element);
   });
 });
 
@@ -261,7 +397,7 @@ describe("assistente da encomenda: endereço já cadastrado", () => {
       props: { ...delivery, issue: "fulfillment" as const, delivery: false, chosenFulfillment: "", chosenAddress: "" },
       attachTo: document.body,
     });
-    await w.findAll("[data-order-fulfillment]")[1]!.trigger("click");
+    await fulfillmentRadios(w)[1]!.trigger("click");
     // O dono do carrinho marca o padrão no mesmo gesto (`chooseFulfillment`).
     await w.setProps({ issue: "", delivery: true, chosenFulfillment: "delivery", chosenAddress: "1" });
     await settled();

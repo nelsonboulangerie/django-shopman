@@ -15002,6 +15002,71 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/admin/conversational.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ConversationalDecisionAdmin",
+            "ConversationalOutcomeAdmin",
+            "_ReadOnly"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/decision_store.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FORMAT",
+            "_moment",
+            "_value",
+            "current_outcome",
+            "record_decision",
+            "record_outcome"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/conversational.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ConversationalDecision",
+            "ConversationalOutcome"
+          ]
+        }
+      ]
     }
   ]
 }

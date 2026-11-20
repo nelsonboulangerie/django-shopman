@@ -157,7 +157,8 @@ describe("jornada J5: dia e retirada escolhidos no cartão", () => {
     await settle();
     expect(step()).toBe("3. Recebimento");
 
-    await w.find("[data-order-fulfillment='pickup']").trigger("click");
+    // Retirada é o primeiro cartão com rádio da etapa (o mesmo do Recebimento).
+    await w.findAll("[data-order-fulfillment-options] [role='radio']")[0]!.trigger("click");
     await settle();
     expect(cart.fulfillmentType).toBe("pickup");
     expect(cart.fulfillmentConfirmed).toBe(true);

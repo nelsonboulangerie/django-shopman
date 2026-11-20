@@ -83,10 +83,6 @@ _CLOSED_STATUSES = frozenset({Order.Status.COMPLETED, Order.Status.CANCELLED, Or
 #: A produção que o pedido espera, nas mesmas palavras do cartão do painel.
 _PRODUCTION_STATE = {"planned": "não começou", "started": "em andamento"}
 
-#: O prefixo com que ``NFCeEmitHandler`` grava a resposta do emissor na Directive.
-_FISCAL_ERROR_PREFIX = "NFC-e emission failed: "
-
-
 @dataclass(frozen=True)
 class OrderPendingActionProjection:
     """O gesto que resolve uma pendência.
@@ -335,8 +331,10 @@ def _money_pending(
 def fiscal_failure_reason(order: Order) -> str:
     """O que o emissor respondeu na recusa da NFC-e, ou ``""`` quando não há resposta.
 
-    Mora na última Directive de emissão (``last_error``). Só a resposta do
-    emissor vira frase de tela; erro interno do worker fica de fora.
+    Mora na última Directive de emissão, no campo que o handler grava ao
+    recusar (``payload["emitter_answer"]``, ``NFCeEmitHandler._refuse``). Só a
+    resposta do emissor vira frase de tela: erro interno do worker e transiente
+    que esgotou as tentativas não gravam o campo e ficam de fora.
     """
     from shopman.orderman.models import Directive
 
@@ -345,15 +343,12 @@ def fiscal_failure_reason(order: Order) -> str:
     row = (
         Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
         .order_by("-created_at", "-pk")
-        .values_list("status", "last_error")
+        .values_list("status", "payload")
         .first()
     )
     if row is None or row[0] != "failed":
         return ""
-    error = str(row[1] or "").strip()
-    if not error.startswith(_FISCAL_ERROR_PREFIX):
-        return ""
-    return error[len(_FISCAL_ERROR_PREFIX):].strip().rstrip(".")
+    return str((row[1] or {}).get("emitter_answer") or "").strip().rstrip(".")
 
 
 def _fiscal_pending(order: Order, fiscal_status: str, by_ref: dict):

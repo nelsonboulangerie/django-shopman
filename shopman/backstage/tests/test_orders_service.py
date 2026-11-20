@@ -62,6 +62,8 @@ def test_advance_order_surfaces_specific_reason(monkeypatch):
         raise ValueError("Pagamento ainda não foi confirmado. Aguarde antes de iniciar o preparo.")
 
     monkeypatch.setattr(orders.operator_orders, "advance_order", fail)
+    # A régua do lote lê a promessa de um pedido de verdade; aqui o pedido é dublê.
+    monkeypatch.setattr("shopman.backstage.projections.order_queue.batch_wait_refusal", lambda order: "")
 
     with pytest.raises(OrderError) as exc_info:
         orders.advance_order("order", actor="operator:ana")
