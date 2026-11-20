@@ -26,7 +26,7 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(page.getByText("Corrida C", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Desfazer a corrida C", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Chamar a corrida C", exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Pedido A47, corrida C", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pedido A47, parada 1 da corrida C", exact: true })).toBeVisible();
     await expect(page.getByText(/[Cc]orrida \d/)).toHaveCount(0);
   });
 
@@ -43,6 +43,9 @@ test.describe("Entregas: corrida por letra", () => {
       [...document.querySelectorAll("ol li span.block.op-body")].map((node) => node.textContent?.trim() ?? ""),
     );
     expect(order.slice(0, 2)).toEqual(["A47 · Ana", "C03 · Caio"]);
+    // O mapa numera igual à lista: o "1" é o primeiro da rota, não o primeiro toque.
+    await expect(page.getByRole("button", { name: "Pedido A47, parada 1 da corrida C", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pedido C03, parada 2 da corrida C", exact: true })).toBeVisible();
     const change = page.getByRole("textbox", { name: "Troco para C03", exact: true });
     await expect(change).toHaveValue("20,00");
     await change.fill("30,00");

@@ -381,13 +381,8 @@ const mapWaiting = computed<MapPoint[]>(() =>
   waiting.value.filter(located).map((stop) => ({ ...stop, preparing: stop.stage !== "Pronto" })),
 );
 const mapBuilding = computed(() =>
-  editing.value.map((ride) => ({
-    number: ride.number,
-    stops: ride.refs
-      .map((ref) => byRef.value.get(ref))
-      .filter((stop): stop is DeliveryStopProjection => Boolean(stop))
-      .filter(located),
-  })),
+  // Na ordem da rota, como a lista: o "1" do mapa é o "1" do cartão.
+  editing.value.map((ride) => ({ number: ride.number, stops: routeOf(ride).filter(located) })),
 );
 const mapLive = computed<MapLiveRide[]>(() =>
   rides.value.map((ride) => ({ number: ride.number, stops: ride.stops.filter(located), courier: ride.position })),
@@ -566,7 +561,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
                   <p
                     v-for="line in linesOf(ride)"
                     :key="line.text"
-                    class="op-body tabular-nums"
+                    class="op-body tabular-nums [font-variant-emoji:text]"
                     :class="line.strong ? 'font-medium text-highlighted' : 'text-muted'"
                   >
                     {{ line.text }}
