@@ -157,3 +157,26 @@ def test_o_cancelar_do_balcao_le_os_mesmos_motivos_do_gestor(client, caixa_user)
     assert [reason["key"] for reason in no_balcao["cancel_reasons"]][:1] == ["out_of_stock"]
     assert no_balcao["cancel_reasons"] == no_gestor["cancel_reasons"]
     assert "cancellation_presets" not in no_gestor
+
+
+def test_o_cancelar_do_balcao_le_a_mesma_frase_do_dinheiro_do_gestor(client, caixa_user):
+    """P1-6 (EXCELENCIA-PDV WP-E5): o gerente assina o cancelamento VENDO O VALOR.
+
+    A frase de quanto volta e por onde é a do Gestor (``_cancel_money_effect``): o
+    balcão lê a mesma, pela rota dele, antes de pedir a assinatura.
+    """
+    from shopman.payman import PaymentService
+    from shopman.shop.models import Shop
+
+    Shop.objects.create(name="Loja Teste")
+    _order(payment={"method": "cash", "intent_ref": "INT-DET-CTX"})
+    PaymentService.create_intent("DET-CTX", 3600, "cash", ref="INT-DET-CTX")
+    PaymentService.authorize("INT-DET-CTX")
+    PaymentService.capture("INT-DET-CTX")
+    client.force_login(caixa_user)
+
+    no_gestor = client.get("/api/v1/backstage/orders/DET-CTX/").json()["order"]
+    no_balcao = client.get("/api/v1/backstage/pos/preorders/DET-CTX/").json()["order"]
+
+    assert no_balcao["cancel_money_effect"] == "R$ 36,00 em dinheiro ficam a devolver no caixa."
+    assert no_balcao["cancel_money_effect"] == no_gestor["cancel_money_effect"]

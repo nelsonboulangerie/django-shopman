@@ -41,6 +41,15 @@ describe("a cobrança na tela", () => {
     expect(charge.notices).toEqual([]);
   });
 
+  it("o desconto vem na própria linha: itens a preço de tabela, desconto e total fecham a conta", () => {
+    const charge = balanceCharge({
+      ...base,
+      discountLines: [{ kind: "discount", label: "Desconto do grupo", amount_display: "−R$ 4,80" }],
+    });
+    expect(charge.adjustments).toEqual([{ key: "discount-0", label: "Desconto do grupo", amountDisplay: "−R$ 4,80" }]);
+    expect(balanceCharge(base).adjustments).toEqual([]);
+  });
+
   it("com parte paga antes, a conta fecha: total, já pago e o que falta", () => {
     const charge = balanceCharge({ ...base, handOver: { ...base.handOver, amount_q: 5300, amount_display: "R$ 53,00" } });
     expect(nbsp(charge.paidDisplay)).toBe("R$ 40,00");

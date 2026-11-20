@@ -2068,6 +2068,17 @@ defineExpose({
               </li>
             </ul>
             <dl class="grid gap-1 border-t px-3 py-2 text-sm" data-balance-totals>
+              <!-- Os itens vêm a preço de tabela: o desconto mora na própria linha,
+                   para os itens, o desconto e o total fecharem a conta à vista. -->
+              <div
+                v-for="adjustment in balance.adjustments"
+                :key="adjustment.key"
+                class="flex items-baseline justify-between gap-2 text-primary"
+                data-balance-adjustment
+              >
+                <dt>{{ adjustment.label }}</dt>
+                <dd class="tabular-nums">{{ adjustment.amountDisplay }}</dd>
+              </div>
               <div class="flex items-baseline justify-between gap-2">
                 <dt class="text-muted-foreground">Total da encomenda</dt>
                 <dd class="tabular-nums">{{ balance.orderTotalDisplay }}</dd>

@@ -10,7 +10,7 @@
 import { formatBRL } from "../../../operator-kit/app/utils/money";
 import type { POSPaymentMethodProjection, POSPaymentTenderDraft } from "~/types/pos";
 import type { CounterMethod, PreorderCard, PreorderHandOver } from "~/types/preorders";
-import type { OrderDetailItem } from "../../../operator-kit/app/types/orderDetail";
+import type { OrderDetailDiscountLine, OrderDetailItem } from "../../../operator-kit/app/types/orderDetail";
 
 import { cashTenderSumQ } from "./payment";
 
@@ -30,6 +30,13 @@ export interface BalanceChargeLine {
   qtyLabel: string;
   name: string;
   totalDisplay: string;
+}
+
+/** O que o servidor tirou dos itens (cupom, promoção, grupo): "Cupom BEMVINDO", "−R$ 5,00". */
+export interface BalanceChargeAdjustment {
+  key: string;
+  label: string;
+  amountDisplay: string;
 }
 
 export interface BalanceChargeNotice {
@@ -52,6 +59,11 @@ export interface PosBalanceCharge {
   /** O que já entrou; "" quando nada foi pago antes. */
   paidDisplay: string;
   lines: BalanceChargeLine[];
+  /**
+   * Os itens vêm a preço de tabela e o desconto em linha própria (o mesmo
+   * detalhe do Gestor): sem estas linhas, itens e total não fecham a conta.
+   */
+  adjustments: BalanceChargeAdjustment[];
   notices: BalanceChargeNotice[];
 }
 
@@ -65,6 +77,7 @@ export function balanceCharge(input: {
   handOver: Pick<PreorderHandOver, "amount_q" | "amount_display" | "kitchen_notice" | "digital_charge_notice">;
   card: Pick<PreorderCard, "total_q" | "total_display">;
   items: OrderDetailItem[];
+  discountLines?: OrderDetailDiscountLine[];
 }): PosBalanceCharge {
   const paidQ = Math.max(0, input.card.total_q - input.handOver.amount_q);
   const notices: BalanceChargeNotice[] = [];
@@ -86,6 +99,11 @@ export function balanceCharge(input: {
       qtyLabel: `${item.qty}x`,
       name: item.name,
       totalDisplay: item.total_display,
+    })),
+    adjustments: (input.discountLines ?? []).map((line, index) => ({
+      key: `${line.kind}-${index}`,
+      label: line.label,
+      amountDisplay: line.amount_display,
     })),
     notices,
   };

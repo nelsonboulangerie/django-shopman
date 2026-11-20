@@ -1175,6 +1175,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             # O cancelar do balcão usa os MESMOS motivos do Gestor: a lista é uma
             # só, no backend (``cancel_reasons``).
             cancel_reasons=_cancel_reasons(order.channel_ref or ""),
+            # E a MESMA frase do dinheiro (P1-6, EXCELENCIA-PDV WP-E5): quem cancela
+            # e o gerente que assina leem quanto volta e por onde, antes do gesto.
+            **_cancel_money_effect(order, method, payment_status),
         )
 
     advance_block = operator_orders.gestor_advance_block(order)

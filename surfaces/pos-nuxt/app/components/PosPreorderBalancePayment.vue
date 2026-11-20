@@ -49,6 +49,7 @@ const charge = computed(() => balanceCharge({
   handOver: props.detail.counter.hand_over,
   card: props.detail.counter.card,
   items: props.detail.items ?? [],
+  discountLines: props.detail.discount_lines ?? [],
 }));
 
 // As linhas desta cobrança. Nascem vazias: como na venda, nenhuma forma vem
