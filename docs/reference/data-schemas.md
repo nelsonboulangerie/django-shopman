@@ -285,8 +285,9 @@ a segunda parte não entendida, com modelo, vai para a equipe. Sem modelo, a par
 
 `Conversation.flags["verification"]` = `{v: 1, id, status, opened_at, fence, questions, promise,
 nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
-conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
-marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
+conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres; o cartão
+é o `alert_pk` (sem marcador na mensagem: ela é só o que a equipe lê, e o cartão se resolve pelo
+`pk`); `status` é `open`, `answered` (a resposta da
 equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
 passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06) ou
 `returned` (com `returned_at`: depois do `handed_off`, o cliente escreveu de novo e a conversa voltou sozinha
