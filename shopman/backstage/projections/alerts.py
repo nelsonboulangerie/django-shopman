@@ -46,6 +46,8 @@ class OperatorAlertProjection:
     origin_label: str = ""
     origin_icon: str = ""
     subject: str = ""
+    #: Também no topo da tela, e não só no sino (``AlertSpec.on_screen``).
+    on_screen: bool = False
     #: O combinado do pedido do aviso, na frase do cartão (``order_queue._schedule``):
     #: o "Aceitar" do sino aceita uma encomenda, e quem toca precisa ler para quando.
     #: Só no Gestor; vazio sem pedido ou sem combinado.
@@ -126,6 +128,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             origin_label=_spec_value(alert, "origin"),
             origin_icon=_spec_value(alert, "origin_icon"),
             subject=verify_subjects.get(alert.pk) or _spec_value(alert, "subject") or alert.get_type_display(),
+            on_screen=bool(_spec_value(alert, "on_screen")),
             order_schedule_label=schedules.get(alert.order_ref, ("", ""))[0],
             order_schedule_state=schedules.get(alert.order_ref, ("", ""))[1],
             actions=_alert_actions(
@@ -255,8 +258,51 @@ def _ifood_binding_href(alert) -> str:
     return f"{path}?{urlencode({'q': needle})}" if needle else path
 
 
+#: A Concierge sem modelo (``concierge_no_model``): o rótulo do botão de cada causa (dono,
+#: 20/11/2026: o aviso leva até a tela que resolve, não ensina o caminho). O freio e as
+#: rotas moram em Configuração, Integrações, seção "Inteligência artificial".
+_NO_MODEL_LABELS = {"brake": "Abrir freio de IA", "ambiguous": "Abrir rotas de IA"}
+_NO_MODEL_CAUSE = re.compile(r"Dedupe: concierge:no_model:(\w+)")
+
+
+def _no_model_home(cause: str) -> tuple[str, str]:
+    """(caminho no Admin, rótulo) da causa, pelo ``reverse`` do Admin (nunca por string)."""
+    from django.urls import reverse
+
+    if cause in _NO_MODEL_LABELS:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        path = (
+            reverse("admin:shop_shopintegrations_change", args=[shop.pk])
+            if shop is not None else reverse("admin:shop_shopintegrations_changelist")
+        )
+        return path, _NO_MODEL_LABELS[cause]
+    return reverse("admin:shop_aiconnection_changelist"), "Abrir conexões de IA"
+
+
+def _admin_link(path: str) -> str:
+    """O endereço absoluto de ``path`` no Admin, que mora noutro host que os apps.
+
+    Sem ``SHOPMAN_ADMIN_HOST``, cai no host da API do operador, onde /admin/ também
+    responde; em DEBUG sem nenhum dos dois, no Django de desenvolvimento.
+    """
+    from django.conf import settings
+
+    host = str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip() or str(
+        getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or ""
+    ).strip()
+    if host:
+        return f"https://{host}{path}"
+    return f"http://127.0.0.1:8000{path}" if settings.DEBUG else ""
+
+
 def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
+    if alert.type == "concierge_no_model":
+        found = _NO_MODEL_CAUSE.search(alert.message or "")
+        path, label = _no_model_home(found.group(1) if found else "")
+        return ("admin", path, label)
     catalog_href = _catalog_product_href(alert)
     if catalog_href:
         return ("orders", catalog_href, "Conferir o GTIN no Catálogo")
@@ -295,6 +341,9 @@ def alert_context_href(alert, *, surface: str, target_date: str = "") -> tuple[s
     if home is None:
         return ("", "")
     home_surface, path, label = home
+    if home_surface == "admin":
+        href = _admin_link(path)
+        return (href, label) if href else ("", "")
     if not surface or surface == home_surface:
         return (path, label)
     from shopman.backstage.projections.hub import surface_link
