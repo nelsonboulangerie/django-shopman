@@ -1332,6 +1332,7 @@ export interface DeliveryRideProjection {
   delivery_eta_at: string;
   tracking_url: string;
   cost_display: string;
+  cost_label: string;
   bags: number;
   undeclared: string[];
   lead_ref: string;

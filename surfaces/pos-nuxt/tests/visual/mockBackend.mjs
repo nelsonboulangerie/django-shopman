@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-const port = Number(process.env.MOCK_PORT || 38792);
+const port = Number(process.env.MOCK_PORT || 28792);
 
 // O DIA do mock. A prévia roda no relógio de verdade (o Período da tela parte da data
 // do dispositivo, e o mock tem de responder pelo mesmo período: "Semana · 05/10 a

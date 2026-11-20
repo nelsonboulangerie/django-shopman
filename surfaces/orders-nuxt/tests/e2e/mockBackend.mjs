@@ -593,6 +593,58 @@ function queueCard(ref) {
   return Object.values(QUEUE.queue).flat().find((card) => card && typeof card === "object" && card.ref === ref);
 }
 
+// F4b: a coluna Editando com duas entregas de cartão e duas maquininhas livres (uma
+// por corrida), para a tela e as capturas.
+function f4bDeliveries() {
+  return {
+    ...DELIVERIES,
+    waiting: [
+      ...DELIVERIES.waiting,
+      deliveryStop("WEB-20261116-0G15", "Gil", "Centro", -0.009, 0.006, { needs_machine: true, change_label: "Cartão na porta" }),
+      deliveryStop("WEB-20261116-0H20", "Helô", "Aeroporto", 0.006, -0.011, { needs_machine: true, change_label: "Cartão na porta" }),
+    ],
+    machines: [
+      { ref: "machine:azul", label: "Maquininha azul" },
+      { ref: "machine:verde", label: "Maquininha verde" },
+    ],
+  };
+}
+
+// A cotação da corrida em edição: uma parada R$ 12,50, cada parada a mais na mesma
+// corrida R$ 4,00 (o adapter mock do servidor). Com 2 ou mais, a comparação.
+function rideQuote(url) {
+  const asked = new URL(url, "http://mock").searchParams.getAll("refs");
+  if (!asked.length) return null;
+  // Como o servidor: as paradas na ordem da rota (vizinho mais próximo a partir da loja).
+  const known = new Map(f4bDeliveries().waiting.map((stop) => [stop.ref, stop]));
+  const left = [...asked];
+  const refs = [];
+  let here = [ORIGIN.latitude, ORIGIN.longitude];
+  const distance = (ref) => {
+    const stop = known.get(ref);
+    return stop ? (stop.latitude - here[0]) ** 2 + (stop.longitude - here[1]) ** 2 : Infinity;
+  };
+  while (left.length) {
+    const next = left.reduce((best, ref) => (distance(ref) < distance(best) ? ref : best), left[0]);
+    left.splice(left.indexOf(next), 1);
+    refs.push(next);
+    const stop = known.get(next);
+    if (stop) here = [stop.latitude, stop.longitude];
+  }
+  const value_q = 1250 + 400 * (refs.length - 1);
+  const minutes = 18 + 6 * (refs.length - 1);
+  const km = (4.2 + 1.5 * (refs.length - 1)).toFixed(1).replace(".", ",");
+  const money = (q) => `R$ ${Math.floor(q / 100)},${String(q % 100).padStart(2, "0")}`;
+  const compare = refs.length > 1 ? { separate_value_q: 1250 * refs.length, saving_q: 1250 * refs.length - value_q } : {};
+  return {
+    estimate: {
+      value_q, minutes, km: Number(km.replace(",", ".")), with_return: false, stops: refs, ...compare,
+      display: `${money(value_q)} · ${minutes} min · ${km} km`,
+      route: refs.map((ref) => ref.slice(-3)).join(" → "),
+    },
+  };
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -612,7 +664,9 @@ const server = createServer((req, res) => {
     return json(res, 200, { waiting: f10Scenario === "countfail" ? null : DELIVERIES.waiting.length });
   }
   if (f10Scenario === "fiscal" && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, f10Deliveries());
-  if (/\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
+  if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
+  if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });
   const promiseVariant = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_promise=(risk|closed)(?:;|$)/)?.[1] ?? "";
   const promiseScenario = Boolean(promiseVariant);
   if (promiseScenario && /\/e2e\/promise\/reset\/?(\?|$)/.test(url)) {

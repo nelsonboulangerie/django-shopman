@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { captureOperatorEvidence } from "../../../operator-kit/visual/playwright";
 import { selectedOperatorViewports } from "../../../operator-kit/visual/matrix";
 
-const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "35021");
+const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "25021");
 
 const screens = [
   { surface: "purchase-base-materials", route: "/base/materials", ready: "[data-base-table]" },

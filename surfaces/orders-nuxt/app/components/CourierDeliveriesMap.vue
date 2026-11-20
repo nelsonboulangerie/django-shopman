@@ -338,7 +338,7 @@ const places = computed(() => {
     <!-- editando: octógono de borda pontilhada na cor da corrida -->
     <template v-for="r in building" :key="`bs${r.number}`">
       <span v-for="(s, k) in r.stops" :key="s.ref" :class="[MARKER, 'z-10']" :style="at(s, s.ref)">
-        <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Pedido ${s.code}, corrida ${rideLetter(r.number)}`" @click="emit('toggle', s.ref)">
+        <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Pedido ${s.code}, parada ${k + 1} da corrida ${rideLetter(r.number)}`" @click="emit('toggle', s.ref)">
           <span class="relative grid size-9 place-items-center op-label font-bold tabular-nums transition hover:scale-110" :style="{ color: rideColor(r.number - 1).ink }">
             <svg class="absolute inset-0 size-full drop-shadow-sm" viewBox="0 0 36 36" aria-hidden="true">
               <defs><pattern :id="`stripe-b${r.number}`" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><rect width="1.5" height="4" :fill="rideColor(r.number - 1).bg" /></pattern></defs>

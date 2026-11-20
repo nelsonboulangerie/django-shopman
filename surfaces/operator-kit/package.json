@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Nuxt layer compartilhado das oito superfícies de operador: BFF, resiliência de rede, telemetria, design system canônico e guardrails de consistência.",
   "scripts": {
-    "catalog:dev": "OPERATOR_KIT_CATALOG=1 nuxt dev --host 127.0.0.1 --port 33113",
+    "catalog:dev": "OPERATOR_KIT_CATALOG=1 nuxt dev --host 127.0.0.1 --port 23113",
     "catalog:build": "OPERATOR_KIT_CATALOG=1 nuxt build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

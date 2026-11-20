@@ -289,8 +289,9 @@ a segunda parte não entendida, com modelo, vai para a equipe. Sem modelo, a par
 
 `Conversation.flags["verification"]` = `{v: 1, id, status, opened_at, fence, questions, promise,
 nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
-conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
-marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
+conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres; o cartão
+é o `alert_pk` (sem marcador na mensagem: ela é só o que a equipe lê, e o cartão se resolve pelo
+`pk`); `status` é `open`, `answered` (a resposta da
 equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
 passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06) ou
 `returned` (com `returned_at`: depois do `handed_off`, o cliente escreveu de novo e a conversa voltou sozinha
@@ -466,6 +467,9 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "tracking_match": "id",          // a prova do casamento do link com a parada: "id" (a entrada da TaOn nomeia o pedido por `id_externo`/`numero_pedido`) | "stop" (pelo `stop_id` gravado) | "single" (corrida de um pedido só) | "position" (uma entrada por parada, na ordem de `ride_orders`, tamanhos iguais). Sem esta chave o link e o código são tratados como ausentes (falha fechada); sai no arquivamento
   "stop_id": "",                   // id da parada deste pedido na TaOn (`parada_id`); hoje só LIDO pelo casamento do link. Quem grava é a entrega por parada (#2428)
   "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": true},  // custo interno (centavos); `with_return` = cotada com `com_retorno`, o mesmo `retorno` que a abertura pede (`courier.needs_return`: cobrança na porta ou maquininha da casa)
+  //   corrida com várias paradas: a chamada grava no pedido que a abriu a cotação da ROTA inteira, com
+  //   `"stops": ["REF-1", "REF-2"]` (as paradas na ordem do percurso). O custo que a tela e o B.I. afirmam para a
+  //   corrida juntada só usa uma cotação cujas `stops` são as paradas dela (J13): a cotação sozinha de antes de juntar nunca vale
   "final_value_q": null,           // finished.final_value convertido p/ centavos (corrida com várias paradas: o valor da corrida inteira, repetido em cada pedido)
   "ride_orders": ["WEB-A47", "WEB-A51"],  // só na corrida com várias paradas: os pedidos dela na ordem das paradas; a leitura (`courier.sync`) roda no primeiro e aplica a todos; sai no arquivamento
   "door_charge": {"cash_q": 5800, "change_for_q": 10000, "card_q": 0},  // cobrança na porta registrada na coleta (E); a mesma régua da observação da corrida (`courier.door_charge`)

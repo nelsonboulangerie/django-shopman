@@ -6,7 +6,7 @@ import { defineConfig } from "@playwright/test";
 // backend), mas sem a matriz visual e sem o reporter de evidência. O globalSetup do kit
 // fica: ele só confere que o Chromium é o travado, e geometria medida em outro navegador
 // não vale como prova.
-const port = Number(process.env.KITCHENSINK_OVERLAP_PORT || 41009);
+const port = Number(process.env.KITCHENSINK_OVERLAP_PORT || 21009);
 // Quem já tem o `.output` deste mesmo build (o mesmo env abaixo) pula a compilação com
 // KITCHENSINK_OVERLAP_PREBUILT=1: numa máquina carregada o build passa dos 7 minutos.
 const build =

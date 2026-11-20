@@ -1980,6 +1980,12 @@ Contrato:
   (`usePosPreorderMove`: "Mudar para qui, 01/10" / "Manter a data").
 - **Ficar é o padrão seguro.** O foco nasce em "Continuar editando"; Esc responde ficar;
   toque fora não responde nada (é `AlertDialog`). Só o botão destrutivo descarta.
+- **O sim que troca a tela leva o foco adiante (`returnFocusOnConfirm: false`).** Ao fechar,
+  a caixa devolve o foco a quem o tinha na abertura. Quando o sim troca a tela, esse
+  elemento está de saída e o foco morreria no `body`; com `returnFocusOnConfirm: false` o
+  sim não devolve o foco a ninguém, e quem pediu o leva ao gesto que segue quando ele
+  aparecer. O não devolve sempre. Consumidor: a "Nova encomenda" do PDV (`openNewOrder`),
+  que leva o foco a "Identificar cliente" (#2824).
 - **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
   gatilhos do mesmo gesto (o Esc do campo e o Esc do popover) não empilham caixas.
 - **Abre sobre o diálogo do app.** O kit faz `dedupe` do `reka-ui` (`nuxt.config.ts`), para

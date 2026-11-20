@@ -7,7 +7,7 @@ import { selectedOperatorViewports } from "../../../operator-kit/visual/matrix";
 // criar, e as gavetas do casco (criar/editar/duplicar insumo e fornecedor) com
 // os contatos, as conversões e os custos. Mesmo mock hermético da matriz.
 
-const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "35021");
+const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "25021");
 const THEMES = ["light", "dark"] as const;
 
 const CASES = [

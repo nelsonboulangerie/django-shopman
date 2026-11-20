@@ -61,7 +61,7 @@
         "refs.ref", "shop.attributedefinition", "shop.channel", "shop.coupon", "shop.courier",
         "shop.courierrate", "shop.deliverydistanceband", "shop.deliveryservice", "shop.deliveryzone", "shop.faqentry", "shop.notificationtemplate", "shop.omotenashicopy",
         "shop.promotion", "shop.qualitydefect", "shop.qualitygrade", "shop.ruleconfig",
-        "storefront.intentcategory", "storefront.messageintentsample"
+        "storefront.conversationcorpusentry", "storefront.intentcategory", "storefront.messageintentsample"
       ]
     },
     {

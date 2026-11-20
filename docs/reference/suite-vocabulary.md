@@ -343,6 +343,16 @@ e em `utils/operationalCopy.ts`.
 pergunta *"Salvar este aparelho?"* e responde *"Dispositivo salvo por 30 dias."* Meia
 superfície com duas palavras é pior do que qualquer uma das duas.
 
+⛔ **O prazo de confirmação da loja ("A loja confirma até 14h34") aparece só na encomenda,
+nunca no pedido do dia** (dono, 19/11 e 20/11/2026; não se reabre). No pedido do dia, o
+acompanhamento mantém as frases do L05 ("Estamos conferindo a disponibilidade. Se não
+conseguirmos confirmar, devolvemos o valor."). Em 19/11 ele recusou a ideia como confusa: "a
+loja não confirma o pedido em até 60 min, esse pode ser o limite para o pagamento… Volte ao
+que estava" e "Mantém o L05". Em 20/11, à pergunta "vale em algum caso? 1) em nenhum; 2) só
+na encomenda; 3) nos dois", respondeu "2". A encomenda que espera a loja continua dizendo o
+prazo (#2770). O PR que levava o prazo ao pedido do dia (#2869) foi fechado como *not
+planned*, e o item 1 do #2749 registra a decisão.
+
 ---
 
 ## 6. O que a trava cobra, e o que só olho pega
