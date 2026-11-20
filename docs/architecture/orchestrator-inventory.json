@@ -15063,7 +15063,76 @@
           "responsibility": "configuração",
           "symbols": [
             "ConversationalDecision",
-            "ConversationalOutcome"
+            "ConversationalEpisode",
+            "ConversationalOutcome",
+            "ConversationalRecord",
+            "ConversationalWork"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/clock.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FACT_VALIDITY_SECONDS",
+            "ShopmanClock"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/outcomes.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "PRODUCER",
+            "SOURCE",
+            "ShopmanOutcomes"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/store.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FORMAT",
+            "ShopmanStore",
+            "_dedupe_key",
+            "_scope",
+            "instant",
+            "moment",
+            "records_of"
           ]
         }
       ]
