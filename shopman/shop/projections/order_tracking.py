@@ -1389,7 +1389,10 @@ def _build_promise(
             wait = customer_wait(get_block(order))
             return promise(
                 state="ready_delivery",
-                tone="success",
+                # Demora e desistência não são boa notícia: o ✔ verde mentiria.
+                # Tom neutro (nunca o amarelo, que pediria uma ação que o
+                # cliente não tem); o resto do caminho segue como sucesso.
+                tone="info" if wait["stage"] in {"late", "replaced"} else "success",
                 requires_active_notification=False,
                 courier_stage=wait["stage"],
                 courier_driver=wait["driver"],

@@ -235,3 +235,19 @@ def test_courier_change_reaches_the_page_channel_and_the_page_rereads(channel, m
     assert pushed[-1][2]["kind"] == "reopened"
     order.refresh_from_db()
     assert _page(order)[:2] == ("Diego não pôde vir", "Estamos chamando outro entregador.")
+
+
+def test_delay_and_withdrawal_are_never_painted_as_good_news(channel):
+    # O ✔ verde de sucesso sobre "Diego não pôde vir" mentiria. Demora e
+    # desistência ficam neutras; o caminho que anda segue como sucesso.
+    late = courier.LATE_SEARCH_MINUTES + 1
+    cases = {
+        "late": _ride("D", called_at=_ago(late), requested_at=_ago(late)),
+        "replaced": _ride("D", reopens=[{"at": _ago(1), "driver": "Diego", "source": "webhook", "reason": "withdrew"}]),
+        "called": _ride("D"),
+        "at_store": _ride("S", driver={"name": "Diego"}, progress={"arrived_pickup_at": _ago(1)}),
+    }
+    tones = {stage: build_order_tracking(_order(channel, courier_block=block)).promise.tone
+             for stage, block in cases.items()}
+
+    assert tones == {"late": "info", "replaced": "info", "called": "success", "at_store": "success"}
