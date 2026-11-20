@@ -175,7 +175,7 @@ describe("Encomenda aberta pelo link da troca (#2765)", () => {
     expect(swapRead).not.toHaveBeenCalled();
   });
 
-  it("com swap, mostra o item a trocar e uma alternativa por linha, com a fornada e a diferença", async () => {
+  it("com swap, mostra o item a trocar e uma alternativa por linha, com o lote da data e a diferença", async () => {
     route.query = { swap: ["BAGUETE", "BAGUETE"] };
     const wrapper = await mount();
 

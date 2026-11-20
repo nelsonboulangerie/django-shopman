@@ -4,7 +4,7 @@
 // O Gestor abre a encomenda em `?swap=<sku>` depois do "Trocar por <produto>" do
 // diálogo "Resolver". Um bloco por item a trocar, com o que sai (na quantidade
 // da linha) e o fato do aviso; abaixo, UMA alternativa por linha, na largura
-// inteira, com o que a fornada da data cobre e a diferença de preço. O toque abre
+// inteira, com o que o lote da data cobre e a diferença de preço. O toque abre
 // a conferência (`PosPreorderSwapDialog`); a troca grava pela edição da encomenda.
 //
 // A busca que rodou e não achou nada diz isso e oferece o Reagendar (a saída que

@@ -388,7 +388,7 @@ export interface PreorderSwapOption {
   name: string;
   /** O verbo do diálogo "Resolver" do Gestor: "Trocar por Fendu". */
   label: string;
-  /** O que a fornada da data cobre: "10 livres para amanhã". */
+  /** O que o lote da data cobre: "10 livres para amanhã". */
   available_display: string;
   /** O que entra, na quantidade da linha: "4x Fendu". */
   qty_label: string;

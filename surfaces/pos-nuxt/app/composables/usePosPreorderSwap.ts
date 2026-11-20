@@ -107,7 +107,7 @@ export function usePosPreorderSwap(options: {
       // alternativa pode voltar a caber), não a repetição deste.
       if (httpError(error).status) lastAttempt = null;
       toast.error(httpErrorMessage(error, "Não deu para trocar o item. Nada mudou: confira a encomenda e tente de novo."));
-      // A fornada mudou ou a encomenda mudou: relê a lista e o detalhe.
+      // O lote mudou ou a encomenda mudou: relê a lista e o detalhe.
       await Promise.all([load(), options.refresh()]);
       return false;
     } finally {

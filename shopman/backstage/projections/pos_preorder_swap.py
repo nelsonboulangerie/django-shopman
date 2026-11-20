@@ -39,7 +39,7 @@ class PreorderSwapOptionProjection:
     """Uma alternativa para o item que falta: uma linha da lista, um toque.
 
     ``label`` é o verbo do diálogo "Resolver" ("Trocar por Fendu").
-    ``available_display`` diz o que a fornada da data cobre ("10 livres para
+    ``available_display`` diz o que o lote da data cobre ("10 livres para
     amanhã"). ``difference_display`` é a diferença de preço da encomenda inteira
     ("R$ 4,00 a mais", "R$ 2,00 a menos", "Mesmo total"); ``money`` diz o que
     acontece com ela, na frase da prévia da edição. ``reason`` vem preenchido

@@ -76,7 +76,7 @@ def _swap_body(client, order: Order, offer: str, *, key: str) -> dict:
 # ── A leitura ────────────────────────────────────────────────────────────────
 
 
-def test_com_alternativa_traz_o_que_a_fornada_da_data_cobre_e_a_diferenca_de_preco(client, caixa, vitrine):
+def test_com_alternativa_traz_o_que_o_lote_da_data_cobre_e_a_diferenca_de_preco(client, caixa, vitrine):
     stock.plan(Decimal("10"), vitrine["FENDU"], _day(1))
     stock.plan(Decimal("6"), vitrine["CAMPAGNE"], _day(1))
     order = _baguete_e_cafe("WEB-SWAP-COM")
@@ -222,7 +222,7 @@ def test_alternativa_que_deixou_de_caber_recusa_e_nada_muda(client, caixa, vitri
     _lost_lot(order, SKU, "4")
     body = _swap_body(client, order, "FENDU", key="pdv-2765-sumiu")
 
-    # Entre a leitura e o toque, a fornada da data deixou de ter o Fendu livre.
+    # Entre a leitura e o toque, o lote da data deixou de ter o Fendu livre.
     monkeypatch.setattr(order_promise, "alternatives_for", lambda *_a, **_k: ())
     response = _post(client, order.ref, body)
 

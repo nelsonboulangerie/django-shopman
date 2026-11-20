@@ -4045,7 +4045,7 @@ class POSPreorderSwapView(_OrderActionBase):
         inputs = {"lines": lines, "notes": None, "fulfillment": None, "schedule": None}
 
         def still_fits():
-            # A fornada da data muda entre a leitura e o toque: a troca relê as
+            # O lote da data muda entre a leitura e o toque: a troca relê as
             # alternativas pela MESMA régua e recusa o que deixou de caber.
             found = order_promise.alternatives_for(order, sku)
             if found is None:
