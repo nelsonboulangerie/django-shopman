@@ -24,7 +24,12 @@
 // - o atalho **Comentar no histórico**, que leva ao campo do kit;
 // - uma etiqueta de estado só, a do balcão (P5 do dono, 02/10): o resumo do kit
 //   vem sem a etiqueta de status do pedido (`show-status`), que o Gestor mantém;
-// - os diálogos de cada gesto.
+// - os diálogos de cada gesto;
+// - a TROCA do item que falta (#2765): o "Trocar por <produto>" do diálogo
+//   "Resolver" do Gestor abre aqui com `?swap=<sku>`. O endereço leva só a
+//   intenção; as alternativas vêm do servidor, na hora (`usePosPreorderSwap`), e
+//   o foco vai para o item a trocar. Sem `swap`, ou com SKU fora do pedido, a
+//   página abre como sempre.
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
@@ -35,11 +40,22 @@ import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetai
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
 import { courierPanelVisible, showsDeliveryExitNotice } from "~/presentation/courier";
+import {
+  SWAP_LOAD_FAILED,
+  SWAP_RETRY,
+  queryWithoutSwap,
+  swapFocus,
+  swapSkusFromQuery,
+  swapUnsearchedTitle,
+} from "~/presentation/preorderSwap";
+import type { PreorderSwapItem, PreorderSwapOption } from "~/types/preorders";
+import type { OperatorScreenAlert } from "../../../../operator-kit/app/presentation/screenState";
 import { canComment, detailAction, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
 
 const route = useRoute();
+const router = useRouter();
 const ref_ = computed(() => String(route.params.ref || ""));
 
 useHead({ title: () => `Encomenda ${ref_.value}` });
@@ -71,7 +87,64 @@ const comment = ref("");
 const commentAllowed = computed(() => !!detail.value && canComment(detail.value));
 // O atalho do painel leva ao campo do histórico, que mora no fim do detalhe.
 const layout = useTemplateRef<HTMLElement>("layout");
-const { reveal } = useNextFocus();
+
+// ── A troca do item que falta (#2765) ──
+const swapSkus = computed(() => swapSkusFromQuery(route.query.swap));
+const swapper = usePosPreorderSwap({ ref: ref_, skus: swapSkus, refresh });
+const swapRead = computed(() => (swapSkus.value.length ? swapper.swap.value : null));
+const swapItems = computed<PreorderSwapItem[]>(() => swapRead.value?.items ?? []);
+const swapPick = ref<{ item: PreorderSwapItem; option: PreorderSwapOption } | null>(null);
+const swapDialogOpen = computed({
+  get: () => swapPick.value !== null,
+  set: (open: boolean) => { if (!open) swapPick.value = null; },
+});
+// O foco do momento: o primeiro item a trocar, quando a encomenda e a troca chegaram.
+const { reveal } = useNextFocus(() => (detail.value ? swapFocus(swapRead.value) : null));
+
+function pickSwap(item: PreorderSwapItem, option: PreorderSwapOption) {
+  swapPick.value = { item, option };
+}
+
+async function confirmSwap(managerApproval: ManagerApproval | null = null) {
+  const pick = swapPick.value;
+  if (!pick) return;
+  if (!(await swapper.confirm(pick.item, pick.option, managerApproval))) {
+    // Recusou (a alternativa deixou de caber, a encomenda mudou): a lista foi relida.
+    if (!swapper.managerChallenge.value) swapPick.value = null;
+    return;
+  }
+  swapPick.value = null;
+  // O item trocado sai do endereço: o bloco dele some, e recarregar não oferece de novo.
+  await router.replace({ query: queryWithoutSwap(route.query, pick.item.sku) as typeof route.query });
+}
+
+// Aviso na tela traz o botão que resolve a causa (padrão `alerts`).
+const swapAlerts = computed<OperatorScreenAlert[]>(() => {
+  if (!swapSkus.value.length) return [];
+  if (swapper.failed.value) {
+    return [{
+      id: "preorder-swap-failed", title: SWAP_LOAD_FAILED, color: "warning", icon: "i-lucide-wifi-off",
+      action: { label: SWAP_RETRY, onSelect: () => void swapper.load() },
+    }];
+  }
+  const read = swapRead.value;
+  if (!read) return [];
+  if (read.refusal) {
+    const c = counter.value;
+    const redo = !!c && !c.edit.allowed && c.edit.cancel_and_redo && c.cancel.allowed;
+    return [{
+      id: "preorder-swap-refused", title: read.refusal, color: "info", icon: "i-lucide-info",
+      ...(redo ? { action: { label: "Cancelar e refazer", onSelect: () => cancelAndRedo() } } : {}),
+    }];
+  }
+  if (read.items.some((item) => !item.searched)) {
+    return [{
+      id: "preorder-swap-unsearched", title: swapUnsearchedTitle(read.items), color: "warning", icon: "i-lucide-search-x",
+      action: { label: SWAP_RETRY, onSelect: () => void swapper.load() },
+    }];
+  }
+  return [];
+});
 function goToComment() {
   reveal(() => layout.value?.querySelector<HTMLElement>("[data-order-comment] textarea"), { align: "center" });
 }
@@ -208,7 +281,8 @@ function goBack() {
     :title="`Encomenda ${ref_}`"
     wide
     :compact-options="compactOptions"
-    @refresh="refreshPos(); refresh()"
+    :alerts="swapAlerts"
+    @refresh="refreshPos(); refresh(); swapper.load()"
   >
     <!-- Celular: o voltar e a encomenda aberta na linha do chão (a identidade do
          registro nunca some). -->
@@ -445,14 +519,24 @@ function goBack() {
             </div>
           </aside>
 
-          <OperatorOrderDetail
-            v-model:comment="comment"
-            class="min-w-0 lg:col-start-1 lg:row-start-1"
-            :order="detail"
-            :busy="actions.busy.value"
-            :show-status="false"
-            @comment="submitComment"
-          />
+          <div class="grid min-w-0 gap-4 lg:col-start-1 lg:row-start-1" data-preorder-main>
+            <PosPreorderSwap
+              v-if="swapItems.length"
+              :items="swapItems"
+              :busy="swapper.busy.value || actions.busy.value"
+              :can-reschedule="counter.reschedule.allowed"
+              @pick="pickSwap"
+              @reschedule="rescheduleOpen = true"
+            />
+            <OperatorOrderDetail
+              v-model:comment="comment"
+              class="min-w-0"
+              :order="detail"
+              :busy="actions.busy.value"
+              :show-status="false"
+              @comment="submitComment"
+            />
+          </div>
         </div>
 
         <PosPreorderHandOverDialog
@@ -491,6 +575,25 @@ function goBack() {
           @update:open="(isOpen: boolean) => { if (!isOpen) actions.dismissManagerChallenge(); }"
           @authorize="signWithPin"
           @authorize-badge="signWithBadge"
+        />
+        <PosPreorderSwapDialog
+          v-model:open="swapDialogOpen"
+          :item="swapPick?.item ?? null"
+          :option="swapPick?.option ?? null"
+          :busy="swapper.busy.value"
+          @confirm="confirmSwap()"
+        />
+        <OperatorManagerAuth
+          :open="!!swapper.managerChallenge.value"
+          action="order_edit_refund"
+          :amount-q="swapPick?.option.refund_q || null"
+          :operator-name="activeOperator?.name || ''"
+          :managers="detail.managers"
+          :busy="swapper.busy.value"
+          :error="swapper.managerChallenge.value?.code === 'manager_approval_invalid' ? swapper.managerChallenge.value.message : ''"
+          @update:open="(isOpen: boolean) => { if (!isOpen) swapper.dismissManagerChallenge(); }"
+          @authorize="(username: string, pin: string) => confirmSwap({ username, pin })"
+          @authorize-badge="(badge: string) => confirmSwap({ badge })"
         />
       </template>
     </div>

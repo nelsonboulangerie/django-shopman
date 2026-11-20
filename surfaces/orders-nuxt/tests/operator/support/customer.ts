@@ -9,10 +9,12 @@ export interface PickupOrder {
   product: string;
   phone: string;
   name: string;
+  /** O dia da retirada como a loja o oferece ("Hoje", "Amanhã"); padrão: hoje. */
+  day?: "Hoje" | "Amanhã";
 }
 
-/** Cliente novo pede retirada para hoje e paga com Pix (pagamento simulado da pilha).
- *  Devolve o código do pedido, como a loja mostra no acompanhamento. */
+/** Cliente novo pede retirada (hoje, ou amanhã: a encomenda) e paga com Pix (pagamento
+ *  simulado da pilha). Devolve o código do pedido, como a loja mostra no acompanhamento. */
 export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, order: PickupOrder): Promise<string> {
   await page.goto("/menu");
   await settled(page);
@@ -51,14 +53,16 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   await page.getByRole("radio", { name: /^Retirada/ }).click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await expect(page.getByText("Horário da retirada")).toBeVisible();
-  await page.getByRole("radio", { name: /^Hoje/ }).click().catch(() => undefined);
-  // O primeiro horário livre de hoje, no formato da casa ("10h às 10h30").
+  const day = order.day ?? "Hoje";
+  if (day === "Hoje") await page.getByRole("radio", { name: /^Hoje/ }).click().catch(() => undefined);
+  else await page.getByRole("radio", { name: new RegExp(`^${day}`) }).click();
+  // O primeiro horário livre do dia, no formato da casa ("10h às 10h30").
   await page.getByRole("radio", { name: /^\d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/ }).first().click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByRole("radio", { name: /^Pix/ }).click();
   await capture(page, testInfo, "loja-finalizar");
   await page.getByRole("button", { name: "Revisar pedido" }).click();
-  await expect(page.getByText(/Retirada · Hoje/).last()).toBeVisible();
+  await expect(page.getByText(new RegExp(`Retirada · ${day}`)).last()).toBeVisible();
   await capture(page, testInfo, "loja-revisar");
   await page.getByRole("button", { name: "Enviar pedido" }).click();
 
@@ -70,4 +74,15 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   await expect(page.getByText("Pagamento recebido")).toBeVisible({ timeout: 60_000 });
   await capture(page, testInfo, "loja-pago");
   return ref;
+}
+
+/** No acompanhamento, antes do preparo: a cliente cancela sozinha e confirma. */
+export async function customerCancelsOwnOrder(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.getByRole("button", { name: "Cancelar pedido", exact: true }).click();
+  const dialog = page.getByRole("alertdialog", { name: "Cancelar pedido?" });
+  await expect(dialog).toBeVisible();
+  await capture(page, testInfo, "loja-cancelar");
+  await dialog.getByRole("button", { name: "Sim, cancelar", exact: true }).click();
+  await expect(page.getByText("Cancelado", { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+  await capture(page, testInfo, "loja-cancelado");
 }

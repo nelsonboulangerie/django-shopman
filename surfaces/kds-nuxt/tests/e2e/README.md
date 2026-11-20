@@ -60,5 +60,5 @@ Abre Estações, a bancada e o Painel de retirada na carga direta, reprova erro 
 e aviso de hidratação, e anexa as capturas ao relatório (sem baseline: retrato só pelo
 browser da CI). Duas travas de desenho moram lá: na mesa a ordem visual dos tickets é a
 ordem da fila (sem mosaico), e no celular o ato do pedido em foco está na ação na base.
-Portas próprias (33019/38797), trocáveis por `KDS_VISUAL_APP_PORT`/`KDS_VISUAL_BACKEND_PORT`
+Portas próprias (23019/28797), trocáveis por `KDS_VISUAL_APP_PORT`/`KDS_VISUAL_BACKEND_PORT`
 (o e2e aceita `KDS_E2E_APP_PORT`/`KDS_E2E_MOCK_PORT`).

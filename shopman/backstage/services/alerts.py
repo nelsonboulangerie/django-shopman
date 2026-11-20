@@ -363,6 +363,29 @@ def resolve_alerts_matching(
         return len(rows)
 
 
+def resolve_alert_pk(pk: int, *, actor: str) -> int:
+    """Resolve um aviso aberto pelo ``pk``: o dono da causa guardou qual é o aviso dela.
+
+    Gêmea de ``resolve_alerts_matching`` para quem não carimba marcador na mensagem
+    (``create_operator_alert(stamp_dedupe=False)``). Mesmo lock, mesma trilha.
+    """
+    from shopman.backstage.models import OperatorAlert
+
+    resolved_actor = str(actor or "").strip()[:100]
+    if not resolved_actor:
+        raise AlertError("Identidade da resolução do alerta é obrigatória.")
+    with transaction.atomic():
+        alert = OperatorAlert.objects.select_for_update().filter(pk=int(pk), resolved_at__isnull=True).first()
+        if alert is None:
+            return 0
+        alert.acknowledged = True
+        alert.resolved_at = timezone.now()
+        alert.resolved_by = resolved_actor
+        alert.rev += 1
+        alert.save(update_fields=["acknowledged", "resolved_at", "resolved_by", "rev"])
+        return 1
+
+
 def resolve_alerts_ending_with(
     type: str,
     *,

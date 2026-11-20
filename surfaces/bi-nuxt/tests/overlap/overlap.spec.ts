@@ -8,7 +8,7 @@ import { expectNoOperatorOverlap } from "../../../operator-kit/visual/playwright
 // O backend é o mock gravado da matriz visual, no cenário normal.
 const WIDTHS = [1440, 1360, 1280, 1024, 768, 390] as const;
 
-const BACKEND = "http://127.0.0.1:" + (process.env.BI_OVERLAP_BACKEND_PORT || "41807");
+const BACKEND = "http://127.0.0.1:" + (process.env.BI_OVERLAP_BACKEND_PORT || "21807");
 
 const ROUTES = [
   "/",

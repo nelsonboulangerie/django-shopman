@@ -7,8 +7,8 @@ import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 // O runner do ledger (scripts/run_operator_visual.py) executa este config por rota/cenário/viewport. Sem baseline de pixel: o gate é o scanner de
 // geometria do kit (`captureOperatorEvidence`). Baseline, se um dia houver, só pela CI.
 
-const appPort = Number(process.env.PURCHASE_VISUAL_APP_PORT || 35020);
-const backendPort = Number(process.env.PURCHASE_VISUAL_BACKEND_PORT || 35021);
+const appPort = Number(process.env.PURCHASE_VISUAL_APP_PORT || 25020);
+const backendPort = Number(process.env.PURCHASE_VISUAL_BACKEND_PORT || 25021);
 
 export default defineOperatorVisualConfig({
   app: "purchase",

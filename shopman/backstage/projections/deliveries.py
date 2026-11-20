@@ -32,10 +32,6 @@ from shopman.shop.projections.types import Action
 
 logger = logging.getLogger(__name__)
 
-#: Procurando entregador há mais que isso: a corrida vira "Ninguém aceitou ainda".
-LATE_SEARCH_MINUTES = 10
-
-
 @dataclass(frozen=True)
 class DeliveryPointProjection:
     latitude: float
@@ -349,7 +345,7 @@ def _state(block: dict, progress: dict, *, back: bool) -> str:
         return "reopened"
     if not block.get("id_mch") or status in ("D", "G", "P"):
         waited = _minutes_since(str(block.get("called_at") or block.get("requested_at") or ""))
-        return "late" if waited is not None and waited >= LATE_SEARCH_MINUTES else "searching"
+        return "late" if waited is not None and waited >= courier.LATE_SEARCH_MINUTES else "searching"
     if status in ("A", "S"):
         return "atStore" if progress.get("arrived_pickup_at") else "coming"
     return "route"

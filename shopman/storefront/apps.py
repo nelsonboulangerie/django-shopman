@@ -32,9 +32,11 @@ class StorefrontConfig(AppConfig):
         # "Vou verificar" (WP-05): a equipe responde ou assume pelo cartão do sino, no
         # backstage, que não importa superfície; a Concierge se registra na porta do shop.
         from shopman.shop import concierge_verification
-        from shopman.storefront.concierge import verification
+        from shopman.storefront.concierge import faq_promotion, verification
 
-        concierge_verification.register(answer=verification.answer, take_over=verification.take_over)
+        concierge_verification.register(
+            answer=verification.answer, take_over=verification.take_over, promote_faq=faq_promotion.promote
+        )
         from shopman.storefront.continuum import CatalogStructureRefreshHandler
 
         registry.register_directive_handler(CatalogStructureRefreshHandler())
