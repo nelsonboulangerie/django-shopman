@@ -9,6 +9,7 @@ subida (``StorefrontConfig.ready``), e o backstage chama por aqui.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -67,9 +68,11 @@ TakeOver = Callable[..., DeskResult]
 _handlers: dict[str, Callable[..., DeskResult]] = {}
 
 
-def register(*, answer: Answer, take_over: TakeOver) -> None:
+def register(*, answer: Answer, take_over: TakeOver, promote_faq: Callable[..., DeskResult] | None = None) -> None:
     _handlers["answer"] = answer
     _handlers["take_over"] = take_over
+    if promote_faq is not None:
+        _handlers["promote_faq"] = promote_faq
 
 
 def answer(alert_pk: int, text: str, *, actor: str) -> DeskResult:
@@ -86,3 +89,45 @@ def take_over(alert_pk: int, *, actor: str) -> DeskResult:
     if handler is None:
         return DeskResult(False, "unavailable")
     return handler(alert_pk, actor=actor)
+
+
+def promote_faq(alert_pk: int, *, actor: str) -> DeskResult:
+    """A verificação respondida vira rascunho de pergunta frequente, não publicado (WP-15).
+
+    ``detail`` é a referência do rascunho; ``sent_text``, o aviso de data quando há.
+    """
+    handler = _handlers.get("promote_faq")
+    if handler is None:
+        return DeskResult(False, "unavailable")
+    return handler(alert_pk, actor=actor)
+
+
+# ── Pergunta frequente promovida (WP-15): de onde veio, e o aviso de data ─────
+
+#: Prefixo da referência do rascunho (``FAQEntry.ref``): diz de onde ele veio.
+FAQ_REF_PREFIX = "concierge-"
+
+
+#: Resposta "do dia" não vira pergunta frequente sem conferência: o rascunho avisa.
+_DATED = re.compile(
+    r"\b(hoje|amanh[ãa]|ontem|depois de amanh[ãa]|esta semana|essa semana|semana que vem|"
+    r"segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo|"
+    r"janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b"
+    r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b",
+    re.IGNORECASE,
+)
+DATED_WARNING = "A resposta cita um dia ou uma data: confira se ela vale sempre antes de publicar."
+
+
+def faq_ref(conversation_pk: int, record_id: str) -> str:
+    return f"{FAQ_REF_PREFIX}{int(conversation_pk)}-{record_id}"[:96]
+
+
+def origin_of(ref: str) -> tuple[int, str] | None:
+    """(conversa, verificação) de um rascunho promovido, ou ``None``."""
+    match = re.fullmatch(rf"{re.escape(FAQ_REF_PREFIX)}(\d+)-([0-9a-f]+)", str(ref or ""))
+    return (int(match.group(1)), match.group(2)) if match else None
+
+
+def cites_a_date(text: str) -> bool:
+    return bool(_DATED.search(str(text or "")))

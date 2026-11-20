@@ -27,7 +27,46 @@ function show(color: ToastColor, title: string) {
   api?.add({ title, color, icon: ICONS[color] });
 }
 
+export interface OperatorToastAction {
+  label: string;
+  /** Link (abre fora, como todo link do Admin). */
+  to?: string;
+  onClick?: () => void;
+}
+
+/** O aviso com UM gesto ("Promover a pergunta frequente", "Abrir no Admin"). */
+function showWithAction(
+  color: ToastColor,
+  title: string,
+  options: { description?: string; action?: OperatorToastAction } = {},
+) {
+  const { action, description } = options;
+  api?.add({
+    title,
+    color,
+    icon: ICONS[color],
+    ...(description ? { description } : {}),
+    ...(action
+      ? {
+          duration: 10_000,
+          actions: [
+            {
+              label: action.label,
+              color,
+              variant: "outline" as const,
+              // O tamanho da suíte para gesto dentro de aviso (`alertActions`), nunca o `xs`.
+              size: "md" as const,
+              ...(action.to ? { to: action.to, target: "_blank" } : {}),
+              ...(action.onClick ? { onClick: action.onClick } : {}),
+            },
+          ],
+        }
+      : {}),
+  });
+}
+
 export const operatorToast = {
+  withAction: showWithAction,
   error: (title: string) => show("error", title),
   success: (title: string) => show("success", title),
   info: (title: string) => show("info", title),
