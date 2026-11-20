@@ -874,7 +874,7 @@ const newCustomerNote = computed(() => {
                   <span class="min-w-0 wrap-anywhere @sm:truncate">{{ stateBadge }}</span>
                   <span
                     v-if="newCustomerNote"
-                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-(--primary-ink)"
                   >
                     <Icon name="lucide:sparkles" class="size-3" />
                     {{ newCustomerNote }}
@@ -920,8 +920,11 @@ const newCustomerNote = computed(() => {
               >
                 <Icon name="lucide:tag" /> {{ customerLookup.group_discount_label }}
               </UiBadge>
-              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-2xl border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
+              <!-- Selo em latão: o texto escreve com a tinta `--primary-ink` (o latão puro
+                   sobre latão a 10%, no cartão já tingido, media 4,09:1; a tinta mede 4,75:1),
+                   e maiúscula só na primeira letra, como todo selo (#2894). -->
+              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-2xl border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-(--primary-ink)" data-customer-birthday-today>
+                🎂 Aniversário hoje{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
               </span>
               <span v-else-if="customerLookup?.is_birthday_month" class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 🎂 Aniversariante do mês ({{ customerLookup?.birthday_display }})
