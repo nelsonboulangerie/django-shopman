@@ -108,6 +108,8 @@ TEAM_COPY_KEY = "CONCIERGE_PARTS_TEAM"
 ORDER_WITH_TEAM_COPY_KEY = "CONCIERGE_PARTS_ORDER_WITH_TEAM"
 NOT_FOUND_COPY_KEY = "CONCIERGE_PARTS_NOT_FOUND"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
+#: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
+UNCLEAR_FLAG = "unclear_asked"
 OFFER_TEAM_COPY_KEY = "CONCIERGE_PARTS_OFFER_TEAM"
 #: Pergunta repetida (OBS0310-R): a abertura da resposta de novo, e o pedido de repetir
 #: quando a casa não acha o que ficou sem resposta.
@@ -652,6 +654,8 @@ class Execution:
     verify: list[dict] = field(default_factory=list)
     verify_promise: dict = field(default_factory=dict)
     verify_note: str = ""
+    #: O turno disse "não entendi" (a casa diz no máximo uma vez por conversa).
+    unclear: bool = False
 
     @property
     def to_team(self) -> bool:
@@ -759,6 +763,7 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     from . import verification
 
     verifiable = verification.can_verify(conversation) and not team_in_turn
+    unclear_before = bool((getattr(conversation, "flags", None) or {}).get(UNCLEAR_FLAG))
 
     def search(act: Act, *, consult: bool = False) -> PartReply:
         from . import dialogue
@@ -849,6 +854,19 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 _rule, fixed = house_rules.fixed_reply_for("desconto", copy=copy)
             run.replies.append(PartReply(act, text=fixed))
             continue
+        if plan_.source in {"gate", "local"} and verifiable and verification.question_text(act):
+            # Sem modelo (sem chave, freio, falha do provedor) e a leitura local não
+            # entendeu (dono, 19/11/2026): nada de "diga de outro jeito". A casa pergunta à
+            # equipe, como no "vou verificar", e o prazo fecha a resposta.
+            run.replies.append(PartReply(act, text="", verifying=True))
+            run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
+            continue
+        if unclear_before:
+            # "Não entendi" já foi dito nesta conversa: a segunda vez é com a equipe.
+            run.team.append(Act(HUMAN, span=act.span))
+            run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=f"“{_clip(act.span)}”")))
+            continue
+        run.unclear = True
         run.replies.append(PartReply(act, text=_fill(copy(UNCLEAR_COPY_KEY) or "", part=_clip(act.span))))
     if run.allergy_team and not run.team:
         run.team = [Act(ALLERGY)]
@@ -1266,6 +1284,7 @@ def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text:
         memory_memos=[*memos, *executed.memos, _parts_memo(executed)],
         intents=found.as_dict(),
     )
+    outcome.unclear = executed.unclear and not executed.to_team
     if executed.verify_note and not executed.to_team:
         # "Vou verificar": o turno grava a pergunta e o cartão da equipe (``service.run_turn``).
         outcome.verification = {"requests": list(executed.verify), "promise": dict(executed.verify_promise)}

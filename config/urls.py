@@ -224,7 +224,8 @@ urlpatterns += [
 ]
 
 urlpatterns += _include_optional("api/webhooks/", "shopman.shop.webhooks.urls")
-# Concierge de WhatsApp (superfície de cliente): /api/webhooks/manychat/conversation/
+# Concierge de WhatsApp (superfície de cliente): POST /api/webhooks/concierge/<connection_key>/events/
+# (o ManyChat chama a de `manychat-whatsapp-primary`, contrato v3).
 urlpatterns += _include_optional("api/webhooks/", "shopman.storefront.concierge.urls")
 # ManyChat inbound webhook (subscriber sync). HMAC + replay gated; without
 # MANYCHAT_WEBHOOK_SECRET it fails CLOSED outside DEBUG (rejects unsigned payloads);

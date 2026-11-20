@@ -177,10 +177,7 @@ class NFCeEmitHandler:
             # "Referência já utilizada": a nota EXISTE no Focus — adotar.
             if self._adopt_existing(order, order_ref):
                 return
-            raise DirectiveTerminalError(
-                f"NFC-e emission failed: ref em conflito e consulta não autorizada "
-                f"({result.error_message})"
-            )
+            self._refuse(message, f"ref em conflito e consulta não autorizada ({result.error_message})")
 
         if _is_transient(result.error_code):
             raise DirectiveTransientError(
@@ -194,7 +191,23 @@ class NFCeEmitHandler:
                 detail=f"Pedido {order_ref}: {result.error_message}",
                 context={"order_ref": order_ref, "error_code": result.error_code},
             )
-        raise DirectiveTerminalError(f"NFC-e emission failed: {result.error_message}")
+        self._refuse(message, result.error_message or "")
+
+    def _refuse(self, message: Directive, answer: str) -> None:
+        """A emissão recusada: grava a resposta do emissor num campo e encerra.
+
+        ``emitter_answer`` no payload da própria directive é o que o Gestor lê
+        para dizer o motivo na linha "NFC-e não autorizada"
+        (``backstage/projections/order_pending.fiscal_failure_reason``). Antes
+        ele recortava o motivo de ``last_error`` por um prefixo de texto, e
+        mudar a frase aqui apagava o motivo da tela em silêncio. O reprocesso
+        reconstrói o payload, e a resposta velha sai junto. ``last_error``
+        segue com a frase inteira, para o log e o Admin.
+        """
+        payload = {**(message.payload or {}), "emitter_answer": str(answer or "").strip()}
+        Directive.objects.filter(pk=message.pk).update(payload=payload)
+        message.payload = payload
+        raise DirectiveTerminalError(f"NFC-e emission failed: {answer}")
 
     def _emit(self, order_ref: str, payload: dict) -> FiscalDocumentResult:
         return self.backend.emit(

@@ -672,6 +672,34 @@ def test_lote_pronto_devolve_o_iniciar_preparo(ficha, gerente, relogio):
     assert card.advance_block_label == ""
 
 
+def test_o_comando_recusa_o_preparo_de_quem_espera_o_lote(ficha, baguete, gerente, relogio):
+    """O POST direto não inicia o que a tela desliga, e diz a mesma frase (#2721)."""
+    from shopman.backstage.services import orders as orders_service
+    from shopman.backstage.services.exceptions import OrderError
+
+    Product.objects.filter(pk=baguete.pk).update(metadata={"ready_from": "12:00"})
+    relogio(9)
+    work_order = _lot(ficha, "10", days=0)
+    order = _paid_today("HOJE-PAGO-POST")
+    _reserve(order, "4", day=_day(), quant=_planned_quant(_day()))
+    order = Order.objects.get(pk=order.pk)
+    card = build_order_card(order, user=gerente)
+    reason = next(action for action in card.actions if action.ref == "advance").reason
+
+    with pytest.raises(OrderError) as refused:
+        orders_service.advance_order(order, actor="gerente-g08", target_status=Order.Status.PREPARING)
+    assert str(refused.value) == reason
+    order.refresh_from_db()
+    assert order.status == Order.Status.ACCEPTED
+
+    # O lote ficou pronto: o mesmo comando inicia o preparo.
+    work_order.refresh_from_db()
+    craft.finish(work_order, finished=Decimal("10"), expected_rev=work_order.rev)
+    orders_service.advance_order(Order.objects.get(pk=order.pk), actor="gerente-g08", target_status=Order.Status.PREPARING)
+    order.refresh_from_db()
+    assert order.status == Order.Status.PREPARING
+
+
 def test_o_bloqueio_do_pagamento_vem_antes_do_lote(ficha, gerente, relogio):
     """Quem espera o dinheiro lê a frase do dinheiro; o lote aparece só como selo."""
     relogio(9)

@@ -417,15 +417,17 @@ def test_my_question_answers_again_what_was_left_without_answer(conversation, ou
 
     result = _turn(conversation, "e a minha pergunta?", "again-2", reader)
 
-    assert not result.handoff
+    # A parte pendente é a que a casa não entendeu, e "não entendi" já foi dito nesta
+    # conversa (dono, 19/11/2026: no máximo uma vez): agora é com a equipe.
+    assert result.handoff
     reply = outbox.sent[-1]
-    assert reply.startswith("Desculpe, ficou faltando a resposta.")
-    assert "vale refeição" in reply and "Pão Francês" not in reply  # só o que ficou pendente
+    assert "vale refeição" in reply and "já chamei a equipe" in reply
+    assert "Pão Francês" not in reply  # só o que ficou pendente
     assert len(reader.requests) == 1  # a segunda vez sai da memória, sem leitura
     stamp = ConversationMessage.objects.filter(conversation=conversation, kind="reply").order_by("-pk").first()
     assert stamp.usage["intents"]["source"] == "memory"
     conversation.refresh_from_db()
-    assert conversation.state == Conversation.State.ACTIVE
+    assert conversation.state == Conversation.State.HANDOFF
 
 
 @pytest.mark.django_db

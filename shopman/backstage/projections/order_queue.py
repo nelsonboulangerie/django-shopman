@@ -2410,6 +2410,25 @@ def _waits_batch(promise, advance_block, next_status: str) -> bool:
     )
 
 
+def batch_wait_refusal(order: Order) -> str:
+    """A frase que recusa o "Iniciar preparo" de quem espera o lote, ou ``""``.
+
+    A mesma régua do cartão e do detalhe (:func:`_waits_batch` sobre a promessa
+    do pedido), para o comando de avançar do Gestor recusar o que a tela não
+    oferece: sem ela, um POST direto iniciava o preparo de pão que ainda não
+    existe (#2721). Mora aqui, e não no gate do ``shop``, porque a promessa é
+    leitura do backstage e o ``shop`` nunca a importa.
+    """
+    advance_block = operator_orders.gestor_advance_block(order)
+    next_status = operator_orders.next_status_for(order) if not advance_block else ""
+    if next_status != Order.Status.PREPARING:
+        return ""
+    promise = _promise_of(order)
+    if not _waits_batch(promise, advance_block, next_status):
+        return ""
+    return order_promise.batch_wait_reason(promise)
+
+
 def _batch_wait_actions(actions, reason: str) -> tuple:
     """As ações do pedido que espera o lote: o gesto de iniciar existe, desligado e com o motivo."""
     return tuple(
