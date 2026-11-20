@@ -56,9 +56,15 @@ def create_operator_alert(
     debounce_minutes: int = 15,
     dedupe_key: str = "",
     respond_by=None,
+    stamp_dedupe: bool = True,
     **fields: Any,
 ):
-    """Create a debounced OperatorAlert and log the decision."""
+    """Create a debounced OperatorAlert and log the decision.
+
+    ``stamp_dedupe=False``: quem chama já garante um aviso por causa (guarda o ``pk``),
+    e a mensagem é só o que o operador lê. Nem o marcador "Dedupe:" vai para o texto, nem
+    o debounce por texto, que calaria a segunda pessoa com a mesma pergunta.
+    """
     message = str(message or "").strip()
     if not message:
         return None
@@ -69,7 +75,7 @@ def create_operator_alert(
     try:
         from shopman.shop.adapters import alert as alert_adapter
 
-        if alert_adapter.recent_exists(
+        if stamp_dedupe and alert_adapter.recent_exists(
             type,
             cutoff,
             message_contains=dedupe_text or None,
@@ -89,7 +95,7 @@ def create_operator_alert(
         alert = alert_adapter.create(
             type,
             severity,
-            _alert_message(message, dedupe_text=dedupe_text),
+            _alert_message(message, dedupe_text=dedupe_text) if stamp_dedupe else message,
             order_ref=order_ref,
             respond_by=respond_by,
         )

@@ -1,0 +1,8 @@
+{% comment %}
+Rota de IA parada (conexão inativa, sem chave, não liberada, freio): um aviso por motivo,
+no topo da página Integrações, com o botão que resolve (#2843). Usa o aviso do próprio
+Unfold (helpers/messages/warning.html).
+{% endcomment %}
+{% for warning in ai_route_warnings %}
+    {% include "unfold/helpers/messages/warning.html" with message=warning.message %}
+{% endfor %}

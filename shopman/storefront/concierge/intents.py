@@ -107,6 +107,7 @@ TEAM_TOPICS = {
 TEAM_COPY_KEY = "CONCIERGE_PARTS_TEAM"
 ORDER_WITH_TEAM_COPY_KEY = "CONCIERGE_PARTS_ORDER_WITH_TEAM"
 NOT_FOUND_COPY_KEY = "CONCIERGE_PARTS_NOT_FOUND"
+DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 #: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
 UNCLEAR_FLAG = "unclear_asked"
@@ -688,6 +689,123 @@ def _search_text(act: Act) -> str:
     return act.product or strip_small_talk(act.span) or act.span
 
 
+#: As palavras de "tem?" e "quanto custa?": presença e preço, que a linha do cardápio já
+#: responde. O que sobra na pergunta além delas e do nome do produto é um atributo
+#: ("é doce?", "é grande?"), e atributo só sai da ficha do produto.
+_PLAIN_PRODUCT_WORDS = frozenset({
+    "ainda", "custa", "custam", "disponivel", "disponiveis", "fica", "hoje", "preco", "precos",
+    "quanto", "quantos", "sai", "temos", "tem", "tinha", "valor", "vende", "vendem", "voces",
+    "amanha", "agora", "unidade", "unidades",
+})
+#: "Ele é doce?" sem o produto resolvido: de quem se fala a busca não sabe.
+_REFERENT_WORDS = frozenset({"ele", "ela", "eles", "elas", "esse", "essa", "esses", "essas", "este", "esta", "isso"})
+SHEET_ITEMS = 3
+
+
+_DELIVERY_WORDS = frozenset({"entrega", "entregas", "entregar", "delivery", "frete"})
+_FEE_WORDS = frozenset({"taxa", "frete", "quanto", "custa", "custo", "valor", "preco", "cobram", "cobra"})
+
+
+def _asks_delivery_fee(span: str) -> bool:
+    """"Quanto custa a entrega?", "qual a taxa de entrega?", "quanto é o frete?"."""
+    words = set(re.findall(r"[a-z0-9]+", _fold(span)))
+    return bool(words & _DELIVERY_WORDS) and bool(words & _FEE_WORDS)
+
+
+def _delivers(channel_ref: str) -> bool:
+    """O canal faz entrega (a mesma régua da pergunta frequente de entrega)."""
+    from shopman.shop.projections.channel_state import channel_capabilities
+
+    try:
+        return "delivery" in channel_capabilities(channel_ref).fulfillment_types
+    except Exception:
+        logger.warning("concierge.intents.channel_capabilities_failed channel=%s", channel_ref, exc_info=True)
+        return False
+
+
+def _points_back(span: str) -> bool:
+    """A fala aponta para um produto dito antes ("ele é doce?", "essa tem recheio?")."""
+    return bool(set(re.findall(r"[a-z0-9]+", _fold(span))) & _REFERENT_WORDS)
+
+
+def _referent(conversation, *, channel_ref: str) -> str:
+    """O nome do produto de que a conversa falava há pouco: o em foco, ou o único listado."""
+    from . import dialogue
+
+    if conversation is None:
+        return ""
+    state = dialogue.for_turn(conversation, channel_ref=channel_ref).state
+    focus = state.get("focus") or {}
+    if focus.get("name"):
+        return str(focus["name"])
+    listed = list(state.get("listed") or [])
+    return str(listed[0].get("name") or "") if len(listed) == 1 else ""
+
+
+def _own_source(act: Act, result: dict) -> dict:
+    """Cada parte com a sua fonte, nunca o texto vizinho.
+
+    Produto (e pedido) pelo cardápio; a casa (horário, entrega, como funciona) pelas
+    perguntas frequentes. Quando a busca achou as duas coisas, a outra sai: "quanto custa o
+    pain perdu?" recebia o preço, o texto do glúten e o do cancelamento (20/11/2026).
+    """
+    if not result.get("ok") or not result.get("found"):
+        return result
+    if act.act in {PRODUCT, ORDER} and result.get("items") and result.get("answers"):
+        return {**result, "answers": [], "links": []}
+    if act.act in {HOURS, HOUSE} and result.get("answers"):
+        # A pergunta da casa recebe a resposta que melhor casou, só ela: "quanto custa a
+        # entrega?" levava junto o texto de acompanhar pedido, que também diz "entrega".
+        return {**result, "answers": result["answers"][:1], "items": [], "count": 0,
+                "available_count": 0, "truncated": False}
+    return result
+
+
+def _sheet_reply(act: Act, result: dict) -> str | None:
+    """A pergunta sobre um atributo do produto, respondida pela ficha dele.
+
+    ``None``: não é pergunta de atributo (presença, preço): vale a linha do cardápio.
+    ``""``: é, e nenhuma ficha achada fala daquilo (ou não se sabe de que produto): sem
+    fato, a casa verifica. Texto: o nome, a seção, a descrição e o preço de cada produto
+    cuja ficha fala do atributo, sem a Concierge concluir nada por conta própria ("O
+    pain perdu é doce ou salgado?" mostra a seção Doces e o caramelo salgado da ficha).
+    """
+    from shopman.storefront.presentation.public_information import word_stem
+
+    from . import tools as tools_module
+    from .small_talk import strip_small_talk
+
+    if not result.get("ok") or not result.get("found") or result.get("overview"):
+        return None
+    items = list(result.get("items") or [])
+    named = {word_stem(word) for word in tools_module._public_search_terms(act.product)}
+    for item in items:
+        named.update(word_stem(word) for word in tools_module._public_search_terms(item.get("name") or ""))
+    asked = [
+        word for word in tools_module._public_search_terms(strip_small_talk(act.span) or act.span)
+        if word not in _PLAIN_PRODUCT_WORDS
+    ]
+    attributes = {word_stem(word) for word in asked if word_stem(word) not in named and word not in _REFERENT_WORDS}
+    if not attributes:
+        return None
+    span_words = set(re.findall(r"[a-z0-9]+", _fold(act.span)))
+    names_product = bool(act.product) or any(
+        set(re.findall(r"[a-z0-9]+", _fold(item.get("name") or ""))) <= span_words for item in items
+    )
+    if not names_product and span_words & _REFERENT_WORDS:
+        return ""
+    rows = []
+    for item in items:
+        sheet = _fold(" ".join(str(item.get(key) or "") for key in ("name", "collection", "description")))
+        if attributes & {word_stem(word) for word in re.findall(r"[a-z0-9]+", sheet)} and item.get("description"):
+            section = f" ({tools_module._display_text(item['collection'])})" if item.get("collection") else ""
+            description = tools_module._display_text(item["description"]).rstrip(".")
+            rows.append(f"{tools_module._display_name(item['name'])}{section}: {description}. {item['price']}.")
+        if len(rows) == SHEET_ITEMS:
+            break
+    return "\n".join(rows)
+
+
 def _cancellation():
     """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``).
 
@@ -762,22 +880,40 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     def search(act: Act, *, consult: bool = False) -> PartReply:
         from . import dialogue
 
+        if consult and act.act == PRODUCT and not act.product and _points_back(act.span):
+            # "ele é doce?" (coordenação, 20/11/2026): o "ele" é o produto citado há pouco
+            # na conversa (o em foco, ou o único da última resposta), e a ficha dele responde.
+            # Sem nenhum, nem a equipe saberia de quem é: pergunta ao cliente.
+            referent = _referent(conversation, channel_ref=channel_ref)
+            if not referent:
+                return PartReply(act, text=copy(dialogue.ASK_PRODUCT_KEY) or "", keeps_question=True)
+            act = Act(act.act, span=act.span, product=referent, qty=act.qty)
+
         query = _search_text(act)
-        result = tools_module.execute("search_storefront", {}, context(query))
+        result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
+        sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
+        # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é
+        # sobre um atributo dele, a pergunta inteira ("Sobre “o croissant é grande”"):
+        # citar só o produto diria que a casa não sabe nada do croissant.
+        cited = act.product or act.span
+        if sheet == "":
+            # Pergunta sobre o produto que a ficha não responde: sem fato.
+            result = {**result, "found": False}
+            cited = act.span.strip().rstrip("?!. ")
         if result.get("ok") and result.get("found"):
-            reply.text = tools_module.render_result("search_storefront", result)
+            reply.text = sheet or tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
         elif consult and verifiable and verification.question_text(act):
             # Sem fato numa consulta: a casa não inventa e não larga o cliente. Diz que
             # não tem aqui, pergunta à equipe e, no fim da resposta, promete o prazo.
-            reply.text = _fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(act.product or act.span))
+            reply.text = _fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(cited))
             reply.verifying = True
             run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
         else:
             # Sem fato, a casa não inventa: diz que não tem e oferece a equipe.
             reply.text = " ".join(
-                part for part in (_fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(act.product or act.span)), offer) if part
+                part for part in (_fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(cited)), offer) if part
             )
             reply.memo = {"tool": "search_storefront", "found": False}
         return reply
@@ -792,6 +928,13 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             topic = TEAM_TOPICS.get(act.act, "isso")
             run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=topic)))
             continue
+        if act.act in {HOURS, HOUSE} and _asks_delivery_fee(act.span) and _delivers(channel_ref):
+            # Preço da entrega: depende do endereço, e a frase diz isso sem o "Sim." da
+            # pergunta frequente, que responde a "vocês fazem entrega?" (20/11/2026).
+            text = (copy(DELIVERY_FEE_COPY_KEY) or "").strip()
+            if text:
+                run.replies.append(PartReply(act, text=text, keeps_question=True))
+                continue
         if act.act in {PRODUCT, HOURS, HOUSE}:
             run.replies.append(search(act, consult=True))
             continue
@@ -1129,7 +1272,8 @@ def run(conversation, *, binding, decision, client=None):
             memory=memory,
             memory_memos=memos,
         )
-    fixed = _house_fixed_reply(conversation, text, channel_ref=channel_ref, memory=memory, memos=memos)
+    fixed = _house_fixed_reply(conversation, text, channel_ref=channel_ref, memory=memory, memos=memos,
+                               team_decided=getattr(decision, "escalates", False))
     if fixed is not None:
         return fixed
     # A alergia sobre a fala inteira só quando ela é uma parte só; com outras partes junto,
@@ -1168,7 +1312,7 @@ def run(conversation, *, binding, decision, client=None):
     return _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
 
 
-def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos):
+def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos, team_decided=False):
     """As regras de entrada com frase fixa sobre a mensagem inteira (R7, R8), antes das partes.
 
     Pedido de desconto (R7, dono, 03/10/2026): até o teto da casa a Concierge concede pelo
@@ -1187,6 +1331,10 @@ def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, mem
         granted = discount.handle_request(conversation=conversation, channel_ref=channel_ref, customer_text=text)
         if granted.text:
             return TurnOutcome(reply_text=granted.text, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
+    if rule == "R8" and team_decided:
+        # A triagem já mandou o turno à equipe (alergia junto, pedido de atendimento): a
+        # frase de assistente não cala a parte da equipe; as partes seguem.
+        return None
     if fixed:
         return TurnOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
     return None

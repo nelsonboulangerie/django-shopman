@@ -264,9 +264,16 @@ def _verify_alert(request, pk: int):
     )
 
 
+def _promote_href(pk: int) -> str:
+    from django.urls import reverse
+
+    return reverse("api-backstage-alert-concierge-verification-promote-faq", args=[pk])
+
+
 def _verify_response(pk: int, result) -> Response:
     if result.ok and not result.code:
-        return Response({"ok": True, "pk": pk, "sent_text": result.sent_text})
+        # Respondida: o mesmo cartão pode virar pergunta frequente (WP-15), pelo toast.
+        return Response({"ok": True, "pk": pk, "sent_text": result.sent_text, "promote_href": _promote_href(pk)})
     code = result.code
     if result.ok:
         # Assumiu, mas o aviso ao cliente não saiu: a conversa já é da equipe.
@@ -320,3 +327,68 @@ class ConciergeVerificationTakeOverView(APIView):
             return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
         result = concierge_verification.take_over(pk, actor=alert_service._actor_ref(request.user) or "operador")
         return _verify_response(pk, result)
+
+
+_PROMOTE_OUTCOMES = {
+    "not_found": (404, "Esta pergunta não está mais na conversa."),
+    "not_answered": (409, "Só a pergunta respondida vira pergunta frequente, e esta conversa já tem outra pergunta."),
+    "unavailable": (503, "A Concierge não está ligada nesta instalação."),
+}
+_PROMOTE_RESPONSE = inline_serializer(
+    name="ConciergeVerificationPromoteResponse",
+    fields={
+        "ok": serializers.BooleanField(),
+        "pk": serializers.IntegerField(),
+        "already": serializers.BooleanField(),
+        "admin_url": serializers.CharField(),
+        "warning": serializers.CharField(),
+    },
+)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Turn the answered Concierge question into an unpublished FAQ draft",
+        request=None,
+        responses={200: _PROMOTE_RESPONSE},
+    ),
+)
+class ConciergeVerificationPromoteView(APIView):
+    """O cartão respondido vira rascunho de pergunta frequente (WP-15). O cartão já
+    fechou com a resposta; quem o via ainda pode promovê-lo. Publicar é do Admin."""
+
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop import concierge_verification
+        from shopman.shop.models import FAQEntry
+
+        visible = OperatorAlert.objects.filter(
+            pk=pk, type=_VERIFY_ALERT_TYPE, audience__in=alert_service.visible_alert_audiences(request.user)
+        ).exists()
+        if not visible:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        result = concierge_verification.promote_faq(pk, actor=alert_service._actor_ref(request.user) or "operador")
+        if not result.ok:
+            status, detail = _PROMOTE_OUTCOMES.get(result.code, (409, "Não deu para concluir. Atualize os avisos."))
+            return Response({"detail": detail, "error": {"code": result.code}}, status=status)
+        entry = FAQEntry.objects.filter(ref=result.detail).only("pk").first()
+        admin_url = _admin_change_url(entry.pk) if entry is not None else ""
+        return Response({
+            "ok": True,
+            "pk": pk,
+            "already": result.code == "already_promoted",
+            "admin_url": admin_url,
+            "warning": result.sent_text,
+        })
+
+
+def _admin_change_url(faq_pk: int) -> str:
+    """O rascunho no Admin, no host do Admin (o Gestor é outro app)."""
+    from django.conf import settings
+    from django.urls import reverse
+
+    host = str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip()
+    return f"https://{host}{reverse('admin:shop_faqentry_change', args=[faq_pk])}" if host else ""

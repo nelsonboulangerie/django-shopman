@@ -5,7 +5,7 @@ import { expectNoOperatorOverlap } from "../../../operator-kit/visual/playwright
 // A trava da sobreposição (dono, 07/11/2026, no cabeçalho do pedido: "parece coisa de
 // amador; não pode acontecer, nem nessa tela nem em nenhuma"). Em cada largura da régua
 // e em cada tela do Gestor, nada visível se desenha por cima de outra coisa visível:
-// controle sobre controle, e texto solto (título, selo de status, hora, "2 de 4") sobre
+// controle sobre controle, e texto solto (título, selo de status, hora, "2 pedidos (cabem até 4)") sobre
 // controle ou sobre outro texto. É geometria, não retrato: não há baseline.
 //
 // 1360 é a largura do defeito (o desktop do dono); 1024 é o tablet deitado com a barra
