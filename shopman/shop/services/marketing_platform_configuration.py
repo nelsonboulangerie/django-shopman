@@ -48,6 +48,10 @@ WHATSAPP_EVENT_LABELS = {
     "preorder_reminder": "Lembrete da encomenda",
     "order_rescheduled": "Nova data da encomenda",
     "order_updated": "Encomenda atualizada",
+    # "Avisar o cliente" (WP-G07): o nome do gesto que o Caixa tocou.
+    "order_delayed": "Vai atrasar",
+    "order_item_missing": "Faltou um item",
+    "order_reschedule_needed": "Precisamos remarcar",
     "fiscal_note_ready": "Nota fiscal disponível",
     "payment_requested": "Pagamento solicitado",
     "payment_link_sent": "Link de pagamento enviado",

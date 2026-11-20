@@ -9571,6 +9571,22 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/services/customer_notice.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.customer-notice-eligibility",
+        "shop.services-customer-notice"
+      ],
+      "responsibilities": [
+        "composição",
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/customer_orders.py",
       "touchpoints": [
         "API",
