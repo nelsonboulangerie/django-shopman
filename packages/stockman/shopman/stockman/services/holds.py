@@ -503,38 +503,28 @@ class StockHolds:
         """
         now = timezone.now()
         total = 0
-        released_skus: set[str] = set()
         batch_size = stockman_settings.EXPIRED_BATCH_SIZE
 
         while True:
             with transaction.atomic():
-                batch = list(
-                    Hold.objects.select_for_update(skip_locked=True).expired().values_list("pk", "sku")[:batch_size]
+                batch_ids = list(
+                    Hold.objects.select_for_update(skip_locked=True).expired().values_list("pk", flat=True)[:batch_size]
                 )
 
-                if not batch:
+                if not batch_ids:
                     break
 
-                batch_ids = [pk for pk, _sku in batch]
                 Hold.objects.filter(pk__in=batch_ids).update(
                     status=HoldStatus.RELEASED,
                     resolved_at=now,
                 )
                 total += len(batch_ids)
-                released_skus.update(sku for _pk, sku in batch if sku)
 
         if total:
             logger.info(
                 "stock.holds.expired_released",
                 extra={"released": total},
             )
-        if released_skus:
-            # O ``update`` em lote não dispara ``post_save``: sem este aviso, quem
-            # acompanha a disponibilidade só via o saldo voltar no próximo gesto.
-            from shopman.stockman.signals import holds_expired
-
-            skus = sorted(released_skus)
-            transaction.on_commit(lambda: holds_expired.send(sender=cls, skus=skus))
         return total
 
     # ── Reference-based queries ──────────────────────────────────
