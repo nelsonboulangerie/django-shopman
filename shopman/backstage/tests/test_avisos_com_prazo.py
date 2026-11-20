@@ -59,12 +59,15 @@ def test_contagem_e_livro_sao_panoramicos():
 #: e o prazo é o do relógio do tipo, não a régua da casa. O "vou verificar" da Concierge
 #: põe o ``respond_by`` no primeiro prazo, contado com a loja aberta (WP-06).
 ONLY_OWN_DEADLINE = {"concierge_verify"}
+#: Tipos sem prazo: não há o que vencer, há uma causa que dura até ser resolvida. A
+#: Concierge sem modelo (dono, 19/11/2026) fica no topo do Gestor enquanto a causa durar.
+CAUSE_WITHOUT_DEADLINE = {"concierge_no_model"}
 
 
 def test_todo_tipo_que_interrompe_tem_origem_assunto_e_regua():
     for type_, spec in ALERT_SPECS.items():
         assert spec.origin and spec.subject and spec.origin_icon.startswith("i-lucide-"), type_
-        if type_ in ONLY_OWN_DEADLINE:
+        if type_ in ONLY_OWN_DEADLINE or type_ in CAUSE_WITHOUT_DEADLINE:
             assert spec.deadline_minutes == 0, type_
         else:
             assert spec.deadline_minutes > 0, type_
