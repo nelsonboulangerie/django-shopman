@@ -57,13 +57,26 @@ def enabled() -> bool:
     return bool(shop is not None and shop.conversational_shadow_enabled)
 
 
-def pending(limit: int = SWEEP_LIMIT):
-    """As entradas do cliente ainda sem decisão, da mais antiga para a mais nova."""
+def pending():
+    """As entradas do cliente ainda sem decisão, da mais antiga para a mais nova (sem teto: quem corta é o ciclo)."""
     from shopman.shop.models import ConversationMessage
 
-    return (ConversationMessage.objects.select_related("conversation")
+    return (ConversationMessage.objects.select_related("conversation", "binding")
             .filter(role="user", kind="inbound", conversational_decision__isnull=True)
-            .order_by("created_at", "pk")[:limit])
+            .order_by("created_at", "pk"))
+
+
+def identity_of(message) -> str:
+    """O degrau da escada de identidade da entrada (P03): a identidade do canal é transportada.
+
+    A ligação do canal (``binding.subject``) é o id do assinante no provedor (ManyChat), não o
+    telefone: identifica quem fala no canal, e por isso a entrada é ``transported`` mesmo quando
+    a conversa ainda não guardou o telefone. Esse id não acha pedido (o pedido guarda o telefone,
+    medido em produção em 20/11/2026). Sem telefone e sem ligação, é anônima, e então o snapshot
+    não leva ``subject_ref`` (o contrato recusa sujeito em identidade anônima).
+    """
+    binding = getattr(message, "binding", None)
+    return "transported" if (message.conversation.phone or (binding is not None and binding.subject)) else "anonymous"
 
 
 def _needs(understanding) -> tuple[NeedSpec, ...]:
@@ -104,7 +117,7 @@ def decide_entry(message, *, profile, commerce: ShopmanCommerceRead | None = Non
         event_id=event_id, content_ref=f"message:{message.pk}", allowed_acts=ACTS))
     needs = _needs(understanding)
     state = TurnState(
-        now=now, channel="whatsapp", identity="transported" if conversation.phone else "anonymous",
+        now=now, channel="whatsapp", identity=identity_of(message),
         profile=profile, needs=needs, event_assurance="provider_claimed" if message.external_id else "none",
         subject=Subject(subject_ref=ctx.subject, cart_ref=conversation.session_key or None))
     _read_facts(ctx, state, commerce)
@@ -114,7 +127,8 @@ def decide_entry(message, *, profile, commerce: ShopmanCommerceRead | None = Non
     snapshot = seal(ContextSnapshot(
         id=f"snap-{event_id}", **envelope, episode_version=int(conversation.turn_fence),
         ownership_epoch=int(conversation.turn_fence),
-        identity={"subject_ref": ctx.subject, "assurance": state.identity},
+        identity={"subject_ref": ctx.subject if state.identity != "anonymous" else None,
+                  "assurance": state.identity},
         needs=[{"need_id": n.need_id, "type": n.act, "state": "open"} for n in needs],
         facts=state.facts, unknowns=[k for k, f in state.facts.items() if isinstance(f, Unknown)],
         dialogue_state={}, relationship_state={},
@@ -137,8 +151,14 @@ def sweep(*, limit: int = SWEEP_LIMIT) -> dict[str, int]:
     if not enabled():
         return {"enabled": 0, "decided": 0, "failed": 0}
     profile = build_profile(environment=ENVIRONMENT)
-    decided = failed = 0
-    for message in pending(limit):
+    decided = failed = attempts = 0
+    first_failure = None
+    for message in pending().iterator():
+        # O ciclo para por decisões gravadas ou por tentativas: entrada que falha sempre não
+        # ocupa o lote inteiro e não impede as novas de serem decididas.
+        if decided >= limit or attempts >= 2 * limit:
+            break
+        attempts += 1
         try:
             decision, snapshot, acts, unknown = decide_entry(message, profile=profile)
             _, created = record_decision(
@@ -146,26 +166,50 @@ def sweep(*, limit: int = SWEEP_LIMIT) -> dict[str, int]:
                 snapshot_hash=snapshot.hash, acts=acts, unknown_facts=unknown,
                 customer_ref=message.conversation.customer_ref or "", entry_at=message.created_at)
             decided += int(created)
-        except Exception:  # noqa: BLE001 - a sombra nunca derruba o ciclo; a entrada fica para o próximo
+        except Exception as error:  # noqa: BLE001 - a sombra nunca derruba o ciclo; a entrada fica para o próximo
+            logger.debug("concierge.shadow: decisão falhou message=%s", message.pk, exc_info=True)
             failed += 1
-            logger.warning("concierge.shadow: decisão falhou message=%s", message.pk, exc_info=True)
+            first_failure = first_failure or (message.pk, error)
+    if first_failure is not None:
+        # Um aviso por ciclo, com a contagem e o primeiro erro; nunca um por entrada.
+        logger.warning("concierge.shadow: %d entradas falharam neste ciclo; a primeira message=%s",
+                       failed, first_failure[0], exc_info=first_failure[1])
     return {"enabled": 1, "decided": decided, "failed": failed}
 
 
+def pending_outcomes(now: datetime):
+    """As decisões que a junção ainda tem o que fazer: alguma métrica sem resultado final.
+
+    Final é ``observed`` ou ``not_applicable``, ou ``unknown`` com a janela já fechada (sem
+    identidade, fechada a janela, não há mais o que medir). ``censored`` e ``unknown`` com a
+    janela aberta voltam. Sem este filtro, a junção pegava sempre as mesmas decisões mais antigas
+    e as novas nunca ganhavam resultado (medido em produção em 20/11/2026: 35 de 235 sem resultado).
+    """
+    from django.db.models import Exists, OuterRef, Q
+
+    from shopman.shop.models import ConversationalDecision, ConversationalOutcome
+
+    final = ConversationalOutcome.objects.filter(decision=OuterRef("pk"), superseded_by__isnull=True).filter(
+        Q(observation__in=("observed", "not_applicable")) | Q(observation="unknown", window_end__lte=now))
+    missing = Q()
+    for metric, _ in WINDOWS:
+        missing |= ~Exists(final.filter(metric=metric))
+    return ConversationalDecision.objects.filter(missing).order_by("decided_at", "pk")
+
+
 def join_outcomes(*, now: datetime | None = None, limit: int = SWEEP_LIMIT) -> dict[str, int]:
-    """Os pedidos do cliente em 24 h e em 7 dias depois de cada decisão. Só telemetria (P19)."""
+    """Os pedidos do cliente em 24 h e em 7 dias depois de cada entrada decidida. Só telemetria (P19)."""
     from shopman.orderman.models import Order
 
     from shopman.shop.conversational.decision_store import current_outcome, record_outcome
-    from shopman.shop.models import Conversation, ConversationalDecision
+    from shopman.shop.models import Conversation
     from shopman.shop.services.customer_orders import customer_identity_filter
 
     if not enabled():
         return {"enabled": 0, "recorded": 0}
     now = now or datetime.now(UTC)
-    horizon = now - WINDOWS[-1][1] - timedelta(days=1)
     recorded = 0
-    for decision in ConversationalDecision.objects.filter(decided_at__gte=horizon).order_by("decided_at")[:limit]:
+    for decision in pending_outcomes(now)[:limit]:
         conversation = Conversation.objects.filter(pk=decision.conversation_id).first()
         identity = customer_identity_filter(customer_ref=decision.customer_ref or None,
                                             phone=(conversation.phone or None) if conversation else None)
@@ -173,7 +217,9 @@ def join_outcomes(*, now: datetime | None = None, limit: int = SWEEP_LIMIT) -> d
             current = current_outcome(decision, metric)
             if current is not None and current.observation == "observed":
                 continue  # janela fechada já observada: o resultado não muda mais
-            start, end = decision.decided_at, decision.decided_at + span
+            # A janela conta da ENTRADA (quando o cliente escreveu), não da decisão: no
+            # acumulado a decisão é de hoje, e a janela mediria os pedidos depois de hoje.
+            start, end = decision.entry_at, decision.entry_at + span
             base = {"id": f"out-{decision.decision_id}-{metric}-{int(now.timestamp())}", "tenant": "shop",
                     "environment": ENVIRONMENT, "trace_id": f"trace-{decision.decision_id}",
                     "occurred_at": instant(now), "producer": PRODUCER, "customer_ref": decision.customer_ref or None,

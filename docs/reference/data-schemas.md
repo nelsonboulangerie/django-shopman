@@ -278,12 +278,19 @@ preço mora aqui.
 "Vou verificar" (WP-05, bloco 4 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/verification.py`): a parte de consulta (produto, horário ou entrega,
 como funciona a casa) sem fato vira pergunta à equipe, e a conversa segue com a Concierge.
+`Conversation.flags["unclear_asked"]` = `true` (dono, 19/11/2026; `concierge/intents.py`, `UNCLEAR_FLAG`): a
+casa já disse "não entendi" nesta conversa. Gravado com o `turn_fence` do turno (`service._remember_unclear`);
+a segunda parte não entendida, com modelo, vai para a equipe. Sem modelo, a parte não entendida não diz
+"não entendi": abre o "vou verificar" (abaixo).
+
 `Conversation.flags["verification"]` = `{v: 1, id, status, opened_at, fence, questions, promise,
 nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
 conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
 marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
-equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff) ou `handed_off` (o segundo prazo
-passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06); `fence` é o
+equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
+passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06) ou
+`returned` (com `returned_at`: depois do `handed_off`, o cliente escreveu de novo e a conversa voltou sozinha
+à Concierge, dono 20/11/2026, #2836; a `taken_over` nunca volta sozinha); `fence` é o
 `turn_fence` do turno que abriu (gravada na mesma transação da resposta: turno revogado não grava);
 `questions` = `[{text, product, at}]`, até 5, `text` a fala do cliente REDIGIDA (`triage._redacted`,
 até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` ("em até 10 minutos"),
@@ -1196,6 +1203,7 @@ preserva o motivo anterior antes de limpar `Directive.last_error` para retry.
 | `additional_info` | `string` | hooks (opcional) | NFCeEmitHandler |
 | `delivery` | `dict` ou `null` | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
 | `intermediary` | `dict` (ausente na venda direta) | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
+| `emitter_answer` | `string` (só na directive recusada) | NFCeEmitHandler (`_refuse`, ao encerrar a emissão como `failed`) | Gestor, linha "NFC-e não autorizada" (`backstage/projections/order_pending.fiscal_failure_reason`) | A resposta do emissor na recusa, sem o prefixo do log. Some no reprocesso, que reconstrói o payload. Transiente que esgota as tentativas e erro interno não a gravam |
 
 Cada linha de `items` leva `gtin` (`str`): o GTIN confiável do produto
 (`fiscal._trusted_gtin`, regra na linha `gtin_source` de `Product.metadata`) ou
