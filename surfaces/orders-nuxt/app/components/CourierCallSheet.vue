@@ -59,6 +59,7 @@ const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops
     :open="open"
     :title="title"
     :description="`${orders} ${orders === 1 ? 'pedido' : 'pedidos'}. A corrida é paga pela casa e o frete dos clientes não muda.`"
+    :close="{ class: 'min-h-11 min-w-11 justify-center' }"
     data-courier-call-sheet
     @update:open="(value: boolean) => { if (!value) emit('close'); }"
   >
@@ -104,6 +105,7 @@ const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops
                     :model-value="stop.change"
                     inputmode="decimal"
                     class="w-28"
+                    :ui="{ base: 'min-h-11' }"
                     :aria-label="`Troco para ${stop.code}`"
                     @update:model-value="(value: string | number) => emit('change', stop.ref, String(value ?? ''))"
                   >
