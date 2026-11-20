@@ -73,7 +73,10 @@ class CourierDispatchHandler:
             self._set_attempt(message, "inert")
             return
         if len(orders) == 1:
-            courier.estimate_for_order(orders[0], store=True)
+            base = courier.dispatch_revision(orders[0])
+            solo = courier.estimate_for_order(orders[0])
+            if solo is not None:
+                courier.store_estimate(orders[0], solo, expected_revision=base)
         else:
             # A cotação da ROTA inteira, no principal (o primeiro da corrida): é ela que a
             # tela mostra como custo, nunca a cotação sozinha que o pedido tinha (J13).
