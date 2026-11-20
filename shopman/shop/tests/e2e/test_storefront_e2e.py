@@ -267,7 +267,9 @@ class TestCustomerStore:
         page.goto(f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="networkidle")
         product_name = page.locator("h1").first.inner_text().strip()
         page.get_by_role("button", name=ADD_TO_CART).first.click()
-        page.get_by_role("link", name="Ver sacola").click()
+        # O link da sacola diz a contagem ("Sacola, 1 item"), no cabeçalho e na barra de
+        # baixo (#2609); o primeiro visível é o do cabeçalho.
+        page.get_by_role("link", name=re.compile(r"^Sacola(, \d+ itens?)?$")).first.click()
         page.wait_for_url(re.compile(r"/sacola$"), timeout=15_000)
         expect(page.get_by_text(product_name, exact=False).first).to_be_visible()
 
