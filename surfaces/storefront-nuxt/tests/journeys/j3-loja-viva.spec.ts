@@ -128,9 +128,14 @@ test('J3: o produto que acaba muda sozinho na tela de quem está olhando', async
   }
 })
 
-/** A linha da sacola diz que chegou ao que a loja tem hoje (o "+" fica no teto). */
-function bagCeilingNote (page: Page) {
-  return page.getByText('Por hoje, temos 1 unidade deste item.')
+/** A sacola de A foi relida sem gesto dela: a leitura da sacola (GET), que a página só faz
+ *  sozinha quando a vitrine avisa. A linha não muda de aparência aqui (o Melonpan não tem teto
+ *  finito na sacola); o que se prova é que a sacola aberta ouve a vitrine. */
+function bagReread (page: Page, timeout: number) {
+  return page.waitForResponse(
+    response => /\/storefront\/cart\//.test(response.url()) && response.request().method() === 'GET' && response.ok(),
+    { timeout }
+  )
 }
 
 test('J3: a sacola aberta acompanha a vitrine, sem esperar o próximo gesto (#2785)', async ({ page, browser }, testInfo) => {
@@ -144,25 +149,26 @@ test('J3: a sacola aberta acompanha a vitrine, sem esperar o próximo gesto (#27
       await page.goto('/sacola')
       await settled(page)
       await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` }).first()).toContainText('1')
-      // Sobra uma na vitrine: a linha ainda pode crescer.
-      await expect(bagCeilingNote(page)).toHaveCount(0)
       await marksTheVisit(page)
-      await capture(page, testInfo, 'a-sacola-com-folga')
+      await capture(page, testInfo, 'a-sacola-aberta')
     })
 
-    await test.step('B leva a última; a linha de A chega ao teto sozinha', async () => {
+    await test.step('B leva a outra; a sacola de A relê sozinha', async () => {
+      const reread = bagReread(page, 20_000)
       await opensProduct(other.page)
       const answered = bagAnswered(other.page)
       await addButton(other.page).click()
       await answered
-      await expect(bagCeilingNote(page), 'a sacola de A deveria ter relido sozinha').toBeVisible({ timeout: 20_000 })
+      await reread
       await stillTheSameVisit(page)
-      await capture(page, testInfo, 'a-sacola-no-teto-sozinha')
+      await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` }).first()).toContainText('1')
+      await capture(page, testInfo, 'a-sacola-relida-sozinha')
     })
 
-    await test.step('B desiste; a linha de A volta a ter folga, também sozinha', async () => {
+    await test.step('B desiste; a sacola de A relê de novo', async () => {
+      const reread = bagReread(page, 20_000)
       await putsThemBack(other.page)
-      await expect(bagCeilingNote(page)).toHaveCount(0, { timeout: 20_000 })
+      await reread
       await stillTheSameVisit(page)
     })
   } finally {
