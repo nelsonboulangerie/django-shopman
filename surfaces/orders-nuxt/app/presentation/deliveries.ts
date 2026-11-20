@@ -7,6 +7,7 @@ import type {
   DeliveryStopProjection,
 } from "~/generated/ordersContract";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
+import { formatBRL } from "../../../operator-kit/app/utils/money";
 import {
   courierChargeNotice,
   type CourierChargeNotice,
@@ -73,15 +74,15 @@ export interface RideCall {
 }
 
 /**
- * O que vai à TaOn para cada corrida editada com pelo menos um pedido. O troco
- * sugerido da gaveta vai como está (o mesmo do Painel); a maquininha só quando
- * algum pedido é de cartão na porta. Na ordem dos números: o servidor dá o
- * menor livre a quem chama primeiro, e a corrida fica com o número que mostrava.
+ * As chamadas, uma por corrida em edição. Cada corrida leva a SUA maquininha
+ * (`machines[number]`, P1-12: antes uma só ia para todas) e o troco que o operador
+ * conferiu (`change[ref]`, quando ele mexeu; senão o sugerido).
  */
 export function rideCalls(
   editing: readonly EditingRide[],
   stops: readonly DeliveryStopProjection[],
-  machineRef: string,
+  machines: Readonly<Record<number, string>>,
+  change: Readonly<Record<string, string>> = {},
 ): RideCall[] {
   const byRef = new Map(stops.map((stop) => [stop.ref, stop]));
   return editing
@@ -97,21 +98,197 @@ export function rideCalls(
         refs: chosen.map((stop) => stop.ref),
         change_out: Object.fromEntries(
           chosen
-            .filter((stop) => stop.change_out_suggested_q > 0)
-            .map((stop) => [stop.ref, moneyInput(stop.change_out_suggested_q)]),
+            .map((stop) => [stop.ref, changeValue(stop, change)] as const)
+            .filter(([, value]) => value !== ""),
         ),
-        machine: chosen.some((stop) => stop.needs_machine) ? machineRef : "",
+        machine: chosen.some((stop) => stop.needs_machine) ? (machines[ride.number] ?? "") : "",
       };
     });
 }
 
-/** Alguma corrida editada leva a maquininha da casa. */
-export function needsMachine(
+/** O troco que vai com o pedido: o que o operador digitou, ou o sugerido. */
+export function changeValue(
+  stop: Pick<DeliveryStopProjection, "ref" | "change_out_suggested_q">,
+  change: Readonly<Record<string, string>>,
+): string {
+  if (stop.ref in change) return change[stop.ref]!.trim();
+  return stop.change_out_suggested_q > 0 ? moneyInput(stop.change_out_suggested_q) : "";
+}
+
+/** As corridas em edição que levam cartão (alguma parada pede a maquininha). */
+export function ridesNeedingMachine(
   editing: readonly EditingRide[],
   stops: readonly DeliveryStopProjection[],
-): boolean {
-  const refs = new Set(editing.flatMap((ride) => ride.refs));
-  return stops.some((stop) => refs.has(stop.ref) && stop.needs_machine);
+): number[] {
+  const needs = new Set(stops.filter((stop) => stop.needs_machine).map((stop) => stop.ref));
+  return editing
+    .filter((ride) => ride.refs.some((ref) => needs.has(ref)))
+    .map((ride) => ride.number)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Uma maquininha DIFERENTE para cada corrida que leva cartão (P1-12). Mantém o que
+ * o operador já escolheu quando ainda vale e não repete; o resto recebe a próxima
+ * livre, na ordem das letras. Corrida sem maquininha livre fica com "".
+ */
+export function assignMachines(
+  needing: readonly number[],
+  free: readonly string[],
+  current: Readonly<Record<number, string>> = {},
+): Record<number, string> {
+  const out: Record<number, string> = {};
+  const taken = new Set<string>();
+  for (const number of needing) {
+    const mine = current[number];
+    if (mine && free.includes(mine) && !taken.has(mine)) {
+      out[number] = mine;
+      taken.add(mine);
+    }
+  }
+  for (const number of needing) {
+    if (out[number]) continue;
+    const next = free.find((ref) => !taken.has(ref));
+    out[number] = next ?? "";
+    if (next) taken.add(next);
+  }
+  return out;
+}
+
+/** "Faltam maquininhas: 2 corridas levam cartão e só 1 está livre." ("" quando dá.) */
+export function machineShortfall(needing: number, free: number): string {
+  if (needing <= free) return "";
+  const rides = `${needing} corridas levam cartão`;
+  if (free === 0) return `Faltam maquininhas: ${rides} e nenhuma está livre.`;
+  return `Faltam maquininhas: ${rides} e só ${free} ${free === 1 ? "está livre" : "estão livres"}.`;
+}
+
+// ── ordem do percurso ───────────────────────────────────────────────────────
+
+export interface RoutePoint {
+  ref: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+/**
+ * As paradas na ordem que o entregador segue: a mais perto da loja, depois a mais
+ * perto dessa, e assim por diante. ESPELHO de ``courier._route`` (o servidor manda
+ * esta ordem à TaOn): distância plana em graus, empate fica com quem veio antes,
+ * parada sem coordenada no fim. A fixture ``tests/fixtures/route-order.json`` roda
+ * nos dois lados (vitest e pytest), para os dois nunca discordarem.
+ */
+export function routeOrder<T extends RoutePoint>(
+  origin: { latitude: number; longitude: number } | null,
+  stops: readonly T[],
+): T[] {
+  if (!origin) return [...stops];
+  const located = stops.filter((stop) => stop.latitude !== null && stop.longitude !== null);
+  const rest = stops.filter((stop) => !located.includes(stop));
+  const route: T[] = [];
+  let here: [number, number] = [origin.latitude, origin.longitude];
+  while (located.length) {
+    let best = 0;
+    let bestDistance = Infinity;
+    located.forEach((stop, index) => {
+      const distance = (stop.latitude! - here[0]) ** 2 + (stop.longitude! - here[1]) ** 2;
+      if (distance < bestDistance) {
+        best = index;
+        bestDistance = distance;
+      }
+    });
+    const [nearest] = located.splice(best, 1);
+    route.push(nearest!);
+    here = [nearest!.latitude!, nearest!.longitude!];
+  }
+  return [...route, ...rest];
+}
+
+// ── cotação ─────────────────────────────────────────────────────────────────
+
+/** "R$ 15,00" com espaço comum, como o `display` que o servidor manda na mesma linha. */
+function money(amountQ: number): string {
+  return formatBRL(amountQ).replace(/\u00a0/g, " ");
+}
+
+export interface EditingQuote {
+  value_q: number;
+  /** "R$ 16,50 · 24 min · 5,7 km · ida e volta" */
+  display: string;
+  stops: string[];
+  separate_value_q?: number;
+  saving_q?: number;
+}
+
+export interface QuoteLine {
+  text: string;
+  /** A linha que vale (a mais barata, com ✔): em destaque; a outra esmaece. */
+  strong: boolean;
+}
+
+/**
+ * A cotação da corrida em duas linhas, com o ✔ na mais barata (regra do dono,
+ * 16/11): "Juntas: R$ 10,00 · 10 min · 5 km ✔" / "Separadas sairiam R$ 15,00", ou
+ * "Juntas: …" / "Separadas sai mais barato: R$ 7,00 ✔". Uma parada só: uma linha.
+ * Sem cotação: a frase do servidor, e a chamada continua possível.
+ */
+export function quoteLines(
+  quote: EditingQuote | null,
+  stopCount: number,
+  failure = "",
+): QuoteLine[] {
+  if (!quote) return failure ? [{ text: failure, strong: false }] : [];
+  if (stopCount < 2) return [{ text: quote.display, strong: true }];
+  if (quote.separate_value_q === undefined || quote.saving_q === undefined)
+    return [{ text: `Juntas: ${quote.display}`, strong: true }];
+  const separate = money(quote.separate_value_q);
+  if (quote.saving_q >= 0)
+    return [
+      { text: `Juntas: ${quote.display} ✔`, strong: true },
+      { text: `Separadas sairiam ${separate}`, strong: false },
+    ];
+  return [
+    { text: `Juntas: ${quote.display}`, strong: false },
+    { text: `Separadas sai mais barato: ${separate} ✔`, strong: true },
+  ];
+}
+
+/**
+ * "5 pedidos em 2 corridas · R$ 31,30": o total só quando TODAS as corridas
+ * cotaram (soma com buraco mente).
+ */
+export function callSummary(
+  orders: number,
+  rides: number,
+  quotes: readonly (EditingQuote | null)[],
+): string {
+  const head = `${orders} ${orders === 1 ? "pedido" : "pedidos"} em ${rides} ${rides === 1 ? "corrida" : "corridas"}`;
+  if (!quotes.length || quotes.length !== rides || quotes.some((quote) => !quote)) return head;
+  return `${head} · ${money(quotes.reduce((sum, quote) => sum + quote!.value_q, 0))}`;
+}
+
+// ── balanço por corrida ─────────────────────────────────────────────────────
+
+export interface RideFailure {
+  number: number;
+  refs: string[];
+  /** "A corrida B não abriu (A47, C03)" */
+  title: string;
+  /** A frase do servidor (ou a genérica, sem rede). */
+  detail: string;
+}
+
+/**
+ * Depois de uma chamada que falhou: seguir para a próxima corrida ou parar. A
+ * recusa do servidor (4xx) é DESTA corrida, e as outras seguem; sem rede ou com o
+ * servidor fora (5xx, status 0), a próxima falharia igual, e para.
+ */
+export function failureStops(status: number): boolean {
+  return !(status >= 400 && status < 500);
+}
+
+export function rideFailureTitle(number: number, codes: readonly string[]): string {
+  return `A corrida ${rideLetter(number)} não abriu (${codes.join(", ")})`;
 }
 
 function minutesUntil(iso: string, now: number): number | null {
@@ -447,4 +624,132 @@ export function toggleStop(
   if (at) at.refs = at.refs.filter((item) => item !== ref);
   mine.refs = [...mine.refs, ref];
   return { editing: rides, active, notice: "" };
+}
+
+// ── sugestões da casa (ride_plan, F5) ───────────────────────────────────────
+
+/** A sugestão do plano, como a página a lê (`RideSuggestionProjection`). */
+export interface RideSuggestion {
+  key: string;
+  refs: readonly string[];
+  codes: readonly string[];
+  places: string;
+  quoted: boolean;
+  suggested: boolean;
+  late_code: string;
+  late_minutes: number;
+  together_q: number | null;
+  minutes: number | null;
+  km: number | null;
+  with_return: boolean;
+  separate_q: number | null;
+  saving_q: number | null;
+}
+
+function kmText(km: number): string {
+  return `${km.toFixed(1).replace(".", ",")} km`;
+}
+
+/** "R$ 11,00 · 18 min · 7,4 km · ida e volta": o mesmo desenho da cotação da corrida. */
+function togetherDisplay(valueQ: number, minutes: number | null, km: number | null, withReturn: boolean): string {
+  return [
+    money(valueQ),
+    minutes !== null ? `${minutes} min` : "",
+    km !== null ? kmText(km) : "",
+    withReturn ? "ida e volta" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * A cotação da sugestão em duas linhas, a junta em destaque com o ✔ e a separada
+ * esmaecida (regra do dono, 16/11). Só leitura: quem decide é o gesto. Sem cotação,
+ * nenhuma linha (a tela diz que a central não cotou).
+ */
+export function suggestionQuoteLines(suggestion: RideSuggestion): QuoteLine[] {
+  if (!suggestion.quoted || suggestion.together_q === null || suggestion.separate_q === null) return [];
+  return quoteLines(
+    {
+      value_q: suggestion.together_q,
+      display: togetherDisplay(suggestion.together_q, suggestion.minutes, suggestion.km, suggestion.with_return),
+      stops: [...suggestion.refs],
+      separate_value_q: suggestion.separate_q,
+      saving_q: suggestion.saving_q ?? undefined,
+    },
+    suggestion.refs.length,
+  );
+}
+
+/** "C03 chega uns 6 min depois.": quem mais espera a mais por ir junto. */
+export function suggestionLate(suggestion: Pick<RideSuggestion, "late_code" | "late_minutes">): string {
+  if (!suggestion.late_code || suggestion.late_minutes < 1) return "";
+  return `${suggestion.late_code} chega uns ${suggestion.late_minutes} min depois.`;
+}
+
+/**
+ * As sugestões que a tela mostra: nenhuma com pedido que o operador já pôs numa
+ * corrida (aceitar soma, nunca apaga) e nenhuma que ele dispensou ("Agora não").
+ */
+export function visibleSuggestions(
+  suggestions: readonly RideSuggestion[],
+  editing: readonly EditingRide[],
+  dismissed: readonly string[],
+): RideSuggestion[] {
+  const taken = new Set(editing.flatMap((ride) => ride.refs));
+  return suggestions.filter(
+    (suggestion) => !dismissed.includes(suggestion.key) && suggestion.refs.every((ref) => !taken.has(ref)),
+  );
+}
+
+/**
+ * O título do cartão: "2 corridas sugeridas: 5 pedidos." Com mais de uma e TODAS
+ * cotadas, o total em duas linhas (juntas × separadas); soma com buraco mente.
+ */
+export function suggestionsHeadline(suggestions: readonly RideSuggestion[]): { title: string; lines: QuoteLine[] } {
+  const orders = suggestions.reduce((sum, item) => sum + item.refs.length, 0);
+  const rides = suggestions.length;
+  const title = `${rides} ${rides === 1 ? "corrida sugerida" : "corridas sugeridas"}: ${orders} pedidos.`;
+  if (rides < 2 || suggestions.some((item) => !item.quoted || item.together_q === null || item.separate_q === null))
+    return { title, lines: [] };
+  const together = suggestions.reduce((sum, item) => sum + item.together_q!, 0);
+  const separate = suggestions.reduce((sum, item) => sum + item.separate_q!, 0);
+  return {
+    title,
+    lines: quoteLines(
+      {
+        value_q: together,
+        display: money(together),
+        stops: suggestions.flatMap((item) => [...item.refs]),
+        separate_value_q: separate,
+        saving_q: separate - together,
+      },
+      orders,
+    ),
+  };
+}
+
+/** "Chamar as 2 corridas": só com mais de uma e todas cotadas e marcadas. */
+export function callAllLabel(suggestions: readonly RideSuggestion[]): string {
+  if (suggestions.length < 2 || suggestions.some((item) => !item.suggested)) return "";
+  return `Chamar as ${suggestions.length} corridas`;
+}
+
+/**
+ * As sugestões aceitas viram corridas em edição, cada uma com a próxima letra livre,
+ * SOMADAS às que o operador já monta. `null` quando faltam letras.
+ */
+export function ridesFromSuggestions(
+  suggestions: readonly RideSuggestion[],
+  free: readonly number[],
+  editing: readonly EditingRide[],
+): EditingRide[] | null {
+  const taken = editing.map((ride) => ride.number);
+  const rides: EditingRide[] = [];
+  for (const suggestion of suggestions) {
+    const number = nextFreeNumber(free, [...taken, ...rides.map((ride) => ride.number)]);
+    if (number === null) return null;
+    rides.push({ number, refs: [...suggestion.refs] });
+  }
+  return rides;
 }

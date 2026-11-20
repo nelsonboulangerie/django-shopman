@@ -520,7 +520,30 @@ const DELIVERIES = {
   machines: [],
   courier_on: true,
   maps_key: "",
+  // A corrida em grupo pelo protocolo de intenção: quem a tela leu e a revisão de cada um.
+  group_action: {
+    ref: "courier-ride", kind: "mutation", label: "Chamar corrida", enabled: true, reason: "",
+    method: "POST", idempotency: "required", confirmation: {},
+    payload_schema: {
+      expected_actor_id: 1,
+      base_revisions: { "WEB-20261116-0A47": "r-a47", "WEB-20261116-0C03": "r-c03", "WEB-20261116-0D12": "r-d12" },
+    },
+  },
+  // O plano da casa (`ride_plan`, F5): A47 e C03, prontos e vizinhos, cotados e mais
+  // baratos juntos. D12 está em preparo e nunca entra.
+  ride_plan: {
+    suggestions: [{
+      key: "WEB-20261116-0A47+WEB-20261116-0C03",
+      refs: ["WEB-20261116-0A47", "WEB-20261116-0C03"], codes: ["A47", "C03"], places: "Gleba Palhano",
+      quoted: true, suggested: true, late_code: "C03", late_minutes: 6,
+      together_q: 1650, minutes: 24, km: 5.7, with_return: false, separate_q: 2500, saving_q: 850,
+    }],
+    service: "taon", service_reason: "default",
+    service_options: [{ ref: "taon", name: "TaOn", kind: "machine", is_default: true }],
+  },
 };
+/** As corridas em grupo que a tela chamou (`POST /orders/courier-ride/`), na ordem. */
+const ridePosts = [];
 
 // A prévia da F4a (`MOCK_F4A=1`): o que a página passou a saber igual ao Painel.
 // Uma chamada sem resposta em Aguardando, a corrida que a TaOn parou de informar
@@ -578,6 +601,58 @@ function queueCard(ref) {
   return Object.values(QUEUE.queue).flat().find((card) => card && typeof card === "object" && card.ref === ref);
 }
 
+// F4b: a coluna Editando com duas entregas de cartão e duas maquininhas livres (uma
+// por corrida), para a tela e as capturas.
+function f4bDeliveries() {
+  return {
+    ...DELIVERIES,
+    waiting: [
+      ...DELIVERIES.waiting,
+      deliveryStop("WEB-20261116-0G15", "Gil", "Centro", -0.009, 0.006, { needs_machine: true, change_label: "Cartão na porta" }),
+      deliveryStop("WEB-20261116-0H20", "Helô", "Aeroporto", 0.006, -0.011, { needs_machine: true, change_label: "Cartão na porta" }),
+    ],
+    machines: [
+      { ref: "machine:azul", label: "Maquininha azul" },
+      { ref: "machine:verde", label: "Maquininha verde" },
+    ],
+  };
+}
+
+// A cotação da corrida em edição: uma parada R$ 12,50, cada parada a mais na mesma
+// corrida R$ 4,00 (o adapter mock do servidor). Com 2 ou mais, a comparação.
+function rideQuote(url) {
+  const asked = new URL(url, "http://mock").searchParams.getAll("refs");
+  if (!asked.length) return null;
+  // Como o servidor: as paradas na ordem da rota (vizinho mais próximo a partir da loja).
+  const known = new Map(f4bDeliveries().waiting.map((stop) => [stop.ref, stop]));
+  const left = [...asked];
+  const refs = [];
+  let here = [ORIGIN.latitude, ORIGIN.longitude];
+  const distance = (ref) => {
+    const stop = known.get(ref);
+    return stop ? (stop.latitude - here[0]) ** 2 + (stop.longitude - here[1]) ** 2 : Infinity;
+  };
+  while (left.length) {
+    const next = left.reduce((best, ref) => (distance(ref) < distance(best) ? ref : best), left[0]);
+    left.splice(left.indexOf(next), 1);
+    refs.push(next);
+    const stop = known.get(next);
+    if (stop) here = [stop.latitude, stop.longitude];
+  }
+  const value_q = 1250 + 400 * (refs.length - 1);
+  const minutes = 18 + 6 * (refs.length - 1);
+  const km = (4.2 + 1.5 * (refs.length - 1)).toFixed(1).replace(".", ",");
+  const money = (q) => `R$ ${Math.floor(q / 100)},${String(q % 100).padStart(2, "0")}`;
+  const compare = refs.length > 1 ? { separate_value_q: 1250 * refs.length, saving_q: 1250 * refs.length - value_q } : {};
+  return {
+    estimate: {
+      value_q, minutes, km: Number(km.replace(",", ".")), with_return: false, stops: refs, ...compare,
+      display: `${money(value_q)} · ${minutes} min · ${km} km`,
+      route: refs.map((ref) => ref.slice(-3)).join(" → "),
+    },
+  };
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -592,7 +667,21 @@ const server = createServer((req, res) => {
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   const cancelScenario = /(?:^|;\s*)e2e_deliveries=cancel(?:;|$)/.test(req.headers.cookie || "");
   if (cancelScenario && /\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, deliveriesProjection());
-  if (/\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
+  if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
+  if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });
+  if (/\/e2e\/deliveries\/rides\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") ridePosts.length = 0;
+    return json(res, 200, { rides: ridePosts });
+  }
+  if (/\/orders\/courier-ride\/?(\?|$)/.test(url)) {
+    if (req.method !== "POST") return json(res, 200, { outcome: "not_found" });
+    return void readBody(req).then((body) => {
+      ridePosts.push(body);
+      json(res, 200, { outcome: "applied", refs: body.refs, directive_id: ridePosts.length, status: "queued",
+        ride_number: body.ride_number ?? null, ride_letter: "" });
+    });
+  }
   const promiseVariant = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_promise=(risk|closed)(?:;|$)/)?.[1] ?? "";
   const promiseScenario = Boolean(promiseVariant);
   if (promiseScenario && /\/e2e\/promise\/reset\/?(\?|$)/.test(url)) {

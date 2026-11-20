@@ -428,15 +428,15 @@ def estimate_for_ride(orders) -> dict | None:
     return {**estimate, "stops": [order.ref for order, _ in route]}
 
 
-def estimate_for_order(order, *, store: bool = False) -> dict | None:
-    """Cotação da corrida (custo interno — o preço ao cliente segue nas faixas/zonas).
+def estimate_for_order(order) -> dict | None:
+    """Cotação da corrida (custo interno; o preço ao cliente segue nas faixas/zonas). Só lê.
 
     Best-effort: sem adapter, sem coordenadas ou com a Machine fora → None.
     Cota com o mesmo retorno que a abertura vai pedir (:func:`needs_return`).
-    Cache de 10 min por destino e retorno (a origem é sempre a loja). ``store=True``
-    grava o resultado em ``Order.data["courier"]["estimate"]``.
+    Cache de 10 min por destino e retorno (a origem é sempre a loja). Quem grava
+    (o despacho) toma a revisão ANTES de cotar e chama :func:`store_estimate`:
+    um GET que cota nunca escreve no pedido.
     """
-    base_revision = dispatch_revision(order) if store else None
     adapter = delivery_services.courier_backend()
     if adapter is None or get_fulfillment_type(order) != "delivery":
         return None
@@ -466,9 +466,6 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         estimate = {"value_q": result.value_q, "minutes": result.minutes, "km": result.km,
                     "with_return": with_return}
         cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
-
-    if store:
-        store_estimate(order, estimate, expected_revision=base_revision)
     return estimate
 
 
@@ -486,7 +483,8 @@ def store_estimate(order, estimate, *, expected_revision, require_quotable=False
     if require_quotable and not can_quote(order):
         raise OrderStateConflict("Confira o estado do pedido e da corrida antes de cotar.")
     block = dict(get_block(order))
-    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km", "with_return") if key in estimate}
+    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km", "with_return", "stops")
+                         if key in estimate}
     _save_block(order, block, emit={"kind": "estimate"})
 
 
@@ -2264,6 +2262,74 @@ def sync_interval(block: dict) -> int:
 def ride_open_too_long(block: dict) -> bool:
     """A corrida segue aberta além da idade em que uma corrida real dura."""
     return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES and poll_expired(block)
+
+
+# ── O que o cliente lê antes da coleta (L2 da revisão das Entregas) ─
+
+#: Procurando entregador há mais que isso: no Gestor a corrida vira "Ninguém
+#: aceitou ainda", e o cliente lê "Está demorando mais que o normal". Um número só
+#: para as duas telas, para elas nunca discordarem sobre o mesmo minuto.
+LATE_SEARCH_MINUTES = 10
+
+
+def driver_first_name(name: str) -> str:
+    """"Diego" de "DIEGO SOUZA LIMA": o cliente chama o entregador pelo primeiro nome."""
+    parts = str(name or "").split()
+    token = parts[0] if parts else ""
+    if token.isupper() and len(token) > 1:
+        token = token[:1] + token[1:].lower()
+    return token
+
+
+def customer_wait(block: dict) -> dict:
+    """Onde a corrida está, no que importa ao cliente entre a chamada e a coleta.
+
+    ``{"stage", "driver", "pickup_eta_at"}``. ``stage``:
+
+    - ``""``: não há corrida viva (nunca chamada, cancelada ou encerrada); a
+      página diz só que o pedido está pronto;
+    - ``"called"``: chamada, ninguém a caminho ainda;
+    - ``"late"``: ninguém aceitou há :data:`LATE_SEARCH_MINUTES` ou mais, ou o
+      serviço desistiu de achar alguém;
+    - ``"replaced"``: o entregador que aceitou desistiu e outro está sendo
+      procurado (``driver`` é o nome de quem desistiu, que o cliente já leu);
+    - ``"coming"``: alguém aceitou e vai até a loja (``pickup_eta_at`` quando o
+      serviço informa a chegada);
+    - ``"at_store"``: o entregador está na loja.
+
+    Lê o estado NEUTRO (``delivery_services.ride_state``), então vale para a
+    TaOn e para os entregadores da casa (DEV-2026-030) sem olhar a letra crua.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.protocols import RideState
+
+    empty = {"stage": "", "driver": "", "pickup_eta_at": ""}
+    if not isinstance(block, dict) or not block.get("id_mch"):
+        return empty
+    state = delivery_services.ride_state(block)
+    driver = block.get("driver") if isinstance(block.get("driver"), dict) else {}
+    name = driver_first_name(driver.get("name") or "")
+    if state in (RideState.CANCELLED, RideState.DONE):
+        return empty
+    if state == RideState.NOT_SERVED:
+        return {**empty, "stage": "late"}
+    if state in (RideState.ASSIGNED, RideState.AT_STORE, RideState.ON_ROUTE):
+        progress = progress_view(block)
+        if state != RideState.ASSIGNED or progress.get("arrived_pickup_at"):
+            return {**empty, "stage": "at_store", "driver": name}
+        return {"stage": "coming", "driver": name, "pickup_eta_at": progress.get("pickup_eta_at") or ""}
+    # Procurando (inclusive trocando de entregador ou junto com outra corrida),
+    # ou letra que a casa ainda não conhece: há corrida chamada, sem dono.
+    reopened = reopen_view(block)
+    if reopened["at"]:
+        return {**empty, "stage": "replaced", "driver": driver_first_name(reopened["driver"])}
+    if state == RideState.GROUPED:
+        return {**empty, "stage": "called"}
+    called = parse_datetime(str(block.get("called_at") or block.get("requested_at") or ""))
+    if called is not None and timezone.now() - called >= timedelta(minutes=LATE_SEARCH_MINUTES):
+        return {**empty, "stage": "late"}
+    return {**empty, "stage": "called"}
 
 
 def vehicle_line(driver: dict) -> str:

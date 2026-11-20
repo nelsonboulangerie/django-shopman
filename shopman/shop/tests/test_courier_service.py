@@ -719,7 +719,8 @@ def test_sync_slows_down_on_a_ride_older_than_the_cap(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_estimate_for_order_caches_and_stores(shop):
     order = _delivery_order()
-    est = courier.estimate_for_order(order, store=True)
+    est = courier.estimate_for_order(order)
+    courier.store_estimate(order, est, expected_revision=courier.dispatch_revision(order))
     assert est == {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": False}
     order.refresh_from_db()
     assert courier.get_block(order)["estimate"] == est
