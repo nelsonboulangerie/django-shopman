@@ -1,7 +1,7 @@
 import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 
 const appPort = 33012;
-const backendPort = 38792;
+const backendPort = 28792;
 
 export default defineOperatorVisualConfig({
   app: "pos-nuxt",

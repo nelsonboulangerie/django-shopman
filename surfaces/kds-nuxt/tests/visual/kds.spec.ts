@@ -15,7 +15,7 @@ import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright
 //     quadro da mesa não aparece nem antes de hidratar.
 
 // A mesma porta do mock que o `playwright.visual.config.ts` sobe.
-const BACKEND_PORT = Number(process.env.KDS_VISUAL_BACKEND_PORT || 38797);
+const BACKEND_PORT = Number(process.env.KDS_VISUAL_BACKEND_PORT || 28797);
 
 const VIEWPORTS = [
   { id: "390", width: 390, height: 844, touch: true },

@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 //   seguem o gravado nos três.
 
 const here = dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.MOCK_PORT || 38794);
+const port = Number(process.env.MOCK_PORT || 28794);
 const recorded = JSON.parse(readFileSync(join(here, "fixtures", "recorded-django.json"), "utf8"));
 
 function recordedFor(url) {
