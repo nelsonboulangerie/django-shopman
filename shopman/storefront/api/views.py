@@ -83,7 +83,7 @@ def _session_customer_identity(session_key: str) -> dict:
 STOCK_REFUSAL_CODE = "insufficient_supply"
 
 
-def _stock_refusal_payload(exc: Exception) -> dict | None:
+def _stock_refusal_payload(exc: Exception, *, session_key: str = "", request=None) -> dict | None:
     """A recusa de estoque no envio, com o item (plano EXCELENCIA-STOREFRONT, P1-11).
 
     A recusa nasce sabendo qual item faltou, mas o mapeamento de erro de
@@ -93,6 +93,12 @@ def _stock_refusal_payload(exc: Exception) -> dict | None:
     (``detail``, ``field``, ``errors``) mais ``error_code`` e ``context``, como
     as outras recusas com destino (``total_changed``). A frase é da loja:
     sacola, nunca carrinho.
+
+    ``stock_issue`` é a folha de alternativas pronta (#2687): o mesmo corpo do
+    409 da sacola, lido da linha recusada (o que ainda dá para levar, os
+    substitutos, o aviso de volta), para a tela abrir a folha sem sair do
+    checkout. Vem ``None`` quando a linha não pôde ser lida; a tela fica com o
+    caminho da sacola.
     """
     # Pelo código da recusa, sem importar o Orderman: a API da loja não fala com o
     # Core direto (``test_import_boundaries``), e o código é o contrato da recusa.
@@ -117,7 +123,27 @@ def _stock_refusal_payload(exc: Exception) -> dict | None:
             "requested_qty": str(context.get("requested_qty") or ""),
             "is_paused": str(context.get("error_code") or "") == "SKU_PAUSED",
         },
+        "stock_issue": _stock_issue(sku, name=name, session_key=session_key, request=request),
     }
+
+
+def _stock_issue(sku: str, *, name: str, session_key: str, request) -> dict | None:
+    """A folha de alternativas da linha que o envio recusou (``cart.line_shortage``)."""
+    if not sku or not session_key:
+        return None
+    try:
+        from shopman.shop.services.cart import line_shortage
+
+        from .surface import _stock_error_payload
+
+        shortage = line_shortage(session_key=session_key, channel_ref=CHANNEL_REF, sku=sku)
+        if shortage is None:
+            return None
+        return _stock_error_payload(shortage, request=request, name=name)
+    except Exception:
+        # A recusa já diz o item e leva à sacola; sem a folha, ela continua útil.
+        logger.warning("checkout_stock_issue_failed sku=%s", sku, exc_info=True)
+        return None
 
 
 def _product_name(sku: str) -> str:
@@ -575,7 +601,7 @@ class CheckoutView(APIView):
             )
         except Exception as exc:
             logger.debug("views.post degraded; using fallback", exc_info=True)
-            stock_refusal = _stock_refusal_payload(exc)
+            stock_refusal = _stock_refusal_payload(exc, session_key=session_key, request=request)
             if stock_refusal is not None:
                 return Response(stock_refusal, status=status.HTTP_400_BAD_REQUEST)
             mapped = checkout_service.map_checkout_error(exc)

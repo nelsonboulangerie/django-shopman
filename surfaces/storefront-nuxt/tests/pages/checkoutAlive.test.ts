@@ -1,6 +1,7 @@
 // WP-L05 do plano EXCELENCIA-STOREFRONT: o checkout que não envelhece e diz do dinheiro.
 //   P1-06: a revisão diz o que acontece com o dinheiro, na forma de pagamento escolhida.
 //   P1-11: faltou estoque no envio: a revisão fecha, a tela diz qual item e leva à sacola.
+//   #2687: com a folha pronta na recusa, as alternativas abrem na própria tela.
 //   P2-08: "Hoje" é o hoje da loja (servidor), e a tela refaz a consulta ao voltar à aba.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
@@ -9,6 +10,7 @@ import { mountSuspended, mockNuxtImport, registerEndpoint } from '@nuxt/test-uti
 import { setResponseStatus } from 'h3'
 
 import CheckoutPage from '~/pages/finalizar.vue'
+import { useCartState } from '~/composables/useCartState'
 import type { CheckoutProjection } from '~/types/shopman'
 
 const { navigateToMock } = vi.hoisted(() => ({ navigateToMock: vi.fn() }))
@@ -104,6 +106,8 @@ beforeAll(() => {
 let served: CheckoutProjection
 let checkoutGets = 0
 let checkoutPosts = 0
+// A folha de alternativas que a recusa traz (#2687); null = servidor sem a folha.
+let stockIssue: Record<string, unknown> | null = null
 let mounted: { unmount: () => void } | null = null
 afterEach(() => { mounted?.unmount(); mounted = null })
 
@@ -121,7 +125,8 @@ registerEndpoint('/api/v1/checkout/', {
       field: 'checkout',
       errors: { checkout: 'Tabatière ficou indisponível antes de concluirmos o seu pedido.' },
       error_code: 'insufficient_supply',
-      context: { sku: 'TABAT', name: 'Tabatière', requested_qty: '1', is_paused: false }
+      context: { sku: 'TABAT', name: 'Tabatière', requested_qty: '1', is_paused: false },
+      stock_issue: stockIssue
     }
   }
 })
@@ -163,6 +168,8 @@ beforeEach(() => {
   document.body.innerHTML = ''
   store.clear()
   served = projection()
+  stockIssue = null
+  useCartState().clearCart()
   clearNuxtData()
 })
 
@@ -314,6 +321,74 @@ describe('checkout: faltou estoque no envio', () => {
     })
     // A revisão fechou: a recusa tem um lugar só.
     await vi.waitFor(() => { expect(document.body.querySelector('[data-review-items]')).toBeNull() })
+  })
+})
+
+describe('checkout: faltou estoque no envio, com as alternativas na própria tela (#2687)', () => {
+  async function sendAndGetRefused (page: Awaited<ReturnType<typeof mountCheckout>>) {
+    await openReview(page)
+    const send = Array.from(document.body.querySelectorAll('button')).find(button => button.textContent?.includes('Enviar pedido'))
+    send!.click()
+    await vi.waitFor(() => { expect(checkoutPosts).toBe(1) })
+    await vi.waitFor(() => { expect(page.find('[data-checkout-stock-refusal]').exists()).toBe(true) })
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    stockIssue = {
+      title: 'Revise este item', error_code: 'insufficient_supply', sku: 'TABAT', name: 'Tabatière',
+      requested_qty: 1, available_qty: 0, line_qty: null, line_id: 'L1', is_notifiable: true,
+      substitutes: [{ sku: 'CROIS', name: 'Croissant', price_q: 800, price_display: 'R$ 8,00', can_order: true, available_qty: 9 }],
+      actions: []
+    }
+  })
+
+  it('a folha de alternativas sobe quando a revisão fecha, mirando a linha recusada', async () => {
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await sendAndGetRefused(page)
+
+    const { cartIssue } = useCartState()
+    await vi.waitFor(() => { expect(cartIssue.value).not.toBeNull() })
+    expect(cartIssue.value).toMatchObject({ sku: 'TABAT', line_id: 'L1', available_qty: 0, isNotifiable: true })
+    expect(cartIssue.value?.substitutes.map(sub => sub.sku)).toEqual(['CROIS'])
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('o aviso traz o botão que reabre a folha, e não manda à sacola', async () => {
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await sendAndGetRefused(page)
+    const { cartIssue, dismissCartIssue } = useCartState()
+    await vi.waitFor(() => { expect(cartIssue.value).not.toBeNull() })
+    dismissCartIssue()
+
+    const alert = page.find('[data-checkout-stock-refusal]')
+    expect(alert.text()).toContain('Veja o que dá para levar no lugar. O resto do pedido continua como você deixou.')
+    expect(alert.findAll('a').find(link => link.text().includes('Abrir a sacola'))).toBeUndefined()
+    await alert.find('[data-checkout-stock-alternatives]').trigger('click')
+
+    expect(cartIssue.value).toMatchObject({ sku: 'TABAT', line_id: 'L1' })
+  })
+
+  it('a linha recusada mudou na sacola: o checkout relê e o aviso sai', async () => {
+    draft('pix')
+    const page = await mountCheckout()
+    mounted = page
+    await sendAndGetRefused(page)
+    const { setFromServer } = useCartState()
+    const before = checkoutGets
+
+    // A folha levou a cliente a trocar: a sacola do servidor já não tem a linha L1.
+    const swapped = projection().cart as unknown as Record<string, unknown>
+    const croissant = { ...(swapped.items as Array<Record<string, unknown>>)[0], line_id: 'L2', sku: 'CROIS', name: 'Croissant' }
+    served = projection({ cart: { ...swapped, items: [croissant], revision: 2 } })
+    setFromServer(served.cart)
+
+    await vi.waitFor(() => { expect(checkoutGets).toBeGreaterThan(before) })
+    await vi.waitFor(() => { expect(page.find('[data-checkout-stock-refusal]').exists()).toBe(false) })
   })
 })
 
