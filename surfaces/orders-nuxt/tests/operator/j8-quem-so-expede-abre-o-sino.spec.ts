@@ -46,6 +46,8 @@ test("J8: quem só expede abre um aviso de pedido no sino e lê por que o detalh
   await open.click();
   await settled(gestor);
   await expect(gestor.getByText("Sua conta não abre o detalhe do pedido")).toBeVisible({ timeout: 60_000 });
+  // A frase que segue ("continua no painel da Saída") é falsa para o pedido cancelado:
+  // #2879. A jornada confere só o que é verdade em todo estado.
   const description = gestor.getByText(`O detalhe é de quem gerencia pedidos. O pedido ${shortCode(ref)}`, { exact: false });
   await expect(description).toBeVisible();
   await expect(gestor.getByRole("link", { name: "Abrir a Saída" })).toBeVisible();
