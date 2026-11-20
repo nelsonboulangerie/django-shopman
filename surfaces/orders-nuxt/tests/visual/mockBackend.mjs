@@ -257,9 +257,9 @@ function handoffAlert() {
   return {
     pk: 970, rev: 0, type: "concierge_handoff", type_label: "WhatsApp: conversa para a equipe",
     severity: "error", severity_label: "Erro", audience: "orders",
-    message: "Falar com uma pessoa, urgência: agora.\nPediu para falar com alguém da equipe.\nCliente: Ana.\nResponda pelo Live Chat do ManyChat.",
+    message: "“Quero falar com um humano” ·\u00a0há\u00a03\u00a0min",
     order_ref: "", created_at_display: "hoje às 22h16",
-    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Cliente esperando atendente",
+    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Ana pediu para falar com alguém da equipe",
     on_screen: true, respond_by_iso: "", deadline_kind: "",
     actions: [
       contextAction(970, "live-chat", "Responder no Live Chat", "https://app.manychat.com/fb486126/chat/1234567890", 9),

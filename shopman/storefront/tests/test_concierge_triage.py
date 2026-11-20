@@ -140,11 +140,13 @@ def test_complaint_card_reaches_the_orders_bell_without_an_order(conversation, o
     assert conversation.handoff_reason == "Reclamação · agora"
     bell = alert_service.list_active_alerts(scope="orders")
     assert [alert.type for alert in bell] == ["concierge_handoff"]
+    # Só a fala dela, entre aspas (coordenação, 20/11/2026): quem e por quê vão no
+    # título, que a projeção escreve; onde responder, no botão.
     card = bell[0].message
-    assert card.startswith("Reclamação, urgência: agora.")
-    assert "meu pedido veio queimado" in card
-    assert "Cliente: Ana." in card
-    assert "Live Chat do ManyChat" in card
+    assert card == "“meu pedido veio queimado”"
+    from shopman.backstage.projections.alerts import handoff_cards
+
+    assert handoff_cards([bell[0].pk])[bell[0].pk]["subject"] == "Ana fez uma reclamação"
 
 
 def test_job_goes_to_the_other_desk_and_stays_out_of_the_bell(conversation, outbox):

@@ -474,11 +474,6 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
     return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
 
 
-#: O cartão de quando o cliente escreve com a conversa na equipe (o sino do Gestor).
-WROTE_WHILE_WITH_TEAM = (
-    "O cliente escreveu de novo, e a conversa está com a equipe. Responda pelo Live Chat "
-    "do ManyChat, ou devolva a conversa ao concierge."
-)
 
 
 def _wrote_while_with_team(conversation: Conversation, binding: ConversationBinding) -> None:
@@ -495,7 +490,13 @@ def _wrote_while_with_team(conversation: Conversation, binding: ConversationBind
         logger.warning(
             "concierge.handoff.reassert_unconfirmed conversation=%s binding=%s", conversation.pk, binding.pk
         )
-    _alert(conversation, "concierge_handoff", WROTE_WHILE_WITH_TEAM)
+    from .triage import customer_quote
+
+    # A fala nova, entre aspas: o título e o "há N min" saem da projeção, pela conversa.
+    latest = (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND).order_by("-pk").values_list("text", flat=True).first()
+    )
+    _alert(conversation, "concierge_handoff", customer_quote(latest or "") or "Escreveu de novo.")
 
 
 def _enqueue_turn(conversation: Conversation, binding: ConversationBinding) -> None:
@@ -1747,12 +1748,16 @@ def _triage_alert(conversation: Conversation, triage, *, synced: bool) -> None:
     pedido na conversa; ``concierge_other_desk`` fica na operação geral, no
     Admin, e não acorda o balcão.
     """
-    from .triage import OTHER_DESK, alert_message
+    from .triage import OTHER_DESK, alert_message, handoff_message
 
     alert_type = "concierge_other_desk" if triage.destination == OTHER_DESK else "concierge_handoff"
-    message = alert_message(conversation, triage)
+    # O handoff traz só a fala do cliente: o título (quem e por quê) a projeção escreve,
+    # e o botão diz onde responder. A outra mesa segue com o resumo para o Admin.
+    message = handoff_message(conversation) if alert_type == "concierge_handoff" else alert_message(conversation, triage)
     if not synced:
-        message += "\nA marca de atendimento humano não foi confirmada no ManyChat em todos os vínculos."
+        message = "\n".join(
+            line for line in (message, "O ManyChat não confirmou que a conversa passou para a equipe.") if line
+        )
     _conversation_card(
         conversation,
         alert_type,

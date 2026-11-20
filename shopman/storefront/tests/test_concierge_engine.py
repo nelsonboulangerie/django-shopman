@@ -1759,7 +1759,7 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
     alert = OperatorAlert.objects.get(type="concierge_handoff")
     assert alert.acknowledged is False
     assert alert.audience == "orders"
-    assert alert.message.startswith("Falar com uma pessoa, urgência: agora.")
+    assert alert.message == "“quero falar com alguém”"
 
     # Com a equipe na conversa, a próxima mensagem fica na transcrição e o bot cala; a
     # marca do Live Chat é ligada de novo (ela chegou ao bot, então estava desligada).

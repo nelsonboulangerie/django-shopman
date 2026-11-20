@@ -88,13 +88,25 @@ for (const viewport of VIEWPORTS) {
       // 1. O aviso no topo, cor de erro, com a causa.
       await open(page, "concierge-handoff", viewport);
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /light/);
-      const notice = page.locator("[data-page-header-alert]", { hasText: "Cliente esperando atendente" });
+      const notice = page.locator("[data-page-header-alert]", { hasText: "Ana pediu para falar com alguém da equipe" });
       await expect(notice).toBeVisible();
-      await expect(notice).toContainText("Responda pelo Live Chat");
-      await expect(notice).not.toContainText("/admin/");
+      // Só o que ela escreveu e há quanto tempo (coordenação, 20/11/2026).
+      await expect(notice).toContainText("“Quero falar com um humano” ·\u00a0há\u00a03\u00a0min");
+      for (const noise of ["urgência", "Cliente:", "Responda pelo", "/admin/"]) {
+        await expect(notice).not.toContainText(noise);
+      }
+      await expect(notice.getByRole("link", { name: "Responder no Live Chat" })).toHaveAttribute(
+        "href", "https://app.manychat.com/fb486126/chat/1234567890",
+      );
       await expect(notice.getByRole("link", { name: "Abrir conversa" })).toHaveAttribute(
         "href", "https://admin.boulangerie.com.br/admin/shop/conversation/2/change/",
       );
+      if (viewport.width < 768) {
+        // No celular o aviso vem DEPOIS das abas (as abas são barra; o aviso, o 1º conteúdo).
+        const tabs = page.getByText("Em preparo", { exact: false }).first();
+        const [tabBox, noticeBox] = [await tabs.boundingBox(), await notice.boundingBox()];
+        expect(tabBox && noticeBox && noticeBox.y >= tabBox.y + tabBox.height).toBeTruthy();
+      }
       await shot(page, `${id}-1-aviso-no-topo`);
       await audit(page, "[data-page-header-alerts]", `${id}-1-aviso-no-topo`);
 
@@ -117,6 +129,7 @@ for (const viewport of VIEWPORTS) {
         await trigger.click();
       }
       await expect(panel).toContainText("conversa para a equipe");
+      await expect(panel.getByRole("link", { name: /Responder no Live Chat/ }).first()).toBeVisible();
       await expect(panel.getByRole("link", { name: /Abrir conversa/ }).first()).toBeVisible();
       await shot(page, `${id}-3-cartao-no-sino`);
     });

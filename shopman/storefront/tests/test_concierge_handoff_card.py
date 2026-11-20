@@ -155,3 +155,43 @@ def test_the_integrations_admin_saves_the_manychat_account(surface, admin_client
     page = admin_client.get(url)
     assert page.status_code == 200
     assert "Conta do ManyChat (Live Chat)" in page.content.decode()
+
+
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "human_return_enabled": True})
+def test_the_card_says_who_and_what_she_wrote_and_nothing_else(conversation, outbox):  # noqa: F811
+    """Coordenação, 20/11/2026: título "Ana pediu para falar com alguém da equipe"; corpo só
+    com o que ela escreveu, entre aspas, e há quanto tempo. Nada de "urgência: agora",
+    "Cliente: Ana" ou "Responda pelo Live Chat"."""
+    from shopman.backstage.projections.alerts import build_operator_alerts_projection
+    from shopman.backstage.services import alerts as alert_service
+
+    _to_team(conversation, "Quero falar com um humano", "h9")
+
+    [row] = build_operator_alerts_projection(
+        alerts=list(_cards()), counts=alert_service.active_counts(scope="orders"), surface="orders"
+    ).alerts
+    assert row.subject == "Ana pediu para falar com alguém da equipe"
+    assert row.message.replace("\u00a0", " ") in {
+        "“Quero falar com um humano” · agora há pouco", "“Quero falar com um humano” · há 1 min",
+    }
+    for noise in ("urgência", "Cliente:", "Responda pelo", "Live Chat"):
+        assert noise not in row.message
+
+
+def test_after_the_verification_deadline_the_title_says_since_when(conversation):  # noqa: F811
+    from datetime import datetime
+
+    from shopman.utils.formatting import format_clock
+
+    from shopman.backstage.projections.alerts import handoff_cards
+
+    opened = "2026-11-20T17:22:00+00:00"
+    card = OperatorAlert.objects.create(type="concierge_handoff", severity="error", message="“tem estacionamento?”")
+    Conversation.objects.filter(pk=conversation.pk).update(flags={
+        "alerts": {"concierge_handoff": card.pk},
+        "triage": {"intent": "human", "escalated_by": "verification_timeout"},
+        "verification": {"opened_at": opened},
+    })
+
+    clock = format_clock(datetime.fromisoformat(opened))
+    assert handoff_cards([card.pk])[card.pk]["subject"] == f"Ana espera a resposta da equipe desde {clock}"
