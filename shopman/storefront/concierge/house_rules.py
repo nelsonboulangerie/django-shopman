@@ -421,6 +421,11 @@ _IDENTITY_PATTERNS = _compile(
     r"pessoa(?:\s+de\s+verdade|\s+real)?|humano|humana|gente\s+de\s+verdade|atendente\s+virtual|"
     r"assistente\s+virtual|automatico|automatica|resposta\s+automatica)\b",
     r"\b(?:qual|como)\s+(?:e\s+)?(?:o\s+)?(?:seu|teu)\s+nome\b|\bcomo\s+(?:voce|vc)\s+se\s+chama\b",
+    # "Com quem eu falo?", "quem é você?", "quem tá falando?" (conversa real, 20/11/2026: a
+    # triagem levava à equipe o que é a pergunta de quem atende).
+    r"\bcom\s+quem\s+(?:eu\s+)?(?:falo|estou\s+falando|to\s+falando|ta\s+falando|converso|estou\s+conversando)\b",
+    r"\bquem\s+(?:e|eh)\s+(?:voce|vc|tu)\b|\bquem\s+(?:esta|ta)\s+(?:falando|respondendo|digitando)\b",
+    r"\b(?:e|eh|isso\s+e|aqui\s+e)\s+(?:um\s+)?(?:atendimento|mensagem|resposta)\s+automatic[oa]\b",
 )
 _DENIAL_PATTERNS = _compile(
     r"\bsou\s+(?:uma?\s+)?(?:pessoa|humana?|atendente\s+de\s+verdade|gente\s+de\s+verdade)\b",
@@ -430,6 +435,14 @@ _DENIAL_PATTERNS = _compile(
 
 def asks_identity(text: str) -> bool:
     return bool(_hits(_IDENTITY_PATTERNS, fold(text)))
+
+
+def answers_identity(text: str) -> bool:
+    """A R8 responde a fala: pergunta de quem atende, sem desconto (R7, que vem antes) e
+    sem pedido de atendimento humano junto ("você é robô? quero falar com alguém" é da equipe)."""
+    from .handoff import classify_handoff_request
+
+    return asks_identity(text) and not asks_negotiation(text) and not classify_handoff_request(text)
 
 
 def _check_denial(text: str, ctx: ReplyContext) -> list[str]:
@@ -941,7 +954,7 @@ def fixed_reply_for(customer_text: str, *, shop_name: str = "", copy=None) -> tu
 
     for rule_id, matches, key in (
         ("R7", asks_negotiation, NEGOTIATION_COPY_KEY),
-        ("R8", asks_identity, IDENTITY_COPY_KEY),
+        ("R8", answers_identity, IDENTITY_COPY_KEY),
     ):
         if matches(customer_text):
             text = (copy(key) or "").replace("{shop_name}", shop_name or "a casa").strip()
