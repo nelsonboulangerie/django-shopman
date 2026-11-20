@@ -86,6 +86,7 @@ from .feeds import (
     FeedRotationView,
     FeedSwitchView,
 )
+from .house_couriers import HouseCourierRideView, HouseCourierShiftView, HouseCouriersView
 from .hub import HubView
 from .ifood_reviews import (
     IFoodReviewDetailView,
@@ -801,6 +802,11 @@ urlpatterns = [
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
     path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
     path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
+    # Os entregadores da casa: quem leva, enviar a corrida e a escala de hoje (M3, #2526).
+    path("deliveries/couriers/", HouseCouriersView.as_view(), name="api-backstage-house-couriers"),
+    path("deliveries/couriers/ride/", HouseCourierRideView.as_view(), name="api-backstage-house-courier-ride"),
+    path("deliveries/couriers/<str:ref>/shift/", HouseCourierShiftView.as_view(),
+         name="api-backstage-house-courier-shift"),
     path("deliveries/<str:ride>/driver-photo/", DeliveryDriverPhotoView.as_view(),
          name="api-backstage-delivery-driver-photo"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
