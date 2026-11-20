@@ -29,8 +29,9 @@ ROUTE_KEYS = (DEFAULT_ROUTE, *ai.PURPOSES)
 
 ROUTE_LABELS = {DEFAULT_ROUTE: "Padrão: as funções sem rota própria", **ai.PURPOSES}
 
-#: O host de cada fornecedor da tabela de preços: modelo de um não roda na conexão do outro.
-VENDOR_HOSTS = {"claude-": "api.anthropic.com", "deepseek-": "api.deepseek.com"}
+#: O fornecedor de cada família de modelo da tabela de preços: modelo de um não roda na
+#: conexão do outro. O nome é o do domínio do provedor; o endereço mesmo só a porta conhece.
+MODEL_VENDORS = {"claude-": "anthropic", "deepseek-": "deepseek"}
 
 SHADOW_ON = "Ligou a decisão em sombra"
 SHADOW_OFF = "Desligou a decisão em sombra"
@@ -192,15 +193,30 @@ def set_initial(form) -> None:
         form.fields[connection_field(key)].help_text = status_html(key)
 
 
-def _vendor_host(model: str) -> str:
-    for prefix, host in VENDOR_HOSTS.items():
+def _model_vendor(model: str) -> str:
+    for prefix, vendor in MODEL_VENDORS.items():
         if model.startswith(prefix) and model in LLM_PRICES:
-            return host
+            return vendor
     return ""
 
 
-def _connection_host(connection) -> str:
-    return (urlparse((connection.base_url or "").strip()).hostname or "api.anthropic.com").lower()
+def _vendor_of_host(host: str) -> str:
+    """O nome do provedor pelo domínio do endereço: o rótulo antes do sufixo."""
+    labels = host.lower().split(".")
+    return labels[-2] if len(labels) >= 2 else ""
+
+
+def _known_vendors() -> dict[str, str]:
+    """Provedor → host, dos endereços que a porta de IA conhece (``ai.EXTRAS_BY_HOST``)."""
+    return {_vendor_of_host(host): host for host in ai.EXTRAS_BY_HOST}
+
+
+def _connection_vendor(connection) -> str:
+    """O provedor da conexão. Endereço vazio é o padrão da porta: o host que aceita todos os extras."""
+    host = urlparse((connection.base_url or "").strip()).hostname or ""
+    if not host:
+        host = next((known for known, extras in ai.EXTRAS_BY_HOST.items() if extras == ai.EXTRAS), "")
+    return _vendor_of_host(host)
 
 
 def clean(form, cleaned_data: dict) -> None:
@@ -222,13 +238,14 @@ def clean(form, cleaned_data: dict) -> None:
         if not (ref and model):
             continue
         connection = AIConnection.objects.filter(ref=ref).first()
-        vendor = _vendor_host(model)
-        host = _connection_host(connection) if connection is not None else ""
-        # Só os dois fornecedores conhecidos: endereço fora da tabela pode servir qualquer modelo.
-        if vendor and host in VENDOR_HOSTS.values() and host != vendor:
+        vendor = _model_vendor(model)
+        have = _connection_vendor(connection) if connection is not None else ""
+        known = _known_vendors()
+        # Só provedores que a porta conhece: endereço fora da tabela pode servir qualquer modelo.
+        if vendor and have in known and have != vendor:
             form.add_error(
                 model_field(key),
-                f"O modelo {model} não roda na conexão {connection.name} ({host}). "
+                f"O modelo {model} não roda na conexão {connection.name} ({known[have]}). "
                 "Escolha um modelo dessa conexão, ou outra conexão.",
             )
 
