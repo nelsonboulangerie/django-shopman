@@ -214,8 +214,33 @@ function verificationAlert(late) {
   };
 }
 
+// A Concierge atendendo sem modelo (dono, 19/11/2026): um aviso por causa, cor de erro,
+// também no topo da tela (`on_screen`).
+function noModelAlert() {
+  return {
+    pk: 960, rev: 0, type: "concierge_no_model", type_label: "WhatsApp: Concierge sem modelo",
+    severity: "error", severity_label: "Erro", audience: "orders",
+    message: "A Concierge está atendendo sem modelo: responde o simples e manda para a equipe o que não entende. Causa: a conexão de IA da leitura está sem chave (Admin, Conexões de IA).",
+    order_ref: "", created_at_display: "hoje às 21h10",
+    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Concierge sem modelo",
+    on_screen: true, respond_by_iso: "", deadline_kind: "",
+    actions: acknowledged.has(960) ? [] : [{
+      ref: "acknowledge:960", kind: "acknowledge_alert", label: "Visto", priority: 20, enabled: true,
+      reason: "", method: "POST", href: "/api/v1/backstage/alerts/960/ack/",
+      payload_schema: "AlertAckMutationRequest", expected_rev: 0,
+      idempotency: { required: true, key_scope: "backstage.alert-ack:960" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "Confirmar" },
+      approval_requirement: null, source_alert_ref: "960", source_alert_effect: "acknowledges", proof: "",
+    }],
+  };
+}
+
 function alertsPayload() {
   const payload = JSON.parse(JSON.stringify(baseAlerts));
+  if (scenario === "concierge-no-model") {
+    payload.alerts = [noModelAlert(), ...payload.alerts];
+    payload.counts.active += 1;
+  }
   if ((scenario === "concierge" || scenario === "concierge-late") && !verification.answered && !verification.takenOver) {
     payload.alerts = [verificationAlert(scenario === "concierge-late"), ...payload.alerts];
     payload.counts.active += 1;

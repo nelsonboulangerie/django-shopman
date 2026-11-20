@@ -586,6 +586,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("sweep_waitlist_windows"),
         call("recover_concierge"),
         call("concierge_verification_sweep"),
+        call("concierge_reading_check"),
         call("cleanup_concierge_observations"),
         # A decisão em sombra: depois da limpeza, nunca decide sobre o que acabou de vencer.
         call("concierge_shadow_decisions"),

@@ -29,6 +29,9 @@ class AlertSpec:
     #: O prazo próprio (``respond_by``) vencido FICA na tela, dizendo há quanto passou,
     #: como a régua da casa: é promessa da casa, não decisão do mundo lá fora.
     own_deadline_stays: bool = False
+    #: Também no topo da tela (o aviso do cabeçalho do kit, na cor da gravidade), e não
+    #: só no sino: a operação inteira está degradada, não um pedido.
+    on_screen: bool = False
 
 
 ALERT_SPECS: dict[str, AlertSpec] = {
@@ -59,6 +62,9 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     "concierge_verify": AlertSpec(
         "WhatsApp", "i-lucide-message-circle", "Cliente espera a resposta da equipe", 0, own_deadline_stays=True,
     ),
+    # A Concierge atendendo sem modelo (dono, 19/11/2026): no topo do Gestor, até a causa
+    # passar. Sem régua: não há prazo, há causa.
+    "concierge_no_model": AlertSpec("WhatsApp", "i-lucide-message-circle", "Concierge sem modelo", 0, on_screen=True),
     # Marketing: disparo com problema antes da hora marcada.
     "marketing_outbox_stuck": AlertSpec("Marketing", "i-lucide-megaphone", "Disparo travado na fila", 30),
     "marketing_readiness_stale": AlertSpec("Marketing", "i-lucide-megaphone", "Canal de disparo sem prontidão", 30),

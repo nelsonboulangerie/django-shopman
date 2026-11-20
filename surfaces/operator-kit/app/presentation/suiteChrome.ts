@@ -315,6 +315,8 @@ export interface OperatorAlertLike {
   origin_label?: string;
   origin_icon?: string;
   subject?: string;
+  /** Também no topo da tela (o servidor diz, por tipo: `AlertSpec.on_screen`). */
+  on_screen?: boolean;
   actions?: ReadonlyArray<{
     kind: string;
     enabled: boolean;
@@ -342,6 +344,7 @@ export interface InboxAlertView {
   origin?: string;
   originIcon?: string;
   subject?: string;
+  onScreen?: boolean;
 }
 
 /**
@@ -390,7 +393,36 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     ...(alert.origin_label ? { origin: alert.origin_label } : {}),
     ...(alert.origin_icon ? { originIcon: alert.origin_icon } : {}),
     ...(alert.subject ? { subject: alert.subject } : {}),
+    ...(alert.on_screen ? { onScreen: true } : {}),
   };
+}
+
+type OnScreen = { key: string | number; onScreen?: boolean; tone?: string; subject?: string; eyebrow?: string; message?: string };
+
+/** O aviso de tela de um alerta que pede o topo (sem a ação: quem monta põe). */
+export interface InboxScreenAlert {
+  key: string | number;
+  id: string;
+  title: string;
+  description: string;
+  color: "error" | "warning" | "info";
+}
+
+/**
+ * Os alertas que pedem o topo da tela viram aviso do cabeçalho, na cor da gravidade
+ * (dono, 19/11/2026: a Concierge sem modelo, cor de erro). O `id` é o do alerta: o
+ * servidor abre um por causa, então outra causa é aviso novo, e o X dispensa só esta.
+ */
+export function inboxScreenAlerts<T extends OnScreen>(items: readonly T[]): InboxScreenAlert[] {
+  return items
+    .filter((item) => item.onScreen)
+    .map((item) => ({
+      key: item.key,
+      id: `alert:${item.key}`,
+      title: item.subject || item.eyebrow || "Aviso",
+      description: item.message || "",
+      color: item.tone === "critical" ? ("error" as const) : item.tone === "warning" ? ("warning" as const) : ("info" as const),
+    }));
 }
 
 /**

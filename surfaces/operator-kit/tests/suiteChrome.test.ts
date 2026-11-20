@@ -21,6 +21,7 @@ import {
   operatorAlertToInbox,
   urgentAlerts,
   answerScreenAlerts,
+  inboxScreenAlerts,
   deadlineLeftLabel,
   respondInLabel,
   reminderIntervalMs,
@@ -314,6 +315,18 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
       { key: 1, id: "answer:1:open", title: "Bia espera a resposta da equipe\u00a0·\u00a0até\u00a015h09", color: "warning" },
     ]);
     expect(answerScreenAlerts([{ key: 3, respondByIso: at(1) }], NOW, clock)).toEqual([]);
+  });
+
+  it("o alerta da operação que pede o topo vira aviso do cabeçalho, na cor da gravidade", () => {
+    const view = operatorAlertToInbox({
+      pk: 77, type_label: "WhatsApp: Concierge sem modelo", severity: "error", severity_label: "Erro",
+      message: "A Concierge está atendendo sem modelo.", created_at_display: "hoje às 21h10",
+      subject: "Concierge sem modelo", origin_label: "WhatsApp", on_screen: true, actions: [],
+    });
+    expect(view.onScreen).toBe(true);
+    expect(inboxScreenAlerts([view, { key: 8, tone: "warning", message: "outro" }])).toEqual([
+      { key: 77, id: "alert:77", title: "Concierge sem modelo", description: "A Concierge está atendendo sem modelo.", color: "error" },
+    ]);
   });
 
   it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {

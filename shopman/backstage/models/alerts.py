@@ -326,6 +326,9 @@ class OperatorAlert(models.Model):
         # volta ao cliente por ela, ou alguém assume a conversa. Sino do Gestor.
         ("concierge_verify", "WhatsApp: cliente espera a resposta da equipe"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
+        # A Concierge atendendo sem modelo (dono, 19/11/2026): responde o simples e manda
+        # à equipe o que não entende. Um aviso por causa, no topo do Gestor, cor de erro.
+        ("concierge_no_model", "WhatsApp: Concierge sem modelo"),
         ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
         ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
         ("concierge_output_blocked", "WhatsApp: resposta automática bloqueada"),
@@ -456,6 +459,7 @@ class OperatorAlert(models.Model):
         "kitchen_print_failed",
         "concierge_handoff",
         "concierge_verify",
+        "concierge_no_model",
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",

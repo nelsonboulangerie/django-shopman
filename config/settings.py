@@ -363,6 +363,7 @@ WATCHMAN = {
         "shopman.shop.watchman_checks.MigrationsCheck",
         "shopman.shop.watchman_checks.QueueCheck",
         "shopman.shop.watchman_checks.IfoodPollingCheck",
+        "shopman.storefront.watchman_checks.ConciergeReadingCheck",
         "shopman.watchman.performance.PerformanceBudgetCheck",
         "shopman.shop.watchman_infrastructure.ProductionContractCheck",
         "shopman.shop.watchman_infrastructure.DeploymentDriftCheck",

@@ -46,6 +46,8 @@ class OperatorAlertProjection:
     origin_label: str = ""
     origin_icon: str = ""
     subject: str = ""
+    #: Também no topo da tela, e não só no sino (``AlertSpec.on_screen``).
+    on_screen: bool = False
     #: O combinado do pedido do aviso, na frase do cartão (``order_queue._schedule``):
     #: o "Aceitar" do sino aceita uma encomenda, e quem toca precisa ler para quando.
     #: Só no Gestor; vazio sem pedido ou sem combinado.
@@ -126,6 +128,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             origin_label=_spec_value(alert, "origin"),
             origin_icon=_spec_value(alert, "origin_icon"),
             subject=verify_subjects.get(alert.pk) or _spec_value(alert, "subject") or alert.get_type_display(),
+            on_screen=bool(_spec_value(alert, "on_screen")),
             order_schedule_label=schedules.get(alert.order_ref, ("", ""))[0],
             order_schedule_state=schedules.get(alert.order_ref, ("", ""))[1],
             actions=_alert_actions(

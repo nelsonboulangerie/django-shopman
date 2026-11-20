@@ -1681,6 +1681,15 @@ mais comuns, onde o Jev escalaria e a regra não, e o tempo do Jev. `--run N` gr
 N mensagens antes; `--days` (padrão 7) e `--examples`. Quando a Concierge atende, quem decide é o
 Jev (com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), e a regra local sensível vence.
 
+### concierge_reading_check
+
+**Propósito:** A Concierge atendendo sem modelo vira aviso no Gestor (decisão do dono, 19/11/2026, "opção 1",
+camada 3). Roda no `maintenance_worker`, depois do `concierge_verification_sweep`. Lê a rota de IA `intents`
+(`concierge/reading_health.py`): sem conexão, sem chave, sem liberação, sem modelo, freio de gasto ou três
+leituras seguidas falhando no provedor abrem UM aviso `concierge_no_model` por causa (cor de erro, sino e topo
+do Gestor, `AlertSpec.on_screen`); a causa que passou é resolvida. Nunca chama modelo. A mesma leitura é a sonda
+`concierge_reading` do Watchman (`storefront/watchman_checks.py`). Saída: `{"opened": n, "resolved": n}`.
+
 ### concierge_verification_sweep
 
 **Propósito:** O relógio do "vou verificar" da Concierge (WP-05/WP-06 do
