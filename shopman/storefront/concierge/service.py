@@ -461,6 +461,14 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
             _enqueue_turn(conversation, binding)
     if with_team:
         if created and conversation.state == Conversation.State.HANDOFF:
+            from . import verification
+
+            if verification.returns_on_new_message(conversation) and return_to_concierge(conversation):
+                # Foi à equipe só pelo prazo do "vou verificar" e o cliente escreveu de novo
+                # (dono, 20/11/2026, #2836): volta à Concierge, que responde (a devolução
+                # agenda o turno das mensagens sem resposta, esta inclusive).
+                verification.mark_returned(conversation.pk)
+                return IntakeResult(conversation.pk, message.pk, True, "returned")
             _wrote_while_with_team(conversation, binding)
         return IntakeResult(conversation.pk, message.pk, False, "handoff")
     return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")

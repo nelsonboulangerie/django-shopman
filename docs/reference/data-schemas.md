@@ -287,8 +287,10 @@ a segunda parte não entendida, com modelo, vai para a equipe. Sem modelo, a par
 nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
 conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
 marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
-equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff) ou `handed_off` (o segundo prazo
-passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06); `fence` é o
+equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
+passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06) ou
+`returned` (com `returned_at`: depois do `handed_off`, o cliente escreveu de novo e a conversa voltou sozinha
+à Concierge, dono 20/11/2026, #2836; a `taken_over` nunca volta sozinha); `fence` é o
 `turn_fence` do turno que abriu (gravada na mesma transação da resposta: turno revogado não grava);
 `questions` = `[{text, product, at}]`, até 5, `text` a fala do cliente REDIGIDA (`triage._redacted`,
 até 160 caracteres); `promise` = `{kind, minutes, when}`, com `kind` em `now` ("em até 10 minutos"),
