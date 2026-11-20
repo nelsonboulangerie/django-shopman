@@ -45,6 +45,15 @@ from .intent_benchmark import REGEX_TO_INTENT
 from .intent_pilot import DEFAULT_INTENTS
 from .small_talk import small_talk_kind
 
+#: O que a triagem grava em ``answered_by`` quando a R8 responde (``data-schemas.md``).
+IDENTITY_ANSWERED_BY = "identity"
+
+
+def _answers_identity(text: str) -> bool:
+    from .house_rules import answers_identity
+
+    return answers_identity(text)
+
 logger = logging.getLogger(__name__)
 
 INTENTS = tuple(ref for ref, *_rest in DEFAULT_INTENTS)
@@ -384,6 +393,12 @@ def decide(
         return allergy
     # Alergia que a concierge não responde: equipe, agora.
     allergy_to_team = allergy is not None
+    if not allergy_to_team and rules_intent not in SENSITIVE and _answers_identity(text):
+        # R8 antes da triagem (dono, 20/11/2026): "com quem eu falo?", "é robô?", "é uma
+        # pessoa?" recebem a frase fixa de assistente da casa. O Jev não transforma a
+        # pergunta de quem atende em pedido de atendimento humano.
+        return Triage("house_info", CAN_WAIT, ANSWER, rules_summary("house_info", text), "rules",
+                      answered_by=IDENTITY_ANSWERED_BY)
     if small_talk_kind(text):
         # "Bom dia", "obrigado", "tchau": não há intenção a propor, e a concierge
         # responde a cortesia sem ferramenta. O Jev não é consultado.
