@@ -152,6 +152,12 @@ export interface PreorderDetail extends OperatorOrderDetail {
   managers: POSManagerProjection[];
   /** Os motivos de cancelar: a lista única do backend, a mesma do Gestor (`cancel_reasons`). */
   cancel_reasons: KeyedReason[];
+  /**
+   * O que cancelar faz com o dinheiro, com o valor ("R$ 93,00 em dinheiro ficam a
+   * devolver no caixa."): a frase do Gestor (`order_queue._cancel_money_effect`).
+   * "" quando o servidor não sabe dizer.
+   */
+  cancel_money_effect?: string;
 }
 
 /** O bloco da corrida — espelho do `CourierBlock` do Gestor (`orders-nuxt/types/orders.ts`). */
