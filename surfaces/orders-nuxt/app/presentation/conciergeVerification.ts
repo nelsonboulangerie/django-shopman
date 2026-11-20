@@ -18,6 +18,39 @@ export const TAKEN_OVER_NOTICE_NOT_SENT =
 export const ANSWER_FAILED = "A resposta não saiu. O texto continua aqui: tente de novo.";
 export const TAKE_OVER_FAILED = "Não deu para assumir a conversa. Tente de novo.";
 
+// Promover a pergunta frequente (WP-15): a resposta enviada pode virar rascunho de
+// pergunta frequente. O gesto mora no aviso de "Resposta enviada", porque o cartão fecha
+// com a resposta; o rascunho só vale para os próximos clientes depois de publicado.
+export const PROMOTE_LABEL = "Promover a pergunta frequente";
+export const PROMOTED = "Virou rascunho em Perguntas frequentes. A Concierge só usa depois de publicado.";
+export const ALREADY_PROMOTED = "Esta pergunta já é um rascunho em Perguntas frequentes.";
+export const PROMOTE_FAILED = "Não deu para criar o rascunho. Tente de novo.";
+export const OPEN_IN_ADMIN = "Abrir no Admin";
+
+export interface PromotionResult {
+  already?: boolean;
+  admin_url?: string;
+  warning?: string;
+}
+
+export interface PromotionToast {
+  color: "success" | "warning" | "info";
+  title: string;
+  description?: string;
+  /** O rascunho no Admin, onde se lê, ajusta e publica. Sem o endereço, sem botão. */
+  action?: { label: string; to: string };
+}
+
+/** O aviso depois de promover: criado, já existia, e o alerta de data quando há. */
+export function promotionToast(result: PromotionResult): PromotionToast {
+  return {
+    color: result.warning ? "warning" : result.already ? "info" : "success",
+    title: result.already ? ALREADY_PROMOTED : PROMOTED,
+    ...(result.warning ? { description: result.warning } : {}),
+    ...(result.admin_url ? { action: { label: OPEN_IN_ADMIN, to: result.admin_url } } : {}),
+  };
+}
+
 /** Os desfechos em que tentar de novo não adianta: só resta assumir a conversa. */
 const FINAL_ANSWER_ERRORS = new Set(["window_closed"]);
 export function isFinalAnswerError(code: string | undefined | null): boolean {
