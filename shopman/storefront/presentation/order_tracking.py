@@ -1481,9 +1481,7 @@ def _promise_copy(
         return copy.title("TRACKING_PROMISE_PREPARING_TITLE", "Preparando…"), message
 
     if state == "ready_delivery":
-        return _pair(copy, "TRACKING_DELIVERY_WAITING_COURIER",
-                     "Pronto, esperando o entregador",
-                     "Assim que ele chegar, seu pedido sai para entrega.")
+        return _ready_delivery_copy(data, copy=copy)
 
     if state == "ready_pickup":
         title = copy.title("TRACKING_PROMISE_READY_PICKUP_TITLE", "Pronto para retirada")
@@ -1500,6 +1498,19 @@ def _promise_copy(
 
     if state == "dispatched":
         eta_display = _eta_display(data.eta_at)
+        if data.courier_driver:
+            # Decisão 7 = B (revisão das Entregas, 16/11): quem leva, pelo nome,
+            # e a hora. O "Recebi meu pedido" segue no botão.
+            message = _with_driver(
+                copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_ETA",
+                             "{driver} está a caminho. Deve chegar por volta de {eta}.")
+                .replace("{eta}", eta_display)
+                if eta_display
+                else copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER",
+                                  "{driver} está a caminho."),
+                data.courier_driver,
+            )
+            return copy.title("TRACKING_PROMISE_DISPATCHED_TITLE", "Saiu para entrega"), message
         message = (
             copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA",
                          "Chega por volta de {eta}. Confirme aqui quando receber.")
@@ -1550,6 +1561,63 @@ _TERMINAL_PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
 
 def _pair(copy: CopyCatalog, key: str, fallback_title: str, fallback_message: str) -> tuple[str, str]:
     return copy.title(key, fallback_title), copy.message(key, fallback_message)
+
+
+def _with_driver(text: str, driver: str) -> str:
+    """Põe o nome do entregador em ``{driver}``; sem nome, "o entregador".
+
+    A frase começa com maiúscula de qualquer jeito: "O entregador não pôde vir".
+    """
+    text = text.replace("{driver}", driver or "o entregador")
+    return text[:1].upper() + text[1:]
+
+
+def _ready_delivery_copy(data: TrackingPromiseData, *, copy: CopyCatalog) -> tuple[str, str]:
+    """Pronto para entrega: um fato útil por momento da corrida, até a coleta.
+
+    L2 da revisão das Entregas, decisão 7 = B (dono, 16/11/2026): ao cliente não
+    se fala em corrida, aceite nem no nome da empresa de entrega, não se promete
+    aviso, e o link de rastreio só aparece depois da coleta. O momento vem da
+    projeção (``courier_stage``), que lê o estado neutro da corrida.
+    """
+    stage = data.courier_stage
+    if stage == "called":
+        return _pair(copy, "TRACKING_DELIVERY_COURIER_CALLED",
+                     "Seu pedido está pronto", "Estamos chamando o entregador.")
+    if stage == "late":
+        return _pair(copy, "TRACKING_DELIVERY_COURIER_LATE",
+                     "Seu pedido está pronto",
+                     "Está demorando mais que o normal. Seguimos chamando o entregador.")
+    if stage == "replaced":
+        title, message = _pair(copy, "TRACKING_DELIVERY_COURIER_REPLACED",
+                               "{driver} não pôde vir", "Estamos chamando outro entregador.")
+        if not data.courier_driver:
+            # Sem o nome de quem desistiu, "O entregador não pôde vir" soaria
+            # como se ninguém fosse vir: o título volta ao pedido pronto.
+            title = copy.title("TRACKING_DELIVERY_COURIER_CALLED", "Seu pedido está pronto")
+        return _with_driver(title, data.courier_driver), message
+    if stage == "coming":
+        title = _with_driver(
+            copy.title("TRACKING_DELIVERY_COURIER_COMING", "{driver} vem buscar seu pedido"),
+            data.courier_driver,
+        )
+        eta_display = _eta_display(data.courier_pickup_eta_at)
+        if eta_display:
+            return title, copy.message(
+                "TRACKING_DELIVERY_COURIER_COMING",
+                "Chega à loja por volta de {eta}.",
+            ).replace("{eta}", eta_display)
+        return title, copy.message("TRACKING_DELIVERY_COURIER_COMING_NO_ETA", "Seu pedido está pronto.")
+    if stage == "at_store":
+        return (
+            _with_driver(
+                copy.title("TRACKING_DELIVERY_COURIER_AT_STORE", "{driver} chegou à loja"),
+                data.courier_driver,
+            ),
+            copy.message("TRACKING_DELIVERY_COURIER_AT_STORE", "Logo sai com seu pedido."),
+        )
+    return _pair(copy, "TRACKING_DELIVERY_WAITING_COURIER",
+                 "Seu pedido está pronto", "Logo sai para entrega.")
 
 
 #: Dia da semana em minúscula, na ordem de ``date.weekday()``.
