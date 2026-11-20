@@ -20,7 +20,6 @@ import logging
 from dataclasses import dataclass
 
 from django.core.cache import cache
-from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -113,18 +112,21 @@ def sync_alert() -> dict[str, int]:
     Um aviso por causa (``dedupe_key``): trocou a causa, o aviso velho sai e entra o novo.
     Chamado pelo ``maintenance_worker``; nunca levanta.
     """
-    from shopman.backstage.models import OperatorAlert
+    # Pela porta de avisos do shop (``adapters.alert``): o storefront não importa o backstage.
+    from shopman.shop.adapters import alert as alert_adapter
     from shopman.shop.services.observability import create_operator_alert
 
     state = current()
     keep = f"concierge:no_model:{state.cause}" if state.without_model else ""
-    marker = f"Dedupe: {keep}"
     opened = resolved = 0
     try:
-        active = OperatorAlert.objects.filter(type=ALERT_TYPE, resolved_at__isnull=True)
-        stale = active.exclude(message__contains=marker) if keep else active
-        resolved = stale.update(resolved_at=timezone.now(), resolved_by="concierge")
-        if keep and not active.filter(message__contains=marker).exists():
+        for cause in CAUSE_TEXT:
+            other = f"concierge:no_model:{cause}"
+            if other != keep:
+                resolved += alert_adapter.resolve_matching(
+                    ALERT_TYPE, message_contains=f"Dedupe: {other}", actor="concierge"
+                )
+        if keep and not alert_adapter.recent_exists(ALERT_TYPE, None, message_contains=f"Dedupe: {keep}"):
             created = create_operator_alert(
                 type=ALERT_TYPE,
                 severity="error",
