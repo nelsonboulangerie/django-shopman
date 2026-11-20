@@ -36,6 +36,8 @@
 >   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, ~~`pagamento_expirado`~~ (aposentado 14/10, ver abaixo),
 >   `pagamento_falhou`, `fila_vaga_disponivel`, `fila_vaga_liberada`, `produto_chegou`,
 >   `reembolso_processado`, `pontos_fidelidade`.
+> - **A submeter, texto aprovado pelo dono em 20/11 (WP-G07, 3):** `pedido_atrasado`,
+>   `pedido_item_em_falta`, `pedido_remarcar`. Ver a seção "Os três avisos do Avisar o cliente".
 > - **Fora do go-live (Marketing) ou sem revisão de voz:** `ficou_pronto`, `anuncio_novidade`,
 >   `pedido_compra` (fornecedor).
 >
@@ -410,6 +412,56 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`Saiu 1 Baguete e entrou 1 Croissant. O novo total é R$ 42,00. Devolvemos R$ 6,00 no seu cartão.` (`status_note`, nunca vazio, termina com ponto)
 - Botão URL: `Acompanhar pedido`
 - 11 palavras literais para 3 variáveis.
+
+### Os três avisos do "Avisar o cliente" (WP-G07) 🆕 · texto aprovado pelo dono em 20/11/2026, **não submetidos**
+
+O Caixa avisa o cliente com um toque no detalhe do pedido, pela API (decisão 4 do plano do
+Gestor, 17/11/2026). São mensagens que a casa inicia, então cada uma precisa de modelo
+aprovado. A voz é a do diálogo "Resolver" (aprovada em 19/11): "Aqui é da Nelson
+Boulangerie 💛 … e sinto muito por isso", primeira pessoa, sem travessão. O dono aprovou os
+três em 20/11 ("1 (depois revisamos mais detalhadamente…)"), com a troca do item B para
+"vai faltar …". Os eventos ainda não existem no código: nascem no WP-G07.
+
+Quando o cliente responde, abre a janela de 24 h e a conversa segue em texto livre. Feita a
+troca ou a remarcação no PDV, saem sozinhos o `pedido_atualizado` e o `pedido_nova_data`
+(aprovados em 29/09).
+
+#### `pedido_atrasado` — evento `order_delayed` (a criar no WP-G07)
+O Caixa toca "Vai atrasar" no pedido e escolhe a nova hora.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 Seu pedido {{2}} vai atrasar um pouco: a nova previsão é {{3}}, e sinto muito por isso. Qualquer dúvida, é só responder aqui.`
+- Vars: `{{1}}`=`Ana` (`customer_name`, `cuf_14859629`) · `{{2}}`=`A17` (`order_ref_short`, `cuf_15003507`) · `{{3}}`=`hoje, às 16h30` (`status_note`, `cuf_15003511`, nunca vazio, sem ponto final)
+- Botão URL: `Acompanhar pedido` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (`order_ref`, `cuf_15003508`)
+
+#### `pedido_item_em_falta` — evento `order_item_missing` (a criar no WP-G07)
+O Caixa toca "Faltou um item" e marca qual, e quanto.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 No seu pedido {{2}}, vai faltar {{3}}, e sinto muito por isso. Posso trocar por outro produto ou devolver esse valor. Me responde aqui como fica melhor para você.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`Focaccia (2 unidades)` (`status_note`, nunca vazio; com mais de um item, o código junta: `Focaccia (2 unidades) e Brioche (1 unidade)`)
+- Botão URL: `Acompanhar pedido`
+
+> ⚠️ **Sem artigo antes do item.** A troca aprovada foi "vai faltar a Focaccia (2 unidades)",
+> mas o "a" é fixo no modelo e erra o gênero de metade do catálogo ("a Croissant"): o
+> catálogo não guarda o gênero do nome (#2809, item 6). O modelo fica com "vai faltar
+> Focaccia (2 unidades)", e o item e a quantidade continuam variáveis, como decidido. Se o
+> dono quiser o artigo, ele entra quando o catálogo souber o gênero.
+
+#### `pedido_remarcar` — evento `order_reschedule_needed` (a criar no WP-G07)
+O Caixa toca "Precisamos remarcar": o pedido inteiro não fica pronto na data combinada.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 Não vamos conseguir aprontar seu pedido {{2}} para {{3}}, como combinamos, e sinto muito por isso. Posso remarcar para outro dia ou cancelar e devolver o valor. Me responde aqui como fica melhor para você.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`retirada amanhã, a partir das 9h` (`status_note`, a mesma frase do `pedido_encomenda_confirmada`, `services/notification._commitment_note`, sem ponto final)
+- Botão URL: `Acompanhar pedido`
+
+> ℹ️ **Os três pedem o nome do cliente** (`{{1}}`): a Meta não aceita variável vazia. Na
+> encomenda o nome sempre existe (o PDV e a loja o pedem). O iFood fica de fora do gesto.
+>
+> ℹ️ **O que é editável no Admin, e o que não é.** O `NotificationTemplate` do evento
+> (Admin, por evento) guarda o assunto, o corpo que sai por SMS, e-mail e WhatsApp dentro
+> da janela de 24 h, e o `whatsapp_flow_ns` (qual modelo aprovado o WhatsApp usa fora da
+> janela). Tudo isso o lojista edita e vale na hora. **O corpo do modelo aprovado na Meta
+> não se edita:** mudar uma palavra é submeter de novo e esperar a reaprovação (24-48 h),
+> e então trocar o `whatsapp_flow_ns` no Admin para o flow novo.
 
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Oi, {{1}}! Seu pedido {{2}} está reservado. Falta só o pagamento.`
