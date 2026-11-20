@@ -5,9 +5,10 @@ O WP-09 de `docs/plans/CONCIERGE-PLANO-DE-ACAO.md`: a leitura das partes com mod
 contra o conjunto de mensagens reais (`concierge/golden_set.json`). Autorização do dono:
 D-040 (mensagem redigida à DeepSeek e ao Jev, rodada de até US$ 2 no total).
 
-> **Estado:** RASCUNHO. Os placares pagos rodam no console do `maintenance-worker` de
-> produção (a coordenação opera, o dono fez o login); as seções marcadas PENDENTE recebem
-> a saída literal dos comandos quando ela chegar.
+> **Estado:** medido em 20/11/2026, no console do `maintenance-worker` de produção (a
+> coordenação operou, o dono fez o login). Gasto total: **US$ 0,369** dos US$ 2 da D-040.
+> **Recomendação: `deepseek-flash` na rota `intents`**, com duas correções antes de
+> chamar a meta de batida (#2909, #2910).
 
 ## Como foi medido
 
@@ -119,29 +120,95 @@ leitura (`intents.build_request`) manda `max_tokens: 600` e nenhum `thinking`; a
 aceita `thinking` (`ai.EXTRAS_BY_HOST`) e, raciocinando por padrão, gasta o teto antes do
 JSON. Sem essas 11 quedas, as partes e a equipe tendem a subir; é correção própria.
 
-## Placar com `deepseek-v4-pro` (3 rodadas, teto US$ 1,40)
+## Placar com `deepseek-v4-pro` (3 rodadas, teto US$ 1,30)
 
-PENDENTE: saída de `/tmp/wp09-pro.log`.
+Rodado logo depois do flash, sozinho, com a fila de diretivas pausada pela coordenação
+enquanto rodava (religada em seguida). Saída copiada da tela:
+
+```text
+antes → depois:
+- várias todas achadas 0/16 → 12/16
+- todos 35/66 → 56/66
+- partes 50/85 → 75/85
+- equipe achada 11/13 → 11/13
+- equipe sem precisar 0 → 1
+- uma parte lida como várias 6/50
+Quem decidiu as partes: gate 44, model 62, local 41. Motivo do porteiro: jev_unsure 63, jev_certain 23, local_multiple 22, rules_single 21, rules_unsure 15, jev_two_intents 3.
+Leitura com o modelo: 62 de 147 (42%); US$ 0.00092 por leitura; p50 2151 ms, p95 3977 ms.
+Por mensagem: US$ 0.000387 · porteiro+leitura p50 2135 ms, p95 4471 ms.
+Falhas da leitura (caiu na divisão local): APITimeoutError 41
+Equipe perdida: msg-109 (unknown + unknown); msg-596 (unknown).
+Equipe sem precisar: msg-696 "Cancela".
+Partes perdidas (10): msg-53 (gate → order); msg-59 (local); msg-113 (local); msg-119 "#menu [código omitido]" (local); msg-545 "O valor para pagar o pão de sábado" (local); msg-596 (model); msg-608 "Por favor, preciso que entreguem em casa, tudo bem?" (local); msg-665 (model → house_info); campo-2 (local: allergy lida como product_question); campo-7 (local)
+Repetição r1 / r2 / r3 / em todas:
+- várias 12/16, 12/16, 13/16, 12/16
+- todos 56/66, 56/66, 58/66, 55/66
+- partes 75/85, 75/85, 77/85, 74/85
+- equipe 11/13 nas três, 11/13
+- sem precisar 1/1/1, limpos 133/134
+- uma lida como várias 6/4/7, limpos 42/50
+Gasto da rodada: US$ 0.1652 de US$ 1.3000.
+```
+
+O v4-pro perdeu **por tempo, não por qualidade**: 41 das 103 leituras estouraram o
+timeout de 4 s da leitura (`intents.READ_TIMEOUT_S`) e caíram na divisão local. Seis das
+dez partes perdidas são dessas quedas. Uma revanche justa pede timeout maior, e mesmo
+assim o p50 dele (2,15 s) já passa da meta de p95.
 
 ## `concierge_check --live`
 
-PENDENTE: saída de `/tmp/wp09-check.txt`.
+```text
+Configuração OK: modo assist, contrato 3, conexão, coorte e ManyChat.
+ManyChat OK: campo concierge_handoff existe (manychat-whatsapp-primary).
+Não conferido por comando: se o flow chama o Concierge em toda mensagem (ensaio manual do checklist).
+```
 
 ## Gasto do dia, depois
 
-PENDENTE: o passo 0 de novo (`/tmp/wp09-freio-depois.txt`).
+```text
+freio Limits(enabled=True, shop_usd_per_day=3.0, purposes={}); rotas {'default': {'connection': 'deepseek'}}; intents ok
+hoje: decision 7 calls / 204 µ$; intents 944 calls / 376085 µ$; labeling 21 / 4821; shop 972 / 381110; denied 0 em todos.
+```
+
+Total do WP-09: US$ 0,369 (flash perdido no `/tmp` 0,103 + flash 0,100 + pro 0,165).
+Nenhuma chamada negada pelo freio. A Concierge viva seguiu no modelo dela o tempo todo.
 
 ## Metas do WP-09 e veredito
 
+Medido "em todas as 3 rodadas" (o pior das três).
+
 | Meta | Sem modelo (hoje) | flash | v4-pro |
 |---|---|---|---|
-| Equipe achada 13/13 nas três rodadas | 11/13 | PENDENTE | PENDENTE |
-| Partes achadas ≥ 90% | 72/85 (85%) | PENDENTE | PENDENTE |
-| Várias partes, todas achadas ≥ 85% | 13/16 (81%) | PENDENTE | PENDENTE |
-| Equipe sem precisar ≤ 4 | 4 | PENDENTE | PENDENTE |
-| p95 da leitura < 2 s | 0 ms | PENDENTE | PENDENTE |
+| Equipe achada 13/13 nas três rodadas | 11/13 | 11/13 ✗ | 11/13 ✗ |
+| Partes achadas ≥ 90% | 72/85 (85%) | **79/85 (93%) ✓** | 74/85 (87%) ✗ |
+| Várias partes, todas achadas ≥ 85% | 13/16 (81%) | 13/16 (81%) ✗ | 12/16 (75%) ✗ |
+| Equipe sem precisar ≤ 4 | 4 | **1 ✓** | **1 ✓** |
+| p95 da leitura < 2 s | 0 ms | 2.662 ms ✗ | 3.977 ms ✗ |
+| Custo por mensagem | 0 | US$ 0,00023 | US$ 0,00039 |
 
-Recomendação de modelo: PENDENTE.
+**Recomendação: `deepseek-flash` na rota `intents`.** Ganha do v4-pro em qualidade
+(partes 79 contra 74), em tempo (p50 1,3 s contra 2,2 s) e custa 40% menos por
+mensagem. Contra a leitura sem modelo, sobe as partes de 72 para 79 e corta a equipe
+sem precisar de 4 para 1.
+
+**Três metas não batidas, com o caso e a issue:**
+
+- **p95 da leitura (2,66 s) e as 11 quedas por `max_tokens`** do flash: o pedido da
+  leitura não desliga o raciocínio da DeepSeek, que gasta o teto de 600 antes do JSON.
+  Duas das três "várias partes" perdidas (msg-113 e campo-7) são leituras que caíram na
+  divisão local. É a #2909, com uma rodada curta de prova (e a revanche do v4-pro com
+  timeout maior, no mesmo passo).
+- **Equipe achada 11/13**, nos três modos: msg-109 (o dado financeiro apagado era o sinal
+  de cobrança) e msg-596 (só um link, que a redação apaga). Não é o modelo, é o que chega
+  a ele. É a #2910.
+
+**O que muda em produção, e quem decide.** Hoje não há rota própria de `intents`: ela cai
+na `default` (conexão `deepseek`, com o modelo cadastrado na conexão, que este relatório
+não conferiu). A recomendação é fixar a rota `intents` em `deepseek-flash`
+(`Shop.ai_routes["intents"] = {"connection": "deepseek", "model": "deepseek-flash"}`, no
+Admin) depois da #2909. Pelo plano, meta não batida não segura a abertura das respostas:
+a Concierge abre como está, com o "vou verificar" cobrindo o que a leitura não achar. Mudar
+a rota e abrir para o grupo de até 20 contatos são palavra do dono, com este relatório.
 
 ## Fora deste relatório
 
