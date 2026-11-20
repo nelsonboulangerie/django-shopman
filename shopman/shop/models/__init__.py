@@ -45,7 +45,13 @@ from .concierge import (
     OutboundAttempt,
 )
 from .contact_release import ContactRelease, ReleasedContactKind
-from .conversational import ConversationalDecision, ConversationalOutcome
+from .conversational import (
+    ConversationalDecision,
+    ConversationalEpisode,
+    ConversationalOutcome,
+    ConversationalRecord,
+    ConversationalWork,
+)
 from .delivery import DeliveryDistanceBand, DeliveryZone
 from .delivery_service import Courier, CourierLink, CourierRate, DeliveryService
 from .faq import FAQEntry
@@ -112,7 +118,10 @@ __all__ = [
     "OutboundAttempt",
     "ContactRelease",
     "ConversationalDecision",
+    "ConversationalEpisode",
     "ConversationalOutcome",
+    "ConversationalRecord",
+    "ConversationalWork",
     "ReleasedContactKind",
     "Channel",
     "Promotion",

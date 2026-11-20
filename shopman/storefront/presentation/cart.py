@@ -17,7 +17,8 @@ import logging
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from shopman.utils.formatting import format_clock
+from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.omotenashi import resolve_copy
@@ -277,6 +278,12 @@ class CartProjection:
     # no envelope da leitura da sacola (``GET /api/v1/storefront/cart/``).
     reserved_until_iso: str | None = None
     reserved_until_display: str | None = None
+    # A reserva que venceu e não foi renovada (#2767): a hora até quando ela valia,
+    # para quem abre a sacola depois do prazo ler o que houve ("A reserva valia até
+    # 19h18 e já venceu"). Prazo de outro dia leva a data ("18/11 às 19h18").
+    # ``None`` com reserva viva (a sacola diz até quando guarda) ou sem reserva
+    # vencida de item que está na sacola.
+    reservation_lapsed_display: str | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -333,9 +340,14 @@ def build_cart(
     from shopman.storefront.identity import checkout_draft_context
     context = checkout_draft_context(request, session_key)
     reserved_until = None if data.is_empty else cart_data.reserved_until(session_key)
+    lapsed_at = (
+        None if data.is_empty or reserved_until
+        else cart_data.reservation_lapsed_at(session_key, [line.sku for line in data.lines])
+    )
     return CartProjection(
         reserved_until_iso=_iso(reserved_until),
         reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
+        reservation_lapsed_display=_lapsed_display(lapsed_at),
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -662,6 +674,15 @@ def _iso(value) -> str | None:
     if value is None:
         return None
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _lapsed_display(lapsed_at) -> str | None:
+    """A hora da reserva vencida; de outro dia, com a data ("18/11 às 19h18")."""
+    if lapsed_at is None:
+        return None
+    if timezone.localtime(lapsed_at).date() == timezone.localdate():
+        return format_clock(lapsed_at) or None
+    return format_local(lapsed_at, "%d/%m às {clock}", empty="") or None
 
 
 def _deadline_display(deadline_iso: str | None) -> str | None:

@@ -1967,29 +1967,28 @@ function compactClear() {
           @clear="stopSelection"
         />
       </template>
+      <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. O
+           traço da aba ativa assenta na borda da faixa, sem vão nem segunda linha (dono,
+           02/11/2026): a faixa não tem respiro embaixo, e a aba dentro da faixa não
+           desenha linha própria (tema do kit, `tabs` link). Mora no `#below`: é a última
+           barra do topo, e o aviso da tela vem depois dela (dono, 20/11/2026,
+           DEV-2026-063). Fora do cabeçalho ela ficava embaixo do aviso. -->
+      <template v-if="boardAsTabs && view === 'board' && zones.length" #below>
+        <OperatorToolbar class="items-end pt-2 pb-0" data-board-zone-bar>
+          <NuxtTabs
+            :model-value="phoneZone"
+            :items="phoneTabItems"
+            :content="false"
+            variant="link"
+            data-board-zone-tabs
+            @update:model-value="pickPhoneZone"
+          >
+            <template #default="{ item }"><span :class="item.iconOnlyOnPhone ? 'max-sm:sr-only' : undefined">{{ item.label }}</span></template>
+            <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+          </NuxtTabs>
+        </OperatorToolbar>
+      </template>
     </OperatorPageHeader>
-
-    <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. O
-         traço da aba ativa assenta na borda da faixa, sem vão nem segunda linha (dono,
-         02/11/2026): a faixa não tem respiro embaixo, e a aba dentro da faixa não
-         desenha linha própria (tema do kit, `tabs` link). -->
-    <OperatorToolbar
-      v-if="boardAsTabs && view === 'board' && zones.length"
-      class="items-end pt-2 pb-0"
-      data-board-zone-bar
-    >
-      <NuxtTabs
-        :model-value="phoneZone"
-        :items="phoneTabItems"
-        :content="false"
-        variant="link"
-        data-board-zone-tabs
-        @update:model-value="pickPhoneZone"
-      >
-        <template #default="{ item }"><span :class="item.iconOnlyOnPhone ? 'max-sm:sr-only' : undefined">{{ item.label }}</span></template>
-        <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-      </NuxtTabs>
-    </OperatorToolbar>
 
 
     <section
