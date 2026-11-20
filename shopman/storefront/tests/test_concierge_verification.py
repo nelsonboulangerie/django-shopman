@@ -465,3 +465,29 @@ def test_the_memory_sees_the_open_verification_as_verifying(conversation, outbox
     assert "verifying" not in (conversation.flags or {}).get(dialogue.FLAG_KEY, {}), (
         "o estado da espera não é gravado na memória: vem da verificação"
     )
+
+
+# ── Fora do turno: a porta de equipe do framework (N7) ────────────────
+
+
+def test_open_for_opens_the_verification_outside_a_turn_with_the_card(conversation, outbox):  # noqa: F811
+    record = verification.open_for(conversation, "vocês fazem bolo de casamento?", actor="framework-n7")
+
+    assert record and record["status"] == verification.OPEN and record["_new"]
+    assert record["opened_by"] == "framework-n7"
+    assert [q["text"] for q in record["questions"]] == ["vocês fazem bolo de casamento?"]
+    stored = _record(conversation)
+    assert stored["opened_by"] == "framework-n7" and stored["promise"]["kind"] in {verification.NOW, verification.LATER}
+    assert _cards().count() == 1
+    assert outbox.sent == []  # quem fala com o cliente é quem chamou
+
+    again = verification.open_for(conversation, "e entregam em Cambé?")
+    assert again and not again["_new"]
+    assert len(_record(conversation)["questions"]) == 2 and _cards().count() == 1
+
+
+def test_open_for_does_nothing_without_a_question_or_with_the_team(conversation):  # noqa: F811
+    assert verification.open_for(conversation, "   ") is None
+    Conversation.objects.filter(pk=conversation.pk).update(state=Conversation.State.HANDOFF)
+    assert verification.open_for(conversation, "tem estacionamento?") is None
+    assert _record(conversation) is None and not _cards().exists()

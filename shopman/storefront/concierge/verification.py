@@ -323,6 +323,52 @@ def record_turn(conversation, outcome, *, now: datetime | None = None) -> dict |
     return {**record, "_new": is_new}
 
 
+def open_for(conversation, question: str, *, product: str = "", actor: str = "", now: datetime | None = None) -> dict | None:
+    """Abre (ou estende) a verificação FORA do turno: a porta de equipe do framework (N7).
+
+    O ``record_turn`` roda dentro da transação da resposta, com o fence do claim do turno.
+    Aqui não há turno: a conversa é travada (``select_for_update``), a promessa é a de
+    agora (``promise_for``) e o fence é o da conversa travada, então um turno em andamento
+    não sobrescreve o registro (ele espera a trava e relê). Depois da transação, o cartão
+    (``notify_team``). ``actor`` fica em ``opened_by`` quando a verificação nasce aqui.
+
+    ``None`` sem pergunta, com a conversa fora da Concierge (HANDOFF, encerrada) ou quando
+    a casa não pode prometer resposta dentro da janela (``no_promise``): quem chama decide
+    o que dizer ao cliente nesse caso.
+    """
+    from types import SimpleNamespace
+
+    from shopman.shop.models import Conversation
+
+    text = question_text(SimpleNamespace(span=str(question or ""), product=str(product or "")))
+    if not text:
+        return None
+    now = now or _now()
+    with transaction.atomic():
+        locked = Conversation.objects.select_for_update().filter(pk=conversation.pk).first()
+        if locked is None or locked.state != Conversation.State.ACTIVE:
+            return None
+        promise = promise_for(locked, now=now)
+        if promise.get("kind") == NO_PROMISE:
+            return None
+        locked._turn_fence = locked.turn_fence
+        outcome = SimpleNamespace(verification={
+            "requests": [{"text": text, "product": str(product or "")[:80]}],
+            "promise": promise,
+        })
+        record = record_turn(locked, outcome, now=now)
+        if record and record.get("_new") and actor:
+            flags = dict(locked.flags or {})
+            flags[FLAG_KEY] = {**flags[FLAG_KEY], "opened_by": str(actor)[:100]}
+            Conversation.objects.filter(pk=locked.pk).update(flags=flags)
+            locked.flags = flags
+            record = {**record, "opened_by": str(actor)[:100]}
+    if record:
+        conversation.flags = locked.flags
+        notify_team(conversation, record)
+    return record
+
+
 def _dedupe_key(conversation, record: dict) -> str:
     return f"concierge:{conversation.pk}:verify:{record.get('id', '')}"
 
