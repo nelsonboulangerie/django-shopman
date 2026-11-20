@@ -5156,7 +5156,7 @@ class OrderCourierRideQuoteView(APIView):
             return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
         orders = [by_ref[ref] for ref in refs]
         if len(orders) == 1:
-            solo = courier.estimate_for_order(orders[0])
+            solo = courier.quote_order(orders[0])
             estimate = {**solo, "stops": [orders[0].ref]} if solo else None
         else:
             estimate = courier.estimate_for_ride(orders)
@@ -5166,7 +5166,7 @@ class OrderCourierRideQuoteView(APIView):
         order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
         compare = {}
         if len(orders) > 1:
-            solos = [courier.estimate_for_order(order) for order in orders]
+            solos = [courier.quote_order(order) for order in orders]
             if all(solo and solo.get("value_q") is not None for solo in solos):
                 separate_q = sum(int(solo["value_q"]) for solo in solos)
                 compare = {"separate_value_q": separate_q, "saving_q": separate_q - int(estimate["value_q"])}

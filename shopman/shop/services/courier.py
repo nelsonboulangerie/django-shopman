@@ -429,14 +429,24 @@ def estimate_for_ride(orders) -> dict | None:
 
 
 def estimate_for_order(order, *, store: bool = False) -> dict | None:
-    """Cotação da corrida (custo interno — o preço ao cliente segue nas faixas/zonas).
+    """Cotação da corrida, e ``store=True`` a grava em ``Order.data["courier"]["estimate"]``.
+
+    Quem só lê (um GET, uma tela) chama :func:`quote_order`, que nunca escreve.
+    """
+    base_revision = dispatch_revision(order) if store else None
+    estimate = quote_order(order)
+    if store and estimate is not None:
+        store_estimate(order, estimate, expected_revision=base_revision)
+    return estimate
+
+
+def quote_order(order) -> dict | None:
+    """Cotação da corrida (custo interno; o preço ao cliente segue nas faixas/zonas). Só lê.
 
     Best-effort: sem adapter, sem coordenadas ou com a Machine fora → None.
     Cota com o mesmo retorno que a abertura vai pedir (:func:`needs_return`).
-    Cache de 10 min por destino e retorno (a origem é sempre a loja). ``store=True``
-    grava o resultado em ``Order.data["courier"]["estimate"]``.
+    Cache de 10 min por destino e retorno (a origem é sempre a loja).
     """
-    base_revision = dispatch_revision(order) if store else None
     adapter = delivery_services.courier_backend()
     if adapter is None or get_fulfillment_type(order) != "delivery":
         return None
@@ -466,9 +476,6 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         estimate = {"value_q": result.value_q, "minutes": result.minutes, "km": result.km,
                     "with_return": with_return}
         cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
-
-    if store:
-        store_estimate(order, estimate, expected_revision=base_revision)
     return estimate
 
 
