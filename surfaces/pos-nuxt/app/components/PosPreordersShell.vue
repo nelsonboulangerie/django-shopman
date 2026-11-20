@@ -30,6 +30,11 @@ const props = withDefaults(defineProps<{
   pending: boolean;
   /** Largura do conteúdo: a grade semanal precisa da tela inteira. */
   wide?: boolean;
+  /**
+   * O conteúdo ocupa a ALTURA da área (a tela de Pagamento do saldo, WP-E5): na
+   * mesa as colunas rolam por dentro, como na venda; no celular a página rola.
+   */
+  fill?: boolean;
   /** As ações da tela no ⋯ (na mesa); "Atualizar" entra sempre no fim. */
   actions?: OperatorHeaderAction[];
   /** As ações do ⋯ no celular, quando diferem das da mesa; "Atualizar" no fim. */
@@ -55,6 +60,7 @@ const props = withDefaults(defineProps<{
   compactOptions: undefined,
   title: "Encomendas",
   wide: false,
+  fill: false,
   actions: () => [],
   phoneActions: undefined,
   alerts: () => [],
@@ -144,8 +150,13 @@ const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
       </template>
     </OperatorPageHeader>
 
-    <div class="relative min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto grid w-full gap-4 p-4 md:py-6" :class="wide ? 'max-w-screen-2xl' : 'max-w-3xl'">
+    <div class="relative min-h-0 flex-1" :class="fill ? 'max-md:overflow-y-auto md:overflow-hidden' : 'overflow-y-auto'">
+      <div
+        class="mx-auto w-full"
+        :class="fill
+          ? 'flex max-w-screen-2xl flex-col gap-3 px-3 pt-2.5 pb-3 md:h-full md:min-h-0'
+          : ['grid gap-4 p-4 md:py-6', wide ? 'max-w-screen-2xl' : 'max-w-3xl']"
+      >
         <slot />
         <!-- A dica mede o que flutua na base ao montar: quando a ação na base chega
              depois (o detalhe carregou), ela remonta e mede de novo. -->

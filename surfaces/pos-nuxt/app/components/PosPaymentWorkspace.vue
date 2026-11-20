@@ -73,9 +73,18 @@ import {
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
 import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import type { PosBalanceCharge } from "~/presentation/balanceCharge";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
+  /**
+   * RECEBER O SALDO de uma encomenda ("Receber e entregar", EXCELENCIA-PDV WP-E5).
+   * Gesto de dinheiro tem UMA tela (dono, 16/11/2026): é esta mesma, com o saldo
+   * que o servidor apurou como total, as mesmas formas, cédulas, Exato, divisão e
+   * conferência do troco alto. Some o que é da VENDA (desconto, nota, itens da
+   * comanda); a coluna do pedido mostra a encomenda. Ausente = a venda.
+   */
+  balance?: PosBalanceCharge | null;
   /**
    * A comanda pode mandar à cozinha AGORA (a Action `fire_tab` da projeção): a linha
    * da cozinha abre e oferece "Enviar agora" para o que ainda não foi.
@@ -299,9 +308,16 @@ const emit = defineEmits<{
 // Nota fiscal é SECUNDÁRIA: mora na coluna "Nota e comprovante" (não é botãozão
 // no grid) e só aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal
 // está configurado.
-const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabilities?.supports_fiscal_document);
+// No saldo da encomenda a nota já foi decidida na venda: a seção não existe.
+const supportsFiscalDocument = computed(
+  () => !props.balance && !!props.checkoutContract?.capabilities?.supports_fiscal_document,
+);
 const savedAddresses = computed(() => props.customerLookup?.saved_addresses || []);
-const needsReview = computed(() => !props.review);
+// O total da tela é o do servidor ou nenhum: a review da venda, ou o saldo que a
+// encomenda já traz apurado (no saldo não há o que revisar).
+const totalConfirmed = computed(() => !!props.balance || !!props.review);
+const totalDisplay = computed(() => props.balance?.amountDisplay ?? props.review?.total_display ?? "");
+const needsReview = computed(() => !totalConfirmed.value);
 const approvalBlocking = computed(() => !!props.review?.requires_manager_approval && !props.managerApproved);
 // ENCOMENDA ACIMA DO PLANO (D-041, WP-E2): bloqueia e só o gerente libera, vendo
 // os dois números. Os números são do servidor (`review.preorder_over_plan`).
@@ -453,6 +469,7 @@ const cashNotesQ = computed(() => contractCashNotesQ(props.checkoutContract));
 const cashSelected = computed(() => props.selectedTenderMethod === "cash" && props.paymentCollection !== "on_delivery");
 /** O rótulo do total: o que se cobra agora, ou o que se recebe na retirada/entrega. */
 const totalLabel = computed(() => {
+  if (props.balance) return "A receber";
   if (props.paymentCollection !== "on_delivery") return "Total a cobrar";
   return props.fulfillmentType === "delivery" ? "A receber na entrega" : "A receber na retirada";
 });
@@ -560,7 +577,7 @@ function setReceiptChannel(ref: string, on: boolean) {
 // operator needs right now, so the big number stays the (stable) sale total.
 const payState = computed<"pending" | "idle" | "short" | "change" | "ready">(() => {
   // Troco, restante e "coberto" são contas sobre o total: sem ele, nenhum vale.
-  if (!props.review) return "pending";
+  if (!totalConfirmed.value) return "pending";
   // Na retirada (ou na entrega) nada é recebido agora: não há troco nesta tela.
   // O troco de quem leva mora no "Troco para quanto?" (beta test de 05/11/2026:
   // "TROCO R$ 23,00" numa encomenda que só se paga na retirada).
@@ -604,7 +621,7 @@ const splitBadge = computed(() => (
 ));
 /** Quanto ficaria cada parte se a conta fosse dividida em `n` — preview do modal. */
 function splitShareLabel(n: number): string {
-  if (!props.review) return "calculando";
+  if (!totalConfirmed.value) return "calculando";
   return formatBRL(splitShareQ(
     props.paymentTotalQ,
     n,
@@ -859,7 +876,9 @@ const ctaLabel = computed(() => {
   // (`onCta` → `managerAuthOpen = true`). Quem conclui é o gerente digitando o
   // PIN, que é, corretamente, o último passo — e só o último passo diz o verbo
   // do ato. Dizia "Autorizar e validar" e entregava uma terceira coisa.
-  return needsAuth.value ? "Pedir autorização" : "Validar";
+  if (needsAuth.value) return "Pedir autorização";
+  // No saldo da encomenda o botão diz o gesto inteiro: receber e entregar.
+  return props.balance ? "Receber e entregar" : "Validar";
 });
 // O QUE SEGURA O BOTÃO — na ordem em que o operador resolve, em três partes:
 // a frase (curta, é o que ele lê de longe), o porquê (miúdo, é o que ele DIZ ao
@@ -912,7 +931,7 @@ const ctaBlock = computed<{
   action?: CheckoutAction;
   actions?: CheckoutAction[];
 } | null>(() => {
-  if (!props.items.length) {
+  if (!props.balance && !props.items.length) {
     return {
       message: "Comanda vazia.",
       hint: "Não há o que cobrar.",
@@ -1146,7 +1165,7 @@ function noticeActions(note: CheckoutNotice): CheckoutAction[] {
 }
 
 // Saldo na RETIRADA se recebe no próprio PDV: Encomendas → "Receber e
-// entregar" (`PosPreorderHandOverDialog`). O aviso dizia "registre no Gestor",
+// entregar", que abre esta mesma tela com o saldo (`balance`). O aviso dizia "registre no Gestor",
 // do tempo em que o balcão não recebia encomenda; mandar o operador a outro app
 // para um gesto que mora aqui era o desvio.
 
@@ -1190,6 +1209,11 @@ const notices = computed<CheckoutNotice[]>(() => {
   // fala em voz alta, e ela some sozinha quando a conta fecha.
   else if (props.splitNote) {
     notes.push({ key: "split", tone: "block", icon: "lucide:users", message: props.splitNote });
+  }
+  // O que receber o saldo VAI fazer com a encomenda: a cobrança do cliente que o
+  // balcão cancela, a encomenda que sai da tela da cozinha. Frases do servidor.
+  for (const note of props.balance?.notices ?? []) {
+    notes.push({ key: `balance-${note.key}`, icon: note.icon, message: note.message, ...(note.tone ? { tone: note.tone } : {}) });
   }
   if (hasPixProviderTestTender.value && !pixProviderTestMixed.value && !pixProviderTestExceeded.value) {
     notes.push({
@@ -1290,7 +1314,7 @@ const plainLineNotices = computed(() =>
 const ctaDisabled = computed(() => {
   // Salvar/editar cliente é parte do fechamento: enquanto o resolve está em
   // voo, nem o clique nem o atalho Enter podem concluir com o cadastro antigo.
-  if (!props.items.length || props.loading || props.lookupBusy) return true;
+  if ((!props.balance && !props.items.length) || props.loading || props.lookupBusy) return true;
   if (props.saleBlockedReason) return true;
   // Com a revisão falhada o botão VOLTA a clicar: ele é o retry.
   if (props.reviewFailed) return false;
@@ -1513,8 +1537,10 @@ defineExpose({
              contrato, só Desconto fica desabilitado. Na entrega o grupo ganha
              os dois botões que definem quando receber. -->
         <section class="grid gap-1.5" aria-label="Ajustes da conta">
-          <div class="grid grid-cols-2 gap-1.5">
+          <div class="grid gap-1.5" :class="balance ? 'grid-cols-1' : 'grid-cols-2'">
+            <!-- No saldo da encomenda não há desconto: o preço foi fechado na venda. -->
             <NuxtButton
+              v-if="!balance"
               :disabled="!discountTypes.length"
               :title="!discountTypes.length ? 'Nenhum desconto disponível para esta loja' : undefined"
               :color="hasDiscount ? 'primary' : 'neutral'"
@@ -1892,14 +1918,14 @@ defineExpose({
           :aria-busy="payState === 'pending' && !reviewFailed ? 'true' : undefined"
           aria-live="polite"
           data-pos-total
-          :data-pos-total-state="review ? 'confirmed' : reviewFailed ? 'failed' : 'calculating'"
+          :data-pos-total-state="totalConfirmed ? 'confirmed' : reviewFailed ? 'failed' : 'calculating'"
         >
           <p class="text-xs font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
             {{ payState === "change" ? "Troco" : totalLabel }}
           </p>
           <!-- Sem a revisão do servidor, NENHUM número no lugar do total: o
                que aparece é o estado (ver `needsReview`). -->
-          <template v-if="!review">
+          <template v-if="!totalConfirmed">
             <p
               v-if="reviewFailed"
               class="mt-1 text-3xl font-semibold text-destructive xl:text-4xl"
@@ -1926,10 +1952,10 @@ defineExpose({
               class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl"
               :class="payState === 'change' ? 'text-primary' : ''"
             >
-              {{ payState === "change" ? formatBRL(paymentChangeQ) : review.total_display }}
+              {{ payState === "change" ? formatBRL(paymentChangeQ) : totalDisplay }}
             </p>
             <p v-if="payState === 'change'" class="mt-2 text-sm tabular-nums text-muted-foreground">
-              Total a cobrar {{ review.total_display }}
+              {{ totalLabel }} {{ totalDisplay }}
             </p>
           </template>
         </section>
@@ -2026,7 +2052,38 @@ defineExpose({
              sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
              só se confere. Rola quando a comanda é grande; subtotal, desconto e
              taxa ficam colados embaixo, fora da rolagem. -->
-        <section class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo do pedido">
+        <!-- A ENCOMENDA, no saldo: de quem é, o que foi pedido e a conta que fecha
+             no que falta receber. Os números são do servidor; aqui só se confere. -->
+        <section v-if="balance" class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo da encomenda" data-balance-summary>
+          <h3 class="flex items-baseline gap-2 px-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Encomenda {{ balance.orderRef }}</span>
+          </h3>
+          <div class="flex min-h-0 flex-1 flex-col rounded-md border bg-card">
+            <p class="border-b px-3 py-2 text-sm font-semibold" data-balance-customer>{{ balance.customerName }}</p>
+            <ul v-if="balance.lines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
+              <li v-for="line in balance.lines" :key="line.key" class="flex items-baseline gap-2 px-3 py-2">
+                <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
+                <span class="min-w-0 flex-1 text-sm">{{ line.name }}</span>
+                <strong class="shrink-0 text-sm font-semibold tabular-nums">{{ line.totalDisplay }}</strong>
+              </li>
+            </ul>
+            <dl class="grid gap-1 border-t px-3 py-2 text-sm" data-balance-totals>
+              <div class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted-foreground">Total da encomenda</dt>
+                <dd class="tabular-nums">{{ balance.orderTotalDisplay }}</dd>
+              </div>
+              <div v-if="balance.paidDisplay" class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted-foreground">Já pago</dt>
+                <dd class="tabular-nums">{{ balance.paidDisplay }}</dd>
+              </div>
+              <div class="flex items-baseline justify-between gap-2 border-t pt-1 font-semibold">
+                <dt>A receber</dt>
+                <dd class="tabular-nums">{{ balance.amountDisplay }}</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+        <section v-else class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo do pedido">
           <h3 class="flex items-baseline gap-2 px-1">
             <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Resumo do pedido</span>
             <span v-if="summaryUnits" class="ml-auto text-xs tabular-nums text-muted-foreground">
@@ -2284,6 +2341,7 @@ defineExpose({
         <NuxtButton
           size="xl"
           class="h-14 w-full shrink-0 gap-2 text-base"
+          data-payment-cta
           :disabled="ctaDisabled"
           :loading="(loading || needsReview) && !reviewFailed"
           @click="onCta"
@@ -2367,7 +2425,9 @@ defineExpose({
   <!-- O comprovante DESTA venda (impressa / e-mail / CPF na nota) mora na
        coluna "Nota e comprovante" acima; o modal cuida do cadastro e dos
        PADRÕES do cliente. Nada de comprovante viaja para ele. -->
+  <!-- No saldo da encomenda o cliente já é o da encomenda: não há o que escolher. -->
   <PosCustomerModal
+    v-if="!balance"
     v-model:open="customerSheetOpen"
     :customer-name="customerName"
     :customer-phone="customerPhone"

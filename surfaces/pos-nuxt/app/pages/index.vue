@@ -23,6 +23,7 @@ import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/s
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { kitchenBoundSkus, kitchenRoutedSkus } from "~/presentation/kitchen";
 import { overPlanSummary } from "~/presentation/payment";
+import { paymentKeyIntent } from "~/presentation/paymentKeys";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
@@ -1123,43 +1124,41 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
   // On the payment screen, the physical keyboard drives the value numpad of the
   // SELECTED tender (like the order screen's numpad): digits type, comma/period
-  // enters centavos, Backspace trims. Requires a form already chosen.
-  if (checkoutMode.value && !isEditing && !event.metaKey && !event.ctrlKey && !event.altKey && selectedTenderIndex.value >= 0) {
-    if (event.key >= "0" && event.key <= "9") {
-      event.preventDefault();
-      tenderDigit(event.key);
-      return;
-    }
-    if (event.key === "," || event.key === "." || event.key === "Decimal") {
-      event.preventDefault();
-      tenderComma();
-      return;
-    }
-    if (event.key === "Backspace") {
-      event.preventDefault();
-      tenderBackspace();
-      return;
-    }
-    // "=" é o Exato do teclado físico: a linha selecionada assume o que as
-    // outras deixam devendo (total coberto, troco zero) — o mesmo botão da tela,
-    // pela mesma porta: com a revisão do total em trânsito, ele espera.
-    if (event.key === "=") {
-      event.preventDefault();
-      paymentWorkspaceRef.value?.pressExact();
-      return;
-    }
-  }
-
+  // enters centavos, Backspace trims, "=" is Exato. A régua das teclas é a mesma
+  // do saldo da encomenda (`paymentKeyIntent`): a mesma tela, as mesmas teclas.
+  //
   // LETRA no checkout = forma de pagamento (D/P/C, derivadas do contrato). É o
   // gesto de TODA venda e era o único do checkout que ainda exigia o mouse. As
   // letras estão livres aqui: o search-as-you-type é da tela de VENDA, e sob
   // campo de texto o `isEditing` acima já cala tudo isto.
-  if (
-    checkoutMode.value && !isEditing
-    && !event.metaKey && !event.ctrlKey && !event.altKey
-    && /^[a-zA-Z]$/.test(event.key)
-  ) {
-    const letra = event.key.toUpperCase();
+  const paymentKey = checkoutMode.value && !isEditing
+    ? paymentKeyIntent(event, selectedTenderIndex.value >= 0)
+    : null;
+  if (paymentKey?.kind === "digit") {
+    event.preventDefault();
+    tenderDigit(paymentKey.digit);
+    return;
+  }
+  if (paymentKey?.kind === "comma") {
+    event.preventDefault();
+    tenderComma();
+    return;
+  }
+  if (paymentKey?.kind === "backspace") {
+    event.preventDefault();
+    tenderBackspace();
+    return;
+  }
+  // "=" é o Exato do teclado físico: a linha selecionada assume o que as
+  // outras deixam devendo (total coberto, troco zero) — o mesmo botão da tela,
+  // pela mesma porta: com a revisão do total em trânsito, ele espera.
+  if (paymentKey?.kind === "exact") {
+    event.preventDefault();
+    paymentWorkspaceRef.value?.pressExact();
+    return;
+  }
+  if (paymentKey?.kind === "letter") {
+    const letra = paymentKey.letter;
     if (paymentWorkspaceRef.value?.pressMethodKey(letra)) {
       event.preventDefault();
       return;
