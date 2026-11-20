@@ -8701,6 +8701,9 @@
             "free_ride_numbers",
             "next_ride_number",
             "ride_is_live",
+            "dispatch_tasks_for",
+            "_LIVE_TASK_STATUSES",
+            "_RECEIPT_STATES",
             "ride_letter"
           ]
         }

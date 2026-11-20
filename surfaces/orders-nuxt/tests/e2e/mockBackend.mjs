@@ -542,6 +542,24 @@ const DELIVERIES = {
 /** As corridas em grupo que a tela chamou (`POST /orders/courier-ride/`), na ordem. */
 const ridePosts = [];
 
+// A F10 (`deliveriesFiscal.spec.ts`, cookie `e2e_f10`): `fiscal` põe a NFC-e não
+// autorizada na parada de Flora (corrida B) e a DANFE por imprimir na de Bia (corrida
+// A), com os MESMOS campos do cartão; `countfail` faz o selo receber `waiting: null`.
+// Sem o cookie, o selo conta as três de Aguardando e nenhuma parada tem aviso.
+function f10Deliveries() {
+  const patch = (stop) => {
+    if (stop.ref === "WEB-20261116-0F09") return { ...stop, fiscal_status: "failed", danfe_state: "", danfe_problem: "" };
+    if (stop.ref === "WEB-20261116-0B12") {
+      return {
+        ...stop, fiscal_status: "authorized", danfe_state: "not_printed",
+        danfe_problem: "A impressora de Balcão recusou a DANFE. Confira o papel e imprima de novo.",
+      };
+    }
+    return stop;
+  };
+  return { ...DELIVERIES, rides: DELIVERIES.rides.map((ride) => ({ ...ride, stops: ride.stops.map(patch) })) };
+}
+
 // A prévia da F4a (`MOCK_F4A=1`): o que a página passou a saber igual ao Painel.
 // Uma chamada sem resposta em Aguardando, a corrida que a TaOn parou de informar
 // com a cobrança de uma parada para trás, a que ninguém aceitou há 12 min e a que
@@ -664,6 +682,11 @@ const server = createServer((req, res) => {
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   const cancelScenario = /(?:^|;\s*)e2e_deliveries=cancel(?:;|$)/.test(req.headers.cookie || "");
   if (cancelScenario && /\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, deliveriesProjection());
+  const f10Scenario = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_f10=(fiscal|countfail)(?:;|$)/)?.[1] ?? "";
+  if (/\/backstage\/deliveries\/count\/?(\?|$)/.test(url)) {
+    return json(res, 200, { waiting: f10Scenario === "countfail" ? null : DELIVERIES.waiting.length });
+  }
+  if (f10Scenario === "fiscal" && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, f10Deliveries());
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });
