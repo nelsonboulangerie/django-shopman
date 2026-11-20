@@ -7361,6 +7361,7 @@
             "build_free_delivery_progress",
             "build_minimum_order_progress",
             "logger",
+            "reservation_lapsed_at",
             "reserved_until",
             "shop_rule_q"
           ]

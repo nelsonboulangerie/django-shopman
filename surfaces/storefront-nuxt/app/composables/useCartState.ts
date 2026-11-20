@@ -109,6 +109,7 @@ function emptyCart (): CartProjection {
     awaiting_confirmation_notice: '',
     reserved_until_iso: null,
     reserved_until_display: null,
+    reservation_lapsed_display: null,
     minimum_order_progress: null,
     delivery_minimum_progress: null,
     free_delivery_progress: null,
