@@ -265,8 +265,11 @@ async function noSideScroll(page: Page, label: string) {
   expect(overflow, `${label}: transbordo horizontal`).toBeLessThanOrEqual(0);
 }
 
-/** O foco de teclado à vista: o elemento focado existe, está na tela e tem anel. */
-async function focusVisible(page: Page, label: string) {
+/**
+ * O foco de teclado à vista: o elemento focado existe, está na tela e, quando o
+ * foco chegou pelo teclado (`:focus-visible`), desenha o anel.
+ */
+async function focusVisible(page: Page, label: string, { ring = true } = {}) {
   const focus = await page.evaluate(() => {
     const el = document.activeElement as HTMLElement | null;
     if (!el || el === document.body) return null;
@@ -275,12 +278,14 @@ async function focusVisible(page: Page, label: string) {
     return {
       text: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 60),
       inView: box.top >= 0 && box.bottom <= window.innerHeight && box.left >= 0 && box.right <= window.innerWidth,
-      ring: style.outlineStyle !== "none" || style.boxShadow !== "none",
+      focusVisible: el.matches(":focus-visible"),
+      ring: (style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0) || style.boxShadow !== "none",
     };
   });
   console.log(`AUDITORIA foco ${label}: ${JSON.stringify(focus)}`);
   expect(focus, `${label}: nenhum elemento com foco`).not.toBeNull();
   expect(focus!.inView, `${label}: o foco está fora da tela`).toBe(true);
+  if (ring) expect(focus!.ring, `${label}: o foco de teclado não desenha anel`).toBe(true);
 }
 
 const PAYMENT_TEXT = [
@@ -341,6 +346,9 @@ for (const device of ["phone", "counter"] as const) {
       // A coluna da encomenda fecha a conta: itens, desconto (quando há) e o total.
       await expect(page.locator("[data-balance-totals]")).toContainText("Total da encomenda");
       await expect(page.locator("[data-payment-cta]")).toBeDisabled();
+      // O próximo foco ao abrir: a primeira forma (Enter lança ela), à vista.
+      await expect(payment.locator('[data-payment-method="cash"]')).toBeFocused({ timeout: 15_000 });
+      await focusVisible(page, "primeira forma", { ring: false });
       // A Tela do cliente acompanha: o valor a pagar.
       await expect(display.getByText("Total a pagar")).toBeVisible({ timeout: 15_000 });
       await expect(display.getByText(due).first()).toBeVisible();
@@ -376,8 +384,11 @@ for (const device of ["phone", "counter"] as const) {
       await hero.scrollIntoViewIfNeeded();
       await still(page);
       await capture(page, testInfo, "troco-grande");
-      // O próximo gesto é receber: o foco de teclado vai ao botão, e fica à vista.
+      // O próximo gesto é receber: pelo teclado (Tab) o foco chega ao botão, à vista e com anel.
       await cta.focus();
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+      await expect(cta).toBeFocused();
       await focusVisible(page, "Receber e entregar");
       await audits(page, "troco", "[data-pos-total] p, [data-payment-cta]");
 

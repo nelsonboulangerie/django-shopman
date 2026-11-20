@@ -93,9 +93,18 @@ const displaySnapshot = computed(() => handOverCustomerDisplaySnapshot({
 }));
 useCustomerDisplayPublisher(displaySnapshot);
 
-// P2-14: com o pagamento aberto o PDV não trava por ociosidade, como na venda.
+// P2-14: com o Pagamento aberto o PDV não trava por ociosidade, como na venda.
 const paymentHold = useState("pos-payment-hold", () => false);
 onMounted(() => { paymentHold.value = true; });
+
+// O PRÓXIMO FOCO ao abrir: escolher a forma. O foco de teclado vai para a primeira
+// (Enter lança ela; com o saldo coberto, Enter recebe e entrega), sem reorganizar a
+// tela em torno dela: o valor a receber continua à vista.
+const root = useTemplateRef<HTMLElement>("root");
+const { reveal } = useNextFocus();
+onMounted(() => {
+  reveal(() => root.value?.querySelector<HTMLElement>("[data-payment-method]:not(:disabled)") ?? null, { align: "center" });
+});
 onBeforeUnmount(() => { paymentHold.value = false; });
 
 // ── O teclado físico: a mesma régua da venda ──
@@ -103,6 +112,7 @@ const workspace = ref<{
   validate: () => void;
   pressMethodKey: (letter: string) => boolean;
   pressExact: () => boolean;
+  openSplit: () => void;
 } | null>(null);
 
 function onKeydown(event: KeyboardEvent) {
@@ -125,6 +135,12 @@ function onKeydown(event: KeyboardEvent) {
     workspace.value?.validate();
     return;
   }
+  // F10 é o Dividir conta, a tecla que o próprio botão anuncia (como na venda).
+  if (event.key === "F10") {
+    event.preventDefault();
+    workspace.value?.openSplit();
+    return;
+  }
   if (event.key === "Escape") {
     event.preventDefault();
     emit("back");
@@ -145,7 +161,7 @@ watch(() => props.detail.counter.hand_over.amount_q, (amount, before) => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col" data-preorder-balance-payment>
+  <div ref="root" class="flex h-full min-h-0 flex-col" data-preorder-balance-payment>
     <PosPaymentWorkspace
       ref="workspace"
       :balance="charge"

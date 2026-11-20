@@ -388,6 +388,28 @@ describe("Detalhe — receber e entregar (a tela de Pagamento da venda, WP-E5)",
     expect(kick).not.toHaveBeenCalled();
   });
 
+  it("o teclado é o da venda: letra lança a forma, dígitos editam, F10 divide e Esc volta", async () => {
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    const press = async (key: string) => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      await settle();
+    };
+    await press("r");
+    for (const digit of ["5", "0"]) await press(digit);
+    expect(heroText(wrapper)).toContain("R$ 14,00");
+    // O diálogo aberto é o do reka-ui (`data-state="open"`), a mesma régua do shell.
+    const openDialog = () => body().querySelector<HTMLElement>('[role="dialog"][data-state="open"]');
+    await press("F10");
+    await vi.waitFor(() => expect(openDialog()?.textContent).toContain("Em quantas pessoas"));
+    // Com o diálogo aberto, as teclas da tela se calam (o Esc é dele).
+    openDialog()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await settle();
+    await vi.waitFor(() => expect(openDialog()).toBeNull());
+    await press("Escape");
+    expect(wrapper.find("[data-preorder-balance-payment]").exists()).toBe(false);
+  });
+
   it("P2-14: com o Pagamento aberto o PDV não trava por ociosidade; voltar solta a trava", async () => {
     const hold = useState<boolean>("pos-payment-hold", () => false);
     const wrapper = await mount(DetailPage);
