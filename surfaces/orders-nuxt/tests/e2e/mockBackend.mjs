@@ -650,6 +650,34 @@ function rideQuote(url) {
   };
 }
 
+// M3 (#2526): os entregadores da casa. Só com o cookie `e2e_crew=on` alguém da casa
+// existe; sem ele, o serviço da casa está desligado e a tela é a de antes. Diego está
+// na escala; Rui não. As paradas ganham a ação `courier-dispatch` (a revisão que a tela
+// leu), que é de onde sai a intenção de enviar à casa.
+const crewState = { diego: true, rui: false };
+const housePosts = [];
+function crewBody(url) {
+  const refs = new URL(url, "http://mock").searchParams.getAll("refs");
+  const value = (q) => (refs.length ? `R$ ${Math.floor(q / 100)},${String(q % 100).padStart(2, "0")}` : "");
+  const row = (ref, name, base) => {
+    const valueQ = refs.length && crewState[ref] ? base + 300 * (refs.length - 1) : null;
+    return { ref, name, on_shift: crewState[ref], state: "free", state_label: "Livre", value_q: valueQ,
+      value: valueQ === null ? "" : value(valueQ) };
+  };
+  return {
+    active: true, service: { ref: "casa", name: "Entregadores da casa" }, default: { ref: "taon", name: "TaOn" },
+    couriers: [row("diego", "Diego", 1200), row("rui", "Rui", 1400)],
+  };
+}
+const DISPATCH = (ref) => ({
+  ref: "courier-dispatch", kind: "mutation", label: "Chamar sozinho", priority: "", enabled: true, reason: "",
+  href: "", method: "POST", idempotency: "required", confirmation: { required: true },
+  payload_schema: { base_revision: `r-${ref.slice(-3).toLowerCase()}`, expected_actor_id: 1 },
+});
+function crewDeliveries() {
+  return { ...DELIVERIES, waiting: DELIVERIES.waiting.map((stop) => ({ ...stop, dispatch_action: DISPATCH(stop.ref) })) };
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -664,6 +692,40 @@ const server = createServer((req, res) => {
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   const cancelScenario = /(?:^|;\s*)e2e_deliveries=cancel(?:;|$)/.test(req.headers.cookie || "");
   if (cancelScenario && /\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, deliveriesProjection());
+  const crewScenario = /(?:^|;\s*)e2e_crew=on(?:;|$)/.test(req.headers.cookie || "");
+  if (/\/e2e\/deliveries\/house\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") {
+      housePosts.length = 0;
+      Object.assign(crewState, { diego: true, rui: false });
+    }
+    return json(res, 200, { rides: housePosts, shift: crewState });
+  }
+  const shiftPost = url.match(/\/deliveries\/couriers\/([a-z]+)\/shift\/?(\?|$)/);
+  if (shiftPost && req.method === "POST") {
+    return void readBody(req).then((body) => {
+      crewState[shiftPost[1]] = Boolean(body.on_shift);
+      json(res, 200, crewBody(""));
+    });
+  }
+  if (/\/deliveries\/couriers\/ride\/?(\?|$)/.test(url)) {
+    if (req.method !== "POST") return json(res, 202, { outcome: "unknown" });
+    return void readBody(req).then((body) => {
+      housePosts.push(body);
+      const name = body.courier === "rui" ? "Rui" : "Diego";
+      const many = body.refs.length > 1;
+      const label = many ? "Rota C" : `Pedido ${body.refs[0].slice(-3)}`;
+      const link = `https://loja.test/rota/tok${housePosts.length}`;
+      const text = `Corrida para você: ${label}. Abra o link no seu celular: ${link}`;
+      json(res, 200, { ok: true, outcome: "applied", refs: body.refs, ride_ref: `CASA-${housePosts.length}`,
+        link_url: link, whatsapp_url: `https://wa.me/5543999990000?text=${encodeURIComponent(text)}`,
+        detail: `${label} ${many ? "enviada" : "enviado"} para ${name}.`, ride_number: body.ride_number ?? 3,
+        ride_letter: "C" });
+    });
+  }
+  if (/\/deliveries\/couriers\/?(\?|$)/.test(url)) {
+    return json(res, 200, crewScenario ? crewBody(url) : { active: false, service: null, default: { ref: "taon", name: "TaOn" }, couriers: [] });
+  }
+  if (crewScenario && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, crewDeliveries());
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });

@@ -43,6 +43,20 @@ import {
   type RideSuggestion,
 } from "~/presentation/deliveries";
 import type { CallSheetRide } from "~/components/CourierCallSheet.vue";
+import {
+  DEFAULT_CARRIER,
+  HOUSE_RIDE_PATH,
+  busyNotice,
+  carrierChips,
+  chosenCarrier,
+  houseQuoteLines,
+  houseRideAction,
+  houseRideInputs,
+  houseRideResource,
+  sendLabel,
+  shiftChips,
+  type HouseRideResult,
+} from "~/presentation/houseCouriers";
 
 const route = useRoute();
 const router = useRouter();
@@ -184,9 +198,36 @@ function routeOf(ride: EditingRide): DeliveryStopProjection[] {
   return routeOrder(origin.value, stops);
 }
 const linesOf = (ride: EditingRide) => {
+  const who = carrierOf(ride.number);
+  if (who) {
+    // Quem é da casa: uma linha só, o valor da tabela (a TaOn não cota esta corrida).
+    const value = houseValues.value[ride.number]?.[who.ref];
+    return value === undefined ? [] : houseQuoteLines(value);
+  }
   const state = quotes.value[ride.number];
   return quoteLines(state?.quote ?? null, ride.refs.length, state?.failure ?? "");
 };
+
+// ── quem leva (M3, #2526) ──────────────────────────────────────────────────
+// O padrão do Admin vem marcado; quem da casa está na escala aparece como opção. A
+// escolha é por corrida, só da tela, e vale até chamar.
+const crewRides = computed(() => ready.value.map((ride) => ({ number: ride.number, refs: routeOf(ride).map((stop) => stop.ref) })));
+const { crew, values: houseValues, refresh: refreshCrew, toggleShift, toggling } = useHouseCrew(crewRides);
+watch(data, () => void refreshCrew());
+const carrier = ref<Record<number, string>>({});
+const carrierOf = (number: number) => chosenCarrier(crew.value, carrier.value[number]);
+function chooseCarrier(number: number, key: string) {
+  carrier.value = { ...carrier.value, [number]: key };
+}
+const chipsOf = (ride: EditingRide) => {
+  const state = quotes.value[ride.number];
+  return carrierChips(crew.value, {
+    quoteQ: state?.quote?.value_q ?? null,
+    quoting: Boolean(state?.pending),
+    values: houseValues.value[ride.number],
+  });
+};
+const shift = computed(() => shiftChips(crew.value));
 
 // ── maquininha de cada corrida (P1-12) ──────────────────────────────────────
 const machines = computed(() => data.value?.machines ?? []);
@@ -247,9 +288,12 @@ function dismissFailure(number: number) {
   const { [number]: _gone, ...rest } = failures.value;
   failures.value = rest;
 }
-const callLabel = computed(() =>
-  ready.value.length === 1 ? `Chamar a corrida ${rideLetter(ready.value[0]!.number)}` : `Chamar ${ready.value.length} corridas`,
-);
+const callLabel = computed(() => {
+  if (ready.value.length !== 1) return `Chamar ${ready.value.length} corridas`;
+  const ride = ready.value[0]!;
+  const who = carrierOf(ride.number);
+  return who ? sendLabel(who.name, routeOf(ride).map((stop) => stop.code)) : `Chamar a corrida ${rideLetter(ride.number)}`;
+});
 const machineMissing = computed(() => needing.value.some((number) => !assigned.value[number]));
 const canCall = computed(() => ready.value.length > 0 && !sending.value && !machineMissing.value);
 const summary = computed(() =>
@@ -269,6 +313,16 @@ async function call(only?: number[]) {
   failure.value = "";
   const targets = only ? ready.value.filter((ride) => only.includes(ride.number)) : ready.value;
   const calls = rideCalls(targets, waitingAll.value, assigned.value, change.value);
+  // As corridas da casa abrem o WhatsApp do dispositivo. A aba nasce AGORA, no toque,
+  // antes de qualquer espera: aberta depois da resposta, o navegador a bloquearia.
+  const tabs: Record<number, Window | null> = {};
+  for (const item of calls) {
+    if (!carrierOf(item.number)) continue;
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    tabs[item.number] = tab;
+  }
+  let sentDetail = "";
   const called: string[] = [];
   let opened = 0;
   // A corrida que já existia com os mesmos pedidos (chamada em outro dispositivo):
@@ -276,7 +330,30 @@ async function call(only?: number[]) {
   let already = "";
   for (const item of calls) {
     try {
-      if (item.kind === "group") {
+      const who = carrierOf(item.number);
+      if (who) {
+        // A casa: a corrida vai para a pessoa escolhida, na ordem da rota, e o link
+        // segue pelo WhatsApp do dispositivo (a aba aberta no toque).
+        const ride = editing.value.find((entry) => entry.number === item.number);
+        const ordered = ride ? routeOf(ride).filter((stop) => item.refs.includes(stop.ref)) : [];
+        const refs = ordered.length === item.refs.length ? ordered.map((stop) => stop.ref) : item.refs;
+        const stops = refs.map((ref) => byRef.value.get(ref)).filter((stop): stop is DeliveryStopProjection => Boolean(stop));
+        const result = (await intentions.executePath(
+          houseRideResource(refs),
+          HOUSE_RIDE_PATH,
+          houseRideAction(stops),
+          houseRideInputs({ refs, courier: who.ref, change_out: item.change_out, machine: item.machine, number: item.number }),
+          undefined,
+          { subject: "a corrida foi enviada", where: "os pedidos" },
+        )) as unknown as HouseRideResult;
+        const tab = tabs[item.number];
+        Reflect.deleteProperty(tabs, item.number);
+        if (result.whatsapp_url) {
+          if (tab) tab.location.href = result.whatsapp_url;
+          else window.open(result.whatsapp_url, "_blank", "noopener");
+        } else tab?.close();
+        sentDetail = result.detail ?? "";
+      } else if (item.kind === "group") {
         // Pelo protocolo de intenção, como a chamada de um pedido só: quem a tela
         // leu, a revisão de cada pedido e uma chave por corrida, guardada até a
         // resposta definitiva (`group_action` da projeção).
@@ -313,15 +390,19 @@ async function call(only?: number[]) {
       }
     }
   }
+  // A aba que ficou sem corrida (a chamada falhou antes) fecha: nada abre à toa.
+  for (const tab of Object.values(tabs)) tab?.close();
   if (opened)
     useSonner.success(
       opened === 1 && calls.length === 1
-        ? already || "Corrida chamada. A TaOn avisa quando alguém aceitar."
+        ? sentDetail || already || "Corrida chamada. A TaOn avisa quando alguém aceitar."
         : `${opened} ${opened === 1 ? "corrida chamada" : "corridas chamadas"}.`,
     );
   const done = new Set(called);
   editing.value = editing.value.filter((ride) => !ride.refs.some((ref) => done.has(ref)));
   if (!editing.value.some((ride) => ride.number === active.value)) active.value = editing.value[0]?.number ?? 0;
+  const alive = new Set(editing.value.map((ride) => ride.number));
+  carrier.value = Object.fromEntries(Object.entries(carrier.value).filter(([number]) => alive.has(Number(number))));
   sending.value = false;
   await refresh();
 }
@@ -444,6 +525,7 @@ const sheetRides = computed<CallSheetRide[]>(() =>
       const stops = routeOf(ride);
       const plan = suggestionOf(ride.refs) ?? suggestionOf(stops.map((stop) => stop.ref));
       const live = linesOf(ride);
+      const who = carrierOf(ride.number);
       return {
         number: ride.number,
         letter: rideLetter(ride.number),
@@ -454,7 +536,10 @@ const sheetRides = computed<CallSheetRide[]>(() =>
         })),
         // A cotação viva da corrida (a mesma que a chamada vai abrir); enquanto ela
         // não chega, a do plano.
-        lines: live.length ? live : plan ? suggestionQuoteLines(plan as RideSuggestion) : [],
+        lines: live.length || who ? live : plan ? suggestionQuoteLines(plan as RideSuggestion) : [],
+        carriers: chipsOf(ride),
+        carrier: who?.ref ?? DEFAULT_CARRIER,
+        notice: busyNotice(who),
         late: plan ? suggestionLate(plan) : "",
         needsMachine: needing.value.includes(ride.number),
         machine: assigned.value[ride.number] ?? "",
@@ -468,12 +553,17 @@ const sheetLines = computed(() => {
   const list = sheetRides.value
     .map((ride) => suggestionOf(editing.value.find((item) => item.number === ride.number)?.refs ?? []))
     .filter(Boolean) as RideSuggestion[];
+  // O total compara cotações da TaOn: com alguma corrida da casa, ele não vale.
+  if (sheetRides.value.some((ride) => ride.carrier !== DEFAULT_CARRIER)) return [];
   return list.length === sheetRides.value.length ? suggestionsHeadline(list).lines : [];
 });
 const sheetMachineMissing = computed(() => sheetRides.value.some((ride) => ride.needsMachine && !ride.machine));
-const sheetCallLabel = computed(() =>
-  sheetRides.value.length === 1 ? `Chamar a corrida ${sheetRides.value[0]!.letter}` : `Chamar as ${sheetRides.value.length} corridas`,
-);
+const sheetCallLabel = computed(() => {
+  if (sheetRides.value.length !== 1) return `Chamar as ${sheetRides.value.length} corridas`;
+  const ride = sheetRides.value[0]!;
+  const who = carrierOf(ride.number);
+  return who ? sendLabel(who.name, ride.stops.map((stop) => stop.code)) : `Chamar a corrida ${ride.letter}`;
+});
 </script>
 
 <template>
@@ -516,6 +606,29 @@ const sheetCallLabel = computed(() =>
 
       <div class="flex min-h-0 flex-col">
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-5">
+          <!-- Entregadores de hoje (M3): um toque liga ou desliga a escala do dia. Só quem
+               está na escala aparece no "Quem leva". Sem o serviço da casa ativo, nada. -->
+          <section v-if="shift.length" class="mb-4 flex flex-col gap-2" data-house-shift>
+            <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
+              <NuxtIcon name="i-lucide-users" class="size-4 text-muted" />
+              Entregadores de hoje
+            </h2>
+            <div class="flex flex-wrap gap-2">
+              <NuxtButton
+                v-for="person in shift"
+                :key="person.ref"
+                class="min-h-11"
+                :color="person.on ? 'primary' : 'neutral'"
+                :variant="person.on ? 'soft' : 'outline'"
+                :icon="person.on ? 'i-lucide-check' : 'i-lucide-plus'"
+                :label="person.label"
+                :aria-pressed="person.on"
+                :loading="toggling === person.ref"
+                :data-house-shift-person="person.ref"
+                @click="toggleShift(person.ref, !person.on)"
+              />
+            </div>
+          </section>
           <!-- 1. aguardando -->
           <section>
             <h2 class="flex items-center gap-2 op-label font-semibold text-highlighted">
@@ -676,7 +789,15 @@ const sheetCallLabel = computed(() =>
                 </ol>
                 <!-- Cotação (duas linhas, ✔ na mais barata) e a maquininha DESTA corrida. -->
                 <div v-if="ride.refs.length" class="flex flex-col gap-1.5 px-3 pb-3" data-ride-quote>
-                  <p v-if="quotes[ride.number]?.pending" class="op-micro text-muted">Cotando na TaOn…</p>
+                  <RideCarrierChips
+                    v-if="chipsOf(ride).length"
+                    :chips="chipsOf(ride)"
+                    :model-value="carrierOf(ride.number)?.ref ?? DEFAULT_CARRIER"
+                    :label="`Quem leva a corrida ${rideLetter(ride.number)}`"
+                    :notice="busyNotice(carrierOf(ride.number))"
+                    @update:model-value="(key: string) => chooseCarrier(ride.number, key)"
+                  />
+                  <p v-if="quotes[ride.number]?.pending && !carrierOf(ride.number)" class="op-micro text-muted">Cotando na TaOn…</p>
                   <p
                     v-for="line in linesOf(ride)"
                     :key="line.text"
@@ -782,6 +903,7 @@ const sheetCallLabel = computed(() =>
       @confirm="confirmSheet"
       @change="setChange"
       @machine="chooseMachine"
+      @carrier="chooseCarrier"
     />
 
     <!-- Entregador voltou: confere e só então encerra a corrida inteira. -->
