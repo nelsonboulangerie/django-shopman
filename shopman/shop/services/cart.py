@@ -20,8 +20,8 @@ from shopman.orderman.models import Session
 from shopman.shop.policies.promotion import PromotionContext, Shopper, promotion_matches
 from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.services import availability, lot_pricing, waitlist
-from shopman.shop.services import substitutes as substitute_suggestions
 from shopman.shop.services import sessions as session_service
+from shopman.shop.services import substitutes as substitute_suggestions
 from shopman.shop.services.order_helpers import parse_commitment_date
 
 logger = logging.getLogger(__name__)
