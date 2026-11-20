@@ -445,6 +445,29 @@ _PUBLIC_SEARCH_STOPWORDS = frozenset(
         "voce",
         "voces",
         "vou",
+        # A casa inteira, o gesto de aceitar e o "quanto custa" não dizem o assunto: casavam
+        # qualquer pergunta frequente que os citasse (pets recebeu o texto do glúten, que
+        # diz "Somos uma padaria", e o de pagamento, que diz "aceitamos"; 20/11/2026).
+        "aceita",
+        "aceitam",
+        "aceitar",
+        "aceitamos",
+        "algo",
+        "aqui",
+        "casa",
+        "custa",
+        "custam",
+        "loja",
+        "padaria",
+        "quanto",
+        "quanta",
+        "sugere",
+        "sugerem",
+        "sugestao",
+        "indica",
+        "indicam",
+        "recomenda",
+        "recomendam",
     }
 )
 _MENU_OVERVIEW_TERMS = frozenset(
@@ -471,7 +494,7 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
     """
     from shopman.shop.models import Shop
     from shopman.storefront.presentation.catalog import build_catalog
-    from shopman.storefront.presentation.public_information import search_public_faq
+    from shopman.storefront.presentation.public_information import search_public_faq, word_stem
 
     from .small_talk import strip_small_talk
 
@@ -511,8 +534,8 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
                     [item.name, item.short_description or "", item.category or "", " ".join(item.search_terms or ())]
                 )
             )
-            haystack_terms = set(re.findall(r"[a-z0-9]+", haystack))
-            score = sum(1 for term in terms if term in haystack_terms)
+            haystack_terms = {word_stem(word) for word in re.findall(r"[a-z0-9]+", haystack)}
+            score = sum(1 for term in terms if word_stem(term) in haystack_terms)
             name = _fold(item.name)
             score += 4 if name and name in needle else 0
             if score:
@@ -532,8 +555,10 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
     matched_words = set()
     if needle:
         for item in items:
-            matched_words.update(re.findall(r"[a-z0-9]+", _fold(f"{item.name} {item.category or ''}")))
-    faq_terms = [term for term in _public_search_terms(search_text) if term not in matched_words]
+            matched_words.update(
+                word_stem(word) for word in re.findall(r"[a-z0-9]+", _fold(f"{item.name} {item.category or ''}"))
+            )
+    faq_terms = [term for term in _public_search_terms(search_text) if word_stem(term) not in matched_words]
 
     try:
         shop = Shop.load()
