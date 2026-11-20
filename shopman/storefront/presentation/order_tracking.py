@@ -1373,13 +1373,19 @@ def _promise_copy(
                     "Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
                 )
             return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
-        message = (
-            copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_NEW",
-                         "Cartão autorizado. Acompanhe o pedido por aqui.")
-            if status == "new"
-            else copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_CONFIRMED",
-                              "Cartão autorizado. Pedido aceito; acompanhe o andamento por aqui.")
-        )
+        # Pedido do dia esperando a loja: com o prazo publicado, até quando ela
+        # confirma (#2749, item 1); o aceite é que cobra.
+        if status == "new" and until:
+            message = copy.message(
+                "TRACKING_CARD_AUTHORIZED_MESSAGE_NEW_UNTIL",
+                "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
+            ).replace("{until}", until)
+        elif status == "new":
+            message = copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_NEW",
+                                   "Cartão autorizado. Acompanhe o pedido por aqui.")
+        else:
+            message = copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_CONFIRMED",
+                                   "Cartão autorizado. Pedido aceito; acompanhe o andamento por aqui.")
         return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
 
     if state == "store_checking":
@@ -1395,15 +1401,17 @@ def _promise_copy(
                 else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until, queue_card=queue_card)
             )
             return title, message
+        if payment_confirmed and until:
+            return title, copy.message(
+                "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID_UNTIL",
+                "Pagamento recebido. A loja confirma a disponibilidade {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ).replace("{until}", until)
         if payment_confirmed:
             return title, copy.message(
                 "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
                 "Pagamento recebido. Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.",
             )
-        return title, copy.message(
-            "TRACKING_PROMISE_AVAILABILITY_MESSAGE",
-            "Estamos conferindo a disponibilidade. Avisamos em seguida.",
-        )
+        return title, _availability_message(copy, until)
 
     if state == "received":
         # `received` é o fallback da máquina de estados, e na prática quem chega
@@ -1427,8 +1435,7 @@ def _promise_copy(
             )
         return (
             copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
-            copy.message("TRACKING_PROMISE_AVAILABILITY_MESSAGE",
-                         "Estamos conferindo a disponibilidade. Avisamos em seguida."),
+            _availability_message(copy, until),
         )
 
     if state == "payment_confirmed":
@@ -1440,13 +1447,17 @@ def _promise_copy(
                 queue_card=queue_card,
             )
             return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
-        message = (
-            copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW",
-                         "Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")
-            if status == "new"
-            else copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED",
-                              "Pedido aceito. Acompanhe o andamento por aqui.")
-        )
+        if status == "new" and until:
+            message = copy.message(
+                "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW_UNTIL",
+                "A loja confirma a disponibilidade {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ).replace("{until}", until)
+        elif status == "new":
+            message = copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW",
+                                   "Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")
+        else:
+            message = copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED",
+                                   "Pedido aceito. Acompanhe o andamento por aqui.")
         return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
 
     if state == "preparing":
@@ -1554,6 +1565,20 @@ def _pair(copy: CopyCatalog, key: str, fallback_title: str, fallback_message: st
 
 #: Dia da semana em minúscula, na ordem de ``date.weekday()``.
 _ACCEPTANCE_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def _availability_message(copy: CopyCatalog, until: str) -> str:
+    """O pedido do dia que a loja ainda confere: com o prazo publicado, até quando
+    ela confirma (#2749, item 1); sem ele, a frase de sempre."""
+    if until:
+        return copy.message(
+            "TRACKING_PROMISE_AVAILABILITY_MESSAGE_UNTIL",
+            "A loja confirma a disponibilidade {until} e avisa por aqui.",
+        ).replace("{until}", until)
+    return copy.message(
+        "TRACKING_PROMISE_AVAILABILITY_MESSAGE",
+        "Estamos conferindo a disponibilidade. Avisamos em seguida.",
+    )
 
 
 def _acceptance_until(deadline_iso: str | None) -> str:

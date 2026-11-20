@@ -920,6 +920,22 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},
     },
+    # O pedido do dia esperando a loja, com o prazo que o shop publica ({until} =
+    # "até 14h34"; #2749, item 1). A conferência e o prazo numa frase só, no molde
+    # das frases da encomenda ("A loja confirma {until} e avisa por aqui."). Sem
+    # prazo publicado, ficam as frases de cima.
+    "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pagamento recebido. A loja confirma a disponibilidade {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_AVAILABILITY_MESSAGE_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma a disponibilidade {until} e avisa por aqui."),
+        },
+    },
     # O ramo com data só é escolhido PORQUE a data existe — e a frase antiga a
     # descartava: quem pagou sabia menos do que quem só olhou a sacola, onde a loja já
     # tinha dito "Previsto para {date}". A gêmea `_NO_DATE` fica sem `{when}` de
@@ -1162,6 +1178,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")},
     },
+    # O mesmo pedido do dia, já pago (o título diz "Pagamento recebido"), com o
+    # prazo que o shop publica (#2749, item 1).
+    "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma a disponibilidade {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. Acompanhe o andamento por aqui.")},
     },
@@ -1169,6 +1194,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message="Cartão autorizado. Acompanhe o pedido por aqui.",
+            ),
+        },
+    },
+    # Cartão do pedido do dia esperando a loja, com o prazo (#2749, item 1): a
+    # mesma frase do cartão da encomenda. O aceite é que cobra.
+    "TRACKING_CARD_AUTHORIZED_MESSAGE_NEW_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
             ),
         },
     },

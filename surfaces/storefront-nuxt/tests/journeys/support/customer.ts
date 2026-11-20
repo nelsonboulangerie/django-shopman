@@ -91,7 +91,7 @@ export async function paysPixOnTracking (page: Page, testInfo: TestInfo): Promis
   await capture(page, testInfo, 'pix')
   await page.getByRole('button', { name: 'Simular pagamento' }).click()
   await expect(page.getByText('Pagamento recebido').first()).toBeVisible({ timeout: 60_000 })
-  // Pago e ainda sem aceite: a loja diz que está conferindo.
-  await expect(page.getByText(/^Estamos conferindo a disponibilidade/).first()).toBeVisible()
+  // Pago e ainda sem aceite: a loja diz até quando confirma a disponibilidade (#2749).
+  await expect(page.getByText(/A loja confirma a disponibilidade até \d{1,2}h(\d{2})? e avisa por aqui/).first()).toBeVisible()
   await capture(page, testInfo, 'pago')
 }

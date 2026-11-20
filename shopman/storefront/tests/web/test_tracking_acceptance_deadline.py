@@ -320,3 +320,91 @@ def test_o_ato_da_loja_tem_um_verbo_so(family, with_deadline, with_date):
 
     assert "aceit" not in message, message
     assert "confirm" in message
+
+
+# ── Pedido do dia esperando a loja (#2749, item 1) ───────────────────────────
+#
+# O shop já publica o prazo também para o pedido do dia (#2770); a frase da loja
+# passa a usá-lo. Sem prazo publicado, as frases de sempre.
+
+
+def _same_day(state: str, payment_method: str | None, deadline: datetime | None):
+    from shopman.shop.projections.order_tracking import TrackingPromiseData
+
+    return TrackingPromiseData(
+        state=state,
+        tone="info",
+        deadline_at=None,
+        deadline_kind=None,
+        timer_mode="none",
+        deadline_action="none",
+        requires_active_notification=False,
+        notification_topic=None,
+        payment_method=payment_method,
+        acceptance_deadline_at=_iso(deadline) if deadline else None,
+    )
+
+
+SAME_DAY = [
+    # (estado, meio, pago, com prazo, sem prazo)
+    (
+        "received", None, False,
+        "A loja confirma a disponibilidade até 8h40 e avisa por aqui.",
+        "Estamos conferindo a disponibilidade. Avisamos em seguida.",
+    ),
+    (
+        "store_checking", None, False,
+        "A loja confirma a disponibilidade até 8h40 e avisa por aqui.",
+        "Estamos conferindo a disponibilidade. Avisamos em seguida.",
+    ),
+    (
+        "store_checking", "pix", True,
+        "Pagamento recebido. A loja confirma a disponibilidade até 8h40 e avisa por aqui. Se não puder, devolvemos o valor.",
+        "Pagamento recebido. Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.",
+    ),
+    (
+        "payment_confirmed", "pix", True,
+        "A loja confirma a disponibilidade até 8h40 e avisa por aqui. Se não puder, devolvemos o valor.",
+        "Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.",
+    ),
+    (
+        "payment_authorized", "card", False,
+        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, até 8h40.",
+        "Cartão autorizado. Acompanhe o pedido por aqui.",
+    ),
+]
+
+
+@pytest.mark.parametrize(("state", "method", "paid", "with_deadline", "without_deadline"), SAME_DAY)
+def test_pedido_do_dia_diz_ate_quando_a_loja_confirma(state, method, paid, with_deadline, without_deadline):
+    deadline = NOW + timedelta(minutes=60)
+
+    _title, message = _promise_copy(
+        _same_day(state, method, deadline), status="new", is_delivery=False, copy=_copy(), payment_confirmed=paid,
+    )
+    _title, fallback = _promise_copy(
+        _same_day(state, method, None), status="new", is_delivery=False, copy=_copy(), payment_confirmed=paid,
+    )
+
+    assert message == with_deadline
+    assert fallback == without_deadline
+    assert "—" not in message
+
+
+@pytest.mark.parametrize(("state", "method", "paid", "_with", "without_deadline"), SAME_DAY)
+def test_pedido_do_dia_com_prazo_vencido_nao_promete_hora(state, method, paid, _with, without_deadline):
+    _title, message = _promise_copy(
+        _same_day(state, method, NOW - timedelta(minutes=1)),
+        status="new", is_delivery=False, copy=_copy(), payment_confirmed=paid,
+    )
+
+    assert message == without_deadline
+
+
+def test_pedido_do_dia_ja_aceito_nao_fala_em_prazo():
+    deadline = NOW + timedelta(minutes=60)
+    for state, method in (("payment_confirmed", "pix"), ("payment_authorized", "card")):
+        _title, message = _promise_copy(
+            _same_day(state, method, deadline), status="accepted", is_delivery=False, copy=_copy(),
+        )
+        assert "até" not in message, (state, message)
