@@ -1213,6 +1213,20 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     no_show_action = no_show_detail_action(order, user)
     if no_show_action is not None:
         extra_actions.append(no_show_action)
+    # "Avisar o cliente" (WP-G07): os três avisos com um toque, no menu do pedido
+    # aberto. Quando cabem e o que cada um pede é de ``services/customer_notice``; o
+    # diálogo lê as escolhas ao abrir (``customer-notice/preview/``).
+    from shopman.shop.services import customer_notice
+
+    if customer_notice.offered(order):
+        notice_refusal = customer_notice.order_refusal(order)
+        extra_actions.append(Action(
+            ref="customer-notice", kind="mutation", label="Avisar o cliente",
+            enabled=authorized and not notice_refusal,
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else notice_refusal),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": customer_notice.notice_revision(order), "expected_actor_id": getattr(user, "pk", None)},
+        ))
     # "Tentar o estorno de novo" (WP-G13, #2727): o pedido em "Estorno não saiu",
     # cancelado ou não (devolução, encomenda editada, pagamento que chegou depois do
     # balcão). A régua (quanto, de onde, a base) é de ``services/refund_retry``.

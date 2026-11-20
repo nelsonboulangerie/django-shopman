@@ -96,6 +96,9 @@ def test_status_note_so_existe_onde_o_texto_a_usa():
         "order_updated",
         "payment_refunded",
         "order_returned",
+        "order_delayed",
+        "order_item_missing",
+        "order_reschedule_needed",
     }
 
 

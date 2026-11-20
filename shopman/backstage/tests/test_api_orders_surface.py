@@ -106,6 +106,8 @@ def test_all_action_endpoints_require_permission(client, plain_staff, order):
         reverse("api-backstage-order-unassign", args=[ref]),
         reverse("api-backstage-order-comment", args=[ref]),
         reverse("api-backstage-order-reschedule", args=[ref]),
+        reverse("api-backstage-order-customer-notice", args=[ref]),
+        reverse("api-backstage-order-customer-notice-preview", args=[ref]),
     ]
     for url in action_urls:
         assert client.post(url).status_code == 403, url
