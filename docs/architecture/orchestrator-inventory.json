@@ -3282,6 +3282,7 @@
             "_on_catalog_saved",
             "_on_channel_saved_for_orders",
             "_on_hold_saved",
+            "_on_holds_expired",
             "_on_kds_ticket_saved",
             "_on_listing_item_saved",
             "_on_move_saved",

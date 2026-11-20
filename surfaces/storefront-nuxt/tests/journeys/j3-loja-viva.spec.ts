@@ -128,6 +128,50 @@ test('J3: o produto que acaba muda sozinho na tela de quem está olhando', async
   }
 })
 
+/** A linha da sacola diz que chegou ao que a loja tem hoje (o "+" fica no teto). */
+function bagCeilingNote (page: Page) {
+  return page.getByText('Por hoje, temos 1 unidade deste item.')
+}
+
+test('J3: a sacola aberta acompanha a vitrine, sem esperar o próximo gesto (#2785)', async ({ page, browser }, testInfo) => {
+  const other = await otherCustomer(browser)
+  try {
+    await test.step('A põe uma na sacola e fica com a sacola aberta', async () => {
+      await opensProduct(page)
+      const answered = bagAnswered(page)
+      await addButton(page).click()
+      await answered
+      await page.goto('/sacola')
+      await settled(page)
+      await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` }).first()).toContainText('1')
+      // Sobra uma na vitrine: a linha ainda pode crescer.
+      await expect(bagCeilingNote(page)).toHaveCount(0)
+      await marksTheVisit(page)
+      await capture(page, testInfo, 'a-sacola-com-folga')
+    })
+
+    await test.step('B leva a última; a linha de A chega ao teto sozinha', async () => {
+      await opensProduct(other.page)
+      const answered = bagAnswered(other.page)
+      await addButton(other.page).click()
+      await answered
+      await expect(bagCeilingNote(page), 'a sacola de A deveria ter relido sozinha').toBeVisible({ timeout: 20_000 })
+      await stillTheSameVisit(page)
+      await capture(page, testInfo, 'a-sacola-no-teto-sozinha')
+    })
+
+    await test.step('B desiste; a linha de A volta a ter folga, também sozinha', async () => {
+      await putsThemBack(other.page)
+      await expect(bagCeilingNote(page)).toHaveCount(0, { timeout: 20_000 })
+      await stillTheSameVisit(page)
+    })
+  } finally {
+    await leavesNothingBehind(other.page)
+    await leavesNothingBehind(page)
+    await other.context.close()
+  }
+})
+
 test('J3: com o aviso derrubado, a consulta de reserva corrige a tela em cerca de um minuto', async ({ page, browser }, testInfo) => {
   test.setTimeout(420_000)
   // O aviso não chega a esta cliente: rede que bloqueia o stream, proxy que o segura.

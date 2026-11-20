@@ -354,6 +354,52 @@ class TestStockReleaseExpired:
         hold = Hold.objects.get(pk=int(hold_id.split(':')[1]))
         assert hold.status == HoldStatus.RELEASED
 
+    def test_release_expired_announces_the_released_skus(
+        self, product, perishable_product, vitrine, today, django_capture_on_commit_callbacks,
+    ):
+        """O lote solta por ``update`` (sem post_save): o sinal é o único aviso de que o saldo voltou."""
+        from shopman.stockman.signals import holds_expired
+
+        stock.receive(Decimal('100'), product.sku, vitrine, reason='Entrada')
+        stock.receive(Decimal('100'), perishable_product.sku, vitrine, reason='Entrada')
+        expired = timezone.now() - timedelta(minutes=1)
+        stock.hold(Decimal('2'), product, today, expires_at=expired)
+        stock.hold(Decimal('3'), product, today, expires_at=expired)
+        stock.hold(Decimal('1'), perishable_product, today, expires_at=expired)
+        stock.hold(Decimal('1'), perishable_product, today, expires_at=timezone.now() + timedelta(minutes=10))
+        received = []
+
+        def receiver(sender, skus, **kwargs):
+            received.append(skus)
+
+        holds_expired.connect(receiver)
+        try:
+            with django_capture_on_commit_callbacks(execute=True):
+                assert stock.release_expired() == 3
+        finally:
+            holds_expired.disconnect(receiver)
+
+        assert received == [sorted([product.sku, perishable_product.sku])]
+
+    def test_nothing_expired_announces_nothing(self, product, vitrine, today, django_capture_on_commit_callbacks):
+        from shopman.stockman.signals import holds_expired
+
+        stock.receive(Decimal('100'), product.sku, vitrine, reason='Entrada')
+        stock.hold(Decimal('2'), product, today, expires_at=timezone.now() + timedelta(minutes=10))
+        received = []
+
+        def receiver(sender, skus, **kwargs):
+            received.append(skus)
+
+        holds_expired.connect(receiver)
+        try:
+            with django_capture_on_commit_callbacks(execute=True):
+                assert stock.release_expired() == 0
+        finally:
+            holds_expired.disconnect(receiver)
+
+        assert received == []
+
 
 class TestExpiredHoldsIgnored:
     """Tests that expired holds are ignored in availability calculations.
