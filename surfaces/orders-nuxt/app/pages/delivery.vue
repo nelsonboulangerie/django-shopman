@@ -25,6 +25,7 @@ import {
   toggleStop,
   type EditingRide,
 } from "~/presentation/deliveries";
+import { deliveriesFiscalAlerts } from "~/presentation/deliveriesFiscal";
 
 const route = useRoute();
 const router = useRouter();
@@ -293,11 +294,13 @@ const hasMap = computed(
 );
 const unlocated = computed(() => waitingAll.value.filter((stop) => !located(stop)).length);
 const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride.refs.length, 0));
+// NFC-e não autorizada e DANFE por imprimir: só avisam, no topo (F10, ENT-19).
+const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-deliveries-page>
-    <OperatorPageHeader title="Entregas" :filters-wrap="false">
+    <OperatorPageHeader title="Entregas" :filters-wrap="false" :alerts="fiscalAlerts">
       <template #status>
         <span class="op-micro text-muted">
           {{ waiting.length }} aguardando · {{ editingCount }} editando · {{ rides.length }} {{ rides.length === 1 ? "corrida" : "corridas" }}

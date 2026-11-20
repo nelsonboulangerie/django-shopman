@@ -1299,6 +1299,9 @@ export interface DeliveryStopProjection {
   dispatch_action: Action | null;
   dispatch_again_action: Action | null;
   charge_outdated: Record<string, unknown> | null;
+  fiscal_status: string;
+  danfe_state: string;
+  danfe_problem: string;
 }
 
 /** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str', photo_url: 'str' = '') */

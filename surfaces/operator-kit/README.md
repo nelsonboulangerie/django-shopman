@@ -596,7 +596,9 @@ dourado mora no `ui.dashboardSidebar` deste `app.config`.
 - Sem o rail na tela (oculto ou abaixo de `lg`), Avisos sobe para a barra do topo.
 - **Sinais** (`sectionRailSignal`, `railSignalChip`, `railSignalLabel` em
   `presentation/suiteChrome.ts`): `badge` numérico maior que zero vira o chip de
-  contagem (`4xl` do kit, "99+" acima de 99); `attention` vira ponto (tamanho padrão do
+  contagem (`4xl` do kit, "99+" acima de 99); `badge: UNKNOWN_COUNT` ("?") é a contagem
+  que o servidor não conseguiu fazer, o mesmo chip com "?" e "contagem indisponível" no
+  nome acessível (zero diria "nada a fazer"); `attention` vira ponto (tamanho padrão do
   NavigationMenu). A cor é `tone` da seção (`success`, `warning` padrão, `error`).
   Compacto: chip no canto do ícone (`chip` do item, `inset: false`). Aberto: o MESMO
   chip na ponta direita da linha, no centro vertical (`OperatorCountChip` no slot
