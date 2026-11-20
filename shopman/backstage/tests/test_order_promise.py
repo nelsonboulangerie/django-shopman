@@ -1106,6 +1106,23 @@ def test_a_funcao_publica_devolve_none_quando_a_busca_nao_pode_rodar(ficha, monk
     assert order_promise.alternatives_for(order, SKU, missing=Decimal("4")) is None
 
 
+def test_a_funcao_publica_devolve_none_tambem_para_o_item_em_risco(ficha, monkeypatch):
+    """O PDV pergunta só com o SKU (#2765): o item em risco cuja busca falhou não vira lista vazia."""
+    from shopman.shop.services import substitutes
+
+    order, work_order, _hold = _encomenda(ficha, "ENC-FUNCAO-QUEBRADA-RISCO")
+    craft.void(work_order, reason="Forno parou")
+    order = Order.objects.get(pk=order.pk)
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("catálogo fora do ar")
+
+    monkeypatch.setattr(substitutes, "find", broken)
+
+    assert _one(_promise(order)).alternatives == ()
+    assert order_promise.alternatives_for(order, SKU) is None
+
+
 def test_falha_na_busca_de_alternativas_nao_derruba_a_leitura(ficha, monkeypatch):
     from shopman.shop.services import substitutes
 

@@ -376,3 +376,59 @@ export interface OrderEditResponse {
   revision: number | null;
   preview: OrderEditPreview;
 }
+
+/**
+ * Trocar o item que falta (#2765): `GET pos/preorders/<ref>/swap/?sku=…`.
+ *
+ * O endereço que o Gestor abre leva só a intenção (`?swap=<sku>`); nome, preço,
+ * quantidade e alternativas vêm daqui, lidos na hora (`order_promise.alternatives_for`).
+ */
+export interface PreorderSwapOption {
+  sku: string;
+  name: string;
+  /** O verbo do diálogo "Resolver" do Gestor: "Trocar por Fendu". */
+  label: string;
+  /** O que o lote da data cobre: "10 livres para amanhã". */
+  available_display: string;
+  /** O que entra, na quantidade da linha: "4x Fendu". */
+  qty_label: string;
+  enabled: boolean;
+  reason: string;
+  total_before_q: number;
+  total_after_q: number;
+  difference_q: number;
+  total_before_display: string;
+  total_after_display: string;
+  /** "R$ 4,00 a mais", "R$ 2,00 a menos", "Mesmo total". */
+  difference_display: string;
+  /** O que acontece com a diferença, na frase da prévia da edição. */
+  money: string;
+  requires_manager_approval: boolean;
+  /** O que volta ao cliente quando a troca fica mais barata numa encomenda paga. */
+  refund_q: number;
+}
+
+export interface PreorderSwapItem {
+  sku: string;
+  name: string;
+  qty: string;
+  /** O que sai: "4x Baguete". */
+  qty_label: string;
+  /** A frase do aviso quando o item está em risco; vazia quando não está. */
+  fact: string;
+  /** `false`: a busca não pôde rodar. A tela não diz que não há alternativa. */
+  searched: boolean;
+  options: PreorderSwapOption[];
+  /** A busca rodou e não achou nada: "Nenhum produto parecido livre para amanhã." */
+  empty_phrase: string;
+}
+
+export interface PreorderSwapResponse {
+  order_ref: string;
+  base_revision: string;
+  expected_actor_id: number | null;
+  /** Por que a encomenda não se edita agora (pronta, NFC-e autorizada, iFood). */
+  refusal_code: string;
+  refusal: string;
+  items: PreorderSwapItem[];
+}

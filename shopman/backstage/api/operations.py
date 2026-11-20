@@ -145,6 +145,7 @@ from shopman.backstage.services import (
 from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes
 from shopman.backstage.services.exceptions import (
     OrderConflict,
+    OrderEditError,
     OrderError,
     POSError,
     POSTerminalAmbiguous,
@@ -3719,38 +3720,56 @@ class OrderEditView(_OrderActionBase):
         inputs, err = _order_edit_inputs(request)
         if err:
             return err
-        prepared: dict = {}
+        return _order_edit_response(self, request, order, inputs)
 
-        def prepare():
-            try:
-                result = orders_service.preview_order_edit(order, **inputs)
-            except OrderError:
-                return None  # a recusa sai no dialeto da gravação, logo abaixo
-            if not result.requires_manager_approval:
-                return None
-            try:
-                prepared["approver"] = pos_tabs_service.validate_manager_override(
-                    request.data.get("manager_approval"),
-                    operator_username=_username(request),
-                    action="order_edit_refund",
-                    message="A encomenda paga ficou mais barata: um gerente precisa autorizar a devolução.",
-                )
-            except PosIntentError as exc:
-                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+def _order_edit_response(view, request, order, inputs, *, intention_inputs=None, before_edit=None):
+    """Grava a edição da encomenda pelo protocolo de intenção: a mesma porta do Gestor e do PDV.
+
+    ``inputs`` é o corpo da edição (``lines``, ``notes``, ``fulfillment``,
+    ``schedule``). ``intention_inputs`` é o que identifica o gesto (padrão:
+    ``inputs``). ``before_edit`` roda dentro da gravação, antes de editar, e
+    recusa levantando ``OrderEditError`` (a troca do PDV relê ali as
+    alternativas). O gerente assina quando a prévia diz que a encomenda paga
+    ficou mais barata.
+    """
+    prepared: dict = {}
+
+    def prepare():
+        try:
+            result = orders_service.preview_order_edit(order, **inputs)
+        except OrderError:
+            return None  # a recusa sai no dialeto da gravação, logo abaixo
+        if not result.requires_manager_approval:
             return None
-
-        def execute(base):
-            result = orders_service.edit_order(
-                order, **inputs, actor=_actor(request), approved_by=prepared.get("approver"),
-                expected_revision=base,
+        try:
+            prepared["approver"] = pos_tabs_service.validate_manager_override(
+                request.data.get("manager_approval"),
+                operator_username=_username(request),
+                action="order_edit_refund",
+                message="A encomenda paga ficou mais barata: um gerente precisa autorizar a devolução.",
             )
-            return {
-                "changed": result.plan.changed,
-                "revision": result.revision,
-                "preview": _order_edit_preview_data(order, result.plan),
-            }
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return None
 
-        return self._context_response(request, order, "edit", inputs, execute, prepare=prepare)
+    def execute(base):
+        if before_edit is not None:
+            before_edit()
+        result = orders_service.edit_order(
+            order, **inputs, actor=_actor(request), approved_by=prepared.get("approver"),
+            expected_revision=base,
+        )
+        return {
+            "changed": result.plan.changed,
+            "revision": result.revision,
+            "preview": _order_edit_preview_data(order, result.plan),
+        }
+
+    return view._context_response(
+        request, order, view.intention_operation, inputs if intention_inputs is None else intention_inputs,
+        execute, prepare=prepare,
+    )
 
 
 def _resend_payment_link_response(order) -> Response:
@@ -3959,6 +3978,90 @@ class POSPreorderDetailView(APIView):
         projection = build_operator_order(order, user=request.user, context="pos")
         return Response(
             read_data(order=projection_data(projection), payment_check_due=_payment_check_due(order))
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Swap the missing item of a preorder: the alternatives the batch of the date covers, read now",
+        responses={
+            200: OpenApiResponse(description="Items to swap (SKUs not in the order are ignored), alternatives and the price difference."),
+            404: OpenApiResponse(description="Not a preorder."),
+        },
+    ),
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Swap the missing item for an alternative, through the preorder edit",
+        responses={
+            200: OpenApiResponse(description="Swapped."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code} (the alternative does not fit anymore, the order is not editable). Nothing changed."),
+            409: OpenApiResponse(description="The order changed since it was read."),
+        },
+    ),
+)
+class POSPreorderSwapView(_OrderActionBase):
+    """Trocar o item que falta da encomenda, no balcão (#2765).
+
+    ``GET ?sku=<sku>&sku=<sku>``: os SKUs do endereço que o Gestor abre
+    (``?swap=``); o que não é item do pedido é ignorado. Para cada um, as
+    alternativas de ``order_promise.alternatives_for`` (a régua do aviso), lidas
+    agora, com a prévia da edição (``projections/pos_preorder_swap``).
+
+    ``POST {sku, offer, base_revision, expected_actor_id, idempotency_key,
+    manager_approval?}``: relê as alternativas e, se ``offer`` ainda cabe, grava
+    pela edição da encomenda (``order_edit``), com a quantidade da linha.
+    Mesmo corte e mesma porta do detalhe da encomenda do PDV.
+    """
+
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+    intention_operation = "preorder-swap"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections import preorders
+        from shopman.backstage.projections.pos_preorder_swap import build_preorder_swap
+
+        if request.query_params.get("idempotency_key"):
+            return _intention_receipt(request, operation=self.intention_operation, resource=ref)
+        order = preorders.find_preorder(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        return Response(projection_data(build_preorder_swap(order, request.query_params.getlist("sku"), user=request.user)))
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections import order_promise, preorders
+        from shopman.backstage.projections.pos_preorder_swap import swapped_lines
+
+        order = preorders.find_preorder(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        sku = str(request.data.get("sku") or "").strip()
+        offer = str(request.data.get("offer") or "").strip()
+        lines = swapped_lines(order, sku, offer) if sku and offer else None
+        if lines is None:
+            field = "offer" if sku and not offer else "sku"
+            message = "Escolha o produto que entra no lugar." if field == "offer" else "Este item não está na encomenda."
+            return Response({"detail": message, "field": field, "errors": {field: [message]}}, status=400)
+        inputs = {"lines": lines, "notes": None, "fulfillment": None, "schedule": None}
+
+        def still_fits():
+            # O lote da data muda entre a leitura e o toque: a troca relê as
+            # alternativas pela MESMA régua e recusa o que deixou de caber.
+            found = order_promise.alternatives_for(order, sku)
+            if found is None:
+                raise OrderEditError(
+                    "Não deu para conferir agora se a troca ainda cabe. Nada mudou: tente de novo.",
+                    code="swap_unverified",
+                )
+            match = next((option for option in found if option.sku == offer), None)
+            if match is None:
+                raise OrderEditError(
+                    "Este produto não está mais livre para a data da encomenda. Nada mudou: escolha outra alternativa.",
+                    code="swap_offer_gone", field="offer",
+                )
+
+        return _order_edit_response(
+            self, request, order, inputs, intention_inputs={"sku": sku, "offer": offer}, before_edit=still_fits,
         )
 
 

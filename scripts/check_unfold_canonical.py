@@ -313,6 +313,9 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
             # A seção Encomendas do PDV (ENCOMENDAS-PDV-PLAN): API headless
             # `/api/v1/backstage/pos/preorders/`, consumida pelo pos-nuxt.
             ROOT / "shopman/backstage/projections/preorders.py",
+            # Trocar o item que falta da encomenda (#2765): as alternativas e a
+            # diferença de preço, `GET /api/v1/backstage/pos/preorders/<ref>/swap/`.
+            ROOT / "shopman/backstage/projections/pos_preorder_swap.py",
             # PDV › Ajustes › Salão (V5-SALAO): a planta das mesas e o registro de
             # cada mudança, API headless `/api/v1/backstage/pos/seating/`.
             ROOT / "shopman/backstage/projections/seating.py",
