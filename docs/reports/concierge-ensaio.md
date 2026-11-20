@@ -202,13 +202,14 @@ sem precisar de 4 para 1.
   de cobrança) e msg-596 (só um link, que a redação apaga). Não é o modelo, é o que chega
   a ele. É a #2910.
 
-**O que muda em produção, e quem decide.** Hoje não há rota própria de `intents`: ela cai
-na `default` (conexão `deepseek`, com o modelo cadastrado na conexão, que este relatório
-não conferiu). A recomendação é fixar a rota `intents` em `deepseek-flash`
-(`Shop.ai_routes["intents"] = {"connection": "deepseek", "model": "deepseek-flash"}`, no
-Admin) depois da #2909. Pelo plano, meta não batida não segura a abertura das respostas:
-a Concierge abre como está, com o "vou verificar" cobrindo o que a leitura não achar. Mudar
-a rota e abrir para o grupo de até 20 contatos são palavra do dono, com este relatório.
+**O que muda em produção, e quem decide.** Nada na rota: a conexão `deepseek` foi criada
+no Admin em 19/11 com o modelo `deepseek-flash` (confirmado pela coordenação em 20/11), e a
+rota `intents`, sem entrada própria, cai na `default`, que aponta para ela. A leitura de
+produção já é o `deepseek-flash` recomendado aqui. O que falta para a meta de tempo é o
+pedido da leitura sem raciocínio (#2909). Pelo plano, meta não batida não segura a
+abertura das respostas: a Concierge abre como está, com o "vou verificar" cobrindo o que a
+leitura não achar. Abrir para o grupo de até 20 contatos é palavra do dono, com este
+relatório.
 
 ## Fora deste relatório
 
