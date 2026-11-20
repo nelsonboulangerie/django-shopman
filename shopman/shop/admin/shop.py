@@ -889,6 +889,40 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             "Conta do início do preparo (o primeiro Iniciar da Cozinha). Em branco = 10."
         ),
     )
+    fields["defaults_delivery_ride_detour_km"] = forms.DecimalField(
+        label="Desvio máximo para juntar (km)",
+        required=False,
+        min_value=0,
+        max_value=20,
+        decimal_places=1,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Quanto a corrida junta pode andar a mais que a entrega mais longe sozinha. Em branco = 2,5.",
+    )
+    fields["defaults_delivery_ride_saving_min_q"] = forms.DecimalField(
+        label="Economia mínima para sugerir (R$)",
+        required=False,
+        min_value=0,
+        max_value=1000,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="A sugestão só vem marcada quando juntar economiza pelo menos isto. Em branco = R$ 3,00.",
+    )
+    fields["defaults_delivery_ride_saving_min_percent"] = forms.IntegerField(
+        label="Economia mínima para sugerir (%)",
+        required=False,
+        min_value=0,
+        max_value=100,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text="Vale junto com o valor em reais: as duas precisam passar. Em branco = 15%.",
+    )
+    fields["defaults_delivery_ride_extra_wait_minutes"] = forms.IntegerField(
+        label="Espera a mais do último cliente (min)",
+        required=False,
+        min_value=1,
+        max_value=60,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text="Quanto o cliente que fica por último pode esperar a mais por ir junto. Em branco = 10.",
+    )
     fields["defaults_stock_alert_cooldown_minutes"] = forms.IntegerField(
         label="Intervalo entre avisos do mesmo alerta (min)",
         required=False,
@@ -1790,6 +1824,18 @@ class ShopForm(forms.ModelForm):
             # Mostra o GRAVADO; ausente fica em branco (= 10, dito na ajuda).
             self.fields["defaults_delivery_courier_reminder_minutes"].initial = reminder.get("minutes")
 
+        if self._has("defaults_delivery_ride_detour_km"):
+            delivery = defaults.get("delivery") if isinstance(defaults.get("delivery"), dict) else {}
+            ride = delivery.get("ride_suggestion") if isinstance(delivery.get("ride_suggestion"), dict) else {}
+            # Mostra o GRAVADO; ausente fica em branco (o padrão está na ajuda).
+            self.fields["defaults_delivery_ride_detour_km"].initial = ride.get("detour_km")
+            saving_q = ride.get("saving_min_q")
+            self.fields["defaults_delivery_ride_saving_min_q"].initial = (
+                Decimal(saving_q) / 100 if isinstance(saving_q, int) else None
+            )
+            self.fields["defaults_delivery_ride_saving_min_percent"].initial = ride.get("saving_min_percent")
+            self.fields["defaults_delivery_ride_extra_wait_minutes"].initial = ride.get("extra_wait_minutes")
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             cooldown = stock_alerts.get("cooldown_minutes")
@@ -2430,6 +2476,30 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("delivery", None)
 
+        if self._has("defaults_delivery_ride_detour_km"):
+            delivery = dict(defaults.get("delivery") if isinstance(defaults.get("delivery"), dict) else {})
+            ride = {}
+            detour = self.cleaned_data.get("defaults_delivery_ride_detour_km")
+            if detour is not None:
+                ride["detour_km"] = float(detour)
+            saving = self.cleaned_data.get("defaults_delivery_ride_saving_min_q")
+            if saving is not None:
+                ride["saving_min_q"] = int((saving * 100).to_integral_value())
+            for field, key in (("defaults_delivery_ride_saving_min_percent", "saving_min_percent"),
+                               ("defaults_delivery_ride_extra_wait_minutes", "extra_wait_minutes")):
+                value = self.cleaned_data.get(field)
+                if value is not None:
+                    ride[key] = int(value)
+            # Tudo em branco é o padrão do dono: não grava nada.
+            if ride:
+                delivery["ride_suggestion"] = ride
+            else:
+                delivery.pop("ride_suggestion", None)
+            if delivery:
+                defaults["delivery"] = delivery
+            else:
+                defaults.pop("delivery", None)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             stock_alerts = dict(stock_alerts)
@@ -2817,6 +2887,20 @@ _ORDERING_FIELDSETS = (
             "description": (
                 "Vale até o sistema ter histórico de preparo e de chegada do entregador para chamar "
                 "sozinho, durante o preparo. Depois disso este lembrete sai."
+            ),
+        },
+    ),
+    (
+        "Sugestão de juntar corridas",
+        {
+            "fields": (
+                ("defaults_delivery_ride_detour_km", "defaults_delivery_ride_extra_wait_minutes"),
+                ("defaults_delivery_ride_saving_min_q", "defaults_delivery_ride_saving_min_percent"),
+            ),
+            "description": (
+                "Na página Entregas e no Chamar entregador, a casa sugere juntar pedidos prontos "
+                "que ficam perto. A sugestão só vem marcada quando a central cotou e juntar sai "
+                "mais barato pelos dois mínimos. Palpites iniciais, até o B.I. medir."
             ),
         },
     ),

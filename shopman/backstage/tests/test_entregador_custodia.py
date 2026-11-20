@@ -592,3 +592,17 @@ def test_cotacao_da_corrida_conjunta_diz_valor_ordem_e_retorno(client, operator)
     # Um pedido só também cota (F4b, P1-10): a página Entregas mostra o preço de toda corrida.
     assert client.get(url, {"refs": ["RIDE-A"]}).json()["estimate"]["stops"] == ["RIDE-A"]
     assert client.get(url).status_code == 400
+
+
+def test_chamar_entregador_ja_marca_o_companheiro_da_sugestao_da_casa(client, operator):
+    # Decisão 1 = A do dono (16/11): cotada e mais barata junta, a sugestão já vem marcada.
+    _order("RIDE-A", method="pix", collection="")
+    _order("RIDE-B", method="pix", collection="")
+    courier_block = _detail(client, "RIDE-A")["courier"]
+    assert [(row["ref"], row["suggested"]) for row in courier_block["ride_offer"]] == [("RIDE-B", True)]
+    suggestion = courier_block["ride_suggestion"]
+    assert sorted(suggestion["codes"]) == ["A", "B"]
+    assert (suggestion["quoted"], suggestion["suggested"]) == (True, True)
+    assert (suggestion["separate_q"], suggestion["saving_q"]) == (2500, 850)
+    # O Painel conta a mesma sugestão: "Montar corridas (1 sugerida)".
+    assert client.get(reverse("api-backstage-orders")).json()["queue"]["ride_suggestions"] == 1

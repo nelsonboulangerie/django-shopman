@@ -9859,6 +9859,44 @@
       ]
     },
     {
+      "path": "shopman/shop/services/ride_plan.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "delivery.courier-ride-plan"
+      ],
+      "responsibilities": [
+        "decisão",
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CACHE_SECONDS",
+            "Candidate",
+            "Group",
+            "_cache_key",
+            "_point",
+            "_ready_key",
+            "km_between",
+            "logger"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "_service",
+            "suggestion_for",
+            "waiting_pool"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/derived_provenance.py",
       "touchpoints": [
         "service"
