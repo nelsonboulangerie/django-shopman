@@ -611,13 +611,17 @@ describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
     expect(panel.find("[data-preorder-money]").text()).toBe("A receber R$ 36,00");
     expect(panel.find("[data-preorder-hand-over]").exists()).toBe(true);
     // O detalhe do kit fica sem o que é do balcão (o PDV não usa #summary nem #actions).
+    // A coluna da esquerda leva o detalhe do kit (e, vindo do link do Gestor, a troca antes dele).
     const kit = layout.find("[data-order-detail]");
-    expect(kit.classes()).toContain("lg:col-start-1");
+    expect(layout.find("[data-preorder-main]").classes()).toContain("lg:col-start-1");
+    expect(layout.find("[data-preorder-main] [data-order-detail]").exists()).toBe(true);
     expect(kit.find("[data-preorder-money]").exists()).toBe(false);
     expect(kit.find("[data-preorder-hand-over]").exists()).toBe(false);
     // Tela estreita: uma árvore só, e o painel vem ANTES do detalhe.
     const children = [...layout.element.children];
-    expect(children.indexOf(panel.element)).toBeLessThan(children.indexOf(kit.element));
+    const main = layout.find("[data-preorder-main]").element;
+    expect(children.indexOf(main)).toBeGreaterThan(-1);
+    expect(children.indexOf(panel.element)).toBeLessThan(children.indexOf(main));
   });
 
   it("o nome no topo do painel não repete o número e o canal, que o resumo do kit já diz", async () => {
