@@ -3,7 +3,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { VueWrapper } from "vue";
 
 import OperatorCountChip from "../../app/components/OperatorCountChip.vue";
-import { countChipProps, countChipText, hasCount } from "../../app/presentation/countChip";
+import {
+  countChipProps,
+  countChipText,
+  hasCount,
+  UNKNOWN_COUNT,
+  unknownCountChipProps,
+} from "../../app/presentation/countChip";
 import { railSignalChip } from "../../app/presentation/suiteChrome";
 
 // O chip de contagem da suíte (dono, 09/10/2026): um desenho para toda contagem.
@@ -45,6 +51,15 @@ describe("OperatorCountChip (no fluxo)", () => {
     expect(base.classes()).toEqual(expect.arrayContaining(["bg-warning", "rounded-full", "h-4", "min-w-4", "ring-2", "ring-transparent"]));
     expect(base.classes()).not.toContain("absolute");
     expect(wrapper.get("[data-count-chip]").text()).toBe("7");
+  });
+
+  it("a contagem que falhou é o mesmo chip com ?, nunca zero nem nada", async () => {
+    const wrapper = await mount({ unknown: true });
+    const base = wrapper.get("[data-slot=base]");
+    expect(base.text()).toBe("?");
+    expect(base.classes()).toEqual(expect.arrayContaining(["bg-warning", "rounded-full", "h-4", "min-w-4"]));
+    expect(railSignalChip({ color: "warning", unknown: true })).toEqual(unknownCountChipProps("warning"));
+    expect(unknownCountChipProps()).toMatchObject({ text: UNKNOWN_COUNT, size: "4xl", inset: false });
   });
 
   it("vira pílula de pontas redondas com 99+", async () => {

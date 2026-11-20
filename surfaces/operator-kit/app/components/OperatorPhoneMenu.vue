@@ -130,7 +130,8 @@ function choose(section: OperatorSection) {
               v-if="item.signal"
               :count="item.signal.count"
               :color="item.signal.color"
-              :dot="item.signal.count === undefined"
+              :unknown="item.signal.unknown"
+              :dot="item.signal.count === undefined && !item.signal.unknown"
             />
           </template>
         </NuxtNavigationMenu>

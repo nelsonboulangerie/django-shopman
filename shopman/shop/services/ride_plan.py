@@ -193,12 +193,17 @@ def _ready_key(order) -> float:
     return moment.timestamp() if moment else 0.0
 
 
-def candidates_from(waiting) -> list:
-    """Os pedidos que podem entrar numa sugestão, entre os que esperam entregador."""
+def candidates_from(waiting, *, tasks: dict | None = None) -> list:
+    """Os pedidos que podem entrar numa sugestão, entre os que esperam entregador.
+
+    ``tasks``: as tarefas de despacho já lidas em lote (``courier.dispatch_tasks_for``),
+    para a página não pagar uma consulta por pedido.
+    """
     from shopman.shop.services import courier
 
     return [order for order in waiting
-            if order.status == Order.Status.READY and _point(order) is not None and not courier.group_refusal(order)]
+            if order.status == Order.Status.READY and _point(order) is not None
+            and not courier.group_refusal(order, tasks=tasks)]
 
 
 def waiting_pool() -> list:
@@ -262,7 +267,7 @@ def _cache_key(candidates, settings: dict) -> str:
     return "courier:ride-plan:" + hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
-def ride_plan(waiting, *, quote: bool = True) -> dict:
+def ride_plan(waiting, *, quote: bool = True, tasks: dict | None = None) -> dict:
     """O plano das corridas para estes pedidos esperando entregador.
 
     ``suggestions``: até 3, na ordem da partição, cada uma com ``refs`` (ordem do
@@ -270,7 +275,7 @@ def ride_plan(waiting, *, quote: bool = True) -> dict:
     ``late_minutes``, ``quoted``, ``suggested`` (vem marcada), e com cotação
     ``together`` ``{value_q, minutes, km, with_return}``, ``separate_q`` e ``saving_q``.
     Cotada e sem a economia mínima, a sugestão sai do plano. ``quote=False`` devolve só
-    a geografia (sem perguntar à central). Mais ``service``, ``service_reason`` e
+    a geografia (sem perguntar à central); ``tasks``, as tarefas de despacho em lote. Mais ``service``, ``service_reason`` e
     ``service_options``. Cache de 60 s pelos pedidos e as revisões deles.
     """
     from shopman.shop.models import Shop
@@ -281,7 +286,7 @@ def ride_plan(waiting, *, quote: bool = True) -> dict:
     shop = Shop.load()
     if shop is None or shop.latitude is None or shop.longitude is None or delivery_services.courier_backend() is None:
         return empty
-    candidates = candidates_from(waiting)
+    candidates = candidates_from(waiting, tasks=tasks)
     if len(candidates) < 2:
         return empty
     settings = params(shop)
