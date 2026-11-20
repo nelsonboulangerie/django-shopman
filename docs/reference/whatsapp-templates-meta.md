@@ -34,15 +34,24 @@
 >   `product_available_alert`, `Unsold Bread` (os dois últimos Marketing).
 > - **Faltam submeter, texto já revisado pelo dono em 25/09 (11):** `pagamento_confirmado`,
 >   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, ~~`pagamento_expirado`~~ (aposentado 14/10, ver abaixo),
->   `pagamento_falhou`, `fila_vaga_disponivel`, `fila_vaga_liberada`, `produto_chegou`,
->   `reembolso_processado`, `pontos_fidelidade`.
-> - **A submeter, texto aprovado pelo dono em 20/11 (WP-G07, 3):** `pedido_atrasado`,
->   `pedido_item_em_falta`, `pedido_remarcar`. Ver a seção "Os três avisos do Avisar o cliente".
+>   `pagamento_falhou`, ~~`fila_vaga_disponivel`~~, ~~`fila_vaga_liberada`~~ (aprovados, ver
+>   a leitura de 20/11 abaixo), `produto_chegou`, `reembolso_processado`, `pontos_fidelidade`.
+> - **Submetidos em 20/11/2026, por volta das 16h, em revisão na Meta (WP-G07, 3):**
+>   `pedido_atrasado`, `pedido_item_em_falta`, `pedido_remarcar`, texto aprovado pelo dono
+>   em 20/11. Ver a seção "Os três avisos do Avisar o cliente".
 > - **Fora do go-live (Marketing) ou sem revisão de voz:** `ficou_pronto`, `anuncio_novidade`,
 >   `pedido_compra` (fornecedor).
 >
 > No ManyChat a variável do corpo é um campo personalizado: `customer_name` é `cuf_14859629`,
 > `order_ref_short` é `cuf_15003507`, `status_note` é `cuf_15003511` (lidos nos aprovados).
+
+> ## Leitura do ManyChat em 20/11/2026 (pela coordenação)
+>
+> - **Aprovados:** `fila_vaga_disponivel`, `fila_vaga_disponivel_v2` e `fila_vaga_liberada`.
+>   Este documento os dava como não submetidos; estavam aprovados.
+> - **Recusado:** o `OTP`, como em 01/10. Não faz falta: o código vai por SMS (ver "OTP").
+> - **Em revisão:** `pedido_atrasado`, `pedido_item_em_falta`, `pedido_remarcar`,
+>   submetidos em 20/11 por volta das 16h.
 
 > Textos pt-BR dos templates transacionais da Nelson, **estruturados para maximizar aprovação**
 > da Meta. Não é "burlar regra" — é **conformar ao formato** que a Meta exige.
@@ -188,7 +197,8 @@ Eles não gravam nada em lugar nenhum.
 
 O ManyChat **não tem a categoria Authentication** (só Marketing e Utility), então WhatsApp-OTP
 é impossível por ali. **O código de verificação vai por SMS (Comtele)** — decidido, não é
-pergunta aberta. Não há template de OTP a submeter.
+pergunta aberta. Não há template de OTP a submeter. O modelo `OTP` que existe no ManyChat
+está **Recusado** pela Meta (lido em 01/10 e de novo em 20/11/2026) e não faz falta.
 
 ---
 
@@ -413,14 +423,15 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 - Botão URL: `Acompanhar pedido`
 - 11 palavras literais para 3 variáveis.
 
-### Os três avisos do "Avisar o cliente" (WP-G07) 🆕 · texto aprovado pelo dono em 20/11/2026, **não submetidos**
+### Os três avisos do "Avisar o cliente" (WP-G07) 🆕 · texto aprovado pelo dono em 20/11/2026, **submetidos em 20/11, em revisão na Meta**
 
 O Caixa avisa o cliente com um toque no detalhe do pedido, pela API (decisão 4 do plano do
 Gestor, 17/11/2026). São mensagens que a casa inicia, então cada uma precisa de modelo
 aprovado. A voz é a do diálogo "Resolver" (aprovada em 19/11): "Aqui é da Nelson
 Boulangerie 💛 … e sinto muito por isso", primeira pessoa, sem travessão. O dono aprovou os
 três em 20/11 ("1 (depois revisamos mais detalhadamente…)"), com a troca do item B para
-"vai faltar …". Os eventos ainda não existem no código: nascem no WP-G07.
+"vai faltar o item …". Os três foram submetidos no ManyChat em 20/11, por volta das 16h, e
+estão em revisão na Meta. Os eventos ainda não existem no código: nascem no WP-G07.
 
 Quando o cliente responde, abre a janela de 24 h e a conversa segue em texto livre. Feita a
 troca ou a remarcação no PDV, saem sozinhos o `pedido_atualizado` e o `pedido_nova_data`
@@ -436,15 +447,14 @@ O Caixa toca "Vai atrasar" no pedido e escolhe a nova hora.
 #### `pedido_item_em_falta` — evento `order_item_missing` (a criar no WP-G07)
 O Caixa toca "Faltou um item" e marca qual, e quanto.
 - Categoria: **Utility** · Idioma: **pt_BR**
-- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 No seu pedido {{2}}, vai faltar {{3}}, e sinto muito por isso. Posso trocar por outro produto ou devolver esse valor. Me responde aqui como fica melhor para você.`
+- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 No seu pedido {{2}}, vai faltar o item {{3}}, e sinto muito por isso. Posso trocar por outro produto ou devolver esse valor. Me responde aqui como fica melhor para você.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`Focaccia (2 unidades)` (`status_note`, nunca vazio; com mais de um item, o código junta: `Focaccia (2 unidades) e Brioche (1 unidade)`)
 - Botão URL: `Acompanhar pedido`
 
-> ⚠️ **Sem artigo antes do item.** A troca aprovada foi "vai faltar a Focaccia (2 unidades)",
-> mas o "a" é fixo no modelo e erra o gênero de metade do catálogo ("a Croissant"): o
-> catálogo não guarda o gênero do nome (#2809, item 6). O modelo fica com "vai faltar
-> Focaccia (2 unidades)", e o item e a quantidade continuam variáveis, como decidido. Se o
-> dono quiser o artigo, ele entra quando o catálogo souber o gênero.
+> ℹ️ **"o item", e não "a".** A troca aprovada foi "vai faltar a Focaccia (2 unidades)",
+> mas um artigo fixo erra o gênero de metade do catálogo ("a Croissant"), e o catálogo não
+> guarda o gênero do nome. O dono escolheu "vai faltar o item Focaccia (2 unidades)" em
+> 20/11; o item e a quantidade continuam variáveis.
 
 #### `pedido_remarcar` — evento `order_reschedule_needed` (a criar no WP-G07)
 O Caixa toca "Precisamos remarcar": o pedido inteiro não fica pronto na data combinada.
@@ -569,15 +579,15 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > ⚠️ **Não submetido** (P1-9, 13/10/2026). Até existir, o aviso sai pelo texto livre
 > do ManyChat e pelos fallbacks (SMS/e-mail).
 
-### `fila_vaga_disponivel` — evento `waitlist_available`
+### `fila_vaga_disponivel` — evento `waitlist_available` · `_v2` aprovado (leitura de 20/11/2026)
 - Corpo: `Oi, {{1}}! A fornada que você esperava ficou pronta. Confirme seu pedido {{2}} para garantir a sua vaga.`
-  ⚠️ **Corpo revisto em 19/11/2026** pela regra do dono de 16/11 ("ficar pronto", nunca "sair do forno") e pela palavra da fila ("vaga"). O corpo aprovado em 02/10/2026 dizia "…que você esperava saiu. Confirme o pedido {{2}} para garantir o seu."; o modelo nunca foi submetido, então não há versão na Meta a trocar. Quando for submetido, nasce como `fila_vaga_disponivel_v2`, Utility, com o mesmo botão `Confirmar pedido`.
+  ⚠️ **Corpo revisto em 19/11/2026** pela regra do dono de 16/11 ("ficar pronto", nunca "sair do forno") e pela palavra da fila ("vaga"). O corpo aprovado em 02/10/2026 dizia "…que você esperava saiu. Confirme o pedido {{2}} para garantir o seu."; na leitura do ManyChat de 20/11/2026 aparecem **aprovados** os dois: `fila_vaga_disponivel` (o corpo antigo) e `fila_vaga_disponivel_v2`. O que vale é o `_v2`, Utility, com o mesmo botão `Confirmar pedido`; o antigo diz "saiu" e não deve ser ligado.
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Confirmar pedido` → `/pedido/{{1}}` (`order_ref`)
 
 > ⚠️ Não ligar `waitlist.enabled` antes do #392 estar no ar — ver a política de fila.
 
-### `fila_vaga_liberada` — evento `waitlist_released`
+### `fila_vaga_liberada` — evento `waitlist_released` · aprovado (leitura de 20/11/2026)
 - Corpo: `Oi, {{1}}. O prazo para confirmar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Pedir de novo` → `https://www.nelsonboulangerie.com.br/conta/pedidos` (link **fixo**, sem variável)
@@ -774,8 +784,8 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `payment_failed` | `pagamento_falhou` | Utility |
 | `payment_refunded` | `reembolso_processado` | Utility 🆕 (emitido desde 13/10; corpo novo a submeter) |
 | `order_returned` | `pedido_devolvido` | Utility 🆕 (a submeter) |
-| `waitlist_available` | `fila_vaga_disponivel` | Utility |
-| `waitlist_released` | `fila_vaga_liberada` | Utility |
+| `waitlist_available` | `fila_vaga_disponivel_v2` | Utility ✅ (aprovado; o `fila_vaga_disponivel` antigo também, mas diz "saiu") |
+| `waitlist_released` | `fila_vaga_liberada` | Utility ✅ (aprovado) |
 | `loyalty_earned` | `pontos_fidelidade` | Utility 🆕 (não emitido ainda) |
 | `stock_arrived` | `produto_chegou` | Utility |
 | `purchase_request` | `pedido_compra` | Utility (fornecedor) |
