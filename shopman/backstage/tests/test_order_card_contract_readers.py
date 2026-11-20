@@ -90,7 +90,7 @@ CARD_FIELD_READERS: dict[str, str] = {
     "change_out_suggested_q": GESTOR + "presentation/board.ts",
     "change_out_q": GESTOR + "presentation/board.ts",
     "change_back_pending": GESTOR + "components/OrderCard.vue",
-    "change_label": GESTOR + "components/CourierRideMenu.vue",
+    "change_label": GESTOR + "components/OrderCard.vue",
     "equipment_options": GESTOR + "presentation/board.ts",
     "equipment_label": GESTOR + "presentation/board.ts",
     "equipment_back_pending": GESTOR + "presentation/board.ts",

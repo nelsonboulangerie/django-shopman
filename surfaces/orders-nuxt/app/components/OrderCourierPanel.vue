@@ -29,6 +29,7 @@ import type {
 } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 import { useRideQuote } from "~/composables/useRideQuote";
+import { suggestionLate, suggestionQuoteLines } from "~/presentation/deliveries";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
@@ -177,10 +178,37 @@ const companions = computed(() =>
 const companionsAskingChange = computed(() =>
   companions.value.filter((choice) => choice.change_out_suggested_q > 0),
 );
+// A sugestão da casa (`ride_plan`, o mesmo das Entregas): o companheiro já vem
+// marcado quando a central cotou e juntar sai mais barato (decisão 1 = A do dono,
+// 16/11). A cotação é SÓ leitura: quem decide é a caixa e o botão principal.
+const suggestion = computed(() => props.courier.ride_suggestion ?? null);
+const suggestionLines = computed(() => {
+  const plan = suggestion.value;
+  if (!plan?.together || plan.separate_q === null) return [];
+  return suggestionQuoteLines({
+    key: plan.refs.join("+"), refs: plan.refs, codes: plan.codes, places: "",
+    quoted: plan.quoted, suggested: plan.suggested, late_code: plan.late_code, late_minutes: plan.late_minutes,
+    together_q: plan.together.value_q, minutes: Math.round(plan.together.minutes), km: plan.together.km,
+    with_return: plan.together.with_return, separate_q: plan.separate_q, saving_q: plan.saving_q,
+  });
+});
+const suggestionNote = computed(() => {
+  const plan = suggestion.value;
+  if (!plan) return "";
+  if (!plan.quoted) {
+    const mates = plan.codes.filter((code) => code !== splitRef(props.orderRef).code);
+    return `A TaOn não cotou agora. Marque ${joinCodes(mates)} se quiser levar junto.`;
+  }
+  return suggestionLate(plan);
+});
+function joinCodes(codes: string[]): string {
+  return codes.length < 2 ? (codes[0] ?? "") : `${codes.slice(0, -1).join(", ")} e ${codes[codes.length - 1]}`;
+}
 const offerItems = computed(() =>
   offer.value.map((choice) => ({
     value: choice.ref,
     label: choice.label,
+    suggested: Boolean(choice.suggested),
     description: rideOfferLine(choice),
     disabled:
       !together.value.includes(choice.ref) &&
@@ -219,6 +247,9 @@ const machineRef = ref("");
 function armCustody() {
   together.value = [];
   companionChanges.value = {};
+  updateTogether(
+    offer.value.filter((choice) => choice.suggested).map((choice) => choice.ref).slice(0, MAX_RIDE_STOPS - 1),
+  );
   changeOut.value = asksChange.value
     ? moneyInput(custody.value?.change_out_suggested_q ?? 0)
     : "";
@@ -671,7 +702,42 @@ const vehicle = computed(() =>
               :items="offerItems"
               variant="table"
               @update:model-value="(next) => updateTogether(next as string[])"
-            />
+            >
+              <template #label="{ item }">
+                <span class="inline-flex flex-wrap items-center gap-2">
+                  {{ (item as { label: string }).label }}
+                  <NuxtBadge
+                    v-if="(item as { suggested?: boolean }).suggested"
+                    color="primary"
+                    icon="i-lucide-sparkles"
+                    label="Sugestão da casa"
+                    data-testid="courier-ride-suggested"
+                  />
+                </span>
+              </template>
+            </NuxtCheckboxGroup>
+            <!-- A cotação da sugestão: duas linhas, só leitura (o ✔ não é botão). -->
+            <div
+              v-if="suggestionLines.length || suggestionNote"
+              class="mt-2 flex flex-col gap-0.5"
+              data-testid="courier-ride-suggestion"
+            >
+              <p
+                v-for="line in suggestionLines"
+                :key="line.text"
+                class="text-sm tabular-nums [font-variant-emoji:text]"
+                :class="line.strong ? 'font-medium text-highlighted' : 'text-muted'"
+              >
+                {{ line.text }}
+              </p>
+              <p
+                v-if="suggestionNote"
+                class="text-sm"
+                :class="suggestion?.quoted ? 'text-muted' : 'text-warning'"
+              >
+                {{ suggestionNote }}
+              </p>
+            </div>
           </NuxtFormField>
           <NuxtFormField
             v-if="asksChange"
@@ -772,6 +838,20 @@ const vehicle = computed(() =>
             "
             @blur="blurDispatch"
             @click="requestDispatch"
+          />
+          <!-- Com companheiro marcado, chamar só este pedido é um toque, ao lado do primário. -->
+          <NuxtButton
+            v-if="confirmingDispatch && together.length"
+            type="button"
+            :label="`Chamar só ${splitRef(orderRef).code}`"
+            color="neutral"
+            variant="outline"
+            :disabled="busy || !dispatchAction?.enabled || machineMissing"
+            data-testid="courier-dispatch-alone"
+            @click="
+              updateTogether([]);
+              requestDispatch();
+            "
           />
           <NuxtButton
             v-if="confirmingDispatch && (asksCustody || offer.length)"

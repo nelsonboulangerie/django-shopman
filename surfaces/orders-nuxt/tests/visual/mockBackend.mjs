@@ -166,7 +166,7 @@ function urgentAlert() {
 // O "vou verificar" da Concierge (WP-07): a pergunta que ela levou à equipe. O cartão
 // nasce com o prazo prometido ao cliente e chega como aviso de tela no topo; em
 // `concierge-late`, a promessa já venceu e a janela interrompe a tela.
-const verification = { answered: false, takenOver: false };
+const verification = { answered: false, takenOver: false, promoted: false, answerText: "" };
 // A hora como a casa escreve ("16h12", "9h"), no fuso da loja.
 function clock(date) {
   const parts = new Intl.DateTimeFormat("pt-BR", {
@@ -318,7 +318,7 @@ createServer((req, res) => {
 
   if (path === "/__visual/scenario") {
     const next = url.searchParams.get("set");
-    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); verification.answered = false; verification.takenOver = false; }
+    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); verification.answered = false; verification.takenOver = false; verification.promoted = false; verification.answerText = ""; }
     send(res, 200, { scenario });
     return;
   }
@@ -404,8 +404,25 @@ createServer((req, res) => {
         return;
       }
       verification.answered = true;
-      send(res, 200, { ok: true, pk: 950, sent_text: `A equipe confirmou: ${text}` });
+      verification.answerText = text;
+      send(res, 200, {
+        ok: true, pk: 950, sent_text: `A equipe confirmou: ${text}`,
+        promote_href: "/api/v1/backstage/alerts/950/concierge-verification/promote-faq/",
+      });
     });
+    return;
+  }
+  // WP-15: a resposta vira rascunho de pergunta frequente; a que cita um dia traz o aviso.
+  if (req.method === "POST" && path === "/api/v1/backstage/alerts/950/concierge-verification/promote-faq/") {
+    const dated = /(^|\s)(hoje|amanh[ãa])(\s|[.,!?]|$)/i.test(verification.answerText || "");
+    send(res, 200, {
+      ok: true, pk: 950, already: Boolean(verification.promoted),
+      admin_url: "https://admin.boulangerie.com.br/admin/shop/faqentry/12/change/",
+      warning: dated
+        ? `A resposta cita um dia ou uma data: “${(verification.answerText.split(/(?<=[.!?])\s+/)[0] || "").replace(/[.!?]$/, "")}”. Confira se ela vale sempre antes de publicar.`
+        : "",
+    });
+    verification.promoted = true;
     return;
   }
   const ackMatch = path.match(/^\/api\/v1\/backstage\/alerts\/(\d+)\/ack\/$/);
