@@ -14,6 +14,7 @@ Não expõe destinatário: só o canal.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
 
 from django.utils import timezone
@@ -22,6 +23,8 @@ from shopman.orderman.models import Directive
 from shopman.utils.formatting import format_local
 
 from shopman.shop.services import notification as notification_svc
+
+logger = logging.getLogger(__name__)
 
 #: Quantos avisos o detalhe mostra (os mais recentes). Pedido comum tem 3 a 6.
 MAX_RECEIPTS = 30
@@ -123,8 +126,8 @@ class NotificationReceiptProjection:
     provider_id: str
     detail: str
     attempts: tuple[NotificationAttemptProjection, ...] = ()
-    # O plano B do "Avisar o cliente" (WP-G07): quando o aviso não saiu por canal
-    # nenhum, o WhatsApp do próprio operador com o MESMO texto. Vazio nos outros avisos.
+    # O botão que resolve o aviso que não saiu por canal nenhum (WP-G07): o WhatsApp
+    # de quem está no balcão, com o MESMO texto. Vazio nos outros estados.
     fallback_whatsapp_url: str = ""
 
 
@@ -263,39 +266,46 @@ def build_notification_receipts(order) -> tuple[NotificationReceiptProjection, .
         if not _applies(directive):
             continue
         receipt = build_receipt(directive)
-        if receipt.state in _FALLBACK_STATES and receipt.template in _NOTICE_KINDS:
+        if receipt.state == STATE_FAILED:
             receipt = replace(receipt, fallback_whatsapp_url=_fallback_whatsapp_url(order, directive))
         receipts.append(receipt)
     return tuple(receipts)
 
 
-#: Os estados em que o aviso do "Avisar o cliente" não chegou a ninguém.
-_FALLBACK_STATES = frozenset({STATE_FAILED, STATE_SKIPPED})
-#: O evento de cada aviso, para remontar o texto que não saiu.
-_NOTICE_KINDS = {
-    "order_delayed": "delayed",
-    "order_item_missing": "item_missing",
-    "order_reschedule_needed": "reschedule",
-}
-
-
 def _fallback_whatsapp_url(order, directive) -> str:
-    """O ``wa.me`` do cliente com o texto do aviso que não saiu; vazio sem WhatsApp."""
+    """O ``wa.me`` do cliente com o texto do aviso que não saiu; vazio sem WhatsApp.
+
+    Todo aviso que falhou em todos os canais traz o botão que resolve: o WhatsApp de
+    quem está no balcão, com o MESMO texto que o cliente leria. Só no que falhou: o
+    "Não enviado" pode ser o cliente que não aceita mensagem, e aí não se oferece.
+    O texto é montado sem cunhar link pessoal (ler a tela não grava nada): os links
+    saem na forma comum, que pede a entrada do cliente.
+    """
+    import copy
     from urllib.parse import quote
 
     from shopman.backstage.projections import order_queue
-    from shopman.shop.services import customer_notice
+    from shopman.shop.adapters import notification_manychat
+    from shopman.shop.adapters._notification_templates import render_message
 
-    customer = (order.data or {}).get("customer") or {}
-    wa_url = order_queue._customer_contact(order, customer if isinstance(customer, dict) else {}).get(
-        "customer_whatsapp_url", ""
-    )
+    data = copy.deepcopy(order.data or {})
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    wa_url = order_queue._customer_contact(order, customer).get("customer_whatsapp_url", "")
     if not wa_url:
         return ""
-    payload = directive.payload or {}
-    note = str(payload.get("status_note") or "").strip()
-    message = customer_notice.message(order, _NOTICE_KINDS[str(payload.get("template") or "")], note)
-    return f"{wa_url}?text={quote(message)}"
+    customer.pop("uuid", None)
+    plain = copy.copy(order)
+    plain.data = data
+    payload = dict(directive.payload or {})
+    template = str(payload.get("template") or "")
+    try:
+        context = notification_svc._build_context(plain, payload, template)
+        event = notification_svc._qualify_template(template, context)
+        message = render_message(event, context, notification_manychat.MESSAGE_TEMPLATES)
+    except Exception:  # noqa: BLE001 — a tela do pedido não cai por causa do plano B
+        logger.warning("notification_receipts.fallback_text_failed template=%s", template, exc_info=True)
+        return ""
+    return f"{wa_url}?text={quote(message.replace('*', '').strip())}"
 
 
 __all__ = [

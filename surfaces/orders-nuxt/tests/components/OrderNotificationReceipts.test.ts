@@ -27,6 +27,8 @@ describe("OrderNotificationReceipts", () => {
     expect(wrapper.get("[data-receipt-label]").text()).toBe("Entregue com comprovante");
     expect(wrapper.text()).toContain("01/10 às 18:42 · E-mail");
     expect(wrapper.get("[data-receipt-provider-id]").text()).toContain("<abc@boulangerie.com.br>");
+    // O aviso que precisava chegar diz isso em palavras, não "crítico".
+    expect(wrapper.get("[data-receipt-critical]").text()).toBe("Precisava chegar");
   });
 
   it("aceite sem comprovante nunca aparece como entregue", () => {

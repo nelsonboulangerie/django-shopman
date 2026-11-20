@@ -313,3 +313,22 @@ class AvisarOClienteApiTests(TestCase):
         self.assertEqual(receipt.label, "Faltou um item")
         self.assertTrue(receipt.fallback_whatsapp_url.startswith("https://wa.me/5543999990002?text="))
         self.assertIn("vai faltar o item Focaccia (2 unidades)", unquote(receipt.fallback_whatsapp_url))
+
+    def test_todo_aviso_que_falhou_traz_o_whatsapp_com_o_texto_dele(self):
+        from urllib.parse import unquote
+
+        from shopman.backstage.projections.notification_receipts import build_notification_receipts
+
+        notification_svc.send(self.order, "order_accepted")
+        directive = _directives(self.order.ref, "order_accepted").get()
+        directive.status = "failed"
+        directive.payload["notification_delivery"] = {"status": "failed", "outcome": "not_applied"}
+        directive.save(update_fields=["status", "payload", "updated_at"])
+
+        (receipt,) = [r for r in build_notification_receipts(self.order) if r.template == "order_accepted"]
+        text = unquote(receipt.fallback_whatsapp_url)
+        self.assertTrue(text.startswith("https://wa.me/5543999990002?text=Seu pedido API está confirmado."), text)
+        self.assertNotIn("{", text)
+        self.assertNotIn("*", text)
+        # Ler a tela não cunha link pessoal: o acompanhamento sai na forma comum.
+        self.assertNotIn("?t=", text.split("?text=", 1)[1])

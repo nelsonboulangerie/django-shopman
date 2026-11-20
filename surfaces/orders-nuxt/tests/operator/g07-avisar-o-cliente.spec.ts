@@ -84,9 +84,9 @@ test("G07: avisar o cliente com um toque, lendo a mensagem antes de enviar", asy
   await expect(dialog).toBeHidden();
   const receipts = gestor.locator("[data-notification-receipts]");
   await expect(receipts.getByText("Faltou um item", { exact: true })).toBeVisible({ timeout: 60_000 });
-  // Nesta pilha nenhum canal aceita (os adaptadores estão inertes): o recibo diz que
-  // falhou e traz o plano B, o WhatsApp de quem está no balcão com o mesmo texto.
-  await expect(receipts.locator("[data-receipt-fallback]")).toHaveAttribute("href", /^https:\/\/wa\.me\/\d+\?text=.*vai%20faltar%20o%20item%20Croissant/);
+  // Nesta pilha nenhum canal aceita (os adaptadores estão inertes): todo recibo que
+  // falhou traz o botão que resolve, o WhatsApp de quem está no balcão com o mesmo texto.
+  await expect(receipts.locator("li", { hasText: "Faltou um item" }).locator("[data-receipt-fallback]")).toHaveAttribute("href", /^https:\/\/wa\.me\/\d+\?text=.*vai%20faltar%20o%20item%20Croissant/);
   await receipts.scrollIntoViewIfNeeded();
   await capture(gestor, testInfo, "aviso-recibo-1366");
 
