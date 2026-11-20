@@ -22,6 +22,7 @@ from conversational_commerce.catalog import evaluate_move
 from conversational_commerce.catalog.situation import Situation
 from conversational_commerce.contracts import DeploymentProfile
 from conversational_commerce.profile import IneligibilityCode, read_line
+from conversational_commerce.testing.conformance import conformance
 
 from shopman.shop.models import Channel, Shop
 from shopman.storefront.concierge import profile, profile_lines
@@ -107,6 +108,7 @@ def test_the_live_mode_and_channel_are_measured_not_assumed(shop):
     assert broken.privacy.retention_days == {}  # retenção sem valor válido fica fora, nunca vira zero
 
 
+@conformance("K39", scope="adapter")
 @pytest.mark.parametrize(("move", "line_id", "code"), [
     ("recommend", "commerce.recommend", IneligibilityCode.PROFILE_LINE_ABSENT),  # P13 ausente
     ("present_terms", "commerce.order_in_conversation", IneligibilityCode.PROFILE_LINE_NOT_APPROVED),  # P08

@@ -251,6 +251,11 @@ POLICY: dict[str, Rule] = {
     # A decisão em sombra (N5) deriva da entrada: sai com a conversa, como a própria entrada.
     "shop.ConversationalDecision": _purge("decisão em sombra das conversas do ensaio (WhatsApp)"),
     "shop.ConversationalOutcome": _purge("decisão em sombra das conversas do ensaio (WhatsApp)"),
+    # O armazenamento do framework conversacional (N8): episódios, registros e caixa de saída
+    # das conversas do ensaio saem com elas.
+    "shop.ConversationalEpisode": _purge("episódios do framework conversacional das conversas do ensaio"),
+    "shop.ConversationalRecord": _purge("registros do framework conversacional das conversas do ensaio"),
+    "shop.ConversationalWork": _purge("caixa de saída do framework conversacional das conversas do ensaio"),
     "shop.OutboundAttempt": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ContactRelease": _purge("conversas do ensaio (WhatsApp)"),
     "shop.PrivacyRequestReceipt": _purge(_CUSTOMER),

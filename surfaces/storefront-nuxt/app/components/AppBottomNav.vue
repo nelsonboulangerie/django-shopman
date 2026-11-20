@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cartLinkName } from '~/presentation/cart'
 import { accountNavEntry } from '~/utils/accountNavEntry'
 
 const route = useRoute()
@@ -18,10 +19,9 @@ const items = computed(() => [
 
 // Nome acessível explícito: o rótulo visível com o contador da sacola junto, para o
 // leitor de tela ouvir "Sacola, 2 itens" em vez de um link sem nome (beta 05/11, LOJA-15).
+// O da sacola é o mesmo do cabeçalho (`cartLinkName`).
 function accessibleName (item: { label: string, showsCartBadge: boolean }) {
-  if (!item.showsCartBadge || cart.value.is_empty) return item.label
-  const count = cart.value.items_count
-  return `${item.label}, ${count} ${count === 1 ? 'item' : 'itens'}`
+  return item.showsCartBadge ? cartLinkName(cart.value) : item.label
 }
 
 function active (to: string) {

@@ -128,7 +128,11 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
 [plano do adaptador da Nice](../plans/COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md)) não são JSON de
 sessão: são tabelas só de acréscimo. O campo `document` da decisão é o `DecisionRecord` do framework
 (`packages/conversational-commerce/spec/01-contracts.md`), e o resultado segue o `OutcomeEvent` de lá. A forma
-mora no contrato do framework e não se redefine aqui. Nenhuma chave nova em `Session.data`, `Order.data` ou
+mora no contrato do framework e não se redefine aqui. O armazenamento do framework (N8) usa outras
+três tabelas, também só de documentos do contrato: `ConversationalEpisode` (o `Episode` vigente,
+uma linha por episódio, com comparar e gravar), `ConversationalRecord` (cada registro gravado no
+episódio, só acréscimo, com a identidade do evento única) e `ConversationalWork` (a caixa de
+saída, gravada na mesma transação do estado). Nenhuma chave nova em `Session.data`, `Order.data` ou
 `Directive.payload`.
 
 ### Concierge de WhatsApp

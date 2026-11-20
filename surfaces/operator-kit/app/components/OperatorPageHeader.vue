@@ -115,8 +115,8 @@ const props = withDefaults(
     /** "Limpar" do painel de filtros. Padrão: remove cada recorte ativo. */
     clearFilters?: () => void;
     /**
-     * Os avisos da tela (o que a tela precisa que a pessoa saiba agora), abaixo da
-     * toolbar. O primeiro aparece inteiro; os outros ficam em "e mais N". Erro de rede é
+     * Os avisos da tela (o que a tela precisa que a pessoa saiba agora), depois de
+     * todas as barras do topo, inclusive o `#below`. O primeiro aparece inteiro; os outros ficam em "e mais N". Erro de rede é
      * do `OfflineBanner`; aviso com prazo, do `OperatorUrgentAlert`; erro de carregar o
      * conteúdo, do `OperatorScreenState`.
      */
@@ -732,11 +732,14 @@ function clearAll() {
     </NuxtDashboardToolbar>
 
     <!-- Navegação secundária da tela (as abas de Ajustes do PDV, o prazo do anúncio no
-         Marketing, a seção do Compras no celular). Vue descarta slot não declarado sem
-         aviso: sem esta linha, as abas de Ajustes do PDV somem. -->
+         Marketing, a seção do Compras no celular, as colunas do Gestor em abas). Vue
+         descarta slot não declarado sem aviso: sem esta linha, as abas de Ajustes do PDV
+         somem. É a última barra do topo: barra da tela mora aqui, nunca depois do
+         cabeçalho, onde ficaria embaixo do aviso (README, "Aviso da tela"). -->
     <slot name="below" />
 
-    <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
+    <!-- O aviso da tela (fase 2, K6): depois de TODAS as barras do topo, o primeiro item
+         do conteúdo em todo tamanho (dono, 20/11/2026, DEV-2026-063); um inteiro e o resto em "e mais
          N". Em faixa descolada e invertida (`OperatorBand`, D, dono 13/11/2026). A orientação vertical canônica mantém a ação sob o texto e o fechar no
          canto superior direito. Lugar declarado: a tela não monta faixa própria. -->
     <div

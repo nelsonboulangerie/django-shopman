@@ -1,0 +1,44 @@
+{
+  "alert_title": "1 encomenda está com o pagamento a conferir: o sistema não conseguiu ler o que f",
+  "alert_top": 217,
+  "alert_bottom": 391,
+  "alert_left": 16,
+  "alert_right": 359,
+  "viewport_w": 375,
+  "page_scroll_w": 375,
+  "bars": [
+    {
+      "bar": "[data-compact-bar]",
+      "top": 0,
+      "bottom": 61
+    },
+    {
+      "bar": "[data-compact-primary]",
+      "top": 114,
+      "bottom": 162
+    }
+  ],
+  "last_bar_bottom": 162,
+  "alert_below_all_bars": true,
+  "overlaps": [],
+  "inside_viewport": true,
+  "min_contrast": 7.47,
+  "texts": [
+    {
+      "text": "1 encomenda está com o pagamento a conferir: o sistema não c",
+      "font_px": 14,
+      "contrast": 11.04
+    },
+    {
+      "text": "Mostrar só essas",
+      "font_px": 14,
+      "contrast": 7.47
+    }
+  ],
+  "close_target": {
+    "box_w": 32,
+    "box_h": 32,
+    "alvo_w": 44,
+    "alvo_h": 44
+  }
+}

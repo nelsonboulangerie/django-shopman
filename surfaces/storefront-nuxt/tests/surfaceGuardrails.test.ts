@@ -498,7 +498,8 @@ describe('surface UX guardrails', () => {
     expect(header).not.toContain("label: 'Finalizar'")
     expect(header).not.toContain("to: '/finalizar'")
     expect(header).toContain('to="/sacola"')
-    expect(header).toContain('aria-label="Ver sacola"')
+    // O nome do link é o da barra de baixo, com a contagem (#2609).
+    expect(header).toContain(':aria-label="cartLinkName(cart)"')
     expect(header).toContain('cartPulse')
     // Logo centralizado: sacola (badge) sempre visível à direita — não mais só no desktop.
     expect(header).toContain('lucide:shopping-bag')

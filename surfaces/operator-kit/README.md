@@ -1287,7 +1287,29 @@ Carregando, vazio, erro e sem conexão, com UMA frase por estado
 ### Aviso da tela (`alerts` do `OperatorPageHeader`)
 
 O que a tela precisa que a pessoa saiba agora tem **um lugar só**: as `alerts` do
-cabeçalho, logo abaixo da toolbar.
+cabeçalho, logo abaixo da última barra do topo.
+
+**O aviso vem depois de TODAS as barras do topo e é o primeiro item do conteúdo, em todo
+tamanho** (dono, 20/11/2026, DEV-2026-063). As barras são a de 56 px (ou a linha do chão
+no celular), as abas e os recortes (as colunas do Gestor no celular: "Novos · Em preparo ·
+Prontos"), a linha dos controles e a dos filtros. O cabeçalho desenha o aviso por último,
+depois de todas as linhas dele, inclusive o `#below`; o que ele não controla é a barra
+que a tela monta FORA dele. Por isso:
+
+- Barra da tela que não cabe nos slots de controle (`#actions`, `#filters-primary`,
+  `#filters`, `#filter-panel`, `#selection`) mora no **`#below`**: é ali que "as barras
+  acabam", e o aviso vem logo depois. Barra do celular que a linha do chão leva junto
+  (o período das Encomendas, as abas dos Ajustes do PDV) pode morar ANTES do cabeçalho,
+  como hoje.
+- Nunca depois do `</OperatorPageHeader>`: ali ela fica embaixo do aviso. Foi o defeito
+  do Gestor de pedidos a 375 px, onde as abas das colunas vinham depois do "Ana espera a
+  resposta da equipe".
+- Sem `order` no CSS: a ordem visual é a do documento (o invólucro do cabeçalho é
+  `contents`, os filhos seguem na coluna da página).
+- Travas: `tests/components/OperatorPageHeaderAlertOrder.test.ts` (o kit: o aviso depois
+  de barra, controles, filtros, seleção e `#below`) e `tests/guardrails.alertsAfterBars.test.ts`
+  (os apps: nenhuma barra logo depois do `</OperatorPageHeader>` ou de um cabeçalho que o
+  embrulha).
 
 ```vue
 <OperatorPageHeader
