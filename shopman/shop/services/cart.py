@@ -18,7 +18,9 @@ from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 
 from shopman.shop.policies.promotion import PromotionContext, Shopper, promotion_matches
+from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.services import availability, lot_pricing, waitlist
+from shopman.shop.services import substitutes as substitute_suggestions
 from shopman.shop.services import sessions as session_service
 from shopman.shop.services.order_helpers import parse_commitment_date
 
@@ -39,6 +41,7 @@ class CartUnavailableError(Exception):
         is_planned: bool = False,
         planned_target_date=None,
         line_qty: int | None = None,
+        line_id: str | None = None,
     ):
         super().__init__(f"unavailable: sku={sku} qty={requested_qty} avail={available_qty}")
         self.sku = sku
@@ -58,6 +61,9 @@ class CartUnavailableError(Exception):
         # Quanto a linha tinha antes do pedido recusado (``None`` = linha nova).
         # A tela só oferece o teto quando ele AVANÇA a linha.
         self.line_qty = line_qty
+        # A linha que JÁ passou do teto (recusa do envio, ``line_shortage``): o
+        # teto encolhe esta linha. ``None`` no 409 da sacola.
+        self.line_id = line_id
 
 
 class CartDateMismatchError(CartUnavailableError):
@@ -426,6 +432,50 @@ def _whole(value: Decimal):
     """Quantidade de sacola como a tela a lê: inteiro quando é inteiro."""
     value = Decimal(str(value))
     return int(value) if value == value.to_integral_value() else value
+
+
+def line_shortage(*, session_key: str, channel_ref: str, sku: str) -> CartUnavailableError | None:
+    """O que dá para fazer com a linha que o ENVIO do pedido recusou por estoque.
+
+    A recusa do commit (``stock._insufficient_supply_error``) sabe só o SKU e a
+    quantidade; a folha de alternativas da loja precisa do mesmo que a sacola
+    entrega no 409: o teto da linha, os substitutos e se dá para pedir o aviso
+    de volta. Aqui só se LÊ: nada é reservado nem solto, e a sacola fica como a
+    cliente deixou até ela escolher.
+
+    Diferente do 409 da sacola, a linha já existe e passou do teto: o teto aqui
+    ENCOLHE a linha (``line_qty`` sai ``None`` e ``line_id`` diz qual linha
+    muda). Com o SKU em duas linhas (escolhas diferentes), quem muda é a
+    última, e as outras continuam com o que têm. ``None`` quando a sacola ou a
+    linha não existe mais.
+    """
+    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    if session is None or not sku:
+        return None
+    lines = [item for item in session.items if item.get("sku") == sku]
+    if not lines:
+        return None
+    line = lines[-1]
+    line_qty = Decimal(str(line.get("qty") or 0))
+    others = sum((Decimal(str(item.get("qty") or 0)) for item in lines[:-1]), Decimal("0"))
+    held = availability.session_line_held_qty(session_key, sku)
+    missing = max(line_qty + others - held, Decimal("1"))
+    cart_date = _cart_date(session)
+    status = availability.check(sku, missing, channel_ref=channel_ref, target_date=cart_date)
+    free = Decimal(str(status.get("available_qty") or 0))
+    ceiling = Decimal("0") if status.get("is_paused") else max(held + free - others, Decimal("0"))
+    error_code = status.get("error_code") or ReserveRefusal.INSUFFICIENT_SUPPLY
+    return CartUnavailableError(
+        sku=sku,
+        requested_qty=_whole(line_qty),
+        available_qty=_whole(min(ceiling, line_qty)),
+        is_paused=bool(status.get("is_paused")),
+        # Na encomenda, a alternativa é a que serve a DATA dela, não o pronto de hoje.
+        substitutes=substitute_suggestions.find(sku, qty=missing, channel=channel_ref, target_date=cart_date),
+        error_code=ReserveRefusal(error_code),
+        is_planned=bool(status.get("is_planned")),
+        line_id=str(line.get("line_id") or "") or None,
+    )
 
 
 def get_line(*, session_key: str, channel_ref: str, line_id: str) -> dict | None:

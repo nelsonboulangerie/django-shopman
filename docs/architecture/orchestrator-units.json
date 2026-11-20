@@ -7333,6 +7333,7 @@
             "remove_item",
             "set_line_notes",
             "_whole",
+            "line_shortage",
             "get_line",
             "LINE_NOTES_MAX_LENGTH"
           ]
@@ -7345,7 +7346,9 @@
         "offerman",
         "stockman"
       ],
-      "ports": [],
+      "ports": [
+        "shopman.stockman.protocols.sku"
+      ],
       "events": [],
       "directives": [],
       "config_surface": [],
