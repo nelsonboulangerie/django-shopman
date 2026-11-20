@@ -21,7 +21,7 @@ import json
 import logging
 import re
 
-from shopman.shop.concierge_verification import DATED_WARNING, cites_a_date, faq_ref
+from shopman.shop.concierge_verification import date_warning, faq_ref
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def promote(alert_pk: int, *, actor: str):
     ref = faq_ref(conversation.pk, str(record.get("id") or ""))
     existing = FAQEntry.objects.filter(ref=ref).first()
     if existing is not None:
-        return DeskResult(True, "already_promoted", ref, DATED_WARNING if cites_a_date(existing.answer) else "")
+        return DeskResult(True, "already_promoted", ref, date_warning(existing.answer))
 
     names = [conversation.customer_name] if conversation.customer_name else []
     question = _redacted(
@@ -140,5 +140,5 @@ def promote(alert_pk: int, *, actor: str):
             entry.save()
     except IntegrityError:
         # Dois cliques ao mesmo tempo: o outro criou primeiro, e é o mesmo rascunho.
-        return DeskResult(True, "already_promoted", ref, DATED_WARNING if cites_a_date(entry.answer) else "")
-    return DeskResult(True, "", ref, DATED_WARNING if cites_a_date(entry.answer) else "")
+        return DeskResult(True, "already_promoted", ref, date_warning(entry.answer))
+    return DeskResult(True, "", ref, date_warning(entry.answer))

@@ -387,7 +387,9 @@ createServer((req, res) => {
     send(res, 200, {
       ok: true, pk: 950, already: Boolean(verification.promoted),
       admin_url: "https://admin.boulangerie.com.br/admin/shop/faqentry/12/change/",
-      warning: dated ? "A resposta cita um dia ou uma data: confira se ela vale sempre antes de publicar." : "",
+      warning: dated
+        ? `A resposta cita um dia ou uma data: “${(verification.answerText.split(/(?<=[.!?])\s+/)[0] || "").replace(/[.!?]$/, "")}”. Confira se ela vale sempre antes de publicar.`
+        : "",
     });
     verification.promoted = true;
     return;

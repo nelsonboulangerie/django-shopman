@@ -2821,6 +2821,8 @@
             "card_subject",
             "card_subjects",
             "cites_a_date",
+            "date_warning",
+            "dated_sentence",
             "faq_ref",
             "origin_of",
             "promote_faq",

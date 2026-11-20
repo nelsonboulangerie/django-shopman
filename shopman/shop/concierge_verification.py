@@ -116,7 +116,7 @@ _DATED = re.compile(
     r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b",
     re.IGNORECASE,
 )
-DATED_WARNING = "A resposta cita um dia ou uma data: confira se ela vale sempre antes de publicar."
+DATED_WARNING = "A resposta cita um dia ou uma data: “{sentence}”. Confira se ela vale sempre antes de publicar."
 
 
 def faq_ref(conversation_pk: int, record_id: str) -> str:
@@ -129,5 +129,20 @@ def origin_of(ref: str) -> tuple[int, str] | None:
     return (int(match.group(1)), match.group(2)) if match else None
 
 
+def dated_sentence(text: str) -> str:
+    """A frase da resposta que cita um dia ou uma data ("Amanhã tem sim."), ou vazio."""
+    text = " ".join(str(text or "").split())
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if _DATED.search(sentence):
+            return sentence.strip()
+    return ""
+
+
 def cites_a_date(text: str) -> bool:
-    return bool(_DATED.search(str(text or "")))
+    return bool(dated_sentence(text))
+
+
+def date_warning(text: str) -> str:
+    """O aviso de data com a frase a rever, ou vazio quando a resposta não cita dia."""
+    sentence = dated_sentence(text).rstrip(".!?")
+    return DATED_WARNING.format(sentence=sentence) if sentence else ""

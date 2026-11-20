@@ -156,7 +156,11 @@ def test_an_answer_about_today_is_promoted_with_the_warning(conversation, outbox
 
     result = faq_promotion.promote(card.pk, actor="ana")
 
-    assert result.ok and result.sent_text == faq_promotion.DATED_WARNING
+    # O aviso cita a frase a rever (coordenação, 20/11/2026).
+    assert result.ok and result.sent_text == (
+        "A resposta cita um dia ou uma data: “Hoje o estacionamento da rua de trás está fechado”. "
+        "Confira se ela vale sempre antes de publicar."
+    )
 
 
 def test_the_endpoint_promotes_the_answered_card(conversation, outbox, client, gestor, monkeypatch, settings):  # noqa: F811

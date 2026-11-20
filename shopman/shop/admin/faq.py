@@ -6,7 +6,7 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from shopman.shop.concierge_verification import DATED_WARNING, cites_a_date, origin_of
+from shopman.shop.concierge_verification import date_warning, origin_of
 from shopman.shop.models import FAQEntry
 
 
@@ -53,4 +53,4 @@ class FAQEntryAdmin(ModelAdmin):
 
     @display(description="aviso")
     def date_warning(self, obj: FAQEntry) -> str:
-        return DATED_WARNING if obj and cites_a_date(obj.answer) else "Nenhum."
+        return (date_warning(obj.answer) if obj else "") or "Nenhum."
