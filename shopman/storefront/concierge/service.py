@@ -1750,41 +1750,78 @@ def _triage_alert(conversation: Conversation, triage, *, synced: bool) -> None:
     message = alert_message(conversation, triage)
     if not synced:
         message += "\nA marca de atendimento humano não foi confirmada no ManyChat em todos os vínculos."
+    _conversation_card(
+        conversation,
+        alert_type,
+        message,
+        intent=triage.intent,
+        urgency=triage.urgency,
+        destination=triage.destination,
+    )
+
+
+def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
+    _conversation_card(conversation, alert_type, message)
+
+
+#: ``Conversation.flags["alerts"]`` = ``{tipo: pk}``: o cartão aberto de cada tipo da conversa.
+ALERTS_FLAG = "alerts"
+#: Os cartões que pedem gente agora: cor de erro e no topo do Gestor (``AlertSpec.on_screen``).
+_URGENT_CARDS = frozenset({"concierge_handoff"})
+
+
+def _conversation_card(conversation: Conversation, alert_type: str, message: str, **fields) -> None:
+    """UM cartão aberto por conversa e tipo, e todo acontecimento novo o traz de volta.
+
+    Medido em 19/11/2026 às 22h16Z: o handoff abriu e NENHUM aviso nasceu. O cartão de
+    antes da mesma conversa ainda estava aberto (já visto), e o debounce por texto calou o
+    novo. Agora o cartão aberto é reaberto (mensagem nova, sem o Visto, de novo na tela);
+    fechado ou inexistente, nasce outro. O ``pk`` fica na conversa, e o botão "Abrir
+    conversa" sai da projeção do sino por ele (sem caminho escrito na mensagem).
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    severity = "error" if alert_type in _URGENT_CARDS else "warning"
     try:
+        known = ((conversation.flags or {}).get(ALERTS_FLAG) or {}).get(alert_type)
+        if known and alert_adapter.revise(int(known), message=message, severity=severity, reopen=True):
+            return
         from shopman.shop.services.observability import create_operator_alert
 
-        create_operator_alert(
+        alert = create_operator_alert(
             type=alert_type,
-            severity="warning",
+            severity=severity,
             message=message,
-            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
+            stamp_dedupe=False,
             order_ref=conversation.last_order_ref,
             conversation_id=conversation.pk,
             owner_role="atendimento",
             action="inspect_conversation",
-            intent=triage.intent,
-            urgency=triage.urgency,
-            destination=triage.destination,
+            **fields,
         )
+        if alert is None:
+            return
+        with transaction.atomic():
+            locked = Conversation.objects.select_for_update().get(pk=conversation.pk)
+            flags = dict(locked.flags or {})
+            flags[ALERTS_FLAG] = {**(flags.get(ALERTS_FLAG) or {}), alert_type: alert.pk}
+            Conversation.objects.filter(pk=conversation.pk).update(flags=flags)
+            conversation.flags = flags
     except Exception:
         logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
 
 
-def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
+def _close_card(conversation: Conversation, alert_type: str, *, actor: str) -> None:
+    """A causa do cartão acabou (a conversa voltou à Concierge): ele sai do sino e do topo."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    known = ((conversation.flags or {}).get(ALERTS_FLAG) or {}).get(alert_type)
+    if not known:
+        return
     try:
-        from shopman.shop.services.observability import create_operator_alert
-
-        create_operator_alert(
-            type=alert_type,
-            severity="warning",
-            message=f"{message} Conversa #{conversation.pk}: /admin/shop/conversation/{conversation.pk}/change/; responsável: atendimento; consultar transcrição e próximo efeito autorizado.",
-            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
-            order_ref=conversation.last_order_ref,
-            conversation_id=conversation.pk, owner_role="atendimento", action="inspect_conversation",
-
-        )
+        alert_adapter.resolve_pk(int(known), actor=actor)
     except Exception:
-        logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
+        logger.warning("concierge.alert_close_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
 
 
 def recover_pending(*, limit=100):
