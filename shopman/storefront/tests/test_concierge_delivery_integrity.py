@@ -326,3 +326,72 @@ def test_a_message_while_with_the_team_never_falls_into_silence(monkeypatch):
     # A mesma entrada de novo (retry do fornecedor) não liga a marca nem o cartão outra vez.
     service.receive_inbound(event(account="test-account", subject="wa-subject", text="Oi? Alguém aí?", event_id="event-2"))
     assert len(adapter_class().handoffs) == 1 and len(alerts) == 1
+
+
+def _with_team(conversation_id, *, verification_status, escalated_by):
+    """A conversa na equipe, como o prazo do "vou verificar" (ou o "Assumir" do sino) a deixa."""
+    from shopman.storefront.concierge import verification
+
+    conversation = Conversation.objects.get(pk=conversation_id)
+    flags = dict(conversation.flags or {})
+    flags[verification.FLAG_KEY] = {"v": verification.VERSION, "id": "abc", "status": verification_status}
+    flags["triage"] = {**(flags.get("triage") or {}), "escalated_by": escalated_by}
+    Conversation.objects.filter(pk=conversation_id).update(state=Conversation.State.HANDOFF, flags=flags)
+
+
+def test_after_the_verification_deadline_a_new_message_returns_to_the_concierge(monkeypatch):
+    """Dono, 20/11/2026 (#2836, "1"): foi à equipe só pelo prazo do "vou verificar" e o
+    cliente escreveu de novo: volta à Concierge, a marca do ManyChat vai a 0 e o turno roda."""
+    from shopman.orderman.models import Directive
+
+    from shopman.storefront.concierge import verification
+
+    result, binding, _ = inbound("Quero falar com alguém")
+    _with_team(result.conversation_id, verification_status=verification.HANDED_OFF,
+               escalated_by=verification.ESCALATED_BY)
+    reset_adapter()
+    Directive.objects.all().delete()
+
+    again = service.receive_inbound(
+        event(account="test-account", subject="wa-subject", text="E aí, conseguiu ver?", event_id="event-2")
+    )
+
+    assert (again.queued, again.reason) == (True, "returned")
+    conversation = Conversation.objects.get(pk=result.conversation_id)
+    assert conversation.state == Conversation.State.ACTIVE
+    assert adapter_class().handoffs == [("manychat-wa", "wa-subject", False)]
+    assert Directive.objects.filter(topic=service.TURN_TOPIC, payload__conversation_id=conversation.pk).exists()
+    assert conversation.flags[verification.FLAG_KEY]["status"] == verification.RETURNED
+
+
+def test_a_conversation_taken_over_from_the_bell_never_returns_by_itself(monkeypatch):
+    from shopman.storefront.concierge import verification
+
+    result, _binding, _ = inbound("Quero falar com alguém")
+    _with_team(result.conversation_id, verification_status=verification.TAKEN_OVER, escalated_by="")
+    reset_adapter()
+
+    again = service.receive_inbound(
+        event(account="test-account", subject="wa-subject", text="Oi?", event_id="event-2")
+    )
+
+    assert (again.queued, again.reason) == (False, "handoff")
+    assert Conversation.objects.get(pk=result.conversation_id).state == Conversation.State.HANDOFF
+    assert adapter_class().handoffs == [("manychat-wa", "wa-subject", True)]  # a marca religada, como antes
+
+
+def test_without_the_return_switch_the_deadline_conversation_stays_with_the_team(settings):
+    from shopman.storefront.concierge import verification
+
+    settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "human_return_enabled": False}
+    result, _binding, _ = inbound("Quero falar com alguém")
+    _with_team(result.conversation_id, verification_status=verification.HANDED_OFF,
+               escalated_by=verification.ESCALATED_BY)
+    reset_adapter()
+
+    again = service.receive_inbound(
+        event(account="test-account", subject="wa-subject", text="E aí?", event_id="event-2")
+    )
+
+    assert (again.queued, again.reason) == (False, "handoff")
+    assert Conversation.objects.get(pk=result.conversation_id).state == Conversation.State.HANDOFF
