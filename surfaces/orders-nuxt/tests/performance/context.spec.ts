@@ -18,8 +18,8 @@ for (const back of ["link", "history"]) {
     const scroll = await page.evaluate(() => window.scrollY);
     expect(scroll).toBeGreaterThan(100);
     await link.click();
-    await expect(page.getByRole("link", { name: "Voltar para a fila", exact: true })).toBeVisible();
-    if (back === "link") await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
+    await expect(page.getByRole("link", { name: "Voltar para os pedidos", exact: true })).toBeVisible();
+    if (back === "link") await page.getByRole("link", { name: "Voltar para os pedidos", exact: true }).click();
     else await page.goBack();
     await expect(search).toHaveValue("HTTP-LAB-500");
     await expect(page).toHaveURL(/view=table/);

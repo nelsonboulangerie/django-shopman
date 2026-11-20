@@ -103,6 +103,12 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             ).values_list("ref", "target_date")
             if target_date is not None
         }
+    # O cartão do "vou verificar" diz no título quem espera ("Ana espera a resposta da
+    # equipe"), pelo nome da conversa dele; os outros tipos ficam com o assunto da spec.
+    from shopman.shop.concierge_verification import ALERT_TYPE as VERIFY_TYPE
+    from shopman.shop.concierge_verification import card_subjects
+
+    verify_subjects = card_subjects(alert.pk for alert in alert_rows if alert.type == VERIFY_TYPE)
     rows = tuple(
         OperatorAlertProjection(
             pk=alert.pk,
@@ -119,7 +125,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             deadline_kind=deadline_kind(alert),
             origin_label=_spec_value(alert, "origin"),
             origin_icon=_spec_value(alert, "origin_icon"),
-            subject=_spec_value(alert, "subject") or alert.get_type_display(),
+            subject=verify_subjects.get(alert.pk) or _spec_value(alert, "subject") or alert.get_type_display(),
             order_schedule_label=schedules.get(alert.order_ref, ("", ""))[0],
             order_schedule_state=schedules.get(alert.order_ref, ("", ""))[1],
             actions=_alert_actions(
@@ -390,12 +396,53 @@ def _accept_order_action(alert) -> ProductionActionProjection:
     )
 
 
+def _concierge_verification_actions(alert) -> list[ProductionActionProjection]:
+    """O "vou verificar" da Concierge (WP-05): responder ao cliente, ou assumir a conversa.
+
+    A resposta vai no corpo (``{"text": ...}``) e sai ao cliente pela Concierge; o
+    cartão fecha sozinho quando ela sai ou quando alguém assume.
+    """
+    base = f"/api/v1/backstage/alerts/{alert.pk}/concierge-verification"
+    rows = (
+        ("answer_concierge_verification", "Responder ao cliente", 1, "answer", "ConciergeVerificationAnswerRequest"),
+        ("take_over_conversation", "Assumir a conversa", 2, "take-over", ""),
+    )
+    return [
+        ProductionActionProjection(
+            ref=f"{kind}:{alert.pk}",
+            kind=kind,
+            label=label,
+            priority=priority,
+            enabled=True,
+            reason="",
+            method="POST",
+            href=f"{base}/{path}/",
+            payload_schema=schema,
+            expected_rev=None,
+            idempotency=ProductionActionIdempotencyProjection(required=False, key_scope=""),
+            confirmation=ProductionActionConfirmationProjection(
+                required=False,
+                reason_required=False,
+                title="",
+                confirm_label=label,
+            ),
+            approval_requirement=None,
+            source_alert_ref=str(alert.pk),
+            source_alert_effect="resolves",
+            proof="",
+        )
+        for kind, label, priority, path, schema in rows
+    ]
+
+
 def _alert_actions(
     alert, *, target_date: str = "", surface: str = "", acceptable: bool = False
 ) -> tuple[ProductionActionProjection, ...]:
     actions = []
     if acceptable:
         actions.append(_accept_order_action(alert))
+    if alert.type == "concierge_verify":
+        actions.extend(_concierge_verification_actions(alert))
     href, label = alert_context_href(alert, surface=surface, target_date=target_date)
     if href:
         actions.append(_open_context_action(alert, label=label, href=href))

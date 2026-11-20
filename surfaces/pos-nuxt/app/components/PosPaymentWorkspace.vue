@@ -153,6 +153,8 @@ const props = defineProps<{
   customerEmail: string;
   deliveryAddress: string;
   deliveryAddressStructured: StructuredAddressProjection;
+  /** O endereço acabou de ser tirado da entrega e ainda dá para devolver. */
+  canRestoreAddress?: boolean;
   deliveryStreetNumber: string;
   deliveryNeighborhood: string;
   deliveryComplement: string;
@@ -281,6 +283,10 @@ const emit = defineEmits<{
   /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
   applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   pickSavedAddress: [SavedAddressProjection];
+  /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
+  clearAddress: [];
+  /** Desfaz o tirar: o endereço volta para a entrega. */
+  restoreAddress: [];
 }>();
 
 // TOTAL QUE AINDA PODE MUDAR NÃO APARECE COMO TOTAL (regra do dono). Sem a
@@ -2304,6 +2310,7 @@ defineExpose({
     :saved-addresses="savedAddresses"
     :address-autocomplete="addressAutocomplete"
     :delivery-address="deliveryAddress"
+    :delivery-address-structured="deliveryAddressStructured"
     :delivery-street-number="deliveryStreetNumber"
     :delivery-neighborhood="deliveryNeighborhood"
     :delivery-complement="deliveryComplement"
@@ -2317,6 +2324,7 @@ defineExpose({
     :delivery-fee-status="review ? 'resolved' : reviewFailed ? 'failed' : 'calculating'"
     :delivery-distance-km="deliveryDistanceKm"
     :order-notes="orderNotes"
+    :can-restore-address="canRestoreAddress"
     @update:fulfillment-type="$emit('update:fulfillmentType', $event)"
     @update:delivery-address="$emit('update:deliveryAddress', $event)"
     @update:delivery-address-structured="$emit('update:deliveryAddressStructured', $event)"
@@ -2328,6 +2336,8 @@ defineExpose({
     @update:delivery-fee-override-input="$emit('update:deliveryFeeOverrideInput', $event)"
     @update:order-notes="$emit('update:orderNotes', $event)"
     @pick-saved-address="$emit('pickSavedAddress', $event)"
+    @clear-address="$emit('clearAddress')"
+    @restore-address="$emit('restoreAddress')"
     @open-schedule="scheduleSheetOpen = true"
   />
 

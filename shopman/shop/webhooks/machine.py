@@ -13,8 +13,10 @@ Payload documentado em docs.machine.global (v1, entregas, "Webhooks > Sobre"):
   request_id, status_code, status_label, stop_id?, will_reopen?, links{request,
   driver?, enterprise?}}``. ``status_code`` traz a letra da corrida
   (D/G/P/S/N/A/E/C/F/U) ou um evento que não é estado: ``AP`` (chegou ao local),
-  ``ER`` (parada finalizada), ``L`` (aguardando liberação), ``R`` (aguardando
-  pagamento). Só a letra de estado entra no funil; o evento é aceito e logado.
+  ``AN`` (nas redondezas), ``AW`` (esperando no local), ``T`` (trocando de
+  entregador), ``ER`` (parada finalizada), ``L`` (aguardando liberação), ``R``
+  (aguardando pagamento). Só a letra de estado entra no funil; AP/AN/AW gravam
+  o andamento e T reabre a mesma corrida; o resto é aceito e logado.
 - **will_reopen** (seção "Campo will_reopen" da doc): no ``C`` em que o
   entregador desistiu, ``true`` diz que a TaOn vai redistribuir a MESMA corrida:
   "não abra outra solicitação". Aqui o ``C`` não cancela nada
@@ -25,8 +27,10 @@ Payload documentado em docs.machine.global (v1, entregas, "Webhooks > Sobre"):
 - O formato antigo (``id_mch``/``status_solicitacao`` e ``id_mch``/
   ``lat_cond``/``lng_cond``) está DEPRECADO na doc, mas continua aceito.
 
-Além do token, todo POST tem de trazer o header ``Signature-V2``: HMAC-SHA-512,
-em hexadecimal, do corpo cru inteiro, com a chave da API
+Além do token, todo POST tem de trazer o header ``Signature-V2``: HMAC-SHA-512
+do corpo cru inteiro, com a chave da API. A doc não diz a codificação: aceita
+hexadecimal (o exemplo da doc) e base64 (o que a produção mandou em 19/11, com
+caracteres fora do hexadecimal), sempre a mesma conta com a mesma chave
 (``SHOPMAN_MACHINE["api_key"]``, env ``MACHINE_API_KEY``), conferido em tempo
 constante. Assinatura ausente ou que não confere → 401. Chave da API vazia →
 401 em TODO POST, com log de erro e alerta ao operador (falha fechada e
@@ -54,6 +58,7 @@ projection do gestor.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import logging
@@ -157,11 +162,22 @@ class MachineWebhookView(APIView):
             # A chegada (AP) entra no progresso (na loja antes da coleta, no
             # cliente depois) e pede uma leitura completa já.
             orders = list(Order.objects.filter(data__courier__id_mch=str(ride_ref)).order_by("pk"))
-            if orders and ride_status == "AP":
-                from shopman.shop.services import courier
+            from shopman.shop.services import courier
 
+            if orders and ride_status == "AP":
                 for order in orders:
-                    courier.record_arrival(order, at=_first(event, ("datetime",)) or None)
+                    courier.record_arrival(order, at=at)
+                courier.schedule_sync(orders[0], delay_seconds=0)
+            elif orders and ride_status in courier.PICKUP_EVENTS:
+                # Nas redondezas (AN) ou esperando na loja além do combinado (AW):
+                # o relógio da espera no balcão conta daqui (TAON-12).
+                for order in orders:
+                    courier.record_pickup_event(order, ride_status, at=at)
+            elif orders and ride_status == "T":
+                # A TaOn está trocando o entregador: a MESMA corrida segue, sem
+                # dono por um instante. Nunca é falha nem "chame de novo".
+                for order in orders:
+                    courier.record_reopen(order, at=at, source="webhook", reason=courier.REOPEN_TRANSFER)
                 courier.schedule_sync(orders[0], delay_seconds=0)
             return Response({"status": "ok", "kind": "event", "code": ride_status}, status=http.HTTP_200_OK)
 
@@ -283,19 +299,59 @@ def _check_signature(request: Request, body: bytes) -> bool:
         )
         _alert_signature_failure("signature_key_missing")
         return False
-    received = (request.META.get(SIGNATURE_HEADER) or "").strip().lower()
+    received = (request.META.get(SIGNATURE_HEADER) or "").strip()
     if not received:
         logger.warning("MachineWebhook: Signature-V2 ausente, rejeitando %s", _body_digest(body))
         _alert_signature_failure("signature_missing")
         return False
-    if not hmac.compare_digest(received.encode("ascii", "replace"), signature_for(body, key).encode("ascii")):
-        # O resumo do corpo e o começo da assinatura recebida bastam para ver
-        # se quem assina é outra conta da TaOn; o corpo cru não entra no log.
-        logger.warning("MachineWebhook: Signature-V2 não confere, rejeitando %s signature=%s...",
-                       _body_digest(body), "".join(ch for ch in received[:8] if ch in "0123456789abcdef"))
+    encoding = _signature_encoding(received, body, key)
+    if not encoding:
+        # O resumo do corpo e a forma da assinatura recebida (tamanho, alfabeto e
+        # começo) dizem se a chave é outra ou se a codificação é outra; o corpo
+        # cru não entra no log.
+        logger.warning(
+            "MachineWebhook: Signature-V2 não confere, rejeitando %s signature=%s... len=%d alphabet=%s",
+            _body_digest(body), "".join(ch for ch in received[:8].lower() if ch in "0123456789abcdef"),
+            len(received), _alphabet(received),
+        )
         _alert_signature_failure("signature_mismatch")
         return False
+    logger.info("machine.webhook signature=ok encoding=%s", encoding)
     return True
+
+
+def _signature_encoding(received: str, body: bytes, key: str) -> str:
+    """Qual codificação do HMAC-SHA-512 confere (``hex``/``base64``), ou ``""``.
+
+    A conta é uma só (HMAC-SHA-512 do corpo cru com a chave da API); muda só a
+    forma de escrever o resultado. Aceitar as duas não abre nada: sem a chave
+    não se forja nenhuma. Prefixo ``sha512=`` é tolerado.
+    """
+    if received.lower().startswith("sha512="):
+        received = received[7:]
+    digest = hmac.new(key.encode("utf-8"), body, hashlib.sha512).digest()
+    candidates = (
+        ("hex", received.lower(), digest.hex()),
+        ("base64", received, base64.b64encode(digest).decode("ascii")),
+        ("base64url", received.rstrip("="), base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")),
+    )
+    matched = ""
+    for name, got, expected in candidates:
+        # Compara todas, sem sair cedo: o tempo não diz qual chegou perto.
+        if hmac.compare_digest(got.encode("ascii", "replace"), expected.encode("ascii")) and not matched:
+            matched = name
+    return matched
+
+
+def _alphabet(value: str) -> str:
+    """O alfabeto da assinatura recebida, sem ela: diz a codificação no log."""
+    if all(ch in "0123456789abcdefABCDEF" for ch in value):
+        return "hex"
+    if all(ch.isalnum() or ch in "+/=" for ch in value):
+        return "base64"
+    if all(ch.isalnum() or ch in "-_=" for ch in value):
+        return "base64url"
+    return "other"
 
 
 def _body_digest(body: bytes) -> str:

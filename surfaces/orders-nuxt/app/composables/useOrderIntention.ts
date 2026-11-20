@@ -23,6 +23,8 @@ type Result = { outcome?: string; detail?: string; count?: number } & Omit<
 const ORDER_OPERATION_SUBJECT: Record<string, string> = {
   cancel: "o cancelamento foi gravado",
   return: "a devolução foi gravada",
+  "no-show": "o pedido foi encerrado como não retirado",
+  "refund-retry": "o estorno foi pedido de novo",
   reject: "a recusa foi gravada",
   confirm: "o aceite foi gravado",
   advance: "o avanço do pedido foi gravado",
@@ -285,7 +287,7 @@ export function useOrderIntention() {
       courierRideAction(action, call.refs),
       courierRideInputs(call),
       undefined,
-      { subject: "a corrida foi chamada", where: "a fila" },
+      { subject: "a corrida foi chamada", where: "os pedidos" },
     );
   }
   return {

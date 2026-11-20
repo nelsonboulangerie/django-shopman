@@ -242,7 +242,7 @@ def process_events(events: list[dict]) -> dict:
             elif code in _HANDSHAKE_CODES:
                 outcome = _process_handshake(event, settlement=code in {"HSS", "HANDSHAKE_SETTLEMENT"})
             elif code in _CANCELLATION_CODES:
-                outcome = _process_cancellation(event_id, order_id)
+                outcome = _process_cancellation(event_id, order_id, event.get("metadata"))
             elif code in _CONCLUSION_CODES:
                 outcome = _process_conclusion(event_id, order_id)
             else:
@@ -950,7 +950,96 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
     return "deduped" if already_applied else "ingested"
 
 
-def _process_cancellation(event_id: str, order_id: str) -> str:
+#: Onde o motivo e a origem do cancelamento vêm no ``metadata`` do CAN. A
+#: referência de eventos não fixa a chave; lemos as conhecidas e guardamos o
+#: ``metadata`` cru (sem dado pessoal: é código, origem e texto do iFood).
+_CAN_REASON_KEYS = ("CANCEL_REASON", "reason", "description", "cancellationReason", "message")
+_CAN_ORIGIN_KEYS = ("CANCEL_ORIGIN", "origin", "cancellationOrigin", "CANCEL_USER")
+_CAN_CODE_KEYS = ("CANCEL_CODE", "cancellationCode", "code")
+_CAN_ORIGIN_COPY = {
+    "CONSUMER": "o cliente",
+    "CUSTOMER": "o cliente",
+    "IFOOD": "o iFood",
+    "RESTAURANT": "a loja",
+    "MERCHANT": "a loja",
+    "LOGISTIC": "a logística do iFood",
+    "LOGISTICS": "a logística do iFood",
+}
+#: O iFood cancelou um pedido que aqui já está pronto ou saiu: a transição não
+#: existe no fluxo local, então o pedido segue ativo no Gestor. Sem aviso, a
+#: equipe entregaria um pedido cancelado.
+CANCELLED_NOT_APPLIED_ALERT = "ifood_cancelled_not_applied"
+
+
+def _first_text(metadata: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = metadata.get(key)
+        if isinstance(value, (str, int)) and str(value).strip():
+            return str(value).strip()[:300]
+    return ""
+
+
+def cancellation_facts(metadata) -> dict:
+    """``{origin, code, reason, metadata}`` do CAN, como o iFood mandou."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return {
+        "origin": _first_text(metadata, _CAN_ORIGIN_KEYS).upper(),
+        "code": _first_text(metadata, _CAN_CODE_KEYS),
+        "reason": _first_text(metadata, _CAN_REASON_KEYS),
+        "metadata": dict(metadata),
+    }
+
+
+def cancellation_reason_copy(facts: dict) -> str:
+    """A frase do motivo, para o card e para o histórico do pedido."""
+    who = _CAN_ORIGIN_COPY.get(facts.get("origin") or "", "")
+    reason = str(facts.get("reason") or "").rstrip(".")
+    if who and reason:
+        return f"Cancelado no iFood por {who}: {reason}"
+    if who:
+        return f"Cancelado no iFood por {who}"
+    if reason:
+        return f"Cancelado pelo iFood: {reason}"
+    return "Cancelamento confirmado pelo iFood"
+
+
+def _alert_cancelled_not_applied(order, facts: dict) -> None:
+    from shopman.shop.services.observability import create_operator_alert
+
+    display = str(((order.data or {}).get("ifood") or {}).get("display_id") or "").strip()
+    name = f"{order.ref} (iFood #{display})" if display else order.ref
+    create_operator_alert(
+        type=CANCELLED_NOT_APPLIED_ALERT,
+        severity="critical",
+        message=(
+            f"O iFood cancelou o pedido {name}, mas aqui ele já está "
+            f"{order.get_status_display().lower()} e não pôde ser cancelado sozinho. "
+            f"{cancellation_reason_copy(facts)}. Não entregue: confira no Portal do iFood e encerre o pedido aqui."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"{CANCELLED_NOT_APPLIED_ALERT}:{order.ref}",
+        debounce_minutes=24 * 60,
+    )
+
+
+def _record_cancellation_facts(order, facts: dict, event_id: str) -> None:
+    data = dict(order.data or {})
+    remote = dict(data.get("ifood") or {})
+    if remote.get("remote_cancelled"):
+        return
+    from django.utils import timezone
+
+    remote["remote_cancelled"] = {
+        "event_id": event_id, "observed_at": timezone.now().isoformat(),
+        "origin": facts.get("origin", ""), "code": facts.get("code", ""), "reason": facts.get("reason", ""),
+        "metadata": facts.get("metadata") or {},
+    }
+    data["ifood"] = remote
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+
+def _process_cancellation(event_id: str, order_id: str, metadata=None) -> str:
     """Reflect an iFood-originated cancellation into our Order.
 
     Mesma disciplina do PLACED: claim por event id (idempotente), ack só
@@ -984,7 +1073,9 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
         # the cancellation after the order has been materialized.
         webhook_idempotency.mark_failed(claim)
         return "failed"
+    facts = cancellation_facts(metadata)
     if order.status == "cancelled":
+        _record_cancellation_facts(order, facts, event_id)
         # Legacy versions cancelled locally before sending requestCancellation.
         # CAN still confirms remote ownership, so queued legacy callbacks must
         # be suppressed even when no further local transition is needed.
@@ -997,9 +1088,10 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
     try:
         from shopman.shop.services import cancellation
 
+        _record_cancellation_facts(order, facts, event_id)
         cancelled = cancellation.cancel(
             order,
-            reason="Cancelamento confirmado pelo iFood",
+            reason=cancellation_reason_copy(facts),
             actor="system:ifood",
             extra_data={"ifood_cancelled": True},
         )
@@ -1008,6 +1100,7 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
                 "ifood_events: CAN cannot reconcile active order %s (status %s); "
                 "leaving unacknowledged for operational review", order_id, order.status,
             )
+            _alert_cancelled_not_applied(order, facts)
             webhook_idempotency.mark_failed(claim)
             return "failed"
         outcome = "ingested" if cancelled else "deduped"
@@ -1112,7 +1205,7 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
                 return "deduped"
 
             _record_remote(order, "remote_concluded", event_id)
-            if not conclusion_allowed(order):
+            if not conclusion_allowed(order) and not concluded_there_closes_here(order):
                 # O iFood já encerrou, mas aqui o pedido ainda não chegou à entrega
                 # (entrega própria parada em preparo, retirada ainda não pronta).
                 # A regra de NÃO pular a custódia do entregador continua de pé; o
@@ -1196,6 +1289,28 @@ def conclusion_allowed(order) -> bool:
     return fulfillment_type == "pickup" and order.status == Order.Status.READY
 
 
+def concluded_there_closes_here(order) -> bool:
+    """Com o CON gravado, o pedido pode andar até concluir mesmo sem a entrega local?
+
+    Sim quando o andamento depois do aceite é do iFood: pedido de TESTE (inerte,
+    ninguém daqui vai entregá-lo; medido em 19/11/2026, oito pedidos de teste de
+    07 e 09/11 seguiam "Aceito" doze dias depois de concluídos lá) e entrega com
+    entregador do iFood (decisão do dono, 12/11/2026, pedido 3417). Com
+    entregador da casa ou retirada no balcão, não: a custódia da sacola é daqui,
+    e o CON espera a entrega ou a retirada acontecerem.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import get_fulfillment_type, is_test_order
+
+    if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY):
+        return False
+    if is_test_order(order):
+        return True
+    facts = (order.data or {}).get("ifood") or {}
+    return get_fulfillment_type(order) == "delivery" and str(facts.get("delivered_by") or "").upper() == "IFOOD"
+
+
 def _reconcile_locked(order) -> None:
     """Aplica, pelo caminho legal, o que os fatos do iFood já autorizam.
 
@@ -1209,7 +1324,7 @@ def _reconcile_locked(order) -> None:
     from shopman.shop.services import ifood_cancellation, operator_orders
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
-    for _ in range(4):
+    for _ in range(6):
         if order.status in Order.TERMINAL_STATUSES:
             return
         facts = (order.data or {}).get("ifood") or {}
@@ -1234,6 +1349,14 @@ def _reconcile_locked(order) -> None:
                 operator_orders.advance_order(order, actor="system:ifood")
                 order.refresh_from_db()
             return
+        if facts.get("remote_concluded") and concluded_there_closes_here(order):
+            # O iFood encerrou e quem manda no andamento é ele: o pedido anda
+            # pelos passos de sempre até onde o CON conclui (acima). A saída é
+            # fato de fora (``partner_collects``): não lança troco nem reserva
+            # maquininha, e nenhum aviso ecoa ao iFood (``remote_status_observed``).
+            operator_orders.advance_order(order, actor="system:ifood:CON", partner_collects=True)
+            order.refresh_from_db()
+            continue
         if facts.get("remote_dispatched") and _collected_by_ifood_courier(order):
             # Pronto pelo sistema: ``advance_order`` fecha os tickets abertos do
             # KDS, e o aviso ao iFood não ecoa (``remote_status_observed``).
@@ -1289,7 +1412,7 @@ def run_once() -> dict:
     return process_events(poll())
 
 
-__all__ = ["acknowledge", "conclusion_allowed", "poll", "polling_configured", "process_events", "run_once"]
+__all__ = ["acknowledge", "concluded_there_closes_here", "conclusion_allowed", "poll", "polling_configured", "process_events", "run_once"]
 
 
 def _process_handshake(event: dict, *, settlement: bool) -> str:

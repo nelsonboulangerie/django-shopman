@@ -6,6 +6,7 @@ Não importar de ``shopman.stockman.api.views``; views importam daqui.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -15,9 +16,7 @@ from shopman.stockman.adapters.sku_validation import get_sku_validator
 from shopman.stockman.models import Hold, Quant
 from shopman.stockman.models.enums import HoldStatus
 from shopman.stockman.protocols.sku import PromiseDecision, PromiseReasonCode
-from shopman.stockman.services.scope import quants_eligible_for
-
-STARTED_BATCH = "started"
+from shopman.stockman.services.scope import STARTED_BATCH, is_in_production, quants_eligible_for
 
 
 def _policy_promisable_qty(
@@ -200,7 +199,9 @@ def availability_for_sku(
     channel-visible quants. Ignored when ``position`` is set (single-position
     query). ``expiry_margin_days`` / ``include_nonconforming`` are the lot
     gates (see :func:`quants_eligible_for`) — likewise ignored for the
-    single-position query, which is an internal/ops view.
+    single-position query, which is an internal/ops view. The expiry margin
+    also reaches batchless stock through its implicit validity (production
+    day + ``shelf_life_days``).
 
     ``availability_policy``: a política que o chamador já resolveu (o hold
     recebe o produto e lê a política dele). Ausente, vem do contrato de oferta.
@@ -453,6 +454,7 @@ def availability_for_skus_on_dates(
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
     allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+    expiry_margin_days_by_date: Mapping[date, int] | None = None,
 ) -> dict[date, dict[str, dict]]:
     """
     :func:`availability_for_skus` para várias datas numa varredura só.
@@ -469,6 +471,13 @@ def availability_for_skus_on_dates(
 
     Quem pergunta "hoje e as próximas fornadas" (a fila de espera) fazia uma
     leitura inteira por data candidata; aqui é uma.
+
+    ``expiry_margin_days_by_date``: a margem de validade de cada data, para
+    quem lê na mesma varredura datas que pedem margens diferentes (a venda de
+    hoje e a promessa para depois). Data ausente do mapa usa
+    ``expiry_margin_days``. Cada ``[data]`` continua sendo o que
+    ``availability_for_skus(target_date=data, expiry_margin_days=<a dela>)``
+    devolve.
     """
     from shopman.stockman.models import Batch
 
@@ -480,7 +489,11 @@ def availability_for_skus_on_dates(
 
     today = timezone.localdate()
     horizon = max(dates)
-    expiry_margin = timedelta(days=max(0, expiry_margin_days))
+    margin_by_date: dict[date, int] = {
+        target: max(0, int((expiry_margin_days_by_date or {}).get(target, expiry_margin_days)))
+        for target in dates
+    }
+    widest_cutoff = max(target + timedelta(days=margin) for target, margin in margin_by_date.items())
 
     # ── Query 1: orderable SKUs from the offering contract ───────────────────
     validator = get_sku_validator()
@@ -501,12 +514,32 @@ def availability_for_skus_on_dates(
     # never an informational reason, drives the compatibility gate.
     # O corte de validade depende da data (``data + margem``): lemos os lotes
     # até o MAIOR corte, com a validade, e cada data aplica o seu.
-    expiring_batches: list[tuple[str, str, date]] = list(
-        Batch.objects.filter(
-            sku__in=skus,
-            expiry_date__lt=horizon + expiry_margin,
-        ).values_list("sku", "ref", "expiry_date")
-    )
+    #
+    # Com margem, a MESMA leitura traz os lotes que declaram data de produção
+    # recente: o saldo físico de um lote é julgado pela data do lote, não pelo
+    # ``created_at`` (ver :mod:`shopman.stockman.shelflife`). Sem margem, ou
+    # sem validade de prateleira, nada muda e nenhum lote a mais é lido.
+    from shopman.stockman.shelflife import lot_production_floor
+
+    lot_floors = [
+        lot_production_floor(shelflife, target, margin)
+        for target, margin in margin_by_date.items()
+        if margin > 0
+        for shelflife in shelflife_by_sku.values()
+        if shelflife is not None
+    ]
+    batch_scope = Q(expiry_date__lt=widest_cutoff)
+    if lot_floors:
+        batch_scope |= Q(production_date__gte=min(lot_floors))
+    expiring_batches: list[tuple[str, str, date]] = []
+    lot_production_by_sku: dict[str, dict[str, date]] = {}
+    for sku, ref, expiry_date, production_date in Batch.objects.filter(batch_scope, sku__in=skus).values_list(
+        "sku", "ref", "expiry_date", "production_date"
+    ):
+        if expiry_date is not None and expiry_date < widest_cutoff:
+            expiring_batches.append((sku, ref, expiry_date))
+        if production_date is not None:
+            lot_production_by_sku.setdefault(sku, {})[ref] = production_date
     nonconforming_refs_by_sku: dict[str, set[str]] = {}
     allowed_batch_refs_by_sku: dict[str, set[str]] | None = None
     if allowed_quality_grade_refs is not None:
@@ -581,7 +614,7 @@ def availability_for_skus_on_dates(
 
     by_date: dict[date, dict[str, dict]] = {}
     for target in dates:
-        cutoff = target + expiry_margin
+        cutoff = target + timedelta(days=margin_by_date[target])
         excluded_refs_by_sku: dict[str, set[str]] = {}
         for sku, ref, expiry_date in expiring_batches:
             if expiry_date < cutoff:
@@ -592,10 +625,12 @@ def availability_for_skus_on_dates(
             skus,
             target,
             safety_margin=safety_margin,
+            expiry_margin_days=margin_by_date[target],
             orderable_skus=orderable_skus,
             sku_infos=sku_infos,
             shelflife_by_sku=shelflife_by_sku,
             excluded_refs_by_sku=excluded_refs_by_sku,
+            lot_production_by_sku=lot_production_by_sku,
             allowed_batch_refs_by_sku=allowed_batch_refs_by_sku,
             planned_dates_by_sku=planned_dates_by_sku,
             tracked_skus=tracked_skus,
@@ -610,10 +645,12 @@ def _availability_on_date(
     target: date,
     *,
     safety_margin: int,
+    expiry_margin_days: int,
     orderable_skus: set[str],
     sku_infos: dict,
     shelflife_by_sku: dict[str, int | None],
     excluded_refs_by_sku: dict[str, set[str]],
+    lot_production_by_sku: dict[str, dict[str, date]],
     allowed_batch_refs_by_sku: dict[str, set[str]] | None,
     planned_dates_by_sku: dict[str, list[date]],
     tracked_skus: set[str],
@@ -644,6 +681,7 @@ def _availability_on_date(
             continue
 
         expired_refs = excluded_refs_by_sku.get(sku, set())
+        lot_production = lot_production_by_sku.get(sku, {})
         is_planned = any(planned_date <= target for planned_date in planned_dates_by_sku.get(sku, ()))
         availability_policy = sku_infos.get(sku).availability_policy if sku_infos.get(sku) is not None else "planned_ok"
 
@@ -670,13 +708,21 @@ def _availability_on_date(
             if (
                 allowed_batch_refs_by_sku is not None
                 and quant.batch
+                and not is_in_production(quant)
                 and quant.batch not in allowed_batch_refs_by_sku.get(sku, set())
             ):
                 # Named refs without a matching Batch are unclassified lots,
                 # not batchless stock. Match the canonical queryset and the
                 # fulfill recheck by failing them closed under an allowlist.
                 continue
-            if not is_valid_for_date(quant, shelflife_ns, target):
+            if not is_valid_for_date(
+                quant,
+                shelflife_ns,
+                target,
+                margin_days=expiry_margin_days,
+                # O dia de produção do saldo físico de lote é o do lote.
+                lot_production_date=lot_production.get(quant.batch) if quant.batch else None,
+            ):
                 continue
 
             qty = quant._quantity

@@ -227,7 +227,7 @@ def add_item(
     _refuse_a_second_date(
         session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_ids[0] if hold_ids else None,
     )
-    availability.bump_session_hold_expiry(resolved_key)
+    availability.bump_session_hold_expiry(resolved_key, channel_ref=channel_ref)
 
     if existing:
         new_qty = Decimal(str(existing["qty"])) + Decimal(str(qty))
@@ -341,7 +341,7 @@ def update_qty(
                 session_key=session_key, sku=line_sku, requested_qty=qty, new_hold_id=result["hold_ids"][0],
             )
 
-    availability.bump_session_hold_expiry(session_key)
+    availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
     return session_service.modify_session(
         session_key=session_key,
         channel_ref=channel_ref,
@@ -371,7 +371,7 @@ def remove_item(
             channel_ref=channel_ref,
         )
 
-    availability.bump_session_hold_expiry(session_key)
+    availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
     return session_service.modify_session(
         session_key=session_key,
         channel_ref=channel_ref,

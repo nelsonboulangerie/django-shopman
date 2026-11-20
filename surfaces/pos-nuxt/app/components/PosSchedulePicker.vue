@@ -44,7 +44,19 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   "update:date": [string];
   "update:timeSlot": [string];
+  /**
+   * O operador ESCOLHEU o horário: uma janela, o "o quanto antes" ou o "a
+   * combinar". Trocar o dia também limpa a janela, mas isso não é escolha de
+   * horário, e por isso não passa por aqui. O assistente da encomenda usa este
+   * sinal para levar o foco ao Continuar (#2778).
+   */
+  timeChosen: [string];
 }>();
+
+function chooseTime(slot: string) {
+  emit("update:timeSlot", slot);
+  emit("timeChosen", slot);
+}
 
 const note = computed(() => readinessNote(props.bottleneckName, props.readyAt));
 const conflict = computed(() => selectedWindowConflict(props.windows, props.timeSlot));
@@ -131,7 +143,7 @@ function pickDate(iso: string) {
           color="neutral"
           variant="ghost"
           class="px-1 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          @click="emit('update:timeSlot', '')"
+          @click="chooseTime('')"
         >
           A combinar
         </NuxtButton>
@@ -149,7 +161,7 @@ function pickDate(iso: string) {
           :class="asapSelected ? 'border-primary bg-primary/5 font-semibold' : 'border-border'"
           :aria-pressed="asapSelected"
           data-schedule-slot="asap"
-          @click="emit('update:timeSlot', '')"
+          @click="chooseTime('')"
         >
           <span class="block">O quanto antes</span>
           <span class="block text-xs text-muted-foreground">Sai assim que ficar pronto</span>
@@ -167,7 +179,7 @@ function pickDate(iso: string) {
           :disabled="option.enabled === false"
           :title="option.reason || ''"
           :data-schedule-slot="option.ref"
-          @click="emit('update:timeSlot', option.ref)"
+          @click="chooseTime(option.ref)"
         >
           <span class="block tabular-nums">{{ option.label }}</span>
           <span v-if="option.enabled === false && option.reason" class="block text-xs opacity-80">

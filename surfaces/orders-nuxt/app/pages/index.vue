@@ -24,6 +24,7 @@ import {
   nextOutRef,
   nextSort,
   oneTapDispatch,
+  paymentLabel,
   realtimeIndicator,
   resolveShortcut,
   rideChoices,
@@ -38,6 +39,12 @@ import {
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import type { ReasonOrderFacts } from "~/presentation/orderReason";
+import {
+  blockPillLabel,
+  blockedReasonLines,
+  lockedButtonRepeatsPill,
+} from "~/presentation/cardBlocks";
 import { boardStrip, type BoardStrip } from "~/presentation/boardStrip";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
@@ -62,6 +69,23 @@ import {
 } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import {
+  acceptedIntoPreorders,
+  preorderFocusKey,
+  PROMISE_HASH,
+  type AcceptedPreorder,
+} from "~/presentation/preorderList";
+import { promiseRisk, waitsForBatch } from "~/presentation/orderPromise";
+import { CANCEL_HASH } from "~/presentation/promiseResolution";
+import {
+  orderFocusKey,
+  orderFocusKeys,
+  promiseRiskAlert,
+} from "~/presentation/promiseAlert";
+import { focusTargetSelector } from "../../../operator-kit/app/presentation/nextFocus";
+import OrderPromiseExits from "~/components/OrderPromiseExits.vue";
+import OrderPromiseSuggestions from "~/components/OrderPromiseSuggestions.vue";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
@@ -77,6 +101,7 @@ const {
   refresh,
   isBusy,
   actionError,
+  actionErrorField,
   clearActionError,
   confirm,
   advance,
@@ -354,6 +379,42 @@ function rowPrimary(card: OrderCardProjection) {
 function rowSecondary(card: OrderCardProjection) {
   const primary = rowPrimary(card);
   return cardAffordances(card).filter((aff) => aff.ref !== primary?.ref);
+}
+/** O bloqueio como estado, não como botão morto: quando o gesto travado da linha só
+ *  leva o nome do bloqueio ("Pix expirado", "Esperando o lote"), a célula mostra o selo
+ *  com esse nome (laudo, P1-16). Quem só espera o lote não usa a cor de erro. */
+function rowBlock(card: OrderCardProjection) {
+  const primary = rowPrimary(card);
+  const repeats = lockedButtonRepeatsPill({
+    primary,
+    primaryLabel: primary?.label ?? "",
+    blockLabel: card.advance_block_label,
+    blockAnnounced: Boolean(card.advance_block_reason),
+  });
+  if (!repeats) return null;
+  const waits = waitsForBatch(card);
+  return {
+    label: blockPillLabel(card.advance_block_label),
+    color: waits ? ("neutral" as const) : ("error" as const),
+    icon: waits ? "i-lucide-hourglass" : "i-lucide-lock",
+  };
+}
+/** Por que o gesto do momento está travado, escrito na própria célula: o `title` não
+ *  existe no toque (sobra do WP-G06, #2710). */
+function rowPrimaryReason(card: OrderCardProjection): string {
+  const primary = rowPrimary(card);
+  return primary?.disabled ? String(primary.reason ?? "").trim() : "";
+}
+/** Por que os outros gestos da linha estão travados, escrito na linha aberta (WP-G06).
+ *  O motivo do gesto do momento já está na célula e não se repete. */
+function rowBlockedReasons(card: OrderCardProjection) {
+  const said = rowPrimaryReason(card);
+  return blockedReasonLines({
+    primary: null,
+    primaryLabel: "",
+    secondary: rowSecondary(card),
+    blockAnnounced: false,
+  }).filter((line) => line !== said);
 }
 // how many cards survive the current filters (for the "no results" affordance).
 const visibleCount = computed(() =>
@@ -775,7 +836,11 @@ onBeforeUnmount(() => {
 // O nome do recebimento no recorte ativo ("Recebimento: Entrega") e no escopo da seleção.
 const FULFILLMENT_LABELS: Record<string, string> = { delivery: "Entrega", pickup: "Retirada" };
 const channelLabel = (ref: string) => channels.value.find((option) => option.ref === ref)?.label ?? ref;
-const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
+// O relógio do painel é o do servidor: ancora no `generated_at` da última leitura
+// boa. Ancorava no primeiro pedido novo, e sem pedido novo (a maior parte do dia) caía
+// no relógio do dispositivo: um tablet adiantado dava todo mundo por atrasado.
+const serverNow = computed(() => readMetadata.value?.generated_at ?? "");
+const nowMs = useNowTick(() => serverNow.value);
 function zoneNext(zone: ZoneView): string {
   return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
 }
@@ -966,7 +1031,7 @@ const phoneHeaderActions = computed(() => {
       onSelect: () => (selecting.value ? stopSelection() : startSelection()),
     },
     { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => exportCsv() },
-    { label: "Imprimir fila", icon: "i-lucide-printer", onSelect: () => printQueue() },
+    { label: "Imprimir pedidos", icon: "i-lucide-printer", onSelect: () => printQueue() },
   ];
 });
 // Os recortes ativos (chips removíveis abaixo da linha e o número no "Filtros").
@@ -1152,10 +1217,20 @@ const rejectRef = ref<string | null>(null);
 // fechar, e a página guarda só a saída por rota e por recarga.
 const rejectDirty = ref(false);
 const confirmDiscard = useConfirm();
+// Recusar sem surpresa (WP-G06): ao abrir, o diálogo lê o detalhe do pedido para dizer
+// o que acontece com o dinheiro (o cartão não tem esse fato, e não ganha). A falha da
+// recusa fica guardada aqui e aparece DENTRO do diálogo: o aviso do cartão está atrás
+// dele.
+const rejectRead = useOrderReasonRead();
+const rejectError = ref("");
+const rejectErrorField = ref("");
 function closeReject() {
   if (rejectRef.value && isBusy(rejectRef.value)) return;
   rejectRef.value = null;
   rejectDirty.value = false;
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  rejectRead.clear();
 }
 onBeforeRouteLeave(
   () =>
@@ -1175,18 +1250,35 @@ function beforeUnload(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", beforeUnload));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
+// O pedido do diálogo: o cartão diz quem é na hora em que o diálogo abre; o detalhe,
+// quando chega, vale por cima (e continua valendo se o cartão sair do painel).
+const rejectOrder = computed<ReasonOrderFacts | null>(() => {
+  const ref_ = rejectRef.value;
+  if (!ref_) return null;
+  const card = allCards.value.find((c) => c.ref === ref_);
+  return { ...card, ...rejectRead.order.value, ref: ref_ };
+});
 const isMarketplaceReject = computed(
-  () =>
-    allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref ===
-    "ifood",
+  () => rejectOrder.value?.channel_ref === "ifood",
 );
 function openReject(ref_: string) {
   rejectRef.value = ref_;
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  void rejectRead.read(ref_);
 }
 async function confirmReject(payload: { reasonKey: string; internalNote: string }) {
   const ref_ = rejectRef.value;
   if (!ref_ || isBusy(ref_)) return;
-  if (await reject(ref_, payload)) closeReject();
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  if (await reject(ref_, payload)) {
+    closeReject();
+    return;
+  }
+  // O diálogo continua aberto, com o motivo escolhido e a frase da falha.
+  rejectError.value = actionError(ref_);
+  rejectErrorField.value = actionErrorField(ref_);
 }
 
 // settle-cash dialog (needs an amount; and, when the courier took change from
@@ -1341,6 +1433,22 @@ function onAction(ref_: string, action: AffordanceRef) {
   else if (action === "dismiss_courier_reminder")
     void dismissCourierReminder(ref_);
   else if (action === "ifood_accept_retry") retryIFoodAccept(ref_);
+  else if (action === "resolve_promise") openResolve(ref_);
+}
+
+// "Resolver" a promessa em risco (WP-G08): UM diálogo para o painel inteiro (cartão,
+// Fila e Tabela), aberto com o pedido que foi tocado. Ele lê as escolhas ao abrir; o
+// cartão não leva o contato do cliente. Tirar o item grava dali e a leitura do painel
+// se refaz; cancelar o pedido inteiro segue para o pedido, que abre o cancelar com
+// motivo e dinheiro (o MESMO diálogo do menu).
+const resolveRef = ref("");
+const resolveOpen = ref(false);
+function openResolve(ref_: string) {
+  resolveRef.value = ref_;
+  resolveOpen.value = true;
+}
+function cancelFromResolve(ref_: string) {
+  void navigateTo(`/${ref_}${CANCEL_HASH}`);
 }
 
 // O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
@@ -1415,7 +1523,102 @@ function seeAttention() {
 // o próximo pedido que pedir atenção traz a pílula de volta. Visto continua sendo o "eu vi,
 // pode parar de avisar".
 const notices = useAlertDismissals();
-// "Falha ao atualizar a fila" fecha e volta na próxima leitura que falhar: cada falha nova
+
+// A encomenda recém-aceita (WP-G03): sai das colunas do dia e vai morar na lista
+// "Encomendas", abaixo da dobra. O aviso diz para onde ela foi e em que dia, e leva
+// até a linha. Sem ele, depois do aceite o painel dizia só "Nenhum pedido novo agora.".
+const acceptedPreorder = ref<AcceptedPreorder | null>(null);
+watch(queue, (after, before) => {
+  const [accepted] = acceptedIntoPreorders(before ?? null, after ?? null);
+  if (accepted) acceptedPreorder.value = accepted;
+  else if (
+    acceptedPreorder.value &&
+    !(after?.preorders ?? []).some((card) => card.ref === acceptedPreorder.value?.ref)
+  )
+    acceptedPreorder.value = null;
+});
+const { reveal: revealFocus } = useNextFocus();
+function showAcceptedPreorder() {
+  if (acceptedPreorder.value) revealFocus(preorderFocusKey(acceptedPreorder.value.ref));
+}
+// Promessa em risco (WP-G08): enquanto houver pedido cuja reserva perdeu o lastro, o
+// cabeçalho diz quantos são e leva ao primeiro. Conta o painel inteiro, sem os filtros
+// da tela: a encomenda de amanhã que perdeu o lote mora abaixo da dobra, e era ali que
+// ela ficava quieta (P0-1). Os de hoje primeiro; depois as encomendas, por data.
+const promiseAlert = computed(() =>
+  promiseRiskAlert(
+    [
+      ...zones.value.flatMap((zone) => zone.cards),
+      ...preorders.value.flatMap((group) => group.cards),
+    ],
+    { canOpen: canManageOrders.value },
+  ),
+);
+// O pedido como a tela o desenha agora: o cartão do quadro, a linha da Fila ou da
+// Tabela e, depois, a linha da lista de Encomendas. Só conta o que está de fato
+// desenhado: a forma que o CSS esconde nesta largura não é destino.
+function findOnScreen(ref_: string): HTMLElement | null {
+  for (const key of orderFocusKeys(ref_)) {
+    const drawn = [
+      ...document.querySelectorAll<HTMLElement>(focusTargetSelector(key)),
+    ].find((element) => element.getClientRects().length > 0);
+    if (drawn) return drawn;
+  }
+  return null;
+}
+// Um pedido só: abre o pedido, na faixa que tem o "Resolver". Vários: a tela vai até
+// o primeiro (o cartão, a linha da Fila ou a da lista de Encomendas). Se ele não está
+// à vista (um filtro o tirou da tela), o aviso abre o pedido: botão de aviso nunca
+// fica sem efeito.
+async function showPromiseRisk() {
+  const alert = promiseAlert.value;
+  if (!alert) return;
+  const open = () => navigateTo(`/${alert.firstRef}${PROMISE_HASH}`);
+  if (alert.opensOrder) return void open();
+  let target = findOnScreen(alert.firstRef);
+  const zone = zones.value.find((z) =>
+    z.cards.some((card) => card.ref === alert.firstRef),
+  );
+  if (!target && zone) {
+    // No celular e no tablet as etapas são abas: a do pedido abre antes.
+    if (phoneExitMode.value && zone.key !== "expedition" && zone.key !== "prep")
+      phoneExitMode.value = false;
+    pickPhoneZone(zone.key);
+    await nextTick();
+    target = findOnScreen(alert.firstRef);
+  }
+  if (target) revealFocus(target);
+  else if (canManageOrders.value) void open();
+}
+// Os avisos moram nas `alerts` do cabeçalho (o lugar declarado do kit): ficam fixos com
+// ele, fecham no X e não rolam com o conteúdo. O `id` leva os pedidos: outra encomenda
+// aceita, ou outro pedido em risco, é aviso novo, e o que foi fechado volta. A promessa
+// em risco vem primeiro: o cabeçalho mostra um aviso inteiro e resume o resto.
+const promiseScreenAlert = computed<OperatorScreenAlert | null>(() => {
+  const risk = promiseAlert.value;
+  if (!risk) return null;
+  return {
+    id: risk.id,
+    color: "error",
+    icon: "i-lucide-package-x",
+    title: risk.title,
+    description: risk.description,
+    action: { label: risk.actionLabel, onSelect: () => void showPromiseRisk() },
+  };
+});
+const screenAlerts = computed<OperatorScreenAlert[]>(() => {
+  const alerts = promiseScreenAlert.value ? [promiseScreenAlert.value] : [];
+  if (acceptedPreorder.value)
+    alerts.push({
+      id: `preorder-accepted:${acceptedPreorder.value.ref}`,
+      color: "info",
+      icon: "i-lucide-calendar-check",
+      title: acceptedPreorder.value.message,
+      action: { label: "Ver em Encomendas", onSelect: showAcceptedPreorder },
+    });
+  return alerts;
+});
+// "Falha ao atualizar os pedidos" fecha e volta na próxima leitura que falhar: cada falha nova
 // (outro erro) é outra chave.
 const queueFailures = ref(0);
 watch(error, (now, before) => {
@@ -1491,7 +1694,7 @@ function compactClear() {
       </template>
     </OperatorCompactBar>
     <!-- Sem conexão segue EXPLÍCITO (cor + texto), não só o chip do selo. Com a
-         leitura falhada o conteúdo já diz "Falha ao atualizar a fila"; aqui não repete. -->
+         leitura falhada o conteúdo já diz "Falha ao atualizar os pedidos"; aqui não repete. -->
     <p v-if="liveTone === 'off' && !error" class="flex items-center gap-2 border-b border-default bg-error/10 px-3 py-2 text-sm text-error md:hidden" role="status" data-compact-offline>
       <NuxtIcon name="i-lucide-wifi-off" class="size-4 shrink-0" /><span>Sem conexão.<template v-if="readClock"> Última leitura às {{ readClock }}.</template></span>
     </p>
@@ -1509,10 +1712,11 @@ function compactClear() {
     </div>
     <OperatorPageHeader
       title="Pedidos"
+      :alerts="screenAlerts"
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       actions-from="md"
-      actions-label="Mais ações da fila"
+      actions-label="Mais ações dos pedidos"
       :active-filters="activeFilters"
     >
       <template #status>
@@ -1745,7 +1949,7 @@ function compactClear() {
             v-if="showSystemBand"
             :lines="systemUndoLines"
             :busy="isBusy"
-            :server-now="queue?.intake[0]?.server_now_iso"
+            :server-now="serverNow || undefined"
             @undo="(ref_) => onAction(ref_, 'undo_ready')"
           />
         </div>
@@ -1834,7 +2038,7 @@ function compactClear() {
       <div
         v-if="(pending || !hydrated) && !zones.length"
         class="grid gap-3 md:grid-cols-2 lg:grid-cols-3"
-        aria-label="Carregando fila"
+        aria-label="Carregando pedidos"
       >
         <NuxtSkeleton v-for="i in 3" :key="i" class="h-40 w-full" />
       </div>
@@ -1846,7 +2050,7 @@ function compactClear() {
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="Falha ao atualizar a fila"
+        title="Falha ao atualizar os pedidos"
         description="Mantivemos a última leitura; atualize antes de confirmar ações."
         data-queue-error
         @update:open="notices.onOpen(`queue-error:${queueFailures}`, $event)"
@@ -2020,12 +2224,15 @@ function compactClear() {
           pinned="order"
           view-key="orders-queue"
           empty-icon="i-lucide-inbox"
-          empty-title="Nenhum pedido precisa de você agora."
+          empty-title="Nenhum pedido em andamento."
           caption="Tabela dos pedidos em andamento"
           data-supervision-table
         >
           <template #order-cell="{ row }">
-            <div class="flex min-w-36 flex-col">
+            <div
+              class="flex min-w-36 flex-col"
+              :data-focus-target="orderFocusKey(row.original.card.ref)"
+            >
               <NuxtLink
                 v-if="canManageOrders"
                 :to="`/${row.original.card.ref}`"
@@ -2058,6 +2265,16 @@ function compactClear() {
                 <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
                 <span class="whitespace-normal text-start">{{ schedulePromise(row.original.card)!.label }}</span>
               </NuxtBadge>
+              <!-- A promessa em risco (WP-G08): o nome do estado; o item e as saídas
+                   moram na linha aberta. -->
+              <NuxtBadge
+                v-if="promiseRisk(row.original.card)"
+                class="mt-1 self-start"
+                color="error"
+                icon="i-lucide-package-x"
+                :label="promiseRisk(row.original.card)!.label"
+                data-table-promise-risk
+              />
             </div>
           </template>
           <template #stage-cell="{ row }">
@@ -2098,8 +2315,15 @@ function compactClear() {
           </template>
           <template #actions-cell="{ row }">
             <div class="flex min-w-max items-center justify-end gap-1.5">
+              <NuxtBadge
+                v-if="rowBlock(row.original.card)"
+                :color="rowBlock(row.original.card)!.color"
+                :icon="rowBlock(row.original.card)!.icon"
+                :label="rowBlock(row.original.card)!.label"
+                data-supervision-block
+              />
               <NuxtButton
-                v-if="rowPrimary(row.original.card)"
+                v-else-if="rowPrimary(row.original.card)"
                 :icon="
                   rowPrimary(row.original.card)!.disabled
                     ? 'i-lucide-lock'
@@ -2123,7 +2347,6 @@ function compactClear() {
                   isBusy(row.original.card.ref) ||
                   rowPrimary(row.original.card)!.disabled
                 "
-                :title="rowPrimary(row.original.card)!.reason || undefined"
                 data-supervision-primary
                 @click="
                   onAction(
@@ -2149,6 +2372,15 @@ function compactClear() {
                 "
               />
             </div>
+            <!-- Por que o gesto do momento está travado, escrito: o `title` não existe
+                 no toque. Quebra a linha, nunca corta. -->
+            <p
+              v-if="rowPrimaryReason(row.original.card)"
+              class="ms-auto mt-1 max-w-64 whitespace-normal text-end text-xs text-muted"
+              data-supervision-primary-reason
+            >
+              {{ rowPrimaryReason(row.original.card) }}
+            </p>
             <NuxtAlert
               v-if="actionError(row.original.card.ref)"
               class="mt-2"
@@ -2182,10 +2414,10 @@ function compactClear() {
                     · {{ row.original.card.delivery_address }}</template
                   >
                 </dd>
-                <template v-if="row.original.card.payment_method_label">
+                <template v-if="paymentLabel(row.original.card)">
                   <dt class="text-muted-foreground">Pagamento</dt>
                   <dd>
-                    {{ row.original.card.payment_method_label
+                    {{ paymentLabel(row.original.card)
                     }}<template v-if="row.original.card.change_label">
                       · {{ row.original.card.change_label }}</template
                     >
@@ -2199,33 +2431,104 @@ function compactClear() {
                   <dt class="text-muted-foreground">Atende</dt>
                   <dd>{{ row.original.card.assigned_operator }}</dd>
                 </template>
-                <template v-if="row.original.card.advance_block_reason">
+                <template
+                  v-if="
+                    row.original.card.advance_block_reason &&
+                    row.original.card.advance_block_reason !==
+                      rowPrimaryReason(row.original.card)
+                  "
+                >
                   <dt class="text-muted-foreground">Por que espera</dt>
                   <dd>{{ row.original.card.advance_block_reason }}</dd>
                 </template>
+                <template v-if="promiseRisk(row.original.card)">
+                  <dt class="font-medium text-error">
+                    {{ promiseRisk(row.original.card)!.label }}
+                  </dt>
+                  <dd data-supervision-promise-risk>
+                    <ul class="flex flex-col gap-1.5">
+                      <li
+                        v-for="item in promiseRisk(row.original.card)!.items"
+                        :key="item.key"
+                        class="flex flex-col"
+                      >
+                        <span class="font-medium">{{ item.label }}</span>
+                        <span class="text-muted-foreground">{{ item.detail }}</span>
+                        <OrderPromiseSuggestions
+                          v-if="item.suggestions.length"
+                          class="mt-1"
+                          :options="item.suggestions"
+                        />
+                      </li>
+                    </ul>
+                    <!-- O próximo passo, com as palavras do servidor. -->
+                    <p
+                      v-if="promiseRisk(row.original.card)!.nextStep"
+                      class="mt-2 font-medium"
+                      data-supervision-promise-next-step
+                    >
+                      {{ promiseRisk(row.original.card)!.nextStep }}
+                    </p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                      <OrderPromiseExits
+                        :exits="promiseRisk(row.original.card)!.exits"
+                        :code="splitRef(row.original.card.ref).code"
+                        @resolve="openResolve(row.original.card.ref)"
+                      />
+                    </div>
+                    <p
+                      v-for="reason in promiseRisk(row.original.card)!.blockedReasons"
+                      :key="reason"
+                      class="mt-1 text-xs text-muted"
+                    >
+                      {{ reason }}
+                    </p>
+                  </dd>
+                </template>
               </dl>
-              <div
-                class="flex flex-wrap content-start items-start justify-end gap-2"
-              >
-                <NuxtButton
-                  v-for="aff in rowSecondary(row.original.card)"
-                  :key="aff.ref"
-                  :icon="aff.icon.replace('lucide:', 'i-lucide-')"
-                  :label="aff.label"
-                  :color="aff.priority === 'danger' ? 'error' : 'neutral'"
-                  variant="outline"
-                  :disabled="isBusy(row.original.card.ref) || aff.disabled"
-                  :title="aff.reason || undefined"
-                  @click="onAction(row.original.card.ref, aff.ref)"
-                />
-                <NuxtButton
-                  v-if="canManageOrders"
-                  :to="`/${row.original.card.ref}`"
-                  icon="i-lucide-file-text"
-                  label="Abrir o pedido"
-                  color="neutral"
-                  variant="outline"
-                />
+              <div class="flex flex-col gap-2">
+                <div
+                  class="flex flex-wrap content-start items-start justify-end gap-2"
+                >
+                  <NuxtButton
+                    v-for="aff in rowSecondary(row.original.card)"
+                    :key="aff.ref"
+                    :icon="aff.icon.replace('lucide:', 'i-lucide-')"
+                    :label="aff.label"
+                    :color="aff.priority === 'danger' ? 'error' : 'neutral'"
+                    variant="outline"
+                    :disabled="isBusy(row.original.card.ref) || aff.disabled"
+                    @click="onAction(row.original.card.ref, aff.ref)"
+                  />
+                  <!-- Pix ou link vencido nunca destrava sozinho: a saída vem pronta,
+                       como no cartão (o detalhe abre o cancelar com o motivo marcado). -->
+                  <NuxtButton
+                    v-if="row.original.card.payment_lapsed && canManageOrders"
+                    :to="`/${row.original.card.ref}#cancel-unpaid`"
+                    icon="i-lucide-ban"
+                    label="Cancelar pedido"
+                    color="error"
+                    variant="outline"
+                    data-supervision-cancel-unpaid
+                  />
+                  <NuxtButton
+                    v-if="canManageOrders"
+                    :to="`/${row.original.card.ref}`"
+                    icon="i-lucide-file-text"
+                    label="Abrir o pedido"
+                    color="neutral"
+                    variant="outline"
+                  />
+                </div>
+                <!-- Por que o gesto está travado, escrito (o `title` não existe no toque). -->
+                <p
+                  v-for="line in rowBlockedReasons(row.original.card)"
+                  :key="line"
+                  class="text-end text-xs text-muted"
+                  data-supervision-blocked-reason
+                >
+                  {{ line }}
+                </p>
               </div>
             </div>
           </template>
@@ -2250,8 +2553,12 @@ function compactClear() {
           v-if="preordersCount"
           :groups="triagedPreorders"
           :count="preordersCount"
+          :highlight-ref="acceptedPreorder?.ref"
         />
       </template>
+      <!-- Tem mais abaixo: a lista de Encomendas fica depois do painel de altura cheia.
+           Contida, porque quem rola é esta seção, não a janela. -->
+      <MoreBelow v-if="preordersCount" contained />
     </section>
 
     <!-- A barra de seleção da suíte, abaixo do `lg`: na base (a da mesa toma o lugar
@@ -2275,13 +2582,21 @@ function compactClear() {
       data-exit-base-action
     />
 
-    <!-- reject dialog: o mesmo diálogo de motivo do detalhe do pedido -->
+    <!-- reject dialog: o mesmo diálogo de motivo do detalhe do pedido. No painel ele
+         diz qual pedido é e lê o destino do dinheiro ao abrir. -->
     <OrderReasonDialog
       :open="rejectRef != null"
       mode="reject"
+      identify
+      :order="rejectOrder"
+      :money-effect="rejectRead.order.value?.cancel_money_effect ?? ''"
+      :money-read="rejectRead.state.value"
+      :error="rejectError"
+      :error-field="rejectErrorField"
       :marketplace="isMarketplaceReject"
       :cancel-reasons="cancelReasons"
       :busy="Boolean(rejectRef && isBusy(rejectRef))"
+      @retry-money="rejectRef && rejectRead.read(rejectRef)"
       @dirty-change="rejectDirty = $event"
       @update:open="
         (v) => {
@@ -2289,6 +2604,17 @@ function compactClear() {
         }
       "
       @confirm="confirmReject"
+    />
+
+    <!-- "Resolver" a promessa em risco: um diálogo só para o cartão, a Fila e a Tabela -->
+    <OrderPromiseResolveDialog
+      :open="resolveOpen"
+      :order-ref="resolveRef"
+      :managers="queue?.awareness?.managers ?? []"
+      :viewer-name="queue?.awareness?.viewer_name ?? ''"
+      @update:open="(value: boolean) => (resolveOpen = value)"
+      @changed="refresh()"
+      @cancel="cancelFromResolve"
     />
 
     <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->

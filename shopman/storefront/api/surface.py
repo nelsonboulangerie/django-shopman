@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django_ratelimit.core import is_ratelimited
@@ -261,7 +262,7 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         ) if exc.is_planned else "",
         "planned_offer_message": (
             resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").message
-            or "Sai fresquinho no próximo lote. Quer garantir o seu?"
+            or "Fica pronto no próximo lote, fresquinho. Quer garantir o seu?"
         ) if exc.is_planned else "",
         # Kintsugi: enquadra a escassez com voz acolhedora (registro, admin-configurável).
         # Um enquadramento só — a pausa não ganha manchete própria, senão o cliente
@@ -683,7 +684,10 @@ class StorefrontCartView(ServerTimingMixin, APIView):
             # ``create()`` grava a linha e marca a sessão como modificada, então o
             # SessionMiddleware devolve o ``sessionid`` nesta mesma resposta.
             request.session.create()
-        return Response({"cart": _cart_payload(request)})
+        # ``server_now_iso``: o relógio do servidor, no envelope e não na projeção
+        # (WP-L11). A sacola conta o prazo da reserva por ele: a tela mede a
+        # diferença para o relógio do aparelho na chegada desta resposta.
+        return Response({"cart": _cart_payload(request), "server_now_iso": timezone.now().isoformat()})
 
 
 @extend_schema_view(

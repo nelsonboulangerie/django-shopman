@@ -111,6 +111,8 @@ STEP_LABEL_COPY: dict[str, tuple[str, str]] = {
     "delivered": ("TRACKING_STEP_DELIVERED", "Entregue"),
     "completed": ("TRACKING_STEP_COMPLETED", "Concluído"),
     "cancelled": ("TRACKING_STEP_CANCELLED", "Cancelado"),
+    # O dinheiro que voltou: marco da loja (não vem dos passos do pedido).
+    "refunded": ("TRACKING_STEP_REFUNDED", "Devolvido"),
 }
 
 DAY_NAMES_PT = {
@@ -214,8 +216,6 @@ class OrderTrackingCopyProjection:
     # mesmo quando a notificação não chegou — ela é a superfície que sempre existe.
     waitlist_waiting_title: str
     waitlist_waiting_message: str
-    waitlist_confirm_title: str
-    waitlist_confirm_message: str
     waitlist_confirm_cta: str
     waitlist_confirmed_title: str
     waitlist_released_title: str
@@ -421,6 +421,12 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
     last_updated_display = copy.title("TRACKING_PROMISE_UPDATED_NOW", "Atualizado agora")
     when_display = _when_display(data.commitment_date, data.commitment_slot_label)
     schedule_display = _schedule_display(data, when_display)
+    # Quem espera a fornada tem o cartão da fila logo abaixo da frase principal.
+    # Com os dois na tela, cada um diz uma coisa: a frase diz ONDE a reserva está
+    # e para quando é a fornada; o cartão diz o que acontece depois (o aviso para
+    # confirmar) e que nada foi cobrado. Antes os dois diziam o aviso e a data
+    # (coordenação, 19/11/2026, defeito "prolixo").
+    queue_card = data.waitlist_state == "fermata"
     promise = _present_promise(
         data.promise,
         status=data.status,
@@ -429,6 +435,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         when_display=when_display,
         when_phrase=_when_phrase(data.commitment_date, data.commitment_slot_label),
         payment_confirmed=data.payment_confirmed,
+        queue_card=queue_card,
     )
     return OrderTrackingProjection(
         convenience_pending=data.convenience_pending,
@@ -437,7 +444,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         status_label=customer_status_label(data.display_status_key, data.status, copy=copy),
         status_color=status_color(data.display_status_key, data.status),
         is_preorder=data.is_preorder,
-        when_display=when_display if data.is_preorder else None,
+        when_display=_as_label(when_display) if data.is_preorder else None,
         copy=_tracking_copy(copy),
         promise=promise,
         promise_deadline_label=_deadline_label(promise, copy),
@@ -454,7 +461,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
             data.pickup,
             copy=copy,
             # Só a data não é horário combinado: sem janela, a aba não inventa um.
-            when_display=when_display if data.commitment_slot_label else None,
+            when_display=_as_label(when_display) if data.commitment_slot_label else None,
         ),
         actions=data.actions,
         is_active=data.is_active,
@@ -462,7 +469,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         payment_pending=data.payment_pending,
         payment_expired=data.payment_expired,
         payment_confirmed=data.payment_confirmed,
-        payment_status_label=_payment_status_label(data.payment_status_key),
+        payment_status_label=_payment_status_label(data),
         cancellation_note=data.cancellation_note,
         cancellation_money_line=_money_outcome_line(data.money_outcome, copy),
         cancel_dialog_money_line=_cancel_dialog_money_line(data, copy),
@@ -487,14 +494,19 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         eta_display=_eta_display(data.eta_at),
         whatsapp_url=data.whatsapp_url,
         support_url=_support_url(data.support_url, data.order_ref, copy=copy),
-        share_text=_share_summary(data, schedule_display=schedule_display, copy=copy),
+        share_text=_share_summary(data, copy=copy),
         is_debug=data.is_debug,
         last_updated_iso=data.last_updated_iso,
         last_updated_display=last_updated_display,
         stale_after_seconds=data.stale_after_seconds,
         waitlist_state=data.waitlist_state,
         waitlist_deadline=data.waitlist_deadline,
-        waitlist_planned_for_display=_waitlist_planned_for_display(data.waitlist_planned_for),
+        waitlist_planned_for_display=(
+            # A frase principal já diz para quando é a fornada: o cartão não repete.
+            None
+            if queue_card and _queue_sentence_dates_the_batch(promise.message, copy)
+            else _waitlist_planned_for_display(data.waitlist_planned_for)
+        ),
         mock_payment_enabled=data.can_mock_confirm_payment,
         fiscal_note=_present_fiscal_note(data.fiscal_note),
         subtotal_display=f"R$ {format_money(_list_subtotal_q(data))}",
@@ -505,7 +517,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
             )
             for line in data.discount_lines
         ),
-        schedule_display=schedule_display,
+        schedule_display=_as_label(schedule_display),
         gift=(
             TrackingGiftProjection(recipient_name=data.gift_recipient_name, message=data.gift_message)
             if data.is_gift
@@ -548,7 +560,42 @@ def _masked_tax_id(tax_id: str) -> str:
     return ""
 
 
-def _share_summary(data: TrackingData, *, schedule_display: str | None, copy: CopyCatalog) -> str:
+def _as_label(value: str | None) -> str | None:
+    """O valor que aparece SOZINHO na tela (rótulo do Resumo, do horário da retirada)
+    começa com maiúscula: "Amanhã · A partir das 9h". Dentro de frase ("para
+    amanhã"), o mesmo dado segue minúsculo, e não passa por aqui."""
+    return f"{value[:1].upper()}{value[1:]}" if value else value
+
+
+def _share_when(data: TrackingData) -> str | None:
+    """Quando, no texto que vai ser lido DEPOIS e por OUTRA pessoa.
+
+    "Retirada: amanhã" está certo só no dia em que foi escrito: quem recebe o
+    resumo no WhatsApp e o abre no dia seguinte lê o dia errado. Aqui a data vai
+    sempre por extenso ("quinta-feira, 19/11"), com a janela combinada ou a hora
+    prevista.
+    """
+    try:
+        from datetime import date
+
+        from django.utils import formats
+
+        if data.commitment_date and (data.commitment_slot_label or data.is_preorder):
+            day = date.fromisoformat(data.commitment_date)
+            # O dia da semana em minúscula, como no resto da loja ("sexta-feira, 20/11").
+            day_part = f"{formats.date_format(day, 'l').lower()}, {formats.date_format(day, 'd/m')}"
+            return f"{day_part} · {data.commitment_slot_label}" if data.commitment_slot_label else day_part
+        eta = parse_datetime(data.eta_at) if data.eta_at else None
+        if eta is None:
+            return None
+        local = timezone.localtime(eta)
+        return f"{formats.date_format(local, 'l').lower()}, {local:%d/%m}, às {format_clock(local)}"
+    except Exception:
+        logger.debug("order_tracking._share_when degraded", exc_info=True)
+        return None
+
+
+def _share_summary(data: TrackingData, *, copy: CopyCatalog) -> str:
     """O texto do "Enviar resumo": o pedido contado, sem link.
 
     O link do pedido é privado (só abre para quem fez o pedido), e quem o recebia
@@ -562,7 +609,7 @@ def _share_summary(data: TrackingData, *, schedule_display: str | None, copy: Co
         if data.is_delivery
         else copy.title("TRACKING_PICKUP_HEADING", "Retirada")
     )
-    when = schedule_display or _eta_display(data.eta_at)
+    when = _share_when(data)
     lines.append(f"{heading}: {when}" if when else heading)
     where = data.delivery_address if data.is_delivery else (data.pickup.address if data.pickup else "")
     if where:
@@ -703,10 +750,50 @@ def _cancel_dialog_money_line(data: TrackingData, copy: CopyCatalog) -> str:
         return copy.message("TRACKING_CANCEL_MONEY_NOTHING_CHARGED", "Nada foi cobrado até agora.")
     return ""
 
-def _payment_status_label(payment_status_key: str | None) -> str | None:
-    if not payment_status_key:
+def _money_event_at(data: TrackingData, event_type: str) -> str | None:
+    """A hora do último evento de dinheiro desse tipo no pedido (ISO), ou ``None``."""
+    found = [event.at for event in data.timeline if event.event_type == event_type and event.at]
+    return found[-1] if found else None
+
+
+def _paid_when(paid_at_iso: str) -> str:
+    """"às 13h34" hoje; "em 18/11 às 13h34" em outro dia. '' se não der para ler."""
+    paid_at = parse_datetime(paid_at_iso)
+    if paid_at is None:
+        return ""
+    try:
+        local = timezone.localtime(paid_at)
+        clock = format_clock(local)
+        article = "à" if local.hour == 1 else "às"
+        if local.date() == timezone.localdate():
+            return f"{article} {clock}"
+        return f"em {local:%d/%m} {article} {clock}"
+    except Exception:
+        logger.debug("order_tracking._paid_when degraded", exc_info=True)
+        return ""
+
+
+def _payment_status_label(data: TrackingData) -> str | None:
+    """O pagamento no Resumo. Pago online diz o meio, o valor e a hora.
+
+    "Pagamento recebido" sozinho não dizia quanto, por onde nem quando (plano
+    EXCELENCIA-STOREFRONT, P1-10): "Pix de R$ 5,10, pago às 13h34". A hora é a
+    do evento de captura do pedido; sem ele (pago no balcão, por exemplo) fica o
+    rótulo de antes, porque o meio não é conhecido com certeza. O valor só entra
+    quando a projeção o traz.
+    """
+    if not data.payment_status_key:
         return None
-    return PAYMENT_STATUS_LABELS.get(payment_status_key)
+    base = PAYMENT_STATUS_LABELS.get(data.payment_status_key)
+    if data.payment_status_key != "payment_confirmed":
+        return base
+    paid_at = _money_event_at(data, "payment.captured")
+    when = _paid_when(paid_at) if paid_at else ""
+    if not when or data.paid_method not in {"pix", "card"}:
+        return base
+    method = payment_method_label(data.paid_method)
+    amount = f" de R$ {format_money(data.paid_amount_q)}" if data.paid_amount_q else ""
+    return f"{method}{amount}, pago {when}"
 
 
 def _delivery_distance_display(delivery_distance_km: float | None) -> str | None:
@@ -870,6 +957,11 @@ _PROMISE_COVERS: dict[str, frozenset[str]] = {
     # tentar outro; prazo e aviso seguem os do convite de pagar.
     "payment_card_declined": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
     "payment_retry": frozenset({NEXT_STEP}),
+    # Bola do cliente: a loja chamou a fila. A frase diz o gesto (confirmar), o
+    # prazo e a consequência (a vaga vai para a próxima pessoa). O aviso que o
+    # estado promete é o próprio chamado (``waitlist_available``) que a trouxe
+    # até aqui, e o da vaga liberada se o prazo passar.
+    "waitlist_confirming": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
     "payment_preparing": frozenset({NOTIFICATION}),
     # Bola do gateway: cartão autorizado, capturando.
     "payment_authorized": frozenset(),
@@ -913,6 +1005,7 @@ def _present_promise(
     when_display: str | None = None,
     when_phrase: str | None = None,
     payment_confirmed: bool = False,
+    queue_card: bool = False,
 ) -> OrderTrackingPromiseProjection:
     title, message = _promise_copy(
         data,
@@ -922,6 +1015,7 @@ def _present_promise(
         when_display=when_display,
         when_phrase=when_phrase,
         payment_confirmed=payment_confirmed,
+        queue_card=queue_card,
     )
     footnote = _promise_footnote(data, copy=copy, message=message)
     return OrderTrackingPromiseProjection(
@@ -1000,6 +1094,7 @@ def _promise_copy(
     when_display: str | None = None,
     when_phrase: str | None = None,
     payment_confirmed: bool = False,
+    queue_card: bool = False,
 ) -> tuple[str, str]:
     """Título e mensagem do estado — UMA frase que já cobre as obrigações.
 
@@ -1010,15 +1105,24 @@ def _promise_copy(
     confere contra as obrigações do dado.
     """
     state = data.state
-    wait_display = when_display or _commitment_date_display(data.fulfillment_wait_until)
+    # O combinado DENTRO de frase vai na forma de frase ("amanhã, a partir das 15h"),
+    # nunca na de rótulo ("amanhã · A partir das 15h"): o ponto do meio e a maiúscula
+    # são do valor que aparece sozinho na tela, e no meio de "A loja confirma sua
+    # encomenda para … e avisa por aqui." quebravam a leitura (#2752). Sem janela
+    # combinada não há forma de frase, e a data sozinha já serve às duas.
+    when_in_sentence = when_phrase or when_display
+    wait_display = when_in_sentence or _commitment_date_display(data.fulfillment_wait_until)
+    # Até quando a loja responde ("até 8h40"), vazio quando o servidor não
+    # publicou prazo: a frase segue sem esse trecho, nunca com buraco.
+    until = _acceptance_until(data.acceptance_deadline_at)
 
     if state == "preorder_scheduled":
         title = copy.title("TRACKING_PROMISE_PREORDER_TITLE", "Encomenda confirmada")
-        if when_display:
+        if when_in_sentence:
             message = copy.message(
                 "TRACKING_PROMISE_PREORDER_MESSAGE",
                 "Pedido garantido para {when}. Preparamos tudo fresco no dia.",
-            ).replace("{when}", when_display)
+            ).replace("{when}", when_in_sentence)
         else:
             message = copy.message(
                 "TRACKING_PROMISE_PREORDER_MESSAGE_NO_DATE",
@@ -1139,6 +1243,27 @@ def _promise_copy(
             card_message,
         )
 
+    if state == "waitlist_confirming":
+        # O chamado da fila é da frase principal: o que aconteceu (chegou a vez
+        # dela), o que fazer e até quando, e o que acontece depois do horário. O
+        # cartão da fila, logo abaixo, fica com o relógio e o botão (#2771: antes
+        # a frase dizia "Estamos conferindo a disponibilidade. Avisamos em
+        # seguida." ao lado do chamado). O título fala da cliente, não da casa:
+        # a fornada é da padaria, a vez é dela.
+        title = copy.title("TRACKING_WAITLIST_CONFIRM_TITLE", "Chegou a sua vez!")
+        call_until = _acceptance_until(data.deadline_at)
+        if call_until:
+            message = copy.message(
+                "TRACKING_WAITLIST_CONFIRM_MESSAGE",
+                "Confirme seu pedido {until} para garantir a sua vaga. Depois desse horário, ela passa para a próxima pessoa da fila.",
+            ).replace("{until}", call_until)
+        else:
+            message = copy.message(
+                "TRACKING_WAITLIST_CONFIRM_MESSAGE_NO_DEADLINE",
+                "Confirme seu pedido para garantir a sua vaga na fila.",
+            )
+        return title, message
+
     if state == "payment_retry":
         return (
             copy.title("TRACKING_PROMISE_RETRY_TITLE", "Não conseguimos preparar o pagamento"),
@@ -1207,29 +1332,46 @@ def _promise_copy(
             # O que existe é dinheiro reservado no cartão, cobrado quando a loja
             # aceitar. "Sua reserva está na fila de espera" soava como produto em
             # lista de espera (beta 06/11).
-            if wait_display:
-                if status == "new":
-                    message = copy.message(
-                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE",
-                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido para {when}.",
+            if status == "new":
+                # Duas coisas, duas frases (#2749): até quando a loja confirma, e
+                # para quando é o pedido. Juntas ("...seu pedido para amanhã, a
+                # partir das 15h") liam como se a loja fosse confirmar amanhã às 15h.
+                # Sem prazo publicado, a frase só nomeia o pedido quando a frase do
+                # dia não vem logo depois: "...seu pedido. Seu pedido é para..."
+                # repetia o substantivo.
+                #
+                # O verbo é "confirmar", o mesmo da revisão do checkout e das
+                # frases do Pix: um ato da loja, um verbo só (dono, 19/11/2026).
+                if until:
+                    acceptance = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
+                    ).replace("{until}", until)
+                elif wait_display:
+                    acceptance = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar.",
                     )
                 else:
-                    message = copy.message(
-                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED",
-                        "Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
-                    )
-                message = message.replace("{when}", wait_display)
-            else:
-                if status == "new":
-                    message = copy.message(
+                    acceptance = copy.message(
                         "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE",
-                        "O valor está reservado no seu cartão e só é cobrado quando a loja aceitar seu pedido.",
+                        "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar seu pedido.",
                     )
-                else:
-                    message = copy.message(
-                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE",
-                        "Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
-                    )
+                message = _with_commitment(
+                    acceptance,
+                    copy.message("TRACKING_PROMISE_ORDER_IS_FOR", "Seu pedido é para {when}."),
+                    wait_display,
+                )
+            elif wait_display:
+                message = copy.message(
+                    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED",
+                    "Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
+                ).replace("{when}", wait_display)
+            else:
+                message = copy.message(
+                    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE",
+                    "Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
+                )
             return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
         message = (
             copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_NEW",
@@ -1248,9 +1390,9 @@ def _promise_copy(
         title = copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido")
         if _is_fulfillment_wait(data):
             message = (
-                _paid_fulfillment_wait_message(data, copy=copy, wait_display=wait_display)
+                _paid_fulfillment_wait_message(data, copy=copy, wait_display=wait_display, until=until)
                 if payment_confirmed
-                else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True)
+                else _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until, queue_card=queue_card)
             )
             return title, message
         if payment_confirmed:
@@ -1273,7 +1415,7 @@ def _promise_copy(
             if _is_fulfillment_wait(data):
                 return (
                     copy.title("TRACKING_PROMISE_CONFIRMED_WAITING", "Pedido aceito"),
-                    _waitlist_message(data, copy=copy, wait_display=wait_display),
+                    _waitlist_message(data, copy=copy, wait_display=wait_display, queue_card=queue_card),
                 )
             return _pair(copy, "TRACKING_PROMISE_CONFIRMED_WAITING",
                          "Pedido aceito",
@@ -1281,7 +1423,7 @@ def _promise_copy(
         if _is_fulfillment_wait(data):
             return (
                 copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
-                _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True),
+                _waitlist_message(data, copy=copy, wait_display=wait_display, awaiting_store=True, until=until, queue_card=queue_card),
             )
         return (
             copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
@@ -1291,9 +1433,11 @@ def _promise_copy(
 
     if state == "payment_confirmed":
         if _is_fulfillment_wait(data):
-            # O título já diz "Pagamento recebido"; a frase diz quem confirma.
+            # O título já diz "Pagamento recebido"; a frase diz quem confirma e,
+            # enquanto a loja não aceitou, que o valor volta se ela não puder.
             message = _waitlist_message(
-                data, copy=copy, wait_display=wait_display, awaiting_store=status == "new",
+                data, copy=copy, wait_display=wait_display, awaiting_store=status == "new", paid=True, until=until,
+                queue_card=queue_card,
             )
             return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
         message = (
@@ -1408,6 +1552,54 @@ def _pair(copy: CopyCatalog, key: str, fallback_title: str, fallback_message: st
     return copy.title(key, fallback_title), copy.message(key, fallback_message)
 
 
+#: Dia da semana em minúscula, na ordem de ``date.weekday()``.
+_ACCEPTANCE_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def _acceptance_until(deadline_iso: str | None) -> str:
+    """Até quando a loja responde, na forma que cabe na frase: "até 8h40".
+
+    Prazo de hoje diz só a hora. Prazo que cai em outro dia diz o dia, como a
+    revisão do checkout diz antes de enviar: "até amanhã, sexta, às 10h";
+    depois de amanhã, com a data ("até segunda, 23/11, às 10h"). Sem prazo
+    publicado, ou com ele já vencido, vazio: a frase não promete hora nenhuma.
+    """
+    if not deadline_iso:
+        return ""
+    try:
+        from datetime import timedelta
+
+        deadline = parse_datetime(deadline_iso)
+        if deadline is None:
+            return ""
+        if timezone.is_naive(deadline):
+            deadline = timezone.make_aware(deadline)
+        if deadline <= timezone.now():
+            return ""
+        local = timezone.localtime(deadline)
+        clock = format_clock(local)
+        if not clock:
+            return ""
+        today = timezone.localdate()
+        if local.date() == today:
+            return f"até {clock}"
+        weekday = _ACCEPTANCE_WEEKDAYS[local.weekday()]
+        article = "à" if local.hour == 1 else "às"
+        if local.date() == today + timedelta(days=1):
+            return f"até amanhã, {weekday}, {article} {clock}"
+        return f"até {weekday}, {local:%d/%m}, {article} {clock}"
+    except Exception:
+        logger.debug("order_tracking._acceptance_until degraded", exc_info=True)
+        return ""
+
+
+def _with_commitment(acceptance: str, commitment_template: str, when: str | None) -> str:
+    """A frase do aceite e, em frase própria, para quando é o pedido."""
+    if not when:
+        return acceptance
+    return f"{acceptance} {commitment_template.replace('{when}', when)}"
+
+
 def _is_fulfillment_wait(data: TrackingPromiseData) -> bool:
     return data.fulfillment_wait_kind in {"planned_batch", "preorder"}
 
@@ -1434,18 +1626,61 @@ def _waitlist_message(
     copy: CopyCatalog,
     wait_display: str | None,
     awaiting_store: bool = False,
+    paid: bool = False,
+    until: str = "",
+    queue_card: bool = False,
 ) -> str:
     # Encomenda que a loja ainda não aceitou não está "reservada": a Conta diz
     # "Aguardando a loja" e o acompanhamento diz a mesma coisa (laudo 09/11).
+    # Paga, a frase promete a devolução, como a frase irmã do pedido do dia
+    # (plano EXCELENCIA-STOREFRONT, P1-07: quem pagou não lia que o valor volta).
+    #
+    # Até quando a loja confirma e para quando é a encomenda são duas frases
+    # (#2749): "A loja confirma sua encomenda para amanhã, a partir das 15h"
+    # lia como se a confirmação fosse amanhã às 15h.
+    if awaiting_store and paid and data.fulfillment_wait_kind == "preorder":
+        # Sem prazo publicado, a frase do aceite só nomeia a encomenda quando a
+        # frase do dia não vem logo depois (o substantivo não se repete).
+        if until:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_UNTIL",
+                "A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ).replace("{until}", until)
+        elif wait_display:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_UNTIL",
+                "A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        else:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE",
+                "A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        return _with_commitment(
+            acceptance,
+            copy.message("TRACKING_PROMISE_PREORDER_IS_FOR", "Sua encomenda é para {when}."),
+            wait_display,
+        )
     if awaiting_store and data.fulfillment_wait_kind == "preorder":
-        if wait_display:
-            return copy.message(
-                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE",
-                "A loja confirma sua encomenda para {when} e avisa por aqui.",
-            ).replace("{when}", wait_display)
-        return copy.message(
-            "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE",
-            "A loja confirma sua encomenda e avisa por aqui.",
+        if until:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_UNTIL",
+                "A loja confirma {until} e avisa por aqui.",
+            ).replace("{until}", until)
+        elif wait_display:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_UNTIL",
+                "A loja confirma e avisa por aqui.",
+            )
+        else:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE",
+                "A loja confirma sua encomenda e avisa por aqui.",
+            )
+        return _with_commitment(
+            acceptance,
+            copy.message("TRACKING_PROMISE_PREORDER_IS_FOR", "Sua encomenda é para {when}."),
+            wait_display,
         )
     if wait_display:
         if data.fulfillment_wait_kind == "preorder":
@@ -1453,19 +1688,49 @@ def _waitlist_message(
                 "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE",
                 "Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
             ).replace("{when}", wait_display)
+        if queue_card:
+            # O cartão da fila, logo abaixo, é quem promete o aviso.
+            return _queue_sentence(copy).replace("{when}", wait_display)
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE",
-            "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+            "Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
         ).replace("{when}", wait_display)
     if data.fulfillment_wait_kind == "preorder":
         return copy.message(
             "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_NO_DATE",
             "Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
         )
+    if queue_card:
+        return copy.message(
+            "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED_NO_DATE",
+            "Sua reserva está na fila de espera da fornada.",
+        )
     return copy.message(
         "TRACKING_PROMISE_WAITLIST_MESSAGE_NO_DATE",
         "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
     )
+
+
+def _queue_sentence(copy: CopyCatalog) -> str:
+    """A frase principal de quem espera a fornada COM o cartão da fila na tela.
+
+    Mantém "fila de espera" e a data como previsão (COPY-WAITLIST-001); perde só
+    o "Avisamos quando ficar pronta.", que o cartão diz.
+    """
+    return copy.message(
+        "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED",
+        "Sua reserva está na fila de espera da fornada prevista para {when}.",
+    )
+
+
+def _queue_sentence_dates_the_batch(message: str, copy: CopyCatalog) -> bool:
+    """A frase principal é a da fila com a data da fornada?
+
+    Quando é, o cartão da fila não repete "Fornada prevista para …". Quando a
+    frase principal é outra (sem data, ou outro estado), a linha do cartão fica.
+    """
+    before_when, _, after_when = _queue_sentence(copy).partition("{when}")
+    return bool(before_when) and message.startswith(before_when) and message.endswith(after_when)
 
 
 def _payment_wait_message(
@@ -1515,23 +1780,35 @@ def _paid_fulfillment_wait_message(
     *,
     copy: CopyCatalog,
     wait_display: str | None,
+    until: str = "",
 ) -> str:
     """Pago e a loja ainda não aceitou (``store_checking``/``new``)."""
     if data.fulfillment_wait_kind == "preorder":
-        if wait_display:
-            return copy.message(
-                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID",
-                "Pagamento recebido. A loja confirma sua encomenda para {when} e avisa por aqui. Se não puder, devolvemos o valor.",
-            ).replace("{when}", wait_display)
-        return copy.message(
-            "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE",
-            "Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+        if until:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_UNTIL",
+                "Pagamento recebido. A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ).replace("{until}", until)
+        elif wait_display:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_UNTIL",
+                "Pagamento recebido. A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        else:
+            acceptance = copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE",
+                "Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+            )
+        return _with_commitment(
+            acceptance,
+            copy.message("TRACKING_PROMISE_PREORDER_IS_FOR", "Sua encomenda é para {when}."),
+            wait_display,
         )
 
     if wait_display:
         return copy.message(
             "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID",
-            "Pagamento recebido. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+            "Pagamento recebido. Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
         ).replace("{when}", wait_display)
     return copy.message(
         "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE",
@@ -1601,7 +1878,64 @@ def _step_label(key: str, *, is_pickup: bool, copy: CopyCatalog) -> str:
 
 
 def _present_progress_steps(data: TrackingData, *, copy: CopyCatalog) -> tuple[OrderProgressStepProjection, ...]:
-    return _present_progress_steps_from(data.progress_steps, is_pickup=data.is_pickup, copy=copy)
+    steps = _present_progress_steps_from(data.progress_steps, is_pickup=data.is_pickup, copy=copy)
+    return _with_money_steps(steps, data, copy=copy)
+
+
+def _with_money_steps(
+    steps: tuple[OrderProgressStepProjection, ...], data: TrackingData, *, copy: CopyCatalog,
+) -> tuple[OrderProgressStepProjection, ...]:
+    """O dinheiro não some do Histórico (plano EXCELENCIA-STOREFRONT, P1-10).
+
+    O passo "Pago" dos dados depende do saldo capturado, que zera com o estorno:
+    no pedido pago e cancelado o Histórico ficava "Recebido, Cancelado", sem o
+    pagamento que houve nem a devolução. Os dois fatos estão nos eventos do
+    pedido (``payment.captured`` e ``payment.refunded``), com hora: aqui eles
+    voltam como marcos, na ordem em que aconteceram. O valor da devolução vem do
+    destino do dinheiro do pedido cancelado, quando a projeção o traz.
+    """
+    paid_at = _money_event_at(data, "payment.captured")
+    refunded_at = _money_event_at(data, "payment.refunded")
+    cancelled = any(step.state == "cancelled" for step in steps)
+    add_paid = bool(paid_at) and cancelled and all(step.key != "payment" for step in steps)
+    if not add_paid and not refunded_at:
+        return steps
+
+    # (hora ISO, ordem original, passo): passo sem hora fica onde estava.
+    raw_at = {step.key: step.at for step in data.progress_steps}
+    dated: list[tuple[str, int, OrderProgressStepProjection]] = []
+    last_at = ""
+    for index, step in enumerate(steps):
+        last_at = raw_at.get(step.key) or last_at
+        dated.append((last_at, index, step))
+
+    def insert(at: str, step: OrderProgressStepProjection) -> None:
+        position = len(dated)
+        for index, (other_at, _order, _step) in enumerate(dated):
+            if other_at and other_at > at:
+                position = index
+                break
+        dated.insert(position, (at, -1, step))
+
+    if add_paid:
+        insert(paid_at, OrderProgressStepProjection(
+            label=_step_label("payment", is_pickup=data.is_pickup, copy=copy),
+            key="payment",
+            state="completed",
+            timestamp_display=_fmt_timestamp(paid_at),
+        ))
+    if refunded_at:
+        label = _step_label("refunded", is_pickup=data.is_pickup, copy=copy)
+        outcome = data.money_outcome
+        if outcome is not None and outcome.outcome == "refunded" and outcome.amount_q:
+            label = f"{label} · R$ {format_money(outcome.amount_q)}"
+        insert(refunded_at, OrderProgressStepProjection(
+            label=label,
+            key="refunded",
+            state="completed",
+            timestamp_display=_fmt_timestamp(refunded_at),
+        ))
+    return tuple(step for _at, _order, step in dated)
 
 
 def _present_progress_steps_from(steps, *, is_pickup: bool, copy: CopyCatalog) -> tuple[OrderProgressStepProjection, ...]:
@@ -1831,12 +2165,7 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         waitlist_waiting_title=copy.title("TRACKING_WAITLIST_WAITING_TITLE", "Você está na fila"),
         waitlist_waiting_message=copy.message(
             "TRACKING_WAITLIST_WAITING_MESSAGE",
-            "Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
-        ),
-        waitlist_confirm_title=copy.title("TRACKING_WAITLIST_CONFIRM_TITLE", "Sua fornada saiu!"),
-        waitlist_confirm_message=copy.message(
-            "TRACKING_WAITLIST_CONFIRM_MESSAGE",
-            "Confirme para garantir o seu. Se não der, a vaga vai para a próxima pessoa da fila.",
+            "Quando a fornada ficar pronta, avisamos para você confirmar. Nada foi cobrado ainda.",
         ),
         waitlist_confirm_cta=copy.title("TRACKING_WAITLIST_CONFIRM_CTA", "Confirmar meu pedido"),
         waitlist_confirmed_title=copy.title("TRACKING_WAITLIST_CONFIRMED_TITLE", "Confirmado, já vamos separar"),

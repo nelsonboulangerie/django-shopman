@@ -339,44 +339,14 @@ AI_USES: tuple[AIUse, ...] = (
         keeps_profile=True,
         redacts=True,
     ),
-    # `intents.read_with_model` → `build_request`: a fala do turno e a nota de estado
-    # (`TurnMemory.prompt_lines`). ⚠️ Redigida a partir do WP-03 do plano; até lá a frase
-    # é promessa, e `test_a_leitura_nao_recebe_dado_pessoal` reprova (o PR espera).
+    # `intents.read_with_model` → `build_request`: a fala do turno, redigida, e a nota de
+    # estado sem número de pedido nem nome (`intents.reading_note`, WP-03).
     AIUse(
         purpose="intents",
         helps_to="entender a sua mensagem",
         sends=("o texto da sua mensagem",),
         keeps_profile=True,
         redacts=True,
-    ),
-    # `triage.build_prompt`: a fala do turno e as falas anteriores de `context_for`
-    # (até seis, do cliente e da loja).
-    AIUse(
-        purpose="triage",
-        helps_to="ver se a sua mensagem precisa de alguém da equipe",
-        sends=(
-            "o texto da sua mensagem como você escreveu",
-            "as seis mensagens anteriores da conversa (suas e da loja)",
-        ),
-        keeps_profile=True,
-        redacts=False,
-    ),
-    # O laço antigo (`agent.run_agent`): `history_for` (até 40 mensagens), o nome, a
-    # sacola e o último pedido em `prompt.dynamic_block`, e o endereço de entrega nas
-    # ferramentas (`tools.py`), que também tocam o cadastro: daqui não se promete que
-    # nada dele fica. O WP-08 do CONCIERGE-PLANO-DE-ACAO o apaga.
-    AIUse(
-        purpose="concierge",
-        helps_to="escrever a resposta",
-        sends=(
-            "as últimas mensagens da conversa",
-            "o seu nome",
-            "o que está na sacola",
-            "o número do seu último pedido",
-            "quando o pedido é para entregar, o endereço da entrega",
-        ),
-        keeps_profile=False,
-        redacts=False,
     ),
 )
 
@@ -394,26 +364,27 @@ _REDACTION = (
 _ROLE_PREFIX = "ajuda o atendimento automático do WhatsApp a "
 
 
+#: Propósitos de `ai.PURPOSES` que nenhum código chama desde o WP-08 (19/11/2026): o laço
+#: do agente (`concierge`) e a triagem por modelo de texto (`triage`) saíram. Ninguém manda
+#: nada por eles, e a página não os cita. A E2 tira os dois de `ai.PURPOSES` (#2831).
+_WITHOUT_CALLER = frozenset({"concierge", "triage"})
+
+
 def _customer_text_purposes() -> tuple[str, ...]:
     """Os propósitos cujo pedido leva mensagem de cliente.
 
     Os de `ai.CUSTOMER_TEXT_PURPOSES` e o do Jev (`decision`), que leva mensagem de
-    cliente quando a conexão dele está liberada para isso (`ai.jev_endpoint`).
-    Propósito de texto de cliente sem `AIUse` reprova no teste: a página não teria frase.
+    cliente quando a conexão dele está liberada para isso (`ai.jev_endpoint`), menos os
+    que ficaram sem quem chame (`_WITHOUT_CALLER`). Propósito de texto de cliente sem
+    `AIUse` reprova no teste: a página não teria frase.
     """
     from shopman.shop import ai
 
-    return tuple(sorted(set(ai.CUSTOMER_TEXT_PURPOSES) | {"decision"}))
+    return tuple(sorted((set(ai.CUSTOMER_TEXT_PURPOSES) | {"decision"}) - _WITHOUT_CALLER))
 
 
 def _concierge_setting(key: str):
     return _setting_value(f"SHOPMAN_CONCIERGE[{key}]")
-
-
-def _intents_mode() -> str:
-    """O mesmo que `concierge.intents.mode`: vazio é `cohort`, desconhecido desliga."""
-    mode = str(_concierge_setting("intents_plural") or "cohort").strip().casefold()
-    return mode if mode in {"off", "cohort", "subjects", "all"} else "off"
 
 
 def _concierge_answers() -> bool:
@@ -425,23 +396,13 @@ def _concierge_answers() -> bool:
 def _purpose_sends(purpose: str) -> bool:
     """A rota existe; o propósito chega a mandar alguma coisa neste deployment?
 
-    A leitura, a triagem e o laço antigo só rodam quando a Concierge atende, cada um com
-    a sua chave (as mesmas que o turno lê em `concierge/service.py`, `intents.py` e
-    `triage.py`). O Jev e o pré-rótulo rodam também fora do atendimento (a sombra e o
-    piloto): a rota basta.
+    A leitura em partes só roda quando a Concierge atende (`concierge/service.py`). O Jev
+    e o pré-rótulo rodam também fora do atendimento (a sombra e o piloto): a rota basta.
     """
     if purpose in {"decision", "labeling"}:
         return True
-    if not _concierge_answers():
-        return False
     if purpose == "intents":
-        return _intents_mode() != "off"
-    if purpose == "concierge":
-        # Em `subjects`, quem está na coorte e fora da lista segue no laço antigo.
-        return _intents_mode() in {"off", "subjects"}
-    if purpose == "triage":
-        classifier = str(_concierge_setting("triage_classifier") or "anthropic").strip().casefold()
-        return bool(_concierge_setting("triage_with_model")) and classifier != "jev"
+        return _concierge_answers()
     return False
 
 

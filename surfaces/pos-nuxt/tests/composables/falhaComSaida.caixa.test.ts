@@ -99,13 +99,18 @@ const MUTACOES: Array<{ nome: string; executar: (s: Sessao) => Promise<unknown> 
 
 describe("§1 toda mutação de caixa que falha diz o que fazer agora", () => {
   for (const { nome, executar } of MUTACOES) {
-    it(`${nome}: o toast traz um gesto`, async () => {
+    it(`${nome}: o aviso traz um gesto`, async () => {
       vi.mocked(toast.error).mockClear();
       const recusa = vi.fn().mockRejectedValue(new Error("rede caiu"));
-      await executar(sessaoDeCaixa(recusa));
+      const sessao = sessaoDeCaixa(recusa);
+      await executar(sessao);
 
-      expect(toast.error).toHaveBeenCalledTimes(1);
-      const mensagem = String(vi.mocked(toast.error).mock.calls[0]?.[0] ?? "");
+      // Um aviso só: no diálogo do gesto (`cashFailure`, WP-E6) ou no toast, nunca
+      // os dois e nunca nenhum.
+      const noDialogo = sessao.cashFailure.value?.message ?? "";
+      const noToast = vi.mocked(toast.error).mock.calls.map((c) => String(c[0] ?? ""));
+      expect(noToast.length + (noDialogo ? 1 : 0)).toBe(1);
+      const mensagem = noDialogo || noToast[0]!;
       expect(mensagem, `"${mensagem}" não oferece saída nenhuma`).toMatch(GESTO);
     });
   }
@@ -118,9 +123,10 @@ describe("§1 toda mutação de caixa que falha diz o que fazer agora", () => {
       status: 400,
       data: { detail: "Caixa não aberto neste terminal." },
     });
-    await sessaoDeCaixa(recusa).registerCashMovement({ kind: "sangria", amount: "200", reason: "" });
+    const sessao = sessaoDeCaixa(recusa);
+    await sessao.registerCashMovement({ kind: "sangria", amount: "200", reason: "" });
 
-    const mensagem = String(vi.mocked(toast.error).mock.calls[0]?.[0] ?? "");
+    const mensagem = sessao.cashFailure.value?.message ?? "";
     expect(mensagem).toContain("Caixa não aberto neste terminal.");
     expect(mensagem).toMatch(GESTO);
   });

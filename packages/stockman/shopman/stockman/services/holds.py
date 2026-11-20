@@ -20,13 +20,43 @@ from shopman.stockman.models.move import Move
 from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.availability import promise_for_sku
 from shopman.stockman.services.queries import _resolve_stock_profile
-from shopman.stockman.services.scope import quants_eligible_for
+from shopman.stockman.services.scope import is_in_production, quants_eligible_for
 
 logger = logging.getLogger("shopman.stockman")
 
 QUALITY_GRADE_ALLOWLIST_METADATA_KEY = "_allowed_quality_grade_refs"
 QUALITY_GRADE_POLICY_VERSION_METADATA_KEY = "_quality_grade_policy_version"
 QUALITY_GRADE_POLICY_VERSION = 1
+
+
+#: ``Move.metadata[DELIVERY_METADATA_KEY]`` = ``{"hold_id": "hold:N", "entry": ...}``:
+#: a conta da entrega de uma reserva no ledger (ver :func:`delivery_entry`).
+DELIVERY_METADATA_KEY = "delivery"
+DELIVERY_FULFILLED = "fulfilled"
+DELIVERY_CARRIED_OUT = "carried_out"
+DELIVERY_CARRIED_IN = "carried_in"
+DELIVERY_RETURNED = "returned"
+
+
+def delivery_entry(hold_pk: int, entry: str) -> dict:
+    """``Move.metadata`` de um lançamento na conta da entrega de uma reserva.
+
+    A conta é a CHAVE do que foi entregue contra um saldo: a baixa
+    (``fulfilled``, escrita pelo ``fulfill``), a entrega que segue com o lote
+    (``carried_out`` no saldo que ela deixa, ``carried_in`` no que passa a
+    pagá-la) e a devolução de um cancelamento (``returned``). O líquido da
+    conta num saldo de produção é o que ele ainda deve ao lote
+    (``planning._early_deliveries``, #2724).
+
+    É por aqui, e só por aqui, que a conta é lida. O ``reason`` do ``Move`` é
+    frase para gente: pode ser reescrito sem mudar o estoque.
+    """
+    return {DELIVERY_METADATA_KEY: {"hold_id": f"hold:{hold_pk}", "entry": entry}}
+
+
+def delivery_reason(hold_pk: int) -> str:
+    """A frase do ``Move`` que baixa uma reserva. Texto para gente, nunca chave."""
+    return f"Entrega hold:{hold_pk}"
 
 
 def _parse_hold_id(hold_id: str) -> int:
@@ -419,7 +449,10 @@ class StockHolds:
                     )
 
                 allowed_grades = (hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
-                if allowed_grades is not None and quant.batch:
+                # O saldo em produção não é lote (não há grau a conferir): a
+                # mesma leitura do escopo, para a baixa não negar o que a
+                # reserva aceitou.
+                if allowed_grades is not None and quant.batch and not is_in_production(quant):
                     from shopman.stockman.models import Batch
 
                     grade_ref = (
@@ -437,7 +470,12 @@ class StockHolds:
 
                 consume_qty = quantity if quantity is not None else hold.quantity
                 move = Move.objects.create(
-                    quant=quant, delta=-consume_qty, reason=f"Entrega hold:{hold.pk}", kind=kind, user=user
+                    quant=quant,
+                    delta=-consume_qty,
+                    reason=delivery_reason(hold.pk),
+                    kind=kind,
+                    user=user,
+                    metadata=delivery_entry(hold.pk, DELIVERY_FULFILLED),
                 )
 
                 _actor = actor or user

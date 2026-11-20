@@ -13,6 +13,10 @@ from shopman.shop.admin.campaign import (  # noqa: F401
     MarketingSecurityEventAdmin,
 )
 from shopman.shop.admin.channel import ChannelAdmin  # noqa: F401
+from shopman.shop.admin.conversational import (  # noqa: F401
+    ConversationalDecisionAdmin,
+    ConversationalOutcomeAdmin,
+)
 from shopman.shop.admin.delivery import (  # noqa: F401
     CourierAdmin,
     CourierRateAdmin,

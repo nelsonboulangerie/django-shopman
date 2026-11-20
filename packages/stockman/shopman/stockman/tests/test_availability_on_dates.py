@@ -14,6 +14,15 @@ nome). Ela fica congelada aqui de propósito: é a régua contra a qual a leitur
 nova é medida, campo a campo, para toda combinação de recorte de canal e para
 datas no passado, hoje, nas fornadas e depois delas.
 
+Uma linha do oráculo mudou em 18/11/2026 (#2693), e só ela: a chamada de
+``is_valid_for_date`` passa a margem adiante (``margin_days``). O que fica
+congelado é a COMPOSIÇÃO (uma leitura inteira por data); a regra de validade
+sempre foi a viva, chamada daqui, e desde o #2693 a margem alcança também a
+validade implícita do saldo sem lote. Com margem 0 a linha não muda nada.
+Em 19/11/2026 a mesma chamada ganhou ``lot_production_date`` (o dia de
+produção que o lote declara, lido numa consulta à parte): com margem, o saldo
+físico de lote é julgado pela data do lote. Com margem 0 também não muda nada.
+
 O cenário cobre o que muda com a data: estoque de hoje, fornadas futuras,
 lote que vence no meio do intervalo (com e sem margem), validade de
 prateleira (0 e 3 dias, contada pela criação ou pela fornada), holds ativos,
@@ -103,6 +112,11 @@ def _reference_availability_for_skus(
     expired_refs_by_sku: dict[str, set[str]] = {}
     for row in Batch.objects.filter(sku__in=skus, expiry_date__lt=expiry_cutoff).values("sku", "ref"):
         expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
+    # O dia de produção que cada lote declara: a regra viva de validade o lê
+    # (``lot_production_date``) para julgar a margem do saldo físico de lote.
+    lot_production_by_sku: dict[str, dict[str, date]] = {}
+    for row in Batch.objects.filter(sku__in=skus).exclude(production_date=None).values("sku", "ref", "production_date"):
+        lot_production_by_sku.setdefault(row["sku"], {})[row["ref"]] = row["production_date"]
     allowed_batch_refs_by_sku: dict[str, set[str]] | None = None
     if allowed_quality_grade_refs is not None:
         allowed_refs = tuple(allowed_quality_grade_refs)
@@ -214,7 +228,13 @@ def _reference_availability_for_skus(
                 # not batchless stock. Match the canonical queryset and the
                 # fulfill recheck by failing them closed under an allowlist.
                 continue
-            if not is_valid_for_date(quant, shelflife_ns, target):
+            if not is_valid_for_date(
+                quant,
+                shelflife_ns,
+                target,
+                margin_days=expiry_margin_days,
+                lot_production_date=lot_production_by_sku.get(sku, {}).get(quant.batch) if quant.batch else None,
+            ):
                 continue
 
             qty = quant._quantity

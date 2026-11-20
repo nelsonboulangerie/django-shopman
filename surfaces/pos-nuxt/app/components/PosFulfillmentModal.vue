@@ -21,13 +21,14 @@ import type {
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import { deliveryFeeWaivedInFull, deliveryFeeWaiverNote } from "~/presentation/deliveryFeeWaiver";
+import { chosenSavedAddressValue } from "~/presentation/savedAddress";
 import {
   BR_STATES,
   DRAFT_FIELD_OF,
+  addressDisplayLine,
   addressDraftErrors,
   deliveryValuesFromDraft,
   draftFromDeliveryState,
-  draftSummaryLine,
   emptyAddressDraft,
   firstInvalidField,
   maskCepInput,
@@ -76,6 +77,8 @@ const props = defineProps<{
   deliveryFeeStatus?: "resolved" | "calculating" | "failed" | "at_payment";
   deliveryDistanceKm: number | null;
   orderNotes: string;
+  /** O endereço acabou de ser tirado da entrega e ainda dá para devolver. */
+  canRestoreAddress?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -92,6 +95,10 @@ const emit = defineEmits<{
   "update:deliveryFeeOverrideInput": [string];
   "update:orderNotes": [string];
   pickSavedAddress: [SavedAddressProjection];
+  /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
+  clearAddress: [];
+  /** Desfaz o tirar: o endereço volta para a entrega. */
+  restoreAddress: [];
   openSchedule: [];
 }>();
 
@@ -100,20 +107,49 @@ const isOpen = computed({
   set: (value: boolean) => emit("update:open", value),
 });
 
-// Foco automático: com entrega selecionada, quem recebe o foco é a busca de
-// endereço — o passo que o operador veio dar. Tanto na abertura quanto ao
-// alternar retirada→entrega com o diálogo já aberto.
+// RETIRADA OU ENTREGA (`PosFulfillmentChoice`, a mesma peça da etapa do
+// assistente). Nenhuma marcada até o operador escolher.
+const chosenFulfillment = computed<string>(() => (props.fulfillmentConfirmed ? props.fulfillmentType : ""));
+function pickFulfillment(ref: "pickup" | "delivery") {
+  emit("update:fulfillmentType", ref);
+  emit("update:fulfillmentConfirmed", true);
+}
+
+// OS ENDEREÇOS JÁ CADASTRADOS: uma linha inteira por endereço, com o da entrega
+// em edição marcado (ao escolher Entrega, o padrão do cliente já vem; quem faz
+// isso é o dono do carrinho, `chooseFulfillment`). As setas trocam de endereço e
+// o Enter aceita pelo mesmo caminho do botão do rodapé.
+const savedListRef = ref<{ focusTarget: () => HTMLElement | null } | null>(null);
+const chosenSaved = computed(() => chosenSavedAddressValue(props.savedAddresses, {
+  route: props.deliveryAddress,
+  streetNumber: props.deliveryStreetNumber,
+  neighborhood: props.deliveryNeighborhood,
+  complement: props.deliveryComplement,
+  structured: props.deliveryAddressStructured,
+}));
+
+// Foco automático na entrega, tanto na abertura quanto ao alternar
+// retirada→entrega com o diálogo já aberto: com um endereço do cadastro
+// marcado, o foco é dele (o Enter aceita e segue); sem nenhum, é da busca de
+// endereço, o passo que o operador veio dar.
 const addressAutocompleteRef = ref<{ focus: () => void } | null>(null);
 const searchQuery = ref("");
+function focusDeliveryStart() {
+  if (chosenSaved.value && savedListRef.value?.focusTarget()) {
+    reveal(() => savedListRef.value?.focusTarget(), { align: "center" });
+    return;
+  }
+  addressAutocompleteRef.value?.focus();
+}
 function onOpenAutoFocus(event: Event) {
   if (props.fulfillmentType !== "delivery") return; // retirada: foco padrão do diálogo
   event.preventDefault();
-  void nextTick(() => addressAutocompleteRef.value?.focus());
+  void nextTick(focusDeliveryStart);
 }
 watch(() => props.fulfillmentType, async (type) => {
   if (!props.open || type !== "delivery" || !import.meta.client) return;
   await nextTick();
-  addressAutocompleteRef.value?.focus();
+  focusDeliveryStart();
 });
 
 // De onde a taxa saiu, em palavras. O operador precisa poder responder "por que
@@ -189,7 +225,9 @@ const draft = computed<AddressDraft>(() => draftFromDeliveryState({
   instructions: props.deliveryInstructions,
   structured: props.deliveryAddressStructured || {},
 }));
-const summaryLine = computed(() => (draft.value.route.trim() ? draftSummaryLine(draft.value) : ""));
+// O endereço escolhido numa linha: o mesmo texto e o mesmo " · " da lista dos
+// endereços do cliente, logo acima (`addressDisplayLine`).
+const summaryLine = computed(() => (draft.value.route.trim() ? addressDisplayLine(draft.value) : ""));
 const stateItems = BR_STATES.map((uf) => ({ label: uf, value: uf }));
 
 // Erros da validação, por campo da tela. Só aparecem depois da primeira tentativa
@@ -252,6 +290,28 @@ function confirmFulfillment() {
     }
   }
   isOpen.value = false;
+}
+
+function onSavedAddressPicked(address: SavedAddressProjection) {
+  fieldErrors.value = {};
+  emit("pickSavedAddress", address);
+}
+
+// TIRAR O ENDEREÇO DESTA ENTREGA: ela volta a "sem endereço" e a busca volta a
+// ser a vez. O cadastro do cliente não é tocado, e a frase que fica no lugar do
+// endereço diz isso, com o Desfazer ao lado (aqui dentro, porque por cima de um
+// diálogo o aviso passageiro não recebe toque).
+function clearAddress() {
+  fieldErrors.value = {};
+  searchQuery.value = "";
+  emit("clearAddress");
+  reveal(fieldKey("search"), { align: "center" });
+}
+function restoreAddress() {
+  fieldErrors.value = {};
+  emit("restoreAddress");
+  // O botão tocado some com o gesto: o foco volta para o endereço devolvido.
+  void nextTick(focusDeliveryStart);
 }
 
 function goPast(after: DeliveryAddressField | null, values = deliveryValuesFromDraft(draft.value)) {
@@ -339,7 +399,7 @@ const mapPoint = computed<AddressPoint | null>(() => {
   if (!target || target.latitude == null || target.longitude == null) return null;
   return { lat: target.latitude, lng: target.longitude };
 });
-const mapSummary = computed(() => (mapDraft.value ? draftSummaryLine(mapDraft.value) : ""));
+const mapSummary = computed(() => (mapDraft.value ? addressDisplayLine(mapDraft.value) : ""));
 
 function openMap(purpose: "confirm" | "adjust", target: AddressDraft = draft.value) {
   mapPurpose.value = purpose;
@@ -388,44 +448,34 @@ function onMapCancel() {
   <NuxtModal
     v-model:open="isOpen"
     title="Recebimento"
-    description="Escolha uma opção. Cliente e data não definem como o pedido será recebido."
+    description="Escolha como o cliente recebe o pedido."
     :content="{ onOpenAutoFocus }"
     :ui="{ content: 'sm:max-w-lg' }"
     data-pos-fulfillment-modal
   >
     <template #body>
       <div class="grid gap-4">
-        <div class="grid grid-cols-2 gap-2">
-          <NuxtButton
-            v-for="option in fulfillmentOptions"
-            :key="option.ref"
-            color="neutral" variant="outline"
-            class="h-auto justify-start whitespace-normal px-3 py-2 text-left"
-            :class="fulfillmentConfirmed && fulfillmentType === option.ref ? 'border-primary bg-primary/5' : ''"
-            @click="$emit('update:fulfillmentType', option.ref as 'pickup' | 'delivery'); $emit('update:fulfillmentConfirmed', true)"
-            :aria-pressed="!!fulfillmentConfirmed && fulfillmentType === option.ref"
-          >
-            <span>
-              <span class="block text-sm font-semibold">{{ option.label }}</span>
-              <span class="block text-xs opacity-80">{{ option.description }}</span>
-            </span>
-          </NuxtButton>
-        </div>
+        <!-- Retirada ou Entrega: o mesmo grupo de rádio (variante cartão) da lista
+             de endereços logo abaixo, com o mesmo sinal da escolha (o rádio
+             marcado, a borda e o fundo da cor da casa) e o estado no papel
+             (`role="radio"` + `aria-checked`). Era um par de botões em que o
+             escolhido só mudava um tom de fundo (#2806). -->
+        <PosFulfillmentChoice
+          data-pos-fulfillment-options
+          :options="fulfillmentOptions"
+          :chosen="chosenFulfillment"
+          @pick="pickFulfillment"
+        />
 
         <div v-if="fulfillmentType === 'delivery'" class="grid gap-3">
-          <div v-if="savedAddresses.length" class="flex flex-wrap gap-2">
-            <NuxtButton
-              v-for="address in savedAddresses"
-              :key="address.id"
-              type="button"
-              color="neutral" variant="outline"
-              size="md"
-              class="h-auto justify-start whitespace-normal px-2 py-1 text-left"
-              @click="$emit('pickSavedAddress', address)"
-            >
-              <span class="max-w-48 truncate">{{ address.label || address.formatted_address }}</span>
-            </NuxtButton>
-          </div>
+          <PosSavedAddressList
+            v-if="savedAddresses.length"
+            ref="savedListRef"
+            :addresses="savedAddresses"
+            :selected="chosenSaved"
+            @pick="onSavedAddressPicked"
+            @accept="confirmFulfillment"
+          />
           <!-- OS PASSOS DA LOJA: buscar (CEP ou endereço) → a sugestão preenche
                os campos → número, complemento, referência. Cada campo é um bloco
                do próximo foco (`data-focus-target`), e o Enter anda para o
@@ -439,18 +489,38 @@ function onMapCancel() {
               @advance="goPast(null)"
             />
           </NuxtFormField>
-          <div v-if="summaryLine" class="flex flex-wrap items-center gap-x-2 gap-y-1" data-pos-address-summary>
-            <Icon name="lucide:map-pin" class="size-4 shrink-0 text-muted" aria-hidden="true" />
-            <p class="min-w-0 flex-1 text-sm font-semibold">{{ summaryLine }}</p>
-            <NuxtButton
-              v-if="canAdjustOnMap"
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-map"
-              label="Ajustar no mapa"
-              data-pos-address-adjust-map
-              @click="openMap('adjust')"
-            />
+          <!-- O endereço numa linha própria, e os gestos sobre ele na linha de
+               baixo: lado a lado, no celular os botões espremiam o endereço numa
+               coluna de uma palavra por linha. -->
+          <div v-if="summaryLine" class="grid gap-1" data-pos-address-summary>
+            <div class="flex items-start gap-2">
+              <Icon name="lucide:map-pin" class="mt-0.5 size-4 shrink-0 text-muted" aria-hidden="true" />
+              <p class="min-w-0 flex-1 text-sm font-semibold">{{ summaryLine }}</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <NuxtButton
+                v-if="canAdjustOnMap"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-map"
+                label="Ajustar no mapa"
+                data-pos-address-adjust-map
+                @click="openMap('adjust')"
+              />
+              <!-- O nome diz o alcance: sai DESTA entrega, não do cadastro. -->
+              <NuxtButton
+                color="neutral"
+                variant="outline"
+                label="Tirar o endereço desta entrega"
+                title="O endereço continua no cadastro do cliente"
+                data-pos-address-clear
+                @click="clearAddress"
+              />
+            </div>
+          </div>
+          <div v-else-if="canRestoreAddress" class="flex flex-wrap items-center gap-x-2 gap-y-1" role="status" data-pos-address-removed>
+            <p class="min-w-0 flex-1 text-sm">Endereço tirado desta entrega. O cadastro do cliente não mudou.</p>
+            <NuxtButton color="neutral" variant="ghost" label="Desfazer" data-pos-address-restore @click="restoreAddress" />
           </div>
           <NuxtFormField label="Rua" :error="fieldErrors.route" :data-focus-target="fieldKey('route')">
             <NuxtInput data-focus-control class="w-full" autocomplete="off" :model-value="deliveryAddress" @update:model-value="setField('route', $event)" @keydown.enter="onFieldEnter('route', $event)" />
@@ -531,7 +601,7 @@ function onMapCancel() {
         </div>
 
         <!-- QUANDO saiu deste formulário, e essa é a mudança. Data e janela
-             viraram a terceira caixa da barra de contexto (PosScheduleModal),
+             viraram uma caixa própria da barra de contexto (PosScheduleModal),
              porque *quando* é fato do PEDIDO e não da entrega: presas dentro do
              bloco de entrega, elas simplesmente NÃO EXISTIAM na retirada, e a
              encomenda por telefone para retirar na quinta não tinha onde ser

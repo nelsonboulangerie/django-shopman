@@ -1834,7 +1834,8 @@
         {
           "path": "shopman/shop/handlers/ifood_merchant.py",
           "symbols": [
-            "IFoodMerchantSyncHandler"
+            "IFoodMerchantSyncHandler",
+            "_LastError"
           ]
         }
       ],
@@ -1851,7 +1852,7 @@
       ],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_ifood_merchant.py::test_grade_recusada_pelo_ifood_nao_repete",
+        "shopman/shop/tests/test_ifood_merchant.py::test_grade_recusada_pelo_ifood_nao_repete_e_avisa",
         "shopman/shop/tests/test_ifood_merchant.py::test_sem_resposta_do_ifood_a_directive_repete"
       ],
       "test_gap_reason": null,
@@ -1943,7 +1944,10 @@
         {
           "path": "shopman/shop/handlers/ifood_status.py",
           "symbols": [
-            "IFoodStatusCallbackHandler"
+            "IFoodStatusCallbackHandler",
+            "STATUS_NOT_DELIVERED_ALERT",
+            "_STEP_COPY",
+            "alert_status_not_delivered"
           ]
         }
       ],
@@ -5678,7 +5682,7 @@
         {
           "path": "shopman/shop/services/availability.py",
           "symbols": [
-            "_availability_kwargs",
+            "availability_kwargs",
             "_check_bundle",
             "_expand_if_bundle",
             "_listing_gate_decision",
@@ -8518,7 +8522,7 @@
       ],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_courier_service.py::test_sync_gives_up_on_a_ride_older_than_the_cap"
+        "shopman/shop/tests/test_courier_service.py::test_sync_slows_down_on_a_ride_older_than_the_cap"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -8715,6 +8719,59 @@
       "config_surface": [],
       "tests": [
         "shopman/backstage/tests/test_deliveries_projection.py::test_the_number_is_freed_when_the_ride_ends"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-in-trouble",
+      "question": "A corrida em apuros: onde o entregador está em relação à loja, quem ele é, quando a entrega pode ser dada por concluída e até quando a casa ainda pergunta à central?",
+      "owner": "delivery.courier-in-trouble",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:auto_complete_hold_until",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:auto_complete_hold_until"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "DRIVER_PHOTO_MAX_BYTES",
+            "DRIVER_PHOTO_SECONDS",
+            "PICKUP_EVENTS",
+            "REOPEN_TRANSFER",
+            "REOPEN_WITHDREW",
+            "SLOW_POLL_SECONDS",
+            "STALE_READ_MINUTES",
+            "_driver_photo_keys",
+            "alert_auto_completed_blind",
+            "auto_complete_hold_until",
+            "driver_photo",
+            "has_driver_photo",
+            "reading_is_fresh",
+            "record_pickup_event",
+            "remember_driver_photo",
+            "ride_open_too_long",
+            "sync_interval",
+            "vehicle_line"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_em_apuros.py::test_auto_complete_waits_while_the_driver_is_on_the_street",
+        "shopman/shop/tests/test_courier_em_apuros.py::test_auto_complete_without_ride_is_the_old_safety_net"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -10080,7 +10137,9 @@
             "KEY",
             "TERMINAL_STATUSES",
             "REFUSED_ALERT_TYPE",
-            "_REASON_KEYS"
+            "_REASON_KEYS",
+            "NOT_DELIVERED_ALERT_TYPE",
+            "record_not_delivered"
           ]
         }
       ],
@@ -10221,6 +10280,7 @@
         {
           "path": "shopman/shop/services/ifood_events.py",
           "symbols": [
+            "concluded_there_closes_here",
             "conclusion_allowed"
           ]
         }
@@ -10236,7 +10296,8 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_ifood_conclusion.py::test_remote_conclusion_eligibility_respects_handoff"
+        "shopman/shop/tests/test_ifood_conclusion.py::test_remote_conclusion_eligibility_respects_handoff",
+        "shopman/shop/tests/test_ifood_concluido_fecha.py::test_pedido_real_com_custodia_da_casa_continua_esperando"
       ],
       "test_gap_reason": null,
       "policy": true,
@@ -10271,7 +10332,17 @@
             "_ACK_BATCH",
             "_CHANGE_TYPE_LABEL",
             "_BLOCK_EXPLANATION",
-            "_RECONCILING"
+            "_RECONCILING",
+            "CANCELLED_NOT_APPLIED_ALERT",
+            "_CAN_CODE_KEYS",
+            "_CAN_ORIGIN_COPY",
+            "_CAN_ORIGIN_KEYS",
+            "_CAN_REASON_KEYS",
+            "_alert_cancelled_not_applied",
+            "_first_text",
+            "_record_cancellation_facts",
+            "cancellation_facts",
+            "cancellation_reason_copy"
           ]
         }
       ],
@@ -10525,7 +10596,7 @@
         "SHOPMAN_IFOOD"
       ],
       "tests": [
-        "shopman/storefront/tests/test_concierge_engine.py::test_run_agent_stops_offering_orders_when_the_channel_is_switched_off"
+        "shopman/storefront/tests/test_concierge_engine.py::test_the_turn_stops_offering_orders_when_the_channel_is_switched_off"
       ],
       "test_gap_reason": null,
       "policy": true,
@@ -10628,7 +10699,10 @@
             "expected_available",
             "check_store",
             "problem_copy",
-            "_alert_divergence"
+            "_alert_divergence",
+            "ALERT_STATUS_UNREADABLE_WINDOW_MINUTES",
+            "_alert_status_unreadable",
+            "alert_store_write_failed"
           ]
         }
       ],
@@ -14231,7 +14305,9 @@
             "_GATEWAY_NAMES",
             "_GATEWAY_REFUSALS",
             "_REFUND_ALL_STATUSES",
-            "_PAYMAN_REFUND_REASONS"
+            "_PAYMAN_REFUND_REASONS",
+            "retained_q",
+            "refund_ceiling_q"
           ]
         }
       ],
@@ -16704,6 +16780,74 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_order_date_before_batch.py::TestRecusaAntesDoFechamento::test_data_anterior_a_fornada_devolve_a_recusa_com_item_e_dia"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "waitlist.charge-waits-for-the-queue",
+      "question": "A cobrança deste pedido espera a fila da fornada, ou nasce no fechamento do pedido?",
+      "owner": "waitlist.charge-waits-for-the-queue",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.waitlist_charge:charge_waits_for_the_queue",
+      "authoritative_symbols": [
+        "shopman.shop.policies.waitlist_charge:charge_waits_for_the_queue"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/waitlist_charge.py",
+          "symbols": [
+            "charge_waits_for_the_queue"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_fila_de_hoje_cobra_na_confirmacao.py::test_pedido_na_fila_da_fornada_de_hoje_nao_nasce_cobrado"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "stock.promise-expiry-margin",
+      "question": "Quantos dias de validade o saldo precisa ter depois da data que se lê ou reserva?",
+      "owner": "stock.promise-expiry-margin",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.promise_expiry_margin:expiry_margin_for_target",
+      "authoritative_symbols": [
+        "shopman.shop.policies.promise_expiry_margin:expiry_margin_for_target"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/promise_expiry_margin.py",
+          "symbols": [
+            "FUTURE_TARGET_EXPIRY_MARGIN_DAYS",
+            "expiry_margin_for_target"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_sobra_de_hoje_nao_lastreia_encomenda.py::TestTheRule::test_today_keeps_the_channel_margin",
+        "shopman/shop/tests/test_sobra_de_hoje_nao_lastreia_encomenda.py::TestTheRule::test_future_target_asks_for_one_more_day_of_validity"
       ],
       "test_gap_reason": null,
       "policy": true,
@@ -19344,6 +19488,159 @@
       "out_of_extraction": false
     },
     {
+      "entrypoint_kind": "symbol",
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "test_gap_reason": null,
+      "out_of_extraction": false,
+      "id": "shop.no-show-policy",
+      "question": "A partir de quando o Gestor pode encerrar como não retirado um pedido de retirada que ficou pronto (tolerância, corte do pago)?",
+      "owner": "order.no-show-policy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.no_show_policy:resolve_no_show_policy",
+      "authoritative_symbols": [
+        "shopman.shop.policies.no_show_policy:NoShowPolicy"
+      ],
+      "sources": [
+        {
+          "path": "shopman/shop/policies/no_show_policy.py",
+          "symbols": [
+            "DEFAULT_TOLERANCE_MINUTES",
+            "DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE",
+            "DEFAULT_PAID_WAITS_CUTOFF",
+            "BLOCK",
+            "NoShowPolicy",
+            "_minutes",
+            "resolve_no_show_policy"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_no_show_service.py::test_policy_reads_the_shop_block_and_ignores_garbage"
+      ],
+      "policy": true
+    },
+    {
+      "entrypoint_kind": "symbol",
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "test_gap_reason": null,
+      "out_of_extraction": false,
+      "id": "order.no-show-customer-copy",
+      "question": "O que o cliente lê quando o pedido dele é encerrado como não retirado, e o que a frase diz sobre o dinheiro?",
+      "owner": "order.no-show-customer-copy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.no_show_reason:customer_text",
+      "authoritative_symbols": [
+        "shopman.shop.policies.no_show_reason:customer_text"
+      ],
+      "sources": [
+        {
+          "path": "shopman/shop/policies/no_show_reason.py",
+          "symbols": [
+            "KEY",
+            "LABEL",
+            "BASE_TEXT",
+            "customer_text",
+            "_amount"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_no_show_service.py::test_preview_says_everything_before_the_gesture_and_writes_nothing"
+      ],
+      "policy": true
+    },
+    {
+      "entrypoint_kind": "symbol",
+      "domains": [
+        "orderman"
+      ],
+      "ports": [
+        "adapter:catalog",
+        "adapter:stock"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "test_gap_reason": null,
+      "out_of_extraction": false,
+      "id": "order.no-show",
+      "question": "O pedido de retirada pronto que o cliente não veio buscar: quem pode encerrá-lo, a partir de quando, o que volta à venda, o que é perda e quanto do dinheiro volta ao cliente?",
+      "owner": "order.no-show",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.no_show:mark_not_picked_up",
+      "authoritative_symbols": [
+        "shopman.shop.services.no_show:mark_not_picked_up",
+        "shopman.shop.services.no_show:decide_destiny"
+      ],
+      "sources": [
+        {
+          "path": "shopman/shop/services/no_show.py",
+          "symbols": [
+            "ORDER_DATA_KEY",
+            "REASON",
+            "RESTOCK",
+            "LOSS",
+            "WHY_MADE_TO_ORDER",
+            "WHY_NO_STOCK",
+            "WHY_LOT_EXPIRED",
+            "MOVE_SOURCE",
+            "_GATEWAY_REFUND_DESTINATION",
+            "NoShowRefused",
+            "NoShowStale",
+            "LineFacts",
+            "decide_destiny",
+            "_decimal",
+            "_decimal_text",
+            "_merchandise_items",
+            "_components",
+            "_hold_entries",
+            "_line_facts",
+            "next_selling_day",
+            "line_decisions",
+            "money_split",
+            "_refund_destination",
+            "money_sentence",
+            "is_candidate",
+            "eligibility_reason",
+            "_paid_q",
+            "_commitment_day",
+            "release_gate",
+            "_when",
+            "block_reason",
+            "_plan",
+            "_revision",
+            "revision",
+            "preview",
+            "mark_not_picked_up",
+            "stock_plan"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",
+        "shopman/shop/tests/test_no_show_service.py::test_destiny_is_decided_from_facts_in_one_place",
+        "shopman/shop/tests/test_no_show_stock.py::test_the_whole_gesture_moves_the_stock_through_the_cancellation"
+      ],
+      "policy": false
+    },
+    {
       "id": "preorder.closed-day-orders",
       "question": "Como o fechamento de uma data no calendário encontra e avisa os pedidos em aberto comprometidos para aquele dia?",
       "owner": "preorder.closed-day",
@@ -19374,6 +19671,45 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_closed_day_orders.py::test_closed_day_orders_finds_open_orders_and_alerts"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "conversational.house-policy-read",
+      "question": "Que política da casa a porta de leitura do comércio conversacional sabe afirmar, e o que ela diz que não sabe?",
+      "owner": "conversational.house-policy-read",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.conversational.commerce_read:ShopmanCommerceRead.read_policy",
+      "authoritative_symbols": [
+        "shopman.shop.conversational.commerce_read:ShopmanCommerceRead.read_policy"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/conversational/commerce_read.py",
+          "symbols": [
+            "ShopmanCommerceRead"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "offerman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:stock"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_conversational_read_ports.py::test_read_policy_states_only_the_house_hours"
       ],
       "test_gap_reason": null,
       "policy": false,

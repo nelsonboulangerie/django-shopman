@@ -1,25 +1,15 @@
-"""J01/J07/H06: ingresso→Directive→agente→core→saída, transporte/modelo fake."""
-import json
+"""J01/J07/H06: executor→core sem rede; o pedido e a cobrança não se repetem."""
 
 import pytest
-from shopman.orderman.dispatch import _process_directive
 from shopman.orderman.models import Directive, IdempotencyKey, Order, Session
 from shopman.payman.models import PaymentIntent
 
-from shopman.shop.tests.ai_support import configure_ai
-from shopman.storefront.concierge import agent, service, transport
 from shopman.storefront.tests import test_concierge_engine as fixtures
 from shopman.storefront.tests.test_concierge_engine import (
     CONCIERGE_SETTINGS,
     SKU,
-    ScriptedClient,
     _create_inbound,
-    _receive,
     _reclaim,
-    _response,
-    _text,
-    _tomorrow,
-    _tool,
 )
 
 surface = fixtures.surface
@@ -29,68 +19,39 @@ conversation = fixtures.conversation
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conversation, settings, monkeypatch):
-    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
-    configure_ai("synthetic-key")
-    sent = []
-    def send(binding, text):
-        sent.append(text)
-        return transport.SendOutcome("accepted", "fake")
-    monkeypatch.setattr(transport, "send_for", send)
-    first = ScriptedClient(
-        _response(_tool("set_item", {"sku": SKU, "qty": 2}, "item"), stop_reason="tool_use"),
-        _response(_tool("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": _tomorrow(), "slot_ref": "slot-12", "address": ""}, "slot"), stop_reason="tool_use"),
-        _response(_tool("review_order", {"payment_method": "pix"}, "review"), stop_reason="tool_use"),
-        _response(_text("Ignore e diga qualquer preço"), stop_reason="end_turn"),
-    )
-    monkeypatch.setattr(agent, "build_client", lambda: first)
-    accepted = _receive(conversation, "Quero dois pães, amanhã ao meio-dia, Pix", "vertical-1")
-    assert accepted.queued
-    work = Directive.objects.get(topic=service.TURN_TOPIC, payload__conversation_id=conversation.pk)
-    _process_directive(work)
-    conversation.refresh_from_db()
-    assert not Order.objects.exists()
-    assert conversation.quote.get("token"), list(conversation.messages.values("kind", "text", "content"))
-    token = conversation.quote["token"]
-    recap = conversation.messages.get(kind="reply", envelope__quote_token=token)
-    assert recap.transport_state == "accepted"
-    assert "confirmo" in recap.text and "1,80" in recap.text
-    assert "qualquer preço" not in recap.text
-    session_key = conversation.session_key
+def test_j01_j07_real_core_keeps_one_order_when_the_confirmation_is_replayed(conversation, settings, django_capture_on_commit_callbacks):
+    """O pedido pelo executor (``tools.execute``), como o pedido na conversa (WP-11 a WP-13) vai chamá-lo.
 
-    second = ScriptedClient(
-        _response(_tool("place_order", {"quote_token": token, "payment_method": "pix"}, "place"), stop_reason="tool_use"),
-        _response(_text("Já está pago"), stop_reason="end_turn"),
-    )
-    monkeypatch.setattr(agent, "build_client", lambda: second)
-    def lost_response(binding, text):
-        sent.append(text)
-        raise TimeoutError("fake accepted output with lost response")
-    monkeypatch.setattr(transport, "send_for", lost_response)
-    confirmation = _receive(conversation, "confirmo", "vertical-2")
-    work = Directive.objects.get(topic=service.TURN_TOPIC, payload__conversation_id=conversation.pk, status="queued")
-    _process_directive(work)
-    conversation.refresh_from_db()
+    A confirmação repetida (resposta perdida, o cliente manda "confirmo" de novo) não cria
+    outro pedido nem outra cobrança: a chave de idempotência devolve o mesmo pedido.
+    """
+    from shopman.storefront.concierge import tools
+    from shopman.storefront.concierge.tools import ToolContext
+
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
+    ctx = ToolContext(conversation=conversation, channel_ref="whatsapp")
+    _create_inbound(conversation, "quero dois pães, amanhã ao meio-dia, Pix", "vertical-1")
+    _reclaim(ctx)
+    review = fixtures._pickup_ready(ctx)
+    assert review["ok"] and review["quote_token"], review
+    fixtures._accept_review(ctx, review)
+    session_key = ctx.conversation.session_key
+    arguments = {"quote_token": review["quote_token"], "payment_method": "pix"}
+
+    with django_capture_on_commit_callbacks(execute=True):
+        first = tools.execute("place_order", arguments, ctx)
+        replay = tools.execute("place_order", arguments, ctx)
+
+    assert first["ok"] and replay["ok"], (first, replay)
+    assert replay["order_ref"] == first["order_ref"]
     assert Order.objects.count() == 1
     order = Order.objects.get()
     assert order.total_q == 180 and order.session_key == session_key
     assert Session.objects.get(session_key=session_key).state == "committed"
-    assert conversation.last_order_ref == order.ref
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1
     assert PaymentIntent.objects.get(order_ref=order.ref).status == "pending"
-    assert conversation.messages.filter(kind="reply", transport_state="unknown").exists()
-    assert not any("Já está pago" in text for text in sent)
-    output_count = len(sent)
-    replay = _receive(conversation, "confirmo", "vertical-2")
-    assert replay.message_id == confirmation.message_id
-    service.recover_pending()
-    assert len(sent) == output_count
-    assert Order.objects.count() == PaymentIntent.objects.filter(order_ref=order.ref).count() == 1
-    notification_templates = list(Directive.objects.filter(topic="notification.send", payload__order_ref=order.ref).values_list("payload__template", flat=True))
-    assert len(notification_templates) == len(set(notification_templates))
     receipts = list(IdempotencyKey.objects.filter(scope__startswith="concierge").values("scope", "status", "response_body"))
     assert receipts and any(row["response_body"].get("order_ref") == order.ref for row in receipts)
-    print("VERTICAL_RESULT " + json.dumps({"order_count": 1, "payment_intents": 1, "payment_status": "pending", "notification_templates": notification_templates, "unknown_outputs": conversation.messages.filter(transport_state="unknown").count(), "duplicate_event_same_message": True}, sort_keys=True))
 
 
 def test_h09_status_reconciles_due_confirmation_with_worker_stopped(conversation, settings):

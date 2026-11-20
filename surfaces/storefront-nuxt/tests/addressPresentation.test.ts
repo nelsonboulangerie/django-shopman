@@ -18,7 +18,8 @@ import {
   nextFocusAfterSuggestion,
   resolvePreselectedAddress,
   stillFailingErrors,
-  savedAddressDisplayLabel,
+  savedAddressLines,
+  savedAddressTag,
   selectionFromDraft,
   selectionFromSavedAddress,
   structuredFromDraft,
@@ -289,8 +290,57 @@ describe('label depois', () => {
   })
 
   it('prefers the custom label for display', () => {
-    expect(savedAddressDisplayLabel({ label: 'Outro', label_key: 'other', label_custom: 'Casa da mãe' })).toBe('Casa da mãe')
-    expect(savedAddressDisplayLabel({ label: 'Casa', label_key: 'home', label_custom: '' })).toBe('Casa')
+    expect(savedAddressTag({ label: 'Outro', label_key: 'other', label_custom: 'Casa da mãe' })).toBe('Casa da mãe')
+    expect(savedAddressTag({ label: 'Casa', label_key: 'home', label_custom: '' })).toBe('Casa')
+  })
+
+  // #2775: "Outro" sem nome é o endereço que ninguém etiquetou (o que o pedido de
+  // entrega grava). Não há etiqueta a mostrar: quem fala é o endereço.
+  it('has no label for an address nobody labeled', () => {
+    expect(savedAddressTag({ label: 'Outro', label_key: 'other', label_custom: '' })).toBe('')
+    expect(savedAddressTag({ label: 'Outro', label_key: 'other', label_custom: '   ' })).toBe('')
+  })
+
+  // A etiqueta que o cliente escreveu à mão vale como qualquer outra, mesmo "Entrega".
+  it('keeps a label the customer wrote by hand', () => {
+    expect(savedAddressTag({ label: 'Entrega', label_key: 'other', label_custom: 'Entrega' })).toBe('Entrega')
+  })
+
+  // #2775: com etiqueta, três linhas; sem etiqueta, duas. A rua leva o número e o
+  // complemento, como no PDV; embaixo, bairro e cidade; o CEP não aparece.
+  it('lists a labeled address as label, street and place', () => {
+    expect(savedAddressLines(savedAddress())).toEqual({
+      title: 'Casa',
+      lines: ['R. das Flores, 123, Apto 4B', 'Jardim · Londrina/PR']
+    })
+  })
+
+  it('lists an address nobody labeled by its street, with the place below', () => {
+    const untagged = savedAddress({ label: 'Outro', label_key: 'other', label_custom: '' })
+    expect(savedAddressLines(untagged)).toEqual({
+      title: 'R. das Flores, 123, Apto 4B',
+      lines: ['Jardim · Londrina/PR']
+    })
+  })
+
+  it('the same address reads the same with or without a label', () => {
+    const tagged = savedAddressLines(savedAddress({ label: 'Mãe', label_key: 'other', label_custom: 'Mãe' }))
+    const untagged = savedAddressLines(savedAddress({ label: 'Outro', label_key: 'other', label_custom: '' }))
+    expect(tagged.lines).toEqual([untagged.title, ...untagged.lines])
+  })
+
+  it('leaves out empty parts without stray commas or dots', () => {
+    expect(savedAddressLines(savedAddress({ complement: '', neighborhood: '', state_code: '' }))).toEqual({
+      title: 'Casa',
+      lines: ['R. das Flores, 123', 'Londrina']
+    })
+  })
+
+  it('falls back to the whole line when the street was not saved apart', () => {
+    const legacy = savedAddress({ label: 'Outro', label_key: 'other', label_custom: '', route: '', street_number: '' })
+    expect(savedAddressLines(legacy)).toEqual({ title: `${legacy.formatted_address}, Apto 4B`, lines: [] })
+    const legacyTagged = savedAddress({ route: '', street_number: '', complement: '' })
+    expect(savedAddressLines(legacyTagged)).toEqual({ title: 'Casa', lines: [legacyTagged.formatted_address] })
   })
 
   it('names the chosen label for the post-order confirmation', () => {

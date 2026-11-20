@@ -1018,6 +1018,12 @@ def refund(
     if idempotency_key is None:
         idempotency_key = f"order-refund:{order.ref}"
 
+    # Pedido não retirado: "devolve tudo" vira "devolve o que não ficou com a
+    # loja" (:func:`retained_q`). Quem passa ``amount_q`` (devolução parcial,
+    # retry da directive com o valor já decidido) segue mandando.
+    if amount_q is None:
+        amount_q = refund_ceiling_q(order)
+
     # Todo intent capturado do pedido, não só o ``payment.intent_ref``: a venda
     # mista do terminal tem um intent por método, e o cancel dela devolve todos.
     # A fonte é o Payman (livro), não o JSON: pedido antigo sem tenders com
@@ -1026,19 +1032,49 @@ def refund(
     # Não é estorno (nada foi pago); é o intent deixando de contar no saldo.
     if _pays_on_account(payment_data):
         _cancel_open_account_intents(order)
-    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
-
-    intents = [
-        (method, ref)
-        for method, ref in _refundable_intents(order, payment_data=payment_data)
-        if method != "cash" and method not in CARD_MACHINE_METHODS and not _asserted_at_terminal(ref)
-    ]
+    intents = _gateway_refund_intents(order, payment_data=payment_data)
     try:
         _refund_gateway_intents(
             order, intents, amount_q=amount_q, idempotency_key=idempotency_key, _from_directive=_from_directive,
         )
     finally:
         announce_card_machine_refund(order)
+
+
+def _gateway_refund_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
+    """``[(method, intent_ref)]`` que o estorno do pedido devolve pelo gateway.
+
+    Fora: dinheiro, maquininha e o que foi atestado no balcão (não têm gateway).
+    """
+    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
+
+    return [
+        (method, ref)
+        for method, ref in _refundable_intents(order, payment_data=payment_data)
+        if method != "cash" and method not in CARD_MACHINE_METHODS and not _asserted_at_terminal(ref)
+    ]
+
+
+def _intent_refund_key(idempotency_key: str, intents, intent_ref: str) -> str:
+    """A chave de UM intent no estorno do pedido.
+
+    Um intent só mantém a chave histórica (retries antigos continuam
+    deduplicando); com vários, cada estorno tem a sua.
+    """
+    return idempotency_key if len(intents) == 1 else f"{idempotency_key}:{intent_ref}"
+
+
+def order_refund_gateway_key(order, intent_ref: str, *, idempotency_key: str | None = None) -> str:
+    """A chave que o estorno AUTOMÁTICO do pedido apresentou ao gateway para ``intent_ref``.
+
+    É a mesma regra de :func:`refund` (chave padrão ``order-refund:{ref}``, ou a
+    que a directive carregou). Serve a quem precisa REAPRESENTAR aquele estorno
+    em vez de abrir outro: a tentativa que ficou sem resposta do gateway pode
+    ter saído, e só a mesma chave o faz devolver a mesma devolução.
+    """
+    payment_data = (order.data or {}).get("payment", {})
+    base = idempotency_key or f"order-refund:{order.ref}"
+    return _intent_refund_key(base, _gateway_refund_intents(order, payment_data=payment_data), intent_ref)
 
 
 def _refund_gateway_intents(order, intents, *, amount_q, idempotency_key, _from_directive) -> None:
@@ -1051,9 +1087,7 @@ def _refund_gateway_intents(order, intents, *, amount_q, idempotency_key, _from_
             intent_ref=intent_ref,
             method=method,
             amount_q=remaining_q,
-            # Um intent só mantém a chave histórica (retries antigos continuam
-            # deduplicando); com vários, cada estorno tem a sua.
-            idempotency_key=idempotency_key if len(intents) == 1 else f"{idempotency_key}:{intent_ref}",
+            idempotency_key=_intent_refund_key(idempotency_key, intents, intent_ref),
             _from_directive=_from_directive,
         )
         if remaining_q is not None:
@@ -1134,6 +1168,42 @@ def _returned_q(order) -> int:
         for record in (order.data or {}).get("returns") or []
         if isinstance(record, dict)
     )
+
+
+def retained_q(order) -> int:
+    """Quanto do capturado FICA com a loja num pedido encerrado como não retirado.
+
+    A régua é uma só e mora no bloco ``order.data["no_show"]`` (WP-G11, "o
+    dinheiro segue o produto"): o valor das linhas que se perderam. Sem o
+    bloco, zero: um cancelado comum devolve tudo, como sempre.
+    """
+    block = (order.data or {}).get("no_show")
+    if not isinstance(block, dict):
+        return 0
+    try:
+        return max(0, int(block.get("retained_q") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def refund_ceiling_q(order, *, payment_reads=None) -> int | None:
+    """O teto do que AINDA volta ao cliente num pedido com valor retido.
+
+    ``capturado líquido − retido``, nunca negativo: cada estorno que sai baixa o
+    capturado, então o teto encolhe sozinho e a segunda chamada não devolve de
+    novo. ``None`` quando não há retido (sem teto: o pedido devolve tudo).
+
+    Payman mudo devolve ``0``: sem saber quanto entrou, não se devolve o que
+    pode ser da loja. A conciliação do dia acusa o saldo que sobrar.
+    """
+    kept_q = retained_q(order)
+    if kept_q <= 0:
+        return None
+    captured = captured_balance_q(order, payment_reads=payment_reads)
+    if captured is None:
+        logger.warning("payment.refund_ceiling_unreadable order=%s", order.ref)
+        return 0
+    return max(0, captured - kept_q)
 
 
 def refund_reason(order) -> str:
@@ -1243,11 +1313,17 @@ def cancelled_money(order) -> CancelledMoney | None:
         paid = [intent for intent, captured, _ in totals if captured > 0]
         money_method = "pix" if str(paid[0].method or "") == "pix" else "card"
         late_pix = any((intent.gateway_data or {}).get("booked_by") == "pix_confirmation" for intent in paid)
-        if refunded_q >= captured_q:
-            return CancelledMoney("refunded", amount_q=captured_q, method=money_method, late_pix=late_pix)
+        # Não retirado: o que volta é o capturado menos o que ficou com a loja.
+        # Quando nada volta, não há devolução a contar: quem explica é o texto
+        # do motivo (``policies/no_show_reason``).
+        returnable_q = captured_q - min(captured_q, retained_q(order))
+        if returnable_q <= 0:
+            return None
+        if refunded_q >= returnable_q:
+            return CancelledMoney("refunded", amount_q=returnable_q, method=money_method, late_pix=late_pix)
         return CancelledMoney(
             "refund_requested",
-            amount_q=captured_q - refunded_q,
+            amount_q=returnable_q - refunded_q,
             method=money_method,
             late_pix=late_pix,
         )
@@ -1259,6 +1335,155 @@ def cancelled_money(order) -> CancelledMoney | None:
     ):
         return CancelledMoney("card_hold_released", method="card")
     return CancelledMoney("nothing_charged", method="pix" if method == "pix" else "card")
+
+
+# ── O que ainda volta pelo meio de pagamento online ──────────────────────────
+
+#: Quem registra dinheiro fora da cobrança do pedido (``gateway_data.booked_by``):
+#: o Pix que caiu numa cobrança já encerrada (``pix_confirmation``) e o cartão pago
+#: depois de o balcão receber (``counter_takeover.handle_late_stripe_payment``).
+OUTSIDE_CHARGE_BOOKERS = frozenset({"pix_confirmation", "counter_takeover"})
+
+
+def booked_outside_charge(intent) -> bool:
+    """Este intent é dinheiro registrado FORA da cobrança que ele substitui?
+
+    A cobrança morta ocupa o par único ``(gateway, gateway_id)`` do Payman, então o
+    dinheiro que chega depois dela ganha um intent próprio com ``gateway=""`` e a
+    cobrança morta em ``superseded_intent_ref``. Ele não é maquininha: volta pelo
+    gateway da cobrança substituída (:func:`_adapter_for_persisted_intent`).
+    """
+    data = getattr(intent, "gateway_data", None) or {}
+    superseded = str(data.get("superseded_intent_ref") or "")
+    return data.get("booked_by") in OUTSIDE_CHARGE_BOOKERS and bool(superseded) and superseded != intent.ref
+
+
+def _net_held_q(intent) -> int:
+    from shopman.payman import PaymentService
+
+    return (
+        PaymentService.captured_total(intent.ref)
+        - PaymentService.refunded_total(intent.ref)
+        - PaymentService.chargeback_total(intent.ref)
+    )
+
+
+def _counter_refund_claims_q(order, due_q: int) -> int:
+    """Quanto de ``due_q`` a gaveta e a maquininha já devolvem, pelas listas do PDV.
+
+    A ordem é a de :func:`card_machine_refund_due`: o dinheiro primeiro (o operador
+    entrega nota, não estorna cartão pela metade), depois a maquininha. Só conta o
+    pedido que as listas mostram (:func:`pending_cash_refunds`,
+    :func:`pending_card_machine_refunds`): o que elas não mostram ninguém devolve
+    por lá, e descontar dali deixaria o cliente sem a devolução.
+    """
+    from shopman.payman.models import PaymentIntent
+
+    data = order.data or {}
+    listed = str(order.status) in _REFUND_ALL_STATUSES or order_composition.KEY in data or "returns" in data
+    if not listed or due_q <= 0:
+        return 0
+    cash_q, _ = _held_refund_balance(
+        PaymentIntent.objects.filter(order_ref=order.ref, method="cash", status__in={"captured", "refunded"})
+    )
+    machine_q, _ = card_machine_refund_due(order)
+    return min(due_q, max(0, cash_q) + machine_q)
+
+
+def gateway_refund_owed_q(order) -> int:
+    """Quanto o pedido ainda tem a devolver PELO MEIO DE PAGAMENTO ONLINE (Pix, cartão online). Só LÊ.
+
+    Cada caso lê a régua que o estorno automático dele usou, nunca uma conta nova:
+
+    - **cancelado digital** (Pix, cartão online): :func:`cancelled_money`, já
+      descontado o que fica com a loja no "não retirado" (:func:`refund_ceiling_q`);
+    - **cancelado ou devolvido inteiro, de outro meio**: o saldo de todas as
+      cobranças do pedido, com o mesmo teto;
+    - **pedido vivo**: o que entrou a mais do que ele vale agora
+      (:func:`overpaid_q`: a devolução de parte da venda, a encomenda editada que
+      ficou mais barata), mais o pagamento digital que chegou depois de o balcão
+      receber (``counter_takeover.late_payment_of_takeover``), que volta inteiro.
+
+    Fora do cancelado digital, sai antes o que a gaveta e a maquininha devolvem
+    (:func:`_counter_refund_claims_q`): o mesmo dinheiro nunca é pedido por dois
+    caminhos. ``0`` quando não há o que devolver ou o Payman não respondeu.
+    """
+    money = cancelled_money(order)
+    if money is not None:
+        if money.outcome != "refund_requested":
+            return 0
+        owed_q = int(money.amount_q or 0)
+        ceiling_q = refund_ceiling_q(order)
+        return max(0, owed_q if ceiling_q is None else min(owed_q, ceiling_q))
+
+    from shopman.payman import PaymentService
+
+    from shopman.shop.services import counter_takeover
+
+    try:
+        intents = list(PaymentService.get_by_order(order.ref).filter(status__in=("captured", "refunded")).order_by("id"))
+        if str(order.status) in _REFUND_ALL_STATUSES:
+            due_q = sum(max(0, _net_held_q(intent)) for intent in intents)
+            ceiling_q = refund_ceiling_q(order)
+            if ceiling_q is not None:
+                due_q = min(due_q, ceiling_q)
+            return max(0, due_q - _counter_refund_claims_q(order, due_q))
+        due_q = overpaid_q(order)
+        due_q -= _counter_refund_claims_q(order, due_q)
+        charged = set(order_intent_refs(order))
+        late_q = sum(
+            max(0, _net_held_q(intent))
+            for intent in intents
+            if intent.ref not in charged and counter_takeover.late_payment_of_takeover(order, intent)
+        )
+        return max(0, due_q) + late_q
+    # silêncio-deliberado: sem o Payman, nada se afirma devido (e nada se pede de novo).
+    except Exception:
+        logger.warning("payment.gateway_refund_owed_unreadable order=%s", order.ref, exc_info=True)
+        return 0
+
+
+def gateway_refund_legs(order, owed_q: int) -> tuple[tuple[str, str, int], ...]:
+    """``((intent_ref, method, amount_q), …)``: ``owed_q`` repartido pelas cobranças online que ainda guardam dinheiro.
+
+    A rota é a de ``order_edit.refund_route`` (dinheiro, maquininha e o atestado no
+    balcão ficam de fora); cada cobrança devolve no máximo o que guarda.
+    """
+    from shopman.payman import PaymentService
+
+    from shopman.shop.services.order_edit import ROUTE_GATEWAY, refund_route
+
+    legs: list[tuple[str, str, int]] = []
+    remaining_q = int(owed_q or 0)
+    for intent in PaymentService.get_by_order(order.ref).filter(status__in=("captured", "refunded")).order_by("id"):
+        if remaining_q <= 0:
+            break
+        if refund_route(intent) != ROUTE_GATEWAY:
+            continue
+        held_q = _net_held_q(intent)
+        if held_q <= 0:
+            continue
+        amount_q = min(held_q, remaining_q)
+        legs.append((intent.ref, str(intent.method or ""), amount_q))
+        remaining_q -= amount_q
+    return tuple(legs)
+
+
+def refund_retry_available(order) -> bool:
+    """O Gestor tem por onde pedir de novo o estorno deste pedido?
+
+    É a régua do "Tentar o estorno de novo" (``backstage.services.refund_retry``):
+    há dinheiro a devolver pelo meio online (:func:`gateway_refund_owed_q`) e uma
+    cobrança online que o guarda (:func:`gateway_refund_legs`). O aviso do sino a
+    usa para dizer o que fazer: no Gestor, quando o botão existe; o suporte, quando
+    não existe. Nunca levanta.
+    """
+    try:
+        return bool(gateway_refund_legs(order, gateway_refund_owed_q(order)))
+    # silêncio-deliberado: na dúvida, o aviso fica com o suporte, que é quem resolve sem o botão.
+    except Exception:
+        logger.warning("payment.refund_retry_available_unreadable order=%s", order.ref, exc_info=True)
+        return False
 
 
 def record_card_decline(order, *, code: str = "", intent_ref: str = "") -> None:
@@ -1482,6 +1707,11 @@ def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashR
         reason = refund_reason(order)
         if str(order.status) not in _REFUND_ALL_STATUSES:
             balance_q = min(balance_q, overpaid_q(order))
+        else:
+            # Não retirado: só o devolvível sai da gaveta; o retido fica.
+            ceiling_q = refund_ceiling_q(order)
+            if ceiling_q is not None:
+                balance_q = min(balance_q, ceiling_q)
         if balance_q <= 0:
             continue
         data = order.data or {}
@@ -1561,6 +1791,8 @@ def card_machine_refund_due(order, *, intents=None) -> tuple[int, list[str]]:
 
     - venda cancelada ou devolvida inteira: o pedido não vale nada, volta tudo
       o que entrou pela maquininha;
+    - pedido não retirado (``order.data["no_show"]``): volta só o devolvível
+      (:func:`refund_ceiling_q`); o retido fica com a loja;
     - pedido vivo: vale o total efetivo (``order_composition``, a encomenda
       editada) menos as devoluções parciais. O que entrou acima disso volta.
       O que o gateway (Pix, cartão online) já devolveu saiu do capturado, e o
@@ -1576,8 +1808,11 @@ def card_machine_refund_due(order, *, intents=None) -> tuple[int, list[str]]:
     if held_q <= 0:
         return 0, []
     if str(order.status) in _REFUND_ALL_STATUSES:
-        return held_q, refs
-    due_q = overpaid_q(order)
+        due_q = refund_ceiling_q(order)
+        if due_q is None:
+            return held_q, refs
+    else:
+        due_q = overpaid_q(order)
     if due_q <= 0:
         return 0, []
     from shopman.payman.models import PaymentIntent
@@ -1798,7 +2033,8 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
     ]
     # Venda cancelada devolve tudo; encomenda viva (editada, mais barata)
     # devolve só o que passou do total — nunca o dinheiro do que ela ainda vale.
-    limit_q = None if str(order.status) in _REFUND_ALL_STATUSES else overpaid_q(order)
+    # O não retirado é a exceção do cancelado: só o devolvível sai (o retido fica).
+    limit_q = refund_ceiling_q(order) if str(order.status) in _REFUND_ALL_STATUSES else overpaid_q(order)
     with db_transaction.atomic():
         # Trava os intents em dinheiro ANTES de ler saldo e contador: dois
         # "Devolvi em dinheiro" simultâneos (dois dispositivos, duplo toque com
@@ -2026,7 +2262,7 @@ _GATEWAY_REFUSALS = {
 
 
 def refund_intent_at_gateway(
-    intent_ref: str, *, amount_q: int, idempotency_key: str, actor: str
+    intent_ref: str, *, amount_q: int, idempotency_key: str, actor: str, origin: str = "Admin"
 ) -> PaymentResult:
     """Devolve ``amount_q`` de UMA cobrança pelo gateway dela (o estorno do Admin).
 
@@ -2044,7 +2280,9 @@ def refund_intent_at_gateway(
     MESMA devolução se a chave voltar, e o Payman deduplica pelo id dela. O duplo
     clique não devolve duas vezes.
 
-    Auditoria: ``actor`` entra no motivo da transação de estorno, que é imutável.
+    Auditoria: ``actor`` entra no motivo da transação de estorno, que é imutável,
+    ao lado de ``origin``: a tela de onde o pedido de estorno saiu (o Admin, ou o
+    Gestor no "Tentar o estorno de novo").
     """
     from shopman.payman import PaymentError, PaymentService
 
@@ -2078,7 +2316,7 @@ def refund_intent_at_gateway(
 
     try:
         result = adapter.refund(
-            intent_ref, amount_q=amount_q, reason=f"Estorno no Admin por {actor}", idempotency_key=idempotency_key
+            intent_ref, amount_q=amount_q, reason=f"Estorno no {origin} por {actor}", idempotency_key=idempotency_key
         )
     except Exception as exc:
         # Timeout/5xx em volta de uma devolução idempotente é AMBÍGUO: o gateway
@@ -2086,13 +2324,23 @@ def refund_intent_at_gateway(
         logger.error("payment.admin_refund: falha ambígua (%s) intent=%s: %s", gateway, intent_ref, exc)
         from shopman.shop.services.observability import create_operator_alert
 
+        if origin == "Gestor":
+            # O sino do balcão: o Gestor reapresenta a mesma chave na tentativa seguinte
+            # (``refund_retry``), então tentar de novo não devolve duas vezes.
+            ambiguous = (
+                f"O estorno do pedido {intent.order_ref or intent_ref}, tentado de novo no Gestor de pedidos, "
+                "ficou sem resposta do meio de pagamento, e pode ter saído. Tente de novo no Gestor em "
+                "alguns minutos: a tentativa seguinte confere esta e não devolve duas vezes."
+            )
+        else:
+            ambiguous = (
+                f"O estorno da cobrança {intent_ref}, pedido no {origin}, ficou sem resposta ({gateway}). "
+                "O dinheiro pode ter saído sem registro aqui: confira no painel antes de estornar de novo."
+            )
         create_operator_alert(
             type="payment_refund_failed",
             severity="critical",
-            message=(
-                f"O estorno da cobrança {intent_ref}, pedido no Admin, ficou sem resposta ({gateway}). "
-                "O dinheiro pode ter saído sem registro aqui: confira no painel antes de estornar de novo."
-            ),
+            message=ambiguous,
             order_ref=intent.order_ref or "",
             dedupe_key=f"admin_refund_ambiguous:{intent_ref}",
         )
@@ -2188,8 +2436,25 @@ def _refund_without_gateway(intent_ref: str, *, amount_q: int | None, idempotenc
     return PaymentResult(success=True, transaction_id=txn.gateway_id, amount_q=txn.amount_q)
 
 
+#: O que fazer, no aviso do estorno que não saiu: no Gestor, quando o pedido tem o
+#: botão "Tentar o estorno de novo" (:func:`refund_retry_available`); o suporte,
+#: quando não tem por onde tentar de novo daqui.
+REFUND_FAILED_RETRY_HERE = (
+    "No Gestor de pedidos, abra o pedido e toque em Tentar o estorno de novo, com a autorização "
+    "de um gerente; se o cliente perguntar, diga que o estorno está sendo feito."
+)
+REFUND_FAILED_SUPPORT = (
+    "O suporte recebeu este aviso por e-mail e resolve no Pix ou no cartão; se o cliente "
+    "perguntar, diga que o estorno está sendo feito."
+)
+
+
 def alert_refund_failed(order, intent_ref, amount_q, detail) -> None:
-    """Alerta crítico de operador para estorno falho — o dinheiro pode estar retido."""
+    """Alerta crítico de operador para estorno falho: o dinheiro pode estar retido.
+
+    A frase do que fazer depende do pedido: com o botão "Tentar o estorno de novo"
+    no Gestor, ela leva até ele; sem o botão, o suporte resolve (F-13).
+    """
     from shopman.utils.monetary import format_money
 
     from shopman.shop.services.observability import create_operator_alert
@@ -2200,14 +2465,14 @@ def alert_refund_failed(order, intent_ref, amount_q, detail) -> None:
         logger.debug("alert_refund_failed: money format failed for amount_q=%s", amount_q, exc_info=True)
         amount_display = "valor a apurar"
 
+    next_step = REFUND_FAILED_RETRY_HERE if refund_retry_available(order) else REFUND_FAILED_SUPPORT
+    reference = f" Referência do pagamento: {intent_ref}." if intent_ref else ""
     create_operator_alert(
         type="payment_refund_failed",
         severity="critical",
         message=(
             f"O estorno do pedido {order.ref} ({amount_display}) não saiu: {detail}. O dinheiro "
-            "do cliente pode estar retido. O suporte recebeu este aviso por e-mail e resolve no "
-            "Pix ou no cartão; se o cliente perguntar, diga que o estorno está sendo feito. "
-            f"Referência do pagamento: {intent_ref}."
+            f"do cliente pode estar retido. {next_step}{reference}"
         ),
         order_ref=order.ref,
         dedupe_key=f"payment_refund_failed:{order.ref}",

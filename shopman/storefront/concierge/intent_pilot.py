@@ -323,8 +323,8 @@ class IntentPilotMeasureHandler:
 # A Concierge em ``observe`` não decide nada ao vivo, e a entrada promete que
 # nenhuma mensagem sai da casa no caminho do webhook. A sombra roda aqui, no
 # ciclo do piloto, com o mesmo portão do comparador (a conexão do Jev liberada
-# para mensagem de cliente). A decisão do Jev é a que a triagem tomaria com
-# ``triage_classifier = "jev"`` (``triage.best_jev_intent``), menos a trava do
+# para mensagem de cliente). A decisão do Jev é a que a triagem toma no turno
+# (``triage.best_jev_intent``), menos a trava do
 # sensível, que a sombra guarda separada para a casa ver onde ela agiria.
 
 SHADOW_KEY = "triage_shadow"

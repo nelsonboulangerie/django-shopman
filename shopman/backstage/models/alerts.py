@@ -321,6 +321,10 @@ class OperatorAlert(models.Model):
         # "outra mesa": operação geral, no Admin, sem acordar o balcão.
         ("concierge_handoff", "WhatsApp: conversa para a equipe"),
         ("concierge_other_desk", "WhatsApp: mensagem para outra mesa"),
+        # "Vou verificar" (WP-05): a parte sem fato que a Concierge perguntou à equipe.
+        # A conversa segue com a Concierge; a equipe responde no cartão e a resposta
+        # volta ao cliente por ela, ou alguém assume a conversa. Sino do Gestor.
+        ("concierge_verify", "WhatsApp: cliente espera a resposta da equipe"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
         ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
         ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
@@ -352,6 +356,18 @@ class OperatorAlert(models.Model):
         # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
         # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
         ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
+        # Preparo, pronto ou saída esgotaram as tentativas sem chegar ao iFood: o
+        # pedido andou aqui e parou lá (16/11/2026, DEV-2026-041).
+        ("ifood_status_not_delivered", "iFood não recebeu uma etapa do pedido"),
+        # O pedido de cancelamento da loja esgotou as tentativas: o pedido destrava
+        # aqui e continua ativo no iFood.
+        ("ifood_cancellation_not_delivered", "Cancelamento não chegou ao iFood"),
+        # O iFood cancelou um pedido que aqui já estava pronto ou saiu: a transição
+        # não existe no fluxo local, e sem aviso a equipe entregaria um cancelado.
+        ("ifood_cancelled_not_applied", "iFood cancelou pedido que segue ativo aqui"),
+        # O iFood avisou que o pedido andou (confirmou, saiu, concluiu) e aqui ele
+        # ficou para trás por mais de 3 h: o operador encerra (reconcile_ifood_orders).
+        ("ifood_order_behind", "Pedido atrasado aqui em relação ao iFood"),
         # O gestor fechou no calendário um dia que já tinha pedido em aberto
         # marcado (encomenda paga, inclusive). Fechar não cancela nem remarca:
         # o aviso, um por pedido, é para alguém remarcar ou falar com o cliente.
@@ -439,9 +455,14 @@ class OperatorAlert(models.Model):
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",
+        "concierge_verify",
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",
+        "ifood_status_not_delivered",
+        "ifood_cancellation_not_delivered",
+        "ifood_cancelled_not_applied",
+        "ifood_order_behind",
         "ifood_poll_stale",
         "fiscal_return_note_due",
         "order_on_closed_day",

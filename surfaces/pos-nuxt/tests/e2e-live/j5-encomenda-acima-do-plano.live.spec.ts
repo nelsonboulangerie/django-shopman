@@ -60,8 +60,9 @@ async function identifiesCustomer(page: Page) {
   }).toPass({ timeout: 30_000 });
 }
 
+// A ordem do funil (WP-E13, #2754): depois do cliente vem "para quando", e só
+// então o recebimento.
 async function schedulesTomorrowPickup(page: Page) {
-  await page.locator('[data-order-fulfillment="pickup"]').locator("visible=true").first().click();
   await page.getByRole("radio", { name: /^Amanhã/ }).locator("visible=true").first().click();
   const slot = page
     .locator('[data-order-step="schedule"]')
@@ -70,6 +71,8 @@ async function schedulesTomorrowPickup(page: Page) {
     .and(page.locator(":enabled"))
     .first();
   await slot.click({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.locator("[data-order-fulfillment-options]").getByRole("radio", { name: /^Retirada/ }).click();
   await page.getByRole("button", { name: /Montar encomenda/ }).click();
   await expect(page.getByPlaceholder(/Buscar produto/).locator("visible=true").first()).toBeVisible({ timeout: 30_000 });
 }

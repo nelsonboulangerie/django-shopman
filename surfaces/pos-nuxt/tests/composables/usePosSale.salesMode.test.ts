@@ -54,7 +54,8 @@ describe("usePosSale — balcão e encomenda", () => {
     expect(h.handles.actionCall.mock.calls.some(([path]) => String(path).includes("/sale/review/"))).toBe(true);
   });
 
-  it("encomenda só libera itens após cliente selecionado, recebimento, data e conclusão", async () => {
+  // A ordem do dono (19/11/2026, #2754): cliente, PARA QUANDO, recebimento.
+  it("encomenda só libera itens após cliente selecionado, data, recebimento e conclusão", async () => {
     const h = createSale();
     const product = h.handles.posValue.value!.products[0]!;
     h.sale.setSalesMode("order");
@@ -71,12 +72,16 @@ describe("usePosSale — balcão e encomenda", () => {
     expect(h.sale.orderSetupIssue.value).toBe("customer");
     await blocked();
     h.sale.cart.customerRef = "CUST-A";
+    expect(h.sale.orderSetupIssue.value).toBe("schedule");
+    await blocked();
+    // Recebimento afirmado antes da data não pula a data: ela vem em segundo.
+    h.sale.cart.fulfillmentConfirmed = true;
+    expect(h.sale.orderSetupIssue.value).toBe("schedule");
+    h.sale.cart.fulfillmentConfirmed = false;
+    h.sale.cart.deliveryDate = "2026-09-12";
     expect(h.sale.orderSetupIssue.value).toBe("fulfillment");
     await blocked();
     h.sale.cart.fulfillmentConfirmed = true;
-    expect(h.sale.orderSetupIssue.value).toBe("schedule");
-    await blocked();
-    h.sale.cart.deliveryDate = "2026-09-12";
     expect(h.sale.orderSetupIssue.value).toBe("");
     h.sale.addProduct(product);
     expect(h.sale.cart.items).toHaveLength(0);

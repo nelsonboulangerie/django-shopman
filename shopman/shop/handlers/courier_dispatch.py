@@ -265,9 +265,11 @@ class CourierDispatchHandler:
                 courier._save_block(order, block, emit={"kind": "dispatched", "status": "D"})
                 order.emit_event(event_type="courier_ride_opened", actor=actor,
                                  payload={"id_mch": courier_ref, **({"ride_orders": stops} if len(stops) > 1 else {})})
-            seconds = courier.poll_seconds()
-            if seconds > 0 and locked:
-                # A leitura é da corrida, não do pedido: uma batida só, que aplica a todos.
+            if locked:
+                # A leitura é da corrida, não do pedido: uma batida só, que aplica a
+                # todos. Sempre agendada: sem polling (só webhook) ela é lenta, mas
+                # existe (``courier.sync_interval``).
+                seconds = courier.sync_interval(courier.get_block(locked[0]))
                 courier.schedule_sync(locked[0], delay_seconds=min(seconds, courier.FIRST_SYNC_SECONDS))
         self._settle_orders_that_left(locked, courier_ref)
 

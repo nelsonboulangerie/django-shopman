@@ -1649,24 +1649,14 @@ SHOPMAN_CONCIERGE = {
     "output_retry_enabled": _env_bool("CONCIERGE_OUTPUT_RETRY_ENABLED", False),
     "transfer_enabled": _env_bool("CONCIERGE_TRANSFER_ENABLED", False),
     "enabled": _env_bool("SHOPMAN_CONCIERGE_ENABLED", False),
-    # O modelo do concierge, da triagem e da leitura de intenções NÃO mora aqui:
-    # é a rota de IA de cada propósito (`Shop.ai_routes`, `shopman/shop/ai.py`).
-    "effort": os.environ.get("CONCIERGE_EFFORT", "medium"),
-    # Raciocínio adaptativo ligado explicitamente (Sonnet 5 / Opus 5). Sem ele o
-    # modelo pode escrever a chamada de ferramenta como texto. Haiku 4.5 não aceita.
-    "adaptive_thinking": _env_bool("CONCIERGE_ADAPTIVE_THINKING", True),
-    "max_tokens": int(os.environ.get("CONCIERGE_MAX_TOKENS", "1024")),
     # Canal de VENDA dos pedidos do chat (Channel.ref). Confirmação, pagamento e
     # estoque vêm da config desse canal, como em qualquer superfície.
     "channel_ref": os.environ.get("CONCIERGE_CHANNEL_REF", "whatsapp"),
-    # Janela de memória enviada ao modelo (mensagens) e teto diário por conversa.
-    "window_messages": int(os.environ.get("CONCIERGE_WINDOW_MESSAGES", "40")),
+    # Teto diário de turnos por conversa.
     "max_turns_per_day": int(os.environ.get("CONCIERGE_MAX_TURNS_PER_DAY", "80")),
     # Memória da conversa: por quantos dias o pedido entregue ou cancelado segue como
     # "pedido recente" ("chegou, obrigado", "esqueci o suco"), ou até o próximo pedido.
     "recent_order_days": int(os.environ.get("CONCIERGE_RECENT_ORDER_DAYS", "7")),
-    # Máximo de idas ao modelo num turno (cada ida pode chamar ferramentas).
-    "max_iterations": int(os.environ.get("CONCIERGE_MAX_ITERATIONS", "6")),
     # Segundos entre a chegada da mensagem e o processamento: o webhook responde
     # em milissegundos e a diretiva fica para o worker (nunca inline no request).
     "dispatch_delay_seconds": int(os.environ.get("CONCIERGE_DISPATCH_DELAY_SECONDS", "1")),
@@ -1678,29 +1668,11 @@ SHOPMAN_CONCIERGE = {
     # Continua UMA por conversa — o `suggestion_offered` em `Conversation.flags`.
     "suggest_add_ons": _env_bool("CONCIERGE_SUGGEST_ADD_ONS", True),
     # Triagem (D32, aprovada pelo dono em 02/10/2026): toda mensagem ganha uma das
-    # 12 intenções e uma urgência. A regra local roda sempre; com o modelo ligado,
-    # ele propõe intenção, urgência e o resumo de uma ou duas linhas. Sem chave ou
-    # com falha, vale a regra local. O modelo é o da rota de IA `triage`.
+    # 12 intenções e uma urgência. A regra local roda sempre; com esta chave ligada,
+    # o Jev (a conexão de IA do propósito `decision`, D-028) propõe a intenção e
+    # diz se a mensagem traz mais de uma parte. A triagem não chama modelo de texto
+    # (WP-08). Sem aprovação, sem chave ou com falha, vale a regra local.
     "triage_with_model": _env_bool("CONCIERGE_TRIAGE_WITH_MODEL", True),
-    # Quem propõe a intenção quando o modelo está ligado: `anthropic` (o modelo
-    # da rota `triage`) ou `jev` (a conexão de IA do propósito `decision`). O dono
-    # quer testar o Jev decidindo (02/10/2026, D-028): enquanto a Concierge observa,
-    # o piloto mede o Jev em sombra (`intent_pilot.shadow_triage`); esta chave é a
-    # troca para quando ela atender. A regra local sensível vence os dois.
-    "triage_classifier": os.environ.get("CONCIERGE_TRIAGE_CLASSIFIER", "anthropic"),
-    # Intenções no plural (OBS0310-Q, v2 bloco 1): a mensagem vira uma lista de partes, cada
-    # parte pelo executor da casa, uma resposta só na ordem do cliente. O Jev decide primeiro;
-    # a leitura com o modelo pequeno entra só quando ele hesita ou há mais de uma parte.
-    # Valem para quem a Concierge JÁ atende (OBS0310-R): `cohort` (padrão, sem env nenhuma:
-    # a coorte atendida em `assist`, `allowed_subjects` da connection; fora dela nada muda),
-    # `off` (interruptor de emergência: desliga para todos), `subjects` (só os subscribers de
-    # CONCIERGE_INTENTS_SUBSCRIBERS, dentro da coorte) ou `all` (também só dentro da coorte).
-    "intents_plural": os.environ.get("CONCIERGE_INTENTS_PLURAL", "cohort"),
-    "intents_subjects": [
-        value.strip()
-        for value in os.environ.get("CONCIERGE_INTENTS_SUBSCRIBERS", "").split(",")
-        if value.strip()
-    ],
     # Primeira connection real. Novos providers/canais entram como irmãos com o
     # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
     "connections": {

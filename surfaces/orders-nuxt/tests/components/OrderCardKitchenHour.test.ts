@@ -25,11 +25,10 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     ref: "WEB-261115-E17",
     status: "accepted",
     status_label: "Aceito",
-    status_color: "",
     channel_ref: "web",
+    channel_name: "Loja online",
     channel_icon: "language",
     customer_name: "Ana",
-    created_at_display: "15/11 18h",
     created_at_iso: "2026-11-15T21:00:00Z",
     clock_since_iso: "2026-11-15T21:00:00Z",
     server_now_iso: "",
@@ -38,28 +37,22 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     items_summary: "1× Pain de Campagne",
     items_count: 1,
     total_display: "R$ 18,70",
-    fulfillment_icon: "storefront",
     fulfillment_label: "Retirada",
     fulfillment_type: "pickup",
     delivery_address: "",
-    delivery_instructions: "",
     can_confirm: false,
     can_advance: true,
     next_status: "preparing",
-    next_action_label: "Adiantar",
     payment_method: "pix",
     payment_method_label: "Pix",
     ifood_cancellation_notice: "",
-    ifood_pickup_code: "",
     ifood_schedule_label: "",
     ifood_remote_ahead_label: "",
     ifood_negotiations: [],
     payment_status: "captured",
     payment_pending: false,
     can_settle_delivery_cash: false,
-    fiscal_status_label: "",
     fiscal_status: "",
-    has_kitchen_note: false,
     has_customer_note: false,
     is_gift: false,
     gift_has_recipient: false,
@@ -67,7 +60,6 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     awaiting_work_orders: [],
     confirmation_deadline_iso: "",
     confirmation_action: "",
-    revisions: {},
     attention: "",
     schedule_label: "Hoje · 17h às 17h30",
     schedule_state: "today",
@@ -128,7 +120,6 @@ describe("OrderCard: depois que a encomenda chega à Cozinha", () => {
     kitchen_released_at_iso: "2026-11-18T12:55:00Z",
     clock_since_iso: "2026-11-18T12:55:00Z",
     elapsed_seconds: 5 * 60,
-    next_action_label: "Iniciar preparo",
     actions: [advance("Iniciar preparo", "primary")],
   });
 
@@ -161,10 +152,11 @@ describe("Encomendas: a de hoje que espera a hora da Cozinha", () => {
       global: { stubs: listStubs },
     });
 
-    expect(w.text()).toContain("hoje");
+    expect(w.get("h3").text()).toBe("Hoje");
     const row = w.get('[data-preorder-row="WEB-261115-E17"]');
     expect(row.get("[data-preorder-kitchen-wait]").html()).toContain("Vai para a Cozinha às 16h15");
-    expect(row.attributes("href")).toBe("/WEB-261115-E17");
+    expect(row.get("a").attributes("href")).toBe("/WEB-261115-E17");
+    expect(row.get("[data-preorder-when]").text()).toBe("Hoje · 17h às 17h30");
   });
 
   it("a de outro dia não ganha a frase", () => {

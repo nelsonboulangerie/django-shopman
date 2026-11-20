@@ -180,7 +180,8 @@
             "open_counts",
             "recent_exists",
             "resolve",
-            "resolve_matching"
+            "resolve_matching",
+            "revise"
           ]
         }
       ]
@@ -521,6 +522,8 @@
             "cancel",
             "cancel_reason_for",
             "dispatch",
+            "driver_from",
+            "driver_photo_url",
             "estimate",
             "get_details",
             "get_position",
@@ -1753,6 +1756,7 @@
             "_MAX_PARTIAL_HOLDS",
             "_copied",
             "_free_by_eligible_quant",
+            "_fulfilled_hold",
             "_get_product",
             "_return_remainder_to_cart",
             "create_hold",
@@ -1764,6 +1768,7 @@
             "get_availability_for_skus",
             "get_channel_scope",
             "hold_backing",
+            "hold_lot_facts",
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
@@ -1776,7 +1781,8 @@
             "retag_hold_reference",
             "return_fulfilled_hold",
             "return_hold_remainder",
-            "stock_error_code"
+            "stock_error_code",
+            "waste_fulfilled_hold"
           ]
         }
       ]
@@ -2198,6 +2204,7 @@
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
             "GoogleMerchantRegistrationForm",
+            "MAX_NO_SHOW_MINUTES",
             "MAX_PREORDER_KITCHEN_MINUTES",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
@@ -2784,6 +2791,34 @@
             "oklch_to_css",
             "oklch_to_hex",
             "oklch_to_raw"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/concierge_verification.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "ALERT_TYPE",
+            "Answer",
+            "DeskResult",
+            "TakeOver",
+            "_handlers",
+            "answer",
+            "card_subject",
+            "card_subjects",
+            "register",
+            "take_over"
           ]
         }
       ]
@@ -4060,6 +4095,12 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "REFUND_GATEWAY_REFUSED",
+            "REFUND_GATEWAY_UNCONFIRMED",
+            "REFUND_HANDED_OFF",
+            "REFUND_PENDING_COUNTER",
+            "_order_refunded_q",
+            "_refund_not_returned_reason",
             "logger"
           ]
         }
@@ -6603,9 +6644,14 @@
             "ACCESS_BUTTON_COPY",
             "ACCESS_BUTTON_MAX_CHARS",
             "CUSTOMER_COPY",
+            "PROMISE_ITEM_SITUATION",
+            "PROMISE_PROPOSAL_COPY",
+            "PROMISE_REFUND_ROUTE",
+            "PROMISE_REMOVED",
             "_GENERIC_TEMPLATE_LABELS",
             "_gsm_ascii",
             "plain_bodies",
+            "promise_proposal",
             "sms_bodies",
             "subjects",
             "template_label"
@@ -6987,6 +7033,34 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/no_show_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.no-show-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/no_show_reason.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show-customer-copy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/order_date_before_batch.py",
       "touchpoints": [
         "outro"
@@ -7038,6 +7112,20 @@
       "out_of_extraction": false,
       "unit_ids": [
         "rating.contact-offer"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/waitlist_charge.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "waitlist.charge-waits-for-the-queue"
       ],
       "responsibilities": [
         "decisão"
@@ -7098,12 +7186,12 @@
             "_PROFILE_STAYS",
             "_REDACTION",
             "_ROLE_PREFIX",
+            "_WITHOUT_CALLER",
             "_concierge_answers",
             "_concierge_setting",
             "_customer_text_purposes",
             "_declared_for",
             "_host_of",
-            "_intents_mode",
             "_join",
             "_purpose_sends",
             "_setting_is_set",
@@ -7273,6 +7361,7 @@
             "build_free_delivery_progress",
             "build_minimum_order_progress",
             "logger",
+            "reserved_until",
             "shop_rule_q"
           ]
         }
@@ -7423,9 +7512,12 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "AcceptanceWindow",
+            "acceptance_window",
             "availability_dates",
             "customer_checkout_defaults",
-            "logger"
+            "logger",
+            "shop_today"
           ]
         }
       ]
@@ -7683,7 +7775,9 @@
             "TrackingTimelineEventData",
             "_COURIER_ENDED_STATUSES",
             "_DIGITAL_PAYMENT_METHODS",
+            "_STORE_DECISION_STATES",
             "_WAITLIST_NONE",
+            "_acceptance_deadline_at",
             "_action",
             "_active_progress_key",
             "_bill_line_of",
@@ -7739,6 +7833,7 @@
             "_stale_after_seconds",
             "_step_was_reached",
             "_store_confirmation_is_deferred",
+            "_waitlist_call",
             "_waitlist_info",
             "as_customer_sees",
             "build_tracking",
@@ -8009,6 +8104,20 @@
       "out_of_extraction": false,
       "unit_ids": [
         "shop.preorder-kitchen-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/promise_expiry_margin.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.promise-expiry-margin"
       ],
       "responsibilities": [
         "decisão"
@@ -9230,6 +9339,8 @@
             "_cancel_local_intent",
             "_local_status",
             "_payment",
+            "late_payment_of_takeover",
+            "late_refund_key",
             "logger"
           ]
         }
@@ -9247,6 +9358,7 @@
         "delivery.courier-charge-staleness",
         "delivery.courier-dispatch-eligibility",
         "delivery.courier-handoff-charge",
+        "delivery.courier-in-trouble",
         "delivery.courier-quote",
         "delivery.courier-return",
         "delivery.courier-ride-number",
@@ -12636,6 +12748,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "OUTSIDE_CHARGE_BOOKERS",
+            "REFUND_FAILED_RETRY_HERE",
+            "REFUND_FAILED_SUPPORT",
             "_ack_payment_failed_alerts",
             "_adapter_config",
             "_adapter_for_persisted_intent",
@@ -12646,6 +12761,7 @@
             "_cancel_open_account_intents",
             "_capture_once",
             "_card_machine_intents",
+            "_counter_refund_claims_q",
             "_create_payment_failed_alert",
             "_customer_name",
             "_efi_intent_environment_matches_runtime",
@@ -12657,13 +12773,16 @@
             "_gateway_answer_text",
             "_gateway_for_adapter",
             "_gateway_recheck_is_due",
+            "_gateway_refund_intents",
             "_held_refund_balance",
             "_ifood_balance_due_q",
             "_intent_detail",
+            "_intent_refund_key",
             "_is_pos_remote_order",
             "_link_deadline_minutes",
             "_lock_payment_intents",
             "_methods_of",
+            "_net_held_q",
             "_notify_payment_failed",
             "_notify_refund",
             "_order_for_intent",
@@ -12694,7 +12813,12 @@
             "_stamp_gateway_check",
             "_terminal_amounts_by_method",
             "_terminal_ref",
-            "logger"
+            "booked_outside_charge",
+            "gateway_refund_legs",
+            "gateway_refund_owed_q",
+            "logger",
+            "order_refund_gateway_key",
+            "refund_retry_available"
           ]
         }
       ]
@@ -14569,12 +14693,14 @@
             "_RIDE_STATUSES",
             "_STATUS_KEYS",
             "_alert_signature_failure",
+            "_alphabet",
             "_body_digest",
             "_cache_position",
             "_cfg",
             "_check_signature",
             "_first",
             "_revive_archived",
+            "_signature_encoding",
             "_store_position",
             "_truthy",
             "logger",
@@ -14675,6 +14801,28 @@
       ]
     },
     {
+      "path": "shopman/shop/services/no_show.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/own_fleet.py",
       "touchpoints": [
         "service"
@@ -14737,6 +14885,185 @@
             "_LinkView",
             "_REFUSALS",
             "_private"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/reconcile_ifood_orders.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "APPLY_WINDOW",
+            "Command",
+            "LOOKBACK",
+            "_alert_behind",
+            "_latest_fact_at",
+            "_stale_test_conclusion"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/__init__.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/commerce_read.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "conversational.house-policy-read"
+      ],
+      "responsibilities": [
+        "decisão",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "CURRENCY",
+            "DenyAll",
+            "FACT_VALIDITY_SECONDS",
+            "FORMAT",
+            "Ownership",
+            "PORT",
+            "PRODUCER_NAME",
+            "UNSUPPORTED",
+            "_date_of",
+            "_text",
+            "instant",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/commerce_execute.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "APPLIED",
+            "Done",
+            "EffectSite",
+            "FORMAT",
+            "PORT",
+            "PRODUCER",
+            "RECEIPT_CONTRACT",
+            "REFUSED",
+            "RETENTION_SECONDS",
+            "Reading",
+            "SCOPE_PREFIX",
+            "ShopmanCommerceExecute",
+            "SystemClock",
+            "TERMS_REF",
+            "_body",
+            "_code",
+            "_fingerprint",
+            "_receipt_of",
+            "instant",
+            "logger",
+            "storage_key"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/admin/conversational.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ConversationalDecisionAdmin",
+            "ConversationalOutcomeAdmin",
+            "_ReadOnly"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/decision_store.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FORMAT",
+            "_moment",
+            "_value",
+            "current_outcome",
+            "record_decision",
+            "record_outcome"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/conversational.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ConversationalDecision",
+            "ConversationalOutcome"
           ]
         }
       ]

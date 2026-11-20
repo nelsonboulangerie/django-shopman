@@ -716,6 +716,14 @@ customer_address:
   is_default:            bool          # Um por cliente
 ```
 
+**Endereço sem etiqueta** é `label="other"` com `label_custom` vazio: o que o pedido de
+entrega grava sozinho no cadastro (`shop/services/customer.py`, `persist_new_address` do
+checkout) e o que a loja cria antes de o cliente etiquetar. "Outro" sem nome não é
+etiqueta, e nenhuma tela o mostra como se fosse: a loja, o PDV, o Gestor e a Concierge
+mostram o próprio endereço no lugar (#2775). Até 19/11/2026 esse endereço nascia com
+`label_custom="Entrega"`, que repetia o canal em todos; a migração `shop.0123` tirou essa
+etiqueta dos que já existiam.
+
 ---
 
 ## 11. PAGAMENTOS (Payments)

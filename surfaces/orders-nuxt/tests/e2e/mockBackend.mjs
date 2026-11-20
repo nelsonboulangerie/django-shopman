@@ -21,14 +21,12 @@ const SESSION = {
 const CARD = {
   ref: "WEB-20260625-0007",
   status: "accepted",
-  revisions: { advance: "fixture-base" },
   actions: [{ ref: "advance", kind: "mutation", label: "Iniciar preparo", priority: "primary", enabled: true, reason: "", href: "", method: "POST", payload_schema: { target_status: "preparing", base_revision: "fixture-base" }, idempotency: "required", confirmation: {} }],
   status_label: "Aceito",
-  status_color: "",
   channel_ref: "web",
+  channel_name: "Loja online",
   channel_icon: "language",
   customer_name: "Ana",
-  created_at_display: "08:00",
   created_at_iso: "",
   server_now_iso: "",
   elapsed_seconds: 30,
@@ -36,13 +34,11 @@ const CARD = {
   items_summary: "2× Pão · 1× Café",
   items_count: 3,
   total_display: "R$ 15,00",
-  fulfillment_icon: "storefront",
   fulfillment_label: "Retirada",
   fulfillment_type: "pickup",
   can_confirm: false,
   can_advance: true,
   next_status: "preparing",
-  next_action_label: "Iniciar preparo",
   payment_method: "cash",
   payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
@@ -52,9 +48,7 @@ const CARD = {
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,
-  fiscal_status_label: "",
   fiscal_status: "",
-  has_kitchen_note: false,
   has_customer_note: false,
   is_gift: false,
   gift_has_recipient: false,
@@ -66,7 +60,7 @@ const CARD = {
   attention: "start",
   attention_since_iso: new Date(Date.now() - 3 * 60_000).toISOString(),
   goal_minutes: 5,
-  goal_label: "meta 5",
+  goal_label: "meta 5 min",
 };
 
 const QUEUE = {
@@ -91,9 +85,9 @@ const QUEUE = {
       ...CARD,
       ref: "IFOOD-260914-1515",
       channel_ref: "ifood",
+      channel_name: "iFood",
       fulfillment_type: "delivery",
       fulfillment_label: "Entrega",
-      fulfillment_icon: "truck",
       channel_icon: "restaurant",
       customer_name: "Pedido iFood agendado",
       items_summary: "1× Pão de teste",
@@ -126,7 +120,6 @@ const QUEUE = {
       items_count: 3,
       actions: [{ ...CARD.actions[0], label: "Marcar pronto", payload_schema: { target_status: "ready", base_revision: "fixture-base" } }],
       next_status: "ready",
-      next_action_label: "Marcar pronto",
       attention: "",
       attention_since_iso: "",
       goal_minutes: 0,
@@ -152,11 +145,28 @@ const QUEUE = {
 
 // O detalhe de um pedido da fila: o card + o que só o detalhe traz. Sem isto o
 // `/<ref>` recebia `{}` e a e2e não alcançava o resumo do iFood, que mora no detalhe.
+/**
+ * "O que falta neste pedido" (WP-G05): o servidor de verdade manda a lista pronta
+ * (`projections/order_pending.py`). Aqui ela sai dos mesmos campos do cartão: o avanço
+ * travado vira a linha do bloqueio, com o nome e o motivo.
+ */
+function pendingFor(card) {
+  if (!card.advance_block_label && !card.advance_block_reason) return [];
+  return [{
+    key: card.payment_pending ? "payment" : "advance",
+    tone: "info",
+    label: String(card.advance_block_label || "").replace(/…$/, ""),
+    reason: card.advance_block_reason || "",
+    actions: [],
+  }];
+}
+
 const DETAIL_EXTRA = {
   customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "",
-  delivery_address: "", delivery_instructions: "",
+  delivery_address: "", delivery_instructions: "", fiscal_status_label: "",
+  revisions: { advance: "fixture-base" },
   items: [{ sku: "PAO", name: "Pão", qty: "1", unit_price_display: "R$ 16,00", total_display: "R$ 16,00" }],
-  timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [], equipment_out: [],
+  timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [],
   kitchen_note_tags: [], customer_profile: null,
   can_cancel: true, cancel_requires_approval: false,
   // A lista única de motivos de recusar e cancelar (`shop/services/cancel_reasons.py`).
@@ -267,9 +277,9 @@ function rideOrder(ref) {
   const codes = fixture.stops.map(([stopRef]) => stopRef.split("-").at(-1));
   return {
     ...CARD, ...DETAIL_EXTRA, ref, status: "ready", status_label: "Pronto", customer_name: customer,
-    fulfillment_type: "delivery", fulfillment_label: "Entrega", fulfillment_icon: "truck",
+    fulfillment_type: "delivery", fulfillment_label: "Entrega",
     payment_method: "pix", payment_method_label: "Pix", payment_status: "paid", payment_pending: false,
-    can_advance: false, next_status: "", next_action_label: "",
+    can_advance: false, next_status: "",
     actions: [{ ...cancelAction(fixture.number, codes, fixture.accepted), enabled: cancel.canCancel }],
     courier: {
       provider: "machine", status: fixture.accepted ? "A" : "D",
@@ -284,6 +294,157 @@ function rideOrder(ref) {
       reminder: null, custody: { change_out_suggested_q: 0, needs_machine: false, recorded: false }, ride_offer: [],
       charge_outdated: null,
     },
+  };
+}
+
+// ── Promessa em risco: o diálogo "Resolver" (`promiseResolve.spec.ts`, WP-G08) ──────
+// Só para quem pede: o cookie `e2e_promise` põe na fila um pedido com a promessa em
+// risco, e as outras specs seguem vendo a fila de sempre. O aviso leva as ações no
+// formato novo (`promise.actions`: "Resolver", `kind: "dialog"`, sem `href`); as saídas
+// antigas moram no diálogo, que lê `orders/<ref>/promise-resolution/` com as quatro
+// famílias de escolha (trocar, remarcar, tirar o item, cancelar). A forma é a do
+// servidor: `conclude` sempre com as cinco chaves (`kind`, `label`, `href`, `items`,
+// `payload_schema`), e a escolha fechada com o motivo e o resto vazio. As frases são as
+// que o servidor manda: a tela não escreve nenhuma delas.
+//   - `e2e_promise=risk`: tudo aberto, com WhatsApp;
+//   - `e2e_promise=closed`: trocar, remarcar e tirar fechados (com o motivo), sem
+//     WhatsApp no pedido; só cancelar segue aberto.
+const PROMISE_REF = "WEB-2611-G8G-N75";
+const PROMISE_PDV = "https://pdv.example.test";
+const PROMISE_FACT = "Faltam 4x Focaccia Cebola, Bacon e Tomilho. O lote de hoje foi cancelado.";
+const PROMISE_HELLO =
+  "Oi, Nelson! Aqui é da Nelson Boulangerie 💛 A Focaccia Cebola, Bacon e Tomilho do seu pedido N75 não vai ficar pronta hoje, e sinto muito por isso.";
+const PROMISE_MESSAGES = {
+  swap: `${PROMISE_HELLO} Posso trocar por Campagne Passas & Castanhas? Me avisa e eu ajusto por aqui ✨`,
+  swapFendu: `${PROMISE_HELLO} Posso trocar por Fendu? Me avisa e eu ajusto por aqui ✨`,
+  reschedule: `${PROMISE_HELLO} Posso remarcar o seu pedido para outro dia? Me diz qual fica melhor para você ✨`,
+  remove: `${PROMISE_HELLO} Posso tirar esse item do pedido e devolver R$ 44,00 pelo Pix? Me avisa e eu ajusto por aqui ✨`,
+  cancel: `${PROMISE_HELLO} Se preferir, cancelo o pedido e devolvo R$ 72,00 pelo Pix. Me avisa como fica melhor ✨`,
+};
+const promiseWhatsapp = (message) => `https://wa.me/5543999990000?text=${encodeURIComponent(message)}`;
+const PROMISE_EDIT_ITEMS = [{ line_id: "line-2", sku: "CROISSANT", qty: "2" }];
+/** O que a rota de edição exige: a revisão que o servidor leu e quem a tela leu. */
+const PROMISE_EDIT_PAYLOAD = { base_revision: "edit-fixture", expected_actor_id: 1 };
+const PROMISE_EDIT_REFUSED = "Pedido em preparo não pode ser editado.";
+/** O que a spec confere: o que foi gravado e se a promessa ainda está em risco. */
+const promiseState = { resolved: false, edits: [] };
+
+const RESOLVE_ACTION = {
+  ref: "resolve", kind: "dialog", label: "Resolver", priority: "primary", enabled: true, reason: "", href: "",
+  method: "", payload_schema: {}, idempotency: "none", confirmation: {},
+};
+const PROMISE = {
+  state: "at_risk", label: "Promessa em risco", blocks_start: false, since_iso: "", next_step: "",
+  recommended_action: "resolve", actions: [RESOLVE_ACTION],
+  items: [{
+    sku: "FOCACCIA-CBT", name: "Focaccia Cebola, Bacon e Tomilho", reservation: "lost", cause: "batch_cancelled",
+    at_risk: true, qty: "4", missing_qty: "4", label: "Faltam 4x Focaccia Cebola, Bacon e Tomilho",
+    detail: "O lote de hoje foi cancelado.", batch_date: "2026-11-19", batch_status: "void", batch_ready_at_iso: "",
+    work_order_refs: ["WO-1"], next_step: "",
+    alternatives: [
+      { sku: "CAMPAGNE-PC", name: "Campagne Passas & Castanhas", available_display: "6 disponíveis hoje" },
+      { sku: "FENDU", name: "Fendu", available_display: "3 disponíveis hoje" },
+    ],
+  }],
+};
+
+function promiseCard() {
+  const risky = !promiseState.resolved;
+  return {
+    ...CARD,
+    ref: PROMISE_REF,
+    customer_name: "Nelson Dias",
+    items_summary: "4× Focaccia Cebola, Bacon e Tomilho · 2× Croissant",
+    items_count: 6,
+    total_display: "R$ 72,00",
+    payment_method: "pix",
+    payment_method_label: "Pix",
+    payment_status: "paid",
+    payment_pending: false,
+    attention: risky ? "promise" : "start",
+    attention_since_iso: new Date(Date.now() - 6 * 60_000).toISOString(),
+    promise: risky ? PROMISE : null,
+  };
+}
+
+/** `conclude` com as cinco chaves, sempre. */
+function promiseConclude(kind, label, extra = {}) {
+  return { kind, label, href: "", items: [], payload_schema: {}, ...extra };
+}
+
+function promiseChoice(key, kind, label, detail, message, conclude, extra = {}) {
+  return {
+    key, kind, label, detail, enabled: true, reason: "", message, whatsapp_url: promiseWhatsapp(message), conclude,
+    requires_manager_approval: false, ...extra,
+  };
+}
+
+/** Escolha fechada, como o servidor a manda: o motivo, e o resto vazio. */
+function promiseClosed(choice, reason) {
+  return {
+    ...choice, enabled: false, reason, message: "", whatsapp_url: "",
+    conclude: { ...choice.conclude, href: "", items: [] },
+  };
+}
+
+function promiseResolution(variant) {
+  const swapHref = `${PROMISE_PDV}/preorders/${PROMISE_REF}?swap=FOCACCIA-CBT`;
+  const open = [
+    promiseChoice("swap:FOCACCIA-CBT:CAMPAGNE-PC", "swap", "Trocar por Campagne Passas & Castanhas", "6 disponíveis hoje",
+      PROMISE_MESSAGES.swap, promiseConclude("link", "Trocar no PDV", { href: swapHref })),
+    promiseChoice("swap:FOCACCIA-CBT:FENDU", "swap", "Trocar por Fendu", "3 disponíveis hoje",
+      PROMISE_MESSAGES.swapFendu, promiseConclude("link", "Trocar no PDV", { href: swapHref })),
+    // O nome do contrato termina em "fornada"; a trava de vocabulário do kit reprova a
+    // palavra nos apps de operador (o objeto na tela é "lote"). Ver `tests/support/promiseResolution.ts`.
+    promiseChoice("reschedule", "reschedule", "Remarcar para outro dia ou outro lote", "",
+      PROMISE_MESSAGES.reschedule, promiseConclude("link", "Remarcar no PDV", { href: `${PROMISE_PDV}/preorders/${PROMISE_REF}` })),
+    promiseChoice("remove", "remove", "Tirar só o item que falta e devolver a diferença", "R$ 44,00 serão estornados ao Pix do cliente.",
+      PROMISE_MESSAGES.remove, promiseConclude("edit", "Tirar o item", { items: PROMISE_EDIT_ITEMS, payload_schema: PROMISE_EDIT_PAYLOAD })),
+    // Pedido pago: o gerente é do diálogo de cancelar, que este só abre.
+    promiseChoice("cancel", "cancel", "Cancelar o pedido inteiro", "R$ 72,00 serão estornados ao Pix do cliente.",
+      PROMISE_MESSAGES.cancel, promiseConclude("cancel", "Cancelar pedido"), { requires_manager_approval: true }),
+  ];
+  const closed = variant === "closed";
+  const choices = closed
+    ? [
+        promiseClosed(open[0], PROMISE_EDIT_REFUSED),
+        promiseClosed(open[1], PROMISE_EDIT_REFUSED),
+        promiseClosed(open[2], "Pedido em preparo não pode ser remarcado."),
+        promiseClosed(open[3], PROMISE_EDIT_REFUSED),
+        { ...open[4], whatsapp_url: "" },
+      ]
+    : open;
+  return {
+    order_ref: PROMISE_REF,
+    code: "N75",
+    customer_name: "Nelson Dias",
+    facts: [PROMISE_FACT],
+    contact: closed ? { enabled: false, reason: "Este pedido não tem WhatsApp do cliente." } : { enabled: true, reason: "" },
+    interim_note: "O envio automático ainda não existe: copie a mensagem ou chame o cliente no WhatsApp.",
+    choices,
+  };
+}
+
+/** O detalhe do pedido em risco: a linha da promessa na faixa, com o mesmo "Resolver". */
+function promiseOrder() {
+  const card = promiseCard();
+  const risky = !promiseState.resolved;
+  return {
+    ...card, ...DETAIL_EXTRA,
+    customer_whatsapp_url: "https://wa.me/5543999990000",
+    items: [
+      { sku: "FOCACCIA-CBT", name: "Focaccia Cebola, Bacon e Tomilho", qty: "4", unit_price_display: "R$ 11,00", total_display: "R$ 44,00" },
+      { sku: "CROISSANT", name: "Croissant", qty: "2", unit_price_display: "R$ 14,00", total_display: "R$ 28,00" },
+    ].slice(risky ? 0 : 1),
+    cancel_money_effect: "R$ 72,00 serão estornados ao Pix do cliente.",
+    managers: [{ username: "ana", name: "Ana" }],
+    revisions: { ...CARD.revisions, edit: "edit-fixture" },
+    pending: risky
+      ? [{
+          key: "promise", tone: "error", label: "Promessa em risco", reason: PROMISE_FACT, next_step: "",
+          actions: [{ ref: "resolve", label: "Resolver", enabled: true, reason: "", href: "", priority: "primary" }],
+        }]
+      : [],
   };
 }
 
@@ -483,6 +644,39 @@ const server = createServer((req, res) => {
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });
+  const promiseVariant = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_promise=(risk|closed)(?:;|$)/)?.[1] ?? "";
+  const promiseScenario = Boolean(promiseVariant);
+  if (promiseScenario && /\/e2e\/promise\/reset\/?(\?|$)/.test(url)) {
+    promiseState.resolved = false;
+    promiseState.edits = [];
+    return json(res, 200, { ok: true });
+  }
+  if (promiseScenario && /\/e2e\/promise\/state\/?(\?|$)/.test(url)) return json(res, 200, promiseState);
+  if (promiseScenario && /\/orders\/?(\?|$)/.test(url)) {
+    return json(res, 200, {
+      queue: { ...QUEUE.queue, prep: [promiseCard(), ...QUEUE.queue.prep], total_count: QUEUE.queue.total_count + 1 },
+    });
+  }
+  if (promiseScenario && url.includes(`/orders/${PROMISE_REF}/`)) {
+    // A leitura do diálogo: 409 quando o pedido já não está em risco.
+    if (/\/promise-resolution\/?(\?|$)/.test(url)) {
+      return promiseState.resolved
+        ? json(res, 409, { detail: "Este pedido não tem mais promessa em risco." })
+        : json(res, 200, promiseResolution(promiseVariant));
+    }
+    if (/\/edit\/?(\?|$)/.test(url)) {
+      if (req.method !== "POST") return json(res, 202, { outcome: "unknown", detail: "Ainda não há resultado confirmado para esta intenção." });
+      return void readBody(req).then((body) => {
+        // A rota exige a revisão e quem a tela leu: sem elas, recusa (como o servidor).
+        if (!body.base_revision || body.expected_actor_id !== SESSION.operator.id)
+          return json(res, 400, { detail: "Esta tela está desatualizada. Atualize o pedido e tente de novo.", code: "intention_required" });
+        promiseState.edits.push({ items: body.items, base_revision: body.base_revision, expected_actor_id: body.expected_actor_id });
+        promiseState.resolved = true;
+        json(res, 200, { ok: true, ref: PROMISE_REF, outcome: "applied", changed: true, revision: "edit-fixture-2", order: promiseOrder() });
+      });
+    }
+    if (new RegExp(`/orders/${PROMISE_REF}/?(\\?|$)`).test(url)) return json(res, 200, { order: promiseOrder() });
+  }
   if (/\/orders\/?(\?|$)/.test(url)) return json(res, 200, QUEUE);
   if (cancelScenario && /\/e2e\/deliveries\/reset\/?(\?|$)/.test(url)) {
     cancelState.clear();
@@ -506,7 +700,9 @@ const server = createServer((req, res) => {
     const inRide = cancelScenario ? rideOrder(detail[1]) : null;
     if (inRide) return json(res, 200, { order: inRide });
     const card = queueCard(detail[1]);
-    return card ? json(res, 200, { order: { ...card, ...DETAIL_EXTRA } }) : json(res, 404, { detail: "Pedido não encontrado." });
+    return card
+      ? json(res, 200, { order: { ...card, ...DETAIL_EXTRA, pending: pendingFor(card) } })
+      : json(res, 404, { detail: "Pedido não encontrado." });
   }
   if (/\/alerts\/?(\?|$)/.test(url)) return json(res, 200, { alerts: [], counts: { active: 0, critical: 0 } });
   return json(res, 200, {});

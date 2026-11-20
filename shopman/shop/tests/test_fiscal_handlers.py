@@ -94,6 +94,30 @@ def test_5xx_is_transient_and_4xx_is_terminal(order):
         )
 
 
+def test_recusa_grava_a_resposta_do_emissor_num_campo(order):
+    """O Gestor lê o motivo de ``emitter_answer``, não de um prefixo de ``last_error`` (#2705)."""
+    directive = _emit_directive(order)
+    with pytest.raises(DirectiveTerminalError) as refused:
+        NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_400", "Rejeição 778: NCM inexistente"))).handle(
+            message=directive, ctx={}
+        )
+    directive.refresh_from_db()
+    assert directive.payload["emitter_answer"] == "Rejeição 778: NCM inexistente"
+    # O payload de emissão continua inteiro, e o log segue com a frase completa.
+    # É ela que o worker grava em ``last_error``, com o código na frente
+    # ("[terminal] NFC-e emission failed: …"): o recorte pelo prefixo nunca casava.
+    assert directive.payload["order_ref"] == order.ref
+    assert str(refused.value) == "[terminal] NFC-e emission failed: Rejeição 778: NCM inexistente"
+
+
+def test_transiente_nao_grava_resposta_do_emissor(order):
+    directive = _emit_directive(order)
+    with pytest.raises(DirectiveTransientError):
+        NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_503"))).handle(message=directive, ctx={})
+    directive.refresh_from_db()
+    assert "emitter_answer" not in directive.payload
+
+
 def test_first_emit_does_not_query_status(order):
     # O dispatcher entrega a 1ª execução já com attempts=1. Ela NÃO pode
     # gastar um query_status (custo/latência à toa) — emite direto.

@@ -13,12 +13,12 @@ Three verbs:
     check(sku, qty, *, channel_ref) -> dict
         Read-only. Returns whether `qty` of `sku` can be ordered now.
 
-    reserve(sku, qty, *, session_key, channel_ref, ttl_minutes=30) -> dict
+    reserve(sku, qty, *, session_key, channel_ref, ttl_minutes=None) -> dict
         Write. Checks first; if available, creates a hold tagged with session_key
         as `reference` so the order's CommitService can adopt it. On shortage,
         populates `substitutes` with suggested SKUs.
 
-    reconcile(sku, new_qty, *, session_key, channel_ref, ttl_minutes=30) -> dict
+    reconcile(sku, new_qty, *, session_key, channel_ref, ttl_minutes=None) -> dict
         Write. Brings the total reserved quantity for `(session_key, sku)` to
         exactly `new_qty`. Grows by creating a fresh hold for the delta (may
         shortage); shrinks by releasing holds FIFO and returning any release
@@ -58,13 +58,25 @@ def _cart_hold_metadata(source_sku: str, *, bundle_parent_sku: str | None = None
     return metadata
 
 
-def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
+def bump_session_hold_expiry(
+    session_key: str,
+    *,
+    channel_ref: str | None = None,
+    ttl_minutes: int | None = None,
+) -> int:
     """Extend the TTL of every active hold tagged with ``session_key``.
 
     Called from the cart's write paths (add/update/set_qty) so the session's
     holds stay alive as long as the shopper is active. Orphaned holds from
     abandoned sessions still die naturally at their TTL — this just keeps
     the "active shopper" case alive.
+
+    O prazo da renovação é o MESMO da criação: ``ttl_minutes=None`` resolve o
+    TTL configurado no canal (``ChannelConfig.stock.hold_ttl_minutes``); sem
+    configuração, 30 minutos. Até 19/11/2026 a renovação usava 30 fixos: canal
+    com 15 tinha a reserva esticada para 30 no mesmo gesto que a criou, e canal
+    com 60 ficava com itens da mesma sacola em prazos diferentes (#2773). A
+    sacola diz essa hora à cliente ("Guardamos seus itens até 19h18").
 
     Indefinite holds (``expires_at IS NULL`` — planned holds) are untouched:
     their TTL only starts after materialization (AVAILABILITY-PLAN §8).
@@ -88,6 +100,8 @@ def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
         logger.debug("availability.bump_session_hold_expiry degraded; returning 0", exc_info=True)
         return 0
 
+    if ttl_minutes is None:
+        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
     now = timezone.now()
     new_expiry = now + timedelta(minutes=ttl_minutes)
     return (
@@ -435,28 +449,46 @@ def stock_on_dates(
 
     Devolve cópias: quem recebe pode mexer no ``dict`` sem tocar o memo.
     Fora do memo (comando, worker, request que muta) é a leitura direta.
+
+    A margem de validade é a de CADA data (``expiry_margin_for_target``): hoje
+    lê com a margem do canal, e a data futura não conta o que estará no último
+    dia de validade nela. As duas saem da mesma varredura, e a chave do memo
+    não muda: a margem de uma data sai do recorte, do dia de hoje e da data,
+    que já estão na chave.
     """
     from django.utils import timezone
     from shopman.stockman.services.availability import availability_for_skus_on_dates
 
     from shopman.shop import request_memo
+    from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
+
+    def read(read_skus, read_dates):
+        return availability_for_skus_on_dates(
+            read_skus,
+            read_dates,
+            **scope,
+            expiry_margin_days_by_date={
+                on: expiry_margin_for_target(scope.get("expiry_margin_days", 0), on)
+                for on in dict.fromkeys(read_dates)
+            },
+        )
 
     unique_dates = list(dict.fromkeys(dates))
     unique_skus = list(dict.fromkeys(skus))
     if not unique_skus or not unique_dates:
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
     try:
         base = ("stock_on_dates", _scope_key(scope), timezone.localdate())
         hash(base)
     except TypeError:
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
     buckets = {on: request_memo.stock_bucket((*base, on)) for on in unique_dates}
     if any(bucket is None for bucket in buckets.values()):
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
 
     missing = [sku for sku in unique_skus if any(sku not in buckets[on] for on in unique_dates)]
     if missing:
-        fresh = availability_for_skus_on_dates(missing, unique_dates, **scope)
+        fresh = read(missing, unique_dates)
         for on in unique_dates:
             for sku, info in (fresh.get(on) or {}).items():
                 buckets[on].setdefault(sku, info)
@@ -550,7 +582,7 @@ def decide(
 
     adapter = get_adapter("stock")
     scope = adapter.get_channel_scope(channel_ref)
-    info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope))
+    info = adapter.get_availability(sku, target_date=target_date, **availability_kwargs(scope, target_date))
     from shopman.stockman.services.availability import decision_from_availability
 
     return _promise_payload(decision_from_availability(sku, qty_d, info, target_date=target_date))
@@ -606,7 +638,7 @@ def decide_many(
     ]
     if to_read:
         scope = adapter.get_channel_scope(channel_ref)
-        kwargs = _availability_kwargs(scope)
+        kwargs = availability_kwargs(scope, target_date)
         bulk_read = getattr(adapter, "get_availability_for_skus", None)
         if bulk_read is not None:
             infos = bulk_read(to_read, target_date=target_date, **kwargs)
@@ -630,13 +662,19 @@ def decide_many(
     return decisions
 
 
-def _availability_kwargs(scope: dict) -> dict:
-    """O recorte do canal nos argumentos da leitura de estoque do adapter."""
+def availability_kwargs(scope: dict, target_date: date | None) -> dict:
+    """O recorte do canal nos argumentos da leitura de estoque do adapter.
+
+    A margem de validade é a da DATA lida (``expiry_margin_for_target``): a
+    mesma que a reserva usa em ``adapters.stock.create_hold``.
+    """
+    from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
+
     return {
         "safety_margin": scope["safety_margin"],
         "allowed_positions": scope["allowed_positions"],
         "excluded_positions": scope.get("excluded_positions"),
-        "expiry_margin_days": scope.get("expiry_margin_days", 0),
+        "expiry_margin_days": expiry_margin_for_target(scope.get("expiry_margin_days", 0), target_date),
         "include_nonconforming": scope.get("sells_nonconforming", True),
         "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
     }
@@ -1280,10 +1318,15 @@ def reconcile(
     session_key: str,
     channel_ref: str | None = None,
     target_date: date | None = None,
-    ttl_minutes: int = 30,
+    ttl_minutes: int | None = None,
 ) -> dict:
     """
     Bring the total reserved qty for `(session_key, sku)` to exactly `new_qty`.
+
+    ``ttl_minutes=None`` resolve o TTL configurado no canal
+    (``ChannelConfig.stock.hold_ttl_minutes``), como o ``reserve``; sem
+    configuração, 30 minutos. O acréscimo pelo seletor de quantidade nasce com
+    o mesmo prazo do primeiro item (#2773).
 
     Used by the cart's stepper and remove flows: while `reserve()` assumes a
     brand-new additive reservation, `reconcile()` computes the delta against
@@ -1326,6 +1369,8 @@ def reconcile(
     new_qty_d = Decimal(str(new_qty))
     if new_qty_d < 0:
         new_qty_d = Decimal("0")
+    if ttl_minutes is None:
+        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
 
     # Bundles are reconciled per component. Component holds are scoped by
     # cart-line metadata so a combo using CROIS-01 cannot consume/release a

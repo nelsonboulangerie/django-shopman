@@ -158,7 +158,7 @@ useSeoMeta({ title: 'Sua oferta', robots: 'noindex, nofollow' })
           <Icon name="lucide:circle-slash" class="mx-auto size-8 text-muted-foreground" />
           <h1 class="mt-4 shop-title">{{ problem }}</h1>
           <p class="mt-2 shop-muted">
-            O cardápio de hoje segue no ar, e tem coisa boa saindo do forno.
+            O cardápio de hoje segue no ar, e tem coisa boa ficando pronta.
           </p>
           <UiButton size="lg" class="mt-4 w-full justify-center" to="/menu">
             Ver o cardápio

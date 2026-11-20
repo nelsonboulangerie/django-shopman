@@ -49,12 +49,12 @@ CONSUMER_SCREENS: dict[str, tuple[str, str]] = {
     "shopman/storefront/api/account.py": ("Loja", "Conta do cliente"),
     # Concierge de WhatsApp: a conversa por IA que vende pelo chat (ADR-026).
     "shopman/storefront/concierge/service.py": ("WhatsApp", "Concierge: respostas da casa"),
-    "shopman/storefront/concierge/prompt.py": ("WhatsApp", "Concierge: abertura da conversa"),
     "shopman/storefront/concierge/small_talk.py": ("WhatsApp", "Concierge: cumprimento e agradecimento"),
     "shopman/storefront/concierge/allergens.py": ("WhatsApp", "Concierge: alergia e alérgenos"),
     "shopman/storefront/concierge/house_rules.py": ("WhatsApp", "Concierge: regras da casa"),
     "shopman/storefront/concierge/intents.py": ("WhatsApp", "Concierge: várias perguntas numa mensagem"),
     "shopman/storefront/concierge/discount.py": ("WhatsApp", "Concierge: desconto da casa"),
+    "shopman/storefront/concierge/verification.py": ("WhatsApp", "Concierge: vou verificar com a equipe"),
     "shopman/storefront/concierge/cancellation.py": ("WhatsApp", "Concierge: cancelamento a pedido do cliente"),
     "shopman/storefront/concierge/dialogue.py": ("WhatsApp", "Concierge: memória da conversa"),
     "shopman/storefront/concierge/order_addition.py": ("WhatsApp", "Concierge: acrescentar a pedido já feito"),
@@ -66,6 +66,8 @@ CONSUMER_SCREENS: dict[str, tuple[str, str]] = {
     "shopman/shop/projections/order_tracking.py": ("Loja", "Acompanhamento do pedido"),
     "shopman/shop/modifiers.py": ("Loja", "Preços e promoções"),
     "shopman/backstage/presentation/status.py": ("Operador", "Rótulos de status"),
+    # O Gestor mostra ao operador a MESMA frase do dinheiro que o cliente lê na loja.
+    "shopman/backstage/projections/order_pending.py": ("Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
 }
 
 UNMAPPED_SURFACE = "Outros"

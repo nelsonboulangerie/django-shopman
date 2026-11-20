@@ -212,10 +212,10 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     },
     # ── Fila de espera, fidelidade, acesso e produto ─────────────────────
     "waitlist_available": {
-        "subject": "Sua fornada saiu: confirme o pedido {order_ref_short}",
+        "subject": "Chegou a sua vez: confirme o pedido {order_ref_short}",
         "body": (
-            "Oba! 💛✨ Acabou de sair do forno{customer_name_greeting}! "
-            "Confirme o pedido *{order_ref_short}* para garantir: {tracking_url}"
+            "Oi{customer_name_greeting}! A fornada que você esperava ficou pronta. "
+            "Confirme seu pedido *{order_ref_short}* para garantir a sua vaga: {tracking_url}"
         ),
     },
     "waitlist_released": {
@@ -269,10 +269,13 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     },
     # `{availability_note}` nunca vem vazia e vem SEM ponto final (o ponto é daqui:
     # o template da Meta não termina em variável). services/availability_copy.py.
+    # "Fornada pronta", e não "{product_name} ficou pronto": o nome do produto pode
+    # ser feminino (a Tabatière, a Baguette) e "pronto" erraria a concordância. A
+    # fornada é sempre feminina.
     "production_ready": {
-        "subject": "{product_name} saiu do forno",
+        "subject": "Fornada pronta: {product_name}",
         "body": (
-            "Olha só o que acabou de sair do forno: *{product_name}*! {availability_note}.\n"
+            "Olha só a fornada que acabou de ficar pronta: *{product_name}*! {availability_note}.\n"
             "Garanta já o seu: {action_url}{management_note}"
         ),
     },
@@ -295,6 +298,110 @@ ACCESS_BUTTON_COPY: dict[str, str] = {
     "revoke": "Encerrar acesso",
     "revoke_lead": "Não reconhece este acesso?",
 }
+
+
+# ── Promessa em risco: a proposta que o operador leva ao cliente (WP-G08) ────
+#
+# NÃO é aviso automático: não tem ``NotificationTemplate`` nem modelo na Meta, e
+# nada aqui é enviado pelo sistema. É o texto que o diálogo "Resolver" do Gestor
+# monta para o operador CONFERIR e levar ao cliente (copiar, ou abrir a conversa
+# no WhatsApp com ele já escrito). Mora aqui porque é frase ao cliente sobre o
+# pedido, e a voz é a mesma: a concierge, no feminino, sem travessão.
+#
+# Três regras a mais, porque quem manda é uma pessoa e o cliente ainda não decidiu:
+#
+# - é PROPOSTA ("Posso trocar…?"), nunca fato consumado: o operador só conclui
+#   depois da resposta;
+# - fala a língua do cliente: o item "não vai ficar pronto", nunca "lote",
+#   "reserva" ou "fornada cancelada";
+# - no máximo um 💛 (na abertura) e um ✨ (no fecho) por mensagem.
+#
+# ``{customer_name_greeting}`` é ", Ana" ou vazio (o primeiro nome); sem o nome da
+# loja a abertura não diz "Aqui é da".
+PROMISE_PROPOSAL_COPY: dict[str, str] = {
+    "opening": "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛",
+    "opening_without_shop": "Oi{customer_name_greeting}! 💛",
+    # O que houve, com um item e com vários. ``{what}`` vem de PROMISE_ITEM_SITUATION.
+    "one_item": "O item {item} do seu pedido {order_ref_short} {what}, e sinto muito por isso.",
+    "many_items": "No seu pedido {order_ref_short}, {items}, e sinto muito por isso.",
+    "many_items_entry": "o item {item} {what}",
+    # O que a casa propõe, uma frase por escolha do diálogo.
+    "swap": "Posso trocar por {offer}? Me avisa e eu ajusto por aqui ✨",
+    "swap_named": "Posso trocar {item} por {offer}? Me avisa e eu ajusto por aqui ✨",
+    "reschedule": "Posso remarcar o seu pedido para outro dia? Me diz qual fica melhor para você ✨",
+    "remove_refund": "Posso tirar {removed} do pedido e devolver {amount} {route}? Me avisa e eu ajusto por aqui ✨",
+    "remove": "Posso tirar {removed} do pedido? O total fica em {total}. Me avisa e eu ajusto por aqui ✨",
+    "cancel_refund": (
+        "Se preferir, cancelo o pedido e devolvo {amount} {route}. Me avisa como fica melhor para você ✨"
+    ),
+    "cancel": "Se preferir, cancelo o pedido. Me avisa como fica melhor para você ✨",
+}
+
+#: O que houve com o item, nas palavras do cliente. ``{day}`` é " hoje", " amanhã",
+#: " para sábado, 21/11" ou vazio; ``{lacking}`` é "falta 1 de 3" / "faltam 2 de 4".
+#: O verbo só afirma o que a casa sabe: o item que a Produção ainda pode fazer e a
+#: reserva que se soltou "podem" faltar; o lote cancelado "não vai" ficar pronto.
+PROMISE_ITEM_SITUATION: dict[str, str] = {
+    "not_ready": "não vai ficar pronto{day}",
+    "not_ready_partial": "não vai ficar pronto por inteiro{day} ({lacking})",
+    "may_not_be_ready": "pode não ficar pronto{day}",
+    "may_not_be_ready_partial": "pode não ficar pronto por inteiro{day} ({lacking})",
+    "late": "está atrasado",
+    "out_of_stock": "está em falta",
+    "out_of_stock_partial": "está em falta em parte ({lacking})",
+    "may_be_missing": "pode faltar",
+    "may_be_missing_partial": "pode faltar em parte ({lacking})",
+}
+
+#: O que sai do pedido no "tirar o item": um item inteiro, vários inteiros, ou só a parte que falta.
+PROMISE_REMOVED: dict[str, str] = {"one": "esse item", "many": "esses itens", "part": "o que falta"}
+
+#: Por onde o dinheiro volta, na frase do cliente (as mesmas palavras do ``order_updated``).
+PROMISE_REFUND_ROUTE: dict[str, str] = {"pix": "pelo Pix", "card": "no seu cartão", "cash": "em dinheiro"}
+
+
+def promise_proposal(
+    proposal: str,
+    *,
+    shop_name: str,
+    customer_name: str,
+    order_ref_short: str,
+    items: list[dict[str, str]],
+    **values: str,
+) -> str:
+    """A mensagem de uma escolha do diálogo "Resolver": abertura, o que houve e a proposta.
+
+    ``proposal`` é uma chave de :data:`PROMISE_PROPOSAL_COPY` ("swap",
+    "swap_named", "reschedule", "remove", "remove_refund", "cancel",
+    "cancel_refund"). ``items`` são os itens em risco, cada um ``{"name",
+    "situation", "day", "lacking"}`` com ``situation`` de
+    :data:`PROMISE_ITEM_SITUATION`. ``values`` preenche a proposta (``offer``,
+    ``item``, ``removed``, ``amount``, ``route``, ``total``). Uma linha só, sem
+    quebra: é o que cabe no ``?text=`` do WhatsApp e no botão de copiar.
+    """
+    name = str(customer_name or "").strip()
+    greeting = f", {name}" if name else ""
+    shop = str(shop_name or "").strip()
+    opening = PROMISE_PROPOSAL_COPY["opening" if shop else "opening_without_shop"].format(
+        customer_name_greeting=greeting, shop_name=shop,
+    )
+    told = [
+        (
+            str(item["name"]),
+            PROMISE_ITEM_SITUATION[item["situation"]].format(day=item.get("day", ""), lacking=item.get("lacking", "")),
+        )
+        for item in items
+    ]
+    if len(told) == 1:
+        happened = PROMISE_PROPOSAL_COPY["one_item"].format(
+            item=told[0][0], what=told[0][1], order_ref_short=order_ref_short,
+        )
+    else:
+        entries = [PROMISE_PROPOSAL_COPY["many_items_entry"].format(item=item, what=what) for item, what in told]
+        happened = PROMISE_PROPOSAL_COPY["many_items"].format(
+            items=", ".join(entries[:-1]) + " e " + entries[-1], order_ref_short=order_ref_short,
+        )
+    return " ".join((opening, happened, PROMISE_PROPOSAL_COPY[proposal].format(**values)))
 
 
 def plain_bodies() -> dict[str, str]:

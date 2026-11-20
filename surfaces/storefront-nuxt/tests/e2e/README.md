@@ -54,6 +54,7 @@ As jornadas a canonizar estão na seção 8 de `docs/plans/EXCELENCIA-STOREFRONT
 | Spec | Jornada | Papéis |
 |---|---|---|
 | `j1-retirada-hoje-pix.spec.ts` | J1: retirada para hoje com Pix, do cardápio ao aceite | cliente nova (375 e 1366 px) · Gerente no Gestor (1366 px) |
+| `j3-loja-viva.spec.ts` | J3: o produto que acaba muda sozinho na tela de quem está olhando (pelo aviso da vitrine, pela consulta de reserva e pela recusa ao tocar) | duas clientes na loja: A olhando (375 e 1366 px) · B levando as últimas unidades (1366 px). Não usa o Gestor, mas a suíte pede a variável dele mesmo assim |
 
 A suíte **não sobe servidor nenhum** e recusa rodar sem as três variáveis abaixo. Cada
 projeto (`cliente-375`, `cliente-1366`) é uma cliente nova, com telefone sorteado, e faz um

@@ -14,6 +14,13 @@ const RAIL_SCOPE = [
   "[--ui-border:color-mix(in_srgb,var(--rail-foreground)_25%,transparent)]",
 ].join(" ");
 
+// Cabeçalho de diálogo e de gaveta lateral com o X na linha (ver `ui.modal`).
+const OVERLAY_HEADER_WITH_CLOSE = {
+  wrapper: "min-w-0 flex-1",
+  // `ms-auto`: sem título, o X continua na ponta da direita.
+  close: "static ms-auto shrink-0 self-start sm:-me-2",
+};
+
 export default defineAppConfig({
   ui: {
     // O título da barra do topo não se corta ("cópia não se corta"; achado do B.I.,
@@ -124,8 +131,16 @@ export default defineAppConfig({
       },
     },
     popover: { slots: { content: "bg-popover" } },
-    slideover: { slots: { content: "bg-card" } },
-    modal: { slots: { content: "bg-card" } },
+    // O X do cabeçalho entra na linha do título, em vez de flutuar por cima dela.
+    // O oficial posiciona o fechar em `absolute top-4 end-4` e não reserva o lugar
+    // dele: título ou descrição que chegam à borda passam por baixo do X (no PDV, a
+    // 375 px, o X cobria uma palavra da frase do Recebimento, #2806). Aqui o fechar
+    // é o último item da linha flexível do cabeçalho, no alto (`self-start`), e o
+    // texto ganha o resto da largura e quebra antes dele. O lugar na tela é o mesmo
+    // do oficial (16 px do topo e da borda; o `sm:-me-2` desfaz os 8 px a mais do
+    // `sm:px-6`). A trava está em `tests/components/OverlayHeader.test.ts`.
+    slideover: { slots: { content: "bg-card", ...OVERLAY_HEADER_WITH_CLOSE } },
+    modal: { slots: { content: "bg-card", ...OVERLAY_HEADER_WITH_CLOSE } },
     drawer: { slots: { content: "bg-card" } },
     tooltip: { slots: { content: "bg-popover text-default" } },
     dropdownMenu: { slots: { content: "bg-popover" } },
@@ -152,11 +167,21 @@ export default defineAppConfig({
     // tamanho do texto. A régua é a tela e não o aviso: `@container` no aviso fixa a
     // largura dele, e o aviso dentro de um popover (o "Por que espera" do quadro do
     // Gestor) encolhia a zero e sumia.
+    //
+    // O fechar tem 44 px de área de toque (#2746). O oficial desenha o X com 20 px e
+    // sem preenchimento (`p-0`): medido no navegador, o alvo efetivo era de 18 px, e
+    // no tablet do balcão o toque errava. O ícone continua pequeno; quem cresce é a
+    // área que recebe o toque (`after:-inset-3`: 12 px para cada lado, 20 + 24 = 44).
+    // `ms-1.5` afasta o X da ação vizinha, para a área maior não roubar o toque dela.
+    // Quem desenha o fechar com outro tamanho (`size-8`, 32 px, na faixa do cabeçalho
+    // e no `useAlertDismissals`) ajusta a sobra (`after:-inset-1.5`). A trava é
+    // `tests/alertCloseTarget.test.ts`.
     alert: {
       slots: {
         description: "opacity-100",
         root: "max-sm:flex-wrap max-sm:items-start",
         actions: "max-sm:basis-full max-sm:flex-col max-sm:items-stretch",
+        close: "relative ms-1.5 after:absolute after:-inset-3",
       },
       compoundVariants: [
         {

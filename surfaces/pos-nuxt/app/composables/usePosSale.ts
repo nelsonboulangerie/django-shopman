@@ -1137,14 +1137,21 @@ export function usePosSale(deps: PosSaleDeps) {
   const orderSetupComplete = ref(false);
   const orderSetupIssue = computed<OrderSetupIssue>(() => {
     if (cart.salesMode !== "order") return "";
+    // A ordem é a do funil da casa e a de `validate_sales_mode` no servidor:
+    // cliente, para quando, recebimento e, na entrega, o endereço. "Para quando"
+    // vem em segundo porque é a data que diz o que a casa pode prometer (decisão
+    // do dono, 19/11/2026, #2754).
     if (!cart.customerRef.trim()) return "customer";
-    if (!cart.fulfillmentConfirmed) return "fulfillment";
-    if (cart.fulfillmentType === "delivery" && !cart.deliveryAddress.trim()
-      && !cart.deliveryAddressStructured.route?.trim()) return "address";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(cart.deliveryDate)
       || (pos.value?.delivery_today && cart.deliveryDate < pos.value.delivery_today)) return "schedule";
+    if (!cart.fulfillmentConfirmed) return "fulfillment";
+    if (cart.fulfillmentType === "delivery" && !hasDeliveryAddress()) return "address";
     return "";
   });
+  /** A entrega em edição já tem endereço (o digitado ou o que veio do cadastro). */
+  function hasDeliveryAddress() {
+    return Boolean(cart.deliveryAddress.trim() || cart.deliveryAddressStructured.route?.trim());
+  }
   const orderSetupPending = computed(() => cart.salesMode === "order"
     && (!orderSetupComplete.value || Boolean(orderSetupIssue.value)));
   function completeOrderSetup() {
@@ -2492,14 +2499,23 @@ export function usePosSale(deps: PosSaleDeps) {
     // A linha do endereço é RECOMPOSTA dos campos, como na loja (`addressForm`):
     // a do Google ficava velha no instante em que o operador corrigia o número, e
     // era ela que ia para o pedido, a nota e o entregador.
-    structured.formatted_address = composedAddressLine({
+    //
+    // A exceção é o endereço ESCOLHIDO DO CADASTRO e não mexido: ele viaja com a
+    // linha do próprio cadastro. O servidor reconhece o endereço do cliente por
+    // essa linha (`_ensure_customer_address`), e a recomposta, escrita de outro
+    // jeito, fazia cada comanda salva gravar o mesmo endereço de novo, como "Casa".
+    const composed = (place: StructuredAddressProjection) => composedAddressLine({
       ...emptyAddressDraft(),
-      route: structured.route || "",
-      street_number: structured.street_number || "",
-      neighborhood: structured.neighborhood || "",
-      city: structured.city || "",
-      state_code: structured.state_code || "",
-    }) || structured.formatted_address || "";
+      route: place.route || "",
+      street_number: place.street_number || "",
+      neighborhood: place.neighborhood || "",
+      city: place.city || "",
+      state_code: place.state_code || "",
+    });
+    const fromRecord = cart.deliveryAddressStructured;
+    const untouched = Boolean(fromRecord.formatted_address) && composed(structured) === composed(fromRecord);
+    structured.formatted_address = (untouched ? fromRecord.formatted_address : composed(structured))
+      || structured.formatted_address || "";
     const deliveryAddress = structured.formatted_address;
     const discountValueNum = Number(String(cart.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
     const manualDiscount = discountValueNum > 0
@@ -2569,21 +2585,93 @@ export function usePosSale(deps: PosSaleDeps) {
     };
   }
 
-  function applyStructuredAddress(address: StructuredAddressProjection) {
-    cart.deliveryAddressStructured = {
-      ...cart.deliveryAddressStructured,
-      ...address,
-    };
-    cart.deliveryAddress = address.route || address.formatted_address || cart.deliveryAddress;
-    cart.deliveryStreetNumber = address.street_number || cart.deliveryStreetNumber;
-    cart.deliveryNeighborhood = address.neighborhood || cart.deliveryNeighborhood;
-    cart.deliveryComplement = address.complement || cart.deliveryComplement;
-    cart.deliveryInstructions = address.delivery_instructions || address.reference || cart.deliveryInstructions;
+  /**
+   * O endereço do cadastro SUBSTITUI o da entrega em edição, campo a campo.
+   * Mesclar (como a sugestão da busca faz) deixava o complemento e as instruções
+   * do endereço anterior grudados no novo, e trocar de endereço com a seta
+   * mandaria o "apto 12" de um para a rua do outro.
+   */
+  function applySavedAddress(address: SavedAddressProjection) {
+    cart.deliveryAddressStructured = { ...address };
+    cart.deliveryAddress = address.route || address.formatted_address;
+    cart.deliveryStreetNumber = address.street_number || "";
+    cart.deliveryNeighborhood = address.neighborhood || "";
+    cart.deliveryComplement = address.complement || "";
+    cart.deliveryInstructions = address.delivery_instructions || address.reference || "";
   }
 
-  function applySavedAddress(address: SavedAddressProjection) {
-    applyStructuredAddress(address);
-    cart.deliveryAddress = address.route || address.formatted_address;
+  /**
+   * Tira o endereço DESTA entrega: ela volta a "sem endereço" e o funil volta a
+   * pedi-lo. O cadastro do cliente não é tocado; o endereço continua na lista.
+   *
+   * O que saiu fica guardado para o Desfazer: um endereço digitado na hora não
+   * está em cadastro nenhum, e sem a volta ele teria de ser ditado de novo. O
+   * Desfazer mora na tela, ao lado de onde o endereço estava, e não num aviso
+   * passageiro: o gesto também existe dentro do diálogo de Recebimento, e por
+   * cima de um diálogo o aviso passageiro não recebe toque.
+   */
+  const removedDeliveryAddress = ref<{
+    tabSessionKey: string;
+    address: string;
+    structured: StructuredAddressProjection;
+    streetNumber: string;
+    neighborhood: string;
+    complement: string;
+    instructions: string;
+  } | null>(null);
+  /** Há um endereço recém-tirado DESTA comanda para devolver, e nada no lugar dele. */
+  const canRestoreDeliveryAddress = computed(() => removedDeliveryAddress.value?.tabSessionKey === cart.tabSessionKey
+    && cart.fulfillmentType === "delivery"
+    && !hasDeliveryAddress());
+  // Outro endereço entrou no lugar: o que saiu antes deixa de ser "o último".
+  watch(() => hasDeliveryAddress(), (has) => {
+    if (has) removedDeliveryAddress.value = null;
+  });
+  function clearDeliveryAddress() {
+    if (!hasDeliveryAddress()) return;
+    removedDeliveryAddress.value = {
+      tabSessionKey: cart.tabSessionKey,
+      address: cart.deliveryAddress,
+      structured: { ...cart.deliveryAddressStructured },
+      streetNumber: cart.deliveryStreetNumber,
+      neighborhood: cart.deliveryNeighborhood,
+      complement: cart.deliveryComplement,
+      instructions: cart.deliveryInstructions,
+    };
+    cart.deliveryAddress = "";
+    cart.deliveryAddressStructured = {};
+    cart.deliveryStreetNumber = "";
+    cart.deliveryNeighborhood = "";
+    cart.deliveryComplement = "";
+    cart.deliveryInstructions = "";
+  }
+  function restoreDeliveryAddress() {
+    const before = removedDeliveryAddress.value;
+    if (!before || !canRestoreDeliveryAddress.value) return;
+    cart.deliveryAddress = before.address;
+    cart.deliveryAddressStructured = before.structured;
+    cart.deliveryStreetNumber = before.streetNumber;
+    cart.deliveryNeighborhood = before.neighborhood;
+    cart.deliveryComplement = before.complement;
+    cart.deliveryInstructions = before.instructions;
+    removedDeliveryAddress.value = null;
+  }
+
+  /** Entrega sem endereço e cliente com cadastro: o endereço padrão já vem escolhido. */
+  function preselectDefaultAddress(customer: POSCustomerLookupProjection | null = customerLookup.value) {
+    if (cart.fulfillmentType !== "delivery" || hasDeliveryAddress()) return;
+    if (customer?.default_address) applySavedAddress(customer.default_address);
+  }
+
+  /**
+   * O operador AFIRMOU como o pedido será recebido (no assistente ou no diálogo
+   * de Recebimento). Na entrega, o endereço padrão do cliente já vem escolhido:
+   * basta confirmar, ou trocar pela lista.
+   */
+  function chooseFulfillment(type: "pickup" | "delivery") {
+    cart.fulfillmentType = type;
+    cart.fulfillmentConfirmed = true;
+    preselectDefaultAddress();
   }
 
   let customerLookupRequest = 0;
@@ -2667,9 +2755,7 @@ export function usePosSale(deps: PosSaleDeps) {
       });
     }
     if (customer.is_staff) cart.customerMemoryAction = "";
-    if (cart.fulfillmentType === "delivery" && customer.default_address && !cart.deliveryAddress.trim()) {
-      applySavedAddress(customer.default_address);
-    }
+    preselectDefaultAddress(customer);
   }
 
   async function lookupCustomer() {
@@ -2934,9 +3020,7 @@ export function usePosSale(deps: PosSaleDeps) {
           duration: 8000,
         });
       }
-      if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
-        applySavedAddress(response.customer.default_address);
-      }
+      preselectDefaultAddress(response.customer);
       toast.success(response.created ? "Cliente cadastrado." : "Cadastro do cliente salvo.");
       return true;
     } catch (error) {
@@ -4843,6 +4927,10 @@ export function usePosSale(deps: PosSaleDeps) {
     openTab,
     openTabFromDialog,
     applySavedAddress,
+    clearDeliveryAddress,
+    restoreDeliveryAddress,
+    canRestoreDeliveryAddress,
+    chooseFulfillment,
     lookupCustomer,
     resolveCustomer,
     customerDecision,

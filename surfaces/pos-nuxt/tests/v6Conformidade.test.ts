@@ -32,7 +32,7 @@ describe("P04: 'Mesa 6' grande e '#1007' pequeno", () => {
   });
 });
 
-describe("P03: 'Consumir aqui F7' e 'Agora F8' também no Balcão", () => {
+describe("P03: 'Agora F7' e 'Consumir aqui F8' também no Balcão", () => {
   it("os chips não somem no modo Balcão", () => {
     const header = read("../app/components/PosTabHeader.vue");
     expect(header).not.toMatch(/v-if="hasOpenTab && salesMode !== 'counter'"/);
@@ -42,6 +42,29 @@ describe("P03: 'Consumir aqui F7' e 'Agora F8' também no Balcão", () => {
     expect(page).not.toContain('if (cart.salesMode === "counter") return;');
     expect(page).toContain("leaveCounterThen(openFulfillmentHere)");
     expect(page).toContain("leaveCounterThen(openScheduleHere)");
+  });
+
+  // A barra segue o funil da encomenda (dono, 19/11/2026, #2754): cliente,
+  // quando, recebimento. A tecla é da POSIÇÃO do chip, e a página abre pela
+  // tecla o mesmo que o chip abre pelo toque.
+  it("a barra vem na ordem cliente, quando, recebimento, e a tecla acompanha a posição", () => {
+    const header = read("../app/components/PosTabHeader.vue");
+    const chips = [...header.matchAll(/data-context-entry="(\w+)"|>(F\d)<\/OperatorKbd>/g)].map((m) => m[1] || m[2]);
+    expect(chips).toEqual(["customer", "F6", "schedule", "F7", "fulfillment", "F8"]);
+    expect(header).toContain("Quando (F7)");
+    expect(header).toContain("Recebimento (F8)");
+    const page = read("../app/pages/index.vue");
+    expect(page).toMatch(/case "F7":[^}]*?openScheduleHere\(\);/);
+    expect(page).toMatch(/case "F8":[^}]*?openFulfillmentHere\(\);/);
+  });
+
+  it("na encomenda por combinar, a barra respeita o funil: sem data, o Recebimento leva ao Quando", () => {
+    const page = read("../app/pages/index.vue");
+    const fulfillment = page.slice(page.indexOf("function openFulfillmentHere()"), page.indexOf("function openScheduleHere()"));
+    expect(fulfillment).toContain('orderSetupIssue.value === "schedule"');
+    expect(fulfillment).toContain("openScheduleHere();");
+    const schedule = page.slice(page.indexOf("function openScheduleHere()"), page.indexOf("const orderEntrySchedule"));
+    expect(schedule).not.toContain("openFulfillmentHere");
   });
 });
 

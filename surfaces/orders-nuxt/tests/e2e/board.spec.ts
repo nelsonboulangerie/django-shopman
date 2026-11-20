@@ -29,14 +29,17 @@ test.describe("Gestor — board de pedidos", () => {
 
 test("card e lista mantêm o avanço bloqueado e explicam o motivo", async ({ page }) => {
   await page.goto("/?view=board&columns=all");
-  // No cartão o bloqueio é a pílula "Por que espera"; o motivo abre a um toque.
+  // No cartão o bloqueio é a pílula com o nome do fato (WP-G06); o motivo abre a um toque.
   const card = page.locator("article").filter({ hasText: "Pagamento pendente" });
-  await card.getByRole("button", { name: "Por que espera", exact: true }).click();
+  const pill = card.locator('[data-card-notice="block"]');
+  await expect(pill).toHaveText("Aguardando pagamento");
+  await pill.click();
   await expect(page.getByText("O pagamento ainda não foi capturado.", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  // Na Tabela o gesto aparece travado, com o motivo no title.
+  // Na Tabela o bloqueio é um selo com o nome, não um botão morto (WP-G08); o motivo
+  // vai escrito na linha aberta, porque o title não existe no toque.
   await page.getByRole("tab", { name: "Tabela" }).click();
-  const action = page.getByRole("button", { name: "Aguardando pagamento", exact: true });
-  await expect(action).toBeDisabled();
-  await expect(action).toHaveAttribute("title", "O pagamento ainda não foi capturado.");
+  const row = page.getByRole("row").filter({ hasText: "Pagamento pendente" });
+  await expect(row.locator("[data-supervision-block]")).toHaveText("Aguardando pagamento");
+  await expect(page.getByRole("button", { name: "Aguardando pagamento", exact: true })).toHaveCount(0);
 });

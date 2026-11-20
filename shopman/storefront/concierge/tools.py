@@ -1,12 +1,13 @@
-"""As ferramentas do concierge: onde o dinheiro é decidido.
+"""Os executores da Concierge: onde o dinheiro é decidido.
 
 Cada função aqui é determinística e só chama services que já existem: o
 catálogo da loja, a disponibilidade do Stockman, a sacola do Orderman, os
 slots de retirada, o checkout, o pagamento, o acompanhamento e o access link.
-O modelo escolhe QUAL ferramenta chamar e conversa sobre o resultado; nenhum
-preço, saldo, prazo ou código Pix nasce no texto dele.
+Quem chama é a leitura em partes (``intents.execute``), sempre por ``execute``,
+que valida a entrada contra ``INPUT_SCHEMAS``; nenhum preço, saldo, prazo ou
+código Pix nasce fora daqui.
 
-Três portões que não são do modelo:
+Três portões:
 
 - ``review_order`` fecha um ORÇAMENTO e devolve um ``quote_token`` que resume
   sacola + fulfillment + total. ``place_order`` só aceita esse token, e só se
@@ -14,12 +15,12 @@ Três portões que não são do modelo:
   pedido volta para a revisão. O token identifica o resumo; compra exige também
   Message de revisão aceita pelo provider e uma nova entrada explícita do cliente.
 - ``place_order`` é idempotente pela chave ``concierge:<conversa>:<token>``:
-  o modelo repetir a chamada não repete o pedido.
+  repetir a chamada não repete o pedido.
 - O código Pix vai numa mensagem SEPARADA, montada pela casa (``extra_replies``),
-  para o cliente copiar sem ruído. O modelo só avisa que ele chega em seguida.
+  para o cliente copiar sem ruído.
 
 Todo resultado é um ``dict`` serializável; erro de negócio vira ``{"ok": False,
-"error": código, "message": frase}`` e nunca exceção, para o modelo poder
+"error": código, "message": frase}`` e nunca exceção, para quem chama poder
 explicar ao cliente o que faltou.
 """
 
@@ -76,8 +77,8 @@ class ToolContext:
     account: str = ""
     transport_channel: str = ""
     connection_key: str = ""
-    #: Texto humano deste turno, capturado pelo servidor. Uma consulta sugerida
-    #: pelo modelo pode refiná-lo, nunca apagar uma parte da pergunta original.
+    #: Texto humano deste turno, capturado pelo servidor. Uma consulta refinada
+    #: por quem chama pode refiná-lo, nunca apagar uma parte da pergunta original.
     customer_text: str = ""
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
@@ -466,7 +467,7 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
     A fala original vem no contexto imutável do turno. ``query`` é apenas um
     refinamento opcional para elipses como "ela é vegana?"; nunca substitui o
     que o cliente de fato escreveu. Assim uma frase composta tem uma única
-    porta de leitura, mesmo que o modelo tente consultar somente "entrega".
+    porta de leitura, mesmo que quem chama consulte somente "entrega".
     """
     from shopman.shop.models import Shop
     from shopman.storefront.presentation.catalog import build_catalog
@@ -958,7 +959,12 @@ def set_fulfillment(
                 )
             saved_choice = delivery_address.pick_saved(saved_list, saved_address_label) if wants_saved else None
             if saved_choice is None:
-                prefix = "" if list_saved_addresses and not wants_saved else "Não achei esse endereço no seu cadastro. "
+                if list_saved_addresses and not wants_saved:
+                    prefix = ""
+                elif len(delivery_address.matching_saved(saved_list, saved_address_label)) > 1:
+                    prefix = "Encontrei mais de um endereço assim no seu cadastro. "
+                else:
+                    prefix = "Não achei esse endereço no seu cadastro. "
                 return _saved_addresses_result("saved_addresses", prefix + delivery_address.saved_listing(saved_list), saved_list)
         if asks_nothing and saved_list:
             return _saved_addresses_result("saved_address_offer", delivery_address.saved_offer(saved_list), saved_list)
@@ -1032,20 +1038,23 @@ def set_fulfillment(
 def _saved_addresses_result(code: str, message: str, saved_list: list) -> dict:
     """Oferta ou lista do cadastro: nada gravado, só a frase ao cliente.
 
-    O modelo recebe os rótulos para repassar a escolha em
+    Quem chama recebe os rótulos para repassar a escolha em
     ``saved_address_label``; o cliente recebe a frase (``render_result``).
     """
+    from shopman.storefront.concierge import address as delivery_address
+
     return {
         "ok": True, "code": code, "message": message,
-        "saved_address_labels": [saved.display_label for saved in saved_list],
+        # Sem etiqueta, o endereço é chamado pela rua (#2775).
+        "saved_address_labels": [delivery_address.saved_name(saved) for saved in saved_list],
     }
 
 
 def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
     """A última localização (pin) que o cliente mandou NESTA conversa.
 
-    O servidor lê a coordenada do envelope da entrada (``transport``); o
-    modelo nunca a digita. ``None`` quando não houve pin.
+    O servidor lê a coordenada do envelope da entrada (``transport``);
+    ninguém a digita. ``None`` quando não houve pin.
     """
     from shopman.shop.models import ConversationMessage as Message
 
@@ -1462,7 +1471,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         if getattr(exc, "code", "") in REFUSAL_CODES:
             # A porta recusa CPF/CNPJ informado e INVÁLIDO, ou endereço
             # incompleto. CPF em branco passa: a nota sai presencial (ADR-035).
-            # O modelo precisa saber O QUE consertar, não que "não deu".
+            # Quem chama precisa saber O QUE consertar, não que "não deu".
             return _error(
                 exc.code,
                 f"{exc.message} Se o CPF ou CNPJ está errado, peça o número certo ao cliente ou siga sem ele "
@@ -1844,7 +1853,7 @@ def _display_name(value) -> str:
 
 
 def render_result(name: str, result: dict) -> str:
-    """Somente fatos do servidor; texto livre do modelo nunca entra na resposta."""
+    """Somente fatos do servidor; texto livre nunca entra na resposta."""
     if not result.get("ok"):
         return _display_text(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
     if result.get("message") and (
@@ -1932,194 +1941,102 @@ def render_result(name: str, result: dict) -> str:
 # ── Registro ──────────────────────────────────────────────────────────
 
 
-def _schema(properties: dict, required: list[str]) -> dict:
-    """Esquema de ferramenta SEM ``strict``, e só o obrigatório em ``required``.
-
-    Medido em 04/09/2026: com ``strict`` e todo parâmetro obrigatório, o modelo,
-    querendo omitir um filtro, era obrigado pela gramática a preencher a string e
-    preenchia com a própria sintaxe interna de chamada (tags), turno após turno.
-    Parâmetro opcional fica opcional; a função tem default.
-    """
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": False,
-    }
-
-
-TOOL_SPECS: list[dict] = [
-    {
-        "name": "search_storefront",
-        "description": (
-            "Pesquisa de uma vez todo o conteúdo público canônico da loja: cardápio com preço e "
-            "disponibilidade atuais, entrega/retirada, horários, endereço, contato e FAQ. Use antes "
-            "de responder qualquer pergunta pública. A fala original deste turno é sempre incluída "
-            "pelo servidor; `query` apenas acrescenta contexto para uma referência como 'ela'."
-        ),
-        "input_schema": _schema(
-            {
-                "query": {
-                    "type": "string",
-                    "description": "Refinamento opcional; não precisa repetir a fala do cliente.",
-                },
-            },
-            [],
-        ),
+#: O que cada executor aceita: os campos, o tipo e os valores fechados. ``execute`` valida
+#: toda entrada contra isto antes de chamar o executor (campo a mais, obrigatório faltando,
+#: tipo ou valor fora da lista viram ``invalid_input``, nunca exceção).
+INPUT_SCHEMAS: dict[str, dict] = {
+    "search_storefront": {
+        "properties": {
+            "query": {"type": "string"},
+        },
+        "required": [],
     },
-    {
-        "name": "view_cart",
-        "description": "Mostra a sacola atual: itens, totais, entrega/retirada escolhida e o que falta para fechar.",
-        "input_schema": _schema({}, []),
+    "view_cart": {
+        "properties": {},
+        "required": [],
     },
-    {
-        "name": "set_item",
-        "description": (
-            "Define a quantidade ABSOLUTA de um produto na sacola (0 remove). Reserva o estoque; se não "
-            "houver, devolve o saldo real e substitutos. Use o SKU exato de search_storefront."
-        ),
-        "input_schema": _schema(
-            {
-                "sku": {"type": "string", "description": "SKU do produto."},
-                "qty": {"type": "number", "description": "Quantidade final na unidade do produto (0 remove); decimal exato para peso ou volume."},
-            },
-            ["sku", "qty"],
-        ),
+    "set_item": {
+        "properties": {
+            "sku": {"type": "string"},
+            "qty": {"type": "number"},
+        },
+        "required": ["sku", "qty"],
     },
-    {
-        "name": "list_fulfillment_slots",
-        "description": (
-            "Dias e horários possíveis. Para retirada devolve os slots (com os que a produção "
-            "ainda não alcança). Para entrega devolve as janelas do dia. `delivery_date` em AAAA-MM-DD "
-            "ou \"\" para hoje."
-        ),
-        "input_schema": _schema(
-            {
-                "delivery_date": {"type": "string", "description": "AAAA-MM-DD; omita para hoje."},
-                "fulfillment_type": {"type": "string", "enum": ["pickup", "delivery"]},
-            },
-            [],
-        ),
+    "list_fulfillment_slots": {
+        "properties": {
+            "delivery_date": {"type": "string"},
+            "fulfillment_type": {"type": "string", "enum": ["pickup", "delivery"]},
+        },
+        "required": [],
     },
-    {
-        "name": "set_fulfillment",
-        "description": (
-            "Grava retirada (pickup) ou entrega (delivery), a data (AAAA-MM-DD, \"\" = hoje), o "
-            "horário (slot_ref de list_fulfillment_slots, \"\" se ainda não escolhido) e, na entrega, o "
-            "endereço e o CPF ou CNPJ para a nota fiscal. Valida como o site e devolve a taxa de entrega. "
-            "O endereço se monta aos poucos: `use_shared_location` usa a localização que o cliente enviou "
-            "no WhatsApp; `address` é o endereço escrito; as partes (street, street_number, complement, "
-            "neighborhood, postal_code, city, state) são o que o cliente disse depois e vão por cima do "
-            "endereço já gravado. Chamadas seguintes só precisam das partes novas. O resultado traz "
-            "`address_question`: o que ainda falta perguntar. Entrega sem endereço nenhum, para quem tem "
-            "endereço cadastrado, não grava nada e devolve a oferta desse endereço (`saved_address_offer`): "
-            "se o cliente aceitar, chame de novo com `use_saved_address=true` (e a data, o horário e o CPF já "
-            "ditos); outro endereço cadastrado vai em `saved_address_label` (um dos `saved_address_labels`); "
-            "`list_saved_addresses=true` mostra os endereços cadastrados; recusou, siga pela localização ou "
-            "pelo texto."
-        ),
-        "input_schema": _schema(
-            {
-                "fulfillment_type": {"type": "string", "enum": ["pickup", "delivery"]},
-                "delivery_date": {"type": "string", "description": "AAAA-MM-DD ou \"\"."},
-                "slot_ref": {"type": "string", "description": "Ref do horário, ou \"\"."},
-                "address": {"type": "string", "description": "Endereço escrito pelo cliente (entrega), ou \"\"."},
-                "tax_id": {"type": "string", "description": "CPF ou CNPJ do cliente para a nota fiscal da entrega (opcional: sem ele a nota sai sem identificar o consumidor), ou \"\"."},
-                "use_shared_location": {"type": "boolean", "description": "true quando o cliente enviou a localização pelo WhatsApp e ela é o endereço da entrega."},
-                "street": {"type": "string", "description": "Rua dita/corrigida pelo cliente, ou \"\"."},
-                "street_number": {"type": "string", "description": "Número da casa/prédio (ou \"S/N\" se o cliente disser que não tem), ou \"\"."},
-                "complement": {"type": "string", "description": "Complemento (apto, bloco, fundos); \"sem complemento\" quando o cliente disser que não tem; \"\" se não foi dito."},
-                "neighborhood": {"type": "string", "description": "Bairro, ou \"\"."},
-                "postal_code": {"type": "string", "description": "CEP, ou \"\"."},
-                "city": {"type": "string", "description": "Cidade, ou \"\"."},
-                "state": {"type": "string", "description": "UF (ex.: PR), ou \"\"."},
-                "use_saved_address": {"type": "boolean", "description": "true quando o cliente aceitou entregar no endereço do cadastro oferecido."},
-                "saved_address_label": {"type": "string", "description": "Rótulo do endereço cadastrado que o cliente escolheu (de `saved_address_labels`), ou \"\" para o padrão."},
-                "list_saved_addresses": {"type": "boolean", "description": "true quando o cliente pede para ver os endereços cadastrados."},
-            },
-            ["fulfillment_type"],
-        ),
+    "set_fulfillment": {
+        "properties": {
+            "fulfillment_type": {"type": "string", "enum": ["pickup", "delivery"]},
+            "delivery_date": {"type": "string"},
+            "slot_ref": {"type": "string"},
+            "address": {"type": "string"},
+            "tax_id": {"type": "string"},
+            "use_shared_location": {"type": "boolean"},
+            "street": {"type": "string"},
+            "street_number": {"type": "string"},
+            "complement": {"type": "string"},
+            "neighborhood": {"type": "string"},
+            "postal_code": {"type": "string"},
+            "city": {"type": "string"},
+            "state": {"type": "string"},
+            "use_saved_address": {"type": "boolean"},
+            "saved_address_label": {"type": "string"},
+            "list_saved_addresses": {"type": "boolean"},
+        },
+        "required": ["fulfillment_type"],
     },
-    {
-        "name": "review_order",
-        "description": (
-            "Fecha o orçamento: recap de itens, entrega/retirada, total e formas de pagamento. Devolve "
-            "`ready` e, quando pronto, o `quote_token`. Apresente o recap ao cliente e peça a confirmação "
-            "explícita ANTES de place_order."
-        ),
-        "input_schema": _schema({"payment_method": {"type": "string"}, "order_notes": {"type": "string", "description": "Observação para incluir no resumo antes da confirmação; até 300 caracteres."}}, []),
+    "review_order": {
+        "properties": {
+            "payment_method": {"type": "string"},
+            "order_notes": {"type": "string"},
+        },
+        "required": [],
     },
-    {
-        "name": "place_order",
-        "description": (
-            "Cria o pedido do orçamento confirmado. Só depois do cliente dizer que confirma. Passe o "
-            "`quote_token` de review_order e a forma de pagamento escolhida. O código Pix, quando "
-            "houver, é enviado pela casa numa mensagem separada logo após a sua."
-        ),
-        "input_schema": _schema(
-            {
-                "quote_token": {"type": "string"},
-                "payment_method": {"type": "string", "description": "Ref de payment_methods (ex.: pix, card)."},
-                "order_notes": {"type": "string", "description": "Observação do cliente para a cozinha, ou \"\"."},
-            },
-            ["quote_token", "payment_method"],
-        ),
+    "place_order": {
+        "properties": {
+            "quote_token": {"type": "string"},
+            "payment_method": {"type": "string"},
+            "order_notes": {"type": "string"},
+        },
+        "required": ["quote_token", "payment_method"],
     },
-    {
-        "name": "order_status",
-        "description": (
-            "Situação dos pedidos do cliente (os 3 últimos, ou um ref específico): estado, mensagem "
-            "oficial, prazo e link de acompanhamento."
-        ),
-        "input_schema": _schema(
-            {"order_ref": {"type": "string", "description": "Ref do pedido; omita para os últimos."}},
-            [],
-        ),
+    "order_status": {
+        "properties": {
+            "order_ref": {"type": "string"},
+        },
+        "required": [],
     },
-    {
-        "name": "add_to_order",
-        "description": (
-            "Acrescentar item a um pedido JÁ FEITO do cliente (não a sacola). Use SÓ quando o cliente "
-            "pedir; nunca ofereça. Não muda nada: devolve a pergunta de confirmação da casa, ou o motivo "
-            "de não dar. O \"sim\" do cliente o servidor aplica."
-        ),
-        "input_schema": _schema(
-            {
-                "order_ref": {"type": "string", "description": "Número do pedido do cliente."},
-                "sku": {"type": "string", "description": "SKU do produto (de search_storefront)."},
-                "qty": {"type": "integer", "description": "Quantos a mais, de 1 a 99."},
-            },
-            ["order_ref", "sku", "qty"],
-        ),
+    "add_to_order": {
+        "properties": {
+            "order_ref": {"type": "string"},
+            "sku": {"type": "string"},
+            "qty": {"type": "integer"},
+        },
+        "required": ["order_ref", "sku", "qty"],
     },
-    {
-        "name": "last_order",
-        "description": "Itens do último pedido do cliente, para repetir (\"o de sempre\").",
-        "input_schema": _schema({}, []),
+    "last_order": {
+        "properties": {},
+        "required": [],
     },
-    {
-        "name": "send_web_link",
-        "description": (
-            "Gera um link do site já logado (leva a sacola junto quando há). Use quando algo é melhor "
-            "no site: cardápio completo com fotos, entrega fora do fluxo, conta, ou cliente sem telefone. "
-            "Para PAGAR um pedido que já foi feito, use `order`: o pagamento de um pedido vive no "
-            "acompanhamento dele, não no checkout."
-        ),
-        "input_schema": _schema(
-            {"destination": {"type": "string", "enum": ["menu", "checkout", "account", "order"]}, "order_ref": {"type": "string"}},
-            [],
-        ),
+    "send_web_link": {
+        "properties": {
+            "destination": {"type": "string", "enum": ["menu", "checkout", "account", "order"]},
+            "order_ref": {"type": "string"},
+        },
+        "required": [],
     },
-    {
-        "name": "notify_when_available",
-        "description": (
-            "Registra o aviso \"me avise quando tiver\" para um produto indisponível, o mesmo sino do "
-            "site: o cliente recebe uma mensagem quando o produto voltar ou quando sair a fornada. "
-            "Ofereça quando um item pedido estiver indisponível."
-        ),
-        "input_schema": _schema({"sku": {"type": "string", "description": "SKU do produto."}}, ["sku"]),
+    "notify_when_available": {
+        "properties": {
+            "sku": {"type": "string"},
+        },
+        "required": ["sku"],
     },
-]
+}
 
 _HANDLERS = {
     "search_storefront": search_storefront,
@@ -2136,29 +2053,12 @@ _HANDLERS = {
     "notify_when_available": notify_when_available,
 }
 
-TOOL_NAMES = tuple(_HANDLERS)
-
-# Uma entrada sem identidade estável do evento ainda pode conversar e consultar
-# fatos. O servidor não oferece ao modelo comandos que alteram sacola, entrega,
-# pedido, pagamento, acesso ou consentimento enquanto a autoridade comercial do
-# turno estiver fechada. Os guards abaixo continuam sendo a garantia primária.
-LIMITED_AUTHORITY_TOOL_NAMES = frozenset(
-    {
-        "search_storefront",
-        "view_cart",
-        "list_fulfillment_slots",
-        "order_status",
-        "last_order",
-    }
-)
-
-
 def execute(name: str, arguments: dict, ctx: ToolContext) -> dict:
     """Roda a ferramenta ``name``. Nunca levanta: erro vira resultado explicável."""
     handler = _HANDLERS.get(name)
     if handler is None:
         return _error("unknown_tool", f"Ferramenta desconhecida: {name}")
-    schema = next(spec["input_schema"] for spec in TOOL_SPECS if spec["name"] == name)
+    schema = INPUT_SCHEMAS[name]
     if not isinstance(arguments, dict) or set(arguments) - set(schema["properties"]) or any(key not in arguments for key in schema["required"]):
         return _error("invalid_input", "Confira os dados necessários para esta ação.")
     for key, value in arguments.items():

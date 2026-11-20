@@ -20,6 +20,7 @@ import {
   inboxAlertDescription,
   operatorAlertToInbox,
   urgentAlerts,
+  answerScreenAlerts,
   deadlineLeftLabel,
   respondInLabel,
   reminderIntervalMs,
@@ -287,6 +288,32 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     );
     expect(view.blocking?.key).toBe(1);
     expect(view.reminders.map((item) => item.key)).toEqual([2]);
+  });
+
+  it("a pergunta que espera resposta só vira janela quando o prazo vence", () => {
+    const answer = { label: "Responder", placeholder: "", maxLength: 300 };
+    const running = urgentAlerts([{ key: 1, respondByIso: at(7), seen: false, deadlineKind: "house", answer }], NOW);
+    expect(running).toEqual({ blocking: null, reminders: [] });
+    const late = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: false, deadlineKind: "house", answer }], NOW);
+    expect(late.blocking?.key).toBe(1);
+    // Vista, não vira lembrete passageiro: a pílula é o lembrete dela.
+    const seen = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: true, deadlineKind: "house", answer }], NOW);
+    expect(seen).toEqual({ blocking: null, reminders: [] });
+  });
+
+  it("a pergunta vira aviso de tela no topo: âmbar, vermelho no prazo vencido, a mais antiga primeiro", () => {
+    const answer = { label: "Responder", placeholder: "", maxLength: 300 };
+    const clock = (iso: string) => `${new Date(iso).getUTCHours()}h${String(new Date(iso).getUTCMinutes()).padStart(2, "0")}`;
+    const items = [
+      { key: 1, respondByIso: at(9), answer, subject: "Bia espera a resposta da equipe" },
+      { key: 2, respondByIso: at(-1), answer, subject: "Ana espera a resposta da equipe" },
+      { key: 3, respondByIso: at(1) },
+    ];
+    expect(answerScreenAlerts(items, NOW, clock)).toEqual([
+      { key: 2, id: "answer:2:late", title: "Ana espera a resposta da equipe\u00a0·\u00a0passou\u00a0do\u00a0prazo\u00a0há\u00a01\u00a0min", color: "error" },
+      { key: 1, id: "answer:1:open", title: "Bia espera a resposta da equipe\u00a0·\u00a0até\u00a015h09", color: "warning" },
+    ]);
+    expect(answerScreenAlerts([{ key: 3, respondByIso: at(1) }], NOW, clock)).toEqual([]);
   });
 
   it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {

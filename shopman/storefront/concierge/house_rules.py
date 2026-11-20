@@ -37,8 +37,8 @@ ninguém cumpre é pega na saída, como qualquer outra resposta.
 
 **Origem da resposta.** ``HOUSE`` é texto montado pelo código a partir dos dados
 (copy da casa, resultado de ferramenta, aviso de alergia); ``MODEL`` é texto
-livre de modelo. Hoje nenhum texto do modelo chega ao cliente (``agent.run_agent``
-só devolve o resultado canônico das ferramentas), então R1 e R5 são cumpridas
+livre de modelo. Nenhum texto do modelo chega ao cliente (o turno é a leitura em
+partes, ``intents.run``, e cada parte sai do executor da casa), então R1 e R5 são cumpridas
 por construção e o verificador delas só reprova texto ``MODEL``: é a trava para a
 redação com marcadores (F6) e a régua que o placar aplica às respostas antigas do
 alpha, que eram do modelo.
@@ -89,7 +89,7 @@ HANDOFF = "handoff"  # a conversa foi entregue à equipe
 CART = "cart"  # a sacola mudou
 ORDER = "order"  # o pedido foi registrado
 NOTIFY = "notify"  # aviso de disponibilidade registrado
-VERIFY = "verify"  # verificação com prazo aberta (fatia F5; ainda não existe)
+VERIFY = "verify"  # verificação com prazo aberta ou em espera ("vou verificar", ``verification``)
 
 
 def fold(text: str) -> str:
@@ -593,7 +593,7 @@ RULES: tuple[HouseRule, ...] = (
         on_violation={HOUSE: Effect.HOLD, MODEL: Effect.HOLD},
         enforced_by="house_rules._check_fact (resposta do modelo); resposta da casa cumpre por construção",
         must_flag=(
-            "Tem croissant hoje, sai às 9h.",
+            "Tem croissant hoje, fica pronto às 9h.",
             "O pão de forma custa R$ 18,00.",
             "Entregamos em até quarenta minutos.",
             "Peça por aqui: https://exemplo.com/loja",
@@ -621,7 +621,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         must_pass=(
             "O croissant está indisponível hoje.",
-            "A fornada acabou de sair do forno.",
+            "A fornada acabou de ficar pronta.",
             "O atendimento automático está pausado. Suas escolhas foram preservadas.",
         ),
         output_check=_check_unavailable,
@@ -681,7 +681,7 @@ RULES: tuple[HouseRule, ...] = (
         on_violation={HOUSE: Effect.ROUTE_TEAM},
         enforced_by=(
             "handoff.classify_handoff_request → cancellation.self_cancellable → triage.decide; "
-            "cancellation.ask/resolve_pending (agent.run_agent)"
+            "cancellation.ask/resolve_pending (intents.run)"
         ),
         entry_flag=(
             "Quero falar com um atendente",
@@ -789,7 +789,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         on_violation={HOUSE: Effect.FIXED_REPLY},
         enforced_by=(
-            "discount.handle_request, depois house_rules.fixed_reply_for (agent.run_agent, antes do modelo)"
+            "intents._house_fixed_reply e intents.execute: discount.handle_request, depois house_rules.fixed_reply_for"
         ),
         entry_flag=(
             "Faz um desconto pra mim?",
@@ -833,7 +833,7 @@ RULES: tuple[HouseRule, ...] = (
         when="só cumprimento, agradecimento ou despedida",
         demands="frase da casa curta, sem busca nem modelo",
         on_violation={HOUSE: Effect.FIXED_REPLY},
-        enforced_by="small_talk.small_talk_kind → agent.run_agent",
+        enforced_by="small_talk.small_talk_kind → intents.run",
         entry_flag=("Bom dia!", "Obrigada, até amanhã", "boa tarde, tudo bem?"),
         entry_pass=("Bom dia, tem croissant?", "Obrigada, e o pão de forma?"),
         entry_check=_entry_courtesy,
@@ -991,7 +991,7 @@ def review(texts: Iterable[str], ctx: ReplyContext = ReplyContext()) -> Review:
 
 
 def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = False) -> frozenset[str]:
-    """Os recibos do turno, lidos do que os executores fizeram (``AgentOutcome``)."""
+    """Os recibos do turno, lidos do que os executores fizeram (``TurnOutcome``)."""
     receipts: set[str] = set()
     if team_notified:
         receipts.add(TEAM_NOTIFIED)
@@ -999,6 +999,10 @@ def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = F
         receipts.update({HANDOFF, TEAM_NOTIFIED})
     if getattr(outcome, "order_ref", ""):
         receipts.add(ORDER)
+    verification = getattr(outcome, "verification", None) or {}
+    if verification.get("requests") or verification.get("waiting"):
+        # A pergunta foi para a equipe (ou está em espera): "te respondo por aqui" é verdade.
+        receipts.update({VERIFY, TEAM_NOTIFIED})
     for event in getattr(outcome, "tool_events", None) or ():
         if not event.get("ok", True):
             continue

@@ -19,6 +19,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_unrealized_production — fornada concluída sem o ledger de estoque fechado é re-realizada
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
+  concierge_verification_sweep — prazos do "vou verificar": aviso ao cliente e passagem à equipe
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   check_stock_alert_delivery_sla — aviso ao cliente travado/incerto alerta o Gestor
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
@@ -33,6 +34,7 @@ manutenção num loop (default: a cada 5 minutos):
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
+  concierge_shadow_decisions — decisão em sombra do framework conversacional (desligada pela Shop)
   run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
@@ -181,9 +183,17 @@ MAINTENANCE_COMMANDS = (
     "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "recover_concierge",
+    # O relógio do "vou verificar" (WP-06): depois da recuperação, para não avisar o
+    # cliente de uma resposta que a fila ainda ia mandar. Custo zero, sem modelo.
+    "concierge_verification_sweep",
     # A retenção é executada automaticamente; o comando só toca mensagens
     # inelegíveis cujo prazo aprovado já venceu.
     "cleanup_concierge_observations",
+    # A decisão em sombra do framework conversacional (N5): DEPOIS da limpeza, de
+    # propósito, para nunca decidir sobre o que a retenção acabou de vencer. Desligada
+    # pelo campo da Shop, não toca em nada; ligada, só grava (nem envia, nem escreve no
+    # comércio, nem chama modelo).
+    "concierge_shadow_decisions",
     # Piloto de intenções (INTENT-PILOT-PLAN): sorteia a mensagem observada
     # recente, pré-marca as intenções e mede os classificadores. DEPOIS da
     # limpeza, de propósito: nunca sorteia o que acabou de vencer. Tetos próprios
@@ -221,6 +231,9 @@ MAINTENANCE_COMMANDS = (
     # esquecida no Portal) ou abre com ela fechada. É o vigia que o
     # ``ifood_poll`` não tinha. Desligado (IFOOD_MERCHANT_SYNC), volta calado.
     "check_ifood_store",
+    # Fato do iFood (confirmou, saiu, concluiu) que chegou antes de o pedido local
+    # estar no ponto: aplica quando recente, avisa quando velho (3417, 12/11/2026).
+    "reconcile_ifood_orders",
     # O sinal de vida do ``ifood_poll --watch``: a integração direta entra só por
     # polling, e sem ele o iFood cancela em 8 min o pedido que não entrou. Mais de
     # 2 min sem resposta do iFood vira alerta crítico com e-mail (DEV-2026-017).

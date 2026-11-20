@@ -79,6 +79,59 @@ def _session_customer_identity(session_key: str) -> dict:
     return {k: existing[k] for k in _CUSTOMER_IDENTITY_KEYS if existing.get(k)}
 
 
+#: O código da recusa de estoque no envio do pedido (``shop.services.stock``).
+STOCK_REFUSAL_CODE = "insufficient_supply"
+
+
+def _stock_refusal_payload(exc: Exception) -> dict | None:
+    """A recusa de estoque no envio, com o item (plano EXCELENCIA-STOREFRONT, P1-11).
+
+    A recusa nasce sabendo qual item faltou, mas o mapeamento de erro de
+    formulário guardava só a frase: a tela recebia um aviso sem item, com texto
+    que mandava "ajustar o carrinho", e não tinha para onde levar a cliente.
+    Aqui o código e o item seguem até a tela, no dialeto de erro da API
+    (``detail``, ``field``, ``errors``) mais ``error_code`` e ``context``, como
+    as outras recusas com destino (``total_changed``). A frase é da loja:
+    sacola, nunca carrinho.
+    """
+    # Pelo código da recusa, sem importar o Orderman: a API da loja não fala com o
+    # Core direto (``test_import_boundaries``), e o código é o contrato da recusa.
+    if getattr(exc, "code", None) != STOCK_REFUSAL_CODE:
+        return None
+    context = dict(getattr(exc, "context", None) or {})
+    sku = str(context.get("sku") or "")
+    name = _product_name(sku) or sku
+    detail = (
+        f"{name} ficou indisponível antes de concluirmos o seu pedido."
+        if name
+        else "Um item ficou indisponível antes de concluirmos o seu pedido."
+    )
+    return {
+        "detail": detail,
+        "field": "checkout",
+        "errors": {"checkout": detail},
+        "error_code": STOCK_REFUSAL_CODE,
+        "context": {
+            "sku": sku,
+            "name": name,
+            "requested_qty": str(context.get("requested_qty") or ""),
+            "is_paused": str(context.get("error_code") or "") == "SKU_PAUSED",
+        },
+    }
+
+
+def _product_name(sku: str) -> str:
+    if not sku:
+        return ""
+    try:
+        from shopman.shop.services import product_readiness
+
+        return str(product_readiness.product_names([sku]).get(sku) or "")
+    except Exception:
+        logger.debug("checkout_stock_refusal_product_name_failed", exc_info=True)
+        return ""
+
+
 # Rate-limit MANUAL (is_ratelimited): só a tentativa que chega ao commit
 # incrementa o contador — cliente corrigindo erro de formulário não pode
 # tomar 429 no momento mais crítico do pedido.
@@ -522,6 +575,9 @@ class CheckoutView(APIView):
             )
         except Exception as exc:
             logger.debug("views.post degraded; using fallback", exc_info=True)
+            stock_refusal = _stock_refusal_payload(exc)
+            if stock_refusal is not None:
+                return Response(stock_refusal, status=status.HTTP_400_BAD_REQUEST)
             mapped = checkout_service.map_checkout_error(exc)
             if mapped:
                 field, message = next(iter(mapped.items()))

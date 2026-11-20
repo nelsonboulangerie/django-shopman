@@ -33,6 +33,7 @@
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
 // o nível "Nesta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
+import { useNow } from "@vueuse/core";
 import { computed, onMounted, ref, useSlots, useTemplateRef } from "vue";
 import { usePageHeaderFit } from "../composables/usePageHeaderFit";
 import { useScreen } from "../composables/useScreen";
@@ -52,6 +53,9 @@ import {
 } from "../presentation/screenState";
 import type { OperatorSession } from "../types/operator";
 import { alertActions } from "../utils/alertActions";
+import { useAnswerWindowRequest, useOperatorInboxAlerts } from "../composables/useSuiteChrome";
+import { answerScreenAlerts } from "../presentation/suiteChrome";
+import { formatClock } from "../presentation/clock";
 
 const props = withDefaults(
   defineProps<{
@@ -301,11 +305,31 @@ const activeCount = computed(() => props.activeFilters.length);
 // causa continuar, o mesmo aviso volta no próximo carregamento.
 const alertsOpen = ref(false);
 const dismissedAlertKeys = ref<string[]>([]);
+// A pergunta que espera resposta escrita (a Concierge levou à equipe, dono, 19/11/2026)
+// é aviso de tela em toda tela do app, antes dos da própria tela: vem da fonte da caixa
+// de Avisos, e "Responder" abre a janela com o campo (`OperatorUrgentAlert`).
+const inboxSource = useOperatorInboxAlerts();
+const answerWindow = useAnswerWindowRequest();
+const alertNow = useNow({ interval: 15_000 });
+function alertClock(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "" : formatClock(at);
+}
+const answerAlerts = computed<OperatorScreenAlert[]>(() =>
+  answerScreenAlerts(inboxSource.value?.items ?? [], alertNow.value.getTime(), alertClock).map((alert) => ({
+    id: alert.id,
+    title: alert.title,
+    color: alert.color,
+    icon: "i-lucide-message-circle",
+    action: { label: "Responder", onSelect: () => { answerWindow.value = alert.key; } },
+  })),
+);
+const screenAlerts = computed(() => [...answerAlerts.value, ...props.alerts]);
 function alertKey(alert: OperatorScreenAlert): string {
   return alert.id ?? alert.title;
 }
 const visibleAlerts = computed(() =>
-  props.alerts.filter((alert) => !dismissedAlertKeys.value.includes(alertKey(alert))),
+  screenAlerts.value.filter((alert) => !dismissedAlertKeys.value.includes(alertKey(alert))),
 );
 const shownAlerts = computed(() =>
   alertsOpen.value ? visibleAlerts.value : visibleAlerts.value.slice(0, SCREEN_ALERTS_VISIBLE),
@@ -715,7 +739,7 @@ function clearAll() {
         :description="alert.description"
         :actions="alertActions(alert.color, headerAlertActions(alert))"
         :close="{ color: 'neutral', variant: 'ghost', size: 'md' }"
-        :ui="{ close: 'size-8' }"
+        :ui="{ close: 'size-8 after:-inset-1.5' }"
         :role="alert.color === 'error' ? 'alert' : 'status'"
         data-page-header-alert
         @update:open="(open: boolean) => { if (!open) dismissAlert(alert); }"

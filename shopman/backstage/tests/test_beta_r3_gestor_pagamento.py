@@ -200,6 +200,66 @@ def test_cancelar_pix_ainda_nao_pago_diz_que_nada_foi_cobrado():
     assert detail.cancel_waits_for_gateway is False
 
 
+# WP-G06: o pedido que paga na retirada ou na entrega saía sem frase nenhuma, e
+# o diálogo de recusar não dizia nada sobre o dinheiro.
+
+
+@pytest.mark.parametrize(
+    "payment",
+    [
+        {"method": "cash", "collection": "on_delivery"},
+        {"method": "credit", "collection": "on_delivery"},
+        {"method": "debit", "collection": "on_delivery"},
+    ],
+    ids=["dinheiro", "credito", "debito"],
+)
+def test_recusar_pedido_que_paga_na_retirada_diz_que_nada_foi_cobrado(payment):
+    order = _order(f"R3-G06-{payment['method'].upper()}", "new", payment=payment)
+
+    detail = build_operator_order(order)
+
+    assert detail.cancel_money_effect == "Nada foi cobrado do cliente."
+    assert detail.cancel_waits_for_gateway is False
+
+
+def test_dinheiro_ja_recebido_continua_dizendo_que_fica_a_devolver_no_caixa():
+    order = _order("R3-G06-PAID", "accepted", payment={"method": "cash", "intent_ref": "INT-R3-G06-PAID"})
+    PaymentService.create_intent(order.ref, 2200, "cash", ref="INT-R3-G06-PAID")
+    PaymentService.authorize("INT-R3-G06-PAID")
+    PaymentService.capture("INT-R3-G06-PAID")
+
+    detail = build_operator_order(order)
+
+    assert detail.cancel_money_effect == "R$ 22,00 em dinheiro ficam a devolver no caixa."
+
+
+def test_pagamento_que_nao_pode_ser_lido_nao_vira_nada_foi_cobrado():
+    # "Não sei" nunca vira "zero": o intent que o Payman não devolve deixa a frase vazia.
+    order = _order("R3-G06-UNK", "new", payment={"method": "cash", "intent_ref": "INT-R3-G06-SUMIU"})
+
+    with patch.object(order_queue.payment_svc, "captured_balance_q", return_value=None):
+        detail = build_operator_order(order)
+
+    assert detail.cancel_money_effect == ""
+
+
+def test_pedido_do_ifood_segue_sem_frase_de_dinheiro():
+    order = _order("R3-G06-IFOOD", "new", payment={"method": "cash", "collection": "on_delivery"})
+    Order.objects.filter(pk=order.pk).update(channel_ref="ifood")
+
+    money = order_queue._cancel_money_effect(Order.objects.get(pk=order.pk), "cash", "")
+
+    assert money == {"cancel_money_effect": "", "cancel_waits_for_gateway": False}
+
+
+def test_pedido_ja_cancelado_segue_sem_frase_de_dinheiro():
+    order = _order("R3-G06-CANC", "cancelled", payment={"method": "cash", "collection": "on_delivery"})
+
+    money = order_queue._cancel_money_effect(order, "cash", "")
+
+    assert money == {"cancel_money_effect": "", "cancel_waits_for_gateway": False}
+
+
 # ── W3: o aviso genérico tem nome ───────────────────────────────────────────
 
 

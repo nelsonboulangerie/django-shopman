@@ -11,6 +11,10 @@ e explícito, e o código resolve a referência contra ele, sem rede e sem model
 - ``last_change``: a última mudança na sacola, para "não, era o outro";
 - ``parts``: as partes da última mensagem lida pelas intenções no plural e o que houve
   com cada uma, para "você não respondeu" / "e a minha pergunta?" (``asks_again``).
+- ``verifying``: as perguntas que a casa levou à equipe e ainda esperam resposta
+  ("vou verificar", ``verification``). Não mora aqui: vem de
+  ``Conversation.flags["verification"]`` a cada turno, porque a resposta da equipe
+  chega fora do turno e fecha a espera sem depender desta gravação.
 
 Regra do dono (03/10/2026): **a memória vence pelo que acontece, não pelo relógio.**
 
@@ -978,26 +982,16 @@ class TurnMemory:
     state: dict
     facts: Facts
 
-    def prompt_lines(self) -> str:
-        """O estado em prosa curta para o prompt do agente (o modelo lê, não decide)."""
-        lines = []
-        note = _context_note(self.state)
-        if note:
-            lines.append(note)
-        if self.facts.open_order:
-            lines.append(f"Pedido aberto do cliente: {self.facts.open_order.label} ({self.facts.open_order.status}).")
-        if self.facts.recent_order:
-            order = self.facts.recent_order
-            lines.append(
-                f"Pedido recente: {order.label}, {CLOSED_STATUS_LABEL.get(order.status, order.status)}. "
-                "Não aceita mais item: acréscimo é pedido novo."
-            )
-        return "\n".join(lines)
-
 
 def for_turn(conversation, *, now: datetime | None = None, channel_ref: str = "") -> TurnMemory:
+    from . import verification
+
     facts = load_facts(conversation, now=now, channel_ref=channel_ref)
     state = effective((conversation.flags or {}).get(FLAG_KEY), facts)
+    verifying = verification.memory_view(conversation)
+    if verifying:
+        # Vence pelo que acontece: aberta até a equipe responder, assumir ou o prazo passar.
+        state = {**state, "verifying": verifying}
     return TurnMemory(state=state, facts=facts)
 
 

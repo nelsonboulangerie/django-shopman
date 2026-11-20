@@ -115,6 +115,14 @@ class ChannelConfig:
         # visível, em vez de ser conta de cabeça do operador. 0 = o canal não tem SLA
         # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
         # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
+        concierge_verify_nudge_minutes: int = 10
+        concierge_verify_handoff_minutes: int = 30
+        # "Vou verificar" da Concierge (WP-05; dono, 16/11/2026: "Sim. Configurável via
+        # admin."): a parte sem fato vira uma pergunta à equipe no sino do Gestor. Os
+        # dois prazos contam só tempo de loja aberta (``business_calendar``). No
+        # primeiro, a Concierge promete a resposta ao cliente e o cartão sobe a
+        # urgente; no segundo, sem resposta, a conversa vai para a equipe. Vale o do
+        # canal da Concierge (``whatsapp``) ou o de ``Shop.defaults``.
 
         def acceptance_timeout_minutes(self, *, long_deadline: bool) -> int:
             """O prazo de aceite do pedido: o longo quando ninguém espera a resposta na hora.
@@ -276,7 +284,9 @@ class ChannelConfig:
         # Não oferecer lote a menos de N dias do vencimento (near-expiry).
         # 0 = só exclui o já vencido (comportamento de sempre). O queijo de
         # 20 dias sai da vitrine remota com antecedência; o pão de 1 dia
-        # não é afetado.
+        # não é afetado. Esta é a margem da venda de HOJE: para data futura
+        # ela ganha um dia em todo canal, porque a sobra de hoje não lastreia
+        # encomenda (``policies/promise_expiry_margin``, #2693).
 
     # ── 4b. Fila de espera (WP-P2E) ──
     @dataclass
@@ -645,6 +655,15 @@ class ChannelConfig:
             )
         if self.pricing.policy not in ("internal", "external"):
             raise ValueError(f"pricing.policy inválido: {self.pricing.policy}")
+        nudge = self.confirmation.concierge_verify_nudge_minutes
+        handoff = self.confirmation.concierge_verify_handoff_minutes
+        for label, value in (("nudge", nudge), ("handoff", handoff)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"confirmation.concierge_verify_{label}_minutes deve ser um inteiro maior que zero")
+        if nudge >= handoff:
+            raise ValueError(
+                "confirmation.concierge_verify_nudge_minutes deve ser menor que concierge_verify_handoff_minutes"
+            )
         cap = self.pricing.concierge_discount_max_percent
         if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not 0 <= cap <= 100:
             raise ValueError("pricing.concierge_discount_max_percent deve ser um número entre 0 e 100")

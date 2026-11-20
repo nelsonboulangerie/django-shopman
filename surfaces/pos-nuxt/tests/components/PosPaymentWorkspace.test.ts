@@ -5,6 +5,12 @@ import PosPaymentWorkspace from "~/components/PosPaymentWorkspace.vue";
 import type { POSCartItem, POSSaleReviewProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 
+import { warmUpMount } from "../support/mountWarmup";
+
+// Este arquivo roda no primeiro lote, com o Vite frio: o primeiro mount paga a
+// raiz do app num hook, fora do primeiro teste (ver `mountWarmup.ts`).
+warmUpMount();
+
 function item(overrides: Partial<POSCartItem> & { sku: string; name: string }): POSCartItem {
   return { price_q: 1000, qty: 1, notes: "", ...overrides };
 }

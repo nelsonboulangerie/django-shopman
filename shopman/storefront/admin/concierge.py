@@ -24,12 +24,10 @@ from unfold.decorators import display
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage
 
-#: Copy de cliente que o concierge usa (``service.copy_message`` e o prompt do
-#: agente). Documentada aqui como literal para o guardrail de chaves órfãs
-#: (``test_omotenashi_copy_keys``) enxergar o consumidor mesmo antes do prompt
-#: existir, e para o gestor saber o que editar em Copy Omotenashi.
+#: Copy de cliente que o concierge usa (``service.copy_message``). Documentada aqui
+#: como literal para o guardrail de chaves órfãs (``test_omotenashi_copy_keys``)
+#: enxergar o consumidor, e para o gestor saber o que editar em Copy Omotenashi.
 CONCIERGE_COPY_KEYS = (
-    "CONCIERGE_GREETING",
     "CONCIERGE_UNAVAILABLE",
     "CONCIERGE_MEDIA_UNSUPPORTED",
     "CONCIERGE_HANDOFF_ACK",
@@ -58,6 +56,15 @@ CONCIERGE_COPY_KEYS = (
     "CONCIERGE_DISCOUNT_ALREADY_GIVEN",
     "CONCIERGE_DISCOUNT_COUPON_IN_USE",
     "CONCIERGE_DISCOUNT_NO_CART",
+    "CONCIERGE_VERIFY_ANSWER",
+    "CONCIERGE_VERIFY_ASKED",
+    "CONCIERGE_VERIFY_ASKED_LATER",
+    "CONCIERGE_VERIFY_HANDOFF",
+    "CONCIERGE_VERIFY_JOINED",
+    "CONCIERGE_VERIFY_NO_PROMISE",
+    "CONCIERGE_VERIFY_NO_PROMISE_UNKNOWN",
+    "CONCIERGE_VERIFY_NUDGE",
+    "CONCIERGE_VERIFY_WAITING",
     "CONCIERGE_CANCEL_CONFIRM",
     "CONCIERGE_CANCEL_DONE",
     "CONCIERGE_CANCEL_KEPT",

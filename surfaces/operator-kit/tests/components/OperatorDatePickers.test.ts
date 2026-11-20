@@ -57,10 +57,36 @@ describe("OperatorDayPicker (Tipo 1)", () => {
     expect(wrapper.get('[role="radiogroup"]').exists()).toBe(true);
   });
 
+  it("as setas levam o foco de um dia ao outro, e voltam pela ponta", async () => {
+    const wrapper = await mount(OperatorDayPicker, {
+      props: { modelValue: "", today: TODAY, min: TODAY },
+      attachTo: document.body,
+    });
+    const key = (name: string) => {
+      (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }));
+      return (document.activeElement as HTMLElement).getAttribute("data-day-option");
+    };
+    (wrapper.get("[data-day-option='today']").element as HTMLElement).focus();
+    expect(key("ArrowRight")).toBe("tomorrow");
+    expect(key("ArrowDown")).toBe(wrapper.findAll("[data-day-option]")[2]!.attributes("data-day-option"));
+    expect(key("ArrowRight")).toBe("other");
+    expect(key("ArrowRight")).toBe("today");
+    expect(key("ArrowLeft")).toBe("other");
+  });
+
   it("um toque escolhe", async () => {
     const wrapper = await mount(OperatorDayPicker, { props: { modelValue: "", today: TODAY } });
     await wrapper.get('[data-day-option="next"]').trigger("click");
     expect(wrapper.emitted("update:modelValue")).toEqual([["2026-10-03"]]);
+  });
+
+  it("o escolhido tem borda e tingido do latão, e o nome escreve com a tinta AA (#2826)", async () => {
+    const wrapper = await mount(OperatorDayPicker, { props: { modelValue: "2026-10-02", today: TODAY } });
+    const chosen = wrapper.get('[data-day-option="tomorrow"]');
+    expect(chosen.classes()).toEqual(expect.arrayContaining(["border-primary", "bg-primary/5"]));
+    expect(chosen.get("span").classes()).toContain("text-(--primary-ink)");
+    const other = wrapper.get('[data-day-option="today"]');
+    expect(other.get("span").classes()).not.toContain("text-(--primary-ink)");
   });
 
   it("dia fechado aparece, não se escolhe, e diz o motivo", async () => {

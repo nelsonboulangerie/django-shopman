@@ -4,6 +4,8 @@ import {
   accountGreeting,
   accountNavCards,
   loyaltyView,
+  orderOpenIcon,
+  orderOpenLabel,
   ordersCountLabel,
   orderStatusAccentClass,
   orderStatusDotClass,
@@ -32,13 +34,16 @@ const greeting = computed(() => accountGreeting(
 const loyalty = computed(() => loyaltyView(summary.value?.loyalty))
 const navCards = computed(() => accountNavCards(summary.value || null))
 // Pedidos em andamento são o primeiro conteúdo da conta; o "Último pedido"
-// vira fallback quando não há nada ativo (aí sim, Refazer é o convite certo).
+// vira fallback quando não há nada ativo (aí sim, repetir é o convite certo).
 const activeOrders = computed(() => summary.value?.active_orders ?? [])
 const countLabel = computed(() => ordersCountLabel(
   summary.value?.active_order_count || 0,
   summary.value?.total_order_count || 0
 ))
 const lastOrder = computed(() => summary.value?.last_order || null)
+// O "Último pedido" só aparece quando nada está em andamento: é pedido encerrado,
+// e o botão dele diz "Ver pedido".
+const LAST_ORDER_IS_OVER = { is_active: false } as const
 const lastOrderReorder = computed(() => (lastOrder.value ? reorderActionFrom(lastOrder.value) : null))
 const conflictRef = conflict as Ref<ReorderConflictProjection | null>
 // Ação de substituição do diálogo de conflito (prefere a action 'replace'; senão a 1ª).
@@ -207,7 +212,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             <p class="shop-muted">{{ lastOrder.created_at_display }}</p>
           </div>
           <div class="flex shrink-0 gap-2">
-            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" icon="lucide:radar">Acompanhar</UiButton>
+            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" :icon="orderOpenIcon(LAST_ORDER_IS_OVER)" data-order-open>{{ orderOpenLabel(LAST_ORDER_IS_OVER) }}</UiButton>
             <UiButton
               v-if="lastOrderReorder"
               size="sm"
@@ -215,7 +220,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
               :loading="!!reorderPending[lastOrder.ref]"
               @click="performAction(lastOrderReorder)"
             >
-              Refazer
+              {{ lastOrderReorder.label }}
             </UiButton>
           </div>
         </div>

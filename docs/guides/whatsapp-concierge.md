@@ -124,9 +124,8 @@ caso diretamente como ingresso **at-least-once**:
    canônico de mensagem e trabalho;
 2. `event_identity_assurance=unavailable` e
    `input_assurance=at_least_once` registram o limite da evidência;
-3. o turno desse lote conversa com o modelo em modo de consulta: pode ler fontes
-   canônicas, mas comandos que alteram estado não são oferecidos ao modelo e
-   continuam recusados pelos guards do servidor;
+3. o turno desse lote roda em modo de consulta: pode ler fontes canônicas, mas
+   comandos que alteram estado são recusados pelos guards do servidor;
 4. catálogo público, orientação e handoff permanecem disponíveis;
 5. ferramentas que mutam sacola, pedido, pagamento, identidade ou transferência
    não recebem autoridade desse ingresso;
@@ -142,8 +141,8 @@ como candidato não verificado e continua sem autorizar mutações.
 
 ## ACK e processamento
 
-O endpoint autentica, normaliza, grava e agenda o trabalho antes de responder. O
-modelo e o envio rodam depois no worker da fila `Directive`, com payload v3
+O endpoint autentica, normaliza, grava e agenda o trabalho antes de responder. A
+leitura do turno e o envio rodam depois no worker da fila `Directive`, com payload v3
 contendo `conversation_id` e `binding_id`.
 
 O ACK não é mensagem para o cliente e não comprova pedido, pagamento, aceitação
@@ -200,9 +199,11 @@ não substituem essa lista.
 ### Sem conexão de IA, ela responde mesmo assim
 
 A conexão de IA (Admin → Conexões de IA; ver [ai-connections](../reference/ai-connections.md))
-melhora a leitura, mas não é condição para atender. Sem conexão para `concierge` e
-`intents`, ou com o freio de gasto cortando, o turno segue pelo caminho sem modelo:
-porteiro, divisão local das partes, executores e uma mensagem só. O `check --deploy`
+melhora a leitura, mas não é condição para atender. O turno tem um caminho só (WP-08,
+19/11/2026): a triagem pela regra local e pelo Jev, e a leitura em partes. Sem conexão
+para `intents`, ou com o freio de gasto cortando, a leitura segue sem modelo: porteiro,
+divisão local das partes, executores e uma mensagem só. Não existe mais laço de agente
+com ferramentas, e nenhum modelo escreve a resposta ao cliente. O `check --deploy`
 (`SHOPMAN_W022`) e o `concierge_check` **avisam** "sem leitura por modelo" e não
 reprovam por isso.
 

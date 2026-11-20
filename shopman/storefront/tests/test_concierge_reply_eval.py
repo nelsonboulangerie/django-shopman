@@ -20,7 +20,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from shopman.storefront.concierge import intent_benchmark, intents, reply_eval, triage
+from shopman.storefront.concierge import intent_benchmark, intents, reply_eval
 
 pytestmark = pytest.mark.django_db
 
@@ -58,7 +58,6 @@ class FakeReader:
 def no_network(monkeypatch):
     factory = ExplodingFactory()
     monkeypatch.setattr(intents, "build_client", factory)
-    monkeypatch.setattr(triage, "build_client", factory)
     monkeypatch.setattr(intent_benchmark, "JevContender", factory)
     return factory
 
@@ -83,7 +82,6 @@ def _command(*args) -> str:
 
 @pytest.mark.parametrize("args", [
     ("--plural", "--reader", "model"),
-    ("--classifier", "model"),
     ("--classifier", "jev"),
     ("--plural", "--reader", "model", "--repeat", "3", "--budget-usd", "5"),
 ])
@@ -108,7 +106,7 @@ def test_free_runs_need_no_paid_and_create_no_client(no_network, args):
 def test_network_reason_names_the_argument_that_costs():
     assert reply_eval.network_reason(plural=True, reader="model") == "--reader model"
     assert reply_eval.network_reason(plural=True, reader="local") == ""
-    assert reply_eval.network_reason(classifier="model") == "--classifier model"
+    assert "model" not in reply_eval.CLASSIFIERS  # a triagem não chama modelo de texto (WP-08)
     assert reply_eval.network_reason(classifier="jev") == "--classifier jev"
     assert reply_eval.network_reason(classifier="rules") == ""
     assert reply_eval.network_reason(classifier="jev-shadow") == ""

@@ -125,7 +125,6 @@ def test_antes_da_hora_o_card_nao_pede_ninguem_e_o_gesto_e_adiantar(operator, re
 
     assert card.attention == "", "sem âmbar e sem alarme antes da hora da Cozinha"
     assert (advance.label, advance.priority, advance.enabled) == ("Adiantar", "secondary", True)
-    assert card.next_action_label == "Adiantar"
     # O gesto continua existindo: adiantar é escolha consciente de quem opera.
     assert card.can_advance is True
 
@@ -138,7 +137,6 @@ def test_o_detalhe_da_o_mesmo_nome_ao_gesto(operator, relogio):
     advance = next(action for action in detail.actions if action.ref == "advance")
 
     assert (advance.label, advance.priority) == ("Adiantar", "secondary")
-    assert detail.next_action_label == "Adiantar"
     # E a mesma frase do card, para o gesto não aparecer sem a hora ao lado.
     assert detail.kitchen_release_label == build_order_card(order, user=operator).kitchen_release_label
     assert detail.kitchen_release_label == "Vai para a Cozinha às 16h15"

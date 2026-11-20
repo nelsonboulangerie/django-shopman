@@ -8,7 +8,12 @@ from shopman.backstage.api.purchase_csv import PurchaseCsvView
 from shopman.backstage.api.purchase_supplier_bulk import PurchaseSupplierBulkView
 from shopman.shop.eventstream import events as eventstream_view
 
-from .alerts import AlertAckView, AlertListView
+from .alerts import (
+    AlertAckView,
+    AlertListView,
+    ConciergeVerificationAnswerView,
+    ConciergeVerificationTakeOverView,
+)
 from .backup import BackupExportView
 from .bi import (
     BICashView,
@@ -180,6 +185,7 @@ from .operations import (
     DayClosingView,
     DeliveriesCountView,
     DeliveriesView,
+    DeliveryDriverPhotoView,
     OperationEpisodeAnswerView,
     OperatorBadgeLostView,
     OperatorEligibleView,
@@ -214,10 +220,14 @@ from .operations import (
     OrderIFoodAcceptRetryView,
     OrderIFoodEvidenceView,
     OrderIFoodHandshakeView,
+    OrderNoShowPreviewView,
+    OrderNoShowView,
     OrderNotesView,
     OrderPaymentCheckView,
+    OrderPromiseResolutionView,
     OrderQueueView,
     OrderRailCountsView,
+    OrderRefundRetryView,
     OrderRejectView,
     OrderRequeueFiscalView,
     OrderRescheduleView,
@@ -791,6 +801,8 @@ urlpatterns = [
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
     path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
     path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
+    path("deliveries/<str:ride>/driver-photo/", DeliveryDriverPhotoView.as_view(),
+         name="api-backstage-delivery-driver-photo"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
     path("ifood/widget/", IFoodWidgetView.as_view(), name="api-backstage-ifood-widget"),
@@ -986,6 +998,14 @@ urlpatterns = [
     path("orders/<str:ref>/return/", OrderReturnView.as_view(), name="api-backstage-order-return"),
     path("orders/<str:ref>/return/preview/", OrderReturnPreviewView.as_view(), name="api-backstage-order-return-preview"),
     path(
+        "orders/<str:ref>/promise-resolution/",
+        OrderPromiseResolutionView.as_view(),
+        name="api-backstage-order-promise-resolution",
+    ),
+    path("orders/<str:ref>/no-show/", OrderNoShowView.as_view(), name="api-backstage-order-no-show"),
+    path("orders/<str:ref>/no-show/preview/", OrderNoShowPreviewView.as_view(), name="api-backstage-order-no-show-preview"),
+    path("orders/<str:ref>/refund-retry/", OrderRefundRetryView.as_view(), name="api-backstage-order-refund-retry"),
+    path(
         "orders/<str:ref>/settle-delivery-cash/",
         OrderSettleDeliveryCashView.as_view(),
         name="api-backstage-order-settle-delivery-cash",
@@ -1038,6 +1058,17 @@ urlpatterns = [
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
+    # "Vou verificar" da Concierge: a equipe responde a pergunta do cliente, ou assume.
+    path(
+        "alerts/<int:pk>/concierge-verification/answer/",
+        ConciergeVerificationAnswerView.as_view(),
+        name="api-backstage-alert-concierge-verification-answer",
+    ),
+    path(
+        "alerts/<int:pk>/concierge-verification/take-over/",
+        ConciergeVerificationTakeOverView.as_view(),
+        name="api-backstage-alert-concierge-verification-take-over",
+    ),
     # Suporte (helpdesk interno)
     path(
         "support/capabilities/",

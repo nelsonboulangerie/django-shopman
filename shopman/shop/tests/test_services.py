@@ -247,8 +247,11 @@ class TestAvailabilityListingMembership:
             allowed_positions=None,
             excluded_positions=None,
             # Gates de lote (C2) viajam com o scope; ausentes no scope, os
-            # defaults são permissivos (o canal é quem restringe).
-            expiry_margin_days=0,
+            # defaults são permissivos (o canal é quem restringe). A margem de
+            # validade é a do ALVO: canal sem margem (0) mais um dia, porque a
+            # data lida é futura e a sobra de hoje não lastreia encomenda
+            # (``policies/promise_expiry_margin``, #2693).
+            expiry_margin_days=1,
             include_nonconforming=True,
             allowed_quality_grade_refs=None,
         )

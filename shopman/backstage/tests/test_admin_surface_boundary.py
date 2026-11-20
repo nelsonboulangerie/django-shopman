@@ -16,7 +16,8 @@ def test_repository_boundary_contract_matches_live_admin_registry() -> None:
     live = gate.registered_model_admins()
     custom_pages = gate.registered_custom_admin_pages()
 
-    assert len(live) == 102
+    # +2 em 19/11/2026: o registro da decisão em sombra (N5), só leitura, em audit-ledgers.
+    assert len(live) == 104
     assert len(custom_pages) == 7
     assert gate.validate_contract(
         contract,

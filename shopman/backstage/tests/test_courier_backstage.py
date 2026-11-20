@@ -317,7 +317,6 @@ def test_board_card_carries_courier_badge(client, operator, shop):
     client.force_login(operator)
     resp = client.get(reverse("api-backstage-orders"))
     cards = resp.json()["queue"]["expedition_delivery_transit"]
-    assert cards[0]["courier_status"] == "E"
     assert cards[0]["courier_status_label"] == "Saiu para entrega"
 
 

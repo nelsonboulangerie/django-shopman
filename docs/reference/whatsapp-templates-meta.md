@@ -36,7 +36,7 @@
 >   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, ~~`pagamento_expirado`~~ (aposentado 14/10, ver abaixo),
 >   `pagamento_falhou`, `fila_vaga_disponivel`, `fila_vaga_liberada`, `produto_chegou`,
 >   `reembolso_processado`, `pontos_fidelidade`.
-> - **Fora do go-live (Marketing) ou sem revisão de voz:** `saiu_do_forno`, `anuncio_novidade`,
+> - **Fora do go-live (Marketing) ou sem revisão de voz:** `ficou_pronto`, `anuncio_novidade`,
 >   `pedido_compra` (fornecedor).
 >
 > No ManyChat a variável do corpo é um campo personalizado: `customer_name` é `cuf_14859629`,
@@ -518,8 +518,8 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > do ManyChat e pelos fallbacks (SMS/e-mail).
 
 ### `fila_vaga_disponivel` — evento `waitlist_available`
-- Corpo: `Oi, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} para garantir o seu.`
-  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (a Meta reclassificou o de 25/09 como Marketing; nasce `fila_vaga_disponivel_v2`, Utility, mesmo botão `Confirmar pedido`). O de 25/09 fica só como histórico.
+- Corpo: `Oi, {{1}}! A fornada que você esperava ficou pronta. Confirme seu pedido {{2}} para garantir a sua vaga.`
+  ⚠️ **Corpo revisto em 19/11/2026** pela regra do dono de 16/11 ("ficar pronto", nunca "sair do forno") e pela palavra da fila ("vaga"). O corpo aprovado em 02/10/2026 dizia "…que você esperava saiu. Confirme o pedido {{2}} para garantir o seu."; o modelo nunca foi submetido, então não há versão na Meta a trocar. Quando for submetido, nasce como `fila_vaga_disponivel_v2`, Utility, com o mesmo botão `Confirmar pedido`.
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Confirmar pedido` → `/pedido/{{1}}` (`order_ref`)
 
@@ -572,7 +572,7 @@ campo personalizado**. Sobram dois formatos:
 | Botão | Onde | Destino |
 |---|---|---|
 | `Acompanhar pedido` · `Ver pedido` · `Ver detalhes` · `Pagar pedido` · `Tentar de novo` · `Confirmar pedido` · `Confirmar recebimento` · `Ver nota fiscal` | a maioria | `…/pedido/{{n}}` + `order_ref` |
-| `Garantir já` | `produto_chegou`, `saiu_do_forno` | `…/produto/{{n}}` + **`product_sku`** |
+| `Garantir já` | `produto_chegou`, `ficou_pronto` | `…/produto/{{n}}` + **`product_sku`** |
 | `Pedir de novo` | `fila_vaga_liberada` | `…/conta/pedidos` — **estático** |
 | `Ver saldo` | `pontos_fidelidade` | `…/conta` — **estático** |
 | `Como chegar` | `pedido_pronto_retirada` | Google Maps da loja — **estático** |
@@ -638,12 +638,13 @@ Audiência diferente: quem recebe é o contato comercial do fornecedor, não um 
 
 Categoria e custo diferentes. **Não misture com Utility** — nem "para passar".
 
-### `saiu_do_forno` — evento `production_ready`
-- Corpo: `Olha só o que acabou de sair do forno: {{1}}! {{2}}.`
+### `ficou_pronto` — evento `production_ready`
+- Corpo: `Olha só a fornada que acabou de ficar pronta: {{1}}! {{2}}.`
+  ("Fornada pronta", e não "{{1}} ficou pronto": o nome do produto pode ser feminino. O nome do modelo era `saiu_do_forno`; nunca foi submetido e mudou com a regra de 16/11/2026.)
 - Vars: `{{1}}`=`Croissant` (`product_name`) · `{{2}}`=`No momento temos 12 un. disponíveis` (`availability_note`)
 - Botão URL: `Garantir já` → `https://www.nelsonboulangerie.com.br/produto/{{1}}` (`product_sku`)
 
-> ℹ️ A quantidade **sempre existe** quando a fornada sai, então é variável fixa do template,
+> ℹ️ A quantidade **sempre existe** quando a fornada fica pronta, então é variável fixa do template,
 > sem frase condicional. Com zero disponível o aviso não sai.
 >
 > ⚠️ **O ponto final é FIXO, fora da variável**, como no `pedido_em_preparo`: o
@@ -726,7 +727,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `loyalty_earned` | `pontos_fidelidade` | Utility 🆕 (não emitido ainda) |
 | `stock_arrived` | `produto_chegou` | Utility |
 | `purchase_request` | `pedido_compra` | Utility (fornecedor) |
-| `production_ready` | `saiu_do_forno` | Marketing |
+| `production_ready` | `ficou_pronto` | Marketing |
 | `announcement_published` | `anuncio_novidade` | Marketing |
 | `access_link` | — (janela aberta, mensagem livre) | — |
 | `stock_alert` | — (interno) | — |
@@ -767,8 +768,8 @@ nome**, senão a variável sai em branco e nada falha.
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
 | Resto do link do entregador | `courier_tracking_path` (**a criar**) | `pedido_saiu_entrega_rastreio`, primeiro botão |
 | Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado`, `pedido_encomenda_confirmada` (a data, sem ponto final; só existe na encomenda) |
-| Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
-| Frase de disponibilidade | `availability_note` | `saiu_do_forno` |
+| Nome do produto | `product_name` | `produto_chegou`, `ficou_pronto` |
+| Frase de disponibilidade | `availability_note` | `ficou_pronto` |
 | Nome da loja | `shop_name` | `pedido_compra` |
 | Ref da compra | `purchase_ref` | `pedido_compra` |
 | Material | `material_name` | `pedido_compra` |
