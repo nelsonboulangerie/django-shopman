@@ -687,12 +687,6 @@ export function suggestionLate(suggestion: Pick<RideSuggestion, "late_code" | "l
   return `${suggestion.late_code} chega uns ${suggestion.late_minutes} min depois.`;
 }
 
-/** "Ordem: A47, depois C03." / "Ordem: B12, D14, depois E02." */
-export function suggestionOrder(codes: readonly string[]): string {
-  if (codes.length < 2) return "";
-  return `Ordem: ${codes.slice(0, -1).join(", ")}, depois ${codes[codes.length - 1]}.`;
-}
-
 /**
  * As sugestões que a tela mostra: nenhuma com pedido que o operador já pôs numa
  * corrida (aceitar soma, nunca apaga) e nenhuma que ele dispensou ("Agora não").

@@ -34,7 +34,6 @@ import {
   ridesNeedingMachine,
   routeOrder,
   suggestionLate,
-  suggestionOrder,
   suggestionQuoteLines,
   suggestionsHeadline,
   toggleStop,
@@ -456,7 +455,6 @@ const sheetRides = computed<CallSheetRide[]>(() =>
         // A cotação viva da corrida (a mesma que a chamada vai abrir); enquanto ela
         // não chega, a do plano.
         lines: live.length ? live : plan ? suggestionQuoteLines(plan as RideSuggestion) : [],
-        order: suggestionOrder(stops.map((stop) => stop.code)),
         late: plan ? suggestionLate(plan) : "",
         needsMachine: needing.value.includes(ride.number),
         machine: assigned.value[ride.number] ?? "",

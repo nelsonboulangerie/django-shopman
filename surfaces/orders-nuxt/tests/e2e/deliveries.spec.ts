@@ -90,7 +90,7 @@ test.describe("Entregas: sugestões da casa", () => {
     const sheet = page.getByRole("dialog", { name: "Chamar a corrida C" });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText("A47 → C03", { exact: true })).toBeVisible();
-    await expect(sheet.getByText("Ordem: A47, depois C03. C03 chega uns 6 min depois.", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("C03 chega uns 6 min depois.", { exact: true })).toBeVisible();
     await expect(sheet.getByRole("textbox", { name: "Troco para C03", exact: true })).toHaveValue("20,00");
     await sheet.getByRole("button", { name: "Voltar", exact: true }).click();
     await expect(sheet).toBeHidden();

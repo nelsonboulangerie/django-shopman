@@ -24,8 +24,6 @@ export interface CallSheetRide {
   color: { bg: string; fg: string };
   stops: CallSheetStop[];
   lines: QuoteLine[];
-  /** "Ordem: A47, depois C03." */
-  order: string;
   /** "C03 chega uns 6 min depois." */
   late: string;
   needsMachine: boolean;
@@ -95,7 +93,7 @@ const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops
                 {{ line.text }}
               </p>
             </div>
-            <p v-if="ride.order || ride.late" class="op-micro text-muted">{{ [ride.order, ride.late].filter(Boolean).join(" ") }}</p>
+            <p v-if="ride.late" class="op-micro text-muted">{{ ride.late }}</p>
             <ul class="flex flex-col gap-1">
               <li v-for="stop in ride.stops" :key="stop.ref" class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="min-w-0 flex-1 op-body"><span class="font-medium text-highlighted">{{ stop.code }} · {{ stop.customer }}</span> <span class="text-muted">· {{ stop.place }}</span></span>

@@ -6,7 +6,6 @@ import {
   callAllLabel,
   ridesFromSuggestions,
   suggestionLate,
-  suggestionOrder,
   suggestionQuoteLines,
   suggestionsHeadline,
   visibleSuggestions,
@@ -49,11 +48,9 @@ describe("a cotação da sugestão", () => {
     expect(suggestionQuoteLines(suggestion({ quoted: false, together_q: null, separate_q: null }))).toEqual([]);
   });
 
-  it("diz quem chega depois e a ordem", () => {
+  it("diz quem chega depois", () => {
     expect(suggestionLate(suggestion())).toBe("C03 chega uns 6 min depois.");
     expect(suggestionLate(suggestion({ late_minutes: 0 }))).toBe("");
-    expect(suggestionOrder(["A47", "C03"])).toBe("Ordem: A47, depois C03.");
-    expect(suggestionOrder(["B12", "D14", "E02"])).toBe("Ordem: B12, D14, depois E02.");
   });
 });
 
