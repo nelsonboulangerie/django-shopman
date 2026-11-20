@@ -166,6 +166,7 @@ def test_o_cancelar_do_balcao_le_a_mesma_frase_do_dinheiro_do_gestor(client, cai
     balcão lê a mesma, pela rota dele, antes de pedir a assinatura.
     """
     from shopman.payman import PaymentService
+
     from shopman.shop.models import Shop
 
     Shop.objects.create(name="Loja Teste")
