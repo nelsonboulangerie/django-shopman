@@ -369,10 +369,6 @@ def open_for(conversation, question: str, *, product: str = "", actor: str = "",
     return record
 
 
-def _dedupe_key(conversation, record: dict) -> str:
-    return f"concierge:{conversation.pk}:verify:{record.get('id', '')}"
-
-
 def promised_label(record: dict) -> str:
     """O prazo que a Concierge prometeu, como hora da casa: "16h12", "amanhã às 7h10"."""
     from shopman.utils.formatting import format_clock
@@ -401,7 +397,7 @@ def alert_message(conversation, record: dict) -> str:
         asked = "; ".join(f"{i}) “{q}”" for i, q in enumerate(questions, 1))
     when = promised_label(record)
     promised = f"Prometemos responder até {when}." if when else "A Concierge não prometeu prazo."
-    return f"{asked}\n{promised}\n\nDedupe: {_dedupe_key(conversation, record)}"
+    return f"{asked}\n{promised}"
 
 
 def notify_team(conversation, record: dict | None) -> None:
@@ -420,7 +416,9 @@ def notify_team(conversation, record: dict | None) -> None:
                 type=ALERT_TYPE,
                 severity="warning",
                 message=message,
-                dedupe_key=_dedupe_key(conversation, record),
+                # Um cartão por verificação, guardado em ``alert_pk``: a mensagem é só o que
+                # a equipe lê, sem o marcador de engenheiro (dono, 20/11/2026).
+                stamp_dedupe=False,
                 order_ref=getattr(conversation, "last_order_ref", "") or "",
                 conversation_id=conversation.pk,
                 owner_role="atendimento",
@@ -475,7 +473,8 @@ def _resolve_card(conversation, record: dict, *, actor: str) -> None:
     from shopman.shop.adapters import alert as alert_adapter
 
     try:
-        alert_adapter.resolve_matching(ALERT_TYPE, message_contains=_dedupe_key(conversation, record), actor=actor)
+        if record.get("alert_pk"):
+            alert_adapter.resolve_pk(int(record["alert_pk"]), actor=actor)
     except Exception:
         logger.warning("concierge.verification.resolve_failed conversation=%s", conversation.pk, exc_info=True)
 

@@ -128,6 +128,13 @@ def resolve_matching(type: str, *, message_contains: str, actor: str) -> int:
     return resolve_alerts_matching(type, message_contains=message_contains, actor=actor)
 
 
+def resolve_pk(pk: int, *, actor: str) -> int:
+    """Resolve UM aviso aberto pelo ``pk``, com a mesma trilha (quem, quando, revisão)."""
+    from shopman.backstage.services.alerts import resolve_alert_pk
+
+    return resolve_alert_pk(pk, actor=actor)
+
+
 def connect_saved(receiver, *, dispatch_uid: str, weak: bool = False) -> None:
     """Connect a receiver to OperatorAlert post-save without leaking imports."""
     from django.db.models.signals import post_save

@@ -12,6 +12,10 @@ import { alertMessageWithSchedule, splitRef } from "~/presentation/board";
 import {
   ANSWER_FAILED,
   ANSWER_SENT,
+  PROMOTE_FAILED,
+  PROMOTE_LABEL,
+  promotionToast,
+  type PromotionResult,
   TAKE_OVER_FAILED,
   TAKEN_OVER,
   TAKEN_OVER_NOTICE_NOT_SENT,
@@ -222,12 +226,15 @@ export function useAlerts() {
     kind: "answer" | "takeOver",
     body: Record<string, unknown> | undefined,
     fallback: string,
-  ): Promise<{ error: string | null; final: boolean; data: { warning?: string } | null }> {
+  ): Promise<{ error: string | null; final: boolean; data: { warning?: string; promote_href?: string } | null }> {
     const action = verificationActions(alert)[kind];
     if (!action || answering.value.has(alert.pk)) return { error: null, final: false, data: null };
     mark(alert.pk, true);
     try {
-      const data = await $fetch<{ ok: boolean; warning?: string }>(action.href, { method: "POST", body: body ?? {} });
+      const data = await $fetch<{ ok: boolean; warning?: string; promote_href?: string }>(action.href, {
+        method: "POST",
+        body: body ?? {},
+      });
       return { error: null, final: false, data };
     } catch (error) {
       // A janela de 24 horas fechou: tentar de novo não adianta, só assumir a conversa.
@@ -243,12 +250,36 @@ export function useAlerts() {
     alert: AlertProjection,
     text: string,
   ): Promise<{ message: string; final: boolean } | null> {
-    const { error, final } = await verificationPost(alert, "answer", { text }, ANSWER_FAILED);
+    const { error, final, data } = await verificationPost(alert, "answer", { text }, ANSWER_FAILED);
     if (!error) {
-      useSonner.success(ANSWER_SENT);
+      const href = data?.promote_href;
+      // A resposta enviada pode virar pergunta frequente (WP-15): o gesto vem no aviso,
+      // porque o cartão fecha com a resposta.
+      if (href) {
+        useSonner.withAction("success", ANSWER_SENT, {
+          action: { label: PROMOTE_LABEL, onClick: () => void promoteToFaq(href) },
+        });
+      } else {
+        useSonner.success(ANSWER_SENT);
+      }
       return null;
     }
     return { message: error, final };
+  }
+
+  async function promoteToFaq(href: string): Promise<PromotionResult | null> {
+    try {
+      const result = await $fetch<PromotionResult>(href, { method: "POST" });
+      const toast = promotionToast(result);
+      useSonner.withAction(toast.color, toast.title, {
+        ...(toast.description ? { description: toast.description } : {}),
+        ...(toast.action ? { action: toast.action } : {}),
+      });
+      return result;
+    } catch (error) {
+      useSonner.error(httpErrorMessage(error, PROMOTE_FAILED));
+      return null;
+    }
   }
 
   async function takeOverVerification(alert: AlertProjection): Promise<string | null> {
@@ -269,6 +300,7 @@ export function useAlerts() {
     acceptAction,
     isAccepting,
     answerVerification,
+    promoteToFaq,
     takeOverVerification,
     isAnswering: (pk: number) => answering.value.has(pk),
   };

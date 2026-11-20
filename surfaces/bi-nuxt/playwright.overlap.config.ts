@@ -9,8 +9,8 @@ import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 // evidência por `list`, porque aqui não há retrato nem evidência a gravar.
 // Portas por env, para várias sessões rodarem ao mesmo tempo sem colidir.
 
-const appPort = Number(process.env.BI_OVERLAP_APP_PORT || 41007);
-const backendPort = Number(process.env.BI_OVERLAP_BACKEND_PORT || 41807);
+const appPort = Number(process.env.BI_OVERLAP_APP_PORT || 21007);
+const backendPort = Number(process.env.BI_OVERLAP_BACKEND_PORT || 21807);
 
 // BI_OVERLAP_PREBUILT=1 serve o `.output` já construído (com o mesmo upstream de teste),
 // para repetir a trava depois de um build sem pagar outro.

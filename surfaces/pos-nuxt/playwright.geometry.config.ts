@@ -12,8 +12,8 @@ import { defineConfig, devices } from "@playwright/test";
 // contrato (nada corta, nada se sobrepõe) não muda. A folga do nome no cabeçalho é
 // pequena mesmo no macOS: ver #2650. Backend hermético (o mock das
 // fotos, no cenário da venda) e o app em modo cliente, como a matriz visual.
-const appPort = Number(process.env.POS_GEOMETRY_PORT || 33032);
-const backendPort = Number(process.env.POS_GEOMETRY_MOCK_PORT || 38812);
+const appPort = Number(process.env.POS_GEOMETRY_PORT || 23032);
+const backendPort = Number(process.env.POS_GEOMETRY_MOCK_PORT || 28812);
 
 export default defineConfig({
   testDir: "./tests/geometry",

@@ -12,6 +12,7 @@ from .alerts import (
     AlertAckView,
     AlertListView,
     ConciergeVerificationAnswerView,
+    ConciergeVerificationPromoteView,
     ConciergeVerificationTakeOverView,
 )
 from .backup import BackupExportView
@@ -281,6 +282,7 @@ from .operations import (
     POSPreorderPaymentCheckView,
     POSPreorderRedoTabView,
     POSPreorderSearchView,
+    POSPreorderSwapView,
     POSRecentSalesView,
     POSResendFiscalEmailView,
     POSResendPaymentLinkView,
@@ -1069,6 +1071,12 @@ urlpatterns = [
         ConciergeVerificationTakeOverView.as_view(),
         name="api-backstage-alert-concierge-verification-take-over",
     ),
+    # WP-15: a pergunta respondida vira rascunho de pergunta frequente (não publicado).
+    path(
+        "alerts/<int:pk>/concierge-verification/promote-faq/",
+        ConciergeVerificationPromoteView.as_view(),
+        name="api-backstage-alert-concierge-verification-promote-faq",
+    ),
     # Suporte (helpdesk interno)
     path(
         "support/capabilities/",
@@ -1392,6 +1400,7 @@ urlpatterns = [
     # ⚠️ ANTES de `pos/preorders/<str:ref>/`: `search` casaria com o ref.
     path("pos/preorders/search/", POSPreorderSearchView.as_view(), name="api-backstage-pos-preorder-search"),
     path("pos/preorders/<str:ref>/", POSPreorderDetailView.as_view(), name="api-backstage-pos-preorder-detail"),
+    path("pos/preorders/<str:ref>/swap/", POSPreorderSwapView.as_view(), name="api-backstage-pos-preorder-swap"),
     path(
         "pos/preorders/<str:ref>/payment/check/",
         POSPreorderPaymentCheckView.as_view(),

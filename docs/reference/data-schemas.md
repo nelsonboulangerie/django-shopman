@@ -180,7 +180,7 @@ escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas qu
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`,
-`jev` (o Jev, com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), `intents` (a leitura em partes), `default`, `failures` ou `verification` (o "vou verificar" sem resposta no segundo prazo); `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave), `verification_timeout` (a pergunta à equipe passou do segundo prazo sem resposta, `intent=human`, `destination=team`) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
+`jev` (o Jev, com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), `intents` (a leitura em partes), `default`, `failures` ou `verification` (o "vou verificar" sem resposta no segundo prazo); `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave), `verification_timeout` (a pergunta à equipe passou do segundo prazo sem resposta, `intent=human`, `destination=team`) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento) ou `identity` (pergunta de quem atende, "com quem eu falo?", "é robô?": a frase fixa da R8, `intent=house_info`, `destination=answer`, sem consultar o Jev).
 
 Cancelamento pela Concierge (dono, 03/10/2026; `shopman/storefront/concierge/cancellation.py`):
 a pergunta de confirmação fica em `Conversation.flags["pending_cancel"]` = `{order_ref, asked_at,
@@ -289,8 +289,9 @@ a segunda parte não entendida, com modelo, vai para a equipe. Sem modelo, a par
 
 `Conversation.flags["verification"]` = `{v: 1, id, status, opened_at, fence, questions, promise,
 nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
-conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres e entra no
-marcador do cartão (`concierge:<conversa>:verify:<id>`); `status` é `open`, `answered` (a resposta da
+conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres; o cartão
+é o `alert_pk` (sem marcador na mensagem: ela é só o que a equipe lê, e o cartão se resolve pelo
+`pk`); `status` é `open`, `answered` (a resposta da
 equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
 passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06) ou
 `returned` (com `returned_at`: depois do `handed_off`, o cliente escreveu de novo e a conversa voltou sozinha
@@ -466,6 +467,9 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "tracking_match": "id",          // a prova do casamento do link com a parada: "id" (a entrada da TaOn nomeia o pedido por `id_externo`/`numero_pedido`) | "stop" (pelo `stop_id` gravado) | "single" (corrida de um pedido só) | "position" (uma entrada por parada, na ordem de `ride_orders`, tamanhos iguais). Sem esta chave o link e o código são tratados como ausentes (falha fechada); sai no arquivamento
   "stop_id": "",                   // id da parada deste pedido na TaOn (`parada_id`); hoje só LIDO pelo casamento do link. Quem grava é a entrega por parada (#2428)
   "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": true},  // custo interno (centavos); `with_return` = cotada com `com_retorno`, o mesmo `retorno` que a abertura pede (`courier.needs_return`: cobrança na porta ou maquininha da casa)
+  //   corrida com várias paradas: a chamada grava no pedido que a abriu a cotação da ROTA inteira, com
+  //   `"stops": ["REF-1", "REF-2"]` (as paradas na ordem do percurso). O custo que a tela e o B.I. afirmam para a
+  //   corrida juntada só usa uma cotação cujas `stops` são as paradas dela (J13): a cotação sozinha de antes de juntar nunca vale
   "final_value_q": null,           // finished.final_value convertido p/ centavos (corrida com várias paradas: o valor da corrida inteira, repetido em cada pedido)
   "ride_orders": ["WEB-A47", "WEB-A51"],  // só na corrida com várias paradas: os pedidos dela na ordem das paradas; a leitura (`courier.sync`) roda no primeiro e aplica a todos; sai no arquivamento
   "door_charge": {"cash_q": 5800, "change_for_q": 10000, "card_q": 0},  // cobrança na porta registrada na coleta (E); a mesma régua da observação da corrida (`courier.door_charge`)
@@ -1861,6 +1865,26 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 | `pos.weighed_weight_entry` | `bool` | `weighed_sale.weight_entry_enabled` (`shop/services/weighed_sale.py`) → `POSProjection.weighed_weight_entry` | **Venda por peso: o operador pode digitar o PESO**, além do valor da etiqueta. Liga quando houver balança no balcão. Ausente/qualquer valor que não `true` = **desligado** (o padrão): o PDV só pede o valor da etiqueta, a opção "Peso" não aparece e o servidor recusa `entry: "weight"` (`weight_entry_disabled`). Por LOJA e não por terminal: é equipamento do balcão, e uma chave só evita dois PDVs discordando. |
 | `pos.cash_tolerance` | `dict` `{percent: str, min_q: int, max_q: int}` | `cash_tolerance.shop_policy` (`backstage/services/cash_tolerance.py`) | **Tolerância do caixa** (decisão do dono, 04/10/2026): a diferença do fechamento que vira só registro, sem alerta. `percent` do dinheiro do dia (vendas, acertos de entrega e de conta em dinheiro do turno), preso entre `min_q` e `max_q` (centavos). Ausente ou chave ausente = **padrão do dono: `0.5`%, `200` (R$ 2), `2000` (R$ 20)**. Valor ilegível cai no padrão, nunca desliga a régua. Editado no ShopAdmin (Ponto de venda → "Tolerância do caixa", mínima e máxima, em % e R$). Cada terminal pode sobrescrever (`Terminal.metadata["cash_tolerance"]`). O operador nunca vê o veredito: o fechamento continua cego |
 | `pos.late_fiscal_emission_days` | `int` (dias) | `late_emission_days` (`shop/services/fiscal.py`) | Quantos dias DEPOIS do dia da venda a emissão avulsa da NFC-e (Últimas vendas do PDV, com gerente) ainda vale. Conta por dia de operação no fuso da loja (`TIME_ZONE`), não por 24 h corridas. **`0` ou ausente = só no mesmo dia** (padrão). Valor ilegível cai no mesmo dia, nunca em "sem limite". Editado no ShopAdmin (PDV e alertas → "Emissão avulsa de NFC-e: dias depois da venda"). ⚠️ A nota sai com a data e a hora da emissão, não da venda. A lista Últimas vendas estica a janela (24 h) até o primeiro dia do prazo, para a venda não sumir antes de vencer |
+
+### Sugestão de juntar corridas — `Shop.defaults["delivery"]["ride_suggestion"]`
+
+Os parâmetros do plano das corridas (`shop/services/ride_plan.py`, P1-9 da revisão das
+Entregas, frente F5): quem a casa sugere juntar numa corrida e quando a sugestão já vem
+marcada. Decididos pelo dono em 16/11/2026 como palpites até o B.I. medir. Editados no
+ShopAdmin (Pedido e entrega → "Sugestão de juntar corridas"). Chave ausente ou ilegível =
+o padrão; nenhuma desliga o freio de preço.
+
+| Chave | Tipo/default | Lido por | Descrição |
+|---|---|---|---|
+| `delivery.ride_suggestion.detour_km` | `float`, `2.5` | `ride_plan.params` → `plan_groups` | O percurso junto passa da maior perna sozinha em no máximo isto (e em no máximo 40% dela, fixo no código). |
+| `delivery.ride_suggestion.saving_min_q` | `int` (centavos), `300` | `ride_plan._quote` | Economia mínima, em centavos, para a sugestão vir marcada. |
+| `delivery.ride_suggestion.saving_min_percent` | `int`, `15` | `ride_plan._quote` | Economia mínima em % das corridas separadas. Vale junto com `saving_min_q` (as duas). |
+| `delivery.ride_suggestion.extra_wait_minutes` | `int`, `10` | `ride_plan._fits` | O cliente que mais espera a mais espera no máximo isto. A espera a mais é estimada pelo desvio a 20 km/h mais 2 min por parada antes (fixos no código). |
+
+O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
+deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o
+"Vai junto nesta corrida?" do Painel do pedido (`courier.ride_offer[].suggested` e
+`courier.ride_suggestion`) e a contagem `ride_suggestions` do quadro.
 
 ### Marketing — `Shop.defaults["marketing"]`
 

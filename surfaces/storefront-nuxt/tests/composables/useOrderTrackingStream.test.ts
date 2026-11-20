@@ -11,7 +11,7 @@ class FakeEventSource {
   static instances: FakeEventSource[] = []
   url: string
   withCredentials: boolean
-  listeners: Record<string, Array<() => void>> = {}
+  listeners: Record<string, Array<(event?: { data: string }) => void>> = {}
   onerror: ((e?: unknown) => void) | null = null
   onopen: ((e?: unknown) => void) | null = null
   readyState = 0
@@ -23,12 +23,13 @@ class FakeEventSource {
     FakeEventSource.instances.push(this)
   }
 
-  addEventListener (name: string, handler: () => void) {
+  addEventListener (name: string, handler: (event?: { data: string }) => void) {
     ;(this.listeners[name] ||= []).push(handler)
   }
 
-  emit (name: string) {
-    ;(this.listeners[name] || []).forEach(h => h())
+  emit (name: string, data?: unknown) {
+    const event = data === undefined ? undefined : { data: JSON.stringify(data) }
+    ;(this.listeners[name] || []).forEach(h => h(event))
   }
 
   close () { this.closed = true; this.readyState = 2 }
@@ -70,6 +71,23 @@ describe('useOrderTrackingStream', () => {
     const es = FakeEventSource.instances[0]!
     es.emit('order-update')
     es.emit('message')
+    expect(onPush).toHaveBeenCalledTimes(2)
+  })
+
+  // L2 da revisão das Entregas: a corrida mudou (o entregador aceitou, chegou à
+  // loja, desistiu) sem o pedido mudar de status. O Django manda o mesmo
+  // `order-update` com o corpo do `emit_courier_update`, e a página relê: é a
+  // releitura que troca "Estamos chamando o entregador" por "Diego vem buscar
+  // seu pedido".
+  it('relê no order-update que só traz a mudança da corrida (courier_changed)', async () => {
+    const useOrderTrackingStream = await loadComposable()
+    const onPush = vi.fn()
+    const { connect } = useOrderTrackingStream(() => 'ORD-7', onPush)
+    connect()
+
+    const es = FakeEventSource.instances[0]!
+    es.emit('order-update', { ref: 'ORD-7', kind: 'courier_changed', status: 'A' })
+    es.emit('order-update', { ref: 'ORD-7', kind: 'reopened', status: 'D' })
     expect(onPush).toHaveBeenCalledTimes(2)
   })
 

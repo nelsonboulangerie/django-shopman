@@ -181,6 +181,7 @@
             "recent_exists",
             "resolve",
             "resolve_matching",
+            "resolve_pk",
             "revise"
           ]
         }
@@ -2811,12 +2812,21 @@
           "symbols": [
             "ALERT_TYPE",
             "Answer",
+            "DATED_WARNING",
             "DeskResult",
+            "FAQ_REF_PREFIX",
             "TakeOver",
+            "_DATED",
             "_handlers",
             "answer",
             "card_subject",
             "card_subjects",
+            "cites_a_date",
+            "date_warning",
+            "dated_sentence",
+            "faq_ref",
+            "origin_of",
+            "promote_faq",
             "register",
             "take_over"
           ]
@@ -9357,6 +9367,7 @@
         "delivery.cancelled-order-ride-disposition",
         "delivery.courier-auto-dispatch",
         "delivery.courier-charge-staleness",
+        "delivery.courier-customer-wait",
         "delivery.courier-dispatch-eligibility",
         "delivery.courier-handoff-charge",
         "delivery.courier-in-trouble",
@@ -9855,6 +9866,44 @@
             "new_ride_service_ref",
             "ride_state",
             "service_for_new_ride"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/ride_plan.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "delivery.courier-ride-plan"
+      ],
+      "responsibilities": [
+        "decisão",
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CACHE_SECONDS",
+            "Candidate",
+            "Group",
+            "_cache_key",
+            "_point",
+            "_ready_key",
+            "km_between",
+            "logger"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "_service",
+            "suggestion_for",
+            "waiting_pool"
           ]
         }
       ]
@@ -15134,6 +15183,58 @@
             "instant",
             "moment",
             "records_of"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/admin/ai_routes.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "DEFAULT_ROUTE",
+            "MODEL_VENDORS",
+            "PROTOCOL_NAMES",
+            "ROUTE_KEYS",
+            "ROUTE_LABELS",
+            "Readiness",
+            "SHADOW_OFF",
+            "SHADOW_ON",
+            "_connection_label",
+            "_connection_vendor",
+            "_empty_connection_label",
+            "_fix_for",
+            "_known_vendors",
+            "_model_vendor",
+            "_protocol",
+            "_route_ref",
+            "_routes_of",
+            "_shop",
+            "_vendor_of_host",
+            "build",
+            "clean",
+            "concrete_reason",
+            "connection_choices",
+            "connection_field",
+            "form_fields",
+            "model_choices",
+            "model_field",
+            "readiness",
+            "record_shadow_change",
+            "set_initial",
+            "shadow_history",
+            "status_html",
+            "warnings",
+            "why_unusable"
           ]
         }
       ]
