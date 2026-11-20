@@ -1574,6 +1574,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Sobre o pedido, a equipe fecha com você por aqui.",
         )},
     },
+    # "Quanto custa a entrega?" (coordenação, 20/11/2026): a taxa depende do endereço. Sem o
+    # "Sim." da pergunta frequente, que responde a outra pergunta ("vocês fazem entrega?").
+    "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="A taxa de entrega depende do endereço. Me manda o endereço completo com número que eu calculo.",
+        )},
+    },
     "CONCIERGE_PARTS_NOT_FOUND": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Sobre “{part}”, não tenho essa informação aqui.",

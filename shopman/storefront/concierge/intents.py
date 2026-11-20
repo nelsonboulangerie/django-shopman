@@ -107,6 +107,7 @@ TEAM_TOPICS = {
 TEAM_COPY_KEY = "CONCIERGE_PARTS_TEAM"
 ORDER_WITH_TEAM_COPY_KEY = "CONCIERGE_PARTS_ORDER_WITH_TEAM"
 NOT_FOUND_COPY_KEY = "CONCIERGE_PARTS_NOT_FOUND"
+DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 #: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
 UNCLEAR_FLAG = "unclear_asked"
@@ -701,6 +702,46 @@ _REFERENT_WORDS = frozenset({"ele", "ela", "eles", "elas", "esse", "essa", "esse
 SHEET_ITEMS = 3
 
 
+_DELIVERY_WORDS = frozenset({"entrega", "entregas", "entregar", "delivery", "frete"})
+_FEE_WORDS = frozenset({"taxa", "frete", "quanto", "custa", "custo", "valor", "preco", "cobram", "cobra"})
+
+
+def _asks_delivery_fee(span: str) -> bool:
+    """"Quanto custa a entrega?", "qual a taxa de entrega?", "quanto é o frete?"."""
+    words = set(re.findall(r"[a-z0-9]+", _fold(span)))
+    return bool(words & _DELIVERY_WORDS) and bool(words & _FEE_WORDS)
+
+
+def _delivers(channel_ref: str) -> bool:
+    """O canal faz entrega (a mesma régua da pergunta frequente de entrega)."""
+    from shopman.shop.projections.channel_state import channel_capabilities
+
+    try:
+        return "delivery" in channel_capabilities(channel_ref).fulfillment_types
+    except Exception:
+        logger.warning("concierge.intents.channel_capabilities_failed channel=%s", channel_ref, exc_info=True)
+        return False
+
+
+def _points_back(span: str) -> bool:
+    """A fala aponta para um produto dito antes ("ele é doce?", "essa tem recheio?")."""
+    return bool(set(re.findall(r"[a-z0-9]+", _fold(span))) & _REFERENT_WORDS)
+
+
+def _referent(conversation, *, channel_ref: str) -> str:
+    """O nome do produto de que a conversa falava há pouco: o em foco, ou o único listado."""
+    from . import dialogue
+
+    if conversation is None:
+        return ""
+    state = dialogue.for_turn(conversation, channel_ref=channel_ref).state
+    focus = state.get("focus") or {}
+    if focus.get("name"):
+        return str(focus["name"])
+    listed = list(state.get("listed") or [])
+    return str(listed[0].get("name") or "") if len(listed) == 1 else ""
+
+
 def _own_source(act: Act, result: dict) -> dict:
     """Cada parte com a sua fonte, nunca o texto vizinho.
 
@@ -839,6 +880,15 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     def search(act: Act, *, consult: bool = False) -> PartReply:
         from . import dialogue
 
+        if consult and act.act == PRODUCT and not act.product and _points_back(act.span):
+            # "ele é doce?" (coordenação, 20/11/2026): o "ele" é o produto citado há pouco
+            # na conversa (o em foco, ou o único da última resposta), e a ficha dele responde.
+            # Sem nenhum, nem a equipe saberia de quem é: pergunta ao cliente.
+            referent = _referent(conversation, channel_ref=channel_ref)
+            if not referent:
+                return PartReply(act, text=copy(dialogue.ASK_PRODUCT_KEY) or "", keeps_question=True)
+            act = Act(act.act, span=act.span, product=referent, qty=act.qty)
+
         query = _search_text(act)
         result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
@@ -878,6 +928,13 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             topic = TEAM_TOPICS.get(act.act, "isso")
             run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=topic)))
             continue
+        if act.act in {HOURS, HOUSE} and _asks_delivery_fee(act.span) and _delivers(channel_ref):
+            # Preço da entrega: depende do endereço, e a frase diz isso sem o "Sim." da
+            # pergunta frequente, que responde a "vocês fazem entrega?" (20/11/2026).
+            text = (copy(DELIVERY_FEE_COPY_KEY) or "").strip()
+            if text:
+                run.replies.append(PartReply(act, text=text, keeps_question=True))
+                continue
         if act.act in {PRODUCT, HOURS, HOUSE}:
             run.replies.append(search(act, consult=True))
             continue

@@ -99,11 +99,34 @@ def test_attribute_the_sheet_does_not_cover_is_verified(conversation, menu, monk
     assert "“o croissant é grande”" in outcome.reply_text
 
 
-def test_he_is_sweet_without_the_product_is_verified(conversation, menu, monkeypatch):  # noqa: F811
-    text = "ele é doce?"
-    outcome = _turn(conversation, text, [_act("product_question", text)], monkeypatch)
+def _service_turn(conversation, text, acts, event_id, monkeypatch):  # noqa: F811
+    """O turno inteiro (com a memória da conversa gravada), como em produção."""
+    from shopman.shop.models import Conversation
+    from shopman.storefront.concierge import service
+    from shopman.storefront.tests.test_concierge_engine import _receive
 
-    assert VERIFY in outcome.reply_text and "R$" not in outcome.reply_text
+    monkeypatch.setattr(intents, "_model", lambda: "modelo-de-teste")
+    Conversation.objects.filter(pk=conversation.pk).update(claim_until=None)
+    _receive(conversation, text, event_id)
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        service.run_turn(conversation.pk, _binding(conversation).pk, intents_client=ReaderClient(acts))
+    return conversation.messages.filter(kind="reply").order_by("-pk").values_list("text", flat=True).first() or ""
+
+
+def test_he_is_sweet_after_pain_perdu_answers_from_its_sheet(conversation, menu, monkeypatch):  # noqa: F811
+    """As duas mensagens reais em sequência: "pain perdu", depois "ele é doce?"."""
+    _service_turn(conversation, "pain perdu", [_act("product_question", "pain perdu", "pain perdu")], "seq-1", monkeypatch)
+    reply = _service_turn(conversation, "ele é doce?", [_act("product_question", "ele é doce?")], "seq-2", monkeypatch)
+
+    assert PERDU in reply and VERIFY not in reply
+
+
+def test_he_is_sweet_without_any_product_asks_which(conversation, menu, monkeypatch):  # noqa: F811
+    """Sem produto na conversa, a equipe também não saberia de quem é o "ele": pergunta ao cliente."""
+    outcome = _turn(conversation, "ele é doce?", [_act("product_question", "ele é doce?")], monkeypatch)
+
+    assert "De qual produto você está falando?" in outcome.reply_text
+    assert VERIFY not in outcome.reply_text and "R$" not in outcome.reply_text
 
 
 def test_a_suggestion_lists_the_sheets_and_nothing_about_delivery(conversation, menu, monkeypatch):  # noqa: F811
@@ -124,12 +147,14 @@ def test_price_and_presence_get_only_the_menu_line(conversation, menu, monkeypat
     assert GLUTEN not in outcome.reply_text and "Cancelar pedido" not in outcome.reply_text
 
 
-def test_a_house_question_gets_only_the_best_answer(conversation, menu, monkeypatch):  # noqa: F811
+def test_delivery_fee_asks_for_the_address_without_yes(conversation, menu, monkeypatch):  # noqa: F811
     text = "quanto custa a entrega?"
     outcome = _turn(conversation, text, [_act("hours_delivery", text)], monkeypatch)
 
-    assert "Fazemos entrega" in outcome.reply_text
-    assert "acompanha cada etapa" not in outcome.reply_text
+    # O preço da entrega depende do endereço; sem o "Sim." de "vocês fazem entrega?".
+    assert outcome.reply_text == (
+        "A taxa de entrega depende do endereço. Me manda o endereço completo com número que eu calculo."
+    )
 
 
 def test_payment_question_still_finds_payment(conversation, menu, monkeypatch):  # noqa: F811
@@ -137,3 +162,11 @@ def test_payment_question_still_finds_payment(conversation, menu, monkeypatch): 
     outcome = _turn(conversation, text, [_act("house_info", text)], monkeypatch)
 
     assert "Pix" in outcome.reply_text and GLUTEN not in outcome.reply_text
+
+
+def test_do_you_deliver_keeps_the_faq_answer(conversation, menu, monkeypatch):  # noqa: F811
+    text = "vocês fazem entrega?"
+    outcome = _turn(conversation, text, [_act("hours_delivery", text)], monkeypatch)
+
+    assert outcome.reply_text.startswith("Sim. Fazemos entrega.")
+    assert "acompanha cada etapa" not in outcome.reply_text  # só a resposta que melhor casou
