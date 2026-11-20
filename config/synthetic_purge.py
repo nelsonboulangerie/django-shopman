@@ -275,6 +275,10 @@ POLICY: dict[str, Rule] = {
     # storefront
     "storefront.CatalogStructureHead": _keep(_CATALOG),
     "storefront.IntentCategory": _keep(_CONFIG),
+    # A amostra de aprendizado (#2851): anonimizada na cópia, sem conversa, cliente ou
+    # telefone ligados, sem prazo de retenção. Não é dado de ninguém, e apagá-la jogaria
+    # fora a curadoria do que a Concierge aprende.
+    "storefront.ConversationCorpusEntry": _keep("amostra anonimizada de aprendizado da Concierge, sem pessoa ligada"),
     "storefront.CustomerFavorite": _purge(_CUSTOMER),
     "storefront.StockAlertSubscription": _purge(_CUSTOMER),
     "storefront.StockAlertOccurrence": _purge(_CUSTOMER),
