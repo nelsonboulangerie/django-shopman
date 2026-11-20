@@ -1898,9 +1898,23 @@ export function usePosSale(deps: PosSaleDeps) {
       requestTabAssociation("cart");
       return;
     }
-    // Sem preço no catálogo não entra no pedido — nenhum canal vende preço zero.
-    // O tile já vem inerte; isto cobre o leitor e o "repetir pedido".
-    if (productBlockedLabel({ price_q: product.price_q, sold_out: false })) return;
+    // Sem preço, ou esgotado NA GRADE QUE O OPERADOR VÊ, não entra no pedido. O
+    // tile já vem inerte; isto cobre o "repetir último pedido" e o favorito, que
+    // chegam com o produto do catálogo de hoje (P2-10: lançavam o esgotado). A
+    // régua é a da grade: na encomenda, o esgotado é o da data (o pão que acabou
+    // hoje entra numa encomenda para amanhã com lote planejado), e o item sem lote
+    // planejado na data entra como pedido à Produção (WP-E3). O toque diz o motivo,
+    // como o tile; o id junta as repetições do "repetir" num aviso só.
+    const onGrid = gridProducts.value.find((entry) => entry.sku === product.sku);
+    const blocked = productBlockedLabel({
+      price_q: product.price_q,
+      sold_out: onGrid ? onGrid.sold_out : product.sold_out,
+      sold_out_reason: onGrid ? onGrid.sold_out_reason : product.sold_out_reason,
+    });
+    if (blocked) {
+      toast.info(`${product.name}: ${blocked}.`, { id: `pos-blocked-${product.sku}` });
+      return;
+    }
     if (product.sold_by_weight && !weighed) {
       if (orderSetupPending.value) return;
       weighedPrompt.value = product;

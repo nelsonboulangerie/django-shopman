@@ -45,6 +45,9 @@ export interface POSProductProjection {
   sold_out?: boolean;
   /** Motivo do bloqueio quando não é o genérico "Esgotado" (ex.: "Sem caixa"). */
   sold_out_reason?: string;
+  /** Encomenda para outro dia sem lote planejado do item na data (WP-E3): o item
+   *  entra, como pedido à Produção, e esta é a frase que a tela diz. Vazio fora disso. */
+  unplanned_note?: string;
   /** Vendido por peso: `price_q` é o preço DO QUILO, e tocar o tile pede o valor
    *  da etiqueta (ou o peso) em vez de somar uma unidade. */
   sold_by_weight?: boolean;
@@ -990,9 +993,14 @@ export interface POSScheduleResponse {
   is_today: boolean;
   /** Não deu para apurar a prontidão — NÃO é "sem restrição". */
   readiness_unavailable: boolean;
-  /** Outro dia: os SKUs da grade sem saldo NAQUELA data (vazio para hoje). */
+  /** Outro dia: os SKUs da grade sem saldo NAQUELA data (vazio para hoje). Plano
+   *  esgotado fica aqui; data sem lote planejado do item, não (`unplanned_skus`). */
   sold_out_skus?: string[];
-  /** Outro dia: o lastro de cada SKU do carrinho na data (vazio para hoje). */
+  /** Outro dia: os SKUs da grade que a casa produz em lote e que ainda não têm lote
+   *  planejado NAQUELA data. Entram como pedido à Produção (WP-E3, D2). */
+  unplanned_skus?: string[];
+  /** Outro dia: o lastro de cada SKU do carrinho na data (vazio para hoje). O SKU
+   *  sem lote planejado na data vem com `planned_qty: 0` (vira pedido à Produção). */
   plan_by_sku?: Record<string, POSPlanBacking>;
 }
 

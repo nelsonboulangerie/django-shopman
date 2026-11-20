@@ -9,6 +9,11 @@
 //
 // O seed planeja 22 Baguette de Tradition para amanhã. A régua é o lote planejado PARA
 // a data; a sobra de hoje (que o seed deixa na vitrine) não entra em nenhum número.
+//
+// WP-E3 estende a jornada com a data SEM plano (D2 do dono): a Fran abre uma encomenda
+// para daqui a dez dias, quando o seed ainda não planejou lote nenhum, e lança 30
+// croissants. O tile não diz "Sem saldo"; a linha diz "Ainda sem lote planejado para
+// DD/MM: vira pedido à Produção", e a encomenda fecha sem gerente.
 import { capture, cast, expect, settled, test, type Page } from "./support/operator";
 
 const PRODUCT = process.env.PDV_LIVE_OVER_PLAN_PRODUCT || "Baguette de Tradition";
@@ -77,12 +82,53 @@ async function schedulesTomorrowPickup(page: Page) {
   await expect(page.getByPlaceholder(/Buscar produto/).locator("visible=true").first()).toBeVisible({ timeout: 30_000 });
 }
 
+/**
+ * Daqui a dez dias no relógio da loja, pulando o domingo (a casa não abre): a data do
+ * laudo (P1-1). O seed planeja só a próxima semana, então a data não tem lote planejado.
+ */
+function tenDaysAhead(): { iso: string; day: string; digits: string } {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  now.setDate(now.getDate() + 10);
+  if (now.getDay() === 0) now.setDate(now.getDate() + 1);
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  return { iso: `${now.getFullYear()}-${mm}-${dd}`, day: `${dd}/${mm}`, digits: `${dd}${mm}${now.getFullYear()}` };
+}
+
+/** "Outra data": a Fran digita o dia no campo do kit, escolhe o turno e monta a encomenda. */
+async function schedulesPickupOn(page: Page, digits: string) {
+  await page.locator('[data-day-option="other"]').locator("visible=true").first().click();
+  const field = page.locator("[data-day-other-input]").locator("visible=true").first();
+  await field.locator("[data-reka-date-field-segment]").first().click();
+  await page.keyboard.type(digits);
+  const slot = page
+    .locator('[data-order-step="schedule"]')
+    .getByRole("button")
+    .filter({ hasText: /\d{1,2}h|\d{2}:\d{2}/ })
+    .and(page.locator(":enabled"))
+    .first();
+  await slot.click({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Continuar", exact: true }).click();
+  await page.locator("[data-order-fulfillment-options]").getByRole("radio", { name: /^Retirada/ }).click();
+  await page.getByRole("button", { name: /Montar encomenda/ }).click();
+  await expect(page.getByPlaceholder(/Buscar produto/).locator("visible=true").first()).toBeVisible({ timeout: 30_000 });
+}
+
+/** O tile do produto pelo nome exato (há "Croissant Mini" ao lado do "Croissant"). */
+function tileOf(page: Page, product: string) {
+  return page
+    .locator("button[data-pos-product]")
+    .filter({ has: page.locator("[data-pos-product-name]", { hasText: new RegExp(`^${product}$`) }) })
+    .locator("visible=true")
+    .first();
+}
+
 /** Lança o produto e digita a quantidade no editor da linha. */
-async function ordersQuantity(page: Page) {
+async function ordersQuantity(page: Page, product = PRODUCT, qty = QTY) {
   const search = page.getByPlaceholder(/Buscar produto/).locator("visible=true").first();
   await search.click();
-  await search.pressSequentially(PRODUCT);
-  await page.locator("button[data-pos-product]").filter({ hasText: exact(PRODUCT) }).first().click({ timeout: 30_000 });
+  await search.pressSequentially(product);
+  await tileOf(page, product).click({ timeout: 30_000 });
   // A baguete fica pronta mais tarde que o turno escolhido: a tela oferece o turno
   // dela, e a Fran aceita (é o que o cliente ouviria).
   const later = page.getByRole("button", { name: /^Mudar para/ }).locator("visible=true").first();
@@ -95,11 +141,11 @@ async function ordersQuantity(page: Page) {
   if (await touch.waitFor({ timeout: 3000 }).then(() => true, () => false)) {
     // Toque: o numérico da linha escreve a quantidade, e "Pronto" fecha.
     const editor = page.locator("[data-pos-line-editor]").locator("visible=true").first();
-    for (const digit of QTY) await editor.getByRole("button", { name: `Dígito ${digit}`, exact: true }).click();
+    for (const digit of qty) await editor.getByRole("button", { name: `Dígito ${digit}`, exact: true }).click();
     await editor.locator("[data-pos-line-editor-close]").click();
   } else {
     // Balcão: o teclado físico digita a quantidade da linha aberta.
-    await page.keyboard.type(QTY);
+    await page.keyboard.type(qty);
     await page.keyboard.press("Enter");
   }
 }
@@ -289,6 +335,46 @@ for (const device of ["phone", "counter"] as const) {
       const confirm = dialog.getByRole("button", { name: /^Confirmar|^Autorizar/ }).first();
       if (await confirm.isVisible({ timeout: 2000 }).catch(() => false)) await confirm.click();
       await expect(dialog).toBeHidden({ timeout: 60_000 });
+      await expect(page.getByText(/Encomenda registrada|CONFIRME COM O CLIENTE|Confirme com o cliente/).locator("visible=true").first())
+        .toBeVisible({ timeout: 60_000 });
+      await capture(page, testInfo, "encomenda-registrada");
+    });
+
+    test("30 croissants para daqui a dez dias, sem lote planejado: vira pedido à Produção", async ({ cashierAtCounter: page }, testInfo) => {
+      test.setTimeout(8 * 60_000);
+      const target = tenDaysAhead();
+      const note = `Ainda sem lote planejado para ${target.day}: vira pedido à Produção`;
+
+      await opensOrder(page);
+      await identifiesCustomer(page);
+      await schedulesPickupOn(page, target.digits);
+
+      // 1 · A grade: o croissant não diz "Sem saldo"; diz que vira pedido à Produção.
+      const search = page.getByPlaceholder(/Buscar produto/).locator("visible=true").first();
+      await search.click();
+      await search.pressSequentially("Croissant");
+      const tile = tileOf(page, "Croissant");
+      await expect(tile).toBeVisible({ timeout: 30_000 });
+      await capture(page, testInfo, "grade-sem-plano");
+      await expect(tile.locator("[data-pos-product-blocked]")).toHaveCount(0);
+      await expect(tile.locator("[data-pos-product-unplanned]")).toContainText("Vira pedido à Produção", { timeout: 30_000 });
+      await expect(tile.locator("[data-pos-product-unplanned]")).toHaveAttribute("title", note);
+      await audits(page, "pilula", "[data-pos-product-unplanned] > span[aria-hidden]");
+      await search.fill("");
+
+      // 2 · A linha: 30 croissants, e o fato da data sem plano.
+      await ordersQuantity(page, "Croissant", "30");
+      const fact = page.locator('[data-pos-line-plan="unplanned"]').locator("visible=true").first();
+      await expect(fact).toHaveText(note, { timeout: 30_000 });
+      await audits(page, "linha", '[data-pos-line-plan="unplanned"] > span');
+      await capture(page, testInfo, "linha-sem-plano");
+
+      // 3 · Nada pede o gerente: o Validar fecha a encomenda em dinheiro.
+      await page.getByRole("button", { name: /^Pagamento|^Outras formas/ }).locator("visible=true").first().click();
+      await page.getByRole("button", { name: /^Dinheiro/ }).and(page.locator(":enabled")).locator("visible=true").first().click();
+      await expect(page.getByText("A encomenda passa do plano. Só o gerente libera.")).toHaveCount(0);
+      await capture(page, testInfo, "pagamento-sem-gerente");
+      await page.getByRole("button", { name: /^Validar/ }).and(page.locator(":enabled")).locator("visible=true").first().click({ timeout: 30_000 });
       await expect(page.getByText(/Encomenda registrada|CONFIRME COM O CLIENTE|Confirme com o cliente/).locator("visible=true").first())
         .toBeVisible({ timeout: 60_000 });
       await capture(page, testInfo, "encomenda-registrada");

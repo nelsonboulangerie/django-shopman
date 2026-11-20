@@ -63,3 +63,35 @@ describe("PosProductTile — bloqueado", () => {
     expect(wrapper.find("[data-pos-product-blocked]").exists()).toBe(false);
   });
 });
+
+describe("PosProductTile — encomenda para data sem lote planejado (WP-E3)", () => {
+  const note = "Ainda sem lote planejado para 30/11: vira pedido à Produção";
+
+  it("não é bloqueio: lança no toque e diz a consequência na pílula, a frase inteira na dica", async () => {
+    const wrapper = await mountSuspended(PosProductTile, {
+      props: { product: product({ sold_out: false, unplanned_note: note }), qty: 0 },
+    });
+    const tile = wrapper.find("[data-pos-product]");
+    expect(tile.attributes("aria-disabled")).toBeUndefined();
+    expect(wrapper.find("[data-pos-product-blocked]").exists()).toBe(false);
+    const pill = wrapper.find("[data-pos-product-unplanned]");
+    expect(pill.attributes("title")).toBe(note);
+    expect(pill.text()).toContain("Vira pedido à Produção");
+    // O nome acessível leva a frase inteira (a pílula é curta).
+    expect(pill.find(".sr-only").text()).toBe(note);
+    await tile.trigger("click");
+    expect(wrapper.emitted("add")).toHaveLength(1);
+  });
+
+  it("na Lista, a mesma pílula", async () => {
+    const wrapper = await mountSuspended(PosProductTile, {
+      props: { product: product({ sold_out: false, unplanned_note: note }), qty: 0, row: true },
+    });
+    expect(wrapper.find("[data-pos-product-unplanned]").attributes("title")).toBe(note);
+  });
+
+  it("sem a frase, nada muda", async () => {
+    const wrapper = await mountSuspended(PosProductTile, { props: { product: product({ sold_out: false }), qty: 0 } });
+    expect(wrapper.find("[data-pos-product-unplanned]").exists()).toBe(false);
+  });
+});
