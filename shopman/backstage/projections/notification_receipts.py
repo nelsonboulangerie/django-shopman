@@ -14,7 +14,7 @@ Não expõe destinatário: só o canal.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -123,6 +123,9 @@ class NotificationReceiptProjection:
     provider_id: str
     detail: str
     attempts: tuple[NotificationAttemptProjection, ...] = ()
+    # O plano B do "Avisar o cliente" (WP-G07): quando o aviso não saiu por canal
+    # nenhum, o WhatsApp do próprio operador com o MESMO texto. Vazio nos outros avisos.
+    fallback_whatsapp_url: str = ""
 
 
 def _time_display(raw, fallback=None) -> str:
@@ -255,7 +258,44 @@ def build_notification_receipts(order) -> tuple[NotificationReceiptProjection, .
         .order_by("-created_at", "-pk")[:MAX_RECEIPTS]
     )
     directives.reverse()
-    return tuple(build_receipt(directive) for directive in directives if _applies(directive))
+    receipts = []
+    for directive in directives:
+        if not _applies(directive):
+            continue
+        receipt = build_receipt(directive)
+        if receipt.state in _FALLBACK_STATES and receipt.template in _NOTICE_KINDS:
+            receipt = replace(receipt, fallback_whatsapp_url=_fallback_whatsapp_url(order, directive))
+        receipts.append(receipt)
+    return tuple(receipts)
+
+
+#: Os estados em que o aviso do "Avisar o cliente" não chegou a ninguém.
+_FALLBACK_STATES = frozenset({STATE_FAILED, STATE_SKIPPED})
+#: O evento de cada aviso, para remontar o texto que não saiu.
+_NOTICE_KINDS = {
+    "order_delayed": "delayed",
+    "order_item_missing": "item_missing",
+    "order_reschedule_needed": "reschedule",
+}
+
+
+def _fallback_whatsapp_url(order, directive) -> str:
+    """O ``wa.me`` do cliente com o texto do aviso que não saiu; vazio sem WhatsApp."""
+    from urllib.parse import quote
+
+    from shopman.backstage.projections import order_queue
+    from shopman.shop.services import customer_notice
+
+    customer = (order.data or {}).get("customer") or {}
+    wa_url = order_queue._customer_contact(order, customer if isinstance(customer, dict) else {}).get(
+        "customer_whatsapp_url", ""
+    )
+    if not wa_url:
+        return ""
+    payload = directive.payload or {}
+    note = str(payload.get("status_note") or "").strip()
+    message = customer_notice.message(order, _NOTICE_KINDS[str(payload.get("template") or "")], note)
+    return f"{wa_url}?text={quote(message)}"
 
 
 __all__ = [

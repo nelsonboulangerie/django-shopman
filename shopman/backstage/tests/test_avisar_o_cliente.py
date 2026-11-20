@@ -297,3 +297,19 @@ class AvisarOClienteApiTests(TestCase):
         self.assertIsNone(action(_order("AV-PRONTO", status=Order.Status.READY)))
         # O iFood avisa pelo app dele (o detalhe do iFood pede o canal montado: a régua basta).
         self.assertFalse(customer_notice.offered(_order("AV-IFOOD", channel="ifood")))
+
+    def test_aviso_que_nao_saiu_traz_o_whatsapp_com_o_mesmo_texto(self):
+        from urllib.parse import unquote
+
+        from shopman.backstage.projections.notification_receipts import build_notification_receipts
+
+        self._send({"kind": "item_missing", "lines": [{"line_id": "L1"}]})
+        directive = _directives(self.order.ref, "order_item_missing").get()
+        directive.status = "failed"
+        directive.payload["notification_delivery"] = {"status": "failed", "outcome": "not_applied"}
+        directive.save(update_fields=["status", "payload", "updated_at"])
+
+        (receipt,) = [r for r in build_notification_receipts(self.order) if r.template == "order_item_missing"]
+        self.assertEqual(receipt.label, "Faltou um item")
+        self.assertTrue(receipt.fallback_whatsapp_url.startswith("https://wa.me/5543999990002?text="))
+        self.assertIn("vai faltar o item Focaccia (2 unidades)", unquote(receipt.fallback_whatsapp_url))
