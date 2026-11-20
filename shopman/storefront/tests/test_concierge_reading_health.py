@@ -122,14 +122,19 @@ def test_the_alert_carries_the_button_that_solves_the_cause(settings, monkeypatc
     """Dono, 20/11/2026: o aviso leva até a tela que resolve, não ensina o caminho."""
     from shopman.backstage.projections.alerts import build_operator_alerts_projection
     from shopman.backstage.services import alerts as alert_service
+    from shopman.shop.models import Shop
 
+    Shop.objects.get_or_create(defaults={"name": "Loja"})
     settings.SHOPMAN_ADMIN_HOST = "admin.exemplo.com.br"
     configure_ai("")
     reading_health.sync_alert()
     counts = alert_service.active_counts(scope="orders")
     [row] = build_operator_alerts_projection(alerts=_open(), counts=counts, surface="orders").alerts
     [action] = [a for a in row.actions if a.kind == "open_alert_context"]
-    assert (action.label, action.href) == ("Abrir conexões de IA", "https://admin.exemplo.com.br/admin/shop/aiconnection/")
+    from django.urls import reverse as admin_reverse
+
+    connections = admin_reverse("admin:shop_aiconnection_changelist")
+    assert (action.label, action.href) == ("Abrir conexões de IA", f"https://admin.exemplo.com.br{connections}")
     assert "(Admin" not in row.message and "Conexões de IA)" not in row.message
 
     configure_ai("sk-teste")
@@ -145,4 +150,10 @@ def test_the_alert_carries_the_button_that_solves_the_cause(settings, monkeypatc
     reading_health.sync_alert()
     [row] = build_operator_alerts_projection(alerts=_open(), counts=counts, surface="orders").alerts
     [action] = [a for a in row.actions if a.kind == "open_alert_context"]
-    assert (action.label, action.href) == ("Abrir freio de IA", "https://admin.exemplo.com.br/admin/shop/shop/")
+    from django.urls import reverse
+
+    from shopman.shop.models import Shop
+
+    # O freio e as rotas moram em Configuração, Integrações (``ShopIntegrationsAdmin``).
+    integrations = reverse("admin:shop_shopintegrations_change", args=[Shop.load().pk])
+    assert (action.label, action.href) == ("Abrir freio de IA", f"https://admin.exemplo.com.br{integrations}")

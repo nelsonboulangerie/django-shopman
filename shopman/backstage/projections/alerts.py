@@ -258,14 +258,27 @@ def _ifood_binding_href(alert) -> str:
     return f"{path}?{urlencode({'q': needle})}" if needle else path
 
 
-#: A Concierge sem modelo (``concierge_no_model``): a tela do Admin que resolve cada causa,
-#: com o rótulo do botão (dono, 20/11/2026: o aviso leva até lá, não ensina o caminho).
-_AI_CONNECTIONS = ("/admin/shop/aiconnection/", "Abrir conexões de IA")
-_NO_MODEL_HOMES = {
-    "brake": ("/admin/shop/shop/", "Abrir freio de IA"),
-    "ambiguous": ("/admin/shop/shop/", "Abrir rotas de IA"),
-}
+#: A Concierge sem modelo (``concierge_no_model``): o rótulo do botão de cada causa (dono,
+#: 20/11/2026: o aviso leva até a tela que resolve, não ensina o caminho). O freio e as
+#: rotas moram em Configuração, Integrações, seção "Inteligência artificial".
+_NO_MODEL_LABELS = {"brake": "Abrir freio de IA", "ambiguous": "Abrir rotas de IA"}
 _NO_MODEL_CAUSE = re.compile(r"Dedupe: concierge:no_model:(\w+)")
+
+
+def _no_model_home(cause: str) -> tuple[str, str]:
+    """(caminho no Admin, rótulo) da causa, pelo ``reverse`` do Admin (nunca por string)."""
+    from django.urls import reverse
+
+    if cause in _NO_MODEL_LABELS:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        path = (
+            reverse("admin:shop_shopintegrations_change", args=[shop.pk])
+            if shop is not None else reverse("admin:shop_shopintegrations_changelist")
+        )
+        return path, _NO_MODEL_LABELS[cause]
+    return reverse("admin:shop_aiconnection_changelist"), "Abrir conexões de IA"
 
 
 def _admin_link(path: str) -> str:
@@ -288,7 +301,7 @@ def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
     if alert.type == "concierge_no_model":
         found = _NO_MODEL_CAUSE.search(alert.message or "")
-        path, label = _NO_MODEL_HOMES.get(found.group(1) if found else "", _AI_CONNECTIONS)
+        path, label = _no_model_home(found.group(1) if found else "")
         return ("admin", path, label)
     catalog_href = _catalog_product_href(alert)
     if catalog_href:
