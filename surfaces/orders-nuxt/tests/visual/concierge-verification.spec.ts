@@ -131,6 +131,9 @@ for (const viewport of VIEWPORTS) {
       // 4b. WP-15: o aviso de "Resposta enviada" traz "Promover a pergunta frequente".
       const promote = page.getByRole("button", { name: "Promover a pergunta frequente" });
       await expect(promote).toBeVisible();
+      // O aviso com gesto não some por tempo: sem barra de progresso, e segue ali depois de 6 s.
+      await page.waitForTimeout(6000);
+      await expect(promote).toBeVisible();
       await shot(page, `${id}-4b-promover-no-aviso`);
       await audit(page, "", `${id}-4b-promover-no-aviso`, "Resposta enviada ao cliente.");
       await promote.click();

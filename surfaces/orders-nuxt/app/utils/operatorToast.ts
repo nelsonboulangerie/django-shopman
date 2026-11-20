@@ -48,7 +48,10 @@ function showWithAction(
     ...(description ? { description } : {}),
     ...(action
       ? {
-          duration: 10_000,
+          // Aviso com gesto não some sozinho (coordenação, 20/11/2026): o gesto só existe
+          // aqui, então fica até o X ou o clique, sem barra de tempo.
+          duration: 0,
+          progress: false,
           actions: [
             {
               label: action.label,
