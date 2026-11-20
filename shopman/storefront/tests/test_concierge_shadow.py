@@ -245,3 +245,88 @@ def test_an_open_window_comes_back_until_it_closes(entry):
     later = decision.entry_at + timedelta(days=8)
     shadow.join_outcomes(now=later)
     assert not shadow.pending_outcomes(later).filter(pk=decision.pk).exists()
+
+
+# ── O caminho até o pedido pelo assinante ligado (#2853) ───────────────────────────
+
+
+def _subscriber_customer(ref, subject, *, active=True):
+    from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
+    from shopman.guestman.models import Customer
+
+    customer = Customer.objects.create(ref=ref, first_name="Cliente", is_active=active)
+    CustomerIdentifier.objects.create(customer=customer, identifier_type=IdentifierType.MANYCHAT,
+                                      identifier_value=subject, source_system="manychat")
+    return customer
+
+
+def _order(customer_ref, at, ref):
+    from shopman.orderman.models import Order
+
+    order = Order.objects.create(ref=ref, channel_ref="whatsapp", session_key=f"s-{ref}", status="new",
+                                 data={"customer_ref": customer_ref})
+    Order.objects.filter(pk=order.pk).update(created_at=at)
+
+
+def _anonymous_entry(subject, external_id, ago=timedelta(days=10)):
+    message = _observed_entry(phone="", subject=subject, external_id=external_id, ago=ago)
+    Conversation.objects.filter(pk=message.conversation_id).update(customer_ref="")
+    return message
+
+
+def _current(decision):
+    return {o.metric: o for o in decision.outcomes.filter(superseded_by__isnull=True)}
+
+
+def test_a_conversation_without_phone_reaches_the_order_by_the_linked_subscriber(entry):
+    """Sem telefone e sem cliente na conversa, o assinante ligado pelo guestman leva ao pedido."""
+    message = _anonymous_entry("3100000001", "mc-link")
+    _subscriber_customer("cust-link", "3100000001")
+    _order("cust-link", message.created_at + timedelta(hours=2), "ORD-LINK")
+    shadow.sweep(limit=10)
+    shadow.join_outcomes()
+    decision = ConversationalDecision.objects.get(message=message)
+    assert decision.customer_ref == "cust-link"
+    outcomes = _current(decision)
+    assert (outcomes["orders_24h"].observation, outcomes["orders_24h"].value) == ("observed", 1)
+    assert (outcomes["orders_7d"].observation, outcomes["orders_7d"].value) == ("observed", 1)
+
+
+def test_an_unknown_comes_back_when_the_subscriber_gets_linked_later(entry):
+    """O unknown de janela fechada é final só enquanto não há caminho; ligado depois, ele é medido."""
+    message = _anonymous_entry("3100000002", "mc-later")
+    shadow.sweep(limit=10)
+    shadow.join_outcomes()
+    decision = ConversationalDecision.objects.get(message=message)
+    assert {o.observation for o in _current(decision).values()} == {"unknown"}
+    assert not shadow.pending_outcomes(timezone.now()).filter(pk=decision.pk).exists()
+
+    _subscriber_customer("cust-later", "3100000002")
+    _order("cust-later", message.created_at + timedelta(days=2), "ORD-LATER")
+    assert shadow.pending_outcomes(timezone.now()).filter(pk=decision.pk).exists()
+    shadow.join_outcomes()
+    outcomes = _current(decision)
+    assert (outcomes["orders_24h"].observation, outcomes["orders_24h"].value) == ("observed", 0)
+    assert (outcomes["orders_7d"].observation, outcomes["orders_7d"].value) == ("observed", 1)
+    assert outcomes["orders_7d"].supersedes is not None, "o unknown fica no histórico, substituído"
+    assert not shadow.pending_outcomes(timezone.now()).filter(pk=decision.pk).exists()
+
+
+def test_two_customers_or_an_inactive_one_stay_unknown(entry):
+    """Ambíguo ou cliente inativo: a sombra não escolhe nem ressuscita, segue sem identidade."""
+    ambiguous = _anonymous_entry("3100000003", "mc-amb")
+    ConversationBinding.objects.create(conversation_id=ambiguous.conversation_id, provider="manychat",
+                                       account="acc-1", transport_channel="instagram", subject="3100000004",
+                                       connection_key="manychat-instagram")
+    _subscriber_customer("cust-a", "3100000003")
+    _subscriber_customer("cust-b", "3100000004")
+    inactive = _anonymous_entry("3100000005", "mc-off")
+    _subscriber_customer("cust-off", "3100000005", active=False)
+
+    assert shadow.customer_ref_of(ambiguous.conversation_id) == ""
+    assert shadow.customer_ref_of(inactive.conversation_id) == ""
+    shadow.sweep(limit=10)
+    shadow.join_outcomes()
+    for message in (ambiguous, inactive):
+        decision = ConversationalDecision.objects.get(message=message)
+        assert {o.observation for o in _current(decision).values()} == {"unknown"}

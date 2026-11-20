@@ -79,6 +79,51 @@ def identity_of(message) -> str:
     return "transported" if (message.conversation.phone or (binding is not None and binding.subject)) else "anonymous"
 
 
+#: O provedor da ligação cujo ``subject`` é o id do assinante (ManyChat).
+MANYCHAT = "manychat"
+
+
+def _subscriber_links():
+    """Os assinantes do ManyChat ligados a um cliente ativo (``CustomerIdentifier``, gravado pela
+    sincronização do assinante no guestman): ``identifier_value`` → cliente."""
+    from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
+
+    return CustomerIdentifier.objects.filter(identifier_type=IdentifierType.MANYCHAT, customer__is_active=True)
+
+
+def customer_ref_of(conversation_id: int) -> str:
+    """O cliente da conversa, por um caminho verificável até ele, ou vazio (#2853).
+
+    1. o ``customer_ref`` que a Concierge gravou na conversa;
+    2. o assinante do ManyChat da ligação da conversa (``binding.subject``) já ligado a um
+       cliente ativo pelo guestman (``CustomerIdentifier`` do tipo ``manychat``).
+
+    Dois clientes possíveis é ambíguo, e então vazio: a sombra mede, não adivinha. O id do
+    assinante nunca é comparado com telefone (não é telefone: medido em produção em 20/11/2026).
+    """
+    from shopman.shop.models import Conversation, ConversationBinding
+
+    own = Conversation.objects.filter(pk=conversation_id).values_list("customer_ref", flat=True).first()
+    if own:
+        return own
+    subjects = ConversationBinding.objects.filter(conversation_id=conversation_id, provider=MANYCHAT).values("subject")
+    refs = set(_subscriber_links().filter(identifier_value__in=subjects).values_list("customer__ref", flat=True))
+    return refs.pop() if len(refs) == 1 else ""
+
+
+def _identity_path():
+    """Para ``pending_outcomes``: a conversa da decisão tem hoje um caminho até o cliente."""
+    from django.db.models import Exists, OuterRef, Q
+
+    from shopman.shop.models import Conversation, ConversationBinding
+
+    own = Conversation.objects.filter(pk=OuterRef("conversation_id")).filter(~Q(customer_ref="") | ~Q(phone=""))
+    linked = ConversationBinding.objects.filter(
+        conversation_id=OuterRef("conversation_id"), provider=MANYCHAT,
+        subject__in=_subscriber_links().values("identifier_value"))
+    return Exists(own) | Exists(linked)
+
+
 def _needs(understanding) -> tuple[NeedSpec, ...]:
     needs = []
     for index, act in enumerate(understanding.acts):
@@ -164,7 +209,7 @@ def sweep(*, limit: int = SWEEP_LIMIT) -> dict[str, int]:
             _, created = record_decision(
                 message=message, conversation_id=message.conversation_id, decision=decision,
                 snapshot_hash=snapshot.hash, acts=acts, unknown_facts=unknown,
-                customer_ref=message.conversation.customer_ref or "", entry_at=message.created_at)
+                customer_ref=customer_ref_of(message.conversation_id), entry_at=message.created_at)
             decided += int(created)
         except Exception as error:  # noqa: BLE001 - a sombra nunca derruba o ciclo; a entrada fica para o próximo
             logger.debug("concierge.shadow: decisão falhou message=%s", message.pk, exc_info=True)
@@ -180,20 +225,23 @@ def sweep(*, limit: int = SWEEP_LIMIT) -> dict[str, int]:
 def pending_outcomes(now: datetime):
     """As decisões que a junção ainda tem o que fazer: alguma métrica sem resultado final.
 
-    Final é ``observed`` ou ``not_applicable``, ou ``unknown`` com a janela já fechada (sem
-    identidade, fechada a janela, não há mais o que medir). ``censored`` e ``unknown`` com a
-    janela aberta voltam. Sem este filtro, a junção pegava sempre as mesmas decisões mais antigas
+    Final é ``observed`` ou ``not_applicable``, ou ``unknown`` com a janela já fechada e a
+    conversa ainda sem caminho até o cliente. Quando o caminho aparece depois (o assinante
+    ligado a um cliente, #2853), o ``unknown`` volta, e a junção mede o que faltava.
+    ``censored`` e ``unknown`` com a janela aberta voltam. Sem este filtro, a junção pegava sempre as mesmas decisões mais antigas
     e as novas nunca ganhavam resultado (medido em produção em 20/11/2026: 35 de 235 sem resultado).
     """
     from django.db.models import Exists, OuterRef, Q
 
     from shopman.shop.models import ConversationalDecision, ConversationalOutcome
 
-    final = ConversationalOutcome.objects.filter(decision=OuterRef("pk"), superseded_by__isnull=True).filter(
-        Q(observation__in=("observed", "not_applicable")) | Q(observation="unknown", window_end__lte=now))
+    current = ConversationalOutcome.objects.filter(decision=OuterRef("pk"), superseded_by__isnull=True)
+    settled = current.filter(observation__in=("observed", "not_applicable"))
+    unknown_closed = current.filter(observation="unknown", window_end__lte=now)
+    path = _identity_path()
     missing = Q()
     for metric, _ in WINDOWS:
-        missing |= ~Exists(final.filter(metric=metric))
+        missing |= ~Exists(settled.filter(metric=metric)) & (~Exists(unknown_closed.filter(metric=metric)) | path)
     return ConversationalDecision.objects.filter(missing).order_by("decided_at", "pk")
 
 
@@ -211,7 +259,8 @@ def join_outcomes(*, now: datetime | None = None, limit: int = SWEEP_LIMIT) -> d
     recorded = 0
     for decision in pending_outcomes(now)[:limit]:
         conversation = Conversation.objects.filter(pk=decision.conversation_id).first()
-        identity = customer_identity_filter(customer_ref=decision.customer_ref or None,
+        customer_ref = decision.customer_ref or customer_ref_of(decision.conversation_id)
+        identity = customer_identity_filter(customer_ref=customer_ref or None,
                                             phone=(conversation.phone or None) if conversation else None)
         for metric, span in WINDOWS:
             current = current_outcome(decision, metric)
@@ -220,9 +269,10 @@ def join_outcomes(*, now: datetime | None = None, limit: int = SWEEP_LIMIT) -> d
             # A janela conta da ENTRADA (quando o cliente escreveu), não da decisão: no
             # acumulado a decisão é de hoje, e a janela mediria os pedidos depois de hoje.
             start, end = decision.entry_at, decision.entry_at + span
-            base = {"id": f"out-{decision.decision_id}-{metric}-{int(now.timestamp())}", "tenant": "shop",
+            # O id leva o microssegundo: duas junções no mesmo segundo não colidem.
+            base = {"id": f"out-{decision.decision_id}-{metric}-{int(now.timestamp() * 1_000_000)}", "tenant": "shop",
                     "environment": ENVIRONMENT, "trace_id": f"trace-{decision.decision_id}",
-                    "occurred_at": instant(now), "producer": PRODUCER, "customer_ref": decision.customer_ref or None,
+                    "occurred_at": instant(now), "producer": PRODUCER, "customer_ref": customer_ref or None,
                     "metric": MetricRef(id=metric, definition_version="1"),
                     "window": {"start": instant(start), "end": instant(end)}, "source": OUTCOME_SOURCE,
                     "decision_ids": (decision.decision_id,)}
