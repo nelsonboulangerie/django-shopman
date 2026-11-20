@@ -70,4 +70,27 @@ describe("useBackstageEvents: tempo real que reconecta", () => {
     unmount();
     expect(FakeEventSource.alive()).toHaveLength(0);
   });
+
+  it("a posição do entregador vem no MESMO stream e só acorda quem pediu (F7b)", () => {
+    const onPush = vi.fn();
+    const onCourierPosition = vi.fn();
+    const others = vi.fn();
+    useBackstageEvents("orders", onPush, { onCourierPosition });
+    mounted();
+    const deliveryMounted = mounted;
+    useBackstageEvents("orders", others);
+    mounted();
+    deliveryMounted();
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    const stream = FakeEventSource.instances[0]!;
+    stream.open();
+    onPush.mockClear();
+    others.mockClear();
+
+    stream.emit("backstage-courier-position", JSON.stringify({ ride: "776753357" }));
+    expect(onCourierPosition).toHaveBeenCalledTimes(1);
+    expect(onPush).not.toHaveBeenCalled();
+    expect(others).not.toHaveBeenCalled();
+  });
 });

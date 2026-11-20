@@ -15,7 +15,7 @@ from shopman.orderman.models import Order
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.adapters import courier_mock
 from shopman.shop.models import Shop
-from shopman.shop.services import courier
+from shopman.shop.services import courier, courier_position
 from shopman.shop.webhooks.machine import signature_for
 
 pytestmark = pytest.mark.django_db
@@ -324,7 +324,8 @@ def test_position_event_goes_to_cache_not_order(shop):
     )
     assert resp.status_code == 200
     assert resp.data["kind"] == "position"
-    assert cache.get("courier:pos:184532") == {"lat": "-23.305", "lng": "-51.162"}
+    stored = courier_position.read("184532")
+    assert (stored["latitude"], stored["longitude"], stored["source"]) == (-23.305, -51.162, "webhook")
     order.refresh_from_db()
     assert order.updated_at == before  # posição nunca escreve no Order
 
@@ -414,8 +415,11 @@ def test_documented_position_batch_goes_to_cache(shop):
     resp = _client().post(_url(), batch, format="json")
     assert resp.status_code == 200
     assert resp.data == {"status": "ok", "kind": "position_batch", "positions": 1}
-    assert cache.get("courier:pos:184532") == {"lat": "-23.305", "lng": "-51.162"}
-    assert cache.get("courier:pos:184533") is None
+    stored = courier_position.read("184532")
+    assert (stored["latitude"], stored["longitude"]) == (-23.305, -51.162)
+    # A hora é a do item do lote (``timestamp`` em ms), não a da chegada.
+    assert stored["at"].isoformat() == "2026-08-10T17:00:00+00:00"
+    assert courier_position.read("184533") is None
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE)
@@ -425,7 +429,8 @@ def test_deprecated_position_payload_goes_to_cache(shop):
     )
     assert resp.status_code == 200
     assert resp.data["kind"] == "position"
-    assert cache.get("courier:pos:184532") == {"lat": "-23.3", "lng": "-51.1"}
+    stored = courier_position.read("184532")
+    assert (stored["latitude"], stored["longitude"]) == (-23.3, -51.1)
 
 
 # ── desistência do entregador: a TaOn reabre a MESMA corrida ─────────

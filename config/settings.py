@@ -363,6 +363,7 @@ WATCHMAN = {
         "shopman.shop.watchman_checks.MigrationsCheck",
         "shopman.shop.watchman_checks.QueueCheck",
         "shopman.shop.watchman_checks.IfoodPollingCheck",
+        "shopman.shop.watchman_checks.CourierWebhooksCheck",
         "shopman.watchman.performance.PerformanceBudgetCheck",
         "shopman.shop.watchman_infrastructure.ProductionContractCheck",
         "shopman.shop.watchman_infrastructure.DeploymentDriftCheck",
@@ -384,6 +385,8 @@ WATCHMAN = {
         # Fora da prontidão de propósito: o poller do iFood é outro componente, e
         # reprovar a prontidão do web tiraria do ar a loja inteira por ele.
         "ifood": ["ifood_polling"],
+        # Pergunta à TaOn (rede, até 40 s): fora do diagnóstico curto e da prontidão.
+        "courier": ["courier_webhooks"],
         # O commit do `main` contra o que cada componente serve (WP-RELEASE-01 R1).
         # Perfil próprio, de CLI: pergunta a endereços públicos e ao git.
         "release": ["release_identity"],

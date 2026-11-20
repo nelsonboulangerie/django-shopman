@@ -3295,6 +3295,7 @@
             "_track_product_sellable",
             "emit_cash_event",
             "emit_catalog_changed",
+            "emit_courier_position",
             "emit_courier_update",
             "emit_danfe_update",
             "emit_delivery_device_update",
@@ -9423,6 +9424,43 @@
       ]
     },
     {
+      "path": "shopman/shop/services/courier_position.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "delivery.courier-position"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FUTURE_TOLERANCE_SECONDS",
+            "KEEP_SECONDS",
+            "PUSH_THROTTLE_SECONDS",
+            "SOURCES",
+            "SOURCE_OWN_FLEET",
+            "SOURCE_POLL",
+            "SOURCE_WEBHOOK",
+            "WEBHOOK_SILENT_SECONDS",
+            "_STATES_WITH_DRIVER",
+            "_coordinate",
+            "_instant",
+            "_key",
+            "_push",
+            "_push_key",
+            "age_seconds",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/courier_links.py",
       "touchpoints": [
         "service"
@@ -14549,6 +14587,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "CacheCheck",
+            "CourierWebhooksCheck",
             "DatabaseCheck",
             "IfoodPollingCheck",
             "LegacyCheck",
@@ -14689,7 +14728,6 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "MachineWebhookView",
-            "POSITION_CACHE_SECONDS",
             "SIGNATURE_HEADER",
             "_ID_KEYS",
             "_RIDE_STATUSES",
@@ -14697,13 +14735,12 @@
             "_alert_signature_failure",
             "_alphabet",
             "_body_digest",
-            "_cache_position",
             "_cfg",
             "_check_signature",
             "_first",
             "_revive_archived",
             "_signature_encoding",
-            "_store_position",
+            "_store_batch_item",
             "_truthy",
             "logger",
             "signature_for"

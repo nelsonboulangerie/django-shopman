@@ -1309,6 +1309,14 @@ export interface DeliveryDriverProjection {
   photo_url: string;
 }
 
+/** Onde o entregador estava na última posição recebida. */
+export interface DeliveryCourierPositionProjection {
+  latitude: number;
+  longitude: number;
+  at: string;
+  source_label: string;
+}
+
 /** Uma corrida chamada, viva: do "procurando" à volta do entregador. */
 export interface DeliveryRideProjection {
   key: string;
@@ -1318,7 +1326,7 @@ export interface DeliveryRideProjection {
   status_label: string;
   stops: DeliveryStopProjection[];
   driver: DeliveryDriverProjection | null;
-  position: DeliveryPointProjection | null;
+  position: DeliveryCourierPositionProjection | null;
   called_at: string;
   called_by: string;
   pickup_eta_at: string;

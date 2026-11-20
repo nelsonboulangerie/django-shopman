@@ -45,6 +45,7 @@ from shopman.backstage.projections.channel_health import (
     ChannelHealthLink,
     ChannelHealthProjection,
 )
+from shopman.backstage.projections.courier_position import DeliveryCourierPositionProjection
 from shopman.backstage.projections.customer_groups import (
     CustomerGroupAdvantageProjection,
     CustomerGroupFormOptionsProjection,
@@ -259,6 +260,7 @@ CONTRACT_DATACLASSES = (
     DeliveryPointProjection,
     DeliveryStopProjection,
     DeliveryDriverProjection,
+    DeliveryCourierPositionProjection,
     DeliveryRideProjection,
     DeliveriesProjection,
 )

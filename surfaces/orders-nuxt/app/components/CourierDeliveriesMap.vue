@@ -31,6 +31,7 @@ import { rideColor } from "~/presentation/ridePalette";
 import { PIN_TEXT, fitKey, googleMapStyles, lineOutline, mapTokens, spreadOverlaps } from "~/presentation/deliveriesMap";
 import { rideLetter } from "~/presentation/deliveries";
 import { metroLines } from "~/presentation/metroLines";
+import { courierPositionAge } from "~/presentation/courierPosition";
 import type { GMap, GOverlayView } from "~/composables/useGoogleMap";
 
 export interface MapPoint {
@@ -44,8 +45,8 @@ export interface MapPoint {
 export interface MapLiveRide {
   number: number;
   stops: (MapPoint & { done?: boolean })[];
-  /** Onde o entregador está (posição da TaOn); null antes do aceite. */
-  courier: { latitude: number; longitude: number } | null;
+  /** Onde o entregador estava na última posição e a hora dela; null antes do aceite. */
+  courier: { latitude: number; longitude: number; at?: string } | null;
   /** Ainda procurando entregador: a rota aparece, a moto não. */
   searching?: boolean;
 }
@@ -244,6 +245,11 @@ const at = (p: LatLng, key = "") => {
 };
 const MARKER = "absolute -translate-x-1/2 -translate-y-1/2 hover:z-30 focus-within:z-30";
 
+// A idade da posição de cada moto (F7b): passada de 2 min sem posição nova, ela esmaece e
+// diz desde quando estava ali. O relógio anda a cada segundo, sem esperar a releitura.
+const nowMs = useNowTick();
+const courierAge = (r: MapLiveRide) => courierPositionAge(r.courier?.at, nowMs.value);
+
 // O bairro escrito uma vez, abaixo dos seus pedidos que ainda esperam ou montam.
 const places = computed(() => {
   const groups = new Map<string, { x: number; n: number; y: number }>();
@@ -363,13 +369,15 @@ const places = computed(() => {
 
     <!-- o entregador: o único cheio de cor -->
     <template v-for="r in live" :key="`c${r.number}`">
-      <span v-if="r.courier" :class="[MARKER, 'z-20']" :style="at(r.courier, `courier:${r.number}`)">
-        <NuxtButton color="neutral" variant="ghost" class="p-1.5" :aria-label="`Entregador da corrida ${rideLetter(r.number)}`" @click="emit('open', r.number)">
-          <span class="flex items-center gap-1 rounded-full py-1 pr-2 pl-1 shadow-lg ring-2 ring-white transition hover:scale-105" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }">
+      <span v-if="r.courier" :class="[MARKER, 'z-20']" :style="at(r.courier, `courier:${r.number}`)" :data-map-courier="rideLetter(r.number)" :data-map-courier-stale="courierAge(r)?.stale ? '' : undefined">
+        <NuxtButton color="neutral" variant="ghost" class="p-1.5" :aria-label="[`Entregador da corrida ${rideLetter(r.number)}`, courierAge(r)?.sentence].filter(Boolean).join('. ')" @click="emit('open', r.number)">
+          <span class="flex items-center gap-1 rounded-full py-1 pr-2 pl-1 shadow-lg ring-2 ring-white transition hover:scale-105" :class="courierAge(r)?.stale ? 'opacity-45 grayscale-[35%]' : ''" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }">
             <span class="grid size-6 place-items-center rounded-full bg-white/20"><NuxtIcon name="i-lucide-bike" class="size-4" /></span>
             <span class="op-label font-bold">{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
+        <!-- Posição que não é de agora: a moto diz desde quando estava ali (sem amarelo: não há o que fazer). -->
+        <span v-if="courierAge(r)?.mapLabel" class="pointer-events-none absolute top-full left-1/2 -mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 op-micro font-medium shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" aria-hidden="true" data-map-courier-age>{{ courierAge(r)?.mapLabel }}</span>
       </span>
     </template>
 

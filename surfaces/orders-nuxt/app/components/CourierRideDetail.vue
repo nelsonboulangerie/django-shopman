@@ -14,6 +14,7 @@ import { rideColor } from "~/presentation/ridePalette";
 import { rideChargeNotices, rideLine, rideNotice, rideStale, whatsappLink } from "~/presentation/deliveries";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
+import { courierPositionLine } from "~/presentation/courierPosition";
 
 const props = defineProps<{
   ride: DeliveryRideProjection;
@@ -52,6 +53,9 @@ function copyLink() {
     .catch(() => (copied.value = false));
 }
 const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
+// "Posição agora, pela TaOn" · "Última posição há 3 min (12h45), pela TaOn" (F7b).
+const positionClock = useNowTick();
+const positionLine = computed(() => (located.value.length ? courierPositionLine(props.ride.position, positionClock.value) : ""));
 
 // Cancelar a corrida: o primeiro toque só arma a confirmação (um toque nunca
 // cancela); o segundo confirma e, depois do aceite, já diz o motivo. Se a corrida
@@ -172,8 +176,8 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
           bare
         />
       </div>
-      <!-- Fora do mapa: dentro, a loja ou uma parada no canto cobria a etiqueta ("Posição pe…"). -->
-      <p v-if="located.length && ride.position" class="mx-5 mt-1 op-micro text-muted" data-ride-position-source>Posição do entregador pela TaOn</p>
+      <!-- Fora do mapa: dentro, a loja ou uma parada no canto cobria a etiqueta. A idade anda com o relógio (F7b). -->
+      <p v-if="positionLine" class="mx-5 mt-1 op-micro text-muted" data-ride-position-source>{{ positionLine }}</p>
 
       <div v-if="ride.driver" class="mx-5 mt-4 flex items-center gap-3 rounded-xl bg-elevated/60 p-3">
         <!-- A foto só existe enquanto a corrida vive (servidor, sem cache); sem ela, a inicial. -->

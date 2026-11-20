@@ -35,7 +35,7 @@ class CourierSyncHandler:
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
         from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES, CourierError, CourierRateLimited
-        from shopman.shop.services import courier, delivery_services
+        from shopman.shop.services import courier, courier_position, delivery_services
 
         payload = message.payload or {}
         try:
@@ -108,6 +108,9 @@ class CourierSyncHandler:
         block = courier.get_block(order)
         still_active = bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
         if still_active:
+            # A posição pela batida só quando o webhook de posição está calado
+            # (``courier_position.poll_if_silent``): com ele vivo, ninguém pergunta.
+            courier_position.poll_if_silent(block)
             courier.schedule_sync(order, delay_seconds=courier.sync_interval(block))
         elif not block.get("id_mch"):
             # A leitura encerrou a corrida neste pedido; se algum companheiro não

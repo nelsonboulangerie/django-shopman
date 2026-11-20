@@ -19,7 +19,7 @@ from shopman.shop.directives import COURIER_DISPATCH, COURIER_SYNC, DELIVERY_AUT
 from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
 from shopman.shop.handlers.courier_sync import CourierSyncHandler
 from shopman.shop.models import Shop
-from shopman.shop.services import courier
+from shopman.shop.services import courier, courier_position
 from shopman.shop.services.operator_orders import short_ref
 
 pytestmark = [pytest.mark.django_db, pytest.mark.channels("web", "pdv")]
@@ -1266,7 +1266,7 @@ def test_reopen_forgets_the_link_and_the_caches_of_the_driver_who_left(shop):
     courier.apply_status(order, "A", source="poll")
     order.refresh_from_db()
     assert courier.proven_tracking(courier.get_block(order))["url"]
-    cache.set(f"courier:pos:{ride}", {"lat": "-23.3", "lng": "-51.1"}, 120)
+    assert courier_position.store_position(ride, "-23.3", "-51.1", source=courier_position.SOURCE_WEBHOOK)
     assert cache.get(f"courier:tracking_links:{ride}") is not None
 
     courier.record_reopen(order, at="2026-10-13T19:50:00Z")
@@ -1274,7 +1274,7 @@ def test_reopen_forgets_the_link_and_the_caches_of_the_driver_who_left(shop):
     block = courier.get_block(order)
     assert not {"tracking_url", "confirmation_code", "tracking_match"} & set(block)
     assert cache.get(f"courier:tracking_links:{ride}") is None
-    assert cache.get(f"courier:pos:{ride}") is None
+    assert courier_position.read(ride) is None
 
     courier.apply_status(order, "A", source="poll")
     order.refresh_from_db()

@@ -80,7 +80,8 @@ export type CourierBlock = {
   /** O entregador desistiu e a TaOn procura outro para a MESMA corrida: quando, e quem saiu. */
   reopened_at?: string;
   reopened_driver?: string;
-  position: { lat: string; lng: string } | null;
+  /** A última posição do entregador: onde, a hora dela (ISO) e quem disse. */
+  position: { latitude: number; longitude: number; at: string; source_label: string } | null;
   error: { message: string; at: string } | null;
   can_quote: boolean;
   can_dispatch: boolean;

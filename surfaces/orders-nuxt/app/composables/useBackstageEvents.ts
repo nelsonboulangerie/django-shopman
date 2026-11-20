@@ -9,10 +9,21 @@ import {
 // (a primeira e as reaberturas) refaz o fetch canônico para cobrir o que passou.
 // Um stream por canal na aba (`subscribeSharedEventSource`): cada chamada assina o
 // mesmo `/sse/<canal>`, em vez de abrir o seu (beta 05/11, GES-01).
+//
+// O canal de pedidos leva também a posição do entregador (`backstage-courier-position`,
+// F7b). Toda assinatura do canal escuta os dois eventos, para continuar UM stream só
+// (a chave do stream compartilhado inclui a lista de eventos); só quem passa
+// `onCourierPosition` reage à posição. O resto da tela não refaz o fetch a cada 10 s.
+const CHANNEL_EVENTS = {
+  orders: ["backstage-orders-update", "backstage-courier-position"],
+  catalog: ["backstage-catalog-update"],
+} as const;
+const COURIER_POSITION_EVENT = "backstage-courier-position";
+
 export function useBackstageEvents(
   channel: "orders" | "catalog",
   onPush: () => void,
-  opts?: { pollMs?: number; orderRef?: string },
+  opts?: { pollMs?: number; orderRef?: string; onCourierPosition?: () => void },
 ) {
   const config = useRuntimeConfig();
   const realtime = ref<"connecting" | "live" | "polling">("polling");
@@ -23,6 +34,10 @@ export function useBackstageEvents(
     if (source) return;
     realtime.value = "connecting";
     const onEvent = (ev: MessageEvent) => {
+      if (ev.type === COURIER_POSITION_EVENT) {
+        opts?.onCourierPosition?.();
+        return;
+      }
       // The orders channel carries every order; only refetch for this ref.
       try {
         const payload = JSON.parse(String(ev.data || "{}"));
@@ -34,7 +49,7 @@ export function useBackstageEvents(
     };
     source = subscribeSharedEventSource({
       url: ssePath(`/sse/${channel}`, config.app.baseURL),
-      events: [`backstage-${channel}-update`],
+      events: [...CHANNEL_EVENTS[channel]],
       onEvent,
       onOpen: () => {
         realtime.value = "live";

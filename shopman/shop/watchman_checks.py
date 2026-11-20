@@ -164,3 +164,67 @@ class IfoodPollingCheck:
                 "iFood cancels orders not accepted within 8 minutes."
             ),
         )
+
+
+class CourierWebhooksCheck:
+    """A TaOn tem os dois avisos desta casa cadastrados: status e posição (F7b).
+
+    Lê ``list_webhooks`` do serviço padrão da casa (``delivery_services.courier_backend``)
+    e confere que há um cadastro de cada tipo apontando para o endpoint deste
+    deployment. Sem o de posição, o Gestor só vê a posição pela batida do
+    ``courier.sync`` (a cada minuto). Só leitura: cadastrar é
+    ``manage.py machine_register_webhook``. A URL cadastrada leva o token do webhook,
+    por isso a evidência diz os tipos e a contagem, nunca a URL.
+    """
+
+    id = "courier_webhooks"
+    description = "The delivery service has this deployment's status and position webhooks registered."
+    scopes = frozenset({Scope.DIAGNOSTIC})
+    #: A listagem pode pedir o token e depois listar, cada chamada com até 15 s.
+    timeout_seconds = 40.0
+
+    KINDS = ("status", "posicao")
+
+    def run(self, context: CheckContext) -> CheckResult:
+        from django.urls import reverse
+
+        from shopman.shop.services import delivery_services
+
+        backend = delivery_services.courier_backend()
+        list_webhooks = getattr(backend, "list_webhooks", None)
+        configured = getattr(backend, "is_configured", None)
+        if list_webhooks is None or configured is None or not configured():
+            return CheckResult(
+                id=self.id,
+                status=Status.SKIPPED,
+                summary="no delivery service with webhooks is configured",
+            )
+        try:
+            items = list_webhooks()
+        except Exception as exc:
+            return CheckResult(
+                id=self.id,
+                status=Status.UNKNOWN,
+                summary="the delivery service did not answer the webhook listing",
+                evidence={"error": type(exc).__name__},
+                remediation="Run manage.py machine_register_webhook <public base> --list and read the answer.",
+            )
+        path = reverse("webhooks:machine-webhook")
+        ours = [item for item in items if path in str(item.get("url") or "")]
+        kinds = sorted({str(item.get("tipo") or item.get("type") or "") for item in ours} - {""})
+        missing = [kind for kind in self.KINDS if kind not in kinds]
+        evidence = {"registered": len(items), "pointing_here": len(ours), "kinds": kinds}
+        if missing:
+            return CheckResult(
+                id=self.id,
+                status=Status.FAIL,
+                summary=f"webhook not registered for: {', '.join(missing)}",
+                evidence={**evidence, "missing": missing},
+                remediation="Register it with manage.py machine_register_webhook <public base>.",
+            )
+        return CheckResult(
+            id=self.id,
+            status=Status.PASS,
+            summary="status and position webhooks are registered",
+            evidence=evidence,
+        )
