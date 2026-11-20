@@ -216,3 +216,76 @@ relatório.
 O ensaio no número do dono e as três conversas de verificação (respondida, atrasada,
 assumida) a coordenação marca depois deste placar; entram como seção própria quando
 acontecerem.
+
+
+## Depois do relatório: a correção da leitura e a revanche do v4-pro (20/11/2026, noite)
+
+O dono mudou a régua (20/11, ~22h35): "segundos de demora na resposta não são
+problematicos, desde que a resposta seja 'correta'". **A correção decide** (partes,
+várias partes, equipe achada, equipe sem precisar); o tempo só desempata e só reprova
+acima de uns 10 s no p95. O custo não é o problema.
+
+### Leitura sem raciocínio (#2911, prova do #2909)
+
+Produção, deploy de 23h23Z, `deepseek-flash`, rodada única, com o pedido da leitura
+desligando o raciocínio da DeepSeek (que vinha ligado por padrão):
+
+```text
+- várias todas achadas 0/16 → 16/16
+- todos 36/66 → 63/66
+- partes 51/85 → 82/85
+- equipe achada 12/13 → 12/13
+- equipe sem precisar 0 → 3
+- uma parte lida como várias 5/50
+Leitura com o modelo: 103 de 147 (70%); US$ 0.00013 por leitura; p50 882 ms, p95 1254 ms.
+Por mensagem: US$ 0.000090 · porteiro+leitura p50 803 ms, p95 1224 ms.
+Falhas da leitura: nenhuma (zero max_tokens, zero timeout).
+Equipe perdida: msg-109 (house_info + unknown).
+Equipe sem precisar: msg-90 "mas ja são 15h50 … como fica?" (complaint); msg-100 "sim, já tinha confirmado! vai logo que estou c..." (order_status + complaint); msg-696 "Cancela" (cancel_order).
+Partes perdidas (3): msg-53 (gate→order); msg-119 "#menu [código omitido]" → unknown (model); msg-665 "Ainda é possível fazer pedidos?" → product_question (model).
+Gasto: US$ 0.0133 de 0.15.
+```
+
+As quedas por `max_tokens` sumiram e o p95 caiu de 2,66 s para 1,25 s. A equipe achada
+subiu para 12/13 com o #2912 (a msg-596); a msg-109 segue na #2910, régua do WP-13.
+
+### Revanche do `deepseek-v4-pro`
+
+Mesmas condições (raciocínio desligado, rodada única), com timeout de 20 s só no processo
+do comando. Deploy de 23h36Z:
+
+```text
+- várias todas achadas 0/16 → 14/16
+- todos 36/66 → 61/66
+- partes 51/85 → 80/85
+- equipe achada 12/13 → 12/13
+- equipe sem precisar 0 → 1
+- uma parte lida como várias 5/50
+Leitura com o modelo: 95 de 147 (65%); US$ 0.00045 por leitura; p50 1324 ms, p95 1787 ms.
+Por mensagem: US$ 0.000307 · porteiro+leitura p50 1240 ms, p95 1747 ms.
+Falhas da leitura (caiu na divisão local): unreadable 2.
+Equipe perdida: msg-109 (house_info + unknown).
+Equipe sem precisar: msg-696 "Cancela".
+Partes perdidas (5): msg-53 (gate→order); msg-59 "qual a taxa?" → só hours_delivery (model); msg-119 → unknown (local); msg-665 → house_info (model); campo-2 → hours_delivery + product_question (local).
+Gasto: US$ 0.0451 de 0.40.
+```
+
+### Veredito
+
+| | flash (sem raciocínio) | v4-pro (sem raciocínio, 20 s) |
+|---|---|---|
+| Partes | **82/85** | 80/85 |
+| Várias partes, todas | **16/16** | 14/16 |
+| Equipe achada | 12/13 | 12/13 |
+| Equipe sem precisar | 3 | **1** |
+| p95 da leitura | **1,25 s** | 1,79 s |
+| Por mensagem | **US$ 0,00009** | US$ 0,00031 |
+
+**Fica o `deepseek-flash`**, que já é o modelo da leitura em produção. Pela régua do dono
+o v4-pro não passa: perde nas partes e nas várias partes e empata na equipe. Ele só é
+melhor em "equipe sem precisar" (1 contra 3), que não decide a troca. As duas mensagens
+que o flash mandou à equipe sem precisar (msg-90 e msg-100) ficam como alvo de régua na
+#2922, sem rodada nova.
+
+**Todas as metas do WP-09 batidas com o flash**, menos a equipe achada 13/13 (12/13, a
+msg-109 depende do WP-13, #2910). Gasto total do WP-09: **US$ 0,427** dos US$ 2 da D-040.
