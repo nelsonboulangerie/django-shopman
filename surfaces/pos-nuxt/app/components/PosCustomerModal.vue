@@ -921,7 +921,7 @@ const newCustomerNote = computed(() => {
                 <Icon name="lucide:tag" /> {{ customerLookup.group_discount_label }}
               </UiBadge>
               <!-- Selo em latão: o texto escreve com a tinta `--primary-ink` (o latão puro
-                   sobre latão a 10%, no cartão já tingido, dava 4,09:1; a tinta dá 4,77:1),
+                   sobre latão a 10%, no cartão já tingido, media 4,09:1; a tinta mede 4,75:1),
                    e maiúscula só na primeira letra, como todo selo (#2894). -->
               <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-2xl border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-(--primary-ink)" data-customer-birthday-today>
                 🎂 Aniversário hoje{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}

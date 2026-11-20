@@ -1,0 +1,41 @@
+#2894 auditoria do selo de aniversário no diálogo Cliente, 1366 px, cadastro Maria Santos (telefone 43991111111), 2026-11-20T20:27:25.732Z
+
+diálogo: left=427 right=939 width=512
+corpo (data-slot=body): scrollWidth=512 clientWidth=512 transbordo=0px
+SELO "🎂 Aniversário HOJE · Parabéns! Desconto de aniversário": texto #8b6b2e sobre fundo efetivo #eee9e0, contraste 4.09:1 REPROVA (< 4,5); borda oklab(0.547308 0.0136535 0.087231 / 0.5); left=468 right=798 w=330 h=22 (1 linha(s)); passa da direita: não; cortado: não
+span     left= 451 right= 505 w=  54 h= 20 contraste=13.67 "Cliente"
+p        left= 451 right= 885 w= 434 h= 40 contraste= 6.52 "Busque por nome, telefone, CPF ou e-mail. Depois, escolha um"
+button   left= 891 right= 923 w=  32 h= 32 contraste=13.67 "Fechar"
+input    left= 451 right= 915 w= 464 h= 32 contraste=12.76 "[campo] Buscar por nome, telefone, CPF ou e-mail"
+span     left= 490 right= 738 w= 248 h= 24 contraste=12.79 "Cadastro existente · Maria Santos"
+p        left= 468 right= 738 w= 270 h= 20 contraste= 6.10 "+5543991111111"
+button   left= 751 right= 898 w= 147 h= 32 contraste= 5.69 "Remover cliente"
+span     left= 468 right= 542 w=  74 h= 20 contraste= 5.71 "17 pedidos"
+button   left= 550 right= 643 w=  93 h= 32 contraste=12.76 "Favorito"
+span     left= 468 right= 798 w= 330 h= 22 contraste= 4.09 [CONTRASTE<4.5] "🎂 Aniversário HOJE · Parabéns! Desconto de aniversário"
+span     left= 468 right= 677 w= 209 h= 20 contraste= 6.10 "Nome"
+input    left= 468 right= 677 w= 209 h= 32 contraste=12.76 "[campo] Maria Santos"
+span     left= 689 right= 898 w= 209 h= 20 contraste= 6.10 "WhatsApp"
+input    left= 689 right= 898 w= 209 h= 32 contraste=12.76 "[campo] +5543991111111"
+span     left= 468 right= 677 w= 209 h= 20 contraste= 6.10 "CPF/CNPJ"
+input    left= 468 right= 677 w= 209 h= 32 contraste=12.76 "[campo] Documento do cadastro"
+span     left= 689 right= 898 w= 209 h= 20 contraste= 6.10 "E-mail"
+input    left= 689 right= 898 w= 209 h= 32 contraste=12.76 "[campo] cliente@email.com"
+p        left= 468 right= 898 w= 430 h= 16 contraste= 6.10 "Padrões deste cliente"
+p        left= 468 right= 898 w= 430 h= 16 contraste= 6.10 "Vale nesta venda e nas próximas."
+span     left= 481 right= 584 w= 103 h= 20 contraste=12.79 "CPF na nota"
+button   left= 847 right= 891 w=  44 h= 24 contraste=10.67 "CPF na nota"
+span     left= 481 right= 606 w= 125 h= 20 contraste=12.79 "Nota por e-mail"
+button   left= 847 right= 891 w=  44 h= 24 contraste=10.67 "Nota por e-mail"
+p        left= 468 right= 898 w= 430 h= 16 contraste= 6.10 "Usar CPF ou e-mail numa venda liga o padrão sozinho; desliga"
+span     left= 468 right= 898 w= 430 h= 16 contraste= 6.10 "Restrições alimentares"
+input    left= 468 right= 898 w= 430 h= 32 contraste=12.76 "[campo] Ex: alérgico a nozes"
+span     left= 468 right= 898 w= 430 h= 16 contraste= 6.10 "Observações do balcão"
+textarea left= 468 right= 898 w= 430 h= 52 contraste=12.76 "[campo] Ex: prefere pão bem assado; busca às 17h"
+button   left= 451 right= 915 w= 464 h= 40 contraste= 4.95 "Concluir"
+span     left= 651 right= 715 w=  63 h= 24 contraste= 4.95 "Concluir"
+alinhamento do cartão do cadastro: esquerdas=468 direitas=898 OK
+selo × cartão: selo começa em 468, a linha dos selos em 468, os blocos do cartão em 468 OK
+
+== problemas ==
+contraste 4.09: 🎂 Aniversário HOJE · Parabéns! Desconto de aniversário
