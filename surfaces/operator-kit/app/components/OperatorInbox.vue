@@ -314,19 +314,35 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                   @click="open = false"
                 />
               </template>
-              <NuxtButton
-                v-else-if="alert.href"
-                class="min-w-0 basis-0 flex-[2]"
-                :to="alert.href"
-                :color="alertColor(alert.tone)"
-                variant="solid"
-                trailing-icon="i-lucide-arrow-right"
-                :label="alert.hrefLabel || 'Abrir'"
-                :target="attrsFor(alert.href).target"
-                :rel="attrsFor(alert.href).rel"
-                data-alert-open
-                @click="open = false"
-              />
+              <template v-else-if="alert.href">
+                <NuxtButton
+                  :class="alert.secondaryHref ? 'min-w-0 basis-full justify-center' : 'min-w-0 basis-0 flex-[2]'"
+                  :to="alert.href"
+                  :color="alertColor(alert.tone)"
+                  variant="solid"
+                  trailing-icon="i-lucide-arrow-right"
+                  :label="alert.hrefLabel || 'Abrir'"
+                  :target="attrsFor(alert.href).target"
+                  :rel="attrsFor(alert.href).rel"
+                  data-alert-open
+                  @click="open = false"
+                />
+                <!-- O segundo lugar que resolve ("Abrir conversa" sob "Responder no Live
+                     Chat"): contorno, na linha de baixo, junto do "Visto". -->
+                <NuxtButton
+                  v-if="alert.secondaryHref"
+                  class="min-w-0 basis-0 flex-[2]"
+                  :to="alert.secondaryHref"
+                  :color="alertColor(alert.tone)"
+                  variant="outline"
+                  trailing-icon="i-lucide-arrow-right"
+                  :label="alert.secondaryHrefLabel || 'Abrir'"
+                  :target="attrsFor(alert.secondaryHref).target"
+                  :rel="attrsFor(alert.secondaryHref).rel"
+                  data-alert-open-secondary
+                  @click="open = false"
+                />
+              </template>
               <NuxtButton
                 v-if="alert.canAck && source?.ack"
                 class="min-w-0 basis-0 flex-1"

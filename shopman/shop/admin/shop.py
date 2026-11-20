@@ -9,6 +9,7 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.utils import flatten_fieldsets
+from django.core.validators import RegexValidator
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
@@ -1318,6 +1319,18 @@ def _integrations_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminSelectWidget,
             help_text="Emissor fiscal (NFC-e). Em branco = desligado/padrão do sistema.",
         ),
+        "integrations_manychat_live_chat_account": forms.CharField(
+            label="Conta do ManyChat (Live Chat)",
+            required=False,
+            max_length=64,
+            validators=[RegexValidator(r"^[A-Za-z0-9_-]+$", "Só letras, números, - e _ (ex.: fb486126).")],
+            widget=UnfoldAdminTextInputWidget,
+            help_text=(
+                "O trecho do endereço da Caixa de Entrada do ManyChat logo depois de app.manychat.com/ "
+                "(ex.: fb486126). Com ele, o aviso de atendimento traz o botão Responder no Live Chat, "
+                "que abre a conversa do cliente. Em branco, o aviso traz só Abrir conversa."
+            ),
+        ),
     }
 
 
@@ -1603,10 +1616,13 @@ class ShopForm(forms.ModelForm):
         self._set_integrations_initial(getattr(self.instance, "integrations", None) or {})
 
     def _set_integrations_initial(self, integrations: dict) -> None:
-        if not self._has("integrations_payment_pix"):
-            return
         if not isinstance(integrations, dict):
             integrations = {}
+        if self._has("integrations_manychat_live_chat_account"):
+            manychat = integrations.get("manychat") if isinstance(integrations.get("manychat"), dict) else {}
+            self.fields["integrations_manychat_live_chat_account"].initial = manychat.get("live_chat_account") or ""
+        if not self._has("integrations_payment_pix"):
+            return
         payment = integrations.get("payment") if isinstance(integrations.get("payment"), dict) else {}
         notif = integrations.get("notification") if isinstance(integrations.get("notification"), dict) else {}
         mapping = {
@@ -2042,6 +2058,17 @@ class ShopForm(forms.ModelForm):
 
     def _build_integrations(self) -> dict:
         integrations = dict(getattr(self.instance, "integrations", None) or {})
+        if self._has("integrations_manychat_live_chat_account"):
+            manychat = dict(integrations.get("manychat") or {})
+            account = (self.cleaned_data.get("integrations_manychat_live_chat_account") or "").strip()
+            if account:
+                manychat["live_chat_account"] = account
+            else:
+                manychat.pop("live_chat_account", None)
+            if manychat:
+                integrations["manychat"] = manychat
+            else:
+                integrations.pop("manychat", None)
         if not self._has("integrations_payment_pix"):
             return integrations
 
@@ -3005,6 +3032,16 @@ _INTEGRATIONS_FIELDSETS = (
         {
             "fields": ("integrations_notification_default", "integrations_fiscal"),
             "description": ("Canal padrão de notificação ao cliente e emissor fiscal. Em branco = herda do sistema."),
+        },
+    ),
+    (
+        "Atendimento no WhatsApp (ManyChat)",
+        {
+            "fields": ("integrations_manychat_live_chat_account",),
+            "description": (
+                "Onde a equipe responde quando a Concierge chama: a conversa do cliente na Caixa de "
+                "Entrada do ManyChat."
+            ),
         },
     ),
     (

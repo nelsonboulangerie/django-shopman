@@ -319,6 +319,46 @@ def _conversation_home(alert) -> tuple[str, str] | None:
     return reverse("admin:shop_conversation_change", args=[owner]), "Abrir conversa"
 
 
+#: O cartão cuja resposta é no Live Chat do ManyChat: a equipe assumiu a conversa.
+_LIVE_CHAT_CARDS = frozenset({"concierge_handoff"})
+_LIVE_CHAT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+LIVE_CHAT_LABEL = "Responder no Live Chat"
+
+
+def live_chat_href(alert) -> str:
+    """A conversa do cliente na Caixa de Entrada do ManyChat, ou ``""``.
+
+    ``https://app.manychat.com/<conta>/chat/<subscriber_id>``: a conta é a página do
+    ManyChat da loja (``Shop.integrations["manychat"]["live_chat_account"]``, no Admin em
+    Integrações; ADR-042, nunca por env) e o ``subscriber_id`` é o ``subject`` do vínculo
+    ManyChat da conversa. Sem um dos dois, ou com valor fora do formato, nada: o aviso
+    fica com "Abrir conversa" e nunca leva a um link quebrado.
+    """
+    if alert.type not in _LIVE_CHAT_CARDS:
+        return ""
+    from shopman.shop.models import Conversation, ConversationBinding, Shop
+
+    shop = Shop.load()
+    account = str((((getattr(shop, "integrations", None) or {}).get("manychat") or {}).get("live_chat_account")) or "").strip()
+    if not _LIVE_CHAT_ID.match(account):
+        return ""
+    owner = (
+        Conversation.objects.filter(**{f"flags__alerts__{alert.type}": alert.pk}).values_list("pk", flat=True).first()
+    )
+    if owner is None:
+        return ""
+    subject = (
+        ConversationBinding.objects.filter(conversation_id=owner, provider="manychat")
+        .order_by("-last_inbound_at", "-pk")
+        .values_list("subject", flat=True)
+        .first()
+    )
+    subject = str(subject or "").strip()
+    if not _LIVE_CHAT_ID.match(subject):
+        return ""
+    return f"https://app.manychat.com/{account}/chat/{subject}"
+
+
 def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
     if alert.type in _CONVERSATION_CARDS:
@@ -517,6 +557,10 @@ def _alert_actions(
         actions.append(_accept_order_action(alert))
     if alert.type == "concierge_verify":
         actions.extend(_concierge_verification_actions(alert))
+    live_chat = live_chat_href(alert)
+    if live_chat:
+        # A resposta é no Live Chat (o principal); a conversa no Admin fica como segunda saída.
+        actions.append(_open_context_action(alert, label=LIVE_CHAT_LABEL, href=live_chat, ref="live-chat", priority=9))
     href, label = alert_context_href(alert, surface=surface, target_date=target_date)
     if href:
         actions.append(_open_context_action(alert, label=label, href=href))
@@ -552,12 +596,14 @@ def _alert_actions(
     return tuple(actions)
 
 
-def _open_context_action(alert, *, label: str, href: str) -> ProductionActionProjection:
+def _open_context_action(
+    alert, *, label: str, href: str, ref: str = "open-context", priority: int = 10
+) -> ProductionActionProjection:
     return ProductionActionProjection(
-        ref=f"open-context:{alert.pk}",
+        ref=f"{ref}:{alert.pk}",
         kind="open_alert_context",
         label=label,
-        priority=10,
+        priority=priority,
         enabled=True,
         reason="",
         method="GET",

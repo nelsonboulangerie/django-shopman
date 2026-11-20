@@ -97,3 +97,61 @@ def test_back_to_the_concierge_the_card_goes_away(conversation, outbox):  # noqa
     assert service.return_to_concierge(conversation) is True
 
     assert _cards().filter(resolved_at__isnull=True).count() == 0
+
+
+def _actions(conversation):  # noqa: F811
+    from shopman.backstage.projections.alerts import build_operator_alerts_projection
+    from shopman.backstage.services import alerts as alert_service
+
+    [row] = build_operator_alerts_projection(
+        alerts=list(_cards()), counts=alert_service.active_counts(scope="orders"), surface="orders"
+    ).alerts
+    return [(a.label, a.href) for a in row.actions if a.kind == "open_alert_context"]
+
+
+def _live_chat_account(value):
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    shop.integrations = {**(shop.integrations or {}), "manychat": {"live_chat_account": value}}
+    shop.save(update_fields=["integrations"])
+
+
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "human_return_enabled": True})
+def test_with_the_manychat_account_the_live_chat_is_the_main_button(conversation, outbox, settings):  # noqa: F811
+    settings.SHOPMAN_ADMIN_HOST = "admin.exemplo.com.br"
+    from shopman.shop.models import ConversationBinding
+
+    _live_chat_account("fb486126")
+    _to_team(conversation, "quero falar com um atendente", "h7")
+    ConversationBinding.objects.filter(conversation=conversation).update(provider="manychat")
+
+    subject = _binding(conversation).subject
+    path = reverse("admin:shop_conversation_change", args=[conversation.pk])
+    assert _actions(conversation) == [
+        ("Responder no Live Chat", f"https://app.manychat.com/fb486126/chat/{subject}"),
+        ("Abrir conversa", f"https://admin.exemplo.com.br{path}"),
+    ]
+
+
+@pytest.mark.parametrize("account", ["", "fb 486126", "../admin", None])
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "human_return_enabled": True})
+def test_without_a_valid_account_only_the_conversation_button(conversation, outbox, settings, account):  # noqa: F811
+    settings.SHOPMAN_ADMIN_HOST = "admin.exemplo.com.br"
+    _live_chat_account(account)
+    from shopman.shop.models import ConversationBinding
+
+    _to_team(conversation, "quero falar com um atendente", f"h8-{account}")
+    ConversationBinding.objects.filter(conversation=conversation).update(provider="manychat")
+
+    assert [label for label, _href in _actions(conversation)] == ["Abrir conversa"]
+
+
+def test_the_integrations_admin_saves_the_manychat_account(surface, admin_client):  # noqa: F811
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    url = reverse("admin:shop_shopintegrations_change", args=[shop.pk])
+    page = admin_client.get(url)
+    assert page.status_code == 200
+    assert "Conta do ManyChat (Live Chat)" in page.content.decode()

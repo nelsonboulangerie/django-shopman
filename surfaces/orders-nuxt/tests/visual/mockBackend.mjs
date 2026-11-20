@@ -241,7 +241,18 @@ function noModelAlert() {
   };
 }
 
-// Todo handoff abre aviso (dono, 20/11/2026): cor de erro, no topo, com "Abrir conversa".
+// Todo handoff abre aviso (dono, 20/11/2026): cor de erro, no topo, com "Responder no
+// Live Chat" (a conversa no ManyChat) e "Abrir conversa" (o Admin) como segunda saída.
+function contextAction(pk, ref, label, href, priority) {
+  return {
+    ref: `${ref}:${pk}`, kind: "open_alert_context", label, priority,
+    enabled: true, reason: "", method: "GET", href,
+    payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+    confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
+    approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "keeps_open", proof: "",
+  };
+}
+
 function handoffAlert() {
   return {
     pk: 970, rev: 0, type: "concierge_handoff", type_label: "WhatsApp: conversa para a equipe",
@@ -250,13 +261,12 @@ function handoffAlert() {
     order_ref: "", created_at_display: "hoje às 22h16",
     origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Cliente esperando atendente",
     on_screen: true, respond_by_iso: "", deadline_kind: "",
-    actions: [{
-      ref: "open_alert_context:970", kind: "open_alert_context", label: "Abrir conversa", priority: 10,
-      enabled: true, reason: "", method: "GET", href: "https://admin.boulangerie.com.br/admin/shop/conversation/2/change/",
-      payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
-      confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
-      approval_requirement: null, source_alert_ref: "970", source_alert_effect: "context", proof: "",
-    }],
+    actions: [
+      contextAction(970, "live-chat", "Responder no Live Chat", "https://app.manychat.com/fb486126/chat/1234567890", 9),
+      contextAction(970, "open-context", "Abrir conversa", "https://admin.boulangerie.com.br/admin/shop/conversation/2/change/", 10),
+      { ...contextAction(970, "acknowledge", "Visto", "/api/v1/backstage/alerts/970/ack/", 20),
+        kind: "acknowledge_alert", method: "POST", source_alert_effect: "acknowledges" },
+    ],
   };
 }
 
