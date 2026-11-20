@@ -6,7 +6,7 @@ import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 // Procedimento de regravação das fixtures: tests/visual/README.md.
 
 const appPort = 33017;
-const backendPort = 38794;
+const backendPort = 28794;
 
 export default defineOperatorVisualConfig({
   app: "bi",

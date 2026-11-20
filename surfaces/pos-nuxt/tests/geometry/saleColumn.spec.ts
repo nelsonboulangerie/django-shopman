@@ -50,7 +50,7 @@ async function openFullTab(
     await page.context().addCookies([{
       name: "pos-sale-sidebar-ticket",
       value: encodeURIComponent(JSON.stringify({ size: TICKET_REM[width], collapsed: false })),
-      url: `http://127.0.0.1:${process.env.POS_GEOMETRY_PORT || 33032}`,
+      url: `http://127.0.0.1:${process.env.POS_GEOMETRY_PORT || 23032}`,
     }]);
   }
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: scheme });

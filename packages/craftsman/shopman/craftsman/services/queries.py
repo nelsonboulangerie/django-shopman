@@ -224,8 +224,11 @@ class CraftQueries:
             1. Get historical demand via DemandProtocol.history()
             2. Filter by season_months if provided
             3. Estimate true demand (extrapolate if soldout_at set)
-            4. confidence = "high" / "medium" / "low" based on sample_size
-            5. avg_demand = average of estimates
+            4. confidence = "high" / "medium" / "low" based on sample_size;
+               "" when there is no sample but something is already committed
+               for the date (the recipe is suggested from committed alone);
+               no sample and nothing committed skips the recipe
+            5. avg_demand = average of estimates (0 without a sample)
             6. Apply waste adjustment if waste_rate > 15%
             7. committed = DemandProtocol.committed(output_sku, date)
             8. quantity = (avg_demand + committed) * (1 + SAFETY_STOCK_PERCENT)
@@ -268,23 +271,29 @@ class CraftQueries:
                 exclude_dates=exclude_dates,
             )
 
-            if not history:
-                continue
-
             # Filter by season if provided
             if season_months:
                 history = [dd for dd in history if dd.date.month in season_months]
 
+            # O que já foi prometido para a data (encomendas): entra na conta com
+            # ou sem histórico. Sem amostra, a ficha só é sugerida se houver
+            # prometido, e a sugestão é ele mais a margem (#2755): a encomenda de
+            # produto novo, ou de produto que nunca vendeu naquele dia da semana,
+            # não pode sumir do planejamento por falta de média.
+            committed = backend.committed(recipe.output_sku, date)
+
             # Estimate true demand for each historical day
             estimates = [_estimate_demand(dd, selling_window) for dd in history]
 
-            # Confidence based on sample size
+            # Confidence based on sample size; "" = sem amostra, só o prometido
             confidence = _calc_confidence(len(estimates))
             if confidence is None:
-                # Not enough data — skip this recipe
-                continue
+                if committed <= 0:
+                    # Not enough data and nothing promised — skip this recipe
+                    continue
+                confidence = ""
 
-            avg_demand = sum(estimates) / len(estimates)
+            avg_demand = sum(estimates) / len(estimates) if estimates else Decimal("0")
 
             # Waste adjustment: if waste_rate > 15%, reduce proportionally
             total_sold = sum(dd.sold for dd in history)
@@ -294,8 +303,6 @@ class CraftQueries:
                 waste_rate = total_wasted / total_sold
                 if waste_rate > Decimal("0.15"):
                     avg_demand = avg_demand * (1 - waste_rate)
-
-            committed = backend.committed(recipe.output_sku, date)
 
             raw_qty = (avg_demand + committed) * (1 + safety_pct)
 

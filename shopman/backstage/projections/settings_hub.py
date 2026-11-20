@@ -85,6 +85,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Chamadas de IA", "shop_aiinvocation", "Cada chamada a um modelo: função, modelo, resultado, tokens e custo. Não guarda o texto. Só leitura.", "receipt_long"),
             _model("Decisões em sombra", "shop_conversationaldecision", "O que o framework de conversa faria com cada mensagem da Concierge, sem responder nem mexer em pedido. Não guarda o texto. Só leitura.", "psychology"),
             _model("Resultados das decisões em sombra", "shop_conversationaloutcome", "Quantos pedidos o cliente fez em 24 horas e em 7 dias depois de cada decisão em sombra. Só leitura.", "insights"),
+            _model("Amostra de aprendizado da Concierge", "storefront_conversationcorpusentry", "Trechos de conversa copiados sem nome, telefone ou endereço, para medir e ensinar a Concierge. Não ligam a ninguém e não vencem.", "school"),
             _model("Histórico da configuração", "shop_instanceapplyrecord", "Cada vez que a configuração da loja foi aplicada pelo descritor: quem aplicou, quando e o que mudou. Só leitura.", "history"),
         ),
     ),

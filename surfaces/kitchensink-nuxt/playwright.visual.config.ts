@@ -1,7 +1,7 @@
 import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 
 // A porta aceita variável para quem roda em paralelo numa faixa própria.
-const port = Number(process.env.KITCHENSINK_VISUAL_PORT || 33114);
+const port = Number(process.env.KITCHENSINK_VISUAL_PORT || 23114);
 
 export default defineOperatorVisualConfig({
   app: "kitchensink",

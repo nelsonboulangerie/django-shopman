@@ -10,8 +10,10 @@ def _entry(key):
 def test_ready_delivery_does_not_read_as_customer_pickup():
     entry = _entry("TRACKING_DELIVERY_WAITING_COURIER")
     # "Pronto para coleta" soava como "venha buscar": a coleta era do entregador.
-    assert "coleta" not in entry.title.lower()
-    assert "entregador" in entry.title.lower()
+    # Desde a L2 (decisão 7 = B) o título diz só "Seu pedido está pronto", e a
+    # frase diz que ele vai até o cliente.
+    assert "coleta" not in f"{entry.title} {entry.message}".lower()
+    assert "entrega" in entry.message.lower()
 
 
 def test_pix_title_does_not_repeat_the_message_verb():
