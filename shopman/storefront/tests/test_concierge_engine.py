@@ -1085,6 +1085,34 @@ def test_order_status_reads_the_customer_orders_through_the_projection(ctx, djan
     assert tools.order_status(ctx, "XYZ-000")["orders"] == []
 
 
+@override_settings(SHOPMAN_COURIER_ADAPTER="shopman.shop.adapters.courier_mock")
+def test_order_status_says_the_same_fact_as_the_order_page(ctx, django_capture_on_commit_callbacks):
+    """L2 da revisão das Entregas: a Concierge diz o que a página do pedido diz."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
+    with django_capture_on_commit_callbacks(execute=True):
+        placed = tools.place_order(ctx, review["quote_token"], "pix", "")
+    order = Order.objects.get(ref=placed["order_ref"])
+    # O mundo do momento, direto no banco: o caminho até o pronto não é o assunto.
+    Order.objects.filter(pk=order.pk).update(status="ready", data={
+        **(order.data or {}),
+        "payment": {"method": "cash"},
+        "fulfillment_type": "delivery",
+        "courier": {"id_mch": "777", "status": "A", "driver": {"name": "Diego Souza"},
+                    "called_at": timezone.now().isoformat()},
+    })
+    order.refresh_from_db()
+
+    row = tools.order_status(ctx, order.ref)["orders"][0]
+    page = build_order_tracking(order).promise
+
+    assert (row["title"], row["message"]) == (page.title, page.message)
+    assert row["title"] == "Diego vem buscar seu pedido"
+    assert "Diego vem buscar seu pedido." in tools.render_result("order_status", {"ok": True, "orders": [row]})
+
+
 @override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
 def test_send_web_link_carries_the_cart_to_the_store_channel(ctx, conversation, monkeypatch):
     configure_ai("fixture")

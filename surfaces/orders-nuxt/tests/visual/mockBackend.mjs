@@ -10,7 +10,7 @@ import { galleryQueue } from "./galleryCards.mjs";
 // O estado é trocado por GET /__visual/scenario?set=<normal|empty|dense|error|gallery>.
 
 const here = dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.MOCK_PORT || 38793);
+const port = Number(process.env.MOCK_PORT || 28793);
 const readFixture = (name) => JSON.parse(readFileSync(join(here, "fixtures", name), "utf8"));
 
 const baseQueue = readFixture("orders-board.json");

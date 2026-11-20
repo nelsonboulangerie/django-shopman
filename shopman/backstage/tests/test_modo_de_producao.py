@@ -114,6 +114,10 @@ def test_a_sugestao_de_producao_so_ve_o_que_e_em_lote(fichas, monkeypatch):
             seen.append(sku)
             return []
 
+        def committed(self, sku, target_date):
+            # O contrato do DemandProtocol: sem encomenda, nada comprometido.
+            return Decimal("0")
+
     real_get_setting = conf.get_setting
     monkeypatch.setattr(
         conf, "get_setting", lambda key: "teste.Backend" if key == "DEMAND_BACKEND" else real_get_setting(key)

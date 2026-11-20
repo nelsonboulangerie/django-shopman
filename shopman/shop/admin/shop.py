@@ -42,6 +42,7 @@ from shopman.shop.address_location_config import (
     DEFAULT_POLICY_VERSION,
     DEFAULT_THRESHOLD_M,
 )
+from shopman.shop.admin import ai_routes
 from shopman.shop.admin.widgets import FontPreviewWidget
 from shopman.shop.colors import oklch_to_hex
 from shopman.shop.loyalty_config import (
@@ -1561,6 +1562,7 @@ class ShopForm(forms.ModelForm):
 
     locals().update(_defaults_form_fields())
     locals().update(_integrations_form_fields())
+    locals().update(ai_routes.form_fields())
 
     class Meta:
         model = Shop
@@ -1614,6 +1616,7 @@ class ShopForm(forms.ModelForm):
 
         self._set_defaults_initial(_shop_defaults(self.instance))
         self._set_integrations_initial(getattr(self.instance, "integrations", None) or {})
+        ai_routes.set_initial(self)
 
     def _set_integrations_initial(self, integrations: dict) -> None:
         if not isinstance(integrations, dict):
@@ -1901,6 +1904,7 @@ class ShopForm(forms.ModelForm):
                     label=label,
                 )
         self._clean_defaults(cleaned_data)
+        ai_routes.clean(self, cleaned_data)
         return cleaned_data
 
     def _clean_defaults(self, cleaned_data: dict) -> None:
@@ -2051,6 +2055,7 @@ class ShopForm(forms.ModelForm):
             }
         instance.defaults = self._build_defaults()
         instance.integrations = self._build_integrations()
+        instance.ai_routes = ai_routes.build(self)
         if commit:
             instance.save()
             self.save_m2m()
@@ -3017,14 +3022,31 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
-        "Inteligência artificial",
+        "Inteligência artificial: qual IA cada função usa",
         {
-            "fields": ("ai_routes", "ai_limits"),
-            "description": (
-                "Qual conexão de IA e qual modelo cada função usa, e quanto a IA pode gastar por "
-                "dia. As conexões (provedor, endereço, chave) ficam em Conexões de IA. Sem rota "
-                "para uma função, vale a rota default. O gasto de cada dia fica em Gasto de IA."
+            "fields": tuple(
+                name for key in ai_routes.ROUTE_KEYS
+                for name in (ai_routes.connection_field(key), ai_routes.model_field(key))
             ),
+            "description": (
+                "Para cada função, a conexão de IA e o modelo. A lista mostra só as conexões "
+                "ativas; provedor, endereço e chave ficam em Conexões de IA. “O modelo da "
+                "conexão” usa o modelo cadastrado nela. Embaixo de cada função, se ela está "
+                "pronta e, se não estiver, o motivo e o botão que resolve."
+            ),
+        },
+    ),
+    (
+        "Freio de IA",
+        {
+            "fields": ("ai_limits",),
+            "description": "Quanto a IA pode gastar por dia. O gasto de cada dia fica em Gasto de IA.",
+        },
+    ),
+    (
+        "Decisão em sombra da Concierge",
+        {
+            "fields": ("conversational_shadow_enabled", "conversational_shadow_history"),
         },
     ),
     (
@@ -3599,8 +3621,36 @@ class ShopPosAdmin(_ShopSingletonAdmin):
 class ShopIntegrationsAdmin(_ShopSingletonAdmin):
     form = _section_form(_INTEGRATIONS_FIELDSETS)
     fieldsets = _INTEGRATIONS_FIELDSETS
-    readonly_fields = ("channel_refs_display", "marketing_ceremony_display", "google_merchant_display")
+    readonly_fields = (
+        "channel_refs_display",
+        "marketing_ceremony_display",
+        "google_merchant_display",
+        "conversational_shadow_history",
+    )
     actions_detail = ("set_google_merchant", "register_google_merchant")
+    # Rota de IA parada vira aviso no topo, com o botão que resolve (#2843).
+    change_form_before_template = "admin/shop/ai_route_warnings.html"
+
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        extra_context = {**(extra_context or {}), "ai_route_warnings": ai_routes.warnings()}
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def save_model(self, request, obj, form, change):
+        """Ligar ou desligar a decisão em sombra fica no histórico, com quem fez (#2842)."""
+        shadow_changed = "conversational_shadow_enabled" in form.changed_data
+        super().save_model(request, obj, form, change)
+        if shadow_changed:
+            ai_routes.record_shadow_change(request, obj, obj.conversational_shadow_enabled)
+
+    @admin.display(description="Quem ligou e desligou")
+    def conversational_shadow_history(self, obj):
+        rows = ai_routes.shadow_history(obj) if obj else []
+        if not rows:
+            return "Nenhuma mudança por esta tela ainda."
+        return unfold_component(
+            "unfold/components/table.html",
+            table={"headers": ["Quando", "Quem", "O quê"], "rows": [list(row) for row in rows]},
+        )
 
     @admin.display(description="Conta gravada")
     def google_merchant_display(self, obj):

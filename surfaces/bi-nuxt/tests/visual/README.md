@@ -8,7 +8,7 @@ dado de pessoa: o operador é "Admin" e os clientes são os do seed.
 npx playwright test -c playwright.visual.config.ts
 ```
 
-O config sobe o mock na porta 38794 e o `nuxt dev` na 33017 (as do Gestor são outras).
+O config sobe o mock na porta 28794 e o `nuxt dev` na 33017 (as do Gestor são outras).
 O spec `bi.spec.ts` abre as 8 rotas e confere o título e a ausência de erro de página.
 Não há baseline de retrato: retrato só se grava com o browser da CI.
 

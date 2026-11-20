@@ -1,0 +1,44 @@
+{
+  "_doc": "A ordem do percurso das paradas de uma corrida. Roda nos dois lados: `routeOrder` (orders-nuxt, vitest) e `courier._route` (shop, pytest). Os dois têm de devolver `expected`.",
+  "cases": [
+    {
+      "name": "a mais perto da loja primeiro, depois a mais perto dessa",
+      "origin": {"latitude": -23.3405, "longitude": -51.158},
+      "stops": [
+        {"ref": "FAR", "latitude": -23.30, "longitude": -51.10},
+        {"ref": "NEAR", "latitude": -23.335, "longitude": -51.155},
+        {"ref": "MID", "latitude": -23.32, "longitude": -51.14}
+      ],
+      "expected": ["NEAR", "MID", "FAR"]
+    },
+    {
+      "name": "sem coordenada vai ao fim, na ordem em que chegou",
+      "origin": {"latitude": -23.3405, "longitude": -51.158},
+      "stops": [
+        {"ref": "NOPE-1", "latitude": null, "longitude": null},
+        {"ref": "B", "latitude": -23.31, "longitude": -51.16},
+        {"ref": "NOPE-2", "latitude": null, "longitude": null},
+        {"ref": "A", "latitude": -23.34, "longitude": -51.159}
+      ],
+      "expected": ["A", "B", "NOPE-1", "NOPE-2"]
+    },
+    {
+      "name": "empate fica com quem veio antes",
+      "origin": {"latitude": 0, "longitude": 0},
+      "stops": [
+        {"ref": "EAST", "latitude": 0, "longitude": 1},
+        {"ref": "WEST", "latitude": 0, "longitude": -1}
+      ],
+      "expected": ["EAST", "WEST"]
+    },
+    {
+      "name": "loja sem coordenada: a ordem dos toques",
+      "origin": null,
+      "stops": [
+        {"ref": "Z", "latitude": -23.30, "longitude": -51.10},
+        {"ref": "Y", "latitude": -23.34, "longitude": -51.159}
+      ],
+      "expected": ["Z", "Y"]
+    }
+  ]
+}

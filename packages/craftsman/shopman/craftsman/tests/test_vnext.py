@@ -1251,6 +1251,25 @@ class TestSuggest:
         assert suggestions[0].quantity == Decimal("156")
         assert suggestions[0].basis["committed"] == Decimal("30")
 
+    def test_committed_without_history_still_suggests(self, recipe, tomorrow, settings):
+        """Sem amostra, a encomenda sozinha sugere: prometido mais a margem (#2755)."""
+        from unittest.mock import MagicMock, patch
+
+        mock_backend = MagicMock()
+        mock_backend.history.return_value = []
+        mock_backend.committed.return_value = Decimal("10")
+        settings.CRAFTSMAN = {"DEMAND_BACKEND": "test.MockDemandBackend"}
+
+        with patch("django.utils.module_loading.import_string", return_value=MagicMock(return_value=mock_backend)):
+            suggestions = craft.suggest(tomorrow, safety_pct=Decimal("0.20"))
+
+        assert len(suggestions) == 1
+        assert suggestions[0].quantity == Decimal("12")
+        basis = suggestions[0].basis
+        assert (basis["avg_demand"], basis["committed"], basis["sample_size"], basis["confidence"]) == (
+            Decimal("0"), Decimal("10"), 0, "",
+        )
+
     def test_soldout_extrapolation(self, recipe, tomorrow, settings):
         """Dia que esgotou mostra o estoque que havia, não a procura que houve.
 
@@ -1359,11 +1378,12 @@ class TestSuggest:
         assert suggestions[0].basis["soldout_days"] == 1
 
     def test_empty_history_skips_recipe(self, recipe, tomorrow, settings):
-        """Recipe with no history data is not included in suggestions."""
+        """Recipe with no history data and nothing committed is not suggested."""
         from unittest.mock import MagicMock, patch
 
         mock_backend = MagicMock()
         mock_backend.history.return_value = []
+        mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)
 
         settings.CRAFTSMAN = {"DEMAND_BACKEND": "test.MockDemandBackend"}
@@ -1386,6 +1406,7 @@ class TestSuggest:
 
         mock_backend = MagicMock()
         mock_backend.history.return_value = []
+        mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)
 
         settings.CRAFTSMAN = {
