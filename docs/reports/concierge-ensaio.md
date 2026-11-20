@@ -80,9 +80,44 @@ Partes perdidas (13; as primeiras 13):
   campo-7 "Boa tarde! Amanhã vai ter pão de forma? Queria para entregar": esperado product_question + hours_delivery|order, saiu greet + unknown + order (local)
 ```
 
-## Placar com `deepseek-flash` (3 rodadas, teto US$ 0,60)
+## Placar com `deepseek-flash` (3 rodadas)
 
-PENDENTE: saída de `/tmp/wp09-flash.log`.
+Rodado em 20/11/2026 à noite, sozinho no console, com teto de US$ 0,40. Uma primeira
+rodada completa (309 chamadas, US$ 0,103) se perdeu: a saída foi para o `/tmp` do
+container, que reiniciou. O motivo das quedas não era deploy: o `maintenance-worker` é
+`apps-s-1vcpu-0.5gb`, e dois shells em paralelo mais o próprio worker estouram a
+memória. Um de cada vez funciona. Saída copiada da tela pela coordenação:
+
+```text
+═══ Intenções no plural (golden set) ═══
+147 casos (16 com mais de uma parte). Leitura: model. Porteiro: regra local + notas do Jev em sombra.
+antes → depois: várias todas achadas 0/16 → 13/16; todos 35/66 → 60/66; partes 50/85 → 79/85; equipe achada 11/13 → 11/13; equipe sem precisar 0 → 1; uma parte lida como várias 5/50
+Leitura com o modelo: 92 de 147 (63%); US$ 0.00027 por leitura; p50 1336 ms, p95 2662 ms
+Por mensagem: US$ 0.000230 · porteiro+leitura p50 1069 ms, p95 3394 ms
+Falhas da leitura (caiu na divisão local): max_tokens 11
+Equipe perdida: msg-109 "hmm, sera que posso pagar com cartão? o [dado fina" (house_info); msg-596 "[link omitido]" (unknown)
+Equipe sem precisar: msg-696 "Cancela" (cancel_order)
+Partes perdidas (6):
+- msg-53 "quero que me avise quando estiver disponivel, pode ser?": esperado product_question, saiu order (gate)
+- msg-59 "seguimos. é para entrega, ok. qual a taxa?": esperado order|hours_delivery + hours_delivery, saiu unknown + hours_delivery (model)
+- msg-113 "o link de pagamento por [...], ok. avis": esperado complaint|human + complaint|human|order_status, saiu unknown + human + unknown + unknown + unknown (local)
+- msg-596 "[link omitido]": esperado job, saiu unknown (model)
+- msg-665 "Ainda é possível fazer pedidos?": esperado order|hours_delivery, saiu house_info (model)
+- campo-7 "Boa tarde! Amanhã vai ter pão de forma? Queria para entregar": esperado product_question + hours_delivery|order, saiu greet + unknown + order (local)
+Repetição, 3 rodadas, 147 casos em todas (r1 / r2 / r3 / em todas):
+- várias todas achadas: 13/16, 13/16, 14/16 / 13/16
+- todos: 60/66, 60/66, 61/66 / 60/66
+- partes (mínimo): 79/85, 79/85, 80/85 / 79/85
+- equipe achada: 11/13 nas três / 11/13
+- equipe sem precisar: 1, 1, 2 / limpos 132/134
+- uma parte lida como várias: 5, 4, 7 / limpos 43/50
+Gasto da rodada: US$ 0.1003 de US$ 0.4000. Nada foi gravado.
+```
+
+**Achado (flash):** 11 leituras caíram na divisão local por `max_tokens`. O pedido da
+leitura (`intents.build_request`) manda `max_tokens: 600` e nenhum `thinking`; a DeepSeek
+aceita `thinking` (`ai.EXTRAS_BY_HOST`) e, raciocinando por padrão, gasta o teto antes do
+JSON. Sem essas 11 quedas, as partes e a equipe tendem a subir; é correção própria.
 
 ## Placar com `deepseek-v4-pro` (3 rodadas, teto US$ 1,40)
 
