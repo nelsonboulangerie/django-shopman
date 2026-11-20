@@ -102,6 +102,18 @@ export type CourierBlock = {
   };
   /** Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais perto primeiro. */
   ride_offer?: RideCandidateProjection[];
+  /** A sugestão da casa para a corrida deste pedido (`ride_plan`, o mesmo das Entregas). */
+  ride_suggestion?: {
+    refs: string[];
+    codes: string[];
+    quoted: boolean;
+    suggested: boolean;
+    together: { value_q: number; minutes: number; km: number; with_return: boolean } | null;
+    separate_q: number | null;
+    saving_q: number | null;
+    late_code: string;
+    late_minutes: number;
+  } | null;
   /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
   charge_outdated?: CourierChargeOutdated | null;
 };

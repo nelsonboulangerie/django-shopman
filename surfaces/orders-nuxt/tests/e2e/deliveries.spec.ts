@@ -63,3 +63,59 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(detail.getByText(/[Cc]orrida \d/)).toHaveCount(0);
   });
 });
+
+// F5: a casa sugere quem vai junto (`ride_plan`), no topo de Aguardando. Cotada e mais
+// barata, vem com "Chamar juntas"; o sheet confere e chama num gesto (decisões 1 e 2 = A).
+const MOCK = `http://127.0.0.1:${Number(process.env.MOCK_PORT || 8796)}`;
+
+test.describe("Entregas: sugestões da casa", () => {
+  test.use({ viewport: { width: 1360, height: 900 } });
+
+  test("o cartão diz a economia em duas linhas e quem chega depois, sem chip de bairro", async ({ page }) => {
+    await page.goto("/delivery");
+    const card = page.locator("[data-ride-suggestions]");
+    await expect(card.getByText("1 corrida sugerida: 2 pedidos.", { exact: true })).toBeVisible();
+    const row = card.locator("[data-ride-suggestion]");
+    await expect(row.getByText("A47 + C03", { exact: true })).toBeVisible();
+    await expect(row.getByText("Juntas: R$ 16,50 · 24 min · 5,7 km ✔", { exact: true })).toBeVisible();
+    await expect(row.getByText("Separadas sairiam R$ 25,00", { exact: true })).toBeVisible();
+    await expect(row.getByText("C03 chega uns 6 min depois.", { exact: true })).toBeVisible();
+    // O chip por nome de bairro saiu.
+    await expect(page.getByRole("button", { name: "Gleba Palhano · 2", exact: true })).toHaveCount(0);
+  });
+
+  test("Chamar juntas abre o sheet e o Voltar desfaz só o que a sugestão pôs", async ({ page }) => {
+    await page.goto("/delivery");
+    await page.getByRole("button", { name: "Chamar juntas", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Chamar a corrida C" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("A47 → C03", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("C03 chega uns 6 min depois.", { exact: true })).toBeVisible();
+    await expect(sheet.getByRole("textbox", { name: "Troco para C03", exact: true })).toHaveValue("20,00");
+    await sheet.getByRole("button", { name: "Voltar", exact: true }).click();
+    await expect(sheet).toBeHidden();
+    await expect(page.getByText("Corrida C", { exact: true })).toHaveCount(0);
+    await expect(page.locator("[data-ride-suggestion]")).toHaveCount(1);
+  });
+
+  test("confirmar no sheet chama UMA corrida com os dois, pelo protocolo de intenção", async ({ page }) => {
+    await page.request.delete(`${MOCK}/api/v1/backstage/e2e/deliveries/rides/`);
+    await page.goto("/delivery");
+    await page.getByRole("button", { name: "Chamar juntas", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Chamar a corrida C" });
+    await sheet.getByRole("button", { name: "Chamar a corrida C", exact: true }).click();
+    await expect(sheet).toBeHidden();
+    await expect
+      .poll(async () => {
+        const answer = await page.request.get(`${MOCK}/api/v1/backstage/e2e/deliveries/rides/`);
+        return ((await answer.json()) as { rides: { refs: string[]; ride_number: number }[] }).rides.at(-1) ?? null;
+      })
+      .toMatchObject({ refs: ["WEB-20261116-0A47", "WEB-20261116-0C03"], ride_number: 3 });
+  });
+
+  test("Agora não esconde a sugestão", async ({ page }) => {
+    await page.goto("/delivery");
+    await page.getByRole("button", { name: "Agora não", exact: true }).click();
+    await expect(page.locator("[data-ride-suggestions]")).toHaveCount(0);
+  });
+});

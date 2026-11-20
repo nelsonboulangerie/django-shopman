@@ -158,6 +158,56 @@ class DeliveryRideProjection:
 
 
 @dataclass(frozen=True)
+class RideSuggestionProjection:
+    """Uma corrida que a casa sugere juntar (``ride_plan``), no topo de Aguardando."""
+
+    #: Os refs em ordem, juntos por "+": identifica a sugestão (o "Agora não" esconde por ela).
+    key: str
+    #: As paradas na ordem do percurso (a da cotação, quando veio).
+    refs: tuple[str, ...]
+    codes: tuple[str, ...]
+    #: Os bairros, sem repetir: "Gleba Palhano, Centro".
+    places: str
+    #: Todas as cotações vieram (a da corrida junta e a de cada pedido sozinho).
+    quoted: bool
+    #: Cotada e mais barata junta pela régua do Admin: vem marcada.
+    suggested: bool
+    #: Quem mais espera a mais com a corrida junta, e quantos minutos.
+    late_code: str
+    late_minutes: int
+    #: A cotação junta (centavos, minutos, km) e a soma das sozinhas; ``None`` sem cotação.
+    together_q: int | None = None
+    minutes: int | None = None
+    km: float | None = None
+    with_return: bool = False
+    separate_q: int | None = None
+    saving_q: int | None = None
+
+
+@dataclass(frozen=True)
+class DeliveryServiceOptionProjection:
+    ref: str
+    name: str
+    kind: str
+    is_default: bool
+
+
+@dataclass(frozen=True)
+class RidePlanProjection:
+    """O plano das corridas (``ride_plan``): o MESMO do Painel e do ``ride_offer``.
+
+    ``service`` é o serviço sugerido (o padrão do Admin), ``service_reason`` diz por quê
+    (``default``) e ``service_options`` são os serviços ativos: o contrato com a frente
+    M3 ("Quem leva", #2526).
+    """
+
+    suggestions: tuple[RideSuggestionProjection, ...] = ()
+    service: str = ""
+    service_reason: str = ""
+    service_options: tuple[DeliveryServiceOptionProjection, ...] = ()
+
+
+@dataclass(frozen=True)
 class DeliveriesProjection:
     origin: DeliveryPointProjection | None
     waiting: tuple[DeliveryStopProjection, ...]
@@ -180,6 +230,9 @@ class DeliveriesProjection:
     free_numbers: tuple[int, ...] = ()
     #: O primeiro livre (``None`` quando as 26 letras estão ocupadas).
     next_number: int | None = None
+    #: As corridas que a casa sugere juntar (``ride_plan``). ``None`` no selo do menu,
+    #: que nunca pergunta à central.
+    ride_plan: RidePlanProjection | None = None
 
 
 def _point(address: dict) -> tuple[float | None, float | None]:
@@ -499,7 +552,43 @@ def _tasks_needed(orders: list[Order]) -> list[Order]:
     return needed
 
 
-def build_deliveries(*, user=None) -> DeliveriesProjection:
+def _ride_plan(waiting: list[Order], stops: tuple[DeliveryStopProjection, ...], *, tasks: dict) -> RidePlanProjection:
+    from shopman.shop.services import ride_plan
+
+    try:
+        plan = ride_plan.ride_plan(waiting, tasks=tasks)
+    except Exception:  # o plano nunca derruba a página: sem ele, monta-se à mão
+        logger.warning("deliveries.ride_plan_failed", exc_info=True)
+        plan = {"suggestions": [], **ride_plan._service()}
+    places = {stop.ref: stop.place for stop in stops}
+    suggestions = []
+    for item in plan["suggestions"]:
+        together = item.get("together") or {}
+        suggestions.append(RideSuggestionProjection(
+            key=item["key"],
+            refs=tuple(item["refs"]),
+            codes=tuple(item["codes"]),
+            places=", ".join(dict.fromkeys(places[ref] for ref in item["refs"] if places.get(ref))),
+            quoted=bool(item["quoted"]),
+            suggested=bool(item["suggested"]),
+            late_code=item["late_code"],
+            late_minutes=int(item["late_minutes"]),
+            together_q=together.get("value_q"),
+            minutes=round(together["minutes"]) if together.get("minutes") is not None else None,
+            km=together.get("km"),
+            with_return=bool(together.get("with_return")),
+            separate_q=item.get("separate_q"),
+            saving_q=item.get("saving_q"),
+        ))
+    return RidePlanProjection(
+        suggestions=tuple(suggestions),
+        service=plan["service"],
+        service_reason=plan["service_reason"],
+        service_options=tuple(DeliveryServiceOptionProjection(**option) for option in plan["service_options"]),
+    )
+
+
+def build_deliveries(*, user=None, with_plan: bool = True) -> DeliveriesProjection:
     from shopman.backstage.models import DeliveryDevice
     from shopman.backstage.projections.order_queue import _fiscal_states_for, courier_ride_action
     from shopman.backstage.services import order_danfe
@@ -537,6 +626,7 @@ def build_deliveries(*, user=None) -> DeliveriesProjection:
         group_action=courier_ride_action([order for order in waiting if order.ref in joinable], user=user),
         free_numbers=free_numbers,
         next_number=free_numbers[0] if free_numbers else None,
+        ride_plan=_ride_plan(waiting, stops, tasks=reads.tasks) if with_plan else None,
     )
 
 

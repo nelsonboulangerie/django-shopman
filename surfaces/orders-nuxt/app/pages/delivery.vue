@@ -20,6 +20,7 @@ import type { OperatorActionBarAction } from "../../../operator-kit/app/presenta
 import {
   assignMachines,
   backCheck,
+  callAllLabel,
   callSummary,
   changeValue,
   failureStops,
@@ -29,13 +30,20 @@ import {
   rideCalls,
   rideFailureTitle,
   rideLetter,
+  ridesFromSuggestions,
   ridesNeedingMachine,
   routeOrder,
+  suggestionLate,
+  suggestionQuoteLines,
+  suggestionsHeadline,
   toggleStop,
+  visibleSuggestions,
   type EditingRide,
   type RideFailure,
+  type RideSuggestion,
 } from "~/presentation/deliveries";
 import { deliveriesFiscalAlerts } from "~/presentation/deliveriesFiscal";
+import type { CallSheetRide } from "~/components/CourierCallSheet.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -95,13 +103,16 @@ function toggle(ref: string) {
   active.value = result.active;
   if (result.notice) useSonner.info(result.notice);
 }
+// O toque no nome do bairro no mapa SOMA à corrida ativa os prontos dali que estão
+// livres, até caber (nunca apaga o que o operador já escolheu, nunca pega pedido em
+// preparo: a casa não sabe a hora em que ele fica pronto).
 function fill(place: string) {
   ensureEditing();
   const mine = activeRide.value!;
-  const refs = waitingAll.value
-    .filter((stop) => stop.place === place && !stop.group_refusal && (!rideOf(stop.ref) || rideOf(stop.ref) === mine))
+  const add = waitingAll.value
+    .filter((stop) => stop.place === place && stop.stage === "Pronto" && !stop.group_refusal && !stop.dispatch_again_action && !rideOf(stop.ref))
     .map((stop) => stop.ref);
-  mine.refs = refs.slice(0, maxStops.value);
+  mine.refs = [...mine.refs, ...add].slice(0, Math.max(maxStops.value, mine.refs.length));
 }
 function newRide() {
   const number = nextFreeNumber(freeNumbers.value, editingNumbers.value);
@@ -119,15 +130,43 @@ function openFromMap(number: number) {
 }
 const waiting = computed(() => waitingAll.value.filter((stop) => !rideOf(stop.ref)));
 const ready = computed(() => editing.value.filter((ride) => ride.refs.length));
-const suggestions = computed(() => {
-  const count = new Map<string, number>();
-  for (const stop of waitingAll.value) {
-    if (stop.group_refusal || !stop.place) continue;
-    if (rideOf(stop.ref) && rideOf(stop.ref) !== activeRide.value) continue;
-    count.set(stop.place, (count.get(stop.place) ?? 0) + 1);
+// ── sugestões da casa (ride_plan, F5) ───────────────────────────────────────
+// O MESMO plano do Painel e do "Vai junto nesta corrida?": a casa sugere quem vai
+// junto, com a cotação. Aceitar SOMA às corridas em edição, nunca apaga.
+const dismissed = ref<string[]>([]);
+const suggestions = computed(() =>
+  visibleSuggestions((data.value?.ride_plan?.suggestions ?? []) as RideSuggestion[], editing.value, dismissed.value),
+);
+const headline = computed(() => suggestionsHeadline(suggestions.value));
+const callAll = computed(() => callAllLabel(suggestions.value));
+// As corridas que vieram de sugestões e esperam a confirmação no sheet.
+const sheetNumbers = ref<number[]>([]);
+function acceptSuggestions(list: RideSuggestion[], { call: withSheet }: { call: boolean }) {
+  // A corrida vazia ("Montar uma corrida" sem pedido ainda) não segura a letra.
+  const kept = editing.value.filter((ride) => ride.refs.length);
+  const rides = ridesFromSuggestions(list, freeNumbers.value, kept);
+  if (!rides) {
+    useSonner.info("Não há letras livres agora. Chame ou desfaça uma corrida antes.");
+    return;
   }
-  return [...count.entries()].filter(([, n]) => n >= 2).map(([place, n]) => ({ place, n }));
-});
+  editing.value = [...kept, ...rides];
+  active.value = rides[0]!.number;
+  if (withSheet) sheetNumbers.value = rides.map((ride) => ride.number);
+}
+// "Voltar": as corridas da sugestão saem da edição; as que o operador já montava ficam.
+function closeSheet() {
+  const numbers = sheetNumbers.value;
+  sheetNumbers.value = [];
+  editing.value = editing.value.filter((ride) => !numbers.includes(ride.number));
+  if (!editing.value.some((ride) => ride.number === active.value)) active.value = editing.value[0]?.number ?? 0;
+}
+async function confirmSheet() {
+  const numbers = sheetNumbers.value;
+  sheetNumbers.value = [];
+  await call(numbers);
+}
+const suggestionOf = (refs: readonly string[]) =>
+  (data.value?.ride_plan?.suggestions ?? []).find((item) => item.refs.join("|") === refs.join("|"));
 const canAddRide = computed(
   () => waiting.value.length > 0 && nextFreeNumber(freeNumbers.value, editingNumbers.value) !== null && editing.value.every((ride) => ride.refs.length),
 );
@@ -398,6 +437,46 @@ const unlocated = computed(() => waitingAll.value.filter((stop) => !located(stop
 const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride.refs.length, 0));
 // NFC-e não autorizada e DANFE por imprimir: só avisam, no topo (F10, ENT-19).
 const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
+
+// ── o sheet de chamar ──────────────────────────────────────────────────────
+const sheetRides = computed<CallSheetRide[]>(() =>
+  sheetNumbers.value
+    .map((number) => editing.value.find((ride) => ride.number === number))
+    .filter((ride): ride is EditingRide => Boolean(ride))
+    .map((ride) => {
+      const stops = routeOf(ride);
+      const plan = suggestionOf(ride.refs) ?? suggestionOf(stops.map((stop) => stop.ref));
+      const live = linesOf(ride);
+      return {
+        number: ride.number,
+        letter: rideLetter(ride.number),
+        color: rideColor(ride.number - 1),
+        stops: stops.map((stop) => ({
+          ref: stop.ref, code: stop.code, customer: stop.customer, place: stop.place,
+          change_out_suggested_q: stop.change_out_suggested_q, change: changeOf(stop),
+        })),
+        // A cotação viva da corrida (a mesma que a chamada vai abrir); enquanto ela
+        // não chega, a do plano.
+        lines: live.length ? live : plan ? suggestionQuoteLines(plan as RideSuggestion) : [],
+        late: plan ? suggestionLate(plan) : "",
+        needsMachine: needing.value.includes(ride.number),
+        machine: assigned.value[ride.number] ?? "",
+      };
+    }),
+);
+const sheetTitle = computed(() =>
+  sheetRides.value.length === 1 ? `Chamar a corrida ${sheetRides.value[0]!.letter}` : `Chamar ${sheetRides.value.length} corridas`,
+);
+const sheetLines = computed(() => {
+  const list = sheetRides.value
+    .map((ride) => suggestionOf(editing.value.find((item) => item.number === ride.number)?.refs ?? []))
+    .filter(Boolean) as RideSuggestion[];
+  return list.length === sheetRides.value.length ? suggestionsHeadline(list).lines : [];
+});
+const sheetMachineMissing = computed(() => sheetRides.value.some((ride) => ride.needsMachine && !ride.machine));
+const sheetCallLabel = computed(() =>
+  sheetRides.value.length === 1 ? `Chamar a corrida ${sheetRides.value[0]!.letter}` : `Chamar as ${sheetRides.value.length} corridas`,
+);
 </script>
 
 <template>
@@ -448,8 +527,48 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
               <OperatorCountChip :count="waiting.length" />
             </h2>
             <p v-if="!waitingAll.length" class="mt-2 op-body text-muted">Nenhuma entrega aguardando entregador.</p>
-            <div v-if="suggestions.length" class="mt-2 flex flex-wrap gap-1.5">
-              <NuxtButton v-for="s in suggestions" :key="s.place" color="neutral" variant="outline" icon="i-lucide-map-pin" :label="`${s.place} · ${s.n}`" @click="fill(s.place)" />
+            <!-- As sugestões da casa (ride_plan): cotadas, já dizem quanto economiza e
+                 quem chega depois; sem cotação, só a montagem à mão. -->
+            <div v-if="suggestions.length" class="mt-2 rounded-xl bg-elevated/60 p-3" data-ride-suggestions>
+              <div class="flex items-start gap-2">
+                <NuxtIcon name="i-lucide-sparkles" class="mt-0.5 size-4 shrink-0 text-muted" />
+                <div class="min-w-0 flex-1">
+                  <p class="op-body font-medium text-highlighted">{{ headline.title }}</p>
+                  <p
+                    v-for="line in headline.lines"
+                    :key="line.text"
+                    class="op-body tabular-nums [font-variant-emoji:text]"
+                    :class="line.strong ? 'font-medium text-highlighted' : 'text-muted'"
+                  >
+                    {{ line.text }}
+                  </p>
+                </div>
+              </div>
+              <ul class="mt-2 flex flex-col divide-y divide-default">
+                <li v-for="s in suggestions" :key="s.key" class="flex flex-col gap-2 py-2 sm:flex-row sm:items-center" data-ride-suggestion>
+                  <div class="min-w-0 flex-1">
+                    <p class="op-body"><span class="font-medium text-highlighted">{{ s.codes.join(" + ") }}</span> <span v-if="s.places" class="text-muted">· {{ s.places }}</span></p>
+                    <template v-if="s.quoted">
+                      <p
+                        v-for="line in suggestionQuoteLines(s)"
+                        :key="line.text"
+                        class="op-micro tabular-nums [font-variant-emoji:text]"
+                        :class="line.strong ? 'font-medium text-highlighted' : 'text-muted'"
+                      >
+                        {{ line.text }}
+                      </p>
+                      <p v-if="suggestionLate(s)" class="op-micro text-muted">{{ suggestionLate(s) }}</p>
+                    </template>
+                    <p v-else class="op-micro text-warning">A TaOn não cotou agora. Monte a corrida se quiser levar junto.</p>
+                  </div>
+                  <div class="flex shrink-0 flex-wrap gap-2">
+                    <NuxtButton v-if="s.suggested" class="min-h-11" color="neutral" variant="outline" icon="i-lucide-bike" label="Chamar juntas" data-ride-suggestion-call @click="acceptSuggestions([s], { call: true })" />
+                    <NuxtButton v-else class="min-h-11" color="neutral" variant="outline" icon="i-lucide-route" label="Montar a corrida" data-ride-suggestion-build @click="acceptSuggestions([s], { call: false })" />
+                    <NuxtButton class="min-h-11" color="neutral" variant="ghost" label="Agora não" @click="dismissed = [...dismissed, s.key]" />
+                  </div>
+                </li>
+              </ul>
+              <NuxtButton v-if="callAll" block class="mt-2 min-h-11" icon="i-lucide-bike" :label="callAll" data-ride-suggestions-call-all @click="acceptSuggestions(suggestions, { call: true })" />
             </div>
             <ul class="mt-2 flex flex-col">
               <li v-for="stop in waiting" :key="stop.ref">
@@ -650,6 +769,23 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
         />
       </template>
     </NuxtSlideover>
+
+    <!-- A sugestão aceita: confere e chama no mesmo sheet (desenho do juiz, F5). -->
+    <CourierCallSheet
+      :open="sheetRides.length > 0"
+      :title="sheetTitle"
+      :lines="sheetLines"
+      :rides="sheetRides"
+      :machine-items="machineItems"
+      :call-label="sheetCallLabel"
+      :can-call="!sending && !sheetMachineMissing"
+      :reason="sheetMachineMissing ? shortfall || 'Escolha a maquininha de cada corrida.' : ''"
+      :busy="sending"
+      @close="closeSheet"
+      @confirm="confirmSheet"
+      @change="setChange"
+      @machine="chooseMachine"
+    />
 
     <!-- Entregador voltou: confere e só então encerra a corrida inteira. -->
     <CourierBackDialog
