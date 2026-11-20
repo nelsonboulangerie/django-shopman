@@ -95,6 +95,8 @@ def test_attribute_the_sheet_does_not_cover_is_verified(conversation, menu, monk
 
     assert VERIFY in outcome.reply_text
     assert "R$" not in outcome.reply_text  # nada de preço no lugar da resposta
+    # Cita a pergunta, não só o produto: "Sobre “croissant”" diria que a casa nada sabe dele.
+    assert "“o croissant é grande”" in outcome.reply_text
 
 
 def test_he_is_sweet_without_the_product_is_verified(conversation, menu, monkeypatch):  # noqa: F811

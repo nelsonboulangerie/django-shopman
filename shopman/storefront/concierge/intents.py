@@ -843,22 +843,27 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
         sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
+        # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é
+        # sobre um atributo dele, a pergunta inteira ("Sobre “o croissant é grande”"):
+        # citar só o produto diria que a casa não sabe nada do croissant.
+        cited = act.product or act.span
         if sheet == "":
             # Pergunta sobre o produto que a ficha não responde: sem fato.
             result = {**result, "found": False}
+            cited = act.span.strip().rstrip("?!. ")
         if result.get("ok") and result.get("found"):
             reply.text = sheet or tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
         elif consult and verifiable and verification.question_text(act):
             # Sem fato numa consulta: a casa não inventa e não larga o cliente. Diz que
             # não tem aqui, pergunta à equipe e, no fim da resposta, promete o prazo.
-            reply.text = _fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(act.product or act.span))
+            reply.text = _fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(cited))
             reply.verifying = True
             run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
         else:
             # Sem fato, a casa não inventa: diz que não tem e oferece a equipe.
             reply.text = " ".join(
-                part for part in (_fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(act.product or act.span)), offer) if part
+                part for part in (_fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(cited)), offer) if part
             )
             reply.memo = {"tool": "search_storefront", "found": False}
         return reply
