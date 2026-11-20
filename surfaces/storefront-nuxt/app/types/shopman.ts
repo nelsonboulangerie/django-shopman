@@ -400,6 +400,10 @@ export interface CartProjection {
   // no envelope da leitura da sacola (`CartResponse.server_now_iso`).
   reserved_until_iso: string | null
   reserved_until_display: string | null
+  // A reserva que venceu e não foi renovada (#2767): até quando ela valia, no
+  // formato da casa ("19h18"; de outro dia, "18/11 às 19h18"). É o que diz a
+  // quem abre a sacola depois do prazo que a reserva acabou. null com reserva viva.
+  reservation_lapsed_display: string | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null

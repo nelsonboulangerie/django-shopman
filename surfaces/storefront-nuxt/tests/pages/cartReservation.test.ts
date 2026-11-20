@@ -87,6 +87,7 @@ function cart (overrides: Partial<CartProjection> = {}): CartProjection {
     awaiting_confirmation_notice: '',
     reserved_until_iso: null,
     reserved_until_display: null,
+    reservation_lapsed_display: null,
     minimum_order_progress: null,
     delivery_minimum_progress: null,
     free_delivery_progress: null,
@@ -188,6 +189,17 @@ describe('sacola: reserva com prazo à vista', () => {
     mounted = page
 
     expect(page.find('[data-cart-reservation]').exists()).toBe(false)
+  })
+
+  it('quem abre a sacola depois do prazo lê que a reserva venceu, já na carga (#2767)', async () => {
+    const page = await openCart(() => cart({ reservation_lapsed_display: '18/11 às 19h18' }))
+    mounted = page
+    await flushPromises()
+
+    const notice = page.find('[data-cart-reservation="lapsed"]')
+    expect(notice.text()).toBe('A reserva valia até 18/11 às 19h18 e já venceu. A sacola mostra o que continua disponível.')
+    expect(page.findAll('[data-cart-reservation]')).toHaveLength(1)
+    expect(page.text()).toContain('Croissant')
   })
 
   it('vencido o prazo, relê a sacola sozinha e diz o que houve', async () => {

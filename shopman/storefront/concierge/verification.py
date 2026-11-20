@@ -323,6 +323,52 @@ def record_turn(conversation, outcome, *, now: datetime | None = None) -> dict |
     return {**record, "_new": is_new}
 
 
+def open_for(conversation, question: str, *, product: str = "", actor: str = "", now: datetime | None = None) -> dict | None:
+    """Abre (ou estende) a verificação FORA do turno: a porta de equipe do framework (N7).
+
+    O ``record_turn`` roda dentro da transação da resposta, com o fence do claim do turno.
+    Aqui não há turno: a conversa é travada (``select_for_update``), a promessa é a de
+    agora (``promise_for``) e o fence é o da conversa travada, então um turno em andamento
+    não sobrescreve o registro (ele espera a trava e relê). Depois da transação, o cartão
+    (``notify_team``). ``actor`` fica em ``opened_by`` quando a verificação nasce aqui.
+
+    ``None`` sem pergunta, com a conversa fora da Concierge (HANDOFF, encerrada) ou quando
+    a casa não pode prometer resposta dentro da janela (``no_promise``): quem chama decide
+    o que dizer ao cliente nesse caso.
+    """
+    from types import SimpleNamespace
+
+    from shopman.shop.models import Conversation
+
+    text = question_text(SimpleNamespace(span=str(question or ""), product=str(product or "")))
+    if not text:
+        return None
+    now = now or _now()
+    with transaction.atomic():
+        locked = Conversation.objects.select_for_update().filter(pk=conversation.pk).first()
+        if locked is None or locked.state != Conversation.State.ACTIVE:
+            return None
+        promise = promise_for(locked, now=now)
+        if promise.get("kind") == NO_PROMISE:
+            return None
+        locked._turn_fence = locked.turn_fence
+        outcome = SimpleNamespace(verification={
+            "requests": [{"text": text, "product": str(product or "")[:80]}],
+            "promise": promise,
+        })
+        record = record_turn(locked, outcome, now=now)
+        if record and record.get("_new") and actor:
+            flags = dict(locked.flags or {})
+            flags[FLAG_KEY] = {**flags[FLAG_KEY], "opened_by": str(actor)[:100]}
+            Conversation.objects.filter(pk=locked.pk).update(flags=flags)
+            locked.flags = flags
+            record = {**record, "opened_by": str(actor)[:100]}
+    if record:
+        conversation.flags = locked.flags
+        notify_team(conversation, record)
+    return record
+
+
 def _dedupe_key(conversation, record: dict) -> str:
     return f"concierge:{conversation.pk}:verify:{record.get('id', '')}"
 
@@ -526,6 +572,43 @@ def take_over(alert_pk: int, *, actor: str):
 
 #: A verificação que passou do segundo prazo e foi entregue à equipe.
 HANDED_OFF = "handed_off"
+
+#: A conversa que foi à equipe pelo prazo voltou à Concierge com a mensagem nova do cliente.
+RETURNED = "returned"
+
+
+def returns_on_new_message(conversation) -> bool:
+    """Volta sozinha à Concierge quando o cliente escreve de novo? (dono, 20/11/2026, #2836)
+
+    Só a que foi à equipe pelo prazo do "vou verificar" (``verification_timeout``) e que
+    ninguém assumiu: a assumida pelo sino (``taken_over``) fica com a equipe, sempre.
+    """
+    flags = getattr(conversation, "flags", None) or {}
+    record = flags.get(FLAG_KEY)
+    triage_stamp = flags.get("triage") or {}
+    return (
+        isinstance(record, dict)
+        and record.get("status") == HANDED_OFF
+        and triage_stamp.get("escalated_by") == ESCALATED_BY
+    )
+
+
+def mark_returned(conversation_pk: int) -> None:
+    """A volta aconteceu: o registro deixa de pedir volta (um handoff depois disso é outro)."""
+    from django.db import transaction
+
+    from shopman.shop.models import Conversation
+
+    with transaction.atomic():
+        locked = Conversation.objects.select_for_update().filter(pk=conversation_pk).first()
+        if locked is None:
+            return
+        flags = dict(locked.flags or {})
+        stored = flags.get(FLAG_KEY)
+        if not isinstance(stored, dict) or stored.get("status") != HANDED_OFF:
+            return
+        flags[FLAG_KEY] = {**stored, "status": RETURNED, "returned_at": _now().isoformat()}
+        Conversation.objects.filter(pk=conversation_pk).update(flags=flags)
 #: O ``escalated_by`` da triagem do handoff no segundo prazo (``triage.Triage``).
 ESCALATED_BY = "verification_timeout"
 

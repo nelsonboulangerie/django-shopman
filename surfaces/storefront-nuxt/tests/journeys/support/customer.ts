@@ -10,10 +10,9 @@ export interface NewCustomer {
   name: string
 }
 
-/** O link da sacola: "Sacola, 1 item" na barra de baixo (celular). No cabeçalho do desktop o
- *  nome é só "Ver sacola", sem a contagem (#2609); quando o #2609 fechar, sai a segunda forma. */
+/** O link da sacola: "Sacola, 1 item", na barra de baixo (celular) e no cabeçalho (desktop). */
 function bagLink (page: Page) {
-  return page.getByRole('link', { name: /^(Sacola, 1 item|Ver sacola)$/ }).first()
+  return page.getByRole('link', { name: 'Sacola, 1 item', exact: true }).first()
 }
 
 /** No cardápio, abre o produto pelo nome e o põe na sacola pela página dele. */
