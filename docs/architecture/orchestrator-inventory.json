@@ -9357,6 +9357,7 @@
         "delivery.cancelled-order-ride-disposition",
         "delivery.courier-auto-dispatch",
         "delivery.courier-charge-staleness",
+        "delivery.courier-customer-wait",
         "delivery.courier-dispatch-eligibility",
         "delivery.courier-handoff-charge",
         "delivery.courier-in-trouble",

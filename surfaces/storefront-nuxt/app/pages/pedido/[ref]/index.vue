@@ -651,7 +651,9 @@ useSeoMeta({
                 <Icon :name="statusPanelIcon" :class="['relative size-4 shrink-0', statusPanelIconClass]" />
               </span>
             </template>
-            <UiAlertTitle class="text-foreground">
+            <!-- O título quebra linha em vez de terminar em reticências: "Maximiliano
+                 vem buscar seu pedido" continua inteiro no celular (L2, decisão 7 = B). -->
+            <UiAlertTitle class="line-clamp-none leading-snug text-foreground">
               {{ tracking.promise.title || tracking.status_label }}
             </UiAlertTitle>
             <UiAlertDescription class="w-full text-muted-foreground">
@@ -768,6 +770,7 @@ useSeoMeta({
                     <template v-for="action in statusPanelActions" :key="action.ref">
                       <UiButton
                         v-if="action.ref === 'reorder'"
+                        class="min-h-11"
                         :icon="actionIcon(action)"
                         :loading="!!reorderPending[orderRef]"
                         @click="handleStatusPanelAction(action)"
@@ -776,6 +779,7 @@ useSeoMeta({
                       </UiButton>
                       <UiButton
                         v-else-if="action.kind === 'link' && action.href"
+                        class="min-h-11"
                         :to="actionRoute(action)"
                         :icon="actionIcon(action)"
                       >
@@ -785,6 +789,7 @@ useSeoMeta({
                            abre em outra aba para o acompanhamento seguir aberto. -->
                       <UiButton
                         v-else-if="action.kind === 'external' && action.href"
+                        class="min-h-11"
                         :href="action.href"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -795,6 +800,7 @@ useSeoMeta({
                       </UiButton>
                       <UiButton
                         v-else-if="canRunInlineAction(action)"
+                        class="min-h-11"
                         :icon="actionIcon(action)"
                         :loading="!!actionPending[action.ref]"
                         @click="handleStatusPanelAction(action)"
@@ -811,7 +817,7 @@ useSeoMeta({
                         {{ action.label }}
                       </span>
                     </template>
-                    <UiButton v-if="showSupportInStatusPanel" :href="supportUrl" target="_blank" rel="noopener noreferrer" variant="secondary" icon="lucide:message-circle">
+                    <UiButton v-if="showSupportInStatusPanel" class="min-h-11" :href="supportUrl" target="_blank" rel="noopener noreferrer" variant="secondary" icon="lucide:message-circle">
                       {{ tracking.copy.support_label }}
                     </UiButton>
                   </div>

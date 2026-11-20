@@ -1544,6 +1544,12 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
             resolve_timeouts_if_due(order)
             order.refresh_from_db()
             projection = build_order_conversation(order, channel_ref=ctx.channel_ref)
+            # A frase do momento é a MESMA da página do pedido: a projeção de
+            # conversa carrega o estado, e o texto ao cliente vem da apresentação
+            # da loja (L2 da revisão das Entregas: "Diego vem buscar seu pedido").
+            from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+            page_promise = build_order_tracking(order).promise
         except Exception:
             logger.exception("concierge.order_status projection failed order=%s", order.ref)
             return _error("projection_unavailable", "O pedido está registrado, mas não consegui atualizar a consulta. Tente consultar novamente.", resource_ref=order.ref)
@@ -1552,8 +1558,8 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
                 "order_ref": projection.order_ref,
                 "status": projection.order_status,
                 "state": projection.state,
-                "title": projection.title,
-                "message": projection.message,
+                "title": page_promise.title,
+                "message": page_promise.message,
                 "items": list(projection.items_summary),
                 "total": projection.total_display,
                 "deadline_at": projection.deadline_at,

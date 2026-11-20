@@ -249,6 +249,14 @@ class TrackingPromiseData:
     repayment: bool = False
     # ...e o cliente pode trocar para Pix (ação ``pay_with_pix``).
     repayment_pix_allowed: bool = False
+    # Entrega pronta ou na rua: onde a corrida está, no vocabulário neutro
+    # (``courier.customer_wait``). ``courier_stage`` só em ``ready_delivery``
+    # ("" sem corrida viva, "called", "late", "replaced", "coming", "at_store");
+    # ``courier_driver`` é o primeiro nome do entregador (em "replaced", o de
+    # quem desistiu); ``courier_pickup_eta_at`` (ISO) é a chegada prevista à loja.
+    courier_stage: str = ""
+    courier_driver: str = ""
+    courier_pickup_eta_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -976,6 +984,9 @@ def _promise(
     fulfillment_wait_until: str | None = None,
     repayment: bool = False,
     repayment_pix_allowed: bool = False,
+    courier_stage: str = "",
+    courier_driver: str = "",
+    courier_pickup_eta_at: str | None = None,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -1001,6 +1012,9 @@ def _promise(
         fulfillment_wait_until=fulfillment_wait_until,
         repayment=repayment,
         repayment_pix_allowed=repayment_pix_allowed,
+        courier_stage=courier_stage,
+        courier_driver=courier_driver,
+        courier_pickup_eta_at=courier_pickup_eta_at,
     )
 
 
@@ -1366,7 +1380,21 @@ def _build_promise(
 
     if order.status == "ready":
         if is_delivery:
-            return promise(state="ready_delivery", tone="success", requires_active_notification=False)
+            # Entre a chamada do entregador e a coleta, a frase acompanha a
+            # corrida (L2 da revisão das Entregas): o ``courier_changed`` do SSE
+            # faz a página reler, e o estado vem daqui. O link de rastreio só
+            # depois da coleta (decisão 7 = B), no ``dispatched`` abaixo.
+            from shopman.shop.services.courier import customer_wait, get_block
+
+            wait = customer_wait(get_block(order))
+            return promise(
+                state="ready_delivery",
+                tone="success",
+                requires_active_notification=False,
+                courier_stage=wait["stage"],
+                courier_driver=wait["driver"],
+                courier_pickup_eta_at=wait["pickup_eta_at"] or None,
+            )
         # Sem ação no painel: "Retirar pedido" era rótulo decorativo com cara de
         # botão. O que resolve de verdade ("Como chegar") vive na aba de retirada.
         return promise(
@@ -1410,10 +1438,14 @@ def _build_promise(
                         idempotency="none",
                     ),
                 )
+        from shopman.shop.services.courier import driver_first_name, get_block
+
+        driver = get_block(order).get("driver") if is_delivery else None
         return promise(
             state="dispatched",
             tone="info",
             eta_at=eta_at,
+            courier_driver=driver_first_name(driver.get("name") or "") if isinstance(driver, dict) else "",
             requires_active_notification=True,
             notification_topic="order_dispatched",
             actions=actions,

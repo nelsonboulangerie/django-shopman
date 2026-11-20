@@ -650,11 +650,58 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STEP_READY_GENERIC": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pronto")},
     },
+    # Pronto para entrega, um fato por momento da corrida até a coleta (L2 da
+    # revisão das Entregas, decisão 7 = B do dono, 16/11/2026). Sem "corrida",
+    # "aceite" nem o nome da empresa de entrega; sem prometer aviso. ``{driver}``
+    # é o primeiro nome do entregador ("o entregador" quando não há nome).
     "TRACKING_DELIVERY_WAITING_COURIER": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Pronto, esperando o entregador",
-                message="Assim que ele chegar, seu pedido sai para entrega.",
+                title="Seu pedido está pronto",
+                message="Logo sai para entrega.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_CALLED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Seu pedido está pronto",
+                message="Estamos chamando o entregador.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_LATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Seu pedido está pronto",
+                message="Está demorando mais que o normal. Seguimos chamando o entregador.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_REPLACED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="{driver} não pôde vir",
+                message="Estamos chamando outro entregador.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_COMING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="{driver} vem buscar seu pedido",
+                message="Chega à loja por volta de {eta}.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_COMING_NO_ETA": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido está pronto.")},
+    },
+    "TRACKING_DELIVERY_COURIER_AT_STORE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="{driver} chegou à loja",
+                message="Logo sai com seu pedido.",
             ),
         },
     },
@@ -1226,6 +1273,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA": {
         WILDCARD: {WILDCARD: CopyEntry(message="Chega por volta de {eta}. Confirme aqui quando receber.")},
+    },
+    # Com o nome de quem leva (decisão 7 = B): a frase aprovada pelo dono.
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_ETA": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{driver} está a caminho. Deve chegar por volta de {eta}.")},
+    },
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{driver} está a caminho.")},
     },
     "TRACKING_ACTION_CONFIRM_RECEIVED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebi meu pedido")},
