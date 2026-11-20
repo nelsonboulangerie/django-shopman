@@ -589,4 +589,6 @@ def test_cotacao_da_corrida_conjunta_diz_valor_ordem_e_retorno(client, operator)
     body = client.get(url, {"refs": ["RIDE-A", "RIDE-B"]}).json()["estimate"]
     assert body["display"] == "R$ 16,50 · 24 min · 5,7 km · ida e volta"
     assert body["route"] == "A → B"
-    assert client.get(url, {"refs": ["RIDE-A"]}).status_code == 400
+    # Um pedido só também cota (F4b, P1-10): a página Entregas mostra o preço de toda corrida.
+    assert client.get(url, {"refs": ["RIDE-A"]}).json()["estimate"]["stops"] == ["RIDE-A"]
+    assert client.get(url).status_code == 400

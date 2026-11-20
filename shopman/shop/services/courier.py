@@ -486,7 +486,8 @@ def store_estimate(order, estimate, *, expected_revision, require_quotable=False
     if require_quotable and not can_quote(order):
         raise OrderStateConflict("Confira o estado do pedido e da corrida antes de cotar.")
     block = dict(get_block(order))
-    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km", "with_return") if key in estimate}
+    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km", "with_return", "stops")
+                         if key in estimate}
     _save_block(order, block, emit={"kind": "estimate"})
 
 

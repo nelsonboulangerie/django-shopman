@@ -4912,10 +4912,14 @@ class OrderCourierRideView(OperationalObservationMixin, APIView):
 class OrderCourierRideQuoteView(APIView):
     """Quanto custa a corrida com estas paradas, antes de chamar.
 
-    ``?refs=A&refs=B``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``. A mesma
+    ``?refs=A&refs=B``: os pedidos, de 1 a ``courier.MAX_RIDE_STOPS``. A mesma
     corrida que a chamada vai abrir (ordem do percurso, retorno), cotada na TaOn.
     ``estimate`` nulo com ``detail`` quando não dá para cotar (pedido sem
     endereço com coordenada, TaOn fora): a chamada continua possível.
+
+    Com 2 ou mais pedidos, ``separate_value_q`` (a soma das corridas sozinhas) e
+    ``saving_q`` (separadas menos juntas; negativo quando separadas sai mais
+    barato) vêm SÓ quando todas as sozinhas cotaram: comparação com buraco mente.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -4929,18 +4933,29 @@ class OrderCourierRideQuoteView(APIView):
         from shopman.shop.services.operator_orders import short_ref
 
         refs = list(dict.fromkeys(ref.strip()[:64] for ref in request.GET.getlist("refs") if ref.strip()))
-        if not 2 <= len(refs) <= courier.MAX_RIDE_STOPS:
-            return Response({"detail": f"Escolha de 2 a {courier.MAX_RIDE_STOPS} pedidos.", "field": "refs"},
+        if not 1 <= len(refs) <= courier.MAX_RIDE_STOPS:
+            return Response({"detail": f"Escolha de 1 a {courier.MAX_RIDE_STOPS} pedidos.", "field": "refs"},
                             status=400)
         by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
         if len(by_ref) != len(refs):
             return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
-        estimate = courier.estimate_for_ride([by_ref[ref] for ref in refs])
+        orders = [by_ref[ref] for ref in refs]
+        if len(orders) == 1:
+            solo = courier.estimate_for_order(orders[0])
+            estimate = {**solo, "stops": [orders[0].ref]} if solo else None
+        else:
+            estimate = courier.estimate_for_ride(orders)
         if estimate is None:
             return Response({"estimate": None,
                              "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
         order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
-        return Response({"estimate": {**estimate, "display": courier_estimate_display(estimate),
+        compare = {}
+        if len(orders) > 1:
+            solos = [courier.estimate_for_order(order) for order in orders]
+            if all(solo and solo.get("value_q") is not None for solo in solos):
+                separate_q = sum(int(solo["value_q"]) for solo in solos)
+                compare = {"separate_value_q": separate_q, "saving_q": separate_q - int(estimate["value_q"])}
+        return Response({"estimate": {**estimate, **compare, "display": courier_estimate_display(estimate),
                                       "route": order_line}})
 
 

@@ -15,15 +15,25 @@ import type {
 } from "~/generated/ordersContract";
 import type { MapLiveRide, MapPoint } from "~/components/CourierDeliveriesMap.vue";
 import { rideColor } from "~/presentation/ridePalette";
+import { PIN_TEXT } from "~/presentation/deliveriesMap";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
+  assignMachines,
   backCheck,
-  needsMachine,
+  callSummary,
+  changeValue,
+  failureStops,
+  machineShortfall,
   nextFreeNumber,
+  quoteLines,
   rideCalls,
+  rideFailureTitle,
   rideLetter,
+  ridesNeedingMachine,
+  routeOrder,
   toggleStop,
   type EditingRide,
+  type RideFailure,
 } from "~/presentation/deliveries";
 
 const route = useRoute();
@@ -121,28 +131,90 @@ const canAddRide = computed(
   () => waiting.value.length > 0 && nextFreeNumber(freeNumbers.value, editingNumbers.value) !== null && editing.value.every((ride) => ride.refs.length),
 );
 
-// ── chamar ──────────────────────────────────────────────────────────────────
+// ── cotação e ordem de cada corrida (P1-10, J03) ───────────────────────────
+const quotes = useEditingQuotes(editing);
+const stopsOf = (ride: EditingRide) =>
+  ride.refs.map((ref) => byRef.value.get(ref)).filter((stop): stop is DeliveryStopProjection => Boolean(stop));
+// A ordem que o entregador segue: a da cotação (o servidor já ordenou a rota),
+// senão o espelho do `courier._route` aqui na tela. Nunca a ordem dos toques.
+function routeOf(ride: EditingRide): DeliveryStopProjection[] {
+  const stops = stopsOf(ride);
+  const quoted = quotes.value[ride.number]?.quote?.stops;
+  if (quoted && quoted.length === stops.length && stops.every((stop) => quoted.includes(stop.ref)))
+    return quoted.map((ref) => stops.find((stop) => stop.ref === ref)!);
+  return routeOrder(origin.value, stops);
+}
+const linesOf = (ride: EditingRide) => {
+  const state = quotes.value[ride.number];
+  return quoteLines(state?.quote ?? null, ride.refs.length, state?.failure ?? "");
+};
+
+// ── maquininha de cada corrida (P1-12) ──────────────────────────────────────
 const machines = computed(() => data.value?.machines ?? []);
-const machineRef = ref("");
-const wantsMachine = computed(() => needsMachine(ready.value, waitingAll.value));
-watch(
-  machines,
-  (list) => {
-    if (list.length === 1) machineRef.value = String(list[0]!.ref);
-  },
-  { immediate: true },
-);
+const freeMachineRefs = computed(() => machines.value.map((m) => String(m.ref)));
 const machineItems = computed(() => machines.value.map((m) => ({ label: String(m.label), value: String(m.ref) })));
+const needing = computed(() => ridesNeedingMachine(ready.value, waitingAll.value));
+const machineChoice = ref<Record<number, string>>({});
+const assigned = computed(() => assignMachines(needing.value, freeMachineRefs.value, machineChoice.value));
+const shortfall = computed(() => machineShortfall(needing.value.length, freeMachineRefs.value.length));
+function chooseMachine(number: number, value: string) {
+  machineChoice.value = { ...assigned.value, [number]: value };
+}
+// "Juntar numa corrida só": as corridas de cartão viram uma, quando cabem.
+const canJoinCardRides = computed(() => {
+  const refs = needing.value.flatMap((number) => editing.value.find((ride) => ride.number === number)?.refs ?? []);
+  return needing.value.length > 1 && refs.length <= maxStops.value;
+});
+function joinCardRides() {
+  const [first, ...others] = needing.value;
+  const target = editing.value.find((ride) => ride.number === first);
+  if (!target) return;
+  for (const number of others) {
+    const ride = editing.value.find((item) => item.number === number);
+    if (ride) target.refs = [...target.refs, ...ride.refs];
+  }
+  editing.value = editing.value.filter((ride) => !others.includes(ride.number));
+  active.value = target.number;
+}
+
+// ── troco conferido ─────────────────────────────────────────────────────────
+// O que o operador digitou, por pedido; sem mexer, vale o sugerido.
+const change = ref<Record<string, string>>({});
+const changeOf = (stop: DeliveryStopProjection) => changeValue(stop, change.value);
+function setChange(ref: string, value: string | number) {
+  change.value = { ...change.value, [ref]: String(value ?? "") };
+}
+
+// ── chamar, com balanço por corrida ─────────────────────────────────────────
 const sending = ref(false);
+// A chamada que parou tudo (sem rede, servidor fora): as que faltavam ficam para chamar.
 const failure = ref("");
+// Um aviso por corrida que não abriu, preso ao cartão dela (J08, J14).
+const failures = ref<Record<number, RideFailure>>({});
+watch(
+  editing,
+  (list) => {
+    // A corrida mudou de pedidos (ou saiu): o aviso de antes já não é dela.
+    const next: Record<number, RideFailure> = {};
+    for (const ride of list) {
+      const old = failures.value[ride.number];
+      if (old && old.refs.join("|") === ride.refs.join("|")) next[ride.number] = old;
+    }
+    failures.value = next;
+  },
+  { deep: true },
+);
+function dismissFailure(number: number) {
+  const { [number]: _gone, ...rest } = failures.value;
+  failures.value = rest;
+}
 const callLabel = computed(() =>
   ready.value.length === 1 ? `Chamar a corrida ${rideLetter(ready.value[0]!.number)}` : `Chamar ${ready.value.length} corridas`,
 );
-const canCall = computed(
-  () => ready.value.length > 0 && !sending.value && (!wantsMachine.value || Boolean(machineRef.value)),
-);
-const callContext = computed(
-  () => `${editingCount.value} ${editingCount.value === 1 ? "pedido" : "pedidos"} em ${ready.value.length} ${ready.value.length === 1 ? "corrida" : "corridas"}`,
+const machineMissing = computed(() => needing.value.some((number) => !assigned.value[number]));
+const canCall = computed(() => ready.value.length > 0 && !sending.value && !machineMissing.value);
+const summary = computed(() =>
+  callSummary(editingCount.value, ready.value.length, ready.value.map((ride) => quotes.value[ride.number]?.quote ?? null)),
 );
 const callAction = computed<OperatorActionBarAction>(() => ({
   label: callLabel.value,
@@ -150,19 +222,21 @@ const callAction = computed<OperatorActionBarAction>(() => ({
   icon: "i-lucide-bike",
   loading: sending.value,
   disabled: !canCall.value,
-  reason: wantsMachine.value && !machineRef.value ? "Escolha a maquininha que vai." : "",
+  reason: machineMissing.value ? shortfall.value || "Escolha a maquininha de cada corrida." : "",
   onSelect: () => void call(),
 }));
-async function call() {
+async function call(only?: number[]) {
   sending.value = true;
   failure.value = "";
-  const calls = rideCalls(ready.value, waitingAll.value, machineRef.value);
+  const targets = only ? ready.value.filter((ride) => only.includes(ride.number)) : ready.value;
+  const calls = rideCalls(targets, waitingAll.value, assigned.value, change.value);
   const called: string[] = [];
+  let opened = 0;
   // A corrida que já existia com os mesmos pedidos (chamada em outro dispositivo):
   // o servidor diz, e a frase é a dele.
   let already = "";
-  try {
-    for (const item of calls) {
+  for (const item of calls) {
+    try {
       if (item.kind === "group") {
         // Pelo protocolo de intenção, como a chamada de um pedido só: quem a tela
         // leu, a revisão de cada pedido e uma chave por corrida, guardada até a
@@ -183,21 +257,54 @@ async function call() {
         });
       }
       called.push(...item.refs);
+      opened += 1;
+    } catch (err) {
+      const codes = item.refs.map((ref) => byRef.value.get(ref)?.code ?? ref);
+      const detail = httpErrorMessage(err, "A chamada não chegou. Confira a internet deste dispositivo.");
+      failures.value = {
+        ...failures.value,
+        [item.number]: { number: item.number, refs: item.refs, title: rideFailureTitle(item.number, codes), detail },
+      };
+      // Recusa do servidor é desta corrida: as outras seguem. Sem rede (ou servidor
+      // fora), a próxima falharia igual: para, e as que faltavam ficam na edição.
+      if (failureStops(httpError(err).status)) {
+        const left = calls.length - opened - 1;
+        failure.value = left > 0 ? `Parou na corrida ${rideLetter(item.number)}. ${left === 1 ? "A outra ficou" : `As outras ${left} ficaram`} para chamar.` : "";
+        break;
+      }
     }
-    useSonner.success(
-      calls.length === 1
-        ? already || "Corrida chamada. A TaOn avisa quando alguém aceitar."
-        : `${calls.length} corridas chamadas.`,
-    );
-  } catch (err) {
-    failure.value = httpErrorMessage(err, "Não foi possível chamar. Confira as corridas e tente de novo.");
-  } finally {
-    const done = new Set(called);
-    editing.value = editing.value.filter((ride) => !ride.refs.some((ref) => done.has(ref)));
-    active.value = editing.value[0]?.number ?? 0;
-    sending.value = false;
-    await refresh();
   }
+  if (opened)
+    useSonner.success(
+      opened === 1 && calls.length === 1
+        ? already || "Corrida chamada. A TaOn avisa quando alguém aceitar."
+        : `${opened} ${opened === 1 ? "corrida chamada" : "corridas chamadas"}.`,
+    );
+  const done = new Set(called);
+  editing.value = editing.value.filter((ride) => !ride.refs.some((ref) => done.has(ref)));
+  if (!editing.value.some((ride) => ride.number === active.value)) active.value = editing.value[0]?.number ?? 0;
+  sending.value = false;
+  await refresh();
+}
+// "Chamar separadas": a corrida que não abriu vira uma corrida por pedido, com o
+// mesmo troco e as maquininhas redistribuídas, e só elas são chamadas.
+function callSeparately(number: number) {
+  const ride = editing.value.find((item) => item.number === number);
+  if (!ride || ride.refs.length < 2) return;
+  const taken = editing.value.filter((item) => item !== ride).map((item) => item.number);
+  const numbers: number[] = [];
+  for (const _ of ride.refs) {
+    const next = nextFreeNumber(freeNumbers.value, [...taken, ...numbers]) ?? (numbers.length ? null : number);
+    if (next === null) {
+      useSonner.info("Não há letras livres para separar agora. Chame de novo juntas.");
+      return;
+    }
+    numbers.push(next);
+  }
+  const singles = ride.refs.map((ref, k) => ({ number: numbers[k]!, refs: [ref] }));
+  editing.value = [...editing.value.filter((item) => item !== ride), ...singles];
+  dismissFailure(number);
+  void nextTick(() => call(numbers));
 }
 
 // "Chamar de novo": a última chamada ficou sem resposta. O primeiro toque arma a
@@ -406,22 +513,78 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
                     <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-md px-1.5 op-micro font-bold" :style="{ background: rideColor(ride.number - 1).bg, color: rideColor(ride.number - 1).fg }">{{ rideLetter(ride.number) }}</span>
                     <span class="op-label font-semibold text-highlighted">Corrida {{ rideLetter(ride.number) }}</span>
                     <span class="op-micro tabular-nums text-muted">{{ ride.refs.length }} de {{ maxStops }}</span>
-                    <span v-if="ride.number !== active && ride.refs.length" class="ml-1 min-w-0 flex-1 truncate op-micro text-muted">{{ ride.refs.map((ref) => byRef.get(ref)?.code ?? ref).join(" → ") }}</span>
+                    <span v-if="ride.number !== active && ride.refs.length" class="ml-1 min-w-0 flex-1 truncate op-micro text-muted">{{ routeOf(ride).map((stop) => stop.code).join(" → ") }}</span>
                   </NuxtButton>
-                  <NuxtButton icon="i-lucide-trash-2" color="neutral" variant="ghost" square :aria-label="`Desfazer a corrida ${rideLetter(ride.number)}`" @click="drop(ride.number)" />
+                  <NuxtButton icon="i-lucide-trash-2" color="neutral" variant="ghost" square class="size-11 justify-center" :aria-label="`Desfazer a corrida ${rideLetter(ride.number)}`" @click="drop(ride.number)" />
                 </div>
-                <ol v-if="ride.number === active" class="flex flex-col gap-1 px-3 pb-3">
+                <!-- A corrida que não abriu: o aviso é DELA, com o gesto para sair do lugar. -->
+                <NuxtAlert
+                  v-if="failures[ride.number]"
+                  class="mx-3 mb-2"
+                  color="error"
+                  variant="subtle"
+                  icon="i-lucide-circle-alert"
+                  :title="failures[ride.number]!.title"
+                  :description="failures[ride.number]!.detail"
+                  close
+                  :actions="alertActions('error', [
+                    { label: 'Chamar de novo', icon: 'i-lucide-rotate-cw', disabled: sending, onClick: () => call([ride.number]) },
+                    ride.refs.length > 1 && { label: 'Chamar separadas', disabled: sending, onClick: () => callSeparately(ride.number) },
+                  ])"
+                  data-ride-failure
+                  @update:open="(value: boolean) => { if (!value) dismissFailure(ride.number); }"
+                />
+                <ol v-if="ride.number === active" class="flex flex-col gap-1 px-3 pb-2">
                   <li v-if="!ride.refs.length" class="rounded-lg border border-dashed border-default px-3 py-3 text-center op-body text-muted">Toque nos pedidos no mapa ou na lista.</li>
-                  <li v-for="(ref, k) in ride.refs" :key="ref" class="flex items-center gap-2.5 rounded-lg bg-elevated/60 px-2 py-1.5">
-                    <span class="grid size-6 shrink-0 place-items-center rounded-full border-[3px] border-dotted bg-white op-micro font-bold text-highlighted" :style="{ borderColor: rideColor(ride.number - 1).bg }">{{ k + 1 }}</span>
+                  <li v-for="(stop, k) in routeOf(ride)" :key="stop.ref" class="flex items-start gap-2.5 rounded-lg bg-elevated/60 px-2 py-1.5">
+                    <span class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border-[3px] border-dotted bg-white op-micro font-bold" :style="{ borderColor: rideColor(ride.number - 1).bg, color: PIN_TEXT }">{{ k + 1 }}</span>
                     <span class="min-w-0 flex-1">
-                      <span class="block truncate op-body font-medium text-highlighted">{{ byRef.get(ref)?.code }} · {{ byRef.get(ref)?.customer }}</span>
-                      <span class="block truncate op-micro text-muted">{{ [byRef.get(ref)?.place, byRef.get(ref)?.change_label].filter(Boolean).join(" · ") }}</span>
+                      <span class="block op-body font-medium text-highlighted">{{ stop.code }} · {{ stop.customer }}</span>
+                      <span class="block op-micro text-muted">{{ [stop.place, stop.stage !== "Pronto" ? stop.stage : ""].filter(Boolean).join(" · ") }}</span>
+                      <!-- Troco: o operador confere e corrige antes de chamar; o R$ fica dentro do campo. -->
+                      <label v-if="stop.change_out_suggested_q > 0" class="mt-1 flex items-center gap-2" data-ride-change>
+                        <span class="op-micro text-toned">Troco</span>
+                        <NuxtInput
+                          :model-value="changeOf(stop)"
+                          inputmode="decimal"
+                          size="sm"
+                          class="w-28"
+                          :aria-label="`Troco para ${stop.code}`"
+                          @update:model-value="(value: string | number) => setChange(stop.ref, value)"
+                        >
+                          <template #leading><span class="op-micro text-muted">R$</span></template>
+                        </NuxtInput>
+                      </label>
                     </span>
-                    <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square :aria-label="`Tirar ${byRef.get(ref)?.code}`" @click="toggle(ref)" />
+                    <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square class="size-11 justify-center" :aria-label="`Tirar ${stop.code}`" @click="toggle(stop.ref)" />
                   </li>
-                  <li v-if="ride.refs.length > 1" class="px-1 pt-1 op-micro text-muted">A TaOn leva na ordem do percurso, a partir da loja.</li>
+                  <li v-if="ride.refs.length > 1" class="px-1 pt-1 op-micro text-muted">O entregador sai da loja e segue esta ordem.</li>
                 </ol>
+                <!-- Cotação (duas linhas, ✔ na mais barata) e a maquininha DESTA corrida. -->
+                <div v-if="ride.refs.length" class="flex flex-col gap-1.5 px-3 pb-3" data-ride-quote>
+                  <p v-if="quotes[ride.number]?.pending" class="op-micro text-muted">Cotando na TaOn…</p>
+                  <p
+                    v-for="line in linesOf(ride)"
+                    :key="line.text"
+                    class="op-body tabular-nums"
+                    :class="line.strong ? 'font-medium text-highlighted' : 'text-muted'"
+                  >
+                    {{ line.text }}
+                  </p>
+                  <div v-if="needing.includes(ride.number)" class="flex flex-wrap items-center gap-2" data-ride-machine>
+                    <span class="op-body text-toned">Maquininha:</span>
+                    <NuxtSelect
+                      v-if="machineItems.length"
+                      :model-value="assigned[ride.number] || undefined"
+                      :items="machineItems"
+                      placeholder="Escolha"
+                      class="min-w-40"
+                      :aria-label="`Maquininha da corrida ${rideLetter(ride.number)}`"
+                      @update:model-value="(value: string) => chooseMachine(ride.number, value)"
+                    />
+                    <span v-if="!assigned[ride.number]" class="op-body text-warning">Nenhuma livre</span>
+                  </div>
+                </div>
               </section>
             </div>
           </section>
@@ -450,23 +613,22 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
 
         <div v-if="ready.length" class="flex flex-col gap-2 border-t border-default bg-default p-4">
           <p v-if="failure" class="op-body text-error" aria-live="assertive">{{ failure }}</p>
-          <div v-if="wantsMachine && machines.length > 1" class="flex items-center gap-2">
-            <p class="op-body text-toned">Maquininha que vai:</p>
-            <NuxtSelect v-model="machineRef" :items="machineItems" placeholder="Escolha" class="min-w-40" />
+          <div v-if="shortfall" class="flex flex-wrap items-center gap-2" data-machine-shortfall>
+            <p class="min-w-0 flex-1 op-body text-warning">{{ shortfall }}</p>
+            <NuxtButton v-if="canJoinCardRides" color="neutral" variant="outline" icon="i-lucide-merge" label="Juntar numa corrida só" @click="joinCardRides" />
           </div>
-          <p v-else-if="wantsMachine && !machines.length" class="op-body text-warning">Nenhuma maquininha livre para a corrida com cartão.</p>
           <div class="flex items-center gap-3">
             <p class="min-w-0 flex-1 op-body text-muted">
-              {{ editingCount }} {{ editingCount === 1 ? "pedido" : "pedidos" }} em {{ ready.length }} {{ ready.length === 1 ? "corrida" : "corridas" }}<template v-if="waiting.length"> · {{ waiting.length }} ficam</template>
+              {{ summary }}<template v-if="waiting.length"> · {{ waiting.length }} {{ waiting.length === 1 ? "fica" : "ficam" }}</template>
             </p>
-            <NuxtButton class="hidden lg:inline-flex" icon="i-lucide-bike" :label="callLabel" :loading="sending" :disabled="!canCall" @click="call" />
+            <NuxtButton class="hidden lg:inline-flex" icon="i-lucide-bike" :label="callLabel" :loading="sending" :disabled="!canCall" @click="call()" />
           </div>
         </div>
       </div>
     </div>
 
     <!-- No celular, o "Chamar" é a ação do momento na base (kit). -->
-    <OperatorActionBar v-if="ready.length" :action="callAction" :context-label="callContext" label="Chamar as corridas" />
+    <OperatorActionBar v-if="ready.length" :action="callAction" :context-label="summary" label="Chamar as corridas" />
 
     <NuxtSlideover
       :open="Boolean(openRide && data)"

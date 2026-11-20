@@ -30,6 +30,26 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(page.getByText(/[Cc]orrida \d/)).toHaveCount(0);
   });
 
+  test("a corrida em edição cota em duas linhas, segue a ordem da rota e deixa conferir o troco", async ({ page }) => {
+    await page.goto("/delivery");
+    // Toca primeiro o mais longe: a ordem mostrada é a da rota, nunca a dos toques.
+    await page.getByRole("button", { name: /C03 · Caio/ }).click();
+    await page.getByRole("button", { name: /A47 · Ana/ }).click();
+    const quote = page.locator("[data-ride-quote]");
+    await expect(quote.getByText("Juntas: R$ 16,50 · 24 min · 5,7 km ✔", { exact: true })).toBeVisible();
+    await expect(quote.getByText("Separadas sairiam R$ 25,00", { exact: true })).toBeVisible();
+    await expect(page.getByText("O entregador sai da loja e segue esta ordem.", { exact: true })).toBeVisible();
+    const order = await page.locator("[data-ride-change]").evaluateAll(() =>
+      [...document.querySelectorAll("ol li span.block.op-body")].map((node) => node.textContent?.trim() ?? ""),
+    );
+    expect(order.slice(0, 2)).toEqual(["A47 · Ana", "C03 · Caio"]);
+    const change = page.getByRole("textbox", { name: "Troco para C03", exact: true });
+    await expect(change).toHaveValue("20,00");
+    await change.fill("30,00");
+    await expect(change).toHaveValue("30,00");
+    await expect(page.getByText("2 pedidos em 1 corrida · R$ 16,50", { exact: false }).first()).toBeVisible();
+  });
+
   test("o detalhe abre pela chave na URL e se apresenta pela letra", async ({ page }) => {
     await page.goto("/delivery?ride=776753358");
     const detail = page.locator("[data-ride-detail]");

@@ -74,6 +74,19 @@ class CourierDispatchHandler:
             return
         if len(orders) == 1:
             courier.estimate_for_order(orders[0], store=True)
+        else:
+            # A cotação da ROTA inteira, no principal (o primeiro da corrida): é ela que a
+            # tela mostra como custo, nunca a cotação sozinha que o pedido tinha (J13).
+            from shopman.shop.services.operator_orders import OrderStateConflict
+
+            ride_estimate = courier.estimate_for_ride(orders)
+            if ride_estimate is not None:
+                try:
+                    courier.store_estimate(orders[0], ride_estimate,
+                                           expected_revision=courier.dispatch_revision(orders[0]))
+                except OrderStateConflict:
+                    # A cotação é informativa: o pedido mudou no meio, a corrida sai igual.
+                    logger.warning("courier.ride_estimate_not_stored order=%s", orders[0].ref)
         try:
             body = courier.build_machine_payload(*orders)
         except ValueError as exc:

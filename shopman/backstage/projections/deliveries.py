@@ -109,6 +109,9 @@ class DeliveryRideProjection:
     delivery_eta_at: str = ""
     tracking_url: str = ""
     cost_display: str = ""
+    # "Valor pago à TaOn" (o valor final dela) ou "Cotação da corrida" (a cotação da
+    # rota inteira, gravada na chamada). Vazio quando não há número honesto (J13).
+    cost_label: str = ""
     #: Soma dos volumes declarados das paradas e quem ainda não declarou.
     bags: int = 0
     undeclared: tuple[str, ...] = ()
@@ -179,6 +182,27 @@ def _action(ref: str, label: str, revision: str, user, *, confirm: bool = True,
         method="POST", idempotency="required", confirmation=confirmation or {"required": confirm},
         payload_schema={"base_revision": revision, "expected_actor_id": getattr(user, "pk", None)},
     )
+
+
+def _ride_cost(block: dict, stop_refs: list[str]) -> tuple[int, str]:
+    """O custo da corrida que a tela pode afirmar, e o nome dele (J13).
+
+    O valor final da TaOn vale sempre ("Valor pago à TaOn"). Sem ele, vale a cotação,
+    mas só a da MESMA rota: numa corrida com várias paradas, a cotação sozinha do
+    principal (a de antes de juntar) mentia o custo. A cotação da rota grava as
+    paradas (``estimate.stops``) e só vale quando elas são as da corrida.
+    """
+    final = block.get("final_value_q")
+    if isinstance(final, int) and final > 0:
+        return final, "Valor pago à TaOn"
+    estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
+    value = estimate.get("value_q")
+    if not isinstance(value, int) or value <= 0:
+        return 0, ""
+    quoted = estimate.get("stops")
+    if len(stop_refs) > 1 and sorted(quoted or []) != sorted(stop_refs):
+        return 0, ""
+    return value, "Cotação da corrida"
 
 
 def _stop(order: Order, *, with_asks: bool = False, user=None) -> DeliveryStopProjection:
@@ -307,8 +331,13 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
                 position = DeliveryPointProjection(latitude=float(cached["lat"]), longitude=float(cached["lng"]))
             except (TypeError, ValueError):
                 position = None
-    estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
-    cost_q = block.get("final_value_q") if block.get("final_value_q") is not None else estimate.get("value_q")
+    # A cotação da rota mora no pedido que abriu a corrida, que nem sempre é o
+    # primeiro da fila: vale a primeira parada que tem um custo honesto.
+    stop_refs = [stop.ref for stop in stops]
+    cost_q, cost_label = next(
+        (found for found in (_ride_cost(courier.get_block(by_ref[ref]), stop_refs) for ref in sequence) if found[0]),
+        (0, ""),
+    )
     pending = [stop for stop in stops if not stop.done]
     trip = _trip_fields(lead) if back else {}
     cancel = courier_cancel_state(lead)
@@ -332,7 +361,8 @@ def _ride(orders: list[Order], *, user=None) -> DeliveryRideProjection:
         # O link é de UMA parada. Com várias, "o link da corrida" seria o de um
         # cliente só, pronto para ser copiado para outro: não aparece.
         tracking_url=courier.proven_tracking(block)["url"] if len(stops) == 1 else "",
-        cost_display=_money(int(cost_q)) if isinstance(cost_q, int) and cost_q > 0 else "",
+        cost_display=_money(cost_q) if cost_q else "",
+        cost_label=cost_label if cost_q else "",
         bags=sum(stop.volumes for stop in pending),
         undeclared=tuple(stop.code for stop in pending if not stop.volumes),
         lead_ref=lead.ref,
