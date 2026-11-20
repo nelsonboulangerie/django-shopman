@@ -5,7 +5,8 @@
 import { describe, expect, it } from "vitest";
 
 import { balanceCharge, handOverBody, handOverMethods } from "../app/presentation/balanceCharge";
-import { paymentKeyIntent } from "../app/presentation/paymentKeys";
+import { BALANCE_PAYMENT_SHORTCUTS } from "../app/presentation/paymentKeys";
+import { shortcutMatches } from "../../operator-kit/app/utils/operatorShortcuts";
 import type { POSPaymentTenderDraft } from "../app/types/pos";
 
 const nbsp = (text: string) => text.replace(/\s/g, " ");
@@ -100,24 +101,34 @@ describe("o corpo da rota", () => {
   });
 });
 
-describe("o teclado da tela de Pagamento", () => {
-  const key = (k: string, mods: Partial<KeyboardEvent> = {}) => ({ key: k, metaKey: false, ctrlKey: false, altKey: false, ...mods });
+describe("o teclado do saldo (mapa canônico do kit)", () => {
+  // A mesma régua do `useOperatorShortcutMap`: a combinação casa e o contexto da tela
+  // liga o comando (o resto, campo em foco e diálogo aberto, é do kit e testado lá).
+  const owner = (code: string, contexts: string[] = []) => {
+    const event = { code, key: code, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false } as KeyboardEvent;
+    return BALANCE_PAYMENT_SHORTCUTS.find((command) =>
+      command.combinations.some((combination) => shortcutMatches(event, combination, "windows"))
+      && (command.enabledContexts.length === 0 || command.enabledContexts.some((context) => contexts.includes(context))),
+    )?.id ?? null;
+  };
 
   it("com uma linha selecionada, dígito, vírgula, Backspace e = editam o valor", () => {
-    expect(paymentKeyIntent(key("7"), true)).toEqual({ kind: "digit", digit: "7" });
-    expect(paymentKeyIntent(key(","), true)).toEqual({ kind: "comma" });
-    expect(paymentKeyIntent(key("."), true)).toEqual({ kind: "comma" });
-    expect(paymentKeyIntent(key("Backspace"), true)).toEqual({ kind: "backspace" });
-    expect(paymentKeyIntent(key("="), true)).toEqual({ kind: "exact" });
+    expect(owner("Digit7", ["tender-selected"])).toBe("balance.digit.7");
+    expect(owner("Numpad7", ["tender-selected"])).toBe("balance.digit.7");
+    expect(owner("Comma", ["tender-selected"])).toBe("balance.comma");
+    expect(owner("Backspace", ["tender-selected"])).toBe("balance.backspace");
+    expect(owner("Equal", ["tender-selected"])).toBe("balance.exact");
   });
 
   it("sem linha selecionada o valor não tem o que editar; a letra ainda lança a forma", () => {
-    expect(paymentKeyIntent(key("7"), false)).toBeNull();
-    expect(paymentKeyIntent(key("d"), false)).toEqual({ kind: "letter", letter: "D" });
+    expect(owner("Digit7")).toBeNull();
+    expect(owner("KeyD")).toBe("balance.method.D");
   });
 
-  it("com modificador a tecla não é desta tela (Ctrl K, Cmd R)", () => {
-    expect(paymentKeyIntent(key("k", { ctrlKey: true }), true)).toBeNull();
-    expect(paymentKeyIntent(key("7", { metaKey: true }), true)).toBeNull();
+  it("Enter só recebe com o saldo coberto; F10 divide; Esc volta", () => {
+    expect(owner("Enter")).toBeNull();
+    expect(owner("Enter", ["covered"])).toBe("balance.receive");
+    expect(owner("F10")).toBe("balance.split");
+    expect(owner("Escape")).toBe("balance.back");
   });
 });

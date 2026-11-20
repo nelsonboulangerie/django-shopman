@@ -10,7 +10,7 @@
 // da venda (`usePosTenders`, o mesmo estado por trás da mesma tela).
 //
 // O que é DESTA tela, e só dela:
-// - o teclado físico (a mesma régua da venda, `paymentKeyIntent`), Enter recebe e
+// - o teclado físico (as teclas da venda, pelo mapa canônico do kit), Enter recebe e
 //   Esc volta ao detalhe;
 // - a Tela do cliente acompanha o recebimento (o valor e para quem);
 // - o PDV não trava por ociosidade com o cliente pagando (P2-14);
@@ -21,11 +21,11 @@ import { toast } from "vue-sonner";
 import type { HandOverBody } from "~/presentation/balanceCharge";
 import { balanceCharge, handOverBody, handOverMethods } from "~/presentation/balanceCharge";
 import { handOverCustomerDisplaySnapshot } from "~/presentation/customerDisplay";
-import { paymentKeyIntent } from "~/presentation/paymentKeys";
+import { BALANCE_PAYMENT_SHORTCUTS, type BalancePaymentContext } from "~/presentation/paymentKeys";
 import { customerLine } from "~/presentation/preorders";
 import { useCustomerDisplayPublisher } from "~/composables/useCustomerDisplay";
 import { usePosTenders } from "~/composables/usePosTenders";
-import { globalKeysBlocked } from "~/utils/keyboardGuard";
+import { useOperatorShortcutMap } from "../../../operator-kit/app/composables/useOperatorShortcutMap";
 import type { POSPaymentTenderDraft, POSProjection } from "~/types/pos";
 import type { PreorderDetail } from "~/types/preorders";
 
@@ -107,7 +107,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => { paymentHold.value = false; });
 
-// ── O teclado físico: a mesma régua da venda ──
+// ── O teclado físico: as teclas da tela de Pagamento, pelo mapa canônico do kit ──
 const workspace = ref<{
   validate: () => void;
   pressMethodKey: (letter: string) => boolean;
@@ -115,39 +115,31 @@ const workspace = ref<{
   openSplit: () => void;
 } | null>(null);
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.defaultPrevented || globalKeysBlocked()) return;
-  const target = event.target as HTMLElement | null;
-  const isEditing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-  if (isEditing) return;
-  const intent = paymentKeyIntent(event, selectedTenderIndex.value >= 0);
-  if (intent?.kind === "digit") { event.preventDefault(); tenders.tenderDigit(intent.digit); return; }
-  if (intent?.kind === "comma") { event.preventDefault(); tenders.tenderComma(); return; }
-  if (intent?.kind === "backspace") { event.preventDefault(); tenders.tenderBackspace(); return; }
-  if (intent?.kind === "exact") { event.preventDefault(); workspace.value?.pressExact(); return; }
-  if (intent?.kind === "letter") {
-    if (workspace.value?.pressMethodKey(intent.letter)) event.preventDefault();
-    return;
-  }
-  if (event.key === "Enter" && paymentCovered.value && !props.busy) {
-    // Pelo MESMO caminho do toque: a maquininha e o troco alto conferem antes.
-    event.preventDefault();
-    workspace.value?.validate();
-    return;
-  }
-  // F10 é o Dividir conta, a tecla que o próprio botão anuncia (como na venda).
-  if (event.key === "F10") {
-    event.preventDefault();
-    workspace.value?.openSplit();
-    return;
-  }
-  if (event.key === "Escape") {
-    event.preventDefault();
-    emit("back");
+const shortcutContexts = computed(() => {
+  const active = new Set<BalancePaymentContext>();
+  if (selectedTenderIndex.value >= 0) active.add("tender-selected");
+  // Enter recebe pelo MESMO caminho do toque (a maquininha e o troco alto conferem antes).
+  if (paymentCovered.value && !props.busy) active.add("covered");
+  return active;
+});
+const shortcutHandlers: Record<string, (event: KeyboardEvent) => void> = {
+  "balance.comma": () => tenders.tenderComma(),
+  "balance.backspace": () => tenders.tenderBackspace(),
+  "balance.exact": () => { workspace.value?.pressExact(); },
+  "balance.receive": () => workspace.value?.validate(),
+  "balance.split": () => workspace.value?.openSplit(),
+  "balance.back": () => emit("back"),
+};
+for (const command of BALANCE_PAYMENT_SHORTCUTS) {
+  if (command.id.startsWith("balance.digit.")) {
+    const digit = command.id.slice("balance.digit.".length);
+    shortcutHandlers[command.id] = () => tenders.tenderDigit(digit);
+  } else if (command.id.startsWith("balance.method.")) {
+    const letter = command.id.slice("balance.method.".length);
+    shortcutHandlers[command.id] = () => { workspace.value?.pressMethodKey(letter); };
   }
 }
-onMounted(() => window.addEventListener("keydown", onKeydown));
-onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
+useOperatorShortcutMap(BALANCE_PAYMENT_SHORTCUTS, shortcutHandlers, shortcutContexts);
 
 // O saldo mudou por fora (outro balcão recebeu, a encomenda foi editada): as
 // linhas lançadas para o valor antigo não valem mais, e a conta recomeça.
