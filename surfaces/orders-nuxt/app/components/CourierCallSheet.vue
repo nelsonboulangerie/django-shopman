@@ -104,8 +104,8 @@ const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops
                   <NuxtInput
                     :model-value="stop.change"
                     inputmode="decimal"
-                    class="w-28"
-                    :ui="{ base: 'min-h-11' }"
+                    size="xl"
+                    class="w-32"
                     :aria-label="`Troco para ${stop.code}`"
                     @update:model-value="(value: string | number) => emit('change', stop.ref, String(value ?? ''))"
                   >
