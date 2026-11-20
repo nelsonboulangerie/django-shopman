@@ -1,4 +1,4 @@
-WP-E5 · auditoria da prévia (gerada pela jornada J6, 20/11/2026)
+WP-E5 · auditoria da prévia (gerada pela jornada J6 no código final do PR, 20/11/2026)
 Régua: contraste >= 4,5:1, letra >= 12 px, dentro da tela, nada cortado, nada encoberto, transbordo horizontal 0, foco à vista.
 Resultado: 0 reprovações em 375 px e 1366 px.
 
@@ -13,7 +13,7 @@ Resultado: 0 reprovações em 375 px e 1366 px.
   - "DébitoD": contraste 12.76:1; letra 14 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
   - "A receber": contraste 6.09:1; letra 12 px; x 153..222; dentro da tela: sim; cortado: não; encoberto: não
   - "R$ 26,00": contraste 12.76:1; letra 36 px; x 116..259; dentro da tela: sim; cortado: não; encoberto: não
-  - "Encomenda PDV-261120-A71": contraste 6.09:1; letra 12 px; x 16..196; dentro da tela: sim; cortado: não; encoberto: não
+  - "Encomenda PDV-261120-Q85": contraste 6.09:1; letra 12 px; x 16..201; dentro da tela: sim; cortado: não; encoberto: não
   - "Ana Ferreira": contraste 13.67:1; letra 14 px; x 13..362; dentro da tela: sim; cortado: não; encoberto: não
   - "Total da encomenda": contraste 6.52:1; letra 14 px; x 25..155; dentro da tela: sim; cortado: não; encoberto: não
   - "R$ 26,00": contraste 13.67:1; letra 14 px; x 292..350; dentro da tela: sim; cortado: não; encoberto: não
@@ -35,7 +35,7 @@ Resultado: 0 reprovações em 375 px e 1366 px.
   - "Troco": contraste 4.62:1; letra 12 px; x 165..210; dentro da tela: sim; cortado: não; encoberto: não
   - "R$ 74,00": contraste 4.62:1; letra 36 px; x 116..259; dentro da tela: sim; cortado: não; encoberto: não
   - "A receber R$ 26,00": contraste 6.09:1; letra 14 px; x 126..249; dentro da tela: sim; cortado: não; encoberto: não
-  - "Receber e entregar Enter": contraste 4.95:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber e entregar Enter": contraste 4.95:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não; sob a dica de rolagem, que some ao chegar ao fim
 
 === 1366 px ===
 
@@ -48,7 +48,7 @@ Resultado: 0 reprovações em 375 px e 1366 px.
   - "DébitoD": contraste 12.76:1; letra 14 px; x 236..583; dentro da tela: sim; cortado: não; encoberto: não
   - "A receber": contraste 6.09:1; letra 12 px; x 778..846; dentro da tela: sim; cortado: não; encoberto: não
   - "R$ 26,00": contraste 12.76:1; letra 60 px; x 692..932; dentro da tela: sim; cortado: não; encoberto: não
-  - "Encomenda PDV-261120-C67": contraste 6.09:1; letra 12 px; x 1045..1229; dentro da tela: sim; cortado: não; encoberto: não
+  - "Encomenda PDV-261120-S87": contraste 6.09:1; letra 12 px; x 1045..1227; dentro da tela: sim; cortado: não; encoberto: não
   - "Ana Ferreira": contraste 13.67:1; letra 14 px; x 1042..1353; dentro da tela: sim; cortado: não; encoberto: não
   - "Total da encomenda": contraste 6.52:1; letra 14 px; x 1054..1184; dentro da tela: sim; cortado: não; encoberto: não
   - "R$ 26,00": contraste 13.67:1; letra 14 px; x 1283..1341; dentro da tela: sim; cortado: não; encoberto: não
