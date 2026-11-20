@@ -381,6 +381,10 @@ def build_request(text: str, *, memory_note: str = "", model: str = "") -> dict:
     return {
         "model": model or _model(),
         "max_tokens": 600,
+        # A leitura é classificação curta: sem raciocínio. A DeepSeek raciocina por padrão
+        # (api-docs.deepseek.com/guides/thinking_mode) e gastava o teto antes do JSON: 11
+        # quedas por max_tokens e p95 de 2,66 s no placar do WP-09 (#2909).
+        "thinking": {"type": "disabled"},
         "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": content}],
         "output_config": {"format": {"type": "json_schema", "schema": ACTS_SCHEMA}},

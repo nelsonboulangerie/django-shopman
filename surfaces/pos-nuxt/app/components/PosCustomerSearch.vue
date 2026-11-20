@@ -17,6 +17,7 @@
 import type { POSCustomerSearchResult } from "~/types/pos";
 import {
   cpfHint,
+  customerSearchPlaceholder,
   enterAction,
   enterActionCaveat,
   enterActionLabel,
@@ -178,6 +179,11 @@ function focus() {
 function seed(value: string) {
   query.value = value;
 }
+// O convite pelo espaço que o campo tem (#2885): no celular a frase longa saía
+// cortada ("Buscar por nome, telefone, CPF ou e…").
+const fieldRef = useTemplateRef<HTMLElement>("fieldRef");
+const { width: fieldWidth } = useElementSize(fieldRef);
+const placeholder = computed(() => customerSearchPlaceholder(fieldWidth.value));
 defineExpose({ reset, focus, seed });
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer);
@@ -186,13 +192,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="grid gap-3">
-    <div class="relative">
+    <div ref="fieldRef" class="relative">
       <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <UiInput
         ref="inputRef"
         v-model="query"
         class="h-8 pl-10 text-base"
-        placeholder="Buscar por nome, telefone, CPF ou e-mail"
+        :placeholder="placeholder"
         role="combobox"
         aria-expanded="true"
         aria-controls="pos-customer-search-listbox"

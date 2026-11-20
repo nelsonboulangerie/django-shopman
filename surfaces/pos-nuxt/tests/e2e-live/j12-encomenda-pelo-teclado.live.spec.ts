@@ -12,7 +12,9 @@
 //   3. no diálogo Cliente, escolhido o cadastro pelo teclado (telefone, seta, Enter), o
 //      foco está no "Concluir": zero Tab (antes do #2825, 11 Tabs, o formulário
 //      inteiro do cliente no caminho), e o diálogo não fecha sozinho;
-//   4. o Enter conclui, e o assistente segue para "Para quando?" com o foco no dia.
+//   4. o Enter conclui, e o assistente segue para "Para quando?" com o foco no dia;
+//   5. o diálogo Cliente cheio cabe na largura, nas duas: o corpo não rola para o lado e
+//      nada passa da borda direita (#2885; antes, a 375 px, 90 px de transbordo).
 //
 // Cada parada de foco é medida por script (o elemento ativo, o anel, a altura, os Tabs
 // até o alvo) e sai no log como `FOCO ...`, para o corpo do PR.
@@ -71,6 +73,23 @@ async function tabsUntil(page: Page, target: ReturnType<Page["locator"]>, max = 
   return -1;
 }
 
+/** O transbordo lateral do diálogo: o corpo (`data-slot=body`) rola para o lado, e quem
+ *  passa da borda direita do diálogo. */
+async function sideOverflow(dialog: ReturnType<Page["locator"]>) {
+  return dialog.evaluate((content) => {
+    const body = content.querySelector<HTMLElement>("[data-slot='body']");
+    const right = content.getBoundingClientRect().right;
+    const outside: string[] = [];
+    for (const el of body?.querySelectorAll<HTMLElement>("*") ?? []) {
+      const box = el.getBoundingClientRect();
+      if (box.width < 2 || box.height < 2 || box.right <= right + 0.5) continue;
+      const label = (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 50);
+      outside.push(`${el.tagName.toLowerCase()} "${label}" right=${Math.round(box.right)} > ${Math.round(right)}`);
+    }
+    return { scrollWidth: body?.scrollWidth ?? 0, clientWidth: body?.clientWidth ?? 0, outside };
+  });
+}
+
 test.describe.configure({ mode: "serial" });
 
 for (const device of ["phone", "counter"] as const) {
@@ -100,7 +119,7 @@ for (const device of ["phone", "counter"] as const) {
 
       // O Enter age no gesto em foco: o diálogo Cliente abre, com o foco na busca.
       await page.keyboard.press("Enter");
-      const search = page.getByPlaceholder("Buscar por nome, telefone, CPF ou e-mail").locator("visible=true").first();
+      const search = page.getByRole("combobox", { name: "Buscar cliente" }).locator("visible=true").first();
       await expect(search).toBeFocused({ timeout: 15_000 });
 
       // O cadastro pelo teclado: o telefone, a seta e o Enter (#2825).
@@ -124,6 +143,12 @@ for (const device of ["phone", "counter"] as const) {
       const toConclude = await tabsUntil(page, conclude);
       console.log(`FOCO ${width} Tabs até Concluir: ${toConclude}`);
       expect(toConclude).toBe(0);
+      // O diálogo cheio cabe na largura (#2885): no celular o corpo transbordava 90 px e
+      // a busca, o "Remover cliente", o selo de aniversário e os campos ficavam cortados.
+      const fit = await sideOverflow(dialog);
+      console.log(`TRANSBORDO ${width} diálogo Cliente: ${JSON.stringify(fit)}`);
+      expect(fit.scrollWidth, "o corpo do diálogo não rola para o lado").toBeLessThanOrEqual(fit.clientWidth);
+      expect(fit.outside, "nada passa da borda direita do diálogo").toEqual([]);
       await capture(page, testInfo, "cadastro-escolhido-concluir-em-foco");
 
       // O Enter conclui; o assistente segue para a data, com o foco no dia (#2778).

@@ -164,3 +164,16 @@ export function customerSearchErrorMessage(status: number): string {
     ? "Não consegui buscar: foram muitas buscas seguidas. Espere um minuto e tente de novo."
     : "Não consegui buscar agora. Tente de novo.";
 }
+
+/**
+ * O convite da busca de cliente, pelo espaço que o campo tem (#2885). No celular
+ * (375 px) o campo tem 311 px e a frase longa saía cortada ("Buscar por nome,
+ * telefone, CPF ou e…"): abaixo de 360 px de campo vale a curta, que cabe. A lupa
+ * diz que é busca, e a descrição do diálogo logo acima diz "Busque por…". Largura
+ * 0 é "ainda não medido", e fica a longa.
+ */
+export const CUSTOMER_SEARCH_PLACEHOLDER_SHORT_BELOW_PX = 360;
+export function customerSearchPlaceholder(width: number): string {
+  if (width > 0 && width < CUSTOMER_SEARCH_PLACEHOLDER_SHORT_BELOW_PX) return "Nome, telefone, CPF ou e-mail";
+  return "Buscar por nome, telefone, CPF ou e-mail";
+}

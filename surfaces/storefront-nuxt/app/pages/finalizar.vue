@@ -76,7 +76,8 @@ definePageMeta({ middleware: 'account' })
 
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
-const { setFromServer, clearCart, applyCoupon, removeCoupon } = useCartState()
+// `liveCart` é a sacola de toda a loja; `cart` (abaixo) é a que veio com o checkout.
+const { setFromServer, clearCart, applyCoupon, removeCoupon, cartIssue, raiseStockIssue, cart: liveCart } = useCartState()
 const session = useShopSession()
 const telemetry = useStorefrontTelemetry()
 const checkoutRoot = ref<HTMLElement | null>(null)
@@ -496,8 +497,34 @@ const pixProviderTest = computed(() => pixProviderTestConstraint(checkout.value?
 // que o servidor recusou; a sacola mudou, quem decide volta a ser a conta local.
 const pixLimitRefusal = ref<{ message: string, totalQ: number } | null>(null)
 // Faltou estoque no envio (`insufficient_supply`): o servidor diz qual item, e a tela
-// guarda isso para o aviso com saída (plano EXCELENCIA-STOREFRONT, P1-11).
-const stockRefusal = ref<{ sku: string, name: string, message: string } | null>(null)
+// guarda isso para o aviso com saída (plano EXCELENCIA-STOREFRONT, P1-11). Com a folha
+// de alternativas pronta (`stock_issue`, #2687), a saída abre na própria tela: o que
+// ainda dá para levar, o que serve no lugar, o aviso de volta. `lineId` e `qty` dizem
+// qual linha passou do teto e quanto ela pedia: quando a linha muda, o aviso some.
+interface StockRefusal {
+  sku: string
+  name: string
+  message: string
+  issue: Record<string, unknown> | null
+  lineId: string | null
+  qty: number | null
+}
+const stockRefusal = ref<StockRefusal | null>(null)
+function openStockAlternatives () {
+  if (stockRefusal.value?.issue) raiseStockIssue(stockRefusal.value.issue)
+}
+// A folha mexeu na sacola (levou o que dá, trocou, tirou): o checkout relê a sacola
+// dele, e o aviso sai quando a linha recusada já não pede o que pedia.
+watch(() => cart.value?.items, (items) => {
+  const refusal = stockRefusal.value
+  if (!refusal?.lineId || !items) return
+  const line = items.find(item => item.line_id === refusal.lineId)
+  if (!line || line.qty !== refusal.qty) stockRefusal.value = null
+})
+watch(() => liveCart.value.revision, (next, prev) => {
+  if (!stockRefusal.value?.lineId || next == null || next === prev) return
+  if (next !== cart.value?.revision) void refresh()
+})
 function revealStockRefusal () {
   // O alvo é a moldura (régua canônica + respiro), não o aviso: o aviso sozinho
   // não tem margem de rolagem e pararia debaixo do cabeçalho.
@@ -522,6 +549,9 @@ function onReviewClosed (event: Event) {
   reviewClosesIntoStockRefusal = false
   event.preventDefault()
   revealStockRefusal()
+  // A folha de alternativas sobe depois que a revisão fechou: duas folhas ao mesmo
+  // tempo disputariam o foco. Ao fechar, ela devolve o foco ao botão do aviso.
+  openStockAlternatives()
 }
 const pixLimitRefusalActive = computed(() =>
   !!pixLimitRefusal.value && state.payment_method === 'pix' &&
@@ -1565,18 +1595,30 @@ async function submitCheckout () {
     // item e sem para onde ir.
     if (data.error_code === 'insufficient_supply') {
       const context = (data.context || {}) as { sku?: unknown, name?: unknown }
+      const issue = data.stock_issue && typeof data.stock_issue === 'object'
+        ? data.stock_issue as Record<string, unknown>
+        : null
+      const lineId = typeof issue?.line_id === 'string' && issue.line_id ? issue.line_id : null
+      const refusedLine = lineId ? cart.value?.items.find(item => item.line_id === lineId) : null
       stockRefusal.value = {
         sku: String(context.sku || ''),
         name: String(context.name || ''),
-        message: serverError.value
+        message: serverError.value,
+        issue,
+        lineId,
+        qty: refusedLine?.qty ?? (typeof issue?.requested_qty === 'number' ? issue.requested_qty : null)
       }
       serverError.value = ''
-      // O foco é do aviso, não do botão que abriu a revisão (`onReviewClosed`).
-      reviewClosesIntoStockRefusal = true
+      // O foco é do aviso, não do botão que abriu a revisão (`onReviewClosed`), e a
+      // folha de alternativas sobe quando a revisão termina de fechar.
+      const reviewWasOpen = confirmOpen.value
+      reviewClosesIntoStockRefusal = reviewWasOpen
       confirmOpen.value = false
       await refresh()
       await nextTick()
-      revealStockRefusal()
+      // Com a folha já aberta, o foco é dela: levar a tela ao aviso agora o roubaria.
+      if (!cartIssue.value) revealStockRefusal()
+      if (!reviewWasOpen) openStockAlternatives()
       return
     }
     if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {
@@ -1694,10 +1736,18 @@ useSeoMeta({
                    em linhas no celular, em vez de cortar com reticências. -->
               <UiAlertTitle class="line-clamp-none leading-snug">{{ stockRefusal.message }}</UiAlertTitle>
               <UiAlertDescription>
-                <p>Abra a sacola para ver o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
-                <UiButton size="sm" icon="lucide:shopping-bag" class="mt-2" to="/sacola" data-focus-control>
-                  Abrir a sacola
-                </UiButton>
+                <template v-if="stockRefusal.issue">
+                  <p>Veja o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
+                  <UiButton size="sm" icon="lucide:repeat" class="mt-2" data-focus-control data-checkout-stock-alternatives @click="openStockAlternatives">
+                    Ver o que dá para levar
+                  </UiButton>
+                </template>
+                <template v-else>
+                  <p>Abra a sacola para ver o que dá para levar no lugar. O resto do pedido continua como você deixou.</p>
+                  <UiButton size="sm" icon="lucide:shopping-bag" class="mt-2" to="/sacola" data-focus-control>
+                    Abrir a sacola
+                  </UiButton>
+                </template>
               </UiAlertDescription>
             </UiAlert>
           </div>

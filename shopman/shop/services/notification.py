@@ -78,6 +78,11 @@ _ACTIVE_NOTIFICATION_TEMPLATES = frozenset(
         # depender de o cliente abrir a tela por conta própria.
         "waitlist_available",
         "waitlist_released",
+        # "Avisar o cliente" (WP-G07): o Caixa tocou para avisar. Sem canal, o
+        # recibo diz que falhou; nunca some como "não precisava".
+        "order_delayed",
+        "order_item_missing",
+        "order_reschedule_needed",
     }
 )
 
@@ -932,6 +937,9 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # caber no template aprovado do WhatsApp, que não aceita variável vazia
     # (revisão do dono, 25/09/2026; texto em `shopman/shop/notification_copy.py`).
     context["status_note"] = _status_note(order, template, reason, note=payload.get("status_note"))
+    # O nome da casa, para o aviso que se apresenta ("Aqui é da … 💛", WP-G07). A
+    # chave existe sempre; a leitura da loja só acontece no aviso que a usa.
+    context["shop_name"] = _shop_name() if _canonical_template(template) in _CUSTOMER_NOTICE_TEMPLATES else ""
     # A data da ENCOMENDA no aviso de confirmado ("confirmado para retirada amanhã,
     # a partir das 9h"). Auto-suprimível: pedido de hoje fica sem nada.
     context["commitment_suffix"] = _commitment_suffix(order)
@@ -1161,6 +1169,11 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
     if template == "order_rescheduled":
         return _commitment_phrase(order) or "a nova data que está no pedido"
+    if template in _CUSTOMER_NOTICE_TEMPLATES:
+        # "Avisar o cliente" (WP-G07): a frase chega pronta no payload, montada no
+        # gesto (``services/customer_notice``), porque é o Caixa quem escolhe a hora
+        # nova e o que falta. A padrão só cobre um reenvio sem ela.
+        return str(note or "").strip() or _CUSTOMER_NOTICE_TEMPLATES[template](order)
     if template == "order_accepted":
         # Só na ENCOMENDA: "retirada amanhã, a partir das 9h", sem ponto final. Vazio
         # no pedido do dia, e é esse vazio que faz o adapter manter o modelo
@@ -1227,6 +1240,15 @@ def _returned_money_note(order) -> str:
     if any(refund_route(intent) == ROUTE_GATEWAY for intent in intents):
         return "O valor volta pela mesma forma de pagamento, e avisamos por aqui quando a devolução for feita"
     return "A devolução do valor é feita pela nossa equipe, na mesma forma de pagamento"
+
+
+#: A frase-padrão de cada aviso do "Avisar o cliente", quando o payload vem sem
+#: ela: sempre uma frase que cabe no {{3}} do modelo, nunca vazia.
+_CUSTOMER_NOTICE_TEMPLATES = {
+    "order_delayed": lambda order: "a que está no acompanhamento",
+    "order_item_missing": lambda order: "que está no acompanhamento",
+    "order_reschedule_needed": lambda order: _commitment_note(order) or "a data combinada",
+}
 
 
 def _commitment_phrase(order) -> str:
@@ -1320,6 +1342,12 @@ def _eta_clock(order) -> str:
     if eta is None:
         return ""
     return format_clock(eta)
+
+
+def _shop_name() -> str:
+    from shopman.shop.models import Shop
+
+    return str(Shop.load() or "").strip()
 
 
 def _qualify_template(template: str, context: dict) -> str:

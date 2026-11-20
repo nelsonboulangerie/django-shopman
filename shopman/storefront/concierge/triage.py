@@ -205,6 +205,26 @@ def intent_label(ref: str) -> str:
     return name or DEFAULT_LABELS.get(ref, ref)
 
 
+#: O que não é fala: endereço de link e as marcas que a redação deixa no lugar do que apagou.
+_NOT_SPEECH = re.compile(r"https?://\S+|www\.\S+|\[[^\[\]]*omitid[oa][^\[\]]*\]", re.IGNORECASE)
+
+
+def _continued_intent(text: str, context) -> str:
+    """A intenção da fala anterior do cliente, quando esta é só um link ou anexo.
+
+    Só para o que é da equipe ou de outra mesa (currículo, reclamação, parceria): um link
+    sozinho depois de "posso te mandar um currículo?" é o currículo. Fala com palavra, ou
+    fala anterior que a Concierge responde, segue a regra de sempre.
+    """
+    if re.search(r"[A-Za-zÀ-ÿ0-9]", _NOT_SPEECH.sub(" ", str(text or ""))):
+        return ""
+    earlier = next((line for who, line in reversed(list(context or ())) if who == "Cliente" and line), "")
+    if not earlier:
+        return ""
+    intent, _source = classify_rules(earlier)
+    return intent if ROUTES.get(intent, (ANSWER,))[0] in {TEAM, OTHER_DESK} else ""
+
+
 def classify_rules(text: str) -> tuple[str, str]:
     """(intenção, fonte) pela regra local. Nunca devolve intenção fora das 12."""
     sensitive = REGEX_TO_INTENT.get(classify_handoff_request(text), "")
@@ -388,6 +408,11 @@ def decide(
         # de cancelamento. A Concierge pergunta e cancela; fora disso, R4.
         return Triage("order", NOW, ANSWER, rules_summary("order", text), "rules", answered_by=concierge_answers)
     rules_intent, rules_source = classify_rules(text)
+    continued = _continued_intent(text, context)
+    if continued:
+        # Só um link (ou anexo) depois de "posso te mandar um currículo?": é a continuação
+        # da fala anterior, e vai para onde ela foi (#2910, msg-596).
+        rules_intent, rules_source = continued, "rules"
     allergy = _allergy_route(text, rules_intent, context=context, previous=previous, channel_ref=channel_ref)
     if allergy is not None and (allergy.destination == ANSWER or allergy.escalated_by):
         return allergy
