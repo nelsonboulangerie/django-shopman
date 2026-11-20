@@ -249,6 +249,15 @@ const MARKER = "absolute -translate-x-1/2 -translate-y-1/2 hover:z-30 focus-with
 // diz desde quando estava ali. O relógio anda a cada segundo, sem esperar a releitura.
 const nowMs = useNowTick();
 const courierAge = (r: MapLiveRide) => courierPositionAge(r.courier?.at, nowMs.value);
+// A etiqueta da moto perto da borda (celular, 375 px) sai do quadro se ficar centrada: cada
+// desenho a empurra para dentro da caixa do mapa, com 4 px de folga.
+function keepInside(el: unknown) {
+  if (!(el instanceof HTMLElement) || !box.value) return;
+  el.style.marginLeft = "0px";
+  const frame = box.value.getBoundingClientRect(), chip = el.getBoundingClientRect();
+  const shift = Math.max(frame.left + 4 - chip.left, Math.min(0, frame.right - 4 - chip.right));
+  if (shift) el.style.marginLeft = `${shift}px`;
+}
 
 // O bairro escrito uma vez, abaixo dos seus pedidos que ainda esperam ou montam.
 const places = computed(() => {
@@ -377,7 +386,7 @@ const places = computed(() => {
           </span>
         </NuxtButton>
         <!-- Posição que não é de agora: a moto diz desde quando estava ali (sem amarelo: não há o que fazer). -->
-        <span v-if="courierAge(r)?.mapLabel" class="pointer-events-none absolute top-full left-1/2 -mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 op-micro font-medium shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" aria-hidden="true" data-map-courier-age>{{ courierAge(r)?.mapLabel }}</span>
+        <span v-if="courierAge(r)?.mapLabel" :ref="keepInside" class="pointer-events-none absolute top-full left-1/2 -mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 op-micro font-medium shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" aria-hidden="true" data-map-courier-age>{{ courierAge(r)?.mapLabel }}</span>
       </span>
     </template>
 

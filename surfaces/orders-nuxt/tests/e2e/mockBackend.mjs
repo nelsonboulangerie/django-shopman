@@ -491,8 +491,8 @@ const DELIVERIES = {
       key: "776753357", number: 1, letter: "A", state: "coming", status_label: "A caminho da loja",
       stops: [deliveryStop("WEB-20261116-0B12", "Bia", "Jardim Higienópolis", -0.004, -0.008, { volumes: 2 })],
       driver: { name: "Diego", phone: "(43) 99999-0001", vehicle: "Moto prata · ABC1D23" },
-      // Posição de agora (F7b): a moto cheia, sem etiqueta.
-      position: { latitude: ORIGIN.latitude + 0.003, longitude: ORIGIN.longitude - 0.003, at: secondsAgo(5), source_label: "pela TaOn" },
+      // Posição de agora (F7b): a moto cheia, sem etiqueta. A hora é lida a cada resposta.
+      position: { latitude: ORIGIN.latitude + 0.003, longitude: ORIGIN.longitude - 0.003, get at() { return secondsAgo(5); }, source_label: "pela TaOn" },
       called_at: minutesAgo(9), pickup_eta_at: minutesAhead(4), cost_display: "R$ 9,00", bags: 2,
       // Link só em corrida de uma parada: com várias, o servidor não prova de quem é.
       tracking_url: "https://rastreio.example/776753357",
@@ -507,7 +507,7 @@ const DELIVERIES = {
       ],
       driver: { name: "Marina", phone: "(43) 99999-0002", vehicle: "Moto preta · XYZ9K88" },
       // Posição velha (F7b): sem aviso há 3 min, a moto esmaece e diz desde quando.
-      position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013, at: minutesAgo(3), source_label: "pela TaOn" },
+      position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013, get at() { return minutesAgo(3); }, source_label: "pela TaOn" },
       called_at: minutesAgo(28), picked_up_at: minutesAgo(12), delivery_eta_at: minutesAhead(11),
       cost_display: "R$ 14,50",
       lead_ref: "WEB-20261116-0E02",
