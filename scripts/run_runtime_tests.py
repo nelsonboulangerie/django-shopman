@@ -81,6 +81,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # O executor do contrato de efeito do framework conversacional (N6): chave, guarda,
     # efeito e recibo numa transação, e dois trabalhadores na mesma chave (K08 a K16).
     "shopman/shop/tests/test_conversational_execute_postgres.py",
+    # O armazenamento do framework conversacional (N8): comparar e gravar com dois
+    # trabalhadores reais (K13), a mesma entrada uma vez (K01) e a caixa de saída sob posse.
+    "shopman/shop/tests/test_conversational_conformance.py",
     "shopman/storefront/tests/test_concierge_commercial_races.py",
     "shopman/storefront/tests/test_concierge_consent_race.py",
     "shopman/storefront/tests/test_concierge_payment_race.py",

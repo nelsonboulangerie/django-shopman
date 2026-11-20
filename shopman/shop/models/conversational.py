@@ -86,3 +86,82 @@ class ConversationalOutcome(models.Model):
                 name="shop_convoutcome_value_iff_observed",
             ),
         ]
+
+
+# ── Armazenamento do framework (N8): episódio, registros, trabalho ─────────────────
+
+
+class ConversationalEpisode(models.Model):
+    """O estado vigente de um episódio do framework. Uma linha por episódio, comparar e gravar."""
+
+    tenant = models.CharField("inquilino", max_length=64)
+    environment = models.CharField("ambiente", max_length=16)
+    episode_id = models.CharField("episódio", max_length=128)
+    subject = models.CharField("sujeito", max_length=256, blank=True, db_index=True)
+    state = models.CharField("estado", max_length=32)
+    version = models.PositiveIntegerField("versão")
+    # O ``Episode`` do framework (``to_document()``): a forma é a do contrato, não daqui.
+    document = models.JSONField("documento")
+    occurred_at = models.DateTimeField("ocorrido em", db_index=True)
+
+    class Meta:
+        app_label = "shop"
+        verbose_name = "episódio conversacional"
+        verbose_name_plural = "episódios conversacionais"
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "environment", "episode_id"],
+                                    name="shop_convepisode_unique_per_tenant"),
+        ]
+
+
+class ConversationalRecord(models.Model):
+    """Um registro do framework gravado no episódio (evento, snapshot, decisão, resposta, recibo...).
+
+    Só acréscimo. ``dedupe_key`` só existe para o evento com identidade estável: a mesma
+    identidade grava uma vez (K01).
+    """
+
+    tenant = models.CharField("inquilino", max_length=64)
+    environment = models.CharField("ambiente", max_length=16)
+    episode_id = models.CharField("episódio", max_length=128, blank=True)
+    schema = models.CharField("contrato", max_length=64)
+    record_id = models.CharField("registro", max_length=128)
+    dedupe_key = models.CharField("identidade do evento", max_length=512, null=True, blank=True)
+    document = models.JSONField("documento")
+    recorded_at = models.DateTimeField("gravado em", auto_now_add=True)
+
+    class Meta:
+        app_label = "shop"
+        verbose_name = "registro conversacional"
+        verbose_name_plural = "registros conversacionais"
+        indexes = [models.Index(fields=["tenant", "environment", "episode_id", "schema", "id"],
+                                name="shop_convrecord_latest")]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "environment", "record_id"],
+                                    name="shop_convrecord_unique_id"),
+            models.UniqueConstraint(fields=["tenant", "environment", "dedupe_key"],
+                                    name="shop_convrecord_unique_event"),
+        ]
+
+
+class ConversationalWork(models.Model):
+    """A caixa de saída do framework: trabalho gravado na mesma transação do estado (N13)."""
+
+    tenant = models.CharField("inquilino", max_length=64)
+    environment = models.CharField("ambiente", max_length=16)
+    work_id = models.CharField("trabalho", max_length=256)
+    kind = models.CharField("tipo", max_length=64)
+    payload = models.JSONField("carga", default=dict)
+    due_at = models.DateTimeField("vence em")
+    lease_until = models.DateTimeField("reivindicado até", null=True, blank=True)
+    attempt = models.PositiveIntegerField("tentativa", default=0)
+    created_at = models.DateTimeField("criado em", auto_now_add=True)
+
+    class Meta:
+        app_label = "shop"
+        verbose_name = "trabalho conversacional"
+        verbose_name_plural = "trabalhos conversacionais"
+        indexes = [models.Index(fields=["tenant", "environment", "kind", "due_at"], name="shop_convwork_due")]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "environment", "work_id"], name="shop_convwork_unique_id"),
+        ]
