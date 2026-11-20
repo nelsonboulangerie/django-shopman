@@ -507,7 +507,7 @@ const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride
                   <NuxtButton color="neutral" variant="ghost" class="min-w-0 flex-1 justify-start gap-2 p-0 text-left" :aria-pressed="ride.number === active" @click="active = ride.number">
                     <span class="grid h-6 min-w-6 shrink-0 place-items-center rounded-md px-1.5 op-micro font-bold" :style="{ background: rideColor(ride.number - 1).bg, color: rideColor(ride.number - 1).fg }">{{ rideLetter(ride.number) }}</span>
                     <span class="op-label font-semibold text-highlighted">Corrida {{ rideLetter(ride.number) }}</span>
-                    <span class="op-micro tabular-nums text-muted">{{ ride.refs.length }} de {{ maxStops }}</span>
+                    <span class="op-micro tabular-nums text-muted" data-ride-capacity>{{ ride.refs.length }} {{ ride.refs.length === 1 ? "pedido" : "pedidos" }} (cabem até {{ maxStops }})</span>
                     <span v-if="ride.number !== active && ride.refs.length" class="ml-1 min-w-0 flex-1 truncate op-micro text-muted">{{ routeOf(ride).map((stop) => stop.code).join(" → ") }}</span>
                   </NuxtButton>
                   <NuxtButton icon="i-lucide-trash-2" color="neutral" variant="ghost" square class="size-11 justify-center" :aria-label="`Desfazer a corrida ${rideLetter(ride.number)}`" @click="drop(ride.number)" />

@@ -39,6 +39,8 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(quote.getByText("Juntas: R$ 16,50 · 24 min · 5,7 km ✔", { exact: true })).toBeVisible();
     await expect(quote.getByText("Separadas sairiam R$ 25,00", { exact: true })).toBeVisible();
     await expect(page.getByText("O entregador sai da loja e segue esta ordem.", { exact: true })).toBeVisible();
+    // Por extenso: "2 de 4" obrigava o leitor a adivinhar de 4 o quê.
+    await expect(page.locator("[data-ride-capacity]")).toHaveText("2 pedidos (cabem até 4)");
     const order = await page.locator("[data-ride-change]").evaluateAll(() =>
       [...document.querySelectorAll("ol li span.block.op-body")].map((node) => node.textContent?.trim() ?? ""),
     );
