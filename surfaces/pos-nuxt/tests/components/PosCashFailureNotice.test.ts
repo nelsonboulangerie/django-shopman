@@ -32,6 +32,26 @@ describe("PosCashFailureNotice", () => {
     expect(wrapper.emitted("dismiss")).toHaveLength(1);
   });
 
+  it("traz o botão que resolve: tocar repete o gesto, e ele espera junto", async () => {
+    // Regra do dono (20/11): o aviso traz a ação pronta, nunca só o caminho escrito.
+    const wrapper = await mountSuspended(PosCashFailureNotice, {
+      props: {
+        failure: { gesture: "request_change", message: "O pedido de troco não foi enviado. Ninguém foi avisado ainda. Tente de novo." },
+        gesture: "request_change",
+        actionLabel: "Tentar de novo",
+      },
+    });
+    const notice = wrapper.get("[data-cash-failure]");
+    const retry = notice.findAll("button").find((b) => b.text().includes("Tentar de novo"));
+    expect(retry, "o aviso não traz o botão que resolve").toBeTruthy();
+    await retry!.trigger("click");
+    expect(wrapper.emitted("action")).toHaveLength(1);
+
+    await wrapper.setProps({ busy: true });
+    const waiting = wrapper.get("[data-cash-failure]").findAll("button").find((b) => b.text().includes("Tentar de novo"));
+    expect(waiting!.attributes("disabled")).toBeDefined();
+  });
+
   it("não mostra a falha de OUTRO gesto, nem nada sem falha", async () => {
     const other = await mountSuspended(PosCashFailureNotice, {
       props: { failure: { gesture: "close_shift", message: "O caixa não fechou." }, gesture: "movement" },
