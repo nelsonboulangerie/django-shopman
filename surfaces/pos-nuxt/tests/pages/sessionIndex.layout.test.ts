@@ -50,6 +50,8 @@ function makeCashSession() {
     requestChange: vi.fn().mockResolvedValue(true),
     serveChangeRequest: vi.fn().mockResolvedValue(true),
     cancelChangeRequest: vi.fn().mockResolvedValue(true),
+    cashFailure: ref<{ gesture: string; message: string } | null>(null),
+    dismissCashFailure: vi.fn(),
   };
 }
 let cash: ReturnType<typeof makeCashSession>;
@@ -367,6 +369,150 @@ describe("antesala — turno aberto, organização da tela", () => {
     // O PIN veio DEPOIS no body: é o que fica por cima.
     const stack = [...document.body.querySelectorAll("[data-session-dialog], [data-drawer-manager-auth]")];
     expect(stack.indexOf(movementDialog!)).toBeLessThan(stack.indexOf(pinDialog!));
+  });
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  A falha do gesto mora DENTRO do diálogo dele (#2726)                    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//
+// Pedir troco, atender ou cancelar o pedido, acertar a conta na casa e abrir a
+// gaveta sem venda mostravam a falha num toast atrás do véu do diálogo aberto: o
+// operador não via o erro. O WP-E6 (#2689) já tinha levado a saída de caixa, o
+// fechamento, a devolução e o estorno para dentro; estes quatro ficaram de fora.
+// Aqui: o aviso aparece DENTRO do diálogo, como alerta, com o botão que repete o
+// gesto (regra do dono: o aviso traz a ação, nunca o caminho escrito).
+describe("antesala — a falha aparece dentro do diálogo do gesto", () => {
+  beforeEach(() => {
+    cash = makeCashSession();
+    projection = openShiftProjection();
+    servedClosing = null;
+  });
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount();
+    document.body.innerHTML = "";
+  });
+
+  const FALHA = "Não deu certo. Tente de novo.";
+  function noticeIn(key: string, gesture: string) {
+    const notice = dialog(key)?.querySelector<HTMLElement>(`[data-cash-failure-gesture="${gesture}"]`) ?? null;
+    return notice;
+  }
+  function retryIn(notice: HTMLElement) {
+    return [...notice.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.includes("Tentar de novo"));
+  }
+
+  it("pedir troco: o aviso fica no diálogo e o botão dele repete o pedido", async () => {
+    cash.requestChange.mockResolvedValue(false);
+    const wrapper = await openLobby();
+    await tile(wrapper, "request_change").trigger("click");
+    await flushPromises();
+    const amount = dialog("request_change")!.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!;
+    amount.value = "50,00";
+    amount.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+    [...dialog("request_change")!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.includes("Preciso de troco"))!.click();
+    await flushPromises();
+    cash.cashFailure.value = { gesture: "request_change", message: FALHA };
+    await nextTick();
+
+    const notice = noticeIn("request_change", "request_change");
+    expect(notice, "o aviso não está dentro do diálogo").not.toBeNull();
+    expect(notice!.getAttribute("role")).toBe("alert");
+    expect(notice!.textContent).toContain(FALHA);
+    retryIn(notice!)!.click();
+    await flushPromises();
+    expect(cash.requestChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("atender e cancelar o pedido de troco: o aviso mora na linha do pedido que falhou", async () => {
+    cash.serveChangeRequest.mockResolvedValue(false);
+    cash.cancelChangeRequest.mockResolvedValue(false);
+    cash.pendingChangeRequests.value = [
+      { ref: "cr-1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [], note: "", requested_by: "Ana", requested_at: "" },
+      { ref: "cr-2", amount_q: 5000, amount_display: "R$ 50,00", denominations: [], note: "", requested_by: "Bia", requested_at: "" },
+    ];
+    const wrapper = await openLobby();
+    await tile(wrapper, "attention:change").trigger("click");
+    await flushPromises();
+    const rows = () => [...dialog("attention:change")!.querySelectorAll<HTMLElement>("li")];
+    [...rows()[1]!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.includes("Atender"))!.click();
+    await flushPromises();
+    cash.cashFailure.value = { gesture: "serve_change", message: FALHA };
+    await nextTick();
+
+    expect(rows()[0]!.querySelector("[data-cash-failure]")).toBeNull();
+    const served = rows()[1]!.querySelector<HTMLElement>('[data-cash-failure-gesture="serve_change"]');
+    expect(served, "o aviso não está na linha do pedido que falhou").not.toBeNull();
+    expect(served!.getAttribute("role")).toBe("alert");
+    retryIn(served!)!.click();
+    await flushPromises();
+    expect(cash.serveChangeRequest).toHaveBeenLastCalledWith({ ref: "cr-2", managerApproval: null });
+
+    // Cancelar: o aviso fica na confirmação do pedido, que segue aberta.
+    [...rows()[0]!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.includes("Cancelar pedido"))!.click();
+    await nextTick();
+    [...rows()[0]!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.includes("Cancelar o pedido"))!.click();
+    await flushPromises();
+    cash.cashFailure.value = { gesture: "cancel_change", message: FALHA };
+    await nextTick();
+    const cancelled = rows()[0]!.querySelector<HTMLElement>('[data-cash-failure-gesture="cancel_change"]');
+    expect(cancelled).not.toBeNull();
+    retryIn(cancelled!)!.click();
+    await flushPromises();
+    expect(cash.cancelChangeRequest).toHaveBeenLastCalledWith("cr-1");
+    expect(cash.cancelChangeRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("acerto de conta na casa: o aviso fica na conta que está sendo acertada", async () => {
+    cash.settleAccount.mockResolvedValue(false);
+    cash.accountBalances.value = [
+      { customer_ref: "c-1", customer_name: "Carlos", balance_q: 4200, balance_display: "R$ 42,00", intents: 2, oldest_at: "" },
+    ];
+    const wrapper = await openLobby();
+    await tile(wrapper, "attention:accounts").trigger("click");
+    await flushPromises();
+    [...dialog("attention:accounts")!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.includes("Receber acerto"))!.click();
+    await nextTick();
+    [...dialog("attention:accounts")!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "Receber")!.click();
+    await flushPromises();
+    cash.cashFailure.value = { gesture: "settle_account", message: FALHA };
+    await nextTick();
+
+    const notice = noticeIn("attention:accounts", "settle_account");
+    expect(notice).not.toBeNull();
+    expect(notice!.getAttribute("role")).toBe("alert");
+    retryIn(notice!)!.click();
+    await flushPromises();
+    expect(cash.settleAccount).toHaveBeenCalledTimes(2);
+    expect(cash.settleAccount).toHaveBeenLastCalledWith({ customerRef: "c-1", amount: "42,00", method: "cash", managerApproval: null });
+  });
+
+  it("abrir gaveta sem venda: o aviso fica no diálogo e repete com o MESMO motivo", async () => {
+    cash.openDrawerWithoutSale.mockResolvedValue(false);
+    const wrapper = await openLobby();
+    await tile(wrapper, "open_drawer").trigger("click");
+    await flushPromises();
+    [...dialog("open_drawer")!.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "Conferência")!.click();
+    await flushPromises();
+    cash.cashFailure.value = { gesture: "open_drawer", message: FALHA };
+    await nextTick();
+
+    const notice = noticeIn("open_drawer", "open_drawer");
+    expect(notice).not.toBeNull();
+    expect(notice!.getAttribute("role")).toBe("alert");
+    retryIn(notice!)!.click();
+    await flushPromises();
+    expect(cash.openDrawerWithoutSale).toHaveBeenCalledTimes(2);
+    expect(cash.openDrawerWithoutSale).toHaveBeenLastCalledWith("Conferência");
+  });
+
+  it("a falha de um gesto não aparece no diálogo de outro", async () => {
+    const wrapper = await openLobby();
+    cash.cashFailure.value = { gesture: "open_drawer", message: FALHA };
+    await tile(wrapper, "request_change").trigger("click");
+    await flushPromises();
+    expect(dialog("request_change")!.querySelector("[data-cash-failure]")).toBeNull();
   });
 });
 

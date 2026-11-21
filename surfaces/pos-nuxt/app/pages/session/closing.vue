@@ -171,7 +171,10 @@ const step = useState<"cash" | "count" | "day">(closingState("step"), () => (cas
 
 // PASSO 1: a contagem cega da gaveta. Nada de esperado, nem antes nem depois (o
 // veredito da conferência fica com o gerente: decisão do dono). O selo ecoa o número.
-const { busy: cashBusy, closeCashShift } = usePosCashSession({ pos, actions, refresh: refreshPos, action });
+// A falha do fechamento mora no passo, junto da contagem (`cashFailure`, WP-E6):
+// o `closeCashShift` não abre toast para ela, e sem o aviso aqui o caixa não
+// fechava e a tela ficava muda (#2726).
+const { busy: cashBusy, closeCashShift, cashFailure, dismissCashFailure } = usePosCashSession({ pos, actions, refresh: refreshPos, action });
 const drawerMode = useState<"denominations" | "total">(closingState("drawer-mode"), () => "denominations");
 // O contador guarda as cédulas no mesmo estado do app, por modo.
 const drawerCounterKey = computed(() => closingState(`drawer:${drawerMode.value}`));
@@ -655,6 +658,14 @@ const discrepancyColumns = [
               <template v-if="drawerMode === 'denominations' && drawerMissing">Faltam {{ drawerMissing }} {{ drawerMissing === 1 ? "valor" : "valores" }}. Valor em branco conta como zero ao confirmar; o total se repete para você conferir.</template>
               <template v-else>O total se repete para você conferir antes de fechar.</template>
             </p>
+            <PosCashFailureNotice
+              :failure="cashFailure"
+              gesture="close_shift"
+              action-label="Tentar de novo"
+              :busy="cashBusy"
+              @action="confirmDrawer()"
+              @dismiss="dismissCashFailure"
+            />
             <NuxtButton
               class="justify-self-start"
               color="neutral"

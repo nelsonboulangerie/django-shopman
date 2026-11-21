@@ -115,6 +115,37 @@ describe("§1 toda mutação de caixa que falha diz o que fazer agora", () => {
     });
   }
 
+  // Os quatro diálogos da antessala que ficaram fora do WP-E6 (#2726): pedir troco,
+  // atender ou cancelar o pedido de troco, acertar a conta na casa e abrir a gaveta
+  // sem venda. O toast nascia atrás do véu do diálogo aberto; agora a falha é do
+  // gesto, e o diálogo mostra o aviso dele.
+  const GESTOS_COM_DIALOGO: Array<{ gesto: string; executar: (s: Sessao) => Promise<unknown> }> = [
+    { gesto: "request_change", executar: (s) => s.requestChange({ amount: "50", denominations: [10], note: "" }) },
+    { gesto: "serve_change", executar: (s) => s.serveChangeRequest({ ref: "TR-1" }) },
+    { gesto: "cancel_change", executar: (s) => s.cancelChangeRequest("TR-1") },
+    { gesto: "settle_account", executar: (s) => s.settleAccount({ customerRef: "CLI-1", amount: "30", method: "cash" }) },
+    { gesto: "open_drawer", executar: (s) => s.openDrawerWithoutSale("conferência") },
+  ];
+  for (const { gesto, executar } of GESTOS_COM_DIALOGO) {
+    it(`${gesto}: a falha mora no diálogo, sem toast atrás do véu`, async () => {
+      vi.mocked(toast.error).mockClear();
+      const sessao = sessaoDeCaixa(vi.fn().mockRejectedValue(new Error("rede caiu")));
+      await executar(sessao);
+      expect(sessao.cashFailure.value?.gesture).toBe(gesto);
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+  }
+
+  it("a falha sai do diálogo quando a repetição confirma", async () => {
+    const serverCall = vi.fn().mockRejectedValueOnce(new Error("rede caiu")).mockResolvedValue({});
+    const sessao = sessaoDeCaixa(serverCall);
+    const pedido = { amount: "50", denominations: [10], note: "" };
+    await sessao.requestChange(pedido);
+    expect(sessao.cashFailure.value?.gesture).toBe("request_change");
+    await sessao.requestChange(pedido);
+    expect(sessao.cashFailure.value).toBeNull();
+  });
+
   it("a causa do SERVIDOR sobrevive, e a saída vem junto", async () => {
     // O ponto do padrão: `httpErrorMessage` troca o fallback pelo `detail`, e
     // mesmo assim o operador continua sabendo o que fazer.
