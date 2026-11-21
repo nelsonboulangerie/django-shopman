@@ -267,13 +267,8 @@ class RideCandidateProjection:
     place: str = ""
     #: "Pronto" ou "Em preparo": a corrida pode sair antes do pronto.
     stage: str = ""
-    #: "a 1,2 km": distância até o pedido que está sendo chamado (só no painel dele).
-    distance_label: str = ""
     #: "Troco para R$ 100,00": a frase do troco do card, quando há.
     change_label: str = ""
-    #: Vem marcado no "Vai junto nesta corrida?": é o companheiro da sugestão da casa
-    #: (``ride_plan``), cotada e mais barata junta (decisão do dono, 16/11/2026).
-    suggested: bool = False
 
 
 @dataclass(frozen=True)
@@ -1574,13 +1569,6 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
             "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
         method="POST", idempotency="required",
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-    # Uma corrida para este pedido e os que podem ir junto (o "Vai junto?" da
-    # chamada): a mesma ação das Entregas e do Painel, com a revisão de cada um.
-    offered = [str(row.get("ref") or "") for row in courier_block.get("ride_offer") or []]
-    if offered and (refs is None or "courier-ride" in refs):
-        ride = courier_ride_action([order, *Order.objects.filter(ref__in=offered)], user=user)
-        if ride is not None:
-            extra_actions.append(ride)
     return [action for action in extra_actions if refs is None or action.ref in refs]
 
 
@@ -1859,13 +1847,6 @@ def _courier_block(order: Order) -> dict | None:
             # O que a chamada pergunta: troco da gaveta e maquininha da casa
             # que vão com o entregador da TaOn (``partner_custody_asks``).
             "custody": operator_orders.partner_custody_asks(order),
-            # Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais
-            # perto primeiro. Só enquanto este pedido pode ser chamado.
-            "ride_offer": (offer := _ride_offer(order) if adapter_on and house and not active and order_can_ride
-                           and unresolved is None and not not_today else []),
-            # A sugestão da casa para esta corrida (``ride_plan``): quem vai junto, a
-            # cotação "juntas contra separadas" e quem chega depois. ``None`` sem ela.
-            "ride_suggestion": ride_suggestion_view(order) if offer else None,
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
             "charge_outdated": charge_outdated(order),
@@ -3139,66 +3120,24 @@ def _rides_with_others(order: Order, *, today: date | None = None) -> bool:
     return _is_delivery(order) and not _is_future_preorder(order, today=today) and not courier.group_refusal(order)
 
 
-def _ride_candidate(order: Order, *, near: Order | None = None) -> RideCandidateProjection:
+def _ride_candidate(order: Order) -> RideCandidateProjection:
     asks = operator_orders.partner_custody_asks(order)
     data = order.data or {}
     customer = str((data.get("customer") or {}).get("name") or "").strip()
     address = data.get("delivery_address_structured") or {}
     place = str(address.get("neighborhood") or data.get("delivery_address") or address.get("formatted_address") or "")
     change = _courier_change_fields(order).get("change_label", "") if asks["change_out_suggested_q"] else ""
-    km = _km_between(near, order) if near is not None else None
     return RideCandidateProjection(
         ref=order.ref, change_out_suggested_q=int(asks["change_out_suggested_q"]),
         needs_machine=bool(asks["needs_machine"]),
         label=" · ".join(part for part in (f"Pedido {operator_orders.short_ref(order.ref)}", customer) if part),
         place=place.strip(), stage="Pronto" if order.status == "ready" else "Em preparo",
-        distance_label="" if km is None else f"a {km:.1f} km".replace(".", ","),
         change_label=change,
     )
 
 
-def _km_between(a: Order, b: Order) -> float | None:
-    """Distância em linha reta entre dois endereços de entrega (haversine), ou ``None``."""
-    import math
-
-    def point(order):
-        address = (order.data or {}).get("delivery_address_structured") or {}
-        try:
-            return float(address["latitude"]), float(address["longitude"])
-        except (KeyError, TypeError, ValueError):
-            return None
-
-    p, q = point(a), point(b)
-    if p is None or q is None:
-        return None
-    lat1, lon1, lat2, lon2 = map(math.radians, (*p, *q))
-    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
-    return 6371 * 2 * math.asin(math.sqrt(h))
 
 
-def _ride_offer(order: Order) -> list[dict]:
-    """As entregas que podem ir na MESMA corrida deste pedido: a sugestão da casa primeiro.
-
-    É a oferta do "Chamar entregador": o operador está chamando este pedido e
-    vê, ali, quem pode ir junto. Primeiro os companheiros da sugestão do plano
-    (``ride_plan``, a mesma partição da página Entregas), marcados quando a
-    sugestão vem cotada e mais barata; depois os outros, os mais perto primeiro.
-    Até ``MAX_RIDE_STOPS - 1``; sem coordenada vai ao fim. Vazio quando este pedido
-    não pode ir com outros.
-    """
-    from shopman.shop.services import courier, delivery_services, ride_plan
-
-    if delivery_services.courier_backend() is None or not _rides_with_others(order):
-        return []
-    pool = [other for other in Order.objects.filter(status__in=("accepted", "preparing", "ready")).exclude(pk=order.pk)
-            if _rides_with_others(other)]
-    suggestion = ride_plan.suggestion_for(order, _plan_for_board())
-    mates = [ref for ref in (suggestion or {}).get("refs", []) if ref != order.ref]
-    marked = bool(suggestion and suggestion.get("suggested"))
-    pool.sort(key=lambda other: (other.ref not in mates, mates.index(other.ref) if other.ref in mates else 0,
-                                 _km_between(order, other) is None, _km_between(order, other) or 0.0))
-    return [asdict(replace(_ride_candidate(other, near=order), suggested=marked and other.ref in mates))
-            for other in pool[: courier.MAX_RIDE_STOPS - 1]]
 
 
 def _plan_for_board() -> dict:
@@ -3212,19 +3151,6 @@ def _plan_for_board() -> dict:
         return {"suggestions": []}
 
 
-def ride_suggestion_view(order: Order) -> dict | None:
-    """A sugestão da casa para a corrida deste pedido, como o "Chamar entregador" a mostra.
-
-    ``{refs, codes, quoted, suggested, together, separate_q, saving_q, late_code,
-    late_minutes}`` ou ``None`` sem sugestão.
-    """
-    from shopman.shop.services import ride_plan
-
-    suggestion = ride_plan.suggestion_for(order, _plan_for_board())
-    if suggestion is None:
-        return None
-    keys = ("refs", "codes", "quoted", "suggested", "together", "separate_q", "saving_q", "late_code", "late_minutes")
-    return {key: suggestion.get(key) for key in keys}
 
 
 def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:

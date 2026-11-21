@@ -8,7 +8,6 @@
 import type {
   EquipmentOptionProjection,
   EquipmentOutProjection,
-  RideCandidateProjection,
 } from "~/generated/ordersContract";
 import type {
   OrderCardProjection,
@@ -19,7 +18,6 @@ import type {
 // A custódia do entregador (troco, maquininha) mora no kit: o PDV chama o mesmo.
 import {
   freeMachines,
-  machinePhrase,
   moneyInput,
 } from "../../../operator-kit/app/presentation/custody";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
@@ -1642,44 +1640,4 @@ export const MAX_RIDE_STOPS = 4;
 export function buildRidesLabel(suggested: number): string {
   if (suggested < 1) return "Montar corridas";
   return `Montar corridas (${suggested} ${suggested === 1 ? "sugerida" : "sugeridas"})`;
-}
-
-/** "Chamar uma corrida para 3 pedidos" (com a maquininha, quando ela vai). */
-export function courierRideCallLabel(
-  count: number,
-  machineLabel?: string,
-): string {
-  const base = `Chamar uma corrida para ${count} pedidos`;
-  return machineLabel === undefined
-    ? base
-    : `${base} com a ${machinePhrase(machineLabel)}`;
-}
-
-/** A linha de uma entrega que pode ir junto: "Pronto · Gleba Palhano · a 1,2 km · leva a maquininha". */
-export function rideOfferLine(
-  choice: Pick<
-    RideCandidateProjection,
-    | "stage"
-    | "place"
-    | "distance_label"
-    | "needs_machine"
-    | "change_out_suggested_q"
-  >,
-): string {
-  return joinFacts(
-    choice.stage,
-    choice.place,
-    choice.distance_label,
-    choice.needs_machine
-      ? "leva a maquininha"
-      : choice.change_out_suggested_q > 0
-        ? "leva troco"
-        : "",
-  );
-}
-
-/** A pergunta da chamada quando outros pedidos vão junto: quem a corrida leva e quem paga. */
-export function courierRideQuestion(refs: readonly string[]): string {
-  const codes = refs.map((ref) => splitRef(ref).code);
-  return `Uma corrida da TaOn leva os pedidos ${joinRefs(codes)}, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.`;
 }
