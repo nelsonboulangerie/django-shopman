@@ -1304,7 +1304,9 @@ def compose(run: Execution) -> str:
     kept = ""
     for reply in run.replies:
         text = (reply.text or "").strip()
-        if run.to_team:
+        if run.to_team or run.verify_note:
+            # Com a equipe chamada, ou com o "vou verificar" no fim da mesma resposta, a
+            # oferta "chamo alguém da equipe" contradiz o que a casa já fez (ensaio, 21/11).
             for offer in run.team_offers:
                 text = text.replace(offer, "").strip()
         if reply.keeps_question and text:
