@@ -176,6 +176,11 @@ function clearFieldErrors (keys: string[]) {
 // Dica de encomenda quando o dia escolhido está fechado (backend: preorder_hint).
 // Aditivo: acompanha o erro do campo de data, não muda o roteamento do fieldError.
 const deliveryDateHint = ref('')
+// A data que a sacola moveu (#2411): o aviso do passo "Quando". A recusa "Sua sacola
+// mudou" do envio relê o checkout, e a releitura pode mover a data: quando move, o
+// aviso do dia novo já disse tudo, e o genérico não repete.
+const dateMovedNotice = ref('')
+let dateMovedNoticeShown = false
 const attemptKey = ref(createCheckoutAttemptKey())
 const addressSelection = ref<AddressSelection | null>(null)
 // Formulário do picker aberto com edição que o checkout ainda não recebeu
@@ -898,6 +903,7 @@ function pickDeliveryDate (value: string) {
   state.delivery_date = value
   clearFieldError('delivery_date')
   deliveryDateHint.value = ''
+  dateMovedNotice.value = ''
   datePopoverOpen.value = false
 }
 
@@ -962,9 +968,6 @@ watch(() => checkout.value, value => {
 // existe. Na navegação cliente o fetch é lazy; usar o relógio local enquanto ele
 // ainda está pendente escolheria "hoje" mesmo num dia fechado e deixaria todos
 // os horários desabilitados. O watch cobre essa chegada tardia sem segurar a rota.
-// A recusa "Sua sacola mudou" do envio relê o checkout, e a releitura pode mover a
-// data: quando move, o aviso do dia novo já disse tudo, e o genérico não repete.
-let dateMovedNoticeShown = false
 function initializeDeliveryDate () {
   if (!checkout.value) return
   const restoredDate = state.delivery_date
@@ -988,10 +991,14 @@ function initializeDeliveryDate () {
   state.delivery_date = value
   // A sacola levou a data para depois da que ela tinha (#2411): a tela diz o dia
   // novo, em vez de trocar calada. Vale para a volta à aba e para a recusa do envio.
+  // O aviso mora no passo "Quando" e fica até ela escolher uma data; quem já tinha
+  // passado do "Quando" volta a ele (um toast sumiria sob a barra de baixo).
   const moved = orderDateMovedNotice(restoredDate, value, dateBounds.value, shopNow.value)
   if (moved) {
+    dateMovedNotice.value = moved
     dateMovedNoticeShown = true
-    if (import.meta.client) useSonner.info(moved)
+    const order = steps.value
+    if (order.indexOf(activeStep.value) > order.indexOf('when')) goToStep('when')
   }
 }
 onMounted(initializeDeliveryDate)
@@ -2095,6 +2102,9 @@ useSeoMeta({
             >
               <!-- Quando o pedido fica pronto para retirada (#2652): a promessa
                    do item mais tardio, a mesma do produto e da sacola. -->
+              <UiAlert v-if="dateMovedNotice" variant="warning" data-checkout-date-moved>
+                <UiAlertTitle class="line-clamp-none leading-snug">{{ dateMovedNotice }}</UiAlertTitle>
+              </UiAlert>
               <p v-if="orderReadyNotice" class="flex items-center gap-1 shop-body" data-checkout-ready-promise>
                 <Icon name="lucide:clock" class="size-3.5 shrink-0" />
                 {{ orderReadyNotice }}
