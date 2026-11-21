@@ -179,6 +179,7 @@
             "exists",
             "open_counts",
             "open_pk",
+            "open_rows",
             "recent_exists",
             "resolve",
             "resolve_matching",
