@@ -18,6 +18,7 @@
 // Como rodar: README.md desta pasta.
 import { audits, still } from "./support/audit";
 import { capture, expect, settled, test, type Page } from "./support/operator";
+import { picksNextOpenDay } from "./support/schedule";
 
 const CUSTOMER = process.env.PDV_LIVE_ADDRESS_CUSTOMER || "Maria Santos";
 const CUSTOMER_PHONE = process.env.PDV_LIVE_ADDRESS_PHONE || "43991111111";
@@ -143,7 +144,9 @@ for (const device of ["phone", "counter"] as const) {
       await expect(currentStep(page)).toHaveAttribute("aria-label", "2. Data e horário", { timeout: 30_000 });
       await expect(page.getByRole("heading", { name: "Para quando?" })).toBeVisible();
       await capture(page, testInfo, "depois-pra-quando");
-      await page.getByRole("radio", { name: /^Amanhã/ }).locator("visible=true").first().click();
+      // O próximo dia em que a loja abre: amanhã, ou a próxima data quando amanhã é
+      // dia fechado (#2976).
+      await picksNextOpenDay(page);
       // O dia escolhido não empurra a tela: a etapa ainda pergunta o horário.
       await expect(currentStep(page)).toHaveAttribute("aria-label", "2. Data e horário, pronta", { timeout: 30_000 });
       const slot = page.locator('[data-order-step="schedule"]').getByRole("button")
