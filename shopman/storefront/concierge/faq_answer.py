@@ -43,7 +43,9 @@ perguntas frequentes abaixo. Nunca afirme nada que elas não digam: nada de pre�
 prazo, endereço, ingrediente ou política que não esteja escrito nelas.
 
 Regras:
-- cite as referências (ref) das perguntas frequentes que usou;
+- cite as referências (ref) só das perguntas frequentes cuja resposta você usou de fato; \
+não cite uma pergunta frequente só porque é do mesmo assunto (a pergunta sobre encomendar \
+no sábado cita a de encomenda; a de horário só entra se a resposta disser o horário);
 - se uma parte da pergunta não é coberta por nenhuma, escreva essa parte em "uncovered" e não \
 a responda (a casa vai verificar);
 - se nenhuma parte é coberta, devolva refs vazio e answer vazio;
