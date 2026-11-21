@@ -31,6 +31,8 @@ NOTIFICATION_PUSH_RECEIPT_SCOPE = "notification:push"
 # A lista fechada evita que um topic novo seja cancelado por acidente.
 PERSONAL_ORDER_DELIVERY_TOPICS = frozenset({NOTIFICATION_SEND, NOTIFICATION_PUSH})
 STOCK_ALERT_DELIVER = "stock_alert.deliver"
+# A reserva venceu: a vitrine relê o SKU no prazo (services/shelf_recheck.py, #2785).
+STOCK_SHELF_RECHECK = "stock.shelf_recheck"
 STOCK_ALERT_DELIVERY_RECEIPT_SCOPE = "stock_alert:delivery"
 
 # Receipts permanentes para a identidade de entrega. O envio original e os

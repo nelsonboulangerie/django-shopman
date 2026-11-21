@@ -1,0 +1,241 @@
+{
+ "about": "Perguntas que batem (ou não) numa pergunta frequente, para o placar da resposta pela IA a partir das FAQs (WP-18). 'parts': uma lista por parte da pergunta, com as referências que a respondem (qualquer uma serve); lista vazia = nenhuma FAQ cobre, e o certo é 'vou verificar'. 'source': real (mensagem de cliente) ou escrita pela sessão, a conferir. Referências: as operacionais (delivery, hours, location, payment, preorder, allergens, contact) e as curadas (curated-<ref> de FAQEntry). No placar, a referência que não está publicada na hora conta como 'nenhuma'.",
+ "cases": [
+  {
+   "ref": "msg-645",
+   "text": "Oie, me tira uma dúvida. Vocês fazem entrega?",
+   "parts": [
+    [
+     "delivery"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "msg-682",
+   "text": "vocês fecham que horas mesmo hj?",
+   "parts": [
+    [
+     "hours"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "msg-557",
+   "text": "olá, bom dia. Gostaria de saber se vcs estarão abertos no próximo domingo, 04/10?",
+   "parts": [
+    [
+     "hours"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "msg-582",
+   "text": "Até qui horas vcs e",
+   "parts": [
+    [
+     "hours"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "msg-59",
+   "text": "seguimos. é para entrega, ok. qual a taxa?",
+   "parts": [
+    [
+     "delivery"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "campo-9",
+   "text": "Qual o horário de vocês no sábado? E tem estacionamento?",
+   "parts": [
+    [
+     "hours"
+    ],
+    []
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "conversa-2011-pets",
+   "text": "Aceitam pets ai na padaria?",
+   "parts": [
+    []
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "faq-pix",
+   "text": "aceitam pix?",
+   "parts": [
+    [
+     "payment",
+     "curated-quais-formas-de-pagamento-voces-aceitam"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-taxa",
+   "text": "quanto custa a entrega?",
+   "parts": [
+    [
+     "delivery"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-onde",
+   "text": "onde vocês ficam?",
+   "parts": [
+    [
+     "location"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-encomenda",
+   "text": "posso encomendar para sábado?",
+   "parts": [
+    [
+     "preorder",
+     "curated-posso-encomendar-para-outro-dia"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-site",
+   "text": "como faço pra pedir pelo site?",
+   "parts": [
+    [
+     "curated-como-faco-um-pedido-pelo-site"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-conta",
+   "text": "preciso criar conta pra comprar?",
+   "parts": [
+    [
+     "curated-preciso-criar-uma-conta"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-levain",
+   "text": "o que é levain?",
+   "parts": [
+    [
+     "curated-o-que-e-fermentacao-natural"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-ifood",
+   "text": "vocês estão no ifood?",
+   "parts": [
+    [
+     "curated-voces-estao-no-ifood"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-fidelidade",
+   "text": "tem programa de fidelidade?",
+   "parts": [
+    [
+     "curated-voces-tem-programa-de-fidelidade"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-estacionamento",
+   "text": "tem estacionamento?",
+   "parts": [
+    []
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-wifi",
+   "text": "tem wi-fi pra cliente?",
+   "parts": [
+    []
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-telefone",
+   "text": "qual o telefone de vocês?",
+   "parts": [
+    [
+     "contact"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-pagar-na-entrega",
+   "text": "posso pagar na entrega?",
+   "parts": [
+    [
+     "payment",
+     "curated-quais-formas-de-pagamento-voces-aceitam"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-indisponivel",
+   "text": "por que o croissant aparece indisponível no site?",
+   "parts": [
+    [
+     "curated-por-que-um-produto-aparece-como-indisponivel"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-me-avise",
+   "text": "como funciona o me avise?",
+   "parts": [
+    [
+     "curated-como-funciona-o-me-avise"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-cpf",
+   "text": "dá pra colocar CPF na nota?",
+   "parts": [
+    [
+     "curated-posso-pedir-cpf-na-nota"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-mesa",
+   "text": "vocês têm mesa pra comer aí?",
+   "parts": [
+    []
+   ],
+   "source": "sessão (a conferir)"
+  }
+ ]
+}

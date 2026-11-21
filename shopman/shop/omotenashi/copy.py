@@ -2013,8 +2013,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "KINTSUGI_SHORTAGE_GENERIC": {
         WILDCARD: {WILDCARD: CopyEntry(title="Ficou indisponível enquanto você escolhia.")},
     },
+    # A frase da folha quando nada sobrou: o título já disse "indisponível", e esta
+    # leva direto à lista, com o nome do item (#2907). ``{name}`` é o produto; "de"
+    # sem artigo, porque a loja não sabe o gênero de cada nome (da Tabatière, do Croissant).
     "KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar?")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar de {name}?")},
     },
     "KINTSUGI_PLANNED_OFFER": {
         WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Fica pronto no próximo lote, fresquinho. Quer garantir o seu?")},

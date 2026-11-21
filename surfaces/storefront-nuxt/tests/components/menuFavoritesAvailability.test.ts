@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import MenuFavoritesShelf from '~/components/MenuFavoritesShelf.vue'
 import type { CatalogItemProjection } from '~/types/shopman'
+import { announceStoreChange, resetLiveStoreForTests } from '~/composables/useLiveStore'
 
 function favorite (sku: string, availability: CatalogItemProjection['availability'], warnings: string[] = []): CatalogItemProjection {
   return {
@@ -32,7 +33,7 @@ beforeEach(async () => {
   const { useShopSession } = await import('~/composables/useShopSession')
   useShopSession().reset()
 })
-afterEach(() => { for (const component of mounted.splice(0)) component.unmount() })
+afterEach(() => { for (const component of mounted.splice(0)) component.unmount(); resetLiveStoreForTests() })
 
 describe('favoritos no cardápio seguem os filtros da página', () => {
   it('tira o esgotado e preserva a fornada; desligar restaura os favoritos', async () => {
@@ -64,5 +65,36 @@ describe('favoritos no cardápio seguem os filtros da página', () => {
     await shelf.setProps({ availableOnly: false, hideDietaryWarnings: false })
     expect(shelf.text()).toContain('COM-GLUTEN')
     expect(shelf.text()).toContain('ESGOTADO')
+  })
+})
+
+describe('favoritos no cardápio acompanham a vitrine (#2785)', () => {
+  async function openShelf () {
+    const shelf = await mountSuspended(MenuFavoritesShelf, { props: { active: true } })
+    mounted.push(shelf)
+    const { useShopSession } = await import('~/composables/useShopSession')
+    useShopSession().setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', customer_phone: '43999' })
+    await vi.waitFor(() => expect(shelf.text()).toContain('PRONTO'))
+    return shelf
+  }
+
+  it('a vitrine mudou: a prateleira relê sozinha', async () => {
+    const shelf = await openShelf()
+    fetchMock.mockResolvedValue({ items: [favorite('PRONTO', 'unavailable'), favorite('VOLTOU', 'available')] })
+
+    announceStoreChange('refusal')
+
+    await vi.waitFor(() => expect(shelf.text()).toContain('VOLTOU'))
+  })
+
+  it('releitura que falha mantém a prateleira como estava', async () => {
+    const shelf = await openShelf()
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+
+    announceStoreChange('refusal')
+    await flushPromises()
+
+    expect(shelf.text()).toContain('PRONTO')
+    expect(shelf.text()).toContain('FORNADA')
   })
 })

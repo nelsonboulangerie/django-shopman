@@ -214,8 +214,97 @@ function verificationAlert(late) {
   };
 }
 
+// Rascunhos de pergunta frequente vindos de conversa (WP-15): aviso no topo do Gestor,
+// âmbar, com "Revisar no Admin" (a lista dos rascunhos, filtrada).
+function faqDraftsAlert() {
+  return {
+    pk: 980, rev: 0, type: "faq_drafts_waiting", type_label: "Concierge: perguntas frequentes esperam publicação",
+    severity: "warning", severity_label: "Aviso", audience: "orders",
+    message: "2 perguntas frequentes esperam publicação.",
+    order_ref: "", created_at_display: "hoje às 21h40",
+    origin_label: "Concierge", origin_icon: "i-lucide-circle-help", subject: "Rascunhos de pergunta frequente",
+    on_screen: true, respond_by_iso: "", deadline_kind: "",
+    actions: [{
+      ref: "open_alert_context:980", kind: "open_alert_context", label: "Revisar no Admin", priority: 10,
+      enabled: true, reason: "", method: "GET",
+      href: "https://admin.boulangerie.com.br/admin/shop/faqentry/?is_published__exact=0&origem=concierge",
+      payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
+      approval_requirement: null, source_alert_ref: "980", source_alert_effect: "keeps_open", proof: "",
+    }],
+  };
+}
+
+// A Concierge atendendo sem modelo (dono, 19/11/2026): um aviso por causa, cor de erro,
+// também no topo da tela (`on_screen`).
+function noModelAlert() {
+  return {
+    pk: 960, rev: 0, type: "concierge_no_model", type_label: "WhatsApp: Concierge sem modelo",
+    severity: "error", severity_label: "Erro", audience: "orders",
+    message: "A Concierge está atendendo sem modelo: responde o simples e manda para a equipe o que não entende. Causa: a conexão de IA da leitura está sem chave.",
+    order_ref: "", created_at_display: "hoje às 21h10",
+    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Concierge sem modelo",
+    on_screen: true, respond_by_iso: "", deadline_kind: "",
+    actions: [{
+      ref: "open_alert_context:960", kind: "open_alert_context", label: "Abrir conexões de IA", priority: 10,
+      enabled: true, reason: "", method: "GET", href: "https://admin.boulangerie.com.br/admin/shop/aiconnection/",
+      payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
+      approval_requirement: null, source_alert_ref: "960", source_alert_effect: "context", proof: "",
+    }, ...(acknowledged.has(960) ? [] : [{
+      ref: "acknowledge:960", kind: "acknowledge_alert", label: "Visto", priority: 20, enabled: true,
+      reason: "", method: "POST", href: "/api/v1/backstage/alerts/960/ack/",
+      payload_schema: "AlertAckMutationRequest", expected_rev: 0,
+      idempotency: { required: true, key_scope: "backstage.alert-ack:960" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "Confirmar" },
+      approval_requirement: null, source_alert_ref: "960", source_alert_effect: "acknowledges", proof: "",
+    }])],
+  };
+}
+
+// Todo handoff abre aviso (dono, 20/11/2026): cor de erro, no topo, com "Responder no
+// Live Chat" (a conversa no ManyChat) e "Abrir conversa" (o Admin) como segunda saída.
+function contextAction(pk, ref, label, href, priority) {
+  return {
+    ref: `${ref}:${pk}`, kind: "open_alert_context", label, priority,
+    enabled: true, reason: "", method: "GET", href,
+    payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+    confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
+    approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "keeps_open", proof: "",
+  };
+}
+
+function handoffAlert() {
+  return {
+    pk: 970, rev: 0, type: "concierge_handoff", type_label: "WhatsApp: conversa para a equipe",
+    severity: "error", severity_label: "Erro", audience: "orders",
+    message: "“Quero falar com um humano” ·\u00a0há\u00a03\u00a0min",
+    order_ref: "", created_at_display: "hoje às 22h16",
+    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Ana pediu para falar com alguém da equipe",
+    on_screen: true, respond_by_iso: "", deadline_kind: "",
+    actions: [
+      contextAction(970, "live-chat", "Responder no Live Chat", "https://app.manychat.com/fb486126/chat/1234567890", 9),
+      contextAction(970, "open-context", "Abrir conversa", "https://admin.boulangerie.com.br/admin/shop/conversation/2/change/", 10),
+      { ...contextAction(970, "acknowledge", "Visto", "/api/v1/backstage/alerts/970/ack/", 20),
+        kind: "acknowledge_alert", method: "POST", source_alert_effect: "acknowledges" },
+    ],
+  };
+}
+
 function alertsPayload() {
   const payload = JSON.parse(JSON.stringify(baseAlerts));
+  if (scenario === "faq-drafts") {
+    payload.alerts = [faqDraftsAlert(), ...payload.alerts];
+    payload.counts.active += 1;
+  }
+  if (scenario === "concierge-handoff") {
+    payload.alerts = [handoffAlert(), ...payload.alerts];
+    payload.counts.active += 1;
+  }
+  if (scenario === "concierge-no-model") {
+    payload.alerts = [noModelAlert(), ...payload.alerts];
+    payload.counts.active += 1;
+  }
   if ((scenario === "concierge" || scenario === "concierge-late") && !verification.answered && !verification.takenOver) {
     payload.alerts = [verificationAlert(scenario === "concierge-late"), ...payload.alerts];
     payload.counts.active += 1;

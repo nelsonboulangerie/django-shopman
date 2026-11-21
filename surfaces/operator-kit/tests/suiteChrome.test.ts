@@ -21,6 +21,7 @@ import {
   operatorAlertToInbox,
   urgentAlerts,
   answerScreenAlerts,
+  inboxScreenAlerts,
   deadlineLeftLabel,
   respondInLabel,
   reminderIntervalMs,
@@ -314,6 +315,42 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
       { key: 1, id: "answer:1:open", title: "Bia espera a resposta da equipe\u00a0·\u00a0até\u00a015h09", color: "warning" },
     ]);
     expect(answerScreenAlerts([{ key: 3, respondByIso: at(1) }], NOW, clock)).toEqual([]);
+  });
+
+  it("o alerta da operação que pede o topo vira aviso do cabeçalho, na cor da gravidade", () => {
+    const view = operatorAlertToInbox({
+      pk: 77, type_label: "WhatsApp: Concierge sem modelo", severity: "error", severity_label: "Erro",
+      message: "A Concierge está atendendo sem modelo.", created_at_display: "hoje às 21h10",
+      subject: "Concierge sem modelo", origin_label: "WhatsApp", on_screen: true,
+      actions: [{ kind: "open_alert_context", enabled: true, label: "Abrir conexões de IA",
+        href: "https://admin.exemplo/admin/shop/aiconnection/" }],
+    });
+    expect(view.onScreen).toBe(true);
+    expect(inboxScreenAlerts([view, { key: 8, tone: "warning", message: "outro" }])).toEqual([
+      { key: 77, id: "alert:77", title: "Concierge sem modelo", description: "A Concierge está atendendo sem modelo.", color: "error",
+        action: { label: "Abrir conexões de IA", to: "https://admin.exemplo/admin/shop/aiconnection/" } },
+    ]);
+  });
+
+  it("o handoff traz o Live Chat como principal e a conversa no Admin como segunda saída", () => {
+    const view = operatorAlertToInbox({
+      pk: 81, type_label: "WhatsApp: atendimento", severity: "error", severity_label: "Erro",
+      message: "Atendimento humano, urgência: agora.", created_at_display: "hoje às 22h16",
+      subject: "Ana chamou a equipe", on_screen: true,
+      actions: [
+        { kind: "open_alert_context", enabled: true, label: "Responder no Live Chat",
+          href: "https://app.manychat.com/fb486126/chat/123" },
+        { kind: "open_alert_context", enabled: true, label: "Abrir conversa",
+          href: "https://admin.exemplo/admin/shop/conversation/9/change/" },
+      ],
+    });
+    expect([view.hrefLabel, view.secondaryHrefLabel]).toEqual(["Responder no Live Chat", "Abrir conversa"]);
+    expect(inboxScreenAlerts([view])).toEqual([
+      { key: 81, id: "alert:81", title: "Ana chamou a equipe", description: "Atendimento humano, urgência: agora.",
+        color: "error",
+        action: { label: "Responder no Live Chat", to: "https://app.manychat.com/fb486126/chat/123" },
+        secondaryAction: { label: "Abrir conversa", to: "https://admin.exemplo/admin/shop/conversation/9/change/" } },
+    ]);
   });
 
   it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {

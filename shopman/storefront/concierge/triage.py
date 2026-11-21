@@ -205,6 +205,26 @@ def intent_label(ref: str) -> str:
     return name or DEFAULT_LABELS.get(ref, ref)
 
 
+#: O que não é fala: endereço de link e as marcas que a redação deixa no lugar do que apagou.
+_NOT_SPEECH = re.compile(r"https?://\S+|www\.\S+|\[[^\[\]]*omitid[oa][^\[\]]*\]", re.IGNORECASE)
+
+
+def _continued_intent(text: str, context) -> str:
+    """A intenção da fala anterior do cliente, quando esta é só um link ou anexo.
+
+    Só para o que é da equipe ou de outra mesa (currículo, reclamação, parceria): um link
+    sozinho depois de "posso te mandar um currículo?" é o currículo. Fala com palavra, ou
+    fala anterior que a Concierge responde, segue a regra de sempre.
+    """
+    if re.search(r"[A-Za-zÀ-ÿ0-9]", _NOT_SPEECH.sub(" ", str(text or ""))):
+        return ""
+    earlier = next((line for who, line in reversed(list(context or ())) if who == "Cliente" and line), "")
+    if not earlier:
+        return ""
+    intent, _source = classify_rules(earlier)
+    return intent if ROUTES.get(intent, (ANSWER,))[0] in {TEAM, OTHER_DESK} else ""
+
+
 def classify_rules(text: str) -> tuple[str, str]:
     """(intenção, fonte) pela regra local. Nunca devolve intenção fora das 12."""
     sensitive = REGEX_TO_INTENT.get(classify_handoff_request(text), "")
@@ -388,6 +408,11 @@ def decide(
         # de cancelamento. A Concierge pergunta e cancela; fora disso, R4.
         return Triage("order", NOW, ANSWER, rules_summary("order", text), "rules", answered_by=concierge_answers)
     rules_intent, rules_source = classify_rules(text)
+    continued = _continued_intent(text, context)
+    if continued:
+        # Só um link (ou anexo) depois de "posso te mandar um currículo?": é a continuação
+        # da fala anterior, e vai para onde ela foi (#2910, msg-596).
+        rules_intent, rules_source = continued, "rules"
     allergy = _allergy_route(text, rules_intent, context=context, previous=previous, channel_ref=channel_ref)
     if allergy is not None and (allergy.destination == ANSWER or allergy.escalated_by):
         return allergy
@@ -508,6 +533,29 @@ def context_for(conversation, *, limit: int = 6) -> list[tuple[str, str]]:
     return [(who[kind], text) for kind, text in reversed(rows)]
 
 
+def customer_quote(text: str) -> str:
+    """A fala do cliente entre aspas, redigida e curta; vazio sem fala."""
+    said = _clip(_redacted(text), 180)
+    return f"“{said}”" if said else ""
+
+
+def handoff_message(conversation) -> str:
+    """O cartão de handoff: só o que o cliente escreveu, entre aspas (coordenação, 20/11/2026).
+
+    Quem é e por quê vêm no título, que a projeção do sino escreve pela conversa; onde
+    responder, no botão. As mensagens do turno são as da triagem gravada; sem elas, a
+    última do cliente.
+    """
+    from shopman.shop.models import ConversationMessage
+
+    messages = conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND)
+    ids = list(((conversation.flags or {}).get("triage") or {}).get("message_ids") or [])
+    texts = list(messages.filter(pk__in=ids).order_by("pk").values_list("text", flat=True)) if ids else []
+    if not any(texts):
+        texts = list(messages.order_by("-pk").values_list("text", flat=True)[:1])
+    return customer_quote(" ".join(text for text in texts if text))
+
+
 def alert_message(conversation, triage: Triage) -> str:
     """O cartão do operador: intenção e urgência, o resumo e onde responder."""
     who = conversation.customer_name or conversation.phone or ""
@@ -519,8 +567,5 @@ def alert_message(conversation, triage: Triage) -> str:
         lines.append(f"Cliente: {who}.")
     if conversation.last_order_ref:
         lines.append(f"Último pedido: {conversation.last_order_ref}.")
-    lines.append(
-        "Responda pelo Live Chat do ManyChat. Transcrição no Admin: "
-        f"/admin/shop/conversation/{conversation.pk}/change/"
-    )
+    lines.append("Responda pelo Live Chat do ManyChat.")
     return "\n".join(line for line in lines if line)

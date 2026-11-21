@@ -367,6 +367,7 @@ export interface NotificationReceiptProjection {
   provider_id: string;
   detail: string;
   attempts: NotificationAttemptProjection[];
+  fallback_whatsapp_url: string;
 }
 
 /** A compact production dependency shown on order cards and detail. */

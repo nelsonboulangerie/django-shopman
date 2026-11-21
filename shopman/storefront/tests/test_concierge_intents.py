@@ -148,6 +148,19 @@ def test_reading_returns_the_acts_in_order_with_structured_output():
     assert request["model"] == "claude-haiku-4-5"
     assert request["output_config"]["format"]["type"] == "json_schema"
     assert request["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert request["thinking"] == {"type": "disabled"}
+
+
+def test_reading_asks_deepseek_not_to_reason():
+    """#2909: a DeepSeek raciocina por padrão e gastava o teto de 600 antes do JSON (11
+    quedas por max_tokens no placar do WP-09). A porta repassa o "thinking" a ela."""
+    from shopman.shop import ai
+
+    request = intents.build_request("tem croissant?", model="deepseek-flash")
+    fitted = ai.fit_request(request, ai.extras_for("https://api.deepseek.com/anthropic"))
+
+    assert fitted["thinking"] == {"type": "disabled"}
+    assert fitted["max_tokens"] == 600
 
 
 def test_reading_drops_unknown_acts_and_invented_products():

@@ -31,7 +31,17 @@ const agentPrint = vi.fn().mockResolvedValue({ status: "printed", detail: "" });
 const danfeFetched = vi.fn();
 
 mockNuxtImport("usePosTerminal", () => async () => ({
-  pos: computed(() => makeProjection({ has_open_cash_session: true })),
+  // As formas da loja como o servidor as publica: o saldo da encomenda oferece só
+  // as que a entrega no balcão recebe (dinheiro, débito, crédito).
+  pos: computed(() => makeProjection({
+    has_open_cash_session: true,
+    payment_methods: [
+      { ref: "cash", label: "Dinheiro" },
+      { ref: "pix", label: "Pix" },
+      { ref: "credit", label: "Crédito" },
+      { ref: "debit", label: "Débito" },
+    ],
+  })),
   pending: ref(false),
   refresh: vi.fn().mockResolvedValue(undefined),
 }));
@@ -285,23 +295,57 @@ async function settle() {
   await flushPromises();
 }
 
-describe("Detalhe — receber e entregar", () => {
+describe("Detalhe — receber e entregar (a tela de Pagamento da venda, WP-E5)", () => {
+  // O "Receber e entregar" abre a MESMA tela de Pagamento da venda, com o saldo
+  // como total: gesto de dinheiro tem uma tela só (dono, 16/11/2026).
+  async function opensPayment(wrapper: VueWrapper) {
+    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await settle();
+    expect(wrapper.find("[data-preorder-balance-payment]").exists()).toBe(true);
+  }
+  async function tap(wrapper: VueWrapper, selector: string) {
+    await wrapper.find(selector).trigger("click");
+    await settle();
+  }
+  const cta = (wrapper: VueWrapper) => wrapper.find<HTMLButtonElement>("[data-payment-cta]");
+  const heroText = (wrapper: VueWrapper) => wrapper.find("[data-pos-total]").text().replace(/\s+/g, " ");
+
   it("com saldo, o botão diz o gesto inteiro com o valor", async () => {
     const wrapper = await mount(DetailPage);
     expect(wrapper.find("[data-preorder-hand-over]").text()).toBe("Receber R$ 36,00 e entregar");
   });
 
-  it("dinheiro com troco: o diálogo mostra o troco e manda a nota e a forma", async () => {
+  it("abre o Pagamento com o saldo como total, as formas da entrega e a encomenda à direita", async () => {
     const wrapper = await mount(DetailPage);
-    await wrapper.find("[data-preorder-hand-over]").trigger("click");
-    await settle();
-    const received = body().querySelector<HTMLInputElement>("[data-preorder-received]")!;
-    received.value = "50";
-    received.dispatchEvent(new Event("input"));
-    await settle();
-    expect(body().querySelector("[data-preorder-change]")!.textContent!.replace(/\s/g, " ")).toContain("Troco: R$ 14,00");
+    await opensPayment(wrapper);
+    expect(heroText(wrapper)).toContain("A receber");
+    expect(heroText(wrapper)).toContain("R$ 36,00");
+    // Pix e link a rota da entrega não recebe: a tela não oferece.
+    const methods = wrapper.findAll("[data-payment-method]").map((button) => button.attributes("data-payment-method"));
+    expect(methods).toEqual(["cash", "credit", "debit"]);
+    expect(wrapper.find("[data-balance-summary]").text()).toContain("Encomenda NB-7");
+    const totals = wrapper.findAll("[data-balance-totals] > div").map((row) => row.findAll("dt, dd").map((cell) => cell.text().replace(/\s+/g, " ")));
+    expect(totals).toEqual([["Total da encomenda", "R$ 36,00"], ["A receber", "R$ 36,00"]]);
+    // Sem forma escolhida, Receber não acende (como na venda).
+    expect(cta(wrapper).text()).toContain("Receber e entregar");
+    expect(cta(wrapper).element.disabled).toBe(true);
+    // O detalhe saiu de cena.
+    expect(wrapper.find("[data-preorder-counter-panel]").exists()).toBe(false);
+  });
 
-    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+  it("dinheiro com troco: a nota de R$ 50 vira o troco grande e o corpo leva a forma e a nota", async () => {
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="cash"]');
+    const note50 = wrapper.findAll("button[aria-label^='Recebi nota de']")
+      .find((button) => button.attributes("aria-label")!.replace(/\s+/g, " ") === "Recebi nota de R$ 50,00")!;
+    await note50.trigger("click");
+    await settle();
+    expect(heroText(wrapper)).toContain("Troco");
+    expect(heroText(wrapper)).toContain("R$ 14,00");
+    expect(cta(wrapper).element.disabled).toBe(false);
+
+    await cta(wrapper).trigger("click");
     await settle();
 
     expect(call).toHaveBeenCalledTimes(1);
@@ -316,19 +360,78 @@ describe("Detalhe — receber e entregar", () => {
     expect(kick).toHaveBeenCalledWith("preorder_cash");
   });
 
-  it("dinheiro que não cobre o valor não deixa confirmar", async () => {
+  it("valor absurdo pede a MESMA conferência da venda antes de receber (troco alto, #2212)", async () => {
     const wrapper = await mount(DetailPage);
-    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="cash"]');
+    for (const digit of ["9", "0", "0", "0"]) await tap(wrapper, `button[aria-label="Dígito ${digit}"]`);
+    expect(heroText(wrapper)).toContain("8.964,00");
+    expect(cta(wrapper).element.disabled).toBe(true);
+    expect(wrapper.text()).toContain("Confira o valor recebido");
+    const confirmBig = wrapper.findAll("button").find((button) => button.text() === "O troco está certo")!;
+    await confirmBig.trigger("click");
     await settle();
-    const received = body().querySelector<HTMLInputElement>("[data-preorder-received]")!;
-    received.value = "20";
-    received.dispatchEvent(new Event("input"));
-    await settle();
-    expect(body().querySelector("[data-preorder-change]")!.textContent!.replace(/\s/g, " ")).toContain("não cobre R$ 36,00");
-    expect(body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.disabled).toBe(true);
+    expect(cta(wrapper).element.disabled).toBe(false);
   });
 
-  it("já paga: o gesto é só Entregar, e não manda forma nenhuma", async () => {
+  it("cartão passa pela conferência da maquininha, e o corpo vai sem nota", async () => {
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="debit"]');
+    await cta(wrapper).trigger("click");
+    await settle();
+    expect(call).not.toHaveBeenCalled();
+    body().querySelector<HTMLButtonElement>("[data-pos-machine-charged]")!.click();
+    await settle();
+    expect(call.mock.calls[0]![1].body).toMatchObject({ tenders: [{ method: "debit", amount_q: 3600 }] });
+    expect(call.mock.calls[0]![1].body.cash_tendered_q).toBeUndefined();
+    expect(kick).not.toHaveBeenCalled();
+  });
+
+  it("o teclado é o da venda: letra lança a forma, dígitos editam, F10 divide e Esc volta", async () => {
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    const press = async (key: string) => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      await settle();
+    };
+    await press("r");
+    for (const digit of ["5", "0"]) await press(digit);
+    expect(heroText(wrapper)).toContain("R$ 14,00");
+    // O diálogo aberto é o do reka-ui (`data-state="open"`), a mesma régua do shell.
+    const openDialog = () => body().querySelector<HTMLElement>('[role="dialog"][data-state="open"]');
+    await press("F10");
+    await vi.waitFor(() => expect(openDialog()?.textContent).toContain("Em quantas pessoas"));
+    // Com o diálogo aberto, as teclas da tela se calam (o Esc é dele).
+    openDialog()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await settle();
+    await vi.waitFor(() => expect(openDialog()).toBeNull());
+    await press("Escape");
+    expect(wrapper.find("[data-preorder-balance-payment]").exists()).toBe(false);
+  });
+
+  it("P2-14: com o Pagamento aberto o PDV não trava por ociosidade; voltar solta a trava", async () => {
+    const hold = useState<boolean>("pos-payment-hold", () => false);
+    const wrapper = await mount(DetailPage);
+    expect(hold.value).toBe(false);
+    await opensPayment(wrapper);
+    expect(hold.value).toBe(true);
+    await tap(wrapper, "[data-preorder-balance-back]");
+    expect(wrapper.find("[data-preorder-balance-payment]").exists()).toBe(false);
+    expect(hold.value).toBe(false);
+  });
+
+  it("entregue, o PDV volta para o recorte de onde veio", async () => {
+    const wrapper = await mount(DetailPage);
+    route.query = { back: "/preorders?mode=week" };
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="cash"]');
+    await cta(wrapper).trigger("click");
+    await settle();
+    expect(navigate).toHaveBeenCalledWith("/preorders?mode=week");
+  });
+
+  it("já paga: o gesto é só Entregar, uma pergunta e nenhuma forma", async () => {
     detail.counter.hand_over = {
       ...detail.counter.hand_over,
       needs_payment: false,
@@ -339,13 +442,15 @@ describe("Detalhe — receber e entregar", () => {
     expect(wrapper.find("[data-preorder-hand-over]").text()).toBe("Entregar");
     await wrapper.find("[data-preorder-hand-over]").trigger("click");
     await settle();
-    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    expect(wrapper.find("[data-preorder-balance-payment]").exists()).toBe(false);
+    expect(useConfirmState().pending.value?.title).toBe("Entregar a encomenda de Ana Souza?");
+    answerConfirm(true);
     await settle();
     expect(call.mock.calls[0]![1].body.tenders).toBeUndefined();
     expect(kick).not.toHaveBeenCalled();
   });
 
-  it("Pix pendente: o diálogo diz que a cobrança do cliente será cancelada antes de receber", async () => {
+  it("Pix pendente: a tela de Pagamento diz que a cobrança do cliente será cancelada antes de receber", async () => {
     detail.counter.hand_over = {
       ...detail.counter.hand_over,
       suggested_method: "",
@@ -353,17 +458,15 @@ describe("Detalhe — receber e entregar", () => {
     };
     const wrapper = await mount(DetailPage);
     expect(wrapper.find("[data-preorder-hand-over]").text()).toBe("Receber R$ 36,00 e entregar");
-    await wrapper.find("[data-preorder-hand-over]").trigger("click");
-    await settle();
-    expect(body().querySelector("[data-preorder-digital-charge-notice]")!.textContent).toContain(
-      "O Pix enviado ao cliente será cancelado.",
-    );
-    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await opensPayment(wrapper);
+    expect(wrapper.text()).toContain("O Pix enviado ao cliente será cancelado.");
+    await tap(wrapper, '[data-payment-method="cash"]');
+    await cta(wrapper).trigger("click");
     await settle();
     expect(call.mock.calls[0]![1].body.tenders).toEqual([{ method: "cash", amount_q: 3600 }]);
   });
 
-  it("o cliente acabou de pagar online: aviso na página e só Entregar", async () => {
+  it("o cliente acabou de pagar online: a tela volta ao detalhe, que avisa e oferece só Entregar", async () => {
     detail.counter.hand_over = {
       ...detail.counter.hand_over,
       digital_charge_notice: "O link de pagamento enviado ao cliente será cancelado.",
@@ -376,8 +479,8 @@ describe("Detalhe — receber e entregar", () => {
       },
     });
     const wrapper = await mount(DetailPage);
-    await wrapper.find("[data-preorder-hand-over]").trigger("click");
-    await settle();
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="cash"]');
     // O servidor registrou o pagamento: a leitura seguinte diz que não há saldo.
     detail.counter.hand_over = {
       ...detail.counter.hand_over,
@@ -386,10 +489,10 @@ describe("Detalhe — receber e entregar", () => {
       amount_display: "R$ 0,00",
       digital_charge_notice: "",
     };
-    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await cta(wrapper).trigger("click");
     await settle();
 
-    expect(body().querySelector("[data-preorder-hand-over-dialog]")).toBeNull();
+    expect(wrapper.find("[data-preorder-balance-payment]").exists()).toBe(false);
     expect(wrapper.find("[data-preorder-paid-online]").text()).toContain("acabou de pagar online");
     expect(wrapper.find("[data-preorder-hand-over]").text()).toBe("Entregar");
     expect(kick).not.toHaveBeenCalled();
@@ -398,9 +501,9 @@ describe("Detalhe — receber e entregar", () => {
   it("P2-27: entregue com a nota na fila, a DANFE sai sozinha na bobina, como na venda de balcão", async () => {
     call.mockResolvedValue({ ok: true, ref: "NB-7", received_q: 3600, status: "completed", fiscal_state: "queued" });
     const wrapper = await mount(DetailPage);
-    await wrapper.find("[data-preorder-hand-over]").trigger("click");
-    await settle();
-    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="cash"]');
+    await cta(wrapper).trigger("click");
     await settle();
     await flushPromises();
 
@@ -411,9 +514,9 @@ describe("Detalhe — receber e entregar", () => {
   it("P2-27: sem nota esperada, entregar não espera nem imprime DANFE", async () => {
     call.mockResolvedValue({ ok: true, ref: "NB-7", received_q: 3600, status: "completed", fiscal_state: "not_expected" });
     const wrapper = await mount(DetailPage);
-    await wrapper.find("[data-preorder-hand-over]").trigger("click");
-    await settle();
-    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="cash"]');
+    await cta(wrapper).trigger("click");
     await settle();
     await flushPromises();
 
@@ -432,15 +535,14 @@ describe("Detalhe — receber e entregar", () => {
     expect(wrapper.find("[data-preorder-hand-over-blocked]").text()).toContain("reagende para hoje");
   });
 
-  it("ainda na cozinha: Entregar existe, e o diálogo diz que a encomenda sai da tela da cozinha", async () => {
+  it("ainda na cozinha: o Pagamento diz que a encomenda sai da tela da cozinha", async () => {
     detail.counter.hand_over = {
       ...detail.counter.hand_over,
       kitchen_notice: "A cozinha ainda não marcou pronto. Ao entregar, a encomenda sai da tela da cozinha.",
     };
     const wrapper = await mount(DetailPage);
-    await wrapper.find("[data-preorder-hand-over]").trigger("click");
-    await settle();
-    expect(body().querySelector("[data-preorder-kitchen-notice]")?.textContent).toContain("sai da tela da cozinha");
+    await opensPayment(wrapper);
+    expect(wrapper.text()).toContain("sai da tela da cozinha");
   });
 });
 
@@ -557,6 +659,25 @@ describe("Detalhe — cancelar", () => {
     expect(call.mock.calls[1]![1].body.reason_key).toBe("other");
     // Mesma tentativa, mesma chave: a primeira foi recusada antes de gravar.
     expect(call.mock.calls[1]![1].body.idempotency_key).toBe(call.mock.calls[0]![1].body.idempotency_key);
+  });
+
+  it("P1-6: o gerente assina VENDO O VALOR que volta ao cliente, e quem cancela também", async () => {
+    detail.counter.cancel = { allowed: true, requires_approval: true, block_reason: "" };
+    detail.cancel_money_effect = "R$ 36,00 em dinheiro ficam a devolver no caixa.";
+    call.mockRejectedValueOnce({ status: 403, data: { detail: "Precisa de gerente.", error: { code: "manager_approval_required" } } });
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    expect(body().textContent!.replace(/\s+/g, " ")).toContain("R$ 36,00 em dinheiro ficam a devolver no caixa.");
+    pickCancelReason("O cliente pediu");
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
+    await settle();
+
+    const auth = wrapper.findComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("open")).toBe(true);
+    expect(auth.props("action")).toBe("cancel_order");
+    expect(auth.props("detail")).toBe("R$ 36,00 em dinheiro ficam a devolver no caixa.");
   });
 
   it("o diálogo é o do kit, o mesmo do Gestor: fechar com motivo digitado pergunta na própria tela", async () => {

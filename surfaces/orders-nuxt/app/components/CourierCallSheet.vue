@@ -6,7 +6,12 @@
 // botão; decisão 1 = A do dono), quem chega depois, o troco que sai da gaveta e a
 // maquininha dela. A página é dona do estado (as corridas estão em Editando): o
 // sheet só desenha e devolve os gestos.
+//
+// "Quem leva" (M3, #2526): com alguém da casa na escala, cada corrida ganha a linha de
+// chips (o padrão do Admin marcado, a casa a um toque). Escolhida uma pessoa, a cotação
+// vira o valor da tabela e o botão diz para quem vai. Sem ninguém, o sheet é o de antes.
 import type { QuoteLine } from "~/presentation/deliveries";
+import type { CarrierChip } from "~/presentation/houseCouriers";
 
 export interface CallSheetStop {
   ref: string;
@@ -28,6 +33,12 @@ export interface CallSheetRide {
   late: string;
   needsMachine: boolean;
   machine: string;
+  /** Os chips "Quem leva" (vazio: ninguém da casa na escala, a linha não aparece). */
+  carriers: CarrierChip[];
+  /** O chip marcado: "" é o serviço padrão; senão, o `ref` do entregador da casa. */
+  carrier: string;
+  /** "Diego está na rua. A corrida espera a volta." */
+  notice: string;
 }
 
 const props = defineProps<{
@@ -47,6 +58,7 @@ const emit = defineEmits<{
   confirm: [];
   change: [ref: string, value: string];
   machine: [number: number, value: string];
+  carrier: [number: number, key: string];
 }>();
 
 const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops.length, 0));
@@ -83,7 +95,15 @@ const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops
               <span class="op-label font-semibold text-highlighted">Corrida {{ ride.letter }}</span>
               <span class="min-w-0 flex-1 truncate op-body text-toned">{{ ride.stops.map((stop) => stop.code).join(" → ") }}</span>
             </div>
-            <div v-if="ride.lines.length" class="flex flex-col gap-0.5">
+            <RideCarrierChips
+              v-if="ride.carriers.length"
+              :chips="ride.carriers"
+              :model-value="ride.carrier"
+              :label="`Quem leva a corrida ${ride.letter}`"
+              :notice="ride.notice"
+              @update:model-value="(key: string) => emit('carrier', ride.number, key)"
+            />
+            <div v-if="ride.lines.length" class="flex flex-col gap-0.5" data-call-sheet-quote>
               <p
                 v-for="line in ride.lines"
                 :key="line.text"
