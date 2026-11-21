@@ -160,3 +160,58 @@ class HouseCourierRideView(APIView):
                     "ride_number": ride_number},
             execute=send, prepare=prepare, where="a fila",
         )
+
+
+@extend_schema_view(
+    get=extend_schema(tags=["backstage"], summary="Read the committed result of a house ride gesture",
+                      responses={200: OpenApiResponse(description="Committed result."),
+                                 202: OpenApiResponse(description="No committed result yet.")}),
+    post=extend_schema(tags=["backstage"], summary="House ride gesture from the counter",
+                       responses={200: OpenApiResponse(description="Applied.")}),
+)
+class HouseRideGestureView(APIView):
+    """Os gestos do balcão na corrida da casa (M3b, #2898): ``depart``, ``deliver``,
+    ``resend`` e ``release``.
+
+    Para quando o entregador está sem celular ou sem sinal: "Saiu" e "A47 entregue" pelo
+    mesmo funil do link (fonte ``operator:<nome>``); "Reenviar o link" devolve o MESMO
+    link e o WhatsApp pronto (``whatsapp_url``); "Soltar o link" solta o celular preso.
+    Protocolo de intenção: ``expected_actor_id``, ``Idempotency-Key`` e ``base_revision``
+    (a revisão da rota, da ação da projeção ``house``). ``deliver`` leva ``ref``.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+    GESTURES = ("depart", "deliver", "resend", "release")
+
+    def get(self, request, ride: str, gesture: str):
+        if gesture not in self.GESTURES:
+            return Response({"detail": "Gesto desconhecido."}, status=404)
+        return _intention_receipt(request, operation=f"house-{gesture}", resource=ride)
+
+    def post(self, request, ride: str, gesture: str):
+        if gesture not in self.GESTURES:
+            return Response({"detail": "Gesto desconhecido."}, status=404)
+        ride = ride.strip()[:64]
+        order_ref = request.data.get("ref") or ""
+        if gesture == "deliver" and (not isinstance(order_ref, str) or not order_ref.strip()):
+            return Response({"detail": "Diga qual pedido foi entregue.", "field": "ref",
+                             "errors": {"ref": ["Diga qual pedido foi entregue."]}}, status=400)
+        order_ref = order_ref.strip()[:64] if isinstance(order_ref, str) else ""
+
+        def run(expected):
+            actor = _actor(request)
+            if gesture == "depart":
+                return {"detail": house_couriers.depart(ride, actor=actor, expected=expected)}
+            if gesture == "deliver":
+                return {"detail": house_couriers.deliver(ride, order_ref, actor=actor, expected=expected)}
+            house_couriers.check_revision(house_couriers.live_link(ride), expected)
+            if gesture == "release":
+                return {"detail": house_couriers.release(ride)}
+            sent = house_couriers.resend(ride)
+            return {"detail": sent.detail, "link_url": sent.link_url, "whatsapp_url": sent.whatsapp_url}
+
+        return _intention_response(
+            request, operation=f"house-{gesture}", resource=ride,
+            inputs={"ref": order_ref} if gesture == "deliver" else {}, execute=run, where="a corrida",
+        )

@@ -87,7 +87,7 @@ from .feeds import (
     FeedRotationView,
     FeedSwitchView,
 )
-from .house_couriers import HouseCourierRideView, HouseCourierShiftView, HouseCouriersView
+from .house_couriers import HouseCourierRideView, HouseCourierShiftView, HouseCouriersView, HouseRideGestureView
 from .hub import HubView
 from .ifood_reviews import (
     IFoodReviewDetailView,
@@ -812,6 +812,9 @@ urlpatterns = [
     path("deliveries/couriers/ride/", HouseCourierRideView.as_view(), name="api-backstage-house-courier-ride"),
     path("deliveries/couriers/<str:ref>/shift/", HouseCourierShiftView.as_view(),
          name="api-backstage-house-courier-shift"),
+    # Os gestos do balcão na corrida da casa (M3b, #2898): depart, deliver, resend, release.
+    path("deliveries/couriers/rides/<str:ride>/<str:gesture>/", HouseRideGestureView.as_view(),
+         name="api-backstage-house-ride-gesture"),
     path("deliveries/<str:ride>/driver-photo/", DeliveryDriverPhotoView.as_view(),
          name="api-backstage-delivery-driver-photo"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).

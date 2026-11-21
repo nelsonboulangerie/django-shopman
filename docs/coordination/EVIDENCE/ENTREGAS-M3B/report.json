@@ -1,0 +1,90 @@
+{
+  "375-antes": {
+    "checked": 17,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Saiu",
+    "overflow": 0,
+    "small_targets": 1,
+    "page_hscroll": false
+  },
+  "375-letter-right-edge": {
+    "house": [
+      346
+    ],
+    "card": [
+      359
+    ]
+  },
+  "375-confirmar": {
+    "checked": 17,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Saiu",
+    "overflow": 0,
+    "small_targets": 1,
+    "page_hscroll": false
+  },
+  "375-na-rua": {
+    "checked": 17,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "C03 entregue",
+    "overflow": 0,
+    "small_targets": 1,
+    "page_hscroll": false
+  },
+  "375-corridas": {
+    "checked": 29,
+    "fails": 0,
+    "min_contrast": 4.54,
+    "min_text": "B",
+    "overflow": 0,
+    "small_targets": 2,
+    "page_hscroll": false
+  },
+  "1366-antes": {
+    "checked": 17,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Saiu",
+    "overflow": 0,
+    "small_targets": 1,
+    "page_hscroll": false
+  },
+  "1366-letter-right-edge": {
+    "house": [
+      1333
+    ],
+    "card": [
+      1346
+    ]
+  },
+  "1366-confirmar": {
+    "checked": 17,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Saiu",
+    "overflow": 0,
+    "small_targets": 1,
+    "page_hscroll": false
+  },
+  "1366-na-rua": {
+    "checked": 17,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "C03 entregue",
+    "overflow": 0,
+    "small_targets": 1,
+    "page_hscroll": false
+  },
+  "1366-corridas": {
+    "checked": 29,
+    "fails": 0,
+    "min_contrast": 4.54,
+    "min_text": "B",
+    "overflow": 0,
+    "small_targets": 3,
+    "page_hscroll": false
+  }
+}
