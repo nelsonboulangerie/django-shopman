@@ -111,6 +111,8 @@ CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
 CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
 CART_ASK_QTY_COPY_KEY = "CONCIERGE_CART_ASK_QTY"
 CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
+#: O que o cliente citou não está no cardápio de hoje: diz isso e mostra o que há (ensaio, 21/11/2026).
+NOT_IN_MENU_COPY_KEY = "CONCIERGE_NOT_IN_MENU"
 DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 #: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
@@ -865,6 +867,74 @@ def _cart_qty(context_fn, sku: str) -> int:
     return int(line.get("qty") or 0) if line else 0
 
 
+#: Palavras que todo item da padaria pode citar: casar SÓ por elas não é achar o que o cliente
+#: pediu ("pão de ensaio A" casava Baguette e Croque pelo "pão"; ensaio do dono, 21/11/2026).
+_GENERIC_PRODUCT_WORDS = frozenset({
+    "pao", "paes", "paozinho", "doce", "doces", "salgado", "salgados", "produto", "produtos", "item", "itens",
+    "quais", "qual", "vende", "vendem", "tipo", "tipos", "sabor", "sabores", "hoje", "agora", "ainda", "algum", "alguma",
+})
+
+
+def _weak_match(act: Act, conversation, items: list[dict]) -> bool:
+    """Nenhum item achado cita uma palavra DISTINTIVA do que o cliente pediu: casou só pelo genérico."""
+    from shopman.storefront.presentation.public_information import word_stem
+
+    from . import tools as tools_module
+
+    wanted = act.product or _cited(act, conversation)
+    distinctive = {
+        word_stem(word) for word in tools_module._public_search_terms(wanted)
+        if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER and word not in _ORDER_WORDS
+    }
+    if not distinctive or not items:
+        return False
+    for item in items:
+        said = _fold(" ".join(str(item.get(key) or "") for key in ("name", "description", "collection")))
+        for word in {word_stem(w) for w in re.findall(r"[a-z0-9]+", said) if len(w) >= 3}:
+            # "franceses" é "francês": basta um prefixo comum de quatro letras ou mais.
+            if any(d == word or (min(len(d), len(word)) >= 4 and (d.startswith(word) or word.startswith(d)))
+                   for d in distinctive):
+                return False
+    return True
+
+
+#: O que diz o gesto de pedir, não o produto ("acrescenta 2 pães no meu pedido").
+_ORDER_WORDS = frozenset({
+    "acrescenta", "acrescentar", "acrescente", "adiciona", "adicionar", "adicione", "pedido", "pedi", "pedir",
+    "meu", "minha", "nos", "num", "numa", "separa", "separar", "reserva", "reservar", "encomenda", "encomendar",
+})
+
+
+_CITE_LEADING = _ORDER_FILLER | {"tem", "temos", "teria", "voce", "voces", "vc", "vcs", "ainda", "hoje", "ai"}
+
+
+def _cited(act: Act, conversation) -> str:
+    """O que o cliente pediu, nas palavras DELE (com acento), sem o "quero 2" do começo.
+
+    A leitura local devolve o trecho dobrado ("quero 2 pao de ensaio a"); a citação ao
+    cliente sai da fala original, caractere a caractere, e perde só o que abre o pedido.
+    """
+    from .turn_outcome import current_customer_text
+
+    original = current_customer_text(conversation) if conversation is not None else ""
+    folded_chars = [_fold(ch) or " " for ch in original]
+    folded = "".join(ch[:1] for ch in folded_chars)
+    target = _fold(act.product or act.span).strip()
+    start = folded.find(target) if target else -1
+    piece = original[start:start + len(target)] if start >= 0 else (act.product or act.span)
+    words = piece.split()
+    while words and (_fold(words[0]).strip("?!.,") in _CITE_LEADING or words[0].isdigit()
+                     or _fold(words[0]) in dialogue_number_words()):
+        words.pop(0)
+    return " ".join(words).strip(" ?!.,") or (act.product or act.span)
+
+
+def dialogue_number_words() -> frozenset:
+    from . import dialogue
+
+    return frozenset(dialogue._NUMBER_WORDS)
+
+
 def _cart_change(act: Act, *, conversation, context, copy):
     """A sacola na conversa (WP-12): põe, troca e tira pelo ``set_item`` que já existe.
 
@@ -886,6 +956,8 @@ def _cart_change(act: Act, *, conversation, context, copy):
     items = list(found.get("items") or []) if found.get("ok") and not found.get("overview") else []
     if not items:
         return None
+    if _weak_match(act, conversation, items):
+        return None  # nada do cardápio é o que o cliente citou: a parte segue para a busca, que diz
     exact = [i for i in items if _fold(i.get("name", "")) == _fold(query)]
     if exact:
         items = exact[:1]
@@ -1117,6 +1189,16 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
         if uncovered_by_faq:
             result = {**result, "found": False}
+        not_in_menu = (
+            act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found") and not result.get("overview")
+            and _weak_match(act, conversation, list(result.get("items") or []))
+        )
+        if not_in_menu:
+            # O que o cliente citou não está no cardápio de hoje: no lugar de "qual deles?" com
+            # itens sem relação, o cardápio do que há (o mesmo de "o que tem disponível?").
+            overview = tools_module.execute("search_storefront", {}, context("o que tem disponível"))
+            result = {**overview, "code": "not_in_menu"} if overview.get("overview") else {**result, "found": False}
+
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
         sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
         # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é
@@ -1130,6 +1212,11 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         if result.get("ok") and result.get("found"):
             reply.text = sheet or tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
+            if result.get("code") == "not_in_menu":
+                # Nada do cardápio casa com o que o cliente citou: nada de "qual deles?" com
+                # itens sem relação. Diz que não achou e mostra o que há hoje.
+                lead = _fill(copy(NOT_IN_MENU_COPY_KEY) or "", part=_clip(_cited(act, conversation)))
+                reply.text = "\n".join(part for part in (lead, reply.text) if part)
         elif consult and verifiable and verification.question_text(act):
             # Sem fato numa consulta: a casa não inventa e não larga o cliente. Diz que
             # não tem aqui, pergunta à equipe e, no fim da resposta, promete o prazo.
