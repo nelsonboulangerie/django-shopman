@@ -17,11 +17,26 @@ function sourceFiles (dir: string): string[] {
   })
 }
 
+// Tira o que está entre `open` e `close` por posição, não por regex: a trava lê o fonte,
+// não sanitiza HTML, e cortar por índice não deixa sobra de marcador pela metade.
+function cutBetween (source: string, open: string, close: string): string {
+  let out = ''
+  let from = 0
+  for (;;) {
+    const start = source.indexOf(open, from)
+    if (start === -1) return out + source.slice(from)
+    out += source.slice(from, start)
+    const end = source.indexOf(close, start + open.length)
+    if (end === -1) return out
+    from = end + close.length
+  }
+}
+
 function withoutComments (source: string): string {
-  return source
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
+  return cutBetween(cutBetween(source, '<!--', '-->'), '/*', '*/')
+    .split('\n')
+    .map(line => line.replace(/(^|[^:'"`])\/\/.*$/, '$1'))
+    .join('\n')
 }
 
 describe('voz da loja: sacola, nunca carrinho', () => {
