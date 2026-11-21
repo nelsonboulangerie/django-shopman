@@ -608,7 +608,7 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > ℹ️ Tinha a mesma forma do `pagamento_expirado`, aposentado em 14/10/2026 (o Pix vencido
 > agora sai pelo `pedido_cancelado`).
 
-### `concierge_resposta_pronta` — evento `concierge_answer_ready` 🆕 · texto aprovado pelo dono em 21/11/2026 · ⏳ não submetido à Meta (#3004)
+### `concierge_resposta_pronta` — evento `concierge_answer_ready` 🆕 · texto aprovado pelo dono em 21/11/2026 · ⏳ submetido em 21/11/2026 (ManyChat, Utility, pt_BR, corpo exato), em análise na Meta (#3004)
 - Corpo (WP-16 da Concierge): `A equipe respondeu a sua pergunta. Responda esta mensagem para eu te mostrar a resposta 💛`
 - Vars: nenhuma. Botão: nenhum (a resposta do cliente reabre a janela de 24 horas).
 - Categoria: Utility.
