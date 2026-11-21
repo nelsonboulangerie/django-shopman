@@ -168,6 +168,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
         entries=(
             _model("PDV e alertas", "shop_shoppos", "Comportamento do balcão e quais alertas o operador recebe.", "point_of_sale"),
             _model("Estações KDS", "backstage_kdsinstance", "As telas da cozinha e o que cada uma exibe.", "tv"),
+            _model("Atalhos da nota da cozinha", "shop_kitchennotetag", "Os acréscimos de um toque na nota que vai para a Cozinha, e para que produtos cada um vale.", "sticky_note_2"),
             _model("Comandas do PDV", "backstage_postab", "As comandas fixas do balcão.", "receipt"),
             _model("Lugares do salão", "backstage_seatingspot", "Mesas, balcão e o que só é usado em dia cheio.", "table_restaurant"),
             _model("Maquininhas de entrega", "backstage_deliverydevice", "Identificação e disponibilidade das maquininhas que acompanham entregas.", "credit_card"),

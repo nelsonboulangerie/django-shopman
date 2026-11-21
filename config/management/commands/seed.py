@@ -1185,6 +1185,7 @@ class Command(BaseCommand):
         channels = self._instance_channels()
         self._assert_storefront_products_orderable()
         self._seed_kds()
+        self._seed_kitchen_note_tags()
         self._seed_timer_tags()
 
         # ── Fase dinâmica: diverge por perfil ──────────────────────────────
@@ -1679,12 +1680,6 @@ class Command(BaseCommand):
                 *BRAND_PROFILES
             ],
             **SEARCH_FIELDS,
-            "kitchen_note_tags": [
-                "Bem assado",
-                "Pouco assado",
-                "Sem cebola",
-                "Embalar para presente",
-                "Cortar ao meio"],
             "opening_hours": opening_hours,
             # Venda sem conexão desligada (dono, 03/11/2026): ligar depende da
             # NFC-e em contingência (tpEmis 9), que ainda não existe.
@@ -2129,6 +2124,27 @@ class Command(BaseCommand):
     # ────────────────────────────────────────────────────────────────
     # Catálogo (Offerman)
     # ────────────────────────────────────────────────────────────────
+
+    #: Os atalhos da nota da cozinha e as categorias a que cada um se aplica (sem
+    #: categoria, vale para todo pedido). Sugestão do seed: a loja ajusta no Admin.
+    KITCHEN_NOTE_TAGS = (
+        ("Bem assado", ("rusticos", "macios", "folhados")),
+        ("Pouco assado", ("rusticos", "macios", "folhados")),
+        ("Sem cebola", ("salgados",)),
+        ("Embalar para presente", ()),
+        ("Cortar ao meio", ("rusticos", "macios", "salgados")),
+    )
+
+    def _seed_kitchen_note_tags(self):
+        from shopman.offerman.models import Collection
+
+        from shopman.shop.models import KitchenNoteTag
+
+        for position, (label, collection_refs) in enumerate(self.KITCHEN_NOTE_TAGS):
+            tag, _ = KitchenNoteTag.objects.update_or_create(label=label, defaults={"position": position})
+            tag.collections.set(Collection.objects.filter(ref__in=collection_refs))
+            tag.products.clear()
+        self.stdout.write(f"  ✅ {len(self.KITCHEN_NOTE_TAGS)} atalhos da nota da cozinha, com o \"vale para\"")
 
     def _seed_catalog(self):
         self.stdout.write("  📦 Catálogo...")
