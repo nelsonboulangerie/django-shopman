@@ -730,7 +730,7 @@ async function confirmVoid() {
   const row = startedRow.value;
   const wo = selectedStartedOrder.value;
   if (!row || !wo) return;
-  // A ação vem da matriz do dia, que traz o lote planejado e o iniciado (#2957). A
+  // A ação vem da matriz do dia, que traz o lote planejado e o aberto (#2957). A
   // recusa (permissão, números velhos, outra tela mexeu) chega pelo aviso do guarda,
   // com a causa e o "Atualizar os números", e o diálogo fica aberto.
   const res = await voidOrder(
@@ -744,7 +744,7 @@ async function confirmVoid() {
     voidConfirming.value = false;
     voidReason.value = "";
     refresh();
-    // O lote iniciado também sai do quadro da bancada.
+    // O lote aberto também sai do quadro da bancada.
     kds.refresh();
     useSonner.success(`Lote cancelado: ${rowLabel(row)}`);
   }

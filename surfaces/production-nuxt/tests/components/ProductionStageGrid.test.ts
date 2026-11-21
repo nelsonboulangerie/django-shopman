@@ -138,7 +138,7 @@ function installGlobals() {
       isBusy: () => false,
       plan: planSpy,
       start: startSpy,
-      // O cancelar do lote é da matriz do dia (#2957): planejado e iniciado.
+      // O cancelar do lote é da matriz do dia (#2957): planejado e aberto.
       voidOrder: voidSpy,
     };
   });
@@ -1070,12 +1070,12 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
       .setValue("queimou");
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith("PAO-001", 7, 2, "queimou");
-    // Nunca pelo quadro dos lotes iniciados de hoje, que não traz o planejado.
+    // Nunca pelo quadro dos lotes abertos de hoje, que não traz o planejado.
     expect(kdsVoidSpy).not.toHaveBeenCalled();
   });
 
   it("o lote PLANEJADO se cancela pelo ⋯ da linha, pela matriz do dia (#2957)", async () => {
-    // Antes o "Confirmar cancelamento" pedia a ação ao quadro dos iniciados de hoje,
+    // Antes o "Confirmar cancelamento" pedia a ação ao quadro dos abertos de hoje,
     // que nunca tem o planejado, e voltava sem cancelar nada nem avisar.
     boardRows.value = [
       row({

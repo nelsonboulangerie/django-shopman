@@ -261,8 +261,8 @@ export function useProductionBoard(
   }
 
   // Cancelar o lote da matriz: a ação `void:<pk>` vem DESTA projeção, que traz o lote
-  // planejado e o iniciado do dia escolhido (hoje ou outro). Antes o diálogo pedia a
-  // ação ao quadro dos lotes iniciados de hoje (`production/kds/`), que nunca tem o
+  // planejado e o aberto do dia escolhido (hoje ou outro). Antes o diálogo pedia a
+  // ação ao quadro dos lotes abertos de hoje (`production/kds/`), que nunca tem o
   // planejado, e o "Confirmar cancelamento" voltava sem cancelar nada (#2957).
   function voidOrder(
     key: string,
