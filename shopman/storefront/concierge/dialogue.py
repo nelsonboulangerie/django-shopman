@@ -362,6 +362,15 @@ _FUNCTION = {
 }
 
 
+_WHEN = {"hoje", "amanha", "depois", "sabado", "domingo", "segunda", "terca", "quarta", "quinta", "sexta", "cedo", "tarde"}
+_ELLIPTIC = _WHEN | {"vai", "ter", "tem", "teria", "ainda", "e", "ja", "pra", "para", "de", "manha", "noite", "a"}
+
+
+def elliptic_availability(tokens: list[str]) -> bool:
+    """"Amanhã vai ter?", "e hoje, tem?": pergunta de disponibilidade sem nomear o produto."""
+    return bool(tokens) and bool({"ter", "tem", "teria"} & set(tokens)) and all(t in _ELLIPTIC for t in tokens)
+
+
 def pronoun_reference(tokens: list[str]) -> str:
     """``singular``/``plural`` quando a fala aponta para algo dito antes e não nomeia outra coisa."""
     if not tokens:
@@ -662,6 +671,14 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
     qty_request = quantity_request(tokens)
     if qty_request is not None:
         return _quantity(text, qty_request, memory, facts, copy=copy)
+
+    # 4b. "Amanhã vai ter?", "e hoje, tem?": a disponibilidade do produto de que se falava.
+    if focus.get("name") and elliptic_availability(tokens):
+        return Resolution(
+            outcome="resolved", text=f"tem {focus['name']} {' '.join(t for t in tokens if t in _WHEN)}".strip(),
+            reason="elliptic_availability", refs=(focus.get("ref", ""),),
+            note=f"\"{text.strip()}\" pergunta se vai ter {focus['name']}.",
+        )
 
     # 5. "ele", "essas opções".
     reference = pronoun_reference(tokens)
