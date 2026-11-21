@@ -1,1 +1,0 @@
-Marketing docs match HEAD: 6 Nuxt routes, 31 Django routes, 2 deploy specs.
