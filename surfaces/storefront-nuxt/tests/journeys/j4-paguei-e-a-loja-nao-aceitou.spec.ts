@@ -48,17 +48,21 @@ test('J4: a cliente paga o Pix, a loja recusa no Gestor e o dinheiro volta', asy
     const history = page.getByRole('tabpanel', { name: 'Histórico' })
     await expect(history.getByText(/^Cancelado/).first()).toBeVisible({ timeout: 60_000 })
     await capture(page, testInfo, 'cliente-recusado')
+    // O motivo da loja e o caminho do dinheiro, na frase principal.
+    await expect(page.getByText(/Motivo do cancelamento: /).first()).toBeVisible()
+    await expect(page.getByText(/Devolvemos os R\$ \d+,\d{2} do seu Pix para a mesma conta\./).first()).toBeVisible()
     // O estorno sai pelo worker (Pix simulado): o histórico ganha o marco do dinheiro.
-    await expect(history.getByText(/^Devolvido/).first()).toBeVisible({ timeout: 120_000 })
+    await expect(history.getByText(/^Devolvido · R\$ \d+,\d{2}/).first()).toBeVisible({ timeout: 120_000 })
     expect(await page.evaluate(() => (window as Marked).__j4SameVisit), 'a página da cliente foi recarregada').toBe(true)
     await capture(page, testInfo, 'cliente-devolvido')
-    console.log('J4 ACOMPANHAMENTO', JSON.stringify((await page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 900)))
   })
 
-  await test.step('a conta mostra o pedido com o dinheiro devolvido', async () => {
+  await test.step('a conta lista o pedido cancelado', async () => {
     await page.goto('/conta/pedidos')
     await settled(page)
+    // Hoje a lista diz "Cancelado · R$ 13,00" e não diz que o dinheiro voltou: o plano
+    // pede "Devolvido" também na conta, e isso é tela (#2992).
+    await expect(page.getByText(/^Cancelado · R\$ \d+,\d{2}$/).first()).toBeVisible()
     await capture(page, testInfo, 'conta-pedidos')
-    console.log('J4 CONTA', JSON.stringify((await page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 900)))
   })
 })
