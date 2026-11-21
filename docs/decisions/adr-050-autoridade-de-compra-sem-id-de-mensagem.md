@@ -1,6 +1,6 @@
 # ADR-050 — Autoridade de compra sem identificador de mensagem: sacola em valor absoluto, fechamento pelo código do orçamento
 
-**Status:** Proposto (a frase que o cliente digita para confirmar espera a palavra do dono)
+**Status:** Aceito
 **Data:** 2026-11-20
 **Escopo:** `shopman/storefront/concierge/service.py` (`_claim`, `assert_turn_authority`), `tools.py` (`_guard`, `review_order`, `place_order`, `_code_confirmation`), `effect_authority.py` (`lock_turn_authority`), `turn_outcome.py` (`collapse_repeats`)
 **Origem:** WP-11 de `docs/plans/CONCIERGE-PLANO-DE-ACAO.md` (corte C6 revertido pelo dono em 16/11: "quero que a Concierge consiga montar o pedido do cliente NA CONVERSA"); compromisso DEV-2026-027
@@ -82,9 +82,18 @@ identidade trocada) é reconferida igual, na transação do efeito (#2625).
 ## Consequências
 
 - O pedido na conversa fica possível com o ManyChat de hoje, sem esperar identificador.
-- **O cliente digita o código para confirmar.** É mudança no que o cliente vê e digita; a
-  frase e o formato ("confirmo 4821") esperam a palavra do dono antes de qualquer cliente
-  usar (o WP-12 é quem expõe a sacola na conversa).
+- **O cliente digita o código para confirmar** ("confirmo 4821"). O dono escolheu um botão
+  "Confirmar pedido" (20/11/2026: "botao 'confirmar pedido' ok"), mas a documentação do
+  ManyChat não o entrega no WhatsApp: resposta rápida não existe lá ("Quick Reply buttons
+  are not supported by WhatsApp and Telegram channels"), os botões aceitos (`url`, `flow`,
+  `node`) não levam payload, e o `dynamic_block_callback`, o único que leva o payload ao
+  servidor, só está documentado para o Messenger. Por isso o texto com o código é a forma
+  principal hoje. O botão com o código no payload vira a principal se um ensaio no número
+  do dono provar que o `dynamic_block_callback` chega íntegro no WhatsApp (seguimento do
+  WP-11); o texto fica de reserva.
+- **Contorno descartado:** gravar o código num campo do contato e o botão `flow` lê-lo no
+  clique. O flow lê o valor de agora, então o botão de um resumo antigo confirmaria o
+  orçamento novo, que é o furo que o código fecha.
 - Se o ManyChat um dia entregar identificador verificado, o caminho de hoje
   (`_confirmation` com "sim") volta a valer sozinho, sem código.
 
@@ -92,8 +101,8 @@ identidade trocada) é reconferida igual, na transação do efeito (#2625).
 
 - **"sim" com o servidor contando a ordem de chegada.** O horário de chegada ao servidor
   não é o horário em que o cliente escreveu; o furo do item 2 continua.
-- **Botão do ManyChat com o token no retorno.** Seria a prova mais limpa, mas depende de
-  flow e de modelo aprovado pela Meta para cada resumo; fica como evolução, e o código
-  continua valendo como reserva.
+- **Botão do ManyChat com o token no retorno, hoje.** Seria a prova mais limpa e é a escolha
+  do dono, mas o WhatsApp do ManyChat não documenta botão com payload (ver Consequências).
+  Fica condicionado ao ensaio.
 - **Descartar mensagens repetidas por hash.** Proibido pelo guia: perde a repetição
   legítima do cliente.
