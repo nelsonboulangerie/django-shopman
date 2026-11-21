@@ -189,7 +189,11 @@ function verificationAlert(late) {
   });
   const actions = [
     gesture("answer_concierge_verification", "Responder ao cliente", 1, "answer", "ConciergeVerificationAnswerRequest"),
-    gesture("take_over_conversation", "Assumir a conversa", 2, "take-over", ""),
+    { ...gesture("take_over_conversation", "Assumir no Live Chat", 2, "take-over", ""),
+      reason: "Ao assumir, a Concierge para de responder nesta conversa." },
+    // O Live Chat daquela conversa, que o "Assumir" abre no mesmo gesto (dono, 21/11/2026).
+    { ...gesture("open_live_chat", "Responder no Live Chat", 3, "", ""), method: "GET",
+      href: `https://app.manychat.com/fb486126/chat/4605528796186498`, source_alert_effect: "" },
   ];
   if (!acknowledged.has(pk)) actions.push({
     ref: `acknowledge:${pk}`, kind: "acknowledge_alert", label: "Visto", priority: 20, enabled: true,

@@ -536,6 +536,16 @@ export interface OrderPromiseContactProjection {
   reason: string;
 }
 
+/** O aviso aprovado que abre a conversa com o cliente (WP-G07). */
+export interface OrderPromiseNoticeProjection {
+  enabled: boolean;
+  kind: string;
+  label: string;
+  note: string;
+  reason: string;
+  line_ids: string[];
+}
+
 /** Uma linha da lista FINAL de itens, no formato de ``POST orders/<ref>/edit/``. */
 export interface OrderPromiseEditLineProjection {
   line_id: string;
@@ -573,7 +583,7 @@ export interface OrderPromiseResolutionProjection {
   customer_name: string;
   facts: string[];
   contact: OrderPromiseContactProjection;
-  interim_note: string;
+  notice: OrderPromiseNoticeProjection;
   choices: OrderPromiseChoiceProjection[];
 }
 
@@ -670,6 +680,7 @@ export interface OrderCardProjection {
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
   payment_lapsed: boolean;
+  advance_block_waits: boolean;
   promise: OrderPromiseProjection | null;
 }
 
@@ -877,6 +888,7 @@ export interface OperatorOrderProjection {
   cancel_waits_for_gateway: boolean;
   transferred_from_label: string;
   payment_lapsed: boolean;
+  advance_block_waits: boolean;
   pending: OrderPendingProjection[];
   cancelled_money: CancelledMoneyProjection | null;
   danfe_printable: boolean;

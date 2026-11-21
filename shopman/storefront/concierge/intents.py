@@ -127,6 +127,8 @@ COPY_KEYS = (TEAM_COPY_KEY, ORDER_WITH_TEAM_COPY_KEY, NOT_FOUND_COPY_KEY, UNCLEA
 JEV_CERTAIN = 0.8
 JEV_PRESENT = 0.5
 MULTIPLE_PARTS = "multiple_parts"
+#: A confiança do Jev na escolha da intenção (``choice.confidence``), junto das notas.
+JEV_CONFIDENCE = "jev_confidence"
 MULTIPLE_PARTS_DESCRIPTION = (
     "duas ou mais coisas diferentes, por exemplo uma pergunta e um pedido, ou perguntas sobre assuntos "
     "diferentes (cumprimento e agradecimento não contam)"
@@ -325,7 +327,12 @@ def gate(text: str, *, rules_intent: str, rules_source: str, jev_scores: dict | 
         present = {ref for p, ref in ranked if p >= JEV_PRESENT}
         if len(present) >= 2 and frozenset(present) not in COMPATIBLE:
             return GateDecision(False, "jev_two_intents")
-        if top_p >= JEV_CERTAIN or top == rules_intent or (rules_intent in present):
+        confidence = scores.get(JEV_CONFIDENCE)
+        if confidence is not None and confidence < JEV_PRESENT and top != rules_intent:
+            # O próprio Jev diz que não tem certeza da escolha, e a regra local não confirma.
+            return GateDecision(False, "jev_unsure")
+        sure = top_p >= JEV_CERTAIN or (confidence is not None and confidence >= JEV_CERTAIN)
+        if sure or top == rules_intent or (rules_intent in present):
             return GateDecision(True, "jev_certain", rules_intent if rules_intent in present else top)
         return GateDecision(False, "jev_unsure")
     if rules_source == "rules" and rules_intent in TRIAGE_INTENT_ACTS:
@@ -993,6 +1000,12 @@ def _faq_by_model(act: Act, *, conversation, channel_ref: str):
         return None
     if not answer.refs and answer.text.strip():
         return None
+    if faq_answer.held_by_jev(answer, faqs):
+        # O Jev reprovou o texto da IA: vale o texto das FAQs que ela citou, como estão
+        # (a FAQ direta perdia o assunto, placar de produção de 21/11/2026).
+        logger.warning("concierge.faq_answer.held reasons=jev_unsupported")
+        verbatim = faq_answer.cited_verbatim(answer, faqs)
+        return verbatim if verbatim.refs else None
     return answer
 
 
@@ -1292,6 +1305,21 @@ def _add_to_order(act: Act, *, conversation, search, run: Execution) -> PartRepl
     return reply
 
 
+def _same_block(text: str, block: str) -> bool:
+    """A mesma frase, ou uma que só acrescenta a oferta à outra ("Sobre “bagel”, não tenho
+    essa informação aqui." e a mesma com "Se quiser, chamo alguém"): sai uma vez só.
+
+    Ensaio do dono (21/11/2026): duas partes sobre o mesmo produto, uma lida como pergunta e
+    outra como pedido, repetiam a frase na mesma resposta.
+    """
+    a, b = text.strip(), block.strip()
+    if a == b:
+        return True
+    shorter, longer = sorted((a, b), key=len)
+    # Só frase inteira: um "Sim." curto no começo de outra resposta não é repetição.
+    return len(shorter) >= 30 and shorter.endswith((".", "?", "!")) and longer.startswith(shorter)
+
+
 def compose(run: Execution) -> str:
     """Uma mensagem: as partes na ordem do cliente e uma pergunta só.
 
@@ -1304,13 +1332,15 @@ def compose(run: Execution) -> str:
     kept = ""
     for reply in run.replies:
         text = (reply.text or "").strip()
-        if run.to_team:
+        if run.to_team or run.verify_note:
+            # Com a equipe chamada, ou com o "vou verificar" no fim da mesma resposta, a
+            # oferta "chamo alguém da equipe" contradiz o que a casa já fez (ensaio, 21/11).
             for offer in run.team_offers:
                 text = text.replace(offer, "").strip()
         if reply.keeps_question and text:
             kept = text  # a confirmação que espera resposta vai para o fim
             continue
-        if text and text not in blocks:
+        if text and not any(_same_block(text, block) for block in blocks):
             blocks.append(text)
     if run.verify_note:
         # O prazo do "vou verificar" fecha as respostas (antes da confirmação no ar).

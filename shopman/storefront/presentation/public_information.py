@@ -19,8 +19,11 @@ class FAQItemProjection:
 
 _OPERATIONAL_SEARCH_TERMS = {
     "delivery": ("entrega", "entregam", "delivery", "frete", "taxa", "receber em casa"),
-    "hours": ("horário", "horarios", "abre", "aberto", "fecha", "funcionamento"),
-    "location": ("endereço", "localização", "onde fica", "como chegar"),
+    # "Que horas vocês fecham?", "até que horas", "abrem domingo?": a pergunta do horário
+    # (produção, 21/11/2026: sem "horas", ela perdia para "A que horas cada pão fica pronto").
+    "hours": ("horário", "horarios", "horas", "abre", "abrem", "aberto", "abertos", "fecha", "fecham",
+              "funcionamento", "domingo", "sábado", "sabado"),
+    "location": ("endereço", "localização", "onde fica", "onde ficam", "como chegar"),
     "contact": ("contato", "telefone", "e-mail", "email", "falar", "atendimento"),
     "payment": ("pagamento", "pagar", "pix", "cartão", "cartao", "crédito", "credito"),
     "preorder": ("encomenda", "encomendar", "agendar", "reservar", "data"),
@@ -260,13 +263,21 @@ def search_public_faq(
             extra_terms = tuple(
                 term.strip() for term in curated_search_terms.get(item.ref, "").split(",") if term.strip()
             )
-        haystack = _fold(f"{item.question} {item.answer} {' '.join(extra_terms)}")
+        # O assunto da pergunta frequente é a PERGUNTA e os termos de busca; a resposta só
+        # desempata. Casar pelo corpo da resposta servia a vizinha (produção, 21/11/2026):
+        # "até qui horas" levava a encomenda ("24 horas de antecedência"), "criar conta" o
+        # levain ("criar o seu fermento"), "me avise" as fotos ("nos avise antes").
+        title = _fold(f"{item.question} {' '.join(extra_terms)}")
+        title_words = {word_stem(word) for word in re.findall(r"[a-z0-9]+", title)}
         # Palavra inteira, nunca pedaço: "padaria" dentro de "Somos uma padaria" levava a
         # resposta do glúten a quem perguntou de pets (conversa real, 20/11/2026).
-        words = {word_stem(word) for word in re.findall(r"[a-z0-9]+", haystack)}
-        score = (10 if needle in haystack else 0) + sum(1 for term in terms if term in words)
-        if score:
-            ranked.append((-score, index, item))
+        body_words = {word_stem(word) for word in re.findall(r"[a-z0-9]+", _fold(item.answer))}
+        title_hits = sum(1 for term in terms if term in title_words)
+        if not title_hits and needle not in title:
+            continue
+        body_hits = sum(1 for term in terms if term in body_words and term not in title_words)
+        score = (10 if needle in title else 0) + 3 * title_hits + body_hits
+        ranked.append((-score, index, item))
     ranked.sort()
     return tuple(item for _, _, item in ranked[:limit])
 

@@ -181,6 +181,18 @@ export function waitsForBatch(
   return block !== "" && block === promise.label;
 }
 
+/**
+ * O bloqueio do avanço anda sozinho, sem ninguém da casa agir? O lote que ainda vai
+ * ficar pronto, e o que o servidor marca (`advance_block_waits`): "Aguardando Pix",
+ * "Aguardando o dia da encomenda", as esperas do iFood. Vermelho é só para o que pede
+ * alguém (decisão da coordenação com o mandato do dono, 21/11/2026, #2721 item 9).
+ */
+export function blockWaits(
+  source: PromiseSource & { advance_block_label?: string | null; advance_block_waits?: boolean },
+): boolean {
+  return Boolean(source.advance_block_waits) || waitsForBatch(source);
+}
+
 /** A frase do item depois de "Produto: " continua a oração, em minúscula (como o servidor). */
 const afterColon = (sentence: string) => sentence.charAt(0).toLowerCase() + sentence.slice(1);
 

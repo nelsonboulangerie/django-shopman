@@ -1,5 +1,7 @@
 // Presentation — o detalhe da encomenda no PDV (o que é só do balcão; as seções
 // comuns são do `OperatorOrderDetail` do kit).
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
+import type { PreorderPromise } from "../types/preorders";
 
 /** Para onde a volta do detalhe leva quando não há histórico para voltar. */
 export const PREORDERS_HOME = "/preorders";
@@ -44,4 +46,43 @@ export function preorderDetailPath(ref: string, from = ""): string {
   const back = preorderBackTarget(from);
   if (!back || back === PREORDERS_HOME) return path;
   return `${path}?${new URLSearchParams({ back }).toString()}`;
+}
+
+/** O título do aviso: o mesmo nome do Gestor. */
+export const PROMISE_ALERT_TITLE = "Promessa em risco";
+
+/**
+ * A promessa em risco da encomenda, como aviso no topo do detalhe (#2721 item 3).
+ *
+ * O fato vem do servidor, item a item, com as frases do Gestor; a saída é a ação
+ * que ele manda ("Resolver no Gestor"), que abre o pedido lá com o diálogo das
+ * escolhas. Travada, a saída some e o motivo entra no texto: aviso sem o botão que
+ * resolve diz por quê. Sem promessa em risco, nada.
+ */
+export function promiseAlert(
+  promise: PreorderPromise | null | undefined,
+  open: (href: string) => void,
+): OperatorScreenAlert | null {
+  if (!promise || promise.state !== "at_risk") return null;
+  const facts = promise.items
+    .filter((item) => item.at_risk)
+    .map((item) => [item.label, item.detail].filter(Boolean).join(". "));
+  const resolve = promise.actions.find((action) => action.ref === "resolve");
+  const reason = resolve && !resolve.enabled ? resolve.reason : "";
+  const description = [...facts, reason].filter(Boolean).map(sentence).join(" ");
+  return {
+    id: "preorder-promise-at-risk",
+    title: PROMISE_ALERT_TITLE,
+    description,
+    color: "error",
+    icon: "i-lucide-package-x",
+    ...(resolve?.enabled && resolve.href
+      ? { action: { label: resolve.label, onSelect: () => open(resolve.href) } }
+      : {}),
+  };
+}
+
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }

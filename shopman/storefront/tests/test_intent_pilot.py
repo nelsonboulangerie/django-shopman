@@ -263,29 +263,50 @@ class _FakeSession:
 
 
 @pytest.mark.django_db
-def test_jev_asks_one_noul_per_intent_in_one_call():
-    """Pedido e resposta no formato de https://docs.typesafe.ai/api.md."""
+def test_jev_asks_one_choice_among_the_intents_and_reads_probabilities_and_confidence():
+    """Pedido e resposta no formato de https://docs.typesafe.ai/api.md (``choice``)."""
     configure_jev("k")
     session = _FakeSession({
         "model": "jev-1.13.0",
         "answers": {
-            "order": {"type": "noul", "noul": 0.95},
-            "hours_delivery": {"type": "noul", "noul": 0.7},
-            "allergy": {"type": "noul", "noul": 0.1},
-            "human": {"type": "noul", "noul": 0.0},
+            "intent": {
+                "type": "choice", "choice": "order",
+                "probabilities": {"order": 0.81, "hours_delivery": 0.12, "allergy": 0.03, "human": 0.0, "other": 0.04},
+                "confidence": 0.77,
+            },
         },
         "usage": {"input_tokens": 90, "output_tokens": 20},
     })
-    prediction = JevContender(session=session).predict(Sample(1, "Quero pão, abre domingo?", frozenset()), CATS)
+    prediction = JevContender(session=session).scores(Sample(1, "Quero pão, abre domingo?", frozenset()), CATS)
     body = session.sent[0]
     assert set(body) == {"model", "state", "questions"}
     assert body["model"] == "jev-latest"
     assert body["state"] == {"customer_message": "Quero pão, abre domingo?"}
-    assert set(body["questions"]) == {"order", "hours_delivery", "allergy", "human"}
-    for question in body["questions"].values():
-        assert set(question) == {"type", "instructions"} and question["type"] == "noul"
-    assert prediction.intents == {"order": 0.95, "hours_delivery": 0.7}
+    [question] = body["questions"].values()
+    assert question["type"] == "choice" and set(question["criteria"]) == {"order", "hours_delivery", "allergy", "human", "other"}
+    assert prediction.intents == {"order": 0.81, "hours_delivery": 0.12, "allergy": 0.03, "human": 0.0}
+    assert prediction.confidence == pytest.approx(0.77)
     assert prediction.input_tokens == 90
+
+
+@pytest.mark.django_db
+def test_jev_keeps_the_multiple_parts_question_as_noul_in_the_same_call():
+    from shopman.storefront.concierge.intent_benchmark import Category
+    from shopman.storefront.concierge.intents import MULTIPLE_PARTS
+
+    configure_jev("k")
+    session = _FakeSession({
+        "answers": {
+            "intent": {"type": "choice", "choice": "order", "probabilities": {"order": 0.6, "other": 0.4}},
+            MULTIPLE_PARTS: {"type": "noul", "noul": 0.9},
+        },
+    })
+    categories = [*CATS[:1], Category(MULTIPLE_PARTS, MULTIPLE_PARTS, "duas coisas")]
+    prediction = JevContender(session=session).scores(Sample(1, "x", frozenset()), categories)
+
+    assert session.sent[0]["questions"][MULTIPLE_PARTS]["type"] == "noul"
+    assert prediction.intents[MULTIPLE_PARTS] == pytest.approx(0.9)
+    assert prediction.confidence is None, "sem confiança na resposta, nada é inventado"
 
 
 def test_jev_noul_parser_reads_the_documented_shape_and_names_unknown_ones():
@@ -309,7 +330,7 @@ def test_jev_http_error_says_why_and_what_was_sent_without_the_message():
         JevContender(session=_Rejecting()).predict(Sample(1, "Quero pão, abre domingo?", frozenset()), CATS)
     message = str(caught.value)
     assert "HTTP 400 (api_usage_error: Invalid request.)" in message
-    assert "4 pergunta(s) do tipo noul" in message
+    assert "1 pergunta(s) do tipo choice" in message
     assert "Quero pão" not in message
 
 

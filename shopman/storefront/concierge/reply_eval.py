@@ -74,6 +74,14 @@ class PaidRunRefused(ValueError):
     """Rodada com rede pedida sem autorização explícita de gasto (``--paid``)."""
 
 
+
+def _channel_ref() -> str:
+    """O canal da Concierge, como no turno vivo (``service.run_turn``): sem ele, a rota de
+    alergia não lia o cardápio (``channel '' is not materialized``) e o placar media outra coisa."""
+    from .service import config
+
+    return str(config().get("channel_ref") or "")
+
 def network_reason(*, classifier: str = "rules", plural: bool = False, reader: str = "local") -> str:
     """O argumento que faz a rodada chamar a rede (e custar), ou ``""`` se ela é gratuita."""
     if plural:
@@ -301,7 +309,7 @@ def run(
                     f"triagem por {classifier} indisponível neste ambiente (credencial ou aprovação do provedor)."
                 )
             with meter.stage("triage"):
-                decision = triage.decide(case["text"], context=context, contender=contender)
+                decision = triage.decide(case["text"], context=context, contender=contender, channel_ref=_channel_ref())
             usage = meter.as_usage()
             if budget is not None:
                 budget.charge(usage["cost_usd"])
@@ -673,7 +681,8 @@ def run_plural(
                 break
             rules_intent, rules_source = triage.classify_rules(text)
             decision = triage.decide(
-                text, context=[(line["who"], line["text"]) for line in case.get("previous", [])]
+                text, context=[(line["who"], line["text"]) for line in case.get("previous", [])],
+                channel_ref=_channel_ref(),
             )
             before = [] if decision.source == "default" else [decision.intent]
             meter = metrics.TurnMeter()

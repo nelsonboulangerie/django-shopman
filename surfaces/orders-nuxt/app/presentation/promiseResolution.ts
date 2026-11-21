@@ -55,6 +55,19 @@ export interface PromiseResolutionChoice {
   requires_manager_approval: boolean;
 }
 
+/** O aviso aprovado que abre a conversa: o diálogo do "Avisar o cliente" envia. */
+export interface PromiseResolutionNotice {
+  enabled: boolean;
+  /** `item_missing` | `reschedule` | `delayed`, os do "Avisar o cliente". */
+  kind: string;
+  label: string;
+  /** A ordem dos passos, ou o que fazer quando o aviso não cabe. */
+  note: string;
+  reason: string;
+  /** As linhas que o "Faltou um item" já traz marcadas. */
+  line_ids: string[];
+}
+
 /** A resposta de `GET /api/v1/backstage/orders/<ref>/promise-resolution/`. */
 export interface PromiseResolution {
   order_ref: string;
@@ -63,8 +76,8 @@ export interface PromiseResolution {
   /** As frases do aviso, uma por item em falta. */
   facts: string[];
   contact: { enabled: boolean; reason: string };
-  /** O interino declarado: por que copiar e chamar, e não enviar. */
-  interim_note: string;
+  /** O aviso aprovado que abre a conversa (WP-G07): qual, e os itens já marcados. */
+  notice: PromiseResolutionNotice;
   choices: PromiseResolutionChoice[];
 }
 
@@ -82,6 +95,36 @@ export const PICK_FIRST_LABEL = "Escolha o que fazer";
  * diálogo de cancelar que já existe, com o motivo por escolher e o dinheiro escrito.
  */
 export const CANCEL_HASH = "#cancel";
+/** O "Resolver no Gestor" das Encomendas do PDV (#2721 item 3): o pedido abre com o diálogo. */
+export const RESOLVE_HASH = "#resolve";
+/** O passo que abre a conversa: o nome do gesto do G07, o mesmo do menu do pedido. */
+export const NOTIFY_LABEL = "Avisar o cliente";
+/**
+ * "Avisar o cliente" a partir do painel: o pedido abre com `#notify=<aviso>&lines=<linhas>`
+ * e sobe o diálogo do G07 com o aviso e os itens já marcados (o envio mora no detalhe).
+ */
+const NOTIFY_PREFIX = "#notify=";
+
+/** O que o diálogo do "Avisar o cliente" abre marcado. */
+export interface NoticePick {
+  kind: string;
+  lines: string[];
+}
+
+export function notifyHash(pick: NoticePick): string {
+  const params = new URLSearchParams({ lines: pick.lines.join(",") });
+  return `${NOTIFY_PREFIX}${encodeURIComponent(pick.kind)}&${params.toString()}`;
+}
+
+/** Lê `#notify=...`; `null` quando o endereço não traz o aviso. */
+export function parseNotifyHash(hash: string): NoticePick | null {
+  if (!hash.startsWith(NOTIFY_PREFIX)) return null;
+  const params = new URLSearchParams(`kind=${hash.slice(NOTIFY_PREFIX.length)}`);
+  const kind = params.get("kind") ?? "";
+  if (!kind) return null;
+  const lines = (params.get("lines") ?? "").split(",").filter(Boolean);
+  return { kind, lines };
+}
 /** O que a tela diz quando o 409 chega sem frase. */
 export const NOT_AT_RISK = "Este pedido não tem mais promessa em risco.";
 /** Sem área de transferência (navegador antigo, permissão negada): o texto continua na tela. */
@@ -94,10 +137,10 @@ export function resolutionTitle(code: string): string {
   return code ? `Promessa em risco no pedido ${code}` : "Promessa em risco";
 }
 
-/** De quem é a mensagem que se confere: o nome do cliente, como o pedido o traz. */
+/** O título da proposta: ela segue a conversa depois que o cliente responde ao aviso. */
 export function messageHeading(customerName: string): string {
   const name = customerName.trim();
-  return name ? `Mensagem para ${name}` : "Mensagem para o cliente";
+  return name ? `Quando ${name} responder` : "Quando o cliente responder";
 }
 
 export interface ResolutionChoiceItem {

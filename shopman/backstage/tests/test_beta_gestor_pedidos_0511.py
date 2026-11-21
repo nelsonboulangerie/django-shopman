@@ -165,6 +165,42 @@ def test_lapsed_pix_is_flagged_for_the_ready_cancel(gestor):
     assert build_operator_order(waiting, user=gestor).payment_lapsed is False
 
 
+def test_pix_que_ainda_pode_cair_anda_sozinho_e_o_vencido_nao(gestor):
+    """#2721 item 9 (coordenação, 21/11/2026): vermelho só para o que pede alguém."""
+    waiting = _pix("B-Z70", minutes_ago=5)
+    assert build_order_card(waiting).advance_block_label == "Aguardando Pix"
+    assert build_order_card(waiting).advance_block_waits is True
+    assert build_operator_order(waiting, user=gestor).advance_block_waits is True
+    lapsed = _pix("B-Z71", minutes_ago=50)
+    assert build_order_card(lapsed).advance_block_waits is False
+    assert build_operator_order(lapsed, user=gestor).advance_block_waits is False
+
+
+def test_as_esperas_que_andam_sozinhas_sao_as_nomeadas():
+    from shopman.backstage.projections.order_queue import block_waits
+
+    for label in ("Aguardando Pix", "Aguardando pagamento", "Aguardando o dia da encomenda…", "Esperando o lote…"):
+        assert block_waits(label) is True, label
+    for label in ("Pix expirado", "Pagamento vencido", "Cobrança recusada", "Quem leva ainda não definido", ""):
+        assert block_waits(label) is False, label
+
+
+def test_pix_vencido_nao_promete_avancar_e_diz_o_que_fazer(gestor):
+    """A frase genérica ("só avança depois que o dinheiro entra") mentia no Pix vencido."""
+    lapsed = _pix("B-Z72", minutes_ago=50)
+    for actions in (build_order_card(lapsed, user=gestor).actions, build_operator_order(lapsed, user=gestor).actions):
+        advance = next(action for action in actions if action.ref == "advance")
+        assert advance.enabled is False
+        assert advance.reason == (
+            "O Pix venceu sem pagamento e o pedido não avança mais sozinho. "
+            "Cancele o pedido ou chame o cliente para combinar o pagamento."
+        )
+    # O Pix que ainda pode cair segue com a frase da espera.
+    waiting = _pix("B-Z73", minutes_ago=5)
+    advance = next(action for action in build_order_card(waiting, user=gestor).actions if action.ref == "advance")
+    assert "só avança depois que o dinheiro entra" in advance.reason
+
+
 # ── GES-11 ──────────────────────────────────────────────────────────────────
 
 

@@ -294,11 +294,13 @@ a segunda parte não entendida, com modelo, vai para a equipe. Sem modelo, a par
 "não entendi": abre o "vou verificar" (abaixo).
 
 `Conversation.flags["verification"]` = `{v: 1, id, status, opened_at, fence, questions, promise,
-nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?}`, UMA por
+nudge_due_at, handoff_due_at, nudged_at, alert_pk, closed_at?, closed_by?, answer?, reply?, delivered_at?}`, UMA por
 conversa (dúvida nova enquanto espera entra na mesma). `id` é hexadecimal de 12 caracteres; o cartão
 é o `alert_pk` (sem marcador na mensagem: ela é só o que a equipe lê, e o cartão se resolve pelo
 `pk`); `status` é `open`, `answered` (a resposta da
-equipe saiu ao cliente), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
+equipe saiu ao cliente), `stored` (WP-16: a equipe respondeu fora da janela de 24 horas, saiu o modelo
+aprovado `concierge_answer_ready` e `reply` guarda a frase pronta; a próxima mensagem do cliente a recebe,
+uma vez só, e o status vira `answered` com `delivered_at`), `taken_over` (alguém assumiu a conversa: handoff), `handed_off` (o segundo prazo
 passou sem resposta, ou a conversa já estava com a equipe: `concierge_verification_sweep`, WP-06) ou
 `returned` (com `returned_at`: depois do `handed_off`, o cliente escreveu de novo e a conversa voltou sozinha
 à Concierge, dono 20/11/2026, #2836; a `taken_over` nunca volta sozinha); `fence` é o

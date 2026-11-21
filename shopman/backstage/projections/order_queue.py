@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
+from urllib.parse import quote
 
 from django.db.models import Q
 from django.utils import timezone
@@ -615,6 +616,10 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # O bloqueio anda sozinho, sem ninguém da casa agir ("Aguardando Pix", "Aguardando
+    # o dia da encomenda", "Esperando o lote"): a tela não o pinta de vermelho
+    # (``WAITING_BLOCK_LABELS``; decisão da coordenação com o mandato do dono, 21/11).
+    advance_block_waits: bool = False
     # A promessa do pedido (WP-G08, ``projections/order_promise``): ``None`` quando
     # a reserva está como deve estar. ``state`` ``at_risk`` é "Promessa em risco"
     # (algum item ficou sem lastro, ou o lote dele atrasou), com o item, quanto
@@ -892,6 +897,8 @@ class OperatorOrderProjection:
     transferred_from_label: str = ""
     # Igual ao do cartão: a cobrança venceu e o avanço não destrava mais sozinho.
     payment_lapsed: bool = False
+    # Igual ao do cartão: o bloqueio anda sozinho, sem ninguém da casa agir.
+    advance_block_waits: bool = False
     # "O que falta neste pedido" (WP-G05): as pendências, da que pede alguém agora
     # à que só espera, cada uma com o gesto que já existe para resolvê-la
     # (``projections/order_pending``). Vazia no contexto ``"pos"``: os gestos são
@@ -1184,6 +1191,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             # E a MESMA frase do dinheiro (P1-6, EXCELENCIA-PDV WP-E5): quem cancela
             # e o gerente que assina leem quanto volta e por onde, antes do gesto.
             **_cancel_money_effect(order, method, payment_status),
+            # A promessa em risco (WP-G08, #2721 item 3): o MESMO fato do Gestor, e
+            # a saída é o "Resolver" de lá (uma situação, um gesto).
+            promise=_pos_promise(order, pos_authorized),
         )
 
     advance_block = operator_orders.gestor_advance_block(order)
@@ -1278,6 +1288,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         operational = _early_start_actions(operational)
     if waits_batch:
         operational = _batch_wait_actions(operational, block_reason)
+    operational = _lapsed_payment_actions(operational, block_label)
     operational = _exit_gesture_actions(order, operational, customer_name=customer_name)
     actions = (*operational, *extra_actions)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
@@ -1320,6 +1331,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancel_reasons=_cancel_reasons(order.channel_ref or ""),
         kitchen_note_tags=_kitchen_note_tags(order),
@@ -2505,6 +2517,17 @@ def batch_wait_refusal(order: Order) -> str:
     return order_promise.batch_wait_reason(promise)
 
 
+def _lapsed_payment_actions(actions, block_label: str) -> tuple:
+    """O avanço travado pela cobrança vencida diz o fato, não a espera (``LAPSED_ADVANCE_REASONS``)."""
+    reason = LAPSED_ADVANCE_REASONS.get(block_label)
+    if not reason:
+        return tuple(actions)
+    return tuple(
+        replace(action, reason=reason) if action.ref == "advance" and not action.enabled else action
+        for action in actions
+    )
+
+
 def _batch_wait_actions(actions, reason: str) -> tuple:
     """As ações do pedido que espera o lote: o gesto de iniciar existe, desligado e com o motivo."""
     return tuple(
@@ -2541,6 +2564,36 @@ def _open_production_action(promise, user) -> Action | None:
     return Action(
         ref=order_promise.ACTION_OPEN_PRODUCTION, kind="link", label="Abrir a Produção", href=href, idempotency="none",
     )
+
+
+#: O "Resolver" visto do balcão: a saída é o diálogo do Gestor, aberto no pedido.
+POS_RESOLVE_LABEL = "Resolver no Gestor"
+POS_RESOLVE_HASH = "#resolve"
+_POS_RESOLVE_UNCONFIGURED = "O endereço do Gestor não está configurado."
+
+
+def _pos_promise(order: Order, authorized: bool) -> order_promise.OrderPromiseProjection | None:
+    """A promessa em risco nas Encomendas do PDV, ou ``None`` quando ela está de pé.
+
+    O fato é o mesmo do Gestor (``order_promise.read_for``); a saída é uma só,
+    "Resolver no Gestor", que abre o pedido lá com o diálogo das escolhas
+    (``#resolve``). Trocar, remarcar e cancelar continuam no balcão, nos gestos
+    que ele já tem; o aviso ao cliente e a escolha moram no Resolver.
+    """
+    from shopman.backstage.projections.hub import surface_link
+
+    promise = _promise_of(order)
+    if promise is None or promise.state != order_promise.STATE_AT_RISK:
+        return None
+    href = surface_link("gestor", f"{quote(order.ref, safe='')}{POS_RESOLVE_HASH}")
+    reason = "" if authorized else _PERMISSION_REASON
+    if not reason and not href:
+        reason = _POS_RESOLVE_UNCONFIGURED
+    resolve = Action(
+        ref=order_promise.ACTION_RESOLVE, kind="link", label=POS_RESOLVE_LABEL,
+        href=href if not reason else "", enabled=not reason, reason=reason, idempotency="none", priority="primary",
+    )
+    return order_promise.with_actions(promise, (resolve,))
 
 
 def _promise_actions(user, promise) -> tuple[Action, ...]:
@@ -2784,6 +2837,7 @@ def _build_card(
         actions = _early_start_actions(actions)
     if waits_batch:
         actions = _batch_wait_actions(actions, block_reason)
+    actions = _lapsed_payment_actions(actions, block_label)
     actions = _exit_gesture_actions(order, actions, customer_name=customer_name)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
         promise = order_promise.with_actions(promise, _promise_actions(user, promise))
@@ -2847,6 +2901,7 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
         has_customer_note=bool(str(order.data.get("order_notes", "") or "").strip()),
@@ -3400,11 +3455,52 @@ AWAITING_REPAYMENT_LABEL = "Aguardando novo pagamento"
 #: Os rótulos do bloqueio de pagamento que não destrava sozinho: a cobrança
 #: venceu ou foi recusada. A tela oferece cancelar com o motivo já marcado.
 LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL, CARD_CAPTURE_FAILED_LABEL})
+#: Por que o avanço não anda quando a cobrança venceu ou foi recusada: o fato, e o
+#: que a pessoa faz (a tela traz o "Cancelar pedido"; chamar o cliente está no
+#: pedido). A frase genérica do ``shop`` ("O pedido só avança depois que o dinheiro
+#: entra") mentia aqui: esse dinheiro não entra mais (coordenação, 21/11/2026).
+LAPSED_ADVANCE_REASONS = {
+    PIX_LAPSED_LABEL: "O Pix venceu sem pagamento e o pedido não avança mais sozinho. "
+    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
+    PAYMENT_LAPSED_LABEL: "O link de pagamento venceu sem pagamento e o pedido não avança mais sozinho. "
+    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
+    CARD_CAPTURE_FAILED_LABEL: "A cobrança do cartão foi recusada e o pedido não avança mais sozinho. "
+    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
+}
+
 #: A situação na LINHA do pagamento quando a cobrança venceu. O bloqueio dizia "Pix
 #: expirado" e a linha do pagamento do mesmo pedido, "Pix · Aguardando pagamento": o
 #: mesmo fato em duas formas, uma delas falsa (ninguém mais espera aquele Pix).
 #: Com o meio na frente, a linha lê "Pix · Expirado" e "Link de pagamento · Vencido".
 _LAPSED_PAYMENT_STATUS_LABELS = {PIX_LAPSED_LABEL: "Expirado", PAYMENT_LAPSED_LABEL: "Vencido"}
+
+
+#: Os bloqueios que andam sozinhos, sem ninguém da casa agir: o pagamento que ainda
+#: pode cair (ou cancela sozinho no vencimento), o dia da encomenda, o lote que ainda
+#: vai ficar pronto e as esperas do iFood. Vermelho é só para o que pede alguém
+#: (decisão da coordenação com o mandato do dono, 21/11/2026, #2721 item 9): a
+#: cobrança vencida ou recusada e "Quem leva ainda não definido" seguem fora.
+WAITING_BLOCK_LABELS = frozenset({
+    "Aguardando Pix",
+    "Aguardando pagamento",
+    AWAITING_REPAYMENT_LABEL,
+    *(
+        _ADVANCE_BLOCK_LABELS[block].removesuffix("…")
+        for block in (
+            operator_orders.AdvanceBlock.PREORDER_NOT_DUE,
+            operator_orders.AdvanceBlock.WAITLIST_FERMATA,
+            operator_orders.AdvanceBlock.IFOOD_SCHEDULE_BLOCKED,
+            operator_orders.AdvanceBlock.IFOOD_WINDOW_NOT_OPEN,
+            operator_orders.AdvanceBlock.IFOOD_WAITING_PICKUP,
+            operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING,
+        )
+    ),
+})
+
+
+def block_waits(block_label: str) -> bool:
+    """O bloqueio do avanço anda sozinho? Lê o nome que :func:`_advance_block_copy` deu."""
+    return str(block_label or "").removesuffix("…") in WAITING_BLOCK_LABELS
 
 
 def _lapsed_payment_status_label(block_label: str) -> str:

@@ -21,6 +21,7 @@ import {
   type KitchenWait,
 } from "./board";
 import {
+  RESOLVE,
   promiseRisk,
   promiseRiskSummary,
   promiseSuggestionGroups,
@@ -75,6 +76,9 @@ export interface PreorderLine {
   risk: { label: string; items: string; suggestions: string; nextStep: string } | null;
   /** Há um gesto que só uma pessoa faz (nunca o pagamento que ainda não caiu). */
   needsYou: boolean;
+  /** A promessa em risco com o "Resolver" aberto para a conta: o gesto da linha é ele,
+   *  no lugar do "Remarcar no PDV" (uma situação, um gesto; #2809 item 4). */
+  resolves: boolean;
   /** Para onde a linha leva: o pedido; em risco, o pedido na faixa das saídas. */
   to: string;
   items: string;
@@ -119,6 +123,7 @@ export function preorderLine(card: LineSource): PreorderLine {
     // fato de fora: avança sozinho, e a linha já diz "Aguardando pagamento". A
     // promessa em risco pede alguém mesmo assim: avisar, remarcar ou cancelar.
     needsYou: Boolean(risk) || (Boolean(card.attention) && !awaitingPayment),
+    resolves: Boolean(risk?.exits.some((exit) => exit.ref === RESOLVE && !exit.disabled)),
     to: risk ? `/${card.ref}${PROMISE_HASH}` : `/${card.ref}`,
     items: card.items_summary,
     total: card.total_display,

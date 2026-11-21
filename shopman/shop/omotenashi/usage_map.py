@@ -180,6 +180,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
     ),
+    "CONCIERGE_CLOSE_GAVE_UP": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
     "CONCIERGE_CLOSE_NO_CASH": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),

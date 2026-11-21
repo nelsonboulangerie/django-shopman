@@ -76,8 +76,8 @@ import {
   PROMISE_HASH,
   type AcceptedPreorder,
 } from "~/presentation/preorderList";
-import { promiseRisk, waitsForBatch } from "~/presentation/orderPromise";
-import { CANCEL_HASH } from "~/presentation/promiseResolution";
+import { blockWaits, promiseRisk } from "~/presentation/orderPromise";
+import { CANCEL_HASH, notifyHash, type NoticePick } from "~/presentation/promiseResolution";
 import {
   orderFocusKey,
   orderFocusKeys,
@@ -393,7 +393,7 @@ function rowSecondary(card: OrderCardProjection) {
 }
 /** O bloqueio como estado, não como botão morto: quando o gesto travado da linha só
  *  leva o nome do bloqueio ("Pix expirado", "Esperando o lote"), a célula mostra o selo
- *  com esse nome (laudo, P1-16). Quem só espera o lote não usa a cor de erro. */
+ *  com esse nome (laudo, P1-16). Quem espera algo que anda sozinho não usa a cor de erro. */
 function rowBlock(card: OrderCardProjection) {
   const primary = rowPrimary(card);
   const repeats = lockedButtonRepeatsPill({
@@ -403,7 +403,7 @@ function rowBlock(card: OrderCardProjection) {
     blockAnnounced: Boolean(card.advance_block_reason),
   });
   if (!repeats) return null;
-  const waits = waitsForBatch(card);
+  const waits = blockWaits(card);
   return {
     label: blockPillLabel(card.advance_block_label),
     color: waits ? ("neutral" as const) : ("error" as const),
@@ -1461,6 +1461,11 @@ function openResolve(ref_: string) {
 function cancelFromResolve(ref_: string) {
   void navigateTo(`/${ref_}${CANCEL_HASH}`);
 }
+// "Avisar o cliente": o envio mora no detalhe do pedido, que abre o diálogo do G07 com
+// o aviso e os itens em risco marcados.
+function notifyFromResolve(ref_: string, pick: NoticePick) {
+  void navigateTo(`/${ref_}${notifyHash(pick)}`);
+}
 
 // O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
 // período, motivo e a aprovação do gerente; a leitura da Fila se refaz depois.
@@ -1577,7 +1582,8 @@ function findOnScreen(ref_: string): HTMLElement | null {
   }
   return null;
 }
-// Um pedido só: abre o pedido, na faixa que tem o "Resolver". Vários: a tela vai até
+// Um pedido só, com o "Resolver" aberto para a conta: o diálogo abre aqui mesmo. Sem
+// ele, abre o pedido, na faixa que tem as saídas. Vários: a tela vai até
 // o primeiro (o cartão, a linha da Fila ou a da lista de Encomendas). Se ele não está
 // à vista (um filtro o tirou da tela), o aviso abre o pedido: botão de aviso nunca
 // fica sem efeito.
@@ -1585,6 +1591,7 @@ async function showPromiseRisk() {
   const alert = promiseAlert.value;
   if (!alert) return;
   const open = () => navigateTo(`/${alert.firstRef}${PROMISE_HASH}`);
+  if (alert.opensResolver) return openResolve(alert.firstRef);
   if (alert.opensOrder) return void open();
   let target = findOnScreen(alert.firstRef);
   const zone = zones.value.find((z) =>
@@ -2410,6 +2417,21 @@ function compactClear() {
             >
               {{ rowPrimaryReason(row.original.card) }}
             </p>
+            <!-- Pix ou link vencido nunca destrava sozinho: a frase diz o fato, e o botão
+                 que resolve vem junto, na própria célula (coordenação, 21/11/2026). -->
+            <div
+              v-if="row.original.card.payment_lapsed && canManageOrders"
+              class="mt-1.5 flex justify-end"
+            >
+              <NuxtButton
+                :to="`/${row.original.card.ref}#cancel-unpaid`"
+                icon="i-lucide-ban"
+                label="Cancelar pedido"
+                color="error"
+                variant="outline"
+                data-supervision-cancel-unpaid-cell
+              />
+            </div>
             <NuxtAlert
               v-if="actionError(row.original.card.ref)"
               class="mt-2"
@@ -2583,6 +2605,7 @@ function compactClear() {
           :groups="triagedPreorders"
           :count="preordersCount"
           :highlight-ref="acceptedPreorder?.ref"
+          @resolve="openResolve"
         />
       </template>
       <!-- Tem mais abaixo: a lista de Encomendas fica depois do painel de altura cheia.
@@ -2644,6 +2667,7 @@ function compactClear() {
       @update:open="(value: boolean) => (resolveOpen = value)"
       @changed="refresh()"
       @cancel="cancelFromResolve"
+      @notify="notifyFromResolve"
     />
 
     <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->

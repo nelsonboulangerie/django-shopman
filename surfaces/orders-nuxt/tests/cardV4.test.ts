@@ -86,6 +86,38 @@ describe("cardSeal", () => {
     expect(cardSeal(card())).toEqual({ label: "Pronto", tone: "success" });
   });
 
+  // #2721 item 9 (coordenação, 21/11/2026, com o mandato do dono): vermelho só para o
+  // que pede alguém. A espera que anda sozinha mostra o estado, como "Esperando o lote".
+  it("espera que anda sozinha não é Bloqueado: Aguardando Pix e o dia da encomenda", () => {
+    for (const label of ["Aguardando Pix", "Aguardando o dia da encomenda…"]) {
+      expect(
+        cardSeal(
+          card({
+            status: "accepted",
+            status_label: "Aceito",
+            advance_block_label: label,
+            advance_block_reason: "Avança sozinho.",
+            advance_block_waits: true,
+            actions: [action("advance", false)],
+          }),
+        ),
+      ).toEqual({ label: "Aceito", tone: "info" });
+    }
+  });
+
+  it("a cobrança vencida segue Bloqueado, em vermelho: alguém precisa agir", () => {
+    expect(
+      cardSeal(
+        card({
+          advance_block_label: "Pix expirado",
+          advance_block_reason: "gerado às 9h · expirou às 9h30",
+          advance_block_waits: false,
+          actions: [action("advance", false)],
+        }),
+      ),
+    ).toEqual({ label: "Bloqueado", tone: "error" });
+  });
+
   it("frase sem gesto travado não vira bloqueio (o Marcar pronto que mora no menu)", () => {
     expect(
       cardSeal(

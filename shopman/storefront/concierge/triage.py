@@ -333,12 +333,19 @@ def classify_with_jev(text: str, *, contender=None, with_parts: bool = False) ->
     mesmo quando nenhuma intenção passa do corte.
     """
     try:
-        scores = jev_scores(text, contender=contender, with_parts=with_parts).intents
+        prediction = jev_scores(text, contender=contender, with_parts=with_parts)
     except Exception as exc:  # sem aprovação, sem chave, rede, resposta ilegível: vale a regra
         logger.warning("concierge.triage.jev_failed exception_type=%s", type(exc).__name__)
         return None
+    scores = prediction.intents
     intent = best_jev_intent(scores)
     rounded = {ref: round(p, 3) for ref, p in scores.items()}
+    confidence = getattr(prediction, "confidence", None)
+    if confidence is not None:
+        # A confiança do Jev na própria escolha: o porteiro lê junto (``intents.gate``).
+        from .intents import JEV_CONFIDENCE
+
+        rounded[JEV_CONFIDENCE] = round(confidence, 3)
     return {"intent": intent, "urgency": "", "summary": "", "scores": rounded}
 
 

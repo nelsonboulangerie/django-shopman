@@ -420,7 +420,14 @@ function promiseResolution(variant) {
     customer_name: "Nelson Dias",
     facts: [PROMISE_FACT],
     contact: closed ? { enabled: false, reason: "Este pedido não tem WhatsApp do cliente." } : { enabled: true, reason: "" },
-    interim_note: "O envio automático ainda não existe: copie a mensagem ou chame o cliente no WhatsApp.",
+    notice: {
+      enabled: true,
+      kind: "item_missing",
+      label: "Faltou um item",
+      note: 'Primeiro, avise o cliente com o aviso "Faltou um item". Quando ele responder, mande a proposta da escolha.',
+      reason: "",
+      line_ids: ["L1"],
+    },
     choices,
   };
 }

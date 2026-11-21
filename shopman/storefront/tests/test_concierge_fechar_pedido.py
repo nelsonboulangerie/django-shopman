@@ -222,3 +222,17 @@ def test_cash_is_not_offered(conversation, outbox, shop):
 
     assert reply.startswith("Pelo WhatsApp não recebemos em dinheiro."), reply
     assert "Dinheiro" not in reply
+
+
+@pytest.mark.parametrize("text", ["deixa, não quero mais", "não", "desisto"])
+def test_giving_up_at_the_summary_registers_nothing_and_keeps_the_bag(conversation, outbox, shop, text):
+    _pickup_until_summary(conversation)
+
+    reply = _say(conversation, text)
+
+    assert reply == "Tudo bem, fica sem pedido por agora. Os itens continuam na sacola, se mudar de ideia.", reply
+    assert not Order.objects.exists()
+    assert {i["sku"]: int(i["qty"]) for i in _session(conversation).items} == {SKU: 2}
+    assert _say(conversation, "confirmo 0000") != "", "o fechamento acabou: a fala segue para as partes"
+    assert not Order.objects.exists()
+
