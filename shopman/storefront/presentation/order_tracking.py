@@ -1500,16 +1500,22 @@ def _promise_copy(
         eta_display = _eta_display(data.eta_at)
         if data.courier_driver:
             # Decisão 7 = B (revisão das Entregas, 16/11): quem leva, pelo nome,
-            # e a hora. O "Recebi meu pedido" segue no botão.
-            message = _with_driver(
-                copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_ETA",
-                             "{driver} está a caminho. Deve chegar por volta de {eta}.")
-                .replace("{eta}", eta_display)
-                if eta_display
-                else copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER",
-                                  "{driver} está a caminho."),
-                data.courier_driver,
-            )
+            # e a hora. O "Recebi meu pedido" segue no botão. A posição vira texto
+            # (#2509, tela aprovada §4.5.2): aos 80 m, "Diego está chegando.".
+            if data.courier_near:
+                message = copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_NEAR", "{driver} está chegando.")
+            elif eta_display:
+                message = copy.message(
+                    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_ETA",
+                    "{driver} está a caminho. Deve chegar por volta de {eta}.",
+                ).replace("{eta}", eta_display)
+            else:
+                message = copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER", "{driver} está a caminho.")
+            message = _with_driver(message, data.courier_driver)
+            age = _position_age_phrase(data.courier_seen_at)
+            if age and not data.courier_near:
+                message = f"{message} " + copy.message(
+                    "TRACKING_PROMISE_DISPATCHED_POSITION_AGE", "Última posição há {age}.").replace("{age}", age)
             return copy.title("TRACKING_PROMISE_DISPATCHED_TITLE", "Saiu para entrega"), message
         message = (
             copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA",
@@ -1561,6 +1567,26 @@ _TERMINAL_PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
 
 def _pair(copy: CopyCatalog, key: str, fallback_title: str, fallback_message: str) -> tuple[str, str]:
     return copy.title(key, fallback_title), copy.message(key, fallback_message)
+
+
+def _position_age_phrase(seen_at: str | None, *, now=None) -> str:
+    """ "2 min" quando a última posição do entregador passou de 1 min; vazio antes.
+
+    A idade só aparece quando a posição envelhece (coordenação, #2509): a frase fresca
+    não precisa dizer de quando é.
+    """
+    from shopman.shop.projections.order_tracking import COURIER_FRESH_SECONDS
+
+    moment = parse_datetime(seen_at) if seen_at else None
+    if moment is None:
+        return ""
+    seconds = ((now or timezone.now()) - moment).total_seconds()
+    if seconds <= COURIER_FRESH_SECONDS:
+        return ""
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60} h"
 
 
 def _with_driver(text: str, driver: str) -> str:
