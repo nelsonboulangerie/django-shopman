@@ -671,3 +671,37 @@ def test_o_que_o_estorno_serve_ao_gerente_nunca_soma_dois_pedidos():
     assert two["blocked"] is True
     assert two["block_reason"] == order_refund.MANY_CHARGES_REASON
     assert two["paid_q"] == 0 and two["available_q"] == 0, "duas cobranças nunca viram um total"
+
+
+def test_o_dia_fraco_no_sino_e_por_papel():
+    """O mesmo aviso, servido pelo sino: o Gerente e o Caixa leem sem número; o Dono,
+    que tem o panorama, lê a proporção do esperado (decisão escrita que segue valendo)."""
+    from shopman.backstage.bi.alerts import Reading, _fire
+    from shopman.backstage.models import BIAlertRule, OperatorAlert
+    from shopman.backstage.projections.alerts import build_operator_alerts_projection
+
+    rule = BIAlertRule.objects.create(
+        ref="faturamento-papel", label="Vendas do dia", metric=BIAlertRule.Metric.DAILY_REVENUE_VS_BASELINE,
+        cooldown_minutes=60,
+    )
+    reading = Reading(
+        value=3412.0, baseline=7100.0, fired=True,
+        message="14/08 (sexta) faturou R$ 3.412,00, 48% do esperado (R$ 7.100,00 na média de 4 sextas)",
+    )
+    _fire(rule, reading, now=None)
+    alerts = OperatorAlert.objects.filter(type="bi_below_baseline")
+
+    from types import SimpleNamespace
+
+    def message_for(user) -> str:
+        counts = SimpleNamespace(active=1, critical=0)
+        (row,) = build_operator_alerts_projection(alerts=alerts, counts=counts, user=user).alerts
+        return row.message
+
+    for user in (_gerente(), _user_in("caixa-trava", "Caixa")):
+        shown = message_for(user)
+        assert "%" not in shown and "R$" not in shown, shown
+        assert "abaixo do esperado" in shown
+    dono = message_for(_user_in("dono-papel", "Dono"))
+    assert "48% do esperado" in dono, dono
+    assert "R$" not in dono
