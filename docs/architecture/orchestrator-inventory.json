@@ -13304,6 +13304,7 @@
             "OwnFleetRefused",
             "PAGE_THEMES",
             "PAYMENT_METHODS",
+            "POSITION_MAX_ACCURACY_M",
             "PROBLEMS",
             "REFUSED",
             "SOURCE",
@@ -13322,6 +13323,7 @@
             "logger",
             "page_theme",
             "remember_theme",
+            "report_position",
             "report_problem",
             "ride_view"
           ]

@@ -44,6 +44,7 @@ import {
   waitText,
   wazeUrl,
   themeToAdopt,
+  trackingText,
   type CourierTheme,
   UNDO_SECONDS
 } from '~/presentation/courierRide'
@@ -68,6 +69,7 @@ function chooseTheme (value: CourierTheme) {
   lastServerTheme = value
   void ride.rememberTheme(value)
 }
+const trackingLine = computed(() => trackingText(ride.tracking.value))
 const screen = computed(() => (props.token ? screenFor(view.value, ride.local.value) : 'home'))
 const tone = computed(() => rideTone(view.value?.letter))
 const stops = computed(() => view.value?.stops || [])
@@ -314,6 +316,7 @@ v-for="choice in THEME_CHOICES"
         </div>
       </div>
       <div class="cr-footer">
+        <p v-if="trackingLine" class="cr-small" :data-tracking="ride.tracking.value">{{ trackingLine }}</p>
         <div class="cr-row">
           <a class="cr-secondary" :href="wazeUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no Waze</a>
           <a class="cr-secondary" :href="mapsUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no mapa</a>
