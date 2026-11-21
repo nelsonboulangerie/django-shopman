@@ -73,4 +73,46 @@ test.describe("Entregas: a corrida da casa", () => {
     await expect(page.getByText("Link de Diego solto. O próximo celular que confirmar fica com ele.", { exact: true })).toBeVisible();
     await expect(card.getByRole("button", { name: "Soltar o link", exact: true })).toHaveCount(0);
   });
+
+  test("o cartão liga para o entregador da casa", async ({ page }) => {
+    await page.goto("/delivery");
+    const call = page.locator("[data-house-ride]").getByRole("link", { name: "Ligar para Diego" });
+    await expect(call).toHaveAttribute("href", "tel:43999990000");
+  });
+
+  // M3d (#2937): o detalhe da corrida da casa diz quem leva, tem os gestos do balcão e o
+  // "Ligar para Diego", e nada do que só a TaOn tem.
+  test("o detalhe da corrida da casa: quem leva, os gestos e nada da TaOn", async ({ page }) => {
+    await page.goto("/delivery?ride=CASA-7F3A2B");
+    const detail = page.locator("[data-ride-detail]");
+    await expect(detail.locator("[data-ride-detail-title]")).toHaveText("Corrida C · Diego leva");
+    await expect(detail.getByText("Entregador da casa · R$ 15,00 · Abriu o link às 12h31", { exact: true })).toBeVisible();
+    await expect(detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Saiu", exact: true })).toBeVisible();
+    await expect(detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Reenviar o link", exact: true })).toBeVisible();
+    await expect(detail.locator("[data-ride-driver-call]")).toHaveText("Ligar para Diego");
+    await expect(detail).not.toContainText("TaOn");
+    await expect(detail.locator("[data-ride-position-source]")).toHaveCount(0);
+
+    await detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Saiu", exact: true }).click();
+    await detail.locator("[data-house-ride-confirm]").getByRole("button", { name: "Saiu", exact: true }).click();
+    await expect(page.getByText("Rota C: Diego saiu para entrega.", { exact: true })).toBeVisible();
+    await expect(detail.locator("[data-ride-detail-title]")).toHaveText("Corrida C · Diego na rua · 0 de 2 entregues");
+    expect((await state(page)).gestures.map((item) => item.gesture)).toEqual(["depart"]);
+  });
+
+  test("na Saída dos Pedidos, a corrida da casa é UM cartão no lugar dos pedidos dela", async ({ page }) => {
+    await page.goto("/?view=board&columns=all");
+    const exit = page.locator('[data-zone="expedition"]');
+    const card = exit.locator("[data-exit-house-ride]");
+    await expect(card).toHaveCount(1);
+    await expect(card.locator("[data-house-ride-codes]")).toHaveText(/A47\s*∙\s*C03/);
+    await expect(card.locator("[data-house-ride-moment]")).toHaveText("Diego leva");
+    // O pedido solto segue no cartão de sempre; os da corrida não aparecem soltos.
+    await expect(exit.locator("[data-card-who]").filter({ hasText: "Edu" })).toHaveCount(1);
+    await expect(exit.locator("[data-card-who]").filter({ hasText: "Ana" })).toHaveCount(0);
+    await card.getByRole("button", { name: "Saiu", exact: true }).click();
+    await card.locator("[data-house-ride-confirm]").getByRole("button", { name: "Saiu", exact: true }).click();
+    await expect(page.getByText("Rota C: Diego saiu para entrega.", { exact: true })).toBeVisible();
+    await expect(card.locator("[data-house-ride-moment]")).toHaveText("Diego na rua · 0 de 2 entregues");
+  });
 });

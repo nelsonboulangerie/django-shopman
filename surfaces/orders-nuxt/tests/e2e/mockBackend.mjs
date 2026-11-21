@@ -746,6 +746,24 @@ function houseRide() {
     },
   };
 }
+// M3d (#2937): a fila com os dois pedidos da corrida da casa (A47 e C03) e um pedido de
+// entrega solto (E21) na Saída. A corrida vira UM cartão; o E21 segue como era.
+function exitCard(ref, customer, extra = {}) {
+  return {
+    ...CARD, ref, customer_name: customer, status: "ready", status_label: "Pronto", fulfillment_type: "delivery",
+    fulfillment_label: "Entrega", actions: [], can_advance: false, next_status: "", attention: "", attention_since_iso: "",
+    goal_minutes: 0, goal_label: "", payment_status: "paid", payment_pending: false, ...extra,
+  };
+}
+function houseQueue() {
+  const delivery = [
+    exitCard("WEB-20261116-0A47", "Ana"),
+    exitCard("WEB-20261116-0C03", "Caio"),
+    exitCard("WEB-20261116-0E21", "Edu"),
+  ];
+  return { ...QUEUE, queue: { ...QUEUE.queue, expedition_delivery: delivery, expedition_delivery_count: 3, expedition_count: 3, total_count: QUEUE.queue.total_count + 3 } };
+}
+
 function houseDeliveries() {
   const keep = new Set(HOUSE_STOPS.map(([ref]) => ref));
   return {
@@ -894,6 +912,7 @@ const server = createServer((req, res) => {
     }
     if (new RegExp(`/orders/${PROMISE_REF}/?(\\?|$)`).test(url)) return json(res, 200, { order: promiseOrder() });
   }
+  if (houseScenario && /\/orders\/?(\?|$)/.test(url)) return json(res, 200, houseQueue());
   if (/\/orders\/?(\?|$)/.test(url)) return json(res, 200, QUEUE);
   if (cancelScenario && /\/e2e\/deliveries\/reset\/?(\?|$)/.test(url)) {
     cancelState.clear();
