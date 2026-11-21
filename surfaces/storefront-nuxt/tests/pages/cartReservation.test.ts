@@ -4,6 +4,7 @@ import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 
 import CartPage from '~/pages/sacola.vue'
 import type { CartItemProjection, CartProjection } from '~/types/shopman'
+import { announceStoreChange, resetLiveStoreForTests } from '~/composables/useLiveStore'
 
 // Reserva com prazo à vista (WP-L11): a sacola diz até quando guarda os itens, e
 // quando o prazo passa com a cliente na tela ela relê a sacola sozinha.
@@ -129,7 +130,7 @@ async function openCart (...answers: Array<() => CartProjection>) {
 
 let mounted: Awaited<ReturnType<typeof openCart>> | null = null
 beforeEach(() => { document.cookie = 'csrftoken=local-test'; serverNow = () => Date.now() })
-afterEach(() => { mounted?.unmount(); mounted = null })
+afterEach(() => { mounted?.unmount(); mounted = null; resetLiveStoreForTests() })
 
 describe('sacola: reserva com prazo à vista', () => {
   it('diz até quando guarda os itens, no alto da sacola, sem cronômetro', async () => {
@@ -233,4 +234,32 @@ describe('sacola: reserva com prazo à vista', () => {
     await new Promise(resolve => setTimeout(resolve, 2200))
     expect(reads).toBe(readsAfter)
   }, 20_000)
+})
+
+describe('sacola: a vitrine muda com a sacola aberta (#2785)', () => {
+  it('o aviso da vitrine relê as linhas, sem esperar o próximo gesto', async () => {
+    const page = await openCart(
+      () => cart(),
+      // Outra cliente levou: da linha de 2, sobrou 1.
+      () => cart({ items: [line({ is_available: false, available_qty: 1, availability_warning: 'Apenas 1 unidade disponível' })] })
+    )
+    mounted = page
+    const before = reads
+
+    announceStoreChange('poll')
+
+    await vi.waitFor(() => expect(reads).toBeGreaterThan(before))
+    await vi.waitFor(() => expect(page.text()).toContain('Usar 1 disponível'))
+  })
+
+  it('a recusa do servidor não relê a sacola outra vez: a mutação recusada já releu', async () => {
+    const page = await openCart(() => cart())
+    mounted = page
+    const before = reads
+
+    announceStoreChange('refusal')
+    await flushPromises()
+
+    expect(reads).toBe(before)
+  })
 })
