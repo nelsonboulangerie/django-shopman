@@ -166,15 +166,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # ficha do Vinagrete + o SEGUNDO café: `CAFE-GRAO` era genérico e escondia
     # dois blends de dois fornecedores (dono, 24/09) + 13 que as fichas reais
     # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA) + 4
-    # das montagens (manteiga com sal, wasabi, cornichon, flor de sal).
-    # Os insumos (sem cadastro de venda) seguem 75; a revenda soma o cadastro de
+    # das montagens (manteiga com sal, wasabi, cornichon, flor de sal) + 3 das
+    # fichas dos itens da casa (dono, 21/11/2026, #2925): as duas castanhas do
+    # recheio do Campagne Passas & Castanhas e o sorvete de creme do Melon Iced
+    # Sando. Os insumos (sem cadastro de venda) são 78; a revenda soma o cadastro de
     # compra do mesmo SKU — um por item de `RESALE` e da Mercearia, e um por
     # caixa física das caixas presente (a embalagem entra pelo Compras).
     from config.management.commands.apply_grocery_catalog import GIFT_BOXES, GROCERY, OPENINGS
     from config.management.commands.apply_product_brands import RESALE
 
     vendaveis = set(Product.objects.values_list("sku", flat=True))
-    assert Material.objects.exclude(sku__in=vendaveis).count() == 75
+    assert Material.objects.exclude(sku__in=vendaveis).count() == 78
     # O tablete Président de 200 g se abre no insumo que a manteiga de wasabi já
     # usa: nenhum cadastro novo, nenhuma ficha mexida.
     for opening in OPENINGS:
