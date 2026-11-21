@@ -288,6 +288,12 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     const buttons = wrapper.findAll("button").map((b) => b.text());
     expect(buttons.some((label) => label.includes("Editar"))).toBe(false);
   });
+
+  it("Editar troca o detalhe no histórico: entregar depois volta à lista, não a outro detalhe", async () => {
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-edit]").trigger("click");
+    expect(navigate).toHaveBeenLastCalledWith({ path: "/", query: { edit: "NB-7" } }, { replace: true });
+  });
 });
 
 const body = () => document.body;
