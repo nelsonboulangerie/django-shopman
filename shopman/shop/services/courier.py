@@ -1151,6 +1151,101 @@ def cancel_state(order) -> dict:
     return empty
 
 
+def last_failure(order) -> dict | None:
+    """A corrida que acabou sem levar este pedido, enquanto ele espera de novo.
+
+    Ninguém aceitou (``NOT_SERVED``) ou foi cancelada (``CANCELLED``): a corrida
+    vai para o histórico (``attempts[-1]``) e o pedido volta para Aguardando. Sem
+    isto ele voltava calado, como se nunca tivesse sido chamado.
+
+    ``{"key", "state", "by_house", "at", "refs", "number"}``: ``key`` é a corrida
+    (o ``ride_ref`` dela), ``refs`` os pedidos que iam nela (o "Chamar de novo"
+    chama a corrida inteira), ``by_house`` diz que o cancelamento saiu daqui e
+    ``number`` é o da letra que ela tinha. ``None`` com corrida viva, sem
+    histórico, quando o fim não foi falha, ou quando uma chamada mais nova já
+    falhou por outro motivo (``block["error"]``, que a tela mostra no lugar).
+    """
+    from shopman.shop.protocols import RideState
+
+    block = get_block(order)
+    if block.get("ride_ref"):
+        return None
+    attempts = block.get("attempts") or []
+    last = attempts[-1] if attempts and isinstance(attempts[-1], dict) else None
+    if last is None:
+        return None
+    state = delivery_services.ride_state({**block, "status": last.get("status")})
+    if state not in (RideState.NOT_SERVED, RideState.CANCELLED):
+        return None
+    at = str(last.get("ended_at") or "")
+    error = block.get("error") if isinstance(block.get("error"), dict) else {}
+    if str(error.get("at") or "") > at:
+        return None
+    refs = [str(ref) for ref in last.get("ride_orders") or [] if ref] or [order.ref]
+    return {
+        "key": str(last.get("ride_ref") or ""),
+        "state": state.value,
+        "by_house": state == RideState.CANCELLED and str(block.get("last_source") or "").startswith("operator:"),
+        "at": at,
+        "refs": refs,
+        "number": block.get("ride_number"),
+    }
+
+
+def failure_message(failure: dict, *, live_numbers=None) -> str:
+    """A frase da corrida que falhou: "Ninguém aceitou a corrida B (14h20)."
+
+    A letra sai quando já é de outra corrida viva (``live_numbers``, os números
+    ocupados; lidos aqui quando a tela não os passa): a frase diz só "a
+    corrida", e a tela mostra os pedidos dela ao lado.
+    """
+    from django.utils.dateparse import parse_datetime
+    from shopman.utils.formatting import format_clock
+
+    from shopman.shop.protocols import RideState
+
+    number = failure.get("number")
+    live = set(_live_ride_numbers()) if live_numbers is None else set(live_numbers)
+    letter = "" if number in live else ride_letter(number)
+    ride = f"a corrida {letter}" if letter else "a corrida"
+    clock = format_clock(parse_datetime(failure.get("at") or ""))
+    when = f" ({clock})" if clock else ""
+    if failure.get("state") == RideState.NOT_SERVED.value:
+        return f"Ninguém aceitou {ride}{when}."
+    if failure.get("by_house"):
+        return f"A casa cancelou {ride}{when}."
+    return f"A TaOn cancelou {ride}{when}."
+
+
+def ride_health(order, *, tasks: dict[str, list[Directive]] | None = None) -> dict:
+    """Como vai a corrida deste pedido. Fonte ÚNICA do Painel do pedido e da página Entregas.
+
+    As duas telas leem daqui, e só daqui, o que mostram da corrida; um campo
+    novo entra aqui e chega às duas (o teste de contrato
+    ``test_ride_health_contract`` reprova a tela que deixar de ler).
+
+    - ``unresolved``: a chamada ficou sem resposta (:func:`unresolved_dispatch`);
+    - ``cancel``: o cancelamento pedido (:func:`cancel_state`);
+    - ``progress``: o andamento em instantes ISO (:func:`progress_view`);
+    - ``reopened``: a desistência que ainda vale (:func:`reopen_view`);
+    - ``tracking``: link e código da parada deste pedido (:func:`proven_tracking`);
+    - ``charge_outdated``: a cobrança que ficou para trás (:func:`charge_outdated`);
+    - ``last_failure``: a corrida que acabou sem levar o pedido (:func:`last_failure`).
+
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
+    """
+    block = get_block(order)
+    return {
+        "unresolved": unresolved_dispatch(order, tasks=tasks) is not None,
+        "cancel": cancel_state(order),
+        "progress": progress_view(block),
+        "reopened": reopen_view(block),
+        "tracking": proven_tracking(block),
+        "charge_outdated": charge_outdated(order),
+        "last_failure": last_failure(order),
+    }
+
+
 def cancel_question(order) -> str:
     """A pergunta da confirmação: "Cancelar a corrida B? A05 e C12 voltam para Aguardando."
 

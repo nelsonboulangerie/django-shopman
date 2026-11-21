@@ -1783,23 +1783,35 @@ def _courier_block(order: Order) -> dict | None:
             point = courier_position_projection(block["ride_ref"])
             position = asdict(point) if point else None
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
+        from shopman.shop.services.courier import (
+            can_quote,
+            failure_message,
+            not_today_refusal,
+            ride_health,
+            unresolved_dispatch,
+        )
 
-        unresolved = unresolved_dispatch(order)
+        # Tudo o que a tela diz da corrida sai da fonte única, a mesma da página
+        # Entregas (``courier.ride_health``).
+        health = ride_health(order)
         # A encomenda de outro dia: chamar recusa com a frase (a régua do servidor).
         not_today = not_today_refusal(order) if order_can_ride and not active else ""
         # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
         # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
-        cancel = courier_cancel_state(order)
+        cancel = health["cancel"]
+        failure = health["last_failure"]
+        if error is None and failure is not None:
+            # A corrida que ninguém aceitou ou que foi cancelada: o pedido voltou a
+            # esperar, e a tela diz por quê (a mesma frase da página Entregas).
+            error = {"message": failure_message(failure), "at": failure["at"]}
 
+        unresolved = unresolved_dispatch(order) if health["unresolved"] else None
         if unresolved is not None:
             error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view, proven_tracking, reopen_view
-
-        progress = progress_view(block)
-        tracking = proven_tracking(block)
-        reopened = reopen_view(block) if active else {"at": "", "driver": "", "reason": ""}
+        progress = health["progress"]
+        tracking = health["tracking"]
+        reopened = health["reopened"] if active else {"at": "", "driver": "", "reason": ""}
         status_label = COURIER_STATUS_LABELS.get(ride_status, "")
         if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
             status_label = "Entregador na loja"
@@ -1849,7 +1861,7 @@ def _courier_block(order: Order) -> dict | None:
             "custody": operator_orders.partner_custody_asks(order),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
-            "charge_outdated": charge_outdated(order),
+            "charge_outdated": health["charge_outdated"],
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
