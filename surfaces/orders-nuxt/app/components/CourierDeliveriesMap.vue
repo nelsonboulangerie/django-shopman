@@ -50,6 +50,13 @@ export interface MapLiveRide {
   /** Ainda procurando entregador: a rota aparece, a moto não. */
   searching?: boolean;
 }
+/** A corrida que a casa sugere juntar (ride_plan): rota tracejada cinza, ainda não montada. */
+export interface MapSuggestedRide {
+  key: string;
+  /** "A47 + C03 · R$ 16,50" (os códigos e, cotada, o preço das juntas). */
+  label: string;
+  stops: MapPoint[];
+}
 type LatLng = { latitude: number; longitude: number };
 const props = defineProps<{
   /** A loja; null quando ela não tem coordenada (a rota começa na primeira parada). */
@@ -57,6 +64,8 @@ const props = defineProps<{
   waiting: MapPoint[];
   building: { number: number; stops: MapPoint[] }[];
   live: MapLiveRide[];
+  /** As sugestões visíveis no cartão de Aguardando; somem com "Agora não" ou ao virar corrida. */
+  suggested?: MapSuggestedRide[];
   active: number;
   /** Opacidade da rota e das paradas das corridas chamadas (a moto fica sempre cheia). */
   liveOpacity?: number;
@@ -120,7 +129,27 @@ const real = computed(() => Boolean(pane.value) && !google.refused.value);
 // A faixa do topo é da legenda (aberta no mapa largo, o botão "Legenda" no estreito): o
 // quadro começa abaixo dela, para nenhum pino ficar escondido por baixo (#2908).
 const LEGEND_BAND = 64;
-const topBand = computed(() => (props.bare ? 0 : LEGEND_BAND));
+// A legenda aberta pode quebrar em duas linhas (o item "Sugestão" aparece com sugestão):
+// a faixa acompanha a altura medida dela, com o mesmo respiro.
+const legendHeight = ref(0);
+let legendObserver: ResizeObserver | null = null;
+function observeLegend(el: unknown) {
+  legendObserver?.disconnect();
+  legendObserver = null;
+  if (!(el instanceof HTMLElement)) {
+    legendHeight.value = 0;
+    return;
+  }
+  legendObserver = new ResizeObserver(([entry]) => {
+    if (entry) legendHeight.value = entry.contentRect.height;
+  });
+  legendObserver.observe(el);
+}
+const topBand = computed(() => {
+  if (props.bare) return 0;
+  if (legendCollapsible.value) return LEGEND_BAND;
+  return Math.max(LEGEND_BAND, Math.round(legendHeight.value) + 32);
+});
 
 function px(p: LatLng): { x: number; y: number } {
   if (real.value && overlay) {
@@ -217,6 +246,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   observer?.disconnect();
+  legendObserver?.disconnect();
   overlay?.setMap(null);
   overlay = null;
   map = null;
@@ -236,6 +266,28 @@ const lines = computed(() => {
     d: l.points.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "),
   }));
 });
+// A rota que a casa sugere: da loja pelas paradas, na ordem do plano, e a etiqueta acima
+// do meio das paradas. Fica por baixo das corridas e nunca recebe toque (o gesto mora no cartão).
+const ghosts = computed(() =>
+  (props.suggested ?? [])
+    .filter((g) => g.stops.length > 0)
+    .map((g) => {
+      // No pino de verdade: pinos próximos se abrem em círculo, e a rota vai até onde eles estão.
+      const stops = g.stops.map((stop) => {
+        const q = px(stop), d = offsets.value.get(stop.ref) || { dx: 0, dy: 0 };
+        return { x: q.x + d.dx, y: q.y + d.dy };
+      });
+      const points = [...(props.origin ? [px(props.origin)] : []), ...stops];
+      const top = Math.min(...stops.map((p) => p.y));
+      return {
+        key: g.key,
+        label: g.label,
+        d: points.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "),
+        x: stops.reduce((sum, p) => sum + p.x, 0) / stops.length,
+        y: top,
+      };
+    }),
+);
 // Pinos no mesmo ponto se abrem em círculo: cada um com o seu toque.
 const offsets = computed(() =>
   spreadOverlaps([
@@ -298,6 +350,20 @@ const places = computed(() => {
     <div ref="layer" :class="real ? 'absolute top-0 left-0 size-0 overflow-visible' : 'absolute inset-0'">
     <!-- as linhas: lado a lado onde se encontram, como metrô; nenhuma some -->
     <svg class="pointer-events-none absolute top-0 left-0 size-px overflow-visible" aria-hidden="true">
+      <!-- a sugestão da casa: tracejado longo cinza, por baixo de tudo (prévia 2A, #2874) -->
+      <path
+        v-for="g in ghosts"
+        :key="`g${g.key}`"
+        :d="g.d"
+        fill="none"
+        :stroke="tokens.neutral"
+        stroke-width="4"
+        stroke-dasharray="11 8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        opacity="0.75"
+        :data-map-suggestion="g.key"
+      />
       <!-- o contorno na tinta da corrida, por baixo: o amarelo e o laranja leem sobre o papel -->
       <path
         v-for="l in lines"
@@ -338,6 +404,16 @@ const places = computed(() => {
         <span class="whitespace-nowrap rounded-full px-2 py-0.5 op-micro font-semibold shadow-sm" :style="{ background: tokens.chip, color: tokens.text }">{{ label.place }}</span>
       </NuxtButton>
     </span>
+
+    <!-- a etiqueta da sugestão, acima das paradas dela: só leitura (o gesto mora no cartão) -->
+    <span
+      v-for="g in ghosts"
+      :key="`gl${g.key}`"
+      class="pointer-events-none absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-dashed px-2 py-0.5 op-micro font-semibold shadow-sm"
+      :style="{ left: `${g.x}px`, top: `${g.y - 22}px`, background: tokens.chip, color: tokens.text, borderColor: tokens.neutral }"
+      aria-hidden="true"
+      :data-map-suggestion-label="g.key"
+    >{{ g.label }}</span>
 
     <span v-if="origin" class="absolute z-10 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full shadow-lg ring-4 ring-white" :style="{ ...at(origin), background: tokens.store, color: tokens.storeText }" title="A loja" data-map-store>
       <NuxtIcon name="i-lucide-store" class="size-4" />
@@ -406,12 +482,13 @@ const places = computed(() => {
     <div v-if="!bare && legendCollapsible && !legendOpen" class="absolute top-3 left-3 z-30 rounded-md shadow-sm">
       <NuxtButton color="neutral" variant="outline" icon="i-lucide-info" label="Legenda" class="min-h-11" aria-expanded="false" data-map-legend-toggle @click="legendOpen = true" />
     </div>
-    <div v-if="!bare && (!legendCollapsible || legendOpen)" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :class="legendCollapsible ? 'z-40 pr-1' : ''" :style="{ background: tokens.chip, color: tokens.text }" data-map-legend>
+    <div v-if="!bare && (!legendCollapsible || legendOpen)" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :ref="observeLegend" :class="legendCollapsible ? 'z-40 pr-1' : ''" :style="{ background: tokens.chip, color: tokens.text }" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 border-black bg-white" />Aguardando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><defs><pattern id="legend-stripe" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="3" fill="#fff" /><rect width="1.1" height="3" :fill="tokens.neutral" /></pattern></defs><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" :stroke="tokens.neutral" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
       <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" :fill="tokens.neutral" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Entregue</span>
       <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full" :style="{ background: tokens.neutral, color: tokens.chip }"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
+      <span v-if="ghosts.length" class="flex items-center gap-1" data-map-legend-suggestion><svg width="22" height="6" aria-hidden="true"><path d="M2 3H20" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="7 4" stroke-linecap="round" /></svg>Sugestão</span>
       <NuxtButton v-if="legendCollapsible" color="neutral" variant="ghost" icon="i-lucide-x" class="min-h-11 min-w-11 justify-center" aria-label="Fechar a legenda" aria-expanded="true" data-map-legend-close @click="legendOpen = false" />
     </div>
 
