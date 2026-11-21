@@ -508,15 +508,7 @@ describe("a casa diz ficar pronto, nunca sair do forno", () => {
 
 const BANNED_SERVICE = /\bTaOn\b/;
 
-// O B.I. de entregas fica de fora até decidir o que o custo soma com mais de um
-// serviço (#3144): lá não é troca de nome, é o que o número significa. A issue fecha
-// esta exceção; o teste abaixo dela trava a lista pelo conteúdo.
-const EXEMPT_FROM_SERVICE = ["bi-nuxt/app/pages/delivery.vue", "bi-nuxt/app/presentation/delivery.ts"];
-
-const SCREEN_SOURCES = SOURCES.filter((file) => {
-  const path = relative(surfacesDir, file);
-  return /\/(app|server)\//.test(path) && !EXEMPT_FROM_SERVICE.includes(path);
-});
+const SCREEN_SOURCES = SOURCES.filter((file) => /\/(app|server)\//.test(relative(surfacesDir, file)));
 
 describe("o nome do serviço de entrega vem do cadastro", () => {
   it("nenhum texto de operador diz 'TaOn' fixo", () => {
@@ -532,10 +524,6 @@ describe("o nome do serviço de entrega vem do cadastro", () => {
 
   it("a varredura enxerga as telas, não um recorte", () => {
     const apps = new Set(SCREEN_SOURCES.map((file) => relative(surfacesDir, file).split("/")[0]));
-    expect([...apps]).toEqual(expect.arrayContaining(["orders-nuxt", "pos-nuxt", "operator-kit"]));
-  });
-
-  it("a exceção do B.I. é só a do #3144, e não cresce", () => {
-    expect(EXEMPT_FROM_SERVICE).toEqual(["bi-nuxt/app/pages/delivery.vue", "bi-nuxt/app/presentation/delivery.ts"]);
+    expect([...apps]).toEqual(expect.arrayContaining(["orders-nuxt", "pos-nuxt", "bi-nuxt", "operator-kit"]));
   });
 });

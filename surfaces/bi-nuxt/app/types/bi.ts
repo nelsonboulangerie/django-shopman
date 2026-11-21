@@ -13,6 +13,7 @@ export type {
   BICustomersWeekRow,
   BIDeliveryCostDay,
   BIDeliveryCostReport,
+  BIDeliveryCostService,
   BIForecastReport,
   BIOvenTimeRow,
   BIPreorderKitchenReport,
