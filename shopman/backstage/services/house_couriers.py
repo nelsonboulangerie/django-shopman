@@ -22,6 +22,7 @@ from urllib.parse import quote
 from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.services.exceptions import OrderError
 from shopman.shop.models.delivery_service import Courier, CourierLink, DeliveryService
@@ -107,7 +108,7 @@ def busy_label(back) -> str:
         return STATE_LABELS[BUSY]
     if back <= timezone.now():
         return "Voltando"
-    return f"Volta {timezone.localtime(back).strftime('%Hh%M')}"
+    return f"Volta {format_clock(back)}"
 
 
 def _money(value_q: int | None) -> str:

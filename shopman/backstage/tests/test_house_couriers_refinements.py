@@ -13,6 +13,7 @@ from django.core.cache import cache
 from django.urls import reverse
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.projections.deliveries import build_deliveries
 from shopman.backstage.services import house_couriers
@@ -61,7 +62,7 @@ def test_courier_on_the_road_shows_when_he_is_back(client, operator, casa):  # n
     row = client.get(reverse(CREW)).json()["couriers"][0]
     back = house_couriers.back_at([Order.objects.get(ref="WEB-A47")])
     assert back is not None and back > timezone.now()
-    assert row["state_label"] == f"Volta {timezone.localtime(back).strftime('%Hh%M')}"
+    assert row["state_label"] == f"Volta {format_clock(back)}"
     assert row["back_at"] == back.isoformat()
 
 
@@ -69,7 +70,7 @@ def test_back_label_when_the_hour_passed_and_without_hour():
     assert house_couriers.busy_label(None) == "Na rua"
     assert house_couriers.busy_label(timezone.now() - timedelta(minutes=1)) == "Voltando"
     later = timezone.now() + timedelta(minutes=20)
-    assert house_couriers.busy_label(later) == f"Volta {timezone.localtime(later).strftime('%Hh%M')}"
+    assert house_couriers.busy_label(later) == f"Volta {format_clock(later)}"
 
 
 # ── a observação para o entregador ──────────────────────────────────────────
