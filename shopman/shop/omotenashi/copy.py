@@ -1570,6 +1570,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_CART_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
     },
+    "CONCIERGE_ALTERNATIVES": {
+        WILDCARD: {WILDCARD: CopyEntry(message="No lugar, posso oferecer {options}. Quer algum?")},
+    },
     "CONCIERGE_CLOSE_ASK_DATE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?")},
     },
@@ -1608,6 +1611,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_MEMORY_ASK_WHICH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
+    },
+    "CONCIERGE_MEMORY_STILL_HERE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estou aqui, sim!")},
+    },
+    "CONCIERGE_MEMORY_STILL_HERE_HELP": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estou aqui, sim! Em que posso ajudar?")},
     },
     "CONCIERGE_MEMORY_ASK_PRODUCT": {
         WILDCARD: {WILDCARD: CopyEntry(message="De qual produto você está falando?")},

@@ -10,7 +10,21 @@ com cartão usa:
 
 * ``POST /v1/checkout/sessions``: cria a sessão hospedada e devolve a ``url``.
 * ``GET  /v1/checkout/sessions/<id>`` e ``GET /v1/payment_intents/<id>``: leitura
-  de reconciliação, caso o app pergunte.
+  de reconciliação, caso o app pergunte. ``expand[]=latest_charge`` devolve a
+  cobrança inteira, com ``payment_method_details.card.funding`` (crédito), que é de
+  onde o adapter tira o código da NFC-e.
+* ``POST /v1/payment_intents/<id>/capture``: captura a autorização (``manual``),
+  inteira ou ``amount_to_capture``. Fora de ``requires_capture`` recusa como o Stripe.
+* ``POST /v1/payment_intents/<id>/cancel``: anula a autorização. Intent já
+  capturado recusa como o Stripe (quem devolve dinheiro capturado é o estorno).
+* ``POST /v1/checkout/sessions/<id>/expire``: mata a sessão ainda aberta.
+* ``POST /v1/refunds``: estorno do capturado, inteiro ou ``amount``, idempotente
+  pelo ``Idempotency-Key`` (o adapter repassa a chave, e o retry devolve o MESMO
+  estorno). Nada além do capturado e ainda não devolvido.
+
+Captura, anulação e estorno são o F-7 da revisão da Loja (#2568): sem eles, as
+jornadas de cartão (cancelar com cartão, J6; entrega com cartão, J8) morriam na
+primeira chamada do adapter depois do pagamento.
 * ``GET  /pay/<id>``: a "página do Stripe", com um botão de pagar.
 * ``POST /pay/<id>``: o cliente pagou. Entrega o webhook
   ``checkout.session.completed`` ASSINADO ao Django (mesmo HMAC do Stripe, com o
@@ -75,6 +89,9 @@ class FakeStripe:
         self.webhook_secret = webhook_secret
         self.sessions: dict[str, dict] = {}
         self.intents: dict[str, dict] = {}
+        self.charges: dict[str, dict] = {}
+        self.refunds: dict[str, dict] = {}
+        self.refunds_by_key: dict[str, str] = {}
         self.lock = threading.Lock()
 
     def create_session(self, params: dict) -> dict:
@@ -112,7 +129,27 @@ class FakeStripe:
             session = self.sessions[session_id]
             if session["payment_intent"] is None:
                 intent_id = f"pi_test_e2e_{secrets.token_hex(8)}"
+                charge_id = f"ch_test_e2e_{secrets.token_hex(8)}"
                 manual = session["_capture_method"] == "manual"
+                # A cobrança nasce na autorização (como no Stripe): sem capturar no
+                # `manual`, capturada no `automatic`. O cartão do teste é crédito.
+                self.charges[charge_id] = {
+                    "id": charge_id,
+                    "object": "charge",
+                    "livemode": False,
+                    "amount": session["amount_total"],
+                    "amount_captured": 0 if manual else session["amount_total"],
+                    "amount_refunded": 0,
+                    "captured": not manual,
+                    "refunded": False,
+                    "currency": session["currency"],
+                    "payment_intent": intent_id,
+                    "status": "succeeded",
+                    "payment_method_details": {
+                        "type": "card",
+                        "card": {"brand": "visa", "funding": "credit", "last4": "4242"},
+                    },
+                }
                 self.intents[intent_id] = {
                     "id": intent_id,
                     "object": "payment_intent",
@@ -123,7 +160,7 @@ class FakeStripe:
                     "capture_method": session["_capture_method"],
                     "status": "requires_capture" if manual else "succeeded",
                     "metadata": session["_intent_metadata"],
-                    "latest_charge": None,
+                    "latest_charge": charge_id,
                 }
                 session.update(
                     payment_intent=intent_id,
@@ -131,6 +168,104 @@ class FakeStripe:
                     payment_status="unpaid" if manual else "paid",
                 )
             return session
+
+    # ── O que o adapter faz depois do pagamento (F-7) ────────────────────────────
+    # Cada operação devolve ``(status_http, corpo)``; erro no formato do Stripe, que
+    # o SDK oficial transforma na exceção certa (``InvalidRequestError``).
+
+    @staticmethod
+    def _error(status: int, message: str, code: str = "") -> tuple[int, dict]:
+        error = {"type": "invalid_request_error", "message": message}
+        if code:
+            error["code"] = code
+        return status, {"error": error}
+
+    def intent_view(self, intent: dict, expand: list[str]) -> dict:
+        view = dict(intent)
+        if "latest_charge" in expand and view.get("latest_charge"):
+            view["latest_charge"] = dict(self.charges[view["latest_charge"]])
+        return view
+
+    def capture(self, intent_id: str, params: dict, expand: list[str]) -> tuple[int, dict]:
+        with self.lock:
+            intent = self.intents.get(intent_id)
+            if intent is None:
+                return self._error(404, f"No such payment_intent: '{intent_id}'", "resource_missing")
+            if intent["status"] != "requires_capture":
+                return self._error(
+                    400,
+                    f"This PaymentIntent could not be captured because it has a status of {intent['status']}.",
+                    "payment_intent_unexpected_state",
+                )
+            amount = int(params.get("amount_to_capture") or intent["amount"])
+            if amount <= 0 or amount > intent["amount"]:
+                return self._error(400, "amount_to_capture fora do autorizado.", "amount_too_large")
+            intent.update(status="succeeded", amount_received=amount)
+            charge = self.charges[intent["latest_charge"]]
+            charge.update(captured=True, amount_captured=amount)
+            return 200, self.intent_view(intent, expand)
+
+    def cancel(self, intent_id: str, expand: list[str]) -> tuple[int, dict]:
+        with self.lock:
+            intent = self.intents.get(intent_id)
+            if intent is None:
+                return self._error(404, f"No such payment_intent: '{intent_id}'", "resource_missing")
+            if intent["status"] in {"succeeded", "canceled"}:
+                return self._error(
+                    400,
+                    f"You cannot cancel this PaymentIntent because it has a status of {intent['status']}.",
+                    "payment_intent_unexpected_state",
+                )
+            intent.update(status="canceled", cancellation_reason="requested_by_customer")
+            return 200, self.intent_view(intent, expand)
+
+    def expire(self, session_id: str) -> tuple[int, dict]:
+        with self.lock:
+            session = self.sessions.get(session_id)
+            if session is None:
+                return self._error(404, f"No such checkout.session: '{session_id}'", "resource_missing")
+            if session["status"] != "open":
+                return self._error(
+                    400,
+                    f"Only Checkout Sessions with a status of `open` can be expired (status={session['status']}).",
+                )
+            session["status"] = "expired"
+            return 200, self.public(session)
+
+    def refund(self, params: dict, idempotency_key: str = "") -> tuple[int, dict]:
+        with self.lock:
+            if idempotency_key and idempotency_key in self.refunds_by_key:
+                return 200, dict(self.refunds[self.refunds_by_key[idempotency_key]])
+            intent = self.intents.get(params.get("payment_intent") or "")
+            if intent is None:
+                return self._error(
+                    404, f"No such payment_intent: '{params.get('payment_intent')}'", "resource_missing"
+                )
+            charge = self.charges[intent["latest_charge"]]
+            refundable = charge["amount_captured"] - charge["amount_refunded"]
+            if refundable <= 0:
+                return self._error(400, f"Charge {charge['id']} has already been refunded.", "charge_already_refunded")
+            amount = int(params.get("amount") or refundable)
+            if amount <= 0 or amount > refundable:
+                return self._error(400, "Refund amount is greater than the unrefunded amount.", "amount_too_large")
+            refund_id = f"re_test_e2e_{secrets.token_hex(8)}"
+            refund = {
+                "id": refund_id,
+                "object": "refund",
+                "amount": amount,
+                "currency": intent["currency"],
+                "charge": charge["id"],
+                "payment_intent": intent["id"],
+                "reason": params.get("reason") or None,
+                "status": "succeeded",
+                "created": int(time.time()),
+            }
+            charge["amount_refunded"] += amount
+            charge["refunded"] = charge["amount_refunded"] >= charge["amount_captured"]
+            self.refunds[refund_id] = refund
+            if idempotency_key:
+                self.refunds_by_key[idempotency_key] = refund_id
+            return 200, dict(refund)
 
     def deliver_completed_webhook(self, session: dict) -> tuple[int, str]:
         event = {
@@ -194,6 +329,13 @@ def _handler(fake: FakeStripe):
             self.end_headers()
             self.wfile.write(raw)
 
+        def _expand(self, form: dict | None = None) -> list[str]:
+            # O SDK manda ``expand[0]=latest_charge``: na query (GET) ou no form (POST).
+            pairs = parse_qsl(urlparse(self.path).query, keep_blank_values=True)
+            values = [value for key, value in pairs if key.startswith("expand")]
+            values += list(((form or {}).get("expand") or {}).values())
+            return values
+
         def do_GET(self):  # noqa: N802 — assinatura da stdlib
             path = urlparse(self.path).path.rstrip("/")
             parts = path.split("/")
@@ -204,7 +346,9 @@ def _handler(fake: FakeStripe):
                 return self._json(200, fake.public(session)) if session else self._not_found()
             if path.startswith("/v1/payment_intents/") and len(parts) == 4:
                 intent = fake.intents.get(parts[3])
-                return self._json(200, intent) if intent else self._not_found()
+                if not intent:
+                    return self._not_found()
+                return self._json(200, fake.intent_view(intent, self._expand()))
             if path.startswith("/pay/") and len(parts) == 3:
                 session = fake.sessions.get(parts[2])
                 if not session:
@@ -226,6 +370,17 @@ def _handler(fake: FakeStripe):
             parts = path.split("/")
             if path == "/v1/checkout/sessions":
                 return self._json(200, fake.public(fake.create_session(self._form())))
+            if path.startswith("/v1/checkout/sessions/") and len(parts) == 6 and parts[5] == "expire":
+                self._form()
+                return self._json(*fake.expire(parts[4]))
+            if path.startswith("/v1/payment_intents/") and len(parts) == 5 and parts[4] in {"capture", "cancel"}:
+                form = self._form()
+                expand = self._expand(form)
+                if parts[4] == "capture":
+                    return self._json(*fake.capture(parts[3], form, expand))
+                return self._json(*fake.cancel(parts[3], expand))
+            if path == "/v1/refunds":
+                return self._json(*fake.refund(self._form(), self.headers.get("Idempotency-Key") or ""))
             if path.startswith("/pay/") and len(parts) == 3:
                 if parts[2] not in fake.sessions:
                     return self._not_found()

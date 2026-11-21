@@ -77,6 +77,14 @@ beforeEach(() => { ifoodWidgetState.value = "off"; });
 const setViewingIFoodOrder = vi.fn();
 vi.stubGlobal("useIFoodWidget", () => ({ state: ifoodWidgetState, start: vi.fn(), setViewingIFoodOrder }));
 vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
+// O sheet de chamar (#2876) é o mesmo das Entregas e tem testes próprios
+// (`courierCallSheet.test.ts`, `useCourierCall.test.ts`); aqui só a ligação da página.
+const courierCallOpen = vi.fn();
+vi.stubGlobal("useOrderCourierCall", () => ({
+  calling: ref(""), open: courierCallOpen, sheet: computed(() => ({ open: false })),
+  closeSheet: vi.fn(), confirmSheet: vi.fn(), confirmAlone: vi.fn(), toggleCompanion: vi.fn(),
+  setChange: vi.fn(), chooseMachine: vi.fn(), chooseCarrier: vi.fn(), setNote: vi.fn(),
+}));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
   deviceAgent: computed(() => estacao.value),
@@ -228,6 +236,7 @@ const stubs = {
   }),
   NuxtLink: { template: "<a><slot /></a>" },
   OrderCourierPanel: true,
+  CourierCallSheet: true,
   OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
   OrderNoShowDialog: defineComponent({ name: "OrderNoShowDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, busy: Boolean }, emits: ["update:open", "confirm"], template: "<div />" }),
@@ -265,6 +274,36 @@ describe("detalhe do pedido — o aviso leva à negociação iFood", () => {
     abrir(order({ ifood_negotiations: [negotiation] }));
     await flushPromises();
     expect(reveal).not.toHaveBeenCalled();
+  });
+});
+
+// #2876: "Chamar entregador" no detalhe abre o MESMO sheet das Entregas; vindo do
+// lembrete do cartão (`#courier-call`), a página abre já com ele.
+describe("detalhe do pedido — o sheet de chamar o entregador", () => {
+  beforeEach(() => {
+    courierCallOpen.mockClear();
+    routeHash.value = "";
+  });
+  const courier = { status: "", can_quote: false, can_dispatch: true, can_cancel: false, attempts_count: 0 };
+  it("o painel pede o sheet, e a página abre para este pedido", async () => {
+    const w = abrir(order({ courier } as never));
+    await flushPromises();
+    expect(courierCallOpen).not.toHaveBeenCalled();
+    w.findComponent({ name: "OrderCourierPanel" }).vm.$emit("call");
+    expect(courierCallOpen).toHaveBeenCalledWith("WEB-20260625-0007");
+  });
+  it("com #courier-call no endereço, abre sozinho uma vez", async () => {
+    routeHash.value = "#courier-call";
+    abrir(order({ courier } as never));
+    await flushPromises();
+    expect(courierCallOpen).toHaveBeenCalledTimes(1);
+    expect(courierCallOpen).toHaveBeenCalledWith("WEB-20260625-0007");
+  });
+  it("sem poder chamar, o endereço não abre nada", async () => {
+    routeHash.value = "#courier-call";
+    abrir(order({ courier: { ...courier, can_dispatch: false } } as never));
+    await flushPromises();
+    expect(courierCallOpen).not.toHaveBeenCalled();
   });
 });
 

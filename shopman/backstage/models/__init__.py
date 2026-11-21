@@ -14,6 +14,7 @@ from .day_context import DayContext, HolidayScope
 from .delivery_device import DeliveryDevice
 from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .import_batch import ImportBatch
+from .incidents import IncidentReaderCredential
 from .kds import KDSInstance, KDSTicket
 from .operation import (
     OperationArea,
@@ -47,6 +48,7 @@ from .timer_tag import TimerTag, TimerTagOrigin
 from .workstation import Workstation
 
 __all__ = [
+    "IncidentReaderCredential",
     "Workstation",
     "PlanCarryNote",
     "AdminTwoFactorEnrollment",

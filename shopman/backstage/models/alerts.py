@@ -346,6 +346,10 @@ class OperatorAlert(models.Model):
         ("ifood_store_closed_while_open", "iFood fechado com a loja aberta"),
         ("ifood_store_open_while_closed", "iFood aberto com a loja fechada"),
         ("ifood_store_sync_failed", "Pausa ou horário não gravado no iFood"),
+        # O 403 do módulo de loja que o iFood ainda não liberou (homologação do
+        # Merchant, #2618/#2622): aviso, sem e-mail, até o iFood liberar
+        # (coordenação, 21/11/2026). Outro erro segue no ``ifood_store_sync_failed``.
+        ("ifood_store_module_pending", "iFood: módulo de loja ainda não liberado"),
         # A NF-e de compra discorda do cadastro fiscal do produto que ela
         # abastece: NCM, CEST, ou ST na nota × perfil sem ST (e o inverso). O
         # recebimento nunca corrige o cadastro sozinho — fornecedor também erra
@@ -455,6 +459,7 @@ class OperatorAlert(models.Model):
         "ifood_store_closed_while_open",
         "ifood_store_open_while_closed",
         "ifood_store_sync_failed",
+        "ifood_store_module_pending",
         "card_machine_overdue",
         "card_machine_refund_due",
         "danfe_print_failed",

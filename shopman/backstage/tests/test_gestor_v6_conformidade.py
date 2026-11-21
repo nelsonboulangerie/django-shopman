@@ -19,13 +19,13 @@ from shopman.orderman.models import Order, OrderItem
 from shopman.utils.formatting import format_clock
 
 from shopman.backstage.presentation.status import OPERATOR_ORDER_STATUS_LABELS, order_status_label
-from shopman.backstage.projections.order_attention import PrepExpectation, prep_expectation, ready_eta
 from shopman.backstage.projections.order_queue import (
     board_rail_counts,
     build_operator_order,
     build_order_card,
     build_two_zone_queue,
 )
+from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
 
 pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 

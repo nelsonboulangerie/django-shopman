@@ -223,3 +223,44 @@ class HouseRideGestureView(APIView):
             request, operation=f"house-{gesture}", resource=ride,
             inputs={"ref": order_ref} if gesture == "deliver" else {}, execute=run, where="a corrida",
         )
+
+
+@extend_schema_view(
+    post=extend_schema(tags=["backstage"], summary="House route slip bytes (ESC/POS, base64) with the link QR",
+                       responses={200: OpenApiResponse(description="Slip payload."),
+                                  409: OpenApiResponse(description="This station does not print.")}),
+)
+class HouseRideSlipView(APIView):
+    """A via impressa da rota da casa, com o QR do link (#2406; decisão 2 do dono).
+
+    O servidor compõe (``house_route_slip``) e a página relaia ao agente desta estação,
+    como a Via Pedido. Sem impressora nesta estação, recusa ANTES de compor (409, com o
+    motivo e o agente), para não carimbar uma primeira via que não saiu. A resposta diz se
+    é 2ª via (``reprint``) e traz o agente da estação (``agent``) para a página imprimir.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ride: str):
+        import base64
+
+        from shopman.backstage.api.operations import _station_device_agent
+        from shopman.backstage.services import house_route_slip
+        from shopman.backstage.services.exceptions import OrderError
+
+        agent = _station_device_agent(request)
+        if not (agent.get("can_print") and agent.get("agent_url")):
+            reason = str(agent.get("reason") or "Este dispositivo não tem impressora.").strip()
+            return Response({"detail": f"{reason} A via sai no dispositivo que tem impressora.", "agent": agent},
+                            status=409)
+        try:
+            link = house_couriers.live_link(ride.strip()[:64])
+        except OrderError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        reprint = house_route_slip.stamp_first_print(link)
+        payload = house_route_slip.slip_bytes(link, link_url=house_couriers.link_url(link), reprint=reprint)
+        return Response({
+            "ok": True, "payload_b64": base64.b64encode(payload).decode("ascii"),
+            "title": f"via-da-rota:{link.ride_ref}", "reprint": reprint, "agent": agent,
+        })

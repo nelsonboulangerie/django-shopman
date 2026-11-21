@@ -6,7 +6,7 @@ import { defineComponent, h, nextTick } from 'vue'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import BottomSheet from '~/components/BottomSheet.vue'
 
-type Entry = { isIntersecting: boolean }
+type Entry = { boundingClientRect: { top: number }, rootBounds: { bottom: number } | null }
 let deliver: ((entries: Entry[]) => void) | null = null
 let observedOptions: IntersectionObserverInit | undefined
 
@@ -29,9 +29,9 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-async function mountSheet () {
+async function mountSheet (surface: 'card' | 'muted' = 'card') {
   const Host = defineComponent({
-    setup: () => () => h(BottomSheet, { open: true, title: 'Revise seu pedido' }, {
+    setup: () => () => h(BottomSheet, { open: true, title: 'Revise seu pedido', surface }, {
       default: () => h('p', 'Conteúdo da folha')
     })
   })
@@ -41,28 +41,60 @@ async function mountSheet () {
   return wrapper
 }
 
-function chevron () {
-  return document.querySelector('.animate-bounce')?.parentElement as HTMLElement | null
+function hint () {
+  return document.querySelector('[data-more-below-contained] [data-more-below]') as HTMLElement | null
 }
 
+// O fim do conteúdo (o sentinela) contra a linha de baixo da caixa observada.
+const still = { boundingClientRect: { top: 900 }, rootBounds: { bottom: 600 } }
+const reached = { boundingClientRect: { top: 590 }, rootBounds: { bottom: 600 } }
+
+// #2414: a folha usa o mesmo <MoreBelow /> da página, no modo caixa, em vez da
+// dica antiga desenhada à mão.
 describe('BottomSheet: "tem mais abaixo"', () => {
   it('a folga do fim do corpo não conta como conteúdo por rolar', async () => {
     await mountSheet()
 
     // Margem só embaixo, de um passo de espaçamento: o fim "aparece" um pouco antes.
     expect(observedOptions?.rootMargin).toBe('0px 0px 16px 0px')
+    expect(observedOptions?.root).toBeInstanceOf(HTMLElement)
   })
 
-  it('a seta aparece enquanto falta conteúdo e some quando o fim chega', async () => {
+  it('a dica aparece enquanto falta conteúdo e some quando o fim chega', async () => {
     await mountSheet()
     expect(deliver).toBeTruthy()
 
-    deliver!([{ isIntersecting: false }])
+    deliver!([still])
     await nextTick()
-    expect(chevron()?.className).toContain('opacity-100')
+    expect(hint()).not.toBeNull()
+    expect(hint()!.querySelector('[data-more-below-jump]')?.getAttribute('aria-label')).toBe('Ir para o fim do conteúdo')
 
-    deliver!([{ isIntersecting: true }])
+    deliver!([reached])
     await nextTick()
-    expect(chevron()?.className).toContain('opacity-0')
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(hint()).toBeNull()
+  })
+
+  // O toque na dica foca o botão dela. Trazer ESSE foco à vista (o que a folha faz
+  // com campo focado, por causa do teclado) cancelava a rolagem até o fim.
+  it('o foco no botão da dica não puxa a rolagem de volta', async () => {
+    await mountSheet()
+    deliver!([still])
+    await nextTick()
+    const jump = hint()!.querySelector('[data-more-below-jump]') as HTMLElement
+    const reveal = vi.fn()
+    jump.scrollIntoView = reveal
+    jump.focus()
+    jump.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await new Promise(resolve => requestAnimationFrame(() => resolve(null)))
+    expect(reveal).not.toHaveBeenCalled()
+  })
+
+  it('a dica mora na folha (sem teleporte) e desbota para a cor dela', async () => {
+    await mountSheet('muted')
+    deliver!([still])
+    await nextTick()
+    expect(document.querySelector('body > [data-more-below]')).toBeNull()
+    expect(hint()!.querySelector('.bg-gradient-to-t')?.className).toContain('from-muted')
   })
 })
