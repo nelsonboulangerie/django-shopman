@@ -18,6 +18,8 @@ import {
   houseGesturePath,
   houseGestureResource,
   houseGestures,
+  houseSlipPath,
+  slipPrintedMessage,
   callCourier,
   withHouseRides,
   ordersWord,
@@ -234,7 +236,17 @@ describe("a corrida da casa na lista (M3b)", () => {
 
   it("antes de sair: Saiu é o gesto do momento, o link vem depois", () => {
     const list = houseGestures(house({ depart_action: action("Despachar a corrida C"), resend_action: action("Reenviar o link", false) }));
-    expect(list.map((item) => [item.key, item.primary])).toEqual([["depart", true], ["resend", false]]);
+    expect(list.map((item) => [item.key, item.primary])).toEqual([["depart", true], ["resend", false], ["slip", false]]);
+  });
+
+  it("a via impressa com o QR do link vale enquanto o link vale, e não pede confirmação (#2406)", () => {
+    const slip = houseGestures(house({ resend_action: action("Reenviar o link") })).find((item) => item.key === "slip");
+    expect(slip?.action.label).toBe("Imprimir a via");
+    expect(slip?.icon).toBe("i-lucide-printer");
+    expect((slip?.action.confirmation as { required: boolean }).required).toBe(false);
+    expect(houseSlipPath("CASA-7/x")).toBe("/api/v1/backstage/deliveries/couriers/rides/CASA-7%2Fx/slip/");
+    expect(slipPrintedMessage("C", false)).toBe("Via da corrida C impressa.");
+    expect(slipPrintedMessage("C", true)).toBe("2ª via da corrida C impressa.");
   });
 
   it("na rua: um Entregue por parada aberta, o primeiro em destaque; soltar só com o link preso", () => {
