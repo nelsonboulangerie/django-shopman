@@ -540,7 +540,7 @@ describe("usePosSale — autorização do gerente presa ao que ele viu (#2558)",
       house_account_limit: null,
     } as never;
 
-    const ok = await h.sale.checkManagerApproval("joyce", "4321");
+    const ok = await h.sale.checkManagerApproval({ username: "joyce", pin: "4321" });
 
     expect(ok).toBe(true);
     const [path, opts] = actionCall.mock.calls.find((c) => String(c[0]).includes("manager-approval/check"))!;

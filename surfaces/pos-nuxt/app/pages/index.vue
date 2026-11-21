@@ -411,8 +411,9 @@ async function recheckFromGuard() {
   // diálogo dele abre sozinho (`closeRecheckApproval`), com o valor da venda.
   if (outcome === "approval") uncertainCloseRecoveryOpen.value = false;
 }
-async function recheckWithManager(username: string, pin: string) {
-  const outcome = await recheckUncertainClose({ username, pin });
+// PIN ou crachá (#2691): o mesmo carimbo, pela porta que o gerente usar.
+async function recheckWithManager(approval: ManagerApproval) {
+  const outcome = await recheckUncertainClose(approval);
   if (outcome === "resolved") dismissCloseRecheckApproval();
   if (outcome === "unknown") {
     dismissCloseRecheckApproval();
@@ -1582,7 +1583,7 @@ onBeforeUnmount(() => {
         :manager-approved="managerApproved"
         :manager-approval-error="managerApprovalError"
         :manager-check-busy="managerCheckBusy"
-        @check-manager="(username, pin, done) => { void checkManagerApproval(username, pin).then(done) }"
+        @check-manager="(approval, done) => { void checkManagerApproval(approval).then(done) }"
         @manager-auth-dismissed="managerApprovalError = ''"
         :fulfillment-type="cart.fulfillmentType"
         v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
@@ -2032,7 +2033,8 @@ onBeforeUnmount(() => {
       :error="closeRecheckApprovalError"
       data-close-guard-manager
       @update:open="(value) => { if (!value) dismissCloseRecheckApproval(); }"
-      @authorize="recheckWithManager"
+      @authorize="(username: string, pin: string) => recheckWithManager({ username, pin })"
+      @authorize-badge="(badge: string) => recheckWithManager({ badge })"
     >
       <!-- Encomenda acima do plano: os dois números, como no Pagamento (WP-E2). -->
       <template v-if="closeRecheckApproval?.over_plan?.length" #context>

@@ -30,6 +30,7 @@ import type {
   SavedAddressProjection,
   StructuredAddressProjection,
 } from "~/types/pos";
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
 import {
@@ -129,7 +130,7 @@ const props = defineProps<{
    */
   managerApproved: boolean;
   managerApprovalError: string;
-  /** O PIN do gerente está sendo conferido no servidor (`checkManager`). */
+  /** A autorização do gerente (PIN ou crachá) está sendo conferida no servidor (`checkManager`). */
   managerCheckBusy?: boolean;
   /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
   managers: POSManagerProjection[];
@@ -234,11 +235,11 @@ const emit = defineEmits<{
   removeTender: [number];
   setSplitCount: [number];
   /**
-   * Confere o PIN do gerente ANTES de seguir (beta test de 05/11/2026): o
-   * diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
+   * Confere o gerente ANTES de seguir (beta test de 05/11/2026), pelo PIN
+   * (`{username, pin}`) ou pelo crachá (`{badge}`): o diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
    * Quem guarda a assinatura (na memória, presa ao retrato) é o `usePosSale`.
    */
-  checkManager: [string, string, (ok: boolean) => void];
+  checkManager: [ManagerApproval, (ok: boolean) => void];
   /** O diálogo do gerente fechou sem assinar: o erro velho não volta na próxima abertura. */
   managerAuthDismissed: [];
   selectTender: [number];
@@ -1342,9 +1343,19 @@ function proceed() {
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
-  // O PIN é conferido AQUI, com o diálogo aberto: errado, o erro aparece nele
-  // e nada adiante (maquininha, "Recebi o Pix") chegou a acontecer.
-  emit("checkManager", username, pin, (ok) => {
+  checkManager({ username, pin });
+}
+// O crachá é a MESMA autorização, pela outra porta (#2691): o diálogo convidava a
+// passar o crachá e a tela não escutava o `authorize-badge`, então o gerente com o
+// crachá no pescoço digitava o PIN mesmo assim. O servidor resolve a pessoa pelo
+// token, exige a mesma permissão e devolve o mesmo carimbo.
+function onManagerBadge(badge: string) {
+  checkManager({ badge });
+}
+function checkManager(approval: ManagerApproval) {
+  // Conferido AQUI, com o diálogo aberto: errado, o erro aparece nele e nada
+  // adiante (maquininha, "Recebi o Pix") chegou a acontecer.
+  emit("checkManager", approval, (ok) => {
     if (!ok) return;
     managerAuthOpen.value = false;
     proceed();
@@ -2711,6 +2722,7 @@ defineExpose({
     :busy="loading || managerCheckBusy"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"
+    @authorize-badge="onManagerBadge"
   >
     <!-- Encomenda acima do plano: o gerente vê os dois números de cada linha
          ANTES de assinar (D-041). O carimbo vale só para eles. -->

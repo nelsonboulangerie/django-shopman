@@ -95,6 +95,7 @@ import { crossAppLinkAttrs } from "../../../operator-kit/app/presentation/appLau
 import { isInstalledDisplay } from "../../../operator-kit/app/utils/displayMode";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { pendingPixDeadlineMs, pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
 import { sourceReleasedMessage } from "~/presentation/moveLines";
 import { tabTitleView } from "~/presentation/tabTitle";
@@ -598,7 +599,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function recheckUncertainClose(
-    approval?: { username: string; pin: string },
+    approval?: ManagerApproval,
   ): Promise<"resolved" | "unknown" | "unavailable" | "approval"> {
     if (closeRecheckBusy.value || closeInFlight.value) return "unavailable";
     const lockManager = globalThis.navigator?.locks;
@@ -633,7 +634,7 @@ export function usePosSale(deps: PosSaleDeps) {
         if (approval) {
           const shown = marker.approval || NO_APPROVAL_FIGURES;
           try {
-            const token = await requestSaleApprovalToken(approval.username, approval.pin, {
+            const token = await requestSaleApprovalToken(approval, {
               tab_ref: typeof marker.body.tab_ref === "string" ? marker.body.tab_ref : "",
               reasons: shown.reasons,
               discount_q: shown.discount_q,
@@ -645,7 +646,7 @@ export function usePosSale(deps: PosSaleDeps) {
             const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
             closeRecheckApproval.value = shown;
             closeRecheckApprovalError.value = failure?.recovery || failure?.message
-              || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+              || httpErrorMessage(error, approval.badge ? "Não deu para conferir o crachá. Tente de novo." : "Não deu para conferir o PIN. Tente de novo.");
             return "approval" as const;
           }
         }
@@ -2715,8 +2716,7 @@ export function usePosSale(deps: PosSaleDeps) {
    * Lança o erro do servidor (PIN errado, trava) para quem chamou mostrar.
    */
   async function requestSaleApprovalToken(
-    username: string,
-    pin: string,
+    approval: ManagerApproval,
     shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number; over_plan?: POSOverPlanLine[] },
   ): Promise<string> {
     const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
@@ -2728,12 +2728,15 @@ export function usePosSale(deps: PosSaleDeps) {
       // que o diálogo mostrou. O carimbo vale só para esses números.
       over_plan: shown.reasons.includes("preorder_over_plan") ? (shown.over_plan ?? []) : [],
     };
-    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
+    // PIN (`{username, pin}`) ou crachá (`{badge}`): o servidor aceita as duas portas
+    // (`validate_manager_override`) e devolve o mesmo carimbo (#2691).
+    const managerApproval = approval.badge ? { badge: approval.badge } : { username: approval.username, pin: approval.pin };
+    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: managerApproval, scope } });
     return typeof answer?.token === "string" ? answer.token : "";
   }
 
   const managerCheckBusy = ref(false);
-  async function checkManagerApproval(username: string, pin: string): Promise<boolean> {
+  async function checkManagerApproval(approval: ManagerApproval): Promise<boolean> {
     if (managerCheckBusy.value) return false;
     managerCheckBusy.value = true;
     managerApprovalError.value = "";
@@ -2745,7 +2748,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // vale só para isso. O PIN fica no diálogo; o carimbo mora na memória da
       // aba, preso ao retrato (`managerSignature`).
       const current = review.value;
-      const token = await requestSaleApprovalToken(username, pin, {
+      const token = await requestSaleApprovalToken(approval, {
         tab_ref: cart.localTab ? "" : cart.tabRef,
         reasons: current?.approval_reasons || [],
         discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
@@ -2758,7 +2761,7 @@ export function usePosSale(deps: PosSaleDeps) {
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
       managerApprovalError.value = failure?.recovery || failure?.message
-        || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+        || httpErrorMessage(error, approval.badge ? "Não deu para conferir o crachá. Tente de novo." : "Não deu para conferir o PIN. Tente de novo.");
       return false;
     } finally {
       managerCheckBusy.value = false;
