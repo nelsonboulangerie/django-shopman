@@ -11,6 +11,10 @@
 // O seed planeja a Baguette de Tradition para cada dia aberto da semana: 22, ou 28 na
 // sexta e no sábado (`seedPlannedQty`). A régua é o lote planejado PARA a data; a sobra de hoje (que o seed deixa na vitrine) não entra em nenhum número.
 //
+// Cada passada DEVOLVE o lote no fim (#2981): a Fran cancela pela tela, com a Gerente,
+// a encomenda de 200 que acabou de fechar. Sem isso a passada seguinte no mesmo banco
+// (o outro tamanho, ou a rodada de amanhã) achava "Sem saldo para DD/MM" e parava.
+//
 // WP-E3 estende a jornada com a data SEM plano (D2 do dono): a Fran abre uma encomenda
 // para daqui a dez dias, quando o seed ainda não planejou lote nenhum, e lança 30
 // croissants. O tile não diz "Sem saldo"; a linha diz "Ainda sem lote planejado para
@@ -18,6 +22,7 @@
 import { audits } from "./support/audit";
 import { seedPlannedQty } from "./support/nextOpenDay";
 import { capture, cast, expect, settled, test, type Page } from "./support/operator";
+import { cancelsPaidPreorder } from "./support/preorder";
 import { picksNextOpenDay, type ChosenDay } from "./support/schedule";
 
 const PRODUCT = process.env.PDV_LIVE_OVER_PLAN_PRODUCT || "Baguette de Tradition";
@@ -258,6 +263,9 @@ for (const device of ["phone", "counter"] as const) {
       // 4 · A Gerente, escolhida da lista, assina com o próprio PIN, e a encomenda fecha.
       await ask.click();
       await expect(dialog).toBeVisible({ timeout: 30_000 });
+      // O número da encomenda vem do fechamento: é ele que a passada cancela no fim. A
+      // escuta nasce antes do PIN, porque o último dígito já pode fechar a venda.
+      const closed = page.waitForResponse((r) => r.url().includes("/pos/sale/close/") && r.request().method() === "POST", { timeout: 90_000 });
       await dialog.getByRole("button", { name: new RegExp(cast.manager.name) }).first().click();
       for (const digit of cast.manager.pin) {
         await dialog.getByRole("button", { name: digit, exact: true }).click();
@@ -265,9 +273,15 @@ for (const device of ["phone", "counter"] as const) {
       const confirm = dialog.getByRole("button", { name: /^Confirmar|^Autorizar/ }).first();
       if (await confirm.isVisible({ timeout: 2000 }).catch(() => false)) await confirm.click();
       await expect(dialog).toBeHidden({ timeout: 60_000 });
+      const ref = String(((await (await closed).json()) as { order_ref?: string }).order_ref || "");
+      expect(ref, "o fechamento devolve o número da encomenda").not.toBe("");
       await expect(page.getByText(/Encomenda registrada|CONFIRME COM O CLIENTE|Confirme com o cliente/).locator("visible=true").first())
         .toBeVisible({ timeout: 60_000 });
       await capture(page, testInfo, "encomenda-registrada");
+
+      // 5 · O lote volta: a Fran cancela a encomenda que fechou, com a Gerente (#2981).
+      await cancelsPaidPreorder(page, ref);
+      await capture(page, testInfo, "encomenda-cancelada-lote-devolvido");
     });
 
     test("30 croissants para daqui a dez dias, sem lote planejado: vira pedido à Produção", async ({ cashierAtCounter: page }, testInfo) => {
