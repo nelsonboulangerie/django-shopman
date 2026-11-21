@@ -10,43 +10,21 @@ import {
   courierTone,
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
-import {
-  courierRideCallLabel,
-  courierRideQuestion,
-  machinesOutSentence,
-  MAX_RIDE_STOPS,
-  rideOfferLine,
-  splitRef,
-} from "~/presentation/board";
-import {
-  freeMachines,
-  machinePhrase,
-  moneyInput,
-} from "../../../operator-kit/app/presentation/custody";
-import type {
-  Action,
-  EquipmentOptionProjection,
-} from "~/generated/ordersContract";
+import type { Action } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
-import { useRideQuote } from "~/composables/useRideQuote";
-import { suggestionLate, suggestionQuoteLines } from "~/presentation/deliveries";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 
 const props = defineProps<{
-  /** O pedido deste painel: a primeira parada da corrida quando outros vão junto. */
-  orderRef: string;
   courier: CourierBlock;
   busy: boolean;
   cancelAction?: Action;
   quoteAction?: Action;
   dispatchAction?: Action;
-  /** As maquininhas do pedido (`order.equipment_options`), para a custódia. */
-  equipmentOptions?: EquipmentOptionProjection[];
   dispatchAgainAction?: Action;
-  /** Abrir com a confirmação de "Chamar entregador" já armada (veio do lembrete do cartão). */
-  armDispatch?: boolean;
+  /** O sheet de chamar está abrindo (a página lê as Entregas). */
+  calling?: boolean;
   /** A cotação está a caminho (o toque em "Cotar entrega" ainda não voltou). */
   quoting?: boolean;
   /** A última cotação falhou: a frase do servidor, ou vazio. */
@@ -54,15 +32,8 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   quote: [];
-  dispatch: [custody: { change_out?: string; equipment?: string[] }];
-  /** Este pedido e os que vão junto, numa corrida só. */
-  dispatchRide: [
-    body: {
-      refs: string[];
-      change_out: Record<string, string>;
-      machine: string;
-    },
-  ];
+  /** Abrir o sheet de chamar (`CourierCallSheet`), o mesmo das Entregas. */
+  call: [];
   /** Confirmado: depois do aceite vem com o motivo escolhido (`reason_id` da TaOn). */
   cancel: [reasonId?: number];
   dispatchAgain: [];
@@ -148,157 +119,16 @@ const chargeActions = computed(() => [
     },
 ]);
 
-// Chamar entregador abre corrida paga na central → confirm de 1 toque, com a
-// pergunta inteira (quem vem, para qual pedido, quem paga) vinda do servidor.
-const confirmingDispatch = ref(false);
-const dispatchQuestion = computed(() =>
-  String(props.dispatchAction?.confirmation?.description ?? ""),
-);
-watch(
-  () => JSON.stringify(props.dispatchAction?.payload_schema),
-  () => {
-    confirmingDispatch.value = false;
-  },
-);
-// A custódia que sai com o entregador da TaOn, pré-preenchida pelo pedido:
-// troco da gaveta e/ou a maquininha da casa. Pedido pago não pergunta nada.
-const custody = computed(() => props.courier.custody);
-const asksChange = computed(
-  () => (custody.value?.change_out_suggested_q ?? 0) > 0,
-);
-// "Vai junto nesta corrida?": as entregas que podem ir com este pedido, as mais
-// perto primeiro (`ride_offer`). Escolhida uma, a chamada vira uma corrida com
-// várias paradas; a maquininha continua UMA, para todos os pedidos de cartão.
-const offer = computed(() => props.courier.ride_offer ?? []);
-const together = ref<string[]>([]);
-const companionChanges = ref<Record<string, string>>({});
-const companions = computed(() =>
-  offer.value.filter((choice) => together.value.includes(choice.ref)),
-);
-const companionsAskingChange = computed(() =>
-  companions.value.filter((choice) => choice.change_out_suggested_q > 0),
-);
-// A sugestão da casa (`ride_plan`, o mesmo das Entregas): o companheiro já vem
-// marcado quando a central cotou e juntar sai mais barato (decisão 1 = A do dono,
-// 16/11). A cotação é SÓ leitura: quem decide é a caixa e o botão principal.
-const suggestion = computed(() => props.courier.ride_suggestion ?? null);
-const suggestionLines = computed(() => {
-  const plan = suggestion.value;
-  if (!plan?.together || plan.separate_q === null) return [];
-  return suggestionQuoteLines({
-    key: plan.refs.join("+"), refs: plan.refs, codes: plan.codes, places: "",
-    quoted: plan.quoted, suggested: plan.suggested, late_code: plan.late_code, late_minutes: plan.late_minutes,
-    together_q: plan.together.value_q, minutes: Math.round(plan.together.minutes), km: plan.together.km,
-    with_return: plan.together.with_return, separate_q: plan.separate_q, saving_q: plan.saving_q,
-  });
-});
-const suggestionNote = computed(() => {
-  const plan = suggestion.value;
-  if (!plan) return "";
-  if (!plan.quoted) {
-    const mates = plan.codes.filter((code) => code !== splitRef(props.orderRef).code);
-    return `A TaOn não cotou agora. Marque ${joinCodes(mates)} se quiser levar junto.`;
-  }
-  return suggestionLate(plan);
-});
-function joinCodes(codes: string[]): string {
-  return codes.length < 2 ? (codes[0] ?? "") : `${codes.slice(0, -1).join(", ")} e ${codes[codes.length - 1]}`;
-}
-const offerItems = computed(() =>
-  offer.value.map((choice) => ({
-    value: choice.ref,
-    label: choice.label,
-    suggested: Boolean(choice.suggested),
-    description: rideOfferLine(choice),
-    disabled:
-      !together.value.includes(choice.ref) &&
-      together.value.length + 1 >= MAX_RIDE_STOPS,
-  })),
-);
-function updateTogether(next: string[]) {
-  for (const choice of offer.value) {
-    if (
-      next.includes(choice.ref) &&
-      choice.change_out_suggested_q > 0 &&
-      companionChanges.value[choice.ref] === undefined
-    ) {
-      companionChanges.value = {
-        ...companionChanges.value,
-        [choice.ref]: moneyInput(choice.change_out_suggested_q),
-      };
-    }
-  }
-  together.value = next;
-}
-const asksMachine = computed(
-  () =>
-    Boolean(custody.value?.needs_machine) ||
-    companions.value.some((choice) => choice.needs_machine),
-);
-const asksCustody = computed(
-  () =>
-    asksChange.value ||
-    asksMachine.value ||
-    companionsAskingChange.value.length > 0,
-);
-const free = computed(() => freeMachines(props.equipmentOptions ?? []));
-const changeOut = ref("");
-const machineRef = ref("");
-function armCustody() {
-  together.value = [];
-  companionChanges.value = {};
-  updateTogether(
-    offer.value.filter((choice) => choice.suggested).map((choice) => choice.ref).slice(0, MAX_RIDE_STOPS - 1),
-  );
-  changeOut.value = asksChange.value
-    ? moneyInput(custody.value?.change_out_suggested_q ?? 0)
-    : "";
-  machineRef.value = free.value[0]?.ref ?? "";
-}
-const machineItems = computed(() =>
-  free.value.map((opt) => ({ value: opt.ref, label: opt.label })),
-);
-const machineMissing = computed(() => asksMachine.value && !free.value.length);
+// Chamar entregador abre o MESMO sheet das Entregas (`CourierCallSheet`, #2876): a
+// página é dona dele (custódia, quem vai junto, cotação da sugestão). Aqui o toque só
+// pede para abrir; um toque nunca chama.
 function requestDispatch() {
-  if (!confirmingDispatch.value) {
-    armCustody();
-    confirmingDispatch.value = true;
-    return;
-  }
-  if (machineMissing.value) return;
-  confirmingDispatch.value = false;
-  if (together.value.length) {
-    emit("dispatchRide", {
-      refs: [props.orderRef, ...together.value],
-      change_out: {
-        ...(asksChange.value
-          ? { [props.orderRef]: changeOut.value.trim() || "0" }
-          : {}),
-        ...Object.fromEntries(
-          companionsAskingChange.value.map((choice) => [
-            choice.ref,
-            (companionChanges.value[choice.ref] ?? "").trim() || "0",
-          ]),
-        ),
-      },
-      machine: asksMachine.value ? machineRef.value : "",
-    });
-    return;
-  }
-  emit("dispatch", {
-    ...(asksChange.value ? { change_out: changeOut.value.trim() || "0" } : {}),
-    ...(asksMachine.value ? { equipment: [machineRef.value] } : {}),
-  });
-}
-// Vindo do lembrete do cartão (`#courier-call`), a página abre já perguntando.
-if (props.armDispatch && props.courier.can_dispatch) {
-  armCustody();
-  confirmingDispatch.value = true;
+  if (props.busy || props.calling || !props.dispatchAction?.enabled) return;
+  emit("call");
 }
 
 // Lembrete temporário (entrega da casa em preparo há X min, sem entregador chamado):
-// o aviso amarelo leva o "Chamar entregador", que arma a MESMA confirmação de baixo
-// (pergunta, troco e maquininha); armada, o botão de confirmar é o de sempre.
+// o aviso amarelo leva o "Chamar entregador", que abre o MESMO sheet de chamar.
 const nowMs = useNowTick();
 const reminderLine = computed(() =>
   props.courier.can_dispatch
@@ -306,10 +136,10 @@ const reminderLine = computed(() =>
     : null,
 );
 const reminderActions = computed(() => [
-  !confirmingDispatch.value && {
+  {
     label: "Chamar entregador",
-    icon: "i-lucide-send",
-    disabled: props.busy || !props.dispatchAction?.enabled,
+    icon: "i-lucide-bike",
+    disabled: props.busy || props.calling || !props.dispatchAction?.enabled,
     onClick: requestDispatch,
     ...{ "data-courier-reminder-call": "" },
   },
@@ -321,51 +151,14 @@ const reminderActions = computed(() => [
   },
 ]);
 
-function blurDispatch() {
-  // Com campos a preencher (ou entregas para juntar), sair do botão não
-  // desarma: o operador está conferindo. "Voltar" desarma.
-  if (!asksCustody.value && !offer.value.length)
-    confirmingDispatch.value = false;
-}
-const confirmLabel = computed(() =>
-  together.value.length
-    ? courierRideCallLabel(together.value.length + 1)
-    : "Confirmar chamada",
-);
-
 // A cotação antes da corrida: valor, tempo e distância numa linha forte, com o
 // "Chamar entregador" logo abaixo como a ação do momento. Com corrida aberta, o
 // valor volta ao cabeçalho (é o custo dela, não uma proposta).
-// Com outras entregas marcadas, o cartão cota a CORRIDA inteira (mesma ordem e
-// retorno da chamada); sem elas, a entrega deste pedido.
-const rideRefs = computed(() =>
-  together.value.length ? [props.orderRef, ...together.value] : [],
+const quoteValue = computed(() =>
+  props.quoting ? "Cotando a entrega…" : props.courier.estimate_display,
 );
-const rideQuote = useRideQuote(rideRefs);
-const quoteTitle = computed(() =>
-  together.value.length
-    ? `Cotação da corrida com ${together.value.length + 1} paradas`
-    : "Cotação da entrega",
-);
-const quoteValue = computed(() => {
-  if (!together.value.length)
-    return props.quoting
-      ? "Cotando a entrega…"
-      : props.courier.estimate_display;
-  if (rideQuote.pending.value) return "Cotando a corrida…";
-  return rideQuote.quote.value?.display ?? "";
-});
-const quoteNote = computed(() => {
-  if (!together.value.length) return "";
-  if (rideQuote.quote.value) return `Ordem: ${rideQuote.quote.value.route}`;
-  return rideQuote.failure.value;
-});
 const showQuote = computed(
-  () =>
-    !hasRide.value &&
-    (together.value.length > 0 ||
-      props.quoting ||
-      Boolean(props.courier.estimate_display)),
+  () => !hasRide.value && (props.quoting || Boolean(props.courier.estimate_display)),
 );
 const quoteActions = computed(() => [
   {
@@ -649,10 +442,10 @@ const vehicle = computed(() =>
         v-if="showQuote"
         variant="soft"
         data-courier-quote
-        :aria-busy="quoting || rideQuote.pending.value || undefined"
+        :aria-busy="quoting || undefined"
       >
         <div class="flex flex-col items-center gap-1 text-center">
-          <p class="text-xs text-muted-foreground">{{ quoteTitle }}</p>
+          <p class="text-xs text-muted-foreground">Cotação da entrega</p>
           <p
             v-if="quoteValue"
             class="text-lg font-semibold tabular-nums"
@@ -661,13 +454,6 @@ const vehicle = computed(() =>
           >
             {{ quoteValue }}
           </p>
-          <p
-            v-if="quoteNote"
-            class="text-sm text-muted-foreground"
-            data-courier-ride-quote-note
-          >
-            {{ quoteNote }}
-          </p>
         </div>
       </NuxtCard>
 
@@ -675,149 +461,16 @@ const vehicle = computed(() =>
         v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel"
       >
         <div
-          v-if="confirmingDispatch"
-          class="flex flex-col gap-3"
-          data-testid="courier-dispatch-confirm"
-        >
-          <p
-            v-if="together.length || dispatchQuestion"
-            class="text-sm"
-            role="status"
-            data-testid="courier-dispatch-question"
-          >
-            {{
-              together.length
-                ? courierRideQuestion([orderRef, ...together])
-                : dispatchQuestion
-            }}
-          </p>
-          <!-- outras entregas que podem ir na mesma corrida, as mais perto primeiro -->
-          <NuxtFormField
-            v-if="offer.length"
-            label="Vai junto nesta corrida?"
-            data-testid="courier-ride-offer"
-          >
-            <NuxtCheckboxGroup
-              :model-value="together"
-              :items="offerItems"
-              variant="table"
-              @update:model-value="(next) => updateTogether(next as string[])"
-            >
-              <template #label="{ item }">
-                <span class="inline-flex flex-wrap items-center gap-2">
-                  {{ (item as { label: string }).label }}
-                  <NuxtBadge
-                    v-if="(item as { suggested?: boolean }).suggested"
-                    color="primary"
-                    icon="i-lucide-sparkles"
-                    label="Sugestão da casa"
-                    data-testid="courier-ride-suggested"
-                  />
-                </span>
-              </template>
-            </NuxtCheckboxGroup>
-            <!-- A cotação da sugestão: duas linhas, só leitura (o ✔ não é botão). -->
-            <div
-              v-if="suggestionLines.length || suggestionNote"
-              class="mt-2 flex flex-col gap-0.5"
-              data-testid="courier-ride-suggestion"
-            >
-              <p
-                v-for="line in suggestionLines"
-                :key="line.text"
-                class="text-sm tabular-nums [font-variant-emoji:text]"
-                :class="line.strong ? 'font-medium text-highlighted' : 'text-muted'"
-              >
-                {{ line.text }}
-              </p>
-              <p
-                v-if="suggestionNote"
-                class="text-sm"
-                :class="suggestion?.quoted ? 'text-muted' : 'text-warning'"
-              >
-                {{ suggestionNote }}
-              </p>
-            </div>
-          </NuxtFormField>
-          <NuxtFormField
-            v-if="asksChange"
-            :label="
-              together.length
-                ? `Troco do pedido ${splitRef(orderRef).code}`
-                : 'Troco que o entregador leva da gaveta'
-            "
-            data-testid="courier-custody-change"
-          >
-            <NuxtInput
-              v-model="changeOut"
-              class="w-40"
-              type="text"
-              inputmode="decimal"
-              icon="i-lucide-circle-dollar-sign"
-              aria-label="Troco que o entregador leva da gaveta, em reais"
-            />
-          </NuxtFormField>
-          <NuxtFormField
-            v-for="choice in companionsAskingChange"
-            :key="`ride-change-${choice.ref}`"
-            :label="`Troco do pedido ${splitRef(choice.ref).code}`"
-            :description="choice.change_label || undefined"
-            data-testid="courier-ride-change"
-          >
-            <NuxtInput
-              v-model="companionChanges[choice.ref]"
-              class="w-40"
-              type="text"
-              inputmode="decimal"
-              icon="i-lucide-circle-dollar-sign"
-              :aria-label="`Troco que o entregador leva no pedido ${splitRef(choice.ref).code}, em reais`"
-            />
-          </NuxtFormField>
-          <template v-if="asksMachine">
-            <NuxtFormField
-              v-if="free.length >= 2"
-              :label="
-                together.length
-                  ? 'Qual maquininha vai na corrida?'
-                  : 'Qual maquininha vai junto?'
-              "
-              data-testid="courier-custody-machine"
-            >
-              <NuxtRadioGroup
-                v-model="machineRef"
-                :items="machineItems"
-                orientation="horizontal"
-              />
-            </NuxtFormField>
-            <p
-              v-else-if="free.length === 1"
-              class="text-sm"
-              data-testid="courier-custody-machine"
-            >
-              Leva a {{ machinePhrase(free[0]!.label) }}.
-            </p>
-            <p
-              v-else
-              class="text-sm text-error"
-              data-testid="courier-custody-machine"
-            >
-              {{ machinesOutSentence(equipmentOptions ?? []) }} Espere uma
-              voltar para chamar.
-            </p>
-          </template>
-        </div>
-        <div
           class="flex flex-wrap gap-2"
           :class="showQuote ? 'justify-center' : ''"
         >
+          <!-- Abre o sheet de chamar (o mesmo das Entregas): troco, maquininha e quem
+               vai junto se conferem lá. Com o lembrete na tela, o gesto mora nele. -->
           <NuxtButton
-            v-if="courier.can_dispatch && (!reminderLine || confirmingDispatch)"
+            v-if="courier.can_dispatch && !reminderLine"
             type="button"
-            :disabled="
-              busy ||
-              !dispatchAction?.enabled ||
-              (confirmingDispatch && machineMissing)
-            "
+            :loading="calling"
+            :disabled="busy || calling || !dispatchAction?.enabled"
             :title="
               dispatchAction?.reason ||
               (dispatchAction?.enabled
@@ -827,46 +480,18 @@ const vehicle = computed(() =>
             :icon="
               hasRide || courier.attempts_count > 0
                 ? 'i-lucide-refresh-cw'
-                : 'i-lucide-send'
+                : 'i-lucide-bike'
             "
             :label="
-              confirmingDispatch
-                ? confirmLabel
-                : hasRide || courier.attempts_count > 0
-                  ? 'Chamar outro entregador'
-                  : 'Chamar entregador'
+              hasRide || courier.attempts_count > 0
+                ? 'Chamar outro entregador'
+                : 'Chamar entregador'
             "
-            @blur="blurDispatch"
+            data-courier-call
             @click="requestDispatch"
           />
-          <!-- Com companheiro marcado, chamar só este pedido é um toque, ao lado do primário. -->
           <NuxtButton
-            v-if="confirmingDispatch && together.length"
-            type="button"
-            :label="`Chamar só ${splitRef(orderRef).code}`"
-            color="neutral"
-            variant="outline"
-            :disabled="busy || !dispatchAction?.enabled || machineMissing"
-            data-testid="courier-dispatch-alone"
-            @click="
-              updateTogether([]);
-              requestDispatch();
-            "
-          />
-          <NuxtButton
-            v-if="confirmingDispatch && (asksCustody || offer.length)"
-            type="button"
-            label="Voltar"
-            color="neutral"
-            variant="outline"
-            @click="confirmingDispatch = false"
-          />
-          <NuxtButton
-            v-if="
-              courier.can_quote &&
-              !confirmingDispatch &&
-              !(quoteError && !quoting)
-            "
+            v-if="courier.can_quote && !(quoteError && !quoting)"
             type="button"
             :loading="quoting"
             :disabled="busy || quoting || !quoteAction?.enabled"

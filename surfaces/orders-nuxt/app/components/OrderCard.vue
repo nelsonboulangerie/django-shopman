@@ -18,6 +18,7 @@ import type { ButtonProps } from "#ui/types";
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
+  withCourierCall,
   cardAuthorizationNotice,
   cardClock,
   cardSeal,
@@ -48,6 +49,7 @@ import {
   type PromiseExit,
 } from "~/presentation/orderPromise";
 import { orderFocusKey } from "~/presentation/promiseAlert";
+import { CALL_CUSTOMER_HASH } from "~/presentation/orderPending";
 import OrderCardActions from "./OrderCardActions.vue";
 import OrderCardNotices from "./OrderCardNotices.vue";
 
@@ -70,6 +72,8 @@ const props = withDefaults(
      *  quatro linhas (código, selo e valor; quem; itens; o gesto e o ⋮). O que é
      *  exceção (avisos, erro, desfazer, DANFE) só aparece quando existe. */
     compact?: boolean;
+    /** Pronto de entrega que dá para chamar agora (#2876): o gesto é "Chamar entregador". */
+    callCourier?: boolean;
   }>(),
   { canOpen: true },
 );
@@ -105,7 +109,9 @@ const attentionStations = computed(() =>
 );
 
 const onRoad = computed(() => onRoadLine(props.card));
-const affordances = computed(() => cardAffordances(props.card));
+const affordances = computed(() =>
+  withCourierCall(cardAffordances(props.card), Boolean(props.callCourier)),
+);
 const primary = computed(
   () =>
     affordances.value.find((a) => a.priority === "primary" || a.disabled) ??
@@ -385,7 +391,9 @@ const notices = computed<CardNotice[]>(() => {
       title: card.advance_block_label?.replace(/…$/, "") || "Bloqueado",
       description: card.advance_block_reason,
       // Pix ou link vencido nunca destrava sozinho: o próximo passo vem pronto.
-      // O detalhe abre o cancelar com "Pagamento não confirmado" já marcado.
+      // O detalhe abre o cancelar com "Pagamento não confirmado" já marcado. Com
+      // telefone, "Ver o contato do cliente" abre o pedido no contato: o número não vem no
+      // cartão (#2434), e o "Chamar no WhatsApp" de verdade mora no detalhe.
       actions: card.payment_lapsed
         ? [
             action(
@@ -396,6 +404,18 @@ const notices = computed<CardNotice[]>(() => {
               },
               { "data-cancel-unpaid": "" },
             ),
+            ...(card.customer_callable
+              ? [
+                  action(
+                    {
+                      label: "Ver o contato do cliente",
+                      icon: "i-lucide-arrow-up-right",
+                      to: `/${card.ref}${CALL_CUSTOMER_HASH}`,
+                    },
+                    { "data-call-customer": "" },
+                  ),
+                ]
+              : []),
           ]
         : undefined,
       attrs: { "data-advance-block": "" },
@@ -616,7 +636,7 @@ function nuxtIcon(icon: string): string {
       <NuxtLink
         v-if="canOpen"
         :to="`/${card.ref}`"
-        class="shrink-0 text-xl font-bold leading-none text-highlighted hover:underline"
+        class="-my-3 inline-flex min-h-11 min-w-11 shrink-0 items-center text-xl font-bold leading-none text-highlighted hover:underline"
         :class="handoff ? 'line-through decoration-success/60' : ''"
         :aria-label="`Abrir pedido ${card.ref}`"
         >{{ code.code }}</NuxtLink
@@ -781,7 +801,7 @@ function nuxtIcon(icon: string): string {
           <NuxtLink
             v-if="canOpen"
             :to="`/${card.ref}`"
-            class="group shrink-0"
+            class="group -my-1.5 flex min-h-11 min-w-11 shrink-0 items-center"
             :aria-label="`Abrir pedido ${card.ref}`"
           >
             <span

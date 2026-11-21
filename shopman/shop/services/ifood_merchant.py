@@ -83,6 +83,52 @@ CHANNEL_OFF_RENEW_AHEAD = timedelta(days=1)
 ALERT_CLOSED_WHILE_OPEN = "ifood_store_closed_while_open"
 ALERT_OPEN_WHILE_CLOSED = "ifood_store_open_while_closed"
 ALERT_SYNC_FAILED = "ifood_store_sync_failed"
+#: O 403 do módulo de loja (Merchant) que o iFood ainda não liberou a esta conta:
+#: não é falha da casa nem pede o suporte. Vira aviso sem e-mail no Gestor, com o
+#: Portal como saída, enquanto durar (coordenação, 21/11/2026; #2618, #2622). Sem o
+#: 403, o erro volta a sair como ``ALERT_SYNC_FAILED``, crítico quando o canal está
+#: desligado, sem flag nenhuma.
+ALERT_MODULE_PENDING = "ifood_store_module_pending"
+MODULE_PENDING_WINDOW_MINUTES = 6 * 60
+
+
+#: Quem fecha os avisos do iFood quando o fato volta a dar certo (#3036).
+_RESOLVER = "system:ifood-merchant"
+
+
+def _resolve_alerts(*causes: tuple[str, str]) -> None:
+    """Fecha os avisos cuja causa deixou de existir, pelo marcador de dedupe.
+
+    O aviso do iFood nascia e nunca fechava: a gravação voltava a dar certo e o
+    sino seguia dizendo que não (#3036). Cada ``(tipo, marcador)`` é uma causa;
+    o marcador é o começo do ``dedupe_key`` gravado na mensagem.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    for alert_type, marker in causes:
+        try:
+            alert_adapter.resolve_matching(alert_type, message_contains=f"Dedupe: {marker}", actor=_RESOLVER)
+        except Exception:
+            logger.warning("ifood_merchant.resolve_alerts_failed type=%s marker=%s", alert_type, marker, exc_info=True)
+
+
+def _alert_module_pending(what: str, *, now: datetime | None = None) -> None:
+    """O iFood negou o módulo de loja (403): aviso no Gestor, sem e-mail."""
+    from shopman.shop.services.observability import create_operator_alert
+
+    off = channel_off(now=now)
+    create_operator_alert(
+        type=ALERT_MODULE_PENDING,
+        severity="warning",
+        message=(
+            f"O iFood ainda não liberou o módulo de loja para a casa, então {what} não chega lá. "
+            "Pausa e horário só pelo Portal do Parceiro até o iFood liberar."
+            + (" O iFood está desligado aqui: pause também pelo Portal." if off else "")
+        ),
+        dedupe_key=f"{ALERT_MODULE_PENDING}:{'off' if off else 'on'}",
+        debounce_minutes=MODULE_PENDING_WINDOW_MINUTES,
+        http_status=403,
+    )
 
 _IFOOD_DAYS = {
     "monday": "MONDAY",
@@ -568,6 +614,9 @@ def sync_store(*, now: datetime | None = None) -> SyncResult:
             alert_store_write_failed(exc, what="o horário de funcionamento", now=now)
 
     _status_row(update={"synced_at": now})
+    if not result.failed:
+        # A gravação deu certo inteira: a recusa de antes e o módulo pendente acabaram.
+        _resolve_alerts((ALERT_SYNC_FAILED, f"{ALERT_SYNC_FAILED}:store:"), (ALERT_MODULE_PENDING, f"{ALERT_MODULE_PENDING}:"))
     return result
 
 
@@ -582,6 +631,9 @@ def alert_store_write_failed(
     from shopman.shop.services.observability import create_operator_alert
 
     status = getattr(exc, "status", 0) or 0
+    if status == 403:
+        _alert_module_pending(what, now=now)
+        return
     why = (
         "O iFood negou a permissão desta loja ao aplicativo (HTTP 403): autorize o aplicativo no Portal do Parceiro."
         if status == 403
@@ -703,6 +755,8 @@ def _create_remote(record, *, remote: list[dict], now: datetime, tz, result: Syn
     record.save(update_fields=["ifood_id", "state", "last_error", "updated_at"])
     if result is not None:
         result.created += 1
+    # A pausa que o iFood recusou antes chegou agora: o aviso dela fecha.
+    _resolve_alerts((ALERT_SYNC_FAILED, _pause_marker(record.pk)))
 
 
 def _format_api_error_copy(exc: MerchantAPIError) -> str:
@@ -711,9 +765,18 @@ def _format_api_error_copy(exc: MerchantAPIError) -> str:
     return f"O iFood recusou o pedido (HTTP {exc.status})."
 
 
+def _pause_marker(pk) -> str:
+    """O marcador do aviso de UMA pausa. O ``:`` final fecha o número: o fecho da
+    pausa 12 não casa com o aviso da 123."""
+    return f"{ALERT_SYNC_FAILED}:pause:{pk}:"
+
+
 def _alert_sync_failed(record, exc: MerchantAPIError) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
+    if exc.status == 403:
+        _alert_module_pending("a pausa")
+        return
     local_start = timezone.localtime(record.starts_at, timezone=business_calendar.shop_timezone())
     local_end = timezone.localtime(record.ends_at, timezone=business_calendar.shop_timezone())
     create_operator_alert(
@@ -723,7 +786,7 @@ def _alert_sync_failed(record, exc: MerchantAPIError) -> None:
             f"{record.get_kind_display()}: a pausa de {format_local(local_start, '%d/%m {clock}')} a {format_local(local_end, '%d/%m {clock}')} "
             f"não foi gravada no iFood. {_format_api_error_copy(exc)}"
         ),
-        dedupe_key=f"{ALERT_SYNC_FAILED}:{record.pk}",
+        dedupe_key=_pause_marker(record.pk),
         debounce_minutes=DIVERGENCE_ALERT_WINDOW_MINUTES,
         interruption_pk=record.pk,
         http_status=exc.status,
@@ -877,6 +940,8 @@ def check_store(*, now: datetime | None = None) -> StoreCheck | None:
             _alert_status_unreadable(exc, now=now)
         return None
 
+    # A leitura voltou: a conferência cega e o módulo pendente acabaram (#3036).
+    _resolve_alerts((ALERT_SYNC_FAILED, f"{ALERT_SYNC_FAILED}:status:"), (ALERT_MODULE_PENDING, f"{ALERT_MODULE_PENDING}:"))
     available, worst, problems = summarize_status(operations)
     expected, why_closed = expected_available(now=now)
     row = _status_row(
@@ -914,6 +979,9 @@ ALERT_STATUS_UNREADABLE_WINDOW_MINUTES = 6 * 60
 def _alert_status_unreadable(exc: MerchantAPIError, *, now: datetime) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
+    if exc.status == 403:
+        _alert_module_pending("a conferência da loja aberta", now=now)
+        return
     why = (
         "o iFood negou a permissão desta loja ao aplicativo (HTTP 403); autorize o aplicativo no Portal do Parceiro"
         if exc.status == 403
