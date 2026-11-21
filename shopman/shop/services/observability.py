@@ -174,6 +174,28 @@ def record_webhook_failure(
     )
 
 
+def record_integration_success(provider: str, operation: str = "") -> int:
+    """A integração respondeu: o ``integration_failed`` dela deixa de ser verdade (#3097).
+
+    Fecha os avisos abertos cujo marcador começa por ``<provider>:`` (ou
+    ``<provider>:<operation>:``). Fato do domínio, não relógio. Nunca levanta e só
+    escreve quando há aviso aberto: roda no caminho feliz de cada chamada.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    marker = f"Dedupe: {provider}:" + (f"{operation}:" if operation else "")
+    try:
+        if alert_adapter.open_pk("integration_failed") is None:
+            return 0
+        label = _INTEGRATION_PROVIDER_LABELS.get(provider, provider)
+        return alert_adapter.resolve_matching(
+            "integration_failed", message_contains=marker, actor=f"sistema: {label} voltou a responder"
+        )
+    except Exception:
+        logger.exception("observability.integration_success_resolve_failed", extra={"provider": provider})
+        return 0
+
+
 #: Nome legível de cada integração externa nos alertas/notificações. Fallback é
 #: o próprio ``provider`` — um slug cru ainda é melhor que aviso nenhum.
 _INTEGRATION_PROVIDER_LABELS = {

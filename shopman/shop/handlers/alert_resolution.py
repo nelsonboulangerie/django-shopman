@@ -96,6 +96,26 @@ def on_nfce_authorized(sender, order=None, **kwargs) -> None:
     ref = getattr(order, "ref", "")
     if ref:
         resolve_on_commit(ref, RESOLVED_BY_AUTHORIZATION, actor="nfce-authorized")
+        transaction.on_commit(lambda: _resolve_emit_integration_failure(ref))
+
+
+def _resolve_emit_integration_failure(ref: str) -> None:
+    """A nota deste pedido saiu: a falha de integração na emissão dele acabou (#3097).
+
+    O aviso é por pedido no texto (``fiscal:emit_nfce:pedido <ref>: ...``), sem
+    ``order_ref``; o marcador nas duas grafias que o código grava.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    for word in ("pedido", "Pedido"):
+        try:
+            alert_adapter.resolve_matching(
+                "integration_failed",
+                message_contains=f"Dedupe: fiscal:emit_nfce:{word} {ref}:",
+                actor="nfce-authorized",
+            )
+        except Exception:
+            logger.exception("alert_resolution.emit_integration_failed", extra={"order_ref": ref})
 
 
 def connect() -> None:

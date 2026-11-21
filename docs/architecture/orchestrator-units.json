@@ -1056,6 +1056,7 @@
             "resolve_on_commit",
             "on_order_changed",
             "on_nfce_authorized",
+            "_resolve_emit_integration_failure",
             "connect",
             "RESOLVED_BY_AUTHORIZATION",
             "RESOLVED_BY_LEAVING_NEW",
