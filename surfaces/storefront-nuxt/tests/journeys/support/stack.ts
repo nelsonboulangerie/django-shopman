@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { expect, type Page, type TestInfo } from '@playwright/test'
 
 // A pilha que as jornadas usam: URLs vindas do ambiente (playwright.journeys.config.ts
@@ -47,6 +47,31 @@ export interface InboxMark { mtimeMs: number, code: string }
 function readInbox (): InboxMark {
   if (!existsSync(stack.otpFile)) return { mtimeMs: 0, code: '' }
   return { mtimeMs: statSync(stack.otpFile).mtimeMs, code: readFileSync(stack.otpFile, 'utf8').trim() }
+}
+
+/** A caixa de entrada é UM arquivo para a pilha inteira: com dois workers (a J5 roda a 375 e
+ *  a 1366 juntas, esperando o mesmo fechamento), dois pedidos de código ao mesmo tempo
+ *  fariam um apagar o do outro. Quem pede o código segura a caixa até lê-lo. A trava é uma
+ *  pasta (mkdir é atômico); uma trava de mais de 2 min é de um processo que morreu. */
+export async function withInbox<T> (fn: () => Promise<T>): Promise<T> {
+  const lock = `${stack.otpFile}.lock`
+  const deadline = Date.now() + 120_000
+  for (;;) {
+    try {
+      mkdirSync(lock)
+      break
+    } catch {
+      const stale = existsSync(lock) && Date.now() - statSync(lock).mtimeMs > 120_000
+      if (stale) rmSync(lock, { recursive: true, force: true })
+      else if (Date.now() > deadline) throw new Error(`a caixa de entrada da pilha ficou presa (${lock})`)
+      else await new Promise(resolve => setTimeout(resolve, 250))
+    }
+  }
+  try {
+    return await fn()
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
 }
 
 /** Marca a caixa de entrada antes de tocar em "Receber por SMS". */

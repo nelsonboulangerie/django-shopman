@@ -76,7 +76,7 @@ test('J5: a loja fecha com a revisão aberta, e a frase do prazo é refeita', as
     await checkoutSigningInByCode(page, testInfo, customer)
     await page.getByRole('radio', { name: /^Retirada/ }).click()
     await page.getByRole('button', { name: 'Continuar', exact: true }).click()
-    await expect(page.getByText('Horário da retirada')).toBeVisible()
+    // Encomenda: a grade é a do turno da casa ("A partir das 9h"), não a meia hora de hoje.
     await page.getByRole('radio', { name: /^A partir das \d{1,2}h(\d{2})?$/ }).first().click()
     await page.getByRole('button', { name: 'Continuar', exact: true }).click()
     await page.getByRole('radio', { name: /^Pix/ }).click()

@@ -1,5 +1,5 @@
 import { expect, type Page, type TestInfo } from '@playwright/test'
-import { capture, inboxMark, readLoginCode, settled } from './stack'
+import { capture, inboxMark, readLoginCode, settled, withInbox } from './stack'
 
 // A cliente na loja: cardápio, produto, sacola, entrar com o código que chegou, finalizar e
 // pagar. Os passos são os da pessoa; o código sai do arquivo do sender da pilha, que é onde
@@ -49,9 +49,11 @@ export async function checkoutSigningInByCode (page: Page, testInfo: TestInfo, w
   const phone = page.getByRole('textbox', { name: 'Telefone', exact: true })
   await phone.click()
   await phone.pressSequentially(who.phone)
-  const mark = inboxMark()
-  await page.getByRole('button', { name: 'Receber por SMS' }).click()
-  const code = await readLoginCode(mark)
+  const code = await withInbox(async () => {
+    const mark = inboxMark()
+    await page.getByRole('button', { name: 'Receber por SMS' }).click()
+    return await readLoginCode(mark)
+  })
   await page.getByRole('textbox', { name: 'Dígito 1 de 6' }).click()
   await page.keyboard.type(code)
   await capture(page, testInfo, 'codigo')
