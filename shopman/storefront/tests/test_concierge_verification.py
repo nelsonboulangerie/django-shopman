@@ -360,6 +360,44 @@ def test_the_bell_card_carries_the_answer_and_take_over_actions(conversation, ou
     assert row["deadline_kind"] == "house", "a promessa vencida fica na tela"
 
 
+
+def test_take_over_says_the_concierge_stops_and_opens_the_live_chat(conversation, outbox, client, gestor):  # noqa: F811
+    """Dono, 21/11/2026: assumir só faz sentido se já leva ao chat do ManyChat daquela conversa."""
+    from shopman.shop.models import ConversationBinding
+
+    shop = Shop.objects.get()
+    shop.integrations = {**(shop.integrations or {}), "manychat": {"live_chat_account": "fb486126"}}
+    shop.save(update_fields=["integrations"])
+    _ask_parking(conversation)
+    card = _cards().get()
+    # O vínculo da conversa é o do ManyChat (o teste atende pelo transporte de teste).
+    ConversationBinding.objects.filter(conversation=conversation).update(provider="manychat")
+    client.force_login(gestor)
+
+    row = next(a for a in client.get("/api/v1/backstage/alerts/?scope=orders&surface=orders").json()["alerts"] if a["pk"] == card.pk)
+    kinds = {action["kind"]: action for action in row["actions"]}
+
+    assert kinds["take_over_conversation"]["label"] == "Assumir no Live Chat"
+    assert kinds["take_over_conversation"]["reason"] == "Ao assumir, a Concierge para de responder nesta conversa."
+    assert kinds["open_live_chat"]["href"] == f"https://app.manychat.com/fb486126/chat/{SUBJECT}"
+    assert "configure_live_chat" not in kinds
+
+
+def test_without_the_live_chat_account_the_card_says_why_and_where_to_set_it(conversation, outbox, client, gestor, settings):  # noqa: F811
+    settings.SHOPMAN_ADMIN_HOST = "admin.exemplo.com"
+    _ask_parking(conversation)
+    card = _cards().get()
+    client.force_login(gestor)
+
+    row = next(a for a in client.get("/api/v1/backstage/alerts/?scope=orders&surface=orders").json()["alerts"] if a["pk"] == card.pk)
+    kinds = {action["kind"]: action for action in row["actions"]}
+
+    assert kinds["take_over_conversation"]["label"] == "Assumir a conversa"
+    configure = kinds["configure_live_chat"]
+    assert configure["reason"] == "Assumir não abre a conversa do ManyChat: falta a conta do Live Chat no Admin."
+    assert configure["href"].startswith("https://admin.exemplo.com/admin/shop/") and configure["label"] == "Configurar o Live Chat"
+    assert "open_live_chat" not in kinds
+
 def test_the_answer_endpoint_sends_and_reports_errors_in_the_house_dialect(conversation, outbox, client, gestor):  # noqa: F811
     _ask_parking(conversation)
     card = _cards().get()

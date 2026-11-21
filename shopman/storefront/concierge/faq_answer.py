@@ -171,3 +171,23 @@ def held_by_jev(answer: Answer, faqs: list, *, session=None) -> bool:
         return False
     support = jev_support(answer, faqs, session=session)
     return support is not None and support < SUPPORTED_AT
+
+
+def cited_verbatim(answer: Answer, faqs: list, *, limit: int = 2) -> Answer:
+    """A resposta com o texto das FAQs que a IA citou, palavra por palavra (sem o texto da IA).
+
+    É o caminho quando o Jev reprova (placar de produção, 21/11/2026): a FAQ direta caía
+    na primeira que casava e perdia o assunto (o feriado virava só o horário), e as FAQs
+    citadas pela IA eram as certas. Aqui não há o que inventar: é o texto da casa.
+    """
+    by_ref = {f.ref: f for f in faqs}
+    cited = [by_ref[ref] for ref in dict.fromkeys(answer.refs) if ref in by_ref][:limit]
+    if not cited:
+        return Answer(refs=[], text="", uncovered=answer.uncovered, ms=answer.ms, cost_usd=answer.cost_usd)
+    return Answer(
+        refs=[f.ref for f in cited],
+        text="\n\n".join(f.answer.strip() for f in cited),
+        uncovered=answer.uncovered,
+        ms=answer.ms,
+        cost_usd=answer.cost_usd,
+    )

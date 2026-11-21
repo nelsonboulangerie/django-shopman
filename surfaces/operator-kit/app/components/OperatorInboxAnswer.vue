@@ -29,6 +29,13 @@ const text = computed(() => draft.value.trim());
 const busy = computed(() => Boolean(sending.value) || Boolean(source.value?.isPending?.(props.alert.key)));
 const left = computed(() => spec.value.maxLength - draft.value.length);
 
+/** O gesto alternativo com destino: a aba abre no clique, e o gesto roda junto. */
+function runAlt() {
+  if (busy.value) return;
+  if (spec.value.altHref && typeof window !== "undefined") window.open(spec.value.altHref, "_blank", "noopener");
+  void run("alt");
+}
+
 async function run(kind: "answer" | "alt") {
   if (busy.value) return;
   const handler =
@@ -106,7 +113,24 @@ async function run(kind: "answer" | "alt") {
         :loading="sending === 'alt'"
         :data-operator-inbox-answer-primary="final ? '' : undefined"
         data-operator-inbox-answer-alt
-        @click="run('alt')"
+        @click="runAlt"
+      />
+    </div>
+    <div
+      v-if="spec.altNote"
+      class="flex flex-wrap items-center gap-2"
+      data-operator-inbox-answer-alt-note
+    >
+      <p class="op-label text-muted-foreground">{{ spec.altNote }}</p>
+      <NuxtButton
+        v-if="spec.altNoteHref && spec.altNoteLabel"
+        :to="spec.altNoteHref"
+        target="_blank"
+        variant="ghost"
+        :color="color"
+        icon="i-lucide-settings"
+        :label="spec.altNoteLabel"
+        data-operator-inbox-answer-alt-note-link
       />
     </div>
   </div>
