@@ -356,3 +356,54 @@ export function houseGesturePath(rideKey: string, gesture: HouseGesture["gesture
 export function houseGestureResource(rideKey: string, item: Pick<HouseGesture, "key">): string {
   return `house-ride:${rideKey}:${item.key}`;
 }
+
+// ── a corrida da casa no detalhe e na Saída dos Pedidos (M3d, #2937) ────────
+
+/** "Ligar para Diego": só na corrida da casa e com o telefone do cadastro dele. */
+export function callCourier(
+  ride: Pick<DeliveryRideProjection, "house" | "driver">,
+): { label: string; href: string } | null {
+  const digits = (ride.driver?.phone ?? "").replace(/\D/g, "");
+  if (!ride.house || !digits) return null;
+  return { label: `Ligar para ${ride.house.courier_name}`, href: `tel:${digits}` };
+}
+
+/** Uma linha da coluna Saída: o cartão do pedido, ou a corrida da casa no lugar dele. */
+export interface ExitHouseRow<Card extends { ref: string }> {
+  card: Card;
+  heading: string;
+  /** A corrida da casa que este cartão abre (os outros pedidos dela saem da coluna). */
+  house?: DeliveryRideProjection;
+}
+
+/**
+ * Na coluna Saída dos Pedidos, os pedidos de uma corrida da casa viram UM cartão da
+ * corrida (forma E), no lugar do primeiro deles; os outros saem da coluna. O rótulo da
+ * parte ("A coletar", "Saiu para entrega") que estava num pedido que saiu passa para o
+ * próximo da mesma parte. Corrida da TaOn e pedido solto seguem como eram.
+ */
+export function withHouseRides<Card extends { ref: string }>(
+  rows: readonly { card: Card; heading: string }[],
+  rides: readonly DeliveryRideProjection[],
+): ExitHouseRow<Card>[] {
+  const rideOf = new Map<string, DeliveryRideProjection>();
+  for (const ride of rides) {
+    if (!ride.house) continue;
+    for (const stop of ride.stops) rideOf.set(stop.ref, ride);
+  }
+  const shown = new Set<string>();
+  const out: ExitHouseRow<Card>[] = [];
+  let carry = "";
+  for (const row of rows) {
+    const heading = row.heading || carry;
+    const ride = rideOf.get(row.card.ref);
+    if (ride && shown.has(ride.key)) {
+      carry = heading;
+      continue;
+    }
+    carry = "";
+    if (ride) shown.add(ride.key);
+    out.push({ card: row.card, heading, ...(ride ? { house: ride } : {}) });
+  }
+  return out;
+}

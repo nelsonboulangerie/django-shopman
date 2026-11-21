@@ -62,9 +62,6 @@ import {
   houseRideResource,
   sendLabel,
   shiftChips,
-  houseGesturePath,
-  houseGestureResource,
-  type HouseGesture,
   type HouseRideResult,
 } from "~/presentation/houseCouriers";
 
@@ -508,37 +505,7 @@ function close() {
 }
 const busyRide = ref("");
 // ── a corrida da casa: os gestos do balcão (M3b, #2898) ─────────────────────
-// "Saiu" e "A47 entregue" quando o entregador está sem celular; "Reenviar o link" abre
-// o WhatsApp do dispositivo com o MESMO link (a aba nasce no toque, antes de esperar a
-// resposta, para o navegador não bloquear); "Soltar o link" solta o celular preso.
-const houseBusy = ref<Record<string, string>>({});
-async function houseGesture(ride: DeliveryRideProjection, item: HouseGesture) {
-  const tab = item.gesture === "resend" ? window.open("", "_blank") : null;
-  if (tab) tab.opener = null;
-  houseBusy.value = { ...houseBusy.value, [ride.key]: item.key };
-  try {
-    const result = (await intentions.executePath(
-      houseGestureResource(ride.key, item),
-      houseGesturePath(ride.key, item.gesture),
-      item.action,
-      item.ref ? { ref: item.ref } : {},
-      undefined,
-      { subject: "o gesto foi gravado", where: "a corrida" },
-    )) as unknown as HouseRideResult;
-    if (item.gesture === "resend" && result.whatsapp_url) {
-      if (tab) tab.location.href = result.whatsapp_url;
-      else window.open(result.whatsapp_url, "_blank", "noopener");
-    } else tab?.close();
-    if (result.detail) useSonner.success(result.detail);
-  } catch (err) {
-    tab?.close();
-    useSonner.error(httpErrorMessage(err, "Não foi possível agora. Atualize e tente de novo."));
-  } finally {
-    const { [ride.key]: _done, ...rest } = houseBusy.value;
-    houseBusy.value = rest;
-    await refresh();
-  }
-}
+const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(() => refresh());
 
 async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
   const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
@@ -999,9 +966,11 @@ const sheetCallLabel = computed(() => {
           :maps-key="data.maps_key"
           :now="now"
           :busy="busyRide === openRide.key"
+          :house-busy="houseBusy[openRide.key] ?? ''"
           @close="close"
           @back="backRide = openRide"
           @cancel="cancelOpenRide"
+          @gesture="(item) => houseGesture(openRide!, item)"
         />
       </template>
     </NuxtSlideover>

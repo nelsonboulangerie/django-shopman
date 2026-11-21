@@ -18,6 +18,8 @@ import {
   houseGesturePath,
   houseGestureResource,
   houseGestures,
+  callCourier,
+  withHouseRides,
   ordersWord,
   mixedTotalLines,
   rideValueQ,
@@ -263,6 +265,50 @@ describe("a corrida da casa na lista (M3b)", () => {
   it("cada gesto tem a sua porta e a sua intenção", () => {
     expect(houseGesturePath("CASA-1", "deliver")).toBe("/api/v1/backstage/deliveries/couriers/rides/CASA-1/deliver/");
     expect(houseGestureResource("CASA-1", { key: "deliver:WEB-A47" })).toBe("house-ride:CASA-1:deliver:WEB-A47");
+  });
+});
+
+describe("a corrida da casa no detalhe e na Saída (M3d)", () => {
+  const ride = (key: string, refs: string[], house = true) =>
+    ({
+      key,
+      stops: refs.map((ref) => ({ ref })),
+      driver: { name: "Diego", phone: "(43) 99999-0000", vehicle: "", photo_url: "" },
+      house: house ? { courier_name: "Diego" } : null,
+    }) as never;
+
+  it("Ligar para Diego só na corrida da casa e com telefone", () => {
+    expect(callCourier(ride("CASA-1", ["A"]))).toEqual({ label: "Ligar para Diego", href: "tel:43999990000" });
+    expect(callCourier(ride("776", ["A"], false))).toBeNull();
+    expect(callCourier({ house: { courier_name: "Diego" }, driver: null } as never)).toBeNull();
+  });
+
+  it("os pedidos da corrida da casa viram um cartão no lugar do primeiro; TaOn e solto seguem", () => {
+    const rows = [
+      { card: { ref: "A" }, heading: "A coletar" },
+      { card: { ref: "B" }, heading: "" },
+      { card: { ref: "T" }, heading: "" },
+      { card: { ref: "X" }, heading: "" },
+    ];
+    const out = withHouseRides(rows, [ride("CASA-1", ["A", "B"]), ride("776", ["T"], false)]);
+    expect(out.map((row) => [row.card.ref, row.heading, (row.house as { key?: string } | undefined)?.key ?? ""])).toEqual([
+      ["A", "A coletar", "CASA-1"], ["T", "", ""], ["X", "", ""],
+    ]);
+  });
+
+  it("o rótulo da parte passa para o próximo quando o pedido que o tinha sai da coluna", () => {
+    const rows = [
+      { card: { ref: "X" }, heading: "A coletar" },
+      { card: { ref: "A" }, heading: "Saiu para entrega" },
+      { card: { ref: "B" }, heading: "" },
+    ];
+    const out = withHouseRides(rows, [ride("CASA-1", ["B", "A"])]);
+    expect(out.map((row) => [row.card.ref, row.heading])).toEqual([["X", "A coletar"], ["A", "Saiu para entrega"]]);
+    const moved = withHouseRides(
+      [{ card: { ref: "B" }, heading: "Saiu para entrega" }, { card: { ref: "A" }, heading: "" }, { card: { ref: "Y" }, heading: "" }],
+      [ride("CASA-1", ["A", "B"])],
+    );
+    expect(moved.map((row) => [row.card.ref, row.heading])).toEqual([["B", "Saiu para entrega"], ["Y", ""]]);
   });
 });
 

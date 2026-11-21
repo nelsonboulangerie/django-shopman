@@ -2,13 +2,12 @@
 // A corrida da casa, forma E (M3b, #2898; prévia 2 do plano das Entregas): o trilho e a
 // letra na cor da corrida, os códigos com "∙" à esquerda e "N pedidos" ao lado da letra.
 // O momento diz quem leva ("Diego leva", "Diego na rua · 1 de 2 entregues"), e os gestos
-// são os do balcão para quando o entregador está sem celular: "Saiu", "A47 entregue",
-// "Reenviar o link" e "Soltar o link". O acerto continua o "Entregador voltou" de sempre.
-// Gesto que avisa cliente ou mexe no link pede confirmação: o primeiro toque arma, a
-// frase diz o que vai acontecer, o segundo faz. A página é dona dos gestos.
-import type { Action, DeliveryRideProjection } from "~/generated/ordersContract";
+// (`HouseRideGestures`) são os do balcão para quando o entregador está sem celular. Mora na
+// lista de Corridas das Entregas e na coluna Saída dos Pedidos (M3d, #2937). A página é
+// dona dos gestos.
+import type { DeliveryRideProjection } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
-import { houseCodes, houseGestures, ordersWord, type HouseGesture } from "~/presentation/houseCouriers";
+import { houseCodes, ordersWord, type HouseGesture } from "~/presentation/houseCouriers";
 
 const props = defineProps<{ ride: DeliveryRideProjection; busy?: string }>();
 const emit = defineEmits<{ gesture: [gesture: HouseGesture]; back: [] }>();
@@ -16,19 +15,6 @@ const emit = defineEmits<{ gesture: [gesture: HouseGesture]; back: [] }>();
 const tone = computed(() => rideColor(props.ride.number - 1));
 const house = computed(() => props.ride.house!);
 const codes = computed(() => houseCodes(props.ride.stops));
-const gestures = computed(() => houseGestures(props.ride));
-const armed = ref("");
-const armedGesture = computed(() => gestures.value.find((item) => item.key === armed.value) ?? null);
-function tap(item: HouseGesture) {
-  const confirmation = item.action.confirmation as { required?: boolean } | undefined;
-  if (confirmation?.required && armed.value !== item.key) {
-    armed.value = item.key;
-    return;
-  }
-  armed.value = "";
-  emit("gesture", item);
-}
-const description = (action: Action) => String((action.confirmation as { description?: string })?.description ?? "");
 const onRoad = computed(() => props.ride.stops.some((stop) => stop.done) || house.value.deliver_actions.length > 0);
 </script>
 
@@ -75,42 +61,7 @@ const onRoad = computed(() => props.ride.stops.some((stop) => stop.done) || hous
         </li>
       </ul>
 
-      <!-- a confirmação do gesto armado: o que vai acontecer, e o segundo toque -->
-      <div v-if="armedGesture" class="mt-1 flex flex-col gap-2 rounded-lg bg-elevated/60 p-2" data-house-ride-confirm>
-        <p class="op-body text-highlighted">{{ description(armedGesture.action) }}</p>
-        <div class="flex flex-wrap gap-2">
-          <NuxtButton color="primary" class="min-h-11" :icon="armedGesture.icon" :label="armedGesture.action.label" :loading="busy === armedGesture.key" @click="tap(armedGesture)" />
-          <NuxtButton color="neutral" variant="ghost" class="min-h-11" label="Agora não" @click="armed = ''" />
-        </div>
-      </div>
-
-      <!-- os gestos do balcão -->
-      <div v-else-if="gestures.length || ride.back_action" class="flex flex-wrap gap-2 pt-1.5" data-house-ride-gestures>
-        <NuxtButton
-          v-if="ride.back_action"
-          color="primary"
-          class="min-h-11"
-          icon="i-lucide-undo-2"
-          :label="ride.back_action.label"
-          :disabled="!ride.back_action.enabled"
-          :loading="busy === 'back'"
-          @click="emit('back')"
-        />
-        <NuxtButton
-          v-for="item in gestures"
-          :key="item.key"
-          class="min-h-11"
-          :color="item.primary && !ride.back_action ? 'primary' : 'neutral'"
-          :variant="item.primary && !ride.back_action ? 'solid' : 'outline'"
-          :icon="item.icon"
-          :label="item.action.label"
-          :disabled="!item.action.enabled"
-          :title="item.action.reason || undefined"
-          :loading="busy === item.key"
-          :data-house-gesture="item.key"
-          @click="tap(item)"
-        />
-      </div>
+      <HouseRideGestures :ride="ride" :busy="busy" @gesture="(item) => emit('gesture', item)" @back="emit('back')" />
     </div>
   </div>
 </template>
