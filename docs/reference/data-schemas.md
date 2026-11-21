@@ -2019,9 +2019,19 @@ Seleção de adapters por tipo. Sobreescreve `settings.py` sem exigir redeploy.
   "notification": {
     "default": "<módulo Python>"
   },
-  "fiscal": "<módulo Python>"
+  "fiscal": "<módulo Python>",
+  "manychat": {
+    "live_chat_account": "<conta do ManyChat, ex.: fb486126>"
+  }
 }
 ```
+
+`manychat.live_chat_account` não é adapter: é a conta (página) do ManyChat da loja, o trecho
+de `https://app.manychat.com/<conta>/chat/<subscriber_id>`. Editado no Admin em Integrações
+("Conta do ManyChat (Live Chat)"), validado como `^[A-Za-z0-9_-]+$`. Com ela, o aviso de
+handoff da Concierge traz "Responder no Live Chat" (`projections/alerts.live_chat_href`, com
+o `subject` do vínculo ManyChat da conversa); sem ela, só "Abrir conversa" (ADR-042: nunca
+por env).
 
 Adapters aceitos por tipo:
 

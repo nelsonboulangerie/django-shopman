@@ -66,6 +66,8 @@ export interface OperatorScreenAlert {
   icon?: string;
   /** A saída do aviso, na cor dele (exceção declarada do conjunto mínimo). */
   action?: { label: string; to?: string; onSelect?: (event: Event) => void };
+  /** A segunda saída, em contorno na mesma cor (só junto da principal). */
+  secondaryAction?: { label: string; to?: string };
 }
 
 /** Quantos avisos aparecem inteiros; o resto fica em "e mais N". */

@@ -349,6 +349,9 @@ export interface InboxAlertView {
   canAck: boolean;
   href?: string;
   hrefLabel?: string;
+  /** O segundo lugar onde o aviso se resolve ("Abrir conversa" sob "Responder no Live Chat"). */
+  secondaryHref?: string;
+  secondaryHrefLabel?: string;
   /** O gesto que resolve ali mesmo ("Aceitar"), quando o servidor o oferece. */
   actLabel?: string;
   respondByIso?: string;
@@ -379,7 +382,9 @@ export function inboxAlertDescription(alert: { message: string; meta?: string; s
  */
 export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
   const actions = alert.actions ?? [];
-  const context = actions.find((action) => action.kind === "open_alert_context" && action.enabled && action.href);
+  // O servidor manda os lugares na ordem: o primeiro é o principal, o segundo o secundário.
+  const contexts = actions.filter((action) => action.kind === "open_alert_context" && action.enabled && action.href);
+  const [context, secondary] = contexts;
   const canAck = actions.some((action) => action.kind === "acknowledge_alert" && action.enabled);
   const direct = actions.find(
     (action) =>
@@ -397,6 +402,7 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     seen: !canAck,
     canAck,
     ...(context ? { href: context.href ?? undefined, hrefLabel: context.label } : {}),
+    ...(secondary ? { secondaryHref: secondary.href ?? undefined, secondaryHrefLabel: secondary.label } : {}),
     ...(direct ? { actLabel: direct.label } : {}),
     ...(alert.respond_by_iso ? { respondByIso: alert.respond_by_iso } : {}),
     ...(alert.deadline_kind === "external" || alert.deadline_kind === "house"
@@ -411,7 +417,7 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
 
 type OnScreen = {
   key: string | number; onScreen?: boolean; tone?: string; subject?: string; eyebrow?: string; message?: string;
-  href?: string; hrefLabel?: string;
+  href?: string; hrefLabel?: string; secondaryHref?: string; secondaryHrefLabel?: string;
 };
 
 /** O aviso de tela de um alerta que pede o topo (sem a ação: quem monta põe). */
@@ -423,6 +429,8 @@ export interface InboxScreenAlert {
   color: "error" | "warning" | "info";
   /** O botão que resolve a causa ("Abrir conexões de IA"), quando o servidor oferece. */
   action?: { label: string; to: string };
+  /** O segundo lugar que resolve ("Abrir conversa"), em contorno, ao lado do principal. */
+  secondaryAction?: { label: string; to: string };
 }
 
 /**
@@ -440,6 +448,9 @@ export function inboxScreenAlerts<T extends OnScreen>(items: readonly T[]): Inbo
       description: item.message || "",
       color: item.tone === "critical" ? ("error" as const) : item.tone === "warning" ? ("warning" as const) : ("info" as const),
       ...(item.href ? { action: { label: item.hrefLabel || "Abrir", to: item.href } } : {}),
+      ...(item.href && item.secondaryHref
+        ? { secondaryAction: { label: item.secondaryHrefLabel || "Abrir", to: item.secondaryHref } }
+        : {}),
     }));
 }
 

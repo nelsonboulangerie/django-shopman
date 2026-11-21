@@ -39,6 +39,9 @@ export interface OperatorInboxAlert {
   /** Leva ao lugar exato. */
   href?: string;
   hrefLabel?: string;
+  /** O segundo lugar que resolve ("Abrir conversa" sob "Responder no Live Chat"). */
+  secondaryHref?: string;
+  secondaryHrefLabel?: string;
   /** O gesto que resolve ali mesmo ("Aceitar"); o app executa por `act`. */
   actLabel?: string;
   /** O servidor oferece "Visto" para este alerta. */
