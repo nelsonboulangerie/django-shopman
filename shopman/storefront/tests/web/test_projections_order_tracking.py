@@ -1854,20 +1854,30 @@ class TestWaitlistCallIsTheMainSentence:
             order.refresh_from_db()
         return order
 
+    @staticmethod
+    def _frozen_at(hour: int, minute: int):
+        """O relógio parado num horário de 20/11/2026 (sexta) em Brasília: a frase depende do dia."""
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
+
+        at = datetime(2026, 11, 20, hour, minute, tzinfo=ZoneInfo("America/Sao_Paulo"))
+        return patch("django.utils.timezone.now", return_value=at.astimezone(UTC))
+
     def test_confirming_without_a_charge_asks_for_the_confirmation_with_the_deadline(self):
         from django.utils import timezone
         from django.utils.dateparse import parse_datetime
 
-        order = self._order("FILA-CHAMA-1")
-
-        proj = build_order_tracking(order)
+        # Meio do dia: o prazo cai no mesmo dia, e a frase diz só a hora.
+        with self._frozen_at(12, 0):
+            order = self._order("FILA-CHAMA-1")
+            proj = build_order_tracking(order)
+            clock = format_clock(timezone.localtime(parse_datetime(proj.waitlist_deadline)))
 
         assert proj.waitlist_state == "confirming"
         assert proj.promise.state == "waitlist_confirming"
         assert proj.promise.tone == "info"
         # O título fala da cliente, não da fornada (que é da casa).
         assert proj.promise.title == "Chegou a sua vez!"
-        clock = format_clock(timezone.localtime(parse_datetime(proj.waitlist_deadline)))
         assert proj.promise.message == (
             f"Confirme seu pedido até {clock} para garantir a sua vaga. "
             "Depois desse horário, ela passa para a próxima pessoa da fila."
@@ -1875,6 +1885,22 @@ class TestWaitlistCallIsTheMainSentence:
         # A frase não manda esperar quando quem age é a cliente.
         assert "conferindo" not in proj.promise.message
         assert "Avisamos" not in proj.promise.message
+
+    def test_a_deadline_past_midnight_says_the_day(self):
+        """Chamada às 23h55 de sexta: o prazo cai no sábado, e a frase diz o dia."""
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+
+        with self._frozen_at(23, 55):
+            order = self._order("FILA-CHAMA-MEIA-NOITE")
+            proj = build_order_tracking(order)
+            deadline = timezone.localtime(parse_datetime(proj.waitlist_deadline))
+
+        assert deadline.date().isoformat() == "2026-11-21"
+        assert proj.promise.message == (
+            f"Confirme seu pedido até amanhã, sábado, às {format_clock(deadline)} para garantir a sua vaga. "
+            "Depois desse horário, ela passa para a próxima pessoa da fila."
+        )
 
     def test_the_promise_carries_the_same_deadline_the_queue_card_counts(self):
         order = self._order("FILA-CHAMA-2")
