@@ -207,6 +207,53 @@ def test_after_pickup_the_name_the_time_and_the_tracking_link(channel):
     assert message.startswith("Diego está a caminho.")
 
 
+def _out_for_delivery(channel, *, lat=-23.3100, lng=-51.1600):
+    order = _order(channel, status="dispatched", courier_block=_ride("E", driver={"name": "Diego"}))
+    order.data["delivery_address_structured"] = {"latitude": lat, "longitude": lng}
+    order.save(update_fields=["data"])
+    return order
+
+
+def test_at_80_meters_the_page_says_the_courier_is_arriving(channel):
+    """#2509 (tela aprovada §4.5.2): a posição vira texto, nunca mapa."""
+    from shopman.shop.services import courier_position
+
+    order = _out_for_delivery(channel)
+    courier_position.store_position("777", -23.3105, -51.1603, source=courier_position.SOURCE_OWN_FLEET)
+
+    title, message, _ = _page(order)
+
+    assert (title, message) == ("Saiu para entrega", "Diego está chegando.")
+    _assert_customer_voice(title, message)
+
+
+def test_far_away_the_page_keeps_the_way_and_says_nothing_about_the_position(channel):
+    from shopman.shop.services import courier_position
+
+    order = _out_for_delivery(channel)
+    courier_position.store_position("777", -23.3300, -51.1800, source=courier_position.SOURCE_OWN_FLEET)
+
+    _, message, _ = _page(order)
+
+    assert message.startswith("Diego está a caminho.")
+    assert "Posição" not in message and "chegando" not in message
+
+
+def test_an_old_position_says_its_age_and_never_says_arriving(channel):
+    """Passado 1 min, a frase diz de quando é a posição; perto, mas velha, não é "chegando"."""
+    from shopman.shop.services import courier_position
+
+    order = _out_for_delivery(channel)
+    courier_position.store_position("777", -23.3101, -51.1601, source=courier_position.SOURCE_OWN_FLEET,
+                                    at=(timezone.now() - timedelta(minutes=2, seconds=10)).isoformat())
+
+    title, message, _ = _page(order)
+
+    assert message.startswith("Diego está a caminho.")
+    assert message.endswith(" Posição de há 2 min.")
+    _assert_customer_voice(title, message)
+
+
 def test_the_house_courier_reads_the_same_neutral_states(channel, monkeypatch):
     """Entregador da casa (DEV-2026-030): o serviço muda, a frase não."""
     from shopman.shop.adapters import courier_own_fleet
