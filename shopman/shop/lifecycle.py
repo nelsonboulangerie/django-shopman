@@ -58,7 +58,12 @@ from shopman.shop.services.business_calendar import (
     current_business_state,
     next_operational_deadline,
 )
-from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date, is_counter_takeaway
+from shopman.shop.services.order_helpers import (
+    customer_holds_the_goods,
+    get_commitment_date,
+    is_counter_takeaway,
+    is_test_order,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +265,30 @@ QUEUED_PHASES = frozenset({"on_preparing", "on_ready", "on_dispatched", "on_deli
 DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"}) | QUEUED_PHASES
 LIFECYCLE_DATA_KEY = "lifecycle"
 PHASE_DONE = "done"
+
+
+#: O pedido já fechou: o trabalho do preparo (cozinha e aviso) não é mais devido.
+_CLOSED_STATUSES = frozenset({"completed", "cancelled", "returned"})
+
+
+def phase_superseded(order, phase: str) -> bool:
+    """A fase chegou tarde e não deve mais nada: fecha sem alerta crítico (#3029).
+
+    Dois casos, medidos nos alertas de 19/11/2026:
+
+    - o preparo que encontra o pedido já fechado. O reparo do iFood (#2817) leva o
+      pedido de ``accepted`` a ``completed`` num instante, e a fase do preparo,
+      enfileirada, chega depois. Rodá-la abriria cozinha para um pedido encerrado,
+      e o aviso "em preparo" chegaria depois do pedido entregue;
+    - o pedido de TESTE (``is_test_order``): é inerte, não deve cozinha, nota nem
+      aviso a ninguém.
+
+    O resto continua como estava: fase que não pode mais rodar num pedido real é
+    travamento, com o alerta crítico.
+    """
+    if is_test_order(order):
+        return True
+    return phase == "on_preparing" and order.status in _CLOSED_STATUSES
 
 
 def phase_complete(order, phase: str) -> bool:

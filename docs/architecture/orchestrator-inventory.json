@@ -4468,6 +4468,7 @@
           "symbols": [
             "KITCHEN_RELEASED_AT_KEY",
             "STALE_ALERT_FRACTION_OF_DEADLINE",
+            "_CLOSED_STATUSES",
             "_alert_coupon_over_redeemed",
             "_alert_if_card_authorization_held",
             "_card_authorization_is_held",
@@ -4510,6 +4511,7 @@
             "awaits_kitchen_release",
             "kitchen_release_at",
             "logger",
+            "phase_superseded",
             "release_preorder_now"
           ]
         }
