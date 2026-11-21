@@ -1555,7 +1555,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Pronto, tirei {item}. Sua sacola ficou assim:")},
     },
     "CONCIERGE_CART_ASK_QTY": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Quantos {item} você quer?")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Quantas unidades de {item} você quer?")},
     },
     "CONCIERGE_CART_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
