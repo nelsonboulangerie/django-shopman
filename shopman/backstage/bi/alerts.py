@@ -120,15 +120,16 @@ _CASH_AUDIT_PUBLIC_MESSAGE = (
     "Detalhe no B.I. › Caixa (quem audita)."
 )
 
-#: Idem para o faturamento: a PROPORÇÃO é operacional (dia fraco é informação de
-#: quem está no balcão), mas o valor em reais não é.
+#: Idem para o faturamento: o dia fraco é informação de quem está no balcão, mas
+#: nenhum número do faturamento é, nem o valor em reais nem a proporção do
+#: esperado. Dono, 21/11/2026: "não quero que eles saibam ou que possam ter um
+#: panorama sobre o quanto está sendo faturado pela casa." A porcentagem do dia
+#: é uma conta sobre todas as vendas dele: saiu da mensagem pública.
 #:
 #: ⚠️ Não bastava mover a métrica para `AUDIT_ONLY_METRICS`: aí o GERENTE perderia
 #: o aviso, e ele é justamente quem age sobre um dia fraco. A leitura íntegra
 #: continua no `BIAlertEvent`, que já é gateado.
-_REVENUE_PUBLIC_MESSAGE = (
-    "o faturamento de {dia} ficou em {share:.0f}% do esperado. Detalhe no B.I. › Vendas."
-)
+_REVENUE_PUBLIC_MESSAGE = "as vendas de {dia} ficaram abaixo do esperado. Detalhe no B.I. › Vendas."
 
 #: Marca de dinheiro na mensagem. O alerta de operador é servido sob um predicado
 #: que é um OR de TODAS as personas operacionais — e o grupo Caixa satisfaz dois
@@ -163,11 +164,9 @@ def _public_message(rule, reading: Reading) -> str:
         )
 
     if rule.metric == BIAlertRule.Metric.DAILY_REVENUE_VS_BASELINE:
-        baseline = reading.baseline or 0
-        share = (float(reading.value or 0) / baseline * 100) if baseline else 0.0
         # O dia sai da própria mensagem íntegra, que já o formata como "14/08 (sexta)".
         dia = reading.message.split(" faturou")[0] if " faturou" in reading.message else "o dia"
-        return _REVENUE_PUBLIC_MESSAGE.format(dia=dia, share=share)
+        return _REVENUE_PUBLIC_MESSAGE.format(dia=dia)
 
     if _MONEY_MARK in (reading.message or ""):
         return _REDACTED_FALLBACK.format(label=rule.label)

@@ -27,11 +27,25 @@ Como a trava funciona:
    Permissão financeira fora das duas listas reprova.
 3. O que é só do Dono (o B.I., a apuração do caixa, as cobranças) nunca chega ao
    Gerente, nem por classificação.
+
+E sobre as listas do balcão, no mesmo dia, corrigindo o rumo: "Não tem problema o
+gerente ver valores... Não tem problema ver o valor de um pedido no histórico. O
+problema seria poder ver valores de vários registros agregados, sobretudo de
+clientes diferentes, soma de um período, etc. ... não quero que eles saibam ou
+que possam ter um panorama sobre o quanto está sendo faturado pela casa."
+
+4. O valor de CADA registro é dele: o pedido, a encomenda, a conta de UM cliente.
+   O que a trava confere, na seção "Nenhum agregado", é a AUSÊNCIA DE AGREGADO
+   servido ao Gerente: soma do período nas encomendas, total somado no Histórico,
+   a lista de contas ordenada pelo saldo (um ranking), o filtro por faixa de
+   valor no Admin, a proporção do faturamento no aviso do B.I. e exportação de
+   pedido, venda ou pagamento com valor.
 """
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, timedelta
 
 import pytest
 from django.contrib import admin
@@ -233,3 +247,226 @@ def test_quem_audita_caixa_ve_o_fechamento_inteiro():
 
     dono = _user_in("dono-trava", "Dono", "Gerente")
     assert "data" in admin.site._registry[DayClosing].get_fields(_request_as(dono), _closing())
+
+
+# ── Nenhum agregado (as listas do balcão) ────────────────────────────────────
+#
+# O valor de cada registro é dele (o pedido, a encomenda, a conta de UM cliente).
+# O que não chega é a conta sobre vários: soma de período, total da lista, ranking
+# de clientes pelo dinheiro, exportação com valor.
+
+#: Chave de payload que carrega uma soma em dinheiro sobre vários registros.
+_MONEY_SUM_KEY = re.compile(
+    r"^(total|sum|subtotal|revenue|to_receive|grand_total)(_q|_display|_amount)?$|_(sum|revenue)_q$"
+)
+
+
+def _money_sums(payload: dict) -> dict:
+    """As chaves de topo que somam dinheiro e vieram com valor. A contagem não conta:
+    ``total`` inteiro é o número de registros (o Histórico)."""
+    return {
+        key: value
+        for key, value in payload.items()
+        if _MONEY_SUM_KEY.search(key) and value is not None and not (key == "total" and isinstance(value, int))
+    }
+
+
+def _order(ref: str, *, customer: str, total_q: int, status: str = "accepted", **data):
+    from shopman.orderman.models import Order
+
+    payload = {"customer": {"name": customer, "phone": "+5543999887766"}, "fulfillment_type": "pickup", **data}
+    return Order.objects.create(ref=ref, channel_ref="web", status=status, total_q=total_q, data=payload)
+
+
+@pytest.mark.channels("web")
+def test_as_encomendas_chegam_ao_gerente_sem_a_soma_do_periodo(client):
+    """O valor de cada encomenda chega (é com ele que o balcão recebe); a soma do
+    período e a de cada dia, não."""
+    from django.utils import timezone
+
+    today = timezone.localdate()
+    _order("ENC-ANA", customer="Ana Souza", total_q=3600, delivery_date=today.isoformat())
+    _order("ENC-BIA", customer="Bia Lima", total_q=8100, delivery_date=today.isoformat())
+    _order("ENC-ANA-2", customer="Ana Souza", total_q=5000, status="completed",
+           delivery_date=(today - timedelta(days=1)).isoformat())
+    client.force_login(_gerente())
+
+    period = client.get("/api/v1/backstage/pos/preorders/", {"date_from": today.isoformat(), "date_to": today.isoformat()})
+    search = client.get("/api/v1/backstage/pos/preorders/search/", {"q": "ana", "include_completed": "1"})
+
+    assert period.status_code == 200, period.content
+    assert search.status_code == 200, search.content
+    body = period.json()
+    assert body["count"] == 2
+    assert not _money_sums(body), f"soma do período servida ao Gerente: {_money_sums(body)}"
+    for day in body["days"]:
+        assert not _money_sums(day), f"soma do dia {day['date']} servida ao Gerente: {_money_sums(day)}"
+        assert all(card["total_display"].startswith("R$") for card in day["orders"])
+    assert not _money_sums(search.json()), f"soma servida ao Gerente na busca: {_money_sums(search.json())}"
+
+
+@pytest.mark.channels("web")
+def test_o_historico_do_gestor_nao_soma_os_pedidos(client):
+    """O valor de cada pedido fechado chega; nenhuma soma sobre as linhas chega."""
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    _order("HIST-ANA", customer="Ana Souza", total_q=3600, status="completed")
+    _order("HIST-BIA", customer="Bia Lima", total_q=8100, status="completed")
+    Order.objects.filter(ref__in=["HIST-ANA", "HIST-BIA"]).update(completed_at=timezone.now())
+    client.force_login(_gerente())
+
+    response = client.get("/api/v1/backstage/orders/history/")
+
+    assert response.status_code == 200, response.content
+    history = response.json()["history"]
+    assert {row["ref"] for row in history["items"]} == {"HIST-ANA", "HIST-BIA"}
+    assert history["total"] == 2, "o ``total`` do Histórico é a CONTAGEM de pedidos"
+    assert not _money_sums(history), f"soma servida ao Gerente no Histórico: {_money_sums(history)}"
+    for label in (history["total_label"], history["period_label"]):
+        assert "R$" not in label, label
+    for facet in history["facets"]:
+        for option in facet["options"]:
+            assert set(option) == {"value", "label", "count"}, f"o recorte {facet['id']} carrega mais que contagem"
+
+
+def test_as_contas_na_casa_vao_pela_divida_mais_antiga_e_nunca_pelo_saldo(client):
+    """A lista pelo maior saldo é um ranking de clientes pelo dinheiro."""
+    from django.utils import timezone
+    from shopman.guestman.models import Customer
+    from shopman.payman.models import PaymentIntent
+
+    now = timezone.now()
+    for ref, name, amount_q, days_ago in (
+        ("CLI-GRANDE", "Zélia", 90000, 1),
+        ("CLI-ANTIGA", "Ana", 1200, 20),
+        ("CLI-MEIO", "Bia", 30000, 7),
+    ):
+        Customer.objects.create(ref=ref, first_name=name, metadata={"house_account": True})
+        PaymentIntent.objects.create(
+            ref=f"PI-{ref}", order_ref=f"ORD-{ref}", method="account", status="authorized",
+            amount_q=amount_q, gateway_data={"customer_ref": ref},
+            authorized_at=now - timedelta(days=days_ago),
+        )
+    client.force_login(_gerente())
+
+    response = client.get("/api/v1/backstage/pos/accounts/")
+
+    assert response.status_code == 200, response.content
+    refs = [row["customer_ref"] for row in response.json()["accounts"]]
+    assert refs == ["CLI-ANTIGA", "CLI-MEIO", "CLI-GRANDE"], refs
+
+
+def test_o_admin_de_pedidos_nao_da_ao_gerente_o_filtro_por_faixa_de_valor():
+    """O filtro por faixa de ``total_q`` recorta pedidos de clientes diferentes pelo
+    dinheiro. A coluna do total (o valor de cada pedido) e o filtro por data ficam."""
+    from shopman.orderman.models import Order
+
+    model_admin = admin.site._registry[Order]
+
+    def _filter_fields(user) -> set[str]:
+        return {
+            entry[0] for entry in model_admin.get_list_filter(_request_as(user))
+            if isinstance(entry, (tuple, list)) and entry
+        }
+
+    gerente, dono = _gerente(), _user_in("dono-admin", "Dono", "Gerente")
+
+    assert "total_q" not in _filter_fields(gerente)
+    assert "created_at" in _filter_fields(gerente)
+    assert "total_display" in model_admin.get_list_display(_request_as(gerente))
+    assert model_admin.date_hierarchy == "created_at"
+    assert "total_q" in _filter_fields(dono)
+
+
+#: Exportação que o Gerente alcança e que NÃO carrega valor de pedido, venda ou
+#: pagamento. Rota nova de exportação que chegue a ele reprova até entrar aqui,
+#: com o motivo (ou sair do alcance dele).
+EXPORTS_WITHOUT_MONEY: dict[str, str] = {
+    "api-backstage-purchase-csv": "Cadastro de insumos e fornecedores (SKU, nome, unidade, contato). Sem preço nem custo.",
+    "api-backstage-production-reports": (
+        "Relatórios da Produção: quantidade, perda e qualidade, sem valor (conferido em 21/11/2026)."
+    ),
+    "api-account-export": (
+        "A exportação LGPD da loja: o CLIENTE logado baixa os PRÓPRIOS dados (AllowAny + "
+        "get_authenticated_customer, com step-up). Não lê pedido de outra pessoa nem da casa."
+    ),
+}
+
+
+def _routes():
+    from django.urls import URLPattern, URLResolver, get_resolver
+
+    def walk(patterns, prefix=""):
+        for pattern in patterns:
+            if isinstance(pattern, URLResolver):
+                yield from walk(pattern.url_patterns, prefix + str(pattern.pattern))
+            elif isinstance(pattern, URLPattern):
+                yield prefix + str(pattern.pattern), pattern
+
+    yield from walk(get_resolver().url_patterns)
+
+
+def _is_export(route: str, view_class) -> bool:
+    if re.search(r"csv|export|download|xlsx", route):
+        return True
+    return any(
+        re.search(r"csv|spreadsheet|excel", str(getattr(renderer, "media_type", "")))
+        for renderer in (getattr(view_class, "renderer_classes", None) or ())
+    )
+
+
+def _reaches(user: User, view_class) -> bool:
+    """O Gerente passa pelas permissões da view? Pergunta às próprias classes dela."""
+    from django.core.exceptions import PermissionDenied
+    from rest_framework.exceptions import APIException
+    from rest_framework.request import Request
+
+    request = Request(RequestFactory().get("/"))
+    request.user = user
+    view = view_class()
+    view.request, view.args, view.kwargs = request, (), {}
+    try:
+        return all(permission.has_permission(request, view) for permission in view.get_permissions())
+    except (PermissionDenied, APIException):
+        return False
+
+
+def test_nenhuma_exportacao_com_dinheiro_alcanca_o_gerente():
+    gerente = User.objects.get(pk=_gerente().pk)
+    reached: dict[str, str] = {}
+    for route, pattern in _routes():
+        view_class = getattr(pattern.callback, "view_class", None) or getattr(pattern.callback, "cls", None)
+        if view_class is None or route.startswith("admin/") or not _is_export(route, view_class):
+            continue
+        if not hasattr(view_class, "get_permissions"):
+            continue
+        if _reaches(gerente, view_class):
+            reached[pattern.name or route] = route
+
+    unclassified = set(reached) - set(EXPORTS_WITHOUT_MONEY)
+    assert not unclassified, (
+        f"Exportação alcançável pelo Gerente e não classificada: {sorted(unclassified)}. Exportação de "
+        "pedido, venda ou pagamento com valor é agregado (dono, 21/11/2026); sem valor, declare em "
+        "EXPORTS_WITHOUT_MONEY com o motivo."
+    )
+    stale = set(EXPORTS_WITHOUT_MONEY) - set(reached)
+    assert not stale, f"Classificadas e fora do alcance do Gerente (tire da lista): {sorted(stale)}"
+
+
+def test_o_aviso_do_bi_ao_balcao_nao_traz_numero_do_faturamento():
+    """O aviso de dia fraco vai ao bus do operador (Gerente e Caixa leem): nem reais,
+    nem a proporção do esperado. O detalhe fica no evento do B.I., que é do Dono."""
+    from shopman.backstage.bi.alerts import Reading, _public_message
+    from shopman.backstage.models import BIAlertRule
+
+    rule = BIAlertRule(ref="faturamento", label="Vendas do dia", metric=BIAlertRule.Metric.DAILY_REVENUE_VS_BASELINE)
+    reading = Reading(
+        value=3412.0, baseline=7100.0, fired=True,
+        message="14/08 (sexta) faturou R$ 3.412,00, 48% do esperado (R$ 7.100,00 na média de 4 sextas)",
+    )
+
+    public = _public_message(rule, reading)
+
+    assert "R$" not in public and "%" not in public, public
+    assert "14/08 (sexta)" in public and "abaixo do esperado" in public
