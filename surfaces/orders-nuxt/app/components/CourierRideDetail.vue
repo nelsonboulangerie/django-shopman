@@ -115,7 +115,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         <p class="op-title font-semibold text-highlighted" data-ride-detail-title>Corrida {{ ride.letter }} · {{ house ? house.moment : ride.status_label }}</p>
         <p class="op-body text-muted">{{ house ? house.hint : line.hint || line.title }}</p>
       </div>
-      <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Fechar" @click="emit('close')" />
+      <NuxtButton class="min-h-11 min-w-11 justify-center" icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar" @click="emit('close')" />
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
@@ -225,7 +225,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
                 </span>
               </p>
               <p class="truncate op-micro text-muted">{{ stop.address }}</p>
-              <NuxtButton class="-ml-2" color="neutral" variant="ghost" label="Abrir o pedido" trailing-icon="i-lucide-arrow-up-right" :to="`/${encodeURIComponent(stop.ref)}`" />
+              <NuxtButton class="-ml-2 min-h-11" color="neutral" variant="ghost" label="Abrir o pedido" trailing-icon="i-lucide-arrow-up-right" :to="`/${encodeURIComponent(stop.ref)}`" />
             </div>
           </li>
         </ol>
