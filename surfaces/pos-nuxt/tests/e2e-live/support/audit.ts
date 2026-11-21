@@ -3,7 +3,7 @@
 // Mesma auditoria da J5 e da J7 (contraste do texto contra o fundo efetivo, letra,
 // caixa dentro da tela, nada cortado, nada encoberto), extraída para cá para a
 // sonda do erro dentro do diálogo da antessala. A J5 e a J7 seguem com a cópia
-// delas; trazê-las para cá é limpeza à parte.
+// delas; trazê-las para cá é a #2954.
 import { expect, type Page } from "@playwright/test";
 
 /** Espera o diálogo parar de animar antes de medir ou capturar. */
