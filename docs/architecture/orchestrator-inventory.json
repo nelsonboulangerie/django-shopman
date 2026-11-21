@@ -10357,6 +10357,7 @@
           "symbols": [
             "_KIND_BY_REF",
             "_kind",
+            "_translator",
             "courier_backend"
           ]
         },
@@ -10366,7 +10367,8 @@
             "capabilities",
             "new_ride_service_ref",
             "ride_state",
-            "service_for_new_ride"
+            "service_for_new_ride",
+            "state_since"
           ]
         }
       ]
