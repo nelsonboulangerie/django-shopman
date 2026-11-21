@@ -5,11 +5,12 @@
 //   P2-08: "Hoje" é o hoje da loja (servidor), e a tela refaz a consulta ao voltar à aba.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { mountSuspended, mockNuxtImport, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { setResponseStatus } from 'h3'
 
 import CheckoutPage from '~/pages/finalizar.vue'
+import SubstituteSheet from '~/components/SubstituteSheet.vue'
 import { useCartState } from '~/composables/useCartState'
 import type { CheckoutProjection } from '~/types/shopman'
 
@@ -340,6 +341,28 @@ describe('checkout: faltou estoque no envio, com as alternativas na própria tel
       requested_qty: 1, available_qty: 0, line_qty: null, line_id: 'L1', is_notifiable: true,
       substitutes: [{ sku: 'CROIS', name: 'Croissant', price_q: 800, price_display: 'R$ 8,00', can_order: true, available_qty: 9 }],
       actions: []
+    }
+  })
+
+  it('"Agora não" devolve o foco ao botão do aviso, todas as vezes (a folha que abriu sozinha também)', async () => {
+    draft('pix')
+    // A folha é global (app.vue): aqui ela monta ao lado da página, como na loja.
+    const Shell = defineComponent({ setup: () => () => h('div', [h(CheckoutPage), h(SubstituteSheet)]) })
+    const page = await mountSuspended(Shell, { attachTo: document.body })
+    mounted = page
+    await vi.waitFor(() => expect(page.find('[data-checkout-step="fulfillment"]').exists()).toBe(true))
+    await sendAndGetRefused(page as never)
+    const noticeButton = () => document.querySelector<HTMLElement>('[data-checkout-stock-alternatives]')
+
+    // 1ª vez: a folha que sobe sozinha quando a revisão fecha. Depois, reaberta pelo aviso.
+    for (let round = 1; round <= 5; round += 1) {
+      await vi.waitFor(() => expect(document.querySelector('[data-substitute-sheet]'), `folha aberta na vez ${round}`).toBeTruthy())
+      const notNow = Array.from(document.querySelectorAll<HTMLElement>('[data-substitute-sheet] button'))
+        .find(button => button.textContent?.trim() === 'Agora não')
+      notNow!.click()
+      await vi.waitFor(() => expect(document.querySelector('[data-substitute-sheet]')).toBeNull())
+      await vi.waitFor(() => expect(document.activeElement, `foco depois de fechar, vez ${round}`).toBe(noticeButton()))
+      if (round < 5) noticeButton()!.click()
     }
   })
 
