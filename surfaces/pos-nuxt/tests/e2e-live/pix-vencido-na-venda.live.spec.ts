@@ -8,6 +8,9 @@
 //
 // Roda à parte (não é jornada `jN`): `PDV_LIVE_PIX_SALE=1 scripts/run_pos_e2e_live.sh pix-vencido`.
 // `PDV_LIVE_PIX_SIDE=antes` só captura (a base sem a correção); sem ele, confere.
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+
 import type { Page } from "@playwright/test";
 
 import { capture, expect, settled, test } from "./support/operator";
@@ -116,6 +119,15 @@ for (const device of ["phone", "counter"] as const) {
       await still(page);
       await capture(page, testInfo, "venda-pix-vencido");
       if (SIDE === "antes") return;
+
+      // A barra do topo diz o mesmo que a tela (a 375 px ela dizia "Venda concluída").
+      await expect(page.getByText("Venda concluída")).toHaveCount(0);
+      if (device === "phone" && process.env.PDV_LIVE_SHOTS) {
+        const width = page.viewportSize()!.width;
+        const dir = join(process.env.PDV_LIVE_SHOTS, "barra-do-topo");
+        mkdirSync(dir, { recursive: true });
+        await page.screenshot({ path: join(dir, "venda-pix-vencido-barra-do-topo-375.png"), clip: { x: 0, y: 0, width, height: 64 } });
+      }
 
       const result = page.locator("[data-sale-result]");
       await expect(result.locator('img[alt^="QR Code"]')).toHaveCount(0);

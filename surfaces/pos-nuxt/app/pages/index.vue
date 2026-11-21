@@ -18,7 +18,7 @@ import type { PreorderRedoResponse } from "~/types/preorders";
 import type { PosSettingsResponse } from "~/types/settings";
 import { rollStyle } from "~/presentation/printGeometry";
 import { firstFittingWindow, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { enterAdvances, paymentFailed, pendingPixBadge, pixAwaiting } from "~/presentation/saleResult";
+import { enterAdvances, pendingPixBadge, saleResultBarTitle } from "~/presentation/saleResult";
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { kitchenBoundSkus, kitchenRoutedSkus } from "~/presentation/kitchen";
@@ -491,15 +491,10 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 // Top context bar title (unified layout language, Arc 5): one band names the
 // current work-area screen across Board / Sale / Payment.
 const screenTitle = computed(() => {
-  // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
-  // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
-  // abaixo — e é a barra que fica na periferia da visão do operador. Mesma
-  // razão para o Pix pendente: o dinheiro ainda não entrou.
-  if (result.value) {
-    if (paymentFailed(result.value.payment)) return "Cobrança não criada";
-    if (result.value.salesMode === "order") return "Encomenda registrada";
-    return pixAwaiting(result.value.payment, pixStatus.value) ? "Aguardando Pix" : "Venda concluída";
-  }
+  // A barra do topo não pode discordar da tela (cobrança recusada, Pix
+  // pendente ou vencido): ela é a periferia da visão do operador, e deriva do
+  // mesmo título da tela de resultado (`saleResultBarTitle`).
+  if (result.value) return saleResultBarTitle(result.value.salesMode, result.value.payment, pixStatus.value);
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (editing.value) return orderEditTitle(editOrderRef.value);
   if (inSaleView.value) return cart.tabDisplay || "Venda";

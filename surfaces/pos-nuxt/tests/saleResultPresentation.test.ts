@@ -17,6 +17,7 @@ import {
   pendingPixBadge,
   pixAwaiting,
   pixUnpaid,
+  saleResultBarTitle,
   resolveFiscalState,
   saleResultTitle,
   saleResultTone,
@@ -326,5 +327,30 @@ describe("selo dos Pix abertos fora da tela", () => {
       label: "2 Pix aguardando",
       title: "Pix aguardando confirmação nos pedidos PED-1, PED-2",
     });
+  });
+});
+
+describe("saleResultBarTitle — a barra do topo não discorda da tela", () => {
+  // Auditoria do #2918: com o Pix vencido, a barra a 375 px dizia "Venda
+  // concluída" em cima de "Venda registrada".
+  it("Pix vencido: a barra diz o mesmo que a tela", () => {
+    expect(saleResultBarTitle("counter", pixProof(), "expired")).toBe("Venda registrada");
+    expect(saleResultBarTitle("counter", pixProof(), "expired")).toBe(saleResultTitle("Maria", pixProof(), "expired"));
+  });
+  it("Pix aguardando e confirmado acompanham a tela, sem o obrigado nominal", () => {
+    expect(saleResultBarTitle("counter", pixProof(), "polling")).toBe("Aguardando Pix");
+    expect(saleResultBarTitle("counter", pixProof(), "paid")).toBe("Venda concluída");
+    expect(saleResultBarTitle("counter", null, "idle")).toBe("Venda concluída");
+  });
+  it("cobrança não criada e encomenda mantêm o rótulo curto da barra", () => {
+    expect(saleResultBarTitle("counter", { ...pixProof(), status: "error" }, "idle")).toBe("Cobrança não criada");
+    expect(saleResultBarTitle("order", pixProof(), "polling")).toBe("Encomenda registrada");
+  });
+  it("a página do PDV usa esta regra para a barra, e nenhuma outra", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const page = readFileSync(fileURLToPath(new URL("../app/pages/index.vue", import.meta.url)), "utf8");
+    expect(page).toContain("saleResultBarTitle(result.value.salesMode, result.value.payment, pixStatus.value)");
+    expect(page).not.toContain('"Venda concluída"');
   });
 });

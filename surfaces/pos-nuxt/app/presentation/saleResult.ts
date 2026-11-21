@@ -197,6 +197,24 @@ export function saleResultTitle(
 }
 
 /**
+ * O título da BARRA DO TOPO na tela de resultado: o mesmo estado do título da
+ * tela, sem o obrigado nominal (a barra é curta e fica na periferia da visão).
+ *
+ * ⚠️ A barra não pode discordar da tela. Ela tinha uma regra própria, e com o
+ * Pix vencido dizia "Venda concluída" em cima de "Venda registrada" (auditoria
+ * do #2918, captura a 375 px). Agora deriva de `saleResultTitle`.
+ */
+export function saleResultBarTitle(
+  salesMode: PosSaleResultSnapshot["salesMode"],
+  payment: PaymentProofView | null,
+  pixStatus: PixPollStatus,
+): string {
+  if (paymentFailed(payment)) return "Cobrança não criada";
+  if (salesMode === "order") return "Encomenda registrada";
+  return saleResultTitle("", payment, pixStatus);
+}
+
+/**
  * O SELO da tela de resultado, em três estados — nunca dois.
  *
  * `settled` é o único que acende verde, porque o verde é a afirmação de que o
