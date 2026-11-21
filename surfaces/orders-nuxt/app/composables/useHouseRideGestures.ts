@@ -1,6 +1,6 @@
 // Os gestos do balcão na corrida da casa (M3b, #2898), num lugar só para a página
-// Entregas e a coluna Saída dos Pedidos (M3d, #2937). "Saiu" e "A47 entregue" quando o
-// entregador está sem celular; "Reenviar o link" abre o WhatsApp do dispositivo com o
+// Entregas e a coluna Saída dos Pedidos (M3d, #2937). "Despachar a corrida C" e "A47
+// entregue" quando o entregador está sem celular; "Reenviar o link" abre o WhatsApp do dispositivo com o
 // MESMO link (a aba nasce no toque, antes de esperar a resposta, para o navegador não
 // bloquear); "Soltar o link" solta o celular preso. Pelo protocolo de intenção.
 // "Imprimir a via" (#2406) não mexe na corrida: o servidor compõe a via com o QR do

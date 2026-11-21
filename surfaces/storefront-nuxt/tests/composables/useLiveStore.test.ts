@@ -12,7 +12,9 @@ import {
   LIVE_STORE_HIDDEN_CLOSE_MS,
   LIVE_STORE_IDLE_CLOSE_MS,
   LIVE_STORE_EVENT,
+  LIVE_STORE_PUSH_JITTER_MS,
   announceStoreChange,
+  liveStoreEventSku,
   resetLiveStoreForTests,
   useLiveRevalidate,
   useLiveStore
@@ -23,7 +25,7 @@ mockNuxtImport('useShopmanApiPath', () => () => (path: string) => path)
 class FakeEventSource {
   static instances: FakeEventSource[] = []
   url: string
-  listeners: Record<string, Array<() => void>> = {}
+  listeners: Record<string, Array<(event?: { data?: string }) => void>> = {}
   onerror: ((e?: unknown) => void) | null = null
   onopen: ((e?: unknown) => void) | null = null
   readyState = 0
@@ -34,12 +36,12 @@ class FakeEventSource {
     FakeEventSource.instances.push(this)
   }
 
-  addEventListener (name: string, handler: () => void) {
+  addEventListener (name: string, handler: (event?: { data?: string }) => void) {
     ;(this.listeners[name] ||= []).push(handler)
   }
 
-  emit (name: string) {
-    ;(this.listeners[name] || []).forEach(h => h())
+  emit (name: string, data?: string) {
+    ;(this.listeners[name] || []).forEach(h => h(data === undefined ? undefined : { data }))
   }
 
   close () { this.closed = true; this.readyState = 2 }
@@ -99,6 +101,44 @@ describe('useLiveStore', () => {
 
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange).toHaveBeenCalledWith('push')
+  })
+
+  // #2784: o aviso leva o SKU cujo estado público mudou; a página que diz quais SKUs
+  // mostra só relê pelo aviso de um deles. Aviso sem SKU vale para todas.
+  it('a página que declara os SKUs só relê pelo aviso de um deles', () => {
+    const product = vi.fn()
+    const menu = vi.fn()
+    useLiveStore(product, { skus: () => ['CRO'] }).start()
+    useLiveStore(menu).start()
+    last().open()
+
+    last().emit(LIVE_STORE_EVENT, '{"sku": "TABAT"}')
+    vi.advanceTimersByTime(LIVE_STORE_PUSH_JITTER_MS)
+    expect(product).not.toHaveBeenCalled()
+    expect(menu).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(LIVE_STORE_MIN_INTERVAL_MS)
+    last().emit(LIVE_STORE_EVENT, '{"sku": "CRO"}')
+    vi.advanceTimersByTime(LIVE_STORE_PUSH_JITTER_MS)
+    expect(product).toHaveBeenCalledTimes(1)
+  })
+
+  it('aviso sem SKU (a lista do canal mudou) faz toda página reler', () => {
+    const product = vi.fn()
+    useLiveStore(product, { skus: () => ['CRO'] }).start()
+    last().open()
+
+    last().emit(LIVE_STORE_EVENT, '{}')
+    vi.advanceTimersByTime(LIVE_STORE_PUSH_JITTER_MS)
+
+    expect(product).toHaveBeenCalledTimes(1)
+  })
+
+  it('o SKU do aviso: só texto que é JSON com sku', () => {
+    expect(liveStoreEventSku('{"sku": "CRO"}')).toBe('CRO')
+    expect(liveStoreEventSku('{}')).toBeNull()
+    expect(liveStoreEventSku('quebrado')).toBeNull()
+    expect(liveStoreEventSku(undefined)).toBeNull()
   })
 
   it('avisos em rajada viram uma releitura, e a seguinte respeita a janela', () => {

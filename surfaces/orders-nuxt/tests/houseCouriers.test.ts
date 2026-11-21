@@ -235,7 +235,7 @@ describe("a corrida da casa na lista (M3b)", () => {
     }) as never;
 
   it("antes de sair: Saiu é o gesto do momento, o link vem depois", () => {
-    const list = houseGestures(house({ depart_action: action("Saiu"), resend_action: action("Reenviar o link", false) }));
+    const list = houseGestures(house({ depart_action: action("Despachar a corrida C"), resend_action: action("Reenviar o link", false) }));
     expect(list.map((item) => [item.key, item.primary])).toEqual([["depart", true], ["resend", false], ["slip", false]]);
   });
 

@@ -28,6 +28,7 @@ import {
   realtimeIndicator,
   resolveShortcut,
   buildRidesLabel,
+  waitingBandText,
   rowsToCsv,
   schedulePromise,
   SORT_OPTIONS,
@@ -288,6 +289,27 @@ const negotiationCards = computed(
 // As entregas que podem ir juntas numa corrida: com duas ou mais, o Painel leva à
 // página Entregas, onde as corridas se montam (F5).
 const rideCandidates = computed(() => queue.value?.ride_candidates ?? []);
+// O cartão Pronto de entrega chama o entregador ali mesmo (#2876, gesto 3 para 2): abre
+// o MESMO sheet das Entregas, com quem a casa sugere levar junto já marcado. Quem dá
+// para chamar agora e quantos aguardam vêm da contagem leve das Entregas (a do selo).
+const deliveriesWaiting = useDeliveriesWaiting();
+const courierCallRefs = computed(() => deliveriesWaiting.data.value?.call_refs ?? []);
+const courierCall = useOrderCourierCall({
+  onCalled: () => Promise.all([refresh(), deliveriesWaiting.refresh()]),
+});
+const courierSheet = courierCall.sheet;
+const cardBusy = (ref_: string) => isBusy(ref_) || courierCall.calling.value === ref_;
+// A faixa da Saída (decisão 4 = A do dono): "Aguardando entregador: 5 · Montar
+// corridas", abrindo a parte "A coletar"; leva às Entregas. Some sem ninguém aguardando.
+const waitingBand = computed(() => {
+  const count = deliveriesWaiting.data.value?.waiting;
+  if (count === undefined) return null;
+  if (count === null && rideCandidates.value.length < 2) return null;
+  const text = waitingBandText(count);
+  if (!text) return null;
+  const suggested = queue.value?.ride_suggestions ?? 0;
+  return { text, action: buildRidesLabel(suggested), suggested: suggested > 0 };
+});
 const allCards = computed<OrderCardProjection[]>(() =>
   zones.value.flatMap((z) => z.cards),
 );
@@ -1445,6 +1467,7 @@ function onAction(ref_: string, action: AffordanceRef) {
     void dismissCourierReminder(ref_);
   else if (action === "ifood_accept_retry") retryIFoodAccept(ref_);
   else if (action === "resolve_promise") openResolve(ref_);
+  else if (action === "call_courier") void courierCall.open(ref_);
 }
 
 // "Resolver" a promessa em risco (WP-G08): UM diálogo para o painel inteiro (cartão,
@@ -2153,6 +2176,8 @@ function compactClear() {
               />
               <OrderBoardColumn
                 :zone="zone"
+                :courier-call-refs="courierCallRefs"
+                :waiting-band="waitingBand"
                 :cards="triaged(zone)"
                 :now-ms="nowMs"
                 :next-ref="zoneNext(zone)"
@@ -2163,7 +2188,7 @@ function compactClear() {
                 :selecting="selecting"
                 :can-collapse="boardLayout.canCollapse(zone.key)"
                 :shortcut="shortcutHint(zone.key)"
-                :is-busy="isBusy"
+                :is-busy="cardBusy"
                 :action-error="actionError"
                 :is-selected="isSelected"
                 :danfe-printing="danfePrint.isPrinting"
@@ -2184,21 +2209,7 @@ function compactClear() {
                 @station-recall="recallStation"
                 @volumes="declareVolumes"
                 @swipe="onSwipe"
-              >
-                <!-- Uma corrida da TaOn para várias entregas prontas, na coluna delas:
-                     some com menos de duas. -->
-                <template v-if="zone.key === 'expedition'" #heading-actions>
-                  <NuxtButton
-                    v-if="rideCandidates.length >= 2"
-                    to="/delivery"
-                    icon="i-lucide-route"
-                    :label="buildRidesLabel(queue?.ride_suggestions ?? 0)"
-                    color="neutral"
-                    variant="outline"
-                    data-build-rides
-                  />
-                </template>
-              </OrderBoardColumn>
+              />
               <OrderBoardStrip
                 v-for="closed in boardStrips[zone.key]?.after ?? []"
                 :key="closed.key"
@@ -2215,6 +2226,8 @@ function compactClear() {
             v-else
             :key="zone.key"
             :zone="zone"
+            :courier-call-refs="courierCallRefs"
+            :waiting-band="waitingBand"
             :cards="triaged(zone)"
             :now-ms="nowMs"
             :next-ref="zoneNext(zone)"
@@ -2224,7 +2237,7 @@ function compactClear() {
             :selecting="selecting"
             :can-collapse="false"
             :shortcut="shortcutHint(zone.key)"
-            :is-busy="isBusy"
+            :is-busy="cardBusy"
             :action-error="actionError"
             :is-selected="isSelected"
             :danfe-printing="danfePrint.isPrinting"
@@ -2683,6 +2696,19 @@ function compactClear() {
           if (!value) switchRef = null;
         }
       "
+    />
+
+    <!-- Chamar entregador do cartão Pronto: o MESMO sheet das Entregas e do detalhe (#2876). -->
+    <CourierCallSheet
+      v-bind="courierSheet"
+      @close="courierCall.closeSheet"
+      @confirm="courierCall.confirmSheet"
+      @alone="courierCall.confirmAlone"
+      @toggle="courierCall.toggleCompanion"
+      @change="courierCall.setChange"
+      @machine="courierCall.chooseMachine"
+      @carrier="courierCall.chooseCarrier"
+      @note="courierCall.setNote"
     />
 
     <!-- saída para entrega (só quando há o que perguntar) -->
