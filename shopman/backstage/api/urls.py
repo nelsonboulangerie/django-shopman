@@ -327,6 +327,7 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
+from .incidents import IncidentsView
 from .operator_capacity import OperatorCapacityView
 from .order_history import OrderHistoryView
 from .pos_settings import POSSettingsView
@@ -950,6 +951,7 @@ urlpatterns = [
     path("feeds/automatic/", FeedAutomaticView.as_view(), name="api-backstage-feeds-automatic"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
     path("channels/health/", ChannelHealthView.as_view(), name="api-backstage-channel-health"),
+    path("incidents/", IncidentsView.as_view(), name="api-backstage-incidents"),
     # Histórico do Gestor: pedidos fechados, filtrados no servidor.
     # ⚠️ ANTES de `orders/<str:ref>/…`: `history` casaria com `<str:ref>`.
     path("orders/history/", OrderHistoryView.as_view(), name="api-backstage-order-history"),

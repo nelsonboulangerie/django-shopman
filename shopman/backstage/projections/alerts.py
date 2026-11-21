@@ -211,6 +211,12 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "marketing_readiness_stale": ("marketing", "/platforms", "Conferir as plataformas"),
 }
 
+
+def alert_home(alert_type: str) -> tuple[str, str, str] | None:
+    """Onde o tipo se resolve (app, caminho, rótulo), sem o filtro do registro."""
+
+    return _ALERT_HOMES.get(alert_type)
+
 #: O id do app no registro de URLs das superfícies (o Gestor é ``gestor`` ali).
 _SURFACE_URL_KEYS = {"orders": "gestor"}
 
