@@ -34,8 +34,12 @@ const props = withDefaults(
     houseRides?: DeliveryRideProjection[];
     /** `{chave da corrida: gesto rodando}`. */
     houseBusy?: Record<string, string>;
+    /** Os prontos de entrega que dá para chamar agora: o cartão ganha o botão (#2876). */
+    courierCallRefs?: string[];
+    /** A faixa "Aguardando entregador: N · Montar corridas" (decisão 4 = A), na Saída. */
+    waitingBand?: { text: string; action: string; suggested: boolean } | null;
   }>(),
-  { heading: true, houseRides: () => [], houseBusy: () => ({}) },
+  { heading: true, houseRides: () => [], houseBusy: () => ({}), courierCallRefs: () => [], waitingBand: null },
 );
 
 const emit = defineEmits<{
@@ -74,11 +78,16 @@ function commitExit(card: OrderCardProjection) {
 }
 // Prontos em "A coletar" e "Saiu para entrega"; as outras colunas, sem partes.
 // A corrida da casa entra no lugar do primeiro pedido dela (forma E), e os outros saem.
+const band = computed(() => (props.zone.key === "expedition" ? props.waitingBand : null));
 const rows = computed(() =>
   props.zone.key === "expedition"
-    ? withHouseRides(exitRows(props.cards), props.houseRides)
+    ? withHouseRides(exitRows(props.cards), props.houseRides).map((row) =>
+        // Com a faixa, o rótulo "A coletar" vem antes dela: o cartão não o repete.
+        band.value && row.heading === "A coletar" ? { ...row, heading: "" } : row,
+      )
     : props.cards.map((card) => ({ card, heading: "" as string, house: undefined })),
 );
+const callRefs = computed(() => new Set(props.courierCallRefs));
 const hint = computed(() =>
   swipeHint(props.zone.key, exitColumn.value ? props.cards : [], props.canOpen),
 );
@@ -113,6 +122,31 @@ const hint = computed(() =>
         <template #actions><slot name="heading-actions" /></template>
       </OrderBoardHeading>
     </header>
+
+    <!-- A faixa da Saída (decisão 4 = A do dono): abre a parte "A coletar" e leva às
+         Entregas, onde se montam as corridas. -->
+    <div v-if="band" class="flex shrink-0 flex-col gap-1.5" :class="phone ? undefined : 'px-2 pb-1'" data-exit-waiting-band>
+      <h3 class="op-micro font-semibold text-muted-foreground" data-exit-part>A coletar</h3>
+      <NuxtCard variant="soft">
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- A frase tem largura mínima: na coluna estreita o botão desce para a
+               linha de baixo em vez de cobrir a contagem. -->
+          <span class="flex min-w-48 flex-1 items-center gap-2 op-body font-semibold text-highlighted">
+            <Icon name="lucide:bike" class="size-4 shrink-0 text-muted" />
+            {{ band.text }}
+          </span>
+          <NuxtButton
+            to="/delivery"
+            icon="i-lucide-route"
+            class="min-h-11"
+            :label="band.action"
+            :color="band.suggested ? 'primary' : 'neutral'"
+            :variant="band.suggested ? 'solid' : 'outline'"
+            data-build-rides
+          />
+        </div>
+      </NuxtCard>
+    </div>
 
     <NuxtEmpty
       v-if="!cards.length"
@@ -164,6 +198,7 @@ const hint = computed(() =>
           :next="card.ref === nextRef"
           :danfe-printing="danfePrinting(card.ref)"
           :can-open="canOpen"
+          :call-courier="callRefs.has(card.ref)"
           @action="(action) => emit('action', card.ref, action)"
           @dismiss-error="emit('dismissError', card.ref)"
           @toggle-select="emit('toggleSelect', card.ref)"
@@ -223,6 +258,7 @@ const hint = computed(() =>
           :next="card.ref === nextRef"
           :danfe-printing="danfePrinting(card.ref)"
           :can-open="canOpen"
+          :call-courier="callRefs.has(card.ref)"
           @action="(action) => emit('action', card.ref, action)"
           @dismiss-error="emit('dismissError', card.ref)"
           @toggle-select="emit('toggleSelect', card.ref)"

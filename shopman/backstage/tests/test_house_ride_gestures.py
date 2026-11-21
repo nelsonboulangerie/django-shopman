@@ -1,7 +1,7 @@
 """A corrida da casa na página Entregas (DEV-2026-030, frente M3b, #2898).
 
 A projeção diz quem leva ("Diego leva", "Diego na rua · 1 de 2 entregues") e oferece os
-gestos do balcão para quando o entregador está sem celular: "Saiu", "A47 entregue",
+gestos do balcão para quando o entregador está sem celular: "Despachar a corrida C", "A47 entregue",
 "Reenviar o link" e "Soltar o link". A corrida da TaOn não ganha nada disso.
 """
 
@@ -72,6 +72,11 @@ def test_house_ride_says_who_takes_it_and_offers_the_counter_gestures(operator, 
     assert house.courier_name == "Diego" and house.moment == "Diego leva"
     assert house.hint.startswith("Entregador da casa · R$ ") and house.hint.endswith("Ainda não abriu o link")
     assert house.depart_action is not None and house.depart_action.confirmation["required"] is True
+    # O gesto de saída tem o nome do vocabulário ("Despachar <código>"), com a letra da
+    # corrida; "Saiu" sozinho não diz se é estado ou ação (coordenação, 21/11, #3054).
+    letter = courier.ride_letter(courier.get_block(Order.objects.get(ref="WEB-A47"))["ride_number"])
+    assert letter and house.depart_action.label == f"Despachar a corrida {letter}"
+    assert "Saiu" not in {house.depart_action.label} | {item.action.label for item in house.deliver_actions}
     assert house.resend_action is not None and house.release_action is None  # ninguém prendeu o link
     assert house.deliver_actions == ()
     assert house.depart_action.payload_schema["base_revision"] == house_couriers.ride_revision(
