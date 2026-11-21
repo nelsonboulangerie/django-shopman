@@ -137,3 +137,14 @@ def test_drafts_enter_only_the_test_and_stay_unpublished(surface):
     from shopman.storefront.presentation.public_information import search_public_faq
 
     assert not search_public_faq("levain", channel_ref="whatsapp", shop=Shop.load()), "o cliente não vê o rascunho"
+
+
+def test_the_instruction_asks_to_cite_only_what_answered():
+    """#2935, item 2: o braço B citava a FAQ vizinha (encomenda + horário). Cita só o que usou."""
+    from shopman.storefront.concierge import faq_answer
+
+    system = faq_answer.build_request("posso encomendar para sábado?", [], model="m")["system"][0]["text"]
+
+    assert "só das perguntas frequentes cuja resposta você usou de fato" in system
+    assert "não cite uma pergunta frequente só porque é do mesmo assunto" in system
+    assert "—" not in system
