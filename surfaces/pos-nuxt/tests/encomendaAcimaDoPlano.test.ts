@@ -42,8 +42,19 @@ describe("a linha da encomenda mostra o plano da data", () => {
     expect(planLineFact(3, undefined, "2026-11-17")).toBeNull();
     expect(planLineFact(3, { planned_qty: 22, unclaimed_qty: 22 }, "")).toBeNull();
   });
-  it("sem lote planejado na data, a linha não diz nada (data sem plano é o WP-E3)", () => {
-    expect(planLineFact(3, { planned_qty: 0, unclaimed_qty: 5 }, "2026-11-17")).toBeNull();
+  it("sem lote planejado na data, a linha diz que vira pedido à Produção, sem passar do plano (WP-E3, D2)", () => {
+    expect(planLineFact(30, { planned_qty: 0, unclaimed_qty: 0 }, "2026-11-30")).toEqual({
+      text: "Ainda sem lote planejado para 30/11: vira pedido à Produção",
+      over: false,
+      unplanned: true,
+    });
+    expect(planLineFact(30, { planned_qty: 0, unclaimed_qty: 0 }, "")).toBeNull();
+  });
+  it("plano esgotado não é data sem plano: passa do plano e pede o gerente", () => {
+    expect(planLineFact(5, { planned_qty: 22, unclaimed_qty: 0 }, "2026-11-30")).toEqual({
+      text: "22 planejadas para 30/11, 0 ainda sem encomenda",
+      over: true,
+    });
   });
 });
 

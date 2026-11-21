@@ -124,12 +124,16 @@ caso diretamente como ingresso **at-least-once**:
    canônico de mensagem e trabalho;
 2. `event_identity_assurance=unavailable` e
    `input_assurance=at_least_once` registram o limite da evidência;
-3. o turno desse lote roda em modo de consulta: pode ler fontes canônicas, mas
-   comandos que alteram estado são recusados pelos guards do servidor;
-4. catálogo público, orientação e handoff permanecem disponíveis;
-5. ferramentas que mutam sacola, pedido, pagamento, identidade ou transferência
-   não recebem autoridade desse ingresso;
-6. um retry técnico pode ser indistinguível de uma repetição legítima do cliente,
+3. o turno desse lote tem só a **autoridade de sacola** ([ADR-050](../decisions/adr-050-autoridade-de-compra-sem-id-de-mensagem.md)),
+   e só com cliente verificado e conexão que não seja só leitura: muda a sacola em valor
+   absoluto (`set_item`, `set_fulfillment`, `review_order`), e mensagens idênticas
+   seguidas no mesmo lote valem um comando (nenhuma é descartada);
+4. fechar o pedido (`place_order`) exige o **código do orçamento** que o resumo mostra
+   ("confirmo 4821"): um "sim" sozinho não prova que veio depois do resumo;
+5. catálogo público, orientação e handoff permanecem disponíveis;
+6. acréscimo a pedido já feito, cópia da sacola para o site, inscrição de aviso,
+   pagamento, identidade e transferência não recebem autoridade desse ingresso;
+7. um retry técnico pode ser indistinguível de uma repetição legítima do cliente,
    portanto nenhum hash de contato + timestamp é usado para descartar mensagens.
 
 Não há modo de compatibilidade paralelo. Esse é um estado normal e explícito do
