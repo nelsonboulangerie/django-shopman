@@ -43,7 +43,7 @@ const toneColor = (
             <NuxtBadge
               v-if="receipt.critical"
               color="error"
-              label="crítico"
+              label="Precisava chegar"
               data-receipt-critical
             />
             <NuxtBadge
@@ -84,6 +84,21 @@ const toneColor = (
               >
             </li>
           </ul>
+          <!-- O aviso que não saiu por canal nenhum: o botão que resolve, com o mesmo
+               texto, pelo WhatsApp de quem está no balcão (WP-G07). -->
+          <div v-if="receipt.fallback_whatsapp_url" class="pt-1">
+            <NuxtButton
+              :to="receipt.fallback_whatsapp_url"
+              target="_blank"
+              rel="noopener"
+              external
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-message-circle"
+              label="Chamar no WhatsApp"
+              data-receipt-fallback
+            />
+          </div>
         </li>
       </ol>
     </div>

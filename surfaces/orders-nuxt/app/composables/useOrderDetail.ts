@@ -3,6 +3,7 @@ import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
 import { useDanfePrint } from "./useDanfePrint";
+import { SENT_SENTENCE } from "~/presentation/customerNotice";
 import {
   httpError,
   isForbiddenError,
@@ -177,6 +178,7 @@ export function useOrderDetail(orderRef: string) {
           "return",
           "no-show",
           "refund-retry",
+          "customer-notice",
         ].includes(action)
       ) {
         await intentions.execute(
@@ -330,6 +332,15 @@ export function useOrderDetail(orderRef: string) {
   // Reenvio do link de pagamento ("não chegou"): o servidor enfileira o aviso
   // de novo com a MESMA URL, e recusa com motivo (vencido, pago, cancelado,
   // cedo demais) — o motivo chega como `detail` e vira o toast do `act`.
+  // Avisar o cliente (WP-G07): o corpo vem do diálogo (o aviso, a hora nova ou os
+  // itens), a base é a do detalhe. A tela diz "na fila", nunca "enviado": o recibo do
+  // pedido, relido aqui, diz o que o provedor respondeu.
+  async function notifyCustomer(inputs: Record<string, unknown>): Promise<boolean> {
+    const ok = await act("customer-notice", inputs);
+    if (ok) useSonner.success(SENT_SENTENCE);
+    return ok;
+  }
+
   async function resendPaymentLink(): Promise<boolean> {
     const ok = await act("resend-payment-link");
     if (ok) useSonner.success("Reenvio do link solicitado.");
@@ -481,6 +492,7 @@ export function useOrderDetail(orderRef: string) {
     requeueFiscal,
     retryIFoodAccept,
     resendPaymentLink,
+    notifyCustomer,
     saveNotes,
     addComment,
     courierDispatch,

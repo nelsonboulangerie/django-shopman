@@ -317,7 +317,8 @@ def test_a_message_while_with_the_team_never_falls_into_silence(monkeypatch):
 
     assert (again.queued, again.reason) == (False, "handoff")
     assert adapter_class().handoffs == [("manychat-wa", "wa-subject", True)]
-    assert alerts == [("concierge_handoff", service.WROTE_WHILE_WITH_TEAM)]
+    # A fala nova, entre aspas; título e "há N min" saem da projeção.
+    assert alerts == [("concierge_handoff", "“Oi? Alguém aí?”")]
     binding.refresh_from_db()
     assert binding.handoff_sync_state == "accepted"
     assert Conversation.objects.get(pk=result.conversation_id).state == Conversation.State.HANDOFF

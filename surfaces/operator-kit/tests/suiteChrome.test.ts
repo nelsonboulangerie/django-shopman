@@ -332,6 +332,27 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     ]);
   });
 
+  it("o handoff traz o Live Chat como principal e a conversa no Admin como segunda saída", () => {
+    const view = operatorAlertToInbox({
+      pk: 81, type_label: "WhatsApp: atendimento", severity: "error", severity_label: "Erro",
+      message: "Atendimento humano, urgência: agora.", created_at_display: "hoje às 22h16",
+      subject: "Ana chamou a equipe", on_screen: true,
+      actions: [
+        { kind: "open_alert_context", enabled: true, label: "Responder no Live Chat",
+          href: "https://app.manychat.com/fb486126/chat/123" },
+        { kind: "open_alert_context", enabled: true, label: "Abrir conversa",
+          href: "https://admin.exemplo/admin/shop/conversation/9/change/" },
+      ],
+    });
+    expect([view.hrefLabel, view.secondaryHrefLabel]).toEqual(["Responder no Live Chat", "Abrir conversa"]);
+    expect(inboxScreenAlerts([view])).toEqual([
+      { key: 81, id: "alert:81", title: "Ana chamou a equipe", description: "Atendimento humano, urgência: agora.",
+        color: "error",
+        action: { label: "Responder no Live Chat", to: "https://app.manychat.com/fb486126/chat/123" },
+        secondaryAction: { label: "Abrir conversa", to: "https://admin.exemplo/admin/shop/conversation/9/change/" } },
+    ]);
+  });
+
   it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {
     const min = 60_000;
     expect(reminderIntervalMs(4 * min)).toBe(min);

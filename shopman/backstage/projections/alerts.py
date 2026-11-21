@@ -111,6 +111,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
     from shopman.shop.concierge_verification import card_subjects
 
     verify_subjects = card_subjects(alert.pk for alert in alert_rows if alert.type == VERIFY_TYPE)
+    handoff = handoff_cards([alert.pk for alert in alert_rows if alert.type == HANDOFF_TYPE])
     rows = tuple(
         OperatorAlertProjection(
             pk=alert.pk,
@@ -120,14 +121,19 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             severity=alert.severity,
             severity_label=alert.get_severity_display(),
             audience=alert.audience,
-            message=readable_message(alert.message),
+            message=_with_ago(readable_message(alert.message), handoff.get(alert.pk)),
             order_ref=alert.order_ref,
             created_at_display=format_local(alert.created_at, "%d/%m às {clock}"),
             respond_by_iso=_deadline_iso(alert),
             deadline_kind=deadline_kind(alert),
             origin_label=_spec_value(alert, "origin"),
             origin_icon=_spec_value(alert, "origin_icon"),
-            subject=verify_subjects.get(alert.pk) or _spec_value(alert, "subject") or alert.get_type_display(),
+            subject=(
+                verify_subjects.get(alert.pk)
+                or (handoff.get(alert.pk) or {}).get("subject")
+                or _spec_value(alert, "subject")
+                or alert.get_type_display()
+            ),
             on_screen=bool(_spec_value(alert, "on_screen")),
             order_schedule_label=schedules.get(alert.order_ref, ("", ""))[0],
             order_schedule_state=schedules.get(alert.order_ref, ("", ""))[1],
@@ -310,10 +316,152 @@ def _faq_drafts_home() -> tuple[str, str]:
     return f"{reverse('admin:shop_faqentry_changelist')}?{query}", "Revisar no Admin"
 
 
+#: Os cartões da Concierge que se resolvem na conversa: o botão abre a conversa no Admin.
+_CONVERSATION_CARDS = frozenset({
+    "concierge_handoff", "concierge_other_desk", "concierge_unavailable", "concierge_handoff_sync",
+    "concierge_output_blocked", "concierge_output_pending", "concierge_empty_output",
+    "concierge_identity_conflict",
+})
+
+
+def _conversation_home(alert) -> tuple[str, str] | None:
+    """(caminho no Admin, rótulo) da conversa dona do cartão (``Conversation.flags["alerts"]``)."""
+    from django.urls import reverse
+
+    from shopman.shop.models import Conversation
+
+    owner = (
+        Conversation.objects.filter(**{f"flags__alerts__{alert.type}": alert.pk}).values_list("pk", flat=True).first()
+    )
+    if owner is None:
+        return None
+    return reverse("admin:shop_conversation_change", args=[owner]), "Abrir conversa"
+
+
+HANDOFF_TYPE = "concierge_handoff"
+
+#: O título do handoff pelo motivo, como no "vou verificar": quem e o quê, num relance
+#: (coordenação, 20/11/2026). A chave é a intenção da triagem, ou o ``escalated_by``.
+_HANDOFF_TITLES = {
+    "human": "{name} pediu para falar com alguém da equipe",
+    "complaint": "{name} fez uma reclamação",
+    "allergy": "{name} perguntou sobre alergia",
+    "special_order": "{name} quer uma encomenda especial",
+    "cancel_order": "{name} quer cancelar um pedido",
+    "order": "{name} quer fazer um pedido",
+    "order_not_closed": "{name} quer fazer um pedido",
+    "no_useful_answer": "{name} não recebeu resposta da Concierge",
+}
+_HANDOFF_TITLE_DEFAULT = "{name} precisa da equipe"
+
+
+def handoff_cards(alert_pks) -> dict[int, dict]:
+    """Título e "há quanto tempo" de cada cartão de handoff, pela conversa dona dele.
+
+    "Ana pediu para falar com alguém da equipe"; e, se foi o prazo do "vou verificar",
+    "Ana espera a resposta da equipe desde 14h22". O tempo é o da última mensagem dela.
+    """
+    from shopman.utils.formatting import format_clock
+
+    from shopman.shop.concierge_verification import card_subject
+    from shopman.shop.models import Conversation
+
+    pks = [int(pk) for pk in alert_pks]
+    if not pks:
+        return {}
+    conversations = Conversation.objects.filter(**{f"flags__alerts__{HANDOFF_TYPE}__in": pks})
+    out: dict[int, dict] = {}
+    for conversation in conversations:
+        flags = conversation.flags or {}
+        pk = int((flags.get("alerts") or {}).get(HANDOFF_TYPE) or 0)
+        name = (conversation.customer_name or "").strip().split(" ")[0] or "Cliente"
+        triage = flags.get("triage") or {}
+        if triage.get("escalated_by") == "verification_timeout":
+            subject = card_subject(name)
+            opened = _parse_iso((flags.get("verification") or {}).get("opened_at"))
+            if opened is not None:
+                subject = f"{subject} desde {format_clock(opened)}"
+        else:
+            key = triage.get("escalated_by") if triage.get("escalated_by") in _HANDOFF_TITLES else triage.get("intent")
+            subject = _HANDOFF_TITLES.get(key or "", _HANDOFF_TITLE_DEFAULT).format(name=name)
+        out[pk] = {"subject": subject, "since": conversation.last_inbound_at}
+    return out
+
+
+def _parse_iso(value):
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
+
+
+def _with_ago(message: str, card: dict | None) -> str:
+    """A fala do cliente e há quanto tempo ela escreveu ("há 3 min")."""
+    since = (card or {}).get("since")
+    if since is None:
+        return message
+    from django.utils import timezone
+
+    minutes = max(0, int((timezone.now() - since).total_seconds() // 60))
+    # Espaço que não quebra: "há 3 min" fica inteiro na linha (a 375 px virava "há 3 / min").
+    ago = "agora há pouco" if minutes < 1 else f"há {minutes} min" if minutes < 60 else f"há {minutes // 60} h"
+    ago = ago.replace(" ", "\u00a0")
+    first, _, rest = message.partition("\n")
+    line = f"{first} ·\u00a0{ago}" if first else f"Escreveu {ago}"
+    return f"{line}\n{rest}" if rest else line
+
+
+#: O cartão cuja resposta é no Live Chat do ManyChat: a equipe assumiu a conversa.
+_LIVE_CHAT_CARDS = frozenset({HANDOFF_TYPE})
+_LIVE_CHAT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+LIVE_CHAT_LABEL = "Responder no Live Chat"
+
+
+def live_chat_href(alert) -> str:
+    """A conversa do cliente na Caixa de Entrada do ManyChat, ou ``""``.
+
+    ``https://app.manychat.com/<conta>/chat/<subscriber_id>``: a conta é a página do
+    ManyChat da loja (``Shop.integrations["manychat"]["live_chat_account"]``, no Admin em
+    Integrações; ADR-042, nunca por env) e o ``subscriber_id`` é o ``subject`` do vínculo
+    ManyChat da conversa. Sem um dos dois, ou com valor fora do formato, nada: o aviso
+    fica com "Abrir conversa" e nunca leva a um link quebrado.
+    """
+    if alert.type not in _LIVE_CHAT_CARDS:
+        return ""
+    from shopman.shop.models import Conversation, ConversationBinding, Shop
+
+    shop = Shop.load()
+    account = str((((getattr(shop, "integrations", None) or {}).get("manychat") or {}).get("live_chat_account")) or "").strip()
+    if not _LIVE_CHAT_ID.match(account):
+        return ""
+    owner = (
+        Conversation.objects.filter(**{f"flags__alerts__{alert.type}": alert.pk}).values_list("pk", flat=True).first()
+    )
+    if owner is None:
+        return ""
+    subject = (
+        ConversationBinding.objects.filter(conversation_id=owner, provider="manychat")
+        .order_by("-last_inbound_at", "-pk")
+        .values_list("subject", flat=True)
+        .first()
+    )
+    subject = str(subject or "").strip()
+    if not _LIVE_CHAT_ID.match(subject):
+        return ""
+    return f"https://app.manychat.com/{account}/chat/{subject}"
+
+
 def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
     if alert.type == "faq_drafts_waiting":
         return ("admin", *_faq_drafts_home())
+
+
+    if alert.type in _CONVERSATION_CARDS:
+        found = _conversation_home(alert)
+        return ("admin", *found) if found else None
     if alert.type == "concierge_no_model":
         found = _NO_MODEL_CAUSE.search(alert.message or "")
         path, label = _no_model_home(found.group(1) if found else "")
@@ -507,6 +655,10 @@ def _alert_actions(
         actions.append(_accept_order_action(alert))
     if alert.type == "concierge_verify":
         actions.extend(_concierge_verification_actions(alert))
+    live_chat = live_chat_href(alert)
+    if live_chat:
+        # A resposta é no Live Chat (o principal); a conversa no Admin fica como segunda saída.
+        actions.append(_open_context_action(alert, label=LIVE_CHAT_LABEL, href=live_chat, ref="live-chat", priority=9))
     href, label = alert_context_href(alert, surface=surface, target_date=target_date)
     if href:
         actions.append(_open_context_action(alert, label=label, href=href))
@@ -542,12 +694,14 @@ def _alert_actions(
     return tuple(actions)
 
 
-def _open_context_action(alert, *, label: str, href: str) -> ProductionActionProjection:
+def _open_context_action(
+    alert, *, label: str, href: str, ref: str = "open-context", priority: int = 10
+) -> ProductionActionProjection:
     return ProductionActionProjection(
-        ref=f"open-context:{alert.pk}",
+        ref=f"{ref}:{alert.pk}",
         kind="open_alert_context",
         label=label,
-        priority=10,
+        priority=priority,
         enabled=True,
         reason="",
         method="GET",

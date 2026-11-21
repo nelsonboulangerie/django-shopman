@@ -108,6 +108,7 @@ const {
   requeueFiscal,
   retryIFoodAccept,
   resendPaymentLink,
+  notifyCustomer,
   saveNotes,
   addComment,
   courierDispatch,
@@ -140,6 +141,21 @@ function onPendingAction(ref_: string) {
 // o pedido é relido; cancelar o pedido inteiro abre o cancelar de sempre, com o motivo
 // e o dinheiro.
 const resolveOpen = ref(false);
+// "Avisar o cliente" (WP-G07): pelo ⋯ do pedido, um diálogo com os três avisos. A
+// recusa do envio fica escrita no diálogo, que segue aberto com a escolha marcada.
+const noticeOpen = ref(false);
+const noticeFailure = ref("");
+const noticeAction = computed(() => projectedAction("customer-notice"));
+function openNotice() {
+  menuOpen.value = false;
+  noticeFailure.value = "";
+  noticeOpen.value = true;
+}
+async function onSendNotice(inputs: Record<string, unknown>) {
+  noticeFailure.value = "";
+  if (await notifyCustomer(inputs)) noticeOpen.value = false;
+  else noticeFailure.value = mutationError.value;
+}
 function cancelFromResolve() {
   void openDialog("cancel");
 }
@@ -823,6 +839,20 @@ const detailMenuItems = computed(() => [
           "data-action": "print-danfe",
           disabled: danfePrinting.value || danfe.value.sending,
           onSelect: () => menuDo(printDanfe),
+        },
+      ]
+    : []),
+  ...(noticeAction.value
+    ? [
+        {
+          label: "Avisar o cliente",
+          description: noticeAction.value.enabled
+            ? "Vai atrasar, faltou um item ou precisamos remarcar."
+            : noticeAction.value.reason,
+          icon: "i-lucide-message-circle-warning",
+          "data-action": "customer-notice",
+          disabled: busy.value || !noticeAction.value.enabled,
+          onSelect: openNotice,
         },
       ]
     : []),
@@ -1878,6 +1908,16 @@ const outside = useOutsideStore(
     />
 
     <!-- "Resolver" a promessa em risco: as escolhas, a mensagem ao cliente e o que conclui -->
+    <OrderCustomerNoticeDialog
+      v-if="noticeAction"
+      :open="noticeOpen"
+      :order-ref="orderRef"
+      :customer-name="order?.customer_name || ''"
+      :busy="busy"
+      :failure="noticeFailure"
+      @update:open="(value: boolean) => (noticeOpen = value)"
+      @send="onSendNotice"
+    />
     <OrderPromiseResolveDialog
       :open="resolveOpen"
       :order-ref="orderRef"
