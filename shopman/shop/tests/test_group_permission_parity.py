@@ -84,6 +84,9 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     # payman.contrib.admin_unfold.PaymentIntentAdmin (refund_row, refund_detail):
     # estornar é dinheiro, mesma régua do audit_shift. Do Dono, nunca do Gerente.
     ("payman.refund_paymentintent", {"Dono"}),
+    # permissions.can_view_bi (o app do B.I., o tile da Central): só do Dono
+    # (dono, 21/11/2026). Gerente fora, e a trava é test_gerente_sem_permissao_financeira.
+    ("backstage.view_bi", {"Dono"}),
     # permissions.can_manage_orders (orders API + sidebar)
     ("shop.manage_orders", {"Caixa", "Gerente"}),
     # api/operations.py::OrderCancelView.ADVANCED_PERMISSION — cancelar depois de

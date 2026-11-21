@@ -27,6 +27,12 @@ confere que a recusa NÃO aparece).
   gravação da edição. Abre pelo cartão, pela Fila e pelo detalhe; marca cada escolha e
   confere a mensagem e o botão que conclui; tira o item, cancela, recebe o 409; e, em
   375 px, confere que nada passa da largura e que o botão que conclui fica à vista.
+- **`courierCall.spec.ts`**: o cartão Pronto e o detalhe do pedido abrem o MESMO sheet
+  de chamar das Entregas (#2876). O cookie `e2e_call=on` põe A47 e C03 prontos na Saída
+  (a contagem leve diz que dá para chamar os dois) e o painel do entregador no detalhe
+  de A47; `GET/DELETE /e2e/call/` devolvem e zeram as chamadas recebidas. Confere a
+  faixa "Aguardando entregador" em "A coletar", o companheiro da sugestão marcado, a
+  chamada da corrida com os dois, o "Chamar só A47", o `#courier-call` e o Voltar.
 
 ## Fora daqui (Django real — reviewer local)
 

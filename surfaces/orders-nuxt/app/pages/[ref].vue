@@ -39,6 +39,7 @@ import { PROMISE_HASH } from "~/presentation/preorderList";
 import { RESOLVE } from "~/presentation/orderPromise";
 import { CANCEL_HASH, RESOLVE_HASH, parseNotifyHash, type NoticePick } from "~/presentation/promiseResolution";
 import {
+  CALL_CUSTOMER_HASH,
   pendingFocusKey,
   PROMISE_PENDING_KEY,
   REFUND_RETRY,
@@ -111,9 +112,7 @@ const {
   notifyCustomer,
   saveNotes,
   addComment,
-  courierDispatch,
   courierDispatchAgain,
-  courierRide,
   courierReminderDismiss,
   resolveContactRequest,
   courierCancel,
@@ -122,6 +121,22 @@ const {
   authorize,
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
+
+// Chamar entregador abre o MESMO sheet das Entregas (`CourierCallSheet`, #2876), com
+// quem a casa sugere levar junto já marcado. Vindo do lembrete do cartão
+// (`#courier-call`), a página abre já com o sheet.
+const courierCall = useOrderCourierCall({ onCalled: () => refresh() });
+const courierSheet = courierCall.sheet;
+let courierArmed = false;
+watch(
+  () => Boolean(order.value?.courier?.can_dispatch),
+  (can) => {
+    if (!can || courierArmed || route.hash !== COURIER_CALL_HASH) return;
+    courierArmed = true;
+    void courierCall.open(order.value?.ref ?? orderRef.value);
+  },
+  { immediate: true },
+);
 
 // "O que falta neste pedido" (WP-G05): a faixa só aponta; o gesto é o que a página já
 // tem. Cancelar a cobrança que venceu abre com o motivo marcado, como no cartão.
@@ -239,6 +254,20 @@ watch(
   focusKey,
   (key, previous) => {
     if (key && key !== previous) reveal(key);
+  },
+  { immediate: true, flush: "post" },
+);
+// O "Ver o contato do cliente" do cartão e da Tabela (Pix vencido) chega com `#call-customer`:
+// a página vai à faixa do pagamento com o teclado no "Chamar no WhatsApp" dela.
+const callCustomerTarget = computed(() =>
+  route.hash === CALL_CUSTOMER_HASH &&
+  order.value?.pending?.some((item) => item.actions?.some((action) => action.ref === "contact-customer")),
+);
+watch(
+  callCustomerTarget,
+  (arrive) => {
+    if (arrive)
+      reveal(() => document.querySelector<HTMLElement>('[data-pending-action="contact-customer"]'), { align: "center" });
   },
   { immediate: true, flush: "post" },
 );
@@ -1247,7 +1276,8 @@ const outside = useOutsideStore(
         <div class="flex min-w-0 items-center gap-1" data-compact-record>
           <div class="min-w-0 flex-1">
             <p class="flex min-w-0 items-center gap-1.5">
-              <span class="truncate text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
+              <!-- O código nunca cede a largura: a 375 ele sumia inteiro, atrás do estado. -->
+              <span class="shrink-0 text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
               <NuxtBadge v-if="order?.status_label" :color="statusColor(order.status)" :label="order.status_label" class="shrink-0" />
               <NuxtBadge v-if="order?.ifood_logistics_label" color="info" icon="i-lucide-bike" :label="order.ifood_logistics_label" class="min-w-0 truncate" data-detail-ifood-logistics />
             </p>
@@ -1255,7 +1285,10 @@ const outside = useOutsideStore(
               <Icon :name="channelIcon" class="size-3.5 shrink-0" /><span class="truncate">{{ order.channel_name || order.channel_ref }}</span>
             </p>
           </div>
-          <OperatorRecordNav v-if="!returnTicket" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
+          <!-- No celular o contador ("7 de 11") sai de vista e as setas ficam: a largura
+               vai para o código, o estado e o canal, que cortavam ("Loj…"). O grupo
+               segue dizendo a posição ao leitor de tela. -->
+          <OperatorRecordNav v-if="!returnTicket" class="max-sm:[&_[data-operator-record-count]]:hidden" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
         </div>
       </template>
       <!-- O ⋮ do pedido no canto, depois do sino, como em toda a suíte. -->
@@ -1800,9 +1833,8 @@ const outside = useOutsideStore(
             :dispatch-action="
               order.actions.find((action) => action.ref === 'courier-dispatch')
             "
-            :equipment-options="order.equipment_options ?? []"
             :busy="busy"
-            :arm-dispatch="route.hash === COURIER_CALL_HASH"
+            :calling="courierCall.calling.value === order.ref"
             :dispatch-again-action="
               order.actions.find(
                 (action) => action.ref === 'courier-dispatch-again',
@@ -1810,11 +1842,9 @@ const outside = useOutsideStore(
             "
             :quoting="quoting"
             :quote-error="quoteError"
-            :order-ref="order.ref"
             @quote="onCourierQuote"
             @dismiss-quote-error="quoteError = ''"
-            @dispatch="courierDispatch"
-            @dispatch-ride="courierRide"
+            @call="courierCall.open(order.ref)"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
             @dismiss-reminder="courierReminderDismiss"
@@ -2168,6 +2198,19 @@ const outside = useOutsideStore(
       "
       @authorize="signWithPin"
       @authorize-badge="signWithBadge"
+    />
+
+    <!-- Chamar entregador: o MESMO sheet das Entregas e do cartão Pronto (#2876). -->
+    <CourierCallSheet
+      v-bind="courierSheet"
+      @close="courierCall.closeSheet"
+      @confirm="courierCall.confirmSheet"
+      @alone="courierCall.confirmAlone"
+      @toggle="courierCall.toggleCompanion"
+      @change="courierCall.setChange"
+      @machine="courierCall.chooseMachine"
+      @carrier="courierCall.chooseCarrier"
+      @note="courierCall.setNote"
     />
   </main>
 </template>

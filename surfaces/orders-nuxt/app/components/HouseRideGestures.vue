@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // Os gestos do balcão na corrida da casa (M3b, #2898; M3d, #2937), um lugar só para o
 // cartão da lista de Corridas, o detalhe da corrida e a coluna Saída dos Pedidos:
-// "Saiu", "A47 entregue", "Reenviar o link", "Soltar o link" e "Ligar para Diego".
+// "Despachar a corrida C", "A47 entregue", "Reenviar o link", "Soltar o link" e "Ligar para
+// Diego". O desenho (dono, 21/11: "bem feios e desorganizados no mobile"): o gesto do
+// momento em largura total; os outros em duas colunas iguais, o último sozinho ocupa as duas.
 // Gesto que avisa cliente ou mexe no link pede confirmação: o primeiro toque arma, a
 // frase diz o que vai acontecer, o segundo faz. A página é dona dos gestos.
 import type { Action, DeliveryRideProjection } from "~/generated/ordersContract";
@@ -35,6 +37,12 @@ function tap(item: HouseGesture) {
 }
 const description = (action: Action) => String((action.confirmation as { description?: string })?.description ?? "");
 const back = computed(() => (props.withBack ? props.ride.back_action : null));
+// Com o "Entregador voltou" à vista, ele é o gesto do momento e os outros descem.
+const primaries = computed(() => (back.value ? [] : gestures.value.filter((item) => item.primary)));
+const secondaries = computed(() => (back.value ? gestures.value : gestures.value.filter((item) => !item.primary)));
+const secondaryCount = computed(() => secondaries.value.length + (call.value ? 1 : 0));
+// O último secundário que sobra sozinho na linha ocupa as duas colunas.
+const spans = (index: number) => secondaryCount.value % 2 === 1 && index === secondaryCount.value - 1;
 </script>
 
 <template>
@@ -47,12 +55,13 @@ const back = computed(() => (props.withBack ? props.ride.back_action : null));
     </div>
   </div>
 
-  <!-- os gestos do balcão -->
-  <div v-else-if="gestures.length || back || call" class="flex flex-wrap gap-2 pt-1.5" data-house-ride-gestures>
+  <!-- os gestos do balcão: o do momento em largura total, os outros em duas colunas iguais -->
+  <div v-else-if="gestures.length || back || call" class="grid grid-cols-2 gap-2 pt-1.5" data-house-ride-gestures>
     <NuxtButton
       v-if="back"
+      block
       color="primary"
-      class="min-h-11"
+      class="col-span-2 min-h-11"
       icon="i-lucide-undo-2"
       :label="back.label"
       :disabled="!back.enabled"
@@ -60,11 +69,27 @@ const back = computed(() => (props.withBack ? props.ride.back_action : null));
       @click="emit('back')"
     />
     <NuxtButton
-      v-for="item in gestures"
+      v-for="item in primaries"
       :key="item.key"
+      block
+      color="primary"
+      class="col-span-2 min-h-11"
+      :icon="item.icon"
+      :label="item.action.label"
+      :disabled="!item.action.enabled"
+      :title="item.action.reason || undefined"
+      :loading="busy === item.key"
+      :data-house-gesture="item.key"
+      @click="tap(item)"
+    />
+    <NuxtButton
+      v-for="(item, index) in secondaries"
+      :key="item.key"
+      block
+      color="neutral"
+      variant="outline"
       class="min-h-11"
-      :color="item.primary && !back ? 'primary' : 'neutral'"
-      :variant="item.primary && !back ? 'solid' : 'outline'"
+      :class="spans(index) ? 'col-span-2' : ''"
       :icon="item.icon"
       :label="item.action.label"
       :disabled="!item.action.enabled"
@@ -75,9 +100,11 @@ const back = computed(() => (props.withBack ? props.ride.back_action : null));
     />
     <NuxtButton
       v-if="call"
-      class="min-h-11"
+      block
       color="neutral"
       variant="outline"
+      class="min-h-11"
+      :class="spans(secondaries.length) ? 'col-span-2' : ''"
       icon="i-lucide-phone"
       :label="call.label"
       :to="call.href"

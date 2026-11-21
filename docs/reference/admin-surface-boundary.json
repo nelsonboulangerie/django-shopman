@@ -24,7 +24,7 @@
       "purpose": "Provisionar contas, permissões, credenciais e dispositivos; nunca operar o turno.",
       "models": [
         "auth.group", "auth.user", "backstage.deliverydevice", "backstage.kdsinstance",
-        "backstage.printagentcredential", "cashman.terminal", "doorman.pincredential", "doorman.trusteddevice"
+        "backstage.incidentreadercredential", "backstage.printagentcredential", "cashman.terminal", "doorman.pincredential", "doorman.trusteddevice"
       ]
     },
     {

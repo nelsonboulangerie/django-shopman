@@ -86,6 +86,8 @@ ASK_QTY_PRODUCT_KEY = "CONCIERGE_MEMORY_ASK_QTY_PRODUCT"
 ASK_ORDER_OR_NEW_KEY = "CONCIERGE_MEMORY_ASK_ORDER_OR_NEW"
 ASK_NEW_AFTER_CLOSED_KEY = "CONCIERGE_MEMORY_ASK_NEW_AFTER_CLOSED"
 DECLINED_KEY = "CONCIERGE_MEMORY_DECLINED"
+STILL_HERE_KEY = "CONCIERGE_MEMORY_STILL_HERE"
+STILL_HERE_HELP_KEY = "CONCIERGE_MEMORY_STILL_HERE_HELP"
 ARRIVED_THANKS_KEY = "CONCIERGE_MEMORY_ARRIVED_THANKS"
 ORDER_THANKS_KEY = "CONCIERGE_MEMORY_ORDER_THANKS"
 COPY_KEYS = (
@@ -96,6 +98,8 @@ COPY_KEYS = (
     ASK_ORDER_OR_NEW_KEY,
     ASK_NEW_AFTER_CLOSED_KEY,
     DECLINED_KEY,
+    STILL_HERE_KEY,
+    STILL_HERE_HELP_KEY,
     ARRIVED_THANKS_KEY,
     ORDER_THANKS_KEY,
 )
@@ -347,7 +351,9 @@ def is_correction(tokens: list[str]) -> bool:
 
 _SINGULAR = {"ele", "ela", "dele", "dela", "nele", "nela"}
 _PLURAL = {"eles", "elas", "deles", "delas", "neles", "nelas", "essas", "esses", "estas", "estes"}
-_DEMONSTRATIVE = {"esse", "essa", "este", "esta"}  # "isso" é concordância, não referência
+#: "isso" é concordância, não referência; "esta" sem acento é quase sempre o verbo ("ainda
+#: está aí?", ensaio do dono, 21/11/2026), e virava "de qual produto você está falando?".
+_DEMONSTRATIVE = {"esse", "essa", "este"}
 #: Palavras que não são produto: perguntas sobre o item em foco ("tem quantas
 #: fatias?", "ele tem glúten?") cabem; sobrou outra palavra, a fala nomeia outra
 #: coisa e a memória não a reescreve.
@@ -511,6 +517,32 @@ def _slot_by_time(text: str, options: list[dict]) -> int:
     return hits[0] if len(hits) == 1 else 0
 
 
+#: "ainda está aí?", "tá aí?", "alô?", "alguém aí?": o cliente confere se a conversa segue.
+_PRESENCE_CORE = {"ai", "aqui", "alo", "alguem"}
+_PRESENCE = _PRESENCE_CORE | {"ainda", "esta", "ta", "tah", "voce", "vc", "oi", "ola", "ei", "e", "moca", "tem", "ninguem"}
+
+
+def presence_check(tokens: list[str]) -> bool:
+    return bool(tokens) and bool(_PRESENCE_CORE & set(tokens)) and all(t in _PRESENCE for t in tokens)
+
+
+def _stem(word: str) -> str:
+    return word[:-1] if len(word) > 3 and word.endswith("s") else word
+
+
+#: Palavras de nome que não distinguem uma opção de outra.
+_GENERIC_NAME_WORDS = {"de", "do", "da", "com", "sem", "pao", "paes", "the"}
+
+
+def named_options(tokens: list[str], options: list[dict]) -> list[dict]:
+    """As opções da lista no ar cujo nome a fala cita ("as 2 baguettes" → Baguette de Tradition)."""
+    said = {_stem(t) for t in tokens if len(t) > 2 and t not in _GENERIC_NAME_WORDS}
+    return [
+        option for option in options
+        if said & {_stem(w) for w in words(option.get("name", "")) if len(w) > 2 and w not in _GENERIC_NAME_WORDS}
+    ]
+
+
 def _fill(template: str, **values) -> str:
     out = template or ""
     for key, value in values.items():
@@ -549,6 +581,33 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
         return _courtesy(event, memory, facts, copy=copy)
 
     # 2. A resposta à pergunta que a casa deixou no ar.
+    options = list(pending.get("options") or [])
+    if presence_check(tokens):
+        # "ainda está aí?": a casa está, e a pergunta no ar continua (ensaio do dono, 21/11).
+        here = copy(STILL_HERE_KEY) or ""
+        if kind in {CHOOSE, ASK_SLOT} and options:
+            question = _fill(copy(ASK_WHICH_KEY), options=_options_text(options))
+            # A pergunta continua no ar: regravada, senão o turno de "ainda está aí?" a apagava.
+            return Resolution(outcome="ask", reply=" ".join(p for p in (here, question) if p), reason="still_here",
+                              memo={"pending": pending})
+        if not kind:
+            return Resolution(outcome="ask", reply=copy(STILL_HERE_HELP_KEY), reason="still_here")
+    choices = options if kind == CHOOSE else (listed if not kind else [])
+    if choices:
+        named = named_options(tokens, choices)
+        if len(named) == 1:
+            # "as 2 baguettes que pedi": a fala cita UMA das opções no ar pelo nome.
+            chosen = named[0]
+            qty = next((int(t) for t in tokens if t.isdigit() and len(t) <= 2), 0) or next(
+                (_NUMBER_WORDS[t] for t in tokens if t in _NUMBER_WORDS), 0)
+            name = chosen.get("name", "")
+            return Resolution(
+                outcome="resolved", reason="named_option", refs=(chosen.get("ref", ""),),
+                text=f"{qty} {name}" if qty else name,
+                note=f"\"{text.strip()}\" escolhe {name} da última lista.",
+                memo={"pending": None, "focus": {"ref": chosen.get("ref", ""), "name": name,
+                                                  **({"qty": qty} if qty else {})}},
+            )
     if kind == CHOOSE_ORDER:
         picked = selection(tokens, 2)
         wants_new = picked == 2 or "novo" in tokens
