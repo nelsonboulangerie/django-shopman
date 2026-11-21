@@ -19936,6 +19936,7 @@
             "ride_plan",
             "params",
             "plan_groups",
+            "breaks_a_deadline",
             "measure",
             "route",
             "_fits",
