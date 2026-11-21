@@ -112,3 +112,47 @@ def test_a_massa_de_cada_peca_e_a_que_o_dono_confirmou(monkeypatch):
         if "a conferir" in (i.meta or {}).get("note", "")
     }
     assert notas == {("baguete-gergelim", "GERGELIM")}
+
+    # A Baguete Lanche é VENDIDA no lugar da Mini Baguete (dono, 21/11/2026:
+    # "Sim, passa"), nos mesmos canais e ao mesmo preço; a MIB sai da grade.
+    from shopman.offerman.models import ListingItem
+
+    bgl_produto = Product.objects.get(sku="BGL")
+    assert bgl_produto.is_published and bgl_produto.is_sellable
+    assert bgl_produto.base_price_q == Product.objects.get(sku="MIB").base_price_q
+    canais = set(
+        ListingItem.objects.filter(product=bgl_produto, is_published=True, is_sellable=True)
+        .values_list("listing__ref", flat=True)
+    )
+    assert {"pdv", "web", "ifood"} <= canais
+    grade = set(
+        ListingItem.objects.filter(
+            listing__ref="pdv", is_published=True, is_sellable=True,
+            product__is_published=True, product__is_sellable=True,
+        ).values_list("product__sku", flat=True)
+    )
+    assert "BGL" in grade and "MIB" not in grade
+    # O peso anunciado sai da ficha (170 g crus pela perda padrão), não de um
+    # número digitado; e o Jambon-Beurre gasta UMA baguete, não 230 gramas dela.
+    assert bgl_produto.unit_weight_g and bgl_produto.unit_weight_g < 170
+    jb = Recipe.objects.get(ref="jambon-beurre").items.get(input_sku="BGL")
+    assert (jb.quantity, jb.unit) == (1, "un")
+
+    # A tabela do Melon Iced Sando sai da ficha (1 melonpan + 60 g de sorvete),
+    # e bate com a soma das partes: cada folha do BOM × o perfil por 100 g.
+    from decimal import Decimal
+
+    from shopman.shop.services.recipe_bom import expand_recipe_items, item_quantity_grams
+
+    melsa = Product.objects.get(sku="MELSA")
+    assert melsa.nutrition_facts.get("auto_filled") is True
+    assert "Sorvete de creme" in melsa.ingredients_text
+    assert "hokupan" not in melsa.ingredients_text
+    ficha = Recipe.objects.get(ref="melon-iced-sando")
+    kcal_por_peca = sum(
+        item_quantity_grams(item) * Decimal(str(item.meta["nutrition"]["energy_kcal"])) / 100
+        for item in expand_recipe_items(ficha)
+    ) / ficha.batch_size
+    porcao = min(100, melsa.unit_weight_g)
+    esperado = float(kcal_por_peca) * porcao / melsa.unit_weight_g
+    assert abs(melsa.nutrition_facts["energy_kcal"] - esperado) <= 0.5

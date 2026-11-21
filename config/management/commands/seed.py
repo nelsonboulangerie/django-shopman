@@ -127,6 +127,7 @@ from shopman.shop.notification_copy import CUSTOMER_COPY
 from shopman.shop.services import attributes
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
+from shopman.shop.services.unit_weight_from_recipe import fill_unit_weight_from_recipe
 
 # Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
 # do seed e as funções de alvo abaixo leem daqui.
@@ -672,7 +673,7 @@ def material_opening_targets() -> dict[str, Decimal]:
 #   HO/MIHO: só a massa — a salsicha entra como insumo próprio na ficha.
 #   KBB: o dono ainda não pesou; estimado pela família do BBB.
 PESO_MASSA_CRUA_G = {
-    "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
+    "FORMA": 400, "BGL": 170, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
     "PIT": 30, "BGGP": 170,
     # Focaccia: 400 g de massa crua na grande e 110 g na pequena, TODAS (dono,
     # 24/09/2026); a cobertura e a finalização somam por cima. A de cebola roxa
@@ -705,7 +706,9 @@ STOCK_VITRINE = {
     "CI": 24,
     "FENDU": 20,
     "TABAT": 24,
-    "MIB": 18,
+    # A Baguete Lanche toma o lugar da Mini Baguete (dono, 21/11/2026) e herda
+    # a calibração dela, como os outros herdaram a dos antecessores.
+    "BGL": 18,
     "TRABB": 20,
     # Finos
     "CRO": 42,
@@ -2273,7 +2276,7 @@ class Command(BaseCommand):
             ("PERDU", "Pain Perdu", "Fatia de brioche banhada no creme e dourada, com caramelo salgado, chantilly e flor de sal", 1800, "un", 0, True,
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
             ("MELSA", "Melon Iced Sando", "Melonpan com uma bola de sorvete de creme", 2200, "un", 0, True,
-             unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
+             unsplash("photo-1746632732485-4cb341e4a4aa"), None, "Conservar refrigerado. Consumir no dia"),
             ("MDLN", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 1, True,
              f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
             # Purin e Tea Jelly são produtos novos em desenvolvimento; validade
@@ -2384,8 +2387,12 @@ class Command(BaseCommand):
              unsplash("photo-1587606381527-172f6d902ada"), 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("BRBBP", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
              f"{IMG}/bbb.webp", 28, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
-             f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
+            # Vendida no lugar da Mini Baguete (dono, 21/11/2026: "Sim, passa"),
+            # ao mesmo preço. O peso fica vazio: o anunciado (assado) sai da ficha
+            # de 170 g crus pela perda de forno padrão da casa, que é estimativa e
+            # a tela diz que é (`unit_weight_from_recipe`). Peso assado a conferir.
+            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche, com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, True,
+             f"{IMG}/bap.webp", None, "Melhor consumido no dia. Congele por até 30 dias"),
             ("ITA", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
              f"{IMG}/bax.webp", 420, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CPBG", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
@@ -2458,6 +2465,7 @@ class Command(BaseCommand):
             "FENDU": ["pao", "frances", "levain", "individual", "artesanal"],
             "TABAT": ["pao", "frances", "levain", "individual", "artesanal"],
             "MIB": ["pao", "frances", "levain", "mini", "individual"],
+            "BGL": ["pao", "baguete", "levain", "lanche", "individual"],
             "TRABB": ["pao", "hamburger", "levain", "individual"],
             "BRBB": ["brioche", "hamburger", "manteiga", "ovos"],
             "HOL": ["pao", "hotdog", "manteiga", "salgado"],
@@ -2500,6 +2508,14 @@ class Command(BaseCommand):
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
             "MIB": {
+                "allergens": ["glúten"],
+                "dietary_info": ["100% vegetal"],
+                "serves": "1 pessoa",
+                "approx_dimensions": "aprox. 26 x 5 x 4 cm",
+            },
+            # A peça da foto que a MIB mostrava é esta (bap.webp, massa ciabatta):
+            # herda a porção e a medida dela.
+            "BGL": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
@@ -2889,7 +2905,7 @@ class Command(BaseCommand):
             "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
             "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CRP", "BRCH", "CN", "BICH", "BRRSN", "FOA",
             "DELI", "HOD",
-            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP", "BGL",
+            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP",
             "ITA", "CPBG", "BAT", "CPR", "VIEN", "PIT", "PIT4", "BGGP", "FOB", "FOC",
             "FOAP", "FOBP", "FOCP", "CRPQ", "FFGO", "FFGOP", "HODP", "JO",
         }
@@ -2985,7 +3001,9 @@ class Command(BaseCommand):
             "FRAP", "VIEN", "CHHIB", "CTFV",
             "SDLA", "AGUA-MINERAL-PRATA-310",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB",             "PERDU"         ]
+            "QJQT", "JB",             "PERDU",
+            # Montado na hora como o Jambon-Beurre (dono, 21/11/2026, #2925).
+            "MELSA"]
 
         # 2) PROMESSA da casa ao cliente: finalizado no momento de servir
         #    (extraído, montado, gratinado). É sobre o ACABAMENTO, então vale
@@ -3004,7 +3022,8 @@ class Command(BaseCommand):
             "FRAP", "VIEN", "CHHIB", "CTFV",
             "SDLA",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB",             "PERDU"         ]
+            "QJQT", "JB",             "PERDU",
+            "MELSA"]
 
         for sku in sells_without_stock_skus:
             product = products.get(sku)
@@ -3322,12 +3341,9 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(180, 1, 420.0, 48.0, 22.0, 11.0, 20.0, 11.0, 1.5, 320.0),
             },
-            "MELSA": {
-                "ingredients_text": (
-                    "Melonpan da casa e sorvete de creme. CONTÉM: glúten, leite e ovos."
-                ),
-                "nutrition_facts": nutrition(200, 1, 310.0, 38.0, 24.0, 6.0, 15.0, 9.0, 1.5, 180.0),
-            },
+            # MELSA saiu daqui em 21/11/2026 (dono: "corrija já"): a tabela manual
+            # era a do sanduíche antigo de shokupan. Agora sai da ficha (1 melonpan
+            # e 60 g de sorvete de creme), pela derivação.
             "TPND": {
                 "ingredients_text": (
                     "Azeitonas pretas, alcaparras, azeite extra virgem e ervas."
@@ -4475,9 +4491,13 @@ class Command(BaseCommand):
                 "name": "Baguete Lanche",
                 "output_sku": "BGL",
                 "batch_size": Decimal("1"),
-                # 170 g (dono, 21/11/2026: "vai ser a baguete lanche no lugar
-                # [da Mini Baguete], 170g massa ciabatta"). Eram 260 g.
+                # 170 g crus (dono, 21/11/2026: "vai ser a baguete lanche no lugar
+                # [da Mini Baguete], 170g massa ciabatta"; "massa crua 170g").
+                # Eram 260 g.
                 "items": [("MASSA-CIABATTA", Decimal("170"))],  # 170 g/un
+                "notes": {
+                    "MASSA-CIABATTA": "170 g de massa crua (dono). Peso assado a conferir: o anunciado sai da perda de forno padrão da casa",
+                },
             },
             {
                 "ref": "batard",
@@ -4980,8 +5000,11 @@ class Command(BaseCommand):
                 "output_sku": "JB",
                 "batch_size": Decimal("1"),
                 "production_mode": ProductionMode.MADE_TO_ORDER,
+                # O pão entra por PEÇA (`units`): a montagem gasta uma baguete, e a
+                # baixa e a expansão da ficha contam uma, não 230 gramas dela.
+                "units": {"BGL": "un"},
                 "items": [
-                    ("BGL", Decimal("230")),     # a baguete lanche assada
+                    ("BGL", Decimal("1")),       # uma baguete lanche inteira
                     ("PRESUNTO-CASA", Decimal("85")),
                     ("MANTEIGA-WASABI", Decimal("30")),
                     ("PEPINO-CORNICHO-CONSERVA", Decimal("12")),
@@ -4996,12 +5019,13 @@ class Command(BaseCommand):
                 "output_sku": "MELSA",
                 "batch_size": Decimal("1"),
                 "production_mode": ProductionMode.MADE_TO_ORDER,
+                "units": {"MELON": "un"},
                 "items": [
-                    ("MELON", Decimal("100")),          # um melonpan assado
+                    ("MELON", Decimal("1")),            # um melonpan
                     ("SORVETE-CREME", Decimal("60")),   # uma bola
                 ],
                 "notes": {
-                    "MELON": "Um melonpan; o peso assado é o do cadastro do produto, a conferir",
+                    "MELON": "Um melonpan; o peso por peça é o do cadastro do produto, a conferir",
                     "SORVETE-CREME": "Uma bola de sorvete de creme; 60 g provisórios, a conferir com o dono",
                 },
             },
@@ -5264,9 +5288,14 @@ class Command(BaseCommand):
             "PASSAS": {"label": "Uvas-passas", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 299, "carbohydrates_g": 79, "sugars_g": 59, "proteins_g": 3.1, "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 11}},
             # O recheio do Campagne Passas & Castanhas e a bola do Melon Iced Sando
             # (dono, 21/11/2026, #2925). Comprados; fornecedor ainda não declarado.
-            "CASTANHA-CAJU": {"label": "Castanha de caju", "allergens": ["castanha-de-caju"], "diet": "vegan", "nutrition": {"energy_kcal": 570, "carbohydrates_g": 29, "sugars_g": 5.9, "proteins_g": 18.5, "total_fat_g": 46, "saturated_fat_g": 9.2, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 12}},
-            "CASTANHA-DO-PARA": {"label": "Castanha-do-brasil", "allergens": ["castanha-do-brasil"], "diet": "vegan", "nutrition": {"energy_kcal": 643, "carbohydrates_g": 15, "sugars_g": 2.3, "proteins_g": 14.5, "total_fat_g": 63.5, "saturated_fat_g": 15.3, "trans_fat_g": 0, "fiber_g": 7.9, "sodium_mg": 1}},
-            "SORVETE-CREME": {"label": "Sorvete de creme", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 200, "carbohydrates_g": 24, "sugars_g": 21, "proteins_g": 3.5, "total_fat_g": 10, "saturated_fat_g": 6, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 80}},
+            # Nutrição por 100 g do USDA FoodData Central (SR Legacy), sem gordura
+            # trans declarada (0): castanha de caju = "Nuts, cashew nuts, raw"
+            # (FDC 170162, NDB 12087); castanha-do-brasil = "Nuts, brazilnuts,
+            # dried, unblanched" (FDC 170569, NDB 12078); sorvete de creme = "Ice
+            # creams, vanilla" (FDC 167575, NDB 19095).
+            "CASTANHA-CAJU": {"label": "Castanha de caju", "allergens": ["castanha-de-caju"], "diet": "vegan", "nutrition": {"energy_kcal": 553, "carbohydrates_g": 30.19, "sugars_g": 5.91, "proteins_g": 18.22, "total_fat_g": 43.85, "saturated_fat_g": 7.783, "trans_fat_g": 0, "fiber_g": 3.3, "sodium_mg": 12}},
+            "CASTANHA-DO-PARA": {"label": "Castanha-do-brasil", "allergens": ["castanha-do-brasil"], "diet": "vegan", "nutrition": {"energy_kcal": 659, "carbohydrates_g": 11.74, "sugars_g": 2.33, "proteins_g": 14.32, "total_fat_g": 67.1, "saturated_fat_g": 16.134, "trans_fat_g": 0, "fiber_g": 7.5, "sodium_mg": 3}},
+            "SORVETE-CREME": {"label": "Sorvete de creme", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 207, "carbohydrates_g": 23.6, "sugars_g": 21.22, "proteins_g": 3.5, "total_fat_g": 11.0, "saturated_fat_g": 6.79, "trans_fat_g": 0, "fiber_g": 0.7, "sodium_mg": 80}},
             # Ao LEITE: o nome diz, e o rótulo tem de dizer também (dono, 24/09). Este
             # perfil vinha como "vegan" e sem alérgeno, herdado do genérico
             # "gotas de chocolate" — o rótulo do Brioche Chocolat só não mentia
@@ -5692,20 +5721,34 @@ class Command(BaseCommand):
             # ingrediente alternativo, que a baixa e a fórmula não contam.
             notes = rd.get("notes", {})
             optional = rd.get("optional", set())
+            # `units` declara a linha em PEÇA quando o insumo é um produto da casa
+            # (a baguete do Jambon-Beurre, o melonpan do Melon Iced Sando).
+            units_by_sku = rd.get("units", {})
             for input_sku, qty, *usable in rd["items"]:
                 meta = dict(INGREDIENT_PROFILES.get(input_sku, {}))
                 if notes.get(input_sku):
                     meta["note"] = notes[input_sku]
+                if input_sku in units_by_sku:
+                    # A ponte da peça até grama é o peso que o próprio cadastro
+                    # anuncia (o da BGL sai da ficha dela, que vem antes na lista).
+                    # Sem ela a fórmula deixaria a linha fora da conta.
+                    piece = Product.objects.filter(sku=input_sku).only("unit_weight_g").first()
+                    if piece is not None and piece.unit_weight_g:
+                        meta["unit_weight_g"] = piece.unit_weight_g
                 RecipeItem.objects.create(
                     recipe=recipe,
                     input_sku=input_sku,
                     quantity=qty,
                     usable_factor=usable[0] if usable else Decimal("1"),
-                    unit=_recipe_item_unit(input_sku),
+                    unit=units_by_sku.get(input_sku) or _recipe_item_unit(input_sku),
                     is_optional=input_sku in optional,
                     meta=meta,
                 )
             if product:
+                # Peso vazio no cadastro: o anunciado sai da ficha já aqui, para a
+                # ficha que gasta esta peça (o Jambon-Beurre gasta uma BGL) achar o
+                # peso dela.
+                fill_unit_weight_from_recipe(product)
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
 
@@ -5727,6 +5770,10 @@ class Command(BaseCommand):
         for rd in recipes_data:
             product = Product.objects.filter(sku=rd["output_sku"]).first()
             if product:
+                # Peso vazio no cadastro (BGL, MELSA): o anunciado sai da ficha,
+                # antes da tabela, que usa o peso para a porção. Peso posto à mão
+                # nunca é sobrescrito (`weight_is_writable`).
+                fill_unit_weight_from_recipe(product)
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
 
@@ -8040,7 +8087,7 @@ class Command(BaseCommand):
         vitrine = positions["vitrine"]
         alerts_data = [
             ("TRADI", 10),
-            ("MIB", 12),
+            ("BGL", 12),
             ("FENDU", 15),
             ("CRO", 15),
             ("PCHOC", 12),
