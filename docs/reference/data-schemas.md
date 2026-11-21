@@ -1512,6 +1512,19 @@ Uma viva por vez (`dedupe_key` fixo = o topic). Só existe com `IFOOD_MERCHANT_S
 |-------|------|-------------|----------|
 | `reason` | `string` | `shop/services/ifood_merchant.enqueue_sync` (`shop_saved`, `check`) | log (informativo) |
 
+#### `incident.act`
+
+O acionador de remédio de um alerta (`shopman/backstage/incidents/act.py`). Nasce quando
+um `OperatorAlert` de tipo com remédio é criado, e também pela repescagem do
+`act_on_incidents`. Planeja, aciona o gesto do domínio e se reagenda (sem gastar
+tentativa) para esperar o retry do domínio ou para conferir o resultado. Uma viva por
+alerta: `dedupe_key` = `incident.act:<alert_id>`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `alert_id` | `int` | `backstage/incidents/act.enqueue` | IncidentActHandler |
+| `action_id` | `int` | IncidentActHandler (depois de acionar) | IncidentActHandler (conferência) |
+
 #### `ifood.merchant_interruption`
 
 Cria ou retira no iFood a pausa pedida pelo gestor. O estado a aplicar é o da linha
