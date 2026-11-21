@@ -38,4 +38,7 @@ class Command(BaseCommand):
         if not url.startswith("https://"):
             raise CommandError("O ManyChat só chama endereço https.")
         result = button_probe.send(options["subscriber"], callback_url=url)
+        self.stdout.write(button_probe.explain(result))
         self.stdout.write(json.dumps({k: v for k, v in result.items() if k != "raw"}, ensure_ascii=False, default=str))
+        if not result.get("success"):
+            raise CommandError(button_probe.explain(result))

@@ -29,7 +29,9 @@ def test_the_test_message_carries_the_callback_button_with_the_code(monkeypatch)
     monkeypatch.setattr(mc, "_prepare_call", lambda subscriber, what: ({"api_token": "t"}, int(subscriber)))
     monkeypatch.setattr(mc, "_api_call", lambda endpoint, payload, config: sent.update(payload) or {"success": True})
 
-    result = button_probe.send("123", callback_url="https://api.exemplo.com/api/webhooks/concierge/button-probe/")
+    result = button_probe.send(
+        "123", callback_url="https://api.exemplo.com/api/webhooks/concierge/button-probe/", check_window=False
+    )
 
     message = sent["data"]["content"]["messages"][0]
     assert sent["data"]["content"]["type"] == "whatsapp"
@@ -69,3 +71,29 @@ def test_a_click_without_the_header_is_refused_but_recorded(client, conversation
 
     assert response.status_code == 403
     assert button_probe.recorded()[0]["authenticated"] is False
+
+
+def test_outside_the_24h_window_the_probe_is_not_sent(monkeypatch):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.shop.adapters import notification_manychat as mc
+
+    old = (timezone.now() - timedelta(hours=30)).isoformat()
+    monkeypatch.setattr(button_probe, "_subscriber_info", lambda subscriber: {"last_interaction": old})
+    monkeypatch.setattr(mc, "_api_call", lambda *a, **k: pytest.fail("fora da janela não chama o ManyChat"))
+
+    result = button_probe.send("123", callback_url="https://api.exemplo.com/x/")
+
+    assert result == {"success": False, "error": "outside_window", "last_interaction": old}
+    assert "fora da janela" in button_probe.explain(result)
+
+
+def test_a_refusal_is_explained_with_the_provider_code():
+    line = button_probe.explain(
+        {"success": False, "error": "provider_rejected", "provider_http_status": 400, "provider_code": "2817", "probe": "abc"}
+    )
+
+    assert line == "Recusado pelo ManyChat: provider_rejected, HTTP 400, código 2817, ensaio abc."
+    assert "—" not in line
