@@ -185,20 +185,52 @@ def test_as_esperas_que_andam_sozinhas_sao_as_nomeadas():
         assert block_waits(label) is False, label
 
 
+def _advance_reasons(order, gestor):
+    return [
+        next(action for action in actions if action.ref == "advance").reason
+        for actions in (build_order_card(order, user=gestor).actions, build_operator_order(order, user=gestor).actions)
+    ]
+
+
 def test_pix_vencido_nao_promete_avancar_e_diz_o_que_fazer(gestor):
     """A frase genérica ("só avança depois que o dinheiro entra") mentia no Pix vencido."""
     lapsed = _pix("B-Z72", minutes_ago=50)
-    for actions in (build_order_card(lapsed, user=gestor).actions, build_operator_order(lapsed, user=gestor).actions):
-        advance = next(action for action in actions if action.ref == "advance")
-        assert advance.enabled is False
-        assert advance.reason == (
-            "O Pix venceu sem pagamento e o pedido não avança mais sozinho. "
-            "Cancele o pedido ou chame o cliente para combinar o pagamento."
-        )
+    lapsed.data["customer"]["phone"] = "+5543999990000"
+    lapsed.save(update_fields=["data"])
+
+    assert _advance_reasons(lapsed, gestor) == [
+        "O Pix venceu sem pagamento e o pedido não avança mais sozinho. "
+        "Cancele o pedido ou chame o cliente para combinar o pagamento."
+    ] * 2
+    # O gesto que a frase manda está ao lado: cancelar e chamar no WhatsApp.
+    (payment,) = [p for p in build_operator_order(lapsed, user=gestor).pending if p.key == "payment"]
+    assert [action.label for action in payment.actions] == ["Cancelar pedido", "Chamar no WhatsApp"]
+    assert payment.actions[1].href == "https://wa.me/5543999990000"
     # O Pix que ainda pode cair segue com a frase da espera.
     waiting = _pix("B-Z73", minutes_ago=5)
     advance = next(action for action in build_order_card(waiting, user=gestor).actions if action.ref == "advance")
     assert "só avança depois que o dinheiro entra" in advance.reason
+
+
+def test_pix_vencido_sem_telefone_manda_so_cancelar(gestor):
+    lapsed = _pix("B-Z74", minutes_ago=50)
+
+    assert _advance_reasons(lapsed, gestor) == [
+        "O Pix venceu sem pagamento e o pedido não avança mais sozinho. Cancele o pedido."
+    ] * 2
+    (payment,) = [p for p in build_operator_order(lapsed, user=gestor).pending if p.key == "payment"]
+    assert [action.label for action in payment.actions] == ["Cancelar pedido"]
+
+
+def test_o_telefone_do_handle_do_pedido_chama_no_whatsapp(gestor):
+    """Quem pediu só com o telefone (o handle do pedido) também é chamado."""
+    lapsed = _pix("B-Z75", minutes_ago=50)
+    Order.objects.filter(pk=lapsed.pk).update(handle_type="phone", handle_ref="+5543988887777")
+    lapsed = Order.objects.get(pk=lapsed.pk)
+
+    detail = build_operator_order(lapsed, user=gestor)
+    assert detail.customer_whatsapp_url == "https://wa.me/5543988887777"
+    assert _advance_reasons(lapsed, gestor)[0].endswith("chame o cliente para combinar o pagamento.")
 
 
 # ── GES-11 ──────────────────────────────────────────────────────────────────

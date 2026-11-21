@@ -1247,7 +1247,8 @@ const outside = useOutsideStore(
         <div class="flex min-w-0 items-center gap-1" data-compact-record>
           <div class="min-w-0 flex-1">
             <p class="flex min-w-0 items-center gap-1.5">
-              <span class="truncate text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
+              <!-- O código nunca cede a largura: a 375 ele sumia inteiro, atrás do estado. -->
+              <span class="shrink-0 text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
               <NuxtBadge v-if="order?.status_label" :color="statusColor(order.status)" :label="order.status_label" class="shrink-0" />
               <NuxtBadge v-if="order?.ifood_logistics_label" color="info" icon="i-lucide-bike" :label="order.ifood_logistics_label" class="min-w-0 truncate" data-detail-ifood-logistics />
             </p>
@@ -1255,7 +1256,10 @@ const outside = useOutsideStore(
               <Icon :name="channelIcon" class="size-3.5 shrink-0" /><span class="truncate">{{ order.channel_name || order.channel_ref }}</span>
             </p>
           </div>
-          <OperatorRecordNav v-if="!returnTicket" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
+          <!-- No celular o contador ("7 de 11") sai de vista e as setas ficam: a largura
+               vai para o código, o estado e o canal, que cortavam ("Loj…"). O grupo
+               segue dizendo a posição ao leitor de tela. -->
+          <OperatorRecordNav v-if="!returnTicket" class="max-sm:[&_[data-operator-record-count]]:hidden" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
         </div>
       </template>
       <!-- O ⋮ do pedido no canto, depois do sino, como em toda a suíte. -->
