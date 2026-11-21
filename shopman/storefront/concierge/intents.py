@@ -1063,9 +1063,11 @@ def _faq_by_model(act: Act, *, conversation, channel_ref: str):
     if not answer.refs and answer.text.strip():
         return None
     if faq_answer.held_by_jev(answer, faqs):
-        # O Jev conferiu e a resposta diz mais do que as FAQs citadas: vale a FAQ direta.
+        # O Jev reprovou o texto da IA: vale o texto das FAQs que ela citou, como estão
+        # (a FAQ direta perdia o assunto, placar de produção de 21/11/2026).
         logger.warning("concierge.faq_answer.held reasons=jev_unsupported")
-        return None
+        verbatim = faq_answer.cited_verbatim(answer, faqs)
+        return verbatim if verbatim.refs else None
     return answer
 
 
