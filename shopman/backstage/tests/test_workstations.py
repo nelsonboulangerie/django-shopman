@@ -390,3 +390,45 @@ def test_copy_do_posto_e_curta_e_sem_jargao():
     assert "quem for operar" not in COPY["manage_lead"]
     jargon = re.compile(r"\b(Core|backend|servidor|endpoint|payload|token|API|SSE)\b", re.IGNORECASE)
     assert [key for key, text in COPY.items() if jargon.search(text)] == []
+
+
+# ── #2584: o tipo do posto novo e o nome repetido ─────────────────────────
+
+
+def test_o_posto_novo_ja_traz_um_tipo_que_o_gestor_oferece(client, gerente):
+    """O padrão era o primeiro da lista inteira ("Atendimento", do PDV): o posto criado
+    no Gestor não aparecia para vincular o próprio dispositivo."""
+    client.force_login(gerente)
+
+    state = client.get(LIST_URL).json()
+
+    assert state["default_kind"] == "dispatch"
+    assert state["default_kind"] in SURFACE_KINDS["orders"]
+
+
+def test_nome_repetido_e_recusado_ao_criar_e_ao_renomear(client, gerente, expedicao):
+    client.force_login(gerente)
+
+    igual = client.post(LIST_URL, {"label": "expedição", "kind": "office"}, content_type="application/json")
+    assert igual.status_code == 400
+    assert (igual.json()["field"], igual.json()["error"]["code"]) == ("label", "workstation_label_taken")
+    assert igual.json()["detail"] == "Já existe um posto com esse nome."
+
+    outro = client.post(LIST_URL, {"label": "Escritório", "kind": "office"}, content_type="application/json")
+    ref = outro.json()["workstation"]["ref"]
+    renomeado = client.patch(f"{LIST_URL}{ref}/", {"label": "Expedição"}, content_type="application/json")
+    assert renomeado.status_code == 400
+    assert renomeado.json()["field"] == "label"
+    # Renomear para o próprio nome não é repetir.
+    assert client.patch(f"{LIST_URL}{ref}/", {"label": "Escritório"}, content_type="application/json").status_code == 200
+    assert Workstation.objects.filter(label__iexact="expedição").count() == 1
+
+
+def test_nome_de_posto_desativado_pede_para_reativar(client, gerente, expedicao):
+    Workstation.objects.filter(pk=expedicao.pk).update(is_active=False)
+    client.force_login(gerente)
+
+    igual = client.post(LIST_URL, {"label": "Expedição", "kind": "dispatch"}, content_type="application/json")
+
+    assert igual.status_code == 400
+    assert igual.json()["detail"] == "Já existe um posto desativado com esse nome. Reative-o na lista."
