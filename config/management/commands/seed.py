@@ -127,6 +127,7 @@ from shopman.shop.notification_copy import CUSTOMER_COPY
 from shopman.shop.services import attributes
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
+from shopman.shop.services.unit_weight_from_recipe import fill_unit_weight_from_recipe
 
 # Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
 # do seed e as funções de alvo abaixo leem daqui.
@@ -473,6 +474,9 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "manteiga-wasabi":                    1000,
     "recheio-cebolas-assadas":            1000,
     "molho-caramelo":                     2000,
+    # A cobertura do melonpan (21/11/2026, #2925): um lote da ficha por dia,
+    # como os outros pré-preparos sem número do dono.
+    "massa-cobertura-melonpan":           780,
 
     # Peças (saída em unidade): a capacidade fala em peças por dia.
     "baguete":                            75,
@@ -494,6 +498,14 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "fendu":                              36,
     "tabatiere":                          36,
     "pao-hamburguer":                     36,
+    # As outras que nasceram da palavra do dono em 21/11/2026 (#2925), com a
+    # mesma capacidade provisória das peças restauradas.
+    "baguete-gergelim":                   36,
+    "campagne-passas-castanhas":          36,
+    "brioche-burger-bun":                 36,
+    "pao-hot-dog":                        36,
+    "cornet":                             36,
+    "melonpan":                           36,
     "baguete-gergelim-pequena":           36,
     "italiano-rustico":                   24,
     "baguette-campagne":                  36,
@@ -529,6 +541,7 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "croque-madame":                      3,
     "croque-complet":                     3,
     "jambon-beurre":                      3,
+    "melon-iced-sando":                   3,
     "pain-perdu":                         3,
     "espresso":                           3,
     "espresso-macchiato":                 3,
@@ -660,7 +673,7 @@ def material_opening_targets() -> dict[str, Decimal]:
 #   HO/MIHO: só a massa — a salsicha entra como insumo próprio na ficha.
 #   KBB: o dono ainda não pesou; estimado pela família do BBB.
 PESO_MASSA_CRUA_G = {
-    "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
+    "FORMA": 400, "BGL": 170, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
     "PIT": 30, "BGGP": 170,
     # Focaccia: 400 g de massa crua na grande e 110 g na pequena, TODAS (dono,
     # 24/09/2026); a cobertura e a finalização somam por cima. A de cebola roxa
@@ -693,7 +706,9 @@ STOCK_VITRINE = {
     "CI": 24,
     "FENDU": 20,
     "TABAT": 24,
-    "MIB": 18,
+    # A Baguete Lanche toma o lugar da Mini Baguete (dono, 21/11/2026) e herda
+    # a calibração dela, como os outros herdaram a dos antecessores.
+    "BGL": 18,
     "TRABB": 20,
     # Finos
     "CRO": 42,
@@ -2259,7 +2274,9 @@ class Command(BaseCommand):
              f"{IMG}/fe.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             ("TABAT", "Tabatière", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/tb.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("MIB", "Mini Baguete", "Mini baguete com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, True,
+            # Saiu de venda (dono, 21/11/2026: "Mini baguette não vai ter... vai ser
+            # a baguete lanche no lugar"). O produto fica, guarda a história.
+            ("MIB", "Mini Baguete", "Mini baguete com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, False,
              f"{IMG}/bap.webp", 120, "Congele no mesmo dia. Reaqueça a 200°C por 5min"),
             ("TRABB", "Pão de Hambúrguer", "Pão de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/ph.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
@@ -2272,8 +2289,12 @@ class Command(BaseCommand):
              f"{IMG}/fa.webp", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("KUP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+            # O peso fica vazio: os 100 g de antes não batiam com a ficha do dono
+            # (21/11/2026: 30 g de massa butter + 22 g de cobertura = 52 g crus).
+            # O anunciado (assado) sai da ficha pela perda de forno padrão da casa,
+            # que é estimativa e a tela diz que é. Peso assado a conferir (#2998).
             ("MELON", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
-             f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
+             f"{IMG}/me.webp", None, "Melhor consumido no dia"),
             ("COE", "Coelhinho de Chocolate", "Pão doce de massa amanteigada, em formato de coelhinho", 1000, "un", 0, True,
              f"{IMG}/anc.webp", 90, "Melhor consumido no dia"),
             ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
@@ -2301,8 +2322,8 @@ class Command(BaseCommand):
             # ── Padaria · Doces ──
             ("PERDU", "Pain Perdu", "Fatia de brioche banhada no creme e dourada, com caramelo salgado, chantilly e flor de sal", 1800, "un", 0, True,
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
-            ("MELSA", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
-             unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
+            ("MELSA", "Melon Iced Sando", "Melonpan com uma bola de sorvete de creme", 2200, "un", 0, True,
+             unsplash("photo-1746632732485-4cb341e4a4aa"), None, "Conservar refrigerado. Consumir no dia"),
             ("MDLN", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 1, True,
              f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
             # Purin e Tea Jelly são produtos novos em desenvolvimento; validade
@@ -2413,8 +2434,12 @@ class Command(BaseCommand):
              unsplash("photo-1587606381527-172f6d902ada"), 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("BRBBP", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
              f"{IMG}/bbb.webp", 28, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
-             f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
+            # Vendida no lugar da Mini Baguete (dono, 21/11/2026: "Sim, passa"),
+            # ao mesmo preço. O peso fica vazio: o anunciado (assado) sai da ficha
+            # de 170 g crus pela perda de forno padrão da casa, que é estimativa e
+            # a tela diz que é (`unit_weight_from_recipe`). Peso assado a conferir.
+            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche, com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, True,
+             f"{IMG}/bap.webp", None, "Melhor consumido no dia. Congele por até 30 dias"),
             ("ITA", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
              f"{IMG}/bax.webp", 420, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CPBG", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
@@ -2487,6 +2512,7 @@ class Command(BaseCommand):
             "FENDU": ["pao", "frances", "levain", "individual", "artesanal"],
             "TABAT": ["pao", "frances", "levain", "individual", "artesanal"],
             "MIB": ["pao", "frances", "levain", "mini", "individual"],
+            "BGL": ["pao", "baguete", "levain", "lanche", "individual"],
             "TRABB": ["pao", "hamburger", "levain", "individual"],
             "BRBB": ["brioche", "hamburger", "manteiga", "ovos"],
             "HOL": ["pao", "hotdog", "manteiga", "salgado"],
@@ -2529,6 +2555,14 @@ class Command(BaseCommand):
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
             "MIB": {
+                "allergens": ["glúten"],
+                "dietary_info": ["100% vegetal"],
+                "serves": "1 pessoa",
+                "approx_dimensions": "aprox. 26 x 5 x 4 cm",
+            },
+            # A peça da foto que a MIB mostrava é esta (bap.webp, massa ciabatta):
+            # herda a porção e a medida dela.
+            "BGL": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
@@ -2775,7 +2809,7 @@ class Command(BaseCommand):
                 "approx_dimensions": "2 fatias",
             },
             "MELSA": {
-                "allergens": ["glúten", "leite"],
+                "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
@@ -2918,7 +2952,7 @@ class Command(BaseCommand):
             "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
             "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CRP", "BRCH", "CN", "BICH", "BRRSN", "FOA",
             "DELI", "HOD",
-            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP", "BGL",
+            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP",
             "ITA", "CPBG", "BAT", "CPR", "VIEN", "PIT", "PIT4", "BGGP", "FOB", "FOC",
             "FOAP", "FOBP", "FOCP", "CRPQ", "FFGO", "FFGOP", "HODP", "JO",
         }
@@ -3014,7 +3048,9 @@ class Command(BaseCommand):
             "FRAP", "VIEN", "CHHIB", "CTFV",
             "SDLA", "AGUA-MINERAL-PRATA-310",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB",             "PERDU"         ]
+            "QJQT", "JB",             "PERDU",
+            # Montado na hora como o Jambon-Beurre (dono, 21/11/2026, #2925).
+            "MELSA"]
 
         # 2) PROMESSA da casa ao cliente: finalizado no momento de servir
         #    (extraído, montado, gratinado). É sobre o ACABAMENTO, então vale
@@ -3033,7 +3069,8 @@ class Command(BaseCommand):
             "FRAP", "VIEN", "CHHIB", "CTFV",
             "SDLA",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB",             "PERDU"         ]
+            "QJQT", "JB",             "PERDU",
+            "MELSA"]
 
         for sku in sells_without_stock_skus:
             product = products.get(sku)
@@ -3351,12 +3388,9 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(180, 1, 420.0, 48.0, 22.0, 11.0, 20.0, 11.0, 1.5, 320.0),
             },
-            "MELSA": {
-                "ingredients_text": (
-                    "Shokupan da casa, chantilly e frutas frescas. CONTÉM: glúten e leite."
-                ),
-                "nutrition_facts": nutrition(200, 1, 310.0, 38.0, 24.0, 6.0, 15.0, 9.0, 1.5, 180.0),
-            },
+            # MELSA saiu daqui em 21/11/2026 (dono: "corrija já"): a tabela manual
+            # era a do sanduíche antigo de shokupan. Agora sai da ficha (1 melonpan
+            # e 60 g de sorvete de creme), pela derivação.
             "TPND": {
                 "ingredients_text": (
                     "Azeitonas pretas, alcaparras, azeite extra virgem e ervas."
@@ -4268,6 +4302,24 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # A cobertura do melonpan, massa própria "tipo biscoito" (dono,
+                # 21/11/2026: "considere uma basica, a conferir depois"). Básica e
+                # provisória: farinha, açúcar, manteiga e ovos, os insumos que a
+                # casa já compra. Sem etapas: o dono escreve na tela da receita.
+                "ref": "massa-cobertura-melonpan",
+                "name": "Massa de Cobertura do Melonpan",
+                "output_sku": "MASSA-COBERTURA-MELONPAN",
+                "batch_size": Decimal("780"),
+                "steps": [],
+                "items": [
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("400")),
+                    ("ACUCAR-CRISTAL", Decimal("160")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("120")),
+                    ("OVOS", Decimal("100")),
+                ],
+                "notes": dict.fromkeys(("FARINHA-ANACONDA-PREMIUM", "ACUCAR-CRISTAL", "MANTEIGA-PRESIDENT-SEM-SAL", "OVOS"), "Receita básica provisória, a conferir com o dono"),
+            },
+            {
                 # Pita tem massa própria (dono, 26/08). Composição proposta.
                 "ref": "massa-pita",
                 "name": "Massa Pita",
@@ -4486,7 +4538,13 @@ class Command(BaseCommand):
                 "name": "Baguete Lanche",
                 "output_sku": "BGL",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-CIABATTA", Decimal("260"))],  # 260 g/un
+                # 170 g crus (dono, 21/11/2026: "vai ser a baguete lanche no lugar
+                # [da Mini Baguete], 170g massa ciabatta"; "massa crua 170g").
+                # Eram 260 g.
+                "items": [("MASSA-CIABATTA", Decimal("170"))],  # 170 g/un
+                "notes": {
+                    "MASSA-CIABATTA": "170 g de massa crua (dono). Peso assado a conferir: o anunciado sai da perda de forno padrão da casa",
+                },
             },
             {
                 "ref": "batard",
@@ -4521,6 +4579,88 @@ class Command(BaseCommand):
                 "output_sku": "TRABB",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
+            # Os itens da casa que vendiam sem ficha (#2925), pela palavra do dono
+            # de 21/11/2026. O que ele mandou conferir sai com a nota «a conferir»
+            # NA LINHA da ficha (`notes` → `RecipeItem.meta["note"]`, que a tela da
+            # receita mostra), não só aqui no comentário.
+            {
+                # "280g massa ciabatta, considere 20g gergelim".
+                "ref": "baguete-gergelim",
+                "name": "Baguete Gergelim",
+                "output_sku": "BGG",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("280")),  # 280 g/un
+                    ("GERGELIM", Decimal("20")),         # 20 g/un
+                ],
+                "notes": {"GERGELIM": "20 g provisórios, a conferir com o dono"},
+            },
+            {
+                # "massa 450g, recheio 150g de uvas passas, castanha de caju e
+                # castanha-do-brasil. considere proporções iguais".
+                "ref": "campagne-passas-castanhas",
+                "name": "Campagne Passas & Castanhas",
+                "output_sku": "CPX",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-CAMPAGNE", Decimal("450")),     # 450 g/un
+                    ("PASSAS", Decimal("50")),              # 50 g/un
+                    ("CASTANHA-CAJU", Decimal("50")),       # 50 g/un
+                    ("CASTANHA-DO-PARA", Decimal("50")),    # 50 g/un
+                ],
+                "notes": {
+                    "PASSAS": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                    "CASTANHA-CAJU": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                    "CASTANHA-DO-PARA": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                },
+            },
+            {
+                # "sim! 60g massa de brioche".
+                "ref": "brioche-burger-bun",
+                "name": "Brioche Burger Bun",
+                "output_sku": "BRBB",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BRIOCHE", Decimal("60"))],  # 60 g/un
+            },
+            {
+                # "60g massa de butter".
+                "ref": "pao-hot-dog",
+                "name": "Pão para Hot Dog",
+                "output_sku": "HOL",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BUTTER", Decimal("60"))],  # 60 g/un
+            },
+            {
+                # "30g massa de butter. recheio de creme de baunilha OU creme de
+                # chocolate (considere 40g a confirmar)". O recheio é UM dos dois:
+                # o baunilha é o padrão; o chocolate é a alternativa que o Core já
+                # modela (`is_optional`, "ingrediente alternativo"), fora da baixa.
+                "ref": "cornet",
+                "name": "Cornet",
+                "output_sku": "CO",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("30")),      # 30 g/un
+                    ("CREME-BAUNILHA", Decimal("40")),    # 40 g/un
+                    ("CREME-CHOCOLATE", Decimal("40")),   # 40 g/un, alternativo
+                ],
+                "optional": {"CREME-CHOCOLATE"},
+                "notes": {
+                    "CREME-BAUNILHA": "Recheio do dia: baunilha ou chocolate. 40 g provisórios, a conferir com o dono",
+                    "CREME-CHOCOLATE": "Alternativa ao creme de baunilha. 40 g provisórios, a conferir com o dono",
+                },
+            },
+            {
+                # "30g massa de butter, 22g massa de 'cobertura do melon'".
+                "ref": "melonpan",
+                "name": "Melonpan",
+                "output_sku": "MELON",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("30")),                # 30 g/un
+                    ("MASSA-COBERTURA-MELONPAN", Decimal("22")),    # 22 g/un
+                ],
             },
             {
                 # Ciabatta, não tradição (dono, 22/09): as baguetes de gergelim
@@ -4907,12 +5047,36 @@ class Command(BaseCommand):
                 "output_sku": "JB",
                 "batch_size": Decimal("1"),
                 "production_mode": ProductionMode.MADE_TO_ORDER,
+                # O pão entra por PEÇA (`units`): a montagem gasta uma baguete, e a
+                # baixa e a expansão da ficha contam uma, não 230 gramas dela.
+                "units": {"BGL": "un"},
+                "assembly": True,
                 "items": [
-                    ("BGL", Decimal("230")),     # a baguete lanche assada
+                    ("BGL", Decimal("1")),       # uma baguete lanche inteira
                     ("PRESUNTO-CASA", Decimal("85")),
                     ("MANTEIGA-WASABI", Decimal("30")),
                     ("PEPINO-CORNICHO-CONSERVA", Decimal("12")),
                 ],
+            },
+            {
+                # "melonpan + bola de sorvete de creme (peso a conferir)" (dono,
+                # 21/11/2026). Montado na hora, como o Jambon-Beurre. O pão é o
+                # melonpan da casa, não o shokupan que o cadastro dizia.
+                "ref": "melon-iced-sando",
+                "name": "Melon Iced Sando",
+                "output_sku": "MELSA",
+                "batch_size": Decimal("1"),
+                "production_mode": ProductionMode.MADE_TO_ORDER,
+                "units": {"MELON": "un"},
+                "assembly": True,
+                "items": [
+                    ("MELON", Decimal("1")),            # um melonpan
+                    ("SORVETE-CREME", Decimal("60")),   # uma bola
+                ],
+                "notes": {
+                    "MELON": "Um melonpan; o peso por peça é o do cadastro do produto, a conferir",
+                    "SORVETE-CREME": "Uma bola de sorvete de creme; 60 g provisórios, a conferir com o dono",
+                },
             },
             {
                 # "1 BN rende, em tese, 8. Nosso pain perdu é pequeno mesmo"
@@ -5171,6 +5335,16 @@ class Command(BaseCommand):
             "SALSINHA-DESIDRATADA": {"label": "Salsinha desidratada", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 51, "sugars_g": 7.3, "proteins_g": 27, "total_fat_g": 5.5, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 30, "sodium_mg": 452}},
             "TOMILHO-FRESCO": {"label": "Tomilho fresco", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 101, "carbohydrates_g": 24, "sugars_g": 0, "proteins_g": 5.6, "total_fat_g": 1.7, "saturated_fat_g": 0.5, "trans_fat_g": 0, "fiber_g": 14, "sodium_mg": 9}},
             "PASSAS": {"label": "Uvas-passas", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 299, "carbohydrates_g": 79, "sugars_g": 59, "proteins_g": 3.1, "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 11}},
+            # O recheio do Campagne Passas & Castanhas e a bola do Melon Iced Sando
+            # (dono, 21/11/2026, #2925). Comprados; fornecedor ainda não declarado.
+            # Nutrição por 100 g do USDA FoodData Central (SR Legacy), sem gordura
+            # trans declarada (0): castanha de caju = "Nuts, cashew nuts, raw"
+            # (FDC 170162, NDB 12087); castanha-do-brasil = "Nuts, brazilnuts,
+            # dried, unblanched" (FDC 170569, NDB 12078); sorvete de creme = "Ice
+            # creams, vanilla" (FDC 167575, NDB 19095).
+            "CASTANHA-CAJU": {"label": "Castanha de caju", "allergens": ["castanha-de-caju"], "diet": "vegan", "nutrition": {"energy_kcal": 553, "carbohydrates_g": 30.19, "sugars_g": 5.91, "proteins_g": 18.22, "total_fat_g": 43.85, "saturated_fat_g": 7.783, "trans_fat_g": 0, "fiber_g": 3.3, "sodium_mg": 12}},
+            "CASTANHA-DO-PARA": {"label": "Castanha-do-brasil", "allergens": ["castanha-do-brasil"], "diet": "vegan", "nutrition": {"energy_kcal": 659, "carbohydrates_g": 11.74, "sugars_g": 2.33, "proteins_g": 14.32, "total_fat_g": 67.1, "saturated_fat_g": 16.134, "trans_fat_g": 0, "fiber_g": 7.5, "sodium_mg": 3}},
+            "SORVETE-CREME": {"label": "Sorvete de creme", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 207, "carbohydrates_g": 23.6, "sugars_g": 21.22, "proteins_g": 3.5, "total_fat_g": 11.0, "saturated_fat_g": 6.79, "trans_fat_g": 0, "fiber_g": 0.7, "sodium_mg": 80}},
             # Ao LEITE: o nome diz, e o rótulo tem de dizer também (dono, 24/09). Este
             # perfil vinha como "vegan" e sem alérgeno, herdado do genérico
             # "gotas de chocolate" — o rótulo do Brioche Chocolat só não mentia
@@ -5330,6 +5504,7 @@ class Command(BaseCommand):
             "MILHO-VERDE-CONSERVA": ("g", 365), "BACON": ("g", 15),
             "SALSINHA-DESIDRATADA": ("g", 365), "TOMILHO-FRESCO": ("g", 14),
             "PASSAS": ("g", 365), "CHOCOLATE-GOTAS-AOLEITE": ("g", 365),
+            "CASTANHA-CAJU": ("g", 180), "CASTANHA-DO-PARA": ("g", 180), "SORVETE-CREME": ("g", 90),
             "CHOCOLATE-BATON-MEIOAMARGO": ("g", 365), "BAUNILHA-EXTRATO-NATURAL": ("g", 365),
             "NATA-FRESCA": ("g", 10),
             "CAFE-ORFEU-CLASSICO": ("g", 90), "CAFE-TAMURA-CHOCOMELO": ("g", 90),
@@ -5581,6 +5756,14 @@ class Command(BaseCommand):
                         # sanduíche: acima disso a Nota 2 do Cap. 16 o leva para
                         # 1602 (auditoria fiscal de 24/09).
                         **({"fiscal_note": CROQUE_FISCAL_NOTE} if rd["ref"].startswith("croque-") else {}),
+                        # A montagem (Jambon-Beurre, Melon Iced Sando) não vai ao
+                        # forno: perda 0 e sem folga de novo, porque a peça que ela
+                        # gasta já entra pelo peso anunciado, que já é piso.
+                        **({
+                            "bake_loss_pct": "0",
+                            "bake_loss_source": "estimated",
+                            "weight_slack_pct": "0",
+                        } if rd.get("assembly") else {}),
                     },
                 },
             )
@@ -5589,17 +5772,40 @@ class Command(BaseCommand):
             # rendimento). O terceiro número é o «Rend. %» da ficha da casa, em
             # fração: cebola 0,84, tomilho só folhas 0,60, suco de limão 0,40. A bruta,
             # que sai do estoque, é derivada — nunca escrita aqui.
+            #
+            # `notes` põe a nota NA LINHA (`meta["note"]`, que a tela da receita
+            # mostra): é onde o dono vê o que mandou conferir. `optional` marca o
+            # ingrediente alternativo, que a baixa e a fórmula não contam.
+            notes = rd.get("notes", {})
+            optional = rd.get("optional", set())
+            # `units` declara a linha em PEÇA quando o insumo é um produto da casa
+            # (a baguete do Jambon-Beurre, o melonpan do Melon Iced Sando).
+            units_by_sku = rd.get("units", {})
             for input_sku, qty, *usable in rd["items"]:
-                meta = INGREDIENT_PROFILES.get(input_sku, {})
+                meta = dict(INGREDIENT_PROFILES.get(input_sku, {}))
+                if notes.get(input_sku):
+                    meta["note"] = notes[input_sku]
+                if input_sku in units_by_sku:
+                    # A ponte da peça até grama é o peso que o próprio cadastro
+                    # anuncia (o da BGL sai da ficha dela, que vem antes na lista).
+                    # Sem ela a fórmula deixaria a linha fora da conta.
+                    piece = Product.objects.filter(sku=input_sku).only("unit_weight_g").first()
+                    if piece is not None and piece.unit_weight_g:
+                        meta["unit_weight_g"] = meta["grams_per_unit"] = piece.unit_weight_g
                 RecipeItem.objects.create(
                     recipe=recipe,
                     input_sku=input_sku,
                     quantity=qty,
                     usable_factor=usable[0] if usable else Decimal("1"),
-                    unit=_recipe_item_unit(input_sku),
+                    unit=units_by_sku.get(input_sku) or _recipe_item_unit(input_sku),
+                    is_optional=input_sku in optional,
                     meta=meta,
                 )
             if product:
+                # Peso vazio no cadastro: o anunciado sai da ficha já aqui, para a
+                # ficha que gasta esta peça (o Jambon-Beurre gasta uma BGL) achar o
+                # peso dela.
+                fill_unit_weight_from_recipe(product)
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
 
@@ -5621,8 +5827,26 @@ class Command(BaseCommand):
         for rd in recipes_data:
             product = Product.objects.filter(sku=rd["output_sku"]).first()
             if product:
+                # Peso vazio no cadastro (BGL, MELSA): o anunciado sai da ficha,
+                # antes da tabela, que usa o peso para a porção. Peso posto à mão
+                # nunca é sobrescrito (`weight_is_writable`).
+                fill_unit_weight_from_recipe(product)
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
+
+        # A linha em PEÇA (`units`) leva a ponte até grama no peso que o cadastro
+        # da peça anuncia AGORA, depois das derivações: o da BGL só existe depois
+        # que a ficha dela fecha. Antes do inventário, que lê a ponte. São duas
+        # chaves para o mesmo número: `unit_weight_g` é a da nutrição e do peso
+        # (`recipe_bom`); `grams_per_unit`, a da fórmula do inventário.
+        for rd in recipes_data:
+            for input_sku in rd.get("units", {}):
+                piece = Product.objects.filter(sku=input_sku).only("unit_weight_g").first()
+                if piece is None or not piece.unit_weight_g:
+                    continue
+                for item in RecipeItem.objects.filter(recipe__ref=rd["ref"], input_sku=input_sku):
+                    item.meta = {**(item.meta or {}), "unit_weight_g": piece.unit_weight_g, "grams_per_unit": piece.unit_weight_g}
+                    item.save(update_fields=["meta"])
 
         # Inventário de receitas (RECIPE-INVENTORY-PLAN §2): uma entry por ficha,
         # com a versão 1 publicada e a fórmula na forma base (partes dissolvidas).
@@ -7934,7 +8158,7 @@ class Command(BaseCommand):
         vitrine = positions["vitrine"]
         alerts_data = [
             ("TRADI", 10),
-            ("MIB", 12),
+            ("BGL", 12),
             ("FENDU", 15),
             ("CRO", 15),
             ("PCHOC", 12),

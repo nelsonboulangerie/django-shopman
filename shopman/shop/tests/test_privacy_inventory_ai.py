@@ -357,7 +357,7 @@ def test_a_leitura_nao_recebe_dado_pessoal():
 
 
 def test_a_frase_dos_leitores_e_a_do_dono():
-    for purposes in ({"decision"}, {"intents"}, {"labeling"}, {"decision", "intents", "labeling"}):
+    for purposes in ({"intents"}, {"labeling"}):
         role, shares = ai_role_and_shares(purposes)
         assert role == "ajuda o atendimento automático do WhatsApp a entender a sua mensagem"
         assert shares == (
@@ -367,6 +367,20 @@ def test_a_frase_dos_leitores_e_a_do_dono():
         )
         # "Anonimizado" promete, na LGPD, que não dá para saber quem é: não é o que a loja faz.
         assert "anonimiz" not in shares
+
+
+def test_o_jev_le_tambem_a_ultima_mensagem_da_loja_e_a_frase_diz():
+    """Adendo à D-040 (dono, 21/11/2026, "desde que seguro perante LGPD, sim"): o Jev
+    (TypeSafe) recebe também a última fala da casa, redigida, e a página diz isso."""
+    for purposes in ({"decision"}, {"decision", "labeling"}):
+        _role, shares = ai_role_and_shares(purposes)
+        assert shares == (
+            "só o texto da sua mensagem e a última mensagem da loja na conversa. Nome, "
+            "documento, e-mail, telefone, endereço, pagamento, alergia ou doença que você "
+            "escrever não são enviados: a loja apaga tudo isso do texto antes. Da mensagem "
+            "da loja, a loja também apaga o número do pedido e os valores"
+        ), shares
+        assert "—" not in shares
 
 
 def test_o_que_nao_vai_vem_logo_depois_do_so():

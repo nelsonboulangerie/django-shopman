@@ -117,7 +117,7 @@ def test_a_failed_count_is_unknown_never_zero(shop, monkeypatch):
     user.user_permissions.add(Permission.objects.get(codename="manage_orders"))
     client = APIClient()
     client.force_authenticate(user)
-    assert client.get("/api/v1/backstage/deliveries/count/").json() == {"waiting": None}
+    assert client.get("/api/v1/backstage/deliveries/count/").json() == {"waiting": None, "call_refs": []}
 
 
 def _fiscal_failed(order: Order) -> None:

@@ -26,8 +26,10 @@ export const RIDE_PALETTE: readonly RideColor[] = [
   // Verde escurecido (dono, 16/11: a moto com número no verde pedia letra branca;
   // #00a03c com branco dava 3,4:1). #008933 com branco: 4,5:1.
   { name: "Verde", bg: "#008933", fg: "#ffffff", ink: "#008933" },
-  { name: "Amarelo", bg: "#ffd000", fg: "#000000", ink: "#8f7400" },
-  { name: "Laranja", bg: "#ff5a00", fg: "#000000", ink: "#cf4900" },
+  // A tinta do amarelo e do laranja tinha 4,50:1 e 4,56:1 sobre branco, no fio do AA;
+  // o número da parada no detalhe da corrida mediu abaixo (#2983). Mesmo matiz, 4,64:1.
+  { name: "Amarelo", bg: "#ffd000", fg: "#000000", ink: "#8c7200" },
+  { name: "Laranja", bg: "#ff5a00", fg: "#000000", ink: "#cd4800" },
   { name: "Magenta", bg: "#e4007c", fg: "#ffffff", ink: "#e4007c" },
   { name: "Preto", bg: "#111111", fg: "#ffffff", ink: "#111111" },
 ];

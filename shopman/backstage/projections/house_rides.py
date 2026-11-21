@@ -3,7 +3,7 @@
 Quando quem leva é um entregador da casa (o serviço que sabe ``assign`` e não avisa sozinho,
 ``DeliveryCapabilities``), a corrida ganha o que a TaOn não tem: o nome de quem leva no
 lugar do momento da central ("Diego leva", "Diego na rua · 1 de 2 entregues"), o estado do
-link e os gestos do balcão para quando o entregador está sem celular ou sem sinal ("Saiu",
+link e os gestos do balcão para quando o entregador está sem celular ou sem sinal ("Despachar a corrida C",
 "A47 entregue"), mais "Reenviar o link" e "Soltar o link". O acerto da volta continua o
 "Entregador voltou" de sempre (``back_action`` da corrida).
 
@@ -123,7 +123,12 @@ def house_ride(lead: Order, *, user=None) -> DeliveryHouseRideProjection | None:
         delivered=delivered,
         total=total,
         link_claimed=bool(link.device_hash),
-        depart_action=_action("house-depart", "Saiu", revision, user, confirmation={
+        # O gesto de saída tem o nome do vocabulário, "Despachar <código>"; o código da
+        # corrida é a letra, e "corrida" desfaz a dúvida de um código de uma letra só
+        # (coordenação, 21/11, #3054). Sem letra, "Despachar a corrida".
+        depart_action=_action("house-depart", " ".join(
+            part for part in ("Despachar a corrida", courier.ride_letter(block.get("ride_number"))) if part
+        ), revision, user, confirmation={
             "required": True,
             "description": f"{name} saiu com {'os pedidos' if total > 1 else 'o pedido'}? Os clientes recebem o aviso de saída.",
         }) if leaving else None,

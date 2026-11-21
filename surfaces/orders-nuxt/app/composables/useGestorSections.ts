@@ -117,10 +117,7 @@ export function useGestorSections() {
     data: deliveries,
     error: deliveriesError,
     refresh: refreshDeliveries,
-  } = useFetch<{ waiting?: number | null }>(
-    "/api/v1/backstage/deliveries/count/",
-    { key: "orders:rail:deliveries", server: false },
-  );
+  } = useDeliveriesWaiting();
   if (import.meta.client) useBackstageEvents("orders", () => void refreshDeliveries(), { pollMs: 60_000 });
 
   const input = computed(() => ({

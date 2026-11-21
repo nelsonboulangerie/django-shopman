@@ -26,6 +26,7 @@ GESTOR_DIR="${ROOT}/surfaces/orders-nuxt"
 
 DJANGO_PORT="${JOURNEYS_DJANGO_PORT:-8090}"
 PROXY_PORT="${JOURNEYS_PROXY_PORT:-8091}"
+STRIPE_PORT="${JOURNEYS_STRIPE_PORT:-12190}"
 STORE_PORT="${JOURNEYS_STORE_PORT:-3190}"
 GESTOR_PORT="${JOURNEYS_GESTOR_PORT:-3194}"
 # Hosts próprios: o navegador divide os cookies de um host entre as portas.
@@ -42,8 +43,10 @@ unset REDIS_URL
 export SHOPMAN_E2E_OTP_FILE="${LOGS}/code"
 export DOORMAN_MESSAGE_SENDER_CLASS=shopman.shop.tests.e2e.otp_sender.E2EFileSender
 export SHOPMAN_OTP_DELIVERY_CHAIN=""
-# O settings do harness exige as chaves FALSAS do Stripe; nenhuma jornada daqui usa cartão.
-export SHOPMAN_E2E_STRIPE_API_BASE=http://127.0.0.1:12190
+# O cartão vai ao Stripe FALSO do harness (`shopman/shop/tests/e2e/fake_stripe.py`): o
+# adapter de produção roda inteiro e só o endereço da API muda. Com captura, anulação e
+# estorno (F-7, #2568), as jornadas de cartão (J6, J8) rodam nesta pilha.
+export SHOPMAN_E2E_STRIPE_API_BASE="http://127.0.0.1:${STRIPE_PORT}"
 export STRIPE_SECRET_KEY=sk_test_e2e_fake_local_only
 export STRIPE_PUBLISHABLE_KEY=pk_test_e2e_fake_local_only
 export STRIPE_WEBHOOK_SECRET=whsec_e2e_fake_local_only
@@ -72,7 +75,7 @@ wait_for () {
   exit 1
 }
 
-for port in "${DJANGO_PORT}" "${PROXY_PORT}" "${STORE_PORT}" "${GESTOR_PORT}"; do
+for port in "${DJANGO_PORT}" "${PROXY_PORT}" "${STORE_PORT}" "${GESTOR_PORT}" "${STRIPE_PORT}"; do
   if lsof -nP -iTCP:"${port}" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Porta ${port} ocupada: outro servidor responderia no lugar desta pilha." >&2
     exit 1
@@ -99,6 +102,13 @@ else
 fi
 
 echo "── Pilha ──"
+# Stripe falso: a sessão hospedada, o webhook assinado de volta ao Django, e o que vem
+# depois do pagamento (captura, anulação, estorno).
+"${PYTHON_BIN}" -m shopman.shop.tests.e2e.fake_stripe \
+  --port "${STRIPE_PORT}" \
+  --webhook-url "${DJANGO_URL}/api/webhooks/stripe/" \
+  --webhook-secret "${STRIPE_WEBHOOK_SECRET}" >"${LOGS}/stripe.log" 2>&1 &
+PIDS+=("$!")
 DJANGO_SETTINGS_MODULE=shopman.shop.tests.e2e.settings_e2e \
   "${PYTHON_BIN}" manage.py runserver "127.0.0.1:${DJANGO_PORT}" --noreload >"${LOGS}/django.log" 2>&1 &
 PIDS+=("$!")
@@ -106,6 +116,7 @@ DJANGO_SETTINGS_MODULE=shopman.shop.tests.e2e.settings_e2e \
   "${PYTHON_BIN}" manage.py process_directives --watch >"${LOGS}/worker.log" 2>&1 &
 PIDS+=("$!")
 wait_for "${DJANGO_URL}/health/live/" "127.0.0.1" "Django" "${LOGS}/django.log"
+wait_for "${SHOPMAN_E2E_STRIPE_API_BASE}/health" "127.0.0.1" "Stripe falso" "${LOGS}/stripe.log"
 
 # Proxy lento da J9: só da pilha de teste, entre a loja e o Django.
 SLOW_PROXY_PORT="${PROXY_PORT}" SLOW_PROXY_TARGET="${DJANGO_URL}" \

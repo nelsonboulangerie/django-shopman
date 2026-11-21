@@ -18,6 +18,7 @@ import type { ButtonProps } from "#ui/types";
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
+  withCourierCall,
   cardAuthorizationNotice,
   cardClock,
   cardSeal,
@@ -71,6 +72,8 @@ const props = withDefaults(
      *  quatro linhas (código, selo e valor; quem; itens; o gesto e o ⋮). O que é
      *  exceção (avisos, erro, desfazer, DANFE) só aparece quando existe. */
     compact?: boolean;
+    /** Pronto de entrega que dá para chamar agora (#2876): o gesto é "Chamar entregador". */
+    callCourier?: boolean;
   }>(),
   { canOpen: true },
 );
@@ -106,7 +109,9 @@ const attentionStations = computed(() =>
 );
 
 const onRoad = computed(() => onRoadLine(props.card));
-const affordances = computed(() => cardAffordances(props.card));
+const affordances = computed(() =>
+  withCourierCall(cardAffordances(props.card), Boolean(props.callCourier)),
+);
 const primary = computed(
   () =>
     affordances.value.find((a) => a.priority === "primary" || a.disabled) ??
@@ -631,7 +636,7 @@ function nuxtIcon(icon: string): string {
       <NuxtLink
         v-if="canOpen"
         :to="`/${card.ref}`"
-        class="shrink-0 text-xl font-bold leading-none text-highlighted hover:underline"
+        class="-my-3 inline-flex min-h-11 min-w-11 shrink-0 items-center text-xl font-bold leading-none text-highlighted hover:underline"
         :class="handoff ? 'line-through decoration-success/60' : ''"
         :aria-label="`Abrir pedido ${card.ref}`"
         >{{ code.code }}</NuxtLink
@@ -796,7 +801,7 @@ function nuxtIcon(icon: string): string {
           <NuxtLink
             v-if="canOpen"
             :to="`/${card.ref}`"
-            class="group shrink-0"
+            class="group -my-1.5 flex min-h-11 min-w-11 shrink-0 items-center"
             :aria-label="`Abrir pedido ${card.ref}`"
           >
             <span

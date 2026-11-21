@@ -146,12 +146,33 @@ def raw_unit_grams(recipe) -> Decimal | None:
     A soma é do BOM expandido (sub-fichas abertas até a folha), dividida pelo
     ``batch_size``. É essa divisão que faz a conta funcionar tanto na ficha por
     fornada quanto na ficha por unidade.
+
+    **Peça pronta entra pelo peso dela, não pela massa crua.** A linha em
+    contagem com ponte declarada (``meta["unit_weight_g"]``) cujo insumo tem
+    ficha própria é uma peça já feita: a montagem do Melon Iced Sando gasta um
+    melonpan ASSADO, não os 52 g crus dele. Abrir essa sub-ficha somaria a massa
+    crua e, depois, a perda de forno da montagem a descontaria de novo. A
+    nutrição continua abrindo a sub-ficha (``expand_recipe_items``): o forno
+    tira água, não nutriente.
     """
     batch_size = Decimal(str(getattr(recipe, "batch_size", 0) or 0))
     if batch_size <= 0:
         return None
 
-    items = expand_recipe_items(recipe)
+    from shopman.craftsman.services.recipes import get_active_recipe_for_output_sku
+    from shopman.utils import units
+
+    # As linhas da conta do peso: peça pronta inteira, o resto aberto até a folha.
+    items: list = []
+    for line in recipe.items.filter(is_optional=False).order_by("-quantity", "sort_order"):
+        line_meta = line.meta if isinstance(line.meta, dict) else {}
+        sub_recipe = get_active_recipe_for_output_sku(line.input_sku)
+        if sub_recipe is None or (
+            units.dimension(line.unit) == units.COUNT and line_meta.get("unit_weight_g") not in (None, "")
+        ):
+            items.append(line)
+            continue
+        items.extend(expand_recipe_items(sub_recipe, coefficient=line.quantity / sub_recipe.batch_size))
     if not items:
         return None
 
