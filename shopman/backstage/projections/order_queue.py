@@ -3819,6 +3819,13 @@ _FISCAL_PILL = {
     "not_expected": ("not_requested", "NFC-e não solicitada"),
 }
 
+#: O pedido cancelado que ainda ESPERAVA o pagamento: a nota não vai sair, e a pill
+#: diz o fato em vez de prometer (#3127: "NFC-e sai quando o pagamento confirmar"
+#: num pedido cujo Pix venceu era rótulo que mente).
+_CANCELLED_BEFORE_NOTE = {
+    "awaiting_payment": ("not_issued", "Sem NFC-e: o pedido foi cancelado antes do pagamento"),
+}
+
 
 class _FiscalEvidence(NamedTuple):
     """Evidência fiscal lida em LOTE para um quadro: uma query por fonte, não por card."""
@@ -3844,6 +3851,8 @@ def _fiscal_status(
         # Nota cancelada é fato posterior à autorização: a chave continua lá, o
         # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
         status, label = "cancelled", "NFC-e cancelada"
+    elif order.status == Order.Status.CANCELLED and state in _CANCELLED_BEFORE_NOTE:
+        status, label = _CANCELLED_BEFORE_NOTE[state]
     else:
         status, label = _FISCAL_PILL[state]
 
