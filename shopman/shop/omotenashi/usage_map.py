@@ -1208,7 +1208,13 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_ETA": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_NEAR": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_DISPATCHED_POSITION_AGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_DISPATCHED_TITLE": (

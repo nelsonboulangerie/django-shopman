@@ -8194,6 +8194,8 @@
           "responsibility": "leitura",
           "symbols": [
             "CARRIER_TRACKING_URLS",
+            "COURIER_FRESH_SECONDS",
+            "COURIER_NEAR_METERS",
             "TERMINAL_STATUSES",
             "TrackingCancellationContactData",
             "TrackingData",
@@ -8230,6 +8232,7 @@
             "_contact_and_share",
             "_copy_message",
             "_copy_title",
+            "_courier_closeness",
             "_courier_tracking_url",
             "_eta_at",
             "_eta_not_before",
