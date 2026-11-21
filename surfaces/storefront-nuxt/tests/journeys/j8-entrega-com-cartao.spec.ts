@@ -123,8 +123,9 @@ test('J8: entrega com cartão, passando pelo mínimo da entrega, até a loja ace
   await test.step('o acompanhamento diz do pedido aceito e da entrega', async () => {
     await expect(page.getByRole('tabpanel', { name: 'Histórico' }).getByText(/^Aceito/).first()).toBeVisible({ timeout: 60_000 })
     await capture(page, testInfo, 'aceito')
-    await page.getByRole('tab', { name: /Entrega/ }).click()
-    await expect(page.locator('main')).toContainText(new RegExp(`${ADDRESS.route},?\\s*${ADDRESS.number}`))
+    // O endereço da entrega mora na aba "Resumo" do acompanhamento.
+    await page.getByRole('tab', { name: 'Resumo', exact: true }).click()
+    await expect(page.getByRole('tabpanel', { name: 'Resumo' })).toContainText(new RegExp(`${ADDRESS.route},?\\s*${ADDRESS.number}`))
     await capture(page, testInfo, 'entrega')
   })
 })
