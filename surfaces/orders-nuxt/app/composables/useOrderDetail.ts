@@ -366,67 +366,9 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  // Courier ride (external delivery): dispatch/re-dispatch, cancel the active
-  // ride, and "just quote" (stores the estimate; refresh shows it in the panel).
-  // A custódia que sai com o entregador da TaOn (troco da gaveta, maquininha)
-  // vai no mesmo corpo do despacho do Gestor: `change_out` e `equipment`.
-  async function courierDispatch(
-    custody: { change_out?: string; equipment?: string[] } = {},
-  ): Promise<boolean> {
-    const ok = await act("courier-dispatch", custody);
-    if (ok) useSonner.success("Pedido de entregador enviado à central.");
-    return ok;
-  }
-
-  // Uma corrida para este pedido e os que vão junto (o "Vai junto?" da chamada):
-  // a mesma rota do "Juntar entregas" do painel, com a custódia de cada um.
-  async function courierRide(body: {
-    refs: string[];
-    change_out: Record<string, string>;
-    machine: string;
-  }): Promise<boolean> {
-    if (busy.value) return false;
-    busy.value = true;
-    mutationError.value = "";
-    try {
-      // Pelo protocolo de intenção: a ação `courier-ride` do pedido traz quem a
-      // tela leu e a revisão dele e de cada um que pode ir junto.
-      await intentions.executeRide(
-        data.value?.order?.actions?.find(
-          (action) => action.ref === "courier-ride",
-        ),
-        body,
-      );
-    } catch (error) {
-      mutationError.value = httpErrorMessage(
-        error,
-        "Não foi possível chamar a corrida. Atualize o pedido.",
-      );
-      useSonner.error(mutationError.value);
-      // Um pedido da corrida mudou depois que a tela foi lida: a frase do
-      // servidor diz qual, e o pedido é relido para a próxima tentativa.
-      if (httpErrorCode(error) === "revision_changed") {
-        try {
-          await refresh();
-        } catch {
-          // A leitura nova falhou; a recusa já está na tela.
-        }
-      }
-      return false;
-    } finally {
-      busy.value = false;
-    }
-    useSonner.success(
-      `Uma corrida para ${body.refs.length} pedidos enviada à central.`,
-    );
-    try {
-      await refresh();
-    } catch {
-      mutationError.value =
-        "Corrida pedida. A leitura atualizada falhou; atualize antes da próxima ação.";
-    }
-    return true;
-  }
+  // Courier ride (external delivery): re-dispatch, cancel the active ride, and
+  // "just quote" (stores the estimate; refresh shows it in the panel). Chamar a
+  // primeira vez é o sheet único das Entregas (#2876), fora daqui.
 
   // "Chamar de novo": a última chamada ficou sem resposta da TaOn. Libera a
   // chamada pendente e chama outra (a confirmação é da página).
@@ -495,9 +437,7 @@ export function useOrderDetail(orderRef: string) {
     notifyCustomer,
     saveNotes,
     addComment,
-    courierDispatch,
     courierDispatchAgain,
-    courierRide,
     courierReminderDismiss,
     resolveContactRequest,
     courierCancel,
