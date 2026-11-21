@@ -836,9 +836,20 @@ describe("aviso de pedido tratável — nasce da projection canônica", () => {
       card({ ref: "PIX-1", can_confirm: false, can_advance: false }),
     ]);
     const after = queue([
-      card({ ref: "PIX-1", can_confirm: false, can_advance: true }),
+      card({ ref: "PIX-1", can_confirm: false, can_advance: true, attention: "dispatch" }),
     ]);
     expect(newlyTreatableOrderRefs(before, after)).toEqual(["PIX-1"]);
+  });
+
+  // Decisão do dono (21/11/2026, #2758 item 3): o som segue o "Precisa de você" da Fila,
+  // que o servidor decide (`attention`), e não mais o gesto disponível na tela.
+  it("o som segue o Precisa de você: toca o que pede alguém, cala o que só anda", () => {
+    const cozinhaTrabalhando = card({ ref: "PREP-1", status: "preparing", can_advance: true, attention: "" });
+    const semEstoque = card({ ref: "NEW-1", can_confirm: false, can_advance: false, attention: "blocked" });
+    const negociacao = card({ ref: "IFD-1", can_confirm: false, can_advance: false, attention: "negotiation" });
+    const promessa = card({ ref: "RISK-1", can_confirm: false, can_advance: false, attention: "promise" });
+    const refs = [...treatableOrderRefs(queue([cozinhaTrabalhando, semEstoque, negociacao, promessa]))];
+    expect(refs).toEqual(["NEW-1", "IFD-1", "RISK-1"]);
   });
 
   it("created sem mudança real de tratabilidade não produz aviso", () => {
@@ -857,6 +868,7 @@ describe("aviso de pedido tratável — nasce da projection canônica", () => {
       can_confirm: true,
       can_advance: true,
       is_preorder: true,
+      attention: "confirm",
     });
     const before = {
       ...queue([]),

@@ -792,27 +792,17 @@ export function treatableOrderRefs(
  *  e as negociações do iFood chegam com tipos diferentes do mesmo contrato. */
 type TreatableSource = Pick<
   OrderCardProjection,
-  | "ref"
-  | "status"
-  | "can_confirm"
-  | "can_advance"
-  | "can_settle_delivery_cash"
-  | "equipment_back_pending"
-  | "kitchen_release_label"
-  | "kitchen_released_at_iso"
+  "ref" | "attention" | "kitchen_released_at_iso"
 >;
 
-/** Os cartões que pedem trabalho agora. A encomenda do dia que ainda espera a hora da
- *  Cozinha tem o "Adiantar" disponível, mas não é trabalho do turno: contá-la fazia o
- *  aviso tocar à meia-noite para toda encomenda do dia (WP-G02, P1-04). */
+/** Os cartões que pedem alguém agora: os do "Precisa de você" da Fila, que o servidor
+ *  decide (`attention`). Decisão do dono (21/11/2026, #2758 item 3): o som segue a Fila.
+ *  Antes a tela tinha régua própria (o gesto disponível), e as duas divergiam: o pedido
+ *  em preparo com a Cozinha trabalhando tocava, e o pedido novo sem estoque, a negociação
+ *  do iFood e a promessa em risco não. A encomenda do dia que espera a hora da Cozinha
+ *  não pede ninguém, e o servidor já a deixa fora (WP-G02, P1-04). */
 function treatableCards<C extends TreatableSource>(cards: C[]): C[] {
-  return cards.filter(
-    (card) =>
-      card.can_confirm ||
-      (card.can_advance && !kitchenWait(card)) ||
-      card.can_settle_delivery_cash ||
-      card.equipment_back_pending,
-  );
+  return cards.filter((card) => Boolean(card.attention));
 }
 
 const KITCHEN_ARRIVAL_MARK = "@cozinha";
