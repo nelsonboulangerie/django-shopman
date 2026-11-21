@@ -16,8 +16,9 @@ import { cashTenderSumQ } from "./payment";
 
 /**
  * As formas que recebem o saldo no balcão. Dinheiro, débito e crédito vão pela
- * rota da entrega (`operator_orders._COUNTER_METHODS`); o Pix, pela cobrança Pix
- * do balcão (`pos/preorders/<ref>/pix/`, #2897), do jeito que a venda cobra Pix.
+ * rota da entrega (`operator_orders._COUNTER_METHODS`); o Pix sozinho, pela
+ * cobrança Pix do balcão (`pos/preorders/<ref>/pix/`, #2897), do jeito que a venda
+ * cobra Pix; o Pix misto, atestado, pela rota da entrega (#2916).
  * O link não entra: a cliente está na frente do caixa.
  */
 export const HAND_OVER_METHODS: readonly string[] = ["cash", "debit", "credit", "pix"];
@@ -28,19 +29,17 @@ export function handOverMethods(methods: POSPaymentMethodProjection[]): POSPayme
 }
 
 /**
- * No saldo, o Pix cobra o valor inteiro, sozinho: é UMA cobrança Pix do pedido,
- * como na venda que fecha em Pix. Verdadeiro quando as linhas pedem outra coisa
- * (Pix com outra forma, conta dividida, Pix de outro valor).
+ * As linhas cobram o saldo pela cobrança Pix do balcão (QR e provedor)?
+ *
+ * Só quando o Pix vem SOZINHO (uma linha, ou a conta dividida só em Pix): é UMA
+ * cobrança Pix do pedido, como na venda que fecha em Pix (#2897). Pix ao lado de
+ * dinheiro ou cartão é o Pix MISTO (#2916): sem provedor, o operador atesta com
+ * "Recebi o Pix" (o mesmo degrau da venda mista) e ele vai pela rota da entrega.
  */
-export function pixNeedsWholeBalance(tenders: Pick<POSPaymentTenderDraft, "method" | "amount_q">[], dueQ: number): boolean {
-  const pix = tenders.filter((tender) => tender.method === "pix");
-  if (!pix.length) return false;
-  return tenders.length > 1 || pix[0]!.amount_q !== dueQ;
-}
-
-/** As linhas cobram o saldo em Pix (sozinho, no valor inteiro)? */
 export function paysBalanceWithPix(tenders: Pick<POSPaymentTenderDraft, "method" | "amount_q">[], dueQ: number): boolean {
-  return tenders.some((tender) => tender.method === "pix") && !pixNeedsWholeBalance(tenders, dueQ);
+  const lines = tenders.filter((tender) => tender.amount_q > 0);
+  if (!lines.length || dueQ <= 0) return false;
+  return lines.every((tender) => tender.method === "pix");
 }
 
 export interface BalanceChargeLine {
@@ -133,8 +132,16 @@ export function balanceCharge(input: {
 /** Onde a espera do Pix do saldo está: a mesma régua da venda em Pix. */
 export type BalancePixStatus = "idle" | "polling" | "paid" | "expired";
 
+/** Uma forma do saldo na rota da entrega: o balcão (dinheiro, cartão) ou o Pix atestado. */
+export interface HandOverTender {
+  method: CounterMethod | "pix";
+  amount_q: number;
+  /** O Pix misto conferido com "Recebi o Pix" (#2916); o servidor carimba quem e quando. */
+  pix_confirmed?: true;
+}
+
 export interface HandOverBody {
-  tenders?: Array<{ method: CounterMethod; amount_q: number }>;
+  tenders?: HandOverTender[];
   cash_tendered_q?: number;
 }
 
@@ -146,13 +153,16 @@ export interface HandOverBody {
  * dinheiro como foi entregue (R$ 50,00 por uma encomenda de R$ 36,00), então o
  * dinheiro vira UMA forma com o que ele paga de fato, e as cédulas vão inteiras
  * como recebido. Cartão vai como está: excedente em cartão a tela não deixa
- * validar. Encomenda paga não manda forma nenhuma: só entrega.
+ * validar. O Pix misto vai com `pix_confirmed`, depois do "Recebi o Pix".
+ * Encomenda paga não manda forma nenhuma: só entrega.
  */
 export function handOverBody(tenders: POSPaymentTenderDraft[], dueQ: number): HandOverBody {
   if (dueQ <= 0) return {};
-  const nonCash = tenders
+  const nonCash: HandOverTender[] = tenders
     .filter((tender) => tender.method !== "cash" && tender.amount_q > 0)
-    .map((tender) => ({ method: tender.method as CounterMethod, amount_q: tender.amount_q }));
+    .map((tender) => (tender.method === "pix" && tender.pix_confirmed
+      ? { method: "pix" as const, amount_q: tender.amount_q, pix_confirmed: true as const }
+      : { method: tender.method as CounterMethod | "pix", amount_q: tender.amount_q }));
   const cashPartQ = dueQ - nonCash.reduce((sum, tender) => sum + tender.amount_q, 0);
   if (cashPartQ <= 0) return { tenders: nonCash };
   const cash = { method: "cash" as const, amount_q: cashPartQ };

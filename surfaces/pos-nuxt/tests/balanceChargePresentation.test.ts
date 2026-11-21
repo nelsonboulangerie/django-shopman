@@ -4,7 +4,7 @@
 // que ela já aceita (formas somando o saldo; a nota inteira em `cash_tendered_q`).
 import { describe, expect, it } from "vitest";
 
-import { balanceCharge, handOverBody, handOverMethods } from "../app/presentation/balanceCharge";
+import { balanceCharge, handOverBody, handOverMethods, paysBalanceWithPix } from "../app/presentation/balanceCharge";
 import { BALANCE_PAYMENT_SHORTCUTS } from "../app/presentation/paymentKeys";
 import { shortcutMatches } from "../../operator-kit/app/utils/operatorShortcuts";
 import type { POSPaymentTenderDraft } from "../app/types/pos";
@@ -98,6 +98,29 @@ describe("o corpo da rota", () => {
 
   it("encomenda paga não manda forma nenhuma: só entrega", () => {
     expect(handOverBody([], 0)).toEqual({});
+  });
+});
+
+describe("o saldo em Pix: sozinho é QR, misto é atestado (#2916)", () => {
+  const line = (method: string, amount_q: number, pix_confirmed?: boolean) =>
+    ({ method, amount_q, collection: "terminal", ...(pix_confirmed ? { pix_confirmed } : {}) }) as POSPaymentTenderDraft;
+
+  it("Pix sozinho, ou dividido só em Pix, é a cobrança Pix do balcão", () => {
+    expect(paysBalanceWithPix([line("pix", 3600)], 3600)).toBe(true);
+    expect(paysBalanceWithPix([line("pix", 1800), line("pix", 1800)], 3600)).toBe(true);
+  });
+
+  it("Pix ao lado de dinheiro ou cartão não é QR: vai pela rota da entrega", () => {
+    expect(paysBalanceWithPix([line("cash", 2000), line("pix", 1600)], 3600)).toBe(false);
+    expect(paysBalanceWithPix([line("debit", 2000), line("pix", 1600)], 3600)).toBe(false);
+    expect(paysBalanceWithPix([], 3600)).toBe(false);
+  });
+
+  it("o corpo leva o Pix atestado com a marca, e o dinheiro com a nota inteira", () => {
+    expect(handOverBody([line("cash", 5000), line("pix", 1600, true)], 3600)).toEqual({
+      tenders: [{ method: "cash", amount_q: 2000 }, { method: "pix", amount_q: 1600, pix_confirmed: true }],
+      cash_tendered_q: 5000,
+    });
   });
 });
 

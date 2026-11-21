@@ -73,7 +73,7 @@ import {
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
 import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { pixNeedsWholeBalance, type PosBalanceCharge } from "~/presentation/balanceCharge";
+import type { PosBalanceCharge } from "~/presentation/balanceCharge";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -924,16 +924,6 @@ function returnToCart() {
 }
 
 /** O saldo em Pix: tira as outras linhas e a divisão, e o Pix assume o valor inteiro. */
-function keepOnlyWholePix() {
-  if (splitActive.value) emit("setSplitCount", 0);
-  const pixIndex = props.paymentTenders.findIndex((tender) => tender.method === "pix");
-  if (pixIndex < 0) return;
-  const removals = props.paymentTenders.map((_, index) => index).filter((index) => index !== pixIndex).reverse();
-  removals.forEach((index) => emit("removeTender", index));
-  emit("selectTender", pixIndex - removals.filter((index) => index < pixIndex).length);
-  emit("tenderExact");
-}
-
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
 // sete portões; a tela apresenta a mesma recusa e o caminho para resolvê-la.
 //
@@ -1086,16 +1076,6 @@ const ctaBlock = computed<{
       message: onDelivery.value
         ? `Escolha como o cliente vai pagar na ${props.fulfillmentType === "delivery" ? "entrega" : "retirada"}.`
         : "Escolha a forma de pagamento.",
-    };
-  }
-  // O SALDO EM PIX é UMA cobrança Pix do pedido, no valor inteiro, como a venda
-  // que fecha em Pix (#2897). Pix com outra forma, conta dividida ou Pix de outro
-  // valor não fecham: o toque deixa só o Pix, no valor do saldo.
-  if (props.balance && pixNeedsWholeBalance(props.paymentTenders, props.paymentTotalQ)) {
-    return {
-      message: "No saldo da encomenda, o Pix cobra o valor inteiro, sozinho.",
-      hint: "Ou tire o Pix e receba em dinheiro ou cartão.",
-      action: { label: "Deixar só o Pix no valor inteiro", run: keepOnlyWholePix },
     };
   }
   // `preorder_fired_unpaid` — a gêmea. Encomenda que já está na cozinha não

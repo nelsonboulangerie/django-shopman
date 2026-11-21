@@ -1540,18 +1540,36 @@ def collects_at_handoff(order: Order) -> bool:
     return (method in _COUNTER_METHODS or not method) and not payment_service.order_intent_refs(order)
 
 
+#: A frase do Pix misto que chegou sem o gesto "Recebi o Pix" (#2916).
+PIX_MIXED_UNCONFIRMED_MESSAGE = "Confira se o Pix entrou e toque em Recebi o Pix antes de entregar."
+#: Pix sozinho no saldo é a cobrança Pix do balcão (``counter_pix``), com QR e provedor.
+PIX_ALONE_MESSAGE = "Pix sozinho no saldo é pela cobrança Pix do balcão, com o QR."
+
+
 def _counter_tender(raw) -> dict:
-    """Uma forma escolhida no balcão, validada: dinheiro, débito ou crédito."""
+    """Uma forma escolhida no balcão, validada: dinheiro, débito, crédito ou Pix atestado.
+
+    O Pix só entra aqui no saldo MISTO (com dinheiro ou cartão) e atestado pelo
+    operador (``pix_confirmed``, o gesto "Recebi o Pix" da venda mista, #2916):
+    sem provedor, quem afirma que o dinheiro entrou é o balcão. Pix sozinho é a
+    cobrança Pix do balcão (:mod:`counter_pix`), que tem QR e confirmação.
+    """
     if not isinstance(raw, dict):
         raise ValueError("Forma de pagamento inválida.")
     method = str(raw.get("method") or "").strip().lower()
-    if method not in _COUNTER_METHODS:
-        raise ValueError("No balcão, receba em dinheiro ou no cartão (débito ou crédito).")
+    if method not in _COUNTER_METHODS and method != "pix":
+        raise ValueError("No balcão, receba em dinheiro, no cartão (débito ou crédito) ou em Pix.")
     try:
         amount = int(raw.get("amount_q") or 0)
     except (TypeError, ValueError):
         amount = 0
-    return {"method": method, "amount_q": amount, "collection": "on_delivery", "status": "pending"}
+    tender = {"method": method, "amount_q": amount, "collection": "on_delivery", "status": "pending"}
+    if method == "pix":
+        if raw.get("pix_confirmed") is not True:
+            raise ValueError(PIX_MIXED_UNCONFIRMED_MESSAGE)
+        tender["pix_confirmed"] = True
+    return tender
+
 
 
 def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int | None = None) -> str:
@@ -1778,7 +1796,8 @@ def settle_delivery_cash(
 
     ``tenders`` (opcional) é a forma escolhida NO BALCÃO — o cliente combinou
     dinheiro e paga no cartão, ou a encomenda nem dizia a forma. Substitui as
-    formas pendentes: só dinheiro, débito ou crédito, somando o que falta.
+    formas pendentes: dinheiro, débito ou crédito, somando o que falta, e o Pix
+    atestado no balcão ("Recebi o Pix") só ao lado de uma delas (#2916).
     ``cash_tendered_q`` é a nota que veio na mão: acima da parte em dinheiro, a
     diferença é o troco (``tendered_q``/``change_q``, como na venda do PDV).
 
@@ -1888,12 +1907,16 @@ def settle_delivery_cash(
     kept = [t for t in existing if t.get("status") == "received" or t.get("method") == "account"]
     if chosen_at_counter:
         tenders = [_counter_tender(t) for t in tenders]
+        # Pix atestado só ao lado de dinheiro ou cartão: a mesma régua da venda mista.
+        chosen_methods = {t["method"] for t in tenders if int(t.get("amount_q") or 0) > 0}
+        if "pix" in chosen_methods and not chosen_methods - {"pix"}:
+            raise ValueError(PIX_ALONE_MESSAGE)
     else:
         tenders = [t for t in existing if t not in kept]
         if not tenders:
             tenders = [{"method": payment.get("method"), "amount_q": amount, "collection": "on_delivery", "status": "pending"}]
     if not tenders or any(
-        t.get("method") not in {"cash", "credit", "debit"}
+        (t.get("method") not in {"cash", "credit", "debit"} and not (t.get("method") == "pix" and t.get("pix_confirmed")))
         or t.get("collection") != "on_delivery"
         or t.get("status") == "received"
         or int(t.get("amount_q") or 0) <= 0
@@ -1908,6 +1931,7 @@ def settle_delivery_cash(
         settled_entry = None
         cash_amount = 0
         cash_intent_ref = ""
+        confirmed_at = timezone_now_iso()
         for index, tender in enumerate(tenders):
             method = tender["method"]
             part = int(tender["amount_q"])
@@ -1915,9 +1939,18 @@ def settle_delivery_cash(
             key = f"order-payment:{order.ref}:{method}:{part}:on_delivery"
             if len(tenders) > 1:
                 key += f":{index}"
+            gateway_data = {"collection": "on_delivery", "terminal_ref": cash_shift.terminal.ref}
+            attested_pix = method == "pix" and tender.pop("pix_confirmed", False) is True
+            if attested_pix:
+                # O gesto "Recebi o Pix" ganha autor e hora no servidor, como na
+                # venda mista (``pos.build_session_ops``): o Pix que o provedor
+                # não viu é a palavra de quem recebeu (a nota lê ``pix_confirmed_by``).
+                tender["pix_confirmed_by"] = actor
+                tender["pix_confirmed_at"] = confirmed_at
+                gateway_data.update({"pix_confirmed_by": actor, "pix_confirmed_at": confirmed_at})
             intent = PaymentService.settle(
                 order.ref, part, method, currency="BRL", idempotency_key=key,
-                gateway_data={"collection": "on_delivery", "terminal_ref": cash_shift.terminal.ref},
+                gateway_data=gateway_data, asserted_at_terminal=attested_pix,
             )
             tender.update({
                 "collection": "terminal", "status": "received",

@@ -112,7 +112,7 @@ def initiate(order) -> None:
     # O total que vale AGORA: pedido editado enquanto novo (concierge, Gestor)
     # tem o total no ajuste, e o ``total_q`` selado é o de nascimento. Cobrar o
     # selado mandava ao cliente um Pix com o valor antigo (P0-6).
-    amount_q = order_composition.effective_total_q(order)
+    amount_q = _charge_amount_q(order)
     adapter = get_adapter("payment", method=method)
     route_by_persisted_gateway = str(method).lower() == "pix"
     expected_gateway = (
@@ -303,6 +303,19 @@ def initiate(order) -> None:
 _INTENT_PRESENTATION_KEYS = ("intent_ref", "idempotency_key", "qr_code", "copy_paste", "expires_at", "checkout_url")
 
 
+def _charge_amount_q(order) -> int:
+    """O valor da cobrança do pedido: o total efetivo, ou o saldo do Pix do balcão.
+
+    O Pix do balcão de uma encomenda com parte paga cobra só o SALDO (#2917): o
+    valor vem da marca dele (``counter_pix.charge_amount_q``). Fora disso, o total
+    efetivo, como sempre.
+    """
+    from shopman.shop.services import counter_pix
+
+    balance = counter_pix.charge_amount_q(order)
+    return balance if balance is not None else order_composition.effective_total_q(order)
+
+
 def _retire_intent_with_old_amount(order, *, payment_data: dict, method: str, amount_q: int, intent_ref: str) -> bool:
     """A cobrança viva do pedido tem o valor de antes da edição? Cancela e libera a nova.
 
@@ -352,7 +365,7 @@ def restore_existing_intent(order) -> bool:
     """Restore a persisted Payman intent to Order data without contacting a provider."""
     payment_data = dict((order.data or {}).get("payment") or {})
     method = payment_data.get("method")
-    amount_q = order_composition.effective_total_q(order)
+    amount_q = _charge_amount_q(order)
     route_by_persisted_gateway = str(method or "").lower() == "pix"
     expected_gateway = (
         _gateway_for_adapter(get_adapter("payment", method=method)) or "__unresolved__"

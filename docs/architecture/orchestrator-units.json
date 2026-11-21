@@ -12922,7 +12922,9 @@
             "_mark_ready_at_counter",
             "take_over_before_hand_over",
             "_COUNTER_METHODS",
-            "COUNTER_HAND_OVER_STATUSES"
+            "COUNTER_HAND_OVER_STATUSES",
+            "PIX_MIXED_UNCONFIRMED_MESSAGE",
+            "PIX_ALONE_MESSAGE"
           ]
         }
       ],
@@ -14346,7 +14348,8 @@
             "settles_without_gateway",
             "initiate",
             "restore_existing_intent",
-            "settle_terminal_tenders"
+            "settle_terminal_tenders",
+            "_charge_amount_q"
           ]
         }
       ],
@@ -17969,8 +17972,9 @@
             "CounterPixRefused",
             "MARKER_KEY",
             "TAKEOVER_HISTORY_KEY",
-            "PARTIAL_BALANCE_MESSAGE",
-            "NOT_CREATED_MESSAGE"
+            "NOT_CREATED_MESSAGE",
+            "charge_amount_q",
+            "_received_lines"
           ]
         }
       ],

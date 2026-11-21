@@ -604,7 +604,7 @@ describe("Detalhe — o saldo em Pix no balcão (#2897)", () => {
     expect(wrapper.find("[data-payment-cta]").exists()).toBe(false);
   });
 
-  it("Pix com outra forma trava, e o toque que resolve deixa só o Pix no valor inteiro", async () => {
+  it("Pix misto (#2916): dinheiro e Pix na mesma tela, o Recebi o Pix confere, e a entrega leva o Pix atestado", async () => {
     answerPix();
     const wrapper = await mount(DetailPage);
     await opensPayment(wrapper);
@@ -614,15 +614,25 @@ describe("Detalhe — o saldo em Pix no balcão (#2897)", () => {
     await tap(wrapper, "button[aria-label=\"Dígito 0\"]");
     await tap(wrapper, '[data-payment-method="pix"]');
 
-    expect(cta(wrapper).element.disabled).toBe(true);
-    expect(wrapper.text()).toContain("No saldo da encomenda, o Pix cobra o valor inteiro, sozinho.");
-    const fix = wrapper.findAll("button").find((button) => button.text() === "Deixar só o Pix no valor inteiro")!;
-    await fix.trigger("click");
+    // Nada trava: é o Pix misto da venda, com o mesmo degrau de conferência.
+    expect(wrapper.text()).not.toContain("o Pix cobra o valor inteiro");
+    expect(cta(wrapper).element.disabled).toBe(false);
+    await cta(wrapper).trigger("click");
+    await settle();
+    expect(call.mock.calls.some(([path]) => String(path).endsWith("/pix/"))).toBe(false);
+    const confirm = document.querySelector<HTMLButtonElement>("[data-pos-machine-charged]")!;
+    expect(confirm.textContent).toContain("Recebi o Pix");
+    confirm.click();
     await settle();
 
-    expect(cta(wrapper).element.disabled).toBe(false);
-    const lines = wrapper.findAll('button[aria-label^="Editar "]').map((line) => line.attributes("aria-label")!.replace(/\s+/g, " "));
-    expect(lines).toEqual(["Editar Pix de R$ 36,00"]);
+    const handOver = call.mock.calls.find(([path]) => String(path).endsWith("/hand-over/"))!;
+    expect(handOver).toBeTruthy();
+    expect(handOver[1].body.tenders).toEqual([
+      { method: "cash", amount_q: 2000 },
+      { method: "pix", amount_q: 1600, pix_confirmed: true },
+    ]);
+    // Nenhuma cobrança Pix no provedor: o Pix misto é a palavra do balcão.
+    expect(call.mock.calls.some(([path]) => String(path).endsWith("/pix/"))).toBe(false);
   });
 
   it("pago, a encomenda é entregue pelo Entregar de sempre, sem forma nenhuma", async () => {

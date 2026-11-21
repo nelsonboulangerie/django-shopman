@@ -466,6 +466,8 @@ for (const device of ["phone", "counter"] as const) {
 //                           traz "Gerar outro Pix" (o QR morto sai), e o operador recebe em dinheiro,
 //                           o que cancela o Pix antes.
 const PIX_ROUND = process.env.PDV_LIVE_J6_PIX || "";
+/** `antes`: só a captura da tela decisiva, no código de antes (#2916/#2917). */
+const SIDE = process.env.PDV_LIVE_J6_SIDE || "depois";
 
 async function choosesPixAndReceives(page: Page) {
   const payment = page.locator("[data-preorder-balance-payment]");
@@ -585,6 +587,120 @@ for (const device of ["phone", "counter"] as const) {
       console.log(`J6 Pix que não chega: intent ${payment.intent_ref}, status depois do dinheiro ${JSON.stringify(status)}`);
       await still(page);
       await capture(page, testInfo, "entregue-em-dinheiro");
+    });
+
+    test("Pix misto (#2916): parte em dinheiro, parte em Pix, o Recebi o Pix confere e a entrega sai", async (
+      { cashierAtCounter: page },
+      testInfo,
+    ) => {
+      test.skip(PIX_ROUND !== "pago" && PIX_ROUND !== "misto", "rodada do Pix misto (PDV_LIVE_J6_PIX=pago ou misto)");
+      test.setTimeout(10 * 60_000);
+
+      await opensOrder(page);
+      await identifiesCustomer(page);
+      await schedulesTodayPickup(page);
+      await orders(page, 2);
+      const ref = await closesOrder(page, true);
+      await opensFromList(page, ref);
+      const handOver = page.locator("[data-preorder-hand-over], [data-preorder-hand-over-bar] button").locator("visible=true").first();
+      await expect(handOver).toContainText(/^Receber R\$ [\d.,]+ e entregar$/, { timeout: 30_000 });
+      const dueQ = cents(money((await handOver.textContent()) || ""));
+      expect(dueQ, "o roteiro paga R$ 10,00 em dinheiro e o resto em Pix").toBeGreaterThan(1000);
+      await handOver.click();
+      const payment = page.locator("[data-preorder-balance-payment]");
+      await expect(payment).toBeVisible({ timeout: 30_000 });
+
+      // R$ 10,00 em dinheiro, e o Pix completa o saldo: a mesma tela, sem trava.
+      await payment.locator('[data-payment-method="cash"]').click();
+      await page.locator('button[aria-label="Limpar: zera o valor da linha"]').click();
+      for (const digit of "10") await page.locator(`button[aria-label="Dígito ${digit}"]`).locator("visible=true").first().click();
+      await payment.locator('[data-payment-method="pix"]').click();
+      await still(page);
+      await capture(page, testInfo, "misto-dinheiro-e-pix");
+      if (SIDE === "antes") return;
+      await expect(payment).not.toContainText("o Pix cobra o valor inteiro");
+      const cta = page.locator("[data-payment-cta]");
+      await expect(cta).toBeEnabled();
+
+      // O degrau da venda mista: confira o Pix e toque em Recebi o Pix.
+      await cta.click();
+      const charged = page.locator("[data-pos-machine-charged]");
+      await expect(charged).toContainText("Recebi o Pix", { timeout: 15_000 });
+      await still(page);
+      await capture(page, testInfo, "misto-confere-o-pix");
+      await audits(page, "conferência do Pix misto", "[role=dialog] h2, [role=dialog] p, [data-pos-machine-charged]");
+      const handedOver = page.waitForResponse((r) => r.url().includes(`/pos/preorders/${ref}/hand-over/`) && r.request().method() === "POST", { timeout: 90_000 });
+      await charged.click();
+      const response = await handedOver;
+      expect(response.status()).toBe(200);
+      const sent = response.request().postDataJSON() as { tenders: Array<{ method: string; amount_q: number; pix_confirmed?: boolean }> };
+      expect(sent.tenders).toEqual([
+        { method: "cash", amount_q: 1000 },
+        { method: "pix", amount_q: dueQ - 1000, pix_confirmed: true },
+      ]);
+      await expect(page.getByText(/Encomenda entregue\./).first()).toBeVisible({ timeout: 30_000 });
+      await expect(page).toHaveURL(/\/preorders(\?|$)/, { timeout: 30_000 });
+      await still(page);
+      await capture(page, testInfo, "misto-entregue");
+    });
+
+    test("saldo parcial (#2917): a encomenda paga e aumentada cobra em Pix só o que falta", async (
+      { cashierAtCounter: page },
+      testInfo,
+    ) => {
+      test.skip(PIX_ROUND !== "pago", "rodada do Pix confirmado (PDV_LIVE_J6_PIX=pago)");
+      test.setTimeout(12 * 60_000);
+
+      // A encomenda nasce paga em dinheiro, e a cliente pede mais um depois.
+      await opensOrder(page);
+      await identifiesCustomer(page);
+      await schedulesTodayPickup(page);
+      await orders(page, 1);
+      const ref = await closesOrder(page, false);
+      await opensFromList(page, ref);
+      if ((page.viewportSize()?.width ?? 0) >= 768) {
+        await page.locator("[data-preorder-edit]").locator("visible=true").first().click({ timeout: 30_000 });
+      } else {
+        await page.getByRole("button", { name: /Mais ações|Opções/ }).locator("visible=true").first().click();
+        await page.getByRole("menuitem", { name: "Editar encomenda" }).first().click();
+      }
+      await orders(page, 1);
+      const sheet = page.getByRole("button", { name: "Ver a comanda" }).locator("visible=true").first();
+      if (await sheet.isVisible().catch(() => false)) await sheet.click();
+      await page.getByRole("button", { name: /^Salvar alterações/ }).locator("visible=true").first().click({ timeout: 30_000 });
+      const review = page.locator("[data-order-edit-review]");
+      await expect(review).toBeVisible({ timeout: 30_000 });
+      const saved = page.waitForResponse((r) => r.url().includes(ref) && r.request().method() === "POST" && r.status() < 500, { timeout: 90_000 });
+      await review.locator("[data-order-edit-confirm]").click();
+      await saved;
+      await expect(page.getByRole("heading", { name: `Encomenda ${ref}` }).locator("visible=true").first()).toBeVisible({ timeout: 60_000 });
+      await settled(page);
+
+      // O saldo é só o item novo; o Pix cobra ele, e o que já entrou fica.
+      const handOver = page.locator("[data-preorder-hand-over], [data-preorder-hand-over-bar] button").locator("visible=true").first();
+      await expect(handOver).toContainText(/^Receber R\$ [\d.,]+ e entregar$/, { timeout: 30_000 });
+      const due = money((await handOver.textContent()) || "");
+      await handOver.click();
+      await expect(page.locator("[data-preorder-balance-payment]")).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator("[data-balance-totals]")).toContainText("Já pago");
+      await still(page);
+      await capture(page, testInfo, "parcial-saldo-com-o-ja-pago");
+      if (SIDE === "antes") return;
+      await expect(page.locator('[data-preorder-balance-payment] [data-payment-method="pix"]')).toBeEnabled();
+      const { payment } = await choosesPixAndReceives(page);
+      expect(payment.amount_display.replace(/\s/, " ")).toBe(due);
+      const pix = page.locator("[data-balance-pix]");
+      await expect(pix.locator('img[alt="QR Code Pix"]')).toBeVisible({ timeout: 30_000 });
+      await expect(pix).toContainText(`Pagamento Pix · ${due}`);
+      await still(page);
+      await capture(page, testInfo, "parcial-pix-so-do-saldo");
+      await audits(page, "Pix do saldo parcial", "[data-balance-pix] header p, [data-balance-pix] p.text-sm, [data-balance-pix] button");
+      await noSideScroll(page, "Pix do saldo parcial");
+
+      await expect(page.getByText(`Pix de ${payment.amount_display} confirmado. Encomenda entregue.`).first()).toBeVisible({ timeout: 120_000 });
+      await expect(page).toHaveURL(/\/preorders(\?|$)/, { timeout: 30_000 });
+      await still(page);
+      await capture(page, testInfo, "parcial-pix-confirmado-entregue");
     });
   });
 }
