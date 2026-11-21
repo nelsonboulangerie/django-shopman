@@ -148,3 +148,43 @@ def test_the_instruction_asks_to_cite_only_what_answered():
     assert "só das perguntas frequentes cuja resposta você usou de fato" in system
     assert "não cite uma pergunta frequente só porque é do mesmo assunto" in system
     assert "—" not in system
+
+
+def test_the_body_of_an_answer_never_picks_the_faq(surface):
+    """A vizinha que respondia errado (produção, 21/11/2026): o corpo da resposta só desempata.
+
+    "Até que horas" levava a encomenda ("24 horas de antecedência"), "me avise" levava as
+    fotos ("nos avise antes"). Sem palavra na pergunta nem nos termos, não casa: vale o
+    "vou verificar", que é melhor que a resposta de outra coisa.
+    """
+    from shopman.shop.models import Shop
+    from shopman.storefront.presentation.public_information import search_public_faq
+
+    FAQEntry.objects.create(ref="fotos", question="Posso tirar fotos na loja?", search_terms="",
+                            answer="Na parte interna, pedimos que nos avise antes.", is_published=True)
+    FAQEntry.objects.create(ref="encomenda", question="Posso encomendar para outro dia?", search_terms="",
+                            answer="Alguns pães precisam de 24 horas de antecedência.", is_published=True)
+    shop = Shop.load()
+
+    def refs(text):
+        return [a.ref for a in search_public_faq(text, channel_ref="whatsapp", shop=shop)]
+
+    assert "curated-fotos" not in refs("me avise")
+    assert "curated-encomenda" not in refs("horas")
+    assert refs("tirar fotos")[:1] == ["curated-fotos"], "a pergunta casa"
+    assert "curated-encomenda" in refs("antecedência encomendar"), "a pergunta casa; o corpo só soma"
+
+
+def test_closing_hours_are_the_hours_question(surface):
+    from shopman.shop.models import Shop
+    from shopman.storefront.presentation.public_information import search_public_faq
+
+    shop = Shop.load()
+    shop.opening_hours = {"monday": {"open": "09:00", "close": "18:00"}}
+    shop.save(update_fields=["opening_hours"])
+    FAQEntry.objects.create(ref="pao-pronto", question="A que horas cada pão fica pronto?", search_terms="",
+                            answer="O croissant fica pronto às 9h.", is_published=True)
+
+    found = search_public_faq("fecham horas", channel_ref="whatsapp", shop=shop)
+
+    assert found[0].ref == "hours"
