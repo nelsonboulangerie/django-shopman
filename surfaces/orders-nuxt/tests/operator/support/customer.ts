@@ -11,6 +11,9 @@ export interface PickupOrder {
   name: string;
   /** O dia da retirada como a loja o oferece ("Hoje", "Amanhã"); padrão: hoje. */
   day?: "Hoje" | "Amanhã";
+  /** A janela como a loja a escreve: meia hora hoje ("17h às 17h30"), turno na encomenda
+   *  ("A partir das 15h"); padrão: a primeira livre. */
+  window?: string;
 }
 
 /** Cliente novo pede retirada (hoje, ou amanhã: a encomenda) e paga com Pix (pagamento
@@ -20,10 +23,12 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   await settled(page);
   await expect(page.getByText(/^Aberto/).first(), "a loja da pilha precisa estar aberta agora (README: expediente)").toBeVisible();
   await page.getByRole("button", { name: `Adicionar ${order.product}`, exact: true }).first().click();
-  await expect(page.getByRole("link", { name: /^Sacola, 1 item/ })).toBeVisible();
+  // A sacola tem dois caminhos no celular: o ícone do topo e a aba da barra de baixo.
+  const bag = page.getByRole("link", { name: /^Sacola, 1 item/ }).first();
+  await expect(bag).toBeVisible();
   await capture(page, testInfo, "loja-cardapio");
 
-  await page.getByRole("link", { name: /^Sacola, 1 item/ }).click();
+  await bag.click();
   await expect(page.getByRole("heading", { name: "Sua sacola" })).toBeVisible();
   await page.getByRole("link", { name: "Finalizar pedido" }).last().click();
 
@@ -56,13 +61,22 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   const day = order.day ?? "Hoje";
   if (day === "Hoje") await page.getByRole("radio", { name: /^Hoje/ }).click().catch(() => undefined);
   else await page.getByRole("radio", { name: new RegExp(`^${day}`) }).click();
-  // O primeiro horário livre do dia, no formato da casa ("10h às 10h30").
-  await page.getByRole("radio", { name: /^\d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/ }).first().click();
+  // A janela pedida, ou o primeiro horário livre do dia, no formato da casa ("10h às 10h30").
+  if (order.window) {
+    // Trocar o dia relê os horários: a janela clicada antes disso some com a lista velha.
+    await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
+    const window = page.getByRole("radio", { name: order.window, exact: true });
+    await window.click();
+    await expect(window).toBeChecked();
+    await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
+    await expect(window, `a janela ${order.window} continua escolhida`).toBeChecked();
+  } else await page.getByRole("radio", { name: /^\d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/ }).first().click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByRole("radio", { name: /^Pix/ }).click();
   await capture(page, testInfo, "loja-finalizar");
   await page.getByRole("button", { name: "Revisar pedido" }).click();
   await expect(page.getByText(new RegExp(`Retirada · ${day}`)).last()).toBeVisible();
+  if (order.window) await expect(page.getByText(order.window).last()).toBeVisible();
   await capture(page, testInfo, "loja-revisar");
   await page.getByRole("button", { name: "Enviar pedido" }).click();
 
