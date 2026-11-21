@@ -87,6 +87,11 @@ def _orphan_keys() -> set[str]:
         for path in (repo_root / base).rglob("*"):
             if path.suffix not in (".py", ".ts", ".vue"):
                 continue
+            # Dependência instalada não é tela, e há pacote que tem PASTA com nome de
+            # arquivo (`gl-matrix/types.d.ts`): ler isso derrubava o teste em quem roda
+            # local com o `node_modules` das superfícies instalado.
+            if "node_modules" in path.parts or not path.is_file():
+                continue
             ap = path.as_posix()
             if ap == defn_file or "/tests/" in ap or "/test_" in ap:
                 continue
