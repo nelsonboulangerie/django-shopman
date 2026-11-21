@@ -86,21 +86,33 @@ async function schedulesTomorrowPickup(page: Page) {
  * Daqui a dez dias no relógio da loja, pulando o domingo (a casa não abre): a data do
  * laudo (P1-1). O seed planeja só a próxima semana, então a data não tem lote planejado.
  */
-function tenDaysAhead(): { iso: string; day: string; digits: string } {
+const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+function tenDaysAhead(): { iso: string; day: string; cell: RegExp; month: string } {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
   now.setDate(now.getDate() + 10);
   if (now.getDay() === 0) now.setDate(now.getDate() + 1);
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
-  return { iso: `${now.getFullYear()}-${mm}-${dd}`, day: `${dd}/${mm}`, digits: `${dd}${mm}${now.getFullYear()}` };
+  const month = `${MONTHS[now.getMonth()]} de ${now.getFullYear()}`;
+  return { iso: `${now.getFullYear()}-${mm}-${dd}`, day: `${dd}/${mm}`, cell: new RegExp(`, ${now.getDate()} de ${month}$`), month };
 }
 
-/** "Outra data": a Fran digita o dia no campo do kit, escolhe o turno e monta a encomenda. */
-async function schedulesPickupOn(page: Page, digits: string) {
+/** "Outra data": a Fran escolhe o dia no calendário do kit, o turno, e monta a encomenda. */
+async function schedulesPickupOn(page: Page, target: { cell: RegExp; month: string }) {
   await page.locator('[data-day-option="other"]').locator("visible=true").first().click();
-  const field = page.locator("[data-day-other-input]").locator("visible=true").first();
-  await field.locator("[data-reka-date-field-segment]").first().click();
-  await page.keyboard.type(digits);
+  const calendar = page.getByRole("dialog", { name: /^Abrir calendário/ });
+  if (!(await calendar.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: /^Abrir calendário/ }).locator("visible=true").first().click();
+  }
+  await expect(calendar).toBeVisible({ timeout: 10_000 });
+  const cell = calendar.getByRole("button", { name: target.cell }).and(calendar.locator(":not([data-outside-view]):not([data-disabled])")).first();
+  // O mês da data pode ser o próximo: avança só se a célula não está na grade aberta.
+  if (!(await cell.waitFor({ timeout: 3000 }).then(() => true, () => false))) {
+    await calendar.getByRole("button", { name: "Próximo mês" }).click();
+  }
+  await cell.click();
+  await expect(calendar).toBeHidden({ timeout: 10_000 });
   const slot = page
     .locator('[data-order-step="schedule"]')
     .getByRole("button")
@@ -263,6 +275,38 @@ async function audits(page: Page, label: string, selector: string) {
   return report;
 }
 
+/**
+ * O resto da auditoria do WP-E3: BORDA (a pílula cabe no tile, sem encostar), FOCO (o
+ * tile recebe o foco do teclado com anel visível) e ALINHAMENTO (o fato da linha começa
+ * onde começa o nome do item).
+ */
+async function auditsGeometry(page: Page, tileSelector: string | null) {
+  const report = await page.evaluate((sel) => {
+    const tile = sel ? (document.querySelector(sel) as HTMLElement | null) : null;
+    const pill = tile?.querySelector("[data-pos-product-unplanned]") as HTMLElement | null;
+    const fact = Array.from(document.querySelectorAll('[data-pos-line-plan="unplanned"]')).find((el) => (el as HTMLElement).offsetParent !== null) as HTMLElement | undefined;
+    const name = fact?.closest("[data-item-select]")?.querySelector("[data-pos-line-name]") as HTMLElement | null;
+    const box = (el: Element | null | undefined) => (el ? el.getBoundingClientRect() : null);
+    const t = box(tile);
+    const p = box(pill);
+    if (tile) tile.focus({ focusVisible: true } as FocusOptions);
+    const focused = document.activeElement === tile;
+    const style = tile ? getComputedStyle(tile) : null;
+    const ring = Boolean(style && ((style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0) || style.boxShadow !== "none"));
+    return {
+      pillInsideTile: Boolean(t && p && p.left >= t.left + 4 && p.right <= t.right - 4 && p.top >= t.top + 4),
+      pill: p && [Math.round(p.left), Math.round(p.right)],
+      tile: t && [Math.round(t.left), Math.round(t.right)],
+      focused,
+      ring,
+      factLeft: box(fact) && Math.round(box(fact)!.left),
+      nameLeft: box(name) && Math.round(box(name)!.left),
+    };
+  }, tileSelector);
+  console.log(`AUDITORIA geometria e foco: ${JSON.stringify(report)}`);
+  return report;
+}
+
 test.describe.configure({ mode: "serial" });
 
 for (const device of ["phone", "counter"] as const) {
@@ -347,7 +391,7 @@ for (const device of ["phone", "counter"] as const) {
 
       await opensOrder(page);
       await identifiesCustomer(page);
-      await schedulesPickupOn(page, target.digits);
+      await schedulesPickupOn(page, target);
 
       // 1 · A grade: o croissant não diz "Sem saldo"; diz que vira pedido à Produção.
       const search = page.getByPlaceholder(/Buscar produto/).locator("visible=true").first();
@@ -360,6 +404,10 @@ for (const device of ["phone", "counter"] as const) {
       await expect(tile.locator("[data-pos-product-unplanned]")).toContainText("Vira pedido à Produção", { timeout: 30_000 });
       await expect(tile.locator("[data-pos-product-unplanned]")).toHaveAttribute("title", note);
       await audits(page, "pilula", "[data-pos-product-unplanned] > span[aria-hidden]");
+      const tileGeometry = await auditsGeometry(page, "button[data-pos-product]:has([data-pos-product-unplanned])");
+      expect(tileGeometry.pillInsideTile, "a pílula cabe no tile, longe da borda").toBe(true);
+      expect(tileGeometry.focused, "o tile recebe o foco do teclado").toBe(true);
+      expect(tileGeometry.ring, "o foco do tile tem anel visível").toBe(true);
       await search.fill("");
 
       // 2 · A linha: 30 croissants, e o fato da data sem plano.
@@ -367,6 +415,8 @@ for (const device of ["phone", "counter"] as const) {
       const fact = page.locator('[data-pos-line-plan="unplanned"]').locator("visible=true").first();
       await expect(fact).toHaveText(note, { timeout: 30_000 });
       await audits(page, "linha", '[data-pos-line-plan="unplanned"] > span');
+      const lineGeometry = await auditsGeometry(page, null);
+      expect(lineGeometry.factLeft, "o fato da linha começa onde começa o nome").toBe(lineGeometry.nameLeft);
       await capture(page, testInfo, "linha-sem-plano");
 
       // 3 · Nada pede o gerente: o Validar fecha a encomenda em dinheiro.

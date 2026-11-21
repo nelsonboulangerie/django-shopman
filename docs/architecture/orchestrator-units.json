@@ -16801,6 +16801,7 @@
             "alert_demand_over_plan",
             "_qty_text",
             "plan_backing_on",
+            "unplanned_on",
             "over_plan_lines",
             "hold",
             "fulfill",
@@ -16829,6 +16830,7 @@
       ],
       "ports": [
         "adapter:catalog",
+        "adapter:production",
         "adapter:stock",
         "shopman.stockman.adapters.sku_validation",
         "shopman.stockman.protocols.sku"
