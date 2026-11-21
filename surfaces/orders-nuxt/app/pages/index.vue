@@ -79,7 +79,6 @@ import {
 } from "~/presentation/preorderList";
 import { blockWaits, promiseRisk } from "~/presentation/orderPromise";
 import { CANCEL_HASH, notifyHash, type NoticePick } from "~/presentation/promiseResolution";
-import { CALL_CUSTOMER_HASH } from "~/presentation/orderPending";
 import {
   orderFocusKey,
   orderFocusKeys,
@@ -2445,12 +2444,15 @@ function compactClear() {
                 variant="outline"
                 data-supervision-cancel-unpaid-cell
               />
-              <!-- Abre o pedido no contato: o número não vem na linha (#2434). -->
+              <!-- Abre a conversa direto, sem escrever o número na linha (#2434). -->
               <NuxtButton
-                v-if="row.original.card.customer_callable"
-                :to="`/${row.original.card.ref}${CALL_CUSTOMER_HASH}`"
-                icon="i-lucide-arrow-up-right"
-                label="Ver o contato do cliente"
+                v-if="row.original.card.customer_whatsapp_url"
+                :to="row.original.card.customer_whatsapp_url"
+                external
+                target="_blank"
+                rel="noopener noreferrer"
+                icon="i-lucide-message-circle"
+                label="Chamar no WhatsApp"
                 color="neutral"
                 variant="outline"
                 data-supervision-call-customer-cell
@@ -2587,10 +2589,13 @@ function compactClear() {
                     data-supervision-cancel-unpaid
                   />
                   <NuxtButton
-                    v-if="row.original.card.payment_lapsed && row.original.card.customer_callable && canManageOrders"
-                    :to="`/${row.original.card.ref}${CALL_CUSTOMER_HASH}`"
-                    icon="i-lucide-arrow-up-right"
-                    label="Ver o contato do cliente"
+                    v-if="row.original.card.payment_lapsed && row.original.card.customer_whatsapp_url && canManageOrders"
+                    :to="row.original.card.customer_whatsapp_url"
+                    external
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    icon="i-lucide-message-circle"
+                    label="Chamar no WhatsApp"
                     color="neutral"
                     variant="outline"
                     data-supervision-call-customer

@@ -184,6 +184,12 @@ def _promise(order: Order):
     return order_promise.read_for([Order.objects.get(pk=order.pk)]).get(order.ref)
 
 
+def _exits(card):
+    """As saídas da promessa no cartão, sem o "Chamar no WhatsApp" (#2434), que só
+    depende de o pedido ter telefone e é provado à parte."""
+    return tuple(action for action in card.promise.actions if action.ref != "contact-customer")
+
+
 def _one(promise):
     assert promise is not None
     assert len(promise.items) == 1
@@ -259,20 +265,25 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     assert promise.next_step == item.next_step
     assert promise.recommended_action == "resolve"
 
-    # O cartão: o selo, UMA saída ("Resolver") e o lugar na Fila "Precisa de você".
+    # O cartão: o selo, "Resolver" e "Chamar no WhatsApp" (o pedido pede ação, #2434)
+    # e o lugar na Fila "Precisa de você".
     card = build_order_card(Order.objects.get(pk=order.pk), user=gerente)
     assert card.promise.state == "at_risk"
     assert card.attention == "promise"
     assert card.attention_since_iso == promise.since_iso
-    (resolve,) = card.promise.actions
+    resolve, contact = card.promise.actions
+    assert (contact.ref, contact.kind, contact.label, contact.href) == (
+        "contact-customer", "link", "Chamar no WhatsApp", "https://wa.me/5543999990000",
+    )
+    assert card.customer_whatsapp_url == contact.href
     # Abre o diálogo: não é link nem mutação, e não leva endereço nenhum.
     assert (resolve.ref, resolve.kind, resolve.label) == ("resolve", "dialog", "Resolver")
     assert (resolve.priority, resolve.enabled, resolve.reason, resolve.href) == ("primary", True, "", "")
     assert (resolve.method, resolve.idempotency) == ("", "none")
     assert card.promise.next_step == "Nenhum produto parecido livre para amanhã."
-    # Nenhum dado do cliente vai para o cartão do painel (#2434): nem telefone, nem nome.
-    assert "5543999990000" not in repr(card.promise)
+    # O número não é escrito no cartão: só o link da conversa vai (decisão do dono, #2434).
     assert "Cliente ENC-CANCELADA" not in repr(card.promise)
+    assert all("5543999990000" not in action.label for action in card.promise.actions)
 
 
 def test_a_linha_do_tempo_diz_o_item_e_o_lote_sem_codigo_cru(ficha, gerente):
@@ -302,7 +313,9 @@ def test_o_detalhe_abre_com_promessa_em_risco_e_a_mesma_saida_do_cartao(ficha, g
     detail = build_operator_order(order, user=gerente)
 
     assert detail.promise.state == "at_risk"
-    assert detail.promise.actions == build_order_card(order, user=gerente).promise.actions
+    card_actions = build_order_card(order, user=gerente).promise.actions
+    # O cartão leva também o WhatsApp; no detalhe ele mora na faixa do pedido.
+    assert detail.promise.actions == tuple(a for a in card_actions if a.ref != "contact-customer")
     assert [(action.ref, action.kind, action.priority) for action in detail.promise.actions] == [
         ("resolve", "dialog", "primary"),
     ]
@@ -328,7 +341,7 @@ def test_quem_nao_gerencia_pedidos_ve_o_risco_e_recebe_o_resolver_travado(ficha,
     card = build_order_card(order, user=visitante)
 
     assert card.promise.state == "at_risk"
-    (resolve,) = card.promise.actions
+    (resolve,) = _exits(card)
     assert (resolve.ref, resolve.enabled, resolve.href) == ("resolve", False, "")
     assert resolve.reason == "Identifique uma pessoa com permissão para gerenciar pedidos."
     # A faixa do detalhe trava igual, com o mesmo motivo.
@@ -861,7 +874,7 @@ def test_abrir_a_producao_e_a_saida_recomendada_quando_ela_ainda_resolve(baguete
 
     assert card.promise.next_step == "Peça à Produção para planejar."
     assert card.promise.recommended_action == "open-production"
-    actions = card.promise.actions
+    actions = _exits(card)
     # "Abrir a Produção" é a cheia; "Resolver" fica ao lado, em contorno.
     assert [(action.ref, action.priority) for action in actions] == [
         ("open-production", "primary"), ("resolve", "secondary"),
@@ -895,7 +908,7 @@ def test_quem_nao_opera_a_producao_recebe_o_resolver_cheio_e_a_frase_segue_valen
 
     assert card.promise.next_step == "Peça à Produção para planejar."
     assert card.promise.recommended_action == "open-production"
-    assert [(action.ref, action.priority, action.enabled) for action in card.promise.actions] == [
+    assert [(action.ref, action.priority, action.enabled) for action in _exits(card)] == [
         ("resolve", "primary", True),
     ]
 
@@ -908,7 +921,7 @@ def test_sem_o_endereco_da_producao_a_acao_nao_vem(baguete, padeiro, settings):
     settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": ""}
     card = build_order_card(_sem_lote_hoje("HOJE-SEM-ENDERECO"), user=padeiro)
 
-    assert [(action.ref, action.priority) for action in card.promise.actions] == [("resolve", "primary")]
+    assert [(action.ref, action.priority) for action in _exits(card)] == [("resolve", "primary")]
 
 
 def test_quem_opera_a_producao_e_nao_gerencia_pedidos_abre_o_plano_e_ve_o_resolver_travado(
@@ -923,7 +936,7 @@ def test_quem_opera_a_producao_e_nao_gerencia_pedidos_abre_o_plano_e_ve_o_resolv
 
     card = build_order_card(_sem_lote_hoje("HOJE-SO-PRODUCAO"), user=so_producao)
 
-    opening, resolve = card.promise.actions
+    opening, resolve = _exits(card)
     assert (opening.ref, opening.priority, opening.enabled) == ("open-production", "primary", True)
     assert (resolve.ref, resolve.priority, resolve.enabled) == ("resolve", "secondary", False)
     assert resolve.reason == "Identifique uma pessoa com permissão para gerenciar pedidos."
@@ -937,7 +950,7 @@ def test_a_producao_nao_e_saida_de_quem_precisa_avisar_o_cliente(ficha, padeiro,
 
     card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
 
-    assert [(action.ref, action.priority) for action in card.promise.actions] == [("resolve", "primary")]
+    assert [(action.ref, action.priority) for action in _exits(card)] == [("resolve", "primary")]
 
 
 # A casa oferece o que tem no lugar: o mecanismo de substitutos da loja.
@@ -1001,7 +1014,8 @@ def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, g
     detail = build_operator_order(order, user=gerente)
     for read in (card.promise, detail.promise):
         assert [option.sku for option in read.items[0].alternatives] == ["FENDU"]
-        assert [(action.ref, action.href) for action in read.actions] == [("resolve", "")]
+        exits = [action for action in read.actions if action.ref != "contact-customer"]
+        assert [(action.ref, action.href) for action in exits] == [("resolve", "")]
     assert detail.pending[0].next_step == ""
 
 
@@ -1167,7 +1181,7 @@ def test_pedido_com_passos_diferentes_diz_cada_um_com_o_produto_e_o_cliente_prim
     assert promise.recommended_action == "resolve"
 
     card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
-    assert [(action.ref, action.priority) for action in card.promise.actions] == [
+    assert [(action.ref, action.priority) for action in _exits(card)] == [
         ("resolve", "primary"), ("open-production", "secondary"),
     ]
 

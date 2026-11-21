@@ -203,9 +203,9 @@ def test_pix_vencido_nao_promete_avancar_e_diz_o_que_fazer(gestor):
         "Cancele o pedido ou chame o cliente para combinar o pagamento."
     ] * 2
     # O gesto que a frase manda está ao lado: cancelar e chamar no WhatsApp.
-    # O cartão sabe que dá para chamar (sem levar o número, #2434).
+    # O cartão chama direto no WhatsApp: o pedido pede ação (decisão do dono, #2434).
     card = build_order_card(lapsed, user=gestor)
-    assert card.customer_callable is True
+    assert card.customer_whatsapp_url == "https://wa.me/5543999990000"
     (payment,) = [p for p in build_operator_order(lapsed, user=gestor).pending if p.key == "payment"]
     assert [action.label for action in payment.actions] == ["Cancelar pedido", "Chamar no WhatsApp"]
     assert payment.actions[1].href == "https://wa.me/5543999990000"
@@ -217,7 +217,7 @@ def test_pix_vencido_nao_promete_avancar_e_diz_o_que_fazer(gestor):
 
 def test_pix_vencido_sem_telefone_manda_so_cancelar(gestor):
     lapsed = _pix("B-Z74", minutes_ago=50)
-    assert build_order_card(lapsed, user=gestor).customer_callable is False
+    assert build_order_card(lapsed, user=gestor).customer_whatsapp_url == ""
 
     assert _advance_reasons(lapsed, gestor) == [
         "O Pix venceu sem pagamento e o pedido não avança mais sozinho. Cancele o pedido."
@@ -286,3 +286,12 @@ def test_completion_actor_does_not_claim_counter_pickup_for_delivery():
     event = build_operator_order(order).timeline[-1]
     assert event.actor == "Conclusão após a entrega"
     assert event.label == "Concluído"
+
+
+def test_pedido_que_nao_pede_acao_nao_leva_o_contato_no_cartao(gestor):
+    """O contato só vem no cartão do pedido que pede ação (#2434, "1:b")."""
+    waiting = _pix("B-Z75", minutes_ago=5)
+    waiting.data["customer"]["phone"] = "+5543999990000"
+    waiting.save(update_fields=["data"])
+
+    assert build_order_card(waiting, user=gestor).customer_whatsapp_url == ""
