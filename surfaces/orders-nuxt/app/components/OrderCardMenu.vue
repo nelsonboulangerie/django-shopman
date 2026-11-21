@@ -129,6 +129,7 @@ const items = computed(() => [
   <OperatorMoreMenu
     :items="items"
     :label="`Mais ações do pedido ${code.code}`"
+    class="min-h-11 min-w-11 justify-center"
     data-card-menu
   />
   <NuxtModal

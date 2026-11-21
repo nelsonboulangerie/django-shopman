@@ -186,6 +186,8 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "ifood_store_closed_while_open": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_open_while_closed": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_sync_failed": ("orders", "/", "Conferir o iFood na Fila"),
+    # O módulo de loja ainda não liberado: pausa e horário só pelo Portal.
+    "ifood_store_module_pending": ("external", "https://portal.ifood.com.br/", "Abrir o Portal"),
     # Gestor: produto que sumiu do cardápio por coleção desativada.
     "catalog_hidden_by_inactive_collection": ("orders", "/catalog", "Abrir o Catálogo"),
     # Compras: a NF-e que diverge do cadastro fiscal.
@@ -430,16 +432,38 @@ def live_chat_href(alert) -> str:
     """
     if alert.type not in _LIVE_CHAT_CARDS:
         return ""
-    from shopman.shop.models import Conversation, ConversationBinding, Shop
+    from shopman.shop.models import Conversation
 
-    shop = Shop.load()
-    account = str((((getattr(shop, "integrations", None) or {}).get("manychat") or {}).get("live_chat_account")) or "").strip()
-    if not _LIVE_CHAT_ID.match(account):
-        return ""
     owner = (
         Conversation.objects.filter(**{f"flags__alerts__{alert.type}": alert.pk}).values_list("pk", flat=True).first()
     )
-    if owner is None:
+    return _conversation_live_chat_href(owner)
+
+
+def live_chat_account() -> str:
+    """A conta do ManyChat da loja para o Live Chat (Admin, Integrações), ou ``""``."""
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    account = str((((getattr(shop, "integrations", None) or {}).get("manychat") or {}).get("live_chat_account")) or "").strip()
+    return account if _LIVE_CHAT_ID.match(account) else ""
+
+
+def verification_live_chat_href(alert) -> str:
+    """A conversa do "vou verificar" (cartão ``concierge_verify``) no Live Chat, ou ``""``."""
+    from shopman.shop.models import Conversation
+
+    owner = (
+        Conversation.objects.filter(flags__verification__alert_pk=alert.pk).order_by("-pk").values_list("pk", flat=True).first()
+    )
+    return _conversation_live_chat_href(owner)
+
+
+def _conversation_live_chat_href(owner) -> str:
+    from shopman.shop.models import ConversationBinding
+
+    account = live_chat_account()
+    if not account or owner is None:
         return ""
     subject = (
         ConversationBinding.objects.filter(conversation_id=owner, provider="manychat")
@@ -504,6 +528,9 @@ def alert_context_href(alert, *, surface: str, target_date: str = "") -> tuple[s
     if home is None:
         return ("", "")
     home_surface, path, label = home
+    if home_surface == "external":
+        # Fora da casa (o Portal do Parceiro do iFood): o endereço é o próprio.
+        return (path, label)
     if home_surface == "admin":
         href = _admin_link(path)
         return (href, label) if href else ("", "")
@@ -615,10 +642,65 @@ def _concierge_verification_actions(alert) -> list[ProductionActionProjection]:
     cartão fecha sozinho quando ela sai ou quando alguém assume.
     """
     base = f"/api/v1/backstage/alerts/{alert.pk}/concierge-verification"
+    live_chat = verification_live_chat_href(alert)
     rows = (
         ("answer_concierge_verification", "Responder ao cliente", 1, "answer", "ConciergeVerificationAnswerRequest"),
-        ("take_over_conversation", "Assumir a conversa", 2, "take-over", ""),
+        ("take_over_conversation", TAKE_OVER_LIVE_CHAT_LABEL if live_chat else TAKE_OVER_LABEL, 2, "take-over", ""),
     )
+    return [*_verification_gestures(alert, base, rows), _live_chat_link(alert, live_chat)]
+
+
+#: "Assumir" tira a Concierge da conversa (WP-05). O botão diz para onde leva, e a linha
+#: sob ele diz o que acontece (dono, 21/11/2026; rótulo longo estourava o cartão a 375 px).
+TAKE_OVER_LIVE_CHAT_LABEL = "Assumir no Live Chat"
+TAKE_OVER_LABEL = "Assumir a conversa"
+TAKE_OVER_CONSEQUENCE = "Ao assumir, a Concierge para de responder nesta conversa."
+LIVE_CHAT_MISSING = "Assumir não abre a conversa do ManyChat: falta a conta do Live Chat no Admin."
+LIVE_CHAT_CONFIGURE_LABEL = "Configurar o Live Chat"
+
+
+def _live_chat_link(alert, live_chat: str) -> ProductionActionProjection:
+    """O Live Chat que o "Assumir" abre no mesmo gesto; sem a conta, o caminho para configurar.
+
+    Tipo próprio (``open_live_chat`` / ``configure_live_chat``): a caixa de Avisos não o
+    mostra como botão solto, quem o usa é o gesto de assumir do cartão.
+    """
+    from django.urls import reverse
+
+    from shopman.shop.models import Shop
+
+    if live_chat:
+        kind, label, href, reason = "open_live_chat", LIVE_CHAT_LABEL, live_chat, ""
+    else:
+        shop = Shop.load()
+        path = (
+            reverse("admin:shop_shopintegrations_change", args=[shop.pk])
+            if shop is not None else reverse("admin:shop_shopintegrations_changelist")
+        )
+        kind, label, href, reason = "configure_live_chat", LIVE_CHAT_CONFIGURE_LABEL, _admin_link(path), LIVE_CHAT_MISSING
+    return ProductionActionProjection(
+        ref=f"{kind}:{alert.pk}",
+        kind=kind,
+        label=label,
+        priority=3,
+        enabled=True,
+        reason=reason,
+        method="GET",
+        href=href,
+        payload_schema="",
+        expected_rev=None,
+        idempotency=ProductionActionIdempotencyProjection(required=False, key_scope=""),
+        confirmation=ProductionActionConfirmationProjection(
+            required=False, reason_required=False, title="", confirm_label=label,
+        ),
+        approval_requirement=None,
+        source_alert_ref=str(alert.pk),
+        source_alert_effect="",
+        proof="",
+    )
+
+
+def _verification_gestures(alert, base: str, rows) -> list[ProductionActionProjection]:
     return [
         ProductionActionProjection(
             ref=f"{kind}:{alert.pk}",
@@ -626,7 +708,7 @@ def _concierge_verification_actions(alert) -> list[ProductionActionProjection]:
             label=label,
             priority=priority,
             enabled=True,
-            reason="",
+            reason=TAKE_OVER_CONSEQUENCE if kind == "take_over_conversation" else "",
             method="POST",
             href=f"{base}/{path}/",
             payload_schema=schema,
