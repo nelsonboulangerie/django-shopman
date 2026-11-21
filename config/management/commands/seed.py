@@ -1629,9 +1629,12 @@ class Command(BaseCommand):
                     "--closing-in-minutes cairia depois da meia-noite: rode mais cedo ou com N menor."
                 )
             today = now.strftime("%A").lower()
-            opening_hours = {**opening_hours, today: {"open": "00:00", "close": closes.strftime("%H:%M")}}
+            close_hhmm = closes.strftime("%H:%M")  # hora-ok: contrato "HH:MM" do opening_hours, não tela
+            opening_hours = {**opening_hours, today: {"open": "00:00", "close": close_hhmm}}
             closed_dates = [d for d in closed_dates if d["date"] != now.date().isoformat()]
-            self.stdout.write(f"  🕘 Pilha de teste: a loja fecha hoje às {closes:%H:%M} (--closing-in-minutes).")
+            from shopman.utils.formatting import format_clock
+
+            self.stdout.write(f"  🕘 Pilha de teste: a loja fecha hoje às {format_clock(closes)} (--closing-in-minutes).")
 
         # A loja é a que o descritor materializou (``_materialize_instance``),
         # nunca uma pk fixa: depois de um ``--flush`` a sequência não volta a 1, e
