@@ -322,18 +322,26 @@ for (const device of ["phone", "counter"] as const) {
       await page.locator("[data-preorder-swap-confirm]").click();
 
       // A encomenda paga em dinheiro que fica mais barata: a Gerente assina da lista.
+      // Mais cara ou igual, a troca entra direto e o "Trocado" é um aviso breve: espera
+      // o que vier primeiro. Esperar o gerente antes de olhar o aviso deixava o aviso
+      // sumir no meio da espera (a alternativa da segunda-feira é mais cara, #2976).
       const manager = page.getByRole("dialog", { name: "Autorizar a devolução" });
-      if (await manager.waitFor({ timeout: 15_000 }).then(() => true, () => false)) {
+      const swapped = page.getByText(`Trocado: 2x ${offerName} no lugar de 2x ${PRODUCT}.`).first();
+      const first = await Promise.race([
+        manager.waitFor({ timeout: 60_000 }).then(() => "manager" as const),
+        swapped.waitFor({ timeout: 60_000 }).then(() => "swapped" as const),
+      ]).catch(() => "nothing" as const);
+      expect(first, "nem o gerente nem o aviso da troca apareceram").not.toBe("nothing");
+      if (first === "manager") {
         await still(page);
         await capture(page, testInfo, "gerente-autoriza-a-devolucao");
         await manager.getByRole("button", { name: new RegExp(cast.manager.name) }).first().click();
         for (const digit of cast.manager.pin) await manager.getByRole("button", { name: digit, exact: true }).click();
         const confirm = manager.getByRole("button", { name: /^Confirmar|^Autorizar/ }).first();
         if (await confirm.isVisible({ timeout: 2000 }).catch(() => false)) await confirm.click();
+        // 4 · Trocado: o item novo na encomenda, o bloco some, o endereço perde o swap.
+        await expect(swapped).toBeVisible({ timeout: 60_000 });
       }
-
-      // 4 · Trocado: o item novo na encomenda, o bloco some, o endereço perde o swap.
-      await expect(page.getByText(`Trocado: 2x ${offerName} no lugar de 2x ${PRODUCT}.`).first()).toBeVisible({ timeout: 60_000 });
       await expect(block).toBeHidden({ timeout: 30_000 });
       await expect(page).not.toHaveURL(/swap=/);
       await expect(page.locator("[data-order-items]").locator("visible=true").first()).toContainText(offerName);
