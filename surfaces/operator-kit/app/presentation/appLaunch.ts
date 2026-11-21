@@ -29,6 +29,8 @@ export interface CrossAppLinkAttrs {
 const SAME_WINDOW: CrossAppLinkAttrs = { target: "_self" };
 /** Ver acima: sem `noopener` o contexto é auxiliar e o Chrome não captura. */
 const OTHER_APP_WINDOW: CrossAppLinkAttrs = { target: "_blank", rel: "noopener" };
+/** Link para fora da casa (a loja do cliente, o Portal, o WhatsApp): sempre em outra janela. */
+export const EXTERNAL_LINK_ATTRS: CrossAppLinkAttrs = OTHER_APP_WINDOW;
 
 /** `href` aponta para a MESMA origem? Relativo conta como mesma; inválido, também. */
 export function sameOrigin(href: string, currentOrigin: string): boolean {
@@ -40,11 +42,51 @@ export function sameOrigin(href: string, currentOrigin: string): boolean {
 }
 
 /**
- * Atributos do link de um app de operador para OUTRO app de operador.
+ * Sufixos públicos que nunca são "o domínio da casa": sem esta guarda, um app em
+ * `x.com.br` acharia que todo `*.com.br` é dele.
+ */
+const PUBLIC_SUFFIXES = new Set(["com", "net", "org", "br", "app", "dev", "io", "com.br", "net.br", "org.br", "gov.br"]);
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+/** Os nomes desta máquina: em dev, `localhost` e `127.0.0.1` são o mesmo lugar. */
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * O `href` é de um app DA CASA (o mesmo host, ou um irmão sob o mesmo domínio), e não
+ * um site de fora (Portal do iFood, ManyChat, Google, WhatsApp, a loja do cliente)?
  *
- * Instalado, a outra origem ganha janela própria. NÃO instalado (aba comum do
- * navegador), nada muda: continuar na mesma aba é o que o operador espera do
- * navegador, e `_blank` ali só empilharia aba a cada troca de app.
+ * Os apps de operador são subdomínios do domínio da loja (`surfaces/registry.json`,
+ * `subdomain`: `pdv.` → `pdv.boulangerie.com.br`; no local, `pdv.boulangerie`), e em
+ * dev mudam só de porta no mesmo host. Então: mesmo host é da casa; host sob o mesmo
+ * domínio-pai do app atual também. Relativo ou inválido conta como da casa (não vira
+ * navegação para fora).
+ */
+export function houseHref(href: string, currentOrigin: string): boolean {
+  let target: URL;
+  let current: URL;
+  try {
+    current = new URL(currentOrigin);
+    target = new URL(href, current);
+  } catch {
+    return true;
+  }
+  if (target.hostname === current.hostname) return true;
+  if (LOOPBACK.has(target.hostname) && LOOPBACK.has(current.hostname)) return true;
+  if (IPV4.test(current.hostname)) return false;
+  const parent = current.hostname.split(".").slice(1).join(".");
+  if (!parent || PUBLIC_SUFFIXES.has(parent)) return false;
+  return target.hostname === parent || target.hostname.endsWith(`.${parent}`);
+}
+
+/**
+ * Atributos do link de um app de operador para OUTRO lugar.
+ *
+ * Site de FORA da casa (Portal do iFood, ManyChat, Google, WhatsApp): nova aba,
+ * SEMPRE, instalado ou não (coordenação, 21/11/2026). O operador não pode perder o
+ * Gestor para ir ao Portal.
+ *
+ * Outro app DA CASA: instalado, a outra origem ganha janela própria. NÃO instalado
+ * (aba comum do navegador), nada muda: continuar na mesma aba é o que o operador
+ * espera do navegador, e `_blank` ali só empilharia aba a cada troca de app.
  */
 export function crossAppLinkAttrs(options: {
   installed: boolean;
@@ -53,8 +95,8 @@ export function crossAppLinkAttrs(options: {
 }): CrossAppLinkAttrs {
   if (!options.href) return SAME_WINDOW;
   if (sameOrigin(options.href, options.currentOrigin)) return SAME_WINDOW;
+  if (!houseHref(options.href, options.currentOrigin)) return EXTERNAL_LINK_ATTRS;
   return options.installed ? OTHER_APP_WINDOW : SAME_WINDOW;
 }
 
-/** Link para fora da casa (a loja do cliente): sempre em outra janela, instalado ou não. */
-export const EXTERNAL_LINK_ATTRS: CrossAppLinkAttrs = OTHER_APP_WINDOW;
+
