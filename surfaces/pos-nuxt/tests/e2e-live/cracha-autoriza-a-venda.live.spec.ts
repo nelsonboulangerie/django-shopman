@@ -87,7 +87,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(dialog).toBeVisible({ timeout: 30_000 });
       await still(page);
       // O convite do crachá está na tela que o gerente lê.
-      await audits(page, `dialogo ${device}`, '[role="dialog"] h2, [role="dialog"] [data-slot="description"]');
+      await audits(page, `dialogo ${device}`, '[role="dialog"] h2, [role="dialog"] [data-slot="description"], [role="dialog"] p');
       await capture(page, testInfo, "autorizar-a-venda");
 
       await swipesBadge(page, badge);

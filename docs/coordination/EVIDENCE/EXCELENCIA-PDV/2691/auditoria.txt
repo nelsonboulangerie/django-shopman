@@ -1,0 +1,31 @@
+# Auditoria por script da prévia do #2691
+# Sonda: surfaces/pos-nuxt/tests/e2e-live/cracha-autoriza-a-venda.live.spec.ts
+# Pilha própria: Django :8072, PDV :3172, banco shopman_pdv_a2726, host pdva2726.localhost (seed local, nunca produção).
+# Fran (Caixa) com PIN dá 50% de desconto numa venda em dinheiro; a Joyce (Gerente) passa o crachá de dev dela
+# (setup_operators.dev_badge) no 'Autorizar a venda'. O leitor é emulado como HID: as teclas do token, rápidas, e Enter.
+# Régua (texto do diálogo): contraste >= 4,5:1, letra >= 12 px, dentro da tela, sem corte, não encoberto.
+# Linha 'crachá': as conferências que chegaram a /pos/manager-approval/check/ (por qual porta, com que status)
+# e se o diálogo ficou aberto depois do crachá.
+
+## ANTES (build do origin/main): o crachá não gera conferência nenhuma; o diálogo fica aberto, mudo.
+### 375 px
+AUDITORIA dialogo phone: [{"text":"Autorizar a venda","contrast":13.67,"fontPx":16,"weight":"600","color":"rgb(59, 42, 30)","background":"rgb(255, 255, 255)","left":33,"right":304,"clipped":false,"inside":true,"covered":false},{"text":"Desconto de R$ 71,50, acima de R$ 5,00.","contrast":6.52,"fontPx":14,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":33,"right":304,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA crachá phone: {"checks":[],"dialogOpen":true}
+### 1366 px
+AUDITORIA dialogo counter: [{"text":"Autorizar a venda","contrast":13.67,"fontPx":16,"weight":"600","color":"rgb(59, 42, 30)","background":"rgb(255, 255, 255)","left":516,"right":820,"clipped":false,"inside":true,"covered":false},{"text":"Desconto de R$ 71,50, acima de R$ 5,00.","contrast":6.52,"fontPx":14,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":516,"right":820,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA crachá counter: {"checks":[],"dialogOpen":true}
+
+## DEPOIS (este branch): uma conferência pelo crachá (200), o diálogo fecha e a venda fecha.
+AUDITORIA dialogo phone: [{"text":"Autorizar a venda","contrast":13.67,"fontPx":16,"weight":"600","color":"rgb(59, 42, 30)","background":"rgb(255, 255, 255)","left":33,"right":304,"clipped":false,"inside":true,"covered":false},{"text":"Desconto de R$ 71,50, acima de R$ 5,00.","contrast":6.52,"fontPx":14,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":33,"right":304,"clipped":false,"inside":true,"covered":false},{"text":"Quem autoriza?","contrast":6.52,"fontPx":14,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":33,"right":342,"clipped":false,"inside":true,"covered":false},{"text":"Toque no seu nome, ou passe o crachá.","contrast":6.52,"fontPx":12,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":33,"right":342,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA crachá phone: {"checks":[{"status":200,"via":"badge"}],"dialogOpen":false}
+AUDITORIA dialogo counter: [{"text":"Autorizar a venda","contrast":13.67,"fontPx":16,"weight":"600","color":"rgb(59, 42, 30)","background":"rgb(255, 255, 255)","left":516,"right":820,"clipped":false,"inside":true,"covered":false},{"text":"Desconto de R$ 71,50, acima de R$ 5,00.","contrast":6.52,"fontPx":14,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":516,"right":820,"clipped":false,"inside":true,"covered":false},{"text":"Quem autoriza?","contrast":6.52,"fontPx":14,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":516,"right":850,"clipped":false,"inside":true,"covered":false},{"text":"Digite o número para escolher, ou passe o crachá.","contrast":6.52,"fontPx":12,"weight":"400","color":"rgb(110, 90, 72)","background":"rgb(255, 255, 255)","left":516,"right":850,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA crachá counter: {"checks":[{"status":200,"via":"badge"}],"dialogOpen":false}
+
+## Servidor (log do Django da pilha, depois)
+# pos_manager_override action=sale_approval_check operator=fran approved_by=joyce via=badge self_signed=False (x2)
+# POST /api/v1/backstage/pos/sale/close/ 200 (x2); no banco, os dois pedidos (PDV-261121-F97 e G96) com approved_by=joyce.
+
+## Alinhamento: título, descrição, 'Quem autoriza?' e o convite do crachá na mesma borda (33 px no 375, 516 px no 1366).
+## Foco: o crachá fecha o diálogo e a venda segue; não há aviso novo nesta tela para receber foco.
+
+## Resultado: antes, 2 jornadas com a asserção do fechamento reprovada (soft) e zero conferências; depois, 2 passed.
