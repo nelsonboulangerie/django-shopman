@@ -819,6 +819,33 @@
       ]
     },
     {
+      "path": "shopman/shop/adapters/fiscal_simulated.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DEFAULT_REJECTION",
+            "REJECTION_CODE",
+            "SERIES",
+            "SimulatedFiscalBackend",
+            "UF_PR",
+            "_digits",
+            "_mod11",
+            "_shop_document",
+            "access_key"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/adapters/inventory.py",
       "touchpoints": [
         "adapter"
@@ -2846,6 +2873,7 @@
             "check_provider_environments_declared",
             "check_secret_key",
             "check_shared_cache_backend",
+            "check_simulated_fiscal_adapter",
             "check_sku_namespace_coherence",
             "check_staging_autopilot",
             "check_vapid_configuration",
@@ -4469,10 +4497,13 @@
           "symbols": [
             "KITCHEN_RELEASED_AT_KEY",
             "STALE_ALERT_FRACTION_OF_DEADLINE",
+            "_CLOSED_STATUSES",
+            "_REPAIR_ACTOR_PREFIX",
             "_alert_coupon_over_redeemed",
             "_alert_if_card_authorization_held",
             "_card_authorization_is_held",
             "_check_availability",
+            "_closed_by_repair",
             "_complete_after_handoff",
             "_counter_handoff",
             "_create_alert",
@@ -4511,6 +4542,7 @@
             "awaits_kitchen_release",
             "kitchen_release_at",
             "logger",
+            "phase_superseded",
             "release_preorder_now"
           ]
         }
@@ -7011,12 +7043,15 @@
             "ACCESS_BUTTON_COPY",
             "ACCESS_BUTTON_MAX_CHARS",
             "CUSTOMER_COPY",
+            "PROMISE_ITEMS_SITUATION",
             "PROMISE_ITEM_SITUATION",
             "PROMISE_PROPOSAL_COPY",
             "PROMISE_REFUND_ROUTE",
             "PROMISE_REMOVED",
             "_GENERIC_TEMPLATE_LABELS",
+            "_grouped_entries",
             "_gsm_ascii",
+            "_listed",
             "plain_bodies",
             "promise_proposal",
             "sms_bodies",
@@ -11588,6 +11623,43 @@
       ]
     },
     {
+      "path": "shopman/shop/services/kitchen_eta.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato",
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "PrepExpectation"
+          ]
+        },
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "PREP_MIN_SAMPLES",
+            "PREP_SAMPLE_HOURS",
+            "_parse"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "prep_expectation",
+            "ready_eta",
+            "stage_minutes"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/lead_time.py",
       "touchpoints": [
         "service"
@@ -13274,6 +13346,7 @@
             "_estimate",
             "_live",
             "_order_label",
+            "_ready_at",
             "_ride_orders",
             "_stop_view",
             "_today_q",

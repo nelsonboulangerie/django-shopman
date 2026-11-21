@@ -102,6 +102,22 @@ SHOPMAN_ENVIRONMENT = (
     .lower()
 )
 
+# Pilha de teste local (#2585): uma pasta de controle que a suíte de operador escreve.
+# ``clock`` fixa o "agora" do Django (config/test_clock.py) e o adapter fiscal de
+# simulação (shopman/shop/adapters/fiscal_simulated.py) guarda nela as notas e o
+# roteiro de recusa. É infraestrutura de teste, não configuração de loja, e só sobe
+# em DEBUG fora de produção: o relógio troca ``timezone.now`` do processo inteiro.
+TEST_STACK_CONTROL_DIR = os.environ.get("TEST_STACK_CONTROL_DIR", "").strip() or None
+if TEST_STACK_CONTROL_DIR:
+    if not DEBUG or SHOPMAN_ENVIRONMENT == "production":
+        raise RuntimeError(
+            "TEST_STACK_CONTROL_DIR é da pilha de teste local: só sobe com DJANGO_DEBUG=true "
+            "e fora de produção. Apague a variável."
+        )
+    from config.test_clock import install as _install_test_clock
+
+    _install_test_clock(Path(TEST_STACK_CONTROL_DIR) / "clock")
+
 # Expand/canary flags. Approval may persist a transactional outbox, but neither
 # boundary hands work to a provider until its independent switch is explicit.
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = _env_bool(

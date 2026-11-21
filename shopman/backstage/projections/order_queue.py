@@ -39,13 +39,10 @@ from shopman.backstage.projections.notification_receipts import (
 )
 from shopman.backstage.projections.order_attention import (
     AcceptanceTimer,
-    PrepExpectation,
     QueueAwarenessProjection,
     acceptance_timer_goal,
     build_queue_awareness,
     card_attention,
-    prep_expectation,
-    ready_eta,
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
@@ -57,6 +54,7 @@ from shopman.shop.projections.types import (
 )
 from shopman.shop.services import operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
+from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
 
 if TYPE_CHECKING:
@@ -601,7 +599,7 @@ class OrderCardProjection:
     goal_minutes: int = 0
     goal_label: str = ""
     # Na Cozinha (aceito ou em preparo): quando deve ficar pronto, pelo início real e
-    # pelo tempo que os preparos estão levando agora (G10, ``order_attention.ready_eta``).
+    # pelo tempo que os preparos estão levando agora (G10, ``kitchen_eta.ready_eta``).
     ready_eta_iso: str = ""
     # Lembrete TEMPORÁRIO de chamar o entregador (``services.courier_reminder``):
     # entrega da casa em preparo sem corrida pedida. A tela mostra o aviso quando o
@@ -611,6 +609,10 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # A cobrança venceu e o pedido tem um telefone para chamar (``_has_order_phone``):
+    # o cartão leva "Ver o contato do cliente" ao lado do "Cancelar pedido", e o toque abre o
+    # pedido no contato. O número NÃO vem no cartão (#2434, decisão do dono pendente).
+    customer_callable: bool = False
     # O bloqueio anda sozinho, sem ninguém da casa agir ("Aguardando Pix", "Aguardando
     # o dia da encomenda", "Esperando o lote"): a tela não o pinta de vermelho
     # (``WAITING_BLOCK_LABELS``; decisão da coordenação com o mandato do dono, 21/11).
@@ -1283,7 +1285,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         operational = _early_start_actions(operational)
     if waits_batch:
         operational = _batch_wait_actions(operational, block_reason)
-    operational = _lapsed_payment_actions(operational, block_label)
+    operational = _lapsed_payment_actions(
+        operational, block_label, can_call=bool(contact.get("customer_whatsapp_url")),
+    )
     operational = _exit_gesture_actions(order, operational, customer_name=customer_name)
     actions = (*operational, *extra_actions)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
@@ -2498,11 +2502,16 @@ def batch_wait_refusal(order: Order) -> str:
     return order_promise.batch_wait_reason(promise)
 
 
-def _lapsed_payment_actions(actions, block_label: str) -> tuple:
-    """O avanço travado pela cobrança vencida diz o fato, não a espera (``LAPSED_ADVANCE_REASONS``)."""
-    reason = LAPSED_ADVANCE_REASONS.get(block_label)
-    if not reason:
+def _lapsed_payment_actions(actions, block_label: str, *, can_call: bool) -> tuple:
+    """O avanço travado pela cobrança vencida diz o fato, não a espera (``LAPSED_ADVANCE_REASONS``).
+
+    ``can_call``: o pedido tem um telefone para chamar. Sem ele, o botão do WhatsApp
+    some e a frase manda só cancelar.
+    """
+    fact = LAPSED_ADVANCE_REASONS.get(block_label)
+    if not fact:
         return tuple(actions)
+    reason = f"{fact} {LAPSED_NEXT_STEP if can_call else LAPSED_NEXT_STEP_NO_CONTACT}"
     return tuple(
         replace(action, reason=reason) if action.ref == "advance" and not action.enabled else action
         for action in actions
@@ -2818,7 +2827,8 @@ def _build_card(
         actions = _early_start_actions(actions)
     if waits_batch:
         actions = _batch_wait_actions(actions, block_reason)
-    actions = _lapsed_payment_actions(actions, block_label)
+    if block_label in LAPSED_PAYMENT_LABELS:
+        actions = _lapsed_payment_actions(actions, block_label, can_call=_has_order_phone(order))
     actions = _exit_gesture_actions(order, actions, customer_name=customer_name)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
         promise = order_promise.with_actions(promise, _promise_actions(user, promise))
@@ -2882,6 +2892,7 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        customer_callable=block_label in LAPSED_PAYMENT_LABELS and _has_order_phone(order),
         advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
@@ -3386,13 +3397,13 @@ LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL, CARD_
 #: pedido). A frase genérica do ``shop`` ("O pedido só avança depois que o dinheiro
 #: entra") mentia aqui: esse dinheiro não entra mais (coordenação, 21/11/2026).
 LAPSED_ADVANCE_REASONS = {
-    PIX_LAPSED_LABEL: "O Pix venceu sem pagamento e o pedido não avança mais sozinho. "
-    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
-    PAYMENT_LAPSED_LABEL: "O link de pagamento venceu sem pagamento e o pedido não avança mais sozinho. "
-    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
-    CARD_CAPTURE_FAILED_LABEL: "A cobrança do cartão foi recusada e o pedido não avança mais sozinho. "
-    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
+    PIX_LAPSED_LABEL: "O Pix venceu sem pagamento e o pedido não avança mais sozinho.",
+    PAYMENT_LAPSED_LABEL: "O link de pagamento venceu sem pagamento e o pedido não avança mais sozinho.",
+    CARD_CAPTURE_FAILED_LABEL: "A cobrança do cartão foi recusada e o pedido não avança mais sozinho.",
 }
+#: O que fazer, conforme há ou não um telefone para chamar (o botão some sem ele).
+LAPSED_NEXT_STEP = "Cancele o pedido ou chame o cliente para combinar o pagamento."
+LAPSED_NEXT_STEP_NO_CONTACT = "Cancele o pedido."
 
 #: A situação na LINHA do pagamento quando a cobrança venceu. O bloqueio dizia "Pix
 #: expirado" e a linha do pagamento do mesmo pedido, "Pix · Aguardando pagamento": o
@@ -3821,8 +3832,11 @@ def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
     e-mail (ver ``docs/reference/data-schemas.md``), então ele só existe pelo
     cadastro — e só quando o pedido está ligado a um.
     """
+    # O handle do pedido, quando ele é o telefone do cliente, é o número deste
+    # pedido também: o nome exibido já o usa (``_customer_handle``), e sem ele o
+    # "Chamar no WhatsApp" sumia de quem pediu só com o telefone (21/11/2026).
     phone_raw = str(
-        customer_data.get("phone") or order.data.get("customer_phone") or ""
+        customer_data.get("phone") or order.data.get("customer_phone") or _customer_handle(order) or ""
     ).strip()
     customer_ref = str(customer_data.get("ref") or "").strip()
     email = ""
@@ -3906,6 +3920,21 @@ _MASKED_NAME_LABEL = "Nome oculto pelo iFood"
 def _is_masked_name(label: str) -> bool:
     """Um rótulo feito só de caracteres de máscara não identifica ninguém."""
     return bool(label) and set(label) <= _MASKED_NAME_CHARS and any(ch in "*·•…" for ch in label)
+
+
+def _has_order_phone(order: Order) -> bool:
+    """O pedido tem um telefone para chamar no WhatsApp, sem consultar o cadastro.
+
+    A leitura barata do quadro (o cadastro só entra no detalhe): o telefone do
+    pedido ou o handle que é o cliente. O relé do iFood é voz, não WhatsApp.
+    """
+    data = order.data or {}
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    if not str(customer.get("phone") or data.get("customer_phone") or _customer_handle(order) or "").strip():
+        return False
+    from shopman.shop.services.notification import customer_phone_is_platform_relay
+
+    return not customer_phone_is_platform_relay(order)
 
 
 def _customer_handle(order: Order) -> str:

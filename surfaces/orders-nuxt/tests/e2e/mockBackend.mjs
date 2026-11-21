@@ -863,6 +863,13 @@ const server = createServer((req, res) => {
     if (req.method === "DELETE") Object.assign(houseState, { departed: false, delivered: [], claimed: true, gestures: [] });
     return json(res, 200, houseState);
   }
+  // A via impressa da rota (#2406): nesta estação do e2e não há impressora, e o servidor
+  // recusa ANTES de compor, para não carimbar uma primeira via que não saiu.
+  if (/\/deliveries\/couriers\/rides\/[A-Z0-9-]+\/slip\/?(\?|$)/.test(url) && req.method === "POST") {
+    houseState.gestures.push({ gesture: "slip", ref: "", base_revision: "" });
+    return json(res, 409, { detail: "Este dispositivo não tem impressora. A via sai no dispositivo que tem impressora.",
+      agent: { can_print: false, agent_url: "" } });
+  }
   const houseGesture = url.match(/\/deliveries\/couriers\/rides\/([A-Z0-9-]+)\/(depart|deliver|resend|release)\/?(\?|$)/);
   if (houseGesture) {
     if (req.method !== "POST") return json(res, 202, { outcome: "unknown" });

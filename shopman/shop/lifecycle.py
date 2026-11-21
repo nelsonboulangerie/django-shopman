@@ -58,7 +58,12 @@ from shopman.shop.services.business_calendar import (
     current_business_state,
     next_operational_deadline,
 )
-from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date, is_counter_takeaway
+from shopman.shop.services.order_helpers import (
+    customer_holds_the_goods,
+    get_commitment_date,
+    is_counter_takeaway,
+    is_test_order,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +265,47 @@ QUEUED_PHASES = frozenset({"on_preparing", "on_ready", "on_dispatched", "on_deli
 DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"}) | QUEUED_PHASES
 LIFECYCLE_DATA_KEY = "lifecycle"
 PHASE_DONE = "done"
+
+
+#: O pedido já fechou: o trabalho do preparo (cozinha e aviso) não é mais devido.
+_CLOSED_STATUSES = frozenset({"completed", "cancelled", "returned"})
+#: Quem fecha o pedido por REPARO: os fatos do iFood aplicados quando chegam ou
+#: depois (``ifood_events``, ``reconcile_ifood_orders``), com ``system:ifood:<fato>``.
+_REPAIR_ACTOR_PREFIX = "system:ifood"
+
+
+def phase_superseded(order, phase: str) -> bool:
+    """A fase chegou tarde e não deve mais nada: fecha sem alerta crítico (#3029).
+
+    Dois casos, medidos nos alertas de 19/11/2026:
+
+    - o pedido de TESTE (``is_test_order``): é inerte, não deve cozinha, nota nem
+      aviso a ninguém;
+    - o preparo que encontra o pedido FECHADO POR REPARO. O reparo do iFood (#2817)
+      leva o pedido de ``accepted`` a ``completed`` num instante, e a fase do
+      preparo, enfileirada, chega depois. Quem fechou foi o fato do iFood, não a casa.
+
+    O preparo obsoleto de um pedido real fechado pela casa (cancelado no Gestor,
+    concluído no balcão) continua visível: a tarefa falha e o alerta sai, porque
+    alguém precisa saber que a cozinha nunca recebeu aquele pedido. Fase que não
+    pode mais rodar num pedido real é travamento, com o alerta crítico.
+    """
+    if is_test_order(order):
+        return True
+    if phase != "on_preparing" or order.status not in _CLOSED_STATUSES:
+        return False
+    return _closed_by_repair(order)
+
+
+def _closed_by_repair(order) -> bool:
+    """O último ``status_changed`` que levou o pedido ao estado atual veio do reparo?"""
+    actor = (
+        order.events.filter(type="status_changed", payload__new_status=order.status)
+        .order_by("-seq")
+        .values_list("actor", flat=True)
+        .first()
+    )
+    return bool(actor) and str(actor).startswith(_REPAIR_ACTOR_PREFIX)
 
 
 def phase_complete(order, phase: str) -> bool:
