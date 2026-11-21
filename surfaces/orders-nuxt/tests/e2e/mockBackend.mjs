@@ -734,7 +734,7 @@ function crewDeliveries() {
 }
 
 // M3b (#2898): a corrida da casa na lista de Corridas, com o cookie `e2e_house=on`. A
-// corrida C é do Diego (A47 ∙ C03); os gestos do balcão mudam o estado do mock: "Saiu"
+// corrida C é do Diego (A47 ∙ C03); os gestos do balcão mudam o estado do mock: "Despachar a corrida C"
 // põe a rota na rua, "A47 entregue" risca a parada. A corrida A (TaOn) segue igual.
 const HOUSE_STOPS = [
   ["WEB-20261116-0A47", "Ana", "Gleba Palhano", 0.006, 0.004, 2, "Troco para R$ 50,00"],
@@ -761,7 +761,7 @@ function houseRide() {
       hint: houseState.departed ? "Entregador da casa · R$ 15,00" : "Entregador da casa · R$ 15,00 · Abriu o link às 12h31",
       delivered: houseState.delivered.length, total: 2, link_claimed: houseState.claimed,
       depart_action: houseState.departed ? null
-        : houseAction("house-depart", "Saiu", "Diego saiu com os pedidos? Os clientes recebem o aviso de saída."),
+        : houseAction("house-depart", "Despachar a corrida C", "Diego saiu com os pedidos? Os clientes recebem o aviso de saída."),
       deliver_actions: houseState.departed ? open.map((stop) => ({
         ref: stop.ref, code: stop.code,
         action: houseAction("house-deliver", `${stop.code} entregue`, `Marcar ${stop.code} como entregue? O cliente recebe o aviso agora.`),
