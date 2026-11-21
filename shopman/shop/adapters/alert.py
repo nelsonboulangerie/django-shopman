@@ -30,10 +30,13 @@ def create(
     )
 
 
-def revise(pk: int, *, message: str | None = None, severity: str | None = None, respond_by=None) -> bool:
+def revise(
+    pk: int, *, message: str | None = None, severity: str | None = None, respond_by=None, reopen: bool = False
+) -> bool:
     """Atualiza um alerta ainda aberto (mensagem, severidade, prazo), com revisão nova.
 
-    ``False`` quando o alerta já fechou. Campo ``None`` fica como está.
+    ``False`` quando o alerta já fechou. Campo ``None`` fica como está. ``reopen``: o
+    acontecimento é novo, então o Visto de antes não vale mais (o aviso volta à tela).
     """
     from django.db import transaction
 
@@ -48,6 +51,11 @@ def revise(pk: int, *, message: str | None = None, severity: str | None = None, 
             if value is not None:
                 setattr(alert, name, value)
                 fields.append(name)
+        if reopen and alert.acknowledged:
+            alert.acknowledged = False
+            alert.acknowledged_at = None
+            alert.acknowledged_by = ""
+            fields += ["acknowledged", "acknowledged_at", "acknowledged_by"]
         alert.rev += 1
         alert.save(update_fields=fields)
         return True
@@ -112,6 +120,18 @@ def open_counts(types) -> dict[str, int]:
         .order_by("type")
     )
     return {str(row["type"]): int(row["total"]) for row in rows}
+
+
+def open_pk(type: str) -> int | None:
+    """O ``pk`` do aviso aberto deste tipo (o mais novo), ou ``None``."""
+    from shopman.backstage.models import OperatorAlert
+
+    return (
+        OperatorAlert.objects.filter(type=type, resolved_at__isnull=True)
+        .order_by("-pk")
+        .values_list("pk", flat=True)
+        .first()
+    )
 
 
 def resolve(type: str, *, order_ref: str, actor: str) -> int:

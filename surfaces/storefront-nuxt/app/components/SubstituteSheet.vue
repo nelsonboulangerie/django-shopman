@@ -39,7 +39,8 @@ const isPlanned = computed(() => !!cartIssue.value?.is_planned)
 const isNotifiable = computed(() => !!cartIssue.value?.isNotifiable && !atLineCeiling.value)
 // Intro dos substitutos e headlines de escassez vêm do registro omotenashi (Kintsugi);
 // o fallback cobre só o intervalo até o payload chegar.
-const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || 'Que tal um destes no lugar?')
+// A frase já vem com o nome do item ("Que tal um destes no lugar de Melonpan?", #2907).
+const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || `Que tal um destes no lugar de ${itemName.value}?`)
 
 // Sem saldo, o aviso é o mesmo para todo mundo: o cliente nunca sabe se o item
 // esgotou, se a casa o pausou ou se ele saiu do canal (AVAILABILITY-PLAN §2).
@@ -63,7 +64,9 @@ const description = computed(() => {
   }
   if (isPlanned.value && cartIssue.value?.planned_offer_message) return cartIssue.value.planned_offer_message
   if (hasAvailable.value) return `Agora temos ${formatCount(availableQty.value!, 'unidade', 'unidades')} de ${itemName.value}.`
-  if (substitutes.value.length) return `${itemName.value} está indisponível agora. Veja boas alternativas.`
+  // O título já disse que ficou indisponível: a descrição leva direto à lista, sem
+  // repetir a palavra, e a lista dispensa o rótulo de cima (#2907).
+  if (substitutes.value.length) return substitutesIntro.value
   if (isNotifiable.value) return `${itemName.value} acabou agora. Dá para avisarmos você quando voltar.`
   return `${itemName.value} acabou agora, e não temos substituto para oferecer hoje.`
 })
@@ -103,7 +106,7 @@ function chooseSubstitute (sub: typeof substitutes.value[number]) {
       </UiButton>
 
       <div v-if="substitutes.length">
-        <p class="mb-1 shop-meta">{{ hasAvailable ? 'Ou troque por:' : substitutesIntro }}</p>
+        <p v-if="hasAvailable" class="mb-1 shop-meta">Ou troque por:</p>
         <ul class="divide-y overflow-hidden rounded-lg border">
           <li v-for="sub in substitutes" :key="sub.sku">
             <UiButton

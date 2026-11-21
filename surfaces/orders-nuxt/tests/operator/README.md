@@ -16,6 +16,7 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 | `j5-cancelar-encomenda-paga.spec.ts` | J5: cancelar a encomenda paga antes do preparo e ver o estorno ("Estornado") | cliente novo (loja, 375 px) · Gerente com PIN (Gestor, 1366 px) |
 | `j7-achar-o-pedido-de-ontem.spec.ts` | J7: achar o pedido de ontem pelo nome, ampliando o período. Falha esperada até a #2878; pede a pilha semeada na véspera | Gerente com PIN (Gestor, 1366 px) |
 | `j8-quem-so-expede-abre-o-sino.spec.ts` | J8: quem só expede abre um aviso de pedido no sino e lê por que o detalhe não abre (#2879) | cliente novo (loja, 375 px) · Gerente e Cozinha (Gestor, 1366 px) |
+| `g07-avisar-o-cliente.spec.ts` | WP-G07: avisar o cliente com um toque (vai atrasar, faltou um item), lendo a mensagem antes de enviar; o recibo que falhou traz o WhatsApp com o mesmo texto | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 e 375 px) |
 
 Os papéis vêm de `shopman/shop/management/commands/setup_operators.py` (o `seed` roda o
 comando): Gerente `joyce` (senha `admin`, PIN 1234), Caixa `fran` (PIN 1234), Cozinha

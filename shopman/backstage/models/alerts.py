@@ -329,6 +329,8 @@ class OperatorAlert(models.Model):
         # A Concierge atendendo sem modelo (dono, 19/11/2026): responde o simples e manda
         # à equipe o que não entende. Um aviso por causa, no topo do Gestor, cor de erro.
         ("concierge_no_model", "WhatsApp: Concierge sem modelo"),
+        # Rascunho de pergunta frequente nascido de conversa (WP-15), esperando publicação.
+        ("faq_drafts_waiting", "Concierge: perguntas frequentes esperam publicação"),
         ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
         ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
         ("concierge_output_blocked", "WhatsApp: resposta automática bloqueada"),
@@ -460,6 +462,7 @@ class OperatorAlert(models.Model):
         "concierge_handoff",
         "concierge_verify",
         "concierge_no_model",
+        "faq_drafts_waiting",
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",

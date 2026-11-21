@@ -779,7 +779,18 @@ def extend_hold(hold_id: str, *, expires_at=None) -> bool:
     """Redefine a expiração de um hold ativo (``None`` = nunca expira)."""
     from shopman.stockman import StockHolds
 
-    return StockHolds.extend(hold_id, expires_at=expires_at)
+    extended = StockHolds.extend(hold_id, expires_at=expires_at)
+    if extended and expires_at is not None:
+        # O ``extend`` grava por ``update``, sem ``post_save``: a releitura do novo
+        # prazo é agendada aqui, como na criação (#2785).
+        from shopman.stockman.models import Hold
+
+        from shopman.shop.services import shelf_recheck
+
+        pk = str(hold_id).rpartition(":")[2]
+        sku = Hold.objects.filter(pk=int(pk)).values_list("sku", flat=True).first() if pk.isdigit() else None
+        shelf_recheck.schedule([sku or ""], expires_at, scope=f"hold:{pk}")
+    return extended
 
 
 def hold_state(hold_id: str) -> str | None:

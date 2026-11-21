@@ -55,7 +55,10 @@ ALERT_SPECS: dict[str, AlertSpec] = {
         "Loja online", "i-lucide-credit-card", "Cartão autorizado esperando aceite", 60,
     ),
     # WhatsApp: régua de atendimento de 5 minutos (dono, 08/10/2026).
-    "concierge_handoff": AlertSpec("WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5),
+    # No topo da tela também (dono, 20/11/2026): todo handoff é gente esperando gente.
+    "concierge_handoff": AlertSpec(
+        "WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5, on_screen=True,
+    ),
     # "Vou verificar": a pergunta que a Concierge levou à equipe. Conta até o prazo que
     # ela prometeu ao cliente (``respond_by``, contado com a loja aberta, por isso sem
     # régua da casa) e, vencido, fica na tela: a promessa é da casa.
@@ -65,6 +68,11 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     # A Concierge atendendo sem modelo (dono, 19/11/2026): no topo do Gestor, até a causa
     # passar. Sem régua: não há prazo, há causa.
     "concierge_no_model": AlertSpec("WhatsApp", "i-lucide-message-circle", "Concierge sem modelo", 0, on_screen=True),
+    # Rascunhos de pergunta frequente vindos de conversa (WP-15): sem prazo, há uma causa
+    # (o rascunho parado). No topo do Gestor até alguém publicar ou apagar.
+    "faq_drafts_waiting": AlertSpec(
+        "Concierge", "i-lucide-circle-help", "Rascunhos de pergunta frequente", 0, on_screen=True,
+    ),
     # Marketing: disparo com problema antes da hora marcada.
     "marketing_outbox_stuck": AlertSpec("Marketing", "i-lucide-megaphone", "Disparo travado na fila", 30),
     "marketing_readiness_stale": AlertSpec("Marketing", "i-lucide-megaphone", "Canal de disparo sem prontidão", 30),
