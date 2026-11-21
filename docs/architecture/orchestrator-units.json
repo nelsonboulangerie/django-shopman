@@ -3341,7 +3341,7 @@
     },
     {
       "id": "preorder.production-promise-lost",
-      "question": "Como o pedido aceito que perdeu a reserva no cancelamento de um lote vira evento do pedido e aviso no Gestor?",
+      "question": "Como o pedido aceito cujo lote foi cancelado, rendeu menos que a reserva ou passou da hora vira evento do pedido e aviso no Gestor?",
       "owner": "preorder.production-promise",
       "responsibility": "composição",
       "public_entrypoint": "shopman.shop.services.production_promise:announce_lost_holds",
@@ -3356,23 +3356,52 @@
             "order_ref_from_hold_reference",
             "_format_qty",
             "_product_name",
-            "announce_lost_holds"
+            "announce_lost_holds",
+            "EVENT_TYPE_SHORT",
+            "EVENT_TYPE_LATE",
+            "REASON_VOIDED",
+            "REASON_SHORT",
+            "REASON_LATE",
+            "_EVENT_BY_REASON",
+            "_emit_fact",
+            "_what_happened",
+            "_already_recorded",
+            "_order_hold_rows",
+            "_by_order",
+            "announce_short_lot",
+            "announce_late_lots"
+          ]
+        },
+        {
+          "path": "shopman/shop/handlers/_stock_receivers.py",
+          "symbols": [
+            "on_production_finished"
+          ]
+        },
+        {
+          "path": "shopman/shop/handlers/production_alerts.py",
+          "symbols": [
+            "_announce_late_lots_to_orders"
           ]
         }
       ],
       "touchpoints": [
+        "handler",
         "service"
       ],
       "domains": [
+        "craftsman",
         "offerman",
-        "orderman"
+        "orderman",
+        "stockman"
       ],
       "ports": [],
       "events": [],
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_o_mesmo_cancelamento_nao_avisa_duas_vezes"
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_o_mesmo_cancelamento_nao_avisa_duas_vezes",
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_lote_que_passou_da_hora_avisa_a_encomenda_uma_vez"
       ],
       "test_gap_reason": null,
       "policy": false,

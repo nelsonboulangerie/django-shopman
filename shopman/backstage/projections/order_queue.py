@@ -4078,6 +4078,9 @@ _EVENT_LABELS = {
     "order_rescheduled": "Data combinada alterada",
     # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
     "production_hold_lost": "Lote cancelado: o item ficou em falta",
+    # O lote rendeu menos do que as reservas, ou passou da hora com o pedido esperando (#2594).
+    "production_hold_short": "Lote rendeu menos: o item ficou em falta",
+    "production_lot_late": "Lote atrasado: o item ainda não ficou pronto",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -4295,7 +4298,7 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             logger.error("order_queue.event_without_label type=%s order=%s", event.type, order.ref)
             label = UNLABELLED_EVENT_LABEL
 
-        if event.type == _PRODUCTION_HOLD_LOST_EVENT:
+        if event.type in _PRODUCTION_PROMISE_EVENTS:
             detail = _production_hold_lost_detail(payload)
         elif event.type == "payment.refund_retry":
             detail = _refund_retry_detail(payload)
@@ -4358,6 +4361,9 @@ def _payment_event_detail(payload: dict) -> str:
 #: O evento que ``shop/services/production_promise`` grava quando o lote cancelado
 #: leva a reserva do pedido.
 _PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
+#: Os três fatos da promessa de produção (cancelado, rendeu menos, atrasado) têm o
+#: mesmo detalhe: o item e o lote.
+_PRODUCTION_PROMISE_EVENTS = frozenset({_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late"})
 
 
 def _production_hold_lost_detail(payload: dict) -> str:
