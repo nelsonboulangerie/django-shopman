@@ -14676,6 +14676,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "HOLD_GAPS_KEY",
             "_adopt_holds_for_qty",
             "_alert_hold_gap",
             "_alert_unknown_sku",
@@ -14685,6 +14686,7 @@
             "_expand_if_bundle",
             "_hold_across_quants_or_nothing",
             "_hold_anchored_by",
+            "_hold_gap_entry",
             "_is_fermata_hold",
             "_is_untracked",
             "_items_to_hold",
@@ -14698,6 +14700,7 @@
             "_sale_consummated_outside",
             "_sku_absent_from_catalog",
             "_unknown_sku_error",
+            "_write_hold_gaps",
             "logger"
           ]
         }
