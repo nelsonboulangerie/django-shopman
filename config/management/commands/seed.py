@@ -473,6 +473,9 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "manteiga-wasabi":                    1000,
     "recheio-cebolas-assadas":            1000,
     "molho-caramelo":                     2000,
+    # A cobertura do melonpan (21/11/2026, #2925): um lote da ficha por dia,
+    # como os outros pré-preparos sem número do dono.
+    "massa-cobertura-melonpan":           780,
 
     # Peças (saída em unidade): a capacidade fala em peças por dia.
     "baguete":                            75,
@@ -494,6 +497,14 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "fendu":                              36,
     "tabatiere":                          36,
     "pao-hamburguer":                     36,
+    # As outras que nasceram da palavra do dono em 21/11/2026 (#2925), com a
+    # mesma capacidade provisória das peças restauradas.
+    "baguete-gergelim":                   36,
+    "campagne-passas-castanhas":          36,
+    "brioche-burger-bun":                 36,
+    "pao-hot-dog":                        36,
+    "cornet":                             36,
+    "melonpan":                           36,
     "baguete-gergelim-pequena":           36,
     "italiano-rustico":                   24,
     "baguette-campagne":                  36,
@@ -529,6 +540,7 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "croque-madame":                      3,
     "croque-complet":                     3,
     "jambon-beurre":                      3,
+    "melon-iced-sando":                   3,
     "pain-perdu":                         3,
     "espresso":                           3,
     "espresso-macchiato":                 3,
@@ -2216,7 +2228,9 @@ class Command(BaseCommand):
              f"{IMG}/fe.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             ("TABAT", "Tabatière", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/tb.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("MIB", "Mini Baguete", "Mini baguete com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, True,
+            # Saiu de venda (dono, 21/11/2026: "Mini baguette não vai ter... vai ser
+            # a baguete lanche no lugar"). O produto fica, guarda a história.
+            ("MIB", "Mini Baguete", "Mini baguete com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, False,
              f"{IMG}/bap.webp", 120, "Congele no mesmo dia. Reaqueça a 200°C por 5min"),
             ("TRABB", "Pão de Hambúrguer", "Pão de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/ph.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
@@ -2258,7 +2272,7 @@ class Command(BaseCommand):
             # ── Padaria · Doces ──
             ("PERDU", "Pain Perdu", "Fatia de brioche banhada no creme e dourada, com caramelo salgado, chantilly e flor de sal", 1800, "un", 0, True,
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
-            ("MELSA", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
+            ("MELSA", "Melon Iced Sando", "Melonpan com uma bola de sorvete de creme", 2200, "un", 0, True,
              unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
             ("MDLN", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 1, True,
              f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
@@ -2732,7 +2746,7 @@ class Command(BaseCommand):
                 "approx_dimensions": "2 fatias",
             },
             "MELSA": {
-                "allergens": ["glúten", "leite"],
+                "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
@@ -3310,7 +3324,7 @@ class Command(BaseCommand):
             },
             "MELSA": {
                 "ingredients_text": (
-                    "Shokupan da casa, chantilly e frutas frescas. CONTÉM: glúten e leite."
+                    "Melonpan da casa e sorvete de creme. CONTÉM: glúten, leite e ovos."
                 ),
                 "nutrition_facts": nutrition(200, 1, 310.0, 38.0, 24.0, 6.0, 15.0, 9.0, 1.5, 180.0),
             },
@@ -4225,6 +4239,24 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # A cobertura do melonpan, massa própria "tipo biscoito" (dono,
+                # 21/11/2026: "considere uma basica, a conferir depois"). Básica e
+                # provisória: farinha, açúcar, manteiga e ovos, os insumos que a
+                # casa já compra. Sem etapas: o dono escreve na tela da receita.
+                "ref": "massa-cobertura-melonpan",
+                "name": "Massa de Cobertura do Melonpan",
+                "output_sku": "MASSA-COBERTURA-MELONPAN",
+                "batch_size": Decimal("780"),
+                "steps": [],
+                "items": [
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("400")),
+                    ("ACUCAR-CRISTAL", Decimal("160")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("120")),
+                    ("OVOS", Decimal("100")),
+                ],
+                "notes": dict.fromkeys(("FARINHA-ANACONDA-PREMIUM", "ACUCAR-CRISTAL", "MANTEIGA-PRESIDENT-SEM-SAL", "OVOS"), "Receita básica provisória, a conferir com o dono"),
+            },
+            {
                 # Pita tem massa própria (dono, 26/08). Composição proposta.
                 "ref": "massa-pita",
                 "name": "Massa Pita",
@@ -4443,7 +4475,9 @@ class Command(BaseCommand):
                 "name": "Baguete Lanche",
                 "output_sku": "BGL",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-CIABATTA", Decimal("260"))],  # 260 g/un
+                # 170 g (dono, 21/11/2026: "vai ser a baguete lanche no lugar
+                # [da Mini Baguete], 170g massa ciabatta"). Eram 260 g.
+                "items": [("MASSA-CIABATTA", Decimal("170"))],  # 170 g/un
             },
             {
                 "ref": "batard",
@@ -4478,6 +4512,88 @@ class Command(BaseCommand):
                 "output_sku": "TRABB",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
+            # Os itens da casa que vendiam sem ficha (#2925), pela palavra do dono
+            # de 21/11/2026. O que ele mandou conferir sai com a nota «a conferir»
+            # NA LINHA da ficha (`notes` → `RecipeItem.meta["note"]`, que a tela da
+            # receita mostra), não só aqui no comentário.
+            {
+                # "280g massa ciabatta, considere 20g gergelim".
+                "ref": "baguete-gergelim",
+                "name": "Baguete Gergelim",
+                "output_sku": "BGG",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("280")),  # 280 g/un
+                    ("GERGELIM", Decimal("20")),         # 20 g/un
+                ],
+                "notes": {"GERGELIM": "20 g provisórios, a conferir com o dono"},
+            },
+            {
+                # "massa 450g, recheio 150g de uvas passas, castanha de caju e
+                # castanha-do-brasil. considere proporções iguais".
+                "ref": "campagne-passas-castanhas",
+                "name": "Campagne Passas & Castanhas",
+                "output_sku": "CPX",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-CAMPAGNE", Decimal("450")),     # 450 g/un
+                    ("PASSAS", Decimal("50")),              # 50 g/un
+                    ("CASTANHA-CAJU", Decimal("50")),       # 50 g/un
+                    ("CASTANHA-DO-PARA", Decimal("50")),    # 50 g/un
+                ],
+                "notes": {
+                    "PASSAS": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                    "CASTANHA-CAJU": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                    "CASTANHA-DO-PARA": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                },
+            },
+            {
+                # "sim! 60g massa de brioche".
+                "ref": "brioche-burger-bun",
+                "name": "Brioche Burger Bun",
+                "output_sku": "BRBB",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BRIOCHE", Decimal("60"))],  # 60 g/un
+            },
+            {
+                # "60g massa de butter".
+                "ref": "pao-hot-dog",
+                "name": "Pão para Hot Dog",
+                "output_sku": "HOL",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BUTTER", Decimal("60"))],  # 60 g/un
+            },
+            {
+                # "30g massa de butter. recheio de creme de baunilha OU creme de
+                # chocolate (considere 40g a confirmar)". O recheio é UM dos dois:
+                # o baunilha é o padrão; o chocolate é a alternativa que o Core já
+                # modela (`is_optional`, "ingrediente alternativo"), fora da baixa.
+                "ref": "cornet",
+                "name": "Cornet",
+                "output_sku": "CO",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("30")),      # 30 g/un
+                    ("CREME-BAUNILHA", Decimal("40")),    # 40 g/un
+                    ("CREME-CHOCOLATE", Decimal("40")),   # 40 g/un, alternativo
+                ],
+                "optional": {"CREME-CHOCOLATE"},
+                "notes": {
+                    "CREME-BAUNILHA": "Recheio do dia: baunilha ou chocolate. 40 g provisórios, a conferir com o dono",
+                    "CREME-CHOCOLATE": "Alternativa ao creme de baunilha. 40 g provisórios, a conferir com o dono",
+                },
+            },
+            {
+                # "30g massa de butter, 22g massa de 'cobertura do melon'".
+                "ref": "melonpan",
+                "name": "Melonpan",
+                "output_sku": "MELON",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("30")),                # 30 g/un
+                    ("MASSA-COBERTURA-MELONPAN", Decimal("22")),    # 22 g/un
+                ],
             },
             {
                 # Ciabatta, não tradição (dono, 22/09): as baguetes de gergelim
@@ -4872,6 +4988,24 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # "melonpan + bola de sorvete de creme (peso a conferir)" (dono,
+                # 21/11/2026). Montado na hora, como o Jambon-Beurre. O pão é o
+                # melonpan da casa, não o shokupan que o cadastro dizia.
+                "ref": "melon-iced-sando",
+                "name": "Melon Iced Sando",
+                "output_sku": "MELSA",
+                "batch_size": Decimal("1"),
+                "production_mode": ProductionMode.MADE_TO_ORDER,
+                "items": [
+                    ("MELON", Decimal("100")),          # um melonpan assado
+                    ("SORVETE-CREME", Decimal("60")),   # uma bola
+                ],
+                "notes": {
+                    "MELON": "Um melonpan; o peso assado é o do cadastro do produto, a conferir",
+                    "SORVETE-CREME": "Uma bola de sorvete de creme; 60 g provisórios, a conferir com o dono",
+                },
+            },
+            {
                 # "1 BN rende, em tese, 8. Nosso pain perdu é pequeno mesmo"
                 # (dono, 26/08): a fatia é 1/8 do Nanterre assado (~26 g; a ficha
                 # da casa diz 22 g). O resto é a ficha da casa: banhado no creme,
@@ -5128,6 +5262,11 @@ class Command(BaseCommand):
             "SALSINHA-DESIDRATADA": {"label": "Salsinha desidratada", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 51, "sugars_g": 7.3, "proteins_g": 27, "total_fat_g": 5.5, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 30, "sodium_mg": 452}},
             "TOMILHO-FRESCO": {"label": "Tomilho fresco", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 101, "carbohydrates_g": 24, "sugars_g": 0, "proteins_g": 5.6, "total_fat_g": 1.7, "saturated_fat_g": 0.5, "trans_fat_g": 0, "fiber_g": 14, "sodium_mg": 9}},
             "PASSAS": {"label": "Uvas-passas", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 299, "carbohydrates_g": 79, "sugars_g": 59, "proteins_g": 3.1, "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 11}},
+            # O recheio do Campagne Passas & Castanhas e a bola do Melon Iced Sando
+            # (dono, 21/11/2026, #2925). Comprados; fornecedor ainda não declarado.
+            "CASTANHA-CAJU": {"label": "Castanha de caju", "allergens": ["castanha-de-caju"], "diet": "vegan", "nutrition": {"energy_kcal": 570, "carbohydrates_g": 29, "sugars_g": 5.9, "proteins_g": 18.5, "total_fat_g": 46, "saturated_fat_g": 9.2, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 12}},
+            "CASTANHA-DO-PARA": {"label": "Castanha-do-brasil", "allergens": ["castanha-do-brasil"], "diet": "vegan", "nutrition": {"energy_kcal": 643, "carbohydrates_g": 15, "sugars_g": 2.3, "proteins_g": 14.5, "total_fat_g": 63.5, "saturated_fat_g": 15.3, "trans_fat_g": 0, "fiber_g": 7.9, "sodium_mg": 1}},
+            "SORVETE-CREME": {"label": "Sorvete de creme", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 200, "carbohydrates_g": 24, "sugars_g": 21, "proteins_g": 3.5, "total_fat_g": 10, "saturated_fat_g": 6, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 80}},
             # Ao LEITE: o nome diz, e o rótulo tem de dizer também (dono, 24/09). Este
             # perfil vinha como "vegan" e sem alérgeno, herdado do genérico
             # "gotas de chocolate" — o rótulo do Brioche Chocolat só não mentia
@@ -5287,6 +5426,7 @@ class Command(BaseCommand):
             "MILHO-VERDE-CONSERVA": ("g", 365), "BACON": ("g", 15),
             "SALSINHA-DESIDRATADA": ("g", 365), "TOMILHO-FRESCO": ("g", 14),
             "PASSAS": ("g", 365), "CHOCOLATE-GOTAS-AOLEITE": ("g", 365),
+            "CASTANHA-CAJU": ("g", 180), "CASTANHA-DO-PARA": ("g", 180), "SORVETE-CREME": ("g", 90),
             "CHOCOLATE-BATON-MEIOAMARGO": ("g", 365), "BAUNILHA-EXTRATO-NATURAL": ("g", 365),
             "NATA-FRESCA": ("g", 10),
             "CAFE-ORFEU-CLASSICO": ("g", 90), "CAFE-TAMURA-CHOCOMELO": ("g", 90),
@@ -5546,14 +5686,23 @@ class Command(BaseCommand):
             # rendimento). O terceiro número é o «Rend. %» da ficha da casa, em
             # fração: cebola 0,84, tomilho só folhas 0,60, suco de limão 0,40. A bruta,
             # que sai do estoque, é derivada — nunca escrita aqui.
+            #
+            # `notes` põe a nota NA LINHA (`meta["note"]`, que a tela da receita
+            # mostra): é onde o dono vê o que mandou conferir. `optional` marca o
+            # ingrediente alternativo, que a baixa e a fórmula não contam.
+            notes = rd.get("notes", {})
+            optional = rd.get("optional", set())
             for input_sku, qty, *usable in rd["items"]:
-                meta = INGREDIENT_PROFILES.get(input_sku, {})
+                meta = dict(INGREDIENT_PROFILES.get(input_sku, {}))
+                if notes.get(input_sku):
+                    meta["note"] = notes[input_sku]
                 RecipeItem.objects.create(
                     recipe=recipe,
                     input_sku=input_sku,
                     quantity=qty,
                     usable_factor=usable[0] if usable else Decimal("1"),
                     unit=_recipe_item_unit(input_sku),
+                    is_optional=input_sku in optional,
                     meta=meta,
                 )
             if product:

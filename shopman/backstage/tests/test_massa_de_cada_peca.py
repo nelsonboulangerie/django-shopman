@@ -50,6 +50,14 @@ MASSA_DA_PECA = {
     "fendu": "MASSA-TRADICAO",
     "tabatiere": "MASSA-TRADICAO",
     "pao-hamburguer": "MASSA-TRADICAO",
+    # Os outros itens da casa que ganharam ficha pela palavra do dono (21/11,
+    # #2925). O melonpan leva duas massas (butter e a da cobertura) e é
+    # conferido à parte, abaixo.
+    "baguete-gergelim": "MASSA-CIABATTA",
+    "campagne-passas-castanhas": "MASSA-CAMPAGNE",
+    "brioche-burger-bun": "MASSA-BRIOCHE",
+    "pao-hot-dog": "MASSA-BUTTER",
+    "cornet": "MASSA-BUTTER",
     # Âncoras do que já estava certo: o croissant é de croissant, a ciabatta
     # de ciabatta.
     "croissant": "MASSA-CROISSANT",
@@ -76,8 +84,31 @@ def test_a_massa_de_cada_peca_e_a_que_o_dono_confirmou(monkeypatch):
 
     assert not divergencias, "Ficha com massa errada:\n  " + "\n  ".join(divergencias)
 
+    melonpan = Recipe.objects.get(ref="melonpan", is_active=True)
+    assert sorted(i.input_sku for i in melonpan.items.all()) == ["MASSA-BUTTER", "MASSA-COBERTURA-MELONPAN"]
+    # O recheio do cornet é UM dos dois cremes: o de chocolate é o alternativo.
+    cornet = {i.input_sku: i.is_optional for i in Recipe.objects.get(ref="cornet").items.all()}
+    assert cornet == {"MASSA-BUTTER": False, "CREME-BAUNILHA": False, "CREME-CHOCOLATE": True}
+
     # Feitos aqui em lote: numa data ainda sem lote planejado, a encomenda deles
     # vira pedido à Produção, e não "Sem saldo" (#2925, regra do WP-E3).
-    from shopman.shop.adapters.production import get_batch_produced_skus
+    from shopman.offerman.models import Product
 
-    assert get_batch_produced_skus(["FENDU", "TABAT", "TRABB"]) == {"FENDU", "TABAT", "TRABB"}
+    from shopman.shop.adapters.production import get_batch_produced_skus, get_made_to_order_skus
+
+    em_lote = {"FENDU", "TABAT", "TRABB", "BGG", "CPX", "BRBB", "HOL", "CO", "MELON"}
+    assert get_batch_produced_skus(sorted(em_lote)) == em_lote
+    # O Melon Iced Sando é montado na hora, como o Jambon-Beurre.
+    assert get_made_to_order_skus(["MELSA", "JB"]) == {"MELSA", "JB"}
+    # A Mini Baguete saiu de venda; a Baguete Lanche, de 170 g, toma o lugar dela.
+    assert Product.objects.get(sku="MIB").is_sellable is False
+    bgl = Recipe.objects.get(ref="baguete-lanche").items.get(input_sku="MASSA-CIABATTA")
+    assert bgl.quantity == 170
+
+    # O que o dono mandou conferir aparece NA LINHA da ficha, não só no código.
+    notas = {
+        (i.recipe.ref, i.input_sku)
+        for i in Recipe.objects.get(ref="baguete-gergelim").items.all()
+        if "a conferir" in (i.meta or {}).get("note", "")
+    }
+    assert notas == {("baguete-gergelim", "GERGELIM")}
