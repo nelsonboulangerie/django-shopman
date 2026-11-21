@@ -1,0 +1,163 @@
+name: Jornadas da loja (madrugada)
+
+# As jornadas da cliente (surfaces/storefront-nuxt/tests/journeys) contra uma pilha de
+# verdade: seed qa, Django, worker, proxy lento, loja e Gestor compilados (#2611).
+#
+# NÃO roda no PR nem na fila: são ~10 min por rodada, e com 40 a 60 merges por dia seria
+# custo e fila parada (coordenação, 21/11/2026; o runner pago está desligado desde 18/11).
+# Roda uma vez por madrugada e quando alguém pede (workflow_dispatch). Se reprovar, abre
+# uma issue com o resumo e o link da rodada, ou comenta na que já está aberta; quando volta
+# a passar, fecha a issue. Rodar por merge é decisão do dono.
+
+"on":
+  schedule:
+    # 03:23 BRT: a fila está parada e ninguém está fazendo pedido na pilha.
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "Filtro do Playwright (ex.: j7 --grep J7). Vazio: todas as jornadas."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+  packages: read
+
+concurrency:
+  group: journeys-nightly
+  cancel-in-progress: false
+
+jobs:
+  journeys:
+    name: Jornadas da cliente
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: ghcr.io/nelsonboulangerie/ci-mirror/postgres:16-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_DB: shopman
+          POSTGRES_USER: shopman
+          POSTGRES_PASSWORD: shopman
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U shopman -d shopman"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # Banco só desta rodada: o seed o apaga (`--flush`).
+      DATABASE_URL: postgres://shopman:shopman@localhost:5432/shopman
+      JOURNEYS_LOG_DIR: /tmp/shopman-jornadas
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            surfaces/storefront-nuxt/package-lock.json
+            surfaces/operator-kit/package-lock.json
+            surfaces/orders-nuxt/package-lock.json
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install Python dependencies
+        run: make install
+
+      - name: Install store dependencies
+        run: npm ci
+        working-directory: surfaces/storefront-nuxt
+
+      # O Gestor estende a layer: o kit precisa existir antes do `npm ci` dele.
+      - name: Install operator-kit layer deps
+        run: npm ci
+        working-directory: surfaces/operator-kit
+
+      - name: Install Gestor dependencies
+        run: npm ci
+        working-directory: surfaces/orders-nuxt
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: surfaces/storefront-nuxt
+
+      - name: Jornadas
+        id: journeys
+        env:
+          # A entrada do disparo manual chega por variável, nunca colada no script.
+          JOURNEY_ARGS: ${{ inputs.args }}
+        run: |
+          set -o pipefail
+          # shellcheck disable=SC2086
+          PYTHON="${PWD}/.venv/bin/python" bash scripts/run_storefront_journeys.sh ${JOURNEY_ARGS} \
+            2>&1 | tee "${RUNNER_TEMP}/journeys.log"
+
+      - name: Upload captures and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jornadas-da-loja
+          path: |
+            surfaces/storefront-nuxt/test-results/journeys
+            /tmp/shopman-jornadas/*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Abrir ou comentar a issue da falha
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create jornadas-da-loja --color B60205 \
+            --description "Jornada da loja reprovou na rodada da madrugada" >/dev/null 2>&1 || true
+          {
+            echo "A rodada das jornadas da loja reprovou: ${RUN_URL}"
+            echo
+            echo "Capturas, traces e logs da pilha estão no artefato \`jornadas-da-loja\` da rodada."
+            echo
+            echo '```'
+            grep -E "✘|✓|passed|failed|flaky|Error:" "${RUNNER_TEMP}/journeys.log" | tail -40 || true
+            echo '```'
+          } > "${RUNNER_TEMP}/issue.md"
+          open=$(gh issue list --label jornadas-da-loja --state open --json number --jq '.[0].number // empty')
+          if [ -n "${open}" ]; then
+            gh issue comment "${open}" --body-file "${RUNNER_TEMP}/issue.md"
+          else
+            gh issue create --label jornadas-da-loja \
+              --title "Jornadas da loja reprovaram na rodada da madrugada" \
+              --body-file "${RUNNER_TEMP}/issue.md"
+          fi
+
+      # Só a rodada inteira fecha: um disparo filtrado que passa não diz que todas passam.
+      - name: Fechar a issue quando voltar a passar
+        if: success() && (github.event_name == 'schedule' || inputs.args == '')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          open=$(gh issue list --label jornadas-da-loja --state open --json number --jq '.[0].number // empty')
+          if [ -n "${open}" ]; then
+            gh issue close "${open}" --comment "As jornadas voltaram a passar: ${RUN_URL}"
+          fi
