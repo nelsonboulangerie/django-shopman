@@ -103,6 +103,18 @@ describe("PosPaymentResult — o Pix vencido", () => {
     expect(text).not.toContain("PIX");
     expect(wrapper.find("[data-payment-proof-expired]").exists()).toBe(true);
   });
+
+  it("vencido: nem o envio ao cliente, nem o aviso do envio (o código morreu com o QR)", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, {
+      props: {
+        proof: pix(),
+        status: "expired",
+        delivery: delivery({ template: "pix", status: "failed", notice: "O envio falhou em todos os canais disponíveis.", action: "resend", action_label: "Reenviar Pix" }),
+      },
+    });
+    expect(wrapper.find("[data-payment-delivery]").exists()).toBe(false);
+    expect(wrapper.find('[data-action="send-payment-notice"]').exists()).toBe(false);
+  });
 });
 
 describe("PosPaymentResult — entrega da cobrança", () => {

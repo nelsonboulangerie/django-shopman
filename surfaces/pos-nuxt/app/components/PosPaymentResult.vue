@@ -96,7 +96,7 @@ async function copyLink() {
              lado. Três frases para um fato é o operador parando de ler as três.
              Ela volta a aparecer quando NÃO há prova: aí é a única voz. -->
         <p
-          v-if="delivery?.notice"
+          v-if="delivery?.notice && !pixExpired"
           class="mt-0.5 flex items-start gap-1 text-xs opacity-90"
           :class="delivery.status === 'failed' || delivery.status === 'skipped' ? 'text-warning' : ''"
           data-payment-delivery
@@ -166,8 +166,9 @@ async function copyLink() {
 
     <!-- O servidor escolhe o template e informa se o gesto seguro é enviar ou
          reenviar. A UI não presume canal nem afirma entrega antes do adapter. -->
+    <!-- Pix vencido não se manda ao cliente: o código morreu junto com o QR. -->
     <NuxtButton
-      v-if="delivery?.action"
+      v-if="delivery?.action && !pixExpired"
       color="neutral" variant="outline"
       size="md"
       class="gap-2"
