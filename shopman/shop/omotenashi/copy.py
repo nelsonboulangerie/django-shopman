@@ -1597,6 +1597,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_CLOSE_NO_CASH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {options}")},
     },
+    "CONCIERGE_CLOSE_GAVE_UP": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Tudo bem, fica sem pedido por agora. Os itens continuam na sacola, se mudar de ideia.")},
+    },
     "CONCIERGE_CLOSE_CONFIRM_CODE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Para registrar o pedido, responda: confirmo {code}")},
     },
