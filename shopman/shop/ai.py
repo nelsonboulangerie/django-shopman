@@ -28,6 +28,8 @@ from urllib.parse import urlparse
 #: Propósito → o que ele é. A chave é o que vai em ``Shop.ai_routes``.
 PURPOSES = {
     "concierge": "Concierge: atendimento no WhatsApp",
+    "concierge_rewrite": "Concierge: reescrever a resposta reprovada na conferência (degrau barato)",
+    "concierge_escalation": "Concierge: reescrever quando o degrau barato também foi reprovado (degrau capaz)",
     "triage": "Triagem das mensagens de clientes",
     "intents": "Leitura de intenções das mensagens (e seu placar)",
     "labeling": "Pré-rótulo do gabarito do piloto de intenções",
@@ -40,7 +42,9 @@ PURPOSES = {
 }
 
 #: Propósitos que mandam texto de cliente ao provedor.
-CUSTOMER_TEXT_PURPOSES = frozenset({"concierge", "triage", "intents", "labeling"})
+CUSTOMER_TEXT_PURPOSES = frozenset(
+    {"concierge", "concierge_rewrite", "concierge_escalation", "triage", "intents", "labeling"}
+)
 
 
 class AINotConfigured(Exception):

@@ -101,3 +101,21 @@ def test_command_prints_the_scorecard_and_the_turns_to_fix(conversation, capsys)
     assert "ManyChat AI no WhatsApp alcançaria 0/4" in out
     assert "pronto (0 sem lastro, 0 silêncio, útil >= 90%): não" in out
     assert "cliente: quero 2 croissant" in out
+
+
+def test_scorecard_shows_the_ladder_and_the_spend_per_day(conversation, capsys):
+    reply = conversation.messages.filter(kind="reply").order_by("pk").first()
+    reply.usage = {**reply.usage, "cost_usd": 0.00002}
+    reply.envelope = {"ladder": {"chosen": "concierge_rewrite", "cost_usd": 0.0003, "attempts": [
+        {"source": "house", "conference": {"checks": {"useful": {"status": "fail", "reason": "no_next_step"}}}},
+        {"source": "concierge_rewrite", "text": "Croissant acabou. Quer pain au chocolat?",
+         "conference": {"checks": {"useful": {"status": "pass"}}}},
+    ]}}
+    reply.save()
+
+    call_command("concierge_conversation_eval", "--days", "1")
+    out = capsys.readouterr().out
+
+    assert "escada (sombra): 1 subidas; escolheria concierge_rewrite 1; pauta (motivos): useful:no_next_step 1" in out
+    assert "US$ 0.0003" in out
+    assert "escada escolheria: concierge_rewrite · Croissant acabou. Quer pain au chocolat?" in out
