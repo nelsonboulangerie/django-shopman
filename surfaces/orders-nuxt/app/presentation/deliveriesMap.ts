@@ -4,9 +4,9 @@
 // O mapa acompanha o tema (dono, 17/11: "porque ele não pode acompanhar o tema
 // claro/escuro?"). As cores dele continuam FIXAS por tema, e não os tokens do tema:
 // um `text-toned` do escuro sobre o papel do mapa some (revisão das Entregas, UXE-08).
-// O que não muda com o tema são os PINOS (a loja, o cupom da parada, o redondo do
-// aguardando, o selo de preparo): papel branco nos dois, como placa. Os desenhos e o
-// contorno na cor do tema moram em `mapGlyphs` (escolha do dono, 21/11, base "c1").
+// Os desenhos dos pinos (a loja, o pacote da parada, a moto) e o contorno na cor do tema
+// moram em `mapGlyphs` (escolha do dono, 21/11). O redondo do aguardando e o selo de
+// preparo são brancos nos dois temas, como placa.
 
 export interface MapTokens {
   /** O papel do desenho próprio (sem Google). */
@@ -124,12 +124,21 @@ export function spreadOverlaps(
       out.set(group[0]!.key, { dx: 0, dy: 0 });
       continue;
     }
-    // Abre o bastante para as caixas deixarem de se tocar.
-    const widest = Math.max(...group.map((m) => m.w ?? size));
-    const r = Math.max(radius, Math.ceil(widest / 2) + 4);
+    // Abre o bastante para as caixas deixarem de se tocar: dois vizinhos no círculo ficam
+    // à distância da corda (2r·sen(π/n)), que tem de cobrir a maior dimensão do grupo (o
+    // pacote é alto, a moto é larga), com 4 px de respiro.
+    const biggest = Math.max(...group.map((m) => Math.max(m.w ?? size, m.h ?? size)));
+    const r = Math.max(radius, Math.ceil((biggest + 4) / (2 * Math.sin(Math.PI / group.length))));
+    // O círculo é em volta do CENTRO do grupo: em volta de cada pino, dois que começam
+    // afastados podiam se reaproximar.
+    const cx = group.reduce((sum, m) => sum + m.x, 0) / group.length;
+    const cy = group.reduce((sum, m) => sum + m.y, 0) / group.length;
     group.forEach((marker, i) => {
       const angle = -Math.PI / 2 + (2 * Math.PI * i) / group.length;
-      out.set(marker.key, { dx: Math.round(Math.cos(angle) * r), dy: Math.round(Math.sin(angle) * r) });
+      out.set(marker.key, {
+        dx: Math.round(cx + Math.cos(angle) * r - marker.x),
+        dy: Math.round(cy + Math.sin(angle) * r - marker.y),
+      });
     });
   }
   return out;

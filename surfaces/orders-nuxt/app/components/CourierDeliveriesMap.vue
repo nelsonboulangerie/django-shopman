@@ -2,15 +2,15 @@
 // O mapa da página Entregas: tudo o que está fora da loja ou a
 // caminho dela, num desenho só.
 //
-// Os desenhos são os da escolha do dono (21/11, "L2, P1 e E4", base "c1"; ver
-// `presentation/mapGlyphs`): a loja é o ícone de loja, a parada é um CUPOM com o número
-// dentro, o entregador é a própria moto. Papel e parede brancos, desenho e número
-// escuros nos dois temas; cada pino e cada linha levam um contorno na cor do tema.
-// A cor da corrida mora na LINHA e no selo da letra no canto de cada pino.
-//  · CHAMADA (na rua): cupom de borda contínua; rota contínua, a 50%. A parada já
-//    entregue troca o número pelo visto. O entregador: a moto, com a letra da corrida.
-//  · EDITANDO: cupom de borda tracejada; rota PONTILHADA. A ativa forte, as outras
-//    esmaecidas.
+// Os desenhos são os da escolha do dono (21/11; ver `presentation/mapGlyphs`): a loja é
+// o ícone de loja, a parada é um PACOTE (saco de pão: picote em cima, base reta embaixo,
+// pousada no ponto) com o código do pedido no corpo, o entregador é a própria moto. Moto
+// e pacote são inteiros na cor da rota; a loja é neutra. O traço de todo ícone tem a
+// espessura da linha da rota, e cada pino e cada linha levam um contorno na cor do tema.
+// Nada tem transparência.
+//  · CHAMADA (na rua): pacote cheio na cor; rota contínua. A parada já entregue troca o
+//    código pelo visto.
+//  · EDITANDO: pacote de papel branco, borda tracejada na cor; rota PONTILHADA.
 //  · AGUARDANDO: o pedido sem corrida, REDONDO, preto e branco, com o código. A forma
 //    e a falta de cor separam o que espera do que já tem corrida (dono, 15 e 16/11).
 //    Tocar põe na ativa.
@@ -20,15 +20,14 @@
 // presas ao mapa por um OverlayView: arrastar e dar zoom levam tudo junto. Sem chave,
 // ou se o Google recusar, o desenho próprio (trama de ruas) fica no lugar.
 //
-// Legível e tocável (revisão das Entregas, 16/11/2026, F7a): toda parada leva a LETRA
-// da corrida num selo no canto (a cor nunca vem sozinha); as cores
+// Legível e tocável (revisão das Entregas, 16/11/2026, F7a): as cores
 // do mapa são fixas por tema (acompanham o claro e o escuro, dono 17/11); todo alvo tem 44 px; pinos no
 // mesmo ponto se abrem em círculo; o enquadramento não corre atrás da moto e, depois
 // que o operador mexe no mapa, "Ver tudo" devolve o quadro inteiro. Loja sem
 // coordenada não se desenha (antes ia parar na casa de um cliente).
 import { rideColor } from "~/presentation/ridePalette";
 import { PIN_TEXT, fitKey, googleMapStyles, mapTokens, spreadOverlaps } from "~/presentation/deliveriesMap";
-import { COUPON_PATH, COUPON_VIEWBOX, GLYPH_INK, GLYPH_PAPER, ICON_VIEWBOX, MOTO_PATHS, lineHalo, STORE_AWNING, STORE_PATH, STORE_WALL, motoStroke, themeHalo } from "~/presentation/mapGlyphs";
+import { GLYPH_INK, GLYPH_PAPER, HALO_WIDTH, ICON_VIEWBOX, MOTO_PATHS, PACKAGE_PATH, PACKAGE_TEXT_Y, PACKAGE_VIEWBOX, ROUTE_WIDTH, STORE_AWNING, STORE_PATH, STORE_WALL, routeColor, textOn, themeHalo } from "~/presentation/mapGlyphs";
 import { rideLetter } from "~/presentation/deliveries";
 import { metroLines } from "~/presentation/metroLines";
 import { courierPositionAge } from "~/presentation/courierPosition";
@@ -67,8 +66,6 @@ const props = defineProps<{
   /** As sugestões visíveis no cartão de Aguardando; somem com "Agora não" ou ao virar corrida. */
   suggested?: MapSuggestedRide[];
   active: number;
-  /** Opacidade da rota e das paradas das corridas chamadas (a moto fica sempre cheia). */
-  liveOpacity?: number;
   /** Sem a legenda (o mapa pequeno do detalhe). */
   bare?: boolean;
   /** A chave pública do Google Maps; vazia, o desenho próprio. */
@@ -80,8 +77,10 @@ const emit = defineEmits<{ toggle: [ref: string]; fill: [place: string]; open: [
 const colorMode = useColorMode();
 const dark = computed(() => colorMode.value === "dark");
 const tokens = computed(() => mapTokens(dark.value));
-const liveAlpha = computed(() => props.liveOpacity ?? 0.5);
 const halo = computed(() => themeHalo(dark.value));
+/** A cor da rota da corrida `n` (1 = A), e a do texto sobre o pacote cheio dela. */
+const route = (n: number) => routeColor(dark.value, rideColor(n - 1));
+const routeText = (n: number) => textOn(route(n));
 
 /** O que se entrega e a loja: o que decide o enquadramento. */
 const framePoints = computed<LatLng[]>(() => [
@@ -157,8 +156,9 @@ function px(p: LatLng): { x: number; y: number } {
     const q = overlay.getProjection()?.fromLatLngToDivPixel({ lat: p.latitude, lng: p.longitude });
     if (q) return { x: q.x, y: q.y };
   }
-  // Folga fixa em pixels: o cupom mais alto e o selo da letra acima dele não encostam na borda.
-  const b = bounds.value, side = 24, top = topBand.value + 36, bottom = 24;
+  // Folga fixa em pixels: o pacote fica todo ACIMA do ponto dele (a base pousa no ponto),
+  // então a folga de cima cobre a altura do pacote.
+  const b = bounds.value, side = 24, top = topBand.value + 52, bottom = 24;
   return {
     x: side + ((p.longitude - b.minLng) / (b.maxLng - b.minLng)) * (size.value.w - 2 * side),
     y: top + (1 - (p.latitude - b.minLat) / (b.maxLat - b.minLat)) * (size.value.h - top - bottom),
@@ -173,8 +173,8 @@ function fit(force = false) {
   const area = new mapLibs.core.LatLngBounds();
   for (const p of everyPoint.value) area.extend({ lat: p.latitude, lng: p.longitude });
   programmatic = true;
-  // O cupom é mais alto que largo e leva o selo da letra acima: a folga de cima é maior.
-  map.fitBounds(area, props.bare ? { top: 44, right: 32, bottom: 28, left: 32 } : { top: 56 + topBand.value, right: 56, bottom: 56, left: 56 });
+  // O pacote fica todo acima do ponto dele: a folga de cima cobre a altura do pacote.
+  map.fitBounds(area, props.bare ? { top: 56, right: 32, bottom: 28, left: 32 } : { top: 64 + topBand.value, right: 56, bottom: 56, left: 56 });
 }
 function showAll() {
   userMoved.value = false;
@@ -291,12 +291,19 @@ const ghosts = computed(() =>
     }),
 );
 // Pinos no mesmo ponto se abrem em círculo: cada um com o seu toque.
+// O pacote fica todo ACIMA do ponto (a base pousa nele): a caixa que se compara é a do
+// desenho, com o contorno, e não um quadrado centrado no ponto.
+const PACKAGE_BOX = { w: 44, h: 50, lift: 23 };
+const packageBox = (s: LatLng & { ref: string }) => {
+  const q = px(s);
+  return { key: s.ref, x: q.x, y: q.y - PACKAGE_BOX.lift, w: PACKAGE_BOX.w, h: PACKAGE_BOX.h };
+};
 const offsets = computed(() =>
   spreadOverlaps([
     ...props.waiting.map((o) => ({ key: o.ref, ...px(o) })),
-    ...props.building.flatMap((r) => r.stops.map((s) => ({ key: s.ref, ...px(s) }))),
+    ...props.building.flatMap((r) => r.stops.map(packageBox)),
     ...props.live.flatMap((r) => [
-      ...r.stops.map((s) => ({ key: s.ref, ...px(s) })),
+      ...r.stops.map(packageBox),
       ...(r.courier ? [{ key: `courier:${r.number}`, ...px(r.courier), w: 64, h: 40 }] : []),
     ]),
   ]),
@@ -307,6 +314,8 @@ const at = (p: LatLng, key = "") => {
   return { left: `${q.x + d.dx}px`, top: `${q.y + d.dy}px` };
 };
 const MARKER = "absolute -translate-x-1/2 -translate-y-1/2 hover:z-30 focus-within:z-30";
+/** O pacote pousa a base no ponto: âncora no centro da base, não no meio do desenho. */
+const PACKAGE_MARKER = "absolute -translate-x-1/2 -translate-y-full hover:z-30 focus-within:z-30";
 
 // A idade da posição de cada moto (F7b): passada de 2 min sem posição nova, ela esmaece e
 // diz desde quando estava ali. O relógio anda a cada segundo, sem esperar a releitura.
@@ -329,7 +338,14 @@ const places = computed(() => {
     const q = px(p), g = groups.get(p.place) || { x: 0, n: 0, y: 0 };
     groups.set(p.place, { x: g.x + q.x, n: g.n + 1, y: Math.max(g.y, q.y) });
   }
-  return [...groups.entries()].map(([place, g]) => ({ place, x: g.x / g.n, y: g.y }));
+  // O rótulo que cairia sobre a loja começa depois da borda dela (a loja tem 48 px; o
+  // rótulo fica 20 px abaixo do pino mais baixo do bairro e tem ~22 px de altura).
+  const store = props.origin ? px(props.origin) : null;
+  return [...groups.entries()].map(([place, g]) => {
+    const x = g.x / g.n, top = g.y + 20, half = place.length * 3.4 + 12;
+    const hits = store && Math.abs(x - store.x) < half + 24 && top < store.y + 24 && top + 22 > store.y - 24;
+    return hits ? { place, x: store.x + 24 + 6, y: g.y, start: true } : { place, x, y: g.y, start: false };
+  });
 });
 </script>
 
@@ -363,22 +379,19 @@ const places = computed(() => {
         stroke-dasharray="11 8"
         stroke-linecap="round"
         stroke-linejoin="round"
-        opacity="0.75"
         :data-map-suggestion="g.key"
       />
-      <!-- o contorno na cor do tema, por baixo: separa a linha do mapa (base "c"); a cor
-           que sumiria nele (o amarelo no claro, o preto no escuro) ganha o contorno de antes -->
+      <!-- o contorno na cor do tema, por baixo: separa a linha do mapa -->
       <path
         v-for="l in lines"
         :key="`o${l.live ? 'l' : 'b'}${l.id}`"
         :d="l.d"
         fill="none"
-        :stroke="lineHalo(dark, rideColor(l.id - 1))"
-        stroke-width="7"
+        :stroke="halo"
+        :stroke-width="HALO_WIDTH"
         stroke-linecap="round"
         stroke-linejoin="round"
         :stroke-dasharray="l.live ? undefined : '0.1 8'"
-        :opacity="l.live ? 0.85 : l.id === active ? 1 : 0.55"
         data-line-outline
       />
       <path
@@ -386,12 +399,11 @@ const places = computed(() => {
         :key="`${l.live ? 'l' : 'b'}${l.id}`"
         :d="l.d"
         fill="none"
-        :stroke="rideColor(l.id - 1).bg"
-        stroke-width="4"
+        :stroke="route(l.id)"
+        :stroke-width="ROUTE_WIDTH"
         stroke-linecap="round"
         stroke-linejoin="round"
         :stroke-dasharray="l.live ? undefined : '0.1 8'"
-        :opacity="l.live ? liveAlpha : l.id === active ? 1 : 0.55"
       />
     </svg>
 
@@ -400,8 +412,10 @@ const places = computed(() => {
     <span
       v-for="label in places"
       :key="label.place"
-      class="absolute -translate-x-1/2 translate-y-5"
+      class="absolute translate-y-5"
+      :class="label.start ? '' : '-translate-x-1/2'"
       :style="{ left: `${label.x}px`, top: `${label.y}px` }"
+      :data-map-place-after-store="label.start ? '' : undefined"
     >
       <NuxtButton color="neutral" variant="ghost" class="min-h-11 p-0" :aria-label="active ? `Pôr ${label.place} na corrida ${rideLetter(active)}` : `Pôr ${label.place} numa corrida nova`" @click="emit('fill', label.place)">
         <span class="whitespace-nowrap rounded-full px-2 py-0.5 op-micro font-semibold shadow-sm" :style="{ background: tokens.chip, color: tokens.text }">{{ label.place }}</span>
@@ -418,51 +432,59 @@ const places = computed(() => {
       :data-map-suggestion-label="g.key"
     >{{ g.label }}</span>
 
-    <!-- a loja: o ícone de loja em traço, parede e toldo brancos, maior que a parada -->
-    <span v-if="origin" class="absolute z-10 size-11 -translate-x-1/2 -translate-y-1/2" :style="at(origin)" title="A loja" data-map-store>
-      <svg class="size-full" :viewBox="ICON_VIEWBOX" aria-hidden="true">
-        <rect v-bind="STORE_WALL" :fill="halo" :stroke="halo" stroke-width="3.5" stroke-linejoin="round" />
-        <path :d="STORE_AWNING" :fill="halo" :stroke="halo" stroke-width="3.5" stroke-linejoin="round" />
+    <!-- a loja: o ícone de loja em traço escuro, parede e toldo brancos; a maior do mapa -->
+    <span v-if="origin" class="absolute z-10 size-12 -translate-x-1/2 -translate-y-1/2" :style="at(origin)" title="A loja" data-map-store>
+      <svg class="size-full overflow-visible" :viewBox="ICON_VIEWBOX" aria-hidden="true">
+        <path :d="STORE_PATH" fill="none" :stroke="halo" :stroke-width="HALO_WIDTH" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
         <rect v-bind="STORE_WALL" :fill="GLYPH_PAPER" />
         <path :d="STORE_AWNING" :fill="GLYPH_PAPER" />
-        <path :d="STORE_PATH" fill="none" :stroke="GLYPH_INK" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <path :d="STORE_PATH" fill="none" :stroke="GLYPH_INK" :stroke-width="ROUTE_WIDTH" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
       </svg>
     </span>
 
-    <!-- corrida chamada: cupom de borda contínua; entregue troca o número pelo visto -->
+    <!-- Posição que não é de agora: a moto diz desde quando estava ali (sem amarelo: não há o
+         que fazer). Fica numa camada ABAIXO das paradas, embaixo da moto: é só leitura e nunca cobre um pacote. -->
+    <template v-for="r in live" :key="`ca${r.number}`">
+      <span v-if="r.courier && courierAge(r)?.mapLabel" :class="MARKER" class="pointer-events-none" :style="at(r.courier, `courier:${r.number}`)" aria-hidden="true">
+        <span class="block size-11" />
+        <span :ref="keepInside" class="absolute top-full left-1/2 -mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 op-micro font-medium shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" data-map-courier-age>{{ courierAge(r)?.mapLabel }}</span>
+      </span>
+    </template>
+
+    <!-- corrida chamada: pacote cheio na cor da rota, com o código; entregue troca o código
+         pelo visto. A base reta pousa no ponto do mapa (âncora no centro da base). -->
     <template v-for="r in live" :key="`ls${r.number}`">
-      <span v-for="(s, k) in r.stops" :key="s.ref" :class="MARKER" :style="at(s, s.ref)">
-        <NuxtButton color="neutral" variant="ghost" class="min-w-11 justify-center p-1" :aria-label="`Corrida ${rideLetter(r.number)}, parada ${k + 1}, pedido ${s.code}${s.done ? ', entregue' : ''}`" @click="emit('open', r.number)">
-          <span class="relative grid h-9 w-7.5 place-items-center pb-1 op-label font-extrabold tabular-nums" :style="{ color: GLYPH_INK }" data-map-stop>
-            <svg class="absolute inset-0 size-full overflow-visible" :viewBox="COUPON_VIEWBOX" aria-hidden="true">
-              <path :d="COUPON_PATH" fill="none" :stroke="halo" stroke-width="7.2" stroke-linejoin="round" />
-              <path :d="COUPON_PATH" :fill="GLYPH_PAPER" :stroke="GLYPH_INK" stroke-width="2.2" stroke-linejoin="round" />
+      <span v-for="(s, k) in r.stops" :key="s.ref" :class="PACKAGE_MARKER" :style="at(s, s.ref)">
+        <NuxtButton color="neutral" variant="ghost" class="min-h-11 min-w-11 items-end justify-center px-1 pt-1 pb-0" :aria-label="`Corrida ${rideLetter(r.number)}, parada ${k + 1}, pedido ${s.code}${s.done ? ', entregue' : ''}`" @click="emit('open', r.number)">
+          <span class="relative block h-[42px] w-[34px]" data-map-stop>
+            <svg class="absolute inset-0 size-full overflow-visible" :viewBox="PACKAGE_VIEWBOX" aria-hidden="true">
+              <path :d="PACKAGE_PATH" fill="none" :stroke="halo" :stroke-width="HALO_WIDTH" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+              <path :d="PACKAGE_PATH" :fill="route(r.number)" :stroke="route(r.number)" :stroke-width="ROUTE_WIDTH" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+              <text x="17" :y="s.done ? PACKAGE_TEXT_Y - 5 : PACKAGE_TEXT_Y" text-anchor="middle" dominant-baseline="central" font-weight="800" font-size="11" :fill="routeText(r.number)" data-map-stop-code>{{ s.code }}</text>
+              <!-- entregue: o visto pequeno abaixo do código, dentro do pacote -->
+              <path v-if="s.done" d="M12.5 31 l3 3 l6 -6.5" fill="none" :stroke="routeText(r.number)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" data-map-stop-done />
             </svg>
-            <span class="relative"><NuxtIcon v-if="s.done" name="i-lucide-check" class="size-4" /><template v-else>{{ k + 1 }}</template></span>
-            <span class="absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-[4px] op-micro leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
       </span>
     </template>
 
-    <!-- editando: cupom de borda tracejada -->
+    <!-- editando: pacote de papel branco, borda tracejada na cor da rota -->
     <template v-for="r in building" :key="`bs${r.number}`">
-      <span v-for="(s, k) in r.stops" :key="s.ref" :class="[MARKER, 'z-10']" :style="at(s, s.ref)">
-        <NuxtButton color="neutral" variant="ghost" class="min-w-11 justify-center p-1" :aria-label="`Pedido ${s.code}, parada ${k + 1} da corrida ${rideLetter(r.number)}`" @click="emit('toggle', s.ref)">
-          <span class="relative grid h-9 w-7.5 place-items-center pb-1 op-label font-extrabold tabular-nums transition hover:scale-110" :style="{ color: GLYPH_INK }" data-map-stop data-map-stop-editing>
-            <svg class="absolute inset-0 size-full overflow-visible" :viewBox="COUPON_VIEWBOX" aria-hidden="true">
-              <path :d="COUPON_PATH" fill="none" :stroke="halo" stroke-width="7.2" stroke-linejoin="round" />
-              <path :d="COUPON_PATH" :fill="GLYPH_PAPER" />
-              <path :d="COUPON_PATH" fill="none" :stroke="GLYPH_INK" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="4 3" />
+      <span v-for="(s, k) in r.stops" :key="s.ref" :class="[PACKAGE_MARKER, 'z-10']" :style="at(s, s.ref)">
+        <NuxtButton color="neutral" variant="ghost" class="min-h-11 min-w-11 items-end justify-center px-1 pt-1 pb-0" :aria-label="`Pedido ${s.code}, parada ${k + 1} da corrida ${rideLetter(r.number)}`" @click="emit('toggle', s.ref)">
+          <span class="relative block h-[42px] w-[34px] transition hover:scale-110" data-map-stop data-map-stop-editing>
+            <svg class="absolute inset-0 size-full overflow-visible" :viewBox="PACKAGE_VIEWBOX" aria-hidden="true">
+              <path :d="PACKAGE_PATH" fill="none" :stroke="halo" :stroke-width="HALO_WIDTH" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+              <path :d="PACKAGE_PATH" :fill="GLYPH_PAPER" :stroke="route(r.number)" :stroke-width="ROUTE_WIDTH" stroke-linejoin="round" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+              <text x="17" :y="PACKAGE_TEXT_Y" text-anchor="middle" dominant-baseline="central" font-weight="800" font-size="11" :fill="GLYPH_INK" data-map-stop-code>{{ s.code }}</text>
             </svg>
-            <span class="relative">{{ k + 1 }}</span>
-            <span class="absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-[4px] op-micro leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
       </span>
     </template>
 
-    <!-- aguardando: redondos, preto e branco, com o código (parada de corrida é cupom) -->
+    <!-- aguardando: redondos, preto e branco, com o código (parada de corrida é pacote) -->
     <span v-for="o in waiting" :key="o.ref" :class="[MARKER, 'z-10']" :style="at(o, o.ref)">
       <NuxtButton color="neutral" variant="ghost" class="p-1" :aria-label="`Pedido ${o.code}, ${o.place}${o.preparing ? ', em preparo' : ''}`" @click="emit('toggle', o.ref)">
         <span class="relative grid size-9 place-items-center rounded-full border-2 border-black bg-white op-micro font-semibold tabular-nums text-black shadow-md transition hover:scale-110">
@@ -472,20 +494,19 @@ const places = computed(() => {
       </NuxtButton>
     </span>
 
-    <!-- o entregador: a própria moto, em traço, com a letra da corrida -->
+    <!-- o entregador: a própria moto, em traço na cor da rota; a posição antiga encolhe e
+         ganha um anel tracejado (sem transparência) -->
     <template v-for="r in live" :key="`c${r.number}`">
       <span v-if="r.courier" :class="[MARKER, 'z-20']" :style="at(r.courier, `courier:${r.number}`)" :data-map-courier="rideLetter(r.number)" :data-map-courier-stale="courierAge(r)?.stale ? '' : undefined">
         <NuxtButton color="neutral" variant="ghost" class="p-1.5" :aria-label="[`Entregador da corrida ${rideLetter(r.number)}`, courierAge(r)?.sentence].filter(Boolean).join('. ')" @click="emit('open', r.number)">
-          <span class="relative block size-10 transition hover:scale-105" :class="courierAge(r)?.stale ? 'opacity-45' : ''">
+          <span class="relative block transition hover:scale-105" :class="courierAge(r)?.stale ? 'size-8' : 'size-10'">
             <svg class="size-full overflow-visible" :viewBox="ICON_VIEWBOX" aria-hidden="true">
-              <path v-for="d in MOTO_PATHS" :key="`h${d}`" :d="d" fill="none" :stroke="halo" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-              <path v-for="d in MOTO_PATHS" :key="d" :d="d" fill="none" :stroke="motoStroke(dark)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <circle v-if="courierAge(r)?.stale" cx="12" cy="12" r="15" fill="none" :stroke="tokens.text" stroke-width="1.5" stroke-dasharray="3 2.5" vector-effect="non-scaling-stroke" />
+              <path v-for="d in MOTO_PATHS" :key="`h${d}`" :d="d" fill="none" :stroke="halo" :stroke-width="HALO_WIDTH" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+              <path v-for="d in MOTO_PATHS" :key="d" :d="d" fill="none" :stroke="route(r.number)" :stroke-width="ROUTE_WIDTH" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
             </svg>
-            <span class="absolute -top-1 -right-1.5 grid size-4.5 place-items-center rounded-[4px] op-micro leading-none font-bold ring-1 ring-white" :style="{ background: rideColor(r.number - 1).bg, color: rideColor(r.number - 1).fg }" aria-hidden="true" data-stop-letter>{{ rideLetter(r.number) }}</span>
           </span>
         </NuxtButton>
-        <!-- Posição que não é de agora: a moto diz desde quando estava ali (sem amarelo: não há o que fazer). -->
-        <span v-if="courierAge(r)?.mapLabel" :ref="keepInside" class="pointer-events-none absolute top-full left-1/2 -mt-1 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 op-micro font-medium shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" aria-hidden="true" data-map-courier-age>{{ courierAge(r)?.mapLabel }}</span>
       </span>
     </template>
 
@@ -497,11 +518,12 @@ const places = computed(() => {
       <NuxtButton color="neutral" variant="outline" icon="i-lucide-info" label="Legenda" class="min-h-11" aria-expanded="false" data-map-legend-toggle @click="legendOpen = true" />
     </div>
     <div v-if="!bare && (!legendCollapsible || legendOpen)" :ref="observeLegend" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :class="legendCollapsible ? 'z-40 pr-1' : ''" :style="{ background: tokens.chip, color: tokens.text }" data-map-legend>
+      <span class="flex items-center gap-1"><svg width="16" height="16" :viewBox="ICON_VIEWBOX" class="overflow-visible" aria-hidden="true"><rect v-bind="STORE_WALL" :fill="GLYPH_PAPER" /><path :d="STORE_AWNING" :fill="GLYPH_PAPER" /><path :d="STORE_PATH" fill="none" :stroke="tokens.text" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" /></svg>Loja</span>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 border-black bg-white" />Aguardando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="12" height="15" :viewBox="COUPON_VIEWBOX" aria-hidden="true"><path :d="COUPON_PATH" :fill="GLYPH_PAPER" /><path :d="COUPON_PATH" fill="none" :stroke="GLYPH_INK" stroke-width="3" stroke-linejoin="round" stroke-dasharray="5 4" /></svg>Editando</span>
-      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-linecap="round" /></svg><svg width="12" height="15" :viewBox="COUPON_VIEWBOX" aria-hidden="true"><path :d="COUPON_PATH" :fill="GLYPH_PAPER" :stroke="GLYPH_INK" stroke-width="3" stroke-linejoin="round" /></svg>Corrida</span>
-      <span class="flex items-center gap-1"><span class="relative grid h-[15px] w-3 place-items-center"><svg class="absolute inset-0 size-full" :viewBox="COUPON_VIEWBOX" aria-hidden="true"><path :d="COUPON_PATH" :fill="GLYPH_PAPER" :stroke="GLYPH_INK" stroke-width="3" stroke-linejoin="round" /></svg><NuxtIcon name="i-lucide-check" class="relative mb-0.5 size-2" :style="{ color: GLYPH_INK }" /></span>Entregue</span>
-      <span class="flex items-center gap-1"><svg width="18" height="18" :viewBox="ICON_VIEWBOX" aria-hidden="true"><path v-for="d in MOTO_PATHS" :key="d" :d="d" fill="none" :stroke="tokens.text" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>Entregador</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="13" height="16" :viewBox="PACKAGE_VIEWBOX" class="overflow-visible" aria-hidden="true"><path :d="PACKAGE_PATH" :fill="GLYPH_PAPER" :stroke="tokens.text" stroke-width="1.6" stroke-linejoin="round" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" /></svg>Editando</span>
+      <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-linecap="round" /></svg><svg width="13" height="16" :viewBox="PACKAGE_VIEWBOX" class="overflow-visible" aria-hidden="true"><path :d="PACKAGE_PATH" :fill="tokens.text" :stroke="tokens.text" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke" /></svg>Corrida</span>
+      <span class="flex items-center gap-1"><svg width="13" height="16" :viewBox="PACKAGE_VIEWBOX" class="overflow-visible" aria-hidden="true"><path :d="PACKAGE_PATH" :fill="tokens.text" :stroke="tokens.text" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke" /><path d="M10 24 l5 5 l9 -10" fill="none" :stroke="tokens.chip" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" /></svg>Entregue</span>
+      <span class="flex items-center gap-1"><svg width="18" height="18" :viewBox="ICON_VIEWBOX" aria-hidden="true"><path v-for="d in MOTO_PATHS" :key="d" :d="d" fill="none" :stroke="tokens.text" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" /></svg>Entregador</span>
       <span v-if="ghosts.length" class="flex items-center gap-1" data-map-legend-suggestion><svg width="22" height="6" aria-hidden="true"><path d="M2 3H20" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="7 4" stroke-linecap="round" /></svg>Sugestão</span>
       <NuxtButton v-if="legendCollapsible" color="neutral" variant="ghost" icon="i-lucide-x" class="min-h-11 min-w-11 justify-center" aria-label="Fechar a legenda" aria-expanded="true" data-map-legend-close @click="legendOpen = false" />
     </div>

@@ -1,61 +1,58 @@
-// Presentation — os desenhos dos pinos do mapa das Entregas (escolha do dono, 21/11:
-// "L2, P1 e E4", depois "opção c1!"). Puro: o componente só os põe na tela.
+// Presentation — os desenhos dos pinos do mapa das Entregas. Puro: o componente só os
+// põe na tela. Decisões do dono (21/11): loja L2, moto E4 e a parada como PACOTE (o saco
+// de pão: picote em cima, base reta embaixo), "V2, sem fio".
 //
-//  · A LOJA é o ícone de loja (tabler building-store) em traço, com a parede e o toldo
-//    preenchidos de branco por baixo, um pouco maior que a parada.
-//  · A PARADA é um cupom (papel com a base em zigue-zague) com o número dentro.
-//  · O ENTREGADOR é a própria moto (tabler motorbike), em traço, sem caixa em volta.
-//
-// Base "c": cada pino e cada linha levam um contorno na cor do TEMA por baixo (branco
-// no claro, quase preto no escuro), que os separa do mapa. O papel do cupom e a parede
-// da loja são brancos nos dois temas; o desenho e o número, sempre escuros (`GLYPH_INK`).
-// A moto não tem papel: o traço dela é o contraste do tema (escuro no claro, branco no
-// escuro), como na prévia aprovada.
-
+//  · O TRAÇO de todo ícone tem a mesma espessura da linha da rota (`ROUTE_WIDTH`), sem
+//    escalar com o ícone (`vector-effect: non-scaling-stroke`).
+//  · A MOTO e o PACOTE são inteiros na cor da rota; o pacote é cheio dela, com o código do
+//    pedido no corpo, na cor de texto que lê sobre ela (4,5:1). A LOJA fica neutra: traço
+//    escuro sobre parede e toldo brancos.
+//  · A corrida preta vira quase branca no escuro (a rota preta sumiria no papel escuro).
+//  · Por baixo de tudo, um contorno na cor do TEMA (branco no claro, quase preto no
+//    escuro), que separa o desenho do mapa. Nada tem transparência.
+//  · O pacote marca o lugar pelo CENTRO DA BASE: a base reta pousa no ponto do mapa.
 import { contrast } from "./deliveriesMap";
 
-/** O desenho e o número dentro do papel branco, nos dois temas. */
+/** A espessura da linha da rota, e do traço de todo ícone do mapa (px). */
+export const ROUTE_WIDTH = 4;
+/** O contorno do tema por baixo de linhas e ícones: 2 px de cada lado. */
+export const HALO_WIDTH = ROUTE_WIDTH + 4;
+/** O traço escuro da loja e o texto escuro. */
 export const GLYPH_INK = "#111111";
-/** O papel do cupom e a parede da loja: brancos sempre. */
+/** A parede da loja e o papel do pacote em edição: brancos sempre. */
 export const GLYPH_PAPER = "#ffffff";
+/** A corrida preta no escuro. */
+export const DARK_BLACK_ROUTE = "#f1ece4";
 
-/** O contorno na cor do tema, por baixo de pinos e linhas (base "c"). */
+/** O contorno na cor do tema, por baixo de pinos e linhas. */
 export function themeHalo(dark: boolean): string {
   return dark ? GLYPH_INK : GLYPH_PAPER;
 }
-/** O contorno claro do escuro, para a linha que some no #111 (o preto). */
-export const DARK_LINE_HALO = "#f1ece4";
 
-/**
- * O contorno por baixo da linha de uma corrida: o do tema (base "c1"), menos para a
- * cor que sumiria nele (abaixo de 3:1). Essa ganha o contorno de antes: a tinta da
- * corrida no claro (o amarelo), o claro no escuro (o preto). Legibilidade não se
- * negocia (coordenação, 21/11).
- */
-export function lineHalo(dark: boolean, ride: { bg: string; ink: string }): string {
-  const halo = themeHalo(dark);
-  if (contrast(ride.bg, halo) >= 3) return halo;
-  return dark ? DARK_LINE_HALO : ride.ink;
+/** A cor da rota de uma corrida: a da amostra; a preta, quase branca no escuro. */
+export function routeColor(dark: boolean, ride: { bg: string }): string {
+  return dark && ride.bg.toLowerCase() === GLYPH_INK ? DARK_BLACK_ROUTE : ride.bg;
 }
 
-/** O traço da moto: o contraste do tema. */
-export function motoStroke(dark: boolean): string {
-  return dark ? GLYPH_PAPER : GLYPH_INK;
+/** O texto sobre o pacote cheio: o branco ou o escuro, o que ler mais sobre a cor. */
+export function textOn(fill: string): string {
+  return contrast(GLYPH_PAPER, fill) >= contrast(GLYPH_INK, fill) ? GLYPH_PAPER : GLYPH_INK;
 }
 
-/** A base do cupom: dentes de `depth` entre `x1` e `x0`, da direita para a esquerda. */
-function zigzag(y: number, x0: number, x1: number, teeth: number, depth: number): string {
+/** O picote do topo: dentes de `depth` entre `x0` e `x1`, da direita para a esquerda. */
+function perforation(y: number, x0: number, x1: number, teeth: number, depth: number): string {
   const step = (x1 - x0) / (teeth * 2);
   const points: string[] = [];
   for (let k = 0; k <= teeth * 2; k++) {
-    points.push(`L${(x1 - step * k).toFixed(1)} ${(k % 2 ? y + depth : y).toFixed(1)}`);
+    points.push(`L${(x1 - step * k).toFixed(2)} ${(k % 2 ? y - depth : y).toFixed(1)}`);
   }
   return points.join(" ");
 }
-/** O cupom: 30 de largura por 34 de papel, com a base em zigue-zague de 4 dentes. */
-export const COUPON_PATH = `M2 2 H32 V36 ${zigzag(36, 2, 32, 4, 4)} Z`;
-/** A caixa do cupom (viewBox), com folga para o contorno do tema. */
-export const COUPON_VIEWBOX = "-3 -3 40 48";
+/** O pacote: 30 de largura, base reta em y=40, picote de 4 dentes no topo (y 2 a 6). */
+export const PACKAGE_PATH = `M2 40 H32 V6 ${perforation(6, 2, 32, 4, 4)} Z`;
+export const PACKAGE_VIEWBOX = "0 0 34 42";
+/** Onde o código fica: o meio do corpo, abaixo do picote. */
+export const PACKAGE_TEXT_Y = 24;
 
 /** A loja (tabler building-store, MIT), em traço. */
 export const STORE_PATH =
@@ -69,5 +66,5 @@ export const MOTO_PATHS = [
   "M2 16a3 3 0 1 0 6 0a3 3 0 1 0-6 0m14 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0m-8.5-2h5l4-4H6m1.5 4l4-4",
   "M13 6h2l1.5 3l2 4",
 ] as const;
-/** A caixa da loja e da moto (24 de desenho), com folga para o contorno do tema. */
-export const ICON_VIEWBOX = "-3 -3 30 30";
+/** A caixa da loja e da moto (24 de desenho). */
+export const ICON_VIEWBOX = "0 0 24 24";

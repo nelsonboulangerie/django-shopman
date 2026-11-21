@@ -3,7 +3,7 @@
 // paradas, nunca pela moto.
 import { describe, expect, it } from "vitest";
 import { MAP_DARK, MAP_LIGHT, PIN_TEXT, contrast, fitKey, googleMapStyles, mapTokens, spreadOverlaps } from "../app/presentation/deliveriesMap";
-import { DARK_LINE_HALO, GLYPH_INK, GLYPH_PAPER, lineHalo, motoStroke, themeHalo } from "../app/presentation/mapGlyphs";
+import { DARK_BLACK_ROUTE, GLYPH_INK, GLYPH_PAPER, HALO_WIDTH, PACKAGE_PATH, ROUTE_WIDTH, routeColor, textOn, themeHalo } from "../app/presentation/mapGlyphs";
 import { rideColor } from "../app/presentation/ridePalette";
 
 describe("cores do mapa", () => {
@@ -16,26 +16,28 @@ describe("cores do mapa", () => {
     expect(contrast(t.neutral, t.chip)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it.each(themes)("tema %s: base c1, o contorno é a cor do tema e a moto é o contraste dele", (_, dark) => {
-    const t = mapTokens(dark);
+  it.each(themes)("tema %s: o contorno é a cor do tema, 2 px de cada lado da rota", (_, dark) => {
     expect(themeHalo(dark)).toBe(dark ? GLYPH_INK : GLYPH_PAPER);
-    // a moto (sem papel) lê sobre o papel do mapa e sobre o próprio contorno
-    expect(contrast(motoStroke(dark), t.paper)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(motoStroke(dark), themeHalo(dark))).toBeGreaterThanOrEqual(4.5);
+    expect(HALO_WIDTH - ROUTE_WIDTH).toBe(4);
   });
 
-  it.each(themes)("tema %s: a cor de toda corrida lê sobre o próprio contorno (3:1)", (_, dark) => {
+  it("a rota é a cor da amostra; só a preta vira quase branca, e só no escuro", () => {
     for (let i = 0; i < 26; i += 1) {
-      expect(contrast(rideColor(i).bg, lineHalo(dark, rideColor(i))), `corrida ${i + 1}`).toBeGreaterThanOrEqual(3);
+      expect(routeColor(false, rideColor(i))).toBe(rideColor(i).bg);
+      expect(routeColor(true, rideColor(i))).toBe(rideColor(i).bg === "#111111" ? DARK_BLACK_ROUTE : rideColor(i).bg);
     }
   });
 
-  it("só o amarelo no claro e o preto no escuro saem do contorno do tema", () => {
-    const off = (dark: boolean) => [0, 1, 2, 3, 4, 5].filter((i) => lineHalo(dark, rideColor(i)) !== themeHalo(dark)).map((i) => rideColor(i).name);
-    expect(off(false)).toEqual(["Amarelo"]);
-    expect(off(true)).toEqual(["Preto"]);
-    expect(lineHalo(false, rideColor(2))).toBe(rideColor(2).ink);
-    expect(lineHalo(true, rideColor(5))).toBe(DARK_LINE_HALO);
+  it.each(themes)("tema %s: o código lê sobre o pacote cheio de toda corrida (texto, 4,5:1)", (_, dark) => {
+    for (let i = 0; i < 26; i += 1) {
+      const fill = routeColor(dark, rideColor(i));
+      expect(contrast(textOn(fill), fill), `corrida ${i + 1}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("o pacote: picote em cima, base reta embaixo (a base pousa no ponto)", () => {
+    expect(PACKAGE_PATH.startsWith("M2 40 H32 V6")).toBe(true);
+    expect(PACKAGE_PATH).toContain("L2.00 6.0");
   });
 
   it.each(themes)("tema %s: o pino branco destaca do papel (3:1)", (_, dark) => {
@@ -92,6 +94,21 @@ describe("pinos sobrepostos", () => {
     expect(a).not.toEqual(b);
     const gap = Math.hypot(50 + a.dx - (52 + b.dx), 50 + a.dy - (51 + b.dy));
     expect(gap).toBeGreaterThanOrEqual(30);
+  });
+
+  it("pacotes altos e a moto larga no mesmo ponto: depois de abrir, nenhuma caixa toca outra", () => {
+    const boxes = [
+      { key: "a", x: 0, y: -23, w: 44, h: 50 },
+      { key: "b", x: 30, y: -23, w: 44, h: 50 },
+      { key: "courier:1", x: 10, y: 0, w: 64, h: 40 },
+    ];
+    const out = spreadOverlaps(boxes);
+    const placed = boxes.map((m) => ({ ...m, x: m.x + out.get(m.key)!.dx, y: m.y + out.get(m.key)!.dy }));
+    for (const a of placed) for (const b of placed) {
+      if (a === b) continue;
+      const apart = Math.abs(a.x - b.x) >= (a.w + b.w) / 2 || Math.abs(a.y - b.y) >= (a.h + b.h) / 2;
+      expect(apart, `${a.key} × ${b.key}`).toBe(true);
+    }
   });
 
   it("a moto em cima da parada também se separa, e o grupo inteiro ganha lugar", () => {
