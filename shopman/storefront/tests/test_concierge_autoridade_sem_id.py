@@ -93,9 +93,9 @@ def test_2_an_old_confirmation_after_a_new_summary_does_not_close(ctx):
     _offer(ctx, first)
     second = _ready(ctx, 3)
     _offer(ctx, second)
-    assert first["confirmation_code"] != second["confirmation_code"] or first["quote_token"] != second["quote_token"]
+    assert first["quote_code"] != second["quote_code"] or first["quote_token"] != second["quote_token"]
 
-    _claim(ctx, f"confirmo {first['confirmation_code']}")
+    _claim(ctx, f"confirmo {first['quote_code']}")
 
     assert tools.place_order(ctx, second["quote_token"], "pix")["error"] in {"confirmation_required", "quote_stale"}
     assert not Order.objects.exists()
@@ -105,9 +105,9 @@ def test_3_a_repeated_confirmation_makes_one_order(ctx):
     _claim(ctx, "quero 2 pães")
     review = _ready(ctx)
     _offer(ctx, review)
-    assert f"Responda ‘confirmo {review['confirmation_code']}’" in tools.render_result("review_order", review)
+    assert f"Responda ‘confirmo {review['quote_code']}’" in tools.render_result("review_order", review)
 
-    code = review["confirmation_code"]
+    code = review["quote_code"]
     _claim(ctx, f"confirmo {code}", f"confirmo {code}")
     first = tools.place_order(ctx, review["quote_token"], "pix")
     again = tools.place_order(ctx, review["quote_token"], "pix")
@@ -142,7 +142,7 @@ def test_a_plain_yes_or_a_wrong_code_does_not_close(ctx, text):
     _claim(ctx, "quero 2 pães")
     review = _ready(ctx)
     _offer(ctx, review)
-    if text == "0000" and review["confirmation_code"] == "0000":
+    if text == "0000" and review["quote_code"] == "0000":
         text = "0001"
 
     _claim(ctx, text)

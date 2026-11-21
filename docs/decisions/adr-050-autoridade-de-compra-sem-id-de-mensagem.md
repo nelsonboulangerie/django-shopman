@@ -52,8 +52,8 @@ com horário verificado depois do resumo (`tools._confirmation`).
 
 Sem ela, **só o código do orçamento confirma** (`tools._code_confirmation`):
 
-- `review_order` devolve `confirmation_code`, quatro dígitos tirados do `quote_token`
-  (`tools.confirmation_code`). O token muda quando a sacola, a entrega ou o pagamento
+- `review_order` devolve `quote_code`, quatro dígitos tirados do `quote_token`
+  (`tools.quote_code`). O token muda quando a sacola, a entrega ou o pagamento
   mudam, então o código também muda;
 - o resumo diz: "Responda ‘confirmo 4821’ para registrar.";
 - aceitos: `4821`, `confirmo 4821`, `confirmar 4821`, `sim 4821`, `sim, confirmo 4821`.

@@ -1200,7 +1200,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         if not getattr(ctx.conversation, "_commercial_authority", False):
             # Sem identificador de mensagem (ADR-050), o "sim" não prova que veio depois
             # deste resumo: a confirmação leva o código deste orçamento.
-            result["confirmation_code"] = confirmation_code(token)
+            result["quote_code"] = quote_code(token)
     return result
 
 
@@ -1280,7 +1280,7 @@ def _confirmation(ctx: ToolContext, token: str):
     return messages[-1]
 
 
-def confirmation_code(token: str) -> str:
+def quote_code(token: str) -> str:
     """O código curto deste orçamento (ADR-050): quatro dígitos tirados do ``quote_token``.
 
     Muda quando a sacola, a entrega ou o pagamento mudam (o token muda), então um "sim"
@@ -1311,7 +1311,7 @@ def _code_confirmation(ctx: ToolContext, token: str):
     messages = list(inbound.order_by("pk"))
     if not messages:
         return None
-    code = confirmation_code(token)
+    code = quote_code(token)
     accepted = {code, f"confirmo {code}", f"confirmar {code}", f"sim {code}", f"sim, {code}", f"sim, confirmo {code}"}
     for message in messages:
         if " ".join(_fold(message.text).rstrip(".! ").split()) not in accepted:
@@ -1993,7 +1993,7 @@ def render_result(name: str, result: dict) -> str:
             rows.append(f"Pagamento: {PAYMENT_LABELS.get(result.get('payment_method'), '') or methods}.")
             if result.get("ready"):
                 # Sem identificador de mensagem (ADR-050), a confirmação leva o código do resumo.
-                reply = f"confirmo {result['confirmation_code']}" if result.get("confirmation_code") else "confirmo"
+                reply = f"confirmo {result['quote_code']}" if result.get("quote_code") else "confirmo"
                 rows.append(f"Confira o resumo. Ao confirmar, seu pedido será registrado; pagamento é uma etapa separada. Responda ‘{reply}’ para registrar.")
             else:
                 labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "corrigir o CPF ou CNPJ da nota (ou seguir sem ele)", "delivery_address_details": "completar o endereço da entrega (rua, número, bairro e CEP)", "cart": "conferir a sacola"}
