@@ -1,0 +1,16 @@
+{
+  "w": 1366,
+  "scheme": "light",
+  "box": {
+    "x": 1187.359375,
+    "y": 525,
+    "width": 133.28125,
+    "height": 44
+  },
+  "style": {
+    "color": "rgb(59, 42, 30)",
+    "bg": "rgb(252, 246, 241)",
+    "font": "14px"
+  },
+  "horizontal_overflow": false
+}

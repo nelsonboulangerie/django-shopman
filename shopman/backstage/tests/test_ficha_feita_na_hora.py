@@ -24,7 +24,11 @@ pytestmark = pytest.mark.django_db
 
 #: FONTE ÚNICA: a lista mora na migração que leva o modo ao banco já semeado
 #: (``shop.0104``); o seed que montar outra coisa na venda reprova aqui.
-NA_HORA = set(importlib.import_module("shopman.shop.migrations.0104_fichas_na_hora_vigentes").MADE_TO_ORDER_RECIPE_REFS)
+NA_HORA = set(importlib.import_module("shopman.shop.migrations.0104_fichas_na_hora_vigentes").MADE_TO_ORDER_RECIPE_REFS) | {
+    # Nasceu depois da migração (migração aplicada é história): o Melon Iced
+    # Sando, montado na hora como o Jambon-Beurre (dono, 21/11/2026, #2925).
+    "melon-iced-sando",
+}
 
 
 def _fire(session_key: str, skus: list[str], *, prep_only: bool) -> dict[str, list[str]]:
@@ -80,3 +84,9 @@ def test_modo_de_producao_do_seed_e_o_roteamento_da_cozinha(monkeypatch):
         "Lanches": ["CQMO"],
         "Separação": ["AGUA-MINERAL-PRATA-310", "BAT", "HOD"],
     }
+
+    # 7. O Melon Iced Sando vai à mesma bancada do Jambon-Beurre: montagem na hora
+    #    nos Lanches, no balcão e no remoto (dono, 21/11/2026, #2925).
+    rotas = kitchen_routes_for_skus(["MELSA", "JB"])
+    assert rotas["MELSA"]["station"] == rotas["JB"]["station"] == "Lanches"
+    assert _fire("SEED-MELSA", ["MELSA", "JB"], prep_only=True) == {"Lanches": ["JB", "MELSA"]}

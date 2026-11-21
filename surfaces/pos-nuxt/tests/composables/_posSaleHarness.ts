@@ -89,7 +89,9 @@ export function makeSale(opts: HarnessOptions = {}) {
     action: { call: actionCall as <T = unknown>(...args: unknown[]) => Promise<T> },
     apiPath: (path: string) => path,
     requestHeaders: {} as Record<string, string>,
-    ordersUrl: computed(() => "http://gestor.test/"),
+    // O Gestor em dev: o irmão da casa no mesmo host (o kit abre o site DE FORA em
+    // nova aba; o app irmão segue a regra de sempre).
+    ordersUrl: computed(() => "http://127.0.0.1:3004/"),
   };
 
   const scope = effectScope();

@@ -62,6 +62,44 @@ describe("cartão de verificação da Concierge", () => {
     expect(item.message).toContain("estacionamento");
   });
 
+  it("assumir abre o Live Chat daquela conversa no mesmo gesto", () => {
+    const card: AlertProjection = {
+      ...CARD,
+      actions: [
+        ...CARD.actions!,
+        {
+          ref: "open_live_chat:31", kind: "open_live_chat", label: "Responder no Live Chat", enabled: true,
+          href: `https://app.manychat.com/fb486126/chat/4605`, source_alert_effect: "",
+        },
+      ],
+    };
+    const item = { ...operatorAlertToInbox(card), ...verificationInbox(card) };
+
+    expect(item.answer?.altHref).toBe(`https://app.manychat.com/fb486126/chat/4605`);
+    expect(item.answer?.altNoteHref).toBeUndefined();
+    expect(item.href).toBeUndefined(); // não vira um botão solto no cartão
+  });
+
+  it("sem a conta do Live Chat, o cartão diz por que e leva a configurar", () => {
+    const card: AlertProjection = {
+      ...CARD,
+      actions: [
+        ...CARD.actions!,
+        {
+          ref: "configure_live_chat:31", kind: "configure_live_chat", label: "Configurar o Live Chat", enabled: true,
+          reason: "Assumir não abre a conversa do ManyChat: falta a conta do Live Chat no Admin.",
+          href: `https://admin.exemplo.com/admin/shop/shopintegrations/1/change/`, source_alert_effect: "",
+        },
+      ],
+    };
+    const item = verificationInbox(card);
+
+    expect(item.answer?.altHref).toBeUndefined();
+    expect(item.answer?.altNote).toContain("Assumir não abre a conversa do ManyChat: falta a conta do Live Chat no Admin.");
+    expect(item.answer?.altNoteHref).toBe(`https://admin.exemplo.com/admin/shop/shopintegrations/1/change/`);
+    expect(item.answer?.altNoteLabel).toBe("Configurar o Live Chat");
+  });
+
   it("acha as duas rotas que o servidor ofereceu", () => {
     const { answer, takeOver } = verificationActions(CARD);
     expect(answer?.href).toBe("/api/v1/backstage/alerts/31/concierge-verification/answer/");
@@ -106,8 +144,8 @@ describe("cartão de verificação da Concierge", () => {
 describe("promotionToast (WP-15)", () => {
   it("criado, já existia e o alerta de data", async () => {
     const { promotionToast, PROMOTED, ALREADY_PROMOTED } = await import("../app/presentation/conciergeVerification");
-    expect(promotionToast({ admin_url: "https://a/x" })).toEqual({
-      color: "success", title: PROMOTED, action: { label: "Abrir no Admin", to: "https://a/x" },
+    expect(promotionToast({ admin_url: `https://a/x` })).toEqual({
+      color: "success", title: PROMOTED, action: { label: "Abrir no Admin", to: `https://a/x` },
     });
     expect(promotionToast({ already: true })).toEqual({ color: "info", title: ALREADY_PROMOTED });
     expect(promotionToast({ warning: "A resposta cita um dia." })).toMatchObject({

@@ -87,7 +87,13 @@ from .feeds import (
     FeedRotationView,
     FeedSwitchView,
 )
-from .house_couriers import HouseCourierRideView, HouseCourierShiftView, HouseCouriersView, HouseRideGestureView
+from .house_couriers import (
+    HouseCourierRideView,
+    HouseCourierShiftView,
+    HouseCouriersView,
+    HouseRideGestureView,
+    HouseRideSlipView,
+)
 from .hub import HubView
 from .ifood_reviews import (
     IFoodReviewDetailView,
@@ -813,6 +819,9 @@ urlpatterns = [
     path("deliveries/couriers/ride/", HouseCourierRideView.as_view(), name="api-backstage-house-courier-ride"),
     path("deliveries/couriers/<str:ref>/shift/", HouseCourierShiftView.as_view(),
          name="api-backstage-house-courier-shift"),
+    # A via impressa da rota, com o QR do link (#2406). ANTES do gesto: "slip" casaria com <gesture>.
+    path("deliveries/couriers/rides/<str:ride>/slip/", HouseRideSlipView.as_view(),
+         name="api-backstage-house-ride-slip"),
     # Os gestos do balcão na corrida da casa (M3b, #2898): depart, deliver, resend, release.
     path("deliveries/couriers/rides/<str:ride>/<str:gesture>/", HouseRideGestureView.as_view(),
          name="api-backstage-house-ride-gesture"),

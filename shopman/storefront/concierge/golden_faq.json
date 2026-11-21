@@ -1,5 +1,5 @@
 {
- "about": "Perguntas que batem (ou não) numa pergunta frequente, para o placar da resposta pela IA a partir das FAQs (WP-18). 'parts': uma lista por parte da pergunta, com as referências que a respondem (qualquer uma serve); lista vazia = nenhuma FAQ cobre, e o certo é 'vou verificar'. 'source': real (mensagem de cliente) ou escrita pela sessão, a conferir. Referências: as operacionais (delivery, hours, location, payment, preorder, allergens, contact) e as curadas (curated-<ref> de FAQEntry). No placar, a referência que não está publicada na hora conta como 'nenhuma'. Rótulos revistos em 21/11/2026 contra as FAQs de produção (as novas com sufixo -2 e as que nasceram para pets, estacionamento, mesa e onde).",
+ "about": "Perguntas que batem (ou não) numa pergunta frequente, para o placar da resposta pela IA a partir das FAQs (WP-18). 'parts': uma lista por parte da pergunta, com as referências que a respondem (qualquer uma serve); lista vazia = nenhuma FAQ cobre, e o certo é 'vou verificar'. 'source': real (mensagem de cliente) ou escrita pela sessão, a conferir. Referências: as operacionais (delivery, hours, location, payment, preorder, allergens, contact) e as curadas (curated-<ref> de FAQEntry). No placar, a referência que não está publicada na hora conta como 'nenhuma'. Rótulos revistos em 21/11/2026 contra as FAQs de produção (as novas com sufixo -2 e as que nasceram para pets, estacionamento, mesa e onde). 'mentions': palavras que o TEXTO da resposta tem de trazer (o assunto perguntado), conferidas sem acento e sem caixa; mede se o cliente recebeu a resposta, além dos refs.",
  "cases": [
   {
    "ref": "msg-645",
@@ -10,7 +10,10 @@
      "curated-voces-entregam-quanto-custa"
     ]
    ],
-   "source": "real"
+   "source": "real",
+   "mentions": [
+    "entreg"
+   ]
   },
   {
    "ref": "msg-682",
@@ -21,7 +24,10 @@
      "curated-qual-o-horario-de-funcionamento"
     ]
    ],
-   "source": "real"
+   "source": "real",
+   "mentions": [
+    "18h"
+   ]
   },
   {
    "ref": "msg-557",
@@ -33,7 +39,10 @@
      "curated-voces-abrem-em-feriado"
     ]
    ],
-   "source": "real"
+   "source": "real",
+   "mentions": [
+    "domingo"
+   ]
   },
   {
    "ref": "msg-582",
@@ -78,7 +87,10 @@
      "curated-posso-levar-meu-pet"
     ]
    ],
-   "source": "real"
+   "source": "real",
+   "mentions": [
+    "pet"
+   ]
   },
   {
    "ref": "faq-pix",
@@ -90,7 +102,10 @@
      "curated-quais-formas-de-pagamento-voces-aceitam-2"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "pix"
+   ]
   },
   {
    "ref": "faq-taxa",
@@ -112,7 +127,10 @@
      "curated-onde-voces-ficam"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "Madre Leônia"
+   ]
   },
   {
    "ref": "faq-encomenda",
@@ -124,7 +142,10 @@
      "curated-posso-encomendar-para-outro-dia-2"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "encomend"
+   ]
   },
   {
    "ref": "faq-site",
@@ -165,7 +186,10 @@
      "curated-voces-estao-no-ifood-2"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "ifood"
+   ]
   },
   {
    "ref": "faq-fidelidade",
@@ -186,7 +210,10 @@
      "curated-tem-estacionamento"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "estacionamento"
+   ]
   },
   {
    "ref": "faq-wifi",
@@ -204,7 +231,10 @@
      "contact"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "3323-1997"
+   ]
   },
   {
    "ref": "faq-pagar-na-entrega",
@@ -216,7 +246,10 @@
      "curated-quais-formas-de-pagamento-voces-aceitam-2"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "pix"
+   ]
   },
   {
    "ref": "faq-indisponivel",
@@ -247,7 +280,10 @@
      "curated-posso-pedir-cpf-na-nota-2"
     ]
    ],
-   "source": "sessão (a conferir)"
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "cpf"
+   ]
   },
   {
    "ref": "faq-mesa",

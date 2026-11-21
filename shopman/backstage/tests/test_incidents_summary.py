@@ -60,6 +60,20 @@ def test_green_group_reports_since_when_and_old_resolved_alerts_drop_out():
     assert group.owner == "Produção"
 
 
+@pytest.mark.parametrize(
+    "alert_type",
+    ["ifood_event_unhandled", "orphan_holds_released",
+     "stock_alert_dispatch_unknown", "stock_alert_delivery_stuck"],
+)
+def test_operations_alerts_without_a_counter_gesture_go_to_engineering(alert_type):
+    """Triagem de 21/11: público "operations", mas a causa está no código ou na integração."""
+    from shopman.backstage.incidents.owners import owner_for
+
+    assert owner_for(alert_type, audience="operations") == "Engenharia"
+    assert owner_for("notification_failed", audience="operations") == "Operação"
+    assert owner_for("stock_hold_gap", audience="operations") == "Operação", "venda acima do estoque: contar"
+
+
 def test_open_alert_from_before_the_window_still_counts():
     _alert("integration_failed", hours_ago=24 * 30)
     (group,) = summarize()
