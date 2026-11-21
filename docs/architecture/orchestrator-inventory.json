@@ -3571,6 +3571,7 @@
             "_publish_for_order",
             "_publish_for_sku",
             "_publish_pickup_board",
+            "_publish_public_shelf",
             "_publish_surface_changed",
             "_scope_for_order",
             "_track_kds_ticket_state",
@@ -14217,6 +14218,35 @@
         "decisão"
       ],
       "support_claims": []
+    },
+    {
+      "path": "shopman/shop/services/public_shelf.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "SHELF_EVENT",
+            "SIGNATURE_TTL_SECONDS",
+            "_PUBLIC_CHANNELS",
+            "_signature_key",
+            "bundles_using",
+            "changed_channels",
+            "logger",
+            "public_channels",
+            "public_signature",
+            "register_public_channel",
+            "shelf_channel"
+          ]
+        }
+      ]
     },
     {
       "path": "shopman/shop/services/push_endpoints.py",

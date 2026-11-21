@@ -29,11 +29,13 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
 usePageContentPending(pending)
 // Loja viva (WP-L04): o produto que esgota, ou que fica pronto, muda na frente da
 // cliente. A releitura troca o dado no lugar, sem esqueleto; se ela já foi para
-// outro produto, a resposta atrasada é descartada.
+// outro produto, a resposta atrasada é descartada. Só relê quando o aviso é DESTE
+// produto (#2784). O pacote também tem aviso com o próprio SKU: o shop reavalia os
+// pacotes que usam o item que mudou (`public_shelf.bundles_using`).
 useLiveRevalidate(
   data,
   () => $fetch<ProductResponse>(apiPath(`/api/v1/storefront/products/${encodeURIComponent(sku.value)}/`), { credentials: 'include' }),
-  { scope: () => sku.value }
+  { scope: () => sku.value, skus: () => [sku.value] }
 )
 
 // Pré-go-live não há redirecionamento de SKU antigo.
