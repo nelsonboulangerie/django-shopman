@@ -230,6 +230,8 @@ class TestCheckoutRefusalCarriesTheSheet:
         assert issue["line_id"] == line_id
         assert issue["is_notifiable"] is True
         assert issue["shortage_title"]
+        # A frase que leva à lista já vem com o nome do item (#2907).
+        assert issue["substitutes_intro"] == "Que tal um destes no lugar de Tabatière?"
         assert isinstance(issue["substitutes"], list)
         refs = [action["ref"] for action in issue["actions"]]
         assert "set_available_qty" in refs

@@ -276,8 +276,8 @@ def _stock_error_payload(exc, *, product=None, request=None, name: str = "") -> 
         ),
         "substitutes_intro": (
             resolve_copy("KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO", moment="*", audience="*").message
-            or "Que tal um destes no lugar?"
-        ),
+            or "Que tal um destes no lugar de {name}?"
+        ).replace("{name}", item_name),
         "substitutes": exc.substitutes,
         "actions": actions,
         "items": [
