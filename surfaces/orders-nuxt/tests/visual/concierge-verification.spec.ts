@@ -27,8 +27,8 @@ async function open(page: Page, scenario: string, viewport: (typeof VIEWPORTS)[n
 
 // Auditoria antes de mostrar (regra da casa): contraste de texto/fundo e tamanho de
 // cada peça do cartão, gravados ao lado das capturas.
-async function audit(page: Page, scope: string, name: string) {
-  const rows = await page.evaluate((root) => {
+async function audit(page: Page, scope: string, name: string, toastText = "") {
+  const rows = await page.evaluate(([root, toast]) => {
     const parse = (value: string) => (value.match(/[\d.]+/g) || []).map(Number);
     const lum = ([r, g, b]: number[]) => {
       const c = [r, g, b].map((v) => {
@@ -50,9 +50,16 @@ async function audit(page: Page, scope: string, name: string) {
       return Math.round(((hi! + 0.05) / (lo! + 0.05)) * 100) / 100;
     };
     const out: Array<Record<string, unknown>> = [];
-    const box = document.querySelector(root);
+    // O toast (WP-15): o item da lista de avisos que contém o texto, inteiro.
+    const toastBox = toast
+      ? [...document.querySelectorAll("li")].find((li) => (li.textContent || "").includes(toast)) ?? null
+      : null;
+    const box = toast ? toastBox : document.querySelector(root);
     if (!box) return out;
-    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-page-header-alert] *")) {
+    const pieces = toast
+      ? box.querySelectorAll("*")
+      : box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-page-header-alert] *");
+    for (const el of pieces) {
       const text = (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim()))
         ? el.textContent!.trim().slice(0, 50) : "";
       if (!text && el.tagName !== "TEXTAREA") continue;
@@ -65,7 +72,7 @@ async function audit(page: Page, scope: string, name: string) {
       });
     }
     return out;
-  }, scope);
+  }, [scope, toastText] as const);
   const fs = await import("node:fs");
   fs.writeFileSync(`${OUT}/${name}.audit.json`, JSON.stringify(rows, null, 2));
 }
@@ -120,6 +127,24 @@ for (const viewport of VIEWPORTS) {
       await expect(dialog).toBeHidden();
       await expect(notice).toBeHidden();
       await shot(page, `${id}-4-respondido-sem-aviso`);
+
+      // 4b. WP-15: o aviso de "Resposta enviada" traz "Promover a pergunta frequente".
+      const promote = page.getByRole("button", { name: "Promover a pergunta frequente" });
+      await expect(promote).toBeVisible();
+      // O aviso com gesto não some por tempo: sem barra de progresso, e segue ali depois de 6 s.
+      await page.waitForTimeout(6000);
+      await expect(promote).toBeVisible();
+      await shot(page, `${id}-4b-promover-no-aviso`);
+      await audit(page, "", `${id}-4b-promover-no-aviso`, "Resposta enviada ao cliente.");
+      await promote.click();
+      // 4c. Virou rascunho (aqui com o aviso de data: a resposta diz "Amanhã"), e o Admin.
+      await expect(page.getByText(/Virou rascunho em Perguntas frequentes/).first()).toBeVisible();
+      await expect(page.getByText(/cita um dia ou uma data/).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: "Abrir no Admin" })).toHaveAttribute(
+        "href", "https://admin.boulangerie.com.br/admin/shop/faqentry/12/change/",
+      );
+      await shot(page, `${id}-4c-rascunho-criado`);
+      await audit(page, "", `${id}-4c-rascunho-criado`, "Virou rascunho em Perguntas frequentes");
 
       // 5. A promessa venceu: a janela interrompe a tela; depois do Visto, o aviso fica vermelho.
       await open(page, "concierge-late", viewport);

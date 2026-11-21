@@ -27,7 +27,7 @@
   a mensagem aprovada pela Meta para responder depois de 24 horas entra (WP-16).
 - **O pedido na conversa entra** (dono, 16/11): quatro WPs próprios (WP-11 a WP-14), depois que
   a fase de respostas estiver com clientes.
-- **Quanto:** 16 WPs em 8 ondas. Os dois primeiros a delegar, em paralelo: **WP-01** (freio e
+- **Quanto:** 17 WPs em 8 ondas (o WP-17, redação com marcadores, só existe se o placar provar ganho). Os dois primeiros a delegar, em paralelo: **WP-01** (freio e
   medidor no `main`) e **WP-02** (régua que prova).
 - **Do dono:** oito respostas dadas em 16/11, na seção 5. Nenhuma pergunta aberta.
 
@@ -67,13 +67,13 @@ leitura. Não foi medido de novo: não há chave, e chamada paga pede a palavra 
 | **F3** Regras da casa | **Pronta** | `concierge/house_rules.py` (14 regras, 88 exemplos), `service.run_turn` e `service._prepare_reply` revisam toda resposta; #1442 | O prompt não cita a tabela. Não importa: nenhum texto de modelo chega ao cliente |
 | **F4** Intenções | **Parcial** | `concierge/intents.py` (porteiro, leitura numa ida com saída estruturada, validação, execução, uma mensagem), ligada por padrão para a coorte (`intents.enabled_for`); parte sensível, pergunta repetida, cancelamento (#1445), desconto (#1444), acréscimo a pedido feito; #1449 | (a) O laço do agente não saiu: `agent.run_agent` é o caminho de `intents_plural=off`. (b) A triagem de intenção única ainda roda antes, com chamada de modelo quando o classificador é `anthropic` (`triage.decide`). (c) A leitura manda o texto **cru** do cliente ao modelo (`intents.build_request`); o V2 dizia redigido. (d) Parte sem fato responde "não achei" e oferece a equipe (`intents.execute`, `search`). (e) Meta de equipe não batida: 11/13 com modelo, 6/13 sem; pass^3 nunca medido |
 | **F5** "Não sei, vou verificar" | **Ausente** | nenhum `concierge_verify` nem `verifying` em `shopman/` (busca em 16/11) | Tudo: cartão, resposta voltando, prazos, tela no sino |
-| **F6** Redação com marcadores e atos de pedido | **Ausente** | `house_rules.py` só tem a trava que reprova texto de modelo; os executores de sacola e pedido existem em `concierge/tools.py`, alcançáveis só pelo laço do agente | Redação: corte proposto (seção 2). Atos de pedido: WP-11 a WP-14 |
+| **F6** Redação com marcadores e atos de pedido | **Ausente** | `house_rules.py` só tem a trava que reprova texto de modelo; os executores de sacola e pedido existem em `concierge/tools.py`, alcançáveis só pelo laço do agente | Redação: corte C1, com a porta condicional no WP-17. Atos de pedido: WP-11 a WP-14 |
 
 ## 2. Cortes
 
 | # | O que sai | Motivo |
 |---|---|---|
-| C1 | **Redação por modelo** (metade da F6): o modelo "deixa mais natural" a frase montada | É a segunda chamada paga de cada resposta, pede um verificador de marcadores inteiro, e só compra naturalidade. O dono já fixou "a frase é da casa" (03/10, topo de `intents.py`). Sem texto de modelo, R1 e R5 valem por construção. **Confirmado pelo dono (16/11):** "Não deve reescrever (a não ser que essa necessidade seja 'provada')". A prova, se vier, são conversas reais do piloto em que a frase da casa saiu dura ou confusa |
+| C1 | **Redação por modelo** (metade da F6): o modelo "deixa mais natural" a frase montada | É a segunda chamada paga de cada resposta, pede um verificador de marcadores inteiro, e só compra naturalidade. O dono já fixou "a frase é da casa" (03/10, topo de `intents.py`). Sem texto de modelo, R1 e R5 valem por construção. **Confirmado pelo dono (16/11):** "Não deve reescrever (a não ser que essa necessidade seja 'provada')". A prova, se vier, são conversas reais do piloto em que a frase da casa saiu dura ou confusa. **Como provar e como reescrever sem inventar fato:** WP-17, condicional (20/11) |
 | C2 | **Chamada de modelo na triagem** antes da leitura de partes | Com a leitura ligada, é uma chamada a mais por turno (US$ 0,0016 e 2,7 s medidos na OBS0310-K) para devolver uma intenção que a leitura já devolve. Ficam a regra local e o Jev (o dono decidiu que o Jev é a primeira opinião) |
 | C3 | **O laço do agente** (`agent.run_agent`, as especificações de ferramenta, o prompt dele e as variáveis de ambiente que só ele lê) | O V2 já o condenava. Hoje é caminho morto por padrão, mas religável por variável de ambiente, e é o caminho que manda nome (no prompt) e endereço de entrega (nas ferramentas) ao provedor. Os executores de `tools.py` ficam: são a base de qualquer pedido futuro |
 | ~~C4~~ | ~~"Vale para todo mundo"~~ (V2, 8.5) | **Trocado, não cortado** (dono, 16/11): o nome era vago ("por quanto tempo, eternamente?"). No lugar entra "Promover a pergunta frequente": a resposta da equipe vira um rascunho de pergunta frequente, com sugestão da IA para generalizar, e só vale depois de publicada no Admin. É o WP-15 |
@@ -556,6 +556,85 @@ Pronto: ver "Pronto quando" do WP-16.
 Compromisso: DEV-2026-027.
 ```
 
+### WP-17 · Redação com marcadores (condicional: só liga se o placar provar ganho)
+
+- **Por que existe, se a C1 cortou:** o corte vale enquanto a frase da casa não perder. O dono
+  deixou a porta aberta (16/11): "Não deve reescrever (a não ser que essa necessidade seja
+  'provada')". Este WP é como provar, e, se a prova vier, como reescrever sem que o modelo
+  possa inventar fato. Pedido da coordenação em 20/11/2026.
+- **Objetivo:** o modelo reescreve a resposta já montada pela casa, para soar natural, sem
+  nunca escrever um fato. Todo fato (nome, preço, disponibilidade, horário, prazo, descrição,
+  texto da pergunta frequente) entra por **marcador** que o sistema preenche depois:
+  `{F1.nome}`, `{F1.preco}`, `{F1.disponibilidade}`, `{F1.descricao}`, `{P1.resposta}`,
+  `{V.prazo}`. O modelo recebe a resposta da casa e a tabela de fatos do turno **com os
+  marcadores no lugar dos valores**, e devolve texto com marcadores. Nunca vê o valor, então
+  não tem o que alterar.
+- **O verificador decide passar, reparar ou segurar** (`concierge/redaction.py`, sem modelo):
+  - **passar**: todo marcador existe na tabela do turno, todo fato da resposta da casa
+    aparece no texto (nenhum some), nenhum número, valor em reais, hora, data ou nome de
+    produto do catálogo aparece fora de marcador, e `house_rules.check` não acusa nada (R1 a
+    R14). O sistema preenche os marcadores e manda;
+  - **reparar**: marcador inexistente, fato da casa que sumiu, ou violação de regra que tem
+    conserto. Uma tentativa só, devolvendo ao modelo a lista exata do que falhou. Falhou de
+    novo: segurar;
+  - **segurar**: número, preço, nome ou data fora de marcador (o modelo tentou escrever
+    fato), promessa que nenhum recibo cobre (R5), negar ser automação (R8), ou o modelo
+    falhou ou passou do tempo. Sai a resposta da casa, intacta, e o caso vai para o placar.
+- **Nunca passa pelo modelo** (fica literal, como hoje): as frases fixas (R7, R8), alergia,
+  a promessa e o prazo do "vou verificar", cancelamento, desconto, o que vai para a equipe e
+  todo texto com valor em reais de pedido ou sacola. A redação só toca resposta de pergunta
+  (produto, casa, horário) e cortesia.
+- **O portão (quando liga):** desligado por padrão (`Shop.ai_routes` sem a rota `redaction` =
+  desligado; nada por env, ADR-042). Só liga com as três provas, no relatório do WP-09 ou num
+  relatório próprio, e com a palavra do dono:
+  1. **Necessidade:** pelo menos 20 respostas reais do piloto (corpus anonimizado, #2851) em
+     que a frase da casa saiu dura ou confusa, apontadas pelo dono ou pela coordenação. Sem
+     elas, o WP para aqui: a C1 continua valendo;
+  2. **Ganho:** nessas respostas e em mais 30 sorteadas, comparação **cega** (casa × redação,
+     ordem embaralhada) feita pelo dono: a redação preferida em 70% ou mais, e em nenhuma ela
+     pior por um fato;
+  3. **Segurança:** `concierge_reply_eval --redaction --repeat 3 --paid` com **zero** fato
+     divergente nas três rodadas (todo valor enviado igual ao da tabela), "segurar" em 10% ou
+     menos, p95 da redação abaixo de 1,5 s e custo por resposta registrado no freio.
+- **Depende de:** WP-09 (placar com modelo e o freio do WP-01 em produção) e o corpus do
+  #2851 com conversas reais do piloto.
+- **Arquivos:** `shopman/storefront/concierge/redaction.py` (novo: tabela de fatos com
+  marcadores, chamada pela porta `ai` com propósito `redaction`, verificador), `intents.py`
+  (`compose` chama a redação só para as partes elegíveis, quando a rota existe),
+  `shopman/shop/ai.py` (`PURPOSES` e `CUSTOMER_TEXT_PURPOSES` ganham `redaction`),
+  `concierge/reply_eval.py` (`--redaction`), `/privacidade` se a redação mandar algo além do
+  texto já declarado, `shopman/storefront/tests/test_concierge_redaction.py` (novo).
+- **Fora do escopo:** ligar a rota em produção (é a palavra do dono, com as três provas);
+  reescrever copy da casa; redação de mensagem que a casa inicia (notificações, campanhas).
+- **Pronto quando:** `pytest shopman/storefront/tests/test_concierge_redaction.py` verde com:
+  (1) preço escrito à mão pelo modelo ("R$ 18") segura; (2) `{F2.preco}` que não existe repara
+  e, na segunda falha, segura; (3) nome de produto do catálogo fora de marcador segura;
+  (4) fato da casa que sumiu repara; (5) "sou uma atendente" segura (R8); (6) modelo fora do
+  ar ou acima do tempo manda a resposta da casa, sem atraso perceptível ao cliente; (7) sem a
+  rota `redaction`, nenhuma chamada (cliente falso que falha se chamado); (8) frase fixa,
+  alergia e "vou verificar" nunca vão ao modelo. E o relatório das três provas, ou a nota
+  "necessidade não provada" que mantém a C1.
+- **Cliente vê:** só se ligar. Até lá, nada muda.
+- **Tamanho:** M (o código e o verificador) mais a rodada de prova paga, com teto próprio a
+  pedir ao dono.
+
+```text
+Tarefa: redação com marcadores da Concierge, condicional. Primeiro a prova da necessidade; código
+só se ela vier.
+Leia: docs/plans/CONCIERGE-PLANO-DE-ACAO.md (C1, WP-09 e WP-17), concierge/house_rules.py (R1 a R14
+e check), concierge/intents.py (execute e compose), concierge/tools.py (render_result: de onde vêm
+os fatos), shopman/shop/ai.py (porta e propósitos), docs/reports/concierge-ensaio.md (WP-09).
+Ordem: (1) junte do corpus anonimizado (#2851) as respostas reais em que a frase da casa saiu dura
+ou confusa e mande à coordenação para o dono apontar; menos de 20 apontadas: escreva "necessidade
+não provada" no relatório e pare (a C1 vale); (2) com 20 ou mais, escreva redaction.py, o
+verificador e os testes do "Pronto quando", com a rota desligada; (3) peça à coordenação o teto da
+rodada paga, rode o placar com --redaction e a comparação cega; (4) traga as três provas.
+Não faça: ligar a rota redaction em produção; variável de ambiente nova (ADR-042); mandar ao modelo
+frase fixa, alergia, "vou verificar", desconto, cancelamento ou valor de pedido.
+Pronto: ver "Pronto quando" do WP-17.
+Compromisso: DEV-2026-058.
+```
+
 ## 4. Ondas
 
 Dois WPs da mesma onda não tocam o mesmo arquivo. Uma onda só começa com a anterior no `main`.
@@ -570,6 +649,7 @@ Dois WPs da mesma onda não tocam o mesmo arquivo. Uma onda só começa com a an
 | **6** | WP-12 (sacola na conversa) | Itens pela conversa |
 | **7** | WP-13 (fechar o pedido) | Pedido completo pela conversa |
 | **8** | WP-14 (ensaio do pedido) | Clientes pedindo pela conversa |
+| condicional | WP-17 (redação com marcadores), depois do WP-09 | Só se a necessidade e o ganho forem provados; senão a C1 vale |
 
 ```mermaid
 flowchart LR
@@ -593,6 +673,7 @@ flowchart LR
   WP12 --> WP13[WP-13 fechar pedido]
   WP13 --> WP14[WP-14 ensaio do pedido]
   WP09 --> WP14
+  WP09 -.-> WP17[WP-17 redação com marcadores, condicional]
 ```
 
 Por que o pedido na conversa vem depois do "vou verificar": WP-05, WP-08, WP-11, WP-12 e WP-13

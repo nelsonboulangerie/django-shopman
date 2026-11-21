@@ -272,6 +272,9 @@ class RideCandidateProjection:
     distance_label: str = ""
     #: "Troco para R$ 100,00": a frase do troco do card, quando há.
     change_label: str = ""
+    #: Vem marcado no "Vai junto nesta corrida?": é o companheiro da sugestão da casa
+    #: (``ride_plan``), cotada e mais barata junta (decisão do dono, 16/11/2026).
+    suggested: bool = False
 
 
 @dataclass(frozen=True)
@@ -978,6 +981,9 @@ class TwoZoneQueueProjection:
     # Chamar a corrida desses candidatos (``courier-ride``): quem a tela leu e a
     # revisão de cada um (``courier_ride_action``). ``None`` sem candidatos.
     ride_action: Action | None = None
+    # Quantas corridas o plano sugere agora (``ride_plan``, o mesmo da página
+    # Entregas): o "Montar corridas (2 sugeridas)" do Painel.
+    ride_suggestions: int = 0
 
     ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
     # Os motivos de recusar do quadro: a MESMA lista única do detalhe e do cancelar.
@@ -1216,6 +1222,20 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     no_show_action = no_show_detail_action(order, user)
     if no_show_action is not None:
         extra_actions.append(no_show_action)
+    # "Avisar o cliente" (WP-G07): os três avisos com um toque, no menu do pedido
+    # aberto. Quando cabem e o que cada um pede é de ``services/customer_notice``; o
+    # diálogo lê as escolhas ao abrir (``customer-notice/preview/``).
+    from shopman.shop.services import customer_notice
+
+    if customer_notice.offered(order):
+        notice_refusal = customer_notice.order_refusal(order)
+        extra_actions.append(Action(
+            ref="customer-notice", kind="mutation", label="Avisar o cliente",
+            enabled=authorized and not notice_refusal,
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else notice_refusal),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": customer_notice.notice_revision(order), "expected_actor_id": getattr(user, "pk", None)},
+        ))
     # "Tentar o estorno de novo" (WP-G13, #2727): o pedido em "Estorno não saiu",
     # cancelado ou não (devolução, encomenda editada, pagamento que chegou depois do
     # balcão). A régua (quanto, de onde, a base) é de ``services/refund_retry``.
@@ -1790,8 +1810,11 @@ def _courier_block(order: Order) -> dict | None:
             "custody": operator_orders.partner_custody_asks(order),
             # Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais
             # perto primeiro. Só enquanto este pedido pode ser chamado.
-            "ride_offer": (_ride_offer(order) if adapter_on and house and not active and order_can_ride
+            "ride_offer": (offer := _ride_offer(order) if adapter_on and house and not active and order_can_ride
                            and unresolved is None and not not_today else []),
+            # A sugestão da casa para esta corrida (``ride_plan``): quem vai junto, a
+            # cotação "juntas contra separadas" e quem chega depois. ``None`` sem ela.
+            "ride_suggestion": ride_suggestion_view(order) if offer else None,
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
             "charge_outdated": charge_outdated(order),
@@ -2195,6 +2218,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         equipment_out=_equipment_out(user=user, devices=devices),
         ride_candidates=(ride_candidates := _ride_candidates([*ready_orders, *prep_orders], today=today)),
         ride_action=_ride_action_for(ride_candidates, [*ready_orders, *prep_orders], user=user),
+        ride_suggestions=len(_plan_for_board()["suggestions"]) if len(ride_candidates) >= 2 else 0,
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
@@ -3038,20 +3062,54 @@ def _km_between(a: Order, b: Order) -> float | None:
 
 
 def _ride_offer(order: Order) -> list[dict]:
-    """As entregas que podem ir na MESMA corrida deste pedido, as mais perto primeiro.
+    """As entregas que podem ir na MESMA corrida deste pedido: a sugestão da casa primeiro.
 
     É a oferta do "Chamar entregador": o operador está chamando este pedido e
-    vê, ali, quem pode ir junto. Até ``MAX_RIDE_STOPS - 1``; sem coordenada vai
-    ao fim. Vazio quando este pedido não pode ir com outros.
+    vê, ali, quem pode ir junto. Primeiro os companheiros da sugestão do plano
+    (``ride_plan``, a mesma partição da página Entregas), marcados quando a
+    sugestão vem cotada e mais barata; depois os outros, os mais perto primeiro.
+    Até ``MAX_RIDE_STOPS - 1``; sem coordenada vai ao fim. Vazio quando este pedido
+    não pode ir com outros.
     """
-    from shopman.shop.services import courier, delivery_services
+    from shopman.shop.services import courier, delivery_services, ride_plan
 
     if delivery_services.courier_backend() is None or not _rides_with_others(order):
         return []
     pool = [other for other in Order.objects.filter(status__in=("accepted", "preparing", "ready")).exclude(pk=order.pk)
             if _rides_with_others(other)]
-    pool.sort(key=lambda other: (_km_between(order, other) is None, _km_between(order, other) or 0.0))
-    return [asdict(_ride_candidate(other, near=order)) for other in pool[: courier.MAX_RIDE_STOPS - 1]]
+    suggestion = ride_plan.suggestion_for(order, _plan_for_board())
+    mates = [ref for ref in (suggestion or {}).get("refs", []) if ref != order.ref]
+    marked = bool(suggestion and suggestion.get("suggested"))
+    pool.sort(key=lambda other: (other.ref not in mates, mates.index(other.ref) if other.ref in mates else 0,
+                                 _km_between(order, other) is None, _km_between(order, other) or 0.0))
+    return [asdict(replace(_ride_candidate(other, near=order), suggested=marked and other.ref in mates))
+            for other in pool[: courier.MAX_RIDE_STOPS - 1]]
+
+
+def _plan_for_board() -> dict:
+    """O plano das corridas para as entregas prontas (o mesmo cache da página Entregas)."""
+    from shopman.shop.services import ride_plan
+
+    try:
+        return ride_plan.ride_plan(ride_plan.waiting_pool())
+    except Exception:  # o plano nunca derruba o quadro nem o detalhe
+        logger.warning("orders.ride_plan_failed", exc_info=True)
+        return {"suggestions": []}
+
+
+def ride_suggestion_view(order: Order) -> dict | None:
+    """A sugestão da casa para a corrida deste pedido, como o "Chamar entregador" a mostra.
+
+    ``{refs, codes, quoted, suggested, together, separate_q, saving_q, late_code,
+    late_minutes}`` ou ``None`` sem sugestão.
+    """
+    from shopman.shop.services import ride_plan
+
+    suggestion = ride_plan.suggestion_for(order, _plan_for_board())
+    if suggestion is None:
+        return None
+    keys = ("refs", "codes", "quoted", "suggested", "together", "separate_q", "saving_q", "late_code", "late_minutes")
+    return {key: suggestion.get(key) for key in keys}
 
 
 def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:

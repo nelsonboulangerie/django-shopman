@@ -6,8 +6,8 @@ import { defineConfig } from "@playwright/test";
 // baseline de retrato, e aqui não há baseline: é geometria. Portas próprias, para rodar
 // ao lado da fase visual sem colidir.
 
-const appPort = Number(process.env.PURCHASE_OVERLAP_APP_PORT || 41008);
-const backendPort = Number(process.env.PURCHASE_OVERLAP_BACKEND_PORT || 41808);
+const appPort = Number(process.env.PURCHASE_OVERLAP_APP_PORT || 21008);
+const backendPort = Number(process.env.PURCHASE_OVERLAP_BACKEND_PORT || 21808);
 
 export default defineConfig({
   testDir: "./tests/overlap",

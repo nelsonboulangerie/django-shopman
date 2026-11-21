@@ -140,6 +140,68 @@ describe("useConfirm + OperatorConfirmDialog", () => {
     expect(document.body.querySelector("[data-outer]")).not.toBeNull();
   });
 
+  // O FOCO DEPOIS DO SIM (#2824). Ao desmontar, a caixa devolve o foco a quem o tinha na
+  // abertura. Quando o sim troca a tela, esse elemento está de saída (no PDV, a busca do
+  // quadro de comandas): com `returnFocusOnConfirm: false` ninguém recebe o foco de
+  // volta, e quem pediu o leva ao gesto que segue.
+  describe("o foco depois da resposta", () => {
+    let opener: HTMLInputElement;
+    let next: HTMLButtonElement;
+    afterEach(() => { opener?.remove(); next?.remove(); });
+    function stage() {
+      opener = Object.assign(document.createElement("input"), { placeholder: "Mesa, nome ou referência" });
+      next = Object.assign(document.createElement("button"), { textContent: "Identificar cliente" });
+      document.body.append(opener, next);
+      opener.focus();
+    }
+    const START = {
+      tone: "primary" as const,
+      title: "Iniciar nova encomenda?",
+      description: "A próxima comanda livre ficará em uso para montar esta encomenda.",
+      confirmLabel: "Iniciar encomenda",
+      cancelLabel: "Voltar sem iniciar",
+    };
+
+    it("sem pedido, o sim devolve o foco a quem o tinha na abertura (o padrão segue)", async () => {
+      await mount();
+      stage();
+      const answer = useConfirm()(START);
+      await settle();
+      expect(document.activeElement).not.toBe(opener);
+      box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-act]")!.click();
+      await expect(answer).resolves.toBe(true);
+      await settle();
+      expect(box()).toBeNull();
+      expect(document.activeElement).toBe(opener);
+    });
+
+    it("returnFocusOnConfirm: false, o sim não devolve o foco; quem pediu o leva ao gesto que segue", async () => {
+      await mount();
+      stage();
+      const answer = useConfirm()({ ...START, returnFocusOnConfirm: false });
+      await settle();
+      box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-act]")!.click();
+      await expect(answer).resolves.toBe(true);
+      await settle();
+      expect(box()).toBeNull();
+      expect(document.activeElement).not.toBe(opener);
+      next.focus();
+      await settle();
+      expect(document.activeElement).toBe(next);
+    });
+
+    it("returnFocusOnConfirm: false não vale para o não: ficar devolve o foco a quem abriu", async () => {
+      await mount();
+      stage();
+      const answer = useConfirm()({ ...START, returnFocusOnConfirm: false });
+      await settle();
+      box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-keep]")!.click();
+      await expect(answer).resolves.toBe(false);
+      await settle();
+      expect(document.activeElement).toBe(opener);
+    });
+  });
+
   it("uma pergunta por vez: a segunda responde false sem abrir outra caixa", async () => {
     await mount();
     const first = useConfirm()(PRICE);

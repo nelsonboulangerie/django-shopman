@@ -29,6 +29,15 @@
 //   await confirm({ tone: "primary", title: "Mudar a encomenda de Ana para qui, 01/10?",
 //     description: "...", confirmLabel: "Mudar para qui, 01/10", cancelLabel: "Manter a data" });
 //
+// O FOCO DEPOIS DO SIM. Ao desmontar, a caixa devolve o foco (o Reka, no
+// `close-auto-focus`) a quem o tinha quando ela abriu. Quando o sim TROCA A TELA, esse
+// elemento está de saída: no PDV, o "Iniciar encomenda" devolvia o foco à busca do quadro
+// de comandas, que some quando a encomenda abre, e o foco morria no `body` (#2824). Com
+// `returnFocusOnConfirm: false`, o sim não devolve o foco a ninguém: quem pediu o leva ao
+// gesto que segue, quando ele estiver na tela. O não ("ficar") devolve sempre.
+//
+//   if (await confirm({ ..., returnFocusOnConfirm: false })) focusNextStep();
+//
 // ⚠️ O `beforeunload` (fechar a aba, recarregar) continua NATIVO: o navegador não deixa
 // página nenhuma desenhar a própria caixa nesse momento. Este composable não o substitui.
 import { shallowRef } from "vue";
@@ -41,6 +50,9 @@ interface ConfirmBase {
   title: string;
   /** O que se perde (e o que fica). Obrigatório: é o que decide a resposta. */
   description: string;
+  /** `false`: o sim não devolve o foco a quem o tinha na abertura; quem pediu o leva
+   *  ao gesto que segue (o sim trocou a tela). O não devolve sempre. Padrão: `true`. */
+  returnFocusOnConfirm?: boolean;
 }
 
 export interface DangerConfirmRequest extends ConfirmBase {
@@ -74,6 +86,7 @@ export const CONFIRM_DEFAULTS = {
   tone: "danger",
   confirmLabel: "Descartar",
   cancelLabel: "Continuar editando",
+  returnFocusOnConfirm: true,
 } as const;
 
 // Estado de módulo, não `useState`: a pergunta só nasce de um gesto no navegador, e

@@ -102,3 +102,16 @@ describe("cartão de verificação da Concierge", () => {
     }
   });
 });
+
+describe("promotionToast (WP-15)", () => {
+  it("criado, já existia e o alerta de data", async () => {
+    const { promotionToast, PROMOTED, ALREADY_PROMOTED } = await import("../app/presentation/conciergeVerification");
+    expect(promotionToast({ admin_url: "https://a/x" })).toEqual({
+      color: "success", title: PROMOTED, action: { label: "Abrir no Admin", to: "https://a/x" },
+    });
+    expect(promotionToast({ already: true })).toEqual({ color: "info", title: ALREADY_PROMOTED });
+    expect(promotionToast({ warning: "A resposta cita um dia." })).toMatchObject({
+      color: "warning", description: "A resposta cita um dia.",
+    });
+  });
+});

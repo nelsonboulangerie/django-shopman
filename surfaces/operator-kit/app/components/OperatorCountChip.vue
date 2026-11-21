@@ -18,6 +18,8 @@
 // inverte: círculo na cor do texto do pai, número na cor do fundo do pai
 // (`COUNT_CHIP_INVERTED_ON` em `presentation/countChip.ts`).
 //
+// `unknown` é a contagem que falhou: o mesmo chip, com "?" (`UNKNOWN_COUNT`), nunca zero.
+//
 // Sem `count` maior que zero, nada aparece; `dot` desenha o ponto de estado (sem número)
 // no tamanho padrão do ponto (`dotSize`, o do NavigationMenu quando vem dele).
 import type { ChipProps } from "@nuxt/ui";
@@ -28,6 +30,7 @@ import {
   COUNT_CHIP_SIZE,
   countChipText,
   hasCount,
+  UNKNOWN_COUNT,
   type CountChipColor,
 } from "../presentation/countChip";
 
@@ -45,17 +48,22 @@ const props = withDefaults(
     color?: CountChipColor;
     /** Ponto de estado, sem número. */
     dot?: boolean;
+    /** A contagem falhou: "?" no lugar do número. */
+    unknown?: boolean;
     dotSize?: ChipProps["size"];
   }>(),
-  { count: null, color: COUNT_CHIP_COLOR, dot: false, dotSize: "md" },
+  { count: null, color: COUNT_CHIP_COLOR, dot: false, unknown: false, dotSize: "md" },
 );
 
-const shown = computed(() => props.dot || hasCount(props.count));
-const numbered = computed(() => !props.dot && hasCount(props.count));
+const shown = computed(() => props.dot || props.unknown || hasCount(props.count));
+const numbered = computed(() => !props.dot && (props.unknown || hasCount(props.count)));
 const size = computed<ChipProps["size"]>(() => (numbered.value ? COUNT_CHIP_SIZE : props.dotSize));
 // Anel transparente (no fluxo) e a inversão sobre pai preenchido de cor próxima.
 const chipUi = { base: `ring-transparent ${COUNT_CHIP_INVERT_CLASSES}` };
-const text = computed(() => (numbered.value ? countChipText(props.count as number) : ""));
+const text = computed(() => {
+  if (!numbered.value) return "";
+  return props.unknown ? UNKNOWN_COUNT : countChipText(props.count as number);
+});
 </script>
 
 <template>

@@ -7,7 +7,13 @@
 // e no desktop, barra de seções embaixo no tablet em pé e no celular (até 4 + Mais),
 // Alt 1…9 em todo app, impresso no desktop.
 import type { OperatorSection } from "./appBar";
-import { countChipDotProps, countChipProps, type CountChipColor } from "./countChip";
+import {
+  countChipDotProps,
+  countChipProps,
+  UNKNOWN_COUNT,
+  unknownCountChipProps,
+  type CountChipColor,
+} from "./countChip";
 
 /**
  * Onde o rail existe: tablet DEITADO (a partir de 768px) e qualquer tela de 1024px para
@@ -51,18 +57,22 @@ export interface RailSignal {
   color: RailSignalColor;
   /** Contagem (chip numérico). Ausente = ponto de estado. */
   count?: number;
+  /** A contagem falhou: o chip escreve "?" (`UNKNOWN_COUNT`), nunca zero. */
+  unknown?: boolean;
   /** O estado por extenso, para tooltip e leitor de tela ("1 desligado"). */
   state?: string;
 }
 
 /**
- * O sinal da seção: com `badge` numérico e maior que zero, o número; senão, com
- * `attention`, o ponto. Zero não é sinal. A cor é `tone` (padrão `warning`).
+ * O sinal da seção: com `badge` numérico e maior que zero, o número; com `badge` "?"
+ * (`UNKNOWN_COUNT`), a contagem que falhou; senão, com `attention`, o ponto. Zero não é
+ * sinal. A cor é `tone` (padrão `warning`).
  */
 export function sectionRailSignal(section: OperatorSection): RailSignal | undefined {
   const color = section.tone ?? "warning";
   const count = Number.parseInt(section.badge ?? "", 10);
   if (Number.isFinite(count) && count > 0) return { color, count, state: section.attention || undefined };
+  if (section.badge === UNKNOWN_COUNT) return { color, unknown: true, state: section.attention || undefined };
   if (section.attention) return { color, state: section.attention };
   return undefined;
 }
@@ -74,6 +84,7 @@ export function sectionRailSignal(section: OperatorSection): RailSignal | undefi
  * mesmo chip vai no fluxo, por `OperatorCountChip`.
  */
 export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean; ui: { base: string } } {
+  if (signal.unknown) return unknownCountChipProps(signal.color);
   if (signal.count === undefined) return countChipDotProps(signal.color);
   return countChipProps(signal.count, signal.color);
 }
@@ -87,6 +98,7 @@ export function railSignalLabel(label: string, signal?: RailSignal): string {
   if (!signal) return label;
   const parts = [label];
   if (signal.count !== undefined) parts.push(`${signal.count} ${signal.count === 1 ? "pendência" : "pendências"}`);
+  if (signal.unknown) parts.push("contagem indisponível");
   if (signal.state) parts.push(signal.state);
   return parts.join(" · ");
 }
@@ -315,6 +327,8 @@ export interface OperatorAlertLike {
   origin_label?: string;
   origin_icon?: string;
   subject?: string;
+  /** Também no topo da tela (o servidor diz, por tipo: `AlertSpec.on_screen`). */
+  on_screen?: boolean;
   actions?: ReadonlyArray<{
     kind: string;
     enabled: boolean;
@@ -342,6 +356,7 @@ export interface InboxAlertView {
   origin?: string;
   originIcon?: string;
   subject?: string;
+  onScreen?: boolean;
 }
 
 /**
@@ -390,7 +405,42 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     ...(alert.origin_label ? { origin: alert.origin_label } : {}),
     ...(alert.origin_icon ? { originIcon: alert.origin_icon } : {}),
     ...(alert.subject ? { subject: alert.subject } : {}),
+    ...(alert.on_screen ? { onScreen: true } : {}),
   };
+}
+
+type OnScreen = {
+  key: string | number; onScreen?: boolean; tone?: string; subject?: string; eyebrow?: string; message?: string;
+  href?: string; hrefLabel?: string;
+};
+
+/** O aviso de tela de um alerta que pede o topo (sem a ação: quem monta põe). */
+export interface InboxScreenAlert {
+  key: string | number;
+  id: string;
+  title: string;
+  description: string;
+  color: "error" | "warning" | "info";
+  /** O botão que resolve a causa ("Abrir conexões de IA"), quando o servidor oferece. */
+  action?: { label: string; to: string };
+}
+
+/**
+ * Os alertas que pedem o topo da tela viram aviso do cabeçalho, na cor da gravidade
+ * (dono, 19/11/2026: a Concierge sem modelo, cor de erro). O `id` é o do alerta: o
+ * servidor abre um por causa, então outra causa é aviso novo, e o X dispensa só esta.
+ */
+export function inboxScreenAlerts<T extends OnScreen>(items: readonly T[]): InboxScreenAlert[] {
+  return items
+    .filter((item) => item.onScreen)
+    .map((item) => ({
+      key: item.key,
+      id: `alert:${item.key}`,
+      title: item.subject || item.eyebrow || "Aviso",
+      description: item.message || "",
+      color: item.tone === "critical" ? ("error" as const) : item.tone === "warning" ? ("warning" as const) : ("info" as const),
+      ...(item.href ? { action: { label: item.hrefLabel || "Abrir", to: item.href } } : {}),
+    }));
 }
 
 /**

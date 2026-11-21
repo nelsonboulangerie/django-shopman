@@ -12,6 +12,7 @@ from .alerts import (
     AlertAckView,
     AlertListView,
     ConciergeVerificationAnswerView,
+    ConciergeVerificationPromoteView,
     ConciergeVerificationTakeOverView,
 )
 from .backup import BackupExportView
@@ -86,6 +87,7 @@ from .feeds import (
     FeedRotationView,
     FeedSwitchView,
 )
+from .house_couriers import HouseCourierRideView, HouseCourierShiftView, HouseCouriersView
 from .hub import HubView
 from .ifood_reviews import (
     IFoodReviewDetailView,
@@ -212,6 +214,8 @@ from .operations import (
     OrderCourierRideQuoteView,
     OrderCourierRideView,
     OrderCustomerContactResolveView,
+    OrderCustomerNoticePreviewView,
+    OrderCustomerNoticeView,
     OrderDanfeEscposView,
     OrderDetailView,
     OrderEditPreviewView,
@@ -803,6 +807,11 @@ urlpatterns = [
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
     path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
     path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
+    # Os entregadores da casa: quem leva, enviar a corrida e a escala de hoje (M3, #2526).
+    path("deliveries/couriers/", HouseCouriersView.as_view(), name="api-backstage-house-couriers"),
+    path("deliveries/couriers/ride/", HouseCourierRideView.as_view(), name="api-backstage-house-courier-ride"),
+    path("deliveries/couriers/<str:ref>/shift/", HouseCourierShiftView.as_view(),
+         name="api-backstage-house-courier-shift"),
     path("deliveries/<str:ride>/driver-photo/", DeliveryDriverPhotoView.as_view(),
          name="api-backstage-delivery-driver-photo"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
@@ -1026,6 +1035,16 @@ urlpatterns = [
         name="api-backstage-order-resend-payment-link",
     ),
     path("orders/<str:ref>/reschedule/", OrderRescheduleView.as_view(), name="api-backstage-order-reschedule"),
+    path(
+        "orders/<str:ref>/customer-notice/",
+        OrderCustomerNoticeView.as_view(),
+        name="api-backstage-order-customer-notice",
+    ),
+    path(
+        "orders/<str:ref>/customer-notice/preview/",
+        OrderCustomerNoticePreviewView.as_view(),
+        name="api-backstage-order-customer-notice-preview",
+    ),
     path("orders/<str:ref>/edit/", OrderEditView.as_view(), name="api-backstage-order-edit"),
     path("orders/<str:ref>/edit/preview/", OrderEditPreviewView.as_view(), name="api-backstage-order-edit-preview"),
     path("orders/<str:ref>/notes/", OrderNotesView.as_view(), name="api-backstage-order-notes"),
@@ -1070,6 +1089,12 @@ urlpatterns = [
         "alerts/<int:pk>/concierge-verification/take-over/",
         ConciergeVerificationTakeOverView.as_view(),
         name="api-backstage-alert-concierge-verification-take-over",
+    ),
+    # WP-15: a pergunta respondida vira rascunho de pergunta frequente (não publicado).
+    path(
+        "alerts/<int:pk>/concierge-verification/promote-faq/",
+        ConciergeVerificationPromoteView.as_view(),
+        name="api-backstage-alert-concierge-verification-promote-faq",
     ),
     # Suporte (helpdesk interno)
     path(

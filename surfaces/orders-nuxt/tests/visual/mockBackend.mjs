@@ -10,7 +10,7 @@ import { galleryQueue } from "./galleryCards.mjs";
 // O estado é trocado por GET /__visual/scenario?set=<normal|empty|dense|error|gallery>.
 
 const here = dirname(fileURLToPath(import.meta.url));
-const port = Number(process.env.MOCK_PORT || 38793);
+const port = Number(process.env.MOCK_PORT || 28793);
 const readFixture = (name) => JSON.parse(readFileSync(join(here, "fixtures", name), "utf8"));
 
 const baseQueue = readFixture("orders-board.json");
@@ -166,7 +166,7 @@ function urgentAlert() {
 // O "vou verificar" da Concierge (WP-07): a pergunta que ela levou à equipe. O cartão
 // nasce com o prazo prometido ao cliente e chega como aviso de tela no topo; em
 // `concierge-late`, a promessa já venceu e a janela interrompe a tela.
-const verification = { answered: false, takenOver: false };
+const verification = { answered: false, takenOver: false, promoted: false, answerText: "" };
 // A hora como a casa escreve ("16h12", "9h"), no fuso da loja.
 function clock(date) {
   const parts = new Intl.DateTimeFormat("pt-BR", {
@@ -214,8 +214,39 @@ function verificationAlert(late) {
   };
 }
 
+// A Concierge atendendo sem modelo (dono, 19/11/2026): um aviso por causa, cor de erro,
+// também no topo da tela (`on_screen`).
+function noModelAlert() {
+  return {
+    pk: 960, rev: 0, type: "concierge_no_model", type_label: "WhatsApp: Concierge sem modelo",
+    severity: "error", severity_label: "Erro", audience: "orders",
+    message: "A Concierge está atendendo sem modelo: responde o simples e manda para a equipe o que não entende. Causa: a conexão de IA da leitura está sem chave.",
+    order_ref: "", created_at_display: "hoje às 21h10",
+    origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Concierge sem modelo",
+    on_screen: true, respond_by_iso: "", deadline_kind: "",
+    actions: [{
+      ref: "open_alert_context:960", kind: "open_alert_context", label: "Abrir conexões de IA", priority: 10,
+      enabled: true, reason: "", method: "GET", href: "https://admin.boulangerie.com.br/admin/shop/aiconnection/",
+      payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
+      approval_requirement: null, source_alert_ref: "960", source_alert_effect: "context", proof: "",
+    }, ...(acknowledged.has(960) ? [] : [{
+      ref: "acknowledge:960", kind: "acknowledge_alert", label: "Visto", priority: 20, enabled: true,
+      reason: "", method: "POST", href: "/api/v1/backstage/alerts/960/ack/",
+      payload_schema: "AlertAckMutationRequest", expected_rev: 0,
+      idempotency: { required: true, key_scope: "backstage.alert-ack:960" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "Confirmar" },
+      approval_requirement: null, source_alert_ref: "960", source_alert_effect: "acknowledges", proof: "",
+    }])],
+  };
+}
+
 function alertsPayload() {
   const payload = JSON.parse(JSON.stringify(baseAlerts));
+  if (scenario === "concierge-no-model") {
+    payload.alerts = [noModelAlert(), ...payload.alerts];
+    payload.counts.active += 1;
+  }
   if ((scenario === "concierge" || scenario === "concierge-late") && !verification.answered && !verification.takenOver) {
     payload.alerts = [verificationAlert(scenario === "concierge-late"), ...payload.alerts];
     payload.counts.active += 1;
@@ -287,7 +318,7 @@ createServer((req, res) => {
 
   if (path === "/__visual/scenario") {
     const next = url.searchParams.get("set");
-    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); verification.answered = false; verification.takenOver = false; }
+    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); verification.answered = false; verification.takenOver = false; verification.promoted = false; verification.answerText = ""; }
     send(res, 200, { scenario });
     return;
   }
@@ -373,8 +404,25 @@ createServer((req, res) => {
         return;
       }
       verification.answered = true;
-      send(res, 200, { ok: true, pk: 950, sent_text: `A equipe confirmou: ${text}` });
+      verification.answerText = text;
+      send(res, 200, {
+        ok: true, pk: 950, sent_text: `A equipe confirmou: ${text}`,
+        promote_href: "/api/v1/backstage/alerts/950/concierge-verification/promote-faq/",
+      });
     });
+    return;
+  }
+  // WP-15: a resposta vira rascunho de pergunta frequente; a que cita um dia traz o aviso.
+  if (req.method === "POST" && path === "/api/v1/backstage/alerts/950/concierge-verification/promote-faq/") {
+    const dated = /(^|\s)(hoje|amanh[ãa])(\s|[.,!?]|$)/i.test(verification.answerText || "");
+    send(res, 200, {
+      ok: true, pk: 950, already: Boolean(verification.promoted),
+      admin_url: "https://admin.boulangerie.com.br/admin/shop/faqentry/12/change/",
+      warning: dated
+        ? `A resposta cita um dia ou uma data: “${(verification.answerText.split(/(?<=[.!?])\s+/)[0] || "").replace(/[.!?]$/, "")}”. Confira se ela vale sempre antes de publicar.`
+        : "",
+    });
+    verification.promoted = true;
     return;
   }
   const ackMatch = path.match(/^\/api\/v1\/backstage\/alerts\/(\d+)\/ack\/$/);

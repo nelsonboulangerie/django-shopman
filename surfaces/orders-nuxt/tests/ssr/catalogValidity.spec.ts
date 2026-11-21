@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const before = process.env.VALIDITY_STAGE === "before";
-const backend = `http://127.0.0.1:${process.env.ORDERS_SSR_MOCK_PORT || 34895}`;
+const backend = `http://127.0.0.1:${process.env.ORDERS_SSR_MOCK_PORT || 24895}`;
 test.beforeEach(async () => {
   await fetch(`${backend}/__visual/scenario?set=validity`);
 });

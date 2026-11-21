@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-const port = Number(process.env.MOCK_PORT || 38792);
+const port = Number(process.env.MOCK_PORT || 28792);
 
 // O DIA do mock. A prévia roda no relógio de verdade (o Período da tela parte da data
 // do dispositivo, e o mock tem de responder pelo mesmo período: "Semana · 05/10 a
@@ -575,6 +575,24 @@ const ALUNO = {
   memory: { total_orders: 4, average_order_display: "R$ 21,40", favorite_product: "Café coado", favorite_item: {}, last_order_items: [] },
   group_discount_label: "Aliança Francesa · 10%",
 };
+// `MOCK_CUSTOMER=1`: a cliente da casa com tudo o que o diálogo Cliente mostra
+// (cadastro existente, 29 pedidos, favorito, último pedido, aniversário hoje com a
+// promoção ativa, e-mail comprido), para a trava de geometria do diálogo a 375 px
+// (#2885). A busca devolve a Maria para qualquer termo. Sem a variável, nada muda.
+const CUSTOMER_FULL = SALE && process.env.MOCK_CUSTOMER === "1";
+const MARIA = {
+  ref: "MARIA", name: "Maria Santos", phone: "+5543991111111", email: "maria.santos.cliente@exemplo.com.br",
+  tax_id: "52998224725", fiscal_prefs: { cpf_na_nota: true }, notes: "", dietary_restrictions: "",
+  birthday_display: "29/09", is_birthday_today: true, is_birthday_month: true,
+  birthday_promo_label: "Parabéns! Desconto de aniversário", price_tier: "", is_staff: false,
+  default_address: null, saved_addresses: [], house_account: false, account_balance_q: 0,
+  memory: {
+    total_orders: 29, average_order_display: "R$ 38,20", favorite_product: "Croissant Tradicional",
+    favorite_item: { sku: "CROISSANT", name: "Croissant Tradicional", qty: 1 },
+    last_order_items: [{ sku: "CROISSANT", name: "Croissant Tradicional", qty: 2 }],
+  },
+  group_discount_label: "",
+};
 function groupLinePrices(body) {
   const member = GROUP && body?.customer_ref === ALUNO.ref;
   const prices = {};
@@ -1048,6 +1066,14 @@ createServer((req, res) => {
         SAVED_ITEMS.set(ref, items);
         send(res, 200, { ok: true, cancelled: 1, trimmed: 0, fired_lines: [], tab: { ...tabPayload(ref), items } });
       });
+      return;
+    }
+    if (CUSTOMER_FULL && path === "/api/v1/backstage/pos/customer/search/") {
+      send(res, 200, { results: [{ ref: MARIA.ref, name: MARIA.name, phone: MARIA.phone, document: MARIA.tax_id, email: MARIA.email }] });
+      return;
+    }
+    if (CUSTOMER_FULL && path === "/api/v1/backstage/pos/customer/lookup/") {
+      send(res, 200, { customer: MARIA });
       return;
     }
     if (GROUP && path === "/api/v1/backstage/pos/customer/search/") {

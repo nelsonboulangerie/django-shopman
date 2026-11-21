@@ -44,7 +44,16 @@ CUSTOMER_TEXT_PURPOSES = frozenset({"concierge", "triage", "intents", "labeling"
 
 
 class AINotConfigured(Exception):
-    """O propósito não tem conexão utilizável. A mensagem diz por quê, para o Admin."""
+    """O propósito não tem conexão utilizável. A mensagem diz por quê, para o Admin.
+
+    ``code`` é a causa, para quem avisa (o aviso da Concierge sem modelo tem um id por
+    causa): ``no_connection``, ``ambiguous``, ``no_key``, ``not_approved``, ``no_model``;
+    o freio de gasto (``ai_governor``) tem as próprias subclasses.
+    """
+
+    def __init__(self, message: str = "", *, code: str = "not_configured"):
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -110,27 +119,32 @@ def resolve(purpose: str) -> Resolved:
         if connection is None:
             raise AINotConfigured(
                 f"a rota de IA '{purpose}' aponta para a conexão '{route['connection']}', "
-                "que não existe, está inativa ou é de outro formato"
+                "que não existe, está inativa ou é de outro formato",
+                code="no_connection",
             )
     else:
         candidates = list(active[:2])
         if not candidates:
-            raise AINotConfigured(f"nenhuma conexão de IA ativa no formato {protocol} (Admin → Conexões de IA)")
+            raise AINotConfigured(
+                f"nenhuma conexão de IA ativa no formato {protocol} (Admin → Conexões de IA)", code="no_connection"
+            )
         if len(candidates) > 1:
             raise AINotConfigured(
-                f"há mais de uma conexão de IA no formato {protocol}; diga qual usar em Loja → rotas de IA"
+                f"há mais de uma conexão de IA no formato {protocol}; diga qual usar em Loja → rotas de IA",
+                code="ambiguous",
             )
         connection = candidates[0]
     api_key = connection.api_key
     if not api_key:
-        raise AINotConfigured(f"a conexão de IA '{connection.ref}' está sem chave")
+        raise AINotConfigured(f"a conexão de IA '{connection.ref}' está sem chave", code="no_key")
     if purpose in CUSTOMER_TEXT_PURPOSES and not connection.customer_text_approved:
         raise AINotConfigured(
-            f"a conexão de IA '{connection.ref}' não está liberada para receber mensagem de cliente"
+            f"a conexão de IA '{connection.ref}' não está liberada para receber mensagem de cliente",
+            code="not_approved",
         )
     model = str(route.get("model") or connection.model or "").strip()
     if not model:
-        raise AINotConfigured(f"a conexão de IA '{connection.ref}' está sem modelo")
+        raise AINotConfigured(f"a conexão de IA '{connection.ref}' está sem modelo", code="no_model")
     from shopman.shop import ai_governor
 
     ai_governor.check(purpose)

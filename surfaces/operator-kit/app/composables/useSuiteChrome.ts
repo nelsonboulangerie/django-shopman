@@ -52,6 +52,9 @@ export interface OperatorInboxAlert {
   origin?: string;
   originIcon?: string;
   subject?: string;
+  /** Também no topo da tela, no aviso do cabeçalho, e não só no sino: a operação
+   *  inteira está degradada (a Concierge sem modelo). Um aviso por causa. */
+  onScreen?: boolean;
   /** O aviso se resolve com uma resposta escrita (a pergunta que a Concierge levou à
    *  equipe): o campo, o gesto de enviar e, opcional, o gesto alternativo ("Assumir a
    *  conversa"). O app executa por `answer`/`answerAlt` da fonte. */

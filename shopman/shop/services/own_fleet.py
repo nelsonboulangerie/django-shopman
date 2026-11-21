@@ -64,13 +64,14 @@ def _order_label(order) -> str:
 
 @transaction.atomic
 def assign(orders: list[Order], courier_person: Courier, *, actor: str, change_out: dict[str, int] | None = None,
-           cash_shift=None, equipment: list[str] | None = None) -> Assignment:
+           cash_shift=None, equipment: list[str] | None = None, ride_number: int | None = None) -> Assignment:
     """Designa a rota a um entregador da casa e emite o link dele.
 
     ``orders`` já vem na ordem da rota. Cada pedido grava o bloco ``courier`` da corrida da
     casa (``service`` = o serviço dos entregadores da casa, letra interna ``A``) e a
     custódia de troco e maquininha. A saída é a do primeiro pedido (``trip_ref``), e a
-    maquininha é uma só para a rota.
+    maquininha é uma só para a rota. ``ride_number`` é o número (letra e cor) que a tela
+    mostrava; vale se ainda estiver livre.
     """
     from shopman.shop.services import operator_orders
 
@@ -96,7 +97,7 @@ def assign(orders: list[Order], courier_person: Courier, *, actor: str, change_o
     refs = [order.ref for order in locked]
     estimate = _estimate(locked, courier_person)
     ride_ref = f"{_RIDE_PREFIX()}{uuid.uuid4().hex[:10].upper()}"
-    number = courier.next_ride_number(exclude_refs=refs)
+    number = courier.next_ride_number(exclude_refs=refs, prefer=ride_number)
     now_iso = timezone.now().isoformat()
     driver = {"name": courier_person.name, "phone": courier_person.phone, "vehicle_model": courier_person.vehicle}
     trip_ref = refs[0] if len(refs) > 1 else ""

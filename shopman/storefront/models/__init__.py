@@ -12,12 +12,16 @@ mensageria (INTENT-PILOT-PLAN): moram ao lado do concierge, que também é daqui
 """
 
 from .continuum import CatalogStructureHead
+from .corpus import ConversationCorpusEntry, CorpusOutcome, CorpusReview
 from .favorites import CustomerFavorite
 from .intents import IntentCategory, IntentPilotReport, MessageIntentSample, SampleStatus
 from .stock_alerts import StockAlertDelivery, StockAlertOccurrence, StockAlertSubscription
 
 __all__ = [
     "CatalogStructureHead",
+    "ConversationCorpusEntry",
+    "CorpusOutcome",
+    "CorpusReview",
     "StockAlertSubscription",
     "StockAlertOccurrence",
     "StockAlertDelivery",

@@ -10,7 +10,7 @@ import {
   bagsWord,
   beforeHandoff,
   cancelConfirmation,
-  needsMachine,
+  ridesNeedingMachine,
   nextFreeNumber,
   rideCalls,
   rideLetter,
@@ -36,7 +36,7 @@ function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjecti
   return {
     key: "1", number: 1, letter: "A", state: "searching", status_label: "", stops: [stop("NB-A01")], driver: null, position: null,
     called_at: "", called_by: "", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "", delivery_eta_at: "",
-    tracking_url: "", cost_display: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
+    tracking_url: "", cost_display: "", cost_label: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
     back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", reopened_at: "", reopened_driver: "",
     near_pickup_at: "", waited_pickup_at: "", reopened_reason: "", custody_line: "", open_too_long: false, sync_since: "", ...extra,
   };
@@ -155,7 +155,7 @@ describe("chamar as corridas editadas", () => {
     const calls = rideCalls(
       [{ number: 1, refs: ["NB-A01", "NB-A02"] }, { number: 2, refs: ["NB-A03"] }, { number: 3, refs: [] }],
       stops,
-      "machine:1",
+      { 1: "machine:1" },
     );
     expect(calls).toEqual([
       { kind: "group", number: 1, refs: ["NB-A01", "NB-A02"], change_out: { "NB-A01": "20,00" }, machine: "machine:1" },
@@ -165,14 +165,14 @@ describe("chamar as corridas editadas", () => {
 
   it("chama na ordem dos números, para cada corrida ficar com a letra que mostrava", () => {
     const editing = [{ number: 3, refs: ["NB-A03"] }, { number: 2, refs: ["NB-A01", "NB-A02"] }];
-    expect(rideCalls(editing, stops, "").map((call) => call.number)).toEqual([2, 3]);
+    expect(rideCalls(editing, stops, {}).map((call) => call.number)).toEqual([2, 3]);
     // A ordem da edição na tela não muda.
     expect(editing.map((ride) => ride.number)).toEqual([3, 2]);
   });
 
   it("a maquininha só é pergunta quando algum pedido é de cartão na porta", () => {
-    expect(needsMachine([{ number: 1, refs: ["NB-A03"] }], stops)).toBe(false);
-    expect(needsMachine([{ number: 1, refs: ["NB-A02"] }], stops)).toBe(true);
+    expect(ridesNeedingMachine([{ number: 1, refs: ["NB-A03"] }], stops)).toEqual([]);
+    expect(ridesNeedingMachine([{ number: 1, refs: ["NB-A02"] }], stops)).toEqual([1]);
   });
 });
 

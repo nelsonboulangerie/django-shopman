@@ -9,8 +9,8 @@ import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 // (docs/reference/operator-visual-baselines.md). O spec anexa as capturas ao relatório.
 
 // As variáveis existem para quem roda em paralelo numa faixa de portas própria.
-const appPort = Number(process.env.KDS_VISUAL_APP_PORT || 33019);
-const backendPort = Number(process.env.KDS_VISUAL_BACKEND_PORT || 38797);
+const appPort = Number(process.env.KDS_VISUAL_APP_PORT || 23019);
+const backendPort = Number(process.env.KDS_VISUAL_BACKEND_PORT || 28797);
 
 export default defineOperatorVisualConfig({
   app: "kds",

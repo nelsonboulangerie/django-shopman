@@ -428,15 +428,15 @@ def estimate_for_ride(orders) -> dict | None:
     return {**estimate, "stops": [order.ref for order, _ in route]}
 
 
-def estimate_for_order(order, *, store: bool = False) -> dict | None:
-    """Cotação da corrida (custo interno — o preço ao cliente segue nas faixas/zonas).
+def estimate_for_order(order) -> dict | None:
+    """Cotação da corrida (custo interno; o preço ao cliente segue nas faixas/zonas). Só lê.
 
     Best-effort: sem adapter, sem coordenadas ou com a Machine fora → None.
     Cota com o mesmo retorno que a abertura vai pedir (:func:`needs_return`).
-    Cache de 10 min por destino e retorno (a origem é sempre a loja). ``store=True``
-    grava o resultado em ``Order.data["courier"]["estimate"]``.
+    Cache de 10 min por destino e retorno (a origem é sempre a loja). Quem grava
+    (o despacho) toma a revisão ANTES de cotar e chama :func:`store_estimate`:
+    um GET que cota nunca escreve no pedido.
     """
-    base_revision = dispatch_revision(order) if store else None
     adapter = delivery_services.courier_backend()
     if adapter is None or get_fulfillment_type(order) != "delivery":
         return None
@@ -466,9 +466,6 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         estimate = {"value_q": result.value_q, "minutes": result.minutes, "km": result.km,
                     "with_return": with_return}
         cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
-
-    if store:
-        store_estimate(order, estimate, expected_revision=base_revision)
     return estimate
 
 
@@ -486,7 +483,8 @@ def store_estimate(order, estimate, *, expected_revision, require_quotable=False
     if require_quotable and not can_quote(order):
         raise OrderStateConflict("Confira o estado do pedido e da corrida antes de cotar.")
     block = dict(get_block(order))
-    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km", "with_return") if key in estimate}
+    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km", "with_return", "stops")
+                         if key in estimate}
     _save_block(order, block, emit={"kind": "estimate"})
 
 
@@ -548,17 +546,66 @@ def stranded_companions(order) -> tuple[str, list]:
     return status, stuck
 
 
-def unresolved_dispatch(order, *, exclude_pk=None):
-    """Pure receipt read. Unknown/start never authorizes another provider POST."""
+#: Recibos de despacho que ainda podem estar abertos lá (:func:`unresolved_dispatch`).
+_RECEIPT_STATES = ("started", "unknown", "accepted")
+
+#: A tarefa de despacho que ainda vai (ou está indo) à central.
+_LIVE_TASK_STATUSES = (Directive.Status.QUEUED, Directive.Status.RUNNING)
+
+
+def dispatch_tasks_for(orders) -> dict[str, list[Directive]]:
+    """As tarefas de despacho de vários pedidos numa consulta só, por pedido.
+
+    Só as que alguma leitura pergunta: as vivas (:func:`ride_is_live`) e as que têm
+    recibo (:func:`unresolved_dispatch`). A tarefa da corrida de várias paradas
+    entra em cada pedido dela (``payload.order_ref`` e ``payload.ride_members``).
+    Quem lê uma lista de pedidos passa o resultado para essas duas funções, e a
+    leitura deixa de fazer uma consulta por pedido.
+    """
+    from django.db.models import Q
+
     from shopman.shop.directives import COURIER_DISPATCH
 
-    tasks = Directive.objects.filter(dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
-        payload__dispatch_attempt__state__in=["started", "unknown", "accepted"])
-    if exclude_pk is not None:
-        tasks = tasks.exclude(pk=exclude_pk)
+    refs = [order.ref for order in orders]
+    found: dict[str, list[Directive]] = {ref: [] for ref in refs}
+    if not refs:
+        return found
+    tasks = Directive.objects.filter(
+        Q(payload__order_ref__in=refs) | Q(payload__ride_members__has_any_keys=refs),
+        Q(status__in=_LIVE_TASK_STATUSES) | Q(payload__dispatch_attempt__state__in=_RECEIPT_STATES),
+        topic=COURIER_DISPATCH,
+    ).order_by("-pk")
+    for task in tasks:
+        payload = task.payload or {}
+        members = payload.get("ride_members") if isinstance(payload.get("ride_members"), dict) else {}
+        for ref in {str(payload.get("order_ref") or ""), *members}:
+            if ref in found:
+                found[ref].append(task)
+    return found
+
+
+def unresolved_dispatch(order, *, exclude_pk=None, tasks: dict[str, list[Directive]] | None = None):
+    """Pure receipt read. Unknown/start never authorizes another provider POST.
+
+    ``tasks``: as tarefas já lidas em lote (:func:`dispatch_tasks_for`).
+    """
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    if tasks is None:
+        candidates = Directive.objects.filter(dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
+            payload__dispatch_attempt__state__in=list(_RECEIPT_STATES))
+        if exclude_pk is not None:
+            candidates = candidates.exclude(pk=exclude_pk)
+        candidates = candidates.order_by("-pk")
+    else:
+        candidates = [
+            task for task in tasks.get(order.ref, [])
+            if ((task.payload or {}).get("dispatch_attempt") or {}).get("state") in _RECEIPT_STATES
+            and task.pk != exclude_pk
+        ]
     block = get_block(order)
     known = {block.get("id_mch"), *[attempt.get("id_mch") for attempt in block.get("attempts", [])]}
-    for task in tasks.order_by("-pk"):
+    for task in candidates:
         receipt = (task.payload or {}).get("dispatch_attempt", {})
         if receipt.get("state") == "accepted" and receipt.get("courier_ref") in known:
             continue
@@ -640,11 +687,12 @@ RIDE_LETTERS = 26
 _RIDE_NUMBER_LOCK = 0x52494445  # "RIDE"
 
 
-def ride_is_live(order) -> bool:
+def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None) -> bool:
     """A corrida deste pedido ainda ocupa uma letra (e uma cor) na tela.
 
     Viva: chamada à espera da TaOn, corrida aberta ainda não terminada, ou
     terminada com o entregador ainda devendo voltar (troco, dinheiro, maquininha).
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
     """
     block = get_block(order)
     if not block.get("ride_number"):
@@ -658,11 +706,12 @@ def ride_is_live(order) -> bool:
         from shopman.shop.services import operator_orders
 
         return bool(operator_orders.courier_return_members(order))
+    if tasks is not None:
+        return any(task.status in _LIVE_TASK_STATUSES for task in tasks.get(order.ref, []))
     from shopman.shop.directives import COURIER_DISPATCH
 
     return Directive.objects.filter(
-        dispatch_task_filter(order.ref), topic=COURIER_DISPATCH,
-        status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        dispatch_task_filter(order.ref), topic=COURIER_DISPATCH, status__in=_LIVE_TASK_STATUSES,
     ).exists()
 
 
@@ -683,9 +732,11 @@ def _live_ride_numbers(exclude_refs=()) -> dict[int, str]:
     """Os números ocupados por corridas vivas, cada um com a chamada mais antiga."""
     live: dict[int, str] = {}
     statuses = (*RIDE_ORDER_STATUSES, Order.Status.DISPATCHED, Order.Status.DELIVERED)
-    for order in Order.objects.filter(status__in=statuses, data__courier__has_key="ride_number").exclude(ref__in=list(exclude_refs)):
+    orders = list(Order.objects.filter(status__in=statuses, data__courier__has_key="ride_number").exclude(ref__in=list(exclude_refs)))
+    tasks = dispatch_tasks_for([order for order in orders if not get_block(order).get("id_mch")])
+    for order in orders:
         number = get_block(order).get("ride_number")
-        if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= RIDE_LETTERS and ride_is_live(order):
+        if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= RIDE_LETTERS and ride_is_live(order, tasks=tasks):
             called = str(get_block(order).get("called_at") or "")
             live[number] = min(live.get(number, called), called)
     return live
@@ -762,8 +813,11 @@ def not_today_refusal(order) -> str:
     return f"A encomenda {short_ref(order.ref)} é para {day}. O entregador se chama no dia."
 
 
-def group_refusal(order) -> str:
-    """Por que este pedido não entra numa corrida com outros ("" quando entra)."""
+def group_refusal(order, *, tasks: dict[str, list[Directive]] | None = None) -> str:
+    """Por que este pedido não entra numa corrida com outros ("" quando entra).
+
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
+    """
     from shopman.shop.services.operator_orders import short_ref
 
     code = short_ref(order.ref)
@@ -779,7 +833,7 @@ def group_refusal(order) -> str:
         return f"O pedido {code} não está esperando entregador."
     if has_active_ride(order):
         return f"O pedido {code} já tem corrida."
-    if unresolved_dispatch(order) is not None:
+    if unresolved_dispatch(order, tasks=tasks) is not None:
         return f"O pedido {code} tem uma chamada sem resposta da TaOn. Confira na central antes."
     return ""
 
@@ -2264,6 +2318,74 @@ def sync_interval(block: dict) -> int:
 def ride_open_too_long(block: dict) -> bool:
     """A corrida segue aberta além da idade em que uma corrida real dura."""
     return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES and poll_expired(block)
+
+
+# ── O que o cliente lê antes da coleta (L2 da revisão das Entregas) ─
+
+#: Procurando entregador há mais que isso: no Gestor a corrida vira "Ninguém
+#: aceitou ainda", e o cliente lê "Está demorando mais que o normal". Um número só
+#: para as duas telas, para elas nunca discordarem sobre o mesmo minuto.
+LATE_SEARCH_MINUTES = 10
+
+
+def driver_first_name(name: str) -> str:
+    """"Diego" de "DIEGO SOUZA LIMA": o cliente chama o entregador pelo primeiro nome."""
+    parts = str(name or "").split()
+    token = parts[0] if parts else ""
+    if token.isupper() and len(token) > 1:
+        token = token[:1] + token[1:].lower()
+    return token
+
+
+def customer_wait(block: dict) -> dict:
+    """Onde a corrida está, no que importa ao cliente entre a chamada e a coleta.
+
+    ``{"stage", "driver", "pickup_eta_at"}``. ``stage``:
+
+    - ``""``: não há corrida viva (nunca chamada, cancelada ou encerrada); a
+      página diz só que o pedido está pronto;
+    - ``"called"``: chamada, ninguém a caminho ainda;
+    - ``"late"``: ninguém aceitou há :data:`LATE_SEARCH_MINUTES` ou mais, ou o
+      serviço desistiu de achar alguém;
+    - ``"replaced"``: o entregador que aceitou desistiu e outro está sendo
+      procurado (``driver`` é o nome de quem desistiu, que o cliente já leu);
+    - ``"coming"``: alguém aceitou e vai até a loja (``pickup_eta_at`` quando o
+      serviço informa a chegada);
+    - ``"at_store"``: o entregador está na loja.
+
+    Lê o estado NEUTRO (``delivery_services.ride_state``), então vale para a
+    TaOn e para os entregadores da casa (DEV-2026-030) sem olhar a letra crua.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.protocols import RideState
+
+    empty = {"stage": "", "driver": "", "pickup_eta_at": ""}
+    if not isinstance(block, dict) or not block.get("id_mch"):
+        return empty
+    state = delivery_services.ride_state(block)
+    driver = block.get("driver") if isinstance(block.get("driver"), dict) else {}
+    name = driver_first_name(driver.get("name") or "")
+    if state in (RideState.CANCELLED, RideState.DONE):
+        return empty
+    if state == RideState.NOT_SERVED:
+        return {**empty, "stage": "late"}
+    if state in (RideState.ASSIGNED, RideState.AT_STORE, RideState.ON_ROUTE):
+        progress = progress_view(block)
+        if state != RideState.ASSIGNED or progress.get("arrived_pickup_at"):
+            return {**empty, "stage": "at_store", "driver": name}
+        return {"stage": "coming", "driver": name, "pickup_eta_at": progress.get("pickup_eta_at") or ""}
+    # Procurando (inclusive trocando de entregador ou junto com outra corrida),
+    # ou letra que a casa ainda não conhece: há corrida chamada, sem dono.
+    reopened = reopen_view(block)
+    if reopened["at"]:
+        return {**empty, "stage": "replaced", "driver": driver_first_name(reopened["driver"])}
+    if state == RideState.GROUPED:
+        return {**empty, "stage": "called"}
+    called = parse_datetime(str(block.get("called_at") or block.get("requested_at") or ""))
+    if called is not None and timezone.now() - called >= timedelta(minutes=LATE_SEARCH_MINUTES):
+        return {**empty, "stage": "late"}
+    return {**empty, "stage": "called"}
 
 
 def vehicle_line(driver: dict) -> str:

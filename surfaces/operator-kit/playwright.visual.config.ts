@@ -1,7 +1,7 @@
 import { defineOperatorVisualConfig } from "./visual/playwright";
 
 // A porta aceita variável para quem roda em paralelo numa faixa própria.
-const port = Number(process.env.OPERATOR_KIT_CATALOG_PORT || 33113);
+const port = Number(process.env.OPERATOR_KIT_CATALOG_PORT || 23113);
 
 export default defineOperatorVisualConfig({
   app: "operator-kit",

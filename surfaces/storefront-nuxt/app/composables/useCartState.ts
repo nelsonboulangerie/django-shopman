@@ -15,6 +15,9 @@ export interface CartIssue {
   available_qty: number | null
   // Quanto a linha tinha antes do pedido recusado (null = linha nova).
   line_qty: number | null
+  // A linha que JÁ passou do teto (recusa do envio do pedido, #2687): o teto encolhe
+  // ESTA linha e o substituto entra no lugar do que falta. null no 409 da sacola.
+  line_id: string | null
   is_paused: boolean
   // Esgotado honesto e assinável: habilita o CTA "Me avise quando disponível" (WP-3).
   isNotifiable: boolean
@@ -209,6 +212,7 @@ function issueFromPayload (data: Record<string, unknown> | null | undefined, met
     requested_qty: numberOrNull(d.requested_qty),
     available_qty: numberOrNull(d.available_qty),
     line_qty: numberOrNull(d.line_qty),
+    line_id: typeof d.line_id === 'string' && d.line_id ? d.line_id : null,
     is_paused: !!d.is_paused,
     isNotifiable: Boolean(d.is_notifiable),
     isNotifySubscribed: Boolean(d.is_notify_subscribed),
@@ -562,9 +566,36 @@ export function useCartState () {
     return replay(mutation, mutation.qty)
   }
 
+  // A linha que a recusa do envio mira, como a sacola a tem agora.
+  function shortLine (issue: CartIssue | null): CartItemProjection | null {
+    if (!issue?.line_id) return null
+    return cart.value.items.find(line => line.line_id === issue.line_id) ?? null
+  }
+
+  // Recusa de estoque no ENVIO do pedido (#2687): a folha de alternativas sobe no
+  // checkout com o corpo que a recusa trouxe (o mesmo do 409 da sacola). Não há
+  // mutação para refazer: o alvo das ações é a linha (`line_id`).
+  function raiseStockIssue (data: Record<string, unknown>) {
+    const d = asRecord(data)
+    lastMutation.value = null
+    cartIssue.value = issueFromPayload(d, {
+      sku: String(d.sku || ''),
+      name: String(d.name || ''),
+      price_q: 0,
+      price_display: '',
+      image_url: null
+    })
+  }
+
   async function acceptAvailableQty () {
-    const mutation = lastMutation.value
     const issue = cartIssue.value
+    if (issue?.line_id) {
+      // A linha passou do teto: "Levar N" a encolhe até o que dá.
+      const line = shortLine(issue)
+      if (!line || !issueAdvancesLine(issue)) return null
+      return setLineQty(line, issue.available_qty!)
+    }
+    const mutation = lastMutation.value
     if (!mutation || !issue || !issueAdvancesLine(issue)) return null
     // O teto do 409 é ABSOLUTO (até onde a linha vai). A inclusão com escolhas
     // SOMA na linha igual, então manda só a diferença.
@@ -583,8 +614,16 @@ export function useCartState () {
   // Reusa setSkuQty (otimista + fila + 409/429); no sucesso, applyServerCart
   // zera cartIssue e o banner some sozinho.
   async function addSubstitute (sub: SubstituteProjection) {
-    const plan = substituteSwapPlan(sub, cartIssue.value?.requested_qty ?? null)
+    const issue = cartIssue.value
+    const line = shortLine(issue)
+    // Linha que passou do teto (recusa do envio): ela fica com o que dá, ou sai, e o
+    // substituto entra no lugar só do que falta. Sem isto a linha seguia acima do
+    // teto e o próximo envio caía na mesma recusa.
+    const keep = Math.max(0, issue?.available_qty ?? 0)
+    const missing = line ? Math.max(1, (issue?.requested_qty ?? line.qty) - keep) : null
+    const plan = substituteSwapPlan(sub, line ? missing : (issue?.requested_qty ?? null))
     if (!plan) return null
+    if (line) await setLineQty(line, keep)
     const res = await setSkuQty(plan.meta, plan.qty)
     if (import.meta.client) useSonner.success(`Adicionamos ${sub.name} à sua sacola.`)
     return res
@@ -614,6 +653,7 @@ export function useCartState () {
     retryLastMutation,
     acceptAvailableQty,
     addSubstitute,
+    raiseStockIssue,
     dismissCartIssue
   }
 }

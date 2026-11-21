@@ -7333,6 +7333,7 @@
             "remove_item",
             "set_line_notes",
             "_whole",
+            "line_shortage",
             "get_line",
             "LINE_NOTES_MAX_LENGTH"
           ]
@@ -7345,7 +7346,9 @@
         "offerman",
         "stockman"
       ],
-      "ports": [],
+      "ports": [
+        "shopman.stockman.protocols.sku"
+      ],
       "events": [],
       "directives": [],
       "config_surface": [],
@@ -8701,6 +8704,9 @@
             "free_ride_numbers",
             "next_ride_number",
             "ride_is_live",
+            "dispatch_tasks_for",
+            "_LIVE_TASK_STATUSES",
+            "_RECEIPT_STATES",
             "ride_letter"
           ]
         }
@@ -8772,6 +8778,43 @@
       "tests": [
         "shopman/shop/tests/test_courier_em_apuros.py::test_auto_complete_waits_while_the_driver_is_on_the_street",
         "shopman/shop/tests/test_courier_em_apuros.py::test_auto_complete_without_ride_is_the_old_safety_net"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-customer-wait",
+      "question": "O que o cliente lê sobre o entregador entre a chamada e a coleta: chamado, demorando, a caminho, na loja ou desistiu?",
+      "owner": "delivery.customer-wait",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.courier:customer_wait",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:customer_wait"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "LATE_SEARCH_MINUTES",
+            "customer_wait",
+            "driver_first_name"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/web/test_tracking_courier_wait.py::test_customer_wait_never_reads_the_raw_letter_without_the_service"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -12353,7 +12396,9 @@
             "_commitment_note",
             "_commitment_suffix",
             "_eta_clock",
-            "_qualify_template"
+            "_qualify_template",
+            "_CUSTOMER_NOTICE_TEMPLATES",
+            "_shop_name"
           ]
         }
       ],
@@ -13716,6 +13761,104 @@
       ],
       "test_gap_reason": null,
       "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "shop.services-customer-notice",
+      "question": "Avisar o cliente com um toque: vai atrasar, faltou um item, precisamos remarcar?",
+      "owner": "order.customer_notice",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.customer_notice:send",
+      "authoritative_symbols": [
+        "shopman.shop.services.customer_notice:send"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/customer_notice.py",
+          "symbols": [
+            "CustomerNoticeRefused",
+            "DelayChoice",
+            "MissingLine",
+            "Availability",
+            "delay_choices",
+            "eta_phrase",
+            "missing_lines",
+            "qty_display",
+            "missing_phrase",
+            "note_for",
+            "message",
+            "notice_revision",
+            "send",
+            "DELAYED",
+            "ITEM_MISSING",
+            "RESCHEDULE",
+            "KINDS",
+            "TEMPLATE_OF",
+            "LABEL_OF",
+            "DELAY_STEPS",
+            "_CLOCK_STEP_MINUTES",
+            "_in",
+            "_units"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "offerman",
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_avisar_o_cliente.py::test_send_enfileira_o_aviso_com_a_frase"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "order.customer-notice-eligibility",
+      "question": "Quando cada aviso do Avisar o cliente cabe no pedido, e por que não cabe?",
+      "owner": "order.customer_notice",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.customer_notice:availability",
+      "authoritative_symbols": [
+        "shopman.shop.services.customer_notice:availability"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/customer_notice.py",
+          "symbols": [
+            "offered",
+            "order_refusal",
+            "availability",
+            "_kind_refusal",
+            "_OPEN_STATUSES",
+            "_commitment_day"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_avisar_o_cliente.py::test_nenhum_aviso_cabe_no_ifood_no_pronto_ou_sem_telefone"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
       "out_of_extraction": false
     },
     {
@@ -19753,6 +19896,62 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_conversational_read_ports.py::test_read_policy_states_only_the_house_hours"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-ride-plan",
+      "question": "Quais entregas prontas a casa sugere juntar numa corrida, e quando a sugestão já vem marcada?",
+      "owner": "delivery.courier-ride-plan",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.ride_plan:ride_plan",
+      "authoritative_symbols": [
+        "shopman.shop.services.ride_plan:ride_plan",
+        "shopman.shop.services.ride_plan:plan_groups",
+        "shopman.shop.services.ride_plan:_quote"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/ride_plan.py",
+          "symbols": [
+            "ride_plan",
+            "params",
+            "plan_groups",
+            "measure",
+            "route",
+            "_fits",
+            "_quote",
+            "candidates_from",
+            "DEFAULT_DETOUR_KM",
+            "DEFAULT_SAVING_MIN_Q",
+            "DEFAULT_SAVING_MIN_PERCENT",
+            "DEFAULT_EXTRA_WAIT_MINUTES",
+            "DETOUR_SHARE",
+            "MAX_SUGGESTIONS",
+            "SPEED_KMH",
+            "STOP_MINUTES"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_ride_plan.py::test_neighbours_ride_together_and_the_opposite_side_does_not",
+        "shopman/shop/tests/test_ride_plan.py::test_quoted_and_cheaper_together_comes_marked",
+        "shopman/shop/tests/test_ride_plan.py::test_without_every_quote_the_suggestion_shows_unmarked"
       ],
       "test_gap_reason": null,
       "policy": false,

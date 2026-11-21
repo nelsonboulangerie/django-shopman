@@ -5,7 +5,13 @@ from __future__ import annotations
 from django.db import transaction
 from shopman.orderman.exceptions import InvalidTransition
 
-from shopman.backstage.services.exceptions import OrderConflict, OrderEditError, OrderError, RescheduleError
+from shopman.backstage.services.exceptions import (
+    CustomerNoticeError,
+    OrderConflict,
+    OrderEditError,
+    OrderError,
+    RescheduleError,
+)
 from shopman.shop.services import operator_orders
 from shopman.shop.services.operator_orders import OrderStateConflict
 
@@ -475,6 +481,64 @@ def reschedule_order(order, *, date, slot, reason: str, actor: str, expected_rev
             raise RescheduleError(exc.message, code=exc.code, field=exc.field) from exc
 
 
+def customer_notice_options(order):
+    """Os três avisos do "Avisar o cliente" (WP-G07), com o que cada um pede e a revisão lida."""
+    from shopman.shop.services import customer_notice
+
+    return {
+        "base_revision": customer_notice.notice_revision(order),
+        "notices": [
+            {
+                "kind": option.kind,
+                "label": option.label,
+                "enabled": option.enabled,
+                "reason": option.reason,
+                "delay_choices": [
+                    {"value": choice.value, "label": choice.label} for choice in option.delay_choices
+                ],
+                "lines": [
+                    {"line_id": line.line_id, "name": line.name, "qty": str(line.qty), "qty_display": line.qty_display}
+                    for line in option.lines
+                ],
+            }
+            for option in customer_notice.availability(order)
+        ],
+    }
+
+
+def preview_customer_notice(order, *, kind: str, eta: str = "", lines=None) -> dict:
+    """A mensagem da escolha, como o cliente a lê. Nada é gravado nem enviado."""
+    from shopman.shop.services import customer_notice
+
+    if kind not in customer_notice.KINDS:
+        raise CustomerNoticeError("Escolha um dos três avisos.", code="customer_notice_kind", field="kind")
+    try:
+        note = customer_notice.note_for(order, kind, eta=eta, lines=lines)
+    except customer_notice.CustomerNoticeRefused as exc:
+        raise CustomerNoticeError(str(exc), code=exc.code, field=exc.field) from exc
+    return {"kind": kind, "status_note": note, "message": customer_notice.message(order, kind, note)}
+
+
+def notify_customer(order, *, kind: str, eta: str = "", lines=None, expected_revision=None):
+    """Envia o aviso escolhido pelo caminho de notificação do ``shop`` e devolve a Directive."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import customer_notice
+
+    if kind not in customer_notice.KINDS:
+        raise CustomerNoticeError("Escolha um dos três avisos.", code="customer_notice_kind", field="kind")
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and customer_notice.notice_revision(locked) != expected_revision:
+            raise OrderConflict("O pedido mudou. Atualize o pedido e confira a mensagem antes de enviar.")
+        try:
+            note = customer_notice.note_for(locked, kind, eta=eta, lines=lines)
+        except customer_notice.CustomerNoticeRefused as exc:
+            raise CustomerNoticeError(str(exc), code=exc.code, field=exc.field) from exc
+        directive = customer_notice.send(locked, kind, note)
+    return directive, customer_notice.message(order, kind, note)
+
+
 def preview_order_edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None):
     """A prévia da edição (``shop.services.order_edit.plan``): nada é gravado."""
     from shopman.shop.services import order_edit
@@ -666,7 +730,7 @@ def courier_quote(order) -> dict:
 
     if not courier.can_quote(order):
         raise OrderError("Confira o estado do pedido e da corrida antes de cotar.")
-    estimate = courier.estimate_for_order(order, store=False)
+    estimate = courier.estimate_for_order(order)
     if estimate is None:
         raise OrderError(
             "Cotação indisponível. Verifique o endereço do pedido e a "
