@@ -57,12 +57,12 @@ test('J4: a cliente paga o Pix, a loja recusa no Gestor e o dinheiro volta', asy
     await capture(page, testInfo, 'cliente-devolvido')
   })
 
-  await test.step('a conta lista o pedido cancelado', async () => {
+  await test.step('a conta lista o pedido pelo dinheiro: devolvido', async () => {
     await page.goto('/conta/pedidos')
     await settled(page)
-    // Hoje a lista diz "Cancelado · R$ 13,00" e não diz que o dinheiro voltou: o plano
-    // pede "Devolvido" também na conta, e isso é tela (#2992).
-    await expect(page.locator('main')).toContainText(/Cancelado\s*·\s*R\$\s*\d+,\d{2}/)
+    // O dinheiro já voltou (o histórico acima disse "Devolvido"): a lista diz o mesmo, com o
+    // valor que voltou, e não só "Cancelado" (#2992).
+    await expect(page.locator('main')).toContainText(/Devolvido\s*·\s*R\$\s*\d+,\d{2}/)
     await capture(page, testInfo, 'conta-pedidos')
   })
 })
