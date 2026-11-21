@@ -8,8 +8,8 @@
 // de acompanhamento, cotação e valor final. Tirar ou trocar parada não existe na API.
 //
 // A corrida da casa (M3d, #2937) usa o mesmo painel, com o que é dela: quem leva no
-// título, os gestos do balcão ("Saiu", "A47 entregue", "Reenviar o link", "Soltar o
-// link") e "Ligar para Diego". O que só a TaOn tem (avisos da central, posição pela
+// título, os gestos do balcão ("Despachar a corrida C", "A47 entregue", "Reenviar o
+// link", "Soltar o link") e "Ligar para Diego". O que só a TaOn tem (avisos da central, posição pela
 // TaOn, link de acompanhamento, "use a central da TaOn") não aparece.
 import type {
   DeliveriesProjection,
@@ -189,18 +189,22 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
       <!-- Fora do mapa: dentro, a loja ou uma parada no canto cobria a etiqueta. A idade anda com o relógio (F7b). -->
       <p v-if="positionLine && !house" class="mx-5 mt-1 op-micro text-muted" data-ride-position-source>{{ positionLine }}</p>
 
-      <div v-if="ride.driver" class="mx-5 mt-4 flex items-center gap-3 rounded-xl bg-elevated/60 p-3">
-        <!-- A foto só existe enquanto a corrida vive (servidor, sem cache); sem ela, a inicial. -->
-        <NuxtAvatar :src="ride.driver.photo_url || undefined" :alt="ride.driver.name" :text="ride.driver.name.slice(0, 1)" size="lg" data-ride-driver-photo />
-        <div class="min-w-0 flex-1">
-          <p class="op-label font-semibold text-highlighted">{{ ride.driver.name }}</p>
-          <p class="op-micro text-muted">{{ ride.driver.vehicle }}</p>
-          <p v-if="ride.custody_line" class="op-micro font-semibold text-highlighted" data-ride-custody-line>{{ ride.custody_line }}</p>
+      <!-- O entregador: quem é e o veículo numa linha inteira; os contatos embaixo, sem
+           espremer o texto (dono, 21/11). -->
+      <div v-if="ride.driver" class="mx-5 mt-4 flex flex-col gap-3 rounded-xl bg-elevated/60 p-3" data-ride-driver>
+        <div class="flex items-center gap-3">
+          <!-- A foto só existe enquanto a corrida vive (servidor, sem cache); sem ela, a inicial. -->
+          <NuxtAvatar :src="ride.driver.photo_url || undefined" :alt="ride.driver.name" :text="ride.driver.name.slice(0, 1)" size="lg" data-ride-driver-photo />
+          <div class="min-w-0 flex-1">
+            <p class="op-label font-semibold text-highlighted">{{ ride.driver.name }}</p>
+            <p class="op-micro text-muted" data-ride-driver-vehicle>{{ ride.driver.vehicle }}</p>
+            <p v-if="ride.custody_line" class="op-micro font-semibold text-highlighted" data-ride-custody-line>{{ ride.custody_line }}</p>
+          </div>
         </div>
-        <template v-if="ride.driver.phone">
-          <NuxtButton class="min-h-11" icon="i-lucide-phone" color="neutral" variant="outline" :label="call ? call.label : 'Ligar'" :to="`tel:${ride.driver.phone.replace(/\D/g, '')}`" external data-ride-driver-call />
+        <div v-if="ride.driver.phone" class="flex gap-2">
+          <NuxtButton block class="min-h-11 min-w-0 flex-1" icon="i-lucide-phone" color="neutral" variant="outline" :label="call ? call.label : 'Ligar'" :to="`tel:${ride.driver.phone.replace(/\D/g, '')}`" external data-ride-driver-call />
           <NuxtButton class="min-h-11 min-w-11 justify-center" icon="i-lucide-message-circle" color="neutral" variant="outline" square :aria-label="`WhatsApp de ${ride.driver.name}`" :to="whatsappLink(ride.driver.phone)" target="_blank" external />
-        </template>
+        </div>
       </div>
 
       <!-- A corrida da casa: os gestos do balcão para quando o entregador está sem celular.
