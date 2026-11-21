@@ -54,6 +54,9 @@ const path = computed(() => line.value.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFi
 const pins = computed(() => props.stops.map(stop => ({ ...stop, ...px(stop) })))
 const me = computed(() => (props.here ? px(props.here) : null))
 const ink = computed(() => (props.dark ? '#ffffff' : '#000000'))
+// O contorno escolhido pelo dono (21/11, opção "a"): os pontos na cor invertida (a borda
+// em --cr-fg) e a linha da rota na cor do TEMA, branca no claro e preta no escuro.
+const paper = computed(() => (props.dark ? '#000000' : '#ffffff'))
 
 // Sem POI e sem ônibus; no escuro, o papel escuro. Paleta neutra da página.
 function styles (dark: boolean): google.maps.MapTypeStyle[] {
@@ -144,7 +147,7 @@ onBeforeUnmount(() => {
     <div ref="canvas" class="crm-canvas" aria-hidden="true" />
     <svg v-if="size.w" class="crm-layer" :viewBox="`0 0 ${size.w} ${size.h}`" aria-hidden="true">
       <template v-if="line.length > 1">
-        <path :d="path" fill="none" :stroke="ink" stroke-width="11" stroke-linejoin="round" stroke-linecap="round" />
+        <path :d="path" fill="none" :stroke="paper" stroke-width="11" stroke-linejoin="round" stroke-linecap="round" data-route-outline />
         <path :d="path" fill="none" :stroke="tone?.bg || ink" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" />
       </template>
     </svg>

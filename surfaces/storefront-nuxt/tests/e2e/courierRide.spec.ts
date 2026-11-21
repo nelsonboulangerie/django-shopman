@@ -348,6 +348,11 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(page.getByRole('button', { name: 'Cheguei' })).toBeInViewport()
         const box = await page.getByRole('button', { name: 'Cheguei' }).boundingBox()
         expect(box!.height).toBeGreaterThanOrEqual(56)
+        // O contorno escolhido pelo dono (opção "a"): pontos na cor invertida, linha na cor do tema.
+        const paper = theme === 'light' ? '#ffffff' : '#000000'
+        const inverted = theme === 'light' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)'
+        await expect(map.locator('[data-route-outline]')).toHaveAttribute('stroke', paper)
+        await expect(map.locator('[data-map-stop="A47"]')).toHaveCSS('border-top-color', inverted)
         await check(page, `04d-mapa-${theme}-${size}`)
       })
     })
