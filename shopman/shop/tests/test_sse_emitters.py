@@ -318,41 +318,6 @@ def test_hold_save_emits_stock_update(
 
 @pytest.mark.django_db
 @patch("django_eventstream.send_event")
-def test_expired_hold_release_emits_stock_update(
-    mock_send, baguete, listings_for_baguete, django_capture_on_commit_callbacks,
-):
-    """A reserva que venceu e foi solta avisa a vitrine (#2785).
-
-    O ``release_expired`` solta em lote, sem ``post_save``: até aqui a sacola e o
-    cardápio abertos só viam o item voltar no próximo gesto.
-    """
-    from datetime import timedelta
-
-    from django.utils import timezone
-    from shopman.stockman.services.holds import StockHolds
-
-    hold = Hold.objects.create(
-        sku="BAGUETE",
-        quantity=Decimal("1"),
-        status="pending",
-        target_date=date.today(),
-        expires_at=timezone.now() - timedelta(minutes=1),
-    )
-    mock_send.reset_mock()
-
-    with django_capture_on_commit_callbacks(execute=True):
-        assert StockHolds.release_expired() == 1
-
-    hold.refresh_from_db()
-    assert hold.status == "released"
-    stock_calls = [call for call in mock_send.call_args_list if call.args[0].startswith("stock-")]
-    assert sorted(call.args[0] for call in stock_calls) == ["stock-catalog", "stock-pdv", "stock-web"]
-    assert {call.args[1] for call in stock_calls} == {"stock-update"}
-    assert {call.args[2]["sku"] for call in stock_calls} == {"BAGUETE"}
-
-
-@pytest.mark.django_db
-@patch("django_eventstream.send_event")
 def test_product_pause_emits_product_paused(
     mock_send, baguete, listings_for_baguete, django_capture_on_commit_callbacks,
 ):

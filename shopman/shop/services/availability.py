@@ -104,16 +104,21 @@ def bump_session_hold_expiry(
         ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
     now = timezone.now()
     new_expiry = now + timedelta(minutes=ttl_minutes)
-    return (
-        Hold.objects.filter(
-            metadata__reference=session_key,
-            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-            expires_at__isnull=False,
-            expires_at__gte=now,
-            expires_at__lt=new_expiry,
-        )
-        .update(expires_at=new_expiry)
+    bumping = Hold.objects.filter(
+        metadata__reference=session_key,
+        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        expires_at__isnull=False,
+        expires_at__gte=now,
+        expires_at__lt=new_expiry,
     )
+    skus = set(bumping.values_list("sku", flat=True))
+    bumped = bumping.update(expires_at=new_expiry)
+    # O ``update`` não passa pelo ``post_save``: a releitura do novo prazo é agendada
+    # aqui (#2785). A do prazo antigo, se já existia, acha a reserva viva e não avisa.
+    from shopman.shop.services import shelf_recheck
+
+    shelf_recheck.schedule(skus, new_expiry, scope=f"bag:{session_key}")
+    return bumped
 
 
 def release_session_holds(session_key: str) -> int:

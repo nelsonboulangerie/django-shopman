@@ -19913,6 +19913,55 @@
       "test_gap_reason": null,
       "policy": false,
       "out_of_extraction": false
+    },
+    {
+      "id": "stock.shelf-recheck",
+      "question": "Como a vitrine fica sabendo, no próprio prazo, que uma reserva venceu e o saldo voltou?",
+      "owner": "stock.shelf-recheck",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.handlers.shelf_recheck:ShelfRecheckHandler.handle",
+      "authoritative_symbols": [
+        "shopman.shop.handlers.shelf_recheck:ShelfRecheckHandler.handle",
+        "shopman.shop.services.shelf_recheck:lapsed_within"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/handlers/shelf_recheck.py",
+          "symbols": [
+            "ShelfRecheckHandler"
+          ]
+        },
+        {
+          "path": "shopman/shop/services/shelf_recheck.py",
+          "symbols": [
+            "BUCKET_SECONDS",
+            "bucket_end",
+            "schedule",
+            "lapsed_within"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "handler",
+        "service"
+      ],
+      "domains": [
+        "stockman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "STOCK_SHELF_RECHECK"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_shelf_recheck.py::test_a_lapsed_reservation_tells_the_shelf",
+        "shopman/shop/tests/test_shelf_recheck.py::test_a_renewed_reservation_wakes_nobody"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
     }
   ]
 }

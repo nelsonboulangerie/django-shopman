@@ -229,7 +229,6 @@ def _connect() -> None:
         payment_refunded,
     )
     from shopman.stockman.models import Hold, Move
-    from shopman.stockman.signals import holds_expired
 
     from shopman.shop.adapters import alert as alert_adapter
     from shopman.shop.adapters import kds as kds_adapter
@@ -244,7 +243,6 @@ def _connect() -> None:
     post_save.connect(_on_channel_saved_for_orders, sender=Channel, weak=False,
                       dispatch_uid="shopman.orders_sse.channel_menu")
     post_save.connect(_on_hold_saved, sender=Hold, weak=False)
-    holds_expired.connect(_on_holds_expired, weak=False, dispatch_uid="shopman.shop.holds_expired_sse")
     post_save.connect(_on_move_saved, sender=Move, weak=False)
     pre_save.connect(_track_product_sellable, sender=Product, weak=False)
     post_save.connect(_on_product_saved, sender=Product, weak=False)
@@ -678,16 +676,6 @@ def _default_backstage_scope() -> str:
 
 def _on_hold_saved(sender, instance, **kwargs):
     _emit_for_sku(instance.sku, event_type="stock-update")
-
-
-def _on_holds_expired(sender, skus, **kwargs):
-    """A reserva vencida soltou saldo (#2785): a vitrine e a sacola de quem olha releem.
-
-    O ``release_expired`` solta em lote (``update``), sem ``post_save``; sem este
-    aviso, o item que voltou só aparecia no próximo gesto de quem estava olhando.
-    """
-    for sku in skus:
-        _emit_for_sku(sku, event_type="stock-update")
 
 
 def _on_move_saved(sender, instance, **kwargs):
