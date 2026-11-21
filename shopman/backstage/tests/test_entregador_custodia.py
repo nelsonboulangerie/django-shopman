@@ -448,19 +448,15 @@ def test_fila_diz_o_que_cada_entrega_da_corrida_pergunta(client, operator):
     assert queue["ride_candidates"][0]["label"] == "Pedido A · Ana"
 
 
-def test_chamar_entregador_oferece_quem_pode_ir_junto_o_mais_perto_primeiro(client, operator):
+def test_detalhe_do_pedido_nao_monta_mais_a_oferta_de_corrida(client, operator):
+    # #3003: o Painel e o detalhe chamam pelo MESMO sheet das Entregas (#2876), que lê o
+    # plano e as paradas da projeção das Entregas. O bloco do entregador do detalhe não
+    # traz mais quem vai junto nem a sugestão, e a ação de corrida do detalhe saiu.
     _order("RIDE-A", method="pix", collection="")
-    near = _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
-    far = _order("RIDE-C", method="pix", collection="")
-    far.status = "preparing"
-    far.data = {**far.data, "delivery_address_structured": {**far.data["delivery_address_structured"],
-        "neighborhood": "Gleba Palhano", "latitude": -23.40, "longitude": -51.20}}
-    far.save(update_fields=["status", "data"])
-    offer = _detail(client, "RIDE-A")["courier"]["ride_offer"]
-    assert [row["ref"] for row in offer] == [near.ref, far.ref]
-    assert offer[0]["distance_label"] == "a 0,0 km"
-    assert (offer[1]["stage"], offer[1]["place"]) == ("Em preparo", "Gleba Palhano")
-    assert offer[0]["change_out_suggested_q"] == 2600
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    detail = _detail(client, "RIDE-A")
+    assert "ride_offer" not in detail["courier"] and "ride_suggestion" not in detail["courier"]
+    assert "courier-ride" not in [action["ref"] for action in detail["actions"]]
 
 
 # ── A corrida conjunta que não anda: a custódia volta, de todos ─────────────
@@ -596,13 +592,16 @@ def test_cotacao_da_corrida_conjunta_diz_valor_ordem_e_retorno(client, operator)
 
 def test_chamar_entregador_ja_marca_o_companheiro_da_sugestao_da_casa(client, operator):
     # Decisão 1 = A do dono (16/11): cotada e mais barata junta, a sugestão já vem marcada.
+    # O sheet único (#2876) lê o plano da projeção das Entregas.
+    from shopman.backstage.projections.deliveries import build_deliveries
+
     _order("RIDE-A", method="pix", collection="")
     _order("RIDE-B", method="pix", collection="")
-    courier_block = _detail(client, "RIDE-A")["courier"]
-    assert [(row["ref"], row["suggested"]) for row in courier_block["ride_offer"]] == [("RIDE-B", True)]
-    suggestion = courier_block["ride_suggestion"]
-    assert sorted(suggestion["codes"]) == ["A", "B"]
-    assert (suggestion["quoted"], suggestion["suggested"]) == (True, True)
-    assert (suggestion["separate_q"], suggestion["saving_q"]) == (2500, 850)
+    suggestions = build_deliveries().ride_plan.suggestions
+    assert len(suggestions) == 1
+    suggestion = suggestions[0]
+    assert sorted(suggestion.codes) == ["A", "B"]
+    assert (suggestion.quoted, suggestion.suggested) == (True, True)
+    assert (suggestion.separate_q, suggestion.saving_q) == (2500, 850)
     # O Painel conta a mesma sugestão: "Montar corridas (1 sugerida)".
     assert client.get(reverse("api-backstage-orders")).json()["queue"]["ride_suggestions"] == 1

@@ -74,7 +74,9 @@ LABEL_REMOVE = "Tirar só o item que falta e devolver a diferença"
 LABEL_CANCEL = "Cancelar o pedido inteiro"
 
 #: Causas em que a reserva não está presa a lote nenhum: o item falta no estoque.
-_STOCK_CAUSES = frozenset({order_promise.CAUSE_STOCK_SHORT, order_promise.CAUSE_HOLD_RELEASED})
+_STOCK_CAUSES = frozenset({
+    order_promise.CAUSE_STOCK_SHORT, order_promise.CAUSE_NEVER_HELD, order_promise.CAUSE_HOLD_RELEASED,
+})
 _ZERO = Decimal("0")
 
 
@@ -536,7 +538,7 @@ def _told(item) -> dict[str, str]:
     cause = item.cause
     if cause == order_promise.CAUSE_BATCH_LATE:
         return {"name": item.name, "situation": "late"}
-    if cause == order_promise.CAUSE_STOCK_SHORT:
+    if cause in (order_promise.CAUSE_STOCK_SHORT, order_promise.CAUSE_NEVER_HELD):
         situation = "out_of_stock"
     elif cause == order_promise.CAUSE_HOLD_RELEASED:
         situation = "may_be_missing"

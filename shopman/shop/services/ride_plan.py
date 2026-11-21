@@ -1,9 +1,10 @@
 """O plano das corridas: quem vai junto com quem (P1-9, o desenho do juiz, frente F5).
 
 Um plano só, no servidor, lido por todas as telas que juntam entregas: o cartão de
-sugestões no topo de Aguardando (página Entregas), a oferta "Vai junto nesta corrida?"
-do Painel do pedido (``ride_offer``) e a contagem "Montar corridas (N sugeridas)" do
-Painel. Como as três leem a MESMA partição, nunca discordam.
+sugestões no topo de Aguardando (página Entregas), o "Vai junto nesta corrida?" do
+sheet de chamar (o mesmo nas Entregas, no Painel e no detalhe do pedido, #2876) e a
+contagem "Montar corridas (N sugeridas)" do Painel. Como todas leem a MESMA partição,
+nunca discordam.
 
 A regra (relatório da revisão, seção 4; parâmetros decididos pelo dono em 16/11/2026):
 
@@ -325,8 +326,3 @@ def ride_plan(waiting, *, quote: bool = True, tasks: dict | None = None) -> dict
     plan = {"suggestions": suggestions, **service}
     cache.set(key, plan, CACHE_SECONDS)
     return plan
-
-
-def suggestion_for(order, plan: dict) -> dict | None:
-    """A sugestão do plano em que este pedido está, ou None."""
-    return next((item for item in plan.get("suggestions") or [] if order.ref in item["refs"]), None)

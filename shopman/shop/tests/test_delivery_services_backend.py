@@ -81,6 +81,17 @@ def test_ride_state_reads_the_block():
     assert delivery_services.ride_state({}) is None
 
 
+@override_settings(SHOPMAN_COURIER_ADAPTER="shopman.shop.adapters.courier_machine")
+def test_state_since_reads_the_hour_of_the_house_state_not_the_letter():
+    """M1b-b (#2552): quem lê a hora pergunta pelo estado; "A" e "S" valem pela primeira."""
+    block = {"service": "taon", "status": "E", "status_at": {
+        "S": "2026-11-21T12:05:00-03:00", "A": "2026-11-21T12:02:00-03:00", "E": "2026-11-21T12:20:00-03:00"}}
+    assert delivery_services.state_since(block, RideState.ASSIGNED) == "2026-11-21T12:02:00-03:00"
+    assert delivery_services.state_since(block, RideState.ON_ROUTE) == "2026-11-21T12:20:00-03:00"
+    assert delivery_services.state_since(block, RideState.DONE) is None
+    assert delivery_services.state_since({}, RideState.ASSIGNED) is None
+
+
 def test_new_ride_takes_the_default_service():
     assert delivery_services.new_ride_service_ref() == "taon"
     DeliveryService.objects.update(is_default=False)

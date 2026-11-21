@@ -44,10 +44,10 @@ por default.
 |-------|-----------|----------------|
 | **Caixa** | `cashman.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
 | **Cozinha** | `backstage.operate_kds`, `shop.manage_production` | Cozinheiro / preparador |
-| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi`, `backstage.void_production` | Gerente de turno |
+| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.void_production` | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
-| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent`, `backstage.void_production` | Quem vê dinheiro e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
+| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent`, `backstage.view_bi` (o B.I. inteiro, com os de-paras e as regras de alerta), `backstage.void_production` | Quem vê dinheiro, lê o B.I. e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
 
 ### Ação é uma permissão; ABRIR A TELA é outra
 
@@ -66,13 +66,46 @@ cards do dashboard perguntam à própria tela antes de oferecê-la
 |---|---|---|
 | **Caixa** | nada — ela opera no PDV, a retaguarda não é ferramenta dela | — |
 | **Cozinha** | fichas técnicas, ordens, insumos, fornecedores, estoque | — (mexer acontece no app de Produção) |
-| **Gerente** | catálogo, clientes, produção, estoque, pedidos, B.I. e a configuração inteira | catálogo, clientes, promoções, cupons, textos da interface, terminais |
+| **Gerente** | catálogo, clientes, produção, estoque, pedidos e a configuração inteira (o B.I. não: é do Dono) | catálogo, clientes, promoções, cupons, textos da interface, terminais |
 | **Admin de Catálogo** | catálogo, regras, promoções, cupons | catálogo e regras |
 | **Rules Managers** | regras de preço | regras de preço |
-| **Dono** | turnos de caixa (apuração), cobranças, comprovantes | estorno de cobrança (`payman.refund_paymentintent`, com segunda confirmação no diálogo) |
+| **Dono** | turnos de caixa (apuração), cobranças, comprovantes, o B.I. inteiro | estorno de cobrança (`payman.refund_paymentintent`, com segunda confirmação no diálogo) |
 
 ⚠️ **Dinheiro é do Dono, e o Gerente não vê** — nem a apuração do turno, nem as
 cobranças (Pix/cartão). É a mesma régua do fechamento cego, explicada abaixo.
+
+### Gerente não tem permissão financeira (dono, 21/11/2026)
+
+A regra, na palavra do dono: *"Isso, gerente basicamente NÃO tem permissões
+financeiras. Ponto. O que teremos são exceções, extremamente pontuais, com regra
+claríssima, que pode/deve ser testada/confrontada/questionada por guardrails ou algo
+que o valha. Simples assim."* E: *"gerente pode ver valores, mas NUNCA somados,
+relatórios, etc. ... ver valores específicos de uma transação não é o problema."*
+
+- **O B.I. é só do Dono.** *"BI -> Só dono, só dono tem acesso!!! Gerente NÃO deve ter
+  acesso ao BI. Se for ter, um dia, será por exceção explícita, solicitada previamente
+  por mim, em pessoa."* Isto revê, para o B.I., a decisão de 13/10/2026 (#1680, "a
+  gerente abre toda superfície de operador"): o app do B.I. e as telas de B.I. do Admin
+  respondem 403 ao Gerente, e a Central não oferece o tile a ele.
+- **O Gerente vê o valor de UMA transação, nunca agregados nem listas de cobranças**:
+  nada de total esperado, quebra, soma por forma de pagamento, faturamento, ticket médio.
+- **As listas do balcão mostram o valor de cada registro, nunca a conta sobre vários**
+  (dono, 21/11/2026): *"Não tem problema ver o valor de um pedido no histórico. O
+  problema seria poder ver valores de vários registros agregados, sobretudo de clientes
+  diferentes, soma de um período, etc."* O pedido, a encomenda e a conta de UM cliente
+  (o que ele gastou, o ticket médio dele, o saldo dele) chegam com valor. Não chegam:
+  soma de período ou de lista, a lista de contas na casa ordenada pelo saldo (vai pela
+  dívida mais antiga), o filtro por faixa de valor no Admin de pedidos, número do
+  faturamento no aviso do B.I. e exportação de pedido, venda ou pagamento com valor.
+- **O fechamento do dia e a assinatura do gerente no caixa são operação, não exceção**:
+  ele fecha às cegas e assina o valor do gesto que autoriza. O registro do fechamento no
+  Admin chega a ele sem o resumo do caixa (o esperado, a quebra e o que entrou por forma de
+  pagamento ficam para quem audita).
+- **A trava** é `shopman/shop/tests/test_gerente_sem_permissao_financeira.py`. Toda
+  permissão financeira do grupo Gerente (payman, cashman, B.I., fechamento) tem de estar
+  numa de duas listas fechadas: `EXCEPTIONS` (com a regra e a palavra do dono) ou
+  `OPERATION_WITHOUT_AGGREGATE` (com o porquê de não somar, e teste do que é servido a
+  ele). Fora delas, reprova. Exceção nova só entra mudando a lista, ou seja, revisada.
 
 ---
 
