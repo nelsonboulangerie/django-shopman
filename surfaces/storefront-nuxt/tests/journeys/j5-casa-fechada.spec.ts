@@ -49,6 +49,22 @@ function moneySentence (page: Page) {
   return page.getByText(MONEY_LATER).first()
 }
 
+/** A cliente sai da aba e volta. A loja relê o checkout quando a aba VOLTA a ficar visível
+ *  (useConnectivity), e um evento solto com a aba sempre visível não muda nada: a aba
+ *  precisa passar por "hidden". Espera a releitura do servidor e devolve a frase nova. */
+async function returnsToTab (page: Page): Promise<string> {
+  const reread = page.waitForResponse(r => r.request().method() === 'GET' && /\/api\/v1\/storefront\/checkout\//.test(r.url()))
+  for (const state of ['hidden', 'visible']) {
+    await page.evaluate((value) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }, state)
+  }
+  await reread
+  await settled(page)
+  return (await moneySentence(page).textContent())!.trim()
+}
+
 test('J5: a loja fecha com a revisão aberta, e a frase do prazo é refeita', async ({ page }, testInfo) => {
   test.skip(!CLOSING, 'a J5 precisa da pilha que fecha a casa (JOURNEYS_CLOSING_IN_MINUTES no script da pilha)')
   test.setTimeout(600_000)
@@ -81,7 +97,9 @@ test('J5: a loja fecha com a revisão aberta, e a frase do prazo é refeita', as
     await page.getByRole('button', { name: 'Continuar', exact: true }).click()
     await page.getByRole('radio', { name: /^Pix/ }).click()
     await page.getByRole('button', { name: 'Revisar pedido' }).click()
+    await expect(page.getByRole('heading', { name: 'Revise seu pedido' })).toBeVisible()
     await expect(moneySentence(page)).toBeVisible()
+    await page.waitForTimeout(600) // a folha da revisão termina de subir antes da captura
     await capture(page, testInfo, 'revisao-loja-aberta')
     const left = await msUntil(page, closes)
     expect(left, `a casa (${closes}) deveria fechar com a revisão aberta, e não antes`).toBeGreaterThan(0)
@@ -89,17 +107,20 @@ test('J5: a loja fecha com a revisão aberta, e a frase do prazo é refeita', as
   })
 
   await test.step('a loja fecha; a cliente volta à aba e a frase é refeita com a casa fechada', async () => {
-    await page.waitForTimeout(before.left + 20_000)
+    await page.waitForTimeout(before.left + 5_000)
     // A cliente volta à aba: o checkout relê o servidor (a releitura do L05, P2-08).
-    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-    await expect(moneySentence(page)).not.toHaveText(before.text, { timeout: 30_000 })
-    await expect(moneySentence(page)).toBeVisible()
+    const after = await returnsToTab(page)
+    expect(after, 'com a casa fechada, o prazo começa inteiro na próxima abertura').not.toBe(before.text)
     await expect(page.getByText(/A loja confirma o pedido em até \d+ minutos?/)).toHaveCount(0)
+    await capture(page, testInfo, 'revisao-loja-fechada')
+    // Prova de que a casa fechou para o servidor: aberta, o prazo anda com o relógio (os
+    // minutos que restam hoje encolhem); fechada, ele fica parado na próxima abertura.
+    await page.waitForTimeout(65_000)
+    expect(await returnsToTab(page), 'com a casa fechada, o prazo não anda com o relógio').toBe(after)
     testInfo.annotations.push(
       { type: 'antes do fechamento', description: before.text },
-      { type: 'depois do fechamento', description: (await moneySentence(page).textContent())!.trim() },
+      { type: 'depois do fechamento', description: after },
     )
-    await capture(page, testInfo, 'revisao-loja-fechada')
   })
 
   await test.step('envia a encomenda com a casa fechada', async () => {

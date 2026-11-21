@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { expect, type Page, type TestInfo } from '@playwright/test'
 
@@ -99,6 +100,8 @@ export async function readLoginCode (mark: InboxMark): Promise<string> {
 
 /** Um celular que nunca comprou na loja: DDD 43, nono dígito, sorteado por execução. */
 export function newCustomerPhone (): string {
-  const tail = String(Date.now() % 100_000_000).padStart(8, '0')
+  // Sorteio, não relógio: dois workers que começam no mesmo milissegundo (a J5 roda a 375
+  // e a 1366 juntas) geravam o MESMO número, e o segundo caía na espera do reenvio.
+  const tail = String(randomInt(100_000_000)).padStart(8, '0')
   return `439${tail}`
 }
