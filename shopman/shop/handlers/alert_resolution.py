@@ -177,7 +177,7 @@ _WORK_ORDER_STATE_WORDS = {"started": "aberto", "finished": "fechado", "void": "
 def _is_seed_order(order) -> bool:
     """Pedido que o ``seed`` criou: marca no snapshot ou na chave de sessão."""
 
-    return (order.snapshot or {}).get("seed") == "nelson" or str(order.session_key or "").startswith("seed-")
+    return bool((order.snapshot or {}).get("seed")) or str(order.session_key or "").startswith("seed-")
 
 
 def _is_seed_work_order(work_order) -> bool:
