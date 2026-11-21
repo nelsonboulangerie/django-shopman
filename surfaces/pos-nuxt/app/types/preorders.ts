@@ -158,6 +158,20 @@ export interface PreorderDetail extends OperatorOrderDetail {
    * "" quando o servidor não sabe dizer.
    */
   cancel_money_effect?: string;
+  /**
+   * A promessa em risco (WP-G08, #2721 item 3): o MESMO fato do Gestor
+   * (`order_queue._pos_promise`), com uma saída só, "Resolver no Gestor". `null`
+   * quando a promessa está de pé.
+   */
+  promise?: PreorderPromise | null;
+}
+
+/** A promessa em risco vista do balcão: os itens em falta e o "Resolver" do Gestor. */
+export interface PreorderPromise {
+  state: string;
+  label: string;
+  items: { sku: string; at_risk: boolean; label: string; detail: string }[];
+  actions: { ref: string; label: string; href: string; enabled: boolean; reason: string }[];
 }
 
 /** O bloco da corrida — espelho do `CourierBlock` do Gestor (`orders-nuxt/types/orders.ts`). */
