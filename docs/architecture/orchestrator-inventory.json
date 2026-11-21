@@ -177,6 +177,7 @@
             "connect_saved",
             "create",
             "exists",
+            "oldest_open_created_at",
             "open_counts",
             "open_pk",
             "open_rows",
@@ -4835,6 +4836,7 @@
           "symbols": [
             "Command",
             "QUEUE_HEALTH_ALERT_TYPES",
+            "_resolve",
             "_tasks",
             "logger"
           ]
