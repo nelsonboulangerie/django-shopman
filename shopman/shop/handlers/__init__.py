@@ -138,6 +138,10 @@ def _register_alert_resolution() -> None:
     from shopman.shop.handlers import alert_resolution
 
     alert_resolution.connect()
+    # Rascunho de pergunta frequente vindo de conversa: aviso no topo do Gestor (WP-15).
+    from shopman.shop.services import faq_drafts
+
+    faq_drafts.connect()
 
 
 def _register_notification_handlers() -> None:

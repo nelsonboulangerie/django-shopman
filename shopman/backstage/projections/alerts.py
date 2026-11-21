@@ -297,8 +297,23 @@ def _admin_link(path: str) -> str:
     return f"http://127.0.0.1:8000{path}" if settings.DEBUG else ""
 
 
+def _faq_drafts_home() -> tuple[str, str]:
+    """O rascunho, quando é um só; a lista dos rascunhos vindos de conversa, quando são vários."""
+    from django.urls import reverse
+
+    from shopman.shop.services.faq_drafts import waiting
+
+    drafts = waiting()
+    if len(drafts) == 1:
+        return reverse("admin:shop_faqentry_change", args=[drafts[0].pk]), "Revisar no Admin"
+    query = urlencode({"is_published__exact": "0", "origem": "concierge"})
+    return f"{reverse('admin:shop_faqentry_changelist')}?{query}", "Revisar no Admin"
+
+
 def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
+    if alert.type == "faq_drafts_waiting":
+        return ("admin", *_faq_drafts_home())
     if alert.type == "concierge_no_model":
         found = _NO_MODEL_CAUSE.search(alert.message or "")
         path, label = _no_model_home(found.group(1) if found else "")

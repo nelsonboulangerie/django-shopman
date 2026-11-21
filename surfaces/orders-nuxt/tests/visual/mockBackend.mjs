@@ -216,6 +216,27 @@ function verificationAlert(late) {
 
 // A Concierge atendendo sem modelo (dono, 19/11/2026): um aviso por causa, cor de erro,
 // também no topo da tela (`on_screen`).
+// Rascunhos de pergunta frequente vindos de conversa (WP-15): aviso no topo do Gestor,
+// âmbar, com "Revisar no Admin" (a lista dos rascunhos, filtrada).
+function faqDraftsAlert() {
+  return {
+    pk: 980, rev: 0, type: "faq_drafts_waiting", type_label: "Concierge: perguntas frequentes esperam publicação",
+    severity: "warning", severity_label: "Aviso", audience: "orders",
+    message: "2 perguntas frequentes esperam publicação.",
+    order_ref: "", created_at_display: "hoje às 21h40",
+    origin_label: "Concierge", origin_icon: "i-lucide-circle-help", subject: "Rascunhos de pergunta frequente",
+    on_screen: true, respond_by_iso: "", deadline_kind: "",
+    actions: [{
+      ref: "open_alert_context:980", kind: "open_alert_context", label: "Revisar no Admin", priority: 10,
+      enabled: true, reason: "", method: "GET",
+      href: "https://admin.boulangerie.com.br/admin/shop/faqentry/?is_published__exact=0&origem=concierge",
+      payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+      confirmation: { required: false, reason_required: false, title: "", confirm_label: "" },
+      approval_requirement: null, source_alert_ref: "980", source_alert_effect: "keeps_open", proof: "",
+    }],
+  };
+}
+
 function noModelAlert() {
   return {
     pk: 960, rev: 0, type: "concierge_no_model", type_label: "WhatsApp: Concierge sem modelo",
@@ -243,6 +264,10 @@ function noModelAlert() {
 
 function alertsPayload() {
   const payload = JSON.parse(JSON.stringify(baseAlerts));
+  if (scenario === "faq-drafts") {
+    payload.alerts = [faqDraftsAlert(), ...payload.alerts];
+    payload.counts.active += 1;
+  }
   if (scenario === "concierge-no-model") {
     payload.alerts = [noModelAlert(), ...payload.alerts];
     payload.counts.active += 1;

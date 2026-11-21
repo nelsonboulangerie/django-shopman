@@ -178,6 +178,7 @@
             "create",
             "exists",
             "open_counts",
+            "open_pk",
             "recent_exists",
             "resolve",
             "resolve_matching",
@@ -1996,7 +1997,8 @@
         {
           "responsibility": "configuração",
           "symbols": [
-            "FAQEntryAdmin"
+            "FAQEntryAdmin",
+            "OriginFilter"
           ]
         }
       ]
@@ -9882,6 +9884,32 @@
             "new_ride_service_ref",
             "ride_state",
             "service_for_new_ride"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/faq_drafts.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "DEDUPE_KEY",
+            "alert_message",
+            "connect",
+            "logger",
+            "on_faq_changed",
+            "sync_alert",
+            "waiting"
           ]
         }
       ]
