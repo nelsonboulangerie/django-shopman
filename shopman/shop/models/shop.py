@@ -449,6 +449,25 @@ class Shop(models.Model):
         ),
     )
 
+    # ── Incidentes: o Watchman aciona o remédio do domínio (DEV-2026-066) ──
+    INCIDENT_REMEDIES_MODES = [
+        ("on", "Ligado: aciona e confere"),
+        ("shadow", "Sombra: só registra o que faria"),
+        ("off", "Desligado"),
+    ]
+    incident_remedies_mode = models.CharField(
+        "remédios automáticos de incidente",
+        max_length=10,
+        choices=INCIDENT_REMEDIES_MODES,
+        default="on",
+        help_text=(
+            "Quando um alerta de produção tem remédio na lista fechada (reprocessar a NFC-e "
+            "já solicitada, reenviar o aceite ao iFood), o sistema aciona o mesmo gesto do "
+            "Gestor, com teto de tentativas, e confere se resolveu. Em sombra, só registra o "
+            "que faria. Cada decisão fica em Incidentes, Placar dos remédios."
+        ),
+    )
+
     # ── PDV: venda sem conexão (decisão do dono, 03/11/2026) ──
     pos_offline_sale_enabled = models.BooleanField(
         "venda sem conexão",

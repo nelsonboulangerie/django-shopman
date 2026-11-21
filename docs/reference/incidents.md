@@ -14,8 +14,8 @@ consertam nada. Eles fazem três coisas:
    decisão de quem observa.
 2. **Rotear.** Cada tipo de alerta vira uma issue `alerta` com dono, sem duplicar, e a
    issue fecha sozinha depois de 24 h verdes.
-3. **Acionar** (fase W2) só remédios que o domínio já oferece, numa lista fechada, e
-   conferir que resolveu.
+3. **Acionar** só remédios que o domínio já oferece, numa lista fechada, e conferir
+   que resolveu.
 
 O alerta que volta sempre é defeito: três episódios em sete dias marcam a issue com
 `defeito-recorrente`, e a causa se corrige no código.
@@ -93,3 +93,55 @@ Credenciais da ponte). Ela não abre nenhuma outra rota.
    `https://api.boulangerie.com.br/api/v1/backstage/incidents/`.
 3. Sem `INCIDENTS_URL` o job nem sobe. Com ela e sem o token, a rodada falha e diz o
    que falta.
+
+## O acionador (W2)
+
+`shopman/backstage/incidents/remedies.py` (a lista FECHADA) e `act.py` (a máquina).
+
+### A lista fechada
+
+Entra só o gesto que o domínio já oferece a uma pessoa e que ele, sozinho, deixou
+parado à espera dela. O que o domínio já repete sozinho não entra, porque acionar de
+novo não ganharia nada.
+
+| Remédio | Alerta | O gesto do domínio | Regra | Confere por fato | Teto |
+|---|---|---|---|---|---|
+| Reprocessar a NFC-e | `fiscal_emit_failed` | `requeue_fiscal_emission` (o "Reprocessar NFC-e" do Gestor) | emissão já solicitada, falhou sem resposta do emissor (a janela transitória de ~64 min acabou) | `nfce_access_key` no pedido; falhou de novo = não resolveu | 3 por pedido em 24 h; confere em 5 min, desiste em 90 |
+| Reenviar o aceite ao iFood | `ifood_accept_not_delivered` | `ifood_accept_sync.retry` (o "Tentar de novo") | o domínio parou de tentar, ou a próxima tentativa dele cai depois do prazo do iFood (8 min) | aceite `sent` ou `confirmed` | 3 por pedido; confere em 30 s, desiste em 10 min |
+
+Ficaram de fora, com motivo:
+
+- **rodar um sweep agora** (`sweep_stuck_orders`, `reconcile_ifood_orders`): já rodam a
+  cada ciclo do `maintenance_worker`;
+- **regravar a loja no iFood**: o `check_store` já pede a regravação quando a loja
+  diverge (4 min) e a cada 6 h, e o que sobra é 403/400/409, que repetir não resolve;
+- **NUNCA**: credencial, dinheiro (estorno, captura, corrida), apagar dado, reseed,
+  configuração de produção, reiniciar ou escalar infraestrutura.
+
+### A máquina
+
+O alerta de tipo com remédio ganha, depois do commit, a Directive `incident.act`. Ela
+roda no worker de diretivas (segundos, não o ciclo de 5 min) e, a cada passo:
+
+- **planeja:** o remédio diz `act`, `wait` (o domínio ainda está tentando), `no` (fica
+  com gente, com o motivo) ou `judge` (a regra não decide: a resposta do emissor, por
+  exemplo, pode ser cadastro ou SEFAZ fora);
+- **espera** reagendando-se, sem gastar tentativa;
+- **aciona** com o ator `watchman:incidentes`, que aparece no histórico do pedido;
+- **confere** por fato do domínio e grava "resolveu" ou "não resolveu".
+
+A repescagem `act_on_incidents` (no `maintenance_worker`) refaz a directive perdida e
+vence a conferência atrasada. Não aciona nada sozinha.
+
+### O placar
+
+Toda decisão vira linha de `IncidentAction` (Admin, Incidentes, Placar dos remédios),
+inclusive a de não agir: quem decidiu (regra ou modelo), confiança, custo, desfecho e
+motivo, sem dado de cliente. O resumo da ponte leva o placar por tipo, e a issue mostra
+"Remédio do domínio (Reprocessar a NFC-e), 7 dias: 2 resolveu, 1 ficou com gente".
+
+### Modo
+
+`Shop.incident_remedies_mode` (Admin, Loja, Remédios automáticos de incidente):
+`on` aciona e confere (padrão, aprovado pelo dono em 21/11), `shadow` só registra o que
+faria, `off` não faz nada.

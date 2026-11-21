@@ -3111,6 +3111,12 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Remédios automáticos de incidente",
+        {
+            "fields": ("incident_remedies_mode",),
+        },
+    ),
+    (
         "Notificações e fiscal",
         {
             "fields": ("integrations_notification_default", "integrations_fiscal"),
