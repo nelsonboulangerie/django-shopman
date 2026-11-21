@@ -19,6 +19,11 @@
 // aplica a folga é o recuo interno do desenho.
 export const HINT_GAP = 12
 
+// Dentro de uma caixa que rola (o corpo da folha), a folga do fim do conteúdo, de
+// um passo de espaçamento, não conta como "mais abaixo". Sem ela, a seta subia por
+// um ou dois pixels de respiro e cobria a última linha, já inteira à vista (WP-L05).
+export const CONTAINED_END_SLACK_PX = 16
+
 // Onde a base da dica se apoia: exatamente no topo do que flutua embaixo.
 export function hintOffset (obstructedBottom: number): number {
   return Math.max(0, obstructedBottom)
