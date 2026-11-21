@@ -516,7 +516,8 @@ const DELIVERIES = {
       // Posição velha (F7b): sem aviso há 3 min, a moto esmaece e diz desde quando.
       position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013, get at() { return minutesAgo(3); }, source_label: "pela TaOn" },
       called_at: minutesAgo(28), picked_up_at: minutesAgo(12), delivery_eta_at: minutesAhead(11),
-      cost_display: "R$ 14,50",
+      cost_display: "R$ 14,50", cost_label: "Valor pago à TaOn",
+      fee_display: "Frete cobrado R$ 12,00", balance_display: "Falta R$ 2,50",
       lead_ref: "WEB-20261116-0E02",
     },
   ],

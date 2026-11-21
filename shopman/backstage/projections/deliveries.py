@@ -20,7 +20,7 @@ vários pedidos sai pela ação ``group_action``, no protocolo de intenção.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -134,6 +134,12 @@ class DeliveryRideProjection:
     # "Valor pago à TaOn" (o valor final dela) ou "Cotação da corrida" (a cotação da
     # rota inteira, gravada na chamada). Vazio quando não há número honesto (J13).
     cost_label: str = ""
+    #: O frete que os clientes da corrida pagaram ("Frete cobrado R$ 12,00") e o
+    #: que sobra ou falta para o custo ("Sobra R$ 3,00", "Falta R$ 2,00",
+    #: "Empata"). A mesma conta do B.I. (``bi_delivery_cost.fees_for``). Vazios
+    #: sem custo honesto (#2747).
+    fee_display: str = ""
+    balance_display: str = ""
     #: Soma dos volumes declarados das paradas e quem ainda não declarou.
     bags: int = 0
     undeclared: tuple[str, ...] = ()
@@ -307,6 +313,8 @@ class _Reads:
     fiscal: object = None
     #: A última DANFE de cada pedido e o destino (``order_danfe.read_for``).
     danfe: object = None
+    #: O frete pago em cada pedido das corridas (``bi_delivery_cost.fees_for``).
+    fees: dict = field(default_factory=dict)
 
 
 def _ride_cost(block: dict, stop_refs: list[str]) -> tuple[int, str]:
@@ -513,6 +521,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         tracking_url=health["tracking"]["url"] if len(stops) == 1 else "",
         cost_display=_money(cost_q) if cost_q else "",
         cost_label=cost_label if cost_q else "",
+        **_balance(cost_q, [reads.fees.get(ref, 0) for ref in sequence]),
         bags=sum(stop.volumes for stop in pending),
         undeclared=tuple(stop.code for stop in pending if not stop.volumes),
         lead_ref=lead.ref,
@@ -530,6 +539,18 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         sync_since=progress.get("sync_since", ""),
         house=house_ride(lead, user=user),
     )
+
+
+def _balance(cost_q: int, fees: list[int]) -> dict:
+    """O frete dos clientes ao lado do custo da corrida: o que sobra ou falta à casa."""
+    from shopman.backstage.projections.order_queue import _money
+
+    if not cost_q:
+        return {"fee_display": "", "balance_display": ""}
+    fee_q = sum(fees)
+    gap = fee_q - cost_q
+    balance = f"Sobra {_money(gap)}" if gap > 0 else f"Falta {_money(-gap)}" if gap < 0 else "Empata"
+    return {"fee_display": f"Frete cobrado {_money(fee_q)}", "balance_display": balance}
 
 
 def _custody_line(orders: list[Order]) -> str:
@@ -635,6 +656,7 @@ def _ride_plan(waiting: list[Order], stops: tuple[DeliveryStopProjection, ...], 
 
 def build_deliveries(*, user=None, with_plan: bool = True) -> DeliveriesProjection:
     from shopman.backstage.models import DeliveryDevice
+    from shopman.backstage.projections.bi_delivery_cost import fees_for
     from shopman.backstage.projections.order_queue import _fiscal_states_for, courier_ride_action
     from shopman.backstage.services import order_danfe
     from shopman.backstage.services.delivery_devices import PREFIX
@@ -654,6 +676,8 @@ def build_deliveries(*, user=None, with_plan: bool = True) -> DeliveriesProjecti
         danfe=order_danfe.read_for(orders),
     )
     rides, waiting = _split(orders, reads.tasks)
+    # O frete de quem está em corrida, numa consulta: o "Sobra/Falta" do detalhe.
+    reads = replace(reads, fees=fees_for(order.ref for group in rides.values() for order in group))
     waiting.sort(key=lambda order: order.status != Order.Status.READY)
     ride_rows = sorted((_ride(group, reads=reads, user=user) for group in rides.values()), key=lambda ride: (ride.number or 99, ride.called_at))
     devices = DeliveryDevice.objects.filter(active=True, current_order__isnull=True)
