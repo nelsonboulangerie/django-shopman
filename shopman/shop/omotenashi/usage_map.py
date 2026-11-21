@@ -1432,6 +1432,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_STATUS_READY_PICKUP": (
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
+    "TRACKING_STATUS_REFUNDED": (
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
+    "TRACKING_STATUS_REFUND_IN_PROGRESS": (
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": (
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
