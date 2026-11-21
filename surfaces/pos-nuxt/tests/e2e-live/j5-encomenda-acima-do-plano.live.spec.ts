@@ -1,36 +1,33 @@
 // JORNADA J5 — encomenda de outro dia acima do plano (EXCELENCIA-PDV WP-E2, D-041).
 //
-// A Caixa (Fran) monta uma encomenda de 200 Baguette de Tradition para amanhã, com
-// 22 planejadas no seed. A linha mostra a fornada da data; o Validar fica travado com
+// A Caixa (Fran) monta uma encomenda de 200 Baguette de Tradition para o próximo dia
+// em que a loja abre (amanhã, ou a próxima data quando amanhã é dia fechado, #2976),
+// contra o lote que o seed planeja para essa data. A linha mostra a fornada da data; o Validar fica travado com
 // os dois números e pede o gerente; sem a assinatura nada fecha; a Gerente (Joyce),
 // escolhida da lista, vê os dois números no diálogo e assina com o próprio PIN; "Na
 // retirada" não aparece para outro dia. Tudo pela tela, no celular (375 px) e no
 // balcão (1366 px). Como rodar: README.md desta pasta.
 //
-// O seed planeja 22 Baguette de Tradition para amanhã. A régua é o lote planejado PARA
-// a data; a sobra de hoje (que o seed deixa na vitrine) não entra em nenhum número.
+// O seed planeja a Baguette de Tradition para cada dia aberto da semana: 22, ou 28 na
+// sexta e no sábado (`seedPlannedQty`). A régua é o lote planejado PARA a data; a sobra de hoje (que o seed deixa na vitrine) não entra em nenhum número.
 //
 // WP-E3 estende a jornada com a data SEM plano (D2 do dono): a Fran abre uma encomenda
 // para daqui a dez dias, quando o seed ainda não planejou lote nenhum, e lança 30
 // croissants. O tile não diz "Sem saldo"; a linha diz "Ainda sem lote planejado para
 // DD/MM: vira pedido à Produção", e a encomenda fecha sem gerente.
+import { seedPlannedQty } from "./support/nextOpenDay";
 import { capture, cast, expect, settled, test, type Page } from "./support/operator";
+import { picksNextOpenDay, type ChosenDay } from "./support/schedule";
 
 const PRODUCT = process.env.PDV_LIVE_OVER_PLAN_PRODUCT || "Baguette de Tradition";
-const PLANNED = process.env.PDV_LIVE_OVER_PLAN_PLANNED || "22";
+/** O lote do seed para a data escolhida (`PDV_LIVE_OVER_PLAN_PLANNED` fixa outro número). */
+const plannedFor = (day: ChosenDay) => process.env.PDV_LIVE_OVER_PLAN_PLANNED || String(seedPlannedQty(22, day.iso));
 const CUSTOMER = process.env.PDV_LIVE_OVER_PLAN_CUSTOMER || "Ana Ferreira";
 const CUSTOMER_PHONE = process.env.PDV_LIVE_OVER_PLAN_PHONE || "43995555555";
 const QTY = "200";
 
 function exact(text: string) {
   return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-}
-
-/** Amanhã no relógio da loja (o navegador roda em America/Sao_Paulo): `19/11`. */
-function tomorrow(): string {
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-  now.setDate(now.getDate() + 1);
-  return `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 async function opensOrder(page: Page) {
@@ -67,8 +64,8 @@ async function identifiesCustomer(page: Page) {
 
 // A ordem do funil (WP-E13, #2754): depois do cliente vem "para quando", e só
 // então o recebimento.
-async function schedulesTomorrowPickup(page: Page) {
-  await page.getByRole("radio", { name: /^Amanhã/ }).locator("visible=true").first().click();
+async function schedulesNextOpenDayPickup(page: Page): Promise<ChosenDay> {
+  const day = await picksNextOpenDay(page);
   const slot = page
     .locator('[data-order-step="schedule"]')
     .getByRole("button")
@@ -80,6 +77,7 @@ async function schedulesTomorrowPickup(page: Page) {
   await page.locator("[data-order-fulfillment-options]").getByRole("radio", { name: /^Retirada/ }).click();
   await page.getByRole("button", { name: /Montar encomenda/ }).click();
   await expect(page.getByPlaceholder(/Buscar produto/).locator("visible=true").first()).toBeVisible({ timeout: 30_000 });
+  return day;
 }
 
 /**
@@ -313,14 +311,14 @@ for (const device of ["phone", "counter"] as const) {
   test.describe(`J5 Encomenda acima do plano · ${device === "phone" ? "375 px" : "1366 px"}`, () => {
     test.use({ device });
 
-    test("200 baguetes para amanhã contra 22 planejadas: só o gerente libera", async ({ cashierAtCounter: page }, testInfo) => {
+    test("200 baguetes para o próximo dia aberto, acima do lote planejado: só o gerente libera", async ({ cashierAtCounter: page }, testInfo) => {
       test.setTimeout(8 * 60_000);
-      const day = tomorrow();
-
       await opensOrder(page);
       await identifiesCustomer(page);
-      await schedulesTomorrowPickup(page);
-      await capture(page, testInfo, "encomenda-para-amanha");
+      const chosen = await schedulesNextOpenDayPickup(page);
+      const day = chosen.dayMonth;
+      const PLANNED = plannedFor(chosen);
+      await capture(page, testInfo, "encomenda-para-o-proximo-dia-aberto");
 
       await ordersQuantity(page);
       // 1 · A linha mostra a fornada da data e que o pedido passa dela.

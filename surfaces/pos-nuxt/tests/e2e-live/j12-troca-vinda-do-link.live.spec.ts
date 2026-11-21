@@ -4,12 +4,14 @@
 // abre o PDV em `/preorders/<ref>?swap=<sku em falta>`. O endereço leva só a
 // intenção: as alternativas vêm do servidor, na hora.
 //
-// A Caixa (Fran) monta pela tela uma encomenda de 2 Baguette de Tradition para
-// amanhã e recebe em dinheiro. Depois abre a encomenda pelo link da troca, como o
+// A Caixa (Fran) monta pela tela uma encomenda de 2 Baguette de Tradition para o
+// próximo dia aberto (amanhã, ou a próxima data quando amanhã é dia fechado, #2976)
+// e recebe em dinheiro. Depois abre a encomenda pelo link da troca, como o
 // Gestor manda. O que a jornada prova, no celular (375 px) e no balcão (1280 px):
 //   1. o foco vai para o bloco "Trocar 2x Baguette de Tradition";
-//   2. uma alternativa por linha, na largura inteira, com o que o lote de amanhã
-//      cobre e a diferença de preço (o seed planeja Fendu e Tabatière para amanhã);
+//   2. uma alternativa por linha, na largura inteira, com o que o lote da data
+//      cobre e a diferença de preço (o seed planeja Fendu e Tabatière para cada dia
+//      aberto da semana);
 //   3. o toque abre a conferência (Sai, Entra, totais, diferença, o que acontece
 //      com o dinheiro); a encomenda paga que fica mais barata pede a Gerente, que
 //      assina da lista com o próprio PIN;
@@ -18,6 +20,7 @@
 // Auditoria da prévia (contraste, letra, tela, alvo de toque, linhas alinhadas) no
 // que esta tela pôs. Como rodar: README.md desta pasta.
 import { capture, cast, expect, settled, test, type Page } from "./support/operator";
+import { dayPhrase, picksNextOpenDay, type ChosenDay } from "./support/schedule";
 
 const PRODUCT = process.env.PDV_LIVE_SWAP_PRODUCT || "Baguette de Tradition";
 const PRODUCT_SKU = process.env.PDV_LIVE_SWAP_SKU || "TRADI";
@@ -62,8 +65,8 @@ async function identifiesCustomer(page: Page) {
 
 // A ordem do funil (WP-E13, #2754): depois do cliente vem "para quando", e só
 // então o recebimento.
-async function schedulesTomorrowPickup(page: Page) {
-  await page.getByRole("radio", { name: /^Amanhã/ }).locator("visible=true").first().click();
+async function schedulesNextOpenDayPickup(page: Page): Promise<ChosenDay> {
+  const day = await picksNextOpenDay(page);
   const slot = page
     .locator('[data-order-step="schedule"]')
     .getByRole("button")
@@ -75,6 +78,7 @@ async function schedulesTomorrowPickup(page: Page) {
   await page.locator("[data-order-fulfillment-options]").getByRole("radio", { name: /^Retirada/ }).click();
   await page.getByRole("button", { name: /Montar encomenda/ }).click();
   await expect(page.getByPlaceholder(/Buscar produto/).locator("visible=true").first()).toBeVisible({ timeout: 30_000 });
+  return day;
 }
 
 /** Espera o que anima parar (diálogo, aviso) antes de medir ou capturar. */
@@ -279,7 +283,7 @@ for (const device of ["phone", "counter"] as const) {
 
       await opensOrder(page);
       await identifiesCustomer(page);
-      await schedulesTomorrowPickup(page);
+      const chosen = await schedulesNextOpenDayPickup(page);
       await ordersTwo(page);
       const ref = await closesInCash(page);
 
@@ -297,7 +301,7 @@ for (const device of ["phone", "counter"] as const) {
       const rows = block.locator("[data-preorder-swap-option]");
       await expect(rows.first()).toBeVisible();
       await expect(rows.first()).toContainText(/Trocar por /);
-      await expect(rows.first().locator("[data-preorder-swap-available]")).toContainText(/livres? para amanhã/);
+      await expect(rows.first().locator("[data-preorder-swap-available]")).toContainText(new RegExp(`livres? para ${dayPhrase(chosen)}`, "iu"));
       await expect(rows.first().locator("[data-preorder-swap-difference]")).toContainText(/a mais|a menos|Mesmo total/);
       await still(page);
       await audits(page, "bloco da troca", "[data-preorder-swap-title], [data-preorder-swap-option] span span, [data-preorder-swap-difference]");
