@@ -8,7 +8,10 @@ export default defineNuxtPlugin(() => {
   const endpoint = apiPath(PWA_UPDATE_ENDPOINT)
   const appVersion = String(useRuntimeConfig().public.appVersion ?? '')
   // Fire-and-forget: telemetria nunca segura o boot nem aparece para a cliente.
-  void reportPwaUpdateApplied(appVersion, body =>
-    $fetch(endpoint, { method: 'POST', body, credentials: 'include' })
-  )
+  // O `await` sem retorno é de propósito: devolver o `$fetch` tipado faz o TypeScript
+  // comparar a resposta de cada rota do Nitro com `Promise<unknown>` e estourar a
+  // pilha (TS2321, typecheck do CI do #3038).
+  void reportPwaUpdateApplied(appVersion, async (body) => {
+    await $fetch(endpoint, { method: 'POST', body, credentials: 'include' })
+  })
 })
