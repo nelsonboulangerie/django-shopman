@@ -19,9 +19,6 @@ import { capture, cast, newCustomerPhone, roleContext, settled, stack } from "./
 // ficou sem lastro, com o "Resolver".
 test("J6: o lote cancelado na Produção vira promessa em risco no Gestor", async ({ browser, baseURL }, testInfo) => {
   test.skip(!stack.production, "a J6 pede a Produção na pilha (OPERATOR_PRODUCTION_URL)");
-  // Falha esperada: na Produção, o "Confirmar cancelamento" do lote planejado não faz nada
-  // nem avisa (#2957). Quando o conserto entrar, a marca sai.
-  test.fail(true, "#2957: o cancelar do lote planejado na Produção não faz nada");
 
   const gestorContext = await roleContext(browser, baseURL!);
   const gestor = await gestorContext.newPage();
