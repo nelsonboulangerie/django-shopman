@@ -33,6 +33,8 @@ from shopman.backstage.projections.courier_position import (
 from shopman.backstage.projections.house_rides import DeliveryHouseRideProjection, house_ride
 from shopman.shop.google_maps_credentials import browser_api_key
 from shopman.shop.projections.types import Action
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
 
 logger = logging.getLogger(__name__)
 
@@ -375,10 +377,11 @@ def _minutes_since(iso: str) -> float | None:
 def _state(block: dict, progress: dict, *, back: bool) -> str:
     from shopman.shop.services import courier
 
-    status = str(block.get("status") or "")
+    # O estado da casa, não a letra do serviço (M1b-b, #2552).
+    state = delivery_services.ride_state(block)
     if back:
         return "back"
-    if block.get("ride_ref") and status == "U":
+    if block.get("ride_ref") and state == RideState.GROUPED:
         # A própria TaOn juntou esta corrida a outra, que já tem entregador:
         # nunca é "Ninguém aceitou", e não há o que chamar de novo.
         return "grouped"
@@ -386,10 +389,10 @@ def _state(block: dict, progress: dict, *, back: bool) -> str:
         # O entregador desistiu e a TaOn já redistribui a mesma corrida: a
         # espera conta de novo, e chamar outra seria pagar duas.
         return "reopened"
-    if not block.get("ride_ref") or status in ("D", "G", "P"):
+    if not block.get("ride_ref") or state == RideState.SEARCHING:
         waited = _minutes_since(str(block.get("called_at") or block.get("requested_at") or ""))
         return "late" if waited is not None and waited >= courier.LATE_SEARCH_MINUTES else "searching"
-    if status in ("A", "S"):
+    if state == RideState.ASSIGNED:
         return "atStore" if progress.get("arrived_pickup_at") else "coming"
     return "route"
 
@@ -423,7 +426,8 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
     sequence += [order.ref for order in orders if order.ref not in sequence]
     stops = tuple(_stop(by_ref[ref], reads=reads) for ref in sequence)
     progress = courier.progress_view(block)
-    back_members = operator_orders.courier_return_members(lead) if str(block.get("status") or "") == "F" else []
+    back_members = (operator_orders.courier_return_members(lead)
+                    if delivery_services.ride_state(block) == RideState.DONE else [])
     back = bool(back_members)
     state = _state(block, progress, back=back)
     raw_driver = block.get("driver") if isinstance(block.get("driver"), dict) else None

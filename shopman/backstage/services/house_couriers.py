@@ -26,6 +26,8 @@ from shopman.utils.formatting import format_clock
 
 from shopman.backstage.services.exceptions import OrderError
 from shopman.shop.models.delivery_service import Courier, CourierLink, DeliveryService
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
 
 #: Os estados do chip, como o operador lê.
 FREE = "free"
@@ -60,7 +62,7 @@ def _live_ride(person: Courier) -> list[Order] | None:
             live.append(order)
             dispatch = (order.data or {}).get("dispatch") or {}
             needs_back = bool(dispatch.get("custody_at")) and not dispatch.get("courier_back_at")
-            holds = holds or block.get("status") != "F" or needs_back
+            holds = holds or delivery_services.ride_state(block) != RideState.DONE or needs_back
         if holds:
             return live
     return None
@@ -84,7 +86,7 @@ def back_at(orders: list[Order]):
     from shopman.shop.services import courier
     from shopman.shop.services.dispatch_handoff import build_dispatch_payload
 
-    departed = [parse_datetime(str((courier.get_block(order).get("status_at") or {}).get("E") or ""))
+    departed = [parse_datetime(str(delivery_services.state_since(courier.get_block(order), RideState.ON_ROUTE) or ""))
                 for order in orders]
     departed = [moment for moment in departed if moment is not None]
     shop = Shop.objects.first()

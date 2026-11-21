@@ -12,8 +12,9 @@ conta que o modelo vai usar. Nada é estimado aqui: são medianas do que acontec
   Recortado por SKU (o pedido entra em cada SKU que contém), hora e dia da semana
   do início.
 - **Chegada do entregador** = da corrida aberta na central
-  (``Order.data["courier"]["requested_at"]``) até o aceite (``status_at["A"]``) e
-  até a coleta (``status_at["E"]``). Inclui as corridas que falharam e foram
+  (``Order.data["courier"]["requested_at"]``) até o aceite (``RideState.ASSIGNED``) e
+  até a coleta (``RideState.ON_ROUTE``), pela hora de cada estado
+  (``delivery_services.state_since``). Inclui as corridas que falharam e foram
   arquivadas em ``attempts`` (só têm aceite se a central aceitou). Recortado por
   hora e dia da semana da chamada.
 
@@ -27,6 +28,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
+
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
 
 DEFAULT_WINDOW_DAYS = 28
 MAX_WINDOW_DAYS = 366
@@ -195,11 +199,11 @@ def build_bi_delivery_timing(*, date_from: date | None = None, date_to: date | N
             if requested is None or not (since <= requested < until):
                 continue
             rides += 1
-            status_at = ride.get("status_at") or {}
-            accepted = _minutes(requested, _parse(status_at.get("A")))
+            # O estado da casa, não a letra do serviço (M1b-b, #2552).
+            accepted = _minutes(requested, _parse(delivery_services.state_since(ride, RideState.ASSIGNED)))
             if accepted is not None:
                 accept.append((requested, accepted))
-            picked = _minutes(requested, _parse(status_at.get("E")))
+            picked = _minutes(requested, _parse(delivery_services.state_since(ride, RideState.ON_ROUTE)))
             if picked is not None:
                 pickup.append((requested, picked))
     accept_hour, accept_weekday = _by_hour_and_weekday(accept)
