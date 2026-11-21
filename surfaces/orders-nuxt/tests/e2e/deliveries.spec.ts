@@ -119,3 +119,51 @@ test.describe("Entregas: sugestões da casa", () => {
     await expect(page.locator("[data-ride-suggestions]")).toHaveCount(0);
   });
 });
+
+// #2908: no celular a legenda aberta cobria pinos ("Entregador" saía "Entrega…" sob o A47).
+// No mapa estreito ela começa recolhida num botão e abre só quando o operador pede.
+test.describe("Entregas: legenda do mapa no celular", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("a legenda começa recolhida, abre por cima do mapa e fecha pelo X", async ({ page }) => {
+    await page.goto("/delivery");
+    const map = page.locator("[data-deliveries-map]").first();
+    await expect(map.locator("[data-map-legend]")).toHaveCount(0);
+    const toggle = map.getByRole("button", { name: "Legenda", exact: true });
+    await expect(toggle).toBeVisible();
+    const box = await toggle.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    // Nenhum pino fica por baixo do botão: o quadro começa abaixo da faixa da legenda.
+    const under = await map.locator("button[aria-label]").evaluateAll((els, b) => els
+      .filter((el) => !el.hasAttribute("data-map-legend-toggle"))
+      .map((el) => ({ name: el.getAttribute("aria-label"), r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width && r.left < b.x + b.width && r.right > b.x && r.top < b.y + b.height && r.bottom > b.y)
+      .map(({ name }) => name), box!);
+    expect(under).toEqual([]);
+    await toggle.click();
+    const legend = map.locator("[data-map-legend]");
+    await expect(legend).toBeVisible();
+    await expect(legend.getByText("Entregador", { exact: true })).toBeVisible();
+    // Aberta, ela fica por cima dos pinos: o texto não é cortado por nenhum deles.
+    const top = await legend.getByText("Entregador", { exact: true }).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.right - 2, r.top + r.height / 2);
+      return hit !== null && (el === hit || el.contains(hit) || hit.contains(el));
+    });
+    expect(top).toBe(true);
+    await legend.getByRole("button", { name: "Fechar a legenda", exact: true }).click();
+    await expect(map.locator("[data-map-legend]")).toHaveCount(0);
+    await expect(toggle).toBeVisible();
+  });
+});
+
+test.describe("Entregas: legenda do mapa no desktop", () => {
+  test.use({ viewport: { width: 1360, height: 900 } });
+
+  test("no mapa largo a legenda fica aberta, sem botão", async ({ page }) => {
+    await page.goto("/delivery");
+    const map = page.locator("[data-deliveries-map]").first();
+    await expect(map.locator("[data-map-legend]")).toBeVisible();
+    await expect(map.getByRole("button", { name: "Legenda", exact: true })).toHaveCount(0);
+  });
+});
