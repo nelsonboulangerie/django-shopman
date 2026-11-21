@@ -128,6 +128,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
     ),
+    "CONCIERGE_ALTERNATIVES": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
     "CONCIERGE_CANCEL_CONFIRM": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),

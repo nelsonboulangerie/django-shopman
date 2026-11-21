@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
 from conversational_commerce.evaluation import IncumbentProfile, Scorecard, TurnEvidence, incumbent_reach, outcome_of
@@ -84,6 +84,14 @@ def fold(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
 
 
+#: Valor que a resposta anuncia e não traz ("Total: .", "Preparando…."): fato sem lastro na tela.
+_EMPTY_VALUE = re.compile(r":\s*\.(?:\s|$)|…\.")
+
+
+def empty_value(reply: str) -> bool:
+    return bool(_EMPTY_VALUE.search(reply or ""))
+
+
 def has_next_step(reply: str) -> bool:
     return bool(_NEXT_STEP.search(fold(reply)))
 
@@ -108,6 +116,8 @@ class Turn:
     customer: str
     reply: str
     conversation_id: int
+    #: As falas do cliente deste turno (para o replay refazê-las no código de hoje).
+    inbound_ids: tuple[int, ...] = ()
 
 
 def _acts(usage: dict) -> set[str]:
@@ -126,7 +136,7 @@ def _evidence(turn_id: str, inbound: list, replies: list, *, with_team: bool) ->
     return TurnEvidence(
         turn_id,
         replied=True,
-        backed=False if held else True,
+        backed=False if held or empty_value(text) else True,
         next_step=bool(acts) and acts <= CLOSING_ACTS or has_next_step(text),
         repeated=repeated_sentence(text),
         needs_live_data=bool(acts & LIVE_DATA_ACTS),
@@ -159,6 +169,7 @@ def _conversation_turns(conversation, messages) -> list[Turn]:
             customer=" / ".join(m.text for m in inbound if m.text),
             reply="\n".join(r.text for r in replies if r.text),
             conversation_id=conversation.pk,
+            inbound_ids=tuple(m.pk for m in inbound),
         ))
         inbound.clear()
         replies.clear()
@@ -168,6 +179,14 @@ def _conversation_turns(conversation, messages) -> list[Turn]:
             takes, back = message.text.startswith(TEAM_TAKES_NOTE), message.text.startswith(BACK_NOTE)
             if (takes or back) and inbound:
                 flush()  # a posse mudou: o que veio antes é outro turno
+            if back and not with_team:
+                # "Voltou para o concierge" sem a nota de entrada no período (a equipe assumiu
+                # por outro caminho): as falas sem resposta logo antes eram da equipe, não
+                # silêncio da Concierge (19/11, m1948 e m1949; coordenação, 21/11/2026).
+                for index in range(len(turns) - 1, -1, -1):
+                    if turns[index].evidence.replied:
+                        break
+                    turns[index].evidence = replace(turns[index].evidence, silence_expected=True)
             with_team = True if takes else False if back else with_team
             continue
         if message.kind == ConversationMessage.Kind.INBOUND:
@@ -250,3 +269,112 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             lines.append(f"      casa:    {_redacted(t.reply).replace(chr(10), ' / ')[:240] or '(nada)'}")
             lines.append(f"      ManyChat AI faria: {REACH_LABELS[reach]}")
     return "\n".join(lines)
+
+
+# ── Replay: as falas reais no código de hoje ───────────────────────────
+
+
+class _Rollback(Exception):
+    """Desfaz tudo o que o replay gravou."""
+
+
+def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_id: int | None = None,
+                 paid: bool = False) -> tuple[list[Turn], dict]:
+    """Refaz as falas reais dos últimos ``days`` dias no código de HOJE e devolve os turnos novos.
+
+    O placar de 7 dias mede o histórico, inclusive turnos de antes das correções; o replay
+    mede o código. Cada conversa começa limpa (sem memória, sacola, posse da equipe) e recebe,
+    turno a turno, as mesmas falas do cliente, com o turno inteiro da Concierge.
+
+    **Nada sai e nada fica:**
+    - tudo roda numa transação que é DESFEITA no fim (o banco volta como estava; o que só
+      sai no commit, como os eventos do Gestor, não sai);
+    - o envio ao ManyChat e a troca de atendimento no ManyChat são cortados (nada chega ao
+      cliente nem muda a posse no provedor);
+    - sem ``paid``, a IA paga fica desligada dentro da transação (leitura local, FAQ direta,
+      sem juiz): é o replay grátis. Com ``paid``, as chamadas passam pelo freio de sempre.
+
+    Conversa cujo vínculo a Concierge não atende (fora da coorte) fica de fora e é contada.
+    """
+    from contextlib import ExitStack
+    from datetime import timedelta as _td
+    from unittest import mock
+
+    from django.db import transaction
+    from django.utils import timezone
+
+    from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, Shop
+
+    from . import service, transport
+
+    originals = read_turns(days=days, channel_ref=channel_ref, conversation_id=conversation_id)
+    by_conversation: dict[int, list[Turn]] = {}
+    for turn in originals:
+        by_conversation.setdefault(turn.conversation_id, []).append(turn)
+    replayed: list[Turn] = []
+    info = {"conversations": len(by_conversation), "skipped": 0, "turns": 0, "paid": paid}
+
+    def _no_handoff(binding, on):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(state="accepted", code="replay", detail="")
+
+    try:
+        with transaction.atomic(), ExitStack() as stack:
+            stack.enter_context(mock.patch.object(service, "_dispatch_reply", lambda conversation, message: None))
+            stack.enter_context(mock.patch.object(transport, "handoff_for", _no_handoff))
+            if not paid:
+                shop = Shop.load()
+                if shop is not None:
+                    shop.ai_limits = {**(shop.ai_limits or {}), "enabled": False}
+                    shop.save(update_fields=["ai_limits"])
+            for conv_pk, turns in by_conversation.items():
+                conversation = Conversation.objects.get(pk=conv_pk)
+                binding = conversation.transport_bindings.filter(status=ConversationBinding.Status.ACTIVE).first()
+                if binding is None or not service.is_allowed(binding):
+                    info["skipped"] += 1
+                    continue
+                ConversationMessage.objects.filter(
+                    conversation=conversation, kind=ConversationMessage.Kind.INBOUND, consumed_by__isnull=True,
+                ).update(consumed_by=0)
+                Conversation.objects.filter(pk=conv_pk).update(
+                    flags={}, state=Conversation.State.ACTIVE, handoff_reason="", handoff_at=None,
+                    session_key="", quote={}, claim_until=None, turns_today=0, consecutive_failures=0,
+                    last_order_ref=conversation.last_order_ref,
+                )
+                with_team = False
+                for turn in turns:
+                    marker = ConversationMessage.objects.order_by("-pk").values_list("pk", flat=True).first() or 0
+                    sources = ConversationMessage.objects.filter(pk__in=turn.inbound_ids).order_by("pk")
+                    now = timezone.now()
+                    new_inbound = []
+                    for index, source in enumerate(sources):
+                        envelope = dict(source.envelope or {})
+                        envelope.pop("event_id", None)
+                        for key in [k for k in envelope if "occurred" in k or k.endswith("_at")]:
+                            envelope[key] = (now + _td(milliseconds=index)).isoformat()
+                        new_inbound.append(ConversationMessage.objects.create(
+                            conversation=conversation, binding=binding, role=ConversationMessage.Role.USER,
+                            kind=ConversationMessage.Kind.INBOUND, text=source.text, content=source.content,
+                            external_id="", envelope=envelope,
+                        ))
+                    if not with_team:
+                        Conversation.objects.filter(pk=conv_pk).update(claim_until=None)
+                        service.run_turn(conv_pk, binding.pk)
+                    replies = list(ConversationMessage.objects.filter(
+                        conversation=conversation, kind=ConversationMessage.Kind.REPLY, pk__gt=marker,
+                    ).order_by("pk"))
+                    info["turns"] += 1
+                    replayed.append(Turn(
+                        _evidence(turn.evidence.turn_id, new_inbound, replies, with_team=with_team),
+                        customer=turn.customer,
+                        reply="\n".join(r.text for r in replies if r.text),
+                        conversation_id=conv_pk,
+                        inbound_ids=turn.inbound_ids,
+                    ))
+                    conversation.refresh_from_db(fields=["state"])
+                    with_team = conversation.state != Conversation.State.ACTIVE
+            raise _Rollback
+    except _Rollback:
+        pass
+    return replayed, info

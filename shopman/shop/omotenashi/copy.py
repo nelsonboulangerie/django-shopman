@@ -1573,6 +1573,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_CART_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
     },
+    "CONCIERGE_ALTERNATIVES": {
+        WILDCARD: {WILDCARD: CopyEntry(message="No lugar, posso oferecer {options}. Quer algum?")},
+    },
     "CONCIERGE_CLOSE_ASK_DATE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?")},
     },

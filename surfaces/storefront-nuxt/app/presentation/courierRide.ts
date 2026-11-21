@@ -49,7 +49,7 @@ export interface CourierStop {
   lat: number | null
   lng: number | null
   phone?: string
-  /** "HH:MM", quando a cozinha souber. Ainda não vem da API (#2647). */
+  /** "HH:MM", a previsão de pronto da Cozinha (`kitchen_eta.ready_eta`, #2647); some sem previsão. */
   ready_at?: string
 }
 

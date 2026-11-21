@@ -37,11 +37,11 @@ test.describe("Entregas: a corrida da casa", () => {
   test("Saiu arma a confirmação e só o segundo toque avança; depois, Entregue por parada", async ({ page }) => {
     await page.goto("/delivery");
     const card = page.locator("[data-house-ride]");
-    await card.getByRole("button", { name: "Saiu", exact: true }).click();
+    await card.getByRole("button", { name: "Despachar a corrida C", exact: true }).click();
     const confirm = card.locator("[data-house-ride-confirm]");
     await expect(confirm).toContainText("Diego saiu com os pedidos? Os clientes recebem o aviso de saída.");
     expect((await state(page)).gestures).toEqual([]);
-    await confirm.getByRole("button", { name: "Saiu", exact: true }).click();
+    await confirm.getByRole("button", { name: "Despachar a corrida C", exact: true }).click();
     await expect(page.getByText("Rota C: Diego saiu para entrega.", { exact: true })).toBeVisible();
     await expect(card.locator("[data-house-ride-moment]")).toHaveText("Diego na rua · 0 de 2 entregues");
 
@@ -87,14 +87,14 @@ test.describe("Entregas: a corrida da casa", () => {
     const detail = page.locator("[data-ride-detail]");
     await expect(detail.locator("[data-ride-detail-title]")).toHaveText("Corrida C · Diego leva");
     await expect(detail.getByText("Entregador da casa · R$ 15,00 · Abriu o link às 12h31", { exact: true })).toBeVisible();
-    await expect(detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Saiu", exact: true })).toBeVisible();
+    await expect(detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Despachar a corrida C", exact: true })).toBeVisible();
     await expect(detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Reenviar o link", exact: true })).toBeVisible();
     await expect(detail.locator("[data-ride-driver-call]")).toHaveText("Ligar para Diego");
     await expect(detail).not.toContainText("TaOn");
     await expect(detail.locator("[data-ride-position-source]")).toHaveCount(0);
 
-    await detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Saiu", exact: true }).click();
-    await detail.locator("[data-house-ride-confirm]").getByRole("button", { name: "Saiu", exact: true }).click();
+    await detail.locator("[data-ride-detail-house]").getByRole("button", { name: "Despachar a corrida C", exact: true }).click();
+    await detail.locator("[data-house-ride-confirm]").getByRole("button", { name: "Despachar a corrida C", exact: true }).click();
     await expect(page.getByText("Rota C: Diego saiu para entrega.", { exact: true })).toBeVisible();
     await expect(detail.locator("[data-ride-detail-title]")).toHaveText("Corrida C · Diego na rua · 0 de 2 entregues");
     expect((await state(page)).gestures.map((item) => item.gesture)).toEqual(["depart"]);
@@ -110,9 +110,33 @@ test.describe("Entregas: a corrida da casa", () => {
     // O pedido solto segue no cartão de sempre; os da corrida não aparecem soltos.
     await expect(exit.locator("[data-card-who]").filter({ hasText: "Edu" })).toHaveCount(1);
     await expect(exit.locator("[data-card-who]").filter({ hasText: "Ana" })).toHaveCount(0);
-    await card.getByRole("button", { name: "Saiu", exact: true }).click();
-    await card.locator("[data-house-ride-confirm]").getByRole("button", { name: "Saiu", exact: true }).click();
+    await card.getByRole("button", { name: "Despachar a corrida C", exact: true }).click();
+    await card.locator("[data-house-ride-confirm]").getByRole("button", { name: "Despachar a corrida C", exact: true }).click();
     await expect(page.getByText("Rota C: Diego saiu para entrega.", { exact: true })).toBeVisible();
     await expect(card.locator("[data-house-ride-moment]")).toHaveText("Diego na rua · 0 de 2 entregues");
+  });
+
+  // Dono, 21/11 ("bem feios e desorganizados no mobile"): a 375 px o gesto do momento
+  // ocupa a largura toda; os outros dividem uma linha em duas colunas iguais; o veículo
+  // do entregador cabe numa linha, com os contatos embaixo (#3053, DEV-2026-068).
+  test("a 375 px, os gestos e o entregador ficam arrumados", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/delivery?ride=CASA-7F3A2B");
+    const detail = page.locator("[data-ride-detail]");
+    const house = detail.locator("[data-ride-detail-house]");
+    const grid = (await house.locator("[data-house-ride-gestures]").boundingBox())!;
+    const depart = (await house.getByRole("button", { name: "Despachar a corrida C", exact: true }).boundingBox())!;
+    const resend = (await house.getByRole("button", { name: "Reenviar o link", exact: true }).boundingBox())!;
+    const release = (await house.getByRole("button", { name: "Soltar o link", exact: true }).boundingBox())!;
+    expect(Math.abs(depart.width - grid.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(resend.width - release.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(resend.y - release.y)).toBeLessThanOrEqual(1);
+    for (const box of [depart, resend, release]) expect(box.height).toBeGreaterThanOrEqual(44);
+    const vehicle = detail.locator("[data-ride-driver-vehicle]");
+    const lineHeight = await vehicle.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));
+    expect((await vehicle.boundingBox())!.height).toBeLessThanOrEqual(lineHeight + 1);
+    const call = (await detail.locator("[data-ride-driver-call]").boundingBox())!;
+    expect(call.height).toBeGreaterThanOrEqual(44);
+    await expect(detail.locator("[data-ride-driver-call]")).toHaveText("Ligar para Diego");
   });
 });

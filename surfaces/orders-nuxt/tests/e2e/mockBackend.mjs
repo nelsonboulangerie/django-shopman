@@ -734,7 +734,7 @@ function crewDeliveries() {
 }
 
 // M3b (#2898): a corrida da casa na lista de Corridas, com o cookie `e2e_house=on`. A
-// corrida C é do Diego (A47 ∙ C03); os gestos do balcão mudam o estado do mock: "Saiu"
+// corrida C é do Diego (A47 ∙ C03); os gestos do balcão mudam o estado do mock: "Despachar a corrida C"
 // põe a rota na rua, "A47 entregue" risca a parada. A corrida A (TaOn) segue igual.
 const HOUSE_STOPS = [
   ["WEB-20261116-0A47", "Ana", "Gleba Palhano", 0.006, 0.004, 2, "Troco para R$ 50,00"],
@@ -761,7 +761,7 @@ function houseRide() {
       hint: houseState.departed ? "Entregador da casa · R$ 15,00" : "Entregador da casa · R$ 15,00 · Abriu o link às 12h31",
       delivered: houseState.delivered.length, total: 2, link_claimed: houseState.claimed,
       depart_action: houseState.departed ? null
-        : houseAction("house-depart", "Saiu", "Diego saiu com os pedidos? Os clientes recebem o aviso de saída."),
+        : houseAction("house-depart", "Despachar a corrida C", "Diego saiu com os pedidos? Os clientes recebem o aviso de saída."),
       deliver_actions: houseState.departed ? open.map((stop) => ({
         ref: stop.ref, code: stop.code,
         action: houseAction("house-deliver", `${stop.code} entregue`, `Marcar ${stop.code} como entregue? O cliente recebe o aviso agora.`),
@@ -799,6 +799,44 @@ function houseDeliveries() {
     rides: [...DELIVERIES.rides.map((ride) => ({ ...ride, house: null })), houseRide()],
     free_numbers: DELIVERIES.free_numbers.filter((n) => n !== 3),
     ride_plan: { ...DELIVERIES.ride_plan, suggestions: [] },
+  };
+}
+
+// #2876: o cartão Pronto chama o entregador ali mesmo. Com o cookie `e2e_call=on`, a
+// Saída tem A47 e C03 prontos (os mesmos de Aguardando, onde a casa sugere juntá-los)
+// e o B08 de retirada; a contagem leve diz que A47 e C03 dá para chamar. O detalhe de
+// A47 traz o painel do entregador. As chamadas de um pedido ficam em `callPosts`.
+const callPosts = [];
+const CALL_REFS = ["WEB-20261116-0A47", "WEB-20261116-0C03"];
+function callQueue() {
+  const delivery = [
+    exitCard("WEB-20261116-0A47", "Ana", { actions: [{ ...CARD.actions[0], label: "Despachar A47", payload_schema: { target_status: "dispatched", base_revision: "r" } }], can_advance: true, next_status: "dispatched", items_summary: "2× Baguete · 1× Pain au chocolat", total_display: "R$ 58,00", delivery_address: "Gleba Palhano" }),
+    exitCard("WEB-20261116-0C03", "Caio", { actions: [{ ...CARD.actions[0], label: "Despachar C03", payload_schema: { target_status: "dispatched", base_revision: "r" } }], can_advance: true, next_status: "dispatched", items_summary: "1× Campagne · 6× Croissant", total_display: "R$ 74,50", delivery_address: "Gleba Palhano" }),
+  ];
+  const pickup = [exitCard("WEB-20261116-0B08", "Carla", { fulfillment_type: "pickup", fulfillment_label: "Retirada", items_summary: "1× Bolo de laranja", total_display: "R$ 42,00" })];
+  return {
+    ...QUEUE,
+    queue: {
+      ...QUEUE.queue, expedition_pickup: pickup, expedition_delivery: delivery, expedition_delivery_count: 2,
+      expedition_count: 3, total_count: QUEUE.queue.total_count + 3, ride_suggestions: 1,
+      ride_candidates: [{ ref: CALL_REFS[0] }, { ref: CALL_REFS[1] }],
+    },
+  };
+}
+function callDetail(ref) {
+  const card = callQueue().queue.expedition_delivery.find((item) => item.ref === ref);
+  if (!card) return null;
+  const dispatch = { ...DISPATCH(ref), label: "Chamar entregador", confirmation: { required: true, description: `Chamar um entregador da TaOn para o pedido ${ref.slice(-3)}? A corrida é cobrada da casa.` } };
+  return {
+    ...card, ...DETAIL_EXTRA, pending: [], delivery_address: "Rua das Entregas, 100, Gleba Palhano",
+    actions: [...card.actions, dispatch],
+    courier: {
+      provider: "machine", status: "", status_label: "", active: false, driver: null, tracking_url: "", confirmation_code: "",
+      estimate_display: "", final_value_display: "", attempts_count: 0, position: null, error: null, can_quote: false,
+      can_dispatch: true, not_today: "", can_dispatch_again: false, can_cancel: false, cancel_state: null, reminder: null,
+      custody: { change_out_suggested_q: 0, needs_machine: false, recorded: false }, ride_offer: [], ride_suggestion: null,
+      charge_outdated: null,
+    },
   };
 }
 
@@ -892,9 +930,29 @@ const server = createServer((req, res) => {
   if (crewScenario && /\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, { ...crewDeliveries(), ...(crewMode === "alone" ? { courier_on: false, house_on: true, ride_plan: { ...DELIVERIES.ride_plan, suggestions: [] } } : { house_on: true }) });
   const f10Scenario = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_f10=(fiscal|countfail)(?:;|$)/)?.[1] ?? "";
+  const callScenario = /(?:^|;\s*)e2e_call=on(?:;|$)/.test(req.headers.cookie || "");
   if (/\/backstage\/deliveries\/count\/?(\?|$)/.test(url)) {
-    return json(res, 200, { waiting: f10Scenario === "countfail" ? null : DELIVERIES.waiting.length });
+    return json(res, 200, {
+      waiting: f10Scenario === "countfail" ? null : DELIVERIES.waiting.length,
+      call_refs: callScenario ? CALL_REFS : [],
+    });
   }
+  if (callScenario && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, crewDeliveries());
+  if (/\/e2e\/call\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") callPosts.length = 0;
+    return json(res, 200, { calls: callPosts, rides: ridePosts });
+  }
+  const dispatchPost = url.match(/\/orders\/([A-Z0-9-]+)\/courier-dispatch\/?(\?|$)/);
+  if (callScenario && dispatchPost) {
+    if (req.method !== "POST") return json(res, 200, { outcome: "not_found" });
+    return void readBody(req).then((body) => {
+      callPosts.push({ ref: dispatchPost[1], ...body });
+      json(res, 200, { outcome: "applied", status: "queued", directive_id: callPosts.length });
+    });
+  }
+  if (callScenario && /\/orders\/?(\?|$)/.test(url)) return json(res, 200, callQueue());
+  const callOrder = callScenario ? url.match(/\/orders\/([A-Z0-9-]+)\/?(\?|$)/) : null;
+  if (callOrder && callDetail(callOrder[1])) return json(res, 200, { order: callDetail(callOrder[1]) });
   if (f10Scenario === "fiscal" && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, f10Deliveries());
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);

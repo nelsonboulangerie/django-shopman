@@ -39,13 +39,10 @@ from shopman.backstage.projections.notification_receipts import (
 )
 from shopman.backstage.projections.order_attention import (
     AcceptanceTimer,
-    PrepExpectation,
     QueueAwarenessProjection,
     acceptance_timer_goal,
     build_queue_awareness,
     card_attention,
-    prep_expectation,
-    ready_eta,
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
@@ -57,6 +54,7 @@ from shopman.shop.projections.types import (
 )
 from shopman.shop.services import operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
+from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
 
 if TYPE_CHECKING:
@@ -606,7 +604,7 @@ class OrderCardProjection:
     goal_minutes: int = 0
     goal_label: str = ""
     # Na Cozinha (aceito ou em preparo): quando deve ficar pronto, pelo início real e
-    # pelo tempo que os preparos estão levando agora (G10, ``order_attention.ready_eta``).
+    # pelo tempo que os preparos estão levando agora (G10, ``kitchen_eta.ready_eta``).
     ready_eta_iso: str = ""
     # Lembrete TEMPORÁRIO de chamar o entregador (``services.courier_reminder``):
     # entrega da casa em preparo sem corrida pedida. A tela mostra o aviso quando o
