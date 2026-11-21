@@ -511,7 +511,14 @@ interface StockRefusal {
 }
 const stockRefusal = ref<StockRefusal | null>(null)
 function openStockAlternatives () {
-  if (stockRefusal.value?.issue) raiseStockIssue(stockRefusal.value.issue)
+  const issue = stockRefusal.value?.issue
+  if (!issue) return
+  // A folha devolve o foco a quem o tinha quando ela abriu. Aberta sozinha (a revisão
+  // acabou de fechar), o foco ainda não estava em lugar nenhum: o "Agora não" mandava a
+  // cliente para o começo da página. O foco vai ao botão do aviso ANTES de a folha abrir,
+  // e é para ele que ela volta, sempre.
+  document.querySelector<HTMLElement>('[data-checkout-stock-alternatives]')?.focus({ preventScroll: true })
+  raiseStockIssue(issue)
 }
 // A folha mexeu na sacola (levou o que dá, trocou, tirou): o checkout relê a sacola
 // dele, e o aviso sai quando a linha recusada já não pede o que pedia.
@@ -527,8 +534,10 @@ watch(() => liveCart.value.revision, (next, prev) => {
 })
 function revealStockRefusal () {
   // O alvo é a moldura (régua canônica + respiro), não o aviso: o aviso sozinho
-  // não tem margem de rolagem e pararia debaixo do cabeçalho.
-  reveal(() => document.querySelector('[data-focus-target="stock-refusal"]'), { align: 'start', focus: true })
+  // não tem margem de rolagem e pararia debaixo do cabeçalho. Com a folha de
+  // alternativas a caminho, a tela só rola: o foco já foi para o botão do aviso
+  // (`openStockAlternatives`), e mexer nele com a folha aberta disputaria o foco dela.
+  reveal(() => document.querySelector('[data-focus-target="stock-refusal"]'), { align: 'start', focus: !stockRefusal.value?.issue })
 }
 // A folha de revisão, ao terminar de fechar, devolve o foco ao botão que a abriu
 // ("Revisar pedido"), e o navegador rola até ele. Quando ela fecha por causa de uma
