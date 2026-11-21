@@ -664,12 +664,12 @@ const checkoutKitchenStations = computed<Record<string, string>>(() =>
     counter: (cart.salesMode || "counter") === "counter" && cart.fulfillmentType !== "delivery",
   }),
 );
-// PIX e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
+// Pix e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
 // lidos da projeção; um meio que o canal não oferece não aparece.
 const quickPayments = computed(() => {
   const methods = pos.value?.payment_methods || [];
   const out: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }> = [];
-  if (methods.some((m) => m.ref === "pix")) out.push({ ref: "pix", label: "PIX", icon: "lucide:qr-code" });
+  if (methods.some((m) => m.ref === "pix")) out.push({ ref: "pix", label: "Pix", icon: "lucide:qr-code" });
   const card = methods.find((m) => m.ref === "credit") || methods.find((m) => m.ref === "card") || methods.find((m) => m.ref === "debit");
   if (card) out.push({ ref: card.ref, label: "Maquininha", icon: "lucide:credit-card" });
   // V6-CAIXA: o dinheiro recebido na mesa. A venda fecha aqui e vira o cartão

@@ -597,7 +597,7 @@ describe("Detalhe — o saldo em Pix no balcão (#2897)", () => {
     // O MESMO componente da venda em Pix: QR, copia e cola, a espera.
     const pix = wrapper.find("[data-balance-pix]");
     expect(pix.exists()).toBe(true);
-    expect(pix.find('img[alt="QR Code PIX"]').attributes("src")).toBe(PIX_PAYMENT.qr_code);
+    expect(pix.find('img[alt="QR Code Pix"]').attributes("src")).toBe(PIX_PAYMENT.qr_code);
     expect(pix.text()).toContain("00020101PIXBALCAO");
     expect(pix.text()).toContain("A confirmação chega aqui sozinha.");
     expect(lastPoll()[0]).toBe("NB-7");
@@ -646,7 +646,7 @@ describe("Detalhe — o saldo em Pix no balcão (#2897)", () => {
     expect(navigate).toHaveBeenCalledWith("/preorders?mode=week");
   });
 
-  it("o Pix que não confirmou: o aviso no topo traz Gerar outro Pix, e a tela também", async () => {
+  it("o Pix que não confirmou: o QR sai, o aviso no topo traz Gerar outro Pix, e a outra forma segue à vista", async () => {
     answerPix();
     const wrapper = await mount(DetailPage);
     await opensPayment(wrapper);
@@ -660,10 +660,17 @@ describe("Detalhe — o saldo em Pix no balcão (#2897)", () => {
     expect(wrapper.text()).toContain("O Pix não foi confirmado.");
     const header = wrapper.findComponent({ name: "OperatorPageHeader" });
     const alerts = header.props("alerts") as Array<{ title: string; action?: { label: string; onSelect?: () => void } }>;
+    expect(alerts).toHaveLength(1);
     expect(alerts[0]!.action!.label).toBe("Gerar outro Pix");
-    expect(wrapper.find("[data-balance-pix-again]").exists()).toBe(true);
+    // Um aviso só: nem o cartão repete o aviso, nem o QR morto fica pagável.
+    expect(wrapper.text().match(/não foi confirmado/g)).toHaveLength(1);
+    expect(wrapper.find('[data-balance-pix] img[alt^="QR Code"]').exists()).toBe(false);
+    expect(wrapper.find("[data-balance-pix]").text()).not.toContain("Copiar código");
+    expect(wrapper.find("[data-balance-pix]").text()).toContain("Este Pix não pode mais ser pago.");
+    expect(wrapper.find("[data-balance-pix-leave]").exists()).toBe(true);
 
-    await tap(wrapper, "[data-balance-pix-again]");
+    alerts[0]!.action!.onSelect!();
+    await settle();
     expect(call.mock.calls.filter(([path]) => String(path).endsWith("/pix/"))).toHaveLength(2);
   });
 

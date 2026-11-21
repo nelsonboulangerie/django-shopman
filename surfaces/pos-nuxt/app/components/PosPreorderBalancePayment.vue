@@ -19,8 +19,9 @@
 // - o SALDO EM PIX (#2897): escolhido o Pix (sozinho, no valor inteiro), a página
 //   pede a cobrança Pix do pedido e esta tela mostra o MESMO QR da venda
 //   (`PosPaymentResult`), na Tela do cliente também, e espera pelo MESMO status
-//   (`usePixStatusPoll`). Pago, a página entrega; não chegou, "Gerar outro Pix" ou
-//   "Receber em outra forma" (que cancela este Pix antes, no servidor).
+//   (`usePixStatusPoll`). Pago, a página entrega; não chegou, o QR sai da tela e
+//   o aviso do topo traz "Gerar outro Pix"; "Receber em outra forma" (que cancela
+//   este Pix antes, no servidor) segue aqui.
 import { toast } from "vue-sonner";
 
 import type { BalancePixStatus, HandOverBody } from "~/presentation/balanceCharge";
@@ -232,19 +233,9 @@ watch(() => props.detail.counter.hand_over.amount_q, (amount, before) => {
         <p class="text-lg font-semibold" data-balance-pix-customer>{{ charge.customerName }}</p>
       </header>
       <PosPaymentResult :proof="pixView" :status="pixStatus" large class="w-full text-left" />
+      <!-- Vencido, o QR sai do cartão e "Gerar outro Pix" mora no aviso do topo
+           (um aviso só, com o botão que resolve). A outra saída fica aqui. -->
       <div class="grid gap-2">
-        <NuxtButton
-          v-if="pixStatus === 'expired'"
-          size="xl"
-          block
-          class="justify-center"
-          icon="i-lucide-qr-code"
-          label="Gerar outro Pix"
-          :loading="busy"
-          :disabled="busy"
-          data-balance-pix-again
-          @click="emit('pix')"
-        />
         <NuxtButton
           size="xl"
           block

@@ -848,7 +848,7 @@ function paymentMethodBlockedReason(ref: string): string | undefined {
   if (props.balance && ref === "pix" && props.balance.pixBlockedReason) return props.balance.pixBlockedReason;
   if (blockedForDelivery(ref)) {
     const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
-    return `PIX Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
+    return `Pix Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
   }
   if (blockedByLink(ref)) return "O link de pagamento cobra a venda inteira";
   if (blockedByPixProviderTest(ref)) {
@@ -1433,7 +1433,7 @@ defineExpose({
     }
     if (blockedForDelivery(ref)) {
       const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
-      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. Pix Efí exige confirmação automática.`);
       return true;
     }
     if (blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;

@@ -463,7 +463,7 @@ for (const device of ["phone", "counter"] as const) {
 //                           sozinho em segundos, e a encomenda é entregue;
 //   PDV_LIVE_J6_PIX=nao-chega sem confirmação e com o Pix do canal `pdv` em 1 minuto
 //                           (ajuste declarado do banco local): o Pix vence, o aviso
-//                           traz "Gerar outro Pix", e o operador recebe em dinheiro,
+//                           traz "Gerar outro Pix" (o QR morto sai), e o operador recebe em dinheiro,
 //                           o que cancela o Pix antes.
 const PIX_ROUND = process.env.PDV_LIVE_J6_PIX || "";
 
@@ -511,10 +511,10 @@ for (const device of ["phone", "counter"] as const) {
       const { payment } = await choosesPixAndReceives(page);
       const pix = page.locator("[data-balance-pix]");
       await expect(pix).toBeVisible({ timeout: 30_000 });
-      await expect(pix.locator('img[alt="QR Code PIX"]')).toBeVisible();
+      await expect(pix.locator('img[alt="QR Code Pix"]')).toBeVisible();
       await expect(pix).toContainText("A confirmação chega aqui sozinha.");
       // A Tela do cliente: o MESMO QR da venda em Pix.
-      await expect(display.locator('img[alt="QR Code PIX"], img[alt*="QR"]').first()).toBeVisible({ timeout: 15_000 });
+      await expect(display.locator('img[alt="QR Code Pix"], img[alt*="QR"]').first()).toBeVisible({ timeout: 15_000 });
       await still(page);
       await capture(page, testInfo, "pix-qr-na-tela");
       await audits(page, "pix na tela", "[data-balance-pix] header p, [data-balance-pix] p.text-sm, [data-balance-pix] button");
@@ -555,10 +555,15 @@ for (const device of ["phone", "counter"] as const) {
       // O Pix vence (1 minuto no canal de teste, mais a folga da espera da venda).
       const alert = page.getByText("O Pix não foi confirmado.").first();
       await expect(alert).toBeVisible({ timeout: 4 * 60_000 });
-      await expect(page.getByRole("button", { name: "Gerar outro Pix" }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Gerar outro Pix" })).toHaveCount(1);
+      // O Pix vencido não é pagável: sem QR e sem código para copiar; o cartão só diz o fato.
+      await expect(page.locator('[data-balance-pix] img[alt^="QR Code"]')).toHaveCount(0);
+      await expect(page.locator("[data-balance-pix]").getByText("Copiar código Pix")).toHaveCount(0);
+      await expect(page.getByText(/não foi confirmado/)).toHaveCount(1);
+      await expect(page.locator("[data-balance-pix-leave]")).toBeVisible();
       await still(page);
       await capture(page, testInfo, "pix-nao-confirmado");
-      await audits(page, "aviso do Pix", "[data-balance-pix] header p, [data-balance-pix] button");
+      await audits(page, "aviso do Pix", "[data-balance-pix] header p, [data-balance-pix] button, [data-payment-proof-expired-note]");
 
       // O operador recebe em dinheiro: a rota da entrega cancela o Pix antes.
       await page.locator("[data-balance-pix-leave]").click();

@@ -29,7 +29,7 @@ describe("PosPaymentWorkspace — a tecla da forma bloqueada avisa", () => {
     });
     expect(exposto(w).pressMethodKey("P")).toBe(true);
     expect(w.emitted("addTender")).toBeUndefined();
-    expect(toast.info).toHaveBeenCalledWith("Na entrega, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.");
+    expect(toast.info).toHaveBeenCalledWith("Na entrega, use dinheiro ou cartão na maquininha. Pix Efí exige confirmação automática.");
   });
 
   it("na retirada (encomenda), a frase nomeia a retirada", async () => {
@@ -38,7 +38,7 @@ describe("PosPaymentWorkspace — a tecla da forma bloqueada avisa", () => {
     });
     expect(exposto(w).pressMethodKey("P")).toBe(true);
     expect(w.emitted("addTender")).toBeUndefined();
-    expect(toast.info).toHaveBeenCalledWith("Na retirada, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.");
+    expect(toast.info).toHaveBeenCalledWith("Na retirada, use dinheiro ou cartão na maquininha. Pix Efí exige confirmação automática.");
   });
 
   it("R (dinheiro) na entrega lança a linha sem aviso; no caixa, P lança o Pix", async () => {

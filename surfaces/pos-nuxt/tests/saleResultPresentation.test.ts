@@ -16,6 +16,7 @@ import {
   orderTicketLabel,
   pendingPixBadge,
   pixAwaiting,
+  pixUnpaid,
   resolveFiscalState,
   saleResultTitle,
   saleResultTone,
@@ -61,7 +62,7 @@ describe("saleResultTitle — o obrigado é nominal quando há cliente", () => {
   });
 });
 
-describe("PIX pendente NÃO veste cara de venda concluída", () => {
+describe("Pix pendente NÃO veste cara de venda concluída", () => {
   // ⚠️ O defeito: `paymentFailed` só era verdadeiro com "error"/"unavailable",
   // e o Pix PENDENTE — QR na tela, polling vivo, dinheiro nenhum na conta —
   // passava por sucesso: check verde, "Venda concluída" em corpo 3xl e o nome
@@ -99,7 +100,7 @@ describe("changeDisplay — troco pronto para o palco", () => {
 });
 
 describe("pixAwaiting — prova pendente na tela", () => {
-  it("PIX com prova + polling = aguardando", () => {
+  it("Pix com prova + polling = aguardando", () => {
     expect(pixAwaiting(pixProof(), "polling")).toBe(true);
   });
   it("confirmado, expirado ou sem prova não é aguardando", () => {
@@ -119,16 +120,16 @@ describe("autoAdvanceSeconds — a tela nunca some sozinha em cima de um gesto",
   it("cartão (link do checkout): contagem curta e cancelável", () => {
     expect(autoAdvanceSeconds({ ...base, payment: cardProof() })).toBe(AUTO_ADVANCE_SECONDS);
   });
-  it("PIX confirmado avança", () => {
+  it("Pix confirmado avança", () => {
     expect(autoAdvanceSeconds({ ...base, payment: pixProof(), pixStatus: "paid" })).toBe(AUTO_ADVANCE_SECONDS);
   });
   it("troco a conferir NUNCA auto-avança", () => {
     expect(autoAdvanceSeconds({ ...base, changeQ: 500 })).toBe(0);
   });
-  it("PIX aguardando NUNCA auto-avança (sair é gesto explícito)", () => {
+  it("Pix aguardando NUNCA auto-avança (sair é gesto explícito)", () => {
     expect(autoAdvanceSeconds({ ...base, payment: pixProof(), pixStatus: "polling" })).toBe(0);
   });
-  it("PIX expirado não some sozinho (prova não resolvida)", () => {
+  it("Pix expirado não some sozinho (prova não resolvida)", () => {
     expect(autoAdvanceSeconds({ ...base, payment: pixProof(), pixStatus: "expired" })).toBe(0);
   });
   it("prefers-reduced-motion desliga a contagem", () => {
@@ -137,17 +138,37 @@ describe("autoAdvanceSeconds — a tela nunca some sozinha em cima de um gesto",
 });
 
 describe("enterAdvances — o Enter que validou não engole a tela do troco", () => {
-  it("sem troco e sem PIX pendente, Enter avança", () => {
+  it("sem troco e sem Pix pendente, Enter avança", () => {
     expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle" })).toBe(true);
   });
   it("com troco, Enter não avança (confirmação explícita)", () => {
     expect(enterAdvances({ changeQ: 1000, payment: null, pixStatus: "idle" })).toBe(false);
   });
-  it("PIX aguardando: só o toque deliberado sai", () => {
+  it("Pix aguardando: só o toque deliberado sai", () => {
     expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "polling" })).toBe(false);
   });
-  it("PIX confirmado libera o Enter", () => {
+  it("Pix confirmado libera o Enter", () => {
     expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "paid" })).toBe(true);
+  });
+  it("Pix vencido: o Enter não passa por cima do aviso", () => {
+    expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "expired" })).toBe(false);
+  });
+});
+
+describe("Pix vencido sem pagar NÃO veste cara de venda concluída", () => {
+  // Auditoria do #2918: o Pix vencia, o QR morto seguia na tela e o título
+  // acendia o verde de "Venda concluída" sobre um dinheiro que não entrou.
+  it("o título só registra a venda, sem agradecer", () => {
+    expect(saleResultTitle("Maria da Silva", pixProof(), "expired")).toBe("Venda registrada");
+  });
+  it("o selo não é verde", () => {
+    expect(saleResultTone(pixProof(), "expired")).toBe("failed");
+  });
+  it("pixUnpaid só vale para o Pix com prova que venceu", () => {
+    expect(pixUnpaid(pixProof(), "expired")).toBe(true);
+    expect(pixUnpaid(pixProof(), "polling")).toBe(false);
+    expect(pixUnpaid(pixProof(), "paid")).toBe(false);
+    expect(pixUnpaid(null, "expired")).toBe(false);
   });
 });
 

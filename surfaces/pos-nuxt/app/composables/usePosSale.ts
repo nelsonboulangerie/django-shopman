@@ -91,6 +91,8 @@ import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptCo
 import { closeGuardNotice } from "~/presentation/closeGuard";
 import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
+import { crossAppLinkAttrs } from "../../../operator-kit/app/presentation/appLaunch";
+import { isInstalledDisplay } from "../../../operator-kit/app/utils/displayMode";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
 import { pendingPixDeadlineMs, pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
@@ -868,8 +870,25 @@ export function usePosSale(deps: PosSaleDeps) {
   function resolveBackgroundPix(orderRef: string, outcome: "paid" | "expired") {
     if (!pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
     forgetPendingPix(orderRef);
-    if (outcome === "paid") toast.success(`PIX do pedido ${orderRef} confirmado.`);
-    else toast.warning(`Não confirmamos o PIX do pedido ${orderRef}. Confira no gestor ou gere um novo pagamento.`);
+    if (outcome === "paid") {
+      toast.success(`Pix do pedido ${orderRef} confirmado.`);
+      return;
+    }
+    // O aviso traz o botão que resolve: a venda está fechada, o PDV não gera
+    // outro Pix, e o pagamento se acerta no pedido, no Gestor. O link abre na
+    // janela certa (instalado, o Gestor tem janela própria; na aba, a mesma).
+    const href = orderUrl(ordersUrl.value, orderRef);
+    toast.warning(`O Pix do pedido ${orderRef} não foi confirmado.`, href
+      ? {
+          action: {
+            label: "Abrir o pedido no Gestor",
+            onClick: () => {
+              const attrs = crossAppLinkAttrs({ installed: isInstalledDisplay(), href, currentOrigin: window.location.origin });
+              window.open(href, attrs.target, attrs.rel);
+            },
+          },
+        }
+      : undefined);
   }
   async function pollBackgroundPix() {
     if (backgroundPixInFlight) return;
@@ -1519,7 +1538,7 @@ export function usePosSale(deps: PosSaleDeps) {
   function addTender(method: string) {
     if (cart.paymentCollection === "on_delivery" && !["cash", "credit", "debit"].includes(method)) {
       const handoff = cart.fulfillmentType === "pickup" ? "retirada" : "entrega";
-      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. Pix Efí exige confirmação automática.`);
       return;
     }
     tenders.addTender(method);
