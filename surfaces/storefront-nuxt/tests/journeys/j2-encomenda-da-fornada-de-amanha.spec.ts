@@ -58,7 +58,8 @@ test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', asyn
     await page.getByRole('radio', { name: /^Pix/ }).click()
     await page.getByRole('button', { name: 'Revisar pedido' }).click()
     await expect(page.getByRole('heading', { name: 'Revise seu pedido' })).toBeVisible()
-    const pickup = /Retirada\s*·\s*[a-zá]{3},\s*(\d{2}\/\d{2})\s*·\s*A\s+partir\s+das\s+\d{1,2}h(\d{2})?/
+    // "Retirada · Amanhã · A partir das 15h" (ou "dom, 22/11", quando a fornada não é amanhã).
+    const pickup = /Retirada\s*·\s*(Amanhã|[a-zá]{3},\s*\d{2}\/\d{2})\s*·\s*A\s+partir\s+das\s+\d{1,2}h(\d{2})?/
     const review = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Revise seu pedido' }) })
     await expect(review).toContainText(pickup)
     await page.waitForTimeout(600) // a folha da revisão termina de subir antes da captura
@@ -71,7 +72,15 @@ test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', asyn
     await expect(page).toHaveURL(/\/pedido\/[^/]+$/, { timeout: 60_000 })
     await settled(page)
     await paysPixOnTracking(page, testInfo)
-    await expect(page.locator('main'), `o acompanhamento deveria dizer o dia da fornada (${day})`).toContainText(day)
+    // O mesmo dia, dito como o acompanhamento diz: "amanhã" ou a data (dd/mm) de amanhã,
+    // medida no navegador, que roda no fuso da loja.
+    const tomorrow = await page.evaluate(() => {
+      const d = new Date()
+      d.setDate(d.getDate() + 1)
+      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+    })
+    const sameDay = day === 'Amanhã' ? new RegExp(`amanhã|${tomorrow}`, 'i') : new RegExp(day.match(/\d{2}\/\d{2}/)![0].replace('/', '\\/'))
+    await expect(page.locator('main'), `o acompanhamento deveria dizer o dia da fornada (${day})`).toContainText(sameDay)
     await capture(page, testInfo, 'acompanhamento-amanha')
   })
 })
