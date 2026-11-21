@@ -144,7 +144,8 @@ const CHAVES_DECLARADAS: Record<string, string> = {
   'storefront-pwa-install-dismissed-until': 'só a data em que o convite foi dispensado',
   'shopman-order-secured': 'marca de que um pedido foi enviado nesta visita (sessionStorage); não guarda dado pessoal',
   'shopman-intention:': 'chave de idempotência de uma ação; não guarda dado pessoal',
-  'shop-marketing-prompt': 'marca de convite já visto; não guarda dado pessoal'
+  'shop-marketing-prompt': 'marca de convite já visto; não guarda dado pessoal',
+  'shopman:storefront:pwa-update': 'marca da troca de versão do app instalado (gatilho e versão do build, até o boot seguinte); não guarda dado pessoal'
 }
 
 function arquivosDoApp (dir: string): string[] {
