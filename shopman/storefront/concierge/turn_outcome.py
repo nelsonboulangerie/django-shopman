@@ -47,19 +47,39 @@ class TurnOutcome:
     unclear: bool = False
 
 
+def collapse_repeats(texts, *, limited: bool) -> list[str]:
+    """As falas do turno, com a repetição idêntica seguida contada uma vez (ADR-050).
+
+    Sem identificador de mensagem (ingresso "pelo menos uma vez"), um reenvio técnico do
+    provedor é indistinguível de o cliente repetir a frase. As duas ficam na transcrição
+    (nada é descartado), mas no mesmo lote valem como UM comando: "mais 2" reenviado não
+    vira "mais 4". Com identificador verificado, cada mensagem conta.
+    """
+    texts = [text for text in texts if text]
+    if not limited:
+        return texts
+    out: list[str] = []
+    for text in texts:
+        if not out or " ".join(text.split()).casefold() != " ".join(out[-1].split()).casefold():
+            out.append(text)
+    return out
+
+
 def current_customer_text(conversation: Conversation) -> str:
     """Texto humano coberto pelo claim atual: as entradas deste turno, na ordem."""
     inbound_ids = tuple(getattr(conversation, "_inbound_ids", ()) or ())
     if not inbound_ids:
         return ""
-    return "\n".join(
+    texts = (
         conversation.messages.filter(
             pk__in=inbound_ids,
             kind=ConversationMessage.Kind.INBOUND,
         )
         .order_by("pk")
         .values_list("text", flat=True)
-    ).strip()
+    )
+    limited = bool(getattr(conversation, "_limited_event_assurance", False))
+    return "\n".join(collapse_repeats(texts, limited=limited)).strip()
 
 
 def addition_outcome(conversation, resolution, *, memory, memos) -> TurnOutcome | None:
