@@ -616,7 +616,7 @@ function nuxtIcon(icon: string): string {
       <NuxtLink
         v-if="canOpen"
         :to="`/${card.ref}`"
-        class="shrink-0 text-xl font-bold leading-none text-highlighted hover:underline"
+        class="-my-3 inline-flex min-h-11 min-w-11 shrink-0 items-center text-xl font-bold leading-none text-highlighted hover:underline"
         :class="handoff ? 'line-through decoration-success/60' : ''"
         :aria-label="`Abrir pedido ${card.ref}`"
         >{{ code.code }}</NuxtLink
@@ -781,7 +781,7 @@ function nuxtIcon(icon: string): string {
           <NuxtLink
             v-if="canOpen"
             :to="`/${card.ref}`"
-            class="group shrink-0"
+            class="group -my-1.5 flex min-h-11 min-w-11 shrink-0 items-center"
             :aria-label="`Abrir pedido ${card.ref}`"
           >
             <span
