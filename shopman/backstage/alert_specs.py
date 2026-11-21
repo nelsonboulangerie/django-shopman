@@ -55,7 +55,10 @@ ALERT_SPECS: dict[str, AlertSpec] = {
         "Loja online", "i-lucide-credit-card", "Cartão autorizado esperando aceite", 60,
     ),
     # WhatsApp: régua de atendimento de 5 minutos (dono, 08/10/2026).
-    "concierge_handoff": AlertSpec("WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5),
+    # No topo da tela também (dono, 20/11/2026): todo handoff é gente esperando gente.
+    "concierge_handoff": AlertSpec(
+        "WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5, on_screen=True,
+    ),
     # "Vou verificar": a pergunta que a Concierge levou à equipe. Conta até o prazo que
     # ela prometeu ao cliente (``respond_by``, contado com a loja aberta, por isso sem
     # régua da casa) e, vencido, fica na tela: a promessa é da casa.
