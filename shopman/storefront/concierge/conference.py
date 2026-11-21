@@ -3,10 +3,11 @@
 A regra é do framework (``conversational_commerce.reply.conference``); aqui mora o que é da
 Nice:
 
-- **o juiz** (``JevJudge``): uma pergunta ``choice`` ao Jev, com a fala do cliente e a
-  resposta candidata, as duas redigidas pela fronteira de privacidade da observação
-  (documento, telefone, e-mail, endereço e nomes conhecidos omitidos; D-040 e o 1b). Passa
-  pelo freio e pelo medidor da porta de IA (``ai.jev_post``). Sem Jev configurado, não há
+- **o juiz** (``JevJudge``): uma pergunta ``choice`` ao Jev, com a fala do cliente (pelo
+  redator da observação) e a resposta que a casa vai enviar pelo MESMO redator da fala da
+  casa do 1b (``triage.house_line``: sem nome, contato, documento, endereço, código de pedido
+  nem valores; D-040 e o adendo de 21/11). Só essas duas falas, nada da conversa anterior.
+  Passa pelo freio e pelo medidor da porta de IA (``ai.jev_post``). Sem Jev configurado, não há
   juiz: a conferência fica com o lado determinístico;
 - **por construção**: a resposta é por molde sobre o fato, salvo quando a IA compôs a partir
   das FAQs (``faq_answer``), que é texto redigido;
@@ -69,9 +70,10 @@ class JevJudge:
         self.session = session
 
     def build_request(self, *, customer: str, reply: str, previous: str = "") -> dict:
-        state = {"customer_message": _redacted(customer), "house_reply": _redacted(reply)}
-        if previous:
-            state["house_previous_reply"] = _redacted(previous)
+        from .triage import house_line
+
+        # ``previous`` não vai: minimização (só a fala do cliente e a resposta a conferir).
+        state = {"customer_message": _redacted(customer), "house_reply": house_line([("Casa", reply)])}
         return {
             "model": self.model,
             "state": state,

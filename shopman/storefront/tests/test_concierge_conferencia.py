@@ -107,7 +107,11 @@ def test_the_judge_request_is_redacted_and_doubt_does_not_fail(monkeypatch):
     sent = _judge(monkeypatch, "off_target", confidence=0.4)
     judge = conference.JevJudge(session=object())
 
-    verdict = judge.judge(customer="meu cpf é 123.456.789-09, tem pão?", reply="Temos sim. Quer separar?")
+    verdict = judge.judge(customer="meu cpf é 123.456.789-09, tem pão?",
+                          reply="Pedido W29: R$ 24,00. Quer separar?", previous="Oi! Como posso ajudar?")
 
-    assert "123.456.789-09" not in sent[0]["state"]["customer_message"]
+    state = sent[0]["state"]
+    assert "123.456.789-09" not in state["customer_message"]
+    assert "24,00" not in state["house_reply"] and "W29" not in state["house_reply"]  # como no 1b
+    assert set(state) == {"customer_message", "house_reply"}  # nada da conversa anterior
     assert verdict == JudgeVerdict("answers", 0.4)  # o Jev em dúvida não derruba resposta boa
