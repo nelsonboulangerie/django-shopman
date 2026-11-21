@@ -1398,12 +1398,21 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
     paga na retirada ou na entrega saía sem frase, e quem recusava não sabia se
     o silêncio era "nada a devolver" ou "não sei". "Não sei" continua sendo
     silêncio: ``captured_balance_q`` devolve ``None`` quando um intent não pôde
-    ser lido, e ``None`` não é zero. O iFood também: o dinheiro é dele.
+    ser lido, e ``None`` não é zero. O iFood tem frase própria
+    (:func:`_ifood_cancel_money_effect`): quem devolve é ele.
     """
     empty = {"cancel_money_effect": "", "cancel_waits_for_gateway": False}
-    if order.channel_ref == "ifood" or order.status not in {"new", "accepted", "preparing", "ready", "dispatched", "delivered", "completed"}:
+    if order.status not in {"new", "accepted", "preparing", "ready", "dispatched", "delivered", "completed"}:
         return empty
+    if order.channel_ref == "ifood":
+        return {**empty, "cancel_money_effect": _ifood_cancel_money_effect(order)}
+    # "Não sei" nunca vira zero: o intent do pedido que o Payman não devolve cala a
+    # frase. Lido ele, a régua é a do estorno do cancelamento: TODOS os intents do
+    # pedido, não só os que ele referencia (um Pix pago no QR anterior também volta, #2710).
     captured_q = payment_svc.captured_balance_q(order)
+    if captured_q is not None:
+        held_q = payment_svc.held_by_order_q(order)
+        captured_q = None if held_q is None else max(captured_q, held_q)
     if captured_q:
         return {
             "cancel_money_effect": refund_effect(captured_q, method),
@@ -1418,6 +1427,31 @@ def _cancel_money_effect(order: Order, method: str, payment_status: str) -> dict
     if captured_q == 0:
         return {**empty, "cancel_money_effect": "Nada foi cobrado do cliente."}
     return empty
+
+
+#: Até aqui o entregador ainda não cobrou o que o cliente paga na entrega.
+_BEFORE_DISPATCH = frozenset({"new", "accepted", "preparing", "ready"})
+
+
+def _ifood_cancel_money_effect(order: Order) -> str:
+    """O dinheiro do pedido do iFood, dito antes de recusar ou cancelar (#2710, item 5).
+
+    O que o cliente pagou pelo app (``prepaid``) volta pelo iFood, nunca pela casa. O que
+    ele paga na entrega (``OFFLINE``) ainda não foi cobrado antes de o pedido sair. Sem a
+    informação do iFood (``unknown``), ou depois da saída, a tela não afirma nada.
+    """
+    data = order.data or {}
+    payments = (data.get("ifood") or {}).get("payments") or {}
+    try:
+        prepaid_q = int(payments.get("prepaid_q") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if prepaid_q > 0:
+        return "Quem devolve o dinheiro ao cliente é o iFood."
+    status = str((data.get("payment") or {}).get("status") or "")
+    if status == "pending" and str(order.status) in _BEFORE_DISPATCH:
+        return "Nada foi cobrado do cliente."
+    return ""
 
 
 def _channel_name(ref: str) -> str:

@@ -14403,7 +14403,9 @@
             "_PAID_STATUSES",
             "cancelled_money",
             "CancelledMoney",
-            "_HOSTED_CARD_METHODS"
+            "_HOSTED_CARD_METHODS",
+            "held_by_order_q",
+            "_held_intents"
           ]
         }
       ],
