@@ -21,18 +21,22 @@ from django.db import transaction
 from shopman.shop.models import Conversation
 
 
-def lock_turn_authority(conversation, *, channel_ref: str | None = None) -> Conversation:
+def lock_turn_authority(conversation, *, channel_ref: str | None = None, level=True) -> Conversation:
     """Trava a conversa e reconfere a posse na transação corrente do efeito.
 
     Exige transação aberta: a trava fora dela seria solta na mesma instrução, e a
     reconferência voltaria a ser "confere, solta, grava".
+
+    ``level``: a autoridade que o efeito exige (``assert_turn_authority(for_mutation=)``).
+    O pedido fechado pelo código do orçamento (ADR-050) passa o nível da sacola; a posse
+    (cerca, transferência, claim) é reconferida igual em todos os níveis.
     """
     from .service import TurnRevoked, assert_turn_authority
 
     if not transaction.get_connection().in_atomic_block:
         raise RuntimeError("lock_turn_authority exige a transação do efeito")
     Conversation.objects.select_for_update().only("pk").get(pk=conversation.pk)
-    current = assert_turn_authority(conversation, for_mutation=True)
+    current = assert_turn_authority(conversation, for_mutation=level)
     if channel_ref is not None and current.channel_ref != channel_ref:
         raise TurnRevoked("identity_changed")
     return current

@@ -48,3 +48,5 @@ def concierge_reading_without_network(request, monkeypatch):
     from shopman.storefront.concierge import intents
 
     monkeypatch.setattr(intents, "build_client", lambda: None)
+    # A resposta das FAQs pela IA (#2935) também nunca abre conexão em teste.
+    monkeypatch.setattr(intents, "build_faq_client", lambda: (None, ""))
