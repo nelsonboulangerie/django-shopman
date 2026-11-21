@@ -4,6 +4,7 @@
 import { computed, defineComponent, h } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { flushPromises } from "@vue/test-utils";
 
 import PosCashFailureNotice from "~/components/PosCashFailureNotice.vue";
 import { usePosCashSession } from "~/composables/usePosCashSession";
@@ -50,6 +51,19 @@ describe("PosCashFailureNotice", () => {
     await wrapper.setProps({ busy: true });
     const waiting = wrapper.get("[data-cash-failure]").findAll("button").find((b) => b.text().includes("Tentar de novo"));
     expect(waiting!.attributes("disabled")).toBeDefined();
+  });
+
+  it("a falha traz o foco para o botão que resolve", async () => {
+    // O botão do gesto se desabilita enquanto corre, e o navegador joga o foco no
+    // `body`: sem isto, o teclado perdia o lugar fora do diálogo.
+    const wrapper = await mountSuspended(PosCashFailureNotice, {
+      props: { failure: null, gesture: "settle_account", actionLabel: "Tentar de novo" },
+      attachTo: document.body,
+    });
+    await wrapper.setProps({ failure: { gesture: "settle_account", message: "O acerto não foi registrado. Tente de novo agora." } });
+    await flushPromises();
+    expect(document.activeElement?.textContent).toContain("Tentar de novo");
+    wrapper.unmount();
   });
 
   it("não mostra a falha de OUTRO gesto, nem nada sem falha", async () => {

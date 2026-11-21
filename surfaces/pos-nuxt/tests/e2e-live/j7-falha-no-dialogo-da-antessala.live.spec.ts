@@ -92,7 +92,9 @@ async function failsInsideDialog(
   await expect(notice.getByRole("button").filter({ hasNotText: "Tentar de novo" }), `${opts.label}: o aviso não tem X`).toHaveCount(1);
 
   const selector = `[data-cash-failure-gesture="${opts.gesture}"]`;
-  await audits(page, opts.label, `${selector} [data-slot="title"], ${selector} [data-slot="actions"] button`);
+  // O X (só ícone, com `aria-label`) fica de fora da régua de texto; a presença dele
+  // já foi conferida acima.
+  await audits(page, opts.label, `${selector} [data-slot="title"], ${selector} [data-slot="actions"] button:not([aria-label])`);
 
   // Posição: dentro do diálogo e da área visível dele; alinhado com o que está acima
   // e abaixo na mesma coluna. Foco: segue dentro do diálogo (a falha não o rouba).

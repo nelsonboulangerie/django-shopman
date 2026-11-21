@@ -26,11 +26,31 @@ const props = defineProps<{
 const emit = defineEmits<{ dismiss: []; action: [] }>();
 
 const visible = computed(() => props.failure?.gesture === props.gesture);
+
+// O FOCO vai para o botão que resolve. O botão que disparou o gesto fica desabilitado
+// enquanto ele corre, e o navegador joga o foco no `body` quando o elemento focado
+// se desabilita: depois da falha, o teclado (e o leitor de tela) perdia o lugar
+// fora do diálogo (prévia do #2726). Cada falha nova traz o foco de volta.
+const root = useTemplateRef<{ $el?: HTMLElement }>("root");
+watch(
+  () => (visible.value ? props.failure : null),
+  async (failure) => {
+    if (!failure) return;
+    await nextTick();
+    const el = root.value?.$el;
+    if (!(el instanceof HTMLElement)) return;
+    const action = el.querySelector<HTMLButtonElement>('[data-slot="actions"] button:not([aria-label])');
+    if (action) action.focus();
+    else el.focus();
+  },
+);
 </script>
 
 <template>
   <NuxtAlert
     v-if="visible"
+    ref="root"
+    tabindex="-1"
     color="error"
     variant="subtle"
     icon="i-lucide-circle-alert"
