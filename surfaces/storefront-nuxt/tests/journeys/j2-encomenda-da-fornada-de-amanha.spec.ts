@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { checkoutSigningInByCode, paysPixOnTracking } from './support/customer'
+import { checkoutSigningInByCode } from './support/customer'
 import { capture, newCustomerPhone, settled } from './support/stack'
 
 // J2 · A encomenda da fornada de amanhã (docs/plans/EXCELENCIA-STOREFRONT-PLANO.md, seção 8;
@@ -71,16 +71,23 @@ test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', asyn
     await page.getByRole('button', { name: 'Enviar pedido' }).click()
     await expect(page).toHaveURL(/\/pedido\/[^/]+$/, { timeout: 60_000 })
     await settled(page)
-    await paysPixOnTracking(page, testInfo)
-    // O mesmo dia, dito como o acompanhamento diz: "amanhã" ou a data (dd/mm) de amanhã,
-    // medida no navegador, que roda no fuso da loja.
+    await capture(page, testInfo, 'pix')
+    await page.getByRole('button', { name: 'Simular pagamento' }).click()
+    await expect(page.getByText('Pagamento recebido').first()).toBeVisible({ timeout: 60_000 })
+    // A encomenda paga diz até quando a loja confirma (#2770) e para quando é o pedido.
+    const main = page.locator('main')
+    await expect(main).toContainText(/A\s+loja\s+confirma\s+até\s+[^.]*?\d{1,2}h(\d{2})?\s+e\s+avisa\s+por\s+aqui\./)
+    // O mesmo dia da revisão: "amanhã" ou a data (dd/mm) de amanhã, medida no navegador
+    // (que roda no fuso da loja).
     const tomorrow = await page.evaluate(() => {
       const d = new Date()
       d.setDate(d.getDate() + 1)
       return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
     })
-    const sameDay = day === 'Amanhã' ? new RegExp(`amanhã|${tomorrow}`, 'i') : new RegExp(day.match(/\d{2}\/\d{2}/)![0].replace('/', '\\/'))
-    await expect(page.locator('main'), `o acompanhamento deveria dizer o dia da fornada (${day})`).toContainText(sameDay)
+    const sameDay = day === 'Amanhã'
+      ? new RegExp(`Sua\\s+encomenda\\s+é\\s+para\\s+(amanhã|[^.]*${tomorrow})`)
+      : new RegExp(`Sua\\s+encomenda\\s+é\\s+para\\s+[^.]*${day.match(/\d{2}\/\d{2}/)![0]}`)
+    await expect(main, `o acompanhamento deveria dizer o dia da fornada (${day})`).toContainText(sameDay)
     await capture(page, testInfo, 'acompanhamento-amanha')
   })
 })
