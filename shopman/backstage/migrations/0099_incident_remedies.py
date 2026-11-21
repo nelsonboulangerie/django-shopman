@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 ('mode', models.CharField(default='on', max_length=10, verbose_name='modo')),
                 ('outcome', models.CharField(choices=[('ran', 'Acionado, conferindo'), ('resolved', 'Resolveu'), ('not_resolved', 'Não resolveu'), ('would_run', 'Acionaria (sombra)'), ('refused', 'O domínio recusou'), ('skipped', 'Fica com gente'), ('ceiling', 'Teto de tentativas')], db_index=True, max_length=16, verbose_name='desfecho')),
                 ('detail', models.CharField(blank=True, default='', max_length=300, verbose_name='detalhe')),
-                ('cost_usd', models.DecimalField(decimal_places=6, default=0, max_digits=10, verbose_name='custo (US$)')),
+                ('cost_usd_micros', models.PositiveBigIntegerField(default=0, verbose_name='custo (micro-US$)')),
                 ('created_at', models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='decidido em')),
                 ('verified_at', models.DateTimeField(blank=True, null=True, verbose_name='conferido em')),
             ],

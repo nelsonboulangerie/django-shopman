@@ -156,21 +156,21 @@ def step(alert_id: int, *, action_id: int | None = None, judge=None):
     if verdict.kind in {"no", "judge"}:
         reason = verdict.reason if verdict.kind == "no" else f"{verdict.reason} (pede leitura)"
         record(alert, remedy, IncidentAction.SKIPPED, reason, once=True, mode=mode,
-               decided_by=decided_by, confidence=confidence, cost_usd=cost)
+               decided_by=decided_by, confidence=confidence, cost_usd_micros=cost)
         return None
 
     if mode == "shadow":
         record(alert, remedy, IncidentAction.WOULD_RUN, verdict.reason, once=True, mode=mode,
-               decided_by=decided_by, confidence=confidence, cost_usd=cost)
+               decided_by=decided_by, confidence=confidence, cost_usd_micros=cost)
         return None
     try:
         detail = remedy.apply(alert)
     except remedies.RemedyRefused as exc:
         record(alert, remedy, IncidentAction.REFUSED, str(exc), mode=mode,
-               decided_by=decided_by, confidence=confidence, cost_usd=cost)
+               decided_by=decided_by, confidence=confidence, cost_usd_micros=cost)
         return None
     action = record(alert, remedy, IncidentAction.RAN, f"{verdict.reason}: {detail}", mode=mode,
-                    decided_by=decided_by, confidence=confidence, cost_usd=cost)
+                    decided_by=decided_by, confidence=confidence, cost_usd_micros=cost)
     logger.info("incident.acted alert=%s remedy=%s target=%s", alert.pk, remedy.key, target)
     return Deferred(now + remedy.verify_after, {"action_id": action.pk})
 

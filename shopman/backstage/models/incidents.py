@@ -104,7 +104,8 @@ class IncidentAction(models.Model):
     mode = models.CharField("modo", max_length=10, default="on")
     outcome = models.CharField("desfecho", max_length=16, choices=OUTCOMES, db_index=True)
     detail = models.CharField("detalhe", max_length=300, blank=True, default="")
-    cost_usd = models.DecimalField("custo (US$)", max_digits=10, decimal_places=6, default=0)
+    #: Custo da leitura da IA em micro-dólares (1 = US$ 0,000001), inteiro como o ``AiInvocation``.
+    cost_usd_micros = models.PositiveBigIntegerField("custo (micro-US$)", default=0)
     created_at = models.DateTimeField("decidido em", auto_now_add=True, db_index=True)
     verified_at = models.DateTimeField("conferido em", null=True, blank=True)
 
