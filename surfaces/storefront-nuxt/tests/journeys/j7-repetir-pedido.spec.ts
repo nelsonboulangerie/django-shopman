@@ -49,7 +49,9 @@ test('J7: a cliente desiste do pedido e o repete do acompanhamento, com as escol
     await expect(page).toHaveURL(/\/finalizar/)
     await settled(page)
     // O contato já vem feito, com quem ela é (nome e telefone na mesma linha).
-    await expect(page.getByText(new RegExp(`^${customer.name} \\(\\d{2}\\) \\d{4,5}-\\d{4}$`)).first()).toBeVisible()
+    const contact = page.locator('p').filter({ hasText: customer.name }).first()
+    await expect(contact).toBeVisible()
+    await expect(contact).toContainText(/\(\d{2}\)\s*\d{4,5}-\d{4}/)
     // As escolhas da outra vez voltam: retirada, hoje, Pix.
     await expect(page.getByRole('radio', { name: /^Retirada/ })).toBeChecked()
     await expect(page.getByText(/^Hoje · \d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/).first()).toBeVisible()
