@@ -67,6 +67,8 @@ class Sample:
 @dataclass
 class Prediction:
     intents: dict[str, float]  # ref → confiança, só as que o concorrente diz que tem
+    #: A confiança do Jev na própria escolha (``choice.confidence``); ``None`` sem ela.
+    confidence: float | None = None
     latency_ms: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -256,14 +258,28 @@ class LLMContender:
         )
 
 
-class JevContender:
-    """TypeSafe Jev: uma pergunta sim/não (``noul``) por intenção, todas numa chamada.
+#: A pergunta de escolha das intenções e a opção que não é nenhuma delas.
+INTENT_QUESTION = "intent"
+OTHER_INTENT = "other"
+OTHER_INTENT_DESCRIPTION = "nenhuma das anteriores: cumprimento, agradecimento ou outro assunto"
+INTENT_INSTRUCTIONS = "Qual é o assunto principal da mensagem do cliente?"
 
-    Formato da referência da API (https://docs.typesafe.ai/api.md, lida em
-    02/10/2026): ``POST /v1/systemone`` com ``Authorization: Bearer``, corpo
-    ``{state, model, questions}``, cada pergunta ``{"type": "noul",
-    "instructions": ...}``; a resposta traz ``answers[id] = {"type": "noul",
-    "noul": <0..1>}`` e ``usage.input_tokens``.
+
+class JevContender:
+    """TypeSafe Jev: UMA pergunta de escolha entre as intenções (e ``other``), numa chamada.
+
+    Até 21/11/2026 eram 12 perguntas sim/não (``noul``) independentes, sem contexto entre
+    elas: medido em produção, só 18% das mensagens passavam de 0,8 e o porteiro mandava 8
+    de 12 turnos à leitura com modelo. Na escolha as intenções competem entre si, e o Jev
+    devolve a probabilidade de cada uma e a confiança na escolha (padrão do ``JevMatcher``).
+    A pergunta "a mensagem traz mais de uma coisa?" (``multiple_parts``) segue ``noul``,
+    na mesma chamada.
+
+    Formato da referência da API (https://docs.typesafe.ai/api.md): ``POST /v1/systemone``
+    com ``Authorization: Bearer``, corpo ``{state, model, questions}``; ``choice`` é
+    ``{"type": "choice", "instructions", "criteria": {opção: descrição}}`` e a resposta
+    ``{"type": "choice", "choice", "probabilities", "confidence"}``; ``noul`` devolve
+    ``{"type": "noul", "noul": <0..1>}``.
     """
 
     name = "jev"
@@ -282,15 +298,23 @@ class JevContender:
             session = requests.Session()
         self.session = session
 
+    @staticmethod
+    def _split(categories: list[Category]) -> tuple[list[Category], list[Category]]:
+        """(as intenções da escolha, as perguntas sim/não à parte: ``multiple_parts``)."""
+        from .intents import MULTIPLE_PARTS
+
+        return ([c for c in categories if c.ref != MULTIPLE_PARTS], [c for c in categories if c.ref == MULTIPLE_PARTS])
+
     def build_request(self, sample: Sample, categories: list[Category]) -> dict:
-        return {
-            "model": self.model,
-            "state": {"customer_message": sample.text},
-            "questions": {
-                c.ref: {"type": "noul", "instructions": f"A mensagem do cliente inclui isto: {c.description}?"}
-                for c in categories
-            },
+        intents, yes_no = self._split(categories)
+        criteria = {c.ref: c.description for c in intents}
+        criteria[OTHER_INTENT] = OTHER_INTENT_DESCRIPTION
+        questions: dict = {
+            INTENT_QUESTION: {"type": "choice", "instructions": INTENT_INSTRUCTIONS, "criteria": criteria},
         }
+        for c in yes_no:
+            questions[c.ref] = {"type": "noul", "instructions": f"A mensagem do cliente inclui isto: {c.description}?"}
+        return {"model": self.model, "state": {"customer_message": sample.text}, "questions": questions}
 
     def scores(self, sample: Sample, categories: list[Category]) -> Prediction:
         """A probabilidade de TODAS as intenções, inclusive as abaixo do corte.
@@ -309,8 +333,13 @@ class JevContender:
             raise ContenderResponseError(jev_http_error(response, body))
         payload = response.json()
         usage = payload.get("usage") or {}
+        intents, yes_no = self._split(categories)
+        probabilities, confidence = parse_jev_choice(payload, question=INTENT_QUESTION)
+        scores = {c.ref: probabilities.get(c.ref, 0.0) for c in intents}
+        scores.update({c.ref: parse_jev_boolean(payload, question=c.ref) for c in yes_no})
         return Prediction(
-            intents={c.ref: parse_jev_boolean(payload, question=c.ref) for c in categories},
+            intents=scores,
+            confidence=confidence,
             latency_ms=latency_ms,
             input_tokens=int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0),
         )
@@ -319,6 +348,33 @@ class JevContender:
         prediction = self.scores(sample, categories)
         prediction.intents = {ref: p for ref, p in prediction.intents.items() if p >= PRESENT_AT}
         return prediction
+
+
+def parse_jev_choice(payload: dict, *, question: str) -> tuple[dict[str, float], float | None]:
+    """(probabilidade de cada opção, confiança na escolha) de uma pergunta ``choice`` do Jev.
+
+    Formato da referência (https://docs.typesafe.ai/api.md#choice-answer)::
+
+        {"answers": {"intent": {"type": "choice", "choice": "order",
+                                "probabilities": {"order": 0.88, ...}, "confidence": 0.81}}}
+
+    Qualquer outro formato falha dizendo as chaves que recebeu.
+    """
+    answers = payload.get("answers")
+    answer = answers.get(question) if isinstance(answers, dict) else None
+    if not isinstance(answer, dict):
+        raise ContenderResponseError(f"Resposta do Jev sem '{question}'. Chaves recebidas: {sorted(payload)}")
+    probabilities = answer.get("probabilities")
+    if not isinstance(probabilities, dict) or answer.get("choice") not in probabilities:
+        raise ContenderResponseError(f"Resposta do Jev ilegível para '{question}'. Chaves: {sorted(answer)}")
+    out = {}
+    for ref, value in probabilities.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
+            raise ContenderResponseError(f"Probabilidade ilegível para '{ref}' em '{question}'.")
+        out[str(ref)] = float(value)
+    confidence = answer.get("confidence")
+    valid = isinstance(confidence, (int, float)) and not isinstance(confidence, bool) and 0.0 <= confidence <= 1.0
+    return out, (float(confidence) if valid else None)
 
 
 def parse_jev_boolean(payload: dict, *, question: str) -> float:

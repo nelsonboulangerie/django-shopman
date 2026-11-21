@@ -127,6 +127,15 @@ def test_jev_hesitating_sends_to_the_reading():
     assert not _gate("Amanhã vai ter pão de forma?", {"human": 0.6, "supplier_offer": 0.55}).direct
 
 
+
+def test_the_jev_confidence_in_its_choice_is_read_by_the_gate():
+    """A escolha do Jev (21/11/2026) traz a confiança: alta decide, baixa manda à leitura."""
+    confident = _gate("Vocês entregam no Bela Suíça?", {"hours_delivery": 0.62, intents.JEV_CONFIDENCE: 0.86})
+    unsure = _gate("Amanhã vai ter pão de forma?", {"complaint": 0.62, intents.JEV_CONFIDENCE: 0.3})
+
+    assert (confident.direct, confident.intent) == (True, "hours_delivery")
+    assert (unsure.direct, unsure.reason) == (False, "jev_unsure")
+
 # ── 2. A leitura ──────────────────────────────────────────────────────
 
 
