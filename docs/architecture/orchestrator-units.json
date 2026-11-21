@@ -1062,7 +1062,9 @@
             "COURIER_TYPES",
             "RESOLVED_BY_DELIVERY",
             "RESOLVED_BY_REFUND",
-            "RESOLVED_BY_UNDO"
+            "RESOLVED_BY_UNDO",
+            "_PHASE_STUCK_MARKER",
+            "resolve_superseded_phase_alerts"
           ]
         }
       ],
