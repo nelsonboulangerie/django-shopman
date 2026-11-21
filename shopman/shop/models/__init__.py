@@ -62,6 +62,7 @@ from .ifood_merchant import (
     IFoodStoreStatus,
 )
 from .instance_apply import InstanceApplyRecord
+from .kitchen_note import KitchenNoteTag
 from .omotenashi_copy import OmotenashiCopy
 from .operator_passkey import OperatorPasskey
 from .privacy import (
@@ -136,6 +137,7 @@ __all__ = [
     "CourierRate",
     "CourierLink",
     "FAQEntry",
+    "KitchenNoteTag",
     "IFoodInterruption",
     "IFoodInterruptionKind",
     "IFoodInterruptionState",

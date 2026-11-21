@@ -1,6 +1,6 @@
 // A grade da estação se reorganiza quando a fila muda: chega um pedido mais urgente e
 // vai para a esquerda, um Pronto sai e o próximo assume o foco. Provado na UI em
-// 06/11/2026 (Encomendas, 800×600): o operador tocou em "Iniciar preparo" do P30
+// 06/11/2026 (Separação, 800×600): o operador tocou em "Iniciar preparo" do P30
 // enquanto o P30 deslizava sobre o T69, e o toque caiu no T69, abrindo o detalhe do
 // pedido errado. O deslize saiu (07/11: ninguém passa por cima de ninguém; quem troca
 // de célula aparece direto nela), mas o respiro de quem entra e de quem sai continua

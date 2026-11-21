@@ -250,3 +250,30 @@ def test_the_badge_the_alert_name_and_the_screens_say_ficar_pronto():
     # E acusaria a frase antiga, sem confundir com o que não é do forno.
     assert says_out_of_the_oven_on_screen("recebe o aviso de que o pão saiu do forno.")
     assert not says_out_of_the_oven_on_screen("a mensagem que saiu do seu WhatsApp.")
+
+
+def _house_rules_texts() -> dict[str, str]:
+    """Toda frase escrita nas regras da casa da Concierge (``storefront/concierge/house_rules.py``).
+
+    São os exemplos que ensinam a Concierge a falar com a cliente: o que eles dizem, ela
+    repete. Lidos como literais do código, sem importar o módulo (#2797).
+    """
+    import ast
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "concierge" / "house_rules.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    out: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.strip():
+            out[f"house_rules.py:{node.lineno}"] = node.value
+    return out
+
+
+def test_as_regras_da_casa_da_concierge_dizem_ficar_pronto():
+    """A Concierge aprende a falar pelos exemplos das regras da casa (#2797, item 1):
+    "A fornada acabou de sair do forno" virava a frase dela para a cliente."""
+    texts = _house_rules_texts()
+    assert texts, "as regras da casa sumiram do lugar: a trava não está varrendo nada"
+    offenders = {where: text for where, text in texts.items() if says_out_of_the_oven(text)}
+    assert offenders == {}

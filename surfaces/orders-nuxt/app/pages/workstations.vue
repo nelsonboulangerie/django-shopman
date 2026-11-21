@@ -59,11 +59,15 @@ const newLabel = ref("");
 // lista saía sem escolha, enquanto o cliente hidratava já com o primeiro tipo
 // (mismatch na carga direta).
 const pickedKind = ref<WorkstationManageRow["kind"] | "">("");
-const newKind = computed<WorkstationManageRow["kind"] | "">(() =>
-  newKinds.value.some((kind) => kind.kind === pickedKind.value)
-    ? pickedKind.value
-    : (newKinds.value[0]?.kind ?? ""),
-);
+// O padrão é o tipo que o servidor indica (um que o Gestor oferece para vincular): o
+// primeiro da lista era "Atendimento", do PDV, e o posto criado aqui não aparecia para
+// vincular este dispositivo (#2584).
+const newKind = computed<WorkstationManageRow["kind"] | "">(() => {
+  const offered = (kind: string) => newKinds.value.some((option) => option.kind === kind);
+  if (offered(pickedKind.value)) return pickedKind.value;
+  const fallback = state.value?.default_kind ?? "";
+  return offered(fallback) ? fallback : (newKinds.value[0]?.kind ?? "");
+});
 function setNewKind(value: string | number) {
   if (newKinds.value.some((kind) => kind.kind === value))
     pickedKind.value = value as WorkstationManageRow["kind"];

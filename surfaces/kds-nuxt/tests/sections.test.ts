@@ -9,7 +9,7 @@ const EXIT = "https://gestor.example/?columns=expedition";
 const stations = [
   { ref: "cafes", name: "Cafés", type: "prep", count: 2 },
   { ref: "lanches", name: "Lanches", type: "prep", count: 0 },
-  { ref: "encomendas", name: "Encomendas", type: "picking", count: 1 },
+  { ref: "picking", name: "Separação", type: "picking", count: 1 },
 ];
 const base = { stations, priorityRef: "", exitUrl: EXIT, exitCount: 5 };
 
@@ -19,7 +19,7 @@ describe("seções da Cozinha", () => {
     expect(sections.map((s) => [s.label, s.to])).toEqual([
       ["Cafés", "/cafes"],
       ["Lanches", "/lanches"],
-      ["Encomendas", "/encomendas"],
+      ["Separação", "/picking"],
       ["Saída", EXIT],
       ["Painel de retirada", "/pickup"],
       ["Ajustes", undefined],
@@ -48,8 +48,8 @@ describe("seções da Cozinha", () => {
   });
 
   it("barra inferior: a estação aberta à frente, as outras na ordem do cadastro, Saída à vista", () => {
-    const sections = kdsSections({ ...base, priorityRef: "encomendas", place: "bar" });
-    expect(sections.map((s) => s.label)).toEqual(["Encomendas", "Cafés", "Lanches", "Saída", "Ajustes"]);
+    const sections = kdsSections({ ...base, priorityRef: "picking", place: "bar" });
+    expect(sections.map((s) => s.label)).toEqual(["Separação", "Cafés", "Lanches", "Saída", "Ajustes"]);
     expect(sections.some((s) => s.key === "pickup")).toBe(false);
   });
 
@@ -62,22 +62,22 @@ describe("seções da Cozinha", () => {
     const sections = kdsSections({ ...base, stations: many, priorityRef: "bar", place: "bar" });
     const visible = sections.slice(0, KDS_BAR_SECTIONS).map((s) => s.label);
     expect(visible).toEqual(["Bar", "Cafés", "Lanches", "Saída"]);
-    expect(sections.slice(KDS_BAR_SECTIONS).map((s) => s.label)).toEqual(["Encomendas", "Forno", "Ajustes"]);
+    expect(sections.slice(KDS_BAR_SECTIONS).map((s) => s.label)).toEqual(["Separação", "Forno", "Ajustes"]);
   });
 
   it("sem a estação aberta nem lembrada, a barra segue a ordem do cadastro", () => {
     const sections = kdsSections({ ...base, place: "bar" });
-    expect(sections.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Encomendas", "Saída", "Ajustes"]);
+    expect(sections.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Separação", "Saída", "Ajustes"]);
   });
 });
 
 describe("seções da Cozinha no shell da suíte", () => {
   it("uma lista, as duas ordens: a lateral pelo cadastro, a inferior com a aberta à frente", () => {
-    const sections = kdsShellSections({ ...base, priorityRef: "encomendas" });
+    const sections = kdsShellSections({ ...base, priorityRef: "picking" });
     const rail = sections.filter((s) => s.where !== "bar" && !s.foot).map((s) => s.label);
     const quick = sections.filter((s) => s.where !== "rail");
-    expect(rail).toEqual(["Cafés", "Lanches", "Encomendas", "Saída", "Painel de retirada"]);
-    expect(quick.filter((s) => s.quick).map((s) => s.label)).toEqual(["Encomendas", "Cafés", "Lanches", "Saída"]);
+    expect(rail).toEqual(["Cafés", "Lanches", "Separação", "Saída", "Painel de retirada"]);
+    expect(quick.filter((s) => s.quick).map((s) => s.label)).toEqual(["Separação", "Cafés", "Lanches", "Saída"]);
     expect(quick.at(-1)?.key).toBe("settings");
     expect(sections.filter((s) => s.foot).map((s) => s.label)).toEqual(["Ajustes"]);
   });
@@ -91,14 +91,14 @@ describe("seções da Cozinha no shell da suíte", () => {
 
 describe("seções da Cozinha no trocador (modelo de navegação, 31/10/2026)", () => {
   it("na ordem da barra lateral (a das teclas Alt+N), com Ajustes no fim", () => {
-    const sections = kdsSwitcherSections({ ...base, priorityRef: "encomendas" });
-    expect(sections.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Encomendas", "Saída", "Painel de retirada", "Ajustes"]);
+    const sections = kdsSwitcherSections({ ...base, priorityRef: "picking" });
+    expect(sections.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Separação", "Saída", "Painel de retirada", "Ajustes"]);
   });
 
   it("estações e Saída são do chão e vão para a barra de baixo; o Painel é da parede", () => {
     const sections = kdsSwitcherSections(base);
     const floor = sections.filter((s) => s.form === "floor");
-    expect(floor.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Encomendas", "Saída"]);
+    expect(floor.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Separação", "Saída"]);
     expect(floor.every((s) => s.quick)).toBe(true);
     expect(sections.find((s) => s.key === "pickup")?.form).toBe("wall");
     expect(sections.find((s) => s.key === "settings")?.form).toBe("office");

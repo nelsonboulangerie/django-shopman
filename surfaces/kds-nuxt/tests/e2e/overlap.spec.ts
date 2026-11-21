@@ -9,14 +9,14 @@ import { expectNoOperatorOverlap } from "../../../operator-kit/visual/playwright
 //
 // As estações cheias vêm dos quadros da prévia (cookie `e2e_kds=preview` no mock): a
 // Bancada com a fila, os Cafés com a mudança com alarde e o pedido cancelado. As vazias
-// (Lanches, Encomendas, Saída) mostram o quadro sem ticket. O login e o painel público
+// (Lanches, Separação, Saída) mostram o quadro sem ticket. O login e o painel público
 // do cliente (`/pickup`) entram sem sessão.
 const WIDTHS = [1440, 1360, 1280, 1024, 768, 390] as const;
 
 const authed = { name: "e2e_session", value: "authed", domain: "127.0.0.1", path: "/" };
 const preview = { name: "e2e_kds", value: "preview", domain: "127.0.0.1", path: "/" };
 
-const OPERATOR_ROUTES = ["/", "/bancada", "/cafes", "/lanches", "/encomendas", "/saida"] as const;
+const OPERATOR_ROUTES = ["/", "/bancada", "/cafes", "/lanches", "/picking", "/saida"] as const;
 const PUBLIC_ROUTES = [
   { path: "/", name: "o login (sem sessão)" },
   { path: "/pickup", name: "o painel do cliente /pickup" },

@@ -17,6 +17,7 @@
 // Como rodar: README.md desta pasta.
 import type { Page } from "@playwright/test";
 
+import { audits, still } from "./support/audit";
 import { capture, cast, expect, settled, stack, test } from "./support/operator";
 
 const PRODUCT = process.env.PDV_LIVE_J6_PRODUCT || "Baguette de Tradition";
@@ -121,143 +122,6 @@ async function opensFromList(page: Page, ref: string) {
   await settled(page);
 }
 
-async function still(page: Page) {
-  await page.waitForFunction(() =>
-    document.getAnimations().every(
-      (animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity,
-    ),
-  );
-}
-
-/**
- * A AUDITORIA da prévia (regra da casa, 16/11): contraste do texto contra o fundo
- * efetivo, tamanho da letra, caixa dentro da tela, sem texto cortado e sem outra
- * camada por cima. Mesma régua da J5, J7 e J12.
- */
-async function audits(page: Page, label: string, selector: string) {
-  const { rows, unparsed } = await page.evaluate((sel) => {
-    const unparsed: string[] = [];
-    const parse = (value: string) => {
-      const srgb = value.match(/color\(srgb ([^)]+)\)/);
-      if (srgb) {
-        const [r, g, b, a = "1"] = srgb[1]!.split(/[\s/]+/).filter(Boolean);
-        return [Number(r) * 255, Number(g) * 255, Number(b) * 255, Number(a)];
-      }
-      const ok = value.match(/okl(ab|ch)\(([^)]+)\)/);
-      if (ok) {
-        const [p0, p1, p2, alpha = "1"] = ok[2]!.split(/[\s/]+/).filter(Boolean);
-        const L = Number.parseFloat(p0!) / (p0!.endsWith("%") ? 100 : 1);
-        let A = Number(p1);
-        let B = Number(p2);
-        if (ok[1] === "ch") {
-          const h = (Number.parseFloat(p2!) * Math.PI) / 180;
-          [A, B] = [Number(p1) * Math.cos(h), Number(p1) * Math.sin(h)];
-        }
-        const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
-        const m2 = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
-        const s2 = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
-        const linear = [
-          4.0767416621 * l - 3.3077115913 * m2 + 0.2309699292 * s2,
-          -1.2684380046 * l + 2.6097574011 * m2 - 0.3413193965 * s2,
-          -0.0041960863 * l - 0.7034186147 * m2 + 1.707614701 * s2,
-        ];
-        const encoded = linear.map((c) => {
-          const v = Math.min(1, Math.max(0, c));
-          return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
-        });
-        return [...encoded, Number.parseFloat(alpha) / (alpha.endsWith("%") ? 100 : 1)];
-      }
-      const m = value.match(/rgba?\(([^)]+)\)/);
-      if (!m) {
-        if (value && value !== "transparent") unparsed.push(value);
-        return null;
-      }
-      const [r, g, b, a = "1"] = m[1]!.split(/[\s,/]+/).filter(Boolean);
-      return [Number(r), Number(g), Number(b), Number(a)];
-    };
-    const luminance = ([r, g, b]: number[]) => {
-      const [R, G, B] = [r, g, b].map((c) => {
-        const v = c! / 255;
-        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-      });
-      return 0.2126 * R! + 0.7152 * G! + 0.0722 * B!;
-    };
-    const background = (el: Element) => {
-      const layers: number[][] = [];
-      for (let node: Element | null = el; node; node = node.parentElement) {
-        const c = parse(getComputedStyle(node).backgroundColor);
-        if (c && c[3]! > 0) {
-          layers.push(c);
-          if (c[3] === 1) break;
-        }
-      }
-      let out = [255, 255, 255];
-      for (const layer of layers.reverse()) {
-        const alpha = layer[3]!;
-        out = out.map((v, i) => layer[i]! * alpha + v * (1 - alpha));
-      }
-      return out;
-    };
-    const rows = Array.from(document.querySelectorAll(sel))
-      .filter((el) => (el as HTMLElement).offsetParent !== null && (el.textContent || "").trim())
-      .map((el) => {
-        const style = getComputedStyle(el);
-        const fg = parse(style.color)!;
-        for (let node: Element | null = el; node; node = node.parentElement) fg[3] = fg[3]! * Number(getComputedStyle(node).opacity);
-        const bg = background(el);
-        const blended = fg.slice(0, 3).map((v, i) => v * fg[3]! + bg[i]! * (1 - fg[3]!));
-        const [l1, l2] = [luminance(blended), luminance(bg)].sort((x, y) => y - x);
-        // Cada texto é medido onde o operador o lê: rolado até o meio da área visível
-        // (no celular a página rola; na mesa, a coluna). Abaixo da dobra não é defeito;
-        // encoberto pela barra de baixo depois de rolar, é.
-        (el as HTMLElement).scrollIntoView({ block: "center", behavior: "instant" });
-        const box = el.getBoundingClientRect();
-        const visible = box.bottom > 0 && box.top < window.innerHeight;
-        return {
-          text: (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 70),
-          contrast: Math.round(((l1! + 0.05) / (l2! + 0.05)) * 100) / 100,
-          fontPx: Number.parseFloat(style.fontSize),
-          color: `rgb(${blended.map(Math.round).join(", ")})`,
-          background: `rgb(${bg.map(Math.round).join(", ")})`,
-          left: Math.round(box.left),
-          right: Math.round(box.right),
-          top: Math.round(box.top),
-          visible,
-          clipped: (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1,
-          inside: box.left >= 0 && box.right <= window.innerWidth + 0.5,
-          // A dica "tem mais abaixo" (`MoreBelow`) flutua por cima do conteúdo enquanto
-          // há o que rolar, e some quando o operador chega ao fim: ela não conta como
-          // camada por cima (fica registrada em `underScrollHint`).
-          underScrollHint: Boolean(
-            document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest("[data-more-below]"),
-          ),
-          covered: visible && (() => {
-            const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-            if (top?.closest("[data-more-below]")) return false;
-            return !(top && (top === el || el.contains(top) || top.contains(el)));
-          })(),
-          coveredBy: (() => {
-            const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-            if (!top || top === el || el.contains(top) || top.contains(el)) return "";
-            return `${top.tagName.toLowerCase()} ${(top.getAttribute("class") || "").slice(0, 60)} ${(top.textContent || "").trim().slice(0, 40)}`;
-          })(),
-        };
-      });
-    return { rows, unparsed: [...new Set(unparsed)] };
-  }, selector);
-  expect(unparsed, `cores não lidas pela auditoria: ${unparsed.join(" | ")}`).toEqual([]);
-  console.log(`AUDITORIA ${label}: ${JSON.stringify(rows)}`);
-  expect(rows.length, `${label}: nada medido`).toBeGreaterThan(0);
-  for (const row of rows) {
-    expect(row.contrast, `${label}: contraste de "${row.text}"`).toBeGreaterThanOrEqual(4.5);
-    expect(row.fontPx, `${label}: letra de "${row.text}"`).toBeGreaterThanOrEqual(12);
-    expect(row.inside, `${label}: "${row.text}" fora da tela`).toBe(true);
-    expect(row.clipped, `${label}: "${row.text}" cortado`).toBe(false);
-    expect(row.covered, `${label}: "${row.text}" encoberto por outra camada`).toBe(false);
-  }
-  return rows;
-}
-
 /** Nada passa da borda: a página não rola para o lado. */
 async function noSideScroll(page: Page, label: string) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -354,7 +218,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(display.getByText(due).first()).toBeVisible();
       await still(page);
       await capture(page, testInfo, "pagamento-com-o-saldo");
-      await audits(page, "pagamento do saldo", PAYMENT_TEXT);
+      await audits(page, "pagamento do saldo", PAYMENT_TEXT, { scroll: true });
       await noSideScroll(page, "pagamento do saldo");
       await display.screenshot({ path: testInfo.outputPath("tela-do-cliente-recebendo.png") });
 
@@ -371,7 +235,7 @@ for (const device of ["phone", "counter"] as const) {
       await page.getByRole("button", { name: "O troco está certo" }).scrollIntoViewIfNeeded();
       await still(page);
       await capture(page, testInfo, "troco-alto-pede-conferencia");
-      await audits(page, "troco alto", "[data-pos-total] p");
+      await audits(page, "troco alto", "[data-pos-total] p", { scroll: true });
 
       // 4 · A nota certa: R$ 100,00. O troco é o número grande.
       await page.locator('button[aria-label="Limpar: zera o valor da linha"]').click();
@@ -390,7 +254,7 @@ for (const device of ["phone", "counter"] as const) {
       await page.keyboard.press("Tab");
       await expect(cta).toBeFocused();
       await focusVisible(page, "Receber e entregar");
-      await audits(page, "troco", "[data-pos-total] p, [data-payment-cta]");
+      await audits(page, "troco", "[data-pos-total] p, [data-payment-cta]", { scroll: true });
 
       // 5 · Receber e entregar: entregue, o PDV volta à lista e a parede às boas-vindas.
       const handedOver = page.waitForResponse((r) => r.url().includes(`/pos/preorders/${ref}/hand-over/`) && r.request().method() === "POST", { timeout: 90_000 });
@@ -519,7 +383,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(display.locator('img[alt="QR Code Pix"], img[alt*="QR"]').first()).toBeVisible({ timeout: 15_000 });
       await still(page);
       await capture(page, testInfo, "pix-qr-na-tela");
-      await audits(page, "pix na tela", "[data-balance-pix] header p, [data-balance-pix] p.text-sm, [data-balance-pix] button");
+      await audits(page, "pix na tela", "[data-balance-pix] header p, [data-balance-pix] p.text-sm, [data-balance-pix] button", { scroll: true });
       await noSideScroll(page, "pix na tela");
       await display.screenshot({ path: testInfo.outputPath("tela-do-cliente-pix.png") });
       if (stack.shots) await display.screenshot({ path: `${stack.shots}/${device}-tela-do-cliente-pix.png` });
@@ -565,7 +429,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(page.locator("[data-balance-pix-leave]")).toBeVisible();
       await still(page);
       await capture(page, testInfo, "pix-nao-confirmado");
-      await audits(page, "aviso do Pix", "[data-balance-pix] header p, [data-balance-pix] button, [data-payment-proof-expired-note]");
+      await audits(page, "aviso do Pix", "[data-balance-pix] header p, [data-balance-pix] button, [data-payment-proof-expired-note]", { scroll: true });
 
       // O operador recebe em dinheiro: a rota da entrega cancela o Pix antes.
       await page.locator("[data-balance-pix-leave]").click();

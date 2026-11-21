@@ -7,7 +7,7 @@ aqui:
    ``system:counter_handoff``) — mas só se o CANAL declarou a transição no seu
    ``lifecycle.transitions`` (config-driven, assada no snapshot);
 2. item de prateleira NÃO vira ticket de picking nem alerta de item sem
-   estação (``prep_only``) — a estação "Encomendas" é para pedido que alguém
+   estação (``prep_only``) — a estação "Separação" é para pedido que alguém
    precisa separar, não para a sacola que o cliente já segura;
 3. a NFC-e é enfileirada UMA vez, com dedupe no banco, mesmo com dois
    gatilhos (fechamento da venda + ``on_completed``).

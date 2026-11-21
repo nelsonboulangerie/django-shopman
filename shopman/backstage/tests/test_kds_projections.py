@@ -60,7 +60,7 @@ def test_kds_is_today_and_future_order_is_not_on_the_board(kds_setup):
     _, _, _, _ = kds_setup
     picking = KDSInstance.objects.create(
         ref="picking-proj",
-        name="Encomendas",
+        name="Separação",
         type="picking",
         target_time_minutes=10,
     )

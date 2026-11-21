@@ -815,7 +815,7 @@ function clearSearchAndFilter() {
 /* Transição da grade: no Pronto, o card sai com um respiro e o próximo "assume o
    foco"; novos pedidos entram com o mesmo respiro. Ninguém DESLIZA de uma célula para
    outra (a grade não tem classe de movimento): o deslize fazia um ticket passar por cima do botão de
-   outro (beta 06/11, Encomendas 800x600: o E09 cobria o T69). Quem troca de célula
+   outro (beta 06/11, Separação 800x600: o E09 cobria o T69). Quem troca de célula
    aparece direto nela; o respiro de quem entra fica dentro da própria célula. */
 .kds-card-enter-active,
 .kds-card-leave-active {

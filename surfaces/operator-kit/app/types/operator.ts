@@ -95,6 +95,8 @@ export interface WorkstationManageState {
   station?: string;
   workstations: WorkstationManageRow[];
   kinds: WorkstationKindOption[];
+  /** O tipo que o posto novo já traz: um que o Gestor oferece para vincular (#2584). */
+  default_kind?: WorkstationKindOption["kind"];
   copy: WorkstationCopy;
 }
 

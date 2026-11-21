@@ -78,5 +78,5 @@ def test_modo_de_producao_do_seed_e_o_roteamento_da_cozinha(monkeypatch):
     assert remoto == {
         "Cafés": ["SP"],
         "Lanches": ["CQMO"],
-        "Encomendas": ["AGUA-MINERAL-PRATA-310", "BAT", "HOD"],
+        "Separação": ["AGUA-MINERAL-PRATA-310", "BAT", "HOD"],
     }

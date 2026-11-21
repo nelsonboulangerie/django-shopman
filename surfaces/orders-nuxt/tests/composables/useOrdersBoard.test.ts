@@ -95,7 +95,7 @@ describe("useOrdersBoard — derivação da fila", () => {
 describe("useOrdersBoard — atenção diária", () => {
   const dueQueue = (ref_: string): TwoZoneQueueProjection => ({
     ...emptyZone(),
-    intake: [{ ref: ref_, can_confirm: true } as never],
+    intake: [{ ref: ref_, can_confirm: true, attention: "confirm" } as never],
     total_count: 1,
   });
 
@@ -589,7 +589,7 @@ it("SSE só toca depois do refresh tornar o pedido tratável", async () => {
     data.value = {
       queue: {
         ...emptyZone(),
-        intake: [{ ref: "PIX-1", can_confirm: false, can_advance: releasePayment } as never],
+        intake: [{ ref: "PIX-1", can_confirm: false, can_advance: releasePayment, attention: releasePayment ? "dispatch" : "" } as never],
       },
     };
   });
@@ -657,7 +657,7 @@ describe("useOrdersBoard — o aviso de pedido novo insiste até o operador reco
     env.reset();
     vi.useFakeTimers();
     const data = ref({
-      queue: { ...emptyZone(), intake: [{ ref: "WEB-NOVO", can_confirm: true } as never], total_count: 1 },
+      queue: { ...emptyZone(), intake: [{ ref: "WEB-NOVO", can_confirm: true, attention: "confirm" } as never], total_count: 1 },
     });
     const playbackCount = ref(0);
     const startAlert = vi.fn(() => { if (audible) playbackCount.value += 1; });

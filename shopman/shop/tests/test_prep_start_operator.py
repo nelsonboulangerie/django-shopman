@@ -109,7 +109,7 @@ def test_future_preorder_cannot_be_started_early():
 def estacao():
     from shopman.backstage.models import KDSInstance
 
-    return KDSInstance.objects.create(ref="encomendas", name="Encomendas", type="picking")
+    return KDSInstance.objects.create(ref="picking", name="Separação", type="picking")
 
 
 def _paid_accepted_order_with_items(ref):

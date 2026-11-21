@@ -219,7 +219,7 @@ def _station_setup():
     doces = Collection.objects.create(ref="modo-doces", name="Doces")
     cafes = KDSInstance.objects.create(ref="modo-cafes", name="Cafés", type="prep")
     cafes.collections.add(bebidas)
-    KDSInstance.objects.create(ref="modo-encomendas", name="Encomendas", type="picking")
+    KDSInstance.objects.create(ref="modo-separacao", name="Separação", type="picking")
     return bebidas, doces
 
 
@@ -257,7 +257,7 @@ def test_revenda_na_colecao_da_estacao_de_preparo_e_separacao():
     _product("ESPRESSO", bebidas, mode=ProductionMode.MADE_TO_ORDER)
     _product("AGUA", bebidas)
 
-    assert _fire(["ESPRESSO", "AGUA"], prep_only=False) == {"Cafés": ["ESPRESSO"], "Encomendas": ["AGUA"]}
+    assert _fire(["ESPRESSO", "AGUA"], prep_only=False) == {"Cafés": ["ESPRESSO"], "Separação": ["AGUA"]}
 
 
 @pytest.mark.django_db
@@ -295,4 +295,4 @@ def test_em_lote_nunca_cai_na_estacao_de_preparo_da_colecao():
     bebidas, _doces = _station_setup()
     _product("CHA-GELADO-LOTE", bebidas, mode=ProductionMode.BATCH)
 
-    assert _fire(["CHA-GELADO-LOTE"], prep_only=False) == {"Encomendas": ["CHA-GELADO-LOTE"]}
+    assert _fire(["CHA-GELADO-LOTE"], prep_only=False) == {"Separação": ["CHA-GELADO-LOTE"]}
