@@ -38,6 +38,8 @@ def _state() -> dict:
     return {
         "workstations": workstations.management_list(),
         "kinds": [{"kind": kind, "label": label} for kind, label in KIND_LABELS.items()],
+        # O tipo que o posto novo já traz: um que o Gestor oferece para vincular (#2584).
+        "default_kind": workstations.default_kind_here(),
         "copy": dict(COPY),
     }
 
