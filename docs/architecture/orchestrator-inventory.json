@@ -3192,6 +3192,7 @@
             "IFOOD_MERCHANT_INTERRUPTION",
             "IFOOD_MERCHANT_SYNC",
             "IFOOD_STATUS_CALLBACK",
+            "INCIDENT_ACT",
             "KDS_TICKET_LATE",
             "LIFECYCLE_PHASE_RECEIPT_SCOPE",
             "LOYALTY_EARN",
