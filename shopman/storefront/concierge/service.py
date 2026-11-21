@@ -1154,6 +1154,19 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
             )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
         reply_text, *extra_replies = reviewed.texts
+        # A conferência antes do envio (dono, 21/11/2026), em sombra: correta, útil e
+        # aceitável. Roda fora da transação (o juiz é rede) e nunca derruba o turno; o
+        # veredito vai para o envelope e o placar de conversa mede antes de ela valer.
+        from . import conference as conference_module
+
+        conference = conference_module.confer_turn(
+            conversation=conversation,
+            outcome=outcome,
+            customer_text=turn_text,
+            texts=reviewed.texts,
+            held=False,
+            meter=meter,
+        )
         primary = semantic_blocks(binding, reply_text) if reply_text else []
         extras = [
             block
@@ -1197,6 +1210,7 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                         customer_text=turn_text,
                         # O que a tabela já consertou no turno vai no primeiro bloco.
                         house_rules_found=reviewed.violations if index == 0 else (),
+                        conference=conference.as_record() if conference is not None and index == 0 else None,
                     )
                 )
             if not prepared:
@@ -1279,6 +1293,7 @@ def _prepare_reply(
     customer_text="",
     house_rules_held=None,
     house_rules_found=(),
+    conference=None,
 ):
     """Grava a resposta para envio. Toda resposta passa aqui, e aqui passa pelas regras da casa.
 
@@ -1336,6 +1351,9 @@ def _prepare_reply(
             # O que de fato aconteceu no turno (``house_rules``: verify, handoff, order...). O
             # corpus anonimizado lê daqui o resultado da conversa (``concierge/corpus``).
             "receipts": sorted(receipts),
+            # A conferência antes do envio, em sombra (``concierge/conference``): só no
+            # primeiro bloco do turno.
+            **({"conference": conference} if conference else {}),
         },
         usage=_turn_usage(meter),
     )
