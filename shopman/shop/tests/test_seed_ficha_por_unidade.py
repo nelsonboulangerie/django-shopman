@@ -164,6 +164,16 @@ MONTAGEM_E_BEBIDA = frozenset({
     "cha-tonica-frutas-vermelhas",
 })
 
+#: Peças que NASCERAM por unidade da aba TRAD da RECEITAS 2.4 (#2925; dono,
+#: 21/11/2026: "use os pesos da RECEITAS 2.4"): sem lote antigo, a ficha É o
+#: registro. {ref: {insumo: quilos por peça}}. A capacidade é a provisória das
+#: peças restauradas, declarada na tabela.
+PECAS_DA_RECEITAS_24: dict[str, dict[str, str]] = {
+    "fendu": {"MASSA-TRADICAO": "0.130"},
+    "tabatiere": {"MASSA-TRADICAO": "0.130"},
+    "pao-hamburguer": {"MASSA-TRADICAO": "0.130"},
+}
+
 #: Uma quantidade planejada qualquer, para comparar o consumo por fornada. Não é
 #: redonda de propósito: fornada de 37 peças pega erro de arredondamento que
 #: fornada de 100 esconderia.
@@ -280,8 +290,14 @@ class TestFichaPorUnidade:
             rendimento, _itens = fichas[ref]
             assert rendimento == Decimal("1")
 
+    def test_a_peca_da_receitas_24_e_a_massa_da_aba_por_unidade(self, fichas):
+        for ref, itens_esperados in PECAS_DA_RECEITAS_24.items():
+            rendimento, itens = fichas[ref]
+            assert rendimento == Decimal("1"), f"{ref} rende lote"
+            assert itens == {sku: Decimal(qtd) for sku, qtd in itens_esperados.items()}, f"{ref} mudou"
+
     def test_as_tres_familias_cobrem_o_seed_inteiro(self, fichas):
-        conhecidas = set(LOTE_ANTIGO) | set(FORMULA_EM_KG) | set(MONTAGEM_E_BEBIDA)
+        conhecidas = set(LOTE_ANTIGO) | set(FORMULA_EM_KG) | set(MONTAGEM_E_BEBIDA) | set(PECAS_DA_RECEITAS_24)
         assert set(fichas) == conhecidas, (
             "ficha nova ou removida no seed sem passar por este teste: "
             f"{sorted(set(fichas) ^ conhecidas)}"
