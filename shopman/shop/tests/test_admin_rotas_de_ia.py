@@ -72,6 +72,7 @@ def _form(shop, data=None):
 def _data(**routes):
     data = dict.fromkeys(MARKETING_FIELDS, "")
     data["ai_limits"] = "{}"
+    data["incident_remedies_mode"] = "on"
     for key in ai_routes.ROUTE_KEYS:
         data[ai_routes.connection_field(key)] = ""
         data[ai_routes.model_field(key)] = ""
