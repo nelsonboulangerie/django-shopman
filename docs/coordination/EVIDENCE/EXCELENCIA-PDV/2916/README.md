@@ -35,5 +35,7 @@ Pix" / "Recebi o Pix", e a entrega leva o Pix atestado.
 `auditoria.txt`, gerado pela jornada: contraste (mínimo 4,5:1), letra (mínimo 12 px), dentro da
 tela, nada cortado, nada encoberto. Resultado: nenhuma reprovação nos dois tamanhos.
 
-Nota: o selo do método no diálogo de conferência sai em caixa alta ("PIX") por estilo do
-componente da venda (o texto é "Pix"); é o mesmo diálogo da venda mista, sem mudança aqui.
+Nota: o selo da forma no diálogo de conferência saía em caixa alta ("PIX", "CRÉDITO") por
+`uppercase` e `tracking-widest` no CSS. Corrigido neste PR (auditoria da coordenação): o selo diz
+"Pix", com maiúscula só na primeira letra, e `02-misto-confere-o-pix.png` foi recapturado nas
+duas larguras.
