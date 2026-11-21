@@ -113,6 +113,22 @@ jobs:
           PYTHON="${PWD}/.venv/bin/python" bash scripts/run_storefront_journeys.sh ${JOURNEY_ARGS} \
             2>&1 | tee "${RUNNER_TEMP}/journeys.log"
 
+      # J5 (#2686): a casa que fecha com o checkout aberto. Pilha própria, com a loja fechando
+      # daqui a 7 min (`seed --closing-in-minutes`), porque as outras jornadas precisam dela
+      # aberta. Roda mesmo se o passo de cima reprovar; capturas em pasta própria, para não
+      # apagar as dele. Dois workers: a 375 e a 1366 precisam esperar o MESMO fechamento
+      # juntas; em fila, a segunda já começaria com a casa fechada. Só na rodada inteira.
+      - name: Jornada da casa que fecha (J5)
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.args == '') }}
+        env:
+          JOURNEYS_CLOSING_IN_MINUTES: "7"
+          JOURNEYS_LOG_DIR: /tmp/shopman-jornadas/j5
+        run: |
+          set -o pipefail
+          PYTHON="${PWD}/.venv/bin/python" bash scripts/run_storefront_journeys.sh \
+            j5 --grep J5 --workers=2 --output=test-results/journeys-j5 \
+            2>&1 | tee "${RUNNER_TEMP}/journeys-j5.log"
+
       - name: Upload captures and logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -120,7 +136,9 @@ jobs:
           name: jornadas-da-loja
           path: |
             surfaces/storefront-nuxt/test-results/journeys
+            surfaces/storefront-nuxt/test-results/journeys-j5
             /tmp/shopman-jornadas/*.log
+            /tmp/shopman-jornadas/j5/*.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -138,7 +156,7 @@ jobs:
             echo "Capturas, traces e logs da pilha estão no artefato \`jornadas-da-loja\` da rodada."
             echo
             echo '```'
-            grep -E "✘|✓|passed|failed|flaky|Error:" "${RUNNER_TEMP}/journeys.log" | tail -40 || true
+            grep -hE "✘|✓|passed|failed|flaky|Error:" "${RUNNER_TEMP}"/journeys*.log | tail -40 || true
             echo '```'
           } > "${RUNNER_TEMP}/issue.md"
           open=$(gh issue list --label jornadas-da-loja --state open --json number --jq '.[0].number // empty')
