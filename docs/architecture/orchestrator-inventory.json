@@ -12926,7 +12926,8 @@
             "operational_event_on_commit",
             "record_integration_failure",
             "record_payment_reconciliation_failure",
-            "record_webhook_failure"
+            "record_webhook_failure",
+            "record_webhook_success"
           ]
         }
       ]
