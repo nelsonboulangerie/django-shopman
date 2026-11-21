@@ -11104,7 +11104,6 @@
             "_LOGISTICS_CODES",
             "_alert_patched",
             "_alert_unhandled_event",
-            "is_known_code",
             "_apply_patch",
             "_brl",
             "_cfg",
@@ -11125,6 +11124,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]
