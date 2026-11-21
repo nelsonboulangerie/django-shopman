@@ -12,7 +12,7 @@ import {
   type Affordance,
 } from "./board";
 import { blockedReasonLines, lockedButtonRepeatsPill } from "./cardBlocks";
-import { waitsForBatch } from "./orderPromise";
+import { blockWaits } from "./orderPromise";
 import {
   timeTone,
   type TimeTone,
@@ -379,11 +379,11 @@ export function queueBlock(item: QueueItem): QueueBlock | null {
   const reason = String(card.advance_block_reason ?? "").trim();
   if (!reason) return null;
   if (item.kind && item.kind !== "blocked" && item.kind !== "promise") return null;
-  const waits = waitsForBatch(card);
+  const waits = blockWaits(card);
   return {
     label: String(card.advance_block_label || "Bloqueado").replace(/…$/, ""),
     reason,
-    color: item.kind === "blocked" ? "error" : "neutral",
+    color: item.kind === "blocked" && !waits ? "error" : "neutral",
     icon: waits ? "i-lucide-hourglass" : "i-lucide-lock",
     cancelUnpaid: Boolean(card.payment_lapsed),
   };

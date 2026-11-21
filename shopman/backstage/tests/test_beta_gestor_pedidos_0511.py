@@ -165,6 +165,26 @@ def test_lapsed_pix_is_flagged_for_the_ready_cancel(gestor):
     assert build_operator_order(waiting, user=gestor).payment_lapsed is False
 
 
+def test_pix_que_ainda_pode_cair_anda_sozinho_e_o_vencido_nao(gestor):
+    """#2721 item 9 (coordenação, 21/11/2026): vermelho só para o que pede alguém."""
+    waiting = _pix("B-Z70", minutes_ago=5)
+    assert build_order_card(waiting).advance_block_label == "Aguardando Pix"
+    assert build_order_card(waiting).advance_block_waits is True
+    assert build_operator_order(waiting, user=gestor).advance_block_waits is True
+    lapsed = _pix("B-Z71", minutes_ago=50)
+    assert build_order_card(lapsed).advance_block_waits is False
+    assert build_operator_order(lapsed, user=gestor).advance_block_waits is False
+
+
+def test_as_esperas_que_andam_sozinhas_sao_as_nomeadas():
+    from shopman.backstage.projections.order_queue import block_waits
+
+    for label in ("Aguardando Pix", "Aguardando pagamento", "Aguardando o dia da encomenda…", "Esperando o lote…"):
+        assert block_waits(label) is True, label
+    for label in ("Pix expirado", "Pagamento vencido", "Cobrança recusada", "Quem leva ainda não definido", ""):
+        assert block_waits(label) is False, label
+
+
 # ── GES-11 ──────────────────────────────────────────────────────────────────
 
 

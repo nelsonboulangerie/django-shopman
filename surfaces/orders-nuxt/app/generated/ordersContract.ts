@@ -680,6 +680,7 @@ export interface OrderCardProjection {
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
   payment_lapsed: boolean;
+  advance_block_waits: boolean;
   promise: OrderPromiseProjection | null;
 }
 
@@ -887,6 +888,7 @@ export interface OperatorOrderProjection {
   cancel_waits_for_gateway: boolean;
   transferred_from_label: string;
   payment_lapsed: boolean;
+  advance_block_waits: boolean;
   pending: OrderPendingProjection[];
   cancelled_money: CancelledMoneyProjection | null;
   danfe_printable: boolean;

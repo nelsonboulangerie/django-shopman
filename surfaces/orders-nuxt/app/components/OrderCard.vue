@@ -43,8 +43,8 @@ import { kitchenChips } from "~/presentation/kitchen";
 import { cardCheckBadge } from "~/presentation/volumeCheck";
 import { blockPillLabel, cardFooter } from "~/presentation/cardBlocks";
 import {
+  blockWaits,
   promiseRisk,
-  waitsForBatch,
   type PromiseExit,
 } from "~/presentation/orderPromise";
 import { orderFocusKey } from "~/presentation/promiseAlert";
@@ -374,8 +374,8 @@ const notices = computed<CardNotice[]>(() => {
     out.push({
       key: "block",
       color: seal.value.tone === "error" ? "error" : "info",
-      // Quem espera o lote não está travado por um problema: ampulheta, não cadeado.
-      icon: waitsForBatch(card) ? "i-lucide-hourglass" : "i-lucide-lock",
+      // Quem espera algo que anda sozinho não está travado por um problema: ampulheta.
+      icon: blockWaits(card) ? "i-lucide-hourglass" : "i-lucide-lock",
       // A pílula diz o fato, pelo nome do bloqueio; sem nome do servidor, pergunta
       // (laudo do Gestor, P2-16).
       label: blockPillLabel(card.advance_block_label),
