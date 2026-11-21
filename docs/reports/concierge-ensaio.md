@@ -289,3 +289,44 @@ que o flash mandou à equipe sem precisar (msg-90 e msg-100) ficam como alvo de 
 
 **Todas as metas do WP-09 batidas com o flash**, menos a equipe achada 13/13 (12/13, a
 msg-109 depende do WP-13, #2910). Gasto total do WP-09: **US$ 0,427** dos US$ 2 da D-040.
+
+## Perguntas frequentes: a FAQ direta contra a IA a partir das FAQs (WP-18, 21/11/2026)
+
+Pedido do dono (20/11): "podemos inclusive dar uma chance à IA para responder mesmo as
+perguntas frequentes, diretamente baseada nas nossas FAQs ... Vale o teste e comparar".
+Produção, deploy de 01h59Z, `concierge_faq_eval --include-drafts`: as 21 FAQs (públicas e
+rascunhos) **só dentro do teste**, sem publicar nada (o dono: "ok, pode fazer assim"). 24
+perguntas: 7 reais, 17 escritas pela sessão.
+
+| | A: FAQ direta | B: IA a partir das FAQs (`deepseek-flash`) |
+|---|---|---|
+| Resposta certa (as FAQs certas) | 22/24 | 22/24 |
+| **Coberta por inteiro** | 21/24 | **24/24** |
+| Texto vizinho | 2 | 2 |
+| Sem FAQ: disse que vai verificar | 4/4 | 4/4 |
+| **Invenção** | 0 | **0** |
+| Tempo, p95 | 9 ms | 1.371 ms |
+| Gasto da rodada | 0 | US$ 0,0054 |
+
+**Os erros não são do mesmo tipo.**
+- A FAQ direta errou feio: "vocês fecham que horas mesmo hj?" saiu com a FAQ de **CPF na
+  nota**, e "Até qui horas vcs e" saiu com a de encomenda.
+- A IA errou por citar uma FAQ **a mais**, não uma errada: "posso encomendar para sábado?"
+  citou encomenda e horário; "por que o croissant aparece indisponível?" citou indisponível
+  e "me avise".
+
+**Tom da IA** (copiado da tela):
+- "Oi! Sim, fazemos entrega. Para confirmar se o endereço está na área atendida e calcular
+  a taxa, preciso do endereço completo com número."
+- "Fechamos às 18h."
+- "Bom dia! Domingo nós fechamos. O horário é de segunda a sábado, das 9h às 18h."
+
+**Recomendação: a IA compondo a partir das FAQs (braço B).** Ela cobre a pergunta inteira
+onde a FAQ direta cala uma parte ou responde outra coisa, sem inventar nada, por meio
+centavo a cada 24 perguntas. A troca é palavra do dono e tem PR próprio, com o verificador
+do placar no caminho (invenção reprova e cai na FAQ direta): #2935.
+
+**Achado de conteúdo, fora do placar:** as FAQs de hoje têm erros de fato (fidelidade com
+"selos", cancelamento, CPF incompleto). A FAQ nova está em revisão com o dono, e a rodada se
+repete com ela.
+

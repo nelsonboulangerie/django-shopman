@@ -6624,8 +6624,13 @@ class Command(BaseCommand):
                     # ele, 1.169 pedidos existiam e NENHUM era atribuível: todo
                     # `CustomerInsight` nascia vazio, RFM dizia "lost" para todo mundo e
                     # todo público comportamental do Marketing resolvia zero.
+                    # `customer`: o nome e o telefone que todo canal real grava no pedido
+                    # (a loja, o que a pessoa digita; o PDV, o do cadastro). Sem eles o
+                    # Histórico não achava a cliente pelo nome e a lista mostrava só o
+                    # telefone (#2878, J7).
                     data={
                         "customer_ref": customer.ref,
+                        "customer": {"name": customer.name, "phone": customer.phone or ""},
                         "fulfillment_type": "pickup",
                         "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     },
@@ -6752,6 +6757,7 @@ class Command(BaseCommand):
                 # painel, "entregar no endereço" (beta 07/11).
                 data={
                     "customer_ref": customer.ref,
+                    "customer": {"name": customer.name, "phone": customer.phone or ""},
                     "fulfillment_type": "pickup",
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     "payment": self._live_order_payment(channel.ref, total_q),

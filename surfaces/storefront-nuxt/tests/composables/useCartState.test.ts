@@ -153,7 +153,7 @@ describe('useCartState', () => {
 
     await expect(store.setSkuQty(meta, 2)).rejects.toThrow()
 
-    expect(store.lastError.value).toBe('Não foi possível atualizar o carrinho.')
+    expect(store.lastError.value).toBe('Não foi possível atualizar a sacola.')
     expect(store.cartIssue.value).toBeNull()
     expect(store.rateLimitRecovery.value).toBeNull()
   })
