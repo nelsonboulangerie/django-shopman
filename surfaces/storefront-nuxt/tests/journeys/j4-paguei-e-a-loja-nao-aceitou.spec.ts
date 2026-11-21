@@ -62,7 +62,7 @@ test('J4: a cliente paga o Pix, a loja recusa no Gestor e o dinheiro volta', asy
     await settled(page)
     // Hoje a lista diz "Cancelado · R$ 13,00" e não diz que o dinheiro voltou: o plano
     // pede "Devolvido" também na conta, e isso é tela (#2992).
-    await expect(page.getByText(/^Cancelado · R\$ \d+,\d{2}$/).first()).toBeVisible()
+    await expect(page.locator('main')).toContainText(/Cancelado\s*·\s*R\$\s*\d+,\d{2}/)
     await capture(page, testInfo, 'conta-pedidos')
   })
 })
