@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('backstage', '0098_incident_reader_credential'),
+        ('backstage', '0099_incident_remedies'),
     ]
 
     operations = [
