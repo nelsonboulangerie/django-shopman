@@ -101,3 +101,18 @@ def test_command_prints_the_scorecard_and_the_turns_to_fix(conversation, capsys)
     assert "ManyChat AI no WhatsApp alcançaria 0/4" in out
     assert "pronto (0 sem lastro, 0 silêncio, útil >= 90%): não" in out
     assert "cliente: quero 2 croissant" in out
+
+
+def test_unanswered_turns_right_before_a_return_note_were_with_the_team():
+    """19/11: "Apenas testando" e "Olá" sem resposta, e a nota "Voltou para o concierge" depois,
+    sem a nota de entrada no período. Era a equipe, não silêncio da Concierge."""
+    conv = Conversation.objects.create(phone="+5543999990001", last_inbound_at=timezone.now())
+    _say(conv, "Apenas testando")
+    _say(conv, "Olá")
+    _note(conv, "Voltou para o concierge.")
+    _say(conv, "com quem eu falo?")
+    _reply(conv, "Sou a assistente virtual da loja. Em que posso ajudar?")
+
+    turns = conversation_eval.read_turns(days=1, conversation_id=conv.pk)
+
+    assert [conversation_eval.outcome_of(t.evidence) for t in turns] == [None, "useful"]
