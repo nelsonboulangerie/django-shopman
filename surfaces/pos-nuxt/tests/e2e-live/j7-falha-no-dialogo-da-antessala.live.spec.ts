@@ -185,7 +185,8 @@ for (const device of ["phone", "counter"] as const) {
       await serve.restore();
       await retries(serveRetry, first.getByRole("button", { name: "Atender" }));
       await managerSigns(page, "Autorizar troco");
-      await expect(page.getByText(/Troco de R\$ 50,00 atendido/).first()).toBeVisible({ timeout: 30_000 });
+      // Atendido, o pedido sai da lista (a confirmação com o valor é um toast breve).
+      await expect(first).toHaveCount(0, { timeout: 30_000 });
 
       // 3 · Cancelar o segundo. O aviso fica na confirmação, que segue aberta.
       const second = requests.getByRole("listitem").filter({ hasText: `segundo ${stamp}` });
@@ -219,7 +220,8 @@ for (const device of ["phone", "counter"] as const) {
       });
       await settle.restore();
       await retries(settleRetry, row.getByRole("button", { name: "Receber", exact: true }));
-      await expect(page.getByText(/Acerto de R\$ .* recebido/).first()).toBeVisible({ timeout: 30_000 });
+      // Acertada, a conta sai da lista ou fecha o formulário do acerto.
+      await expect(row.getByRole("button", { name: "Receber", exact: true })).toHaveCount(0, { timeout: 30_000 });
       if (await accounts.isVisible()) await page.keyboard.press("Escape");
 
       // 5 · Abrir a gaveta sem venda, quando este dispositivo tem caminho de software
