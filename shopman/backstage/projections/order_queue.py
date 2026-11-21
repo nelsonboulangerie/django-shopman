@@ -52,6 +52,7 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
+from shopman.shop.protocols import RideState
 from shopman.shop.services import operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
@@ -1701,21 +1702,45 @@ def _schedule_label(order: Order, *, today: date | None = None) -> str:
     return _schedule(order, today=today)[0]
 
 
-#: Letra Machine → label pt-BR do operador (fonte única do gestor).
-COURIER_STATUS_LABELS = {
-    "D": "Procurando entregador",
-    "G": "Aguardando aceite",
-    "P": "Procurando entregador",
-    "A": "Entregador a caminho da loja",
-    # S é "em espera": o entregador aceitou e termina outra entrega antes.
-    # "Na loja" é a chegada (``progress.arrived_pickup_at``), não esta letra.
-    "S": "Entregador vem após outra entrega",
-    "E": "Saiu para entrega",
-    "F": "Entregue",
-    "N": "Não atendida",
-    "C": "Corrida cancelada",
-    "U": "Junto com outra corrida",
+#: Estado da corrida (``RideState``) → frase do operador (fonte única do gestor).
+#: A nuance que só a letra de um serviço sabe (``G``, ``S`` da TaOn) vem de
+#: :func:`delivery_services.state_detail`; ``REASSIGNING`` fala pela desistência
+#: (``COURIER_REOPENED_LABEL``).
+COURIER_STATE_LABELS = {
+    RideState.SEARCHING: "Procurando entregador",
+    RideState.GROUPED: "Junto com outra corrida",
+    RideState.ASSIGNED: "Entregador a caminho da loja",
+    RideState.AT_STORE: "Entregador na loja",
+    RideState.ON_ROUTE: "Saiu para entrega",
+    RideState.DONE: "Entregue",
+    RideState.NOT_SERVED: "Não atendida",
+    RideState.CANCELLED: "Corrida cancelada",
 }
+
+#: Onde a corrida já acabou: a tela não mostra mais entregador vivo.
+COURIER_ENDED_STATES = frozenset({RideState.DONE, RideState.NOT_SERVED, RideState.CANCELLED})
+
+
+def _courier_service_ref(order: Order) -> str:
+    block = (order.data or {}).get("courier")
+    return str(block.get("service") or "") if isinstance(block, dict) else ""
+
+
+def _courier_service_name(block: dict) -> str:
+    from shopman.shop.services import delivery_services
+
+    return delivery_services.service_name(block)
+
+
+def courier_state_label(block: dict | None) -> str:
+    """A frase do estado da corrida: a nuance do serviço, ou a do estado da casa."""
+    from shopman.shop.services import delivery_services
+
+    state = delivery_services.ride_state(block)
+    if state is None:
+        return ""
+    return delivery_services.state_detail(block) or COURIER_STATE_LABELS.get(state, "")
+
 
 #: A corrida voltou a procurar depois de um entregador desistir (``courier.reopen_view``).
 COURIER_REOPENED_LABEL = "Procurando outro entregador"
@@ -1754,7 +1779,6 @@ def _courier_block(order: Order) -> dict | None:
         if not _is_delivery(order):
             return None
 
-        from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
         from shopman.shop.services import delivery_services
 
         data = order.data or {}
@@ -1772,7 +1796,8 @@ def _courier_block(order: Order) -> dict | None:
             return None
 
         ride_status = str(block.get("status") or "")
-        active = bool(block.get("ride_ref")) and ride_status not in TERMINAL_STATUSES
+        state = delivery_services.ride_state(block)
+        active = bool(block.get("ride_ref")) and state not in COURIER_ENDED_STATES
         order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
@@ -1802,14 +1827,18 @@ def _courier_block(order: Order) -> dict | None:
         progress = progress_view(block)
         tracking = proven_tracking(block)
         reopened = reopen_view(block) if active else {"at": "", "driver": "", "reason": ""}
-        status_label = COURIER_STATUS_LABELS.get(ride_status, "")
-        if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
-            status_label = "Entregador na loja"
+        status_label = courier_state_label(block)
+        if state == RideState.ASSIGNED and progress["arrived_pickup_at"]:
+            status_label = COURIER_STATE_LABELS[RideState.AT_STORE]
         if reopened["at"]:
             status_label = COURIER_REOPENED_LABEL
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
+            # O estado no vocabulário da casa (``RideState``): é o que a tela lê.
+            "ride_state": state.value if state else "",
+            # O nome do serviço como o cadastro diz, para a frase do operador.
+            "service_name": delivery_services.service_name(block),
             "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
             # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
             **progress,
@@ -3239,21 +3268,15 @@ def _change_label(change_for_q: int, suggested_q: int, out_q: int, back_q: int |
     return f"Cliente paga com R$ {format_money(change_for_q)}"
 
 
-def _card_courier_status(order: Order) -> str:
-    block = (order.data or {}).get("courier")
-    if not isinstance(block, dict):
-        return ""
-    return str(block.get("status") or "")
-
-
 def _card_courier_label(order: Order) -> str:
     """"Entregador a caminho" e, na corrida com várias paradas, com quem ela vai:
     "Entregador a caminho · corrida com B12, C03". O card diz a corrida inteira
     sem o operador abrir pedido por pedido."""
-    label = COURIER_STATUS_LABELS.get(_card_courier_status(order), "")
+    from shopman.shop.services import courier
+
+    label = courier_state_label(courier.get_block(order))
     if not label:
         return ""
-    from shopman.shop.services import courier
 
     if courier.reopen_view(courier.get_block(order))["at"]:
         # O entregador desistiu e a TaOn redistribui a mesma corrida.
@@ -4153,7 +4176,7 @@ _EVENT_LABELS = {
     "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
     "customer_cancellation_requested": "Cliente solicitou o cancelamento",
     "customer_contact_resolved": "Ouvidoria resolvida",
-    # A letra da corrida vira a frase do Gestor (``COURIER_STATUS_LABELS``) em
+    # A letra da corrida vira a frase do Gestor (``courier_state_label``) em
     # ``_build_timeline``; este é o rótulo da letra que ninguém nomeou.
     "courier_status": "Corrida da TaOn atualizada",
     # O dinheiro, nos três fatos que o Payman distingue. Autorizar NÃO é cobrar:
@@ -4322,8 +4345,10 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             label = _OUTSIDE_CHARGE_CAPTURE_LABEL
         elif event.type == "customer_contact_requested" and payload.get("origin") == "cancellation":
             label = "Cliente quis cancelar com o preparo começado e pediu para falar com o responsável"
-        elif event.type == "courier_status" and payload.get("status") in COURIER_STATUS_LABELS:
-            label = f"TaOn: {COURIER_STATUS_LABELS[payload['status']]}"
+        elif event.type == "courier_status" and (ride_label := courier_state_label(
+            ride_event := {"service": _courier_service_ref(order), "status": payload.get("status")}
+        )):
+            label = ": ".join(part for part in (_courier_service_name(ride_event), ride_label) if part)
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:

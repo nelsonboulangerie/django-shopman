@@ -1,6 +1,6 @@
-// Courier ride presentation — pure functions over the raw Machine status letter
-// (D/G/P/A/S/E/F/N/C/U). The label text comes from the server projection
-// (single source of truth); here we derive the compact step timeline and tones.
+// A corrida no painel: funções puras sobre o estado da corrida no vocabulário da
+// casa (`ride_state`, o `RideState` do servidor), igual para qualquer serviço. A
+// frase vem do servidor (`status_label`); aqui saem os passos e o tom.
 
 export type CourierTone = "muted" | "info" | "active" | "success" | "danger";
 
@@ -10,16 +10,15 @@ export interface CourierStep {
   state: "done" | "current" | "pending";
 }
 
-/** Ride phases in board order. N/C (failed) short-circuit the timeline. */
+/** Os passos na ordem do quadro. Não atendida e cancelada não têm passos. */
 const STEP_INDEX: Record<string, number> = {
-  D: 0, // distribuindo
-  G: 0, // aguardando aceite
-  P: 0, // pendente (buscando entregador)
-  U: 0, // agrupada — segue buscando/roteirizando
-  A: 1, // aceita — entregador a caminho da loja
-  S: 1, // em espera — entregador na loja
-  E: 2, // em andamento — coletou, saiu para entrega
-  F: 3, // finalizada
+  searching: 0, // procurando quem leve
+  grouped: 0, // juntou com outra corrida
+  reassigning: 0, // trocando de entregador
+  assigned: 1, // alguém aceitou, a caminho da loja
+  at_store: 1, // na loja
+  on_route: 2, // coletou, saiu para entrega
+  done: 3, // entregue
 };
 
 const STEPS: { key: CourierStep["key"]; label: string }[] = [
@@ -29,13 +28,13 @@ const STEPS: { key: CourierStep["key"]; label: string }[] = [
   { key: "delivered", label: "Entregue" },
 ];
 
-export function courierFailed(letter: string): boolean {
-  return letter === "N" || letter === "C";
+export function courierFailed(state: string): boolean {
+  return state === "not_served" || state === "cancelled";
 }
 
 /** Compact 4-step timeline for the ride panel. Empty for failed/blank status. */
-export function courierSteps(letter: string): CourierStep[] {
-  const idx = STEP_INDEX[letter];
+export function courierSteps(state: string): CourierStep[] {
+  const idx = STEP_INDEX[state];
   if (idx === undefined) return [];
   return STEPS.map((step, i) => ({
     ...step,
@@ -43,7 +42,7 @@ export function courierSteps(letter: string): CourierStep[] {
       i < idx
         ? "done"
         : i === idx
-          ? letter === "F"
+          ? state === "done"
             ? "done"
             : "current"
           : "pending",
@@ -51,13 +50,11 @@ export function courierSteps(letter: string): CourierStep[] {
 }
 
 /** Visual tone for the ride status badge. */
-export function courierTone(letter: string): CourierTone {
-  if (courierFailed(letter)) return "danger";
-  if (letter === "F") return "success";
-  if (letter === "E") return "active";
-  if (letter === "A" || letter === "S") return "info";
-  if (letter === "D" || letter === "G" || letter === "P" || letter === "U")
-    return "muted";
+export function courierTone(state: string): CourierTone {
+  if (courierFailed(state)) return "danger";
+  if (state === "done") return "success";
+  if (state === "on_route") return "active";
+  if (state === "assigned" || state === "at_store") return "info";
   return "muted";
 }
 
