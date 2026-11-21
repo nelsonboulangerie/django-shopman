@@ -605,6 +605,9 @@ storefront-e2e: $(NUXT_DIR)/node_modules/.package-lock.json ## E2E Playwright: s
 		SHOPMAN_E2E_NUXT_PORT="$(or $(nuxt_port),3100)" \
 		bash scripts/run_storefront_e2e.sh $(args)
 
+storefront-journeys: ## Jornadas da cliente numa pilha própria (seed qa, Django, worker, proxy lento, loja e Gestor compilados); DATABASE_URL de um banco SÓ de jornada; filtro via args= (ex.: args="j7 --grep J7")
+	PYTHON="$(PYTHON)" bash scripts/run_storefront_journeys.sh $(args)
+
 pwa: ## PWA opt-in (app=storefront|pos|hub|orders|kds|production|marketing|purchase|bi)
 	@test -n "$(app)" || (echo "uso: make pwa app=<surface opt-in>" >&2; exit 2)
 	@test -d "$(PWA_DIR)" || (echo "surface desconhecida: $(app)" >&2; exit 2)
