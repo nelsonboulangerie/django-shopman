@@ -1490,7 +1490,7 @@ const startedDescription = computed(() => {
           data-plan-table
         >
           <div
-            class="hidden h-10 items-center gap-4 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1fr)_250px_168px_176px]"
+            class="hidden h-10 items-center gap-4 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] xl:grid-cols-[minmax(0,1fr)_250px_168px_176px]"
             aria-hidden="true"
           >
             <span>Produto</span>
@@ -1502,7 +1502,7 @@ const startedDescription = computed(() => {
           <div
             v-for="row in planGroups.focus"
             :key="row.output_sku"
-            class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3 last:border-b-0 lg:grid lg:min-h-[62px] lg:grid-cols-[minmax(0,1fr)_250px_168px_176px] lg:py-2"
+            class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3 last:border-b-0 lg:grid lg:min-h-[62px] lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] xl:grid-cols-[minmax(0,1fr)_250px_168px_176px] lg:py-2"
             :class="
               reasonSku === row.output_sku
                 ? 'bg-primary/5 shadow-[inset_0_0_0_2px_var(--primary)]'
@@ -1511,7 +1511,10 @@ const startedDescription = computed(() => {
             data-plan-row
             :data-sku="row.output_sku"
           >
-            <!-- Produto: nome, SKU e o chip das encomendas. -->
+            <!-- Produto: nome, SKU e o chip das encomendas. No tablet (1024 a 1279 px) as
+                 colunas da sugestão, da quantidade e da ação ficam com a largura do que
+                 mostram (até 145, 136 e 158 px, medidos), e o nome ganha o resto: com as
+                 larguras da mesa, sobravam 92 px e o nome acabava em reticências (#2966). -->
             <div
               class="flex w-full min-w-0 items-center gap-2.5 lg:w-auto"
               data-row-product
