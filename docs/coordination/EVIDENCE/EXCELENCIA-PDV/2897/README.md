@@ -59,4 +59,25 @@ Notas:
 - Dentro do QR vencido, a linha "Não confirmamos o PIX automaticamente. Confira no gestor ou gere
   um novo pagamento." é a do mesmo componente da venda (`PosPaymentResult`), sem mudança. Aqui
   os dois gestos que resolvem estão na tela: "Gerar outro Pix" (no aviso e no rodapé do QR) e
-  "Receber em outra forma".
+  "Receber em outra forma". **Corrigido no #2918, ver abaixo.**
+
+## Auditoria da coordenação no #2918 (20/11/2026)
+
+Três defeitos de tela vistos na `b01`: o QR vencido seguia pagável, o cartão repetia o aviso com
+um caminho escrito ("Confira no gestor"), e "PIX" em caixa alta.
+
+Venda de balcão com o Pix vencido (sonda `surfaces/pos-nuxt/tests/e2e-live/pix-vencido-na-venda.live.spec.ts`,
+`PDV_LIVE_PIX_SALE=1`, Pix do canal `pdv` em 1 minuto, desfeito depois):
+
+| Arquivo | O que mostra |
+|---|---|
+| `antes/*/v01-venda-aguardando-pix.png` | a venda fechada em Pix, aguardando (código antigo) |
+| `antes/*/v02-venda-pix-vencido.png` | vencido: "Venda concluída" em verde, o QR morto e "Copiar código PIX" à mostra, "Confira no gestor" escrito |
+| `depois/*/v01-venda-aguardando-pix.png` | a mesma espera, com "Pix" |
+| `depois/*/v02-venda-pix-vencido.png` | vencido: "Venda registrada" (sem verde), um aviso só ("O Pix não foi confirmado.") com o botão "Abrir o pedido no Gestor", o link daquele pedido; o cartão sem QR, "Este Pix não pode mais ser pago." |
+
+Auditoria por script no fim do `auditoria.txt`: 0 reprovações em 375 e 1366 px, transbordo 0.
+
+Saldo da encomenda: a correção está no código (sem QR no vencido, "Gerar outro Pix" só no aviso do
+topo, "Pix"), mas `a01`-`a03` e `b01`-`b03` desta pasta ainda são as capturas de ANTES da
+correção. A rodada J6 que as refaz ficou para depois da pausa pedida pelo dono.

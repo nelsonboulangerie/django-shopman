@@ -35,3 +35,30 @@ Resultado: 0 reprovações em 375 px e 1366 px.
   - "Copiar código PIX": contraste 12.76:1; letra 14 px; x 584..1006; dentro da tela: sim; cortado: não; encoberto: não
   - "Gerar outro Pix": contraste 4.95:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
   - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+
+# Auditoria do #2918 (coordenação): o Pix vencido na VENDA, depois da correção
+# (sonda pix-vencido-na-venda, 20/11/2026). As seções acima (saldo) são de ANTES da correção.
+
+## pix vencido na venda (375 px)
+  - "Venda registrada": contraste 12.76:1; letra 30 px; x 73..302; dentro da tela: sim; cortado: não; encoberto: não
+  - "O Pix não foi confirmado.": contraste 12.76:1; letra 14 px; x 45..330; dentro da tela: sim; cortado: não; encoberto: não
+  - "R$ 13,00 segue em aberto. Receba de outra forma e acerte o pagamento no pedido.": contraste 6.09:1; letra 14 px; x 45..330; dentro da tela: sim; cortado: não; encoberto: não
+  - "Abrir o pedido no Gestor": contraste 12.76:1; letra 14 px; x 45..246; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 13,00": contraste 12.76:1; letra 14 px; x 69..334; dentro da tela: sim; cortado: não; encoberto: não
+  - "Este Pix não pode mais ser pago.": contraste 6.09:1; letra 12 px; x 69..334; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix vencido na venda (375 px)
+  0
+
+## pix vencido na venda (1366 px)
+  - "Venda registrada": contraste 12.76:1; letra 30 px; x 680..910; dentro da tela: sim; cortado: não; encoberto: não
+  - "O Pix não foi confirmado.": contraste 12.76:1; letra 14 px; x 588..1002; dentro da tela: sim; cortado: não; encoberto: não
+  - "R$ 13,00 segue em aberto. Receba de outra forma e acerte o pagamento no pedido.": contraste 6.09:1; letra 14 px; x 588..1002; dentro da tela: sim; cortado: não; encoberto: não
+  - "Abrir o pedido no Gestor": contraste 12.76:1; letra 14 px; x 588..789; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 13,00": contraste 12.76:1; letra 14 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Este Pix não pode mais ser pago.": contraste 6.09:1; letra 12 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix vencido na venda (1366 px)
+  0
+
+Resultado da venda: 0 reprovações.
