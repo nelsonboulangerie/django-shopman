@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // Tela de RESULTADO pós-venda (padrão Odoo/Shopify): tela cheia no fluxo de
 // venda, no lugar do banner de antes. O troco é o herói (tipografia display),
-// a prova digital (QR PIX / link do cartão) tem palco, e o CTA dominante é
+// a prova digital (QR Pix / link do cartão) tem palco, e o CTA dominante é
 // "Nova venda". Comportamento por método:
 //   - dinheiro COM troco → a tela NUNCA some sozinha (confirmação explícita);
-//   - pagamento exato/cartão/PIX confirmado → auto-avanço curto com contagem
+//   - pagamento exato/cartão/Pix confirmado → auto-avanço curto com contagem
 //     visível e cancelável (qualquer toque cancela; reduced-motion desliga);
-//   - PIX aguardando → sair exige toque explícito (o composable transforma a
+//   - Pix aguardando → sair exige toque explícito (o composable transforma a
 //     prova pendente num chip no header, com o polling seguindo).
 import {
   autoAdvanceSeconds,
@@ -19,6 +19,7 @@ import {
   orderTicketLabel,
   paymentFailed,
   pixAwaiting,
+  pixUnpaid,
   type PixPollStatus,
   type PosSaleResultSnapshot,
   saleResultTitle,
@@ -70,6 +71,11 @@ const courierChange = computed(() => courierChangeLine(props.result.courierChang
 // A DANFE por EXISTÊNCIA da nota, não por previsão (ver `danfeOffer`).
 const danfe = computed(() => danfeOffer(props.result.fiscalState));
 const pixPending = computed(() => pixAwaiting(props.result.payment, props.pixStatus));
+// O Pix VENCEU sem pagar. A venda está fechada, então o PDV não gera outro Pix:
+// quem resolve é o pedido no Gestor, e o aviso leva até ELE (nunca um caminho
+// escrito). Um aviso só na tela: o cartão do Pix só diz que o QR não vale mais.
+const pixExpired = computed(() => !offline.value && pixUnpaid(props.result.payment, props.pixStatus));
+const { attrsFor } = useOperatorAppLink();
 const isOrder = computed(() => props.result.salesMode === "order");
 const ctaLabel = computed(() => nextActionLabel(props.result.salesMode, pixPending.value));
 const enterHint = computed(() => enterAdvances({
@@ -253,7 +259,37 @@ function onPrimary() {
       </p>
     </div>
 
-    <!-- Prova digital: QR PIX grande + status vivo do polling, ou o link do
+    <!-- Pix VENCIDO: o aviso da tela, com o botão que resolve (o pedido no
+         Gestor, onde o pagamento se acerta). Segura a tela como a cobrança não
+         criada: o auto-avanço e o Enter já não correm com o Pix sem pagar. -->
+    <div
+      v-if="pixExpired"
+      class="grid w-full max-w-md gap-3 rounded-md border border-warning/40 bg-warning/5 p-4 text-left"
+      role="alert"
+      data-sale-result-pix-expired
+    >
+      <div class="grid gap-1">
+        <p class="flex items-center gap-2 text-sm font-semibold">
+          <Icon name="lucide:clock-alert" class="size-4 shrink-0 text-warning" aria-hidden="true" />
+          O Pix não foi confirmado.
+        </p>
+        <p class="text-sm text-muted-foreground">
+          {{ result.payment?.amountDisplay }} segue em aberto. Receba de outra forma e acerte o pagamento no pedido.
+        </p>
+      </div>
+      <NuxtButton
+        v-if="result.nextUrl"
+        color="neutral" variant="outline" size="md"
+        class="justify-self-start gap-1.5"
+        :href="result.nextUrl"
+        v-bind="attrsFor(result.nextUrl)"
+      >
+        <Icon name="lucide:external-link" class="size-4" />
+        Abrir o pedido no Gestor
+      </NuxtButton>
+    </div>
+
+    <!-- Prova digital: QR Pix grande + status vivo do polling, ou o link do
          checkout do cartão (mesmo componente do fluxo de pagamento). -->
     <PosPaymentResult
       v-if="result.payment?.hasProof"
@@ -282,7 +318,7 @@ function onPrimary() {
         Nova venda em {{ countdown }}s · toque em qualquer lugar para ficar
       </p>
       <p v-else-if="pixPending" class="text-xs text-muted-foreground">
-        O PIX segue aguardando: ao sair, ele vira um aviso no topo até confirmar.
+        O Pix segue aguardando: ao sair, ele vira um aviso no topo até confirmar.
       </p>
       <p v-else-if="enterHint" class="text-xs text-muted-foreground">Enter também avança.</p>
 

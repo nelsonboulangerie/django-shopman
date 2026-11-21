@@ -77,6 +77,46 @@ describe("PosPaymentResult — o prazo do link", () => {
   });
 });
 
+// O Pix que venceu não é mais pagável: o QR e o copia-e-cola saem da tela (o
+// cliente escanearia um código que o banco recusa), e o cartão diz só o fato.
+// O aviso com o botão que resolve é da TELA, um só (auditoria do #2918).
+describe("PosPaymentResult — o Pix vencido", () => {
+  const pix = () => linkProof({ method: "pix", isPix: true, isLink: false, checkoutUrl: "", qrCodeSrc: "data:image/png;base64,abc", copyPaste: "000201..." });
+
+  it("aguardando: QR e 'Copiar código Pix', com a grafia da casa", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, { props: { proof: pix(), status: "polling" } });
+    expect(wrapper.find('img[alt="QR Code Pix"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("Copiar código Pix");
+    expect(wrapper.text()).toContain("Pagamento Pix");
+    expect(wrapper.text()).not.toContain("PIX");
+  });
+
+  it("vencido: sem QR, sem código e sem botão de copiar; só o fato, sem repetir o aviso da tela", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, { props: { proof: pix(), status: "expired" } });
+    const text = wrapper.text();
+    expect(wrapper.find("img").exists()).toBe(false);
+    expect(text).not.toContain("000201");
+    expect(text).not.toContain("Copiar código");
+    expect(text).toContain("Este Pix não pode mais ser pago.");
+    expect(text).not.toContain("não foi confirmado");
+    expect(text).not.toMatch(/Confira no gestor/i);
+    expect(text).not.toContain("PIX");
+    expect(wrapper.find("[data-payment-proof-expired]").exists()).toBe(true);
+  });
+
+  it("vencido: nem o envio ao cliente, nem o aviso do envio (o código morreu com o QR)", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, {
+      props: {
+        proof: pix(),
+        status: "expired",
+        delivery: delivery({ template: "pix", status: "failed", notice: "O envio falhou em todos os canais disponíveis.", action: "resend", action_label: "Reenviar Pix" }),
+      },
+    });
+    expect(wrapper.find("[data-payment-delivery]").exists()).toBe(false);
+    expect(wrapper.find('[data-action="send-payment-notice"]').exists()).toBe(false);
+  });
+});
+
 describe("PosPaymentResult — entrega da cobrança", () => {
   it("mostra o canal realmente aceito e emite a ação do servidor", async () => {
     const wrapper = await mountSuspended(PosPaymentResult, {
@@ -117,12 +157,12 @@ describe("PosPaymentResult — entrega da cobrança", () => {
           can_send: true,
           can_resend: false,
           action: "send",
-          action_label: "Enviar PIX ao cliente",
+          action_label: "Enviar Pix ao cliente",
         }),
       },
     });
     const botao = wrapper.find('[data-action="send-payment-notice"]');
-    expect(botao.text()).toContain("Enviar PIX ao cliente");
+    expect(botao.text()).toContain("Enviar Pix ao cliente");
     await botao.trigger("click");
     expect(wrapper.emitted("paymentNotice")).toEqual([["send"]]);
   });

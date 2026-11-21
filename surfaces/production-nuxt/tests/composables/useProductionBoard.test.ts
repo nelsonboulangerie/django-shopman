@@ -36,6 +36,12 @@ function boardPayload(overrides: Record<string, unknown> = {}) {
           proof: "start-proof",
           expected_rev: 3,
         },
+        {
+          ref: "void:42",
+          enabled: true,
+          proof: "void-proof",
+          expected_rev: 3,
+        },
       ],
       base_recipes: [],
       matrix_rows: [{ output_sku: "PAO-001", recipe_name: "Pão", planned_qty: "0" }],
@@ -142,6 +148,36 @@ describe("useProductionBoard — plan/start writes", () => {
         }),
       }),
     );
+  });
+
+  it("void POSTs to the per-WO void endpoint with the action of THIS board (#2957)", async () => {
+    env.fetchData.value = boardPayload();
+    const { voidOrder } = useProductionBoard();
+    const res = await voidOrder("PAO-001", 42, 3, "queimou");
+    expect(res.ok).toBe(true);
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/production/42/void/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          reason: "queimou",
+          expected_rev: 3,
+          source_revision: "board:1",
+          action_ref: "void:42",
+          action_proof: "void-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("void of a lot the board does not offer says so, and sends nothing", async () => {
+    env.fetchData.value = boardPayload();
+    const { voidOrder } = useProductionBoard();
+    const res = await voidOrder("PAO-001", 99, 1, "queimou");
+    expect(res.ok).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalledWith("/api/v1/backstage/production/99/void/", expect.anything());
+    expect(env.sonner.error).toHaveBeenCalled();
   });
 
   it("uses the quantity-bound suggested action and preserves an override proof", async () => {

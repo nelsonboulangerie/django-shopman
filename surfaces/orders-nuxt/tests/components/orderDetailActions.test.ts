@@ -1528,8 +1528,9 @@ describe("detalhe do pedido — a leitura que falhou diz por quê", () => {
     try {
       const denial = w.get("[data-order-forbidden]");
       expect(denial.text()).toContain("Sua conta não abre o detalhe do pedido");
-      expect(denial.text()).toContain("O detalhe é de quem gerencia pedidos.");
-      expect(denial.text()).toContain("continua no painel da Saída, onde você marca a saída e a retirada.");
+      expect(denial.text()).toContain("é de quem gerencia pedidos.");
+      expect(denial.text()).toContain("Os pedidos prontos para sair ficam no painel da Saída, onde você marca a saída e a retirada.");
+      expect(denial.text()).not.toContain("continua");
       expect(denial.text()).toContain("Abrir a Saída");
       expect(w.text()).not.toContain("não encontrado");
       expect(w.find("[data-order-error]").exists()).toBe(false);

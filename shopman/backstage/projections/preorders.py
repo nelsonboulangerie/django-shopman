@@ -226,6 +226,13 @@ class PreorderHandOverProjection:
     # o pronto, como o "Marcar pronto" do Gestor. A linha que a tela mostra
     # antes de confirmar; vazio quando a encomenda já está pronta.
     kitchen_notice: str = ""
+    # O Pix do saldo cobrado no balcão (#2897) ainda pagável: o QR no formato da
+    # venda (``pos._pos_payment_response``), para a tela de Pagamento voltar a
+    # ele. ``None`` quando não há Pix do balcão vivo.
+    counter_pix: dict | None = None
+    # Por que o saldo NÃO pode ser cobrado em Pix no balcão agora (a forma fica
+    # apagada com esta frase); vazio quando pode.
+    pix_block_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -486,11 +493,16 @@ def build_counter_block(order, *, user=None) -> CounterOrderProjection:
 
 
 def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHandOverProjection:
-    from shopman.shop.services import counter_takeover, operator_orders
+    from shopman.shop.services import counter_pix, counter_takeover, operator_orders
 
     reason = operator_orders.counter_hand_over_block(order, balance_q=card.balance_q)
     amount = int(card.balance_q or 0)
     digital = counter_takeover.pending_digital_method(order) if amount > 0 and not reason else ""
+    pix_proof = counter_pix.live_proof(order) if amount > 0 and not reason else None
+    if digital and counter_pix.governs(order):
+        notice = COUNTER_PIX_NOTICE
+    else:
+        notice = counter_takeover.notice_for(digital) if digital else ""
     return PreorderHandOverProjection(
         allowed=not reason,
         needs_payment=amount > 0,
@@ -498,9 +510,28 @@ def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHand
         amount_display=_money(amount),
         suggested_method=method if method in {"cash", "debit", "credit"} else "",
         block_reason=reason,
-        digital_charge_notice=counter_takeover.notice_for(digital) if digital else "",
+        digital_charge_notice=notice,
         kitchen_notice=KITCHEN_NOTICE if not reason and order.status != "ready" else "",
+        counter_pix=pix_proof,
+        pix_block_reason=_counter_pix_block(order, amount) if amount > 0 and not reason else "",
     )
+
+
+#: O Pix do balcão que ainda espera: receber de outra forma cancela ele antes.
+COUNTER_PIX_NOTICE = "O Pix gerado no balcão será cancelado."
+
+
+def _counter_pix_block(order, amount_q: int) -> str:
+    """A frase de por que o saldo não sai em Pix no balcão agora; vazio quando sai."""
+    from shopman.shop.services import counter_pix, order_composition, pix_policy
+
+    if amount_q != order_composition.effective_total_q(order):
+        return counter_pix.PARTIAL_BALANCE_MESSAGE
+    try:
+        pix_policy.enforce_pix_test_amount_limit(amount_q)
+    except pix_policy.PixPaymentPolicyError as exc:
+        return exc.message
+    return ""
 
 
 #: Entregar antes do pronto da cozinha: o que acontece com a tela dela.

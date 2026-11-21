@@ -1547,6 +1547,19 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_MEMORY_ASK_WHAT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi a que você está respondendo. Pode me dizer o que você gostaria?")},
     },
+    # A sacola na conversa (WP-12). Quantidade e total vêm do serviço da loja.
+    "CONCIERGE_CART_UPDATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, sua sacola ficou assim:")},
+    },
+    "CONCIERGE_CART_REMOVED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, tirei {item}. Sua sacola ficou assim:")},
+    },
+    "CONCIERGE_CART_ASK_QTY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Quantas unidades de {item} você quer?")},
+    },
+    "CONCIERGE_CART_UNAVAILABLE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
+    },
     "CONCIERGE_MEMORY_ASK_WHICH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
     },

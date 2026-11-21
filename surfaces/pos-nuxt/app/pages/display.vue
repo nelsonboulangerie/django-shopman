@@ -159,7 +159,7 @@ const itemCountLabel = computed(() => {
           <img
             v-if="snapshot.pix.qrCodeSrc"
             :src="snapshot.pix.qrCodeSrc"
-            alt="QR code do pagamento PIX"
+            alt="QR code do pagamento Pix"
             class="size-72 rounded-2xl border border-border bg-white p-4 md:size-80"
           >
           <p v-if="snapshot.pix.status === 'waiting'" class="flex items-center gap-2 text-xl text-muted-foreground">

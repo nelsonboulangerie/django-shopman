@@ -9,14 +9,16 @@ e continuar prometendo depois de vencida.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.utils import timezone
 from shopman.stockman import stock
 from shopman.stockman.models import Hold, Position, PositionKind
-from shopman.utils.formatting import format_clock, format_local
+from shopman.utils.formatting import format_local
 
 from shopman.shop.projections import cart as cart_data
 from shopman.storefront.tests.web.conftest import _ensure_listing_item
@@ -223,6 +225,12 @@ class TestCartSaysTheReservationLapsed:
     via as linhas normais e nenhuma palavra sobre a reserva.
     """
 
+    @staticmethod
+    def _frozen_at(day: int, hour: int, minute: int):
+        """O relógio parado num horário de novembro de 2026 em Brasília: a frase depende do dia."""
+        at = datetime(2026, 11, day, hour, minute, tzinfo=ZoneInfo("America/Sao_Paulo"))
+        return patch("django.utils.timezone.now", return_value=at.astimezone(UTC))
+
     def _lapse(self, client, *, ago=timedelta(minutes=5)):
         expired_at = timezone.now() - ago
         _timed_holds(client).update(expires_at=expired_at)
@@ -234,25 +242,35 @@ class TestCartSaysTheReservationLapsed:
         assert _cart(client)["reservation_lapsed_display"] is None
 
     def test_reservation_past_its_deadline_says_until_when_it_held(self, client, ready):
-        _set_qty(client, ready.sku, 2)
-        expired_at = self._lapse(client)
-
-        cart = _cart(client)
+        # Meio do dia: venceu hoje, e a frase diz só a hora.
+        with self._frozen_at(20, 12, 0):
+            _set_qty(client, ready.sku, 2)
+            self._lapse(client)
+            cart = _cart(client)
 
         assert cart["reserved_until_iso"] is None
-        assert cart["reservation_lapsed_display"] == format_clock(expired_at)
+        assert cart["reservation_lapsed_display"] == "11h55"
+
+    def test_a_reservation_that_lapsed_just_before_midnight_carries_the_date(self, client, ready):
+        """À 0h02, a reserva que venceu às 23h57 venceu ONTEM: a frase leva a data."""
+        with self._frozen_at(21, 0, 2):
+            _set_qty(client, ready.sku, 2)
+            self._lapse(client)
+            cart = _cart(client)
+
+        assert cart["reservation_lapsed_display"] == "20/11 às 23h57"
 
     def test_reservation_released_by_the_sweep_still_says_it_lapsed(self, client, ready):
         from shopman.stockman.services.holds import StockHolds
 
-        _set_qty(client, ready.sku, 2)
-        expired_at = self._lapse(client)
-        assert StockHolds.release_expired() >= 1
-
-        cart = _cart(client)
+        with self._frozen_at(20, 12, 0):
+            _set_qty(client, ready.sku, 2)
+            self._lapse(client)
+            assert StockHolds.release_expired() >= 1
+            cart = _cart(client)
 
         assert [item["sku"] for item in cart["items"]] == [ready.sku]
-        assert cart["reservation_lapsed_display"] == format_clock(expired_at)
+        assert cart["reservation_lapsed_display"] == "11h55"
 
     def test_reservation_from_another_day_carries_the_date(self, client, ready):
         _set_qty(client, ready.sku, 1)
