@@ -615,6 +615,10 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # O bloqueio anda sozinho, sem ninguém da casa agir ("Aguardando Pix", "Aguardando
+    # o dia da encomenda", "Esperando o lote"): a tela não o pinta de vermelho
+    # (``WAITING_BLOCK_LABELS``; decisão da coordenação com o mandato do dono, 21/11).
+    advance_block_waits: bool = False
     # A promessa do pedido (WP-G08, ``projections/order_promise``): ``None`` quando
     # a reserva está como deve estar. ``state`` ``at_risk`` é "Promessa em risco"
     # (algum item ficou sem lastro, ou o lote dele atrasou), com o item, quanto
@@ -892,6 +896,8 @@ class OperatorOrderProjection:
     transferred_from_label: str = ""
     # Igual ao do cartão: a cobrança venceu e o avanço não destrava mais sozinho.
     payment_lapsed: bool = False
+    # Igual ao do cartão: o bloqueio anda sozinho, sem ninguém da casa agir.
+    advance_block_waits: bool = False
     # "O que falta neste pedido" (WP-G05): as pendências, da que pede alguém agora
     # à que só espera, cada uma com o gesto que já existe para resolvê-la
     # (``projections/order_pending``). Vazia no contexto ``"pos"``: os gestos são
@@ -1320,6 +1326,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancel_reasons=_cancel_reasons(order.channel_ref or ""),
         kitchen_note_tags=_kitchen_note_tags(order),
@@ -2847,6 +2854,7 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
         has_customer_note=bool(str(order.data.get("order_notes", "") or "").strip()),
@@ -3405,6 +3413,34 @@ LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL, CARD_
 #: mesmo fato em duas formas, uma delas falsa (ninguém mais espera aquele Pix).
 #: Com o meio na frente, a linha lê "Pix · Expirado" e "Link de pagamento · Vencido".
 _LAPSED_PAYMENT_STATUS_LABELS = {PIX_LAPSED_LABEL: "Expirado", PAYMENT_LAPSED_LABEL: "Vencido"}
+
+
+#: Os bloqueios que andam sozinhos, sem ninguém da casa agir: o pagamento que ainda
+#: pode cair (ou cancela sozinho no vencimento), o dia da encomenda, o lote que ainda
+#: vai ficar pronto e as esperas do iFood. Vermelho é só para o que pede alguém
+#: (decisão da coordenação com o mandato do dono, 21/11/2026, #2721 item 9): a
+#: cobrança vencida ou recusada e "Quem leva ainda não definido" seguem fora.
+WAITING_BLOCK_LABELS = frozenset({
+    "Aguardando Pix",
+    "Aguardando pagamento",
+    AWAITING_REPAYMENT_LABEL,
+    *(
+        _ADVANCE_BLOCK_LABELS[block].removesuffix("…")
+        for block in (
+            operator_orders.AdvanceBlock.PREORDER_NOT_DUE,
+            operator_orders.AdvanceBlock.WAITLIST_FERMATA,
+            operator_orders.AdvanceBlock.IFOOD_SCHEDULE_BLOCKED,
+            operator_orders.AdvanceBlock.IFOOD_WINDOW_NOT_OPEN,
+            operator_orders.AdvanceBlock.IFOOD_WAITING_PICKUP,
+            operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING,
+        )
+    ),
+})
+
+
+def block_waits(block_label: str) -> bool:
+    """O bloqueio do avanço anda sozinho? Lê o nome que :func:`_advance_block_copy` deu."""
+    return str(block_label or "").removesuffix("…") in WAITING_BLOCK_LABELS
 
 
 def _lapsed_payment_status_label(block_label: str) -> str:

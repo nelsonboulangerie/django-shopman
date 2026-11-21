@@ -34,7 +34,7 @@ import {
 import { joinFacts } from "../../../operator-kit/app/presentation/orderDetail";
 import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
 import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
-import { promiseWaitLines, waitsForBatch } from "./orderPromise";
+import { blockWaits, promiseWaitLines } from "./orderPromise";
 
 export {
   joinFacts,
@@ -1266,12 +1266,13 @@ type SealSource = Pick<
   OrderCardProjection,
   "status" | "status_label" | "can_confirm" | "advance_block_reason" | "actions"
 > &
-  Partial<Pick<OrderCardProjection, "promise" | "advance_block_label">>;
+  Partial<Pick<OrderCardProjection, "promise" | "advance_block_label" | "advance_block_waits">>;
 
 /** Selo do canto do cartão. Bloqueio primeiro (o motivo vem escrito no cartão); depois
  *  "Novo" (a decisão pendente) e "Próximo" (o primeiro da Saída a sair); senão o estado.
- *  Quem só espera o lote ficar pronto não é "Bloqueado": a reserva está inteira, e a
- *  espera saudável não usa cor de erro (WP-G08; a pílula "Esperando o lote" diz o fato). */
+ *  Quem só espera algo que anda sozinho (o lote ficar pronto, o Pix cair, o dia da
+ *  encomenda) não é "Bloqueado": a espera saudável não usa cor de erro (WP-G08 e #2721
+ *  item 9; a pílula diz o fato). */
 export function cardSeal(
   card: SealSource,
   opts: { next?: boolean } = {},
@@ -1279,7 +1280,7 @@ export function cardSeal(
   const advance = (card.actions ?? []).find(
     (a) => a.ref === "advance" && a.priority !== "menu",
   );
-  if (card.advance_block_reason && advance && !advance.enabled && !waitsForBatch(card))
+  if (card.advance_block_reason && advance && !advance.enabled && !blockWaits(card))
     return { label: "Bloqueado", tone: "error" };
   if (card.can_confirm) return { label: "Novo", tone: "primary" };
   if (opts.next) return { label: "Próximo", tone: "primary" };

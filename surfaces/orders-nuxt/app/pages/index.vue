@@ -76,7 +76,7 @@ import {
   PROMISE_HASH,
   type AcceptedPreorder,
 } from "~/presentation/preorderList";
-import { promiseRisk, waitsForBatch } from "~/presentation/orderPromise";
+import { blockWaits, promiseRisk } from "~/presentation/orderPromise";
 import { CANCEL_HASH } from "~/presentation/promiseResolution";
 import {
   orderFocusKey,
@@ -393,7 +393,7 @@ function rowSecondary(card: OrderCardProjection) {
 }
 /** O bloqueio como estado, não como botão morto: quando o gesto travado da linha só
  *  leva o nome do bloqueio ("Pix expirado", "Esperando o lote"), a célula mostra o selo
- *  com esse nome (laudo, P1-16). Quem só espera o lote não usa a cor de erro. */
+ *  com esse nome (laudo, P1-16). Quem espera algo que anda sozinho não usa a cor de erro. */
 function rowBlock(card: OrderCardProjection) {
   const primary = rowPrimary(card);
   const repeats = lockedButtonRepeatsPill({
@@ -403,7 +403,7 @@ function rowBlock(card: OrderCardProjection) {
     blockAnnounced: Boolean(card.advance_block_reason),
   });
   if (!repeats) return null;
-  const waits = waitsForBatch(card);
+  const waits = blockWaits(card);
   return {
     label: blockPillLabel(card.advance_block_label),
     color: waits ? ("neutral" as const) : ("error" as const),

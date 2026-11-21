@@ -128,6 +128,7 @@ CARD_FIELD_READERS: dict[str, str] = {
     "ready_eta_iso": GESTOR + "presentation/boardStrip.ts",
     "courier_reminder": GESTOR + "components/OrderCard.vue",
     "payment_lapsed": GESTOR + "presentation/queue.ts",
+    "advance_block_waits": GESTOR + "presentation/orderPromise.ts",
     "promise": GESTOR + "presentation/orderPromise.ts",
 }
 
