@@ -34,7 +34,7 @@ function props(overrides: Record<string, unknown> = {}) {
     fulfillmentOptions: [{ ref: "pickup", label: "Retirada", description: "", requires_address: false }],
     paymentMethods: [
       { ref: "cash", label: "Dinheiro" },
-      { ref: "pix", label: "PIX" },
+      { ref: "pix", label: "Pix" },
       { ref: "card", label: "Cartão" },
       { ref: "mixed", label: "Misto" },
     ],
@@ -112,14 +112,14 @@ describe("PosPaymentWorkspace — instrumento de pagamento", () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
     const text = wrapper.text();
     expect(text).toContain("Dinheiro");
-    expect(text).toContain("PIX");
+    expect(text).toContain("Pix");
     expect(text).toContain("Cartão");
     expect(text).not.toContain("Misto"); // injectableMethods filtra "mixed"
   });
 
   it("tocar num método lança um tender (addTender com o ref)", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
-    const pix = wrapper.findAll("button").find((b) => b.text().includes("PIX"));
+    const pix = wrapper.findAll("button").find((b) => b.text().includes("Pix"));
     await pix!.trigger("click");
     expect(wrapper.emitted("addTender")?.[0]).toEqual(["pix"]);
   });
@@ -1029,7 +1029,7 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     const method = (label: string) => wrapper.findAll("button").find((b) => b.text().includes(label))!;
     expect(method("Dinheiro").attributes("disabled")).toBeUndefined();
     expect(method("Cartão").attributes("disabled")).toBeDefined();
-    expect(method("PIX").attributes("disabled")).toBeDefined();
+    expect(method("Pix").attributes("disabled")).toBeDefined();
   });
 
   it("o cadastro só-com-CPF identifica a encomenda: o servidor aceita, a tela também", async () => {

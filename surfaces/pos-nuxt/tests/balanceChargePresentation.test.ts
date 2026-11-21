@@ -13,7 +13,7 @@ const nbsp = (text: string) => text.replace(/\s/g, " ");
 const line = (method: string, amount_q: number): POSPaymentTenderDraft => ({ method, amount_q, collection: "terminal" });
 
 describe("as formas do saldo", () => {
-  it("só dinheiro, débito e crédito, na ordem da loja: Pix e link a rota não recebe", () => {
+  it("dinheiro, débito, crédito e Pix, na ordem da loja; o link não entra no saldo", () => {
     const methods = [
       { ref: "cash", label: "Dinheiro" },
       { ref: "pix", label: "Pix" },
@@ -21,7 +21,7 @@ describe("as formas do saldo", () => {
       { ref: "debit", label: "Débito" },
       { ref: "link", label: "Link de pagamento" },
     ];
-    expect(handOverMethods(methods).map((method) => method.ref)).toEqual(["cash", "credit", "debit"]);
+    expect(handOverMethods(methods).map((method) => method.ref)).toEqual(["cash", "pix", "credit", "debit"]);
   });
 });
 

@@ -26,6 +26,9 @@ warmUpMount();
 const printOne = vi.fn().mockResolvedValue(true);
 const printBatch = vi.fn().mockResolvedValue(true);
 const call = vi.fn();
+// A espera do Pix é a da venda (`usePixStatusPoll`); aqui o teste diz como ela acaba.
+const pixPoll = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }));
+vi.mock("~/composables/usePixStatusPoll", () => ({ usePixStatusPoll: () => pixPoll }));
 const kick = vi.fn().mockResolvedValue(true);
 const agentPrint = vi.fn().mockResolvedValue({ status: "printed", detail: "" });
 const danfeFetched = vi.fn();
@@ -206,6 +209,8 @@ beforeEach(() => {
   searched.mockClear();
   listed.mockClear();
   call.mockReset();
+  pixPoll.start.mockClear();
+  pixPoll.stop.mockClear();
   call.mockResolvedValue({ ok: true, received_q: 3600, status: "completed" });
   kick.mockClear();
   agentPrint.mockClear();
@@ -320,9 +325,9 @@ describe("Detalhe — receber e entregar (a tela de Pagamento da venda, WP-E5)",
     await opensPayment(wrapper);
     expect(heroText(wrapper)).toContain("A receber");
     expect(heroText(wrapper)).toContain("R$ 36,00");
-    // Pix e link a rota da entrega não recebe: a tela não oferece.
+    // O link não entra no saldo (a cliente está no balcão); o Pix entra (#2897).
     const methods = wrapper.findAll("[data-payment-method]").map((button) => button.attributes("data-payment-method"));
-    expect(methods).toEqual(["cash", "credit", "debit"]);
+    expect(methods).toEqual(["cash", "pix", "credit", "debit"]);
     expect(wrapper.find("[data-balance-summary]").text()).toContain("Encomenda NB-7");
     const totals = wrapper.findAll("[data-balance-totals] > div").map((row) => row.findAll("dt, dd").map((cell) => cell.text().replace(/\s+/g, " ")));
     expect(totals).toEqual([["Total da encomenda", "R$ 36,00"], ["A receber", "R$ 36,00"]]);
@@ -543,6 +548,167 @@ describe("Detalhe — receber e entregar (a tela de Pagamento da venda, WP-E5)",
     const wrapper = await mount(DetailPage);
     await opensPayment(wrapper);
     expect(wrapper.text()).toContain("sai da tela da cozinha");
+  });
+});
+
+describe("Detalhe — o saldo em Pix no balcão (#2897)", () => {
+  // O Pix entra pela MESMA tela de Pagamento: escolhido sozinho, a página pede a
+  // cobrança Pix do pedido e mostra o QR da venda; a espera é a da venda
+  // (`usePixStatusPoll`, aqui controlada pelo teste); pago, entrega.
+  const PIX_PAYMENT = {
+    method: "pix", amount_q: 3600, amount_display: "R$ 36,00", status: "pending",
+    message: "Pagamento criado.", intent_ref: "INT-PIX-1", qr_code: "data:image/png;base64,QUFB",
+    copy_paste: "00020101PIXBALCAO", expires_at: "2099-01-01T00:00:00Z",
+  };
+  function answerPix() {
+    call.mockImplementation((path: string) => (
+      path.endsWith("/pix/")
+        ? Promise.resolve({ ok: true, ref: "NB-7", payment: PIX_PAYMENT })
+        : Promise.resolve({ ok: true, received_q: 0, status: "completed" })
+    ));
+  }
+  async function opensPayment(wrapper: VueWrapper) {
+    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await settle();
+  }
+  async function tap(wrapper: VueWrapper, selector: string) {
+    await wrapper.find(selector).trigger("click");
+    await settle();
+  }
+  const cta = (wrapper: VueWrapper) => wrapper.find<HTMLButtonElement>("[data-payment-cta]");
+  const lastPoll = () => pixPoll.start.mock.calls.at(-1)!;
+
+  it("o Pix é uma das formas do saldo e, sozinho, vira o QR da venda", async () => {
+    answerPix();
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    const methods = wrapper.findAll("[data-payment-method]").map((button) => button.attributes("data-payment-method"));
+    expect(methods).toEqual(["cash", "pix", "credit", "debit"]);
+
+    await tap(wrapper, '[data-payment-method="pix"]');
+    expect(cta(wrapper).element.disabled).toBe(false);
+    await cta(wrapper).trigger("click");
+    await settle();
+
+    const [path, options] = call.mock.calls[0]!;
+    expect(path).toBe("/api/v1/backstage/pos/preorders/NB-7/pix/");
+    expect(options.body).toMatchObject({ base_revision: "rev-1" });
+    expect(options.body.client_request_id).toBeTruthy();
+    // O MESMO componente da venda em Pix: QR, copia e cola, a espera.
+    const pix = wrapper.find("[data-balance-pix]");
+    expect(pix.exists()).toBe(true);
+    expect(pix.find('img[alt="QR Code Pix"]').attributes("src")).toBe(PIX_PAYMENT.qr_code);
+    expect(pix.text()).toContain("00020101PIXBALCAO");
+    expect(pix.text()).toContain("A confirmação chega aqui sozinha.");
+    expect(lastPoll()[0]).toBe("NB-7");
+    expect(wrapper.find("[data-payment-cta]").exists()).toBe(false);
+  });
+
+  it("Pix com outra forma trava, e o toque que resolve deixa só o Pix no valor inteiro", async () => {
+    answerPix();
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="cash"]');
+    await tap(wrapper, "button[aria-label=\"Limpar: zera o valor da linha\"]");
+    await tap(wrapper, "button[aria-label=\"Dígito 2\"]");
+    await tap(wrapper, "button[aria-label=\"Dígito 0\"]");
+    await tap(wrapper, '[data-payment-method="pix"]');
+
+    expect(cta(wrapper).element.disabled).toBe(true);
+    expect(wrapper.text()).toContain("No saldo da encomenda, o Pix cobra o valor inteiro, sozinho.");
+    const fix = wrapper.findAll("button").find((button) => button.text() === "Deixar só o Pix no valor inteiro")!;
+    await fix.trigger("click");
+    await settle();
+
+    expect(cta(wrapper).element.disabled).toBe(false);
+    const lines = wrapper.findAll('button[aria-label^="Editar "]').map((line) => line.attributes("aria-label")!.replace(/\s+/g, " "));
+    expect(lines).toEqual(["Editar Pix de R$ 36,00"]);
+  });
+
+  it("pago, a encomenda é entregue pelo Entregar de sempre, sem forma nenhuma", async () => {
+    answerPix();
+    const wrapper = await mount(DetailPage);
+    route.query = { back: "/preorders?mode=week" };
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="pix"]');
+    await cta(wrapper).trigger("click");
+    await settle();
+    // O servidor registrou o Pix: a leitura seguinte não tem saldo.
+    detail.counter.hand_over = { ...detail.counter.hand_over, needs_payment: false, amount_q: 0, amount_display: "R$ 0,00" };
+
+    lastPoll()[1].onOutcome("paid");
+    await settle();
+    await flushPromises();
+
+    const handOver = call.mock.calls.find(([path]) => String(path).endsWith("/hand-over/"))!;
+    expect(handOver).toBeTruthy();
+    expect(handOver[1].body.tenders).toBeUndefined();
+    expect(navigate).toHaveBeenCalledWith("/preorders?mode=week");
+  });
+
+  it("o Pix que não confirmou: o QR sai, o aviso no topo traz Gerar outro Pix, e a outra forma segue à vista", async () => {
+    answerPix();
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="pix"]');
+    await cta(wrapper).trigger("click");
+    await settle();
+
+    lastPoll()[1].onOutcome("deadline");
+    await settle();
+
+    expect(wrapper.text()).toContain("O Pix não foi confirmado.");
+    const header = wrapper.findComponent({ name: "OperatorPageHeader" });
+    const alerts = header.props("alerts") as Array<{ title: string; action?: { label: string; onSelect?: () => void } }>;
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.action!.label).toBe("Gerar outro Pix");
+    // Um aviso só: nem o cartão repete o aviso, nem o QR morto fica pagável.
+    expect(wrapper.text().match(/não foi confirmado/g)).toHaveLength(1);
+    expect(wrapper.find('[data-balance-pix] img[alt^="QR Code"]').exists()).toBe(false);
+    expect(wrapper.find("[data-balance-pix]").text()).not.toContain("Copiar código");
+    expect(wrapper.find("[data-balance-pix]").text()).toContain("Este Pix não pode mais ser pago.");
+    expect(wrapper.find("[data-balance-pix-leave]").exists()).toBe(true);
+
+    alerts[0]!.action!.onSelect!();
+    await settle();
+    expect(call.mock.calls.filter(([path]) => String(path).endsWith("/pix/"))).toHaveLength(2);
+  });
+
+  it("receber em outra forma volta às formas limpas (receber cancela o Pix no servidor)", async () => {
+    answerPix();
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    await tap(wrapper, '[data-payment-method="pix"]');
+    await cta(wrapper).trigger("click");
+    await settle();
+
+    await tap(wrapper, "[data-balance-pix-leave]");
+
+    expect(wrapper.find("[data-balance-pix]").exists()).toBe(false);
+    expect(wrapper.find("[data-payment-cta]").exists()).toBe(true);
+    expect(wrapper.findAll('button[aria-label^="Editar "]')).toHaveLength(0);
+  });
+
+  it("o Pix do balcão ainda pagável volta direto ao QR ao abrir de novo", async () => {
+    detail.counter.hand_over = { ...detail.counter.hand_over, counter_pix: PIX_PAYMENT };
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+
+    expect(wrapper.find("[data-balance-pix]").exists()).toBe(true);
+    expect(lastPoll()[0]).toBe("NB-7");
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("quando o servidor diz que o Pix não cobra este saldo, a forma fica apagada com a frase", async () => {
+    detail.counter.hand_over = {
+      ...detail.counter.hand_over,
+      pix_block_reason: "Esta encomenda já tem parte paga: o Pix do balcão ainda não cobra só o saldo. Receba em dinheiro ou cartão.",
+    };
+    const wrapper = await mount(DetailPage);
+    await opensPayment(wrapper);
+    const pix = wrapper.find('[data-payment-method="pix"]');
+    expect(pix.attributes("disabled")).toBeDefined();
+    expect(pix.attributes("title")).toContain("já tem parte paga");
   });
 });
 

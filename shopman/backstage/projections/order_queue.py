@@ -4030,6 +4030,9 @@ _EVENT_LABELS = {
     # respondeu vão no detalhe (``_refund_retry_detail``).
     "payment.refund_retry": "Estorno tentado de novo",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
+    # #2897: o saldo da encomenda cobrado em Pix no balcão (novo, ou o Pix online
+    # do cliente aproveitado); quem gerou é o autor da linha.
+    "payment.counter_pix": "Pix do saldo gerado no balcão",
 }
 
 #: O que a linha do tempo diz de um evento ainda sem rótulo: nunca o identificador.

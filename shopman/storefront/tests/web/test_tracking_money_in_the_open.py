@@ -17,7 +17,6 @@ import pytest
 from django.utils import formats, timezone
 from shopman.orderman.models import Order
 from shopman.payman import PaymentService
-from shopman.utils.formatting import format_clock
 
 from shopman.storefront.presentation.order_tracking import build_order_tracking
 
@@ -105,15 +104,18 @@ class TestHistoryKeepsTheMoney:
 
 class TestPaymentSummarySaysMethodAmountAndTime:
     def test_pix_paid_today_says_method_and_time(self, order_with_payment):
-        _paid_by_pix(order_with_payment)
-        now = format_clock(timezone.localtime())
+        from datetime import UTC, datetime
+        from unittest.mock import patch
+        from zoneinfo import ZoneInfo
 
-        label = build_order_tracking(order_with_payment).payment_status_label
+        # Relógio parado ao meio-dia: pago agora é "hoje", sem a data, em qualquer hora da rodada.
+        noon = datetime(2026, 11, 20, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
+        with patch("django.utils.timezone.now", return_value=noon.astimezone(UTC)):
+            _paid_by_pix(order_with_payment)
+            label = build_order_tracking(order_with_payment).payment_status_label
 
         assert label.startswith("Pix")
-        assert ", pago às " in label or ", pago à " in label
-        # A hora é a do pagamento (agora, com folga de um minuto de relógio).
-        assert label.endswith(now) or label.endswith(format_clock(timezone.localtime() - timedelta(minutes=1)))
+        assert label.endswith(", pago às 12h")
 
     def test_amount_enters_when_the_projection_brings_it(self, order_with_payment):
         _paid_by_pix(order_with_payment)

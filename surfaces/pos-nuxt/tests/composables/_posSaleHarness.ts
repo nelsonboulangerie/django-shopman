@@ -16,7 +16,7 @@ export function makeProjection(overrides: Partial<POSProjection> = {}): POSProje
     collections: [],
     payment_methods: [
       { ref: "cash", label: "Dinheiro" },
-      { ref: "pix", label: "PIX" },
+      { ref: "pix", label: "Pix" },
       { ref: "card", label: "Cartão" },
     ],
     fulfillment_options: [
