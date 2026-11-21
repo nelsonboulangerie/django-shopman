@@ -12922,7 +12922,9 @@
             "_mark_ready_at_counter",
             "take_over_before_hand_over",
             "_COUNTER_METHODS",
-            "COUNTER_HAND_OVER_STATUSES"
+            "COUNTER_HAND_OVER_STATUSES",
+            "PIX_MIXED_UNCONFIRMED_MESSAGE",
+            "PIX_ALONE_MESSAGE"
           ]
         }
       ],
@@ -14346,7 +14348,8 @@
             "settles_without_gateway",
             "initiate",
             "restore_existing_intent",
-            "settle_terminal_tenders"
+            "settle_terminal_tenders",
+            "_charge_amount_q"
           ]
         }
       ],
@@ -14403,7 +14406,9 @@
             "_PAID_STATUSES",
             "cancelled_money",
             "CancelledMoney",
-            "_HOSTED_CARD_METHODS"
+            "_HOSTED_CARD_METHODS",
+            "held_by_order_q",
+            "_held_intents"
           ]
         }
       ],
@@ -17952,6 +17957,50 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.services.counter_takeover:take_over_pending_digital_charge"
+      ]
+    },
+    {
+      "id": "payment.counter-pix",
+      "question": "Como o saldo da encomenda é cobrado em Pix no balcão, do jeito da venda, sem duas cobranças vivas?",
+      "owner": "payment.counter-pix",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.counter_pix:governs",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/counter_pix.py",
+          "symbols": [
+            "start",
+            "governs",
+            "live_proof",
+            "CounterPixRefused",
+            "MARKER_KEY",
+            "TAKEOVER_HISTORY_KEY",
+            "NOT_CREATED_MESSAGE",
+            "charge_amount_q",
+            "_received_lines"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman",
+        "payman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_pos_preorder_counter_pix.py::test_pix_do_balcao_vencido_nao_cancela_a_encomenda"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.counter_pix:governs"
       ]
     },
     {

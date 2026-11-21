@@ -94,6 +94,7 @@ from shopman.backstage.projections.feeds import (
     ManagerOptionProjection,
     MenuboardAutomaticProjection,
 )
+from shopman.backstage.projections.house_rides import DeliveryHouseRideProjection, HouseStopActionProjection
 from shopman.backstage.projections.ifood_handshake import (
     IFoodNegotiationAlternative,
     IFoodNegotiationChoice,
@@ -264,6 +265,8 @@ CONTRACT_DATACLASSES = (
     DeliveryStopProjection,
     DeliveryDriverProjection,
     DeliveryCourierPositionProjection,
+    HouseStopActionProjection,
+    DeliveryHouseRideProjection,
     DeliveryRideProjection,
     RideSuggestionProjection,
     DeliveryServiceOptionProjection,
@@ -288,6 +291,7 @@ def render_orders_contract_ts() -> str:
             " + shopman/backstage/projections/order_history.py"
             " + shopman/backstage/projections/order_attention.py"
             " + shopman/backstage/projections/deliveries.py"
+            " + shopman/backstage/projections/house_rides.py"
             " + shopman/backstage/projections/order_pending.py"
             " + shopman/backstage/projections/order_promise.py"
             " + shopman/backstage/projections/order_promise_resolution.py"

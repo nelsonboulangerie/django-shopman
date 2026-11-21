@@ -5,7 +5,7 @@
 // um toque. Sem ninguém da casa na escala (ou o serviço da casa desligado), a linha não
 // existe e a tela é a de antes. Tudo aqui é puro: a página busca, isto só decide o que
 // desenhar e o que enviar.
-import type { Action, DeliveryStopProjection } from "~/generated/ordersContract";
+import type { Action, DeliveryRideProjection, DeliveryStopProjection } from "~/generated/ordersContract";
 import { formatBRL } from "../../../operator-kit/app/utils/money";
 import type { QuoteLine } from "~/presentation/deliveries";
 
@@ -237,4 +237,59 @@ export function shiftChips(crew: HouseCrew | null | undefined): {
     label: courier.on_shift && courier.state === "busy" ? `${courier.name} · Na rua` : courier.name,
     on: courier.on_shift,
   }));
+}
+
+// ── a corrida da casa na página Entregas (M3b, #2898) ───────────────────────
+
+/** Um gesto do balcão na corrida da casa: o que a página manda e o botão que o card desenha. */
+export interface HouseGesture {
+  /** Chave única no card ("depart", "deliver:WEB-A47"…). */
+  key: string;
+  gesture: "depart" | "deliver" | "resend" | "release";
+  /** O pedido do "Entregue". */
+  ref?: string;
+  action: Action;
+  icon: string;
+  /** O gesto do momento (botão cheio); os outros em contorno. */
+  primary: boolean;
+}
+
+/** Os gestos que a projeção oferece, na ordem do momento: o que avança, depois o link. */
+export function houseGestures(ride: Pick<DeliveryRideProjection, "house">): HouseGesture[] {
+  const house = ride.house;
+  if (!house) return [];
+  const list: HouseGesture[] = [];
+  if (house.depart_action)
+    list.push({ key: "depart", gesture: "depart", action: house.depart_action, icon: "i-lucide-navigation", primary: true });
+  house.deliver_actions.forEach((item, index) =>
+    list.push({
+      key: `deliver:${item.ref}`, gesture: "deliver", ref: item.ref, action: item.action,
+      icon: "i-lucide-package-check", primary: index === 0,
+    }),
+  );
+  if (house.resend_action)
+    list.push({ key: "resend", gesture: "resend", action: house.resend_action, icon: "i-lucide-send", primary: false });
+  if (house.release_action)
+    list.push({ key: "release", gesture: "release", action: house.release_action, icon: "i-lucide-unlink", primary: false });
+  return list;
+}
+
+/** Os códigos do card, na ordem da rota, com o que já foi entregue. */
+export function houseCodes(stops: readonly Pick<DeliveryStopProjection, "code" | "done">[]): { code: string; done: boolean }[] {
+  return stops.map((stop) => ({ code: stop.code, done: stop.done }));
+}
+
+/** "1 pedido", "2 pedidos". */
+export function ordersWord(count: number): string {
+  return `${count} ${count === 1 ? "pedido" : "pedidos"}`;
+}
+
+/** Onde mora o gesto no servidor. */
+export function houseGesturePath(rideKey: string, gesture: HouseGesture["gesture"]): string {
+  return `/api/v1/backstage/deliveries/couriers/rides/${encodeURIComponent(rideKey)}/${gesture}/`;
+}
+
+/** Onde mora a intenção do gesto até a resposta definitiva (um por pedido no "Entregue"). */
+export function houseGestureResource(rideKey: string, item: Pick<HouseGesture, "key">): string {
+  return `house-ride:${rideKey}:${item.key}`;
 }

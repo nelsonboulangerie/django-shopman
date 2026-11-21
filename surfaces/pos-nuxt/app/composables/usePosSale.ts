@@ -51,6 +51,7 @@ import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } fro
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
 import { lastBookableDate, resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import { collectionsForFulfillment, paymentProofView } from "~/presentation/payment";
+import { usePixStatusPoll } from "~/composables/usePixStatusPoll";
 import { usePosTenders } from "~/composables/usePosTenders";
 import {
   draftAssociationTargetStates,
@@ -90,8 +91,11 @@ import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptCo
 import { closeGuardNotice } from "~/presentation/closeGuard";
 import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
+import { crossAppLinkAttrs } from "../../../operator-kit/app/presentation/appLaunch";
+import { isInstalledDisplay } from "../../../operator-kit/app/utils/displayMode";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { pendingPixDeadlineMs, pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
 import { sourceReleasedMessage } from "~/presentation/moveLines";
 import { tabTitleView } from "~/presentation/tabTitle";
@@ -595,7 +599,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function recheckUncertainClose(
-    approval?: { username: string; pin: string },
+    approval?: ManagerApproval,
   ): Promise<"resolved" | "unknown" | "unavailable" | "approval"> {
     if (closeRecheckBusy.value || closeInFlight.value) return "unavailable";
     const lockManager = globalThis.navigator?.locks;
@@ -630,7 +634,7 @@ export function usePosSale(deps: PosSaleDeps) {
         if (approval) {
           const shown = marker.approval || NO_APPROVAL_FIGURES;
           try {
-            const token = await requestSaleApprovalToken(approval.username, approval.pin, {
+            const token = await requestSaleApprovalToken(approval, {
               tab_ref: typeof marker.body.tab_ref === "string" ? marker.body.tab_ref : "",
               reasons: shown.reasons,
               discount_q: shown.discount_q,
@@ -642,7 +646,7 @@ export function usePosSale(deps: PosSaleDeps) {
             const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
             closeRecheckApproval.value = shown;
             closeRecheckApprovalError.value = failure?.recovery || failure?.message
-              || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+              || httpErrorMessage(error, approval.badge ? "Não deu para conferir o crachá. Tente de novo." : "Não deu para conferir o PIN. Tente de novo.");
             return "approval" as const;
           }
         }
@@ -781,9 +785,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const pendingPixOrderRefs = computed(() => pendingPix.value
     .map((entry) => entry.orderRef)
     .filter((orderRef) => orderRef !== result.value?.orderRef));
-  let pixPollTimer: ReturnType<typeof setInterval> | null = null;
   let deliveryPollTimer: ReturnType<typeof setInterval> | null = null;
-  let pixPollGeneration = 0;
   let deliveryPollGeneration = 0;
   function applyPaymentDelivery(orderRef: string, delivery?: POSPaymentDeliveryProjection | null) {
     if (result.value?.orderRef === orderRef && delivery) result.value.paymentDelivery = delivery;
@@ -818,35 +820,27 @@ export function usePosSale(deps: PosSaleDeps) {
       finally { inFlight = false; }
     }, 2500);
   }
-  function stopPixPolling(expectedGeneration?: number) {
-    if (expectedGeneration !== undefined && expectedGeneration !== pixPollGeneration) return;
-    pixPollGeneration += 1;
-    if (pixPollTimer) { clearInterval(pixPollTimer); pixPollTimer = null; }
+  // A espera é a mesma do saldo da encomenda no balcão (`usePixStatusPoll`).
+  const pixPoll = usePixStatusPoll();
+  function stopPixPolling() {
+    pixPoll.stop();
   }
   function startPixPolling(orderRef: string) {
-    stopPixPolling();
     pixOrderRef.value = orderRef;
     pixStatus.value = "polling";
-    let inFlight = false;
-    const generation = pixPollGeneration;
     // O prazo é o do servidor (`payment.expires_at`, guardado com o Pix pendente):
     // quem decide que o Pix venceu é o status (`is_terminal`); a desistência local
     // só vale quando o servidor nem responde, e espera o prazo mais a folga.
     const tracked = pendingPix.value.find((entry) => entry.orderRef === orderRef);
     const deadlineMs = pendingPixDeadlineMs(tracked ?? { since: new Date().toISOString() });
-    pixPollTimer = setInterval(async () => {
-      if (generation !== pixPollGeneration) return;
-      if (Date.now() >= deadlineMs) { pixStatus.value = "expired"; return stopPixPolling(generation); }
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean; payment_delivery?: POSPaymentDeliveryProjection }>(
-          apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
-          { credentials: "include", signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS) },
-        );
-        if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
-        applyPaymentDelivery(orderRef, status.payment_delivery);
-        if (status?.is_paid) {
+    pixPoll.start(orderRef, {
+      deadlineMs,
+      onStatus: (status) => {
+        if (pixOrderRef.value === orderRef) applyPaymentDelivery(orderRef, status.payment_delivery);
+      },
+      onOutcome: (outcome) => {
+        if (pixOrderRef.value !== orderRef) return;
+        if (outcome === "paid") {
           pixStatus.value = "paid";
           // A NFC-e que esperava o Pix agora está na fila: a tela de resultado
           // troca "sai quando o pagamento confirmar" por "na fila", e a
@@ -854,14 +848,13 @@ export function usePosSale(deps: PosSaleDeps) {
           if (result.value?.orderRef === orderRef && result.value.fiscalState === "awaiting_payment") {
             markFiscalState(orderRef, "queued");
           }
-          stopPixPolling(generation);
+          return;
         }
-        else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
-      // A desistência é que fala alto: passou do prazo → `pixStatus = "expired"`
-      // e o toast do watcher. A tentativa isolada, não.
-      } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
-      finally { inFlight = false; }
-    }, 2500);
+        // Cancelado/expirado no servidor, ou passou do prazo sem resposta: a
+        // desistência fala alto (`pixStatus = "expired"` e o toast do watcher).
+        pixStatus.value = "expired";
+      },
+    });
   }
 
   // O Pix da tela de resultado resolveu: sai da lista. A tela já diz o desfecho.
@@ -878,8 +871,25 @@ export function usePosSale(deps: PosSaleDeps) {
   function resolveBackgroundPix(orderRef: string, outcome: "paid" | "expired") {
     if (!pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
     forgetPendingPix(orderRef);
-    if (outcome === "paid") toast.success(`PIX do pedido ${orderRef} confirmado.`);
-    else toast.warning(`Não confirmamos o PIX do pedido ${orderRef}. Confira no gestor ou gere um novo pagamento.`);
+    if (outcome === "paid") {
+      toast.success(`Pix do pedido ${orderRef} confirmado.`);
+      return;
+    }
+    // O aviso traz o botão que resolve: a venda está fechada, o PDV não gera
+    // outro Pix, e o pagamento se acerta no pedido, no Gestor. O link abre na
+    // janela certa (instalado, o Gestor tem janela própria; na aba, a mesma).
+    const href = orderUrl(ordersUrl.value, orderRef);
+    toast.warning(`O Pix do pedido ${orderRef} não foi confirmado.`, href
+      ? {
+          action: {
+            label: "Abrir o pedido no Gestor",
+            onClick: () => {
+              const attrs = crossAppLinkAttrs({ installed: isInstalledDisplay(), href, currentOrigin: window.location.origin });
+              window.open(href, attrs.target, attrs.rel);
+            },
+          },
+        }
+      : undefined);
   }
   async function pollBackgroundPix() {
     if (backgroundPixInFlight) return;
@@ -1529,7 +1539,7 @@ export function usePosSale(deps: PosSaleDeps) {
   function addTender(method: string) {
     if (cart.paymentCollection === "on_delivery" && !["cash", "credit", "debit"].includes(method)) {
       const handoff = cart.fulfillmentType === "pickup" ? "retirada" : "entrega";
-      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. Pix Efí exige confirmação automática.`);
       return;
     }
     tenders.addTender(method);
@@ -2706,8 +2716,7 @@ export function usePosSale(deps: PosSaleDeps) {
    * Lança o erro do servidor (PIN errado, trava) para quem chamou mostrar.
    */
   async function requestSaleApprovalToken(
-    username: string,
-    pin: string,
+    approval: ManagerApproval,
     shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number; over_plan?: POSOverPlanLine[] },
   ): Promise<string> {
     const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
@@ -2719,12 +2728,15 @@ export function usePosSale(deps: PosSaleDeps) {
       // que o diálogo mostrou. O carimbo vale só para esses números.
       over_plan: shown.reasons.includes("preorder_over_plan") ? (shown.over_plan ?? []) : [],
     };
-    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: { username, pin }, scope } });
+    // PIN (`{username, pin}`) ou crachá (`{badge}`): o servidor aceita as duas portas
+    // (`validate_manager_override`) e devolve o mesmo carimbo (#2691).
+    const managerApproval = approval.badge ? { badge: approval.badge } : { username: approval.username, pin: approval.pin };
+    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: managerApproval, scope } });
     return typeof answer?.token === "string" ? answer.token : "";
   }
 
   const managerCheckBusy = ref(false);
-  async function checkManagerApproval(username: string, pin: string): Promise<boolean> {
+  async function checkManagerApproval(approval: ManagerApproval): Promise<boolean> {
     if (managerCheckBusy.value) return false;
     managerCheckBusy.value = true;
     managerApprovalError.value = "";
@@ -2736,7 +2748,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // vale só para isso. O PIN fica no diálogo; o carimbo mora na memória da
       // aba, preso ao retrato (`managerSignature`).
       const current = review.value;
-      const token = await requestSaleApprovalToken(username, pin, {
+      const token = await requestSaleApprovalToken(approval, {
         tab_ref: cart.localTab ? "" : cart.tabRef,
         reasons: current?.approval_reasons || [],
         discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
@@ -2749,7 +2761,7 @@ export function usePosSale(deps: PosSaleDeps) {
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
       managerApprovalError.value = failure?.recovery || failure?.message
-        || httpErrorMessage(error, "Não deu para conferir o PIN. Tente de novo.");
+        || httpErrorMessage(error, approval.badge ? "Não deu para conferir o crachá. Tente de novo." : "Não deu para conferir o PIN. Tente de novo.");
       return false;
     } finally {
       managerCheckBusy.value = false;

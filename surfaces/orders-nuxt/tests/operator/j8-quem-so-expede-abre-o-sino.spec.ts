@@ -46,10 +46,13 @@ test("J8: quem só expede abre um aviso de pedido no sino e lê por que o detalh
   await open.click();
   await settled(gestor);
   await expect(gestor.getByText("Sua conta não abre o detalhe do pedido")).toBeVisible({ timeout: 60_000 });
-  // A frase que segue ("continua no painel da Saída") é falsa para o pedido cancelado:
-  // #2879. A jornada confere só o que é verdade em todo estado.
-  const description = gestor.getByText(`O detalhe é de quem gerencia pedidos. O pedido ${shortCode(ref)}`, { exact: false });
-  await expect(description).toBeVisible();
+  // A frase não diz onde o pedido está: ele foi cancelado, e a recusa não sabe disso
+  // (#2879). Diz só o que vale em todo estado.
+  await expect(
+    gestor.getByText(
+      `O detalhe do pedido ${shortCode(ref)} é de quem gerencia pedidos. Os pedidos prontos para sair ficam no painel da Saída, onde você marca a saída e a retirada.`,
+    ),
+  ).toBeVisible();
   await expect(gestor.getByRole("link", { name: "Abrir a Saída" })).toBeVisible();
   // Nada de "tentar de novo": quem não abre é a conta, não a rede.
   await expect(gestor.getByRole("button", { name: /Tentar de novo/ })).toHaveCount(0);

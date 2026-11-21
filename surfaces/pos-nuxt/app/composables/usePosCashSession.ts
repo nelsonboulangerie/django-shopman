@@ -28,7 +28,8 @@ interface CashSessionDeps {
  * usePosSale quando o caixa era um diálogo da tela de venda; com a antesala
  * (`/session`) a sessão tem tela própria e o write-side acompanha. Cada ação
  * devolve `true` no sucesso para a página decidir navegação (ex.: abrir caixa
- * → ir vender). Erros sobem como toast, mesmo dialeto do restante do PDV.
+ * → ir vender). O erro de um gesto com diálogo aberto mora DENTRO do diálogo
+ * (`cashFailure`, ver `CashGesture`); os demais sobem como toast.
  */
 /**
  * A autorização do gerente, pelas DUAS portas.
@@ -44,8 +45,23 @@ export interface ManagerApproval {
   badge?: string;
 }
 
-/** Os gestos de caixa cujo erro mora DENTRO do diálogo (ver `PosCashFailureNotice`). */
-export type CashGesture = "movement" | "close_shift" | "refund_cash" | "card_machine_refund";
+/**
+ * Os gestos de caixa cujo erro mora DENTRO do diálogo (ver `PosCashFailureNotice`).
+ *
+ * Todo gesto da antessala com diálogo próprio entra aqui. O pedido de troco, o
+ * atendimento e o cancelamento dele, o acerto de conta na casa e a gaveta sem
+ * venda ficaram fora do WP-E6 e seguiam com o toast atrás do véu (#2726).
+ */
+export type CashGesture =
+  | "movement"
+  | "close_shift"
+  | "refund_cash"
+  | "card_machine_refund"
+  | "request_change"
+  | "serve_change"
+  | "cancel_change"
+  | "settle_account"
+  | "open_drawer";
 
 /** A falha do último gesto, com a frase inteira (causa e saída). */
 export interface CashFailure {
@@ -104,6 +120,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   function dismissCashFailure() {
     cashFailure.value = null;
   }
+  function clearFailure(gesture: CashGesture) {
+    if (cashFailure.value?.gesture === gesture) cashFailure.value = null;
+  }
 
   async function run(
     path: string,
@@ -121,7 +140,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       chaves.settled(); // gesto concluído: o próximo é outro lançamento
       if (failureToast != null) toast.dismiss(failureToast);
       failureToast = null;
-      if (cashFailure.value && cashFailure.value.gesture === gesture) cashFailure.value = null;
+      if (gesture) clearFailure(gesture);
       await refresh();
       return true;
     } catch (error) {
@@ -328,9 +347,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       busy.value = true;
       try {
         const opened = await drawerOpening.open({ purpose: "no_sale", reason });
-        if (!opened) {
-          toast.error(`${drawerOpening.message.value} Tente de novo ou abra com a chave.`);
-        }
+        // O gesto mora no diálogo "Abrir gaveta": a falha também (#2726).
+        if (opened) clearFailure("open_drawer");
+        else cashFailure.value = { gesture: "open_drawer", message: `${drawerOpening.message.value} Tente de novo ou abra com a chave.` };
         return opened;
       } finally {
         busy.value = false;
@@ -341,9 +360,19 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       { purpose: "no_sale", reason, via: "local" },
       "A abertura da gaveta não entrou na trilha.",
       "A gaveta continua fechada: sem registro ela não abre. Tente de novo.",
+      "open_drawer",
     );
     if (!registered) return false;
-    return drawer.kick("no_sale");
+    // O agente recusou depois de a abertura entrar na trilha: o aviso também fica
+    // no diálogo, e diz que o registro já existe (repetir registra outra abertura).
+    return drawer.kick("no_sale", {
+      onFailure: (detail) => {
+        cashFailure.value = {
+          gesture: "open_drawer",
+          message: `A gaveta não abriu: ${detail} A abertura ficou registrada no turno. Confira o agente da estação e tente de novo, ou abra com a chave.`,
+        };
+      },
+    });
   }
 
   // ── Pedido de troco ─────────────────────────────────────────────────────
@@ -370,6 +399,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       { amount: payload.amount, denominations: payload.denominations, note: payload.note },
       "O pedido de troco não foi enviado.",
       "Ninguém foi avisado ainda. Tente de novo.",
+      "request_change",
     );
   }
 
@@ -395,6 +425,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // "o pedido", sozinho, é o pedido do CLIENTE em todo o resto do PDV.
       "O pedido de troco não foi atendido.",
       "A gaveta não abriu e o pedido segue na lista. Tente de novo.",
+      "serve_change",
     ).then((ok) => {
       // Só depois do `ok`: gaveta aberta por um atendimento recusado (PIN
       // errado, pedido já resolvido) é dinheiro exposto sem lastro.
@@ -479,6 +510,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       body,
       "O acerto não foi registrado.",
       "Nada entrou na gaveta e o saldo do cliente não mudou. Tente de novo agora: a mesma tentativa não cobra duas vezes.",
+      "settle_account",
     ).then((ok) => {
       // Dinheiro entrando: a gaveta abre para guardar, depois do `ok`.
       if (ok && payload.method === "cash") void drawer.kick("account_settled");
@@ -492,6 +524,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       {},
       "O pedido de troco não foi cancelado.",
       "Ele segue na lista. Tente de novo.",
+      "cancel_change",
     );
   }
 

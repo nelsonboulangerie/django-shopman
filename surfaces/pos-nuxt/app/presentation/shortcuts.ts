@@ -70,7 +70,7 @@ export const POS_SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Na venda concluída",
     items: [
       { keys: ["F2"], label: "Nova venda (sempre)" },
-      { keys: ["Enter"], label: "Nova venda (sem troco a conferir nem PIX aguardando)" },
+      { keys: ["Enter"], label: "Nova venda (sem troco a conferir nem Pix aguardando)" },
     ],
   },
 ];

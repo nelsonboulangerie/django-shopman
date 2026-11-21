@@ -219,7 +219,10 @@ def delivery_uncertainty_refusal(order, template: str) -> NotificationResendRefu
     if uncertain:
         return NotificationResendRefused(
             "notification_acceptance_unknown",
-            "Aceite do envio anterior não confirmado. Confira o envio com o responsável antes de reenviar.",
+            # Quem lê é o operador: a frase diz o que houve e o que fazer, sem mandar
+            # a "o responsável", que não existe na tela (P2-22, #2705 item 4).
+            "O envio anterior ficou sem resposta do provedor e pode ter chegado. "
+            "Pergunte ao cliente antes de mandar de novo, para não chegar duas vezes.",
         )
     return None
 

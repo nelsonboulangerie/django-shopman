@@ -212,13 +212,110 @@ def send_ride(orders: list[Order], courier_ref: str, *, actor: str, operator=Non
         raise OrderError(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Não foi possível enviar a corrida.") from exc
+    return _sent(assignment.link, orders, verb=("enviada", "enviado"))
+
+
+def _sent(link: CourierLink, orders: list[Order], *, verb: tuple[str, str]) -> SentRide:
+    """O link e o WhatsApp pronto da rota, e a frase do toast ("Rota C enviada para Diego.")."""
+    from shopman.shop.services import courier
+
     first = Order.objects.get(pk=orders[0].pk)
     number = courier.get_block(first).get("ride_number")
     label, feminine = ride_label(orders, number)
-    url = link_url(assignment.link)
+    url = link_url(link)
     text = f"Corrida para você: {label}. Abra o link no seu celular: {url}"
     return SentRide(
-        ride_ref=assignment.ride_ref, link_url=url, whatsapp_url=whatsapp_url(person.phone, text),
-        detail=f"{label} {'enviada' if feminine else 'enviado'} para {person.name}.",
+        ride_ref=link.ride_ref, link_url=url, whatsapp_url=whatsapp_url(link.courier.phone, text),
+        detail=f"{label} {verb[0] if feminine else verb[1]} para {link.courier.name}.",
         ride_number=number if isinstance(number, int) else None,
     )
+
+
+# ── Os gestos do balcão na corrida da casa (M3b, #2898) ─────────────────────
+# Quando o entregador está sem celular ou sem sinal, o operador faz por ele, pelo mesmo
+# funil do link (``own_fleet.depart``/``deliver``), com a fonte ``operator:<nome>``. E o
+# link: reenviar (o MESMO link, pelo WhatsApp do dispositivo) e soltar do celular errado.
+
+
+def live_link(ride_ref: str) -> CourierLink:
+    """O link vivo da rota, ou a recusa com a frase da tela."""
+    link = (CourierLink.objects.select_related("courier")
+            .filter(ride_ref=ride_ref, revoked_at__isnull=True, expires_at__isnull=True).first())
+    if link is None:
+        raise OrderError("Esta corrida não é mais da casa, ou já fechou. Atualize a tela.")
+    return link
+
+
+def ride_orders(link: CourierLink) -> list[Order]:
+    by_ref = {order.ref: order for order in Order.objects.filter(ref__in=link.order_refs or [])}
+    return [by_ref[ref] for ref in link.order_refs or [] if ref in by_ref]
+
+
+def ride_revision(link: CourierLink) -> str:
+    """O que a tela leu da rota: a revisão de cada pedido dela, numa marca só."""
+    from shopman.shop.services import courier
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"ride": link.ride_ref,
+                                 "orders": [courier.dispatch_revision(order) for order in ride_orders(link)]})
+
+
+def check_revision(link: CourierLink, expected: str | None) -> None:
+    from shopman.backstage.services.exceptions import OrderConflict
+
+    if expected is not None and expected != ride_revision(link):
+        raise OrderConflict("A corrida mudou depois que você abriu esta tela. Confira e toque de novo.")
+
+
+def operator_source(actor: str) -> str:
+    return f"operator:{actor}"
+
+
+def depart(ride_ref: str, *, actor: str, expected: str | None = None) -> str:
+    """ "Saiu": a rota sai para entrega pelo balcão. Devolve a frase do toast."""
+    from shopman.shop.services import courier, own_fleet
+
+    link = live_link(ride_ref)
+    check_revision(link, expected)
+    try:
+        applied = own_fleet.depart(link, source=operator_source(actor))
+    except own_fleet.OwnFleetRefused as exc:
+        raise OrderError(str(exc)) from exc
+    if not applied:
+        raise OrderError("Nenhum pedido desta corrida estava esperando sair.")
+    orders = ride_orders(link)
+    label, _ = ride_label(orders, courier.get_block(orders[0]).get("ride_number"))
+    return f"{label}: {link.courier.name} saiu para entrega."
+
+
+def deliver(ride_ref: str, order_ref: str, *, actor: str, expected: str | None = None) -> str:
+    """ "Entregue" de UM pedido da rota, pelo balcão. O aviso vai só àquele cliente."""
+    from shopman.shop.services import own_fleet
+    from shopman.shop.services.operator_orders import short_ref
+
+    link = live_link(ride_ref)
+    check_revision(link, expected)
+    try:
+        own_fleet.deliver(link, order_ref, source=operator_source(actor))
+    except own_fleet.OwnFleetRefused as exc:
+        raise OrderError(str(exc)) from exc
+    except Order.DoesNotExist as exc:
+        raise OrderError("Este pedido não é desta rota.") from exc
+    return f"{short_ref(order_ref)} entregue."
+
+
+def resend(ride_ref: str) -> SentRide:
+    """O MESMO link de novo, pelo WhatsApp do dispositivo (a mensagem se perdeu)."""
+    link = live_link(ride_ref)
+    return _sent(link, ride_orders(link), verb=("reenviada", "reenviado"))
+
+
+def release(ride_ref: str) -> str:
+    """Solta o link do celular em que ele está preso; o próximo a confirmar fica com ele."""
+    from shopman.shop.services import courier_links
+
+    link = live_link(ride_ref)
+    if not link.device_hash:
+        raise OrderError("O link ainda não está preso a nenhum celular.")
+    courier_links.release(ride_ref)
+    return f"Link de {link.courier.name} solto. O próximo celular que confirmar fica com ele."

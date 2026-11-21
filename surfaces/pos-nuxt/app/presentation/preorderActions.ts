@@ -30,7 +30,8 @@ export function paidOnlineNotice(code: string | null | undefined): string {
  * mais, o troco que a tela de Pagamento mostrou (a resposta da rota traz só o
  * recebido).
  */
-export function handOverDoneMessage(receivedQ: number, changeQ = 0): string {
+export function handOverDoneMessage(receivedQ: number, changeQ = 0, pixQ = 0): string {
+  if (pixQ > 0) return `Pix de ${formatBRL(pixQ)} confirmado. Encomenda entregue.`;
   if (receivedQ <= 0) return "Encomenda entregue.";
   const change = changeQ > 0 ? `, com troco de ${formatBRL(changeQ)}` : "";
   return `Recebido ${formatBRL(receivedQ)}${change}. Encomenda entregue.`;

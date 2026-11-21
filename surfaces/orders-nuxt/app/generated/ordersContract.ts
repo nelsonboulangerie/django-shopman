@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py + shopman/backstage/projections/order_promise_resolution.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/house_rides.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py + shopman/backstage/projections/order_promise_resolution.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -712,6 +712,8 @@ export interface PreorderHandOverProjection {
   block_reason: string;
   digital_charge_notice: string;
   kitchen_notice: string;
+  counter_pix: Record<string, unknown> | null;
+  pix_block_reason: string;
 }
 
 /** Cancelar pelo PDV: a mesma régua, política e permissão do Gestor. */
@@ -1323,6 +1325,28 @@ export interface DeliveryCourierPositionProjection {
   source_label: string;
 }
 
+/** O "Entregue" de UMA parada da rota, pelo balcão. */
+export interface HouseStopActionProjection {
+  ref: string;
+  code: string;
+  action: Action;
+}
+
+/** O que a corrida da casa mostra e os gestos dela no Gestor. */
+export interface DeliveryHouseRideProjection {
+  courier_ref: string;
+  courier_name: string;
+  moment: string;
+  hint: string;
+  delivered: number;
+  total: number;
+  link_claimed: boolean;
+  depart_action: Action | null;
+  deliver_actions: HouseStopActionProjection[];
+  resend_action: Action | null;
+  release_action: Action | null;
+}
+
 /** Uma corrida chamada, viva: do "procurando" à volta do entregador. */
 export interface DeliveryRideProjection {
   key: string;
@@ -1358,6 +1382,7 @@ export interface DeliveryRideProjection {
   cancel_state: string;
   cancel_message: string;
   sync_since: string;
+  house: DeliveryHouseRideProjection | null;
 }
 
 /** Uma corrida que a casa sugere juntar (``ride_plan``), no topo de Aguardando. */

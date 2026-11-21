@@ -189,14 +189,30 @@ export function idleCustomerDisplaySnapshot(shopName: string, nowMs: number = Da
  * que falta pagar e para quem, como no pagamento da venda.
  */
 export function handOverCustomerDisplaySnapshot(
-  inputs: { shopName: string; amountDisplay: string; customerName: string; orderRef: string },
+  inputs: {
+    shopName: string;
+    amountDisplay: string;
+    customerName: string;
+    orderRef: string;
+    /**
+     * O saldo cobrado em Pix no balcão (#2897): a parede mostra o MESMO QR da venda
+     * em Pix, com o estado da espera; pago, o agradecimento da venda concluída.
+     */
+    pix?: { qrCodeSrc: string; status: "idle" | "polling" | "paid" | "expired" } | null;
+  },
   nowMs: number = Date.now(),
 ): CustomerDisplaySnapshot {
-  return {
+  const base: CustomerDisplaySnapshot = {
     ...idleCustomerDisplaySnapshot(inputs.shopName, nowMs),
     phase: "payment",
     totalDisplay: inputs.amountDisplay,
     customerFirstName: firstName(inputs.customerName),
     orderRef: inputs.orderRef,
+  };
+  if (!inputs.pix) return base;
+  if (inputs.pix.status === "paid") return { ...base, phase: "result" };
+  return {
+    ...base,
+    pix: { qrCodeSrc: inputs.pix.qrCodeSrc, status: inputs.pix.status === "expired" ? "expired" : "waiting" },
   };
 }

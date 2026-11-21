@@ -88,9 +88,14 @@ identidade trocada) é reconferida igual, na transação do efeito (#2625).
   are not supported by WhatsApp and Telegram channels"), os botões aceitos (`url`, `flow`,
   `node`) não levam payload, e o `dynamic_block_callback`, o único que leva o payload ao
   servidor, só está documentado para o Messenger. Por isso o texto com o código é a forma
-  principal hoje. O botão com o código no payload vira a principal se um ensaio no número
-  do dono provar que o `dynamic_block_callback` chega íntegro no WhatsApp (seguimento do
-  WP-11); o texto fica de reserva.
+  principal.
+- **Ensaio do botão no número do dono (21/11/2026, #2926): recusado.** Duas tentativas com
+  `concierge_button_probe`, e o ManyChat devolveu HTTP 400 `provider_rejected` nas duas
+  (ensaio `ff3160e9454f`, código de teste 6473; ensaio `2247268e7826`, código 2817). A
+  segunda foi dentro da janela de 24 horas, então a recusa é do botão no WhatsApp, não da
+  janela. Nenhum clique chegou. **Fica o texto "confirmo NNNN" como forma única**; o botão
+  só volta se o ManyChat passar a documentar o `dynamic_block_callback` no WhatsApp, e aí o
+  mesmo comando refaz o ensaio (ele confere a janela antes e explica a recusa).
 - **Contorno descartado:** gravar o código num campo do contato e o botão `flow` lê-lo no
   clique. O flow lê o valor de agora, então o botão de um resumo antigo confirmaria o
   orçamento novo, que é o furo que o código fecha.
@@ -103,6 +108,6 @@ identidade trocada) é reconferida igual, na transação do efeito (#2625).
   não é o horário em que o cliente escreveu; o furo do item 2 continua.
 - **Botão do ManyChat com o token no retorno, hoje.** Seria a prova mais limpa e é a escolha
   do dono, mas o WhatsApp do ManyChat não documenta botão com payload (ver Consequências).
-  Fica condicionado ao ensaio.
+  O ensaio de 21/11/2026 confirmou: o ManyChat recusa o botão no WhatsApp (HTTP 400).
 - **Descartar mensagens repetidas por hash.** Proibido pelo guia: perde a repetição
   legítima do cliente.

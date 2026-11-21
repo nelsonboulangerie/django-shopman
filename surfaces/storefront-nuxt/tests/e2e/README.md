@@ -150,6 +150,18 @@ npm run test:journeys
 Só uma largura: `npm run test:journeys -- --project=cliente-375`. As capturas de cada passo
 ficam em `test-results/journeys/` e no relatório (`--reporter=html`).
 
+**J9 (um toque, uma reserva) precisa do proxy lento.** Ele fica entre a loja e o Django só
+na pilha de teste e atrasa UMA resposta a pedido da jornada, para ela passar do prazo do
+BFF. A loja aponta para o proxy, e o proxy, para o Django:
+
+```bash
+(cd surfaces/storefront-nuxt && SLOW_PROXY_PORT=8091 SLOW_PROXY_TARGET=http://127.0.0.1:8090 node tests/journeys/support/slow-proxy.mjs > /tmp/shopman-jornadas/proxy.log 2>&1 &)
+(cd surfaces/storefront-nuxt && NUXT_DJANGO_BASE_URL=http://127.0.0.1:8091 HOST=127.0.0.1 PORT=3190 node .output/server/index.mjs > /tmp/shopman-jornadas/loja.log 2>&1 &)
+```
+
+e a jornada recebe a porta de controle: `JOURNEY_PROXY_CONTROL=http://127.0.0.1:8091`. Sem
+essa variável, a J9 pula e diz por quê. As outras jornadas não notam o proxy.
+
 ### Desligar
 
 Derrube o que subiu (`kill` nos processos do `runserver`, do worker e dos dois

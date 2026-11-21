@@ -127,6 +127,10 @@ def test_unknown_blocks_new_resend_and_explains_payment_link(context):
     with pytest.raises(notification.NotificationResendRefused) as refusal:
         notification.resend(context, notification.PAYMENT_LINK_TEMPLATE, min_interval_seconds=0)
     assert refusal.value.code == "notification_acceptance_unknown"
+    # A frase diz o que fazer com o que a tela tem: perguntar ao cliente. Nunca manda a
+    # "o responsável", que não existe na tela (P2-22, #2705 item 4).
+    assert "responsável" not in refusal.value.message
+    assert "Pergunte ao cliente antes de mandar de novo" in refusal.value.message
     assert notification.delivery_uncertainty_refusal(
         context,
         notification.PAYMENT_LINK_TEMPLATE,

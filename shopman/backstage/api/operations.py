@@ -4308,6 +4308,61 @@ class POSPreorderHandOverView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="POS preorder balance in Pix: the Pix charge (QR) for the balance, without a double charge",
+        responses={200: OpenApiResponse(description="Pix charge (QR)."), 409: OpenApiResponse(description="Changed, paid online or charge not cancelled.")},
+    ),
+)
+class POSPreorderCounterPixView(APIView):
+    """O saldo da encomenda em Pix no balcão (#2897): o QR, do jeito da venda.
+
+    ``POST {base_revision, terminal_ref?, client_request_id?}`` devolve
+    ``{ok, ref, payment}`` com ``payment`` no formato da venda de balcão
+    (``pos._pos_payment_response``): QR, copia e cola, prazo. A confirmação é a
+    de sempre: o PDV acompanha por ``pos/payment/<ref>/status/`` e, pago, entrega
+    pelo ``hand-over``. A régua e a proteção contra cobrança dupla moram em
+    ``counter_pix.start``; idempotente (o Pix do balcão ainda pagável volta como
+    está).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import counter_pix, counter_takeover, operator_orders
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        base = str(request.data.get("base_revision") or "").strip()
+        if not base:
+            return Response({"detail": "Esta tela está desatualizada. Atualize a encomenda e tente de novo.",
+                "error": {"code": "base_revision_required"}}, status=400)
+        terminal_ref = _terminal_do_pedido(request)
+        try:
+            pos_service.current_shift(terminal_ref, strict=True)
+        except Exception as exc:
+            logger.debug("pos_preorder_counter_pix_no_shift order=%s", order.ref, exc_info=True)
+            return _falha_do_caixa(exc, "Abra o caixa para receber o Pix.")
+        if operator_orders.operational_revision(order) != base:
+            return Response({"detail": "A encomenda mudou. Confira o estado atualizado antes de receber.",
+                "error": {"code": "preorder_changed"}}, status=409)
+        try:
+            payment = counter_pix.start(
+                order, actor=_actor(request), terminal_ref=terminal_ref,
+                attempt_id=str(request.data.get("client_request_id") or "").strip(),
+            )
+        except counter_takeover.PaidOnline as exc:
+            return Response({"detail": str(exc), "error": {"code": "preorder_paid_online"}}, status=409)
+        except counter_takeover.TakeoverFailed as exc:
+            return Response({"detail": str(exc), "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+        except counter_pix.CounterPixRefused as exc:
+            return Response({"detail": str(exc), "error": {"code": "counter_pix_refused"}}, status=400)
+        return Response({"ok": True, "ref": order.ref, "payment": payment})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Open (or resume) the virtual tab that edits a preorder in the POS sale screen",
         responses={200: OpenApiResponse(description="Virtual tab + edit context."), 409: OpenApiResponse(description="Not editable.")},
     ),
@@ -7787,7 +7842,13 @@ class POSManagerApprovalCheckView(APIView):
                 approval,
                 operator_username=_username(request),
                 action="sale_approval_check",
-                recovery_invalid="Confira o gerente e digite o PIN de novo.",
+                # A saída fala da porta que o gerente usou: com o crachá, "digite o
+                # PIN de novo" mandava refazer um gesto que ninguém fez (#2691).
+                recovery_invalid=(
+                    "Passe o crachá de novo, ou escolha o gerente e digite o PIN."
+                    if str(approval.get("badge") or "").strip()
+                    else "Confira o gerente e digite o PIN de novo."
+                ),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)

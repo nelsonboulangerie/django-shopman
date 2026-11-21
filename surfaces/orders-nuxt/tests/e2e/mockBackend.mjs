@@ -699,6 +699,58 @@ function crewDeliveries() {
   return { ...DELIVERIES, waiting: DELIVERIES.waiting.map((stop) => ({ ...stop, dispatch_action: DISPATCH(stop.ref) })) };
 }
 
+// M3b (#2898): a corrida da casa na lista de Corridas, com o cookie `e2e_house=on`. A
+// corrida C é do Diego (A47 ∙ C03); os gestos do balcão mudam o estado do mock: "Saiu"
+// põe a rota na rua, "A47 entregue" risca a parada. A corrida A (TaOn) segue igual.
+const houseState = { departed: false, delivered: [], claimed: true, gestures: [] };
+const HOUSE_STOPS = [
+  ["WEB-20261116-0A47", "Ana", "Gleba Palhano", 0.006, 0.004, 2, "Troco para R$ 50,00"],
+  ["WEB-20261116-0C03", "Caio", "Gleba Palhano", 0.008, 0.007, 1, ""],
+];
+const houseAction = (ref, label, confirmation) => ({
+  ref, kind: "mutation", label, priority: "", enabled: true, reason: "", href: "", method: "POST",
+  idempotency: "required", confirmation: confirmation ? { required: true, description: confirmation } : { required: false },
+  payload_schema: { base_revision: `house-${houseState.departed}-${houseState.delivered.length}`, expected_actor_id: 1 },
+});
+function houseRide() {
+  const stops = HOUSE_STOPS.map(([ref, customer, place, dLat, dLng, volumes, change]) =>
+    deliveryStop(ref, customer, place, dLat, dLng, { volumes, change_label: change, done: houseState.delivered.includes(ref) }));
+  const open = stops.filter((stop) => !stop.done);
+  const moment = houseState.departed ? `Diego na rua · ${houseState.delivered.length} de 2 entregues` : "Diego leva";
+  return {
+    ...RIDE_BASE,
+    key: "CASA-7F3A2B", number: 3, letter: "C", state: houseState.departed ? "route" : "coming",
+    status_label: houseState.departed ? "Em rota" : "Entregador a caminho da loja",
+    stops, called_at: minutesAgo(4), lead_ref: stops[0].ref, cost_display: "R$ 15,00",
+    driver: { name: "Diego", phone: "(43) 99999-0000", vehicle: "Moto prata · ABC1D23", photo_url: "" },
+    house: {
+      courier_ref: "diego", courier_name: "Diego", moment,
+      hint: houseState.departed ? "Entregador da casa · R$ 15,00" : "Entregador da casa · R$ 15,00 · Abriu o link às 12h31",
+      delivered: houseState.delivered.length, total: 2, link_claimed: houseState.claimed,
+      depart_action: houseState.departed ? null
+        : houseAction("house-depart", "Saiu", "Diego saiu com os pedidos? Os clientes recebem o aviso de saída."),
+      deliver_actions: houseState.departed ? open.map((stop) => ({
+        ref: stop.ref, code: stop.code,
+        action: houseAction("house-deliver", `${stop.code} entregue`, `Marcar ${stop.code} como entregue? O cliente recebe o aviso agora.`),
+      })) : [],
+      resend_action: houseAction("house-resend", "Reenviar o link"),
+      release_action: houseState.claimed
+        ? houseAction("house-release", "Soltar o link", "Soltar o link do celular em que está preso? O próximo celular que confirmar fica com ele.")
+        : null,
+    },
+  };
+}
+function houseDeliveries() {
+  const keep = new Set(HOUSE_STOPS.map(([ref]) => ref));
+  return {
+    ...DELIVERIES,
+    waiting: DELIVERIES.waiting.filter((stop) => !keep.has(stop.ref)),
+    rides: [...DELIVERIES.rides.map((ride) => ({ ...ride, house: null })), houseRide()],
+    free_numbers: DELIVERIES.free_numbers.filter((n) => n !== 3),
+    ride_plan: { ...DELIVERIES.ride_plan, suggestions: [] },
+  };
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -714,6 +766,36 @@ const server = createServer((req, res) => {
   const cancelScenario = /(?:^|;\s*)e2e_deliveries=cancel(?:;|$)/.test(req.headers.cookie || "");
   if (cancelScenario && /\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, deliveriesProjection());
   const crewScenario = /(?:^|;\s*)e2e_crew=on(?:;|$)/.test(req.headers.cookie || "");
+  const houseScenario = /(?:^|;\s*)e2e_house=on(?:;|$)/.test(req.headers.cookie || "");
+  if (/\/e2e\/deliveries\/house-ride\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") Object.assign(houseState, { departed: false, delivered: [], claimed: true, gestures: [] });
+    return json(res, 200, houseState);
+  }
+  const houseGesture = url.match(/\/deliveries\/couriers\/rides\/([A-Z0-9-]+)\/(depart|deliver|resend|release)\/?(\?|$)/);
+  if (houseGesture) {
+    if (req.method !== "POST") return json(res, 202, { outcome: "unknown" });
+    return void readBody(req).then((body) => {
+      const gesture = houseGesture[2];
+      houseState.gestures.push({ gesture, ref: body.ref ?? "", base_revision: body.base_revision });
+      let detail = "";
+      if (gesture === "depart") {
+        houseState.departed = true;
+        detail = "Rota C: Diego saiu para entrega.";
+      } else if (gesture === "deliver") {
+        houseState.delivered.push(body.ref);
+        detail = `${String(body.ref).slice(-3)} entregue.`;
+      } else if (gesture === "release") {
+        houseState.claimed = false;
+        detail = "Link de Diego solto. O próximo celular que confirmar fica com ele.";
+      } else {
+        const text = "Corrida para você: Rota C. Abra o link no seu celular: https://loja.test/rota/tok7";
+        return json(res, 200, { ok: true, outcome: "applied", detail: "Rota C reenviada para Diego.",
+          link_url: "https://loja.test/rota/tok7", whatsapp_url: `https://wa.me/5543999990000?text=${encodeURIComponent(text)}` });
+      }
+      json(res, 200, { ok: true, outcome: "applied", detail });
+    });
+  }
+  if (houseScenario && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, houseDeliveries());
   if (/\/e2e\/deliveries\/house\/?(\?|$)/.test(url)) {
     if (req.method === "DELETE") {
       housePosts.length = 0;

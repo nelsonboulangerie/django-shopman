@@ -135,7 +135,7 @@ function tender(method: string, amountQ: number): POSPaymentTenderDraft {
 
 const METHODS: POSPaymentMethodProjection[] = [
   { ref: "cash", label: "Dinheiro" },
-  { ref: "pix", label: "PIX" },
+  { ref: "pix", label: "Pix" },
   { ref: "card", label: "Cartão" },
   { ref: "mixed", label: "Misto" },
 ];
@@ -498,7 +498,7 @@ describe("presentation/payment — tender math & method affordance", () => {
   });
 
   it("resolves the method label and icon, with fallbacks", () => {
-    expect(methodLabel("pix", METHODS)).toBe("PIX");
+    expect(methodLabel("pix", METHODS)).toBe("Pix");
     // Ref cru nunca chega à tela: fallback pt-BR digno.
     expect(methodLabel("external", METHODS)).toBe("Outro meio");
     expect(methodLabel("unknown", METHODS)).toBe("Outro meio");
@@ -550,7 +550,7 @@ describe("presentation/payment — tender math & method affordance", () => {
   it("shapes a tender line view", () => {
     expect(tenderLineView(tender("pix", 2599), METHODS)).toEqual({
       method: "pix",
-      label: "PIX",
+      label: "Pix",
       icon: "lucide:qr-code",
       amountQ: 2599,
       amountDisplay: formatBRL(2599),
