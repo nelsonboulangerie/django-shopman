@@ -65,6 +65,7 @@ class Scored:
 class Report:
     arm: str
     model: str = ""
+    drafts: bool = False
     live_refs: list[str] = field(default_factory=list)
     rows: list[Scored] = field(default_factory=list)
     stopped: str = ""
@@ -79,7 +80,9 @@ class Report:
         verified = sum(not r.answer.refs for r in none_cases)
         lines = [
             f"Braço: {self.arm}" + (f" ({self.model})" if self.model else ""),
-            f"{total} perguntas · FAQs vivas: {len(self.live_refs)} ({', '.join(self.live_refs)})",
+            f"{total} perguntas · FAQs na rodada: {len(self.live_refs)}"
+            + (" (públicas + rascunhos, só no teste)" if self.drafts else " (só as públicas)")
+            + f": {', '.join(self.live_refs)}",
             f"  Resposta certa (as FAQs certas, nem mais nem menos)   {exact}/{total}",
             f"  Pergunta coberta por inteiro                           {covered}/{total}",
             f"  Texto vizinho (FAQ que não responde a pergunta)        {extra}",
@@ -111,12 +114,24 @@ class Report:
         return "\n".join(lines)
 
 
-def live_faq(channel_ref: str) -> list:
-    from shopman.shop.models import Shop
-    from shopman.storefront.presentation.public_information import build_public_faq
+def live_faq(channel_ref: str, *, include_drafts: bool = False) -> list:
+    """As perguntas que valem na rodada: as públicas e, com ``include_drafts``, os rascunhos.
+
+    Os rascunhos entram SÓ no placar (dono, 20/11/2026: "ok, pode fazer assim"); nada é
+    publicado nem chega ao cliente. Publicar continua sendo dele, no Admin.
+    """
+    from shopman.shop.models import FAQEntry, Shop
+    from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
 
     shop = Shop.load()
-    return list(build_public_faq(channel_ref=channel_ref, shop=shop)) if shop else []
+    items = list(build_public_faq(channel_ref=channel_ref, shop=shop)) if shop else []
+    if include_drafts:
+        items += [
+            FAQItemProjection(ref=f"curated-{entry.ref}", question=entry.question.strip(), answer=entry.answer.strip())
+            for entry in FAQEntry.objects.filter(is_published=False).order_by("position", "id")
+            if entry.question.strip() and entry.answer.strip()
+        ]
+    return items
 
 
 def answer_direct(text: str, *, channel_ref: str, faqs: list) -> Answer:
@@ -128,7 +143,7 @@ def answer_direct(text: str, *, channel_ref: str, faqs: list) -> Answer:
 
     started = time.perf_counter()
     query = " ".join(_public_search_terms(text))
-    found = search_public_faq(query, channel_ref=channel_ref, shop=Shop.load(), limit=1) if query else ()
+    found = search_public_faq(query, channel_ref=channel_ref, shop=Shop.load(), limit=1, items=faqs) if query else ()
     elapsed = (time.perf_counter() - started) * 1000
     if not found:
         return Answer(refs=[], ms=elapsed)
@@ -221,12 +236,15 @@ def score(case: dict, answer: Answer, *, live: set, faqs: list, check_invention:
     )
 
 
-def run(cases: list[dict], *, arm: str, channel_ref: str, client=None, model: str = "", budget=None) -> Report:
+def run(
+    cases: list[dict], *, arm: str, channel_ref: str, client=None, model: str = "", budget=None,
+    include_drafts: bool = False,
+) -> Report:
     from . import metrics
 
-    faqs = live_faq(channel_ref)
+    faqs = live_faq(channel_ref, include_drafts=include_drafts)
     live = {f.ref for f in faqs}
-    report = Report(arm=arm, model=model, live_refs=sorted(live))
+    report = Report(arm=arm, model=model, live_refs=sorted(live), drafts=include_drafts)
     for index, case in enumerate(cases):
         if budget is not None and (reason := budget.stop_reason(measured=index, total=len(cases))):
             report.stopped = reason

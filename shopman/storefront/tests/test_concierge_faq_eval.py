@@ -117,3 +117,23 @@ def test_the_golden_set_is_well_formed():
     assert len(cases) >= 20
     assert all(isinstance(c["parts"], list) and all(isinstance(p, list) for p in c["parts"]) for c in cases)
     assert sum(c["source"] == "real" for c in cases) >= 7
+
+
+def test_drafts_enter_only_the_test_and_stay_unpublished(surface):
+    for entry in PUBLIC_FAQ:
+        FAQEntry.objects.create(
+            ref=entry["ref"], question=entry["question"], answer=entry["answer"],
+            search_terms=entry["search_terms"], is_published=False, position=entry["position"],
+        )
+    case = _case("o que é levain?", [["curated-o-que-e-fermentacao-natural"]])
+
+    without = faq_eval.run([case], arm="faq", channel_ref="whatsapp")
+    with_drafts = faq_eval.run([case], arm="faq", channel_ref="whatsapp", include_drafts=True)
+
+    assert without.rows[0].expected == [set()], "sem a opção, rascunho não conta"
+    assert with_drafts.rows[0].exact, "com a opção, a FAQ direta acha o rascunho"
+    assert not FAQEntry.objects.filter(is_published=True).exists(), "nada foi publicado"
+    from shopman.shop.models import Shop
+    from shopman.storefront.presentation.public_information import search_public_faq
+
+    assert not search_public_faq("levain", channel_ref="whatsapp", shop=Shop.load()), "o cliente não vê o rascunho"

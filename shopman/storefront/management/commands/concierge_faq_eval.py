@@ -27,6 +27,11 @@ class Command(BaseCommand):
         parser.add_argument("--budget-usd", type=float, default=0.2, help="Teto da rodada (default US$ 0,20).")
         parser.add_argument("--show", type=int, default=30, help="Quantos erros e respostas mostrar.")
         parser.add_argument("--golden", default="", help="Outro arquivo de casos.")
+        parser.add_argument(
+            "--include-drafts",
+            action="store_true",
+            help="Inclui as perguntas frequentes em rascunho, SÓ no teste (nada é publicado).",
+        )
 
     def handle(self, *args, **options):
         cases = faq_eval.load_golden(options["golden"] or None)
@@ -50,7 +55,8 @@ class Command(BaseCommand):
             except ValueError as exc:
                 raise CommandError(str(exc)) from exc
         report = faq_eval.run(
-            cases, arm=options["arm"], channel_ref=options["channel"], client=client, model=model or "", budget=budget
+            cases, arm=options["arm"], channel_ref=options["channel"], client=client, model=model or "", budget=budget,
+            include_drafts=options["include_drafts"],
         )
         self.stdout.write("═══ Perguntas frequentes: FAQ direta × IA a partir das FAQs ═══")
         self.stdout.write(report.render(show=options["show"]))
