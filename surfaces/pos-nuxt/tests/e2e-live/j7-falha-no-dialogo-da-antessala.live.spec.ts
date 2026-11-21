@@ -91,6 +91,11 @@ async function failsInsideDialog(
   await expect(retry, `${opts.label}: o aviso não traz o botão que resolve`).toBeVisible();
   await expect(notice.getByRole("button").filter({ hasNotText: "Tentar de novo" }), `${opts.label}: o aviso não tem X`).toHaveCount(1);
 
+  // O ponteiro fica onde estava o botão do gesto, e no balcão o aviso nasce embaixo
+  // dele: o "Tentar de novo" mediria o tom de hover (passageiro, do kit inteiro), não
+  // o do repouso. A régua mede o repouso; o hover fica registrado no auditoria.txt.
+  await page.mouse.move(0, 0);
+  await still(page);
   const selector = `[data-cash-failure-gesture="${opts.gesture}"]`;
   // O X (só ícone, com `aria-label`) fica de fora da régua de texto; a presença dele
   // já foi conferida acima.
@@ -111,7 +116,8 @@ async function failsInsideDialog(
       dialog: [Math.round(frame.left), Math.round(frame.top), Math.round(frame.right), Math.round(frame.bottom)],
       inDialog: box.left >= frame.left - 0.5 && box.right <= frame.right + 0.5 && box.top >= frame.top - 0.5 && box.bottom <= frame.bottom + 0.5,
       onScreen: box.top >= 0 && box.bottom <= window.innerHeight + 0.5 && box.left >= 0 && box.right <= window.innerWidth + 0.5,
-      columnLeft: Math.round(column.left),
+      // A borda de CONTEÚDO da coluna (a linha do pedido tem `p-3`), não a da caixa.
+      columnLeft: Math.round(column.left + Number.parseFloat(getComputedStyle(el.parentElement!).paddingLeft)),
       siblingLefts: [...new Set(siblings)],
       focusInDialog: dialog.contains(document.activeElement),
       focused: document.activeElement?.tagName ?? "",
