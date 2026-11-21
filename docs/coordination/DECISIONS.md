@@ -1136,6 +1136,19 @@ com a frase. E o texto da mensagem aprovada, que ele aprova antes da submissão.
 
 **Fonte.** Conversa de 16/11/2026; PR #2486.
 
+**Adendo de 21/11/2026 · contexto no Jev.** Perguntado se o Jev pode ler a mensagem com o
+contexto da conversa, o dono respondeu: *"desde que seguro perante LGPD, sim."* As condições,
+fixadas pela coordenação no mesmo dia, e cumpridas em `triage.house_line`:
+
+- vai **só a última fala da casa** (nada do histórico além dela), pelo mesmo redator da fala do
+  cliente (`redact_observation_text`: nome, telefone, e-mail, documento, endereço, código de
+  pedido longo), e ainda sem o código curto do pedido ("pedido W29") e sem valores em reais;
+- vai ao Jev (TypeSafe), no estado do pedido, para entender a mensagem; a DeepSeek continua
+  recebendo o que já recebia;
+- a frase de `/privacidade` diz isso (`privacy_inventory.AI_USES`, propósito `decision`).
+
+O ref do produto em foco, que as condições permitiam, não foi mandado: o ganho medido não pediu.
+
 ## D-041 · PDV: encomenda acima do plano, sem plano, a pagar na retirada e o que a Caixa vê
 
 - **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-16 · **revisar_em:** 2026-12-16
