@@ -2246,8 +2246,12 @@ class Command(BaseCommand):
              f"{IMG}/fa.webp", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("KUP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+            # O peso fica vazio: os 100 g de antes não batiam com a ficha do dono
+            # (21/11/2026: 30 g de massa butter + 22 g de cobertura = 52 g crus).
+            # O anunciado (assado) sai da ficha pela perda de forno padrão da casa,
+            # que é estimativa e a tela diz que é. Peso assado a conferir (#2998).
             ("MELON", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
-             f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
+             f"{IMG}/me.webp", None, "Melhor consumido no dia"),
             ("COE", "Coelhinho de Chocolate", "Pão doce de massa amanteigada, em formato de coelhinho", 1000, "un", 0, True,
              f"{IMG}/anc.webp", 90, "Melhor consumido no dia"),
             ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
@@ -5003,6 +5007,7 @@ class Command(BaseCommand):
                 # O pão entra por PEÇA (`units`): a montagem gasta uma baguete, e a
                 # baixa e a expansão da ficha contam uma, não 230 gramas dela.
                 "units": {"BGL": "un"},
+                "assembly": True,
                 "items": [
                     ("BGL", Decimal("1")),       # uma baguete lanche inteira
                     ("PRESUNTO-CASA", Decimal("85")),
@@ -5020,6 +5025,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "production_mode": ProductionMode.MADE_TO_ORDER,
                 "units": {"MELON": "un"},
+                "assembly": True,
                 "items": [
                     ("MELON", Decimal("1")),            # um melonpan
                     ("SORVETE-CREME", Decimal("60")),   # uma bola
@@ -5707,6 +5713,14 @@ class Command(BaseCommand):
                         # sanduíche: acima disso a Nota 2 do Cap. 16 o leva para
                         # 1602 (auditoria fiscal de 24/09).
                         **({"fiscal_note": CROQUE_FISCAL_NOTE} if rd["ref"].startswith("croque-") else {}),
+                        # A montagem (Jambon-Beurre, Melon Iced Sando) não vai ao
+                        # forno: perda 0 e sem folga de novo, porque a peça que ela
+                        # gasta já entra pelo peso anunciado, que já é piso.
+                        **({
+                            "bake_loss_pct": "0",
+                            "bake_loss_source": "estimated",
+                            "weight_slack_pct": "0",
+                        } if rd.get("assembly") else {}),
                     },
                 },
             )

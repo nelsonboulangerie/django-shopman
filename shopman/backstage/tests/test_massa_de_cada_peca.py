@@ -145,6 +145,12 @@ def test_a_massa_de_cada_peca_e_a_que_o_dono_confirmou(monkeypatch):
     from shopman.shop.services.recipe_bom import expand_recipe_items, item_quantity_grams
 
     melsa = Product.objects.get(sku="MELSA")
+    # O peso da montagem é a soma das peças, sem forno: o melonpan entra pelo
+    # peso anunciado dele (que sai da ficha de 52 g crus e já é piso) e o
+    # sorvete pelos 60 g. Nem perda de forno nem folga de novo.
+    melonpan = Product.objects.get(sku="MELON")
+    assert melonpan.unit_weight_g and melonpan.unit_weight_g < 52
+    assert melsa.unit_weight_g == melonpan.unit_weight_g + 60
     assert melsa.nutrition_facts.get("auto_filled") is True
     assert "Sorvete de creme" in melsa.ingredients_text
     assert "hokupan" not in melsa.ingredients_text

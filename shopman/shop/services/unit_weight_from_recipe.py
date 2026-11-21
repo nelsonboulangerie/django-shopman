@@ -146,12 +146,20 @@ def raw_unit_grams(recipe) -> Decimal | None:
     A soma é do BOM expandido (sub-fichas abertas até a folha), dividida pelo
     ``batch_size``. É essa divisão que faz a conta funcionar tanto na ficha por
     fornada quanto na ficha por unidade.
+
+    **Peça pronta entra pelo peso dela, não pela massa crua.** A linha em
+    contagem com ponte declarada (``meta["unit_weight_g"]``) cujo insumo tem
+    ficha própria é uma peça já feita: a montagem do Melon Iced Sando gasta um
+    melonpan ASSADO, não os 52 g crus dele. Abrir essa sub-ficha somaria a massa
+    crua e, depois, a perda de forno da montagem a descontaria de novo. A
+    nutrição continua abrindo a sub-ficha (``expand_recipe_items``): o forno
+    tira água, não nutriente.
     """
     batch_size = Decimal(str(getattr(recipe, "batch_size", 0) or 0))
     if batch_size <= 0:
         return None
 
-    items = expand_recipe_items(recipe)
+    items = _items_by_piece_weight(recipe)
     if not items:
         return None
 
@@ -170,6 +178,26 @@ def raw_unit_grams(recipe) -> Decimal | None:
     if total_g <= 0:
         return None
     return total_g / batch_size
+
+
+def _items_by_piece_weight(recipe) -> list:
+    """As linhas da conta do peso: peça pronta inteira, o resto aberto até a folha."""
+    from shopman.craftsman.services.recipes import get_active_recipe_for_output_sku
+    from shopman.utils import units
+
+    items: list = []
+    for item in recipe.items.filter(is_optional=False).order_by("-quantity", "sort_order"):
+        meta = item.meta if isinstance(item.meta, dict) else {}
+        sub_recipe = get_active_recipe_for_output_sku(item.input_sku)
+        if sub_recipe is None:
+            items.append(item)
+            continue
+        if units.dimension(item.unit) == units.COUNT and meta.get("unit_weight_g") not in (None, ""):
+            items.append(item)
+            continue
+        coefficient = item.quantity / sub_recipe.batch_size
+        items.extend(expand_recipe_items(sub_recipe, coefficient=coefficient))
+    return items
 
 
 def fill_unit_weight_from_recipe(product: Product) -> bool:
