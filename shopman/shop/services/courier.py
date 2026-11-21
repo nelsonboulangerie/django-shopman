@@ -86,15 +86,15 @@ def _emit_sse(order, payload: dict) -> None:
 
 
 def has_active_ride(order) -> bool:
-    """Corrida ativa = id_mch presente e status não-terminal."""
+    """Corrida ativa = ride_ref presente e status não-terminal."""
     block = get_block(order)
-    return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
+    return bool(block.get("ride_ref")) and block.get("status") not in TERMINAL_STATUSES
 
 
 def ride_cancellable(block: dict) -> bool:
     """A corrida deste bloco ainda pode ser cancelada pela casa? Régua única.
 
-    Antes da coleta: corrida aberta na central (``id_mch``), numa letra que a
+    Antes da coleta: corrida aberta na central (``ride_ref``), numa letra que a
     central cancela (``CANCELLABLE_STATUSES``) e SEM a marca da coleta
     (``dispatched_at``). A marca é o fato: se uma letra atrasada devolver o
     status a "aceita" com a sacola já na moto, o cancelar não reaparece. É a
@@ -102,7 +102,7 @@ def ride_cancellable(block: dict) -> bool:
     pedido de cancelamento e o worker que chama a central).
     """
     return (
-        bool(block.get("id_mch"))
+        bool(block.get("ride_ref"))
         and block.get("status") in CANCELLABLE_STATUSES
         and not block.get("dispatched_at")
     )
@@ -510,18 +510,18 @@ def ride_orders(order) -> list[str]:
 
 
 def ride_companions(order, *, alive: bool = False) -> list:
-    """Os OUTROS pedidos que estão na mesma corrida (mesmo ``id_mch``).
+    """Os OUTROS pedidos que estão na mesma corrida (mesmo ``ride_ref``).
 
     ``alive=True`` conta só quem ainda espera a entrega: pedido cancelado segue
-    com o ``id_mch`` no bloco (a corrida é dos outros), mas não é mais motivo
+    com o ``ride_ref`` no bloco (a corrida é dos outros), mas não é mais motivo
     para a corrida seguir aberta.
     """
-    ride_id = get_block(order).get("id_mch")
+    ride_id = get_block(order).get("ride_ref")
     others = [ref for ref in ride_orders(order) if ref != order.ref]
     if not ride_id or not others:
         return []
     return [other for other in Order.objects.filter(ref__in=others).order_by("pk")
-            if get_block(other).get("id_mch") == ride_id
+            if get_block(other).get("ride_ref") == ride_id
             and not (alive and other.status == Order.Status.CANCELLED)]
 
 
@@ -532,16 +532,16 @@ def stranded_companions(order) -> tuple[str, list]:
     ele recebeu o fim (``N``/``C``), a corrida foi para o histórico dele
     (``attempts[-1]``) e os outros seguem "com corrida" para sempre, segurando
     letra, cor, troco e maquininha. Devolve a letra final e os pedidos que
-    ainda carregam aquele ``id_mch`` vivo; ``("", [])`` quando ninguém ficou.
+    ainda carregam aquele ``ride_ref`` vivo; ``("", [])`` quando ninguém ficou.
     """
     attempts = get_block(order).get("attempts") or []
     last = attempts[-1] if attempts and isinstance(attempts[-1], dict) else {}
-    ride_id, status = last.get("id_mch"), str(last.get("status") or "")
+    ride_id, status = last.get("ride_ref"), str(last.get("status") or "")
     refs = [str(ref) for ref in last.get("ride_orders") or [] if ref != order.ref]
-    if not ride_id or not refs or get_block(order).get("id_mch") == ride_id:
+    if not ride_id or not refs or get_block(order).get("ride_ref") == ride_id:
         return "", []
     stuck = [other for other in Order.objects.filter(ref__in=refs).order_by("pk")
-             if get_block(other).get("id_mch") == ride_id
+             if get_block(other).get("ride_ref") == ride_id
              and get_block(other).get("status") not in TERMINAL_STATUSES]
     return status, stuck
 
@@ -604,7 +604,7 @@ def unresolved_dispatch(order, *, exclude_pk=None, tasks: dict[str, list[Directi
             and task.pk != exclude_pk
         ]
     block = get_block(order)
-    known = {block.get("id_mch"), *[attempt.get("id_mch") for attempt in block.get("attempts", [])]}
+    known = {block.get("ride_ref"), *[attempt.get("ride_ref") for attempt in block.get("attempts", [])]}
     for task in candidates:
         receipt = (task.payload or {}).get("dispatch_attempt", {})
         if receipt.get("state") == "accepted" and receipt.get("courier_ref") in known:
@@ -698,7 +698,7 @@ def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None) -> b
     if not block.get("ride_number"):
         return False
     status = str(block.get("status") or "")
-    if block.get("id_mch"):
+    if block.get("ride_ref"):
         if status not in TERMINAL_STATUSES:
             return True
         if status != "F":
@@ -733,7 +733,7 @@ def _live_ride_numbers(exclude_refs=()) -> dict[int, str]:
     live: dict[int, str] = {}
     statuses = (*RIDE_ORDER_STATUSES, Order.Status.DISPATCHED, Order.Status.DELIVERED)
     orders = list(Order.objects.filter(status__in=statuses, data__courier__has_key="ride_number").exclude(ref__in=list(exclude_refs)))
-    tasks = dispatch_tasks_for([order for order in orders if not get_block(order).get("id_mch")])
+    tasks = dispatch_tasks_for([order for order in orders if not get_block(order).get("ride_ref")])
     for order in orders:
         number = get_block(order).get("ride_number")
         if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= RIDE_LETTERS and ride_is_live(order, tasks=tasks):
@@ -881,8 +881,8 @@ def _same_ride_already_called(ordered) -> RideAlreadyCalled | None:
     ).order_by("-pk").first()
     if task is not None and set((task.payload or {}).get("order_refs") or []) == refs:
         return RideAlreadyCalled(ride_number=number, directive_id=task.pk)
-    ride_id = get_block(lead).get("id_mch")
-    if ride_id and all(has_active_ride(order) and get_block(order).get("id_mch") == ride_id
+    ride_id = get_block(lead).get("ride_ref")
+    if ride_id and all(has_active_ride(order) and get_block(order).get("ride_ref") == ride_id
                        and set(ride_orders(order)) == refs for order in ordered):
         return RideAlreadyCalled(ride_number=number)
     return None
@@ -952,7 +952,7 @@ def request_group_dispatch(orders, *, actor: str, expected_revisions: dict[str, 
     number = next_ride_number(exclude_refs=refs, prefer=ride_number)
     for order in ordered:
         block = dict(get_block(order))
-        if block.get("id_mch"):
+        if block.get("ride_ref"):
             _archive_current_ride(block)
         block.pop("error", None)
         block["ride_number"] = number
@@ -1029,7 +1029,7 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None, ride_
         raise ValueError(refusal)
 
     block = get_block(order)
-    if block.get("id_mch"):
+    if block.get("ride_ref"):
         _archive_current_ride(block)
     block.pop("error", None)
     _save_block(order, block, emit={"kind": "redispatch"})
@@ -1090,7 +1090,7 @@ def latest_cancellation(order, *, pending_only=False):
 
     from shopman.shop.directives import COURIER_CANCEL
 
-    ride = get_block(order).get("id_mch")
+    ride = get_block(order).get("ride_ref")
     if not ride:
         return None
     tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__courier_ref=ride)
@@ -1182,7 +1182,7 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
     ``reason_id`` é o motivo que o operador escolheu (só vale depois do aceite;
     antes dele a central só aceita o 10 e a escolha nem é perguntada). Sem ele,
     o worker usa o motivo do ``intent`` (``courier_machine.cancel_reason_for``).
-    A solicitação é da corrida: uma por ``id_mch``, venha de qual pedido vier.
+    A solicitação é da corrida: uma por ``ride_ref``, venha de qual pedido vier.
     """
     from shopman.shop.directives import COURIER_CANCEL, create_deduped
     from shopman.shop.services.operator_orders import OrderStateConflict
@@ -1214,13 +1214,13 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
     refs += [member.ref for member in members if member.ref not in refs]
     task = create_deduped(COURIER_CANCEL,
         payload={"order_ref": refs[0], "order_refs": refs, "channel_ref": by_ref[refs[0]].channel_ref or "",
-            "actor": actor, "courier_ref": block["id_mch"], "reason_id": reason_id, "intent": intent},
-        dedupe_key=f"courier.cancel:{block['id_mch']}")
+            "actor": actor, "courier_ref": block["ride_ref"], "reason_id": reason_id, "intent": intent},
+        dedupe_key=f"courier.cancel:{block['ride_ref']}")
     if task is None:
         raise OrderStateConflict("Já existe uma solicitação de cancelamento para esta corrida. Atualize o pedido.")
     for member in members:
         member.emit_event(event_type="courier_cancel_requested", actor=actor,
-                          payload={"directive_id": task.pk, "id_mch": block["id_mch"]})
+                          payload={"directive_id": task.pk, "ride_ref": block["ride_ref"]})
         _emit_sse(member, {"kind": "cancel_queued"})
     return task
 
@@ -1317,7 +1317,7 @@ def _archive_current_ride(block: dict) -> None:
     attempts = list(block.get("attempts") or [])
     attempts.append(
         {
-            "id_mch": block.get("id_mch", ""),
+            "ride_ref": block.get("ride_ref", ""),
             "status": block.get("status", ""),
             "requested_at": block.get("requested_at", ""),
             "status_at": dict(block.get("status_at") or {}),
@@ -1331,7 +1331,7 @@ def _archive_current_ride(block: dict) -> None:
         }
     )
     block["attempts"] = attempts
-    for key in ("id_mch", "status", "status_at", "dispatched_at", "finished_at", "driver",
+    for key in ("ride_ref", "status", "status_at", "dispatched_at", "finished_at", "driver",
                 "tracking_url", "confirmation_code", "tracking_match", "final_value_q", "progress", "sync",
                 "door_charge_note",
                 "ride_orders", "reopens", "last_provider_at"):
@@ -1370,7 +1370,7 @@ REOPEN_TRANSFER = "transfer"
 def _reopen(block: dict, *, at: str, source: str, reason: str = REOPEN_WITHDREW) -> str:
     """O entregador saiu da corrida e a TaOn voltou a procurar: devolve o nome dele.
 
-    A corrida é a mesma (``id_mch``, paradas, custódia, número): só o entregador
+    A corrida é a mesma (``ride_ref``, paradas, custódia, número): só o entregador
     e o que era dele saem. O aceite dele sai de ``status_at`` para o próximo
     aceite registrar a própria hora, e fica guardado em ``reopens``. O link de
     rastreio e o código da parada saem também: o entregador novo pode ter link
@@ -1405,7 +1405,7 @@ def reopen_view(block: dict) -> dict:
     """
     reopens = block.get("reopens") if isinstance(block.get("reopens"), list) else []
     last = reopens[-1] if reopens and isinstance(reopens[-1], dict) else None
-    if last is None or not block.get("id_mch") or str(block.get("status") or "") not in ("D", "G", "P"):
+    if last is None or not block.get("ride_ref") or str(block.get("status") or "") not in ("D", "G", "P"):
         return {"at": "", "driver": "", "reason": ""}
     return {"at": str(last.get("at") or ""), "driver": str(last.get("driver") or ""),
             "reason": str(last.get("reason") or REOPEN_WITHDREW)}
@@ -1416,7 +1416,7 @@ def record_reopen(order, *, at: str | None = None, source: str = "webhook",
     """O entregador desistiu e a TaOn reabriu a corrida sozinha (``will_reopen``).
 
     A doc da TaOn diz: com ``will_reopen``, "não abra outra solicitação". A
-    corrida continua a mesma e chamada: mantém o ``id_mch``, volta a procurar
+    corrida continua a mesma e chamada: mantém o ``ride_ref``, volta a procurar
     (``D``), perde o entregador e grava ``reopens``. Não arquiva, não avisa
     "chame de novo" e não devolve a custódia: o troco e a maquininha seguem
     separados para o próximo entregador. Chamar de novo aqui seria uma segunda
@@ -1425,14 +1425,14 @@ def record_reopen(order, *, at: str | None = None, source: str = "webhook",
     Devolve ``"applied"``, ``"noop"`` (a mesma desistência, de novo), ``"stale"``
     (chegou fora de hora) ou vazio (o pedido não tem esta corrida).
     """
-    ride_id = get_block(order).get("id_mch")
+    ride_id = get_block(order).get("ride_ref")
     if not ride_id:
         return ""
     with transaction.atomic():
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
-        if block.get("id_mch") != ride_id:
+        if block.get("ride_ref") != ride_id:
             return ""
         previous = str(block.get("status") or "")
         reopens = block.get("reopens") if isinstance(block.get("reopens"), list) else []
@@ -1442,7 +1442,7 @@ def record_reopen(order, *, at: str | None = None, source: str = "webhook",
         if previous in TERMINAL_STATUSES or block.get("dispatched_at") or (provider_at and last and provider_at < last):
             # Depois da coleta ou do fim não há o que reabrir; aviso mais velho
             # que o último aplicado chegou fora de ordem.
-            logger.info("courier_status_ignored order=%s id_mch=%s previous=%s received=C(will_reopen) source=%s",
+            logger.info("courier_status_ignored order=%s ride_ref=%s previous=%s received=C(will_reopen) source=%s",
                         order.ref, ride_id, previous, source)
             return "stale"
         now_iso = timezone.now().isoformat()
@@ -1451,7 +1451,7 @@ def record_reopen(order, *, at: str | None = None, source: str = "webhook",
         if provider_at:
             block["last_provider_at"] = at
         order.emit_event(event_type=_REOPEN_EVENT, actor=source,
-                         payload={"id_mch": ride_id, "driver": name, "reason": reason})
+                         payload={"ride_ref": ride_id, "driver": name, "reason": reason})
         _save_block(order, block, emit={"kind": "reopened", "status": "D"})
     _forget_driver_caches(ride_id)
     return "applied"
@@ -1499,7 +1499,7 @@ def driver_photo(ride_id: str) -> tuple[bytes, str] | None:
     cache, com o teto de :data:`DRIVER_PHOTO_SECONDS`. Corrida que terminou não
     tem foto, mesmo que o cache ainda tenha: a regra é a corrida, não o relógio.
     """
-    if not ride_id or not Order.objects.filter(data__courier__id_mch=str(ride_id)).exclude(
+    if not ride_id or not Order.objects.filter(data__courier__ride_ref=str(ride_id)).exclude(
             data__courier__status__in=list(TERMINAL_STATUSES)).exists():
         _forget_driver_caches(str(ride_id))
         return None
@@ -1518,11 +1518,11 @@ def driver_photo(ride_id: str) -> tuple[bytes, str] | None:
         body = response.raw.read(DRIVER_PHOTO_MAX_BYTES + 1, decode_content=True)
         response.close()
     except Exception:  # silêncio-deliberado: sem foto, a tela mostra a inicial
-        logger.warning("courier.driver_photo_failed id_mch=%s", ride_id)
+        logger.warning("courier.driver_photo_failed ride_ref=%s", ride_id)
         return None
     if response.status_code != 200 or not content_type.startswith("image/") or not body \
             or len(body) > DRIVER_PHOTO_MAX_BYTES:
-        logger.warning("courier.driver_photo_refused id_mch=%s status=%s type=%s size=%s",
+        logger.warning("courier.driver_photo_refused ride_ref=%s status=%s type=%s size=%s",
                        ride_id, response.status_code, content_type or "-", len(body or b""))
         cache.delete(url_key)
         return None
@@ -1544,14 +1544,14 @@ def orders_with_archived_ride(ride_id: str) -> list:
         return []
     candidates = Order.objects.filter(status__in=RIDE_ORDER_STATUSES, data__courier__has_key="attempts").order_by("pk")
     return [order for order in candidates
-            if any(isinstance(attempt, dict) and str(attempt.get("id_mch") or "") == ride_id
+            if any(isinstance(attempt, dict) and str(attempt.get("ride_ref") or "") == ride_id
                    for attempt in get_block(order).get("attempts") or [])]
 
 
 def archived_ride_ended_at(order, ride_id: str):
     """Quando a corrida arquivada terminou (a hora da letra final; sem ela, a do arquivamento)."""
     for attempt in reversed(get_block(order).get("attempts") or []):
-        if isinstance(attempt, dict) and str(attempt.get("id_mch") or "") == str(ride_id):
+        if isinstance(attempt, dict) and str(attempt.get("ride_ref") or "") == str(ride_id):
             status_at = attempt.get("status_at") if isinstance(attempt.get("status_at"), dict) else {}
             return provider_instant(status_at.get(str(attempt.get("status") or ""))) or provider_instant(attempt.get("ended_at"))
     return None
@@ -1570,20 +1570,20 @@ def restore_archived_ride(order, ride_id: str, *, source: str) -> str:
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
-        if block.get("id_mch") == ride_id:
+        if block.get("ride_ref") == ride_id:
             return "live"
         attempts = [dict(attempt) for attempt in block.get("attempts") or [] if isinstance(attempt, dict)]
-        index = next((i for i in range(len(attempts) - 1, -1, -1) if str(attempts[i].get("id_mch") or "") == ride_id), None)
+        index = next((i for i in range(len(attempts) - 1, -1, -1) if str(attempts[i].get("ride_ref") or "") == ride_id), None)
         if index is None:
             return ""
-        if block.get("id_mch") or order.status not in RIDE_ORDER_STATUSES:
+        if block.get("ride_ref") or order.status not in RIDE_ORDER_STATUSES:
             outcome = "conflict"
         else:
             attempt = attempts.pop(index)
             now_iso = timezone.now().isoformat()
             status_at = {letter: moment for letter, moment in (attempt.get("status_at") or {}).items()
                          if letter not in TERMINAL_STATUSES and letter not in ("A", "S")}
-            block.update(provider="machine", id_mch=ride_id, status="D", status_at=status_at or {"D": now_iso},
+            block.update(provider="machine", ride_ref=ride_id, status="D", status_at=status_at or {"D": now_iso},
                          requested_at=str(attempt.get("requested_at") or now_iso), last_event_at=now_iso, last_source=source)
             if service_ref := delivery_services.new_ride_service_ref():
                 block["service"] = service_ref
@@ -1596,7 +1596,7 @@ def restore_archived_ride(order, ride_id: str, *, source: str) -> str:
             else:
                 block.pop("attempts", None)
             block.pop("error", None)
-            order.emit_event(event_type="courier_ride_restored", actor=source, payload={"id_mch": ride_id})
+            order.emit_event(event_type="courier_ride_restored", actor=source, payload={"ride_ref": ride_id})
             _save_block(order, block, emit={"kind": "restored", "status": "D"})
             outcome = "restored"
     _alert_ride_restored(order, ride_id, outcome)
@@ -1620,7 +1620,7 @@ def _alert_ride_restored(order, ride_id: str, outcome: str) -> None:
             f"A TaOn deu notícia de uma corrida do pedido {code} que {_RESTORED_ALERT_MARKER}, e o pedido já tem outra. "
             "Confira na central da TaOn para a casa não pagar duas corridas."
         )
-    logger.warning("courier.archived_ride_alive order=%s id_mch=%s outcome=%s", order.ref, ride_id, outcome)
+    logger.warning("courier.archived_ride_alive order=%s ride_ref=%s outcome=%s", order.ref, ride_id, outcome)
     try:
         if alert_adapter.recent_exists(_RESTORED_ALERT_TYPE, None, order_ref=order.ref, message_contains=_RESTORED_ALERT_MARKER):
             return
@@ -1677,7 +1677,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
     """
     status = (machine_status or "").strip().upper()
     observed = dict(get_block(order))
-    ride_id = observed.get("id_mch")
+    ride_id = observed.get("ride_ref")
     if not status or not ride_id:
         return ""
     enrichment = dict(observed)
@@ -1692,11 +1692,11 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
-        if block.get("id_mch") != ride_id:
+        if block.get("ride_ref") != ride_id:
             return ""
         previous = block.get("status")
         if previous != status and _status_out_of_order(block, status, source=source, at=at):
-            logger.info("courier_status_ignored order=%s id_mch=%s previous=%s received=%s source=%s",
+            logger.info("courier_status_ignored order=%s ride_ref=%s previous=%s received=%s source=%s",
                         order.ref, ride_id, previous, status, source)
             return "stale"
         if previous != status:
@@ -1710,7 +1710,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
                 # Aceita que voltou a procurar: o entregador saiu (a mesma
                 # desistência que o webhook traz com ``will_reopen``).
                 name = _reopen(block, at=at or now_iso, source=source)
-                order.emit_event(event_type=_REOPEN_EVENT, actor=source, payload={"id_mch": ride_id, "driver": name})
+                order.emit_event(event_type=_REOPEN_EVENT, actor=source, payload={"ride_ref": ride_id, "driver": name})
             block.update(status=status, last_event_at=now_iso, last_source=source)
             if source == "webhook" and provider_instant(at):
                 block["last_provider_at"] = at
@@ -1727,7 +1727,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             if status == "F":
                 block["finished_at"] = now_iso
             order.emit_event(event_type=_STATUS_EVENT, actor=source,
-                             payload={"status": status, "id_mch": ride_id})
+                             payload={"status": status, "ride_ref": ride_id})
             failed_ride = status in ("N", "C")
             if failed_ride:
                 _archive_current_ride(block)
@@ -1764,7 +1764,7 @@ def recover_local_status(order, *, ride_id: str) -> None:
 
     order.refresh_from_db()
     block = get_block(order)
-    if block.get("id_mch") != ride_id:
+    if block.get("ride_ref") != ride_id:
         return
     status = block.get("status")
     if status in ("E", "F") and order.status in _BEFORE_READY_STATUSES:
@@ -1920,7 +1920,7 @@ def _tracking_for(order_ref: str, block: dict, ride_id: str) -> dict:
     try:
         links = _ride_links(str(ride_id))
     except CourierError as exc:
-        logger.warning("courier.tracking_failed id_mch=%s: %s", ride_id, exc)
+        logger.warning("courier.tracking_failed ride_ref=%s: %s", ride_id, exc)
         return {}
     if not links:
         return {}
@@ -1928,7 +1928,7 @@ def _tracking_for(order_ref: str, block: dict, ride_id: str) -> dict:
     found = link_for_order(order_ref, refs, links, stop_id=str(block.get("stop_id") or ""))
     if not found and cache.add(f"courier:tracking_unmatched:{ride_id}:{order_ref}", 1, MAX_POLL_HOURS * 3600):
         # Uma vez por pedido da corrida, sem link e sem dado pessoal: só o tamanho do que não casou.
-        logger.warning("courier.tracking_unmatched id_mch=%s order=%s stops=%s links=%s",
+        logger.warning("courier.tracking_unmatched ride_ref=%s order=%s stops=%s links=%s",
                        ride_id, order_ref, len(refs or [order_ref]), len(links))
     return found
 
@@ -1941,16 +1941,16 @@ def _enrich_accepted(block: dict, details: dict | None, *, order_ref: str) -> No
     try:
         # A leitura do polling já traz o entregador; o corpo do webhook não
         # (só a letra e os links): aí os detalhes vêm da central.
-        info = details if isinstance(details, dict) and "driver" in details else adapter.get_details(block["id_mch"])
+        info = details if isinstance(details, dict) and "driver" in details else adapter.get_details(block["ride_ref"])
         from shopman.shop.adapters.courier_machine import driver_from, driver_photo_url
 
         driver = driver_from(info)
         if driver:
             block["driver"] = driver
-        remember_driver_photo(block["id_mch"], driver_photo_url(info))
+        remember_driver_photo(block["ride_ref"], driver_photo_url(info))
     except CourierError as exc:
-        logger.warning("courier.details_failed id_mch=%s: %s", block.get("id_mch"), exc)
-    block.update(_tracking_for(order_ref, block, block["id_mch"]))
+        logger.warning("courier.details_failed ride_ref=%s: %s", block.get("ride_ref"), exc)
+    block.update(_tracking_for(order_ref, block, block["ride_ref"]))
 
 
 def _enrich_finished(block: dict, details: dict | None) -> None:
@@ -1962,7 +1962,7 @@ def _enrich_finished(block: dict, details: dict | None) -> None:
         block["final_value_q"] = int(details["final_value_q"])
         return
     try:
-        info = details if isinstance(details, dict) and "finished" in details else adapter.get_details(block["id_mch"])
+        info = details if isinstance(details, dict) and "finished" in details else adapter.get_details(block["ride_ref"])
         finished = info.get("finished") or {}
         final_value = finished.get("final_value")
         if final_value is not None:
@@ -1970,7 +1970,7 @@ def _enrich_finished(block: dict, details: dict | None) -> None:
 
             block["final_value_q"] = _to_q(final_value)
     except CourierError as exc:
-        logger.warning("courier.finished_details_failed id_mch=%s: %s", block.get("id_mch"), exc)
+        logger.warning("courier.finished_details_failed ride_ref=%s: %s", block.get("ride_ref"), exc)
 
 
 def _alert_ride_failed(order, status: str) -> None:
@@ -2115,7 +2115,7 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
     """
     if not snapshot:
         return
-    ride_id = get_block(order).get("id_mch")
+    ride_id = get_block(order).get("ride_ref")
     if not ride_id:
         return
     status = str(snapshot.get("status") or "")
@@ -2136,7 +2136,7 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
-        if block.get("id_mch") == ride_id:
+        if block.get("ride_ref") == ride_id:
             had_sync = block.pop("sync", None) is not None
             changed = had_sync
             fresh = {k: v for k, v in reading.items() if v not in (None, "")}
@@ -2166,12 +2166,12 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
             # taxa que a TaOn fechou fica com a corrida arquivada, para o B.I.
             attempts = [dict(attempt) for attempt in block.get("attempts") or []]
             for attempt in attempts:
-                if attempt.get("id_mch") == ride_id and attempt.get("final_value_q") is None:
+                if attempt.get("ride_ref") == ride_id and attempt.get("final_value_q") is None:
                     attempt["final_value_q"] = int(snapshot["final_value_q"])
                     block["attempts"] = attempts
                     _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
                     break
-    if had_sync or str(get_block(order).get("status") or "") in TERMINAL_STATUSES or not get_block(order).get("id_mch"):
+    if had_sync or str(get_block(order).get("status") or "") in TERMINAL_STATUSES or not get_block(order).get("ride_ref"):
         _resolve_sync_alert(ride_id)
 
 
@@ -2207,7 +2207,7 @@ def record_sync_failure(order, exc: Exception, *, ride_id: str) -> None:
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
-        if block.get("id_mch") != ride_id:
+        if block.get("ride_ref") != ride_id:
             return
         sync = dict(block.get("sync") or {})
         sync.setdefault("failing_since", now_iso)
@@ -2251,7 +2251,7 @@ def _resolve_sync_alert(ride_id: str) -> None:
             alert_adapter.resolve_matching(_SYNC_ALERT_TYPE, message_contains=_sync_alert_marker(ride_id),
                                            actor="courier:sync")
         except Exception:
-            logger.warning("courier.sync_alert_resolve_failed id_mch=%s", ride_id, exc_info=True)
+            logger.warning("courier.sync_alert_resolve_failed ride_ref=%s", ride_id, exc_info=True)
 
     transaction.on_commit(_resolve)
 
@@ -2317,7 +2317,7 @@ def sync_interval(block: dict) -> int:
 
 def ride_open_too_long(block: dict) -> bool:
     """A corrida segue aberta além da idade em que uma corrida real dura."""
-    return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES and poll_expired(block)
+    return bool(block.get("ride_ref")) and block.get("status") not in TERMINAL_STATUSES and poll_expired(block)
 
 
 # ── O que o cliente lê antes da coleta (L2 da revisão das Entregas) ─
@@ -2361,7 +2361,7 @@ def customer_wait(block: dict) -> dict:
     from shopman.shop.protocols import RideState
 
     empty = {"stage": "", "driver": "", "pickup_eta_at": ""}
-    if not isinstance(block, dict) or not block.get("id_mch"):
+    if not isinstance(block, dict) or not block.get("ride_ref"):
         return empty
     state = delivery_services.ride_state(block)
     driver = block.get("driver") if isinstance(block.get("driver"), dict) else {}
@@ -2433,7 +2433,7 @@ def auto_complete_hold_until(order, *, grace_minutes: int):
     from django.utils.dateparse import parse_datetime
 
     block = get_block(order)
-    if not block.get("id_mch") or block.get("status") not in ("A", "S", "E"):
+    if not block.get("ride_ref") or block.get("status") not in ("A", "S", "E"):
         return None
     if not reading_is_fresh(block):
         return None
@@ -2479,7 +2479,7 @@ def record_pickup_event(order, code: str, *, at: str | None = None, source: str 
     """
     keys = PICKUP_EVENTS.get(str(code or "").upper())
     block = get_block(order)
-    ride_id = block.get("id_mch")
+    ride_id = block.get("ride_ref")
     if not keys or not ride_id or block.get("status") in TERMINAL_STATUSES or block.get("dispatched_at"):
         return
     when = at or timezone.now().isoformat()
@@ -2487,7 +2487,7 @@ def record_pickup_event(order, code: str, *, at: str | None = None, source: str 
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
-        if block.get("id_mch") != ride_id or block.get("dispatched_at"):
+        if block.get("ride_ref") != ride_id or block.get("dispatched_at"):
             return
         progress = dict(block.get("progress") or {})
         fresh = {key: when for key in keys if not progress.get(key)}
@@ -2501,7 +2501,7 @@ def record_pickup_event(order, code: str, *, at: str | None = None, source: str 
 def record_arrival(order, *, at: str | None = None, source: str = "webhook") -> None:
     """O entregador avisou que chegou (``AP`` do webhook): na loja antes da coleta, no cliente depois."""
     block = get_block(order)
-    ride_id = block.get("id_mch")
+    ride_id = block.get("ride_ref")
     if not ride_id or block.get("status") in TERMINAL_STATUSES:
         return
     key = "arrived_dropoff_at" if block.get("status") == "E" else "arrived_pickup_at"
@@ -2512,7 +2512,7 @@ def record_arrival(order, *, at: str | None = None, source: str = "webhook") -> 
         Order.objects.select_for_update().get(pk=order.pk)
         order.refresh_from_db()
         block = dict(get_block(order))
-        if block.get("id_mch") != ride_id:
+        if block.get("ride_ref") != ride_id:
             return
         progress = dict(block.get("progress") or {})
         if progress.get(key):

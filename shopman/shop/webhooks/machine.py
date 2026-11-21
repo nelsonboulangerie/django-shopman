@@ -160,7 +160,7 @@ class MachineWebhookView(APIView):
             # Chegada ao local, parada finalizada etc.: não é a letra da corrida.
             # A chegada (AP) entra no progresso (na loja antes da coleta, no
             # cliente depois) e pede uma leitura completa já.
-            orders = list(Order.objects.filter(data__courier__id_mch=str(ride_ref)).order_by("pk"))
+            orders = list(Order.objects.filter(data__courier__ride_ref=str(ride_ref)).order_by("pk"))
             from shopman.shop.services import courier
 
             if orders and ride_status == "AP":
@@ -184,12 +184,12 @@ class MachineWebhookView(APIView):
         from shopman.shop.services import courier
 
         # Corrida com várias paradas: o mesmo id em cada pedido dela.
-        orders = list(Order.objects.filter(data__courier__id_mch=str(ride_ref)).order_by("pk"))
+        orders = list(Order.objects.filter(data__courier__ride_ref=str(ride_ref)).order_by("pk"))
         # Corrida que consta como encerrada (N/C) e dá sinal de vida: a TaOn
         # retomou a mesma corrida (uma desistência que virou "cancelada" aqui).
         archived = [] if orders or ride_status in TERMINAL_STATUSES else courier.orders_with_archived_ride(str(ride_ref))
         if not orders and not archived:
-            logger.warning("machine.webhook: corrida sem pedido id_mch=%s", ride_ref)
+            logger.warning("machine.webhook: corrida sem pedido ride_ref=%s", ride_ref)
             return Response({"status": "ok", "kind": "unknown_ride"}, status=http.HTTP_200_OK)
 
         # Um aviso é um fato (``event_id``). A chave antiga (corrida + letra)
@@ -228,7 +228,7 @@ class MachineWebhookView(APIView):
                     try:
                         details = {**event, **(adapter.get_details(str(ride_ref)) if adapter else {})}
                     except Exception:  # silêncio-deliberado: cada pedido busca sozinho, como antes
-                        logger.warning("machine.webhook: detalhes da corrida id_mch=%s", ride_ref, exc_info=True)
+                        logger.warning("machine.webhook: detalhes da corrida ride_ref=%s", ride_ref, exc_info=True)
                 outcomes = [courier.apply_status(order, ride_status, source="webhook", details=details, at=at)
                             for order in orders]
                 if kind == "status" and outcomes and all(outcome == "stale" for outcome in outcomes):
@@ -241,10 +241,10 @@ class MachineWebhookView(APIView):
                 courier.schedule_sync(orders[0], delay_seconds=0)
             webhook_idempotency.mark_done(
                 claim,
-                response_body={"status": "processed", "id_mch": str(ride_ref), "ride_status": ride_status, "kind": kind},
+                response_body={"status": "processed", "ride_ref": str(ride_ref), "ride_status": ride_status, "kind": kind},
             )
         except Exception as exc:
-            logger.exception("MachineWebhook: error processing id_mch=%s", ride_ref)
+            logger.exception("MachineWebhook: error processing ride_ref=%s", ride_ref)
             webhook_idempotency.mark_failed(claim)
             from shopman.shop.services import observability
 
@@ -254,7 +254,7 @@ class MachineWebhookView(APIView):
                 status_code=http.HTTP_500_INTERNAL_SERVER_ERROR,
                 external_ref=str(ride_ref),
                 exc=exc,
-                context={"id_mch": str(ride_ref), "ride_status": ride_status},
+                context={"ride_ref": str(ride_ref), "ride_status": ride_status},
             )
             # 5xx → a Machine (se reentregar) tenta de novo; o polling cobre se não.
             return Response({"status": "retry"}, status=http.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -384,12 +384,12 @@ def _revive_archived(archived: list, ride_ref: str, ride_status: str, *, at: str
         try:
             reading = read_ride(ride_ref) if read_ride else {}
         except Exception:  # silêncio-deliberado: sem leitura não há prova, e sem prova não retoma
-            logger.warning("machine.webhook: leitura da corrida arquivada id_mch=%s", ride_ref, exc_info=True)
+            logger.warning("machine.webhook: leitura da corrida arquivada ride_ref=%s", ride_ref, exc_info=True)
             reading = {}
         letter = str(reading.get("status") or "")
         proven = bool(letter) and letter not in TERMINAL_STATUSES
     if not proven:
-        logger.info("courier_status_ignored id_mch=%s received=%s reason=archived_ride_without_proof", ride_ref, ride_status)
+        logger.info("courier_status_ignored ride_ref=%s received=%s reason=archived_ride_without_proof", ride_ref, ride_status)
         return [], "stale"
     restored = [order for order in archived if courier.restore_archived_ride(order, ride_ref, source="webhook") == "restored"]
     for order in restored:

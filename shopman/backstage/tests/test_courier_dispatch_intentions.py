@@ -71,7 +71,7 @@ def test_cancel_queue_receipt_and_observed_ride(client, context):
     user, order = context
     from shopman.shop.services.courier import dispatch_revision
 
-    order.data["courier"] = {"id_mch": "RIDE-CANCEL", "status": "A"}
+    order.data["courier"] = {"ride_ref": "RIDE-CANCEL", "status": "A"}
     order.save(update_fields=["data"])
     body = {"expected_actor_id": user.pk, "base_revision": dispatch_revision(order)}
     url = reverse("api-backstage-order-courier-cancel", args=[order.ref])
@@ -84,7 +84,7 @@ def test_cancel_queue_receipt_and_observed_ride(client, context):
     assert client.get(url, {"idempotency_key": "cancel-once"}).json()["outcome"] == "applied"
     replay = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-once")
     assert replay.json()["directive_id"] == response.json()["directive_id"]
-    order.data["courier"]["id_mch"] = "OTHER-RIDE"
+    order.data["courier"]["ride_ref"] = "OTHER-RIDE"
     order.save(update_fields=["data"])
     stale = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-another")
     assert stale.status_code == 409

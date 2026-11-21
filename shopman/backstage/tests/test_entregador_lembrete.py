@@ -124,7 +124,7 @@ def test_no_reminder_where_it_does_not_fit(shop, case):
     if case == "ifood":
         kwargs.update(channel="ifood", ifood={"delivered_by": "IFOOD"})
     if case == "ride":
-        kwargs["courier"] = {"id_mch": "M1", "status": "D"}
+        kwargs["courier"] = {"ride_ref": "M1", "status": "D"}
     if case == "call_queued":
         kwargs["courier"] = {"called_at": timezone.now().isoformat()}
     order = _order(**kwargs)
@@ -146,7 +146,7 @@ def test_reminder_comes_back_two_minutes_after_a_failed_ride(shop):
     """ENT-15: a corrida que ninguém aceitou deixava o pedido sem entregador e sem lembrete."""
     ended = timezone.now() - timedelta(seconds=30)
     order = _order(courier={"called_at": (ended - timedelta(minutes=8)).isoformat(),
-                            "attempts": [{"id_mch": "M1", "status": "N", "ended_at": ended.isoformat()}]})
+                            "attempts": [{"ride_ref": "M1", "status": "N", "ended_at": ended.isoformat()}]})
     reminder = courier_reminder.courier_reminder(order)
     assert reminder is not None
     assert reminder.stage == "retry"
@@ -158,7 +158,7 @@ def test_dismissal_before_a_failed_ride_does_not_silence_the_retry(shop):
     dismissed = timezone.now() - timedelta(minutes=9)
     ended = timezone.now() - timedelta(minutes=3)
     order = _order(courier_reminder={"dismissed_at": dismissed.isoformat()},
-                   courier={"attempts": [{"id_mch": "M1", "status": "C", "ended_at": ended.isoformat()}]})
+                   courier={"attempts": [{"ride_ref": "M1", "status": "C", "ended_at": ended.isoformat()}]})
     assert courier_reminder.courier_reminder(order).stage == "retry"
 
     order.data["courier_reminder"] = {"dismissed_at": timezone.now().isoformat()}
@@ -196,7 +196,7 @@ def test_calling_during_prep_queues_the_ride_and_ends_the_reminder(client, opera
     task = Directive.objects.get(topic=COURIER_DISPATCH, payload__order_ref=order.ref)
     CourierDispatchHandler().handle(message=task, ctx={})
     order.refresh_from_db()
-    assert order.data["courier"]["id_mch"]
+    assert order.data["courier"]["ride_ref"]
     assert order.data["courier"]["called_at"]  # a primeira chamada sobrevive à abertura
 
 

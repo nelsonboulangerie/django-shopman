@@ -245,13 +245,13 @@ class CourierDispatchHandler:
             locked = list(Order.objects.select_for_update().filter(pk__in=[o.pk for o in orders]).order_by("pk"))
             for order in locked:
                 block = dict(courier.get_block(order))
-                known = {block.get("id_mch"), *[attempt.get("id_mch") for attempt in block.get("attempts", [])]}
+                known = {block.get("ride_ref"), *[attempt.get("ride_ref") for attempt in block.get("attempts", [])]}
                 if courier_ref in known:
                     continue
                 if courier.has_active_ride(order):
                     raise DirectiveTerminalError("A central aceitou outra referência; confira as duas corridas antes de vincular.")
                 opened_at = timezone.now().isoformat()
-                block.update(provider="machine", id_mch=courier_ref, status="D", status_at={"D": opened_at},
+                block.update(provider="machine", ride_ref=courier_ref, status="D", status_at={"D": opened_at},
                     requested_at=opened_at, last_event_at=opened_at, last_source="dispatch")
                 if service_ref:
                     block["service"] = service_ref
@@ -267,7 +267,7 @@ class CourierDispatchHandler:
                 block.pop("error", None)
                 courier._save_block(order, block, emit={"kind": "dispatched", "status": "D"})
                 order.emit_event(event_type="courier_ride_opened", actor=actor,
-                                 payload={"id_mch": courier_ref, **({"ride_orders": stops} if len(stops) > 1 else {})})
+                                 payload={"ride_ref": courier_ref, **({"ride_orders": stops} if len(stops) > 1 else {})})
             if locked:
                 # A leitura é da corrida, não do pedido: uma batida só, que aplica a
                 # todos. Sempre agendada: sem polling (só webhook) ela é lenta, mas
@@ -307,7 +307,7 @@ class CourierDispatchHandler:
                 courier.on_order_cancelled(order)
             return
         lead = cancelled[0]
-        if courier.get_block(lead).get("id_mch") != courier_ref:
+        if courier.get_block(lead).get("ride_ref") != courier_ref:
             return
         codes = [short_ref(order.ref) for order in cancelled]
         subject = (f"O pedido {codes[0]} foi cancelado" if len(codes) == 1

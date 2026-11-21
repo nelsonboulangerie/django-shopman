@@ -37,7 +37,7 @@ def test_ride_of_the_taon_resolves_the_central():
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK)
 def test_ride_opened_before_the_m1_has_no_service_and_still_works():
-    assert delivery_services.courier_backend({"id_mch": "1", "status": "E"}) is courier_mock
+    assert delivery_services.courier_backend({"ride_ref": "1", "status": "E"}) is courier_mock
     assert delivery_services.courier_backend({"service": "nao-existe"}) is courier_mock
 
 

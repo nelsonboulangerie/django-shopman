@@ -287,8 +287,8 @@ class Command(BaseCommand):
         from shopman.orderman.models import Order
 
         seen: dict[str, int] = {}
-        for order in Order.objects.filter(data__courier__has_key="id_mch").order_by("-pk")[:200]:
-            ride = str((order.data.get("courier") or {}).get("id_mch") or "")
+        for order in Order.objects.filter(data__courier__has_key="ride_ref").order_by("-pk")[:200]:
+            ride = str((order.data.get("courier") or {}).get("ride_ref") or "")
             if ride:
                 seen[ride] = seen.get(ride, 0) + 1
         # As de várias paradas primeiro: são elas que respondem as sondas de parada.

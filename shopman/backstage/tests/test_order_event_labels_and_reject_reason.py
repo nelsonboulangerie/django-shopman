@@ -144,8 +144,8 @@ def web_order(db):
 
 
 def test_courier_status_reads_as_the_ride_step(web_order):
-    web_order.emit_event(event_type="courier_status", actor="courier:webhook", payload={"status": "E", "id_mch": "1"})
-    web_order.emit_event(event_type="courier_status", actor="courier:webhook", payload={"status": "?", "id_mch": "1"})
+    web_order.emit_event(event_type="courier_status", actor="courier:webhook", payload={"status": "E", "ride_ref": "1"})
+    web_order.emit_event(event_type="courier_status", actor="courier:webhook", payload={"status": "?", "ride_ref": "1"})
 
     labels = _timeline_labels(web_order)
     assert "TaOn: Saiu para entrega" in labels

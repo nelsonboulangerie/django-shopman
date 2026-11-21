@@ -70,7 +70,7 @@ def _order_with_ride(ref="WH-1") -> Order:
             "delivery_address_structured": {"latitude": -23.31, "longitude": -51.16},
             "courier": {
                 "provider": "machine",
-                "id_mch": "184532",
+                "ride_ref": "184532",
                 "status": "D",
                 "requested_at": "2026-07-07T10:00:00-03:00",
             },
@@ -454,7 +454,7 @@ def _accepted_order(ref="WH-1") -> Order:
 def test_driver_withdrawal_with_will_reopen_keeps_the_same_ride(shop):
     """``C`` com ``will_reopen``: a TaOn redistribui sozinha. "Não abra outra solicitação."
 
-    Antes o ``C`` arquivava a corrida, tirava o ``id_mch``, avisava "chame o
+    Antes o ``C`` arquivava a corrida, tirava o ``ride_ref``, avisava "chame o
     entregador de novo" e devolvia a custódia: dois entregadores, duas corridas pagas.
     """
     order = _accepted_order()
@@ -467,7 +467,7 @@ def test_driver_withdrawal_with_will_reopen_keeps_the_same_ride(shop):
 
     order.refresh_from_db()
     block = courier.get_block(order)
-    assert block["id_mch"] == "184532"  # a MESMA corrida, ainda chamada
+    assert block["ride_ref"] == "184532"  # a MESMA corrida, ainda chamada
     assert block["status"] == "D"
     assert "driver" not in block
     assert "attempts" not in block  # nada foi arquivado
@@ -602,7 +602,7 @@ def _order_with_archived_ride(ref="WH-ARQ", **courier_block) -> Order:
             "delivery_address_structured": {"latitude": -23.31, "longitude": -51.16},
             "courier": {
                 "provider": "machine", "ride_number": 2, "called_at": "2026-10-01T14:10:00Z",
-                "attempts": [{"id_mch": "184532", "status": "C", "requested_at": "2026-10-01T14:10:00Z",
+                "attempts": [{"ride_ref": "184532", "status": "C", "requested_at": "2026-10-01T14:10:00Z",
                               "status_at": {"D": "2026-10-01T14:10:00Z", "C": "2026-10-01T14:32:00Z"},
                               "ended_at": "2026-10-01T14:32:05Z"}],
                 **courier_block,
@@ -622,7 +622,7 @@ def test_live_event_for_an_archived_ride_restores_it_and_alerts(shop):
 
     order.refresh_from_db()
     block = courier.get_block(order)
-    assert block["id_mch"] == "184532"
+    assert block["ride_ref"] == "184532"
     assert block["status"] == "A"
     assert "attempts" not in block
     assert block["ride_number"] == 2
@@ -640,18 +640,18 @@ def test_late_event_for_an_archived_ride_changes_nothing(shop):
     resp = _client().post(_url(), _event("A", event_id="evt-aceite-velho", at="2026-10-01T14:14:00Z"), format="json")
     assert resp.data["kind"] == "stale"
     order.refresh_from_db()
-    assert "id_mch" not in courier.get_block(order)
+    assert "ride_ref" not in courier.get_block(order)
     assert not OperatorAlert.objects.filter(order_ref=order.ref).exists()
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_archived_ride_alive_while_another_ride_runs_is_a_critical_alert(shop):
-    order = _order_with_archived_ride(id_mch="999001", status="D", requested_at="2026-10-01T14:33:00Z")
+    order = _order_with_archived_ride(ride_ref="999001", status="D", requested_at="2026-10-01T14:33:00Z")
     courier_mock.rides()["184532"] = {"status": "A", "driver": None}
     resp = _client().post(_url(), _event("A", event_id="evt-aceite-2", at="2026-10-01T14:36:00Z"), format="json")
     assert resp.data["kind"] == "conflict"
     order.refresh_from_db()
-    assert courier.get_block(order)["id_mch"] == "999001"  # a corrida de agora não é trocada
+    assert courier.get_block(order)["ride_ref"] == "999001"  # a corrida de agora não é trocada
     alert = OperatorAlert.objects.get(type="integration_failed", order_ref=order.ref)
     assert alert.severity == "critical"
     assert "não pagar duas corridas" in alert.message

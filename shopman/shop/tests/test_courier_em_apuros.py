@@ -65,7 +65,7 @@ def _order(ref="AP-1", *, status=Order.Status.READY, block=None) -> Order:
             "fulfillment_type": "delivery",
             "customer": {"name": "Ana", "phone": "5543999990000"},
             "delivery_address_structured": {"latitude": -23.31, "longitude": -51.16},
-            "courier": {"provider": "machine", "id_mch": RIDE, "status": "A",
+            "courier": {"provider": "machine", "ride_ref": RIDE, "status": "A",
                         "requested_at": timezone.now().isoformat(), **(block or {})},
         },
         total_q=5000,
@@ -114,7 +114,7 @@ def test_transfer_reopens_the_same_ride_and_is_never_a_failure(shop):
     _post(_event("T", at="2026-10-01T13:25:00Z"))
     order.refresh_from_db()
     block = courier.get_block(order)
-    assert block["id_mch"] == RIDE  # a MESMA corrida
+    assert block["ride_ref"] == RIDE  # a MESMA corrida
     assert block["status"] == "D"
     assert "driver" not in block
     assert courier.reopen_view(block) == {"at": "2026-10-01T13:25:00Z", "driver": "Diego", "reason": "transfer"}

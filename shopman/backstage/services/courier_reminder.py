@@ -108,7 +108,7 @@ def _call_in_flight(order: Order) -> bool:
     from shopman.shop.services import courier
 
     block = (order.data or {}).get("courier")
-    if not isinstance(block, dict) or not any(block.get(key) for key in ("called_at", "id_mch", "attempts", "error")):
+    if not isinstance(block, dict) or not any(block.get(key) for key in ("called_at", "ride_ref", "attempts", "error")):
         # Nunca chamado: nada em voo, e o quadro não paga consulta por cartão.
         return False
     if courier.has_active_ride(order):

@@ -142,7 +142,7 @@ def test_the_push_names_the_ride_never_the_coordinate(django_capture_on_commit_c
 
 def _accepted(order) -> None:
     """Aceita do lado da central (o mock só dá posição a corrida aceita) e do nosso."""
-    courier_mock.set_status(courier.get_block(order)["id_mch"], "A")
+    courier_mock.set_status(courier.get_block(order)["ride_ref"], "A")
     courier.apply_status(order, "A", source="poll")
 
 
@@ -180,7 +180,7 @@ def test_with_the_webhook_quiet_the_beat_asks_the_service(shop):
     block = courier.get_block(order)
 
     assert courier_position.poll_if_silent(block)
-    position = courier_position.read(block["id_mch"])
+    position = courier_position.read(block["ride_ref"])
     assert position["source"] == POLL
     assert (position["latitude"], position["longitude"]) == (-23.3045, -51.1696)
 
@@ -190,12 +190,12 @@ def test_with_the_webhook_alive_nobody_asks(shop):
     order = _dispatched_order(shop)
     _accepted(order)
     block = courier.get_block(order)
-    courier_position.store_position(block["id_mch"], -23.30, -51.10, source=WEBHOOK)
+    courier_position.store_position(block["ride_ref"], -23.30, -51.10, source=WEBHOOK)
 
     with patch.object(courier_mock, "get_position") as asked:
         assert not courier_position.poll_if_silent(block)
     asked.assert_not_called()
-    assert courier_position.read(block["id_mch"])["source"] == WEBHOOK
+    assert courier_position.read(block["ride_ref"])["source"] == WEBHOOK
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -204,10 +204,10 @@ def test_a_webhook_quiet_for_more_than_thirty_seconds_counts_as_missing(shop):
     _accepted(order)
     block = courier.get_block(order)
     old = timezone.now() - timedelta(seconds=courier_position.WEBHOOK_SILENT_SECONDS + 5)
-    courier_position.store_position(block["id_mch"], -23.30, -51.10, source=WEBHOOK, at=old.isoformat())
+    courier_position.store_position(block["ride_ref"], -23.30, -51.10, source=WEBHOOK, at=old.isoformat())
 
     assert courier_position.poll_if_silent(block)
-    assert courier_position.read(block["id_mch"])["source"] == POLL
+    assert courier_position.read(block["ride_ref"])["source"] == POLL
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -227,7 +227,7 @@ def test_a_service_without_get_position_is_not_asked(shop):
     house = SimpleNamespace(ride_state=courier_mock.ride_state)
     with patch("shopman.shop.services.delivery_services.courier_backend", return_value=house):
         assert not courier_position.poll_if_silent(block)
-    assert courier_position.store_position(block["id_mch"], -23.30, -51.10,
+    assert courier_position.store_position(block["ride_ref"], -23.30, -51.10,
                                            source=courier_position.SOURCE_OWN_FLEET)
 
 
@@ -245,7 +245,7 @@ def test_a_failed_poll_never_stops_the_beat_nor_logs_the_place(shop, logged):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_the_sync_beat_brings_the_position_when_the_webhook_is_quiet(shop, logged):
     order = _dispatched_order(shop)
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride, "A")
     directive = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref)
     Directive.objects.filter(pk=directive.pk).update(status=Directive.Status.DONE)
