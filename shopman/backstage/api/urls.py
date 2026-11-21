@@ -105,6 +105,7 @@ from .ifood_store import (
     IFoodStoreView,
     IFoodWidgetView,
 )
+from .incidents import IncidentsView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -327,7 +328,6 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
-from .incidents import IncidentsView
 from .operator_capacity import OperatorCapacityView
 from .order_history import OrderHistoryView
 from .pos_settings import POSSettingsView
