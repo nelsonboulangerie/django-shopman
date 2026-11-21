@@ -59,7 +59,10 @@ LOTE_ANTIGO: dict[str, tuple[str, dict[str, str]]] = {
     "folhado-dia": ("12", {"MASSA-FOLHADO": "0.744", "RECHEIO-MACA": "0.240"}),
     "bichon": ("12", {"MASSA-FOLHADO": "0.960", "CREME-LIMAO": "0.240"}),
     "madeleine": ("24", {"MASSA-MADELEINE": "0.672"}),
-    "baguete-lanche": ("12", {"MASSA-CIABATTA": "3.120"}),
+    # ⚠️ Mudou de receita em 21/11/2026, por decisão do dono: a Baguete Lanche
+    # toma o lugar da Mini Baguete com 170 g de massa ciabatta (eram 260 g).
+    # Linha atualizada no mesmo lote de antes, que dá a régua da capacidade.
+    "baguete-lanche": ("12", {"MASSA-CIABATTA": "2.040"}),
     "batard": ("10", {"MASSA-TRADICAO": "3.200"}),
     "baguete-gergelim-pequena": ("12", {"MASSA-CIABATTA": "1.980", "GERGELIM": "0.060"}),
     "italiano-rustico": ("8", {"MASSA-TRADICAO": "3.840"}),
@@ -126,6 +129,8 @@ FORMULA_EM_KG: dict[str, tuple[str, str, int]] = {
     "recheio-cebolas-assadas": ("1.47", "3.657", 6),
     "salada-da-casa": ("1.6", "1.600", 5),
     "vinagrete-frances": ("0.825", "0.825", 7),
+    # A cobertura do melonpan (dono, 21/11/2026, #2925): básica, a conferir.
+    "massa-cobertura-melonpan": ("0.78", "0.780", 4),
 }
 
 #: ⚠️ Sete fórmulas acima mudaram de receita DE VERDADE em 24/09/2026 — não por
@@ -153,7 +158,11 @@ RENDIMENTO_ANTES_DA_FICHA_DA_CASA: dict[str, str] = {
 
 #: Fichas que NASCERAM com a ficha da casa: não há rendimento de antes, e a
 #: capacidade é a declarada na tabela — um lote por dia, dito como tal.
-NASCIDAS_DA_FICHA_DA_CASA = frozenset({"molho-caramelo", "manteiga-wasabi", "recheio-cebolas-assadas"})
+NASCIDAS_DA_FICHA_DA_CASA = frozenset({
+    "molho-caramelo", "manteiga-wasabi", "recheio-cebolas-assadas",
+    # Nasceu da palavra do dono em 21/11/2026 (#2925), sem rendimento de antes.
+    "massa-cobertura-melonpan",
+})
 
 #: Montagem e bebida: ficha inativa (não é fornada), que já nascia por unidade.
 MONTAGEM_E_BEBIDA = frozenset({
@@ -162,16 +171,27 @@ MONTAGEM_E_BEBIDA = frozenset({
     "mochaccino", "mocha", "caffe-latte", "chocolate-quente", "cha-camille", "cha-rouge",
     "cha-sophie", "cha-bleu", "cha-hibisco", "soft-chai-citrico", "vienna-gelado",
     "cha-tonica-frutas-vermelhas",
+    # Melonpan com sorvete, montado na hora (dono, 21/11/2026, #2925).
+    "melon-iced-sando",
 })
 
-#: Peças que NASCERAM por unidade da aba TRAD da RECEITAS 2.4 (#2925; dono,
-#: 21/11/2026: "use os pesos da RECEITAS 2.4"): sem lote antigo, a ficha É o
-#: registro. {ref: {insumo: quilos por peça}}. A capacidade é a provisória das
-#: peças restauradas, declarada na tabela.
+#: Peças que NASCERAM por unidade em 21/11/2026 (#2925): as três de tradição
+#: com o peso da aba TRAD da RECEITAS 2.4, e as outras pela palavra do dono no
+#: mesmo dia. Sem lote antigo, a ficha É o registro. {ref: {insumo: quilos por
+#: peça}}. A capacidade é a provisória das peças restauradas, declarada na tabela.
 PECAS_DA_RECEITAS_24: dict[str, dict[str, str]] = {
     "fendu": {"MASSA-TRADICAO": "0.130"},
     "tabatiere": {"MASSA-TRADICAO": "0.130"},
     "pao-hamburguer": {"MASSA-TRADICAO": "0.130"},
+    "baguete-gergelim": {"MASSA-CIABATTA": "0.280", "GERGELIM": "0.020"},
+    "campagne-passas-castanhas": {
+        "MASSA-CAMPAGNE": "0.450", "PASSAS": "0.050", "CASTANHA-CAJU": "0.050", "CASTANHA-DO-PARA": "0.050",
+    },
+    "brioche-burger-bun": {"MASSA-BRIOCHE": "0.060"},
+    "pao-hot-dog": {"MASSA-BUTTER": "0.060"},
+    # O creme de chocolate é o ALTERNATIVO ao de baunilha (`is_optional`).
+    "cornet": {"MASSA-BUTTER": "0.030", "CREME-BAUNILHA": "0.040", "CREME-CHOCOLATE": "0.040"},
+    "melonpan": {"MASSA-BUTTER": "0.030", "MASSA-COBERTURA-MELONPAN": "0.022"},
 }
 
 #: Uma quantidade planejada qualquer, para comparar o consumo por fornada. Não é
