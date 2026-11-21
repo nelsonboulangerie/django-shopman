@@ -1893,6 +1893,13 @@ o padrão; nenhuma desliga o freio de preço.
 | `delivery.ride_suggestion.saving_min_percent` | `int`, `15` | `ride_plan._quote` | Economia mínima em % das corridas separadas. Vale junto com `saving_min_q` (as duas). |
 | `delivery.ride_suggestion.extra_wait_minutes` | `int`, `10` | `ride_plan._fits` | O cliente que mais espera a mais espera no máximo isto. A espera a mais é estimada pelo desvio a 20 km/h mais 2 min por parada antes (fixos no código). |
 
+Além dos parâmetros, o plano lê o **fim da janela combinada** de cada pedido
+(`fulfillment_window.window_end`: o fim da meia hora de `delivery_time_slot` no dia de
+`delivery_date`, ou o `ifood.schedule.delivery_end_at` do agendado; o turno da encomenda
+não tem fim). O par cuja chegada estimada junta passaria desse fim, quando sozinho
+chegaria a tempo, não vira sugestão (`ride_plan.breaks_a_deadline`, #2875). A chegada
+usa o mesmo palpite da espera: agora, mais o percurso a 20 km/h e 2 min por parada antes.
+
 O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
 deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o
 "Vai junto nesta corrida?" do sheet de chamar (o mesmo nas Entregas, no Painel e no detalhe

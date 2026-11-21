@@ -15,7 +15,14 @@ A regra (relatório da revisão, seção 4; parâmetros decididos pelo dono em 1
    da maior perna sozinha em no máximo ``detour_km`` E em no máximo 40% dela.
    Agrupamento guloso pela hora em que ficou pronto, até ``courier.MAX_RIDE_STOPS``; o
    que sobra vira a próxima sugestão.
-3. **Prazo:** o cliente que mais espera a mais espera no máximo ``extra_wait_minutes``.
+3. **Prazo:** o cliente que mais espera a mais espera no máximo ``extra_wait_minutes``. E
+   ninguém chega depois da janela combinada por causa da corrida junta (#2875): o par
+   que faria a chegada estimada passar do fim da janela (``fulfillment_window.window_end``:
+   a meia hora de hoje, o fim do iFood agendado), quando sozinho ainda chegaria a tempo,
+   não vira sugestão. O turno da encomenda (*A partir das 12h*) não tem fim e não
+   limita. A chegada é o mesmo palpite da espera: agora, mais o percurso a
+   ``SPEED_KMH`` e ``STOP_MINUTES`` por parada antes. Quem já está atrasado sozinho
+   não é culpa do par, e não o recusa.
 4. **Preço:** a sugestão só vem MARCADA quando todas as cotações existem (a da corrida
    junta e a de cada pedido sozinho), a economia é de pelo menos ``saving_min_q`` E de
    ``saving_min_percent``, e a trava de sanidade passa (o km junto não é menor que o
@@ -40,6 +47,7 @@ import math
 from dataclasses import asdict, dataclass
 
 from django.core.cache import cache
+from django.utils import timezone
 from shopman.orderman.models import Order
 
 logger = logging.getLogger(__name__)
@@ -69,6 +77,8 @@ class Candidate:
     latitude: float
     longitude: float
     ready_key: float = 0.0
+    #: O fim da janela combinada (timestamp), ou ``None`` quando não há fim.
+    deadline: float | None = None
 
 
 @dataclass(frozen=True)
@@ -146,21 +156,45 @@ def measure(origin: tuple[float, float], stops: list[Candidate]) -> Group:
     )
 
 
-def _fits(origin, stops: list[Candidate], settings: dict) -> Group | None:
+def breaks_a_deadline(origin: tuple[float, float], stops: list[Candidate], now: float | None) -> bool:
+    """A corrida junta faz alguém chegar depois do fim da janela, e sozinho não faria?
+
+    ``now`` em timestamp; sem ele (a régua pura, sem relógio) não há prazo a medir.
+    """
+    if now is None:
+        return False
+    along, here = 0.0, origin
+    for index, stop in enumerate(route(origin, stops)):
+        point = (stop.latitude, stop.longitude)
+        along += km_between(here, point)
+        here = point
+        if stop.deadline is None:
+            continue
+        together_at = now + along / SPEED_KMH * 3600 + STOP_MINUTES * 60 * index
+        alone_at = now + km_between(origin, point) / SPEED_KMH * 3600
+        if alone_at <= stop.deadline < together_at:
+            return True
+    return False
+
+
+def _fits(origin, stops: list[Candidate], settings: dict, now: float | None = None) -> Group | None:
     group = measure(origin, stops)
     longest = max(km_between(origin, (stop.latitude, stop.longitude)) for stop in stops)
     if group.detour_km > settings["detour_km"] or group.detour_km > DETOUR_SHARE * longest:
         return None
     if group.late_minutes > settings["extra_wait_minutes"]:
         return None
+    if breaks_a_deadline(origin, stops, now):
+        return None
     return group
 
 
 def plan_groups(origin: tuple[float, float], candidates: list[Candidate], settings: dict, *,
-                max_stops: int) -> list[Group]:
+                max_stops: int, now: float | None = None) -> list[Group]:
     """A partição gulosa: o pronto há mais tempo puxa quem cabe com ele; o resto, a próxima.
 
-    Só grupos de dois ou mais. Pura (sem banco): a régua é testável à mão.
+    Só grupos de dois ou mais. Pura (sem banco): a régua é testável à mão. ``now``
+    (timestamp) liga a régua do prazo; sem ele, o fim da janela não é medido.
     """
     pool = sorted(candidates, key=lambda candidate: candidate.ready_key)
     groups: list[Group] = []
@@ -170,7 +204,7 @@ def plan_groups(origin: tuple[float, float], candidates: list[Candidate], settin
         for other in list(pool):
             if len(chosen) >= max_stops:
                 break
-            fitted = _fits(origin, [*chosen, other], settings)
+            fitted = _fits(origin, [*chosen, other], settings, now)
             if fitted is None:
                 continue
             chosen.append(other)
@@ -187,6 +221,13 @@ def _point(order) -> tuple[float, float] | None:
         return float(address["latitude"]), float(address["longitude"])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _deadline(order) -> float | None:
+    from shopman.shop.services.fulfillment_window import window_end
+
+    end = window_end(order)
+    return end.timestamp() if end else None
 
 
 def _ready_key(order) -> float:
@@ -301,9 +342,11 @@ def ride_plan(waiting, *, quote: bool = True, tasks: dict | None = None) -> dict
     by_ref = {order.ref: order for order in candidates}
     groups = plan_groups(
         origin,
-        [Candidate(order.ref, *_point(order), ready_key=_ready_key(order)) for order in candidates],
+        [Candidate(order.ref, *_point(order), ready_key=_ready_key(order), deadline=_deadline(order))
+         for order in candidates],
         settings,
         max_stops=courier.MAX_RIDE_STOPS,
+        now=timezone.now().timestamp(),
     )
     suggestions = []
     for group in groups:

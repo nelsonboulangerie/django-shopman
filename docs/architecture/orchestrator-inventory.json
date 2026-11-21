@@ -10721,7 +10721,8 @@
             "_hour_pair",
             "_local_today",
             "_window_start",
-            "logger"
+            "logger",
+            "window_end"
           ]
         }
       ]
@@ -11474,6 +11475,7 @@
             "block_reason",
             "defer_stock_hold",
             "delivery_date_from_payload",
+            "delivery_end",
             "delivery_start",
             "dispatch_before_window",
             "is_due",
@@ -14489,6 +14491,7 @@
             "Candidate",
             "Group",
             "_cache_key",
+            "_deadline",
             "_point",
             "_ready_key",
             "km_between",
