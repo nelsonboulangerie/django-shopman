@@ -608,6 +608,16 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > ℹ️ Tinha a mesma forma do `pagamento_expirado`, aposentado em 14/10/2026 (o Pix vencido
 > agora sai pelo `pedido_cancelado`).
 
+### `concierge_resposta_pronta` — evento `concierge_answer_ready` 🆕 · texto aprovado pelo dono em 21/11/2026 · ⏳ não submetido à Meta (#3004)
+- Corpo (WP-16 da Concierge): `A equipe respondeu a sua pergunta. Responda esta mensagem para eu te mostrar a resposta 💛`
+- Vars: nenhuma. Botão: nenhum (a resposta do cliente reabre a janela de 24 horas).
+- Categoria: Utility.
+- Uso: a equipe respondeu uma verificação da Concierge ("vou verificar") depois da janela de 24 horas;
+  a resposta fica guardada (`verification.STORED`) e sai na próxima mensagem do cliente.
+- Ligar só depois de aprovado pela Meta: o flow vai em `MANYCHAT_FLOW_MAP["concierge_answer_ready"]` (ou no
+  `NotificationTemplate` do Admin), e `manage.py manychat_flows --check` confere. Sem o flow, a Concierge
+  não promete resposta fora da janela (falha fechada, WP-05).
+
 ### `pontos_fidelidade` — evento `loyalty_earned` 🆕
 - Corpo: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}. Obrigada por nos prestigiar!`
   ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (o de 25/09 terminava em variável). O de 25/09 fica só como histórico.
