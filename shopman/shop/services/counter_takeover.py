@@ -124,7 +124,11 @@ def taken_over(order) -> bool:
 def cancelled_by_takeover(order, intent_ref: str) -> bool:
     """Este intent é a cobrança digital que o balcão cancelou neste pedido?"""
     payment = _payment(order)
-    records = (payment.get("counter_takeover") or {}, payment.get("counter_takeover_intent") or {})
+    # As rodadas anteriores (``counter_takeover_history``, ver ``counter_pix``)
+    # contam: o pagamento que cair numa cobrança assumida há duas rodadas também
+    # é pagamento em dobro.
+    history = [record for record in payment.get("counter_takeover_history") or [] if isinstance(record, dict)]
+    records = (payment.get("counter_takeover") or {}, payment.get("counter_takeover_intent") or {}, *history)
     return bool(intent_ref) and any(
         str(record.get("cancelled_intent_ref") or "") == str(intent_ref) for record in records
     )

@@ -3762,7 +3762,9 @@ def _adapter_config(order, *, method: str) -> dict:
         if repayment_minutes is not None:
             # O Pix escolhido no lugar do cartão recusado vale até o MESMO prazo.
             config["pix_timeout_minutes"] = repayment_minutes
-        if _is_pos_remote_order(order):
+        from shopman.shop.services import counter_pix
+
+        if _is_pos_remote_order(order) and not counter_pix.governs(order):
             # Pix de ENCOMENDA anotada no PDV: o cliente paga depois, de casa, e
             # o pedido pode ser para a semana que vem. O prazo do Pix de balcão
             # (minutos, cliente na frente do caixa) cancelava a encomenda antes

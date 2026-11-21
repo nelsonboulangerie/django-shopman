@@ -1,0 +1,64 @@
+#2897 + auditoria do #2918 · gerada pelas jornadas no código final (21/11/2026)
+Régua: contraste >= 4,5:1, letra >= 12 px, dentro da tela, nada cortado, nada encoberto, transbordo horizontal 0.
+Resultado: 0 reprovações em 375 px e 1366 px, nas três rodadas.
+
+# Saldo em Pix, rodada pago (a01-a03)
+
+## pix na tela (375 px)
+  - "Encomenda PDV-261120-A72": contraste 6.09:1; letra 12 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 26,00": contraste 5.56:1; letra 14 px; x 53..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código Pix": contraste 12.76:1; letra 14 px; x 25..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix na tela (375 px)
+  0
+
+## pix na tela (1366 px)
+  - "Encomenda PDV-261120-K50": contraste 6.09:1; letra 12 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 26,00": contraste 5.56:1; letra 14 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código Pix": contraste 12.76:1; letra 14 px; x 584..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix na tela (1366 px)
+  0
+
+# Saldo em Pix, rodada nao-chega (b01-b03)
+
+## aviso do Pix (375 px)
+  - "Encomenda PDV-261120-P00": contraste 6.09:1; letra 12 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Este Pix não pode mais ser pago.": contraste 5.94:1; letra 12 px; x 53..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+
+## aviso do Pix (1366 px)
+  - "Encomenda PDV-261121-C43": contraste 6.09:1; letra 12 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Este Pix não pode mais ser pago.": contraste 5.94:1; letra 12 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+
+# Venda de balcão com o Pix vencido (v01-v03)
+
+## pix vencido na venda (375 px)
+  - "Venda registrada": contraste 12.76:1; letra 30 px; x 73..302; dentro da tela: sim; cortado: não; encoberto: não
+  - "O Pix não foi confirmado.": contraste 12.76:1; letra 14 px; x 45..330; dentro da tela: sim; cortado: não; encoberto: não
+  - "R$ 13,00 segue em aberto. Receba de outra forma e acerte o pagamento n": contraste 6.09:1; letra 14 px; x 45..330; dentro da tela: sim; cortado: não; encoberto: não
+  - "Abrir o pedido no Gestor": contraste 12.76:1; letra 14 px; x 45..246; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 13,00": contraste 12.76:1; letra 14 px; x 69..334; dentro da tela: sim; cortado: não; encoberto: não
+  - "Este Pix não pode mais ser pago.": contraste 6.09:1; letra 12 px; x 69..334; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix vencido na venda (375 px)
+  0
+
+## pix vencido na venda (1366 px)
+  - "Venda registrada": contraste 12.76:1; letra 30 px; x 680..910; dentro da tela: sim; cortado: não; encoberto: não
+  - "O Pix não foi confirmado.": contraste 12.76:1; letra 14 px; x 588..1002; dentro da tela: sim; cortado: não; encoberto: não
+  - "R$ 13,00 segue em aberto. Receba de outra forma e acerte o pagamento n": contraste 6.09:1; letra 14 px; x 588..1002; dentro da tela: sim; cortado: não; encoberto: não
+  - "Abrir o pedido no Gestor": contraste 12.76:1; letra 14 px; x 588..789; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 13,00": contraste 12.76:1; letra 14 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Este Pix não pode mais ser pago.": contraste 6.09:1; letra 12 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo pix vencido na venda (1366 px)
+  0
+

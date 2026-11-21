@@ -260,7 +260,7 @@ describe("PosCartPanel — a porta da comanda e as do raro", () => {
     expect(wrapper.find("[data-pos-tab-menu]").attributes("aria-label")).toBe("Ações da comanda: liberar");
     // Na folha que paga direto (tablet, celular) não há pé: Transferir segue no ⋯.
     const sheet = await mountSuspended(PosCartPanel, {
-      props: props({ sheet: true, quickPayments: [{ ref: "pix", label: "PIX", icon: "i-lucide-qr-code" }] }),
+      props: props({ sheet: true, quickPayments: [{ ref: "pix", label: "Pix", icon: "i-lucide-qr-code" }] }),
     });
     await sheet.find("[data-operator-action-bar-secondary]").trigger("click");
     await new Promise((resolve) => setTimeout(resolve, 0));

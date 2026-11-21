@@ -73,7 +73,7 @@ import {
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
 import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import type { PosBalanceCharge } from "~/presentation/balanceCharge";
+import { pixNeedsWholeBalance, type PosBalanceCharge } from "~/presentation/balanceCharge";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -843,9 +843,12 @@ function awaitingReviewReason(): string | undefined {
 function paymentMethodBlockedReason(ref: string): string | undefined {
   const awaiting = awaitingReviewReason();
   if (awaiting) return awaiting;
+  // No saldo da encomenda, o servidor diz quando o Pix não cobra (parte já paga,
+  // teto do Pix de testes): a forma fica apagada com a frase dele.
+  if (props.balance && ref === "pix" && props.balance.pixBlockedReason) return props.balance.pixBlockedReason;
   if (blockedForDelivery(ref)) {
     const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
-    return `PIX Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
+    return `Pix Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
   }
   if (blockedByLink(ref)) return "O link de pagamento cobra a venda inteira";
   if (blockedByPixProviderTest(ref)) {
@@ -918,6 +921,17 @@ function removePixAndFocusAlternative() {
 
 function returnToCart() {
   emit("back");
+}
+
+/** O saldo em Pix: tira as outras linhas e a divisão, e o Pix assume o valor inteiro. */
+function keepOnlyWholePix() {
+  if (splitActive.value) emit("setSplitCount", 0);
+  const pixIndex = props.paymentTenders.findIndex((tender) => tender.method === "pix");
+  if (pixIndex < 0) return;
+  const removals = props.paymentTenders.map((_, index) => index).filter((index) => index !== pixIndex).reverse();
+  removals.forEach((index) => emit("removeTender", index));
+  emit("selectTender", pixIndex - removals.filter((index) => index < pixIndex).length);
+  emit("tenderExact");
 }
 
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
@@ -1072,6 +1086,16 @@ const ctaBlock = computed<{
       message: onDelivery.value
         ? `Escolha como o cliente vai pagar na ${props.fulfillmentType === "delivery" ? "entrega" : "retirada"}.`
         : "Escolha a forma de pagamento.",
+    };
+  }
+  // O SALDO EM PIX é UMA cobrança Pix do pedido, no valor inteiro, como a venda
+  // que fecha em Pix (#2897). Pix com outra forma, conta dividida ou Pix de outro
+  // valor não fecham: o toque deixa só o Pix, no valor do saldo.
+  if (props.balance && pixNeedsWholeBalance(props.paymentTenders, props.paymentTotalQ)) {
+    return {
+      message: "No saldo da encomenda, o Pix cobra o valor inteiro, sozinho.",
+      hint: "Ou tire o Pix e receba em dinheiro ou cartão.",
+      action: { label: "Deixar só o Pix no valor inteiro", run: keepOnlyWholePix },
     };
   }
   // `preorder_fired_unpaid` — a gêmea. Encomenda que já está na cozinha não
@@ -1409,7 +1433,7 @@ defineExpose({
     }
     if (blockedForDelivery(ref)) {
       const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
-      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. Pix Efí exige confirmação automática.`);
       return true;
     }
     if (blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;

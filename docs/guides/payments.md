@@ -278,6 +278,26 @@ máquina de timeout cancela, e o caminho é refazer a venda. As recusas (`paymen
 `payment_link_already_paid`, `payment_link_send_pending`, `payment_link_resend_too_soon`…) estão em
 [errors.md](../reference/errors.md).
 
+### O saldo da encomenda em Pix no balcão (#2897)
+
+Gesto de dinheiro tem uma tela só (dono, 16/11/2026): o "Receber e entregar" do PDV abre a tela de
+Pagamento da venda, e o Pix entra nela como a venda de balcão recebe Pix. Escolhido o Pix (sozinho,
+no valor inteiro do saldo), o PDV pede `POST /api/v1/backstage/pos/preorders/<ref>/pix/`;
+`shop/services/counter_pix.py` responde com o QR no formato da venda (`_pos_payment_response`), e o
+PDV acompanha pelo mesmo `pos/payment/<ref>/status/`. Pago, o saldo vira zero e a entrega é o
+`hand-over` de sempre, sem forma nenhuma.
+
+- **Nunca duas cobranças.** O Pix online do cliente ainda vivo e do mesmo valor é aproveitado
+  (`counter_pix.adopted`). Link, cartão hospedado ou Pix vencido passam antes pelo
+  `counter_takeover` (abaixo); o registro dele vai para `payment.counter_takeover_history` e o
+  pagamento que cair depois em qualquer cobrança assumida é estornado no mesmo meio.
+- **O Pix que não chega.** Receber em dinheiro ou cartão é o "Receber e entregar" de sempre, que
+  cancela este Pix antes (`counter_takeover`). Vencido, o Pix do balcão **não cancela a encomenda**
+  (`PaymentTimeoutHandler` lê `counter_pix.governs`): o PDV avisa e oferece "Gerar outro Pix".
+- **O prazo** é o do Pix de balcão (`payment.timeout_minutes`), nunca o do link da encomenda.
+- **Fora, por enquanto:** o Pix misto no saldo (a tela pede o Pix sozinho) e o saldo com parte já
+  paga (o `initiate` cobra o total efetivo; a forma fica apagada com o motivo).
+
 ### Pix ou link pendente recebido no balcão
 
 Decisão do dono (26/09/2026): a encomenda que espera um Pix ou um link pode ser recebida no

@@ -114,7 +114,7 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
     expect(cart).toContain("(era {{ qtyWas }})");
     expect(cart).toContain('{{ discountOpen ? "Aplicar" : "Pronto" }}</NuxtButton>');
   });
-  it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, PIX e Maquininha", () => {
+  it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, Pix e Maquininha", () => {
     // A folha fechada é a barra da ação do momento do kit; a primária é o envio
     // quando há o que enviar (`sheetFirePrimary`), e a gaveta aberta paga direto.
     expect(cart).toContain("<OperatorActionBar");

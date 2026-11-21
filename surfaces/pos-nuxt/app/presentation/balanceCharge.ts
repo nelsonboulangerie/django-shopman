@@ -15,14 +15,32 @@ import type { OrderDetailDiscountLine, OrderDetailItem } from "../../../operator
 import { cashTenderSumQ } from "./payment";
 
 /**
- * As formas que a entrega no balcão recebe. Espelho da régua do servidor
- * (`operator_orders._COUNTER_METHODS`): a tela só oferece o que a rota aceita.
+ * As formas que recebem o saldo no balcão. Dinheiro, débito e crédito vão pela
+ * rota da entrega (`operator_orders._COUNTER_METHODS`); o Pix, pela cobrança Pix
+ * do balcão (`pos/preorders/<ref>/pix/`, #2897), do jeito que a venda cobra Pix.
+ * O link não entra: a cliente está na frente do caixa.
  */
-export const HAND_OVER_METHODS: readonly CounterMethod[] = ["cash", "debit", "credit"];
+export const HAND_OVER_METHODS: readonly string[] = ["cash", "debit", "credit", "pix"];
 
 /** As formas da loja que o saldo da encomenda aceita, na ordem da projeção. */
 export function handOverMethods(methods: POSPaymentMethodProjection[]): POSPaymentMethodProjection[] {
-  return methods.filter((method) => (HAND_OVER_METHODS as readonly string[]).includes(method.ref));
+  return methods.filter((method) => HAND_OVER_METHODS.includes(method.ref));
+}
+
+/**
+ * No saldo, o Pix cobra o valor inteiro, sozinho: é UMA cobrança Pix do pedido,
+ * como na venda que fecha em Pix. Verdadeiro quando as linhas pedem outra coisa
+ * (Pix com outra forma, conta dividida, Pix de outro valor).
+ */
+export function pixNeedsWholeBalance(tenders: Pick<POSPaymentTenderDraft, "method" | "amount_q">[], dueQ: number): boolean {
+  const pix = tenders.filter((tender) => tender.method === "pix");
+  if (!pix.length) return false;
+  return tenders.length > 1 || pix[0]!.amount_q !== dueQ;
+}
+
+/** As linhas cobram o saldo em Pix (sozinho, no valor inteiro)? */
+export function paysBalanceWithPix(tenders: Pick<POSPaymentTenderDraft, "method" | "amount_q">[], dueQ: number): boolean {
+  return tenders.some((tender) => tender.method === "pix") && !pixNeedsWholeBalance(tenders, dueQ);
 }
 
 export interface BalanceChargeLine {
@@ -59,6 +77,8 @@ export interface PosBalanceCharge {
   /** O que já entrou; "" quando nada foi pago antes. */
   paidDisplay: string;
   lines: BalanceChargeLine[];
+  /** Por que o Pix não cobra este saldo agora (a forma fica apagada); "" quando cobra. */
+  pixBlockedReason: string;
   /**
    * Os itens vêm a preço de tabela e o desconto em linha própria (o mesmo
    * detalhe do Gestor): sem estas linhas, itens e total não fecham a conta.
@@ -74,7 +94,7 @@ export interface PosBalanceCharge {
 export function balanceCharge(input: {
   orderRef: string;
   customerName: string;
-  handOver: Pick<PreorderHandOver, "amount_q" | "amount_display" | "kitchen_notice" | "digital_charge_notice">;
+  handOver: Pick<PreorderHandOver, "amount_q" | "amount_display" | "kitchen_notice" | "digital_charge_notice" | "pix_block_reason">;
   card: Pick<PreorderCard, "total_q" | "total_display">;
   items: OrderDetailItem[];
   discountLines?: OrderDetailDiscountLine[];
@@ -94,6 +114,7 @@ export function balanceCharge(input: {
     amountDisplay: input.handOver.amount_display,
     orderTotalDisplay: input.card.total_display,
     paidDisplay: paidQ > 0 ? formatBRL(paidQ) : "",
+    pixBlockedReason: input.handOver.pix_block_reason ?? "",
     lines: input.items.map((item, index) => ({
       key: `${item.sku}-${index}`,
       qtyLabel: `${item.qty}x`,
@@ -108,6 +129,9 @@ export function balanceCharge(input: {
     notices,
   };
 }
+
+/** Onde a espera do Pix do saldo está: a mesma régua da venda em Pix. */
+export type BalancePixStatus = "idle" | "polling" | "paid" | "expired";
 
 export interface HandOverBody {
   tenders?: Array<{ method: CounterMethod; amount_q: number }>;

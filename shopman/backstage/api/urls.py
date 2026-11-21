@@ -278,6 +278,7 @@ from .operations import (
     POSManagerApprovalCheckView,
     POSMovementView,
     POSPaymentStatusView,
+    POSPreorderCounterPixView,
     POSPreorderDetailView,
     POSPreorderEditSessionView,
     POSPreorderHandOverView,
@@ -1428,6 +1429,11 @@ urlpatterns = [
         "pos/preorders/<str:ref>/hand-over/",
         POSPreorderHandOverView.as_view(),
         name="api-backstage-pos-preorder-hand-over",
+    ),
+    path(
+        "pos/preorders/<str:ref>/pix/",
+        POSPreorderCounterPixView.as_view(),
+        name="api-backstage-pos-preorder-counter-pix",
     ),
     path(
         "pos/preorders/<str:ref>/edit-session/",
