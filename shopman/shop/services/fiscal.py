@@ -1185,6 +1185,7 @@ FISCAL_STATE_AWAITING_PICKUP = "awaiting_pickup"
 FISCAL_STATE_AWAITING_DELIVERY = "awaiting_delivery"
 FISCAL_STATE_AUTHORIZED = "authorized"
 FISCAL_STATE_FAILED = "failed"
+FISCAL_STATE_NOT_ISSUED = "not_issued"
 FISCAL_STATES = (
     FISCAL_STATE_NOT_EXPECTED,
     FISCAL_STATE_QUEUED,
@@ -1193,6 +1194,7 @@ FISCAL_STATES = (
     FISCAL_STATE_AWAITING_DELIVERY,
     FISCAL_STATE_AUTHORIZED,
     FISCAL_STATE_FAILED,
+    FISCAL_STATE_NOT_ISSUED,
 )
 
 #: Directive viva ou concluída: houve tentativa de emissão, e a configuração de
@@ -1250,6 +1252,9 @@ def fiscal_state(order, *, directive_status: str | None = None, emit_failed_aler
     - ``awaiting_payment``: venda de balcão esperada, sem chave, e a cobrança é
       digital antecipada ainda não capturada — a nota nasce na captura
       (``lifecycle._on_paid``).
+    - ``not_issued``: o pedido foi CANCELADO sem nenhuma tentativa de emissão.
+      Nenhuma nota vai sair; sem este estado, a regra caía em ``queued`` ou
+      ``awaiting_payment`` e a tela prometia uma nota (#3127, #3130).
 
     A evidência de tentativa (Directive/alerta) vem ANTES da regra: mudar o
     resolver ou tirar o backend da env não apaga uma nota que já tentou sair.
@@ -1274,6 +1279,11 @@ def fiscal_state(order, *, directive_status: str | None = None, emit_failed_aler
         return FISCAL_STATE_FAILED
     if directive_status in _DIRECTIVE_ATTEMPTED:
         return FISCAL_STATE_QUEUED
+
+    # Cancelado e nenhuma tentativa: a regra abaixo diria quando a nota SAI, e
+    # ela não sai mais. A Directive viva ficou acima: essa é emissão de verdade.
+    if str(order.status) == "cancelled":
+        return FISCAL_STATE_NOT_ISSUED
 
     if not emission_expected(order):
         return FISCAL_STATE_NOT_EXPECTED
