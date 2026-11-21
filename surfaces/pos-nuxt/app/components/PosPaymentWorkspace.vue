@@ -2559,13 +2559,15 @@ defineExpose({
              mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
              e taxas diferentes) e o valor. A forma vem primeiro, em pastilha
              cheia: é a primeira escolha no teclado do terminal, e a única que a
-             maquininha não perdoa em silêncio. -->
+             maquininha não perdoa em silêncio. Selo com maiúscula só na
+             primeira letra (dono, 16/11/2026) e a grafia da casa: "Pix",
+             "Crédito", "Débito", nunca em caixa alta. -->
         <div
           v-for="(line, idx) in confirmTenders"
           :key="`${line.method}-${idx}`"
           class="grid justify-items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-7"
         >
-          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold uppercase tracking-widest text-primary-foreground">
+          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold text-primary-foreground" data-pos-confirm-method>
             <Icon :name="line.icon" class="size-5 shrink-0" />
             {{ line.label }}
           </p>
