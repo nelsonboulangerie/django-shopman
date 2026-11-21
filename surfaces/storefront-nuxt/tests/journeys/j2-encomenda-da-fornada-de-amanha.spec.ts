@@ -13,6 +13,7 @@ import { capture, newCustomerPhone, settled } from './support/stack'
 // O que a jornada supõe do seed `--profile qa`: a Tabatière só tem fornada amanhã (a vitrine
 // do perfil), e a loja da pilha está aberta.
 const PRODUCT = 'Tabatière'
+// A frase vem em mais de um nó (dia em destaque): o filtro lê o texto inteiro do parágrafo.
 const PROMISE_TOMORROW = /^Fica\s+pronto\s+amanhã,\s+[a-zçá]+,\s+a\s+partir\s+das\s+\d{1,2}h(\d{2})?$/ // a loja usa espaço inseparável
 
 test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', async ({ page }, testInfo) => {
@@ -27,7 +28,7 @@ test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', asyn
     await expect(page).toHaveURL(/\/produto\//)
     await settled(page)
     await expect(page.getByRole('heading', { name: PRODUCT, level: 1 })).toBeVisible()
-    await expect(page.getByText(PROMISE_TOMORROW).first()).toBeVisible()
+    await expect(page.locator('p').filter({ hasText: PROMISE_TOMORROW }).first()).toBeVisible()
     await capture(page, testInfo, 'produto-amanha')
   })
 
@@ -36,7 +37,7 @@ test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', asyn
     await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` })).toContainText('1')
     await page.getByRole('link', { name: 'Sacola, 1 item', exact: true }).first().click()
     await expect(page.getByRole('heading', { name: 'Sua sacola' })).toBeVisible()
-    await expect(page.getByText(PROMISE_TOMORROW).first()).toBeVisible()
+    await expect(page.locator('p').filter({ hasText: PROMISE_TOMORROW }).first()).toBeVisible()
     await capture(page, testInfo, 'sacola-amanha')
   })
 
@@ -57,11 +58,12 @@ test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', asyn
     await page.getByRole('radio', { name: /^Pix/ }).click()
     await page.getByRole('button', { name: 'Revisar pedido' }).click()
     await expect(page.getByRole('heading', { name: 'Revise seu pedido' })).toBeVisible()
-    const pickup = page.getByText(/^Retirada\s*·\s*[a-zá]{3},\s*\d{2}\/\d{2}\s*·\s*A\s+partir\s+das\s+\d{1,2}h(\d{2})?$/).first()
-    await expect(pickup).toBeVisible()
+    const pickup = /Retirada\s*·\s*[a-zá]{3},\s*(\d{2}\/\d{2})\s*·\s*A\s+partir\s+das\s+\d{1,2}h(\d{2})?/
+    const review = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Revise seu pedido' }) })
+    await expect(review).toContainText(pickup)
     await page.waitForTimeout(600) // a folha da revisão termina de subir antes da captura
     await capture(page, testInfo, 'revisao-amanha')
-    return (await pickup.textContent())!.match(/\d{2}\/\d{2}/)![0]
+    return (await review.textContent())!.match(pickup)![1]!
   })
 
   await test.step('envia, paga o Pix, e o acompanhamento diz o mesmo dia', async () => {
