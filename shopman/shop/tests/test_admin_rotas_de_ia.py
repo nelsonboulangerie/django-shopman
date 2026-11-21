@@ -72,7 +72,6 @@ def _form(shop, data=None):
 def _data(**routes):
     data = dict.fromkeys(MARKETING_FIELDS, "")
     data["ai_limits"] = "{}"
-    data["incident_remedies_mode"] = "on"
     for key in ai_routes.ROUTE_KEYS:
         data[ai_routes.connection_field(key)] = ""
         data[ai_routes.model_field(key)] = ""
@@ -242,3 +241,24 @@ def test_the_reason_has_no_written_path_and_names_the_format(shop):
     assert ambiguous.text.endswith("; escolha qual na lista desta função")
     assert ambiguous.fix_url == f"#id_{ai_routes.connection_field('copy')}"
     assert "→" not in text + ambiguous.text
+
+
+def test_saving_without_the_remedies_mode_keeps_what_the_shop_has(admin_client, shop):
+    """Salvar a página sem o campo (ou com ele vazio) não dá erro e não muda o modo gravado."""
+    shop.incident_remedies_mode = "shadow"
+    shop.save()
+
+    absent = admin_client.post(_url(shop), _data())
+    assert absent.status_code == 302, absent.context_data["adminform"].form.errors
+    shop.refresh_from_db()
+    assert shop.incident_remedies_mode == "shadow"
+
+    empty = admin_client.post(_url(shop), _data(incident_remedies_mode=""))
+    assert empty.status_code == 302
+    shop.refresh_from_db()
+    assert shop.incident_remedies_mode == "shadow"
+
+    changed = admin_client.post(_url(shop), _data(incident_remedies_mode="off"))
+    assert changed.status_code == 302
+    shop.refresh_from_db()
+    assert shop.incident_remedies_mode == "off"
