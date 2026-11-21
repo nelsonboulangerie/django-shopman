@@ -55,6 +55,15 @@ test.describe("Entregas: a corrida da casa", () => {
     expect(sent.every((item) => item.base_revision)).toBe(true);
   });
 
+  test("Imprimir a via sem impressora diz o motivo e não mexe na corrida (#2406)", async ({ page }) => {
+    await page.goto("/delivery");
+    const card = page.locator("[data-house-ride]");
+    await card.getByRole("button", { name: "Imprimir a via", exact: true }).click();
+    await expect(page.getByText("Este dispositivo não tem impressora. A via sai no dispositivo que tem impressora.")).toBeVisible();
+    await expect(card.locator("[data-house-ride-moment]")).toHaveText("Diego leva");
+    expect((await state(page)).gestures.map((item) => item.gesture)).toEqual(["slip"]);
+  });
+
   test("Reenviar o link abre o WhatsApp com o mesmo link no mesmo toque", async ({ page, context }) => {
     await page.goto("/delivery");
     const popup = context.waitForEvent("page");
