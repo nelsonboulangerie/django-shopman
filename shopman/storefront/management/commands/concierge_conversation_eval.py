@@ -7,7 +7,7 @@
     manage.py concierge_conversation_eval --replay --paid    # idem, com Jev e modelo (custa)
 
 Só leitura, sem modelo, sem rede. Cada turno sai como útil, sem saída, sem lastro ou
-silêncio, com a coluna "ManyChat AI faria" (perfil de capacidade, levantamento de 21/11).
+silêncio, com a coluna do ManyChat AI ESTIMADA pela documentação (não medida: o add-on está desligado).
 O texto do cliente e da casa sai redigido (documento, telefone, e-mail, endereço omitidos).
 """
 
