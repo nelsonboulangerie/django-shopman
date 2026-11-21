@@ -1,5 +1,6 @@
+import type { MaybeRefOrGetter } from 'vue'
 import { measureBottomObstruction } from '~/composables/useNextFocus'
-import { hintOffset, shouldHint } from '~/presentation/moreBelow'
+import { CONTAINED_END_SLACK_PX, hintOffset, shouldHint } from '~/presentation/moreBelow'
 import { FOCUS_OBSTRUCTION_ATTRIBUTE } from '~/presentation/nextFocus'
 
 /**
@@ -17,8 +18,15 @@ import { FOCUS_OBSTRUCTION_ATTRIBUTE } from '~/presentation/nextFocus'
  * destino é o próprio sentinela, alinhado pela borda de baixo — e como ele
  * carrega `scroll-margin-bottom` igual ao obstáculo, o fim para ACIMA do card,
  * não atrás dele.
+ *
+ * `container`: a rolagem é de uma caixa, não da página (o corpo da folha,
+ * `BottomSheet`). Aí a área observada é a caixa, nada flutua sobre ela (não há
+ * obstáculo a medir), e o fim conta um passo de folga antes (#2414; a regra
+ * que a folha já tinha: a folga do fim não é conteúdo por rolar).
  */
-export function useMoreBelow () {
+export function useMoreBelow (options: { container?: MaybeRefOrGetter<HTMLElement | null | undefined> } = {}) {
+  const container = computed(() => toValue(options.container) || null)
+  const contained = computed(() => options.container !== undefined)
   const sentinel = ref<HTMLElement | null>(null)
   const endReached = ref(true)
   const obstruction = ref(0)
@@ -36,6 +44,18 @@ export function useMoreBelow () {
     observer?.disconnect()
     observer = null
     if (!import.meta.client || !el || typeof IntersectionObserver !== 'function') return
+    if (contained.value) {
+      const caixa = container.value
+      if (!caixa) return
+      observer = new IntersectionObserver(entries => {
+        const entry = entries[entries.length - 1]
+        if (!entry) return
+        const limite = entry.rootBounds?.bottom ?? caixa.getBoundingClientRect().bottom + CONTAINED_END_SLACK_PX
+        chegouAoFim(entry.boundingClientRect.top, limite)
+      }, { root: caixa, threshold: 0.01, rootMargin: `0px 0px ${CONTAINED_END_SLACK_PX}px 0px` })
+      observer.observe(el)
+      return
+    }
     const recuo = Math.round(Math.max(0, obstaculo))
     observer = new IntersectionObserver(entries => {
       const entry = entries[entries.length - 1]
@@ -68,11 +88,15 @@ export function useMoreBelow () {
   function reavaliar () {
     const el = sentinel.value
     if (!el) return
-    chegouAoFim(el.getBoundingClientRect().top, window.innerHeight - obstruction.value)
+    const caixa = contained.value ? container.value : null
+    const limite = caixa
+      ? caixa.getBoundingClientRect().bottom + CONTAINED_END_SLACK_PX
+      : window.innerHeight - obstruction.value
+    chegouAoFim(el.getBoundingClientRect().top, limite)
   }
 
   function measure () {
-    if (!import.meta.client) return
+    if (!import.meta.client || contained.value) return
     const medido = measureBottomObstruction()
     if (Math.abs(medido - obstruction.value) < 1) return
     obstruction.value = medido
@@ -88,7 +112,7 @@ export function useMoreBelow () {
   function watchObstructionSizes () {
     obstructionSizes?.disconnect()
     obstructionSizes = null
-    if (!import.meta.client || typeof ResizeObserver !== 'function') return
+    if (!import.meta.client || contained.value || typeof ResizeObserver !== 'function') return
     obstructionSizes = new ResizeObserver(measure)
     for (const el of document.querySelectorAll(`[${FOCUS_OBSTRUCTION_ATTRIBUTE}]`)) {
       obstructionSizes.observe(el)
@@ -104,11 +128,11 @@ export function useMoreBelow () {
     el.scrollIntoView({ block: 'end', behavior })
   }
 
-  watch(sentinel, el => observe(el, obstruction.value), { immediate: true })
+  watch([sentinel, container], ([el]) => observe(el, obstruction.value), { immediate: true })
   // O que flutua na base muda de altura (o botão vira "Autorizar e validar", o
   // aviso do mínimo aparece): a folga e a área de observação acompanham.
   useEventListener(() => (import.meta.client ? window : null), 'resize', measure)
-  useEventListener(() => (import.meta.client ? window : null), 'scrollend', reavaliar)
+  useEventListener(() => (import.meta.client ? (contained.value ? container.value : window) : null), 'scrollend', reavaliar)
   onMounted(() => {
     measure()
     watchObstructionSizes()
