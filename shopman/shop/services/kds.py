@@ -119,7 +119,7 @@ def _customer_holds_the_goods(order) -> bool:
     """Venda de balcão presencial: item de prateleira já saiu pela porta.
 
     Nessa venda só o feito na hora vai à cozinha (o café, o lanche a montar); o
-    pão pronto não vira ticket de picking — a estação "Encomendas" é para pedido
+    pão pronto não vira ticket de picking — a estação "Separação" é para pedido
     remoto/agendado que alguém precisa separar, não para a sacola que o cliente
     já está segurando. Sem isto, toda venda de pão criava ticket com som e meta
     de 5 minutos para uma mercadoria já entregue.

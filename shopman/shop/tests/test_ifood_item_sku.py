@@ -4,7 +4,7 @@ Caso medido: no primeiro pedido real (IFOOD-261112-3417) os itens chegaram com
 ``89c36650c82b11eeb4433516a`` (``externalCode``) e
 ``c570b678-9a2b-4cab-a52d-26ae21d3f8d6`` (id do item, sem ``externalCode``).
 Nenhum dos dois é SKU nosso: deu ``stock_unknown_sku``, sem baixa, e o ticket
-caiu na estação genérica "Encomendas".
+caiu na estação genérica "Separação".
 """
 
 from __future__ import annotations
@@ -167,7 +167,7 @@ def test_ticket_cai_na_estacao_da_colecao_do_produto(channel):
     queijos = Collection.objects.create(ref="queijos", name="Queijos")
     camembert = _product("CAMEMBERT", "Queijo Camembert")
     CollectionItem.objects.create(collection=queijos, product=camembert, is_primary=True)
-    KDSInstance.objects.create(ref="encomendas", name="Encomendas", type="picking")
+    KDSInstance.objects.create(ref="picking", name="Separação", type="picking")
     frios = KDSInstance.objects.create(ref="frios", name="Frios", type="picking")
     frios.collections.add(queijos)
     _bind(channel, camembert)

@@ -12,7 +12,7 @@ import {
 } from "~/composables/useKdsGridSettle";
 import { focusSlice } from "~/presentation/board";
 
-// O toque no pedido errado (06/11/2026, Encomendas, 800×600): chegou o P30, a fila se
+// O toque no pedido errado (06/11/2026, Separação, 800×600): chegou o P30, a fila se
 // reorganizou e, com os tickets deslizando uns sobre os outros, o "Iniciar preparo" do
 // P30 abriu o detalhe do T69. Enquanto a grade se acomoda, nenhum toque age.
 
