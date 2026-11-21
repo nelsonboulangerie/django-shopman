@@ -1,0 +1,23 @@
+#2917 · auditoria da prévia (J6, teste "saldo parcial", código final, 21/11/2026)
+Régua: contraste >= 4,5:1, letra >= 12 px, dentro da tela, nada cortado, nada encoberto, transbordo horizontal 0.
+Resultado: 0 reprovações em 375 px e 1366 px.
+
+## Pix do saldo parcial (375 px)
+  - "Encomenda PDV-261121-H96": contraste 6.09:1; letra 12 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 13,00": contraste 5.56:1; letra 14 px; x 53..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código Pix": contraste 12.76:1; letra 14 px; x 25..350; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 12..363; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo Pix do saldo parcial (375 px)
+  0
+
+## Pix do saldo parcial (1366 px)
+  - "Encomenda PDV-261121-A13": contraste 6.09:1; letra 12 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Ana Ferreira": contraste 12.76:1; letra 18 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pagamento Pix · R$ 13,00": contraste 5.56:1; letra 14 px; x 612..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Copiar código Pix": contraste 12.76:1; letra 14 px; x 584..1006; dentro da tela: sim; cortado: não; encoberto: não
+  - "Receber em outra forma": contraste 12.76:1; letra 16 px; x 571..1019; dentro da tela: sim; cortado: não; encoberto: não
+
+## transbordo Pix do saldo parcial (1366 px)
+  0
