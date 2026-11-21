@@ -1071,6 +1071,7 @@
             "_is_seed_order",
             "_is_seed_work_order",
             "_synthetic_reason",
+            "_IFOOD_UNHANDLED_MARKER",
             "resolve_alerts_ended_by_fact"
           ]
         }

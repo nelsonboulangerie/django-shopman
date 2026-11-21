@@ -145,12 +145,14 @@ def open_rows(type: str) -> list[tuple[int, str, str]]:
     )
 
 
-def open_rows_with_ref() -> list[tuple[int, str, str]]:
-    """``(pk, tipo, order_ref)`` de todo aviso aberto, do mais velho ao mais novo."""
+def open_rows_with_ref() -> list[tuple[int, str, str, str]]:
+    """``(pk, tipo, order_ref, mensagem)`` de todo aviso aberto, do mais velho ao mais novo."""
     from shopman.backstage.models import OperatorAlert
 
     return list(
-        OperatorAlert.objects.filter(resolved_at__isnull=True).order_by("pk").values_list("pk", "type", "order_ref")
+        OperatorAlert.objects.filter(resolved_at__isnull=True)
+        .order_by("pk")
+        .values_list("pk", "type", "order_ref", "message")
     )
 
 

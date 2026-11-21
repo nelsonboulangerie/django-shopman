@@ -11104,6 +11104,7 @@
             "_LOGISTICS_CODES",
             "_alert_patched",
             "_alert_unhandled_event",
+            "is_known_code",
             "_apply_patch",
             "_brl",
             "_cfg",
