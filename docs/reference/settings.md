@@ -425,6 +425,31 @@ Mudou a flag? Rode o `seed` de novo — o horário 24/7 é dado, não código.
 
 **Guia:** [staging-autopilot.md](../guides/staging-autopilot.md)
 
+### Pilha de teste local: relógio e nota simulada
+
+A suíte de operador (`surfaces/orders-nuxt/tests/operator/`) roda contra o Django de
+verdade. Duas peças deixam a pilha local exercitar o que dependia do relógio real e
+de um emissor externo (#2585):
+
+| Setting | Tipo | Default | Descrição |
+|---------|------|---------|-----------|
+| `TEST_STACK_CONTROL_DIR` | env path | vazio (desligado) | Pasta de controle que a suíte escreve. O arquivo `clock` dentro dela fixa o "agora" do processo (`config/test_clock.py`); o adapter fiscal de simulação guarda ali as notas e o roteiro de recusa |
+| `SHOPMAN_FISCAL_ADAPTER` | str | — | `shopman.shop.adapters.fiscal_simulated.SimulatedFiscalBackend` responde como a SEFAZ sem rede, em homologação |
+
+- **Relógio:** `clock` contém um instante ISO 8601 com fuso (`2026-11-23T15:50:00-03:00`).
+  O relógio vale esse instante no momento da gravação do arquivo e anda dali no ritmo
+  real; gravar de novo é outra viagem, sem reiniciar. Sem arquivo, ou vazio, é a hora
+  real. Muda `timezone.now` e tudo que passa por ele; quem lê `datetime.now()` direto
+  segue a hora real.
+- **Nota simulada:** toda emissão autoriza, com número sequencial e chave de 44 dígitos
+  válida. `fiscal.json` com `{"deny_next": 1, "error_message": "Rejeição 778: ..."}`
+  recusa a próxima emissão com esse motivo; a seguinte (o "Reprocessar NFC-e") autoriza.
+  Sem XML nem DANFE hospedados.
+
+⚠️ **Só na pilha local.** O settings recusa subir com `TEST_STACK_CONTROL_DIR` fora de
+`DJANGO_DEBUG=true` ou em produção; o simulador fiscal fora de DEBUG é `SHOPMAN_E029`; e
+os dois são portas de teste abertas no `SHOPMAN_E027`.
+
 ### Webhook
 
 **Dict:** `SHOPMAN_WEBHOOK = {}`

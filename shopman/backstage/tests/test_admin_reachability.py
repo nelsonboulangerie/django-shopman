@@ -192,8 +192,14 @@ def test_o_gerente_alcanca_a_loja(grupos):
     joyce = _com_grupo("Gerente", grupos)
     titulos = _titulos(joyce)
 
-    for esperado in ("Produtos", "Clientes", "Histórico de pedidos", "Todos os ajustes", "Importações"):
+    for esperado in ("Produtos", "Clientes", "Histórico de pedidos", "Todos os ajustes"):
         assert esperado in titulos, esperado
+
+
+def test_as_importacoes_do_bi_sao_do_dono(grupos):
+    """O B.I. é só do Dono (dono, 21/11/2026), e as importações são a porta dele."""
+    assert "Importações" not in _titulos(_com_grupo("Gerente", grupos))
+    assert "Importações" in _titulos(_com_grupo("Dono", grupos))
 
 
 def test_o_gerente_nao_alcanca_dinheiro(grupos):

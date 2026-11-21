@@ -133,3 +133,32 @@ def test_4_an_answer_inside_the_window_follows_wp05(conversation, outbox, templa
     assert result.ok and template == [], "dentro da janela, o modelo não é usado"
     assert outbox.sent[-1] == "A equipe confirmou: Temos sim, duas vagas."
     assert _record(conversation)["status"] == verification.ANSWERED
+
+
+# ── #3005: o segundo prazo fora da janela não passa à equipe ────────────
+
+
+def test_the_second_deadline_outside_the_window_keeps_the_card_and_does_not_hand_off(conversation, outbox, template):  # noqa: F811
+    """Regra escrita (#3005): o "a equipe assume" não chegaria ao cliente, e a equipe não
+    escreveria no Live Chat. A conversa fica com a Concierge, o cartão segue aberto e a resposta
+    da equipe pelo cartão sai pelo modelo aprovado (WP-16)."""
+    from shopman.shop.models import Conversation
+
+    _ask_parking(conversation)
+    card = _cards().get()
+    _close_the_window(conversation)
+    record = _record(conversation)
+    late = timezone.now() + timedelta(hours=2)
+    sent = len(outbox.sent)
+
+    counts = verification.sweep(now=max(late, verification._parse(record["handoff_due_at"]) + timedelta(minutes=1)))
+
+    conversation.refresh_from_db()
+    assert counts["handed_off"] == 0 and counts[verification.KEPT_OUT_OF_WINDOW] == 1, counts
+    assert conversation.state == Conversation.State.ACTIVE
+    assert len(outbox.sent) == sent, "nada de texto livre fora da janela"
+    card.refresh_from_db()
+    assert card.resolved_at is None, "o cartão segue esperando a equipe"
+
+    result = verification.answer(card.pk, "Temos sim, duas vagas na frente.", actor="ana")
+    assert result.ok and template, result  # a resposta sai pelo modelo aprovado

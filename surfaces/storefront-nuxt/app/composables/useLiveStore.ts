@@ -1,9 +1,12 @@
 // Loja viva (WP-L04): o que a cliente lê sobre disponibilidade muda sozinho.
 //
 // Uma conexão só por aba, same-origin no BFF (/sse/loja), que faz streaming do
-// aviso público da vitrine (`shelf-update`, sem conteúdo: nem SKU, nem motivo).
-// O aviso só diz QUANDO reler; cada página refaz a própria leitura canônica, que
-// continua sendo a fonte da verdade (ADR-016).
+// aviso público da vitrine (`shelf-update`). O shop só publica quando muda o que
+// qualquer visitante vê de um SKU, e o aviso leva esse SKU (#2784): a página que
+// declara os SKUs que mostra (`skus`) só relê quando o aviso é de um deles. Aviso
+// sem SKU (a lista do canal mudou) vale para todas. O aviso só diz QUANDO reler;
+// cada página refaz a própria leitura canônica, que continua sendo a fonte da
+// verdade (ADR-016).
 //
 // Cinco motivos fazem a página reler, e todos passam por aqui:
 // - `push`: o aviso chegou.
@@ -50,6 +53,7 @@ interface Listener {
   run: (cause: LiveStoreCause) => void | Promise<void>
   minIntervalMs: number
   causes: ReadonlySet<LiveStoreCause> | null
+  skus: (() => readonly string[] | null | undefined) | null
   lastRunAt: number
   timer: ReturnType<typeof setTimeout> | null
 }
@@ -59,6 +63,11 @@ export interface LiveStoreOptions {
   minIntervalMs?: number
   /** Só estes motivos fazem este ouvinte reler; sem a lista, todos. */
   causes?: LiveStoreCause[]
+  /**
+   * Os SKUs que a página mostra agora. O `push` de outro SKU não faz esta página
+   * reler; sem a lista (ou com ela vazia de propósito, `null`), todo aviso vale.
+   */
+  skus?: () => readonly string[] | null | undefined
 }
 
 const listeners = new Set<Listener>()
@@ -87,8 +96,16 @@ function fire (listener: Listener, cause: LiveStoreCause) {
   }
 }
 
-function schedule (listener: Listener, cause: LiveStoreCause) {
+/** O aviso é de um SKU que esta página não mostra? Então ela não relê. */
+function unrelated (listener: Listener, cause: LiveStoreCause, sku: string | null): boolean {
+  if (cause !== 'push' || !sku || !listener.skus) return false
+  const shown = listener.skus()
+  return Array.isArray(shown) && !shown.includes(sku)
+}
+
+function schedule (listener: Listener, cause: LiveStoreCause, sku: string | null = null) {
   if (listener.causes && !listener.causes.has(cause)) return
+  if (unrelated(listener, cause, sku)) return
   if (cause === 'refusal') {
     if (listener.timer) {
       clearTimeout(listener.timer)
@@ -107,8 +124,19 @@ function schedule (listener: Listener, cause: LiveStoreCause) {
   }, wait)
 }
 
-function notify (cause: LiveStoreCause) {
-  listeners.forEach(listener => schedule(listener, cause))
+function notify (cause: LiveStoreCause, sku: string | null = null) {
+  listeners.forEach(listener => schedule(listener, cause, sku))
+}
+
+/** O SKU do aviso (`{"sku": "CRO"}`); `null` quando o aviso vale para a vitrine inteira. */
+export function liveStoreEventSku (data: unknown): string | null {
+  if (typeof data !== 'string' || !data) return null
+  try {
+    const parsed = JSON.parse(data) as { sku?: unknown }
+    return typeof parsed?.sku === 'string' && parsed.sku ? parsed.sku : null
+  } catch {
+    return null
+  }
 }
 
 function drop () {
@@ -163,7 +191,7 @@ function open () {
     return
   }
   source = created
-  const onPush = () => notify('push')
+  const onPush = (event?: Event) => notify('push', liveStoreEventSku((event as MessageEvent | undefined)?.data))
   ;['message', LIVE_STORE_EVENT].forEach(name => created.addEventListener(name, onPush))
   // O Django recusou o stream com 200 + `stream-error`: deixar o navegador
   // reconectar sozinho vira laço de 3 s; aqui vira backoff.
@@ -303,6 +331,7 @@ export function useLiveStore (
     run: onChange,
     minIntervalMs: options.minIntervalMs ?? LIVE_STORE_MIN_INTERVAL_MS,
     causes: options.causes ? new Set(options.causes) : null,
+    skus: options.skus ?? null,
     lastRunAt: 0,
     timer: null
   }
