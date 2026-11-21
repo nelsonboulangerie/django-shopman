@@ -192,6 +192,7 @@ def get_sidebar_navigation(request):
         ]),
         # A ponte que leva o alerta de produção a uma issue com dono no GitHub.
         _group("Incidentes", "emergency_home", [
+            _model_item("Placar dos remédios", "healing", "backstage.IncidentAction"),
             _model_item("Credenciais da ponte", "key", "backstage.IncidentReaderCredential"),
         ]),
         _group("Estoque", "inventory_2", [

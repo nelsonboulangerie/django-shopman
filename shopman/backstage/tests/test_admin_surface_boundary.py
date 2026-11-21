@@ -19,7 +19,6 @@ def test_repository_boundary_contract_matches_live_admin_registry() -> None:
     # +2 em 19/11/2026: o registro da decisão em sombra (N5), só leitura, em audit-ledgers.
     # +1 em 20/11/2026: a conferência do corpus anonimizado (#2851), em business-policy-configuration.
     # +1 em 21/11/2026: os atalhos da nota da cozinha com "vale para" (#2705), em business-policy-configuration.
-    # +1 do Watchman (#3049), que entra antes na fila.
     # +1 em 21/11/2026: o medidor das APIs pagas (#2509, DEV-2026-067), só leitura, em audit-ledgers.
     assert len(live) == 109
     assert len(custom_pages) == 7

@@ -89,6 +89,14 @@ relatórios, etc. ... ver valores específicos de uma transação não é o prob
   respondem 403 ao Gerente, e a Central não oferece o tile a ele.
 - **O Gerente vê o valor de UMA transação, nunca agregados nem listas de cobranças**:
   nada de total esperado, quebra, soma por forma de pagamento, faturamento, ticket médio.
+- **As listas do balcão mostram o valor de cada registro, nunca a conta sobre vários**
+  (dono, 21/11/2026): *"Não tem problema ver o valor de um pedido no histórico. O
+  problema seria poder ver valores de vários registros agregados, sobretudo de clientes
+  diferentes, soma de um período, etc."* O pedido, a encomenda e a conta de UM cliente
+  (o que ele gastou, o ticket médio dele, o saldo dele) chegam com valor. Não chegam:
+  soma de período ou de lista, a lista de contas na casa ordenada pelo saldo (vai pela
+  dívida mais antiga), o filtro por faixa de valor no Admin de pedidos, número do
+  faturamento no aviso do B.I. e exportação de pedido, venda ou pagamento com valor.
 - **O fechamento do dia e a assinatura do gerente no caixa são operação, não exceção**:
   ele fecha às cegas e assina o valor do gesto que autoriza. O registro do fechamento no
   Admin chega a ele sem o resumo do caixa (o esperado, a quebra e o que entrou por forma de

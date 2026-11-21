@@ -67,7 +67,7 @@ class Report:
     live_refs: list[str] = field(default_factory=list)
     rows: list[Scored] = field(default_factory=list)
     stopped: str = ""
-    #: Com ``jev_check``: os casos em que o Jev reprovou a resposta da IA (e valeu a FAQ direta).
+    #: Com ``jev_check``: os casos em que o Jev reprovou a resposta da IA (e valeu o texto das FAQs citadas).
     jev_held: list[str] | None = None
 
     def render(self, *, show: int = 30) -> str:
@@ -101,7 +101,7 @@ class Report:
             lines.append(f"  O texto diz o que foi perguntado (palavras do caso)     {sum(r.says for r in judged)}/{len(judged)}"
                          + "".join(f"\n    não disse: {r.case['ref']}" for r in judged if not r.says))
         if self.jev_held is not None:
-            lines.append(f"  Conferência do Jev: reprovou {len(self.jev_held)} (valeu a FAQ direta)"
+            lines.append(f"  Conferência do Jev: reprovou {len(self.jev_held)} (valeu o texto das FAQs citadas; sem citação, a direta)"
                          + (f": {', '.join(self.jev_held)}" if self.jev_held else ""))
         if self.stopped:
             lines.append(f"  ⚠ {self.stopped}")
