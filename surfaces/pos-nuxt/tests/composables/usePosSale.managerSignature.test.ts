@@ -115,7 +115,7 @@ describe("usePosSale — a assinatura do gerente vale para o retrato que ele viu
     const h = await saleWithDiscount(actionCall, "6,00");
     expect(h.sale.review.value?.requires_manager_approval).toBe(true);
 
-    expect(await h.sale.checkManagerApproval("joyce", PIN)).toBe(true);
+    expect(await h.sale.checkManagerApproval({ username: "joyce", pin: PIN })).toBe(true);
     expect(h.sale.managerApproved.value).toBe(true);
 
     h.sale.cart.discountValue = "30,00";
@@ -134,12 +134,12 @@ describe("usePosSale — a assinatura do gerente vale para o retrato que ele viu
     const h = await saleWithDiscount(actionCall, "6,00");
     const pao = h.handles.posValue.value!.products[0]!;
 
-    await h.sale.checkManagerApproval("joyce", PIN);
+    await h.sale.checkManagerApproval({ username: "joyce", pin: PIN });
     h.sale.addProduct(pao);
     await nextTick();
     expect(h.sale.managerApproved.value).toBe(false);
 
-    await h.sale.checkManagerApproval("joyce", PIN);
+    await h.sale.checkManagerApproval({ username: "joyce", pin: PIN });
     h.sale.cart.paymentTenders = [{ method: "credit", amount_q: 3735, collection: "terminal" }];
     await nextTick();
     expect(h.sale.managerApproved.value).toBe(false);
@@ -157,12 +157,50 @@ describe("usePosSale — a assinatura do gerente vale para o retrato que ele viu
     });
     const h = await saleWithDiscount(actionCall, "6,00");
 
-    const checking = h.sale.checkManagerApproval("joyce", PIN);
+    const checking = h.sale.checkManagerApproval({ username: "joyce", pin: PIN });
     await nextTick();
     h.sale.cart.discountValue = "30,00";
     release();
     expect(await checking).toBe(false);
     expect(h.sale.managerApproved.value).toBe(false);
+    h.handles.dispose();
+  });
+});
+
+describe("usePosSale — o crachá do gerente emite o carimbo como o PIN (#2691)", () => {
+  const BADGE = "4337f822b0e6";
+
+  it("crachá: a conferência leva `{badge}`, o carimbo volta e o fechamento leva só ele", async () => {
+    const actionCall = router([() => ({ ok: true, order_ref: "PED-1" })]);
+    const h = await saleWithDiscount(actionCall, "6,00");
+
+    expect(await h.sale.checkManagerApproval({ badge: BADGE })).toBe(true);
+    expect(h.sale.managerApproved.value).toBe(true);
+
+    const [check] = bodiesTo(actionCall, "/manager-approval/check/");
+    // A mesma porta do PIN, com o crachá no lugar de usuário e PIN, e o mesmo escopo.
+    expect(check?.manager_approval).toEqual({ badge: BADGE });
+    expect(check?.scope).toEqual({ tab_ref: "", discount_q: 600, account_over_q: 0, over_plan: [] });
+
+    await closeOnce(h, actionCall);
+    const [close] = bodiesTo(actionCall, "/sale/close/");
+    expect(close?.manager_approval).toEqual({ token: TOKEN });
+    expect(JSON.stringify(close)).not.toContain(BADGE);
+    h.handles.dispose();
+  });
+
+  it("crachá recusado: a venda segue sem assinatura e o erro do servidor aparece", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string, options?: { body?: Record<string, unknown> }) => {
+      if (String(path).includes("/manager-approval/check/")) {
+        throw { status: 422, data: { detail: "Aprovação gerencial inválida.", error: { code: "manager_approval_invalid", message: "Aprovação gerencial inválida.", recovery: "Confira o gerente e digite o PIN de novo." } } };
+      }
+      return router([])(path, options);
+    });
+    const h = await saleWithDiscount(actionCall, "6,00");
+
+    expect(await h.sale.checkManagerApproval({ badge: "000000000000" })).toBe(false);
+    expect(h.sale.managerApproved.value).toBe(false);
+    expect(h.sale.managerApprovalError.value).toBe("Confira o gerente e digite o PIN de novo.");
     h.handles.dispose();
   });
 });
@@ -177,7 +215,7 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
       },
     ]);
     const h = await saleWithDiscount(actionCall, "6,00");
-    await h.sale.checkManagerApproval("joyce", PIN);
+    await h.sale.checkManagerApproval({ username: "joyce", pin: PIN });
     await h.sale.saveTab();
 
     await closeOnce(h, actionCall);
@@ -216,7 +254,7 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
       () => ({ ok: true, order_ref: "PED-2" }),
     ]);
     const h = await saleWithDiscount(actionCall, "6,00");
-    await h.sale.checkManagerApproval("joyce", PIN);
+    await h.sale.checkManagerApproval({ username: "joyce", pin: PIN });
 
     await closeOnce(h, actionCall);
     expect(h.sale.managerApproved.value).toBe(false);
@@ -241,7 +279,7 @@ describe("usePosSale — o PIN do gerente nunca fica no navegador (P1-4)", () =>
       },
     ]);
     const h = await saleWithDiscount(actionCall, "6,00");
-    await h.sale.checkManagerApproval("joyce", PIN);
+    await h.sale.checkManagerApproval({ username: "joyce", pin: PIN });
 
     await closeOnce(h, actionCall);
 

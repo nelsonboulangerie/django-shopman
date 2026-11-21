@@ -35,7 +35,8 @@
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import type { HandOverBody } from "~/presentation/balanceCharge";
+import type { BalancePixStatus, HandOverBody } from "~/presentation/balanceCharge";
+import type { POSPaymentResultProjection } from "~/types/pos";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
@@ -84,6 +85,10 @@ const actions = usePosPreorderActions({ detail, pos, refresh });
 // devolvem o detalhe; entregue, o PDV volta à lista).
 const receiving = ref(false);
 const confirmDelivery = useConfirm();
+// O saldo em Pix no balcão (#2897): o QR da cobrança (formato da venda) e onde a
+// espera está. O Pix do balcão ainda pagável volta da leitura (`counter_pix`).
+const pixProof = ref<POSPaymentResultProjection | null>(null);
+const pixStatus = ref<BalancePixStatus>("idle");
 const cancelOpen = ref(false);
 const rescheduleOpen = ref(false);
 
@@ -168,7 +173,10 @@ const redoAfterCancel = ref(false);
 
 function editOrder() {
   if (!detail.value) return;
-  void navigateTo({ path: "/", query: { edit: detail.value.ref } });
+  // A edição TROCA a página do detalhe no histórico (e a volta dela troca de novo):
+  // a ida e volta não empilha um segundo detalhe, e o "voltar" depois de entregar
+  // continua levando à lista de onde o operador veio.
+  void navigateTo({ path: "/", query: { edit: detail.value.ref } }, { replace: true });
 }
 
 function cancelAndRedo() {
@@ -197,6 +205,7 @@ async function startHandOver() {
   const handOver = counter.value?.hand_over;
   if (!handOver?.allowed || actions.busy.value) return;
   if (handOver.needs_payment) {
+    pixProof.value = handOver.counter_pix ?? null;
     receiving.value = true;
     return;
   }
@@ -211,8 +220,9 @@ async function startHandOver() {
   if (confirmed) await deliver({});
 }
 
-async function deliver(body: HandOverBody, changeQ = 0) {
-  if (await actions.handOver(body, changeQ)) {
+async function deliver(body: HandOverBody, changeQ = 0, pixQ = 0) {
+  if (await actions.handOver(body, changeQ, pixQ)) {
+    pixProof.value = null;
     receiving.value = false;
     // Entregue: a encomenda sai do balcão, e o PDV volta para o recorte de onde veio.
     goBack();
@@ -223,10 +233,45 @@ async function deliver(body: HandOverBody, changeQ = 0) {
 }
 
 // A leitura nova diz que não há mais o que receber aqui (outro balcão entregou, a
-// encomenda mudou de estado): a tela de Pagamento sai de cena.
+// encomenda mudou de estado): a tela de Pagamento sai de cena. Com o Pix na tela,
+// o saldo zerar é o Pix entrando, e quem conduz é a espera dele.
 watch(() => [counter.value?.hand_over.allowed, counter.value?.hand_over.needs_payment] as const, ([allowed, needsPayment]) => {
-  if (receiving.value && !(allowed && needsPayment)) receiving.value = false;
+  if (receiving.value && !pixProof.value && !(allowed && needsPayment)) receiving.value = false;
 });
+
+/** O saldo vai em Pix: a cobrança Pix do pedido (ou outra, depois da que venceu). */
+async function requestPix() {
+  const proof = await actions.startPix();
+  if (proof) {
+    pixProof.value = proof;
+    return;
+  }
+  // O cliente acabou de pagar online: o detalhe avisa e oferece só Entregar.
+  if (actions.paidOnline.value) {
+    pixProof.value = null;
+    receiving.value = false;
+  }
+}
+
+/** O Pix entrou: a encomenda está paga, e a entrega é o "Entregar" de sempre. */
+async function deliverAfterPix(amountQ: number) {
+  await refresh();
+  await deliver({}, 0, amountQ);
+}
+
+// O Pix que não confirmou: o aviso no topo traz o botão que resolve.
+const pixAlerts = computed<OperatorScreenAlert[]>(() => (
+  receiving.value && pixProof.value && pixStatus.value === "expired"
+    ? [{
+      id: "preorder-pix-expired",
+      title: "O Pix não foi confirmado.",
+      description: "Gere outro Pix, ou receba em dinheiro ou cartão: receber cancela este Pix antes.",
+      color: "warning",
+      icon: "i-lucide-clock-alert",
+      action: { label: "Gerar outro Pix", onSelect: () => void requestPix() },
+    }]
+    : []
+));
 
 async function confirmCancel(
   choice: { reasonKey: string; internalNote: string },
@@ -307,6 +352,7 @@ const compactOptions = computed<OperatorHeaderAction[]>(() => {
 // dois a volta é a casa da seção.
 function goBack() {
   if (receiving.value) {
+    pixProof.value = null;
     receiving.value = false;
     return;
   }
@@ -325,7 +371,7 @@ function goBack() {
     wide
     :fill="receiving"
     :compact-options="compactOptions"
-    :alerts="receiving ? [] : swapAlerts"
+    :alerts="receiving ? pixAlerts : swapAlerts"
     @refresh="refreshPos(); refresh(); swapper.load()"
   >
     <!-- Celular: o voltar e a encomenda aberta na linha do chão (a identidade do
@@ -358,7 +404,7 @@ function goBack() {
           icon="i-lucide-arrow-left"
           label="Voltar à encomenda"
           data-preorder-balance-back
-          @click="receiving = false"
+          @click="goBack"
         />
       </div>
       <PosPreorderBalancePayment
@@ -367,8 +413,13 @@ function goBack() {
         :pos="pos"
         :busy="actions.busy.value"
         :operator-name="activeOperator?.name || ''"
-        @back="receiving = false"
+        :pix-proof="pixProof"
+        @back="goBack"
         @submit="deliver"
+        @pix="requestPix"
+        @pix-paid="deliverAfterPix"
+        @pix-leave="pixProof = null"
+        @pix-status="(status: BalancePixStatus) => { pixStatus = status; }"
       />
     </template>
     <div v-else class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">

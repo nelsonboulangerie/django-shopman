@@ -1128,6 +1128,14 @@ def review_sale(
         target_date=target_date,
     )
     not_ready: list[tuple[str, str, Decimal]] = []
+    # Encomenda para data ainda sem lote planejado do item: não é falta, é pedido à
+    # Produção (WP-E3, D2). Só se pergunta pelo que não foi aprovado.
+    from shopman.shop.services import stock as stock_service
+
+    unplanned = stock_service.unplanned_on(
+        [sku for (_item, sku, _qty), decision in zip(checked, decisions, strict=True) if not decision.get("approved")],
+        target_date,
+    )
     for (item, sku, qty), decision in zip(checked, decisions, strict=True):
         name = str(item.get("name") or sku)
         if decision.get("approved"):
@@ -1138,11 +1146,16 @@ def review_sale(
             continue
         # O `sku` deixa a tela marcar o item na conta (a ressalva é terciária: um
         # sinal no item, não uma caixa a mais no Pagamento; dono, 03/11/2026).
+        shortfall = (
+            f"ainda sem lote planejado para {target_date.strftime('%d/%m')}. Vira pedido à Produção."
+            if sku in unplanned
+            else _availability_shortfall(decision, requested_qty=qty, target_date=target_date)
+        )
         warnings.append({
             "code": "item_low_stock",
             "field": "items",
             "sku": sku,
-            "message": f"{name}: {_availability_shortfall(decision, requested_qty=qty, target_date=target_date)}",
+            "message": f"{name}: {shortfall}",
         })
     if not_ready:
         started = _started_lot_qty([sku for _name, sku, _missing in not_ready], target_date)

@@ -10,6 +10,7 @@ import {
   isUnavailableProduct,
   parseHideUnavailable,
   productsForOrderDate,
+  unplannedOrderNote,
 } from "../app/presentation/catalog";
 
 function product(overrides: Partial<POSProductProjection> & { sku: string }): POSProductProjection {
@@ -93,6 +94,23 @@ describe("productsForOrderDate — a grade da encomenda lê o saldo do dia combi
     const grade = productsForOrderDate([baguete, brioche], amanha, "2026-11-07");
     expect(grade.find((p) => p.sku === "BRI")?.sold_out).toBe(false);
     expect(grade.find((p) => p.sku === "BAG")).toMatchObject({ sold_out: true, sold_out_reason: "Sem saldo para 07/11" });
+  });
+
+  it("duas réguas (WP-E3): plano esgotado bloqueia; data sem lote planejado entra como pedido à Produção", () => {
+    const daquiADez = { date: "2026-11-30", is_today: false, sold_out_skus: ["BAG"], unplanned_skus: ["BRI"] };
+    const grade = productsForOrderDate([baguete, brioche], daquiADez, "2026-11-30");
+    expect(grade.find((p) => p.sku === "BAG")).toMatchObject({ sold_out: true, sold_out_reason: "Sem saldo para 30/11" });
+    const semPlano = grade.find((p) => p.sku === "BRI")!;
+    expect(semPlano).toMatchObject({ sold_out: false, sold_out_reason: "" });
+    expect(semPlano.unplanned_note).toBe("Ainda sem lote planejado para 30/11: vira pedido à Produção");
+    expect(isUnavailableProduct(semPlano)).toBe(false);
+    expect(unplannedOrderNote("2026-11-30")).toBe("Ainda sem lote planejado para 30/11: vira pedido à Produção");
+  });
+
+  it("sem plano não vence o bloqueio: o SKU nas duas listas fica sem saldo", () => {
+    const grade = productsForOrderDate([baguete], { date: "2026-11-30", is_today: false, sold_out_skus: ["BAG"], unplanned_skus: ["BAG"] }, "2026-11-30");
+    expect(grade[0]).toMatchObject({ sold_out: true, sold_out_reason: "Sem saldo para 30/11" });
+    expect(grade[0]!.unplanned_note).toBeUndefined();
   });
 
   it("bloqueio com motivo do catálogo continua", () => {

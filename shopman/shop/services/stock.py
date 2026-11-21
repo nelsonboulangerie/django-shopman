@@ -252,6 +252,31 @@ def plan_backing_on(skus, day, *, channel_ref: str | None = None) -> dict[str, d
     return backing
 
 
+def unplanned_on(skus, day) -> set[str]:
+    """Os SKUs que a casa produz em lote e que ainda não têm lote planejado PARA ``day``.
+
+    Encomenda para essa data vira pedido à Produção (WP-E3; D2 do dono, 16/11/2026):
+    não é "sem saldo", porque ninguém planejou a data ainda. A reserva fica como
+    demanda sem lote, a sugestão da Produção a conta (``committed``) e o aviso sai no
+    fechamento (``alert_demand_over_plan``). Plano esgotado é outra coisa: a data tem
+    lote planejado e ele acabou, e acima dele só o gerente libera (WP-E2).
+
+    Revenda (sem ficha) e "Na hora" ficam de fora: a Produção não planeja lote deles,
+    e o zero ali é falta de verdade. Hoje não é encomenda: vazio.
+    """
+    wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
+    if day is None or day <= timezone.localdate() or not wanted:
+        return set()
+    production = get_adapter("production")
+    if not production:
+        return set()
+    batch = production.get_batch_produced_skus(wanted)
+    if not batch:
+        return set()
+    planned = plan_backing_on(sorted(batch), day)
+    return {sku for sku in batch if sku not in planned}
+
+
 def over_plan_lines(lines, day, *, channel_ref: str | None = None) -> list[dict]:
     """As linhas da encomenda que passam do plano da data, com os números.
 

@@ -9,7 +9,7 @@ import type { KeyedReason } from "../../../operator-kit/app/types/reason";
 import type { CourierChargeOutdated } from "../../../operator-kit/app/presentation/courierCharge";
 import type { CourierCancelState } from "../../../operator-kit/app/presentation/courierCancel";
 
-import type { POSManagerProjection, POSTabPayload } from "./pos";
+import type { POSManagerProjection, POSPaymentResultProjection, POSTabPayload } from "./pos";
 
 export type PreorderSituation =
   | "to_pay"
@@ -229,6 +229,14 @@ export interface PreorderHandOver {
    * pronto" do Gestor). A linha que o diálogo mostra; "" quando já está pronta.
    */
   kitchen_notice?: string;
+  /**
+   * O Pix do saldo cobrado no balcão (#2897) ainda pagável, no formato da venda
+   * (`_pos_payment_response`): a tela de Pagamento volta direto ao QR. `null`
+   * quando não há Pix do balcão vivo.
+   */
+  counter_pix?: POSPaymentResultProjection | null;
+  /** Por que o saldo não sai em Pix no balcão agora (a forma fica apagada); "" quando sai. */
+  pix_block_reason?: string;
 }
 
 export type CounterMethod = "cash" | "debit" | "credit";

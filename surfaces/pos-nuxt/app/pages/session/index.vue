@@ -48,7 +48,7 @@ import {
   DRAWER_DENOMINATIONS,
 } from "~/presentation/cash";
 import type { SessionTile } from "~/presentation/cash";
-import type { ManagerApproval } from "~/composables/usePosCashSession";
+import type { CashGesture, ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
 
 useHead({ title: "Caixa" });
@@ -87,6 +87,18 @@ const {
   serveChangeRequest,
   cancelChangeRequest,
 } = usePosCashSession({ pos, actions, refresh, action });
+
+// O botão que resolve, dentro do aviso de falha (regra do dono, 20/11): cada gesto
+// guarda aqui como se repete, com os mesmos dados da tentativa que falhou. Um
+// registro POR GESTO, nunca "o último": o aviso de um diálogo não pode repetir o
+// gesto de outro que rodou no meio tempo.
+const retries: Partial<Record<CashGesture, () => void>> = {};
+function remember(gesture: CashGesture, again: () => void) {
+  retries[gesture] = again;
+}
+function retryCashGesture(gesture: CashGesture) {
+  retries[gesture]?.();
+}
 
 // Entrada do FECHAMENTO DO DIA (contagem cega de sobras): o gate é da API
 // (`backstage.perform_closing`) — sondagem leve; 401/403 = card não aparece.
@@ -492,6 +504,7 @@ function autorizar(aprovacao: { username?: string; pin?: string; badge?: string 
 // porque dinheiro sai da gaveta, como na sangria.
 async function refundPending(orderRef: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "refund_cash", orderRef };
+  remember("refund_cash", () => void refundPending(orderRef));
   const ok = await refundCash({ orderRef, managerApproval });
   if (ok) {
     managerChallenge.value = null;
@@ -503,6 +516,7 @@ async function refundPending(orderRef: string, managerApproval: ManagerApproval 
 // maquininha (o sistema não fala com ela) e registra aqui, com o PIN do gerente.
 async function recordMachineRefund(orderRef: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "card_machine_refund", orderRef };
+  remember("card_machine_refund", () => void recordMachineRefund(orderRef));
   const ok = await recordCardMachineRefund({ orderRef, managerApproval });
   if (ok) {
     managerChallenge.value = null;
@@ -534,6 +548,7 @@ async function submitSettle(managerApproval: ManagerApproval | null = null) {
   const customerRef = settleCustomerRef.value;
   if (!customerRef || !settleAmount.value.trim()) return;
   managerIntent.value = { action: "settle_account" };
+  remember("settle_account", () => void submitSettle());
   const amount = settleAmount.value.trim();
   const method = SETTLE_METHODS.find((m) => m.value === settleMethod.value)?.label ?? "";
   const name = accountBalances.value.find((row) => row.customer_ref === customerRef)?.customer_name || "";
@@ -550,6 +565,7 @@ async function submitSettle(managerApproval: ManagerApproval | null = null) {
 async function submitMovement(managerApproval: ManagerApproval | null = null) {
   if (!canSubmitMovement.value) return;
   managerIntent.value = { action: "movement" };
+  remember("movement", () => void submitMovement());
   // A confirmação com o valor ("R$ 50,00 entrou na gaveta.") é do
   // `registerCashMovement`, uma vez só: repetida aqui, o balcão via dois toasts
   // para um movimento (beta 05/11, PDV-10/11).
@@ -590,6 +606,7 @@ function toggleDenomination(q: number) {
 
 async function submitChangeRequest() {
   if (!canSubmitChange.value) return;
+  remember("request_change", () => void submitChangeRequest());
   const ok = await requestChange({
     amount: changeAmount.value,
     denominations: [...changeDenominationsPicked.value],
@@ -603,8 +620,14 @@ async function submitChangeRequest() {
   }
 }
 
+// O pedido que o operador tentou atender: o aviso da falha mora na linha DELE,
+// não no pé da lista (com dois pedidos, "não foi atendido" sem dizer qual é
+// pergunta).
+const servingChangeRef = ref("");
 async function serveChange(ref_: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "serve_change", ref: ref_ };
+  servingChangeRef.value = ref_;
+  remember("serve_change", () => void serveChange(ref_));
   // A confirmação com o valor ("Troco de R$ 100,00 atendido.") é do
   // `serveChangeRequest`, uma vez só (beta 05/11, PDV-10).
   const ok = await serveChangeRequest({ ref: ref_, managerApproval });
@@ -619,6 +642,7 @@ async function serveChange(ref_: string, managerApproval: ManagerApproval | null
 // cancelaria o errado.
 const cancellingChangeRef = ref("");
 async function confirmCancelChange(ref_: string) {
+  remember("cancel_change", () => void confirmCancelChange(ref_));
   const ok = await cancelChangeRequest(ref_);
   if (ok) cancellingChangeRef.value = "";
 }
@@ -632,6 +656,7 @@ const drawerReason = ref("");
 async function openDrawer(reason: string) {
   const chosen = reason.trim();
   if (!chosen) return;
+  remember("open_drawer", () => void openDrawer(chosen));
   const ok = await openDrawerWithoutSale(chosen);
   if (ok) {
     drawerReason.value = "";
@@ -644,7 +669,10 @@ async function openDrawer(reason: string) {
 const drawerProbeResult = ref<{ ok: boolean; message: string } | null>(null);
 async function testDrawer() {
   drawerProbeResult.value = await probeDrawer();
-  if (drawerProbeResult.value.ok) await openDrawerWithoutSale("Teste de gaveta");
+  if (drawerProbeResult.value.ok) {
+    remember("open_drawer", () => void testDrawer());
+    await openDrawerWithoutSale("Teste de gaveta");
+  }
 }
 
 // O fechamento avisa o estorno na maquininha ainda não registrado: o caixa
@@ -705,6 +733,7 @@ const closingManagerAmount = computed(() => formatBRL(amountToQ(closingAmount.va
 async function confirmClose(managerApproval: ManagerApproval | null = null) {
   if (!canClose.value) return;
   managerIntent.value = { action: "close_shift" };
+  remember("close_shift", () => void confirmClose());
   const ok = await closeCashShift({ amount: closingAmount.value, notes: closingNotes.value, managerApproval });
   confirmingClose.value = false;
   if (ok) {
@@ -941,7 +970,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
               />
             </li>
           </ul>
-          <PosCashFailureNotice :failure="cashFailure" gesture="refund_cash" @dismiss="dismissCashFailure" />
+          <PosCashFailureNotice :failure="cashFailure" gesture="refund_cash" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('refund_cash')" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             O dinheiro sai desta gaveta e fica registrado no turno e no pedido, com quem devolveu e quando. Um gerente autoriza com o PIN.
           </p>
@@ -987,7 +1016,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
               />
             </li>
           </ul>
-          <PosCashFailureNotice :failure="cashFailure" gesture="card_machine_refund" @dismiss="dismissCashFailure" />
+          <PosCashFailureNotice :failure="cashFailure" gesture="card_machine_refund" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('card_machine_refund')" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido com quem fez e quando.
           </p>
@@ -1018,6 +1047,15 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
             </div>
             <p v-if="request.note" class="text-xs text-muted-foreground">{{ request.note }}</p>
 
+            <PosCashFailureNotice
+              v-if="servingChangeRef === request.ref && cancellingChangeRef !== request.ref"
+              :failure="cashFailure"
+              gesture="serve_change"
+              action-label="Tentar de novo"
+              :busy="busy"
+              @action="retryCashGesture('serve_change')"
+              @dismiss="dismissCashFailure"
+            />
             <div v-if="cancellingChangeRef !== request.ref" class="grid grid-cols-2 gap-2">
               <NuxtButton
                 block
@@ -1037,6 +1075,14 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
             </div>
             <div v-else class="grid gap-2 rounded-md bg-error/10 p-3">
               <p class="text-sm font-medium">Cancelar este pedido? Ninguém vai trazer o troco.</p>
+              <PosCashFailureNotice
+                :failure="cashFailure"
+                gesture="cancel_change"
+                action-label="Tentar de novo"
+                :busy="busy"
+                @action="retryCashGesture('cancel_change')"
+                @dismiss="dismissCashFailure"
+              />
               <div class="grid grid-cols-2 gap-2">
                 <NuxtButton
                   block
@@ -1134,6 +1180,14 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
                     @click="submitSettle()"
                   />
                 </div>
+                <PosCashFailureNotice
+                  :failure="cashFailure"
+                  gesture="settle_account"
+                  action-label="Tentar de novo"
+                  :busy="busy"
+                  @action="retryCashGesture('settle_account')"
+                  @dismiss="dismissCashFailure"
+                />
                 <p class="text-xs text-muted-foreground">
                   O acerto é por venda inteira, da mais antiga para a mais nova; o que não couber fica em aberto.
                 </p>
@@ -1227,14 +1281,24 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
         </div>
       </template>
       <template #footer>
-        <NuxtButton
-          size="xl"
-          block
-          label="Preciso de troco"
-          :disabled="busy || !canSubmitChange"
-          :loading="busy"
-          @click="submitChangeRequest"
-        />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice
+            :failure="cashFailure"
+            gesture="request_change"
+            action-label="Tentar de novo"
+            :busy="busy"
+            @action="retryCashGesture('request_change')"
+            @dismiss="dismissCashFailure"
+          />
+          <NuxtButton
+            size="xl"
+            block
+            label="Preciso de troco"
+            :disabled="busy || !canSubmitChange"
+            :loading="busy"
+            @click="submitChangeRequest"
+          />
+        </div>
       </template>
     </NuxtModal>
 
@@ -1317,7 +1381,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
       </template>
       <template #footer>
         <div class="grid w-full gap-3">
-          <PosCashFailureNotice :failure="cashFailure" gesture="movement" @dismiss="dismissCashFailure" />
+          <PosCashFailureNotice :failure="cashFailure" gesture="movement" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('movement')" @dismiss="dismissCashFailure" />
           <NuxtButton
             size="xl"
             block
@@ -1362,6 +1426,14 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
               @click="openDrawer(drawerReason)"
             />
           </div>
+          <PosCashFailureNotice
+            :failure="cashFailure"
+            gesture="open_drawer"
+            action-label="Tentar de novo"
+            :busy="busy"
+            @action="retryCashGesture('open_drawer')"
+            @dismiss="dismissCashFailure"
+          />
           <div class="grid gap-2 border-t border-default pt-3">
             <!-- ⚠️ A sonda ABRE a gaveta e registra a abertura no turno
                  (`drawer_open`, motivo "Teste de gaveta"), como qualquer
@@ -1496,7 +1568,7 @@ async function confirmClose(managerApproval: ManagerApproval | null = null) {
              caixa" (porta com nome do destino); repetir o verbo do ato aqui
              ensinava a apertar no automático. -->
         <div class="grid w-full gap-3">
-          <PosCashFailureNotice :failure="cashFailure" gesture="close_shift" @dismiss="dismissCashFailure" />
+          <PosCashFailureNotice :failure="cashFailure" gesture="close_shift" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('close_shift')" @dismiss="dismissCashFailure" />
           <NuxtButton
             v-if="!confirmingClose"
             size="xl"

@@ -268,7 +268,9 @@ def open_operator_task(ids: tuple[str, ...], *, receipt_ref) -> None:
         return
     from shopman.shop.services.observability import create_operator_alert
 
-    deadline = timezone.now() + timedelta(days=ERASURE_DEADLINE_DAYS)
+    # A data do prazo é a de Brasília: com o UTC, entre 21h e meia-noite a tarefa do
+    # operador dizia o dia seguinte.
+    deadline = timezone.localtime(timezone.now() + timedelta(days=ERASURE_DEADLINE_DAYS))
     create_operator_alert(
         type="manychat_contact_erasure_due",
         severity="critical",

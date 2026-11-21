@@ -342,9 +342,11 @@ describe("orderDetailDenial", () => {
     const denial = orderDetailDenial("S84", { expeditesOnly: true });
     expect(denial.title).toBe("Sua conta não abre o detalhe do pedido");
     expect(denial.description).toBe(
-      "O detalhe é de quem gerencia pedidos. O pedido S84 continua no painel da Saída, onde você marca a saída e a retirada.",
+      "O detalhe do pedido S84 é de quem gerencia pedidos. Os pedidos prontos para sair ficam no painel da Saída, onde você marca a saída e a retirada.",
     );
     expect(denial.back).toEqual({ label: "Abrir a Saída", to: ORDERS_EXIT_POST });
+    // A recusa não sabe o estado do pedido: não afirma onde ele está (#2879).
+    expect(denial.description).not.toMatch(/continua/);
   });
 
   it("outra conta sem a permissão pede o acesso e volta para onde ela entra", () => {

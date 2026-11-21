@@ -8,7 +8,7 @@ const open = ref(false);
 const ITEMS = [
   { icon: "lucide:circle-check", tone: "text-success", title: "Vender e lançar comandas", note: "" },
   { icon: "lucide:circle-check", tone: "text-success", title: "Cartão pela maquininha", note: "ela tem bateria e 4G próprios" },
-  { icon: "lucide:circle-check", tone: "text-success", title: "PIX", note: "QR na tela, confirma sozinho" },
+  { icon: "lucide:circle-check", tone: "text-success", title: "Pix", note: "QR na tela, confirma sozinho" },
   { icon: "lucide:triangle-alert", tone: "text-warning", title: "Dinheiro: recebe normal, a gaveta abre na chave", note: "sem a rede da loja o pulso do Balcão não chega" },
   { icon: "lucide:circle-x", tone: "text-destructive", title: "Impressora e cupom", note: "sem recibo impresso; NFC-e com CPF sai normal" },
   { icon: "lucide:triangle-alert", tone: "text-warning", title: "Cozinha: só se os tablets dela tiverem bateria ou 4G", note: "se apagaram, avise a cozinha de voz" },

@@ -542,7 +542,14 @@ def test_a_exclusao_abre_tarefa_datada_para_o_que_a_api_do_provedor_nao_faz() ->
         identifier_value="12345678",
     )
 
-    with _provedor_confirma():
+    # 22h de 20/11 em Brasília (já é dia 21 em UTC): o prazo de 15 dias é 05/12, a
+    # data que o operador vive, nunca a do UTC.
+    from datetime import UTC, datetime
+    from unittest.mock import patch
+    from zoneinfo import ZoneInfo
+
+    evening = datetime(2026, 11, 20, 22, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
+    with _provedor_confirma(), patch("django.utils.timezone.now", return_value=evening.astimezone(UTC)):
         outcome = account_privacy.delete_account(
             customer=customer,
             idempotency_key=str(uuid.uuid4()),
@@ -554,8 +561,7 @@ def test_a_exclusao_abre_tarefa_datada_para_o_que_a_api_do_provedor_nao_faz() ->
     assert "Delete Contact" in tarefa.message
     assert "15 dias" in tarefa.message
     assert str(outcome.receipt_ref) in tarefa.message
-    prazo = (timezone.now() + timedelta(days=15)).strftime("%d/%m/%Y")
-    assert prazo in tarefa.message
+    assert "até 05/12/2026" in tarefa.message
 
 
 def test_vinculo_que_aparece_durante_a_limpeza_nao_e_declarado_apagado() -> None:

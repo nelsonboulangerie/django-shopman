@@ -489,6 +489,11 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "madeleine":                          72,
     "baguete-lanche":                     36,
     "batard":                             30,
+    # Nascidas em 21/11/2026 da aba TRAD (#2925), sem lote antigo nem número do
+    # dono: a mesma capacidade provisória das peças restauradas, dita como tal.
+    "fendu":                              36,
+    "tabatiere":                          36,
+    "pao-hamburguer":                     36,
     "baguete-gergelim-pequena":           36,
     "italiano-rustico":                   24,
     "baguette-campagne":                  36,
@@ -4431,6 +4436,33 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-TRADICAO", Decimal("320"))],  # 320 g/un
             },
+            # Os três pãezinhos de tradição que vendiam sem ficha (#2925). O peso
+            # é o da massa crua por peça na aba TRAD da RECEITAS 2.4, a mesma
+            # coluna que dá os 320 g do Bâtard e os 480 g do Italiano Rústico
+            # (dono, 21/11/2026: "use os pesos da RECEITAS 2.4"). Massa de
+            # tradição pela aba e, no Pão de Hambúrguer, pela resposta 4 do dono
+            # (02/10). Sem recheio nem cobertura na aba.
+            {
+                "ref": "fendu",
+                "name": "Fendu",
+                "output_sku": "FENDU",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
+            {
+                "ref": "tabatiere",
+                "name": "Tabatière",
+                "output_sku": "TABAT",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
+            {
+                "ref": "pao-hamburguer",
+                "name": "Pão de Hambúrguer",
+                "output_sku": "TRABB",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
             {
                 # Ciabatta, não tradição (dono, 22/09): as baguetes de gergelim
                 # saem da massa da ciabatta, que dá casca mais fina — é por isso
@@ -6592,8 +6624,13 @@ class Command(BaseCommand):
                     # ele, 1.169 pedidos existiam e NENHUM era atribuível: todo
                     # `CustomerInsight` nascia vazio, RFM dizia "lost" para todo mundo e
                     # todo público comportamental do Marketing resolvia zero.
+                    # `customer`: o nome e o telefone que todo canal real grava no pedido
+                    # (a loja, o que a pessoa digita; o PDV, o do cadastro). Sem eles o
+                    # Histórico não achava a cliente pelo nome e a lista mostrava só o
+                    # telefone (#2878, J7).
                     data={
                         "customer_ref": customer.ref,
+                        "customer": {"name": customer.name, "phone": customer.phone or ""},
                         "fulfillment_type": "pickup",
                         "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     },
@@ -6720,6 +6757,7 @@ class Command(BaseCommand):
                 # painel, "entregar no endereço" (beta 07/11).
                 data={
                     "customer_ref": customer.ref,
+                    "customer": {"name": customer.name, "phone": customer.phone or ""},
                     "fulfillment_type": "pickup",
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     "payment": self._live_order_payment(channel.ref, total_q),

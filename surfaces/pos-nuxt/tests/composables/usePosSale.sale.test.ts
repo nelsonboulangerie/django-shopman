@@ -922,7 +922,7 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
   });
 });
 
-describe("usePosSale — PIX polling pós-venda", () => {
+describe("usePosSale — Pix polling pós-venda", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchMock.mockReset();
@@ -1006,7 +1006,7 @@ describe("usePosSale — PIX polling pós-venda", () => {
     h.handles.dispose();
   });
 
-  it("sair da tela de resultado com PIX aguardando vira chip e o polling SEGUE", async () => {
+  it("sair da tela de resultado com Pix aguardando vira chip e o polling SEGUE", async () => {
     fetchMock.mockResolvedValue({}); // nunca resolve neste teste
     const actionCall = saleRouter(pixProof);
     const h = saleReadyForCheckout(actionCall);
@@ -1048,7 +1048,7 @@ describe("usePosSale — PIX polling pós-venda", () => {
     h.handles.dispose();
   });
 
-  it("resposta PIX tardia não contamina um polling de venda mais nova", async () => {
+  it("resposta Pix tardia não contamina um polling de venda mais nova", async () => {
     let releaseOld!: (value: unknown) => void;
     fetchMock.mockImplementationOnce(() => new Promise((resolve) => { releaseOld = resolve; }));
     fetchMock.mockResolvedValue({});
@@ -1101,11 +1101,11 @@ describe("usePosSale — PIX polling pós-venda", () => {
     await vi.advanceTimersByTimeAsync(2500);
 
     expect(h.sale.pendingPixOrderRefs.value).toEqual([]);
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("PIX do pedido PED-1 confirmado.");
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Pix do pedido PED-1 confirmado.");
     h.handles.dispose();
   });
 
-  it("dismissResult sem PIX pendente encerra o polling e volta a 'idle'", async () => {
+  it("dismissResult sem Pix pendente encerra o polling e volta a 'idle'", async () => {
     fetchMock.mockResolvedValue({ is_paid: true });
     const actionCall = saleRouter(pixProof);
     const h = saleReadyForCheckout(actionCall);
@@ -1179,13 +1179,13 @@ describe("usePosSale — PIX polling pós-venda", () => {
     const asked = fetchMock.mock.calls.map((call) => String(call[0]));
     expect(asked.some((url) => url.includes("/payment/PED-1/status/"))).toBe(true);
     expect(asked.some((url) => url.includes("/payment/PED-2/status/"))).toBe(true);
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("PIX do pedido PED-1 confirmado.");
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Pix do pedido PED-1 confirmado.");
     expect(h.sale.pendingPixOrderRefs.value).toEqual(["PED-2"]);
     expect(storedRefs()).toEqual(["PED-2"]);
 
     paid.add("PED-2");
     await vi.advanceTimersByTimeAsync(2500);
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("PIX do pedido PED-2 confirmado.");
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Pix do pedido PED-2 confirmado.");
     expect(h.sale.pendingPixOrderRefs.value).toEqual([]);
     expect(storageValues.has("shopman:pos:pending-pix")).toBe(false);
 
@@ -1218,7 +1218,7 @@ describe("usePosSale — PIX polling pós-venda", () => {
 
     paid.add("PED-1");
     await vi.advanceTimersByTimeAsync(2500);
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("PIX do pedido PED-1 confirmado.");
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Pix do pedido PED-1 confirmado.");
     expect(after.sale.pendingPixOrderRefs.value).toEqual([]);
     after.handles.dispose();
   });
@@ -1234,7 +1234,8 @@ describe("usePosSale — PIX polling pós-venda", () => {
     await vi.advanceTimersByTimeAsync(2500);
 
     expect(vi.mocked(toast.warning)).toHaveBeenCalledWith(
-      "Não confirmamos o PIX do pedido PED-9. Confira no gestor ou gere um novo pagamento.",
+      "O Pix do pedido PED-9 não foi confirmado.",
+      expect.objectContaining({ action: expect.objectContaining({ label: "Abrir o pedido no Gestor" }) }),
     );
     expect(h.sale.pendingPixOrderRefs.value).toEqual([]);
     expect(storageValues.has("shopman:pos:pending-pix")).toBe(false);
@@ -1249,8 +1250,15 @@ describe("usePosSale — PIX polling pós-venda", () => {
     h.sale.restorePendingPix();
     await vi.advanceTimersByTimeAsync(2500);
     expect(vi.mocked(toast.warning)).toHaveBeenCalledWith(
-      "Não confirmamos o PIX do pedido PED-3. Confira no gestor ou gere um novo pagamento.",
+      "O Pix do pedido PED-3 não foi confirmado.",
+      expect.objectContaining({ action: expect.objectContaining({ label: "Abrir o pedido no Gestor" }) }),
     );
+    // O botão leva àquele pedido no Gestor (na aba, a mesma janela), nunca a um caminho escrito.
+    const options = vi.mocked(toast.warning).mock.calls.at(-1)![1] as { action: { onClick: () => void } };
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    options.action.onClick();
+    expect(open).toHaveBeenCalledWith("http://gestor.test/PED-3", "_self", undefined);
+    open.mockRestore();
     expect(h.sale.pendingPixOrderRefs.value).toEqual([]);
     h.handles.dispose();
   });

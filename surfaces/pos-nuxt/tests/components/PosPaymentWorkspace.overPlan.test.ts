@@ -62,7 +62,7 @@ describe("PosPaymentWorkspace: encomenda acima do plano pede o gerente com os nÃ
     expect(w.emitted("submit")).toBeUndefined();
     dialog.vm.$emit("authorize", "joyce", "1234");
     await w.vm.$nextTick();
-    const [[, , done]] = w.emitted("checkManager") as [[string, string, (ok: boolean) => void]];
+    const [[, done]] = w.emitted("checkManager") as [[{ username?: string; pin?: string; badge?: string }, (ok: boolean) => void]];
     done(false);
     await w.vm.$nextTick();
     expect(w.emitted("submit")).toBeUndefined();

@@ -27,6 +27,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Order
 
+from shopman.backstage.projections.house_rides import DeliveryHouseRideProjection, house_ride
 from shopman.shop.google_maps_credentials import browser_api_key
 from shopman.shop.projections.types import Action
 
@@ -155,6 +156,9 @@ class DeliveryRideProjection:
     #: Desde quando a TaOn não informa a corrida (``courier.progress_view``, o
     #: mesmo do Painel); vazio com a leitura em dia.
     sync_since: str = ""
+    #: A corrida da casa (quem leva, o link e os gestos do balcão); None na TaOn
+    #: (``house_rides.house_ride``, M3b #2898).
+    house: DeliveryHouseRideProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -489,6 +493,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         custody_line=custody_line,
         open_too_long=courier.ride_open_too_long(block),
         sync_since=progress.get("sync_since", ""),
+        house=house_ride(lead, user=user),
     )
 
 

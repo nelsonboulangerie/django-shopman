@@ -178,20 +178,24 @@ def _live(order: Order, link: CourierLink) -> bool:
     return courier.get_block(order).get("id_mch") == link.ride_ref and order.status != Order.Status.CANCELLED
 
 
-def depart(link: CourierLink) -> list[str]:
-    """ "Saí da loja": todos os pedidos da rota saem para entrega. Só com todos prontos."""
+def depart(link: CourierLink, *, source: str = SOURCE) -> list[str]:
+    """ "Saí da loja": todos os pedidos da rota saem para entrega. Só com todos prontos.
+
+    ``source`` é quem tocou: o link (padrão) ou o operador no Gestor (``operator:<nome>``),
+    quando o entregador está sem o celular.
+    """
     orders = [o for o in _ride_orders(link) if _live(o, link)]
     waiting = [_order_label(o) for o in orders if o.status != Order.Status.READY and courier.get_block(o).get("status") == "A"]
     if waiting:
         raise OwnFleetRefused(f"Espere {', '.join(waiting)} ficar pronto.")
     applied = []
     for order in orders:
-        if courier.apply_status(order, "E", source=SOURCE) == "applied":
+        if courier.apply_status(order, "E", source=source) == "applied":
             applied.append(order.ref)
     return applied
 
 
-def deliver(link: CourierLink, order_ref: str) -> bool:
+def deliver(link: CourierLink, order_ref: str, *, source: str = SOURCE) -> bool:
     """ "Entreguei A47": só aquele pedido fica entregue, e o aviso vai só àquele cliente."""
     if order_ref not in link.order_refs:
         raise OwnFleetRefused("Este pedido não é desta rota.")
@@ -202,7 +206,7 @@ def deliver(link: CourierLink, order_ref: str) -> bool:
         raise OwnFleetRefused("Toque em Saí da loja antes de entregar.")
     value = (courier.get_block(order).get("estimate") or {}).get("value_q")
     details = {"final_value_q": value} if value is not None else None
-    return courier.apply_status(order, "F", source=SOURCE, details=details) == "applied"
+    return courier.apply_status(order, "F", source=source, details=details) == "applied"
 
 
 def report_problem(link: CourierLink, order_ref: str, kind: str, *, payment: str = "") -> None:

@@ -107,6 +107,10 @@ TEAM_TOPICS = {
 TEAM_COPY_KEY = "CONCIERGE_PARTS_TEAM"
 ORDER_WITH_TEAM_COPY_KEY = "CONCIERGE_PARTS_ORDER_WITH_TEAM"
 NOT_FOUND_COPY_KEY = "CONCIERGE_PARTS_NOT_FOUND"
+CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
+CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
+CART_ASK_QTY_COPY_KEY = "CONCIERGE_CART_ASK_QTY"
+CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
 DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 #: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
@@ -816,6 +820,182 @@ def _sheet_reply(act: Act, result: dict) -> str | None:
     return "\n".join(rows)
 
 
+#: "tira", "retira": a mudança é tirar o item (quantidade 0).
+_REMOVE_WORDS = frozenset({"tira", "tirar", "tire", "retira", "retirar", "remove", "remover", "exclui", "excluir"})
+_ORDER_FILLER = frozenset({
+    "quero", "queria", "vou", "querer", "manda", "mande", "coloca", "coloque", "poe", "bota", "pode", "por", "favor",
+    "me", "mais", "um", "uma", "uns", "umas", "o", "a", "os", "as", "de", "do", "da", "dos", "das", "e", "pra", "para",
+    "na", "no", "sacola", "carrinho", "entao", "ai", "tambem", "so", "tira", "tirar", "tire", "retira", "retirar",
+    "remove", "remover", "exclui", "excluir", "isso", "esse", "essa",
+})
+
+
+def _cart_authorized(conversation) -> bool:
+    return bool(getattr(conversation, "_cart_authority", False) or getattr(conversation, "_commercial_authority", False))
+
+
+def _order_qty(act: Act) -> tuple[int, bool]:
+    """(quantidade, relativa) da parte: o que a leitura deu, ou o número da fala."""
+    from . import dialogue
+
+    tokens = dialogue.words(act.span)
+    relative = "mais" in tokens
+    if act.qty:
+        return int(act.qty), relative
+    for token in tokens:
+        if token.isdigit() and len(token) <= 3:
+            return int(token), relative
+        if token in dialogue._NUMBER_WORDS:
+            return dialogue._NUMBER_WORDS[token], relative
+    return 0, relative
+
+
+def _cart_qty(context_fn, sku: str) -> int:
+    from . import tools as tools_module
+
+    cart = tools_module.execute("view_cart", {}, context_fn(""))
+    line = next((line for line in cart.get("lines", []) if line.get("sku") == sku), None)
+    return int(line.get("qty") or 0) if line else 0
+
+
+def _cart_change(act: Act, *, conversation, context, copy):
+    """A sacola na conversa (WP-12): põe, troca e tira pelo ``set_item`` que já existe.
+
+    ``None``: não é com a sacola (sem autoridade de compra, ou o produto não foi achado), e
+    a parte segue para a resposta de hoje. A quantidade é ABSOLUTA, calculada pela casa
+    ("mais 2" = o que há na sacola + 2); preço e total vêm do serviço da loja, nunca do texto.
+    """
+    from . import dialogue
+    from . import tools as tools_module
+
+    if conversation is None or not _cart_authorized(conversation):
+        return None
+    tokens = dialogue.words(act.span)
+    removing = bool(set(tokens) & _REMOVE_WORDS)
+    query = act.product or " ".join(t for t in tokens if t not in _ORDER_FILLER and not t.isdigit() and t not in dialogue._NUMBER_WORDS)
+    if not query.strip():
+        return None
+    found = tools_module.execute("search_storefront", {}, context(query))
+    items = list(found.get("items") or []) if found.get("ok") and not found.get("overview") else []
+    if not items:
+        return None
+    exact = [i for i in items if _fold(i.get("name", "")) == _fold(query)]
+    if exact:
+        items = exact[:1]
+    if len(items) > 1:
+        listed = dialogue.memo_of("search_storefront", {}, found) or {}
+        options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
+        text = _fill(copy(dialogue.ASK_WHICH_KEY) or "", options=dialogue._options_text(options))
+        return PartReply(act, text=text, memo=listed, keeps_question=True)
+    item = items[0]
+    name, sku = item.get("name", ""), item.get("sku", "")
+    if not removing and not item.get("can_order"):
+        # Para o cliente é só "Indisponível" (regra da casa).
+        return PartReply(act, text=_fill(copy(CART_UNAVAILABLE_COPY_KEY) or "", item=name))
+    qty, relative = _order_qty(act)
+    if removing:
+        target = 0
+    elif not qty:
+        return PartReply(act, text=_fill(copy(CART_ASK_QTY_COPY_KEY) or "", item=name), keeps_question=True,
+                         memo={"focus": {"ref": sku, "name": name}})
+    else:
+        target = _cart_qty(context, sku) + qty if relative else qty
+    result = tools_module.execute("set_item", {"sku": sku, "qty": target}, context(act.span))
+    events = [{"name": "set_item", "input": {"sku": sku, "qty": target}, "ok": result.get("ok", True)}]
+    if not result.get("ok"):
+        return PartReply(act, text=tools_module.render_result("set_item", result), tool_events=events)
+    lead = _fill(copy(CART_REMOVED_COPY_KEY if removing else CART_UPDATED_COPY_KEY) or "", item=name)
+    text = "\n".join(part for part in (lead, tools_module.render_result("set_item", result)) if part)
+    memo = dialogue.memo_of("set_item", {"sku": sku, "qty": target}, result) or {}
+    return PartReply(act, text=text, memo=memo, tool_events=events)
+
+
+def _cart_correction(conversation, resolution, *, memory, memos, binding, channel_ref: str):
+    """"Não, era o outro" logo depois de uma mudança na sacola (WP-12): desfaz e aplica.
+
+    Só quando a memória resolveu a correção (``reason == "correction"``) e a última mudança
+    da sacola foi o item em foco: tira esse item e põe o outro com a mesma quantidade, pelo
+    ``set_item``. Sem autoridade de compra, ou sem mudança a desfazer, ``None``.
+    """
+    from . import dialogue
+    from . import tools as tools_module
+    from .metrics import LAYER_CONTEXT
+    from .service import copy_message as copy
+    from .tools import ToolContext
+    from .turn_outcome import TurnOutcome
+
+    if resolution.reason != "correction" or not resolution.refs or not _cart_authorized(conversation):
+        return None
+    focus = memory.state.get("focus") or {}
+    change = memory.state.get("last_change") or {}
+    if not change.get("ref") or change.get("ref") != focus.get("ref") or not change.get("qty"):
+        return None
+    new_ref, qty = resolution.refs[0], int(change["qty"])
+    ctx = ToolContext(
+        conversation=conversation, channel_ref=channel_ref,
+        provider=str(getattr(binding, "provider", "") or ""), account=str(getattr(binding, "account", "") or ""),
+        transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+        connection_key=str(getattr(binding, "connection_key", "") or ""), customer_text=resolution.text,
+    )
+    removed = tools_module.execute("set_item", {"sku": change["ref"], "qty": 0}, ctx)
+    if not removed.get("ok"):
+        return TurnOutcome(reply_text=tools_module.render_result("set_item", removed), layer=LAYER_CONTEXT, memory=memory, memory_memos=memos)
+    added = tools_module.execute("set_item", {"sku": new_ref, "qty": qty}, ctx)
+    if not added.get("ok"):
+        return TurnOutcome(reply_text=tools_module.render_result("set_item", added), layer=LAYER_CONTEXT, memory=memory, memory_memos=memos)
+    lead = (copy(CART_UPDATED_COPY_KEY) or "").strip()
+    memo = dialogue.memo_of("set_item", {"sku": new_ref, "qty": qty}, added) or {}
+    return TurnOutcome(
+        reply_text="\n".join(part for part in (lead, tools_module.render_result("set_item", added)) if part),
+        layer=LAYER_CONTEXT, memory=memory, memory_memos=[*memos, memo] if memo else memos,
+    )
+
+
+def build_faq_client():
+    """``(cliente, modelo)`` da conversa (propósito ``concierge``), ou ``(None, "")``.
+
+    Sem conexão, sem chave, sem liberação para mensagem de cliente ou com o freio fechado
+    (``ai.AINotConfigured`` e suas filhas): ``(None, "")``, e vale a FAQ direta.
+    """
+    from shopman.shop import ai
+
+    try:
+        return ai.anthropic_client("concierge", timeout=READ_TIMEOUT_S * 2, max_retries=0)
+    except ai.AINotConfigured:
+        return None, ""
+
+
+def _faq_by_model(act: Act, *, conversation, channel_ref: str):
+    """A resposta da pergunta da casa pela IA a partir das FAQs, já verificada (#2935).
+
+    ``None``: vale a FAQ direta (sem modelo, freio, falha do provedor, ou a resposta
+    inventou algo, que o verificador do placar pega). ``Answer`` com ``refs`` vazias: a IA
+    disse que nenhuma FAQ cobre, e a casa verifica.
+    """
+    from . import faq_answer
+    from .faq_eval import live_faq
+
+    faqs = live_faq(channel_ref)
+    if not faqs:
+        return None
+    client, model = build_faq_client()
+    if client is None:
+        return None
+    meter = getattr(conversation, "_meter", None)
+    if meter is not None:
+        client = meter.wrap(client, "faq")
+    answer = faq_answer.answer_with_model(act.span, faqs=faqs, client=client, model=model)
+    if answer.error:
+        return None
+    invented = faq_answer.inventions(answer, faqs)
+    if invented:
+        logger.warning("concierge.faq_answer.held reasons=%s", ",".join(i.split(":")[0] for i in invented))
+        return None
+    if not answer.refs and answer.text.strip():
+        return None
+    return answer
+
+
 def _cancellation():
     """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``).
 
@@ -862,6 +1042,8 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     offer = (copy(OFFER_TEAM_COPY_KEY) or "").strip()
     run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
     team_in_turn = bool(run.team)
+    # Pedido de desconto ou "o dono autorizou" no mesmo turno: a sacola não muda (WP-12).
+    negotiating = any(act.act == NEGOTIATION for act in plan_.acts)
     texts = " ".join(act.span for act in plan_.acts)
     if any(a.act == GREET for a in plan_.acts):
         # O cumprimento sai da fala do cliente: o trecho das partes já vem sem ele.
@@ -899,8 +1081,29 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 return PartReply(act, text=copy(dialogue.ASK_PRODUCT_KEY) or "", keeps_question=True)
             act = Act(act.act, span=act.span, product=referent, qty=act.qty)
 
+        uncovered_by_faq = False
+        if consult and act.act in {HOURS, HOUSE}:
+            # A pergunta da casa: a IA compõe a partir das FAQs publicadas, citando as que
+            # usou (dono, 21/11/2026, #2935). Sem modelo, freio fechado ou invenção: a FAQ direta.
+            composed = _faq_by_model(act, conversation=conversation, channel_ref=channel_ref)
+            if composed is not None and composed.refs:
+                faq_reply = PartReply(
+                    act, text=composed.text,
+                    memo={"tool": "faq_answer", "refs": composed.refs},
+                    tool_events=[{"name": "faq_answer", "input": {}, "ok": True}],
+                )
+                if composed.uncovered.strip() and verifiable:
+                    # A parte que nenhuma FAQ cobre vai à equipe ("vou verificar").
+                    faq_reply.verifying = True
+                    run.verify.append({"text": _clip(composed.uncovered), "product": ""})
+                return faq_reply
+            # A IA disse que nenhuma FAQ cobre: a casa verifica, sem colar FAQ vizinha.
+            uncovered_by_faq = composed is not None
+
         query = _search_text(act)
         result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
+        if uncovered_by_faq:
+            result = {**result, "found": False}
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
         sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
         # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é
@@ -957,6 +1160,11 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 added = _add_to_order(act, conversation=conversation, search=search, run=run)
                 if added is not None:
                     run.replies.append(added)
+                    continue
+            if not negotiating:
+                changed = _cart_change(act, conversation=conversation, context=context, copy=copy)
+                if changed is not None:
+                    run.replies.append(changed)
                     continue
             run.replies.append(search(act))
             continue
@@ -1259,6 +1467,9 @@ def run(conversation, *, binding, decision, client=None):
     addition = addition_outcome(conversation, resolution, memory=memory, memos=memos)
     if addition is not None:
         return addition
+    corrected = _cart_correction(conversation, resolution, memory=memory, memos=memos, binding=binding, channel_ref=channel_ref)
+    if corrected is not None:
+        return corrected
     if resolution.answers_without_model:
         return TurnOutcome(
             reply_text=resolution.reply,

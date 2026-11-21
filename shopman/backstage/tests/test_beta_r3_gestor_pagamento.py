@@ -179,6 +179,27 @@ def test_cancelar_pix_pago_diz_que_o_valor_volta_ao_pix():
     assert detail.cancel_waits_for_gateway is True
 
 
+def test_pix_pago_num_intent_que_nao_e_mais_o_do_pedido_nao_vira_nada_foi_cobrado():
+    """#2710, item 6: o Pix pago num intent que o pedido já não referencia.
+
+    O pedido aponta para um intent novo, ainda pendente; o cliente pagou o anterior.
+    O estorno de verdade soma TODOS os intents do pedido (``payment.gateway_refund_owed_q``,
+    ``PaymentService.get_by_order``), e a frase de antes de cancelar tem de dizer o
+    mesmo: "Nada foi cobrado" seria falso, e o operador cancelaria achando que não há
+    o que devolver.
+    """
+    order = _order("R3-G06-OLD", "accepted", payment={"method": "pix", "intent_ref": "INT-R3-G06-NEW"})
+    PaymentService.create_intent(order.ref, 2200, "pix", gateway="efi", ref="INT-R3-G06-OLD-PAID")
+    PaymentService.authorize("INT-R3-G06-OLD-PAID")
+    PaymentService.capture("INT-R3-G06-OLD-PAID")
+    PaymentService.create_intent(order.ref, 2200, "pix", gateway="efi", ref="INT-R3-G06-NEW")
+
+    detail = build_operator_order(Order.objects.get(pk=order.pk))
+
+    assert detail.cancel_money_effect == "R$ 22,00 serão estornados ao Pix do cliente."
+    assert detail.cancel_waits_for_gateway is True
+
+
 def test_cancelar_cartao_so_autorizado_diz_que_nada_foi_cobrado():
     order = _order("R3-F5-CARD", "new", payment={"method": "card", "intent_ref": "INT-R3-F5-CARD"}, total_q=510)
     PaymentService.create_intent(order.ref, 510, "card", gateway="stripe", ref="INT-R3-F5-CARD")
@@ -243,7 +264,7 @@ def test_pagamento_que_nao_pode_ser_lido_nao_vira_nada_foi_cobrado():
     assert detail.cancel_money_effect == ""
 
 
-def test_pedido_do_ifood_segue_sem_frase_de_dinheiro():
+def test_pedido_do_ifood_sem_a_informacao_do_pagamento_segue_sem_frase_de_dinheiro():
     order = _order("R3-G06-IFOOD", "new", payment={"method": "cash", "collection": "on_delivery"})
     Order.objects.filter(pk=order.pk).update(channel_ref="ifood")
 
@@ -268,3 +289,37 @@ def test_aviso_generico_tem_nome_em_portugues():
 
     assert _template_label("order_ready") == "Pedido pronto"
     assert _template_label("order_ready_pickup") == "Pedido pronto para retirada"
+
+
+# #2710, item 5: o dinheiro do pedido do iFood, dito antes de recusar ou cancelar.
+
+
+def _ifood(ref: str, status: str, *, prepaid_q: int, pending_q: int, payment_status: str) -> Order:
+    return Order.objects.create(
+        ref=ref, channel_ref="ifood", session_key=f"s-{ref}", status=status, total_q=2200,
+        data={
+            "payment": {"method": "external", "gateway": "ifood", "status": payment_status},
+            "ifood": {"payments": {"prepaid_q": prepaid_q, "pending_q": pending_q, "methods": []}},
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "status,prepaid_q,pending_q,payment_status,expected",
+    [
+        ("new", 2200, 0, "paid", "Quem devolve o dinheiro ao cliente é o iFood."),
+        ("dispatched", 2200, 0, "paid", "Quem devolve o dinheiro ao cliente é o iFood."),
+        ("new", 1000, 1200, "pending", "Quem devolve o dinheiro ao cliente é o iFood."),
+        ("accepted", 0, 2200, "pending", "Nada foi cobrado do cliente."),
+        ("dispatched", 0, 2200, "pending", ""),
+        ("new", 0, 0, "unknown", ""),
+    ],
+    ids=["pago-pelo-app", "pago-pelo-app-ja-saiu", "misto", "na-entrega-antes-de-sair", "na-entrega-ja-saiu", "sem-informacao"],
+)
+def test_ifood_diz_quem_devolve_o_dinheiro(status, prepaid_q, pending_q, payment_status, expected):
+    from shopman.backstage.projections.order_queue import _cancel_money_effect
+
+    order = _ifood(f"R3-IFD-{status}-{prepaid_q}-{pending_q}", status, prepaid_q=prepaid_q, pending_q=pending_q,
+                   payment_status=payment_status)
+    effect = _cancel_money_effect(order, "external", payment_status)
+    assert effect == {"cancel_money_effect": expected, "cancel_waits_for_gateway": False}

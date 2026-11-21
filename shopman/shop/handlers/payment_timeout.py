@@ -58,6 +58,13 @@ class PaymentTimeoutHandler:
         if payload.get("intent_ref") and payment_data.get("intent_ref") != payload["intent_ref"]:
             return
 
+        from shopman.shop.services import counter_pix
+
+        if counter_pix.governs(order):
+            # O Pix cobrado no balcão (#2897): o cliente está na frente do caixa, e
+            # o Pix que venceu sem pagar não cancela a encomenda. O operador gera
+            # outro ou recebe de outra forma, que cancela este antes.
+            return
         method = str(payment_data.get("method") or "").lower()
         status = (payment_service.get_payment_status(order) or "").lower()
         if payment_service.has_sufficient_captured_payment(order) is True:

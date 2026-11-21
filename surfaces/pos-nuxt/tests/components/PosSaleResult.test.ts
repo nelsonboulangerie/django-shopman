@@ -1,7 +1,7 @@
 // Tela de resultado — o palco do troco e o CTA "Nova venda". O comportamento
 // decidido em presentation (auto-avanço, Enter) tem prova própria; aqui se
 // prova o que a TELA faz com ele: herói do troco, contagem visível/cancelável
-// e a saída explícita com PIX pendente.
+// e a saída explícita com Pix pendente.
 import { describe, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
@@ -184,7 +184,7 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(wrapper.emitted("newSale")).toHaveLength(1);
   });
 
-  it("PIX aguardando: sem contagem, saída nomeada como gesto deliberado", async () => {
+  it("Pix aguardando: sem contagem, saída nomeada como gesto deliberado", async () => {
     const wrapper = await mountSuspended(PosSaleResult, {
       props: props({ result: result({ payment: pixProof() }), pixStatus: "polling" }),
     });
@@ -192,6 +192,32 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(text).not.toContain("Nova venda em");
     expect(text).toContain("Nova venda mesmo assim");
     expect(text).toContain("vira um aviso no topo");
+  });
+
+  it("Pix vencido: um aviso só, com o botão que leva ao pedido no Gestor, e nada de verde", async () => {
+    const wrapper = await mountSuspended(PosSaleResult, {
+      props: props({ result: result({ payment: pixProof() }), pixStatus: "expired" }),
+    });
+    const text = wrapper.text();
+    expect(wrapper.find("h2").text()).toBe("Venda registrada");
+    expect(text).not.toContain("Venda concluída");
+    expect(text.match(/não foi confirmado/g)).toHaveLength(1);
+    expect(text).not.toMatch(/Confira no gestor/i);
+    expect(text).not.toContain("PIX");
+    expect(wrapper.find('img[alt^="QR Code"]').exists()).toBe(false);
+    const alert = wrapper.find("[data-sale-result-pix-expired]");
+    expect(alert.attributes("role")).toBe("alert");
+    const link = alert.find("a");
+    expect(link.text()).toContain("Abrir o pedido no Gestor");
+    expect(link.attributes("href")).toBe("http://gestor.test/PDV-042");
+    expect(text).not.toContain("Nova venda em");
+  });
+
+  it("Pix aguardando não ganha o aviso de vencido", async () => {
+    const wrapper = await mountSuspended(PosSaleResult, {
+      props: props({ result: result({ payment: pixProof() }), pixStatus: "polling" }),
+    });
+    expect(wrapper.find("[data-sale-result-pix-expired]").exists()).toBe(false);
   });
 
   it("verbos secundários emitem os handlers de sempre", async () => {

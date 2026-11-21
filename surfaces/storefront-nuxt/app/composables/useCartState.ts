@@ -124,7 +124,7 @@ function emptyCart (): CartProjection {
         label: 'Finalizar pedido',
         priority: 'primary',
         enabled: false,
-        reason: 'Carrinho vazio.',
+        reason: 'Sacola vazia.',
         href: '/finalizar',
         method: '',
         payload_schema: {},
@@ -436,7 +436,7 @@ export function useCartState () {
         lastError.value = String(data?.detail || 'Revise as escolhas deste item.')
       } else {
         // Erro genérico não tem UI própria → o toast é a única forma de avisar.
-        lastError.value = String(data?.detail || 'Não foi possível atualizar o carrinho.')
+        lastError.value = String(data?.detail || 'Não foi possível atualizar a sacola.')
         if (import.meta.client) useSonner.error(lastError.value)
       }
       throw error

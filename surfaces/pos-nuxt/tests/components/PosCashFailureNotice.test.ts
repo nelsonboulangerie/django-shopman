@@ -4,6 +4,7 @@
 import { computed, defineComponent, h } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { flushPromises } from "@vue/test-utils";
 
 import PosCashFailureNotice from "~/components/PosCashFailureNotice.vue";
 import { usePosCashSession } from "~/composables/usePosCashSession";
@@ -30,6 +31,39 @@ describe("PosCashFailureNotice", () => {
     expect(close.exists()).toBe(true);
     await close.trigger("click");
     expect(wrapper.emitted("dismiss")).toHaveLength(1);
+  });
+
+  it("traz o botão que resolve: tocar repete o gesto, e ele espera junto", async () => {
+    // Regra do dono (20/11): o aviso traz a ação pronta, nunca só o caminho escrito.
+    const wrapper = await mountSuspended(PosCashFailureNotice, {
+      props: {
+        failure: { gesture: "request_change", message: "O pedido de troco não foi enviado. Ninguém foi avisado ainda. Tente de novo." },
+        gesture: "request_change",
+        actionLabel: "Tentar de novo",
+      },
+    });
+    const notice = wrapper.get("[data-cash-failure]");
+    const retry = notice.findAll("button").find((b) => b.text().includes("Tentar de novo"));
+    expect(retry, "o aviso não traz o botão que resolve").toBeTruthy();
+    await retry!.trigger("click");
+    expect(wrapper.emitted("action")).toHaveLength(1);
+
+    await wrapper.setProps({ busy: true });
+    const waiting = wrapper.get("[data-cash-failure]").findAll("button").find((b) => b.text().includes("Tentar de novo"));
+    expect(waiting!.attributes("disabled")).toBeDefined();
+  });
+
+  it("a falha traz o foco para o botão que resolve", async () => {
+    // O botão do gesto se desabilita enquanto corre, e o navegador joga o foco no
+    // `body`: sem isto, o teclado perdia o lugar fora do diálogo.
+    const wrapper = await mountSuspended(PosCashFailureNotice, {
+      props: { failure: null, gesture: "settle_account", actionLabel: "Tentar de novo" },
+      attachTo: document.body,
+    });
+    await wrapper.setProps({ failure: { gesture: "settle_account", message: "O acerto não foi registrado. Tente de novo agora." } });
+    await flushPromises();
+    expect(document.activeElement?.textContent).toContain("Tentar de novo");
+    wrapper.unmount();
   });
 
   it("não mostra a falha de OUTRO gesto, nem nada sem falha", async () => {

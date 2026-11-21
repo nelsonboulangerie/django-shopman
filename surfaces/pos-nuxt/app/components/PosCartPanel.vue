@@ -2103,13 +2103,15 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                   class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 op-micro text-muted-foreground tnum"
                 >
                   <!-- O lastro da encomenda: a fornada da data. Acima do livre, âmbar
-                       e escrito (a cor nunca anda sozinha): o Validar vai pedir o gerente. -->
+                       e escrito (a cor nunca anda sozinha): o Validar vai pedir o gerente.
+                       Sem lote planejado na data, a linha diz que vira pedido à
+                       Produção (WP-E3), sem âmbar: nada trava. -->
                   <span
                     v-if="planFact(item)"
                     class="inline-flex min-w-0 items-center gap-1"
                     :class="planFact(item)!.over ? 'rounded-sm bg-warning/10 px-1 font-semibold text-warning' : ''"
-                    :data-pos-line-plan="planFact(item)!.over ? 'over' : 'within'"
-                    ><Icon :name="planFact(item)!.over ? 'lucide:triangle-alert' : 'lucide:calendar-check'" class="size-3.5 shrink-0" aria-hidden="true" /><span class="[overflow-wrap:anywhere]">{{ planFact(item)!.over ? `Passa do plano: ${planFact(item)!.text}` : planFact(item)!.text }}</span></span
+                    :data-pos-line-plan="planFact(item)!.over ? 'over' : planFact(item)!.unplanned ? 'unplanned' : 'within'"
+                    ><Icon :name="planFact(item)!.over ? 'lucide:triangle-alert' : planFact(item)!.unplanned ? 'lucide:calendar-plus' : 'lucide:calendar-check'" class="size-3.5 shrink-0" aria-hidden="true" /><span class="[overflow-wrap:anywhere]">{{ planFact(item)!.over ? `Passa do plano: ${planFact(item)!.text}` : planFact(item)!.text }}</span></span
                   >
                   <span v-if="item.notes" class="min-w-0 text-foreground/80 [overflow-wrap:anywhere]">Obs.: {{ item.notes }}</span>
                   <span v-if="isWeighedLine(item)" class="shrink-0">{{ formatBRL(unitChargedQ(item)) }}/kg</span>
