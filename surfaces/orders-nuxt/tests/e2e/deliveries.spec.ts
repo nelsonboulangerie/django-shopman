@@ -12,9 +12,9 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(mirrors).toHaveCount(2);
     await expect(mirrors.nth(0).locator("span").first()).toHaveText("A");
     await expect(mirrors.nth(1).locator("span").first()).toHaveText("B");
-    // No mapa, a moto leva a letra e o nome acessível fala a letra.
-    await expect(page.getByRole("button", { name: "Entregador da corrida A", exact: true })).toHaveText("A");
-    await expect(page.getByRole("button", { name: "Entregador da corrida B", exact: true })).toHaveText("B");
+    // No mapa, a moto leva a letra e o nome acessível fala a letra (e a idade da posição, F7b).
+    await expect(page.getByRole("button", { name: "Entregador da corrida A. Posição agora", exact: true })).toHaveText("A");
+    await expect(page.getByRole("button", { name: /^Entregador da corrida B\. Última posição há 3 min/ })).toHaveText("B");
     await expect(page.getByRole("button", { name: "Corrida B, parada 2, pedido F09", exact: true })).toBeVisible();
     await expect(page.getByText(/[Cc]orrida \d/)).toHaveCount(0);
     await expect(page.locator("[aria-label*='orrida 1'], [aria-label*='orrida 2']")).toHaveCount(0);

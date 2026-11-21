@@ -74,7 +74,8 @@ const { data, pending, error, refresh } = useFetch<DeliveriesProjection>(
   "/api/v1/backstage/deliveries/",
   { key: "orders:deliveries", server: false },
 );
-useBackstageEvents("orders", () => void refresh(), { pollMs: 20_000 });
+// A posição do entregador também chega por push (F7b), em no máximo uma releitura a cada 10 s.
+useBackstageEvents("orders", () => void refresh(), { pollMs: 20_000, onCourierPosition: useCourierPositionPush(() => void refresh()) });
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
 onMounted(() => (clock = setInterval(() => (now.value = Date.now()), 30_000)));

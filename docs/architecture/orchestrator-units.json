@@ -19966,6 +19966,48 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-position",
+      "question": "Onde o entregador da corrida está, de quando é essa posição e quem a disse; e quando a casa pergunta ao serviço porque o webhook calou?",
+      "owner": "delivery.courier-position",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier_position:store_position",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier_position:read",
+        "shopman.shop.services.courier_position:store_position"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier_position.py",
+          "symbols": [
+            "poll_if_silent",
+            "read",
+            "store_position",
+            "webhook_is_silent"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_position.py::test_the_position_keeps_where_when_and_who_said",
+        "shopman/shop/tests/test_courier_position.py::test_an_older_position_never_replaces_a_newer_one",
+        "shopman/shop/tests/test_courier_position.py::test_with_the_webhook_alive_nobody_asks",
+        "shopman/shop/tests/test_courier_position.py::test_with_the_webhook_quiet_the_beat_asks_the_service"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "stock.shelf-recheck",
       "question": "Como a vitrine fica sabendo, no próprio prazo, que uma reserva venceu e o saldo voltou?",
       "owner": "stock.shelf-recheck",

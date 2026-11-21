@@ -371,6 +371,16 @@ def emit_courier_update(order, payload: dict) -> None:
     )
 
 
+def emit_courier_position(ride_ref: str) -> None:
+    """A posição do entregador da corrida mudou: a página Entregas do Gestor relê.
+
+    Só a corrida vai no aviso, nunca a coordenada: o canal ``backstage-orders`` guarda
+    histórico, e a posição do entregador é dado pessoal. O limite de um aviso a cada
+    10 s por corrida é de quem grava (``courier_position.store_position``).
+    """
+    _emit_backstage("orders", "backstage-courier-position", {"ride": str(ride_ref)})
+
+
 def emit_fiscal_update(order) -> None:
     """A NFC-e do pedido mudou (autorizou): o quadro do Gestor relê.
 
