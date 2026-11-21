@@ -675,6 +675,13 @@ for (const device of ["phone", "counter"] as const) {
       await saved;
       await expect(page.getByRole("heading", { name: `Encomenda ${ref}` }).locator("visible=true").first()).toBeVisible({ timeout: 60_000 });
       await settled(page);
+      // O aviso de "atualizada" já disse o que tinha a dizer: fechado, ele não cobre a tela seguinte.
+      const updated = page.locator("[data-sonner-toast]").filter({ hasText: "atualizada" });
+      if (await updated.first().isVisible().catch(() => false)) {
+        await updated.first().hover();
+        await updated.first().locator("[data-close-button]").click();
+      }
+      await expect(updated).toHaveCount(0, { timeout: 15_000 });
 
       // O saldo é só o item novo; o Pix cobra ele, e o que já entrou fica.
       const handOver = page.locator("[data-preorder-hand-over], [data-preorder-hand-over-bar] button").locator("visible=true").first();
