@@ -159,7 +159,20 @@ def raw_unit_grams(recipe) -> Decimal | None:
     if batch_size <= 0:
         return None
 
-    items = _items_by_piece_weight(recipe)
+    from shopman.craftsman.services.recipes import get_active_recipe_for_output_sku
+    from shopman.utils import units
+
+    # As linhas da conta do peso: peça pronta inteira, o resto aberto até a folha.
+    items: list = []
+    for line in recipe.items.filter(is_optional=False).order_by("-quantity", "sort_order"):
+        line_meta = line.meta if isinstance(line.meta, dict) else {}
+        sub_recipe = get_active_recipe_for_output_sku(line.input_sku)
+        if sub_recipe is None or (
+            units.dimension(line.unit) == units.COUNT and line_meta.get("unit_weight_g") not in (None, "")
+        ):
+            items.append(line)
+            continue
+        items.extend(expand_recipe_items(sub_recipe, coefficient=line.quantity / sub_recipe.batch_size))
     if not items:
         return None
 
@@ -178,26 +191,6 @@ def raw_unit_grams(recipe) -> Decimal | None:
     if total_g <= 0:
         return None
     return total_g / batch_size
-
-
-def _items_by_piece_weight(recipe) -> list:
-    """As linhas da conta do peso: peça pronta inteira, o resto aberto até a folha."""
-    from shopman.craftsman.services.recipes import get_active_recipe_for_output_sku
-    from shopman.utils import units
-
-    items: list = []
-    for item in recipe.items.filter(is_optional=False).order_by("-quantity", "sort_order"):
-        meta = item.meta if isinstance(item.meta, dict) else {}
-        sub_recipe = get_active_recipe_for_output_sku(item.input_sku)
-        if sub_recipe is None:
-            items.append(item)
-            continue
-        if units.dimension(item.unit) == units.COUNT and meta.get("unit_weight_g") not in (None, ""):
-            items.append(item)
-            continue
-        coefficient = item.quantity / sub_recipe.batch_size
-        items.extend(expand_recipe_items(sub_recipe, coefficient=coefficient))
-    return items
 
 
 def fill_unit_weight_from_recipe(product: Product) -> bool:
