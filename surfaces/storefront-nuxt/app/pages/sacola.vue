@@ -62,6 +62,15 @@ watch(() => cart.value.is_empty, (empty) => {
   if (empty) lapsedReservationDisplay.value = null
 })
 
+// Loja viva (#2785): o que muda na vitrine com a sacola aberta (a reserva de outra
+// cliente venceu e o item voltou, o item esgotou, a fornada ficou pronta) chega às
+// linhas e às sugestões sem esperar o próximo gesto. A recusa (409) já relê a sacola
+// por conta própria.
+useLiveStore(async () => {
+  if (cart.value.is_empty || hasPendingMutations.value) return
+  await refreshCart()
+}, { causes: ['push', 'reopen', 'visible', 'poll'] })
+
 onMounted(() => {
   // O shell global já trouxe a sacola e a página pode abrir imediatamente.
   // A reconciliação é passiva: atualiza a verdade sem manter a rota anterior

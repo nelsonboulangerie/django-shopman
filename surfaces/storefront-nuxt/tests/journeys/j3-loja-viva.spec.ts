@@ -128,6 +128,56 @@ test('J3: o produto que acaba muda sozinho na tela de quem está olhando', async
   }
 })
 
+/** A sacola de A foi relida sem gesto dela: a leitura da sacola (GET), que a página só faz
+ *  sozinha quando a vitrine avisa. A linha não muda de aparência aqui (o Melonpan não tem teto
+ *  finito na sacola); o que se prova é que a sacola aberta ouve a vitrine. */
+function bagReread (page: Page, timeout: number) {
+  return page.waitForResponse(
+    response => /\/storefront\/cart\//.test(response.url()) && response.request().method() === 'GET' && response.ok(),
+    { timeout }
+  )
+}
+
+test('J3: a sacola aberta acompanha a vitrine, sem esperar o próximo gesto (#2785)', async ({ page, browser }, testInfo) => {
+  const other = await otherCustomer(browser)
+  try {
+    await test.step('A põe uma na sacola e fica com a sacola aberta', async () => {
+      await opensProduct(page)
+      const answered = bagAnswered(page)
+      await addButton(page).click()
+      await answered
+      await page.goto('/sacola')
+      await settled(page)
+      await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` }).first()).toContainText('1')
+      await marksTheVisit(page)
+      await capture(page, testInfo, 'a-sacola-aberta')
+    })
+
+    await test.step('B leva a outra; a sacola de A relê sozinha', async () => {
+      const reread = bagReread(page, 20_000)
+      await opensProduct(other.page)
+      const answered = bagAnswered(other.page)
+      await addButton(other.page).click()
+      await answered
+      await reread
+      await stillTheSameVisit(page)
+      await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` }).first()).toContainText('1')
+      await capture(page, testInfo, 'a-sacola-relida-sozinha')
+    })
+
+    await test.step('B desiste; a sacola de A relê de novo', async () => {
+      const reread = bagReread(page, 20_000)
+      await putsThemBack(other.page)
+      await reread
+      await stillTheSameVisit(page)
+    })
+  } finally {
+    await leavesNothingBehind(other.page)
+    await leavesNothingBehind(page)
+    await other.context.close()
+  }
+})
+
 test('J3: com o aviso derrubado, a consulta de reserva corrige a tela em cerca de um minuto', async ({ page, browser }, testInfo) => {
   test.setTimeout(420_000)
   // O aviso não chega a esta cliente: rede que bloqueia o stream, proxy que o segura.

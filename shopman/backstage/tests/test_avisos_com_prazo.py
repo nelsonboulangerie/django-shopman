@@ -61,7 +61,7 @@ def test_contagem_e_livro_sao_panoramicos():
 ONLY_OWN_DEADLINE = {"concierge_verify"}
 #: Tipos sem prazo: não há o que vencer, há uma causa que dura até ser resolvida. A
 #: Concierge sem modelo (dono, 19/11/2026) fica no topo do Gestor enquanto a causa durar.
-CAUSE_WITHOUT_DEADLINE = {"concierge_no_model"}
+CAUSE_WITHOUT_DEADLINE = {"concierge_no_model", "faq_drafts_waiting"}
 
 
 def test_todo_tipo_que_interrompe_tem_origem_assunto_e_regua():

@@ -31,6 +31,15 @@ async function load () {
 }
 
 watch(isAuthenticated, load, { immediate: import.meta.client })
+// Loja viva (#2785): a prateleira relê com o cardápio. Releitura que falha mantém
+// o que a prateleira mostrava (a carga é que zera, para não mostrar favorito alheio).
+useLiveStore(async () => {
+  if (!isAuthenticated.value || !items.value.length) return
+  const res = await $fetch<{ items: CatalogItemProjection[] }>(
+    apiPath('/api/v1/account/favorites/'), { credentials: 'include' }
+  )
+  if (isAuthenticated.value) items.value = res.items || []
+}, { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS })
 // Recarrega após cada mutação CONFIRMADA pelo servidor (evita o race do otimista).
 watch(version, () => { if (isAuthenticated.value) load() })
 

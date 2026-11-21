@@ -10,11 +10,30 @@ from shopman.shop.concierge_verification import date_warning, origin_of
 from shopman.shop.models import FAQEntry
 
 
+class OriginFilter(admin.SimpleListFilter):
+    """De onde veio a pergunta: de uma conversa da Concierge (WP-15) ou do Admin."""
+
+    title = "origem"
+    parameter_name = "origem"
+
+    def lookups(self, request, model_admin):
+        return (("concierge", "Conversa da Concierge"), ("admin", "Cadastrada no Admin"))
+
+    def queryset(self, request, queryset):
+        from shopman.shop.concierge_verification import FAQ_REF_PREFIX
+
+        if self.value() == "concierge":
+            return queryset.filter(ref__startswith=FAQ_REF_PREFIX)
+        if self.value() == "admin":
+            return queryset.exclude(ref__startswith=FAQ_REF_PREFIX)
+        return queryset
+
+
 @admin.register(FAQEntry)
 class FAQEntryAdmin(ModelAdmin):
     list_display = ("question", "position", "is_published", "origin_label", "updated_at")
     list_editable = ("position", "is_published")
-    list_filter = ("is_published",)
+    list_filter = ("is_published", OriginFilter)
     search_fields = ("question", "answer", "search_terms")
     ordering = ("position", "id")
     readonly_fields = ("origin", "date_warning", "ref", "created_at", "updated_at")

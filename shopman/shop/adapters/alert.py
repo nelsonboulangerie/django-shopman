@@ -122,6 +122,18 @@ def open_counts(types) -> dict[str, int]:
     return {str(row["type"]): int(row["total"]) for row in rows}
 
 
+def open_pk(type: str) -> int | None:
+    """O ``pk`` do aviso aberto deste tipo (o mais novo), ou ``None``."""
+    from shopman.backstage.models import OperatorAlert
+
+    return (
+        OperatorAlert.objects.filter(type=type, resolved_at__isnull=True)
+        .order_by("-pk")
+        .values_list("pk", flat=True)
+        .first()
+    )
+
+
 def resolve(type: str, *, order_ref: str, actor: str) -> int:
     """Resolve active alert causes through the canonical audited service."""
     from shopman.backstage.services.alerts import resolve_alerts

@@ -33,6 +33,8 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.confirmation.StaleNewOrderAlertHandler",
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
     "shopman.shop.handlers.card_authorization.CardAuthorizationWatchHandler",
+    # Vitrine: a reserva que vence avisa no próprio prazo (#2785)
+    "shopman.shop.handlers.shelf_recheck.ShelfRecheckHandler",
     # Production
     "shopman.shop.handlers.production_alerts.ProductionLateCheckHandler",
     # Cozinha (avisos no bolso: pedido novo e atraso)
@@ -121,6 +123,9 @@ def register_all() -> None:
     _register_production_order_sync()
     _register_alert_resolution()
     _register_sse_emitters()
+    from shopman.shop.handlers.shelf_recheck import ShelfRecheckHandler
+
+    registry.register_directive_handler(ShelfRecheckHandler())
     _register_catalog_projection_handler()
     _register_catalog_signals()
     _register_ifood_status_callbacks()
@@ -138,6 +143,10 @@ def _register_alert_resolution() -> None:
     from shopman.shop.handlers import alert_resolution
 
     alert_resolution.connect()
+    # Rascunho de pergunta frequente vindo de conversa: aviso no topo do Gestor (WP-15).
+    from shopman.shop.services import faq_drafts
+
+    faq_drafts.connect()
 
 
 def _register_notification_handlers() -> None:
