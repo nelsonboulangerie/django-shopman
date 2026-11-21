@@ -63,6 +63,25 @@ veta a comparação (`cost_unknown:<braço>`) quando algum consumo de algum bra�
 e também quando as moedas diferem. Comparar o que custa com o que não se sabe daria vantagem a
 quem não declarou preço (K34).
 
+## 4.1 Placar de conversa (`evaluation.conversation`)
+
+A régua de mensagem mede se a casa entendeu; esta mede se o cliente saiu atendido. O adaptador
+traduz cada turno do cliente em `TurnEvidence` (respondeu, silêncio legítimo, lastro, próximo
+passo, frase repetida, se pedia dado vivo ou ação) e `score` conta. Desfecho por turno, nesta
+ordem: `silent` (falou e ninguém respondeu, sem equipe com a conversa), `unbacked` (afirmou sem
+lastro), `dead_end` (respondeu com lastro e deixou o cliente sem próximo passo), `useful`.
+Silêncio legítimo fica fora da conta. Lastro desconhecido (`backed=None`) conta à parte e
+impede o "pronto"; taxa sem turno é `None`, nunca zero.
+
+`Scorecard.meets(useful_at_least=0.9)` é o alvo de pronto: nenhum sem lastro, nenhum silêncio,
+nenhum lastro desconhecido e útil na fração pedida.
+
+A alternativa de mercado entra como `IncumbentProfile` (lê dado vivo?, age no comércio?,
+responde texto livre neste canal?), e `incumbent_reach` diz, por turno, se ela alcançaria um
+atendimento útil ou o primeiro motivo por que não. É comparação por capacidade declarada, não
+por execução: prova onde a alternativa nem chega, nunca que ela erraria onde chega. O leitor
+de língua (o que é "próximo passo" em português) é do adaptador.
+
 ## 5. Memória declarada (`memory.MemoryStore`)
 
 Na primeira versão só existem a memória de trabalho (o estado de diálogo, `04-episode.md`) e a
@@ -92,6 +111,7 @@ Preferência inferida é corte do plano (fora do F10).
 | K33 janela aberta: censurado, não zero | `adapter` |
 | K34 modelo sem preço: custo desconhecido, comparação vetada | `core` |
 | K35 fonte externa corrige: registro novo que substitui, histórico preservado | `adapter` |
+| Placar de conversa: ordem dos desfechos, lastro desconhecido à parte, alcance da alternativa | núcleo |
 | Restrição de conselheiro: sem item que atenda, sem necessidade declarada, caso aberto no episódio | núcleo |
 | Exposição: aceito não é exposto; entregue é; cada estado é registro | núcleo |
 | Fonte do próprio agente recusada; desconhecido contado à parte; sombra não guarda memória | núcleo |
