@@ -519,8 +519,14 @@ def read_with_model(text: str, *, memory_note: str = "", client=None) -> tuple[l
         response = client.messages.create(**build_request(redacted, memory_note=note))
     except Exception as exc:  # rede, cota, chave, tempo: vale a divisão local
         logger.warning("concierge.intents.read_failed exception_type=%s", type(exc).__name__)
+        from .reading_health import record_read
+
+        record_read(ok=False)
         return [], (time.perf_counter() - started) * 1000, type(exc).__name__
     elapsed = (time.perf_counter() - started) * 1000
+    from .reading_health import record_read
+
+    record_read(ok=True)  # o provedor respondeu: a leitura tem modelo
     if getattr(response, "stop_reason", "") in {"refusal", "max_tokens"}:
         return [], elapsed, str(response.stop_reason)
     raw = "".join(

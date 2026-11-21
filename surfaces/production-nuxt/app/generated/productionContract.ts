@@ -49,7 +49,7 @@ export interface OperatorAlertCountsProjection {
   critical: number;
 }
 
-/** OperatorAlertProjection(pk: 'int', rev: 'int', type: 'str', type_label: 'str', severity: "Literal['warning', 'error', 'critical']", severity_label: 'str', audience: 'str', message: 'str', order_ref: 'str', created_at_display: 'str', actions: 'tuple[ProductionActionProjection, ...]', respond_by_iso: 'str' = '', deadline_kind: 'str' = '', origin_label: 'str' = '', origin_icon: 'str' = '', subject: 'str' = '', order_schedule_label: 'str' = '', order_schedule_state: 'str' = '') */
+/** OperatorAlertProjection(pk: 'int', rev: 'int', type: 'str', type_label: 'str', severity: "Literal['warning', 'error', 'critical']", severity_label: 'str', audience: 'str', message: 'str', order_ref: 'str', created_at_display: 'str', actions: 'tuple[ProductionActionProjection, ...]', respond_by_iso: 'str' = '', deadline_kind: 'str' = '', origin_label: 'str' = '', origin_icon: 'str' = '', subject: 'str' = '', on_screen: 'bool' = False, order_schedule_label: 'str' = '', order_schedule_state: 'str' = '') */
 export interface OperatorAlertProjection {
   pk: number;
   rev: number;
@@ -67,6 +67,7 @@ export interface OperatorAlertProjection {
   origin_label: string;
   origin_icon: string;
   subject: string;
+  on_screen: boolean;
   order_schedule_label: string;
   order_schedule_state: string;
 }
