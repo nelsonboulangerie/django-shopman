@@ -547,7 +547,9 @@ export type AffordanceRef =
   | "dismiss_courier_reminder"
   | "ifood_accept_retry"
   // O "Resolver" da promessa em risco (aviso do cartão e linha da Fila): abre o diálogo.
-  | "resolve_promise";
+  | "resolve_promise"
+  // O "Chamar entregador" do cartão Pronto de entrega: abre o sheet de chamar (#2876).
+  | "call_courier";
 
 export interface Affordance {
   ref: AffordanceRef;
@@ -1605,6 +1607,30 @@ export function equipmentOutLine(
 }
 
 // ── Uma corrida para várias entregas (cabeçalho do Gestor) ─────────────────
+
+/**
+ * O cartão Pronto de entrega que dá para chamar agora (#2876, gesto 3 para 2): o
+ * "Chamar entregador" vira o gesto principal do cartão e abre o MESMO sheet das
+ * Entregas. O gesto que era principal (o "Despachar" de quem leva por conta própria)
+ * segue no cartão, como secundário.
+ */
+export function withCourierCall(affordances: Affordance[], canCall: boolean): Affordance[] {
+  if (!canCall) return affordances;
+  return [
+    { ref: "call_courier", label: "Chamar entregador", icon: "lucide:bike", priority: "primary", needsInput: false },
+    ...affordances.map((aff) => (aff.priority === "primary" ? { ...aff, priority: "secondary" as const } : aff)),
+  ];
+}
+
+/**
+ * A faixa da Saída (decisão 4 = A do dono): "Aguardando entregador: 5", abrindo a parte
+ * "A coletar". Some sem ninguém aguardando; com a contagem desconhecida, só sem número.
+ */
+export function waitingBandText(waiting: number | null | undefined): string {
+  if (waiting === null) return "Aguardando entregador";
+  if (!waiting) return "";
+  return `Aguardando entregador: ${waiting}`;
+}
 
 /** Quantos pedidos uma corrida leva (espelho de `courier.MAX_RIDE_STOPS`). */
 export const MAX_RIDE_STOPS = 4;

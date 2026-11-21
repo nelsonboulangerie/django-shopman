@@ -1,10 +1,9 @@
-"""GET /api/v1/storefront/shelf/events/ — o aviso público de que a vitrine mudou.
+"""GET /api/v1/storefront/shelf/events/ — o aviso público de que a vitrine mudou (#2784).
 
-O canal cru de estoque diz o SKU de cada reserva e de cada movimento: aberto ao
-público, entrega o ritmo da loja (ADR-018 §5.1). A rota da loja entrega só um
-``shelf-update`` sem conteúdo, com janela. Estes testes provam o filtro: nada do
-canal cru atravessa, nenhuma mudança se perde, a contagem de eventos some, e o
-aviso devido sai quando a janela vence, mesmo com o canal calado.
+Quem publica é o shop, no canal ``shelf-<canal>``, só quando o estado público de um SKU
+muda (``shop/services/public_shelf.py``; os testes dele provam que dez vendas sem
+mudança não geram aviso). A rota filtra esse canal: passa o ``shelf-update`` com o SKU
+validado e os quadros de controle; nada mais atravessa, nem o ``id`` de retomada.
 """
 
 from __future__ import annotations
@@ -14,22 +13,14 @@ import asyncio
 import pytest
 from django.urls import resolve
 
-from shopman.storefront.api.shelf_events import (
-    MIN_INTERVAL_SECONDS,
-    SHELF_EVENT,
-    coarsen,
-    storefront_shelf_events_view,
-)
+from shopman.storefront.api.shelf_events import SHELF_EVENT, public_frames, storefront_shelf_events_view
 
 OPEN = ":" + " " * 2048 + "\n\nevent: stream-open\ndata:\n\n"
 KEEP_ALIVE = "event: keep-alive\ndata:\n\n"
 
-#: Janela dos testes: curta para o teste ser rápido, larga para não oscilar.
-WINDOW = 0.15
 
-
-def stock(sku: str, event_id: str = "1") -> str:
-    return f'event: stock-update\nid: stock-web:{event_id}\ndata: {{"sku": "{sku}"}}\n\n'
+def shelf(data: str, event_id: str = "1") -> str:
+    return f"event: shelf-update\nid: shelf-web:{event_id}\ndata: {data}\n\n"
 
 
 async def _stream(chunks):
@@ -37,11 +28,9 @@ async def _stream(chunks):
         yield chunk
 
 
-def run(chunks, *, min_interval: float = WINDOW) -> list[str]:
-    """Roda o filtro sobre um stream que entrega os pedaços e termina."""
-
+def run(chunks) -> list[str]:
     async def collect() -> list[str]:
-        return [chunk async for chunk in coarsen(_stream(chunks), min_interval=min_interval)]
+        return [chunk async for chunk in public_frames(_stream(chunks))]
 
     return asyncio.run(collect())
 
@@ -64,14 +53,9 @@ class LiveSource:
             self.closed = True
 
 
-def test_route_is_wired_to_the_coarsening_view():
+def test_route_is_wired_to_the_public_view():
     match = resolve("/api/v1/storefront/shelf/events/")
     assert match.func is storefront_shelf_events_view
-
-
-def test_the_window_is_a_few_seconds():
-    # "Em poucos segundos" é o que a tela promete; a janela é o pior atraso.
-    assert 2.0 <= MIN_INTERVAL_SECONDS <= 10.0
 
 
 @pytest.mark.django_db
@@ -84,15 +68,35 @@ def test_anyone_gets_a_live_event_stream(client):
     resp.close()
 
 
-def test_stock_event_becomes_a_shelf_update_with_no_payload():
-    out = "".join(run([OPEN, stock("TABAT")]))
+def test_the_notice_carries_the_sku_and_nothing_else():
+    out = "".join(run([OPEN, shelf('{"sku": "TABAT", "extra": "x"}')]))
+
+    assert f'event: {SHELF_EVENT}\ndata: {{"sku": "TABAT"}}\n\n' in out
+    # Nem o id de retomada, nem o nome do canal, nem campo a mais.
+    assert "id:" not in out
+    assert "shelf-web" not in out
+    assert "extra" not in out
+
+
+def test_a_notice_without_sku_means_the_whole_shelf():
+    out = "".join(run([shelf("{}")]))
 
     assert f"event: {SHELF_EVENT}\ndata: {{}}\n\n" in out
-    # Nada do canal cru atravessa: nem o SKU, nem o tipo, nem o id de retomada.
-    assert "TABAT" not in out
+
+
+def test_an_odd_sku_does_not_cross():
+    out = "".join(run([shelf('{"sku": "<script>"}'), shelf("not json", "2")]))
+
+    assert "<script>" not in out
+    assert "not json" not in out
+    assert out.count(f"event: {SHELF_EVENT}\ndata: {{}}") == 2
+
+
+def test_other_events_of_the_channel_do_not_cross():
+    out = "".join(run([OPEN, 'event: stock-update\ndata: {"sku": "A"}\n\n']))
+
     assert "stock-update" not in out
-    assert "stock-web" not in out
-    assert "id:" not in out
+    assert SHELF_EVENT not in out
 
 
 def test_control_frames_pass_through():
@@ -103,101 +107,25 @@ def test_control_frames_pass_through():
     assert out[1] == KEEP_ALIVE
 
 
-def test_a_burst_in_one_chunk_is_one_notice():
-    # Uma venda mexe em reserva, confirmação e baixa: três eventos, um aviso só.
-    out = "".join(run([stock("A", "1") + stock("B", "2") + stock("A", "3")]))
-
-    assert out.count(SHELF_EVENT) == 1
-
-
-def test_the_first_event_after_silence_leaves_at_once():
-    async def scenario() -> float:
-        source = LiveSource()
-        stream = coarsen(source, min_interval=WINDOW)
-        loop = asyncio.get_running_loop()
-        source.push(stock("A"))
-        started = loop.time()
-        chunk = await anext(stream)
-        elapsed = loop.time() - started
-        await stream.aclose()
-        assert SHELF_EVENT in chunk
-        return elapsed
-
-    assert asyncio.run(scenario()) < WINDOW / 2
-
-
-def test_an_event_inside_the_window_leaves_when_the_window_ends_even_if_the_channel_goes_quiet():
-    async def scenario() -> tuple[str, float]:
-        source = LiveSource()
-        stream = coarsen(source, min_interval=WINDOW)
-        loop = asyncio.get_running_loop()
-        source.push(stock("A", "1"))
-        await anext(stream)
-        sent_at = loop.time()
-        # Outra mudança logo em seguida, e depois o canal cala: sem keep-alive,
-        # sem evento. O aviso devido tem de sair sozinho, no fim da janela.
-        source.push(stock("B", "2"))
-        chunk = await asyncio.wait_for(anext(stream), timeout=WINDOW * 10)
-        waited = loop.time() - sent_at
-        await stream.aclose()
-        return chunk, waited
-
-    chunk, waited = asyncio.run(scenario())
-
-    assert chunk.count(SHELF_EVENT) == 1
-    assert "B" not in chunk.replace(SHELF_EVENT, "")
-    # Nem antes da janela (seria contar a segunda venda), nem muito depois dela.
-    assert WINDOW * 0.9 <= waited <= WINDOW * 4
-
-
-def test_the_number_of_sales_does_not_show():
-    async def scenario() -> list[str]:
-        source = LiveSource()
-        stream = coarsen(source, min_interval=WINDOW)
-        out = []
-        source.push(stock("A", "0"))
-        out.append(await anext(stream))
-        # Dez vendas dentro da mesma janela.
-        for i in range(1, 11):
-            source.push(stock("A", str(i)))
-        out.append(await asyncio.wait_for(anext(stream), timeout=WINDOW * 10))
-        # Depois disso, silêncio: nada mais sai.
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(anext(stream), timeout=WINDOW * 3)
-        return out
-
-    out = "".join(asyncio.run(scenario()))
-
-    # Onze eventos, dois avisos: quem ouve não conta vendas.
-    assert out.count(SHELF_EVENT) == 2
-
-
-def test_a_quiet_stream_emits_nothing():
-    out = "".join(run([OPEN, KEEP_ALIVE, KEEP_ALIVE]))
-
-    assert SHELF_EVENT not in out
-
-
 def test_channel_refusal_does_not_name_the_channel():
-    refusal = 'event: stream-error\nid: error\ndata: {"condition": "forbidden", "text": "x", "channels": ["stock-web"]}\n\n'
+    refusal = 'event: stream-error\nid: error\ndata: {"condition": "forbidden", "text": "x", "channels": ["shelf-web"]}\n\n'
     out = "".join(run([refusal]))
 
     assert "event: stream-error" in out
-    assert "stock-web" not in out
+    assert "shelf-web" not in out
 
 
 def test_bytes_are_accepted():
-    out = "".join(run([stock("A").encode()]))
+    out = "".join(run([shelf('{"sku": "A"}').encode()]))
 
     assert out.count(SHELF_EVENT) == 1
-    assert '"sku"' not in out
 
 
 def test_closing_the_notice_closes_the_source_even_while_waiting():
     async def scenario() -> bool:
         source = LiveSource()
-        stream = coarsen(source, min_interval=WINDOW)
-        source.push(stock("A"))
+        stream = public_frames(source)
+        source.push(shelf('{"sku": "A"}'))
         await anext(stream)
         # O cliente sai com o filtro esperando o próximo pedaço.
         waiting = asyncio.ensure_future(anext(stream))

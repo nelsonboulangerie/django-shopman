@@ -264,7 +264,22 @@ def close_if_settled(link: CourierLink) -> bool:
 # ── A leitura da rota para a página do entregador (telas do §4.5.2) ──────────
 
 
-def _stop_view(order: Order, link: CourierLink, *, on_route: bool) -> dict:
+def _ready_at(order: Order, expectation, *, now) -> str:
+    """ "HH:MM" da previsão de pronto da Cozinha (#2647), ou ``""`` sem previsão útil.
+
+    A mesma previsão da Fila do Gestor (``kitchen_eta.ready_eta``). Hora que já passou
+    não é previsão: o entregador lê "Ainda não ficou pronto", nunca uma hora vencida.
+    """
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services.kitchen_eta import ready_eta
+
+    eta = ready_eta(order, expectation, ChannelConfig.for_channel(order.channel_ref), now=now)
+    if eta is None or eta <= now:
+        return ""
+    return timezone.localtime(eta).strftime("%H:%M")  # hora-ok: contrato HH:MM, a página formata (clock.ts)
+
+
+def _stop_view(order: Order, link: CourierLink, *, on_route: bool, expectation=None) -> dict:
     from shopman.shop.services.dispatch_handoff import build_dispatch_payload
 
     block = courier.get_block(order)
@@ -300,6 +315,11 @@ def _stop_view(order: Order, link: CourierLink, *, on_route: bool) -> dict:
         "lat": handoff["latitude"],
         "lng": handoff["longitude"],
     }
+    # A hora prevista de pronto, só para o pedido aberto que ainda está na Cozinha.
+    if expectation is not None and state == "open" and not view["ready"]:
+        ready_at = _ready_at(order, expectation, now=timezone.now())
+        if ready_at:
+            view["ready_at"] = ready_at
     # Telefone só com a parada aberta e a rota na rua (plano §4.4: o mínimo, com prazo).
     if on_route and state == "open":
         view["phone"] = handoff["customer_phone"]
@@ -331,7 +351,14 @@ def ride_view(link: CourierLink) -> dict:
     live = [(o, b) for o, b in zip(orders, blocks, strict=False) if _live(o, link)]
     statuses = {b.get("status") for _, b in live}
     on_route = "E" in statuses
-    stops = [_stop_view(o, link, on_route=on_route) for o in orders]
+    # Uma medição da Cozinha por leitura, e só quando há pedido ainda nela (#2647).
+    kitchen = any(o.status in (Order.Status.ACCEPTED, Order.Status.PREPARING) for o in orders)
+    expectation = None
+    if kitchen:
+        from shopman.shop.services.kitchen_eta import prep_expectation
+
+        expectation = prep_expectation(now=timezone.now())
+    stops = [_stop_view(o, link, on_route=on_route, expectation=expectation) for o in orders]
     if "A" in statuses:
         moment = "pickup" if all(s["ready"] for s in stops if s["state"] != "cancelled") else "pickup_wait"
     elif on_route:

@@ -4,7 +4,9 @@ import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import { useOperatorAppLink } from "../../app/composables/useOperatorAppLink";
 
-const CENTRAL = "https://central.boulangerie/";
+/** O app irmão DA CASA, visto da página do teste: o mesmo host em outra porta, como no
+ *  dev. Um host de fora agora abre em nova aba sempre (``crossAppLinkAttrs``). */
+const CENTRAL = `${window.location.protocol}//${window.location.hostname}:${Number(window.location.port || 80) + 1}/`;
 
 /** `matchMedia` controlável: `installed` liga os display-modes de app. */
 function stubDisplayMode(installed: boolean) {
