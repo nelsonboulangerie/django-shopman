@@ -15221,7 +15221,8 @@
             "LegacyCheck",
             "MigrationsCheck",
             "PoolCheck",
-            "_result"
+            "_result",
+            "logger"
           ]
         }
       ]
