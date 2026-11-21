@@ -236,7 +236,7 @@ def test_far_away_the_page_keeps_the_way_and_says_nothing_about_the_position(cha
     _, message, _ = _page(order)
 
     assert message.startswith("Diego está a caminho.")
-    assert "Posição" not in message and "chegando" not in message
+    assert "posição" not in message.lower() and "chegando" not in message
 
 
 def test_an_old_position_says_its_age_and_never_says_arriving(channel):
@@ -250,7 +250,7 @@ def test_an_old_position_says_its_age_and_never_says_arriving(channel):
     title, message, _ = _page(order)
 
     assert message.startswith("Diego está a caminho.")
-    assert message.endswith(" Posição de há 2 min.")
+    assert message.endswith(" Última posição há 2 min.")
     _assert_customer_voice(title, message)
 
 

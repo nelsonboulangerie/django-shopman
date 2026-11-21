@@ -1515,7 +1515,7 @@ def _promise_copy(
             age = _position_age_phrase(data.courier_seen_at)
             if age and not data.courier_near:
                 message = f"{message} " + copy.message(
-                    "TRACKING_PROMISE_DISPATCHED_POSITION_AGE", "Posição de há {age}.").replace("{age}", age)
+                    "TRACKING_PROMISE_DISPATCHED_POSITION_AGE", "Última posição há {age}.").replace("{age}", age)
             return copy.title("TRACKING_PROMISE_DISPATCHED_TITLE", "Saiu para entrega"), message
         message = (
             copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA",

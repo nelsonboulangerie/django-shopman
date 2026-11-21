@@ -1294,7 +1294,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     # Só quando a posição envelhece (passou de 1 min): a frase diz de quando é.
     "TRACKING_PROMISE_DISPATCHED_POSITION_AGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Posição de há {age}.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Última posição há {age}.")},
     },
     "TRACKING_ACTION_CONFIRM_RECEIVED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebi meu pedido")},
