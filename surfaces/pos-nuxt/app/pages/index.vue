@@ -307,7 +307,7 @@ async function startOrderEdit(ref: string) {
   const tab = await orderEdit.start(ref);
   if (!tab) {
     toast.error(editError.value);
-    await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+    await navigateTo(`/preorders/${encodeURIComponent(ref)}`, { replace: true });
     return;
   }
   await loadPreparedTab(tab);
@@ -370,7 +370,8 @@ async function leaveOrderEdit(ref: string) {
   // estava, no descarte).
   await clearCurrentTab();
   orderEdit.reset();
-  await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+  // Troca a edição pelo detalhe no histórico (a ida também trocou): ver `editOrder`.
+  await navigateTo(`/preorders/${encodeURIComponent(ref)}`, { replace: true });
 }
 
 function discardOrderEdit() {

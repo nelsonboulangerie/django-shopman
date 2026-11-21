@@ -73,7 +73,7 @@ import {
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
 import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { pixNeedsWholeBalance, type PosBalanceCharge } from "~/presentation/balanceCharge";
+import type { PosBalanceCharge } from "~/presentation/balanceCharge";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -924,16 +924,6 @@ function returnToCart() {
 }
 
 /** O saldo em Pix: tira as outras linhas e a divisão, e o Pix assume o valor inteiro. */
-function keepOnlyWholePix() {
-  if (splitActive.value) emit("setSplitCount", 0);
-  const pixIndex = props.paymentTenders.findIndex((tender) => tender.method === "pix");
-  if (pixIndex < 0) return;
-  const removals = props.paymentTenders.map((_, index) => index).filter((index) => index !== pixIndex).reverse();
-  removals.forEach((index) => emit("removeTender", index));
-  emit("selectTender", pixIndex - removals.filter((index) => index < pixIndex).length);
-  emit("tenderExact");
-}
-
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
 // sete portões; a tela apresenta a mesma recusa e o caminho para resolvê-la.
 //
@@ -1086,16 +1076,6 @@ const ctaBlock = computed<{
       message: onDelivery.value
         ? `Escolha como o cliente vai pagar na ${props.fulfillmentType === "delivery" ? "entrega" : "retirada"}.`
         : "Escolha a forma de pagamento.",
-    };
-  }
-  // O SALDO EM PIX é UMA cobrança Pix do pedido, no valor inteiro, como a venda
-  // que fecha em Pix (#2897). Pix com outra forma, conta dividida ou Pix de outro
-  // valor não fecham: o toque deixa só o Pix, no valor do saldo.
-  if (props.balance && pixNeedsWholeBalance(props.paymentTenders, props.paymentTotalQ)) {
-    return {
-      message: "No saldo da encomenda, o Pix cobra o valor inteiro, sozinho.",
-      hint: "Ou tire o Pix e receba em dinheiro ou cartão.",
-      action: { label: "Deixar só o Pix no valor inteiro", run: keepOnlyWholePix },
     };
   }
   // `preorder_fired_unpaid` — a gêmea. Encomenda que já está na cozinha não
@@ -2579,13 +2559,15 @@ defineExpose({
              mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
              e taxas diferentes) e o valor. A forma vem primeiro, em pastilha
              cheia: é a primeira escolha no teclado do terminal, e a única que a
-             maquininha não perdoa em silêncio. -->
+             maquininha não perdoa em silêncio. Selo com maiúscula só na
+             primeira letra (dono, 16/11/2026) e a grafia da casa: "Pix",
+             "Crédito", "Débito", nunca em caixa alta. -->
         <div
           v-for="(line, idx) in confirmTenders"
           :key="`${line.method}-${idx}`"
           class="grid justify-items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-7"
         >
-          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold uppercase tracking-widest text-primary-foreground">
+          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold text-primary-foreground" data-pos-confirm-method>
             <Icon :name="line.icon" class="size-5 shrink-0" />
             {{ line.label }}
           </p>

@@ -1688,6 +1688,38 @@ describe("Pix na venda mista: Recebi o Pix", () => {
     expect(w.emitted("submit")).toHaveLength(1);
   });
 
+  it("o selo da forma diz Pix, com maiúscula só na primeira letra (nada de caixa alta por CSS)", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentTenders: mixed, paymentCovered: true, paymentRemainingQ: 0 }),
+    });
+    await cta(w)!.trigger("click");
+    await w.vm.$nextTick();
+    const badges = [...document.querySelectorAll<HTMLElement>("[data-pos-confirm-method]")];
+    expect(badges.map((badge) => badge.textContent!.trim())).toEqual(["Pix"]);
+    for (const badge of badges) {
+      expect(badge.className).not.toMatch(/\buppercase\b/);
+      expect(badge.className).not.toMatch(/\btracking-(wide|wider|widest)\b/);
+    }
+  });
+
+  it("o mesmo selo na maquininha: Crédito e Pix, como se escrevem", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentMethods: [{ ref: "credit", label: "Crédito" }, { ref: "pix", label: "Pix" }],
+        paymentTenders: [
+          { method: "credit", amount_q: 200, collection: "terminal" as const },
+          { method: "pix", amount_q: 800, collection: "terminal" as const },
+        ],
+        paymentCovered: true, paymentRemainingQ: 0,
+      }),
+    });
+    await cta(w)!.trigger("click");
+    await w.vm.$nextTick();
+    const badges = [...document.querySelectorAll<HTMLElement>("[data-pos-confirm-method]")];
+    expect(badges.map((badge) => badge.textContent!.trim())).toEqual(["Crédito", "Pix"]);
+    expect(badges.every((badge) => !/\buppercase\b/.test(badge.className))).toBe(true);
+  });
+
   it("Pix sozinho segue sem o gesto: quem confirma é o provedor", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, {
       props: props({

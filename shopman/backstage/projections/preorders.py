@@ -523,10 +523,8 @@ COUNTER_PIX_NOTICE = "O Pix gerado no balcão será cancelado."
 
 def _counter_pix_block(order, amount_q: int) -> str:
     """A frase de por que o saldo não sai em Pix no balcão agora; vazio quando sai."""
-    from shopman.shop.services import counter_pix, order_composition, pix_policy
+    from shopman.shop.services import pix_policy
 
-    if amount_q != order_composition.effective_total_q(order):
-        return counter_pix.PARTIAL_BALANCE_MESSAGE
     try:
         pix_policy.enforce_pix_test_amount_limit(amount_q)
     except pix_policy.PixPaymentPolicyError as exc:

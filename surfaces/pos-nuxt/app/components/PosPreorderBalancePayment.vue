@@ -98,8 +98,9 @@ const methods = computed(() => handOverMethods(props.pos?.payment_methods ?? [])
 
 function submit() {
   if (props.busy) return;
-  // Pix sozinho, no valor inteiro (a tela já travou o resto): a cobrança Pix do
-  // pedido, do jeito da venda que fecha em Pix.
+  // Pix sozinho (ou a conta dividida só em Pix): a cobrança Pix do pedido, do
+  // jeito da venda que fecha em Pix. Pix ao lado de dinheiro ou cartão é o Pix
+  // misto: já conferido com "Recebi o Pix", ele vai na rota da entrega (#2916).
   if (paysBalanceWithPix(lines.value, charge.value.amountQ)) {
     emit("pix");
     return;
@@ -328,6 +329,7 @@ watch(() => props.detail.counter.hand_over.amount_q, (amount, before) => {
       :lookup-busy="false"
       @back="emit('back')"
       @submit="submit"
+      @confirm-pix="tenders.confirmPixTenders"
       @add-tender="tenders.addTender"
       @remove-tender="tenders.removeTender"
       @select-tender="tenders.selectTender"

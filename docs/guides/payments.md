@@ -281,8 +281,8 @@ máquina de timeout cancela, e o caminho é refazer a venda. As recusas (`paymen
 ### O saldo da encomenda em Pix no balcão (#2897)
 
 Gesto de dinheiro tem uma tela só (dono, 16/11/2026): o "Receber e entregar" do PDV abre a tela de
-Pagamento da venda, e o Pix entra nela como a venda de balcão recebe Pix. Escolhido o Pix (sozinho,
-no valor inteiro do saldo), o PDV pede `POST /api/v1/backstage/pos/preorders/<ref>/pix/`;
+Pagamento da venda, e o Pix entra nela como a venda de balcão recebe Pix. Escolhido o Pix sozinho
+(no valor inteiro do saldo, ou o saldo dividido só em Pix), o PDV pede `POST /api/v1/backstage/pos/preorders/<ref>/pix/`;
 `shop/services/counter_pix.py` responde com o QR no formato da venda (`_pos_payment_response`), e o
 PDV acompanha pelo mesmo `pos/payment/<ref>/status/`. Pago, o saldo vira zero e a entrega é o
 `hand-over` de sempre, sem forma nenhuma.
@@ -295,8 +295,17 @@ PDV acompanha pelo mesmo `pos/payment/<ref>/status/`. Pago, o saldo vira zero e 
   cancela este Pix antes (`counter_takeover`). Vencido, o Pix do balcão **não cancela a encomenda**
   (`PaymentTimeoutHandler` lê `counter_pix.governs`): o PDV avisa e oferece "Gerar outro Pix".
 - **O prazo** é o do Pix de balcão (`payment.timeout_minutes`), nunca o do link da encomenda.
-- **Fora, por enquanto:** o Pix misto no saldo (a tela pede o Pix sozinho) e o saldo com parte já
-  paga (o `initiate` cobra o total efetivo; a forma fica apagada com o motivo).
+- **O Pix misto** (#2916): Pix ao lado de dinheiro ou cartão no mesmo saldo não é QR. É o Pix da
+  venda mista: o operador confere e toca em "Recebi o Pix", e a linha vai no `hand-over` com
+  `pix_confirmed`. `settle_delivery_cash` carimba quem e quando (`pix_confirmed_by/at`) e liquida o
+  Pix no Payman `asserted_at_terminal`; só o dinheiro entra na gaveta. Pix sozinho atestado é
+  recusado: Pix sozinho é a cobrança do balcão, com QR.
+- **A encomenda com parte paga** (#2917): o Pix cobra só o SALDO. O valor da cobrança é o da marca
+  `counter_pix.amount_q` (`payment._charge_amount_q`), as linhas recebidas ficam com os seus intents
+  (o capturado que só morava em `payment.intent_ref` vira linha `received`) e o Pix é a linha
+  pendente do saldo. O Payman soma todos os intents (`captured_balance_q`): pago o Pix, o saldo
+  vira zero sem tocar no que já tinha entrado. O Core não mudou: o valor da cobrança sempre foi
+  decidido no orquestrador.
 
 ### Pix ou link pendente recebido no balcão
 
