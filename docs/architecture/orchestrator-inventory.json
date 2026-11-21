@@ -1876,6 +1876,58 @@
       ]
     },
     {
+      "path": "shopman/shop/admin/ai_routes.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "DEFAULT_ROUTE",
+            "MODEL_VENDORS",
+            "PROTOCOL_NAMES",
+            "ROUTE_KEYS",
+            "ROUTE_LABELS",
+            "Readiness",
+            "SHADOW_OFF",
+            "SHADOW_ON",
+            "_connection_label",
+            "_connection_vendor",
+            "_empty_connection_label",
+            "_fix_for",
+            "_known_vendors",
+            "_model_vendor",
+            "_protocol",
+            "_route_ref",
+            "_routes_of",
+            "_shop",
+            "_vendor_of_host",
+            "build",
+            "clean",
+            "concrete_reason",
+            "connection_choices",
+            "connection_field",
+            "form_fields",
+            "model_choices",
+            "model_field",
+            "readiness",
+            "record_shadow_change",
+            "set_initial",
+            "shadow_history",
+            "status_html",
+            "warnings",
+            "why_unusable"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/admin/attributes.py",
       "touchpoints": [
         "admin"
@@ -1948,6 +2000,27 @@
             "_INHERIT",
             "_aspect_widget",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/admin/conversational.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ConversationalDecisionAdmin",
+            "ConversationalOutcomeAdmin",
+            "_ReadOnly"
           ]
         }
       ]
@@ -2864,6 +2937,185 @@
       ]
     },
     {
+      "path": "shopman/shop/conversational/__init__.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/clock.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FACT_VALIDITY_SECONDS",
+            "ShopmanClock"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/commerce_execute.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "APPLIED",
+            "Done",
+            "EffectSite",
+            "FORMAT",
+            "PORT",
+            "PRODUCER",
+            "RECEIPT_CONTRACT",
+            "REFUSED",
+            "RETENTION_SECONDS",
+            "Reading",
+            "SCOPE_PREFIX",
+            "ShopmanCommerceExecute",
+            "SystemClock",
+            "TERMS_REF",
+            "_body",
+            "_code",
+            "_fingerprint",
+            "_receipt_of",
+            "instant",
+            "logger",
+            "storage_key"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/commerce_read.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "conversational.house-policy-read"
+      ],
+      "responsibilities": [
+        "decisão",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "CURRENCY",
+            "DenyAll",
+            "FACT_VALIDITY_SECONDS",
+            "FORMAT",
+            "Ownership",
+            "PORT",
+            "PRODUCER_NAME",
+            "UNSUPPORTED",
+            "_date_of",
+            "_text",
+            "instant",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/decision_store.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FORMAT",
+            "_moment",
+            "_value",
+            "current_outcome",
+            "record_decision",
+            "record_outcome"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/outcomes.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "PRODUCER",
+            "SOURCE",
+            "ShopmanOutcomes"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/store.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "FORMAT",
+            "ShopmanStore",
+            "_dedupe_key",
+            "_scope",
+            "instant",
+            "moment",
+            "records_of"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/courier_link_urls.py",
       "touchpoints": [
         "outro"
@@ -2946,6 +3198,7 @@
             "STOCK_ALERT_DELIVERY_RECEIPT_SCOPE",
             "STOCK_CONSUME_MADE_TO_ORDER",
             "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION",
+            "STOCK_SHELF_RECHECK",
             "logger"
           ]
         }
@@ -4119,6 +4372,20 @@
       ]
     },
     {
+      "path": "shopman/shop/handlers/shelf_recheck.py",
+      "touchpoints": [
+        "handler"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.shelf-recheck"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/handlers/staging_autopilot.py",
       "touchpoints": [
         "handler"
@@ -4518,25 +4785,6 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/check_ifood_store.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/management/commands/check_ifood_polling.py",
       "touchpoints": [
         "outro"
@@ -4556,6 +4804,25 @@
             "RESOLVED_BY",
             "_message",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/check_ifood_store.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command"
           ]
         }
       ]
@@ -4669,6 +4936,39 @@
             "_QUANT_EXP",
             "_ROTULO_DA_UNIDADE",
             "_escala"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/courier_machine_probe.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command",
+            "_LINK_KEYS",
+            "_NEVER",
+            "_RATE_HEADERS",
+            "_SAFE_KEYS",
+            "_SAFE_PREFIXES",
+            "_SAFE_SUFFIXES",
+            "_WRITES",
+            "_items",
+            "_link",
+            "_path",
+            "_point",
+            "_safe",
+            "_shape",
+            "_unwrap"
           ]
         }
       ]
@@ -5147,39 +5447,6 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/courier_machine_probe.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command",
-            "_LINK_KEYS",
-            "_NEVER",
-            "_RATE_HEADERS",
-            "_SAFE_KEYS",
-            "_SAFE_PREFIXES",
-            "_SAFE_SUFFIXES",
-            "_WRITES",
-            "_items",
-            "_link",
-            "_path",
-            "_point",
-            "_safe",
-            "_shape",
-            "_unwrap"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/management/commands/machine_register_webhook.py",
       "touchpoints": [
         "outro"
@@ -5429,6 +5696,31 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/reconcile_ifood_orders.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "APPLY_WINDOW",
+            "Command",
+            "LOOKBACK",
+            "_alert_behind",
+            "_latest_fact_at",
+            "_stale_test_conclusion"
           ]
         }
       ]
@@ -6251,6 +6543,29 @@
           "symbols": [
             "ContactRelease",
             "ReleasedContactKind"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/conversational.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "ConversationalDecision",
+            "ConversationalEpisode",
+            "ConversationalOutcome",
+            "ConversationalRecord",
+            "ConversationalWork"
           ]
         }
       ]
@@ -7094,6 +7409,34 @@
       "out_of_extraction": false,
       "unit_ids": [
         "order.payment-method"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/preorder_kitchen_policy.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.preorder-kitchen-policy"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/promise_expiry_margin.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.promise-expiry-margin"
       ],
       "responsibilities": [
         "decisão"
@@ -8103,34 +8446,6 @@
       "out_of_extraction": false,
       "unit_ids": [
         "shop.purchase-policy"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/preorder_kitchen_policy.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "shop.preorder-kitchen-policy"
-      ],
-      "responsibilities": [
-        "decisão"
-      ],
-      "support_claims": []
-    },
-    {
-      "path": "shopman/shop/policies/promise_expiry_margin.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "stock.promise-expiry-margin"
       ],
       "responsibilities": [
         "decisão"
@@ -9256,6 +9571,29 @@
       ]
     },
     {
+      "path": "shopman/shop/services/closed_day_orders.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.closed-day-orders"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "OPEN_STATUSES"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/communication_consent.py",
       "touchpoints": [
         "service"
@@ -9889,70 +10227,6 @@
       ]
     },
     {
-      "path": "shopman/shop/services/faq_drafts.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "ALERT_TYPE",
-            "DEDUPE_KEY",
-            "alert_message",
-            "connect",
-            "logger",
-            "on_faq_changed",
-            "sync_alert",
-            "waiting"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/services/ride_plan.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "delivery.courier-ride-plan"
-      ],
-      "responsibilities": [
-        "decisão",
-        "infraestrutura",
-        "leitura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "CACHE_SECONDS",
-            "Candidate",
-            "Group",
-            "_cache_key",
-            "_point",
-            "_ready_key",
-            "km_between",
-            "logger"
-          ]
-        },
-        {
-          "responsibility": "leitura",
-          "symbols": [
-            "_service",
-            "suggestion_for",
-            "waiting_pool"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/services/derived_provenance.py",
       "touchpoints": [
         "service"
@@ -10146,6 +10420,32 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/faq_drafts.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "DEDUPE_KEY",
+            "alert_message",
+            "connect",
+            "logger",
+            "on_faq_changed",
+            "sync_alert",
+            "waiting"
           ]
         }
       ]
@@ -10719,82 +11019,6 @@
       ]
     },
     {
-      "path": "shopman/shop/services/ifood_poll_health.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "DISABLED",
-            "FRESH",
-            "MISSING",
-            "POLL_HEARTBEAT",
-            "PollHealth",
-            "STALE",
-            "STALE_AFTER",
-            "UNKNOWN",
-            "_LOCMEM_BACKEND",
-            "_shared_cache",
-            "current",
-            "last_success",
-            "record_success"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/services/ifood_review.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "COLLECT_MAX_PAGES",
-            "DEFAULT_PAGE_SIZE",
-            "IFOOD_MAX_PAGE_SIZE",
-            "MAX_PAGE_SIZE_FORWARDED",
-            "REPLYABLE_STATUS",
-            "REPLY_MAX_CHARS",
-            "REPLY_MIN_CHARS",
-            "ReviewAPIError",
-            "ReviewPage",
-            "ReviewUnavailable",
-            "STATUSES",
-            "_KNOWN_MESSAGES",
-            "_OPERATOR_COPY",
-            "_RETRYABLE_STATUS",
-            "_REVIEW_PATH",
-            "_base",
-            "_iso",
-            "_json",
-            "_raise_for",
-            "collect_reviews",
-            "enabled",
-            "get_review",
-            "ifood_error_message",
-            "list_reviews",
-            "logger",
-            "reply",
-            "summary"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/services/ifood_evidence.py",
       "touchpoints": [
         "service"
@@ -11006,6 +11230,82 @@
             "_takeout_at",
             "_to_q",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/ifood_poll_health.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DISABLED",
+            "FRESH",
+            "MISSING",
+            "POLL_HEARTBEAT",
+            "PollHealth",
+            "STALE",
+            "STALE_AFTER",
+            "UNKNOWN",
+            "_LOCMEM_BACKEND",
+            "_shared_cache",
+            "current",
+            "last_success",
+            "record_success"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/ifood_review.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "COLLECT_MAX_PAGES",
+            "DEFAULT_PAGE_SIZE",
+            "IFOOD_MAX_PAGE_SIZE",
+            "MAX_PAGE_SIZE_FORWARDED",
+            "REPLYABLE_STATUS",
+            "REPLY_MAX_CHARS",
+            "REPLY_MIN_CHARS",
+            "ReviewAPIError",
+            "ReviewPage",
+            "ReviewUnavailable",
+            "STATUSES",
+            "_KNOWN_MESSAGES",
+            "_OPERATOR_COPY",
+            "_RETRYABLE_STATUS",
+            "_REVIEW_PATH",
+            "_base",
+            "_iso",
+            "_json",
+            "_raise_for",
+            "collect_reviews",
+            "enabled",
+            "get_review",
+            "ifood_error_message",
+            "list_reviews",
+            "logger",
+            "reply",
+            "summary"
           ]
         }
       ]
@@ -12410,6 +12710,28 @@
       ]
     },
     {
+      "path": "shopman/shop/services/no_show.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "order.no-show"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/notification.py",
       "touchpoints": [
         "service"
@@ -12648,6 +12970,33 @@
       ]
     },
     {
+      "path": "shopman/shop/services/order_acceptance_alerts.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-order-acceptance-alerts"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_canceller",
+            "_clock",
+            "_close",
+            "_notify",
+            "_order_label",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/order_composition.py",
       "touchpoints": [
         "service"
@@ -12783,6 +13132,48 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/own_fleet.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ADDRESS_NOT_FOUND",
+            "Assignment",
+            "NO_ANSWER",
+            "ORDER_PROBLEM",
+            "OTHER_PAYMENT",
+            "OwnFleetRefused",
+            "PAYMENT_METHODS",
+            "PROBLEMS",
+            "REFUSED",
+            "SOURCE",
+            "_RIDE_PREFIX",
+            "_estimate",
+            "_live",
+            "_order_label",
+            "_ride_orders",
+            "_stop_view",
+            "_today_q",
+            "assign",
+            "close_if_settled",
+            "deliver",
+            "depart",
+            "logger",
+            "report_problem",
+            "ride_view"
           ]
         }
       ]
@@ -13672,6 +14063,32 @@
       ]
     },
     {
+      "path": "shopman/shop/services/production_promise.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.production-promise-lost"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "ALERT_TYPE",
+            "EVENT_TYPE",
+            "OPEN_STATUSES",
+            "ORDER_REFERENCE_PREFIX",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/promotions.py",
       "touchpoints": [
         "service"
@@ -13839,6 +14256,44 @@
       ]
     },
     {
+      "path": "shopman/shop/services/ride_plan.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "delivery.courier-ride-plan"
+      ],
+      "responsibilities": [
+        "decisão",
+        "infraestrutura",
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CACHE_SECONDS",
+            "Candidate",
+            "Group",
+            "_cache_key",
+            "_point",
+            "_ready_key",
+            "km_between",
+            "logger"
+          ]
+        },
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "_service",
+            "suggestion_for",
+            "waiting_pool"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/sessions.py",
       "touchpoints": [
         "service"
@@ -13859,6 +14314,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/services/shelf_recheck.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.shelf-recheck"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
     },
     {
       "path": "shopman/shop/services/sku_history.py",
@@ -14149,33 +14618,6 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/services/order_acceptance_alerts.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "shop.services-order-acceptance-alerts"
-      ],
-      "responsibilities": [
-        "composição",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "_canceller",
-            "_clock",
-            "_close",
-            "_notify",
-            "_order_label",
             "logger"
           ]
         }
@@ -14504,6 +14946,31 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "admin_host_root"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/views/courier_link.py",
+      "touchpoints": [
+        "API"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "CourierRideClaimView",
+            "CourierRideEventView",
+            "CourierRideView",
+            "DEVICE_HEADER",
+            "_LinkView",
+            "_REFUSALS",
+            "_private"
           ]
         }
       ]
@@ -14841,444 +15308,6 @@
           "symbols": [
             "app_name",
             "urlpatterns"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/services/production_promise.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "preorder.production-promise-lost"
-      ],
-      "responsibilities": [
-        "composição",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "ALERT_TYPE",
-            "EVENT_TYPE",
-            "OPEN_STATUSES",
-            "ORDER_REFERENCE_PREFIX",
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/services/closed_day_orders.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "preorder.closed-day-orders"
-      ],
-      "responsibilities": [
-        "composição",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "ALERT_TYPE",
-            "OPEN_STATUSES"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/services/no_show.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "order.no-show"
-      ],
-      "responsibilities": [
-        "composição",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/services/own_fleet.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "ADDRESS_NOT_FOUND",
-            "Assignment",
-            "NO_ANSWER",
-            "ORDER_PROBLEM",
-            "OTHER_PAYMENT",
-            "OwnFleetRefused",
-            "PAYMENT_METHODS",
-            "PROBLEMS",
-            "REFUSED",
-            "SOURCE",
-            "_RIDE_PREFIX",
-            "_estimate",
-            "_live",
-            "_order_label",
-            "_ride_orders",
-            "_stop_view",
-            "_today_q",
-            "assign",
-            "close_if_settled",
-            "deliver",
-            "depart",
-            "logger",
-            "report_problem",
-            "ride_view"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/views/courier_link.py",
-      "touchpoints": [
-        "API"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "CourierRideClaimView",
-            "CourierRideEventView",
-            "CourierRideView",
-            "DEVICE_HEADER",
-            "_LinkView",
-            "_REFUSALS",
-            "_private"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/management/commands/reconcile_ifood_orders.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "ALERT_TYPE",
-            "APPLY_WINDOW",
-            "Command",
-            "LOOKBACK",
-            "_alert_behind",
-            "_latest_fact_at",
-            "_stale_test_conclusion"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/conversational/__init__.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": []
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/conversational/commerce_read.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "conversational.house-policy-read"
-      ],
-      "responsibilities": [
-        "decisão",
-        "leitura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "leitura",
-          "symbols": [
-            "CURRENCY",
-            "DenyAll",
-            "FACT_VALIDITY_SECONDS",
-            "FORMAT",
-            "Ownership",
-            "PORT",
-            "PRODUCER_NAME",
-            "UNSUPPORTED",
-            "_date_of",
-            "_text",
-            "instant",
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/conversational/commerce_execute.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "APPLIED",
-            "Done",
-            "EffectSite",
-            "FORMAT",
-            "PORT",
-            "PRODUCER",
-            "RECEIPT_CONTRACT",
-            "REFUSED",
-            "RETENTION_SECONDS",
-            "Reading",
-            "SCOPE_PREFIX",
-            "ShopmanCommerceExecute",
-            "SystemClock",
-            "TERMS_REF",
-            "_body",
-            "_code",
-            "_fingerprint",
-            "_receipt_of",
-            "instant",
-            "logger",
-            "storage_key"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/admin/conversational.py",
-      "touchpoints": [
-        "admin"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "configuração"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "configuração",
-          "symbols": [
-            "ConversationalDecisionAdmin",
-            "ConversationalOutcomeAdmin",
-            "_ReadOnly"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/conversational/decision_store.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "FORMAT",
-            "_moment",
-            "_value",
-            "current_outcome",
-            "record_decision",
-            "record_outcome"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/models/conversational.py",
-      "touchpoints": [
-        "model"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "configuração"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "configuração",
-          "symbols": [
-            "ConversationalDecision",
-            "ConversationalEpisode",
-            "ConversationalOutcome",
-            "ConversationalRecord",
-            "ConversationalWork"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/conversational/clock.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "FACT_VALIDITY_SECONDS",
-            "ShopmanClock"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/conversational/outcomes.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "PRODUCER",
-            "SOURCE",
-            "ShopmanOutcomes"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/conversational/store.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "FORMAT",
-            "ShopmanStore",
-            "_dedupe_key",
-            "_scope",
-            "instant",
-            "moment",
-            "records_of"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/admin/ai_routes.py",
-      "touchpoints": [
-        "admin"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "configuração"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "configuração",
-          "symbols": [
-            "DEFAULT_ROUTE",
-            "MODEL_VENDORS",
-            "PROTOCOL_NAMES",
-            "ROUTE_KEYS",
-            "ROUTE_LABELS",
-            "Readiness",
-            "SHADOW_OFF",
-            "SHADOW_ON",
-            "_connection_label",
-            "_connection_vendor",
-            "_empty_connection_label",
-            "_fix_for",
-            "_known_vendors",
-            "_model_vendor",
-            "_protocol",
-            "_route_ref",
-            "_routes_of",
-            "_shop",
-            "_vendor_of_host",
-            "build",
-            "clean",
-            "concrete_reason",
-            "connection_choices",
-            "connection_field",
-            "form_fields",
-            "model_choices",
-            "model_field",
-            "readiness",
-            "record_shadow_change",
-            "set_initial",
-            "shadow_history",
-            "status_html",
-            "warnings",
-            "why_unusable"
           ]
         }
       ]

@@ -11,6 +11,16 @@ const { data, status, error, execute, clear } = useFetch<ProductRecommendationsR
   () => apiPath(`/api/v1/storefront/products/${encodeURIComponent(props.sku)}/recommendations/`),
   { server: false, immediate: false, watch: false, credentials: 'include' }
 )
+// Loja viva (#2785): "Você também pode gostar" acompanha a vitrine como o produto
+// acima dela. Só relê o que já carregou; a troca de produto descarta a resposta velha.
+useLiveRevalidate(
+  data,
+  () => $fetch<ProductRecommendationsResponse>(
+    apiPath(`/api/v1/storefront/products/${encodeURIComponent(props.sku)}/recommendations/`),
+    { credentials: 'include' }
+  ),
+  { scope: () => props.sku, minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS }
+)
 const items = computed(() => data.value ? crossSellItems(data.value.recommendations) : [])
 // Só depois que o servidor respondeu (ou falhou) o placeholder sai de cena.
 const settled = computed(() => status.value === 'success' || status.value === 'error')

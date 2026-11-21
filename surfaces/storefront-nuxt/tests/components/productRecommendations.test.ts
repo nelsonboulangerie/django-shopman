@@ -4,6 +4,7 @@ import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import ProductRecommendations from '~/components/ProductRecommendations.vue'
 import { CROSS_SELL_LIMIT, RECOMMENDATIONS_ROOT_MARGIN } from '~/presentation/product'
 import type { CatalogItemProjection, ProductRecommendationsResponse } from '~/types/shopman'
+import { announceStoreChange, resetLiveStoreForTests } from '~/composables/useLiveStore'
 
 const mocks = vi.hoisted(() => ({
   execute: vi.fn(),
@@ -28,6 +29,8 @@ const status = ref<'idle' | 'pending' | 'success' | 'error'>('idle')
 const error = ref<Error | null>(null)
 
 mockNuxtImport('useFetch', () => () => ({ data, status, error, execute: mocks.execute, clear: mocks.clear }))
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
+mockNuxtImport('$fetch', () => fetchMock)
 
 const item: CatalogItemProjection = {
   sku: 'CROISSANT',
@@ -201,3 +204,38 @@ function stubRailHeight (height: number): () => void {
   })
   return () => spy.mockRestore()
 }
+
+describe('recomendações acompanham a vitrine (#2785)', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    resetLiveStoreForTests()
+    data.value = withItems(['CROISSANT'])
+    status.value = 'success'
+    error.value = null
+  })
+
+  it('a vitrine mudou: a lista relê no lugar, sem voltar a carregar', async () => {
+    const section = await mountSuspended(ProductRecommendations, { props: { sku: 'PAO-FRANCES' } })
+    expect(section.text()).toContain('CROISSANT')
+    fetchMock.mockResolvedValue(withItems(['BRIOCHE']))
+
+    announceStoreChange('refusal')
+
+    await vi.waitFor(() => expect(section.text()).toContain('BRIOCHE'))
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/storefront/products/PAO-FRANCES/recommendations/', { credentials: 'include' })
+    expect(mocks.execute).not.toHaveBeenCalled()
+    section.unmount()
+  })
+
+  it('antes da primeira carga, o aviso não busca nada', async () => {
+    data.value = null
+    status.value = 'idle'
+    const section = await mountSuspended(ProductRecommendations, { props: { sku: 'PAO-FRANCES' } })
+
+    announceStoreChange('refusal')
+    await nextTick()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    section.unmount()
+  })
+})
