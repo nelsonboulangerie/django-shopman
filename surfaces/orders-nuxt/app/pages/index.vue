@@ -1582,7 +1582,8 @@ function findOnScreen(ref_: string): HTMLElement | null {
   }
   return null;
 }
-// Um pedido só: abre o pedido, na faixa que tem o "Resolver". Vários: a tela vai até
+// Um pedido só, com o "Resolver" aberto para a conta: o diálogo abre aqui mesmo. Sem
+// ele, abre o pedido, na faixa que tem as saídas. Vários: a tela vai até
 // o primeiro (o cartão, a linha da Fila ou a da lista de Encomendas). Se ele não está
 // à vista (um filtro o tirou da tela), o aviso abre o pedido: botão de aviso nunca
 // fica sem efeito.
@@ -1590,6 +1591,7 @@ async function showPromiseRisk() {
   const alert = promiseAlert.value;
   if (!alert) return;
   const open = () => navigateTo(`/${alert.firstRef}${PROMISE_HASH}`);
+  if (alert.opensResolver) return openResolve(alert.firstRef);
   if (alert.opensOrder) return void open();
   let target = findOnScreen(alert.firstRef);
   const zone = zones.value.find((z) =>

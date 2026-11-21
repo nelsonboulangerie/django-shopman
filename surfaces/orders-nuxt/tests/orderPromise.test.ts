@@ -479,21 +479,30 @@ describe("promiseRiskAlert: o aviso de página", () => {
     expect(promiseRiskAlert([card(), card({ ref: "B", promise: waiting() })])).toBeNull();
   });
 
-  it("um pedido: diz qual, o item, o porquê e o que fazer, e abre o pedido", () => {
+  it("um pedido: diz qual, o item, o porquê e o que fazer, e o botão abre o Resolver", () => {
+    // #2809 item 3 (coordenação, 21/11/2026): uma situação, um gesto.
     const alert = promiseRiskAlert([card(), card({ ref: "NB-261118-W33", promise: atRisk() })])!;
     expect(alert).toMatchObject({
       title: "Promessa em risco no pedido W33",
       description:
         "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado. Nenhum produto parecido livre para amanhã.",
-      actionLabel: "Abrir o pedido",
+      actionLabel: "Resolver",
       firstRef: "NB-261118-W33",
-      opensOrder: true,
+      opensOrder: false,
+      opensResolver: true,
     });
+  });
+
+  it("um pedido com o Resolver travado para a conta: o aviso abre o pedido", () => {
+    const alert = promiseRiskAlert([
+      card({ ref: "NB-261118-W33", promise: atRisk({ actions: [resolveAction({ enabled: false, reason: "Sem permissão." })] }) }),
+    ])!;
+    expect(alert).toMatchObject({ actionLabel: "Abrir o pedido", opensOrder: true, opensResolver: false });
   });
 
   it("quem só expede não abre o detalhe: o botão diz que leva até o pedido na tela", () => {
     const alert = promiseRiskAlert([card({ ref: "NB-261118-W33", promise: atRisk() })], { canOpen: false })!;
-    expect(alert).toMatchObject({ actionLabel: "Ver o W33", opensOrder: false });
+    expect(alert).toMatchObject({ actionLabel: "Ver o W33", opensOrder: false, opensResolver: false });
   });
 
   it("vários: diz quantos e leva ao primeiro, na ordem em que a tela os recebeu", () => {
