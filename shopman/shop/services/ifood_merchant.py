@@ -83,6 +83,32 @@ CHANNEL_OFF_RENEW_AHEAD = timedelta(days=1)
 ALERT_CLOSED_WHILE_OPEN = "ifood_store_closed_while_open"
 ALERT_OPEN_WHILE_CLOSED = "ifood_store_open_while_closed"
 ALERT_SYNC_FAILED = "ifood_store_sync_failed"
+#: O 403 do módulo de loja (Merchant) que o iFood ainda não liberou a esta conta:
+#: não é falha da casa nem pede o suporte. Vira aviso sem e-mail no Gestor, com o
+#: Portal como saída, enquanto durar (coordenação, 21/11/2026; #2618, #2622). Sem o
+#: 403, o erro volta a sair como ``ALERT_SYNC_FAILED``, crítico quando o canal está
+#: desligado, sem flag nenhuma.
+ALERT_MODULE_PENDING = "ifood_store_module_pending"
+MODULE_PENDING_WINDOW_MINUTES = 6 * 60
+
+
+def _alert_module_pending(what: str, *, now: datetime | None = None) -> None:
+    """O iFood negou o módulo de loja (403): aviso no Gestor, sem e-mail."""
+    from shopman.shop.services.observability import create_operator_alert
+
+    off = channel_off(now=now)
+    create_operator_alert(
+        type=ALERT_MODULE_PENDING,
+        severity="warning",
+        message=(
+            f"O iFood ainda não liberou o módulo de loja para a casa, então {what} não chega lá. "
+            "Pausa e horário só pelo Portal do Parceiro até o iFood liberar."
+            + (" O iFood está desligado aqui: pause também pelo Portal." if off else "")
+        ),
+        dedupe_key=f"{ALERT_MODULE_PENDING}:{'off' if off else 'on'}",
+        debounce_minutes=MODULE_PENDING_WINDOW_MINUTES,
+        http_status=403,
+    )
 
 _IFOOD_DAYS = {
     "monday": "MONDAY",
@@ -582,6 +608,9 @@ def alert_store_write_failed(
     from shopman.shop.services.observability import create_operator_alert
 
     status = getattr(exc, "status", 0) or 0
+    if status == 403:
+        _alert_module_pending(what, now=now)
+        return
     why = (
         "O iFood negou a permissão desta loja ao aplicativo (HTTP 403): autorize o aplicativo no Portal do Parceiro."
         if status == 403
@@ -714,6 +743,9 @@ def _format_api_error_copy(exc: MerchantAPIError) -> str:
 def _alert_sync_failed(record, exc: MerchantAPIError) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
+    if exc.status == 403:
+        _alert_module_pending("a pausa")
+        return
     local_start = timezone.localtime(record.starts_at, timezone=business_calendar.shop_timezone())
     local_end = timezone.localtime(record.ends_at, timezone=business_calendar.shop_timezone())
     create_operator_alert(
@@ -914,6 +946,9 @@ ALERT_STATUS_UNREADABLE_WINDOW_MINUTES = 6 * 60
 def _alert_status_unreadable(exc: MerchantAPIError, *, now: datetime) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
+    if exc.status == 403:
+        _alert_module_pending("a conferência da loja aberta", now=now)
+        return
     why = (
         "o iFood negou a permissão desta loja ao aplicativo (HTTP 403); autorize o aplicativo no Portal do Parceiro"
         if exc.status == 403

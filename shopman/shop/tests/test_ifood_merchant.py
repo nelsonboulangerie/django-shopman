@@ -301,8 +301,11 @@ def test_horario_recusado_nao_impede_a_pausa_de_chegar_ao_ifood(fake):
     (interruption,) = fake.interruptions
     assert interruption["description"] == ifood_merchant.CHANNEL_OFF_DESCRIPTION
     assert result.created == 1 and result.failed == 1
-    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
-    assert "Portal do Parceiro" in alert.message
+    # O 403 é o módulo de loja que o iFood ainda não liberou: aviso, sem e-mail.
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_MODULE_PENDING)
+    assert alert.severity == "warning"
+    assert "ainda não liberou o módulo de loja" in alert.message and "Portal do Parceiro" in alert.message
+    assert not OperatorAlert.objects.filter(type=ifood_merchant.ALERT_SYNC_FAILED).exists()
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
@@ -322,8 +325,10 @@ def test_pausa_recusada_de_vez_avisa_que_o_ifood_pode_seguir_aberto(fake):
     directive = Directive(topic=IFOOD_MERCHANT_SYNC, payload={}, last_error="[terminal] iFood merchant: HTTP 403")
     IFoodMerchantSyncHandler().on_terminal_failure(message=directive)
 
-    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
-    assert "403" in alert.message and "Portal do Parceiro" in alert.message
+    # Com o canal desligado aqui, o 403 ainda é aviso (sem e-mail), e diz para pausar pelo Portal.
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_MODULE_PENDING)
+    assert alert.severity == "warning"
+    assert "O iFood está desligado aqui: pause também pelo Portal." in alert.message
 
 
 # ── 2. Toggle do canal → iFood ────────────────────────────────────────────────
@@ -567,8 +572,26 @@ def test_status_negado_pelo_ifood_vira_aviso_e_nao_fica_so_no_log(fake):
     assert ifood_merchant.check_store(now=TUESDAY_10H) is None
     ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=5))
 
-    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)  # um só: dedupe
-    assert "conferir se a loja está aberta" in alert.message
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_MODULE_PENDING)  # um só: dedupe
+    assert "a conferência da loja aberta não chega lá" in alert.message
+    assert alert.severity == "warning"
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_sem_o_403_o_erro_volta_a_ser_critico_com_o_canal_desligado(fake):
+    """Outro erro do iFood segue no alerta de sempre, crítico com o canal desligado (e-mail)."""
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    _ifood()
+    _switch(False, "1h")
+    fake.override[("GET", f"{BASE}/status")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+
+    ifood_merchant.check_store(now=TUESDAY_10H)
+
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
+    assert alert.severity == "critical"
+    assert not OperatorAlert.objects.filter(type=ifood_merchant.ALERT_MODULE_PENDING).exists()
 
 
 @override_settings(SHOPMAN_IFOOD=OFF)

@@ -186,6 +186,8 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "ifood_store_closed_while_open": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_open_while_closed": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_sync_failed": ("orders", "/", "Conferir o iFood na Fila"),
+    # O módulo de loja ainda não liberado: pausa e horário só pelo Portal.
+    "ifood_store_module_pending": ("external", "https://portal.ifood.com.br/", "Abrir o Portal"),
     # Gestor: produto que sumiu do cardápio por coleção desativada.
     "catalog_hidden_by_inactive_collection": ("orders", "/catalog", "Abrir o Catálogo"),
     # Compras: a NF-e que diverge do cadastro fiscal.
@@ -504,6 +506,9 @@ def alert_context_href(alert, *, surface: str, target_date: str = "") -> tuple[s
     if home is None:
         return ("", "")
     home_surface, path, label = home
+    if home_surface == "external":
+        # Fora da casa (o Portal do Parceiro do iFood): o endereço é o próprio.
+        return (path, label)
     if home_surface == "admin":
         href = _admin_link(path)
         return (href, label) if href else ("", "")
