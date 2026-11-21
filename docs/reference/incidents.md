@@ -32,7 +32,7 @@ o sino do Gestor e a issue leem dele.
   (`orders` → Gestor de pedidos, `production` → Produção, `finance` → Financeiro,
   `operations` → Operação). Os avisos de sistema (`SYSTEM_TYPES`) e as exceções
   nominais (`OWNER_OVERRIDES`) são da Engenharia: hoje a fase travada, a gravação no
-  iFood, o evento do iFood sem tratador, os furos de reserva de estoque e a entrega do
+  iFood, o evento do iFood sem tratador, a reserva órfã devolvida e a entrega do
   aviso "voltou ao estoque" (triagem da primeira rodada, 21/11/2026).
 - **Sem dado de cliente:** a mensagem do alerta nunca sai do resumo. Saem tipo,
   contagens, horários e refs de pedido.

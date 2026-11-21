@@ -17,15 +17,16 @@ OWNER_BY_AUDIENCE = {
 }
 
 #: Tipos cujo dono não é o do público: a causa está no código ou na integração.
-#: Triagem da primeira rodada da ponte (21/11/2026): os cinco do público "operations"
+#: Triagem da primeira rodada da ponte (21/11/2026): os quatro do público "operations"
 #: abaixo não têm gesto de balcão; quem resolve muda código ou integração.
+#: ``stock_hold_gap`` fica com a Operação: é venda consumada acima do estoque contado,
+#: e o gesto é contar o estoque.
 OWNER_OVERRIDES = {
     "lifecycle_phase_stuck": ENGINEERING,
     "ifood_store_sync_failed": ENGINEERING,
     # Evento do iFood sem tratador: falta o tratador no código.
     "ifood_event_unhandled": ENGINEERING,
-    # Pedido confirmado sem reserva, e reserva que sobrou: furo do fluxo de estoque.
-    "stock_hold_gap": ENGINEERING,
+    # Reserva que sobrou sem dono, devolvida pela varredura: vazamento no código.
     "orphan_holds_released": ENGINEERING,
     # O aviso "voltou ao estoque" ao cliente: entrega da fila de envio.
     "stock_alert_dispatch_unknown": ENGINEERING,
