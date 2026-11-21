@@ -45,15 +45,14 @@ async function saleNeedsManager(page: Page) {
   await page.getByRole("button", { name: /^Pagamento|^Outras formas|^Cobrar/ }).locator("visible=true").first().click();
 
   await page.getByRole("button", { name: /^Desconto/ }).locator("visible=true").first().click();
-  const discount = page.locator("[data-pos-discount-modal]").locator("visible=true").first();
+  const discount = page.getByRole("dialog", { name: "Desconto" });
   await expect(discount).toBeVisible({ timeout: 30_000 });
-  const percent = discount.getByRole("button", { name: /%|Percent/ }).first();
-  if (await percent.isVisible().catch(() => false)) await percent.click();
+  await discount.getByRole("button", { name: "Percentual", exact: true }).click();
   const value = discount.getByPlaceholder("0");
   await value.click();
   await value.pressSequentially("50");
-  const reasons = discount.locator("button").filter({ hasNotText: /Valor|Percent|%|Voltar ao pagamento/ });
-  if (await reasons.count()) await reasons.first().click();
+  const reason = discount.getByRole("button", { name: "Cortesia", exact: true });
+  if (await reason.isVisible().catch(() => false)) await reason.click();
   await discount.getByRole("button", { name: "Voltar ao pagamento" }).click();
   await expect(discount).toBeHidden({ timeout: 30_000 });
 
