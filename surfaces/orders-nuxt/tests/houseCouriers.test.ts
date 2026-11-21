@@ -8,7 +8,12 @@ import {
   busyNotice,
   callSummaryByCarrier,
   carrierChips,
+  OTHER_CARRIER,
   chipLine,
+  chipValue,
+  choiceFromChip,
+  noteLabel,
+  otherCouriers,
   houseCodes,
   houseGesturePath,
   houseGestureResource,
@@ -70,6 +75,58 @@ describe("os chips de quem leva", () => {
     expect(chosenCarrier(people, "diego")?.name).toBe("Diego");
     expect(chosenCarrier(people, "rui")).toBeNull();
     expect(chosenCarrier(people, DEFAULT_CARRIER)).toBeNull();
+  });
+});
+
+describe("refinamentos do Quem leva (M3c)", () => {
+  const five = crew([
+    person("ana", "Ana"),
+    person("bruno", "Bruno"),
+    person("caio", "Caio", { state: "busy", state_label: "Volta 12h50" }),
+    person("diego", "Diego"),
+    person("eva", "Eva"),
+  ]);
+
+  it("com mais de 3 na escala, o último chip vira Outro da casa; os livres vêm primeiro", () => {
+    const chips = carrierChips(five, { quoteQ: 1100, quoting: false });
+    expect(chips.map((chip) => chip.label)).toEqual(["TaOn", "Ana", "Bruno", "Outro da casa"]);
+    expect(chips[3]!.state).toBe("Mais 3 na escala");
+    expect(otherCouriers(five).map((courier) => courier.ref)).toEqual(["diego", "eva", "caio"]);
+  });
+
+  it("tocar em Outro da casa escolhe o primeiro da lista, e o chip diz quem é, com o ✔", () => {
+    const ref = choiceFromChip(five, OTHER_CARRIER);
+    expect(ref).toBe("diego");
+    expect(chipValue(five, ref)).toBe(OTHER_CARRIER);
+    const chips = carrierChips(five, { quoteQ: 1100, quoting: false, chosen: ref, values: { diego: "R$ 15,00" } });
+    expect(chipLine(chips[3]!)).toBe("Diego · R$ 15,00 ✔");
+    expect(chipValue(five, "ana")).toBe("ana");
+  });
+
+  it("até 3 na escala, cada um tem o seu chip", () => {
+    const three = crew([person("ana", "Ana"), person("bruno", "Bruno"), person("caio", "Caio")]);
+    expect(carrierChips(three, { quoteQ: 1100, quoting: false }).map((chip) => chip.key)).toEqual([DEFAULT_CARRIER, "ana", "bruno", "caio"]);
+    expect(otherCouriers(three)).toEqual([]);
+  });
+
+  it("quem está na rua diz a hora da volta no chip", () => {
+    const chips = carrierChips(crew([person("caio", "Caio", { state: "busy", state_label: "Volta 12h50" })]), { quoteQ: null, quoting: false, values: { caio: "R$ 18,00" } });
+    expect(chipLine(chips[1]!)).toBe("Volta 12h50 · R$ 18,00");
+  });
+
+  it("sem a TaOn, só a casa: sem chip do serviço, e o primeiro livre vem marcado", () => {
+    const people = crew([person("caio", "Caio", { state: "busy", state_label: "Na rua" }), person("diego", "Diego")]);
+    const chips = carrierChips(people, { quoteQ: null, quoting: false, serviceOn: false });
+    expect(chips.map((chip) => [chip.key, chip.chosen])).toEqual([["diego", true], ["caio", false]]);
+    expect(chosenCarrier(people, undefined, false)?.ref).toBe("diego");
+    expect(chosenCarrier(people, undefined, true)).toBeNull();
+    expect(chosenCarrier(crew([]), undefined, false)).toBeNull();
+  });
+
+  it("a observação vai junto quando escrita, e o campo diz para quem", () => {
+    expect(noteLabel("Diego")).toBe("Observação para Diego (opcional)");
+    expect(houseRideInputs({ refs: ["A"], courier: "diego", change_out: {}, machine: "", note: "  Interfone quebrado.  " }).note).toBe("Interfone quebrado.");
+    expect("note" in houseRideInputs({ refs: ["A"], courier: "diego", change_out: {}, machine: "", note: "  " })).toBe(false);
   });
 });
 

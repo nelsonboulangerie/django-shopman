@@ -65,6 +65,13 @@ export interface CourierRideView {
   machine?: string
   settle?: { cash_q: number, machine: string, bags_back: string[] }
   detail?: string
+  /** A observação da loja para esta corrida (escrita no Gestor, ao enviar). */
+  note?: string
+}
+
+/** O recado da loja para a corrida, sem espaços sobrando; vazio quando não há. */
+export function storeNote (view: CourierRideView | null | undefined): string {
+  return (view?.note || '').trim()
 }
 
 // ── O que a página escolhe mostrar ───────────────────────────────────────────

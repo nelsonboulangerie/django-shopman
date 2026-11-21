@@ -39,6 +39,12 @@ export interface CallSheetRide {
   carrier: string;
   /** "Diego está na rua. A corrida espera a volta." */
   notice: string;
+  /** A lista do "Outro da casa" e quem foi escolhido nela (M3c). */
+  others: { label: string; value: string }[];
+  otherValue: string;
+  /** "Observação para Diego (opcional)"; vazio sem a casa escolhida. */
+  noteLabel: string;
+  note: string;
 }
 
 const props = defineProps<{
@@ -59,6 +65,7 @@ const emit = defineEmits<{
   change: [ref: string, value: string];
   machine: [number: number, value: string];
   carrier: [number: number, key: string];
+  note: [number: number, value: string];
 }>();
 
 const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops.length, 0));
@@ -101,7 +108,13 @@ const orders = computed(() => props.rides.reduce((sum, ride) => sum + ride.stops
               :model-value="ride.carrier"
               :label="`Quem leva a corrida ${ride.letter}`"
               :notice="ride.notice"
+              :others="ride.others"
+              :other-value="ride.otherValue"
+              :note-label="ride.noteLabel"
+              :note="ride.note"
               @update:model-value="(key: string) => emit('carrier', ride.number, key)"
+              @other="(ref: string) => emit('carrier', ride.number, ref)"
+              @update:note="(value: string) => emit('note', ride.number, value)"
             />
             <div v-if="ride.lines.length" class="flex flex-col gap-0.5" data-call-sheet-quote>
               <p

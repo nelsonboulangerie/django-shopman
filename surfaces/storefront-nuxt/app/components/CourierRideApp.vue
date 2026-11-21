@@ -28,6 +28,7 @@ import {
   openStops,
   paymentChoices,
   pickupBlocks,
+  storeNote,
   problemNote,
   quoted,
   refusalText,
@@ -219,6 +220,10 @@ v-for="choice in THEME_CHOICES"
           </div>
         </div>
         <p v-if="bagTip(view!)" class="cr-small">{{ bagTip(view!) }}</p>
+        <div v-if="storeNote(view)" class="cr-block" data-courier-note>
+          <p class="cr-small">Recado da loja</p>
+          <p class="cr-base">{{ storeNote(view) }}</p>
+        </div>
       </div>
       <div class="cr-footer">
         <UiButton v-if="screen === 'pickup'" variant="ghost" class="cr-primary" :disabled="ride.busy.value" @click="ride.depart()">

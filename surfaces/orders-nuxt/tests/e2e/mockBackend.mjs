@@ -674,7 +674,7 @@ function rideQuote(url) {
 // leu), que é de onde sai a intenção de enviar à casa.
 const crewState = { diego: true, rui: false };
 const housePosts = [];
-function crewBody(url) {
+function crewBody(url, mode = "on") {
   const refs = new URL(url, "http://mock").searchParams.getAll("refs");
   const value = (q) => (refs.length ? `R$ ${Math.floor(q / 100)},${String(q % 100).padStart(2, "0")}` : "");
   const row = (ref, name, base) => {
@@ -684,7 +684,16 @@ function crewBody(url) {
   };
   return {
     active: true, service: { ref: "casa", name: "Entregadores da casa" }, default: { ref: "taon", name: "TaOn" },
-    couriers: [row("diego", "Diego", 1200), row("rui", "Rui", 1400)],
+    couriers: mode === "many"
+      // M3c: cinco na escala (o último chip vira "Outro da casa"); Caio está na rua e volta 12h50.
+      ? [["ana", "Ana", 1100], ["bruno", "Bruno", 1150], ["caio", "Caio", 1300], ["diego", "Diego", 1200], ["eva", "Eva", 1250]]
+        .map(([ref, name, base]) => {
+          const valueQ = refs.length ? base + 300 * (refs.length - 1) : null;
+          const busy = ref === "caio";
+          return { ref, name, on_shift: true, state: busy ? "busy" : "free", state_label: busy ? "Volta 12h50" : "Livre",
+            back_at: null, value_q: valueQ, value: valueQ === null ? "" : value(valueQ) };
+        })
+      : [row("diego", "Diego", 1200), row("rui", "Rui", 1400)],
   };
 }
 const DISPATCH = (ref) => ({
@@ -762,7 +771,8 @@ const server = createServer((req, res) => {
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   const cancelScenario = /(?:^|;\s*)e2e_deliveries=cancel(?:;|$)/.test(req.headers.cookie || "");
   if (cancelScenario && /\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, deliveriesProjection());
-  const crewScenario = /(?:^|;\s*)e2e_crew=on(?:;|$)/.test(req.headers.cookie || "");
+  const crewMode = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_crew=(on|many|alone)(?:;|$)/)?.[1] ?? "";
+  const crewScenario = Boolean(crewMode);
   const houseScenario = /(?:^|;\s*)e2e_house=on(?:;|$)/.test(req.headers.cookie || "");
   if (/\/e2e\/deliveries\/house-ride\/?(\?|$)/.test(url)) {
     if (req.method === "DELETE") Object.assign(houseState, { departed: false, delivered: [], claimed: true, gestures: [] });
@@ -823,9 +833,14 @@ const server = createServer((req, res) => {
     });
   }
   if (/\/deliveries\/couriers\/?(\?|$)/.test(url)) {
-    return json(res, 200, crewScenario ? crewBody(url) : { active: false, service: null, default: { ref: "taon", name: "TaOn" }, couriers: [] });
+    return json(res, 200, crewScenario ? crewBody(url, crewMode) : { active: false, service: null, default: { ref: "taon", name: "TaOn" }, couriers: [] });
   }
-  if (crewScenario && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, crewDeliveries());
+  // M3c: `e2e_crew=alone` é a loja só com os entregadores da casa (TaOn desligada);
+  // `e2e_crew=nobody` é sem TaOn e sem casa: a página só informa.
+  if (/(?:^|;\s*)e2e_crew=nobody(?:;|$)/.test(req.headers.cookie || "") && /\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, { ...DELIVERIES, courier_on: false, house_on: false });
+  if (crewScenario && /\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, { ...crewDeliveries(), ...(crewMode === "alone" ? { courier_on: false, house_on: true, ride_plan: { ...DELIVERIES.ride_plan, suggestions: [] } } : { house_on: true }) });
   const f10Scenario = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_f10=(fiscal|countfail)(?:;|$)/)?.[1] ?? "";
   if (/\/backstage\/deliveries\/count\/?(\?|$)/.test(url)) {
     return json(res, 200, { waiting: f10Scenario === "countfail" ? null : DELIVERIES.waiting.length });

@@ -13220,6 +13220,7 @@
           "symbols": [
             "ADDRESS_NOT_FOUND",
             "Assignment",
+            "NOTE_MAX",
             "NO_ANSWER",
             "ORDER_PROBLEM",
             "OTHER_PAYMENT",
