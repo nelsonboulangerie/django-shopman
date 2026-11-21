@@ -78,6 +78,13 @@ Credenciais da ponte). Ela não abre nenhuma outra rota.
 
 - Lê o resumo da loja e, quando o `SENTRY_AUTH_TOKEN` lê issues, as issues abertas do
   Sentry em produção. Issue do Sentry sem evento há 24 h conta como verde.
+- Lê da DigitalOcean (`DO_READ_TOKEN` = segredo `DIGITALOCEAN_READ_TOKEN`, app em
+  `DO_APP_NAME`) os reinícios e a memória de cada componente do app nas últimas 48 h,
+  pela API de métricas do App Platform (`/v2/monitoring/metrics/apps/restart_count` e
+  `memory_percentage`). Componente que reiniciou nas últimas 24 h, ou passou de 90% de
+  memória, abre `do:<componente>:restart` ou `do:<componente>:memoria`, com dono
+  Engenharia. O contador é por instância e recomeça no deploy: só a subida conta. Sem
+  o escopo `monitoring:read`, a rodada avisa no log e segue com as outras fontes.
 - Acha a issue da ponte pelo marcador `<!-- incident:<fingerprint> -->` no corpo, ou
   ADOTA uma issue aberta à mão cujo título cita o tipo como palavra inteira
   (ex.: "Alerta: lifecycle_phase_stuck").

@@ -4,7 +4,11 @@
 Fontes (só leitura):
 - o resumo de alertas da loja, ``GET /api/v1/backstage/incidents/`` com a
   credencial ``INCIDENTS_TOKEN`` (emitida por ``issue_incident_reader_credential``);
-- as issues abertas do Sentry no projeto, quando ``SENTRY_AUTH_TOKEN`` lê issues.
+- as issues abertas do Sentry no projeto, quando ``SENTRY_AUTH_TOKEN`` lê issues;
+- os reinícios e a memória de cada componente do app na DigitalOcean (API de
+  métricas do App Platform), quando ``DO_READ_TOKEN`` e ``DO_APP_NAME`` existem.
+  Componente que reiniciou nas últimas 24 h (ou passou de 90% de memória) é
+  incidente aberto, com dono Engenharia; 24 h sem reinício fecha a issue.
 
 Destino: issues com o label ``alerta`` no repositório (``GITHUB_TOKEN``).
 
@@ -150,6 +154,101 @@ def incidents_from_sentry(issues: list[dict], *, now: datetime) -> list[Incident
                 link=str(issue.get("permalink") or ""),
             )
         )
+    return out
+
+
+# ── DigitalOcean (App Platform) ─────────────────────────────────────────────
+
+DO_API = "https://api.digitalocean.com"
+#: Memória acima disto em algum ponto da janela é incidente (o worker de 0,5 GB
+#: morreu por memória em 20/11/2026 com dois shells abertos no console).
+DO_MEMORY_LIMIT = 90.0
+#: A janela que a ponte lê: 24 h decidem "aberto"; as 24 h anteriores dizem desde
+#: quando está verde, para a issue fechar depois de 24 h sem reinício.
+DO_WINDOW_HOURS = 2 * GREEN_HOURS
+
+
+def _series_points(payload: dict) -> list[list[tuple[datetime, float]]]:
+    """As séries de ``data.result[].values`` (``[timestamp, "valor"]``), em ordem de tempo."""
+
+    out = []
+    for series in ((payload or {}).get("data") or {}).get("result") or []:
+        points = []
+        for raw in series.get("values") or []:
+            try:
+                points.append((datetime.fromtimestamp(int(raw[0]), UTC), float(raw[1])))
+            except (TypeError, ValueError, IndexError):
+                continue
+        out.append(sorted(points))
+    return out
+
+
+def restarts_in(payload: dict) -> list[datetime]:
+    """Os instantes em que o contador de reinícios subiu, somando as instâncias.
+
+    O contador é por instância e pode recomeçar do zero quando a instância é
+    trocada (deploy); só a subida conta como reinício.
+    """
+
+    moments = []
+    for points in _series_points(payload):
+        for (_t0, v0), (t1, v1) in zip(points, points[1:], strict=False):
+            if v1 > v0:
+                moments.extend([t1] * int(v1 - v0))
+    return sorted(moments)
+
+
+def memory_peaks(payload: dict, *, limit: float = DO_MEMORY_LIMIT) -> list[tuple[datetime, float]]:
+    return sorted((t, v) for points in _series_points(payload) for t, v in points if v >= limit)
+
+
+def incidents_from_digitalocean(components: dict[str, dict], *, now: datetime) -> list[Incident]:
+    """``components``: ``{nome: {"restart": payload, "memory": payload}}`` da API de métricas."""
+
+    out = []
+    window_start = now - timedelta(hours=DO_WINDOW_HOURS)
+    for name, metrics in sorted(components.items()):
+        for kind, moments, measures in (
+            ("restart", restarts_in(metrics.get("restart") or {}), "reinícios do componente"),
+            ("memoria", [t for t, _v in memory_peaks(metrics.get("memory") or {})],
+             f"memória acima de {DO_MEMORY_LIMIT:.0f}%"),
+        ):
+            recent = [t for t in moments if now - t < timedelta(hours=GREEN_HOURS)]
+            is_open = bool(recent)
+            last = moments[-1] if moments else None
+            out.append(
+                Incident(
+                    fingerprint=f"do:{name}:{kind}",
+                    title=f"Alerta: {name} ({measures}, DigitalOcean)",
+                    adopt_token=f"do:{name}:{kind}",
+                    owner="Engenharia",
+                    measures=f"DigitalOcean App Platform: {measures} em `{name}`",
+                    home="Painel da DigitalOcean, Insights do componente",
+                    is_open=is_open,
+                    severity="error",
+                    open_count=len(recent),
+                    open_since=recent[0] if is_open else None,
+                    green_since=None if is_open else (last or window_start),
+                )
+            )
+    return out
+
+
+def _do_components(token: str, app_name: str, *, now: datetime) -> dict[str, dict]:
+    apps, _ = _get_json(f"{DO_API}/v2/apps?per_page=200", token=token)
+    app = next((a for a in apps.get("apps") or [] if (a.get("spec") or {}).get("name") == app_name), None)
+    if app is None:
+        raise RuntimeError(f"app {app_name!r} não encontrado na DigitalOcean")
+    spec = app.get("spec") or {}
+    names = [c.get("name") for key in ("services", "workers", "jobs") for c in spec.get(key) or [] if c.get("name")]
+    start = int((now - timedelta(hours=DO_WINDOW_HOURS)).timestamp())
+    end = int(now.timestamp())
+    out = {}
+    for name in names:
+        query = urllib.parse.urlencode({"app_id": app["id"], "app_component": name, "start": start, "end": end})
+        restart, _ = _get_json(f"{DO_API}/v2/monitoring/metrics/apps/restart_count?{query}", token=token)
+        memory, _ = _get_json(f"{DO_API}/v2/monitoring/metrics/apps/memory_percentage?{query}", token=token)
+        out[name] = {"restart": restart, "memory": memory}
     return out
 
 
@@ -387,6 +486,15 @@ def main(argv=None) -> int:
         except urllib.error.HTTPError as exc:
             # Token sem escopo de issues (event:read): a loja segue; o aviso fica no log da rodada.
             print(f"::warning::Sentry recusou a leitura de issues (HTTP {exc.code}); só os alertas da loja nesta rodada")
+
+    do_token = os.environ.get("DO_READ_TOKEN", "").strip()
+    do_app = os.environ.get("DO_APP_NAME", "").strip()
+    if do_token and do_app:
+        try:
+            incidents += incidents_from_digitalocean(_do_components(do_token, do_app, now=now), now=now)
+        except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as exc:
+            # Token sem monitoring:read, app renomeado ou API fora: a loja segue; o aviso fica no log.
+            print(f"::warning::DigitalOcean não leu as métricas do app ({exc}); só as outras fontes nesta rodada")
 
     actions = plan_and_apply(incidents, GitHub(repo=repo, token=gh_token, dry_run=args.dry_run), now=now)
     open_now = sum(1 for incident in incidents if incident.is_open)
