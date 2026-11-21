@@ -939,6 +939,80 @@ def dialogue_number_words() -> frozenset:
     return frozenset(dialogue._NUMBER_WORDS)
 
 
+#: O Jev escolhe o SKU sozinho só com confiança alta; abaixo, a casa pergunta "qual deles?".
+SKU_CHOICE_MIN_CONFIDENCE = 0.85
+SKU_CHOICE_QUESTION = "sku"
+SKU_CHOICE_INSTRUCTIONS = (
+    "Um cliente de padaria pediu um produto pelo WhatsApp. Qual destes produtos do cardápio é o que ele "
+    "pediu? Escolha 'other' se nenhum for claramente o pedido, ou se mais de um servir igualmente."
+)
+SKU_CHOICE_OTHER = "Nenhum destes com certeza: o cliente precisa dizer qual."
+
+
+def _jev_picks_sku(act: Act, items: list[dict], *, conversation) -> dict | None:
+    """O Jev decide entre os candidatos da busca ("quero 2 baguettes": Tradition ou Jambon-Beurre?).
+
+    Decisor tipado (``choice`` com ``other``, no padrão do ``JevMatcher`` do B.I.): só nome e
+    descrição dos candidatos e a fala do cliente, redigida, pela porta (freio e medidor). Devolve
+    o item só com confiança de pelo menos ``SKU_CHOICE_MIN_CONFIDENCE``; com dúvida, ``other``,
+    erro ou sem Jev, ``None``, e a casa pergunta "qual deles?". Abaixo da confiança não há LLM de
+    reserva: a pergunta ao cliente custa zero e não erra; um modelo de texto seria um chute sobre
+    outro chute.
+    """
+    import time
+
+    from shopman.shop import ai
+
+    from .intent_benchmark import parse_jev_choice
+    from .observation_privacy import redact_observation_text
+
+    candidates = items[:dialogue_max_listed()]
+    keyed = {f"p{n}": item for n, item in enumerate(candidates, 1)}
+    criteria = {key: " ".join(part for part in (item.get("name", ""), item.get("description", "")) if part)[:200]
+                for key, item in keyed.items()}
+    criteria["other"] = SKU_CHOICE_OTHER
+    try:
+        url, api_key, model = ai.jev_endpoint(customer_text=True)
+    except ai.AINotConfigured:
+        return None
+    body = {
+        "model": model,
+        "state": {"customer_message": redact_observation_text(act.span or act.product).text},
+        "questions": {SKU_CHOICE_QUESTION: {"type": "choice", "instructions": SKU_CHOICE_INSTRUCTIONS,
+                                            "criteria": criteria}},
+    }
+    meter = getattr(conversation, "_meter", None)
+    started = time.perf_counter()
+    try:
+        import requests
+
+        response = ai.jev_post(requests.Session(), url, api_key, body, timeout=3.0, model=model)
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+        probabilities, confidence = parse_jev_choice(payload, question=SKU_CHOICE_QUESTION)
+    except Exception:  # noqa: BLE001 — o decisor que cai nunca escolhe: a casa pergunta
+        logger.warning("concierge.sku_choice.failed", exc_info=True)
+        return None
+    finally:
+        if meter is not None:
+            meter.add_time("sku_choice", (time.perf_counter() - started) * 1000)
+    if meter is not None:
+        usage = payload.get("usage") or {}
+        meter.add_call("sku_choice", model, {"input_tokens": usage.get("input_tokens", usage.get("prompt_tokens", 0))},
+                       provider="typesafe")
+    choice = max(probabilities, key=probabilities.get) if probabilities else "other"
+    if choice not in keyed or (confidence or 0.0) < SKU_CHOICE_MIN_CONFIDENCE:
+        return None
+    return keyed[choice]
+
+
+def dialogue_max_listed() -> int:
+    from . import dialogue
+
+    return dialogue.MAX_LISTED
+
+
 def _alternatives(sku: str, *, context, qty: int = 1) -> list[dict]:
     """O que a casa oferece no lugar de um indisponível, pelo mecanismo da Loja.
 
@@ -1020,6 +1094,10 @@ def _cart_change(act: Act, *, conversation, context, copy):
     exact = [i for i in items if _fold(i.get("name", "")) == _fold(query)]
     if exact:
         items = exact[:1]
+    if len(items) > 1:
+        chosen = _jev_picks_sku(act, items, conversation=conversation)
+        if chosen is not None:
+            items = [chosen]
     if len(items) > 1:
         listed = dialogue.memo_of("search_storefront", {}, found) or {}
         options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
