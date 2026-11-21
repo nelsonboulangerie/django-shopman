@@ -280,6 +280,14 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
     ),
+    "CONCIERGE_MEMORY_STILL_HERE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_STILL_HERE_HELP": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
     "CONCIERGE_NOT_IN_MENU": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
