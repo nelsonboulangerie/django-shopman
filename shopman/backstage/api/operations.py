@@ -2461,14 +2461,16 @@ class DeliveriesView(APIView):
 
 
 class DeliveriesCountView(APIView):
-    """O selo de Entregas no menu: ``{waiting}``, entregas do dia sem corrida chamada."""
+    """O selo de Entregas no menu e o "Chamar entregador" do cartão Pronto do Painel:
+    ``{waiting, call_refs}`` (entregas do dia sem corrida chamada; os prontos que dá
+    para chamar agora, #2876)."""
 
     permission_classes = [HasOrderBoardAccess]
 
     def get(self, request):
-        from shopman.backstage.projections.deliveries import deliveries_waiting_count
+        from shopman.backstage.projections.deliveries import deliveries_waiting_summary
 
-        return Response({"waiting": deliveries_waiting_count()})
+        return Response(deliveries_waiting_summary())
 
 
 class DeliveryDriverPhotoView(APIView):

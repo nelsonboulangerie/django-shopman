@@ -292,7 +292,33 @@ def jev_categories() -> list:
     ]
 
 
-def jev_scores(text: str, *, contender=None, with_parts: bool = False):
+#: Valor em reais e código de pedido: ligados à pessoa, não vão no contexto do Jev.
+_MONEY_RE = re.compile(r"R\$\s?\d[\d.]*(?:,\d{1,2})?")
+_ORDER_CODE_RE = re.compile(r"\b(pedido)\s+\*?(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]{2,24}\*?", re.IGNORECASE)
+HOUSE_LINE_CHARS = 300
+
+
+def house_line(context) -> str:
+    """A última fala da casa, redigida, para o Jev ler a mensagem com contexto (1b, D-040).
+
+    Minimização (dono, 21/11/2026, "desde que seguro perante LGPD, sim"): só a ÚLTIMA fala
+    da casa, pelo mesmo redator da fala do cliente (nome, telefone, e-mail, documento,
+    endereço, código de pedido longo), e mais o código curto ("pedido W29") e os valores em
+    reais, que também se ligam à pessoa. Nada além disso.
+    """
+    from .observation_privacy import redact_observation_text
+
+    for who, said in reversed(list(context or [])):
+        if who != "Casa" or not str(said or "").strip():
+            continue
+        text = redact_observation_text(str(said)).text
+        text = _ORDER_CODE_RE.sub(r"\1 [pedido omitido]", text)
+        text = _MONEY_RE.sub("[valor]", text)
+        return _clip(" ".join(text.split()), HOUSE_LINE_CHARS)
+    return ""
+
+
+def jev_scores(text: str, *, contender=None, with_parts: bool = False, house: str = ""):
     """A probabilidade de cada uma das 12 intenções pelo Jev (``Prediction``).
 
     O texto vai REDIGIDO (``redact_observation_text``), o mesmo que o comparador
@@ -304,7 +330,7 @@ def jev_scores(text: str, *, contender=None, with_parts: bool = False):
     from .observation_privacy import redact_observation_text
 
     contender = contender or JevContender(timeout=10.0)
-    sample = Sample(0, redact_observation_text(text).text, frozenset())
+    sample = Sample(0, redact_observation_text(text).text, frozenset(), house_line=house)
     categories = jev_categories()
     if with_parts:
         # Uma pergunta a mais na MESMA chamada: "a mensagem traz mais de uma coisa?"
@@ -326,14 +352,14 @@ def best_jev_intent(scores: dict[str, float]) -> str:
     return ranked[0][1] if ranked else ""
 
 
-def classify_with_jev(text: str, *, contender=None, with_parts: bool = False) -> dict | None:
+def classify_with_jev(text: str, *, contender=None, with_parts: bool = False, house: str = "") -> dict | None:
     """Proposta do Jev: a intenção, sem urgência nem resumo; ou None.
 
     ``scores`` leva todas as probabilidades (para o porteiro das intenções no plural),
     mesmo quando nenhuma intenção passa do corte.
     """
     try:
-        prediction = jev_scores(text, contender=contender, with_parts=with_parts)
+        prediction = jev_scores(text, contender=contender, with_parts=with_parts, house=house)
     except Exception as exc:  # sem aprovação, sem chave, rede, resposta ilegível: vale a regra
         logger.warning("concierge.triage.jev_failed exception_type=%s", type(exc).__name__)
         return None
@@ -437,7 +463,10 @@ def decide(
         proposal = None
     else:
         # O Jev responde também se a mensagem traz mais de uma parte (``intents``).
-        proposal = classify_with_jev(text, contender=contender, with_parts=True) if jev_enabled() else None
+        proposal = (
+            classify_with_jev(text, contender=contender, with_parts=True, house=house_line(context))
+            if jev_enabled() else None
+        )
 
     scores = dict((proposal or {}).get("scores") or {})
     if proposal is not None and not proposal["intent"]:
