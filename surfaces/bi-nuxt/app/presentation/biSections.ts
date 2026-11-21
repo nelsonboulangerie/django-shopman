@@ -45,6 +45,8 @@ export const BI_SECTIONS: readonly OperatorSection[] = [
     form: "floor",
     quick: true,
   },
+  // Só do Dono: quanto a casa gasta com IA e como a Concierge está respondendo (DEV-2026-067).
+  { key: "ai", label: "IA", icon: "lucide:sparkles", to: "/ai", form: "office" },
   // Última: a IA propõe cenários sobre os agregados; o gestor decide.
   {
     key: "scenarios",
@@ -68,8 +70,11 @@ export type BiSurfaceRole = "cash_auditor" | "reader" | null | undefined;
  * 403 que nunca vai passar (beta 05/11, ge:BI-07), e ocupava uma das quatro vagas da
  * barra de baixo do Gerente.
  */
+/** As seções que só o Dono lê: o Caixa e a IA (gasto e respostas da Concierge). */
+const OWNER_ONLY = new Set(["cash", "ai"]);
+
 export function biSections(windowQuery: string, role: BiSurfaceRole = null): OperatorSection[] {
-  const visible = BI_SECTIONS.filter((section) => !(section.key === "cash" && role === "reader"));
+  const visible = BI_SECTIONS.filter((section) => !(OWNER_ONLY.has(section.key) && role === "reader"));
   if (!windowQuery) return [...visible];
   return visible.map((section) => ({
     ...section,
