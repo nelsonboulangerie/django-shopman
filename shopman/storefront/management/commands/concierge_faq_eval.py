@@ -32,6 +32,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Inclui as perguntas frequentes em rascunho, SÓ no teste (nada é publicado).",
         )
+        parser.add_argument(
+            "--jev-check",
+            action="store_true",
+            help="Com --arm model: o Jev confere se cada resposta se sustenta nas FAQs citadas (custa).",
+        )
 
     def handle(self, *args, **options):
         cases = faq_eval.load_golden(options["golden"] or None)
@@ -56,7 +61,7 @@ class Command(BaseCommand):
                 raise CommandError(str(exc)) from exc
         report = faq_eval.run(
             cases, arm=options["arm"], channel_ref=options["channel"], client=client, model=model or "", budget=budget,
-            include_drafts=options["include_drafts"],
+            include_drafts=options["include_drafts"], jev_check=options["jev_check"],
         )
         self.stdout.write("═══ Perguntas frequentes: FAQ direta × IA a partir das FAQs ═══")
         self.stdout.write(report.render(show=options["show"]))
