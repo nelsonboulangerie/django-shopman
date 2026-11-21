@@ -1560,6 +1560,39 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_CART_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
     },
+    "CONCIERGE_CLOSE_ASK_DATE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?")},
+    },
+    "CONCIERGE_CLOSE_ASK_FULFILLMENT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Você vai retirar aqui na loja ou prefere entrega?")},
+    },
+    "CONCIERGE_CLOSE_ASK_SLOT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual horário de retirada fica melhor? {options}")},
+    },
+    "CONCIERGE_CLOSE_NO_SLOTS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nesse dia não há mais horário de retirada. Para qual outro dia?")},
+    },
+    "CONCIERGE_CLOSE_SLOT_REFUSED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{slot} não está disponível: {reason}.")},
+    },
+    "CONCIERGE_CLOSE_NO_PICKUP_AT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Às {time} ainda não há retirada nesse dia.")},
+    },
+    "CONCIERGE_CLOSE_NO_DELIVERY_AT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Às {time} não entregamos nesse dia. As janelas de entrega são: {windows}. Qual delas fica melhor?")},
+    },
+    "CONCIERGE_CLOSE_ASK_ADDRESS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual é o endereço da entrega? Pode enviar a localização pelo WhatsApp ou escrever rua, número, bairro e CEP.")},
+    },
+    "CONCIERGE_CLOSE_ASK_PAYMENT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Como você prefere pagar? {options}")},
+    },
+    "CONCIERGE_CLOSE_NO_CASH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {options}")},
+    },
+    "CONCIERGE_CLOSE_CONFIRM_CODE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para registrar o pedido, responda: confirmo {code}")},
+    },
     "CONCIERGE_MEMORY_ASK_WHICH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
     },

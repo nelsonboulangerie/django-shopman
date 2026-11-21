@@ -22,11 +22,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from django.core.cache import cache
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Order
 
+from shopman.backstage.projections.courier_position import (
+    DeliveryCourierPositionProjection,
+    courier_position_projection,
+)
 from shopman.backstage.projections.house_rides import DeliveryHouseRideProjection, house_ride
 from shopman.shop.google_maps_credentials import browser_api_key
 from shopman.shop.projections.types import Action
@@ -109,7 +112,7 @@ class DeliveryRideProjection:
     status_label: str
     stops: tuple[DeliveryStopProjection, ...]
     driver: DeliveryDriverProjection | None = None
-    position: DeliveryPointProjection | None = None
+    position: DeliveryCourierPositionProjection | None = None
     called_at: str = ""
     called_by: str = ""
     pickup_eta_at: str = ""
@@ -436,12 +439,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         )
     position = None
     if block.get("id_mch") and state in ("coming", "atStore", "route"):
-        cached = cache.get(f"courier:pos:{block['id_mch']}")
-        if isinstance(cached, dict) and cached.get("lat") is not None and cached.get("lng") is not None:
-            try:
-                position = DeliveryPointProjection(latitude=float(cached["lat"]), longitude=float(cached["lng"]))
-            except (TypeError, ValueError):
-                position = None
+        position = courier_position_projection(block["id_mch"])
     # A cotação da rota mora no pedido que abriu a corrida, que nem sempre é o
     # primeiro da fila: vale a primeira parada que tem um custo honesto.
     stop_refs = [stop.ref for stop in stops]

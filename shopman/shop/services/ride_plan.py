@@ -282,7 +282,9 @@ def ride_plan(waiting, *, quote: bool = True, tasks: dict | None = None) -> dict
     from shopman.shop.services import courier, delivery_services
     from shopman.shop.services.operator_orders import short_ref
 
-    empty = {"suggestions": [], **_service()}
+    # Os serviços de entrega são lidos uma vez só por plano, com ou sem sugestão.
+    service = _service()
+    empty = {"suggestions": [], **service}
     shop = Shop.load()
     if shop is None or shop.latitude is None or shop.longitude is None or delivery_services.courier_backend() is None:
         return empty
@@ -320,7 +322,7 @@ def ride_plan(waiting, *, quote: bool = True, tasks: dict | None = None) -> dict
             "late_code": short_ref(group.late_ref),
             "detour_km": round(group.detour_km, 2),
         })
-    plan = {"suggestions": suggestions, **_service()}
+    plan = {"suggestions": suggestions, **service}
     cache.set(key, plan, CACHE_SECONDS)
     return plan
 

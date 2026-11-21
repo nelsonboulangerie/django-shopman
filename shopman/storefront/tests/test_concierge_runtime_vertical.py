@@ -124,3 +124,28 @@ def test_d12_second_item_failure_preserves_source_fulfillment_and_all_holds(conv
     assert not Session.objects.filter(channel_ref="web").exists()
     assert not IdempotencyKey.objects.filter(scope=f"concierge.transfer:{conversation.pk}").exists()
     assert not Order.objects.exists()
+
+
+def test_wp13_the_conversation_closes_the_order_and_the_pix_goes_once(conversation, settings, monkeypatch):
+    """WP-13 de ponta a ponta, com commit de verdade: o Pix nasce no commit e sai uma vez, à parte."""
+    from shopman.storefront.tests import test_concierge_fechar_pedido as closing
+    from shopman.storefront.tests.test_concierge_engine import _listed
+
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
+    monkeypatch.setattr("shopman.storefront.concierge.intents._model", lambda: "modelo-de-teste")
+    monkeypatch.setattr(
+        "shopman.storefront.concierge.transport.send_for",
+        lambda binding, text: fixtures.SendOutcome("accepted", "accepted", f"test:{binding.subject}:{text[:8]}"),
+    )
+    _listed("CROISSANT", "Croissant", description="Folhado amanteigado", stock="50")
+    summary = closing._pickup_until_summary(conversation)
+
+    placed = closing._turn(conversation, f"confirmo {closing._code(summary)}")
+    again = closing._turn(conversation, f"confirmo {closing._code(summary)}")
+
+    order = Order.objects.get()
+    pix = order.data["payment"]["copy_paste"]
+    assert placed[0].startswith(f"Pedido {order.ref} registrado."), placed
+    assert placed[1:] == [pix], "o código Pix numa mensagem só dele"
+    assert pix not in again, "o Pix sai uma vez"
+    assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1

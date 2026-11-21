@@ -52,8 +52,9 @@ no-op e a letra fora de ordem é recusada (``stale``). A idempotência é pelo
 ``event_id`` do aviso: dois avisos com a mesma letra (o aceite do segundo
 entregador, depois de uma desistência) são dois fatos. Só o formato deprecado,
 sem ``event_id``, cai na chave antiga (corrida + letra). Posição não toca o
-Order: vai para o cache (``courier:pos:{id_mch}``, TTL 120s), lida pela
-projection do gestor.
+Order: vai para ``courier_position.store_position``, com a hora da posição
+(``timestamp`` do item do lote) e a via ``webhook``, lida pela projection do
+Gestor.
 """
 
 from __future__ import annotations
@@ -64,7 +65,6 @@ import hmac
 import logging
 
 from django.conf import settings
-from django.core.cache import cache
 from drf_spectacular.utils import extend_schema
 from rest_framework import status as http
 from rest_framework.permissions import AllowAny
@@ -72,7 +72,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.shop.services import webhook_idempotency
+from shopman.shop.services import courier_position, webhook_idempotency
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +88,6 @@ _STATUS_KEYS = ("status", "status_solicitacao", "status_code", "situacao")
 #: mesmo webhook mas são eventos (chegada, parada, liberação, pagamento):
 #: gravá-los como status apagaria a letra verdadeira.
 _RIDE_STATUSES = frozenset({"D", "G", "P", "S", "N", "A", "E", "C", "F", "U"})
-
-POSITION_CACHE_SECONDS = 120
 
 #: Header da assinatura documentada (``Signature`` é o antigo, deprecado).
 SIGNATURE_HEADER = "HTTP_SIGNATURE_V2"
@@ -122,7 +120,7 @@ class MachineWebhookView(APIView):
         event = request.data if isinstance(request.data, dict) else {}
         if isinstance(event.get("data"), list):
             # Lote de posição (formato documentado atual).
-            stored = sum(_cache_position(item) for item in event["data"] if isinstance(item, dict))
+            stored = sum(_store_batch_item(item) for item in event["data"] if isinstance(item, dict))
             logger.info("machine.webhook kind=position_batch items=%d stored=%d %s",
                         len(event["data"]), stored, _body_digest(body))
             return Response(
@@ -141,11 +139,12 @@ class MachineWebhookView(APIView):
         lat = _first(event, ("lat", "lat_condutor", "lat_cond"))
         lng = _first(event, ("lng", "lng_condutor", "lng_cond"))
         if lat and lng:
-            _store_position(ride_ref, lat, lng)
+            courier_position.store_position(ride_ref, lat, lng, source=courier_position.SOURCE_WEBHOOK,
+                                            at=_first(event, ("datetime",)) or None)
 
         ride_status = _first(event, _STATUS_KEYS).upper()
         if not ride_status:
-            # Evento só de posição: cache atualizado acima, nada mais a fazer.
+            # Evento só de posição: gravada acima, nada mais a fazer.
             return Response({"status": "ok", "kind": "position"}, status=http.HTTP_200_OK)
         event_id = _first(event, ("event_id",))
         will_reopen = _truthy(event.get("will_reopen"))
@@ -412,23 +411,16 @@ def _alert_signature_failure(reason: str) -> None:
         logger.exception("MachineWebhook: falha ao registrar o alerta de assinatura (%s)", reason)
 
 
-def _store_position(ride_ref: str, lat, lng) -> None:
-    cache.set(
-        f"courier:pos:{ride_ref}",
-        {"lat": str(lat), "lng": str(lng)},
-        POSITION_CACHE_SECONDS,
-    )
-
-
-def _cache_position(item: dict) -> bool:
-    """Um item do lote de posição: ``request_id`` + ``coordinates``."""
+def _store_batch_item(item: dict) -> bool:
+    """Um item do lote de posição: ``request_id`` + ``coordinates`` + ``timestamp``."""
     ride_ref = _first(item, ("request_id", "id_mch"))
     coordinates = item.get("coordinates") if isinstance(item.get("coordinates"), dict) else {}
-    lat, lng = coordinates.get("latitude"), coordinates.get("longitude")
-    if not ride_ref or lat is None or lng is None:
+    if not ride_ref:
         return False
-    _store_position(ride_ref, lat, lng)
-    return True
+    return courier_position.store_position(
+        ride_ref, coordinates.get("latitude"), coordinates.get("longitude"),
+        source=courier_position.SOURCE_WEBHOOK, at=item.get("timestamp"),
+    )
 
 
 def _first(event: dict, keys: tuple[str, ...]) -> str:

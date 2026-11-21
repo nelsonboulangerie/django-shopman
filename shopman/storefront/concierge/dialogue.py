@@ -191,7 +191,7 @@ def effective(state: dict | None, facts: Facts) -> dict:
         out["order"] = order
 
     if alive and not order_closed_since:
-        for key in ("listed", "focus", "last_change", "parts"):
+        for key in ("listed", "focus", "last_change", "parts", "closing"):
             if state.get(key):
                 out[key] = state[key]
 
@@ -814,7 +814,8 @@ def next_state(
     está no ar); o resumo pendente sobrevive enquanto o orçamento for o mesmo.
     """
     state = {
-        key: value for key, value in (previous or {}).items() if key in {"listed", "focus", "order", "last_change", "parts"}
+        key: value for key, value in (previous or {}).items()
+        if key in {"listed", "focus", "order", "last_change", "parts", "closing"}
     }
     old_pending = (previous or {}).get("pending") or {}
     pending = old_pending if old_pending.get("kind") == CONFIRM_ORDER else None
@@ -825,6 +826,10 @@ def next_state(
             pending = memo["pending"]
         if memo.get("focus"):
             state["focus"] = memo["focus"]
+        if "closing" in memo:
+            # O fechamento do pedido na conversa (``order_closing``): o dia escolhido e a
+            # pergunta no ar. ``None`` encerra (pedido registrado, ou a sacola esvaziou).
+            state["closing"] = memo["closing"]
         if "parts" in memo:
             # As partes do último turno pelas intenções no plural e o que houve com cada
             # uma: a pergunta repetida ("e a minha pergunta?") responde a partir daqui.
@@ -859,7 +864,7 @@ def next_state(
             pending = None
     if pending:
         state["pending"] = pending
-    if not any(state.get(key) for key in ("listed", "focus", "order", "last_change", "pending", "parts")):
+    if not any(state.get(key) for key in ("listed", "focus", "order", "last_change", "pending", "parts", "closing")):
         return {}
     return {
         "v": VERSION,

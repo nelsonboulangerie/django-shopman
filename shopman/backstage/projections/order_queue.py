@@ -1748,8 +1748,6 @@ def _courier_block(order: Order) -> dict | None:
         if not _is_delivery(order):
             return None
 
-        from django.core.cache import cache
-
         from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
         from shopman.shop.services import delivery_services
 
@@ -1776,7 +1774,10 @@ def _courier_block(order: Order) -> dict | None:
 
         position = None
         if active and block.get("id_mch"):
-            position = cache.get(f"courier:pos:{block['id_mch']}")
+            from shopman.backstage.projections.courier_position import courier_position_projection
+
+            point = courier_position_projection(block["id_mch"])
+            position = asdict(point) if point else None
 
         from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
 

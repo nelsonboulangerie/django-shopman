@@ -1,0 +1,140 @@
+[
+ {
+  "tag": "375",
+  "scheme": "light",
+  "contraste": [
+   "2 3.90",
+   "1 corrida sugerida: 2 pedidos. 1.53",
+   "A47 + C03 1.53",
+   "· Gleba Palhano 3.21",
+   "Juntas: R$ 16,50 · 24 min · 5,7 km ✔ 1.53",
+   "Separadas sairiam R$ 25,00 3.21",
+   "C03 chega uns 6 min depois. 3.21",
+   "Agora não 1.53",
+   "Em preparo 3.57"
+  ],
+  "alvo": [
+   "Buscar 32x32",
+   "Avisos 32x32",
+   "A47 · Ana · Gleba Palhano 343x36",
+   "D12 · Dora · CentroEm preparo 343x36",
+   "Montar uma corrida 174x32",
+   "ADiego chega em 4 minB12 (2)·Separe 2 sa 314x38"
+  ],
+  "cortado": [
+   "Gestor de pedidos",
+   "Entregas"
+  ],
+  "motos": [
+   "Entregador da corrida A. Posição agora",
+   "Entregador da corrida B. Última posição há 3 min (2h13)"
+  ]
+ },
+ {
+  "tag": "375",
+  "scheme": "dark",
+  "contraste": [
+   "1 2.67",
+   "2 3.69",
+   "B12 (2) 1.18",
+   "F09 1.18"
+  ],
+  "alvo": [
+   "Buscar 32x32",
+   "Avisos 32x32",
+   "A47 · Ana · Gleba Palhano 343x36",
+   "D12 · Dora · CentroEm preparo 343x36",
+   "Montar uma corrida 174x32",
+   "ADiego chega em 4 minB12 (2)·Separe 2 sa 314x38"
+  ],
+  "cortado": [
+   "Gestor de pedidos",
+   "Entregas"
+  ],
+  "motos": [
+   "Entregador da corrida A. Posição agora",
+   "Entregador da corrida B. Última posição há 3 min (2h13)"
+  ]
+ },
+ {
+  "tag": "1366",
+  "scheme": "light",
+  "contraste": [
+   "2 3.90",
+   "1 corrida sugerida: 2 pedidos. 1.53",
+   "A47 + C03 1.53",
+   "· Gleba Palhano 3.21",
+   "Juntas: R$ 16,50 · 24 min · 5,7 km ✔ 1.53",
+   "Separadas sairiam R$ 25,00 3.21",
+   "C03 chega uns 6 min depois. 3.21",
+   "Agora não 1.53",
+   "Em preparo 3.57"
+  ],
+  "alvo": [
+   "Pedidos 192x32",
+   "Entregas · 3 pendências 192x32",
+   "Histórico 192x32",
+   "Clientes 192x32",
+   "Catálogo 192x32",
+   "Canais 192x32",
+   "Ajustes 192x32",
+   "Atalhos do teclado 192x32",
+   "Suporte 192x32",
+   "Bloquear ou trocar de operador 192x32",
+   "Avisos 32x32",
+   "Menu do operador 89x32",
+   "Compactar a barra lateral 32x32",
+   "Buscar pedido, cliente, produto ou tela 320x32",
+   "A47 · Ana · Gleba Palhano 531x36",
+   "D12 · Dora · CentroEm preparo 531x36",
+   "Montar uma corrida 174x32",
+   "ADiego chega em 4 minB12 (2)·Separe 2 sa 502x38",
+   "BMarina em rotaE02F09·1 de 2 entregues · 502x38"
+  ],
+  "cortado": [
+   "Gestor de pedidos"
+  ],
+  "motos": [
+   "Entregador da corrida A. Posição agora",
+   "Entregador da corrida B. Última posição há 3 min (2h13)"
+  ]
+ },
+ {
+  "tag": "1366",
+  "scheme": "dark",
+  "contraste": [
+   "1 2.67",
+   "2 3.69",
+   "B12 (2) 1.18",
+   "F09 1.18"
+  ],
+  "alvo": [
+   "Pedidos 192x32",
+   "Entregas · 3 pendências 192x32",
+   "Histórico 192x32",
+   "Clientes 192x32",
+   "Catálogo 192x32",
+   "Canais 192x32",
+   "Ajustes 192x32",
+   "Atalhos do teclado 192x32",
+   "Suporte 192x32",
+   "Bloquear ou trocar de operador 192x32",
+   "Avisos 32x32",
+   "Menu do operador 89x32",
+   "Compactar a barra lateral 32x32",
+   "Buscar pedido, cliente, produto ou tela 320x32",
+   "A47 · Ana · Gleba Palhano 531x36",
+   "D12 · Dora · CentroEm preparo 531x36",
+   "Montar uma corrida 174x32",
+   "ADiego chega em 4 minB12 (2)·Separe 2 sa 502x38",
+   "BMarina em rotaE02F09·1 de 2 entregues · 502x38"
+  ],
+  "cortado": [
+   "Gestor de pedidos"
+  ],
+  "motos": [
+   "Entregador da corrida A. Posição agora",
+   "Entregador da corrida B. Última posição há 3 min (2h13)"
+  ]
+ }
+]

@@ -22,7 +22,7 @@ function ride(over: Partial<DeliveryRideProjection> = {}): DeliveryRideProjectio
   return {
     key: "776753357", number: 2, state: "route", status_label: "Indo para os clientes",
     stops: [stop("NB-261116-A05", { done: true }), stop("NB-261116-C12"), stop("NB-261116-D20", { volumes: 0 })],
-    driver: null, position: { latitude: -21.16, longitude: -47.8 },
+    driver: null, position: { latitude: -21.16, longitude: -47.8, at: "2026-11-16T14:19:55-03:00", source_label: "pela TaOn" },
     called_at: "2026-11-16T17:12:00Z", called_by: "ana", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "",
     delivery_eta_at: "", tracking_url: "", cost_display: "", bags: 3, undeclared: [], lead_ref: "NB-261116-A05",
     back_action: null, back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "",
@@ -48,12 +48,19 @@ describe("Entregas: o detalhe da corrida e o mapa", () => {
     } finally { w.unmount(); }
   });
 
-  it("a origem da posição vem por extenso, fora do mapa", () => {
+  it("a idade e a origem da posição vêm por extenso, fora do mapa (F7b)", () => {
     const w = mountDetail();
     try {
       const label = w.get("[data-ride-position-source]");
-      expect(label.text()).toBe("Posição do entregador pela TaOn");
+      expect(label.text()).toBe("Posição agora, pela TaOn");
       expect(w.get("[data-map-stub]").element.contains(label.element)).toBe(false);
+    } finally { w.unmount(); }
+  });
+
+  it("a posição velha diz há quanto tempo e a hora dela (F7b)", () => {
+    const w = mountDetail({ position: { latitude: -21.16, longitude: -47.8, at: "2026-11-16T14:17:00-03:00", source_label: "pela TaOn" } });
+    try {
+      expect(w.get("[data-ride-position-source]").text()).toBe("Última posição há 3 min (14h17), pela TaOn");
     } finally { w.unmount(); }
   });
 

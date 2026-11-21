@@ -66,3 +66,22 @@ export async function acceptsNewOrder (page: Page, testInfo: TestInfo, ref: stri
   await expect(accept).toHaveCount(0, { timeout: 60_000 })
   await capture(page, testInfo, 'gestor-aceito')
 }
+
+/** A operadora recusa o pedido pelo detalhe dele no Gestor: "Recusar", o motivo da lista
+ *  única do backend e a confirmação. O confirmar só acende depois que o diálogo leu para
+ *  onde vai o dinheiro (WP-G06). */
+export async function refusesOrder (page: Page, testInfo: TestInfo, ref: string): Promise<void> {
+  await acknowledgeOtherOrdersAlarms(page, ref)
+  await page.goto(`/${encodeURIComponent(ref)}`)
+  await settled(page)
+  await page.getByRole('button', { name: 'Recusar', exact: true }).first().click()
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: /^Recusar/ }) })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('radio').first().click()
+  const confirm = dialog.getByRole('button', { name: 'Recusar pedido', exact: true })
+  await expect(confirm).toBeEnabled({ timeout: 30_000 })
+  await capture(page, testInfo, 'gestor-recusa')
+  await confirm.click()
+  await expect(dialog).toBeHidden({ timeout: 30_000 })
+  await capture(page, testInfo, 'gestor-recusado')
+}

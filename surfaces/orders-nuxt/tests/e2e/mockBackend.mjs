@@ -463,6 +463,7 @@ function readBody(req) {
 // corrida escolhe a cor; o que a tela escreve é a LETRA (`letter`); a URL leva a chave.
 const minutesAgo = (n) => new Date(Date.now() - n * 60_000).toISOString();
 const minutesAhead = (n) => new Date(Date.now() + n * 60_000).toISOString();
+const secondsAgo = (n) => new Date(Date.now() - n * 1000).toISOString();
 const ORIGIN = { latitude: -23.3273, longitude: -51.1762 };
 function deliveryStop(ref, customer, place, dLat, dLng, extra = {}) {
   return {
@@ -490,7 +491,8 @@ const DELIVERIES = {
       key: "776753357", number: 1, letter: "A", state: "coming", status_label: "A caminho da loja",
       stops: [deliveryStop("WEB-20261116-0B12", "Bia", "Jardim Higienópolis", -0.004, -0.008, { volumes: 2 })],
       driver: { name: "Diego", phone: "(43) 99999-0001", vehicle: "Moto prata · ABC1D23" },
-      position: { latitude: ORIGIN.latitude + 0.003, longitude: ORIGIN.longitude - 0.003 },
+      // Posição de agora (F7b): a moto cheia, sem etiqueta. A hora é lida a cada resposta.
+      position: { latitude: ORIGIN.latitude + 0.003, longitude: ORIGIN.longitude - 0.003, get at() { return secondsAgo(5); }, source_label: "pela TaOn" },
       called_at: minutesAgo(9), pickup_eta_at: minutesAhead(4), cost_display: "R$ 9,00", bags: 2,
       // Link só em corrida de uma parada: com várias, o servidor não prova de quem é.
       tracking_url: "https://rastreio.example/776753357",
@@ -504,7 +506,8 @@ const DELIVERIES = {
         deliveryStop("WEB-20261116-0F09", "Flora", "Aeroporto", 0.009, -0.015),
       ],
       driver: { name: "Marina", phone: "(43) 99999-0002", vehicle: "Moto preta · XYZ9K88" },
-      position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013 },
+      // Posição velha (F7b): sem aviso há 3 min, a moto esmaece e diz desde quando.
+      position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013, get at() { return minutesAgo(3); }, source_label: "pela TaOn" },
       called_at: minutesAgo(28), picked_up_at: minutesAgo(12), delivery_eta_at: minutesAhead(11),
       cost_display: "R$ 14,50",
       lead_ref: "WEB-20261116-0E02",
