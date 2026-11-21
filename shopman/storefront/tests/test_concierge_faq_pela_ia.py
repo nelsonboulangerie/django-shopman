@@ -151,8 +151,8 @@ def test_when_the_jev_says_the_answer_is_not_backed_the_direct_faq_answers(conve
 
     outcome = _turn(conversation, text, [_act("house_info", text)], monkeypatch)
 
-    assert outcome.reply_text != "Aceitamos Pix e cartão, sim!", "o Jev reprovou: vale a FAQ direta"
-    assert "Pix" in outcome.reply_text
+    assert outcome.reply_text != "Aceitamos Pix e cartão, sim!", "o Jev reprovou: o texto da IA não sai"
+    assert "Pix" in outcome.reply_text, "sai o texto da FAQ que a IA citou, como está"
 
 
 def test_without_the_jev_the_checked_answer_stands(conversation, menu, monkeypatch):
@@ -187,3 +187,19 @@ def test_the_jev_receives_the_cited_faqs_and_the_answer_redacted(conversation):
     assert "99876" not in body["state"]["store_answer"], "a resposta vai redigida"
     assert not faq_answer.held_by_jev(answer, [faq], session=FakeJev(0.9))
     assert faq_answer.held_by_jev(answer, [faq], session=FakeJev(0.2))
+
+
+def test_when_the_jev_rejects_the_cited_faqs_are_served_verbatim_not_the_first_match():
+    """Placar de produção (21/11/2026): reprovada, a FAQ direta devolvia só o horário para
+    a pergunta do feriado. Vale o texto das FAQs que a IA citou, como estão, até duas."""
+    from shopman.storefront.concierge.faq_answer import Answer, cited_verbatim
+
+    hours = SimpleNamespace(ref="hours", question="Horário?", answer="Das 9h às 18h.")
+    holiday = SimpleNamespace(ref="curated-feriado", question="Abrem em feriado?", answer="Normalmente não abrimos em feriado.")
+    answer = Answer(refs=["curated-feriado", "hours", "curated-feriado"], text="No feriado fechamos, viu? Mas sábado sim!")
+
+    served = cited_verbatim(answer, [hours, holiday])
+
+    assert served.refs == ["curated-feriado", "hours"]
+    assert served.text == "Normalmente não abrimos em feriado.\n\nDas 9h às 18h."
+    assert cited_verbatim(Answer(refs=["nada"], text="x"), [hours]).refs == []

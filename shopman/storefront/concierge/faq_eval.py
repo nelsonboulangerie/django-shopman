@@ -30,6 +30,7 @@ from .faq_answer import (  # noqa: E402,F401  (o motor mora em faq_answer; o pla
     _fold,
     answer_with_model,
     build_request,
+    cited_verbatim,
     held_by_jev,
     inventions,
 )
@@ -54,6 +55,8 @@ class Scored:
     covered: bool
     extra: list[str]
     invented: list[str]
+    #: O texto diz o que a pergunta pede (``mentions`` do caso)? ``None``: o caso não diz.
+    says: bool | None = None
 
 
 @dataclass
@@ -93,6 +96,10 @@ class Report:
         errors = [r for r in self.rows if r.answer.error]
         if errors:
             lines.append("  Falhas (a resposta caiu na FAQ direta): " + ", ".join(sorted({r.answer.error for r in errors})))
+        judged = [r for r in self.rows if r.says is not None]
+        if judged:
+            lines.append(f"  O texto diz o que foi perguntado (palavras do caso)     {sum(r.says for r in judged)}/{len(judged)}"
+                         + "".join(f"\n    não disse: {r.case['ref']}" for r in judged if not r.says))
         if self.jev_held is not None:
             lines.append(f"  Conferência do Jev: reprovou {len(self.jev_held)} (valeu a FAQ direta)"
                          + (f": {', '.join(self.jev_held)}" if self.jev_held else ""))
@@ -163,9 +170,11 @@ def score(case: dict, answer: Answer, *, live: set, faqs: list, check_invention:
     # verificar"), e não silenciada. Pergunta toda sem FAQ: não respondeu nada.
     has_uncovered_part = any(not part for part in expected)
     covered = covered and (not has_uncovered_part or (not needed and not got) or bool(answer.uncovered.strip()))
+    mentions = [str(m) for m in case.get("mentions") or []]
+    says = all(_fold(m) in _fold(answer.text) for m in mentions) if mentions else None
     return Scored(
         case=case, answer=answer, expected=expected, exact=exact, covered=covered, extra=extra,
-        invented=inventions(answer, faqs) if check_invention else [],
+        invented=inventions(answer, faqs) if check_invention else [], says=says,
     )
 
 
@@ -193,8 +202,10 @@ def run(
             if budget is not None:
                 budget.charge(usage.get("cost_usd"))
             if report.jev_held is not None and not answer.error and held_by_jev(answer, faqs):
-                # O caminho vivo (``intents._faq_by_model``): reprovada, vale a FAQ direta.
+                # O caminho vivo (``intents._faq_by_model``): reprovada, vale o texto das FAQs
+                # que a IA citou; sem nenhuma citada, a FAQ direta.
                 report.jev_held.append(case["ref"])
-                answer = answer_direct(case["text"], channel_ref=channel_ref, faqs=faqs)
+                verbatim = cited_verbatim(answer, faqs)
+                answer = verbatim if verbatim.refs else answer_direct(case["text"], channel_ref=channel_ref, faqs=faqs)
         report.rows.append(score(case, answer, live=live, faqs=faqs, check_invention=arm == "model"))
     return report
