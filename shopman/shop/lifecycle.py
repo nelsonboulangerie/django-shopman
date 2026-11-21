@@ -1051,9 +1051,12 @@ def awaits_kitchen_release(order) -> bool:
 
     Data FUTURA espera o dia. NO dia, a encomenda (``is_preorder`` gravado no
     commit, ou despertador vivo) espera ``preorder_activation_at``: hora
-    combinada − preparo − antecedência (decisão do dono, 09/11/2026). Pedido do
-    dia sem despertador vai para a Cozinha no aceite, como sempre. Depois que
-    a Cozinha recebeu (``kitchen_released_at``), nada mais espera.
+    combinada − preparo − antecedência (decisão do dono, 09/11/2026). O pedido
+    feito hoje PARA hoje com hora combinada espera pela mesma régua
+    (:func:`_promised_for_today`, #2548): o pão feito na hora não sai horas
+    antes do combinado. Pedido do dia sem hora combinada, e a venda de balcão,
+    vão para a Cozinha no aceite. Depois que a Cozinha recebeu
+    (``kitchen_released_at``), nada mais espera.
     """
     from shopman.shop.services.order_helpers import get_commitment_date
 
@@ -1068,10 +1071,27 @@ def awaits_kitchen_release(order) -> bool:
     data = order.data or {}
     if data.get(KITCHEN_RELEASED_AT_KEY):
         return False
-    if not (data.get("is_preorder") or _has_live_preorder_alarm(order)):
+    if not (data.get("is_preorder") or _has_live_preorder_alarm(order) or _promised_for_today(order, target)):
         return False
     available_at, _ = preorder_activation_at(order)
     return available_at is not None and available_at > timezone.now()
+
+
+def _promised_for_today(order, today) -> bool:
+    """O pedido de hoje combinou uma hora de hoje (#2548, coordenação 21/11/2026).
+
+    ``is_preorder`` é falso no mesmo dia (o commit só o grava para data futura),
+    e sem esta pergunta o pedido feito às 9h para as 17h ia à Cozinha no aceite.
+    A hora é a mesma que :func:`kitchen_release_at` usa (``promised_at``). A
+    venda de balcão fica de fora: o cliente leva agora, não há hora a esperar.
+    """
+    from shopman.shop.services.fulfillment_window import promised_at
+    from shopman.shop.services.order_helpers import is_counter_takeaway
+
+    if is_counter_takeaway(order):
+        return False
+    promised = promised_at(order)
+    return promised is not None and timezone.localtime(promised).date() == today
 
 
 #: ``Order.data`` — ISO datetime em que a encomenda saiu da espera e entrou no
