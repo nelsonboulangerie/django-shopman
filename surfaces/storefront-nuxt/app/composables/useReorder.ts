@@ -30,7 +30,7 @@ export function useReorder () {
       outcome.value = { added: response.added || [], skipped: response.skipped || [], ok: response.ok === true }
       forgetRemoteMutationKey(`reorder:${intent}`)
       keys.value = omitKey(keys.value, intent)
-      if (import.meta.client && response.ok && !outcome.value.skipped.length) useSonner.success(response.replayed ? 'Esta tentativa já foi processada. Sua sacola está atualizada.' : 'Itens adicionados ao carrinho.')
+      if (import.meta.client && response.ok && !outcome.value.skipped.length) useSonner.success(response.replayed ? 'Esta tentativa já foi processada. Sua sacola está atualizada.' : 'Itens adicionados à sacola.')
       if (import.meta.client) await navigateTo('/sacola')
       conflict.value = null
       return response
