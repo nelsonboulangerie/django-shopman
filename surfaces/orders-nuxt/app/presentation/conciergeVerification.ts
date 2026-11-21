@@ -59,14 +59,27 @@ export function isFinalAnswerError(code: string | undefined | null): boolean {
 
 type Action = AlertProjection["actions"][number];
 
-export function verificationActions(alert: AlertProjection): { answer: Action | null; takeOver: Action | null } {
+export const LIVE_CHAT_KIND = "open_live_chat";
+export const CONFIGURE_LIVE_CHAT_KIND = "configure_live_chat";
+
+export function verificationActions(alert: AlertProjection): {
+  answer: Action | null;
+  takeOver: Action | null;
+  liveChat: Action | null;
+  configureLiveChat: Action | null;
+} {
   const find = (kind: string) => alert.actions?.find((action) => action.kind === kind && action.enabled) ?? null;
-  return { answer: find(ANSWER_KIND), takeOver: find(TAKE_OVER_KIND) };
+  return {
+    answer: find(ANSWER_KIND),
+    takeOver: find(TAKE_OVER_KIND),
+    liveChat: find(LIVE_CHAT_KIND),
+    configureLiveChat: find(CONFIGURE_LIVE_CHAT_KIND),
+  };
 }
 
 /**
  * O que o cartão de verificação acrescenta ao aviso da caixa: o campo de resposta e o
- * "Assumir a conversa", no lugar do gesto direto. Aviso de outro tipo: nada.
+ * "Assumir" (que abre o Live Chat), no lugar do gesto direto. Aviso de outro tipo: nada.
  */
 /** A linha do prazo prometido ("Prometemos responder até 16h12."). */
 const PROMISE_LINE = /^Prometemos responder até .+$/;
@@ -85,8 +98,20 @@ export function verificationInbox(alert: AlertProjection): {
   actLabel?: undefined;
   urgentMessage?: string;
 } {
-  const { answer, takeOver } = verificationActions(alert);
+  const { answer, takeOver, liveChat, configureLiveChat } = verificationActions(alert);
   if (!answer) return {};
+  // Assumir leva ao Live Chat daquela conversa, no mesmo gesto (dono, 21/11/2026); sem a
+  // conta no Admin, o cartão diz por que não leva, com o botão que configura.
+  const destination = takeOver && liveChat?.href ? { altHref: liveChat.href } : {};
+  // A linha sob os botões: o que assumir faz, e (sem a conta) por que não abre o Live Chat.
+  const missing = takeOver && !liveChat ? configureLiveChat : null;
+  const lines = [takeOver?.reason, missing?.reason].filter((line): line is string => Boolean(line));
+  const note = lines.length
+    ? {
+        altNote: lines.join(" "),
+        ...(missing?.href ? { altNoteHref: missing.href, altNoteLabel: missing.label } : {}),
+      }
+    : {};
   return {
     actLabel: undefined,
     ...(alert.respond_by_iso ? { urgentMessage: withoutPromiseLine(alert.message) } : {}),
@@ -96,6 +121,8 @@ export function verificationInbox(alert: AlertProjection): {
       maxLength: ANSWER_MAX_LENGTH,
       hint: ANSWER_HINT,
       ...(takeOver ? { altLabel: takeOver.label } : {}),
+      ...destination,
+      ...note,
     },
   };
 }
