@@ -62,6 +62,10 @@ ORDER_STATUS_TONES: dict[str, Tone] = {
     "completed": Tone.SUCCESS,
     "cancelled": Tone.DANGER,
     "returned": Tone.NEUTRAL,
+    # Chaves semânticas da lista da Conta para o cancelado com devolução (#2992):
+    # o dinheiro voltou (assunto encerrado) ou está voltando (ainda acontece).
+    "refunded": Tone.NEUTRAL,
+    "refund_in_progress": Tone.WARNING,
 }
 
 

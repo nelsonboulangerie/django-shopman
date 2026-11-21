@@ -1,5 +1,5 @@
 import { expect, type Page, type TestInfo } from '@playwright/test'
-import { capture, inboxMark, readLoginCode, settled } from './stack'
+import { capture, inboxMark, readLoginCode, settled, withInbox } from './stack'
 
 // A cliente na loja: cardápio, produto, sacola, entrar com o código que chegou, finalizar e
 // pagar. Os passos são os da pessoa; o código sai do arquivo do sender da pilha, que é onde
@@ -19,7 +19,8 @@ function bagLink (page: Page) {
 export async function addReadyProductFromMenu (page: Page, testInfo: TestInfo, product: string): Promise<void> {
   await page.goto('/menu')
   await settled(page)
-  await expect(page.getByText(/^Aberto/).first(), 'a loja da pilha precisa estar aberta agora (README: seed com a loja aberta)').toBeVisible()
+  // Aberta é "Aberto até 19h" ou, na última hora antes de fechar, "Últimos pedidos até 19h".
+  await expect(page.getByText(/^(Aberto|Últimos pedidos)\b/).first(), 'a loja da pilha precisa estar aberta agora (README: seed com a loja aberta)').toBeVisible()
   await capture(page, testInfo, 'cardapio')
 
   await page.getByRole('link', { name: product }).first().click()
@@ -48,9 +49,11 @@ export async function checkoutSigningInByCode (page: Page, testInfo: TestInfo, w
   const phone = page.getByRole('textbox', { name: 'Telefone', exact: true })
   await phone.click()
   await phone.pressSequentially(who.phone)
-  const mark = inboxMark()
-  await page.getByRole('button', { name: 'Receber por SMS' }).click()
-  const code = await readLoginCode(mark)
+  const code = await withInbox(async () => {
+    const mark = inboxMark()
+    await page.getByRole('button', { name: 'Receber por SMS' }).click()
+    return await readLoginCode(mark)
+  })
   await page.getByRole('textbox', { name: 'Dígito 1 de 6' }).click()
   await page.keyboard.type(code)
   await capture(page, testInfo, 'codigo')

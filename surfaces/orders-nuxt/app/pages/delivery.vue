@@ -16,7 +16,7 @@ import type {
   DeliveryRideProjection,
   DeliveryStopProjection,
 } from "~/generated/ordersContract";
-import type { MapLiveRide, MapPoint } from "~/components/CourierDeliveriesMap.vue";
+import type { MapLiveRide, MapPoint, MapSuggestedRide } from "~/components/CourierDeliveriesMap.vue";
 import { rideColor } from "~/presentation/ridePalette";
 import { PIN_TEXT } from "~/presentation/deliveriesMap";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
@@ -27,6 +27,7 @@ import {
   rideLetter,
   ridesFromSuggestions,
   suggestionLate,
+  suggestionMapLabel,
   suggestionQuoteLines,
   suggestionsHeadline,
   toggleStop,
@@ -245,6 +246,15 @@ const mapBuilding = computed(() =>
 const mapLive = computed<MapLiveRide[]>(() =>
   rides.value.map((ride) => ({ number: ride.number, stops: ride.stops.filter(located), courier: ride.position })),
 );
+// A sugestão no mapa é a MESMA do cartão: some com "Agora não" e quando vira corrida em edição.
+const mapSuggested = computed<MapSuggestedRide[]>(() => {
+  const byRef = new Map(mapWaiting.value.map((stop) => [stop.ref, stop]));
+  return suggestions.value.map((suggestion) => ({
+    key: suggestion.key,
+    label: suggestionMapLabel(suggestion),
+    stops: suggestion.refs.map((ref) => byRef.get(ref)).filter((stop): stop is MapPoint => Boolean(stop)),
+  }));
+});
 // A loja sem coordenada NÃO vira o primeiro cliente (o ícone da loja ia parar na casa
 // dele): o mapa desenha só o que tem lugar, e a rota começa na primeira parada.
 const hasMap = computed(
@@ -287,6 +297,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
           :waiting="mapWaiting"
           :building="mapBuilding"
           :live="mapLive"
+          :suggested="mapSuggested"
           :active="active"
           :live-opacity="0.5"
           :maps-key="data.maps_key"

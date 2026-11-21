@@ -136,7 +136,7 @@ def test_the_ride_link_is_offered_only_when_the_ride_has_one_stop(shop):
     # Cada pedido tem o link da própria parada gravado, e mesmo assim a corrida não oferece um.
     assert courier.proven_tracking(courier.get_block(a))["url"] != courier.proven_tracking(courier.get_block(b))["url"]
     assert shared.tracking_url == ""
-    assert single.tracking_url == f"https://rastreio.mock/pedido/{courier.get_block(alone)['id_mch']}"
+    assert single.tracking_url == f"https://rastreio.mock/pedido/{courier.get_block(alone)['ride_ref']}"
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)

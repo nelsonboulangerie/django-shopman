@@ -87,7 +87,14 @@ export function resolution(over: Partial<PromiseResolution> = {}): PromiseResolu
     order_ref: RESOLUTION_REF, code: "N75", customer_name: "Nelson Dias",
     facts: ["Faltam 4x Focaccia Cebola, Bacon e Tomilho. O lote de hoje foi cancelado."],
     contact: { enabled: true, reason: "" },
-    interim_note: "O envio automático ainda não existe: copie a mensagem ou chame o cliente no WhatsApp.",
+    notice: {
+      enabled: true,
+      kind: "item_missing",
+      label: "Faltou um item",
+      note: 'Primeiro, avise o cliente com o aviso "Faltou um item". Quando ele responder, mande a proposta da escolha.',
+      reason: "",
+      line_ids: ["L1"],
+    },
     choices: [swapChoice(), rescheduleChoice(), removeChoice(), cancelChoice()],
     ...over,
   };

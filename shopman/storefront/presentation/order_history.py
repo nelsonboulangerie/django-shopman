@@ -76,17 +76,28 @@ def build_order_history(
 # ──────────────────────────────────────────────────────────────────────
 
 
+# Pedido cancelado cujo dinheiro volta: a linha diz o dinheiro, não o cancelamento,
+# e o valor ao lado é o que volta, não o total do pedido (#2992).
+_REFUND_STATUS_KEYS = {"refunded": "refunded", "refund_requested": "refund_in_progress"}
+
+
 def present_summary(summary) -> OrderSummaryProjection:
     """Render one data order summary into the display projection."""
+    key = summary.display_status_key
+    amount_q = summary.total_q
+    refund_key = _REFUND_STATUS_KEYS.get(summary.refund_outcome)
+    if refund_key:
+        key = refund_key
+        amount_q = summary.refund_q
     return OrderSummaryProjection(
         ref=summary.ref,
         created_at_display=_fmt_datetime(summary.created_at),
         total_q=summary.total_q,
-        total_display=f"R$ {format_money(summary.total_q)}",
+        total_display=f"R$ {format_money(amount_q)}",
         status=summary.status,
-        display_status_key=summary.display_status_key,
-        status_label=customer_status_label(summary.display_status_key, summary.status),
-        status_color=status_color(summary.display_status_key, summary.status),
+        display_status_key=key,
+        status_label=customer_status_label(key, summary.status),
+        status_color=status_color(key, summary.status),
         item_count=summary.item_count,
     )
 

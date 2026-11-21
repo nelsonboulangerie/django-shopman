@@ -4,11 +4,15 @@
 // `ref` do pedido. De cima para baixo:
 //
 //   1. o fato, com as frases do aviso;
-//   2. "O que fazer", uma escolha por linha (trocar, remarcar, tirar o item, cancelar);
+//   2. "Avisar o cliente" (WP-G07): o aviso aprovado que abre a conversa. O botão leva
+//      ao diálogo do G07 com o aviso e os itens já marcados; ele mostra a mensagem,
+//      envia e o recibo do pedido diz o que o provedor respondeu;
+//   3. "O que fazer", uma escolha por linha (trocar, remarcar, tirar o item, cancelar);
 //      a escolha travada escreve o motivo, e nada vem marcado: quem decide é a pessoa;
-//   3. a mensagem ao cliente da escolha marcada, para conferir, com "Copiar mensagem"
-//      e "Chamar no WhatsApp" (enviar pela casa ainda não existe: a nota diz);
-//   4. no rodapé, que não rola, "Voltar" e o botão com o nome do que a escolha faz.
+//   4. a proposta da escolha marcada, para quando o cliente responder, com "Copiar
+//      mensagem" e "Chamar no WhatsApp". O modelo aprovado é fixo: a proposta sob
+//      medida segue a conversa, não sai pela API;
+//   5. no rodapé, que não rola, "Voltar" e o botão com o nome do que a escolha faz.
 //
 // Tudo o que se lê vem do servidor (`GET orders/<ref>/promise-resolution/`): as
 // escolhas, a guarda de cada uma, a mensagem e o que conclui. Concluir, por tipo:
@@ -23,6 +27,7 @@ import {
   COPY_MESSAGE_LABEL,
   MANAGER_NEXT_STEP,
   MESSAGE_COPIED,
+  NOTIFY_LABEL,
   WHAT_TO_DO_LABEL,
   choiceItems,
   concludeButton,
@@ -54,6 +59,8 @@ const emit = defineEmits<{
   changed: [];
   /** "Cancelar o pedido inteiro": quem monta abre o diálogo de cancelar que já existe. */
   cancel: [ref: string];
+  /** "Avisar o cliente": quem monta abre o diálogo do G07 com o aviso e os itens marcados. */
+  notify: [ref: string, pick: { kind: string; lines: string[] }];
 }>();
 
 const { resolution, state, message, busy, read, clear, removeMissing } =
@@ -139,6 +146,13 @@ function close(value: boolean) {
   if (value) return;
   if (busy.value) return;
   emit("update:open", false);
+}
+
+function notify() {
+  const notice = resolution.value?.notice;
+  if (!notice?.enabled || busy.value) return;
+  emit("update:open", false);
+  emit("notify", props.orderRef, { kind: notice.kind, lines: [...notice.line_ids] });
 }
 
 async function send(approval?: Record<string, string>) {
@@ -236,7 +250,37 @@ function conclude() {
           </template>
         </NuxtAlert>
 
-        <!-- 2. O que fazer: uma escolha por linha. A travada escreve o motivo. -->
+        <!-- 2. O aviso aprovado abre a conversa: um toque leva ao diálogo do G07, com o
+             aviso e os itens marcados. Fechado, o motivo e o que fazer no lugar. -->
+        <NuxtCard variant="soft" as="section" data-resolve-notice>
+          <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex min-w-0 flex-col gap-1">
+              <p class="text-sm break-words" data-resolve-notice-note>
+                {{ resolution.notice.note }}
+              </p>
+              <p
+                v-if="!resolution.notice.enabled && resolution.notice.reason"
+                class="text-sm text-muted break-words"
+                data-resolve-notice-reason
+              >
+                {{ resolution.notice.reason }}
+              </p>
+            </div>
+            <NuxtButton
+              v-if="resolution.notice.enabled"
+              type="button"
+              color="neutral"
+              icon="i-lucide-send"
+              :label="NOTIFY_LABEL"
+              :disabled="busy"
+              class="shrink-0 justify-center max-sm:w-full"
+              data-resolve-notify
+              @click="notify"
+            />
+          </div>
+        </NuxtCard>
+
+        <!-- 3. O que fazer: uma escolha por linha. A travada escreve o motivo. -->
         <NuxtRadioGroup
           v-model="picked"
           :items="items"
@@ -246,8 +290,8 @@ function conclude() {
           data-resolve-choices
         />
 
-        <!-- 3. A mensagem ao cliente da escolha marcada, para conferir. O lugar existe
-             desde o início: escolher não empurra o resto para baixo do dedo. -->
+        <!-- 4. A proposta da escolha marcada, para quando o cliente responder. O lugar
+             existe desde o início: escolher não empurra o resto para baixo do dedo. -->
         <NuxtCard variant="soft" as="section" data-resolve-message-block>
           <div class="flex min-w-0 flex-col gap-3">
             <h3 class="text-sm font-medium text-highlighted">
@@ -314,14 +358,6 @@ function conclude() {
               data-resolve-contact-reason
             >
               {{ resolution.contact.reason }}
-            </p>
-            <!-- O interino declarado, com as palavras do servidor. -->
-            <p
-              v-if="resolution.interim_note"
-              class="text-xs text-muted"
-              data-resolve-interim
-            >
-              {{ resolution.interim_note }}
             </p>
           </div>
         </NuxtCard>

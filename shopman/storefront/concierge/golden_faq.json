@@ -1,12 +1,13 @@
 {
- "about": "Perguntas que batem (ou não) numa pergunta frequente, para o placar da resposta pela IA a partir das FAQs (WP-18). 'parts': uma lista por parte da pergunta, com as referências que a respondem (qualquer uma serve); lista vazia = nenhuma FAQ cobre, e o certo é 'vou verificar'. 'source': real (mensagem de cliente) ou escrita pela sessão, a conferir. Referências: as operacionais (delivery, hours, location, payment, preorder, allergens, contact) e as curadas (curated-<ref> de FAQEntry). No placar, a referência que não está publicada na hora conta como 'nenhuma'.",
+ "about": "Perguntas que batem (ou não) numa pergunta frequente, para o placar da resposta pela IA a partir das FAQs (WP-18). 'parts': uma lista por parte da pergunta, com as referências que a respondem (qualquer uma serve); lista vazia = nenhuma FAQ cobre, e o certo é 'vou verificar'. 'source': real (mensagem de cliente) ou escrita pela sessão, a conferir. Referências: as operacionais (delivery, hours, location, payment, preorder, allergens, contact) e as curadas (curated-<ref> de FAQEntry). No placar, a referência que não está publicada na hora conta como 'nenhuma'. Rótulos revistos em 21/11/2026 contra as FAQs de produção (as novas com sufixo -2 e as que nasceram para pets, estacionamento, mesa e onde).",
  "cases": [
   {
    "ref": "msg-645",
    "text": "Oie, me tira uma dúvida. Vocês fazem entrega?",
    "parts": [
     [
-     "delivery"
+     "delivery",
+     "curated-voces-entregam-quanto-custa"
     ]
    ],
    "source": "real"
@@ -16,7 +17,8 @@
    "text": "vocês fecham que horas mesmo hj?",
    "parts": [
     [
-     "hours"
+     "hours",
+     "curated-qual-o-horario-de-funcionamento"
     ]
    ],
    "source": "real"
@@ -26,7 +28,9 @@
    "text": "olá, bom dia. Gostaria de saber se vcs estarão abertos no próximo domingo, 04/10?",
    "parts": [
     [
-     "hours"
+     "hours",
+     "curated-qual-o-horario-de-funcionamento",
+     "curated-voces-abrem-em-feriado"
     ]
    ],
    "source": "real"
@@ -36,7 +40,8 @@
    "text": "Até qui horas vcs e",
    "parts": [
     [
-     "hours"
+     "hours",
+     "curated-qual-o-horario-de-funcionamento"
     ]
    ],
    "source": "real"
@@ -46,7 +51,8 @@
    "text": "seguimos. é para entrega, ok. qual a taxa?",
    "parts": [
     [
-     "delivery"
+     "delivery",
+     "curated-voces-entregam-quanto-custa"
     ]
    ],
    "source": "real"
@@ -58,7 +64,9 @@
     [
      "hours"
     ],
-    []
+    [
+     "curated-tem-estacionamento"
+    ]
    ],
    "source": "real"
   },
@@ -66,7 +74,9 @@
    "ref": "conversa-2011-pets",
    "text": "Aceitam pets ai na padaria?",
    "parts": [
-    []
+    [
+     "curated-posso-levar-meu-pet"
+    ]
    ],
    "source": "real"
   },
@@ -76,7 +86,8 @@
    "parts": [
     [
      "payment",
-     "curated-quais-formas-de-pagamento-voces-aceitam"
+     "curated-quais-formas-de-pagamento-voces-aceitam",
+     "curated-quais-formas-de-pagamento-voces-aceitam-2"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -86,7 +97,8 @@
    "text": "quanto custa a entrega?",
    "parts": [
     [
-     "delivery"
+     "delivery",
+     "curated-voces-entregam-quanto-custa"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -96,7 +108,8 @@
    "text": "onde vocês ficam?",
    "parts": [
     [
-     "location"
+     "location",
+     "curated-onde-voces-ficam"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -107,7 +120,8 @@
    "parts": [
     [
      "preorder",
-     "curated-posso-encomendar-para-outro-dia"
+     "curated-posso-encomendar-para-outro-dia",
+     "curated-posso-encomendar-para-outro-dia-2"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -147,7 +161,8 @@
    "text": "vocês estão no ifood?",
    "parts": [
     [
-     "curated-voces-estao-no-ifood"
+     "curated-voces-estao-no-ifood",
+     "curated-voces-estao-no-ifood-2"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -157,7 +172,8 @@
    "text": "tem programa de fidelidade?",
    "parts": [
     [
-     "curated-voces-tem-programa-de-fidelidade"
+     "curated-voces-tem-programa-de-fidelidade",
+     "curated-voces-tem-programa-de-fidelidade-2"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -166,7 +182,9 @@
    "ref": "faq-estacionamento",
    "text": "tem estacionamento?",
    "parts": [
-    []
+    [
+     "curated-tem-estacionamento"
+    ]
    ],
    "source": "sessão (a conferir)"
   },
@@ -194,7 +212,8 @@
    "parts": [
     [
      "payment",
-     "curated-quais-formas-de-pagamento-voces-aceitam"
+     "curated-quais-formas-de-pagamento-voces-aceitam",
+     "curated-quais-formas-de-pagamento-voces-aceitam-2"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -224,7 +243,8 @@
    "text": "dá pra colocar CPF na nota?",
    "parts": [
     [
-     "curated-posso-pedir-cpf-na-nota"
+     "curated-posso-pedir-cpf-na-nota",
+     "curated-posso-pedir-cpf-na-nota-2"
     ]
    ],
    "source": "sessão (a conferir)"
@@ -233,7 +253,10 @@
    "ref": "faq-mesa",
    "text": "vocês têm mesa pra comer aí?",
    "parts": [
-    []
+    [
+     "curated-posso-comer-no-local",
+     "curated-preciso-reservar-mesa"
+    ]
    ],
    "source": "sessão (a conferir)"
   }

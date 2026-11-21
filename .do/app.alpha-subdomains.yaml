@@ -614,7 +614,7 @@ envs:
   type: GENERAL
 - key: CONCIERGE_READ_ONLY
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED
   scope: RUN_TIME
@@ -627,7 +627,7 @@ envs:
   type: GENERAL
 - key: CONCIERGE_IDENTITY_LINK_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: CONCIERGE_HUMAN_RETURN_ENABLED
   scope: RUN_TIME

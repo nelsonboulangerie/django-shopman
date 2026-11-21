@@ -16,7 +16,7 @@ def context(settings, monkeypatch):
     monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
     Shop.objects.create(name="Synthetic cancellation recovery lab")
     order = Order.objects.create(ref="CANCEL-RIDE-LAB", status="ready", data={
-        "fulfillment_type": "delivery", "courier": {"id_mch": "RIDE-LAB", "status": "A"}})
+        "fulfillment_type": "delivery", "courier": {"ride_ref": "RIDE-LAB", "status": "A"}})
     adapter = Mock()
     adapter.cancel.return_value = True
     monkeypatch.setattr("shopman.shop.adapters.get_adapter", lambda name: adapter)
@@ -78,7 +78,7 @@ def test_accepted_cancel_recovers_after_local_failure(context, monkeypatch):
 def test_changed_ride_before_worker_does_not_cancel_replacement(context):
     order, adapter = context
     task = courier.cancel_ride(order, actor="operator")
-    order.data["courier"]["id_mch"] = "REPLACEMENT"
+    order.data["courier"]["ride_ref"] = "REPLACEMENT"
     order.save(update_fields=["data"])
     run(task)
     adapter.cancel.assert_not_called()
@@ -92,14 +92,14 @@ def test_accepted_response_cannot_cancel_replacement(context):
 
     def replace(*args, **kwargs):
         other = Order.objects.get(pk=order.pk)
-        other.data["courier"]["id_mch"] = "REPLACEMENT"
+        other.data["courier"]["ride_ref"] = "REPLACEMENT"
         other.save(update_fields=["data"])
         return True
 
     adapter.cancel.side_effect = replace
     run(task)
     order.refresh_from_db()
-    assert courier.get_block(order) == {"id_mch": "REPLACEMENT", "status": "A"}
+    assert courier.get_block(order) == {"ride_ref": "REPLACEMENT", "status": "A"}
 
 
 @pytest.mark.django_db(transaction=True)

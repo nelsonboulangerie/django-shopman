@@ -51,14 +51,19 @@ ASK_ADDRESS_KEY = "CONCIERGE_CLOSE_ASK_ADDRESS"
 ASK_PAYMENT_KEY = "CONCIERGE_CLOSE_ASK_PAYMENT"
 NO_CASH_KEY = "CONCIERGE_CLOSE_NO_CASH"
 CONFIRM_CODE_KEY = "CONCIERGE_CLOSE_CONFIRM_CODE"
+GAVE_UP_KEY = "CONCIERGE_CLOSE_GAVE_UP"
 COPY_KEYS = (
     ASK_DATE_KEY, ASK_FULFILLMENT_KEY, ASK_SLOT_KEY, NO_SLOTS_KEY, SLOT_REFUSED_KEY, NO_PICKUP_AT_KEY,
-    NO_DELIVERY_AT_KEY, ASK_ADDRESS_KEY, ASK_PAYMENT_KEY, NO_CASH_KEY, CONFIRM_CODE_KEY,
+    NO_DELIVERY_AT_KEY, ASK_ADDRESS_KEY, ASK_PAYMENT_KEY, NO_CASH_KEY, CONFIRM_CODE_KEY, GAVE_UP_KEY,
 )
 
 #: O que dá início ao fechamento quando há sacola: "pode fechar", "é só isso", "finalizar".
 _START_RE = re.compile(
     r"\b(?:fecha\w*|finaliz\w*|conclu\w*|e so isso|so isso|era isso|quero pagar|vou pagar|como (?:eu )?pago)\b"
+)
+#: Desistir do pedido no meio do fechamento: "deixa", "desisto", "não quero mais".
+_GIVE_UP_RE = re.compile(
+    r"^\s*(?:nao|n)\s*[.!]*\s*$|\b(?:desist\w*|deixa (?:pra la|quieto)?|nao quero mais|esquece|cancela (?:tudo|o pedido)|melhor nao)\b"
 )
 _PICKUP_RE = re.compile(r"\b(?:retir\w*|busc\w*|pegar|pego|passo (?:ai|la)|balcao)\b")
 _DELIVERY_RE = re.compile(r"\b(?:entreg\w*|delivery|mand\w* (?:pra|para) (?:casa|mim)|em casa)\b")
@@ -535,6 +540,9 @@ def handle(conversation, text: str, *, binding, channel_ref: str, memory, memos=
         from .service import copy_message as copy
     pending = memory.state.get("pending") or {}
     closing = memory.state.get("closing")
+    if closing is not None and _GIVE_UP_RE.search(_fold(text)):
+        # Desistiu: nada é registrado, a sacola fica como está (para quem mudar de ideia).
+        return _outcome(Step(copy(GAVE_UP_KEY), pending=None, closing=None), memory=memory, memos=list(memos))
     if pending.get("kind") == "confirm_order" and closing is not None:
         quote = conversation.quote or {}
         if quote.get("token") == pending.get("token") and _confirms(text, str(pending.get("token") or "")):

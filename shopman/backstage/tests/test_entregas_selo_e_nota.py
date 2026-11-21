@@ -58,7 +58,7 @@ def _board(waiting: int) -> None:
         _at(f"EN-{index}", -23.30, -51.16)
     _call(_at("EN-RUA", -23.31, -51.16))
     # Chamada que a central ainda não respondeu: a tarefa está na fila, a corrida
-    # já tem número (ocupa uma letra) e não tem ``id_mch``.
+    # já tem número (ocupa uma letra) e não tem ``ride_ref``.
     courier.request_dispatch(_at("EN-FILA", -23.32, -51.16), actor="operator:ana")
 
 
@@ -67,7 +67,7 @@ def _board(waiting: int) -> None:
 def test_the_badge_counts_under_a_fixed_ceiling_of_queries(shop, waiting, django_assert_max_num_queries):
     _board(waiting)
     pending = Order.objects.get(ref="EN-FILA")
-    assert courier.get_block(pending).get("ride_number") and not courier.get_block(pending).get("id_mch")
+    assert courier.get_block(pending).get("ride_number") and not courier.get_block(pending).get("ride_ref")
 
     with django_assert_max_num_queries(COUNT_QUERY_CEILING):
         count = deliveries_waiting_count()

@@ -99,6 +99,9 @@ STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
     "ready_delivery": ("TRACKING_STATUS_READY_DELIVERY", "Aguardando entregador"),
     "ready_pickup": ("TRACKING_STATUS_READY_PICKUP", "Pronto para retirada"),
     "preorder_scheduled": ("TRACKING_STATUS_PREORDER_SCHEDULED", "Encomenda confirmada"),
+    # Pedido cancelado com dinheiro que volta (lista da Conta, #2992).
+    "refunded": ("TRACKING_STATUS_REFUNDED", "Devolvido"),
+    "refund_in_progress": ("TRACKING_STATUS_REFUND_IN_PROGRESS", "Devolução em andamento"),
 }
 
 

@@ -1098,6 +1098,17 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--closing-in-minutes",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Só pilha de teste (jornada J5, #2686): hoje a loja abre à 0h e fecha "
+                "daqui a N minutos; o resto da semana segue o horário normal, então a "
+                "próxima abertura é a de amanhã. Recusado em produção."
+            ),
+        )
+        parser.add_argument(
             "--descriptor",
             type=Path,
             default=NELSON_INSTANCE_DESCRIPTOR,
@@ -1134,6 +1145,15 @@ class Command(BaseCommand):
         # Perfil de dados dinâmicos. A base estática é idêntica; só os seeders
         # dinâmicos (pedidos, produção, comandas, caixa) divergem no branch abaixo.
         self.profile = options["profile"]
+
+        # A casa que fecha daqui a pouco (jornada J5): opção de linha de comando da
+        # pilha de teste, nunca variável de ambiente (ADR-042) nem caminho de produção.
+        self.closing_in_minutes = options.get("closing_in_minutes")
+        if self.closing_in_minutes is not None:
+            if is_production():
+                raise CommandError("--closing-in-minutes é só de pilha de teste, nunca de produção.")
+            if self.closing_in_minutes < 1:
+                raise CommandError("--closing-in-minutes precisa ser 1 ou mais.")
 
         # Determinismo do perfil qa: semente fixa do RNG ANTES de qualquer seeder,
         # para que a matriz de produção (jitter em _seed_recipes) e qualquer sorteio
@@ -1592,6 +1612,29 @@ class Command(BaseCommand):
             self.stdout.write(
                 "  🤖 Piloto automático de staging: loja aberta 24/7, sem feriados."
             )
+
+        # Jornada J5 (#2686): a casa abriu à 0h e fecha daqui a N minutos; amanhã
+        # segue o horário de sempre. A pilha de teste passa a opção; nada lê isto ao ar.
+        if getattr(self, "closing_in_minutes", None) is not None:
+            from datetime import timedelta as _td
+
+            from django.utils import timezone as _tz
+
+            now = _tz.localtime()
+            closes = (now + _td(minutes=self.closing_in_minutes)).replace(second=0, microsecond=0)
+            if closes <= now:
+                closes += _td(minutes=1)
+            if closes.date() != now.date():
+                raise CommandError(
+                    "--closing-in-minutes cairia depois da meia-noite: rode mais cedo ou com N menor."
+                )
+            today = now.strftime("%A").lower()
+            close_hhmm = closes.strftime("%H:%M")  # hora-ok: contrato "HH:MM" do opening_hours, não tela
+            opening_hours = {**opening_hours, today: {"open": "00:00", "close": close_hhmm}}
+            closed_dates = [d for d in closed_dates if d["date"] != now.date().isoformat()]
+            from shopman.utils.formatting import format_clock
+
+            self.stdout.write(f"  🕘 Pilha de teste: a loja fecha hoje às {format_clock(closes)} (--closing-in-minutes).")
 
         # A loja é a que o descritor materializou (``_materialize_instance``),
         # nunca uma pk fixa: depois de um ``--flush`` a sequência não volta a 1, e

@@ -30,6 +30,7 @@ from .faq_answer import (  # noqa: E402,F401  (o motor mora em faq_answer; o pla
     _fold,
     answer_with_model,
     build_request,
+    held_by_jev,
     inventions,
 )
 
@@ -63,6 +64,8 @@ class Report:
     live_refs: list[str] = field(default_factory=list)
     rows: list[Scored] = field(default_factory=list)
     stopped: str = ""
+    #: Com ``jev_check``: os casos em que o Jev reprovou a resposta da IA (e valeu a FAQ direta).
+    jev_held: list[str] | None = None
 
     def render(self, *, show: int = 30) -> str:
         total = len(self.rows)
@@ -90,6 +93,9 @@ class Report:
         errors = [r for r in self.rows if r.answer.error]
         if errors:
             lines.append("  Falhas (a resposta caiu na FAQ direta): " + ", ".join(sorted({r.answer.error for r in errors})))
+        if self.jev_held is not None:
+            lines.append(f"  Conferência do Jev: reprovou {len(self.jev_held)} (valeu a FAQ direta)"
+                         + (f": {', '.join(self.jev_held)}" if self.jev_held else ""))
         if self.stopped:
             lines.append(f"  ⚠ {self.stopped}")
         if invented:
@@ -165,13 +171,14 @@ def score(case: dict, answer: Answer, *, live: set, faqs: list, check_invention:
 
 def run(
     cases: list[dict], *, arm: str, channel_ref: str, client=None, model: str = "", budget=None,
-    include_drafts: bool = False,
+    include_drafts: bool = False, jev_check: bool = False,
 ) -> Report:
     from . import metrics
 
     faqs = live_faq(channel_ref, include_drafts=include_drafts)
     live = {f.ref for f in faqs}
-    report = Report(arm=arm, model=model, live_refs=sorted(live), drafts=include_drafts)
+    report = Report(arm=arm, model=model, live_refs=sorted(live), drafts=include_drafts,
+                    jev_held=[] if jev_check and arm == "model" else None)
     for index, case in enumerate(cases):
         if budget is not None and (reason := budget.stop_reason(measured=index, total=len(cases))):
             report.stopped = reason
@@ -185,5 +192,9 @@ def run(
             answer.cost_usd = usage.get("cost_usd")
             if budget is not None:
                 budget.charge(usage.get("cost_usd"))
+            if report.jev_held is not None and not answer.error and held_by_jev(answer, faqs):
+                # O caminho vivo (``intents._faq_by_model``): reprovada, vale a FAQ direta.
+                report.jev_held.append(case["ref"])
+                answer = answer_direct(case["text"], channel_ref=channel_ref, faqs=faqs)
         report.rows.append(score(case, answer, live=live, faqs=faqs, check_invention=arm == "model"))
     return report

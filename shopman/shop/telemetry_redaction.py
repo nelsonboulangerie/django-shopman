@@ -120,12 +120,12 @@ _URL_RE = re.compile(r"https?://[^\s<>\]\[\"']+")
 _EDGE_REFERENCE_RE = re.compile(r"\b\d{1,3}\.[0-9a-f]{4,}\.\d{9,11}\.[0-9a-f]{4,}\b")
 _EDGE_REFERENCE_SLOT = "\x00ref{}\x00"
 # O id da corrida na TaOn tem nove dígitos (776753357, a primeira corrida real,
-# em 13/10/2026): forma de telefone, e o log saía `id_mch=[phone]`. É o id que
+# em 13/10/2026): forma de telefone, e o log saía `ride_ref=[phone]`. É o id que
 # casa a nossa linha com a corrida na central, e não é dado de pessoa. Passa só
 # a FORMA `chave=valor` destas chaves técnicas, com valor em dígitos ou
 # hexadecimal (o resumo SHA-256 do corpo do webhook, que pode sair só com
 # dígitos): um telefone solto no texto continua sem passagem.
-_RIDE_REFERENCE_RE = re.compile(r"\b(?:id_mch|request|request_id|sha256)=[0-9a-f]{1,64}\b")
+_RIDE_REFERENCE_RE = re.compile(r"\b(?:ride_ref|request|request_id|sha256)=[0-9a-f]{1,64}\b")
 # Data ISO (`2026-09-21`) e data-hora (`2026-09-21T14:30:00Z`, `2026-09-21 14:30`)
 # têm oito dígitos com hífen — forma que o regex de telefone casa. A mensagem da
 # reconciliação financeira chegava ao Sentry como "Reconciliação financeira de

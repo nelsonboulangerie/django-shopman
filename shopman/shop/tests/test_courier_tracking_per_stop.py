@@ -67,7 +67,7 @@ def _three_stop_ride():
     CourierDispatchHandler().handle(message=directive, ctx={})
     for order in orders.values():
         order.refresh_from_db()
-    ride_id = courier.get_block(orders["TRK-B"])["id_mch"]
+    ride_id = courier.get_block(orders["TRK-B"])["ride_ref"]
     assert courier.get_block(orders["TRK-A"])["ride_orders"] == REFS
     return orders, ride_id
 
@@ -174,7 +174,7 @@ def test_the_machine_adapter_turns_the_single_format_into_one_entry(monkeypatch)
 
 def test_a_link_recorded_without_proof_is_no_link():
     """O dado gravado quando todo pedido recebia a primeira parada não vale mais."""
-    old = {"id_mch": "1", "status": "E", "ride_orders": REFS,
+    old = {"ride_ref": "1", "status": "E", "ride_orders": REFS,
            "tracking_url": "https://rastreio.mock/de-outro-cliente", "confirmation_code": "1234"}
     assert courier.proven_tracking(old) == {"url": "", "code": ""}
     assert courier.proven_tracking({**old, "tracking_match": "single"}) == {"url": "", "code": ""}
@@ -306,7 +306,7 @@ def test_a_ride_of_one_order_still_gets_its_link_and_code(shop):
     order = _at("TRK-SOLO", -23.30, -51.16)
     CourierDispatchHandler().handle(message=courier.request_dispatch(order, actor="operator:ana"), ctx={})
     order.refresh_from_db()
-    ride_id = courier.get_block(order)["id_mch"]
+    ride_id = courier.get_block(order)["ride_ref"]
 
     _read(ride_id, "A")
     _read(ride_id, "E")

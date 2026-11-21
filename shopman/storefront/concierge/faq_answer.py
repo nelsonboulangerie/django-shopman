@@ -43,7 +43,9 @@ perguntas frequentes abaixo. Nunca afirme nada que elas não digam: nada de pre�
 prazo, endereço, ingrediente ou política que não esteja escrito nelas.
 
 Regras:
-- cite as referências (ref) das perguntas frequentes que usou;
+- cite as referências (ref) só das perguntas frequentes cuja resposta você usou de fato; \
+não cite uma pergunta frequente só porque é do mesmo assunto (a pergunta sobre encomendar \
+no sábado cita a de encomenda; a de horário só entra se a resposta disser o horário);
 - se uma parte da pergunta não é coberta por nenhuma, escreva essa parte em "uncovered" e não \
 a responda (a casa vai verificar);
 - se nenhuma parte é coberta, devolva refs vazio e answer vazio;
@@ -104,3 +106,68 @@ def inventions(answer: Answer, faqs: list) -> list[str]:
     if "—" in answer.text:
         out.append("travessão")
     return out
+
+
+# ── Conferência pelo Jev (auditoria do Jev, item 2, 21/11/2026) ─────────────
+
+#: A partir de quanto o Jev diz que a resposta se sustenta nas FAQs citadas.
+SUPPORTED_AT = 0.5
+SUPPORT_QUESTION = "supported"
+SUPPORT_INSTRUCTIONS = (
+    "A resposta da loja diz só o que as perguntas frequentes citadas dizem, sem acrescentar fato, "
+    "número, prazo, preço ou política que elas não tragam?"
+)
+
+
+def support_request(answer: Answer, faqs: list, *, model: str) -> dict:
+    """O pedido ao Jev: as FAQs citadas e a resposta (redigida) no estado, uma pergunta sim/não."""
+    from .observation_privacy import redact_observation_text
+
+    by_ref = {f.ref: f for f in faqs}
+    cited = [by_ref[r] for r in answer.refs if r in by_ref]
+    return {
+        "model": model,
+        "state": {
+            "faqs": "\n\n".join(f"pergunta: {f.question}\nresposta: {f.answer}" for f in cited),
+            "store_answer": redact_observation_text(answer.text).text,
+        },
+        "questions": {SUPPORT_QUESTION: {"type": "noul", "instructions": SUPPORT_INSTRUCTIONS}},
+    }
+
+
+def jev_support(answer: Answer, faqs: list, *, session=None, timeout: float = 5.0) -> float | None:
+    """A probabilidade de a resposta se sustentar nas FAQs citadas, pelo Jev; ``None`` sem Jev.
+
+    Sem Jev configurado, com o freio fechado ou com falha do provedor, ``None``: quem chama
+    segue com o verificador sem modelo (``inventions``), que já passou.
+    """
+    from shopman.shop import ai
+
+    from .intent_benchmark import parse_jev_boolean
+
+    try:
+        url, api_key, model = ai.jev_endpoint(customer_text=True)
+    except ai.AINotConfigured:
+        return None
+    if session is None:
+        import requests
+
+        session = requests.Session()
+    body = support_request(answer, faqs, model=model)
+    try:
+        response = ai.jev_post(session, url, api_key, body, timeout=timeout, model=model)
+        if response.status_code >= 400:
+            logger.warning("concierge.faq_answer.jev_http status=%s", response.status_code)
+            return None
+        return parse_jev_boolean(response.json(), question=SUPPORT_QUESTION)
+    except Exception as exc:
+        logger.warning("concierge.faq_answer.jev_failed exception_type=%s", type(exc).__name__)
+        return None
+
+
+def held_by_jev(answer: Answer, faqs: list, *, session=None) -> bool:
+    """O Jev diz que a resposta NÃO se sustenta nas FAQs citadas (com Jev; sem ele, nunca)."""
+    if not answer.refs or not answer.text.strip():
+        return False
+    support = jev_support(answer, faqs, session=session)
+    return support is not None and support < SUPPORTED_AT

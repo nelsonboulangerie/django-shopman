@@ -584,6 +584,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STATUS_PAYMENT_EXPIRED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento expirado")},
     },
+    # Pedido cancelado cujo dinheiro já voltou / ainda está voltando (lista da Conta).
+    "TRACKING_STATUS_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
+    },
+    "TRACKING_STATUS_REFUND_IN_PROGRESS": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolução em andamento")},
+    },
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando a loja")},
     },
@@ -1589,6 +1596,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_CLOSE_NO_CASH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {options}")},
+    },
+    "CONCIERGE_CLOSE_GAVE_UP": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Tudo bem, fica sem pedido por agora. Os itens continuam na sacola, se mudar de ideia.")},
     },
     "CONCIERGE_CLOSE_CONFIRM_CODE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Para registrar o pedido, responda: confirmo {code}")},

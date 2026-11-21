@@ -77,14 +77,14 @@ def _at(ref, lat, lng, **data):
 
 
 def _group(*orders):
-    """Uma corrida aberta com vários pedidos; devolve o ``id_mch``."""
+    """Uma corrida aberta com vários pedidos; devolve o ``ride_ref``."""
     CourierDispatchHandler().handle(
         message=courier.request_group_dispatch(list(orders), actor="operator:ana"), ctx={})
     # O worker fecha a tarefa depois do handler; aqui o handler roda direto.
     Directive.objects.filter(topic=COURIER_DISPATCH).update(status=Directive.Status.DONE)
     for order in orders:
         order.refresh_from_db()
-    return courier.get_block(orders[0])["id_mch"]
+    return courier.get_block(orders[0])["ride_ref"]
 
 
 def _cancel(task):
@@ -92,7 +92,7 @@ def _cancel(task):
 
 
 def _ride(order) -> str:
-    return courier.get_block(order)["id_mch"]
+    return courier.get_block(order)["ride_ref"]
 
 
 # ── a tabela ────────────────────────────────────────────────────────
@@ -318,7 +318,7 @@ def test_cancelling_a_group_ride_frees_every_order_of_it(shop, sse):
         order.refresh_from_db()
         block = courier.get_block(order)
         assert not courier.has_active_ride(order), order.ref
-        assert "id_mch" not in block and block["attempts"][-1]["status"] == "C"
+        assert "ride_ref" not in block and block["attempts"][-1]["status"] == "C"
         assert not courier.ride_is_live(order)  # a letra e a cor voltam a ficar livres
         assert (order.ref, "cancel_queued") in sse
     # Quem cancelou foi o operador: nenhum aviso de "a TaOn cancelou".
@@ -351,7 +351,7 @@ def test_sync_releases_orders_stranded_in_a_ride_the_lead_already_ended(shop):
     lead, other = (a, b) if lead_ref == a.ref else (b, a)
     courier.apply_status(lead, "C", source="operator:maria")
     other.refresh_from_db()
-    assert courier.get_block(other)["id_mch"] == ride  # preso: "Procurando entregador" para sempre
+    assert courier.get_block(other)["ride_ref"] == ride  # preso: "Procurando entregador" para sempre
 
     CourierSyncHandler().handle(message=Directive.objects.filter(topic=COURIER_SYNC).last(), ctx={})
     other.refresh_from_db()

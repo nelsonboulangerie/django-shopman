@@ -26,8 +26,8 @@ def _order(ref, *, ride, fee_q=800, status="dispatched"):
     return order
 
 
-def _ride(id_mch, *, status="F", final_value_q=None, estimate_q=None, ride_orders=None, when=None):
-    ride = {"id_mch": id_mch, "status": status, "requested_at": (when or timezone.now()).isoformat()}
+def _ride(ride_ref, *, status="F", final_value_q=None, estimate_q=None, ride_orders=None, when=None):
+    ride = {"ride_ref": ride_ref, "status": status, "requested_at": (when or timezone.now()).isoformat()}
     if final_value_q is not None:
         ride["final_value_q"] = final_value_q
     if estimate_q is not None:

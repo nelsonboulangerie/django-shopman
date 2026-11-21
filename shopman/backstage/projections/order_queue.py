@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
+from urllib.parse import quote
 
 from django.db.models import Q
 from django.utils import timezone
@@ -1184,6 +1185,9 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             # E a MESMA frase do dinheiro (P1-6, EXCELENCIA-PDV WP-E5): quem cancela
             # e o gerente que assina leem quanto volta e por onde, antes do gesto.
             **_cancel_money_effect(order, method, payment_status),
+            # A promessa em risco (WP-G08, #2721 item 3): o MESMO fato do Gestor, e
+            # a saída é o "Resolver" de lá (uma situação, um gesto).
+            promise=_pos_promise(order, pos_authorized),
         )
 
     advance_block = operator_orders.gestor_advance_block(order)
@@ -1766,17 +1770,17 @@ def _courier_block(order: Order) -> dict | None:
             return None
 
         ride_status = str(block.get("status") or "")
-        active = bool(block.get("id_mch")) and ride_status not in TERMINAL_STATUSES
+        active = bool(block.get("ride_ref")) and ride_status not in TERMINAL_STATUSES
         order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
         estimate_display = courier_estimate_display(estimate)
 
         position = None
-        if active and block.get("id_mch"):
+        if active and block.get("ride_ref"):
             from shopman.backstage.projections.courier_position import courier_position_projection
 
-            point = courier_position_projection(block["id_mch"])
+            point = courier_position_projection(block["ride_ref"])
             position = asdict(point) if point else None
 
         from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
@@ -2541,6 +2545,36 @@ def _open_production_action(promise, user) -> Action | None:
     return Action(
         ref=order_promise.ACTION_OPEN_PRODUCTION, kind="link", label="Abrir a Produção", href=href, idempotency="none",
     )
+
+
+#: O "Resolver" visto do balcão: a saída é o diálogo do Gestor, aberto no pedido.
+POS_RESOLVE_LABEL = "Resolver no Gestor"
+POS_RESOLVE_HASH = "#resolve"
+_POS_RESOLVE_UNCONFIGURED = "O endereço do Gestor não está configurado."
+
+
+def _pos_promise(order: Order, authorized: bool) -> order_promise.OrderPromiseProjection | None:
+    """A promessa em risco nas Encomendas do PDV, ou ``None`` quando ela está de pé.
+
+    O fato é o mesmo do Gestor (``order_promise.read_for``); a saída é uma só,
+    "Resolver no Gestor", que abre o pedido lá com o diálogo das escolhas
+    (``#resolve``). Trocar, remarcar e cancelar continuam no balcão, nos gestos
+    que ele já tem; o aviso ao cliente e a escolha moram no Resolver.
+    """
+    from shopman.backstage.projections.hub import surface_link
+
+    promise = _promise_of(order)
+    if promise is None or promise.state != order_promise.STATE_AT_RISK:
+        return None
+    href = surface_link("gestor", f"{quote(order.ref, safe='')}{POS_RESOLVE_HASH}")
+    reason = "" if authorized else _PERMISSION_REASON
+    if not reason and not href:
+        reason = _POS_RESOLVE_UNCONFIGURED
+    resolve = Action(
+        ref=order_promise.ACTION_RESOLVE, kind="link", label=POS_RESOLVE_LABEL,
+        href=href if not reason else "", enabled=not reason, reason=reason, idempotency="none", priority="primary",
+    )
+    return order_promise.with_actions(promise, (resolve,))
 
 
 def _promise_actions(user, promise) -> tuple[Action, ...]:
