@@ -126,6 +126,8 @@ test('J8: entrega com cartão, passando pelo mínimo da entrega, até a loja ace
     // O endereço da entrega mora na aba "Resumo" do acompanhamento.
     await page.getByRole('tab', { name: 'Resumo', exact: true }).click()
     await expect(page.getByRole('tabpanel', { name: 'Resumo' })).toContainText(new RegExp(`${ADDRESS.route},?\\s*${ADDRESS.number}`))
+    // O dinheiro, na mesma aba: o cartão pago, com o valor, depois da captura no aceite.
+    await expect(page.getByRole('tabpanel', { name: 'Resumo' })).toContainText(/Cartão de R\$\s*\d+,\d{2}, pago às \d{1,2}h\d{2}/)
     await capture(page, testInfo, 'entrega')
   })
 })
