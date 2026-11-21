@@ -304,6 +304,7 @@ POLICY: dict[str, Rule] = {
     "backstage.KDSInstance_collections": _keep(_CONFIG),
     "backstage.POSTab": _keep("comandas físicas"),
     "backstage.PrintAgentCredential": _keep("credencial da impressora do balcão"),
+    "backstage.IncidentReaderCredential": _keep("credencial da ponte de incidentes (GitHub); vale no Dia 1"),
     "backstage.OperationTaskTemplate": _keep(_CONFIG),
     "backstage.OperationChecklistTemplate": _keep(_CONFIG),
     "backstage.OperationChecklistTemplateTask": _keep(_CONFIG),

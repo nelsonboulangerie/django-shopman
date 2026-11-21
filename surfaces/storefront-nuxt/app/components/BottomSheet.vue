@@ -81,6 +81,7 @@ watch(keyboardInset, () => {
       variant="floating"
       :class="['mx-auto flex max-h-[85dvh] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0', maxWidthClass, surfaceClass, contentClass]"
       v-bind="$attrs"
+      data-focus-obstruction
       :style="panelStyle"
       @focusin="onFocusIn"
     >

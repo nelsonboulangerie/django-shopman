@@ -37,6 +37,12 @@ class StorefrontConfig(AppConfig):
         concierge_verification.register(
             answer=verification.answer, take_over=verification.take_over, promote_faq=faq_promotion.promote
         )
+        # Loja viva (#2784): o canal da loja tem vitrine pública. O shop só calcula o
+        # estado público do SKU (e publica ``shelf-<canal>``) para canal registrado aqui.
+        from shopman.shop.services import public_shelf
+        from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+
+        public_shelf.register_public_channel(STOREFRONT_CHANNEL_REF)
         from shopman.storefront.continuum import CatalogStructureRefreshHandler
 
         registry.register_directive_handler(CatalogStructureRefreshHandler())

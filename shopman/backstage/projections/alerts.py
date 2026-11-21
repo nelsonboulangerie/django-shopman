@@ -186,6 +186,8 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "ifood_store_closed_while_open": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_open_while_closed": ("orders", "/", "Conferir o iFood na Fila"),
     "ifood_store_sync_failed": ("orders", "/", "Conferir o iFood na Fila"),
+    # O módulo de loja ainda não liberado: pausa e horário só pelo Portal.
+    "ifood_store_module_pending": ("external", "https://portal.ifood.com.br/", "Abrir o Portal"),
     # Gestor: produto que sumiu do cardápio por coleção desativada.
     "catalog_hidden_by_inactive_collection": ("orders", "/catalog", "Abrir o Catálogo"),
     # Compras: a NF-e que diverge do cadastro fiscal.
@@ -210,6 +212,12 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "marketing_unknown_stale": ("marketing", "/history", "Abrir o histórico"),
     "marketing_readiness_stale": ("marketing", "/platforms", "Conferir as plataformas"),
 }
+
+
+def alert_home(alert_type: str) -> tuple[str, str, str] | None:
+    """Onde o tipo se resolve (app, caminho, rótulo), sem o filtro do registro."""
+
+    return _ALERT_HOMES.get(alert_type)
 
 #: O id do app no registro de URLs das superfícies (o Gestor é ``gestor`` ali).
 _SURFACE_URL_KEYS = {"orders": "gestor"}
@@ -526,6 +534,9 @@ def alert_context_href(alert, *, surface: str, target_date: str = "") -> tuple[s
     if home is None:
         return ("", "")
     home_surface, path, label = home
+    if home_surface == "external":
+        # Fora da casa (o Portal do Parceiro do iFood): o endereço é o próprio.
+        return (path, label)
     if home_surface == "admin":
         href = _admin_link(path)
         return (href, label) if href else ("", "")
