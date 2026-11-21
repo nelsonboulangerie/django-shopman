@@ -127,3 +127,63 @@ def test_the_brake_or_no_connection_means_no_ai_client(monkeypatch):
 
     monkeypatch.setattr(ai, "anthropic_client", missing)
     assert REAL_BUILD_FAQ_CLIENT() == (None, "")
+
+
+# ── Conferência pelo Jev (auditoria do Jev, item 2) ───────────────────
+
+
+class FakeJev:
+    def __init__(self, supported: float):
+        self.supported, self.sent = supported, []
+
+    def post(self, url, *, json, headers, timeout):
+        self.sent.append(json)
+        payload = {"answers": {"supported": {"type": "noul", "noul": self.supported}}, "usage": {"input_tokens": 50}}
+        return SimpleNamespace(status_code=200, text="", json=lambda: payload)
+
+
+def test_when_the_jev_says_the_answer_is_not_backed_the_direct_faq_answers(conversation, menu, monkeypatch):
+    from shopman.storefront.concierge import faq_answer
+
+    _model(monkeypatch, FakeModel({"refs": ["payment"], "answer": "Aceitamos Pix e cartão, sim!", "uncovered": ""}))
+    monkeypatch.setattr(faq_answer, "jev_support", lambda answer, faqs, session=None, timeout=5.0: 0.1)
+    text = "aceitam pix?"
+
+    outcome = _turn(conversation, text, [_act("house_info", text)], monkeypatch)
+
+    assert outcome.reply_text != "Aceitamos Pix e cartão, sim!", "o Jev reprovou: vale a FAQ direta"
+    assert "Pix" in outcome.reply_text
+
+
+def test_without_the_jev_the_checked_answer_stands(conversation, menu, monkeypatch):
+    from shopman.storefront.concierge import faq_answer
+
+    _model(monkeypatch, FakeModel({"refs": ["payment"], "answer": "Aceitamos Pix e cartão, sim!", "uncovered": ""}))
+    monkeypatch.setattr(faq_answer, "jev_support", lambda answer, faqs, session=None, timeout=5.0: None)
+    text = "aceitam pix?"
+
+    outcome = _turn(conversation, text, [_act("house_info", text)], monkeypatch)
+
+    assert outcome.reply_text == "Aceitamos Pix e cartão, sim!"
+
+
+def test_the_jev_receives_the_cited_faqs_and_the_answer_redacted(conversation):
+    from shopman.shop.tests.ai_support import configure_jev
+    from shopman.storefront.concierge import faq_answer
+    from shopman.storefront.concierge.faq_answer import Answer
+
+    configure_jev("k")
+    faq = SimpleNamespace(ref="payment", question="Quais formas de pagamento?", answer="Pix e cartão.")
+    other = SimpleNamespace(ref="hours", question="Horário?", answer="Das 9h às 18h.")
+    session = FakeJev(0.9)
+    answer = Answer(refs=["payment"], text="Ana, aceitamos Pix. Me liga no (43) 99876-5432.")
+
+    support = faq_answer.jev_support(answer, [faq, other], session=session)
+
+    assert support == pytest.approx(0.9)
+    body = session.sent[0]
+    assert body["questions"]["supported"]["type"] == "noul"
+    assert "Quais formas de pagamento?" in body["state"]["faqs"] and "Horário?" not in body["state"]["faqs"]
+    assert "99876" not in body["state"]["store_answer"], "a resposta vai redigida"
+    assert not faq_answer.held_by_jev(answer, [faq], session=FakeJev(0.9))
+    assert faq_answer.held_by_jev(answer, [faq], session=FakeJev(0.2))

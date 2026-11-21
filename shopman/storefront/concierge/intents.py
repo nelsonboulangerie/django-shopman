@@ -993,6 +993,10 @@ def _faq_by_model(act: Act, *, conversation, channel_ref: str):
         return None
     if not answer.refs and answer.text.strip():
         return None
+    if faq_answer.held_by_jev(answer, faqs):
+        # O Jev conferiu e a resposta diz mais do que as FAQs citadas: vale a FAQ direta.
+        logger.warning("concierge.faq_answer.held reasons=jev_unsupported")
+        return None
     return answer
 
 
