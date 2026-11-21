@@ -58,7 +58,12 @@ from shopman.shop.services.business_calendar import (
     current_business_state,
     next_operational_deadline,
 )
-from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date, is_counter_takeaway
+from shopman.shop.services.order_helpers import (
+    customer_holds_the_goods,
+    get_commitment_date,
+    is_counter_takeaway,
+    is_test_order,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +265,47 @@ QUEUED_PHASES = frozenset({"on_preparing", "on_ready", "on_dispatched", "on_deli
 DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"}) | QUEUED_PHASES
 LIFECYCLE_DATA_KEY = "lifecycle"
 PHASE_DONE = "done"
+
+
+#: O pedido já fechou: o trabalho do preparo (cozinha e aviso) não é mais devido.
+_CLOSED_STATUSES = frozenset({"completed", "cancelled", "returned"})
+#: Quem fecha o pedido por REPARO: os fatos do iFood aplicados quando chegam ou
+#: depois (``ifood_events``, ``reconcile_ifood_orders``), com ``system:ifood:<fato>``.
+_REPAIR_ACTOR_PREFIX = "system:ifood"
+
+
+def phase_superseded(order, phase: str) -> bool:
+    """A fase chegou tarde e não deve mais nada: fecha sem alerta crítico (#3029).
+
+    Dois casos, medidos nos alertas de 19/11/2026:
+
+    - o pedido de TESTE (``is_test_order``): é inerte, não deve cozinha, nota nem
+      aviso a ninguém;
+    - o preparo que encontra o pedido FECHADO POR REPARO. O reparo do iFood (#2817)
+      leva o pedido de ``accepted`` a ``completed`` num instante, e a fase do
+      preparo, enfileirada, chega depois. Quem fechou foi o fato do iFood, não a casa.
+
+    O preparo obsoleto de um pedido real fechado pela casa (cancelado no Gestor,
+    concluído no balcão) continua visível: a tarefa falha e o alerta sai, porque
+    alguém precisa saber que a cozinha nunca recebeu aquele pedido. Fase que não
+    pode mais rodar num pedido real é travamento, com o alerta crítico.
+    """
+    if is_test_order(order):
+        return True
+    if phase != "on_preparing" or order.status not in _CLOSED_STATUSES:
+        return False
+    return _closed_by_repair(order)
+
+
+def _closed_by_repair(order) -> bool:
+    """O último ``status_changed`` que levou o pedido ao estado atual veio do reparo?"""
+    actor = (
+        order.events.filter(type="status_changed", payload__new_status=order.status)
+        .order_by("-seq")
+        .values_list("actor", flat=True)
+        .first()
+    )
+    return bool(actor) and str(actor).startswith(_REPAIR_ACTOR_PREFIX)
 
 
 def phase_complete(order, phase: str) -> bool:
@@ -1051,9 +1097,12 @@ def awaits_kitchen_release(order) -> bool:
 
     Data FUTURA espera o dia. NO dia, a encomenda (``is_preorder`` gravado no
     commit, ou despertador vivo) espera ``preorder_activation_at``: hora
-    combinada − preparo − antecedência (decisão do dono, 09/11/2026). Pedido do
-    dia sem despertador vai para a Cozinha no aceite, como sempre. Depois que
-    a Cozinha recebeu (``kitchen_released_at``), nada mais espera.
+    combinada − preparo − antecedência (decisão do dono, 09/11/2026). O pedido
+    feito hoje PARA hoje com hora combinada espera pela mesma régua
+    (:func:`_promised_for_today`, #2548): o pão feito na hora não sai horas
+    antes do combinado. Pedido do dia sem hora combinada, e a venda de balcão,
+    vão para a Cozinha no aceite. Depois que a Cozinha recebeu
+    (``kitchen_released_at``), nada mais espera.
     """
     from shopman.shop.services.order_helpers import get_commitment_date
 
@@ -1068,10 +1117,27 @@ def awaits_kitchen_release(order) -> bool:
     data = order.data or {}
     if data.get(KITCHEN_RELEASED_AT_KEY):
         return False
-    if not (data.get("is_preorder") or _has_live_preorder_alarm(order)):
+    if not (data.get("is_preorder") or _has_live_preorder_alarm(order) or _promised_for_today(order, target)):
         return False
     available_at, _ = preorder_activation_at(order)
     return available_at is not None and available_at > timezone.now()
+
+
+def _promised_for_today(order, today) -> bool:
+    """O pedido de hoje combinou uma hora de hoje (#2548, coordenação 21/11/2026).
+
+    ``is_preorder`` é falso no mesmo dia (o commit só o grava para data futura),
+    e sem esta pergunta o pedido feito às 9h para as 17h ia à Cozinha no aceite.
+    A hora é a mesma que :func:`kitchen_release_at` usa (``promised_at``). A
+    venda de balcão fica de fora: o cliente leva agora, não há hora a esperar.
+    """
+    from shopman.shop.services.fulfillment_window import promised_at
+    from shopman.shop.services.order_helpers import is_counter_takeaway
+
+    if is_counter_takeaway(order):
+        return False
+    promised = promised_at(order)
+    return promised is not None and timezone.localtime(promised).date() == today
 
 
 #: ``Order.data`` — ISO datetime em que a encomenda saiu da espera e entrou no
