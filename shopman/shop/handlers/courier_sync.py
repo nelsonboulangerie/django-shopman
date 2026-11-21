@@ -44,9 +44,9 @@ class CourierSyncHandler:
             return
 
         block = courier.get_block(order)
-        if not block.get("id_mch"):
+        if not block.get("ride_ref"):
             # O primeiro pedido já encerrou a corrida (N/C arquiva e tira o
-            # ``id_mch``), mas a batida é uma só para a corrida inteira: quem
+            # ``ride_ref``), mas a batida é uma só para a corrida inteira: quem
             # ainda a carrega recebe o mesmo fim, senão fica "com corrida" para
             # sempre, com a letra, o troco e a maquininha presos.
             self._release_stranded(order)
@@ -57,9 +57,9 @@ class CourierSyncHandler:
         # corrida no primeiro pedido, e depois dele ninguém mais saberia quem
         # estava nela (os outros ficariam presos "com corrida", com a custódia fora).
         companions = courier.ride_companions(order)
-        courier.recover_local_status(order, ride_id=block["id_mch"])
+        courier.recover_local_status(order, ride_id=block["ride_ref"])
         for other in companions:
-            courier.recover_local_status(other, ride_id=block["id_mch"])
+            courier.recover_local_status(other, ride_id=block["ride_ref"])
         if block.get("status") in TERMINAL_STATUSES:
             return
 
@@ -68,9 +68,9 @@ class CourierSyncHandler:
             return
 
         seconds = courier.sync_interval(block)
-        ride_id = block["id_mch"]
+        ride_id = block["ride_ref"]
         if courier.poll_expired(block):
-            logger.info("courier.sync_slow order=%s id_mch=%s", order.ref, ride_id)
+            logger.info("courier.sync_slow order=%s ride_ref=%s", order.ref, ride_id)
 
         try:
             read_ride = getattr(adapter, "read_ride", None)
@@ -80,7 +80,7 @@ class CourierSyncHandler:
             # é a casa que tem de esperar. Não conta como falha de leitura (sem
             # "sem notícias" na tela, sem aviso) e a próxima batida respeita o
             # prazo que a TaOn pediu.
-            logger.warning("courier.sync_rate_limited order=%s id_mch=%s retry_after=%s",
+            logger.warning("courier.sync_rate_limited order=%s ride_ref=%s retry_after=%s",
                            order.ref, ride_id, exc.retry_after)
             courier.schedule_sync(order, delay_seconds=max(seconds, exc.retry_after))
             return
@@ -91,7 +91,7 @@ class CourierSyncHandler:
             # primeira corrida real ficou parada em D por 30 min só com WARNING
             # no log (``solicitacaoStatus`` → 400 [67] a cada minuto).
             logger.warning(
-                "courier.sync_failed order=%s id_mch=%s: %s",
+                "courier.sync_failed order=%s ride_ref=%s: %s",
                 order.ref, ride_id, exc,
             )
             courier.record_sync_failure(order, exc, ride_id=ride_id)
@@ -106,13 +106,13 @@ class CourierSyncHandler:
                 courier.apply_snapshot(other, snapshot, source="poll")
 
         block = courier.get_block(order)
-        still_active = bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
+        still_active = bool(block.get("ride_ref")) and block.get("status") not in TERMINAL_STATUSES
         if still_active:
             # A posição pela batida só quando o webhook de posição está calado
             # (``courier_position.poll_if_silent``): com ele vivo, ninguém pergunta.
             courier_position.poll_if_silent(block)
             courier.schedule_sync(order, delay_seconds=courier.sync_interval(block))
-        elif not block.get("id_mch"):
+        elif not block.get("ride_ref"):
             # A leitura encerrou a corrida neste pedido; se algum companheiro não
             # recebeu o fim (falha local no meio), ele recebe agora.
             self._release_stranded(order)

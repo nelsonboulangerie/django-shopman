@@ -117,13 +117,13 @@ def assign(orders: list[Order], courier_person: Courier, *, actor: str, change_o
             shared_device = {"device_ref": custody["device_ref"], "device_label": custody.get("device_label", "")}
         order.refresh_from_db()
         block = dict(courier.get_block(order))
-        if block.get("id_mch"):
+        if block.get("ride_ref"):
             # Corrida anterior encerrada (N/C): vai para o histórico, como no "Chamar de novo".
             attempts = list(block.get("attempts") or [])
-            attempts.append({k: block[k] for k in ("id_mch", "status", "requested_at", "status_at") if k in block})
+            attempts.append({k: block[k] for k in ("ride_ref", "status", "requested_at", "status_at") if k in block})
             block = {"attempts": attempts}
         block.update(
-            provider="own_fleet", service=service.ref, id_mch=ride_ref, status="A",
+            provider="own_fleet", service=service.ref, ride_ref=ride_ref, status="A",
             status_at={"A": now_iso}, requested_at=now_iso, called_at=now_iso, called_by=actor,
             ride_number=number, driver=driver, courier_ref=courier_person.ref,
             last_event_at=now_iso, last_source=actor,
@@ -139,7 +139,7 @@ def assign(orders: list[Order], courier_person: Courier, *, actor: str, change_o
                                  "with_return": False}
         courier._save_block(order, block, emit={"kind": "status", "status": "A"})
         order.emit_event(event_type="courier_assigned", actor=actor,
-                         payload={"id_mch": ride_ref, "courier": courier_person.ref})
+                         payload={"ride_ref": ride_ref, "courier": courier_person.ref})
     link = courier_links.issue(courier_person, ride_ref, refs)
     return Assignment(ride_ref=ride_ref, link=link)
 
@@ -175,7 +175,7 @@ def _ride_orders(link: CourierLink) -> list[Order]:
 
 
 def _live(order: Order, link: CourierLink) -> bool:
-    return courier.get_block(order).get("id_mch") == link.ride_ref and order.status != Order.Status.CANCELLED
+    return courier.get_block(order).get("ride_ref") == link.ride_ref and order.status != Order.Status.CANCELLED
 
 
 def depart(link: CourierLink, *, source: str = SOURCE) -> list[str]:
@@ -251,7 +251,7 @@ def close_if_settled(link: CourierLink) -> bool:
     def settled(o):
         block = courier.get_block(o)
         dispatch = (o.data or {}).get("dispatch") or {}
-        ended = block.get("id_mch") != link.ride_ref or o.status == Order.Status.CANCELLED
+        ended = block.get("ride_ref") != link.ride_ref or o.status == Order.Status.CANCELLED
         delivered = block.get("status") == "F"
         needs_back = bool(dispatch.get("custody_at")) and not dispatch.get("courier_back_at")
         return ended or (delivered and not needs_back)
@@ -272,7 +272,7 @@ def _stop_view(order: Order, link: CourierLink, *, on_route: bool) -> dict:
     charge = courier.door_charge(order)
     paid_other = next((p.get("payment") for p in reversed(block.get("problems") or [])
                        if p.get("kind") == OTHER_PAYMENT), "")
-    if order.status == Order.Status.CANCELLED or block.get("id_mch") != link.ride_ref:
+    if order.status == Order.Status.CANCELLED or block.get("ride_ref") != link.ride_ref:
         state = "cancelled"
     elif block.get("status") == "F":
         state = "done"

@@ -30,7 +30,7 @@ CAPABILITIES = DeliveryCapabilities(
     assign=True,
 )
 
-#: Prefixo do identificador da corrida da casa (o mesmo campo da TaOn até a M1b).
+#: Prefixo do identificador da corrida da casa (o `ride_ref` do bloco, o mesmo campo da TaOn).
 RIDE_PREFIX = "CASA-"
 
 #: Velocidade média para estimar o tempo da rota na cidade (km/h). É palpite até o B.I.
@@ -93,7 +93,7 @@ def read_ride(courier_ref: str) -> dict:
     """A leitura é o próprio pedido: a casa não tem central para consultar."""
     from shopman.orderman.models import Order
 
-    order = Order.objects.filter(data__courier__id_mch=courier_ref).order_by("pk").first()
+    order = Order.objects.filter(data__courier__ride_ref=courier_ref).order_by("pk").first()
     block = ((order.data or {}).get("courier") or {}) if order else {}
     return {"status": block.get("status", ""), "driver": block.get("driver") or {}, "progress": {},
             "final_value_q": block.get("final_value_q"), "via": "own_fleet"}

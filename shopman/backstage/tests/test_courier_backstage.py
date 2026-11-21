@@ -148,7 +148,7 @@ def test_detail_carries_the_ride_progress_and_the_reading_gap(client, operator, 
     courier.request_dispatch(order, actor="test")
     CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
     order.refresh_from_db()
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride, "A")
     courier_mock.set_progress(ride, {"pickup_eta_at": "2026-10-13T18:49:00+00:00", "trip_minutes": 9})
     courier.apply_snapshot(order, courier_mock.read_ride(ride), source="poll")
@@ -311,7 +311,7 @@ def test_courier_actions_require_manage_orders(client, shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_board_card_carries_courier_badge(client, operator, shop):
     order = _delivery_order(
-        courier={"provider": "machine", "id_mch": "1", "status": "E"},
+        courier={"provider": "machine", "ride_ref": "1", "status": "E"},
     )
     Order.objects.filter(pk=order.pk).update(status=Order.Status.DISPATCHED)
     client.force_login(operator)
@@ -465,7 +465,7 @@ def test_one_ride_refuses_the_order_with_the_card_machine_by_name(client, operat
 @pytest.mark.parametrize("ride_status", ["F", "C", "N"])
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_ended_ride_keeps_local_status_without_expired_tracking(client, operator, shop, ride_status):
-    order = _delivery_order(status=Order.Status.COMPLETED, courier={"provider": "machine", "id_mch": 123, "status": ride_status, "tracking_url": "https://rastreio.mock/ended"})
+    order = _delivery_order(status=Order.Status.COMPLETED, courier={"provider": "machine", "ride_ref": 123, "status": ride_status, "tracking_url": "https://rastreio.mock/ended"})
     before = order.data.copy()
     client.force_login(operator)
     block = _detail(client, order.ref)["courier"]
