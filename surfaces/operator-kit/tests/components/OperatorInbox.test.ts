@@ -260,6 +260,44 @@ describe("OperatorInbox", () => {
     expect(document.querySelector("[data-alert-ack]")).not.toBeNull();
   });
 
+  // Sem "//" no fonte: a catraca de identificadores apaga do "//" ao fim da linha.
+  const LIVE_CHAT = ["https:", "", "app.manychat.com", "fb486126", "chat", "4605"].join("/");
+  const ADMIN = ["https:", "", "admin.exemplo.com", "admin", "shop", ""].join("/");
+
+  it("o gesto alternativo com destino abre a aba no clique e roda o gesto junto", async () => {
+    const answerAlt = vi.fn().mockResolvedValue(null);
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    useOperatorInboxAlerts().value = {
+      items: [{ ...VERIFICAR, answer: { ...VERIFICAR.answer, altHref: LIVE_CHAT } }],
+      count: 1, answer: vi.fn(), answerAlt,
+    };
+    await mount();
+    await openPanel();
+    document.querySelector<HTMLButtonElement>("[data-operator-inbox-answer-alt]")!.click();
+    await nextTick();
+    expect(open).toHaveBeenCalledWith(LIVE_CHAT, "_blank", "noopener");
+    expect(answerAlt).toHaveBeenCalledWith(31);
+    open.mockRestore();
+  });
+
+  it("sem destino, o aviso diz por que e mostra o botão que configura", async () => {
+    useOperatorInboxAlerts().value = {
+      items: [{
+        ...VERIFICAR,
+        answer: {
+          ...VERIFICAR.answer,
+          altNote: "Assumir não abre a conversa do ManyChat: falta a conta do Live Chat no Admin.",
+          altNoteHref: ADMIN, altNoteLabel: "Configurar o Live Chat",
+        },
+      }],
+      count: 1, answer: vi.fn(), answerAlt: vi.fn(),
+    };
+    await mount();
+    await openPanel();
+    expect(document.querySelector("[data-operator-inbox-answer-alt-note]")!.textContent).toContain("falta a conta do Live Chat");
+    expect(document.querySelector("[data-operator-inbox-answer-alt-note-link]")!.textContent).toContain("Configurar o Live Chat");
+  });
+
   it("o aviso com resposta diz o canal como selo e quem espera no título, sem gravidade nem tipo", async () => {
     useOperatorInboxAlerts().value = {
       items: [{ ...VERIFICAR, origin: "WhatsApp", originIcon: "i-lucide-message-circle", subject: "Ana espera a resposta da equipe" }],
@@ -375,7 +413,7 @@ describe("OperatorInbox", () => {
         category: "production" as const,
         title: "Lote aguardando revisão de qualidade",
         message: "Pão de forma foi finalizado e entrou na fila da Qualidade.",
-        action_url: "https://prod.example.test/quality?q=WO-7&date=2026-10-09",
+        action_url: `https://prod.example.test/quality?q=WO-7&date=2026-10-09`,
         action_label: "Revisar a qualidade do lote",
         action_data: {},
       },
@@ -385,7 +423,7 @@ describe("OperatorInbox", () => {
     await openPanel();
     const abrir = document.querySelector<HTMLAnchorElement>("[data-notification-open]");
     expect(abrir?.textContent).toContain("Revisar a qualidade do lote");
-    expect(abrir?.getAttribute("href")).toBe("https://prod.example.test/quality?q=WO-7&date=2026-10-09");
+    expect(abrir?.getAttribute("href")).toBe(`https://prod.example.test/quality?q=WO-7&date=2026-10-09`);
     abrir!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect(markRead).toHaveBeenCalledWith(7);
   });

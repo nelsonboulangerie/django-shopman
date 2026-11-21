@@ -343,3 +343,48 @@ describe('checkout flow — o hoje é o da loja', () => {
     expect(checkoutNow(undefined)).toBeInstanceOf(Date)
   })
 })
+
+// #2411: a sacola leva a data para depois da que a cliente tinha, e a tela diz o dia novo.
+describe('checkout flow — a data do pedido que a sacola mudou', () => {
+  // 10/03/2031 é segunda-feira.
+  const now = new Date(2031, 2, 10, 14, 0)
+
+  it('diz o dia novo quando a fornada da sacola passou a data que ela tinha', async () => {
+    const { checkoutDateBounds, orderDateMovedNotice } = await import('~/utils/checkoutFlow')
+    const bounds = checkoutDateBounds({ max_preorder_days: 7 }, now, '2031-03-11')
+    expect(orderDateMovedNotice('2031-03-10', '2031-03-11', bounds, now))
+      .toBe('Sua sacola mudou, e o pedido passou para amanhã, terça-feira, 11/03. Confira os itens e a data antes de enviar.')
+    const later = checkoutDateBounds({ max_preorder_days: 7 }, now, '2031-03-13')
+    expect(orderDateMovedNotice('2031-03-11', '2031-03-13', later, now))
+      .toBe('Sua sacola mudou, e o pedido passou para quinta-feira, 13/03. Confira os itens e a data antes de enviar.')
+  })
+
+  // Em produção o domingo é fechado: a fornada de domingo empurra o pedido para a
+  // próxima data ABERTA, e a frase diz essa data, sem "amanhã".
+  it('com o dia seguinte fechado, diz a próxima data aberta, sem "amanhã"', async () => {
+    const { checkoutDateBounds, initialCheckoutDate, orderDateMovedNotice } = await import('~/utils/checkoutFlow')
+    const saturday = new Date(2031, 2, 15, 14, 0)
+    const bounds = checkoutDateBounds({ max_preorder_days: 7 }, saturday, '2031-03-16')
+    // A projection não oferece o domingo (fechado): a primeira data aberta é segunda.
+    const after = initialCheckoutDate('2031-03-15', false, ['2031-03-17', '2031-03-18'], bounds, '2031-03-15')
+    expect(after).toBe('2031-03-17')
+    expect(orderDateMovedNotice('2031-03-15', after, bounds, saturday))
+      .toBe('Sua sacola mudou, e o pedido passou para segunda-feira, 17/03. Confira os itens e a data antes de enviar.')
+  })
+
+  it('cala quando a data não mudou ou quando não havia data', async () => {
+    const { checkoutDateBounds, orderDateMovedNotice } = await import('~/utils/checkoutFlow')
+    const bounds = checkoutDateBounds({ max_preorder_days: 7 }, now, '2031-03-11')
+    expect(orderDateMovedNotice('2031-03-11', '2031-03-11', bounds, now)).toBe('')
+    expect(orderDateMovedNotice('', '2031-03-11', bounds, now)).toBe('')
+  })
+
+  it('cala quando quem mudou a data não foi a sacola (rascunho de ontem, dia fechado)', async () => {
+    const { checkoutDateBounds, orderDateMovedNotice } = await import('~/utils/checkoutFlow')
+    const noFloor = checkoutDateBounds({ max_preorder_days: 7 }, now)
+    // Rascunho de ontem: a data venceu sozinha.
+    expect(orderDateMovedNotice('2031-03-09', '2031-03-10', noFloor, now)).toBe('')
+    // Sem piso da sacola: a data de quarta saiu porque o calendário a fechou.
+    expect(orderDateMovedNotice('2031-03-12', '2031-03-13', noFloor, now)).toBe('')
+  })
+})

@@ -62,6 +62,8 @@ class Sample:
     sample_id: int
     text: str  # sempre redigido
     gold: frozenset[str]
+    #: A última fala da casa, redigida (``triage.house_line``): o contexto do Jev (1b, D-040).
+    house_line: str = ""
 
 
 @dataclass
@@ -314,7 +316,12 @@ class JevContender:
         }
         for c in yes_no:
             questions[c.ref] = {"type": "noul", "instructions": f"A mensagem do cliente inclui isto: {c.description}?"}
-        return {"model": self.model, "state": {"customer_message": sample.text}, "questions": questions}
+        state = {"customer_message": sample.text}
+        if sample.house_line:
+            # Só a última fala da casa, redigida: o "sim" ao resumo é pedido, não reclamação
+            # (adendo à D-040, dono 21/11/2026: "desde que seguro perante LGPD, sim").
+            state["previous_store_message"] = sample.house_line
+        return {"model": self.model, "state": state, "questions": questions}
 
     def scores(self, sample: Sample, categories: list[Category]) -> Prediction:
         """A probabilidade de TODAS as intenções, inclusive as abaixo do corte.

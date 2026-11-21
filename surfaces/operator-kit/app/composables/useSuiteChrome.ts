@@ -78,6 +78,14 @@ export interface OperatorInboxAnswerSpec {
   hint?: string;
   /** O gesto alternativo ("Assumir a conversa"); sem ele, só o de enviar. */
   altLabel?: string;
+  /** Onde o gesto alternativo leva, numa aba nova, no mesmo clique (o Live Chat do
+   *  ManyChat daquela conversa). A aba abre no clique, antes da chamada: navegador não
+   *  bloqueia. */
+  altHref?: string;
+  /** Por que o gesto alternativo não leva a lugar nenhum, e o botão que resolve. */
+  altNote?: string;
+  altNoteHref?: string;
+  altNoteLabel?: string;
 }
 
 /** O erro do envio, quando quem chama sabe que tentar de novo não adianta. */

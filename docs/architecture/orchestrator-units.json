@@ -10747,6 +10747,12 @@
             "_alert_divergence",
             "ALERT_STATUS_UNREADABLE_WINDOW_MINUTES",
             "_alert_status_unreadable",
+            "ALERT_MODULE_PENDING",
+            "MODULE_PENDING_WINDOW_MINUTES",
+            "_alert_module_pending",
+            "_RESOLVER",
+            "_resolve_alerts",
+            "_pause_marker",
             "alert_store_write_failed"
           ]
         }

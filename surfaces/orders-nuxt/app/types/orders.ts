@@ -187,6 +187,9 @@ export interface AlertProjection {
     href: string;
     expected_rev?: number | null;
     proof?: string;
+    /** A frase que acompanha o gesto: o que ele faz ("Ao assumir, a Concierge para de
+     *  responder nesta conversa.") ou por que não leva a lugar nenhum. */
+    reason?: string;
     /** `resolves`: o gesto acaba com a causa (o "Aceitar" do pedido parado). */
     source_alert_effect?: string | null;
   }>;

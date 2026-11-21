@@ -2417,6 +2417,21 @@ function compactClear() {
             >
               {{ rowPrimaryReason(row.original.card) }}
             </p>
+            <!-- Pix ou link vencido nunca destrava sozinho: a frase diz o fato, e o botão
+                 que resolve vem junto, na própria célula (coordenação, 21/11/2026). -->
+            <div
+              v-if="row.original.card.payment_lapsed && canManageOrders"
+              class="mt-1.5 flex justify-end"
+            >
+              <NuxtButton
+                :to="`/${row.original.card.ref}#cancel-unpaid`"
+                icon="i-lucide-ban"
+                label="Cancelar pedido"
+                color="error"
+                variant="outline"
+                data-supervision-cancel-unpaid-cell
+              />
+            </div>
             <NuxtAlert
               v-if="actionError(row.original.card.ref)"
               class="mt-2"
