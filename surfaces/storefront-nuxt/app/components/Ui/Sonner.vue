@@ -36,3 +36,35 @@ const sonnerTheme = computed(() => colorMode.value === 'dark' ? 'dark' : 'light'
 // partir do topo do que flutua.
 const obstruction = useBottomObstruction()
 </script>
+
+<style>
+/* O "×" do toast DENTRO dele, à direita, no centro da altura, com alvo de 44 px: o
+   padrão do X dos avisos de tela. O da biblioteca era um círculo de 20 px pendurado
+   FORA do toast, no canto de cima à esquerda, sobre a borda (prévia do #3046). Vale
+   para todos os toasts da loja. O toast reserva o lugar do botão à direita, para o
+   texto nunca correr por baixo dele. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:has([data-close-button]) {
+  padding-right: 3.25rem;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button] {
+  left: auto;
+  right: 0.25rem;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button] svg {
+  width: 1rem;
+  height: 1rem;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:hover [data-close-button]:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+</style>
