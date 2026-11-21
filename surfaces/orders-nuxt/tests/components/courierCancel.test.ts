@@ -42,7 +42,7 @@ function cancelAction(accepted: boolean, over: Partial<Action> = {}): Action {
 
 // ── Painel do pedido ────────────────────────────────────────────────────────
 const courier = {
-  status: "D", ride_state: "searching", status_label: "Procurando entregador", active: true, can_quote: false,
+  status: "D", ride_state: "searching", service_name: "TaOn", status_label: "Procurando entregador", active: true, can_quote: false,
   can_dispatch: false, can_cancel: true, attempts_count: 0, charge_outdated: null, error: null,
 } as unknown as CourierBlock;
 const mountPanel = (over: Partial<CourierBlock> = {}, action: Action | undefined = cancelAction(false)) =>
@@ -146,7 +146,7 @@ const stop = (ref: string) => ({
 });
 function ride(over: Partial<DeliveryRideProjection> = {}): DeliveryRideProjection {
   return {
-    key: "776753357", number: 2, state: "searching", status_label: "Procurando entregador",
+    key: "776753357", number: 2, state: "searching", status_label: "Procurando entregador", service_name: "TaOn",
     stops: [stop("NB-261116-A05"), stop("NB-261116-C12")], driver: null, position: null,
     called_at: "2026-11-16T17:12:00Z", called_by: "ana", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "",
     delivery_eta_at: "", tracking_url: "", cost_display: "", bags: 2, undeclared: [], lead_ref: "NB-261116-A05",

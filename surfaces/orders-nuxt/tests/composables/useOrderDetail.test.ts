@@ -20,7 +20,7 @@ describe("useOrderDetail", () => {
   // "Chamar de novo", pelo mesmo protocolo de intenção.
   it("chamar de novo com resposta perdida consulta recibo e informa somente fila", async () => {
     const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: "courier-dispatch-again" };
-    env.fetchData.value = { order: { ref: "COURIER-LOST", actions: [action] } };
+    env.fetchData.value = { order: { ref: "COURIER-LOST", actions: [action], courier: { service_name: "TaOn" } } };
     env.fetchMock.mockRejectedValueOnce(new Error("response lost"));
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied", status: "queued", directive_id: 7 });
     expect(await useOrderDetail("COURIER-LOST").courierDispatchAgain()).toBe(true);

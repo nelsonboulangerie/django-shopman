@@ -16,12 +16,13 @@ import {
 import {
   clockHHMM,
   GROUPED_HINT,
-  GROUPED_TITLE,
-  REOPENED_HINT,
+  groupedTitle,
+  reopenedHint,
   TRANSFER_HINT,
-  TRANSFER_TITLE,
+  transferTitle,
   withdrawalTitle,
 } from "../../../operator-kit/app/presentation/courierProgress";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 /** Uma corrida que o operador está juntando, antes de chamar (estado só da tela). */
 export interface EditingRide {
@@ -333,16 +334,16 @@ export function rideLine(ride: DeliveryRideProjection, now: number): RideLine {
       // O entregador desistiu, ou a TaOn está trocando o entregador, e ela
       // redistribui a MESMA corrida: nada a chamar.
       if (ride.reopened_reason === "transfer")
-        return { icon: "i-lucide-repeat", title: TRANSFER_TITLE, hint: TRANSFER_HINT };
+        return { icon: "i-lucide-repeat", title: transferTitle(ride.service_name), hint: TRANSFER_HINT };
       const at = Date.parse(ride.reopened_at);
       return {
         icon: "i-lucide-user-x",
         title: Number.isFinite(at) ? withdrawalTitle(ride.reopened_driver, at) : ride.status_label,
-        hint: REOPENED_HINT,
+        hint: reopenedHint(ride.service_name),
       };
     }
     case "grouped":
-      return { icon: "i-lucide-link", title: GROUPED_TITLE, hint: GROUPED_HINT };
+      return { icon: "i-lucide-link", title: groupedTitle(ride.service_name), hint: GROUPED_HINT };
     case "coming": {
       const minutes = ride.pickup_eta_at ? minutesUntil(ride.pickup_eta_at, now) : null;
       return {
@@ -470,6 +471,7 @@ export function listCodes(codes: readonly string[]): string {
  */
 export function rideNotice(ride: DeliveryRideProjection, now: number): RideNotice | null {
   const line = rideLine(ride, now);
+  const service = deliveryServiceName(ride.service_name);
   if (ride.open_too_long)
     return {
       key: "open_too_long",
@@ -477,7 +479,7 @@ export function rideNotice(ride: DeliveryRideProjection, now: number): RideNotic
       icon: "i-lucide-clock-alert",
       title: "Corrida aberta há muito tempo.",
       description:
-        "A TaOn ainda não encerrou esta corrida. Confira no painel da central se ela já terminou; a tela segue perguntando a cada 10 min.",
+        `A ${service} ainda não encerrou esta corrida. Confira no painel da central se ela já terminou; a tela segue perguntando a cada 10 min.`,
     };
   if (ride.state === "atStore" && ride.waited_pickup_at)
     return {
@@ -486,8 +488,8 @@ export function rideNotice(ride: DeliveryRideProjection, now: number): RideNotic
       icon: "i-lucide-timer",
       title: `${line.title}.`,
       description: line.hint
-        ? `A TaOn avisou que a espera passou do combinado. ${line.hint}.`
-        : "A TaOn avisou que a espera passou do combinado.",
+        ? `A ${service} avisou que a espera passou do combinado. ${line.hint}.`
+        : `A ${service} avisou que a espera passou do combinado.`,
     };
   if (ride.state === "reopened")
     return {
@@ -512,7 +514,7 @@ export function rideNotice(ride: DeliveryRideProjection, now: number): RideNotic
       title: `${line.title}.`,
       description: `${who} para uma corrida que já tem entregador. Não precisa chamar de novo.`,
       footer:
-        "A TaOn cuida desta entrega junto com a outra corrida. Quando ela disser quem leva, o nome aparece aqui.",
+        `A ${service} cuida desta entrega junto com a outra corrida. Quando ela disser quem leva, o nome aparece aqui.`,
     };
   }
   return null;
@@ -526,14 +528,16 @@ export function whatsappLink(phone: string): string {
 }
 
 /**
- * A TaOn parou de informar a corrida: a frase do Painel do pedido
+ * O serviço parou de informar a corrida: a frase do Painel do pedido
  * (`courierProgress.stale`), para as duas telas dizerem o mesmo. Vazio com a
  * leitura em dia e depois que tudo foi entregue.
  */
-export function rideStale(ride: Pick<DeliveryRideProjection, "sync_since" | "state">): string {
+export function rideStale(ride: Pick<DeliveryRideProjection, "sync_since" | "state" | "service_name">): string {
   if (ride.state === "back") return "";
   const since = Date.parse(ride.sync_since ?? "");
-  return Number.isFinite(since) ? `A TaOn não informa a corrida desde ${clockHHMM(since)}.` : "";
+  return Number.isFinite(since)
+    ? `A ${deliveryServiceName(ride.service_name)} não informa a corrida desde ${clockHHMM(since)}.`
+    : "";
 }
 
 export interface RideChargeNotice extends CourierChargeNotice {
@@ -547,11 +551,11 @@ export interface RideChargeNotice extends CourierChargeNotice {
  * a frase do Painel (`courierChargeNotice`). Na página, cancelar mora no detalhe.
  */
 export function rideChargeNotices(
-  ride: Pick<DeliveryRideProjection, "stops" | "cancel_action">,
+  ride: Pick<DeliveryRideProjection, "stops" | "cancel_action" | "service_name">,
 ): RideChargeNotice[] {
   return ride.stops.flatMap((stop) => {
     const outdated = stop.charge_outdated as unknown as CourierChargeOutdated | null | undefined;
-    const notice = courierChargeNotice(outdated, { cancelHere: Boolean(ride.cancel_action) });
+    const notice = courierChargeNotice(outdated, { cancelHere: Boolean(ride.cancel_action), service: ride.service_name });
     return notice && !stop.done
       ? [{ ...notice, title: `${stop.code}: ${notice.title.toLowerCase()}`, code: stop.code, collected: Boolean(outdated?.collected) }]
       : [];
