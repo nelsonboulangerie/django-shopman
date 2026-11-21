@@ -245,6 +245,15 @@ def test_the_seeded_history_is_attributable_to_customers(db):
     assert attributable > 0, "nenhum pedido atribuível: o público comportamental resolve zero"
     # A maioria do histórico é de cliente conhecido; o resto é balcão anônimo, legítimo.
     assert attributable > total // 2, f"só {attributable} de {total} atribuíveis"
+    # E o pedido do cliente leva o nome dele, como todo canal real grava (a loja, o que a
+    # pessoa digita; o PDV, o do cadastro). Sem o nome, o Histórico não achava a cliente
+    # pelo nome e a lista mostrava só o telefone (#2878, J7).
+    nameless = [
+        order.ref
+        for order in Order.objects.exclude(data__customer_ref=None).exclude(data__customer_ref="")
+        if not str(((order.data or {}).get("customer") or {}).get("name") or "").strip()
+    ]
+    assert nameless == [], f"pedidos de cliente sem o nome: {nameless[:5]}"
 
 
 def test_the_seeded_history_produces_favorites(db):
