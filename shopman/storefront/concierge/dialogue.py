@@ -536,6 +536,13 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
     kind = pending.get("kind", "")
     answer = answer_kind(tokens)
 
+    # 0. A resposta da equipe que chegou fora da janela (WP-16): a primeira mensagem
+    # do cliente depois do aviso aprovado a recebe, uma vez só.
+    waiting = memory.get("answer_waiting") or {}
+    if waiting.get("reply"):
+        return Resolution(outcome="ask", reply=str(waiting["reply"]), reason="stored_answer",
+                          memo={"answer_delivered": str(waiting.get("id") or "")})
+
     # 1. Cortesia que reconhece o evento recente (dado do sistema, nunca inventado).
     event = courtesy_event(tokens)
     if event:
@@ -993,6 +1000,10 @@ def for_turn(conversation, *, now: datetime | None = None, channel_ref: str = ""
 
     facts = load_facts(conversation, now=now, channel_ref=channel_ref)
     state = effective((conversation.flags or {}).get(FLAG_KEY), facts)
+    stored = verification.stored_view(conversation)
+    if stored:
+        # A equipe respondeu fora da janela (WP-16): esta mensagem recebe a resposta.
+        state = {**state, "answer_waiting": stored}
     verifying = verification.memory_view(conversation)
     if verifying:
         # Vence pelo que acontece: aberta até a equipe responder, assumir ou o prazo passar.
@@ -1016,6 +1027,12 @@ def save_turn(conversation, memos: list[dict], *, previous: dict, open_order_ref
         return False
     state = next_state(previous, memos, now=now, fence=fence, open_order_refs=open_order_refs)
     flags = dict(current.flags or {})
+    for memo in memos:
+        if memo.get("answer_delivered"):
+            # Entregue neste turno, no mesmo fence: a resposta guardada não sai de novo.
+            from . import verification
+
+            flags = verification.deliver_stored(flags, memo["answer_delivered"])
     if state:
         flags[FLAG_KEY] = state
     else:
