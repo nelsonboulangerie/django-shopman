@@ -1329,6 +1329,7 @@
             "_get_config",
             "_masked",
             "_record_failure",
+            "_record_success",
             "logger"
           ]
         }
@@ -10765,6 +10766,7 @@
             "_component_short",
             "_parse_result",
             "_record_failure",
+            "_record_success",
             "_reverse_daily_limit",
             "_spend_reverse_daily_budget",
             "forward_geocode",
@@ -13006,6 +13008,7 @@
             "operational_event",
             "operational_event_on_commit",
             "record_integration_failure",
+            "record_integration_success",
             "record_payment_reconciliation_failure",
             "record_webhook_failure"
           ]
