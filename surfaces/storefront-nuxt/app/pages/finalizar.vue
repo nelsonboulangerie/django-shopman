@@ -181,6 +181,9 @@ const deliveryDateHint = ref('')
 // aviso do dia novo já disse tudo, e o genérico não repete.
 const dateMovedNotice = ref('')
 let dateMovedNoticeShown = false
+// O X fecha o aviso, e ele volta na próxima releitura do checkout enquanto a causa
+// durar, isto é, enquanto ela não escolher uma data (regra do aviso de tela, #2095).
+const dateMovedDismissed = ref(false)
 const attemptKey = ref(createCheckoutAttemptKey())
 const addressSelection = ref<AddressSelection | null>(null)
 // Formulário do picker aberto com edição que o checkout ainda não recebeu
@@ -407,6 +410,9 @@ function isTyping (): boolean {
 async function refreshIfIdle () {
   if (submitting.value || isTyping()) return
   await refresh().catch(() => null)
+  // O aviso da data que a sacola moveu, fechado com a causa de pé (ela ainda não
+  // escolheu a data), volta nesta releitura (#2411; regra do aviso de tela, #2095).
+  if (dateMovedNotice.value) dateMovedDismissed.value = false
 }
 useConnectivity().watchConnectivity(refreshIfIdle)
 let calmRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -996,6 +1002,7 @@ function initializeDeliveryDate () {
   const moved = orderDateMovedNotice(restoredDate, value, dateBounds.value, shopNow.value)
   if (moved) {
     dateMovedNotice.value = moved
+    dateMovedDismissed.value = false
     dateMovedNoticeShown = true
     const order = steps.value
     if (order.indexOf(activeStep.value) > order.indexOf('when')) goToStep('when')
@@ -2102,8 +2109,20 @@ useSeoMeta({
             >
               <!-- Quando o pedido fica pronto para retirada (#2652): a promessa
                    do item mais tardio, a mesma do produto e da sacola. -->
-              <UiAlert v-if="dateMovedNotice" variant="warning" data-checkout-date-moved>
-                <UiAlertTitle class="line-clamp-none leading-snug">{{ dateMovedNotice }}</UiAlertTitle>
+              <UiAlert v-if="dateMovedNotice && !dateMovedDismissed" variant="warning" data-checkout-date-moved>
+                <div class="flex items-start gap-2">
+                  <UiAlertTitle class="line-clamp-none min-w-0 flex-1 leading-snug">{{ dateMovedNotice }}</UiAlertTitle>
+                  <UiButton
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    icon="lucide:x"
+                    class="-my-2 -mr-2 size-11 shrink-0"
+                    aria-label="Fechar aviso"
+                    data-checkout-date-moved-close
+                    @click="dateMovedDismissed = true"
+                  />
+                </div>
               </UiAlert>
               <p v-if="orderReadyNotice" class="flex items-center gap-1 shop-body" data-checkout-ready-promise>
                 <Icon name="lucide:clock" class="size-3.5 shrink-0" />
