@@ -201,7 +201,7 @@ class DeliveryServiceOptionProjection:
 
 @dataclass(frozen=True)
 class RidePlanProjection:
-    """O plano das corridas (``ride_plan``): o MESMO do Painel e do ``ride_offer``.
+    """O plano das corridas (``ride_plan``): o MESMO do sheet de chamar e do Painel.
 
     ``service`` é o serviço sugerido (o padrão do Admin), ``service_reason`` diz por quê
     (``default``) e ``service_options`` são os serviços ativos: o contrato com a frente

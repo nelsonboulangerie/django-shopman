@@ -1894,8 +1894,9 @@ o padrão; nenhuma desliga o freio de preço.
 
 O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
 deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o
-"Vai junto nesta corrida?" do Painel do pedido (`courier.ride_offer[].suggested` e
-`courier.ride_suggestion`) e a contagem `ride_suggestions` do quadro.
+"Vai junto nesta corrida?" do sheet de chamar (o mesmo nas Entregas, no Painel e no detalhe
+do pedido, que lê `DeliveriesProjection.ride_plan`, #2876) e a contagem `ride_suggestions`
+do quadro.
 
 ### Marketing — `Shop.defaults["marketing"]`
 
