@@ -4528,6 +4528,7 @@
             "_payment_is_captured",
             "_payment_method",
             "_prep_starts_automatically",
+            "_promised_for_today",
             "_record_availability_decision",
             "_record_coupon_use",
             "_release_coupon_use",
@@ -10356,6 +10357,7 @@
           "symbols": [
             "_KIND_BY_REF",
             "_kind",
+            "_translator",
             "courier_backend"
           ]
         },
@@ -10365,7 +10367,8 @@
             "capabilities",
             "new_ride_service_ref",
             "ride_state",
-            "service_for_new_ride"
+            "service_for_new_ride",
+            "state_since"
           ]
         }
       ]
@@ -14499,7 +14502,6 @@
           "responsibility": "leitura",
           "symbols": [
             "_service",
-            "suggestion_for",
             "waiting_pool"
           ]
         }

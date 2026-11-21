@@ -150,14 +150,71 @@ def test_on_the_day_the_preorder_waits_until_its_time(day):
             assert awaits_kitchen_release(order) is False
 
 
-def test_same_day_order_without_alarm_goes_to_kitchen_on_accept(day):
-    """Pedido feito hoje para hoje não é encomenda: vai à Cozinha no aceite."""
+def test_same_day_order_with_promised_time_waits_until_its_time(day):
+    """Pedido feito hoje para as 17h de hoje espera 16h15, como a encomenda (#2548)."""
     order = _order(day, is_preorder=False)
+
+    with patch("django.utils.timezone.localdate", return_value=day):
+        with patch("django.utils.timezone.now", return_value=_at(day, 9)):
+            assert awaits_kitchen_release(order) is True
+        with patch("django.utils.timezone.now", return_value=_at(day, 16, 15)):
+            assert awaits_kitchen_release(order) is False
+
+
+def test_same_day_order_without_promised_time_goes_to_kitchen_on_accept(day):
+    """Sem hora combinada não há o que esperar: vai à Cozinha no aceite."""
+    order = _order(day, is_preorder=False, slot="")
 
     with patch("django.utils.timezone.localdate", return_value=day), patch(
         "django.utils.timezone.now", return_value=_at(day, 9)
     ):
         assert awaits_kitchen_release(order) is False
+
+
+def test_same_day_promised_time_already_due_goes_to_kitchen_on_accept(day):
+    """Pedido das 9h para as 9h30: a hora da Cozinha já passou, vai no aceite."""
+    order = _order(day, is_preorder=False, slot="09:30-10:00")
+
+    with patch("django.utils.timezone.localdate", return_value=day), patch(
+        "django.utils.timezone.now", return_value=_at(day, 9)
+    ):
+        assert awaits_kitchen_release(order) is False
+
+
+def test_counter_takeaway_never_waits_even_with_a_time(day):
+    """Venda de balcão: o cliente leva agora, a hora não segura a Cozinha."""
+    order = _order(day, is_preorder=False)
+    order.data = {
+        **order.data,
+        "origin_channel": "pos",
+        "fulfillment_type": "pickup",
+        "payment": {"method": "cash", "status": "captured"},
+    }
+    order.save(update_fields=["data"])
+
+    with (
+        patch("django.utils.timezone.localdate", return_value=day),
+        patch("django.utils.timezone.now", return_value=_at(day, 9)),
+        patch("shopman.shop.services.order_helpers.is_counter_takeaway", return_value=True),
+    ):
+        assert awaits_kitchen_release(order) is False
+
+
+def test_accepting_a_same_day_order_arms_the_alarm_at_kitchen_time(day):
+    from shopman.shop.config import ChannelConfig
+
+    order = _order(day, is_preorder=False, ref="HOJE-1")
+    with (
+        patch("django.utils.timezone.localdate", return_value=day),
+        patch("django.utils.timezone.now", return_value=_at(day, 9)),
+        patch.object(lifecycle.notification, "send"),
+        patch.object(lifecycle, "_dispatch_physical_work") as dispatch,
+    ):
+        lifecycle._on_accepted(order, ChannelConfig.for_channel("balcao"))
+
+    dispatch.assert_not_called()
+    alarm = Directive.objects.get(topic=PREORDER_ACTIVATE, dedupe_key=f"preorder.activate:{order.ref}")
+    assert alarm.available_at == _at(day, 16, 15)
 
 
 def test_accepting_a_future_preorder_arms_the_alarm_at_kitchen_time(day):
