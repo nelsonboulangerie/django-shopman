@@ -134,8 +134,9 @@ useSeoMeta({ title: 'Pedidos' })
           <div class="min-w-0">
             <p class="flex items-center gap-2 font-semibold">
               <span class="size-2 shrink-0 rounded-full" :class="orderStatusDotClass(order.status_tone)" aria-hidden="true" />
-              {{ order.status_label }}
-              <span v-if="order.total_display" class="text-muted-foreground">· {{ order.total_display }}</span>
+              <!-- Rótulo e valor num bloco só: o vão do flex fica entre o ponto e o texto, e o
+                   "·" tem um espaço de cada lado ("Devolvido · R$ 13,00"). -->
+              <span class="min-w-0">{{ order.status_label }}<span v-if="order.total_display" class="text-muted-foreground"> · {{ order.total_display }}</span></span>
             </p>
             <p class="mt-0.5 truncate shop-muted">{{ order.ref }} · {{ order.created_at_display }}</p>
           </div>
