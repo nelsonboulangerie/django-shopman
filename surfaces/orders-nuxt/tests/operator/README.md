@@ -14,6 +14,7 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 | `j1-pedido-de-hoje.spec.ts` | J1: pedido de retirada para hoje, de ponta a ponta | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
 | `j2-recusar-com-motivo.spec.ts` | J2: recusar um pedido pago, lendo o destino do dinheiro antes de confirmar | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
 | `j5-cancelar-encomenda-paga.spec.ts` | J5: cancelar a encomenda paga antes do preparo e ver o estorno ("Estornado") | cliente novo (loja, 375 px) · Gerente com PIN (Gestor, 1366 px) |
+| `j6-lote-cancelado-promessa-em-risco.spec.ts` | J6: a Gerente cancela na Produção o lote planejado de amanhã e o Gestor mostra a encomenda paga em "Promessa em risco". Falha esperada até a #2957; pede a Produção na pilha (`OPERATOR_PRODUCTION_URL`), e pula sem ela | cliente novo (loja, 375 px) · Caixa (Gestor, 1366 px) · Gerente com PIN (Produção, 1366 px) |
 | `j7-achar-o-pedido-de-ontem.spec.ts` | J7: achar o pedido de ontem pelo nome, ampliando o período. Falha esperada até a #2878; pede a pilha semeada na véspera | Gerente com PIN (Gestor, 1366 px) |
 | `j8-quem-so-expede-abre-o-sino.spec.ts` | J8: quem só expede abre um aviso de pedido no sino e lê por que o detalhe não abre (#2879) | cliente novo (loja, 375 px) · Gerente e Cozinha (Gestor, 1366 px) |
 | `g07-avisar-o-cliente.spec.ts` | WP-G07: avisar o cliente com um toque (vai atrasar, faltou um item), lendo a mensagem antes de enviar; o recibo que falhou traz o WhatsApp com o mesmo texto | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 e 375 px) |
@@ -70,6 +71,15 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    (cd surfaces/storefront-nuxt && npx nuxt build && NUXT_DJANGO_BASE_URL=http://127.0.0.1:8062 HOST=127.0.0.1 PORT=3180 node .output/server/index.mjs &)
    (cd surfaces/kds-nuxt && npx nuxt build && NUXT_DJANGO_BASE_URL=http://127.0.0.1:8062 HOST=127.0.0.1 PORT=3183 node .output/server/index.mjs &)
    ```
+
+   **A Produção** só entra na J6. Ela liga o envelope estrito de produção, então sobe com a
+   exceção declarada de teste:
+
+   ```bash
+   (cd surfaces/production-nuxt && NUXT_DJANGO_BASE_URL=http://127.0.0.1:8062 NUXT_SHOPMAN_ENVIRONMENT=local npx nuxt build && NUXT_SHOPMAN_ENVIRONMENT=test SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM=1 NUXT_DJANGO_BASE_URL=http://127.0.0.1:8062 HOST=127.0.0.1 PORT=3185 node .output/server/index.mjs &)
+   ```
+
+   e a suíte recebe `OPERATOR_PRODUCTION_URL=http://127.0.0.1:3185`.
 
 4. **O Gestor** só se compila; quem o sobe é a suíte, na porta `OPERATOR_GESTOR_PORT`
    (padrão 3184):

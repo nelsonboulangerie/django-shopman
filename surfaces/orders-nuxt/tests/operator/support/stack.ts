@@ -8,6 +8,8 @@ export const stack = {
   django: process.env.OPERATOR_DJANGO_URL!.replace(/\/$/, ""),
   store: process.env.OPERATOR_STORE_URL!.replace(/\/$/, ""),
   kitchen: process.env.OPERATOR_KITCHEN_URL!.replace(/\/$/, ""),
+  // A Produção só entra nas jornadas que a pedem (J6); sem ela, essas jornadas pulam.
+  production: (process.env.OPERATOR_PRODUCTION_URL || "").replace(/\/$/, ""),
   djangoLog: process.env.OPERATOR_DJANGO_LOG!,
 };
 
