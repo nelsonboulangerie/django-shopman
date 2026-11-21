@@ -4341,6 +4341,7 @@ class POSPreorderCounterPixView(APIView):
         try:
             pos_service.current_shift(terminal_ref, strict=True)
         except Exception as exc:
+            logger.debug("pos_preorder_counter_pix_no_shift order=%s", order.ref, exc_info=True)
             return _falha_do_caixa(exc, "Abra o caixa para receber o Pix.")
         if operator_orders.operational_revision(order) != base:
             return Response({"detail": "A encomenda mudou. Confira o estado atualizado antes de receber.",
