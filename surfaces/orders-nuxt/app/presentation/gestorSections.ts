@@ -356,6 +356,11 @@ export interface OrderDetailDenial {
  * lia "Pedido não encontrado ou falha ao carregar": o pedido existe, a conta é que não
  * abre esta tela (P1-20). A recusa diz por quê e devolve a pessoa ao lugar onde ela
  * conduz o pedido. `code` é o código curto do pedido ("S84"), como no cabeçalho.
+ *
+ * A frase não diz onde ESTE pedido está: a recusa é um 403, sem o pedido, e ele pode ter
+ * sido cancelado, concluído ou ainda não estar pronto. "Continua no painel da Saída" era
+ * falso para o cancelado que chega pelo sino (#2879, J8). O que vale em todo estado: a
+ * Saída é onde ficam os pedidos prontos para sair.
  */
 export function orderDetailDenial(
   code: string,
@@ -368,7 +373,7 @@ export function orderDetailDenial(
   if (expeditesOnly)
     return {
       title,
-      description: `O detalhe é de quem gerencia pedidos. O pedido ${code} continua no painel da Saída, onde você marca a saída e a retirada.`,
+      description: `O detalhe do pedido ${code} é de quem gerencia pedidos. Os pedidos prontos para sair ficam no painel da Saída, onde você marca a saída e a retirada.`,
       back: { label: "Abrir a Saída", to: ORDERS_EXIT_POST },
     };
   return {
