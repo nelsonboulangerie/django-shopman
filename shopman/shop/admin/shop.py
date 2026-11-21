@@ -1591,9 +1591,6 @@ class ShopForm(forms.ModelForm):
 
     # Justificativas de cancelamento/recusa — mesma edição add/remove (ArrayWidget).
 
-    # Tags de nota da cozinha — mesma edição add/remove (ArrayWidget).
-    kitchen_note_tags = forms.Field(label="Tags de nota da cozinha", required=False, widget=ArrayWidget())
-
     locals().update(_defaults_form_fields())
     locals().update(_integrations_form_fields())
     locals().update(ai_routes.form_fields())
@@ -1624,14 +1621,6 @@ class ShopForm(forms.ModelForm):
             self.fields["social_links"].help_text = (
                 "Adicione uma rede por vez (URL completa, ex.: https://instagram.com/sualoja). "
                 "O ícone é detectado automaticamente."
-            )
-
-        if "kitchen_note_tags" in self.fields:
-            self.fields["kitchen_note_tags"].required = False
-            self.fields["kitchen_note_tags"].help_text = (
-                "Adicione uma tag por vez. O operador anexa com um toque à nota da cozinha "
-                "no gestor, e a nota aparece no ticket do KDS para a produção: instruções "
-                "curtas de preparo (ex.: “Bem assado”, “Sem cebola”)."
             )
 
         opening_hours = getattr(self.instance, "opening_hours", None) or {}
@@ -1928,8 +1917,6 @@ class ShopForm(forms.ModelForm):
         # ArrayWidget vazio → None; o campo é NOT NULL (default lista).
         if self._has("social_links") and not cleaned_data.get("social_links"):
             cleaned_data["social_links"] = []
-        if self._has("kitchen_note_tags") and not cleaned_data.get("kitchen_note_tags"):
-            cleaned_data["kitchen_note_tags"] = []
         if self._has(_opening_field("monday", "status")):
             for day, label in OPENING_HOUR_DAYS:
                 status = cleaned_data.get(_opening_field(day, "status"))
@@ -2933,16 +2920,6 @@ _ORDERING_FIELDSETS = (
                 "Na página Entregas e no Chamar entregador, a casa sugere juntar pedidos prontos "
                 "que ficam perto. A sugestão só vem marcada quando a central cotou e juntar sai "
                 "mais barato pelos dois mínimos. Palpites iniciais, até o B.I. medir."
-            ),
-        },
-    ),
-    (
-        "Tags de nota da cozinha",
-        {
-            "fields": ("kitchen_note_tags",),
-            "description": (
-                "Etiquetas prontas para o operador anexar com um toque à nota da cozinha de um "
-                "pedido no gestor. A nota é exibida no ticket do KDS para a produção."
             ),
         },
     ),

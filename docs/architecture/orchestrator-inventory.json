@@ -2096,6 +2096,25 @@
       ]
     },
     {
+      "path": "shopman/shop/admin/kitchen_note.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "KitchenNoteTagAdmin"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/admin/omotenashi.py",
       "touchpoints": [
         "admin"
@@ -6668,6 +6687,25 @@
           "responsibility": "configuração",
           "symbols": [
             "InstanceApplyRecord"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/kitchen_note.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "KitchenNoteTag"
           ]
         }
       ]
@@ -13182,6 +13220,7 @@
           "symbols": [
             "ADDRESS_NOT_FOUND",
             "Assignment",
+            "NOTE_MAX",
             "NO_ANSWER",
             "ORDER_PROBLEM",
             "OTHER_PAYMENT",

@@ -8,11 +8,18 @@ import {
   busyNotice,
   callSummaryByCarrier,
   carrierChips,
+  OTHER_CARRIER,
   chipLine,
+  chipValue,
+  choiceFromChip,
+  noteLabel,
+  otherCouriers,
   houseCodes,
   houseGesturePath,
   houseGestureResource,
   houseGestures,
+  callCourier,
+  withHouseRides,
   ordersWord,
   mixedTotalLines,
   rideValueQ,
@@ -70,6 +77,58 @@ describe("os chips de quem leva", () => {
     expect(chosenCarrier(people, "diego")?.name).toBe("Diego");
     expect(chosenCarrier(people, "rui")).toBeNull();
     expect(chosenCarrier(people, DEFAULT_CARRIER)).toBeNull();
+  });
+});
+
+describe("refinamentos do Quem leva (M3c)", () => {
+  const five = crew([
+    person("ana", "Ana"),
+    person("bruno", "Bruno"),
+    person("caio", "Caio", { state: "busy", state_label: "Volta 12h50" }),
+    person("diego", "Diego"),
+    person("eva", "Eva"),
+  ]);
+
+  it("com mais de 3 na escala, o último chip vira Outro da casa; os livres vêm primeiro", () => {
+    const chips = carrierChips(five, { quoteQ: 1100, quoting: false });
+    expect(chips.map((chip) => chip.label)).toEqual(["TaOn", "Ana", "Bruno", "Outro da casa"]);
+    expect(chips[3]!.state).toBe("Mais 3 na escala");
+    expect(otherCouriers(five).map((courier) => courier.ref)).toEqual(["diego", "eva", "caio"]);
+  });
+
+  it("tocar em Outro da casa escolhe o primeiro da lista, e o chip diz quem é, com o ✔", () => {
+    const ref = choiceFromChip(five, OTHER_CARRIER);
+    expect(ref).toBe("diego");
+    expect(chipValue(five, ref)).toBe(OTHER_CARRIER);
+    const chips = carrierChips(five, { quoteQ: 1100, quoting: false, chosen: ref, values: { diego: "R$ 15,00" } });
+    expect(chipLine(chips[3]!)).toBe("Diego · R$ 15,00 ✔");
+    expect(chipValue(five, "ana")).toBe("ana");
+  });
+
+  it("até 3 na escala, cada um tem o seu chip", () => {
+    const three = crew([person("ana", "Ana"), person("bruno", "Bruno"), person("caio", "Caio")]);
+    expect(carrierChips(three, { quoteQ: 1100, quoting: false }).map((chip) => chip.key)).toEqual([DEFAULT_CARRIER, "ana", "bruno", "caio"]);
+    expect(otherCouriers(three)).toEqual([]);
+  });
+
+  it("quem está na rua diz a hora da volta no chip", () => {
+    const chips = carrierChips(crew([person("caio", "Caio", { state: "busy", state_label: "Volta 12h50" })]), { quoteQ: null, quoting: false, values: { caio: "R$ 18,00" } });
+    expect(chipLine(chips[1]!)).toBe("Volta 12h50 · R$ 18,00");
+  });
+
+  it("sem a TaOn, só a casa: sem chip do serviço, e o primeiro livre vem marcado", () => {
+    const people = crew([person("caio", "Caio", { state: "busy", state_label: "Na rua" }), person("diego", "Diego")]);
+    const chips = carrierChips(people, { quoteQ: null, quoting: false, serviceOn: false });
+    expect(chips.map((chip) => [chip.key, chip.chosen])).toEqual([["diego", true], ["caio", false]]);
+    expect(chosenCarrier(people, undefined, false)?.ref).toBe("diego");
+    expect(chosenCarrier(people, undefined, true)).toBeNull();
+    expect(chosenCarrier(crew([]), undefined, false)).toBeNull();
+  });
+
+  it("a observação vai junto quando escrita, e o campo diz para quem", () => {
+    expect(noteLabel("Diego")).toBe("Observação para Diego (opcional)");
+    expect(houseRideInputs({ refs: ["A"], courier: "diego", change_out: {}, machine: "", note: "  Interfone quebrado.  " }).note).toBe("Interfone quebrado.");
+    expect("note" in houseRideInputs({ refs: ["A"], courier: "diego", change_out: {}, machine: "", note: "  " })).toBe(false);
   });
 });
 
@@ -206,6 +265,50 @@ describe("a corrida da casa na lista (M3b)", () => {
   it("cada gesto tem a sua porta e a sua intenção", () => {
     expect(houseGesturePath("CASA-1", "deliver")).toBe("/api/v1/backstage/deliveries/couriers/rides/CASA-1/deliver/");
     expect(houseGestureResource("CASA-1", { key: "deliver:WEB-A47" })).toBe("house-ride:CASA-1:deliver:WEB-A47");
+  });
+});
+
+describe("a corrida da casa no detalhe e na Saída (M3d)", () => {
+  const ride = (key: string, refs: string[], house = true) =>
+    ({
+      key,
+      stops: refs.map((ref) => ({ ref })),
+      driver: { name: "Diego", phone: "(43) 99999-0000", vehicle: "", photo_url: "" },
+      house: house ? { courier_name: "Diego" } : null,
+    }) as never;
+
+  it("Ligar para Diego só na corrida da casa e com telefone", () => {
+    expect(callCourier(ride("CASA-1", ["A"]))).toEqual({ label: "Ligar para Diego", href: "tel:43999990000" });
+    expect(callCourier(ride("776", ["A"], false))).toBeNull();
+    expect(callCourier({ house: { courier_name: "Diego" }, driver: null } as never)).toBeNull();
+  });
+
+  it("os pedidos da corrida da casa viram um cartão no lugar do primeiro; TaOn e solto seguem", () => {
+    const rows = [
+      { card: { ref: "A" }, heading: "A coletar" },
+      { card: { ref: "B" }, heading: "" },
+      { card: { ref: "T" }, heading: "" },
+      { card: { ref: "X" }, heading: "" },
+    ];
+    const out = withHouseRides(rows, [ride("CASA-1", ["A", "B"]), ride("776", ["T"], false)]);
+    expect(out.map((row) => [row.card.ref, row.heading, (row.house as { key?: string } | undefined)?.key ?? ""])).toEqual([
+      ["A", "A coletar", "CASA-1"], ["T", "", ""], ["X", "", ""],
+    ]);
+  });
+
+  it("o rótulo da parte passa para o próximo quando o pedido que o tinha sai da coluna", () => {
+    const rows = [
+      { card: { ref: "X" }, heading: "A coletar" },
+      { card: { ref: "A" }, heading: "Saiu para entrega" },
+      { card: { ref: "B" }, heading: "" },
+    ];
+    const out = withHouseRides(rows, [ride("CASA-1", ["B", "A"])]);
+    expect(out.map((row) => [row.card.ref, row.heading])).toEqual([["X", "A coletar"], ["A", "Saiu para entrega"]]);
+    const moved = withHouseRides(
+      [{ card: { ref: "B" }, heading: "Saiu para entrega" }, { card: { ref: "A" }, heading: "" }, { card: { ref: "Y" }, heading: "" }],
+      [ride("CASA-1", ["A", "B"])],
+    );
+    expect(moved.map((row) => [row.card.ref, row.heading])).toEqual([["B", "Saiu para entrega"], ["Y", ""]]);
   });
 });
 

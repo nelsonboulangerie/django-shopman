@@ -59,7 +59,7 @@
         "backstage.operationepisodekind", "backstage.operationtasktemplate", "backstage.productconsumptiontag",
         "backstage.reciperatingcriterion", "backstage.seatingspot", "backstage.timertag", "guestman.pricetier",
         "refs.ref", "shop.attributedefinition", "shop.channel", "shop.coupon", "shop.courier",
-        "shop.courierrate", "shop.deliverydistanceband", "shop.deliveryservice", "shop.deliveryzone", "shop.faqentry", "shop.notificationtemplate", "shop.omotenashicopy",
+        "shop.courierrate", "shop.deliverydistanceband", "shop.deliveryservice", "shop.deliveryzone", "shop.faqentry", "shop.kitchennotetag", "shop.notificationtemplate", "shop.omotenashicopy",
         "shop.promotion", "shop.qualitydefect", "shop.qualitygrade", "shop.ruleconfig",
         "storefront.conversationcorpusentry", "storefront.intentcategory", "storefront.messageintentsample"
       ]

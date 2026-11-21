@@ -2454,7 +2454,10 @@ class DeliveriesView(APIView):
     def get(self, request):
         from shopman.backstage.projections.deliveries import build_deliveries
 
-        return Response(projection_data(build_deliveries(user=request.user)))
+        # ``?plan=0``: sem o plano das corridas (que pergunta à central). É a leitura da
+        # coluna Saída dos Pedidos, que só quer as corridas da casa (M3d, #2937).
+        with_plan = request.GET.get("plan") != "0"
+        return Response(projection_data(build_deliveries(user=request.user, with_plan=with_plan)))
 
 
 class DeliveriesCountView(APIView):

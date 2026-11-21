@@ -6,12 +6,18 @@
 // Só mostra o que a API da TaOn entrega (estudo de 14/11/2026): posição depois do
 // aceite, entregador com telefone, hora de término da rota (não por parada), link
 // de acompanhamento, cotação e valor final. Tirar ou trocar parada não existe na API.
+//
+// A corrida da casa (M3d, #2937) usa o mesmo painel, com o que é dela: quem leva no
+// título, os gestos do balcão ("Saiu", "A47 entregue", "Reenviar o link", "Soltar o
+// link") e "Ligar para Diego". O que só a TaOn tem (avisos da central, posição pela
+// TaOn, link de acompanhamento, "use a central da TaOn") não aparece.
 import type {
   DeliveriesProjection,
   DeliveryRideProjection,
 } from "~/generated/ordersContract";
 import { rideColor } from "~/presentation/ridePalette";
 import { rideChargeNotices, rideLine, rideNotice, rideStale, whatsappLink } from "~/presentation/deliveries";
+import { callCourier, type HouseGesture } from "~/presentation/houseCouriers";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
@@ -21,13 +27,17 @@ const props = defineProps<{
   now: number;
   busy?: boolean;
   mapsKey?: string;
+  /** O gesto da casa que está rodando nesta corrida (chave), ou vazio. */
+  houseBusy?: string;
 }>();
-const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number] }>();
+const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number]; gesture: [gesture: HouseGesture] }>();
+const house = computed(() => props.ride.house ?? null);
+const call = computed(() => callCourier(props.ride));
 const tone = computed(() => rideColor(props.ride.number - 1));
 const line = computed(() => rideLine(props.ride, props.now));
 // O aviso de "não chame de novo" se dispensa, e volta se a causa mudar
 // (outra desistência na mesma corrida).
-const notice = computed(() => rideNotice(props.ride, props.now));
+const notice = computed(() => (house.value ? null : rideNotice(props.ride, props.now)));
 const noticeDismissedFor = ref("");
 const showNotice = computed(() => notice.value !== null && noticeDismissedFor.value !== notice.value.key);
 function dismissNotice() {
@@ -86,7 +96,7 @@ const showCancelState = computed(
 // O que o Painel do pedido também diz (paridade): a TaOn parou de informar a
 // corrida, e a cobrança que o entregador leu ficou para trás. Os dois se
 // dispensam e voltam se a causa mudar.
-const stale = computed(() => rideStale(props.ride));
+const stale = computed(() => (house.value ? "" : rideStale(props.ride)));
 const staleDismissed = ref("");
 const charges = computed(() => rideChargeNotices(props.ride));
 const chargeDismissed = ref<string[]>([]);
@@ -98,8 +108,8 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
     <header class="flex items-start gap-3 border-b border-default px-5 py-4" :style="{ borderTop: `6px solid ${tone.bg}` }">
       <span class="grid size-9 shrink-0 place-items-center rounded-lg text-lg font-bold" :style="{ background: tone.bg, color: tone.fg }">{{ ride.letter }}</span>
       <div class="min-w-0 flex-1">
-        <p class="op-title font-semibold text-highlighted">Corrida {{ ride.letter }} · {{ ride.status_label }}</p>
-        <p class="op-body text-muted">{{ line.hint || line.title }}</p>
+        <p class="op-title font-semibold text-highlighted" data-ride-detail-title>Corrida {{ ride.letter }} · {{ house ? house.moment : ride.status_label }}</p>
+        <p class="op-body text-muted">{{ house ? house.hint : line.hint || line.title }}</p>
       </div>
       <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Fechar" @click="emit('close')" />
     </header>
@@ -173,7 +183,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         />
       </div>
       <!-- Fora do mapa: dentro, a loja ou uma parada no canto cobria a etiqueta ("Posição pe…"). -->
-      <p v-if="located.length && ride.position" class="mx-5 mt-1 op-micro text-muted" data-ride-position-source>Posição do entregador pela TaOn</p>
+      <p v-if="located.length && ride.position && !house" class="mx-5 mt-1 op-micro text-muted" data-ride-position-source>Posição do entregador pela TaOn</p>
 
       <div v-if="ride.driver" class="mx-5 mt-4 flex items-center gap-3 rounded-xl bg-elevated/60 p-3">
         <!-- A foto só existe enquanto a corrida vive (servidor, sem cache); sem ela, a inicial. -->
@@ -184,10 +194,16 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
           <p v-if="ride.custody_line" class="op-micro font-semibold text-highlighted" data-ride-custody-line>{{ ride.custody_line }}</p>
         </div>
         <template v-if="ride.driver.phone">
-          <NuxtButton icon="i-lucide-phone" color="neutral" variant="outline" label="Ligar" :to="`tel:${ride.driver.phone.replace(/\D/g, '')}`" external />
-          <NuxtButton icon="i-lucide-message-circle" color="neutral" variant="outline" square :aria-label="`WhatsApp de ${ride.driver.name}`" :to="whatsappLink(ride.driver.phone)" target="_blank" external />
+          <NuxtButton class="min-h-11" icon="i-lucide-phone" color="neutral" variant="outline" :label="call ? call.label : 'Ligar'" :to="`tel:${ride.driver.phone.replace(/\D/g, '')}`" external data-ride-driver-call />
+          <NuxtButton class="min-h-11 min-w-11 justify-center" icon="i-lucide-message-circle" color="neutral" variant="outline" square :aria-label="`WhatsApp de ${ride.driver.name}`" :to="whatsappLink(ride.driver.phone)" target="_blank" external />
         </template>
       </div>
+
+      <!-- A corrida da casa: os gestos do balcão para quando o entregador está sem celular.
+           O "Entregador voltou" fica no rodapé, como na TaOn; o "Ligar" no cartão dele. -->
+      <section v-if="house" class="mx-5 mt-4" data-ride-detail-house>
+        <HouseRideGestures :ride="ride" :busy="houseBusy" :with-back="false" :with-call="false" @gesture="(item) => emit('gesture', item)" />
+      </section>
 
       <section class="mx-5 mt-5">
         <p class="op-micro font-semibold text-muted">Paradas, na ordem do percurso</p>
@@ -211,7 +227,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         </ol>
       </section>
 
-      <section v-if="ride.tracking_url" class="mx-5 mt-5 flex items-center gap-3 rounded-xl border border-default p-3">
+      <section v-if="ride.tracking_url && !house" class="mx-5 mt-5 flex items-center gap-3 rounded-xl border border-default p-3">
         <NuxtIcon name="i-lucide-map-pinned" class="size-5 text-muted" />
         <p class="min-w-0 flex-1 op-body text-toned">Link de acompanhamento da corrida.</p>
         <NuxtButton color="neutral" variant="outline" :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'" :label="copied ? 'Copiado' : 'Copiar link'" @click="copyLink" />
@@ -244,7 +260,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
     </div>
 
     <!-- Com o cancelamento pedido, o aviso do topo já diz tudo: o rodapé não repete nem oferece gesto. -->
-    <footer v-if="ride.back_action || ride.cancel_action || ride.cancel_state !== 'pending'" class="flex flex-wrap items-center gap-2 border-t border-default px-5 py-3" data-ride-footer>
+    <footer v-if="ride.back_action || ride.cancel_action || (!house && ride.cancel_state !== 'pending')" class="flex flex-wrap items-center gap-2 border-t border-default px-5 py-3" data-ride-footer>
       <template v-if="ride.back_action">
         <NuxtButton class="flex-1 justify-center" color="primary" icon="i-lucide-undo-2" :label="ride.back_action.label" :loading="busy" :disabled="!ride.back_action.enabled" @click="emit('back')" />
       </template>

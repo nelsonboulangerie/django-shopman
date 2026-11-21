@@ -51,20 +51,22 @@ import {
   carrierChips,
   mixedTotalLines,
   rideValueQ,
+  chipValue,
+  choiceFromChip,
   chosenCarrier,
+  noteLabel,
+  otherCouriers,
   houseQuoteLines,
   houseRideAction,
   houseRideInputs,
   houseRideResource,
   sendLabel,
   shiftChips,
-  houseGesturePath,
-  houseGestureResource,
-  type HouseGesture,
   type HouseRideResult,
 } from "~/presentation/houseCouriers";
 
 const route = useRoute();
+const adminBase = String(useRuntimeConfig().public.adminBaseUrl ?? "");
 const router = useRouter();
 const intentions = useOrderIntention();
 
@@ -221,10 +223,23 @@ const crewRides = computed(() => ready.value.map((ride) => ({ number: ride.numbe
 const { crew, values: houseValues, valuesQ: houseValuesQ, refresh: refreshCrew, toggleShift, toggling } = useHouseCrew(crewRides);
 watch(data, () => void refreshCrew());
 const carrier = ref<Record<number, string>>({});
-const carrierOf = (number: number) => chosenCarrier(crew.value, carrier.value[number]);
+// Sem a TaOn (M3c, #2899), quem leva é sempre da casa: vem marcado o primeiro livre.
+const serviceOn = computed(() => data.value?.courier_on ?? true);
+const carrierOf = (number: number) => chosenCarrier(crew.value, carrier.value[number], serviceOn.value);
 function chooseCarrier(number: number, key: string) {
-  carrier.value = { ...carrier.value, [number]: key };
+  carrier.value = { ...carrier.value, [number]: choiceFromChip(crew.value, key) };
 }
+// A observação para o entregador da casa, por corrida (vai à página do link).
+const notes = ref<Record<number, string>>({});
+function setNote(number: number, value: string) {
+  notes.value = { ...notes.value, [number]: value };
+}
+// O "Outro da casa": a lista de quem não ganhou chip, com o estado e o valor desta rota.
+const othersOf = (ride: EditingRide) =>
+  otherCouriers(crew.value).map((courier) => ({
+    value: courier.ref,
+    label: [courier.name, courier.state_label, houseValues.value[ride.number]?.[courier.ref] ?? courier.value].filter(Boolean).join(" · "),
+  }));
 // A corrida que saiu da edição (Voltar, desfazer, chamada) leva a escolha junto: a
 // próxima com a mesma letra nasce com o padrão marcado.
 watch(
@@ -232,6 +247,7 @@ watch(
   () => {
     const alive = new Set(editing.value.map((ride) => ride.number));
     carrier.value = Object.fromEntries(Object.entries(carrier.value).filter(([number]) => alive.has(Number(number))));
+    notes.value = Object.fromEntries(Object.entries(notes.value).filter(([number]) => alive.has(Number(number))));
   },
 );
 const chipsOf = (ride: EditingRide) => {
@@ -241,6 +257,7 @@ const chipsOf = (ride: EditingRide) => {
     quoting: Boolean(state?.pending),
     values: houseValues.value[ride.number],
     chosen: carrierOf(ride.number)?.ref ?? DEFAULT_CARRIER,
+    serviceOn: serviceOn.value,
   });
 };
 const shift = computed(() => shiftChips(crew.value));
@@ -322,7 +339,10 @@ const callLabel = computed(() => {
   return who ? sendLabel(who.name, routeOf(ride).map((stop) => stop.code)) : `Chamar a corrida ${rideLetter(ride.number)}`;
 });
 const machineMissing = computed(() => needing.value.some((number) => !assigned.value[number]));
-const canCall = computed(() => ready.value.length > 0 && !sending.value && !machineMissing.value);
+// Sem a TaOn e sem ninguém da casa na escala, não há quem leve (M3c, #2899).
+const nobodyTakes = computed(() => !serviceOn.value && ready.value.some((ride) => !carrierOf(ride.number)));
+const NOBODY_TAKES = "Ponha um entregador da casa na escala de hoje para chamar.";
+const canCall = computed(() => ready.value.length > 0 && !sending.value && !machineMissing.value && !nobodyTakes.value);
 // O total segue quem leva cada corrida (a casa pela tabela, a TaOn pela cotação).
 const summary = computed(() =>
   callSummaryByCarrier(editingCount.value, ready.value.length, ready.value.map((ride) => valueOf(ride))),
@@ -333,7 +353,7 @@ const callAction = computed<OperatorActionBarAction>(() => ({
   icon: "i-lucide-bike",
   loading: sending.value,
   disabled: !canCall.value,
-  reason: machineMissing.value ? shortfall.value || "Escolha a maquininha de cada corrida." : "",
+  reason: nobodyTakes.value ? NOBODY_TAKES : machineMissing.value ? shortfall.value || "Escolha a maquininha de cada corrida." : "",
   onSelect: () => void call(),
 }));
 async function call(only?: number[]) {
@@ -370,7 +390,7 @@ async function call(only?: number[]) {
           houseRideResource(refs),
           HOUSE_RIDE_PATH,
           houseRideAction(stops),
-          houseRideInputs({ refs, courier: who.ref, change_out: item.change_out, machine: item.machine, number: item.number }),
+          houseRideInputs({ refs, courier: who.ref, change_out: item.change_out, machine: item.machine, number: item.number, note: notes.value[item.number] ?? "" }),
           undefined,
           { subject: "a corrida foi enviada", where: "os pedidos" },
         )) as unknown as HouseRideResult;
@@ -485,37 +505,7 @@ function close() {
 }
 const busyRide = ref("");
 // ── a corrida da casa: os gestos do balcão (M3b, #2898) ─────────────────────
-// "Saiu" e "A47 entregue" quando o entregador está sem celular; "Reenviar o link" abre
-// o WhatsApp do dispositivo com o MESMO link (a aba nasce no toque, antes de esperar a
-// resposta, para o navegador não bloquear); "Soltar o link" solta o celular preso.
-const houseBusy = ref<Record<string, string>>({});
-async function houseGesture(ride: DeliveryRideProjection, item: HouseGesture) {
-  const tab = item.gesture === "resend" ? window.open("", "_blank") : null;
-  if (tab) tab.opener = null;
-  houseBusy.value = { ...houseBusy.value, [ride.key]: item.key };
-  try {
-    const result = (await intentions.executePath(
-      houseGestureResource(ride.key, item),
-      houseGesturePath(ride.key, item.gesture),
-      item.action,
-      item.ref ? { ref: item.ref } : {},
-      undefined,
-      { subject: "o gesto foi gravado", where: "a corrida" },
-    )) as unknown as HouseRideResult;
-    if (item.gesture === "resend" && result.whatsapp_url) {
-      if (tab) tab.location.href = result.whatsapp_url;
-      else window.open(result.whatsapp_url, "_blank", "noopener");
-    } else tab?.close();
-    if (result.detail) useSonner.success(result.detail);
-  } catch (err) {
-    tab?.close();
-    useSonner.error(httpErrorMessage(err, "Não foi possível agora. Atualize e tente de novo."));
-  } finally {
-    const { [ride.key]: _done, ...rest } = houseBusy.value;
-    houseBusy.value = rest;
-    await refresh();
-  }
-}
+const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(() => refresh());
 
 async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
   const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
@@ -599,7 +589,11 @@ const sheetRides = computed<CallSheetRide[]>(() =>
         // não chega, a do plano.
         lines: live.length || who ? live : plan ? suggestionQuoteLines(plan as RideSuggestion) : [],
         carriers: chipsOf(ride),
-        carrier: who?.ref ?? DEFAULT_CARRIER,
+        carrier: chipValue(crew.value, who?.ref ?? DEFAULT_CARRIER),
+        others: othersOf(ride),
+        otherValue: who?.ref ?? "",
+        noteLabel: who ? noteLabel(who.name) : "",
+        note: notes.value[ride.number] ?? "",
         notice: busyNotice(who),
         late: plan ? suggestionLate(plan) : "",
         needsMachine: needing.value.includes(ride.number),
@@ -649,12 +643,16 @@ const sheetCallLabel = computed(() => {
 
     <OperatorScreenState v-if="error && !data" state="error" what="as entregas" class="m-4" />
     <div v-else-if="pending && !data" class="grid flex-1 place-items-center p-6"><NuxtSkeleton class="h-64 w-full max-w-3xl" /></div>
+    <!-- Sem a TaOn e sem os entregadores da casa, ninguém leva: a página só informa e
+         leva ao Admin, onde se liga um dos dois (M3c, #2899). -->
     <NuxtEmpty
-      v-else-if="data && !data.courier_on"
+      v-else-if="data && !data.courier_on && !data.house_on"
       icon="i-lucide-bike"
-      title="A integração com a TaOn não está ligada."
-      description="As entregas aparecem aqui quando a central estiver configurada."
+      title="Nenhum serviço de entrega está ligado."
+      description="Ligue a TaOn ou os entregadores da casa para chamar entregas daqui."
+      :actions="[{ label: 'Abrir os serviços de entrega', icon: 'i-lucide-external-link', to: `${adminBase}/admin/shop/deliveryservice/`, target: '_blank', color: 'neutral', variant: 'outline', size: 'xl', class: 'min-h-11' }]"
       class="m-6"
+      data-deliveries-off
     />
 
     <div v-else-if="data" class="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
@@ -863,10 +861,16 @@ const sheetCallLabel = computed(() => {
                   <RideCarrierChips
                     v-if="chipsOf(ride).length"
                     :chips="chipsOf(ride)"
-                    :model-value="carrierOf(ride.number)?.ref ?? DEFAULT_CARRIER"
+                    :model-value="chipValue(crew, carrierOf(ride.number)?.ref ?? DEFAULT_CARRIER)"
                     :label="`Quem leva a corrida ${rideLetter(ride.number)}`"
                     :notice="busyNotice(carrierOf(ride.number))"
+                    :others="othersOf(ride)"
+                    :other-value="carrierOf(ride.number)?.ref ?? ''"
+                    :note-label="carrierOf(ride.number) ? noteLabel(carrierOf(ride.number)!.name) : ''"
+                    :note="notes[ride.number] ?? ''"
                     @update:model-value="(key: string) => chooseCarrier(ride.number, key)"
+                    @other="(ref: string) => chooseCarrier(ride.number, ref)"
+                    @update:note="(value: string) => setNote(ride.number, value)"
                   />
                   <p v-if="quotes[ride.number]?.pending && !carrierOf(ride.number)" class="op-micro text-muted">Cotando na TaOn…</p>
                   <p
@@ -928,6 +932,7 @@ const sheetCallLabel = computed(() => {
 
         <div v-if="ready.length" class="flex flex-col gap-2 border-t border-default bg-default p-4">
           <p v-if="failure" class="op-body text-error" aria-live="assertive">{{ failure }}</p>
+          <p v-if="nobodyTakes" class="op-body text-warning" data-nobody-takes>{{ NOBODY_TAKES }}</p>
           <div v-if="shortfall" class="flex flex-wrap items-center gap-2" data-machine-shortfall>
             <p class="min-w-0 flex-1 op-body text-warning">{{ shortfall }}</p>
             <NuxtButton v-if="canJoinCardRides" color="neutral" variant="outline" icon="i-lucide-merge" label="Juntar numa corrida só" @click="joinCardRides" />
@@ -961,9 +966,11 @@ const sheetCallLabel = computed(() => {
           :maps-key="data.maps_key"
           :now="now"
           :busy="busyRide === openRide.key"
+          :house-busy="houseBusy[openRide.key] ?? ''"
           @close="close"
           @back="backRide = openRide"
           @cancel="cancelOpenRide"
+          @gesture="(item) => houseGesture(openRide!, item)"
         />
       </template>
     </NuxtSlideover>
@@ -976,14 +983,15 @@ const sheetCallLabel = computed(() => {
       :rides="sheetRides"
       :machine-items="machineItems"
       :call-label="sheetCallLabel"
-      :can-call="!sending && !sheetMachineMissing"
-      :reason="sheetMachineMissing ? shortfall || 'Escolha a maquininha de cada corrida.' : ''"
+      :can-call="!sending && !sheetMachineMissing && !nobodyTakes"
+      :reason="nobodyTakes ? NOBODY_TAKES : sheetMachineMissing ? shortfall || 'Escolha a maquininha de cada corrida.' : ''"
       :busy="sending"
       @close="closeSheet"
       @confirm="confirmSheet"
       @change="setChange"
       @machine="chooseMachine"
       @carrier="chooseCarrier"
+      @note="setNote"
     />
 
     <!-- Entregador voltou: confere e só então encerra a corrida inteira. -->

@@ -36,9 +36,10 @@
 >   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, ~~`pagamento_expirado`~~ (aposentado 14/10, ver abaixo),
 >   `pagamento_falhou`, ~~`fila_vaga_disponivel`~~, ~~`fila_vaga_liberada`~~ (aprovados, ver
 >   a leitura de 20/11 abaixo), `produto_chegou`, `reembolso_processado`, `pontos_fidelidade`.
-> - **Submetidos em 20/11/2026, por volta das 16h, em revisão na Meta (WP-G07, 3):**
->   `pedido_atrasado`, `pedido_item_em_falta`, `pedido_remarcar`, texto aprovado pelo dono
->   em 20/11. Ver a seção "Os três avisos do Avisar o cliente".
+> - **Aprovados pela Meta em 21/11/2026 (WP-G07, 3, Utility, pt_BR):** `pedido_atrasado`,
+>   `pedido_item_em_falta`, `pedido_remarcar`, submetidos em 20/11 com o texto aprovado pelo
+>   dono. Os flows foram criados e publicados no ManyChat em 21/11. Ver a seção "Os três
+>   avisos do Avisar o cliente".
 > - **Fora do go-live (Marketing) ou sem revisão de voz:** `ficou_pronto`, `anuncio_novidade`,
 >   `pedido_compra` (fornecedor).
 >
@@ -51,7 +52,8 @@
 >   Este documento os dava como não submetidos; estavam aprovados.
 > - **Recusado:** o `OTP`, como em 01/10. Não faz falta: o código vai por SMS (ver "OTP").
 > - **Em revisão:** `pedido_atrasado`, `pedido_item_em_falta`, `pedido_remarcar`,
->   submetidos em 20/11 por volta das 16h.
+>   submetidos em 20/11 por volta das 16h. Aprovados em 21/11 (leitura da coordenação no
+>   ManyChat: "Aprovado", Utility, PT-BR).
 
 > Textos pt-BR dos templates transacionais da Nelson, **estruturados para maximizar aprovação**
 > da Meta. Não é "burlar regra" — é **conformar ao formato** que a Meta exige.
@@ -423,7 +425,7 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 - Botão URL: `Acompanhar pedido`
 - 11 palavras literais para 3 variáveis.
 
-### Os três avisos do "Avisar o cliente" (WP-G07) 🆕 · texto aprovado pelo dono em 20/11/2026, **submetidos em 20/11, em revisão na Meta**
+### Os três avisos do "Avisar o cliente" (WP-G07) · texto aprovado pelo dono em 20/11/2026 · ✅ **APROVADOS na Meta em 21/11/2026**
 
 O Caixa avisa o cliente com um toque no detalhe do pedido, pela API (decisão 4 do plano do
 Gestor, 17/11/2026). São mensagens que a casa inicia, então cada uma precisa de modelo
@@ -431,20 +433,31 @@ aprovado. A voz é a do diálogo "Resolver" (aprovada em 19/11): "Aqui é da Nel
 Boulangerie 💛 … e sinto muito por isso", primeira pessoa, sem travessão. O dono aprovou os
 três em 20/11 ("1 (depois revisamos mais detalhadamente…)"), com a troca do item B para
 "vai faltar o item …". Os três foram submetidos no ManyChat em 20/11, por volta das 16h, e
-estão em revisão na Meta. Os eventos ainda não existem no código: nascem no WP-G07.
+a Meta os aprovou em 21/11 (Utility, pt_BR). Os eventos existem desde o #2895, e as linhas
+do `NotificationTemplate` desde a migração `shop.0127`.
+
+**Como o flow se liga ao evento.** Cada modelo tem um flow publicado no ManyChat (21/11), com
+um passo só: o modelo aprovado, `{{1}}`=`customer_name`, `{{2}}`=`order_ref_short`,
+`{{3}}`=`status_note` e a URL do botão "Acompanhar pedido" ligada a `order_ref`. O
+namespace se grava no `whatsapp_flow_ns` do evento pelo app de Marketing: Configurações →
+Plataformas → WhatsApp → "Avisos automáticos", escolhendo a mensagem ("Vai atrasar",
+"Faltou um item", "Precisamos remarcar") e o modelo aprovado da lista. O comando revalida o
+flow no catálogo vivo e pede versão, confirmação, TOTP e auditoria (ADR-042: configuração
+de loja não entra por `settings`). Sem o `whatsapp_flow_ns`, o aviso sai em texto livre,
+que a Meta só entrega dentro da janela de 24 h.
 
 Quando o cliente responde, abre a janela de 24 h e a conversa segue em texto livre. Feita a
 troca ou a remarcação no PDV, saem sozinhos o `pedido_atualizado` e o `pedido_nova_data`
 (aprovados em 29/09).
 
-#### `pedido_atrasado` — evento `order_delayed` (a criar no WP-G07)
+#### `pedido_atrasado` — evento `order_delayed` · ✅ APROVADO na Meta (21/11/2026) · flow `content20261121063856_606640` ("Aviso: vai atrasar (order_delayed)")
 O Caixa toca "Vai atrasar" no pedido e escolhe a nova hora.
 - Categoria: **Utility** · Idioma: **pt_BR**
 - Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 Seu pedido {{2}} vai atrasar um pouco: a nova previsão é {{3}}, e sinto muito por isso. Qualquer dúvida, é só responder aqui.`
 - Vars: `{{1}}`=`Ana` (`customer_name`, `cuf_14859629`) · `{{2}}`=`A17` (`order_ref_short`, `cuf_15003507`) · `{{3}}`=`hoje, às 16h30` (`status_note`, `cuf_15003511`, nunca vazio, sem ponto final)
 - Botão URL: `Acompanhar pedido` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (`order_ref`, `cuf_15003508`)
 
-#### `pedido_item_em_falta` — evento `order_item_missing` (a criar no WP-G07)
+#### `pedido_item_em_falta` — evento `order_item_missing` · ✅ APROVADO na Meta (21/11/2026) · flow `content20261121063922_615944` ("Aviso: faltou um item (order_item_missing)")
 O Caixa toca "Faltou um item" e marca qual, e quanto.
 - Categoria: **Utility** · Idioma: **pt_BR**
 - Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 No seu pedido {{2}}, vai faltar o item {{3}}, e sinto muito por isso. Posso trocar por outro produto ou devolver esse valor. Me responde aqui como fica melhor para você.`
@@ -456,7 +469,7 @@ O Caixa toca "Faltou um item" e marca qual, e quanto.
 > guarda o gênero do nome. O dono escolheu "vai faltar o item Focaccia (2 unidades)" em
 > 20/11; o item e a quantidade continuam variáveis.
 
-#### `pedido_remarcar` — evento `order_reschedule_needed` (a criar no WP-G07)
+#### `pedido_remarcar` — evento `order_reschedule_needed` · ✅ APROVADO na Meta (21/11/2026) · flow `content20261121063910_235375` ("Aviso: precisamos remarcar (order_reschedule_needed)")
 O Caixa toca "Precisamos remarcar": o pedido inteiro não fica pronto na data combinada.
 - Categoria: **Utility** · Idioma: **pt_BR**
 - Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 Não vamos conseguir aprontar seu pedido {{2}} para {{3}}, como combinamos, e sinto muito por isso. Posso remarcar para outro dia ou cancelar e devolver o valor. Me responde aqui como fica melhor para você.`

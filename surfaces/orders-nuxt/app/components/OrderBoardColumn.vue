@@ -6,6 +6,8 @@ import type {
 import type { AffordanceRef, ZoneView } from "~/presentation/board";
 import { exitGesture, exitRows, swipeHint, zoneEmptyText } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
+import type { DeliveryRideProjection } from "~/generated/ordersContract";
+import { withHouseRides, type HouseGesture } from "~/presentation/houseCouriers";
 
 const props = withDefaults(
   defineProps<{
@@ -28,8 +30,12 @@ const props = withDefaults(
     danfePrinting: (ref: string) => boolean;
     swipeActions: (card: OrderCardProjection) => OperatorSwipeAction[];
     heading?: boolean;
+    /** As corridas da casa (M3d, #2937): na Saída, viram um cartão por corrida. */
+    houseRides?: DeliveryRideProjection[];
+    /** `{chave da corrida: gesto rodando}`. */
+    houseBusy?: Record<string, string>;
   }>(),
-  { heading: true },
+  { heading: true, houseRides: () => [], houseBusy: () => ({}) },
 );
 
 const emit = defineEmits<{
@@ -44,6 +50,8 @@ const emit = defineEmits<{
   volumes: [cardRef: string, count: number, context: "exit" | "orders"];
   swipe: [card: OrderCardProjection, key: string];
   collapse: [];
+  houseGesture: [ride: DeliveryRideProjection, gesture: HouseGesture];
+  houseBack: [ride: DeliveryRideProjection];
 }>();
 
 // F7 (dono, 09/10/2026: "deslizar no mobile é sempre bom"): na Saída do celular,
@@ -65,10 +73,11 @@ function commitExit(card: OrderCardProjection) {
     emit("action", card.ref, gesture.action);
 }
 // Prontos em "A coletar" e "Saiu para entrega"; as outras colunas, sem partes.
+// A corrida da casa entra no lugar do primeiro pedido dela (forma E), e os outros saem.
 const rows = computed(() =>
   props.zone.key === "expedition"
-    ? exitRows(props.cards)
-    : props.cards.map((card) => ({ card, heading: "" })),
+    ? withHouseRides(exitRows(props.cards), props.houseRides)
+    : props.cards.map((card) => ({ card, heading: "" as string, house: undefined })),
 );
 const hint = computed(() =>
   swipeHint(props.zone.key, exitColumn.value ? props.cards : [], props.canOpen),
@@ -128,7 +137,7 @@ const hint = computed(() =>
         "
         data-zone-cards
       >
-        <template v-for="{ card, heading: part } in rows" :key="card.ref">
+        <template v-for="{ card, heading: part, house } in rows" :key="card.ref">
         <h3
           v-if="part"
           class="col-span-full op-micro font-semibold text-muted-foreground"
@@ -136,7 +145,16 @@ const hint = computed(() =>
         >
           {{ part }}
         </h3>
+        <HouseRideCard
+          v-if="house"
+          :ride="house"
+          :busy="houseBusy[house.key] ?? ''"
+          data-exit-house-ride
+          @gesture="(item) => emit('houseGesture', house!, item)"
+          @back="emit('houseBack', house!)"
+        />
         <OrderCard
+          v-else
           :card="card"
           :compact="!phone"
           :busy="isBusy(card.ref)"
@@ -170,7 +188,7 @@ const hint = computed(() =>
       :class="phone ? '-mx-2 -mt-2 gap-3 px-2 pt-2 pb-3' : 'gap-2 px-2 pt-1 pb-2'"
       data-zone-cards
     >
-      <template v-for="{ card, heading: part } in rows" :key="card.ref">
+      <template v-for="{ card, heading: part, house } in rows" :key="card.ref">
       <h3
         v-if="part"
         class="op-micro font-semibold text-muted-foreground"
@@ -178,7 +196,16 @@ const hint = computed(() =>
       >
         {{ part }}
       </h3>
+      <HouseRideCard
+        v-if="house"
+        :ride="house"
+        :busy="houseBusy[house.key] ?? ''"
+        data-exit-house-ride
+        @gesture="(item) => emit('houseGesture', house!, item)"
+        @back="emit('houseBack', house!)"
+      />
       <OperatorSwipeRow
+        v-else
         :actions="phone ? swipeActions(card) : []"
         :commit="swipeCommit(card)"
         :label="`Pedido ${card.ref}`"
