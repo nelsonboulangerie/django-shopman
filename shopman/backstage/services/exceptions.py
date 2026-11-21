@@ -69,6 +69,19 @@ class RescheduleError(OrderError):
         self.field = field
 
 
+class CustomerNoticeError(OrderError):
+    """Aviso ao cliente recusado (``shop.services.customer_notice.CustomerNoticeRefused``).
+
+    Mesmo formato do :class:`RescheduleError`: ``field`` aponta a escolha da tela
+    (``kind``, ``eta``, ``lines``).
+    """
+
+    def __init__(self, message: str, *, code: str = "", field: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.field = field
+
+
 class OrderEditError(OrderError):
     """Edição da encomenda recusada (``shop.services.order_edit.EditRefused``).
 

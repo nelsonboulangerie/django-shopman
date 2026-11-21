@@ -48,6 +48,38 @@ describe('SubstituteSheet', () => {
     expect(body).toContain('Pão')
   })
 
+  it('sem nada para levar, diz "indisponível" uma vez só e a frase leva direto à lista (#2907)', async () => {
+    await setIssue({ ...OUT_OF_STOCK, substitutes_intro: 'Que tal um destes no lugar de Croissant?' })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const sheet = document.querySelector('[data-substitute-sheet]')!
+    const text = sheet.textContent || ''
+    expect(text.match(/indisponível/gi)).toHaveLength(1)
+    expect(text).toContain('Que tal um destes no lugar de Croissant?')
+    expect(text).not.toContain('Veja boas alternativas')
+    expect(text).not.toContain('Ou troque por:')
+    // A frase aparece uma vez: a lista não ganha rótulo próprio.
+    expect(text.split('Que tal um destes').length - 1).toBe(1)
+  })
+
+  it('sem a frase do servidor, a folha monta a mesma com o nome do item', async () => {
+    await setIssue({ ...OUT_OF_STOCK, substitutes_intro: '' })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    expect(document.querySelector('[data-substitute-sheet]')?.textContent).toContain('Que tal um destes no lugar de Croissant?')
+  })
+
+  it('com algo para levar, a troca segue como alternativa ao "Levar N"', async () => {
+    await setIssue({ ...OUT_OF_STOCK, available_qty: 1, substitutes_intro: 'Que tal um destes no lugar de Croissant?' })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const text = document.querySelector('[data-substitute-sheet]')?.textContent || ''
+    expect(text).toContain('Agora temos 1 unidade de Croissant.')
+    expect(text).toContain('Levar 1 unidade')
+    expect(text).toContain('Ou troque por:')
+    expect(text).not.toContain('Que tal um destes')
+  })
+
   it('offers "adjust quantity" copy when there is still available stock', async () => {
     await setIssue({ ...OUT_OF_STOCK, available_qty: 3, substitutes: [] })
     await mountSuspended(SubstituteSheet)

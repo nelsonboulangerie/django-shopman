@@ -1,6 +1,7 @@
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from "vue";
 import {
   accessResolved,
+  deliveriesWaitingBadge,
   deniedSettingsSection,
   gestorSections,
   gestorSettingsSections,
@@ -110,8 +111,13 @@ export function useGestorSections() {
   // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do painel.
   const offBoard = useGestorRailCounts(() => !rail.value.onBoard);
   // O selo de Entregas: entregas do dia sem corrida chamada, relido a cada push
-  // do canal de pedidos (e no poll calmo de fallback).
-  const { data: deliveries, refresh: refreshDeliveries } = useFetch<{ waiting?: number }>(
+  // do canal de pedidos (e no poll calmo de fallback). `waiting: null` (o servidor
+  // não conseguiu contar) e a leitura que falhou viram "?", nunca zero.
+  const {
+    data: deliveries,
+    error: deliveriesError,
+    refresh: refreshDeliveries,
+  } = useFetch<{ waiting?: number | null }>(
     "/api/v1/backstage/deliveries/count/",
     { key: "orders:rail:deliveries", server: false },
   );
@@ -125,7 +131,7 @@ export function useGestorSections() {
     expeditesOnly: expeditesOnly.value,
     catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
-    deliveriesWaiting: deliveries.value?.waiting ?? 0,
+    deliveriesWaiting: deliveriesWaitingBadge(deliveries.value, Boolean(deliveriesError.value)),
   }));
   const sections = computed(() => gestorSections(input.value));
   const settings = computed(() => gestorSettingsSections(input.value));

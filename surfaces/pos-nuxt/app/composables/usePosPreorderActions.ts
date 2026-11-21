@@ -2,7 +2,8 @@ import type { ComputedRef, Ref } from "vue";
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import { danfeExpected, handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
+import type { HandOverBody } from "~/presentation/balanceCharge";
+import { danfeExpected, handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage } from "~/presentation/preorderActions";
 import type {
   PreorderDetail,
   PreorderHandOverResponse,
@@ -32,7 +33,8 @@ export interface ManagerChallenge {
  * Os gestos do detalhe de uma encomenda (ENCOMENDAS-PDV-PLAN, WP-E3/E4).
  *
  * - **Receber e entregar**: a rota do PDV (`/pos/preorders/<ref>/hand-over/`),
- *   que faz o acerto no turno DESTA estação e conclui, numa transação. Mesma
+ *   que faz o acerto no turno DESTA estação e conclui, numa transação. As formas
+ *   vêm da tela de Pagamento da venda (`PosPreorderBalancePayment`). Mesma
  *   idempotência das mutações de caixa: uma chave por gesto (`client_request_id`),
  *   reaproveitada quando o mesmo gesto é repetido depois de uma falha de rede.
  *   Pix ou link pendente: o servidor cancela a cobrança do cliente antes de
@@ -76,7 +78,8 @@ export function usePosPreorderActions(options: {
     return key;
   }
 
-  async function handOver(body: HandOverBody): Promise<boolean> {
+  /** `changeQ`: o troco que a tela de Pagamento mostrou, para o aviso de pronto. */
+  async function handOver(body: HandOverBody, changeQ = 0): Promise<boolean> {
     const detail = options.detail.value;
     if (!detail || busy.value) return false;
     busy.value = true;
@@ -93,7 +96,7 @@ export function usePosPreorderActions(options: {
       lastAttempt = null;
       if (body.tenders?.some((tender) => tender.method === "cash")) void drawer.kick("preorder_cash");
       paidOnline.value = "";
-      toast.success(handOverDoneMessage(response?.received_q ?? 0));
+      toast.success(handOverDoneMessage(response?.received_q ?? 0, changeQ));
       // A nota da retirada nasce na entrega: a DANFE sai sozinha na bobina
       // quando autoriza, como na venda de balcão (P2-27). Sem impressora nesta
       // estação, não há o que esperar; o detalhe já diz que o papel sai no

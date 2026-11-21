@@ -20,6 +20,8 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   concierge_verification_sweep — prazos do "vou verificar": aviso ao cliente e passagem à equipe
+  concierge_reading_check   — Concierge atendendo sem modelo vira aviso no Gestor (um por causa)
+  concierge_inbound_sweep   — o que o ManyChat recebeu e não chegou ao webhook é reingerido
   concierge_corpus_copy     — cópia anonimizada das mensagens para o aprendizado (antes da retenção)
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   check_stock_alert_delivery_sla — aviso ao cliente travado/incerto alerta o Gestor
@@ -187,6 +189,12 @@ MAINTENANCE_COMMANDS = (
     # O relógio do "vou verificar" (WP-06): depois da recuperação, para não avisar o
     # cliente de uma resposta que a fila ainda ia mandar. Custo zero, sem modelo.
     "concierge_verification_sweep",
+    # A Concierge sem modelo (dono, 19/11/2026): aviso no topo do Gestor, um por causa;
+    # resolve sozinho quando o modelo volta. Lê a configuração, não chama modelo.
+    "concierge_reading_check",
+    # O que o ManyChat recebeu e não chegou aqui (o External Request não reenvia, #2943):
+    # pergunta ao ManyChat pela última entrada de quem conversa com a Concierge. Teto por rodada.
+    "concierge_inbound_sweep",
     # O corpus anonimizado (dono, 20/11/2026, #2851): ANTES da limpeza de retenção, para a
     # observação ser copiada antes de vencer. Sem nada que ligue à pessoa.
     "concierge_corpus_copy",

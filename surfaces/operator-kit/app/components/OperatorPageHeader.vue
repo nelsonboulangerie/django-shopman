@@ -54,7 +54,7 @@ import {
 import type { OperatorSession } from "../types/operator";
 import { alertActions } from "../utils/alertActions";
 import { useAnswerWindowRequest, useOperatorInboxAlerts } from "../composables/useSuiteChrome";
-import { answerScreenAlerts } from "../presentation/suiteChrome";
+import { answerScreenAlerts, inboxScreenAlerts } from "../presentation/suiteChrome";
 import { formatClock } from "../presentation/clock";
 
 const props = withDefaults(
@@ -324,7 +324,20 @@ const answerAlerts = computed<OperatorScreenAlert[]>(() =>
     action: { label: "Responder", onSelect: () => { answerWindow.value = alert.key; } },
   })),
 );
-const screenAlerts = computed(() => [...answerAlerts.value, ...props.alerts]);
+// O alerta da operação que pede o topo (a Concierge sem modelo): cor da gravidade, sem
+// gesto; o X dispensa nesta montagem e ele volta enquanto a causa durar.
+const operationAlerts = computed<OperatorScreenAlert[]>(() =>
+  inboxScreenAlerts(inboxSource.value?.items ?? []).map((alert) => ({
+    id: alert.id,
+    title: alert.title,
+    description: alert.description,
+    color: alert.color,
+    // O aviso traz o botão que resolve a causa (dono, 20/11/2026: aviso sem ação é defeito).
+    ...(alert.action ? { action: alert.action } : {}),
+    ...(alert.secondaryAction ? { secondaryAction: alert.secondaryAction } : {}),
+  })),
+);
+const screenAlerts = computed(() => [...operationAlerts.value, ...answerAlerts.value, ...props.alerts]);
 function alertKey(alert: OperatorScreenAlert): string {
   return alert.id ?? alert.title;
 }
@@ -350,6 +363,7 @@ function headerAlertActions(alert: OperatorScreenAlert) {
       to: alert.action.to,
       onClick: (event: Event) => alert.action?.onSelect?.(event),
     },
+    alert.secondaryAction && { label: alert.secondaryAction.label, to: alert.secondaryAction.to },
   ];
 }
 function clearAll() {

@@ -100,7 +100,8 @@ ativas presas a eles); o PDV só as diz:
 
 | Onde | Chave | Forma |
 |---|---|---|
-| `GET /pos/schedule/` (`build_pos_schedule`) | `plan_by_sku` | `{sku: {planned_qty, unclaimed_qty}}` para os SKUs do carrinho com lote planejado na data; `{}` hoje |
+| `GET /pos/schedule/` (`build_pos_schedule`) | `plan_by_sku` | `{sku: {planned_qty, unclaimed_qty}}` para os SKUs do carrinho com lote planejado na data, e `{planned_qty: 0, unclaimed_qty: 0}` para o SKU do carrinho em `unplanned_skus`; `{}` hoje |
+| `GET /pos/schedule/` (`build_pos_schedule`) | `sold_out_skus` · `unplanned_skus` | os SKUs da grade sem saldo na data (plano esgotado e falta de verdade: bloqueados) e os que viram pedido à Produção (WP-E3); `[]` hoje |
 | `POST /pos/sale/review/` | `preorder_over_plan` | `[{sku, name, date, requested_qty, planned_qty, unclaimed_qty}]`, com o motivo `preorder_over_plan` em `approval_reasons` |
 
 `planned_qty` é o lote planejado para a data, sem descontar reservas; `unclaimed_qty`, o que
@@ -109,8 +110,18 @@ de hoje e a vitrine não entram em nenhum dos dois** (dono, 18/11/2026: "não of
 de um dia para o outro! eles não ficam disponíveis para encomenda!"). Passa do plano quando o
 pedido é maior que `unclaimed_qty`: o Validar trava e só o gerente libera. A liberação é o
 carimbo do WP-E1 (`issue_sale_approval`), com as linhas em `scope.over_plan`; o fechamento
-recusa carimbo de outros números. SKU sem lote planejado na data fica de fora (data sem plano,
-WP-E3). Travas: `shopman/shop/tests/test_pos_encomenda_acima_do_plano_bloqueia.py`,
+recusa carimbo de outros números.
+
+**Data sem plano não é sem saldo (WP-E3, D2 do dono).** A régua do Stockman responde zero
+por dois motivos, e o servidor os separa (`shop/services/stock.py`, `unplanned_on`): *plano
+esgotado* (a data tem lote planejado e ele acabou) segue em `sold_out_skus`, bloqueado, e
+acima do plano só o gerente libera; *sem plano* (o SKU é produzido aqui em lote, ficha "Em
+lote", e a data ainda não tem lote planejado dele) vai para `unplanned_skus`: o item entra
+como pedido à Produção, sem gerente. A linha diz "Ainda sem lote planejado para 30/11: vira
+pedido à Produção", e a ressalva da review diz o mesmo. Revenda e "Na hora" não entram: a
+Produção não planeja lote deles. A reserva fica como demanda sem lote, a sugestão da Produção
+a conta (`committed`) e o aviso `order_demand_over_plan` sai no fechamento. Travas:
+`shopman/shop/tests/test_pos_encomenda_sem_plano.py`. Travas do WP-E2: `shopman/shop/tests/test_pos_encomenda_acima_do_plano_bloqueia.py`,
 `surfaces/pos-nuxt/tests/encomendaAcimaDoPlano.test.ts` e os testes de componente
 `PosPaymentWorkspace.overPlan` e `PosCartPanel.plan`.
 

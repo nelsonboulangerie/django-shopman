@@ -140,11 +140,13 @@ def test_complaint_card_reaches_the_orders_bell_without_an_order(conversation, o
     assert conversation.handoff_reason == "Reclamação · agora"
     bell = alert_service.list_active_alerts(scope="orders")
     assert [alert.type for alert in bell] == ["concierge_handoff"]
+    # Só a fala dela, entre aspas (coordenação, 20/11/2026): quem e por quê vão no
+    # título, que a projeção escreve; onde responder, no botão.
     card = bell[0].message
-    assert card.startswith("Reclamação, urgência: agora.")
-    assert "meu pedido veio queimado" in card
-    assert "Cliente: Ana." in card
-    assert "Live Chat do ManyChat" in card
+    assert card == "“meu pedido veio queimado”"
+    from shopman.backstage.projections.alerts import handoff_cards
+
+    assert handoff_cards([bell[0].pk])[bell[0].pk]["subject"] == "Ana fez uma reclamação"
 
 
 def test_job_goes_to_the_other_desk_and_stays_out_of_the_bell(conversation, outbox):
@@ -279,3 +281,29 @@ def test_concierge_check_ids_do_not_collide_with_the_shop_checks():
     shop_checks = (pathlib.Path(__file__).resolve().parents[2] / "shop" / "checks.py").read_text(encoding="utf-8")
     used_in_shop = set(re.findall(r'id="(SHOPMAN_[EW]\d+)"', shop_checks))
     assert used_in_shop and {"SHOPMAN_W022", "SHOPMAN_W023"}.isdisjoint(used_in_shop)
+
+
+# ── Só um link: continua a fala anterior (#2910, msg-596) ─────────────
+
+
+@pytest.mark.parametrize("text", ["[link omitido]", "https://drive.google.com/file/d/abc/view", "www.exemplo.com/cv.pdf"])
+def test_a_bare_link_after_offering_a_resume_goes_to_the_other_desk(text):
+    decision = triage.decide(text, context=[("Cliente", "Bom Dia, posso te mandar um Currículo")])
+
+    assert decision.intent == "job"
+    assert decision.destination == triage.OTHER_DESK
+
+
+def test_a_bare_link_after_a_question_the_concierge_answers_stays_with_the_concierge():
+    decision = triage.decide("https://exemplo.com/foto.jpg", context=[("Cliente", "tem croissant hoje?")])
+
+    assert decision.destination == triage.ANSWER
+
+
+def test_a_link_with_words_follows_the_usual_rule():
+    decision = triage.decide(
+        "olha esse bolo https://exemplo.com/bolo.jpg, vocês fazem?",
+        context=[("Cliente", "posso te mandar um currículo?")],
+    )
+
+    assert decision.intent != "job"

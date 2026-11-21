@@ -13,6 +13,13 @@ const { data, pending, error, refresh } = await useFetch<FavoritesResponse>(
 )
 usePageContentPending(pending)
 
+// Loja viva (#2785): o favorito que esgotou ou voltou muda na lista aberta.
+useLiveRevalidate(
+  data,
+  () => $fetch<FavoritesResponse>(apiPath('/api/v1/account/favorites/'), { credentials: 'include' }),
+  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS }
+)
+
 const items = computed(() => data.value?.items || [])
 // Copy do empty-state vem do backend; os literais atuais seguem como fallback.
 const emptyCopy = computed(() => data.value?.copy?.empty || null)

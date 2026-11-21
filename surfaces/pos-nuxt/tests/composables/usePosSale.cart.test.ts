@@ -120,6 +120,37 @@ describe("usePosSale — mutações de carrinho", () => {
   });
 });
 
+describe("usePosSale — o esgotado da grade não entra pelo atalho (P2-10)", () => {
+  function soldOutProjection() {
+    const projection = freeCartProjection();
+    projection.products = projection.products.map((product) =>
+      product.sku === "PAO" ? { ...product, sold_out: true, sold_out_reason: "" } : product,
+    );
+    return projection;
+  }
+
+  it("addProduct com o produto esgotado hoje não lança e diz por quê", () => {
+    const h = makeSale({ projection: soldOutProjection() });
+    // O "repetir último pedido" e o favorito chegam com o produto do catálogo.
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.addProduct(pao);
+    h.sale.addProduct(pao);
+    expect(h.sale.cart.items).toHaveLength(0);
+    expect(toast.info).toHaveBeenCalledWith("Pão: Esgotado.", { id: "pos-blocked-PAO" });
+    h.handles.dispose();
+  });
+
+  it("vale a grade que o operador vê, não o produto que chegou: o atalho com selo velho também não lança", () => {
+    const h = makeSale({ projection: soldOutProjection() });
+    const paoVelho = { ...h.handles.posValue.value!.products[0]!, sold_out: false };
+    const cafe = h.handles.posValue.value!.products[1]!;
+    h.sale.addProduct(paoVelho);
+    h.sale.addProduct(cafe);
+    expect(h.sale.cart.items.map((item) => item.sku)).toEqual(["CAFE"]);
+    h.handles.dispose();
+  });
+});
+
 describe("usePosSale — gate de comanda para usar o carrinho", () => {
   it("com comanda obrigatória, addProduct pede associação em vez de lançar", () => {
     const h = makeSale(); // projeção default → requires_open_tab_for_cart

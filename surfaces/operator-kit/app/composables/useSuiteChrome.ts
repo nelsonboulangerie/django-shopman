@@ -39,6 +39,9 @@ export interface OperatorInboxAlert {
   /** Leva ao lugar exato. */
   href?: string;
   hrefLabel?: string;
+  /** O segundo lugar que resolve ("Abrir conversa" sob "Responder no Live Chat"). */
+  secondaryHref?: string;
+  secondaryHrefLabel?: string;
   /** O gesto que resolve ali mesmo ("Aceitar"); o app executa por `act`. */
   actLabel?: string;
   /** O servidor oferece "Visto" para este alerta. */
@@ -52,6 +55,9 @@ export interface OperatorInboxAlert {
   origin?: string;
   originIcon?: string;
   subject?: string;
+  /** Também no topo da tela, no aviso do cabeçalho, e não só no sino: a operação
+   *  inteira está degradada (a Concierge sem modelo). Um aviso por causa. */
+  onScreen?: boolean;
   /** O aviso se resolve com uma resposta escrita (a pergunta que a Concierge levou à
    *  equipe): o campo, o gesto de enviar e, opcional, o gesto alternativo ("Assumir a
    *  conversa"). O app executa por `answer`/`answerAlt` da fonte. */

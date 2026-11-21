@@ -3376,13 +3376,21 @@ def customer_history_summary(customer_ref: str, *, limit: int = 5) -> dict:
     }
 
 
-def _pos_sold_out_on(day) -> list[str]:
-    """Os SKUs da grade do PDV sem saldo para ``day`` (encomenda para outro dia).
+def _pos_sold_out_on(day) -> tuple[list[str], list[str]]:
+    """A grade do PDV numa data de encomenda: ``(sem saldo, sem lote planejado)``.
 
     Beta test de 05/11/2026 (PDV2-04). A grade só sabia o esgotado de HOJE: na
     encomenda para amanhã, o pão que acabou hoje não entrava, e o que a grade
     deixava entrar o salvamento recusava ("não tem saldo para 07/11"). A grade
     passa a ler a mesma régua por data do salvamento.
+
+    A régua do Stockman responde "zero" por dois motivos que a tela precisa
+    separar (WP-E3, P1-1): o lote planejado da data acabou (plano esgotado: o
+    item segue bloqueado, e acima do plano só o gerente libera, WP-E2), ou a
+    data ainda não tem lote planejado do item (sem plano). Com a data a dez
+    dias, o plano do seed já tinha terminado e trinta e cinco pães da casa
+    apareciam "Sem saldo". Sem plano a encomenda entra como pedido à Produção
+    (dono, D2): o item sai do bloqueio e vem na segunda lista.
     """
     from shopman.offerman.models import ListingItem
 
@@ -3391,7 +3399,27 @@ def _pos_sold_out_on(day) -> list[str]:
             listing__ref=POS_CHANNEL_REF, is_published=True, is_sellable=True,
         ).values_list("product__sku", flat=True).distinct()
     )
-    return sorted(_sold_out_skus(skus, target_date=day))
+    sold_out = _sold_out_skus(skus, target_date=day)
+    unplanned = _unplanned_skus(sorted(sold_out), day)
+    return sorted(sold_out - unplanned), sorted(unplanned)
+
+
+def _unplanned_skus(skus: list[str], day) -> set[str]:
+    """Dos ``skus`` sem saldo em ``day``, os que viram pedido à Produção.
+
+    A régua é do orquestrador (``stock.unplanned_on``): produzido aqui em lote e
+    ainda sem lote planejado PARA a data. Silencioso quando a leitura falha: o item
+    fica como estava (sem saldo), e o salvamento confere de qualquer jeito.
+    """
+    if not skus or day is None:
+        return set()
+    try:
+        from shopman.shop.services import stock as stock_service
+
+        return stock_service.unplanned_on(skus, day)
+    except Exception:
+        logger.exception("pos_unplanned_lookup_failed")
+        return set()
 
 
 def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None) -> dict:
@@ -3420,6 +3448,7 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         day = today
 
     context = fulfillment_window.annotate(day, list(skus or []))
+    sold_out, unplanned = _pos_sold_out_on(day) if day != today else ([], [])
     dates = business_calendar.available_dates(
         max_count=max_preorder_days + 1, horizon_days=max_preorder_days
     )
@@ -3445,24 +3474,33 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         # "sem restrição" — todas as janelas voltam desabilitadas.
         "readiness_unavailable": bool(context.get("readiness_unavailable")),
         # Outro dia: o que a grade NÃO deixa entrar naquela data (a régua da
-        # reserva). Hoje a grade já sabe pelo selo do próprio catálogo.
-        "sold_out_skus": _pos_sold_out_on(day) if day != today else [],
+        # reserva), e o que entra como pedido à Produção porque a data ainda não
+        # tem lote planejado dele (WP-E3, D2). Hoje a grade já sabe pelo selo do
+        # próprio catálogo.
+        "sold_out_skus": sold_out,
+        "unplanned_skus": unplanned,
         # Outro dia: o LASTRO de cada SKU do carrinho na data (WP-E2, D-041), a
         # lote planejado e o que dele está sem encomenda. A linha diz "22 planejadas para
         # 17/11", e o pedido acima do que o lote ainda tem sem encomenda pede o
         # gerente. O PDV mostra o que o servidor apura; a sobra de hoje não conta.
-        "plan_by_sku": _pos_plan_by_sku(skus, day) if day != today else {},
+        # O SKU do carrinho sem lote planejado na data vem com os dois zeros: a
+        # linha diz que vira pedido à Produção (WP-E3), e nada pede o gerente.
+        "plan_by_sku": _pos_plan_by_sku(skus, day, unplanned=set(unplanned)) if day != today else {},
     }
 
 
-def _pos_plan_by_sku(skus: list[str] | None, day) -> dict[str, dict]:
+def _pos_plan_by_sku(skus: list[str] | None, day, *, unplanned: set[str] | frozenset[str] = frozenset()) -> dict[str, dict]:
     from shopman.shop.services import stock as stock_service
 
     backing = stock_service.plan_backing_on(list(skus or ()), day, channel_ref=POS_CHANNEL_REF)
-    return {
+    plan = {
         sku: {"planned_qty": _plan_qty(info["planned_qty"]), "unclaimed_qty": _plan_qty(info["unclaimed_qty"])}
         for sku, info in backing.items()
     }
+    for sku in dict.fromkeys(skus or ()):
+        if sku in unplanned and sku not in plan:
+            plan[sku] = {"planned_qty": 0, "unclaimed_qty": 0}
+    return plan
 
 
 def _plan_qty(value) -> int | float:

@@ -474,11 +474,6 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
     return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
 
 
-#: O cartão de quando o cliente escreve com a conversa na equipe (o sino do Gestor).
-WROTE_WHILE_WITH_TEAM = (
-    "O cliente escreveu de novo, e a conversa está com a equipe. Responda pelo Live Chat "
-    "do ManyChat, ou devolva a conversa ao concierge no Admin."
-)
 
 
 def _wrote_while_with_team(conversation: Conversation, binding: ConversationBinding) -> None:
@@ -495,7 +490,13 @@ def _wrote_while_with_team(conversation: Conversation, binding: ConversationBind
         logger.warning(
             "concierge.handoff.reassert_unconfirmed conversation=%s binding=%s", conversation.pk, binding.pk
         )
-    _alert(conversation, "concierge_handoff", WROTE_WHILE_WITH_TEAM)
+    from .triage import customer_quote
+
+    # A fala nova, entre aspas: o título e o "há N min" saem da projeção, pela conversa.
+    latest = (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND).order_by("-pk").values_list("text", flat=True).first()
+    )
+    _alert(conversation, "concierge_handoff", customer_quote(latest or "") or "Escreveu de novo.")
 
 
 def _enqueue_turn(conversation: Conversation, binding: ConversationBinding) -> None:
@@ -824,6 +825,10 @@ class TurnRevoked(Exception):
     """O claim não tem mais autoridade; preservar entradas e efeitos."""
 
 
+#: O nível de autoridade da sacola (ADR-050), para ``assert_turn_authority(for_mutation=...)``.
+CART_AUTHORITY = "cart"
+
+
 def assert_turn_authority(conversation, *, for_mutation=True):
     from . import transport
 
@@ -847,7 +852,11 @@ def assert_turn_authority(conversation, *, for_mutation=True):
         raise TurnRevoked("new_input")
     if not current.claim_until or current.claim_until <= timezone.now():
         raise TurnRevoked("claim_expired")
-    if for_mutation and not getattr(conversation, "_commercial_authority", False):
+    if for_mutation == CART_AUTHORITY:
+        # Sacola (ADR-050): a autoridade comercial completa serve, e a de sacola também.
+        if not (getattr(conversation, "_commercial_authority", False) or getattr(conversation, "_cart_authority", False)):
+            raise TurnRevoked("commercial_authority_missing")
+    elif for_mutation and not getattr(conversation, "_commercial_authority", False):
         raise TurnRevoked("commercial_authority_missing")
     return current
 
@@ -888,6 +897,13 @@ def _claim(conversation_id: int, binding_id: int):
         )
         conversation._commercial_authority = bool(
             not conversation._limited_event_assurance
+            and binding.identity_assurance == "verified_customer"
+        )
+        # Autoridade de SACOLA (ADR-050): mudança reversível e em valor absoluto, que um
+        # reenvio repete sem dobrar. Basta cliente verificado e conexão que não seja só
+        # leitura, mesmo sem identificador de mensagem. Fechar pedido pede mais (o código).
+        conversation._cart_authority = bool(
+            not (config().get("read_only") or (connection and connection.options.get("read_only")))
             and binding.identity_assurance == "verified_customer"
         )
         return conversation, binding, inbound
@@ -953,7 +969,14 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
 
         # Triagem (D32): toda entrada ganha intenção, urgência e destino antes da
         # leitura em partes, pela regra local e pelo Jev (sem modelo de texto).
-        turn_text = "\n".join(message.text for message in inbound if message.text)
+        from .turn_outcome import collapse_repeats
+
+        turn_text = "\n".join(
+            collapse_repeats(
+                (message.text for message in inbound),
+                limited=bool(getattr(conversation, "_limited_event_assurance", False)),
+            )
+        )
         previous_triage = (conversation.flags or {}).get("triage")
         from . import cancellation
 
@@ -995,6 +1018,7 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                 conversation.customer_ref
                 and binding.identity_assurance == "verified_customer"
             )
+            conversation._cart_authority = conversation._cart_authority or conversation._commercial_authority
         assert_turn_authority(conversation, for_mutation=False)
         if all(
             (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES
@@ -1732,6 +1756,9 @@ def return_to_concierge(conversation: Conversation) -> bool:
             "Retorno não confirmado em todos os vínculos. Atendimento humano mantido.",
         )
     conversation.refresh_from_db()
+    if synced:
+        # Voltou à Concierge: o cartão de atendimento humano desta conversa acabou.
+        _close_card(conversation, "concierge_handoff", actor="concierge")
     return synced
 
 
@@ -1747,47 +1774,95 @@ def _triage_alert(conversation: Conversation, triage, *, synced: bool) -> None:
     pedido na conversa; ``concierge_other_desk`` fica na operação geral, no
     Admin, e não acorda o balcão.
     """
-    from .triage import OTHER_DESK, alert_message
+    from .triage import OTHER_DESK, alert_message, handoff_message
 
     alert_type = "concierge_other_desk" if triage.destination == OTHER_DESK else "concierge_handoff"
-    message = alert_message(conversation, triage)
+    # O handoff traz só a fala do cliente: o título (quem e por quê) a projeção escreve,
+    # e o botão diz onde responder. A outra mesa segue com o resumo para o Admin.
+    if alert_type != "concierge_handoff":
+        message = alert_message(conversation, triage)
+    elif triage.escalated_by == "verification_timeout":
+        # O prazo do "vou verificar" venceu: o motivo e a pergunta do cliente, juntos
+        # (coordenação, 20/11/2026), pelo resumo que a verificação já escreve.
+        message = triage.summary
+    else:
+        message = handoff_message(conversation)
     if not synced:
-        message += "\nA marca de atendimento humano não foi confirmada no ManyChat em todos os vínculos."
+        message = "\n".join(
+            line for line in (message, "O ManyChat não confirmou que a conversa passou para a equipe.") if line
+        )
+    _conversation_card(
+        conversation,
+        alert_type,
+        message,
+        intent=triage.intent,
+        urgency=triage.urgency,
+        destination=triage.destination,
+    )
+
+
+def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
+    _conversation_card(conversation, alert_type, message)
+
+
+#: ``Conversation.flags["alerts"]`` = ``{tipo: pk}``: o cartão aberto de cada tipo da conversa.
+ALERTS_FLAG = "alerts"
+#: Os cartões que pedem gente agora: cor de erro e no topo do Gestor (``AlertSpec.on_screen``).
+_URGENT_CARDS = frozenset({"concierge_handoff"})
+
+
+def _conversation_card(conversation: Conversation, alert_type: str, message: str, **fields) -> None:
+    """UM cartão aberto por conversa e tipo, e todo acontecimento novo o traz de volta.
+
+    Medido em 19/11/2026 às 22h16Z: o handoff abriu e NENHUM aviso nasceu. O cartão de
+    antes da mesma conversa ainda estava aberto (já visto), e o debounce por texto calou o
+    novo. Agora o cartão aberto é reaberto (mensagem nova, sem o Visto, de novo na tela);
+    fechado ou inexistente, nasce outro. O ``pk`` fica na conversa, e o botão "Abrir
+    conversa" sai da projeção do sino por ele (sem caminho escrito na mensagem).
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    severity = "error" if alert_type in _URGENT_CARDS else "warning"
     try:
+        known = ((conversation.flags or {}).get(ALERTS_FLAG) or {}).get(alert_type)
+        if known and alert_adapter.revise(int(known), message=message, severity=severity, reopen=True):
+            return
         from shopman.shop.services.observability import create_operator_alert
 
-        create_operator_alert(
+        alert = create_operator_alert(
             type=alert_type,
-            severity="warning",
+            severity=severity,
             message=message,
-            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
+            stamp_dedupe=False,
             order_ref=conversation.last_order_ref,
             conversation_id=conversation.pk,
             owner_role="atendimento",
             action="inspect_conversation",
-            intent=triage.intent,
-            urgency=triage.urgency,
-            destination=triage.destination,
+            **fields,
         )
+        if alert is None:
+            return
+        with transaction.atomic():
+            locked = Conversation.objects.select_for_update().get(pk=conversation.pk)
+            flags = dict(locked.flags or {})
+            flags[ALERTS_FLAG] = {**(flags.get(ALERTS_FLAG) or {}), alert_type: alert.pk}
+            Conversation.objects.filter(pk=conversation.pk).update(flags=flags)
+            conversation.flags = flags
     except Exception:
         logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
 
 
-def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
+def _close_card(conversation: Conversation, alert_type: str, *, actor: str) -> None:
+    """A causa do cartão acabou (a conversa voltou à Concierge): ele sai do sino e do topo."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    known = ((conversation.flags or {}).get(ALERTS_FLAG) or {}).get(alert_type)
+    if not known:
+        return
     try:
-        from shopman.shop.services.observability import create_operator_alert
-
-        create_operator_alert(
-            type=alert_type,
-            severity="warning",
-            message=f"{message} Conversa #{conversation.pk}: /admin/shop/conversation/{conversation.pk}/change/; responsável: atendimento; consultar transcrição e próximo efeito autorizado.",
-            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
-            order_ref=conversation.last_order_ref,
-            conversation_id=conversation.pk, owner_role="atendimento", action="inspect_conversation",
-
-        )
+        alert_adapter.resolve_pk(int(known), actor=actor)
     except Exception:
-        logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
+        logger.warning("concierge.alert_close_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
 
 
 def recover_pending(*, limit=100):

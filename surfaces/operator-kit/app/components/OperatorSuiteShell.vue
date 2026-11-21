@@ -386,7 +386,8 @@ function menuDotSize(size: string): ChipProps["size"] {
               v-if="!isCollapsed && signalOf(item)"
               :count="signalOf(item)!.count"
               :color="signalOf(item)!.color"
-              :dot="signalOf(item)!.count === undefined"
+              :unknown="signalOf(item)!.unknown"
+              :dot="signalOf(item)!.count === undefined && !signalOf(item)!.unknown"
               :dot-size="menuDotSize(ui.linkLeadingChipSize())"
             />
           </template>

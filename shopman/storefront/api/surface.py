@@ -175,10 +175,10 @@ def _date_mismatch_payload(exc, *, product=None) -> dict:
     }
 
 
-def _stock_error_payload(exc, *, product=None, request=None) -> dict:
+def _stock_error_payload(exc, *, product=None, request=None, name: str = "") -> dict:
     if isinstance(exc, CartDateMismatchError):
         return _date_mismatch_payload(exc, product=product)
-    item_name = getattr(product, "name", None) or getattr(exc, "sku", "")
+    item_name = name or getattr(product, "name", None) or getattr(exc, "sku", "")
     reason = _stock_reason(exc)
     actions = [
         action_payload(
@@ -246,6 +246,9 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         "requested_qty": exc.requested_qty,
         "available_qty": exc.available_qty,
         "line_qty": line_qty,
+        # A linha que já passou do teto (recusa do envio do pedido): o teto a
+        # encolhe. Sem ela, a folha mira a mutação que acabou de ser recusada.
+        "line_id": getattr(exc, "line_id", None),
         "is_paused": exc.is_paused,
         "is_planned": exc.is_planned,
         "is_notifiable": is_notifiable,
@@ -273,8 +276,8 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         ),
         "substitutes_intro": (
             resolve_copy("KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO", moment="*", audience="*").message
-            or "Que tal um destes no lugar?"
-        ),
+            or "Que tal um destes no lugar de {name}?"
+        ).replace("{name}", item_name),
         "substitutes": exc.substitutes,
         "actions": actions,
         "items": [

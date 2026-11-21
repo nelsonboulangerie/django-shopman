@@ -21,9 +21,6 @@ import { capture, cast, roleContext, settled } from "./support/stack";
 const CUSTOMER = "Ana Ferreira";
 
 test("J7: achar o pedido de ontem pelo nome, ampliando o período", async ({ browser, baseURL }, testInfo) => {
-  // Falha esperada: a busca do Histórico não acha pelo nome a venda de cliente cadastrado
-  // identificado pelo telefone (#2878). Quando o conserto entrar, a marca sai.
-  test.fail(true, "#2878: o Histórico não acha pelo nome a venda de cliente identificado pelo telefone");
   const gestorContext = await roleContext(browser, baseURL!);
   const gestor = await gestorContext.newPage();
   await acknowledgeOtherOrdersAlarms(gestor);
@@ -40,11 +37,21 @@ test("J7: achar o pedido de ontem pelo nome, ampliando o período", async ({ bro
   await gestor.getByRole("button", { name: "Buscar pedido no histórico" }).click();
   await gestor.getByRole("textbox", { name: "Pedido, nome ou telefone" }).pressSequentially(CUSTOMER);
   await gestor.getByRole("option", { name: `Filtrar o histórico por “${CUSTOMER}”` }).click();
-  await expect(gestor.getByText(`Nenhum pedido com “${CUSTOMER}” hoje`).first()).toBeVisible({ timeout: 60_000 });
-  await capture(gestor, testInfo, "historico-hoje-vazio");
-
-  // Um toque amplia o período, e o pedido de ontem aparece com o nome dela.
-  await gestor.getByRole("button", { name: "Buscar nos últimos 28 dias" }).click();
+  // Hoje, ou não há nada dela ("Nenhum pedido com … hoje", com a oferta de ampliar), ou
+  // a lista já a acha pelo nome, nos pedidos de hoje. Nos dois casos, o de ontem vem
+  // dos últimos 28 dias: pela oferta, ou pelo período nos Filtros.
+  const empty = gestor.getByText(`Nenhum pedido com “${CUSTOMER}” hoje`).first();
+  const today = gestor.getByRole("row").filter({ hasText: /hoje às/ }).filter({ hasText: CUSTOMER }).first();
+  await expect(empty.or(today)).toBeVisible({ timeout: 60_000 });
+  if (await empty.isVisible()) {
+    await capture(gestor, testInfo, "historico-hoje-vazio");
+    await gestor.getByRole("button", { name: "Buscar nos últimos 28 dias" }).click();
+  } else {
+    await capture(gestor, testInfo, "historico-hoje-pelo-nome");
+    await gestor.getByRole("button", { name: "Filtros" }).click();
+    await gestor.getByText("Últimos 28 dias", { exact: true }).filter({ visible: true }).first().click();
+    await gestor.keyboard.press("Escape");
+  }
   const yesterday = gestor.getByRole("row").filter({ hasText: /ontem às/ }).filter({ hasText: CUSTOMER }).first();
   await expect(yesterday).toBeVisible({ timeout: 60_000 });
   await capture(gestor, testInfo, "historico-28-dias");
