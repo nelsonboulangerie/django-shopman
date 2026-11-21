@@ -401,10 +401,15 @@ def _agreed(ref: str, *, status, at: datetime, fulfillment="pickup") -> Order:
 
 
 def test_hora_combinada_mede_o_inicio_contra_o_combinado(operator):
-    """Aceita às 10h para as 18h: iniciar não está atrasado aos 5 min do aceite."""
+    """Aceito há 20 min para daqui a 30: iniciar mede contra o combinado, não contra o aceite.
+
+    O combinado fica perto o bastante para o pedido já estar no quadro: com mais
+    folga que preparo + antecedência, o pedido de hoje com hora combinada espera a
+    hora da Cozinha na lista "Encomendas" e não pede início (#2548).
+    """
     from shopman.shop.services.fulfillment_window import promised_at
 
-    order = _agreed("ATT-HC-START", status=Order.Status.ACCEPTED, at=timezone.now() + timedelta(hours=3))
+    order = _agreed("ATT-HC-START", status=Order.Status.ACCEPTED, at=timezone.now() + timedelta(minutes=30))
     Order.objects.filter(pk=order.pk).update(accepted_at=timezone.now() - timedelta(minutes=20))
     order.refresh_from_db()
     _, cards = _cards(operator)
