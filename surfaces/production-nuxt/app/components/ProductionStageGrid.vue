@@ -886,10 +886,14 @@ const docked = computed(
   () => gridMounted.value && touchPointer.value && !screen.belowLg.value,
 );
 // Com o painel encaixado a lista estreita: colunas de número compactas (v3 tablet).
+// Sem ele, as colunas de número e a da ação têm a largura do que mostram ("A confirmar",
+// o número, "Confirmar" e o ⋯): fixas, para alinhar de uma linha para a outra, e justas,
+// para o nome do produto caber a 1024 px (#2959: com 236 px na ação, sobravam 76 px
+// para o produto, e o nome quebrava no meio da palavra).
 const openCols = computed(() =>
   docked.value
     ? "lg:grid-cols-[minmax(0,1fr)_118px_60px_72px_auto] lg:gap-x-3"
-    : "lg:grid-cols-[minmax(0,1fr)_140px_110px_110px_236px]",
+    : "lg:grid-cols-[minmax(0,1fr)_120px_96px_96px_156px]",
 );
 const startPadFresh = ref(true);
 function startDigit(digit: string) {
@@ -1505,7 +1509,7 @@ const startedDescription = computed(() => {
           <div
             v-for="row in planGroups.focus"
             :key="row.output_sku"
-            class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3 last:border-b-0 lg:grid lg:h-[62px] lg:grid-cols-[minmax(0,1fr)_250px_168px_176px] lg:py-0"
+            class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3 last:border-b-0 lg:grid lg:min-h-[62px] lg:grid-cols-[minmax(0,1fr)_250px_168px_176px] lg:py-2"
             :class="
               reasonSku === row.output_sku
                 ? 'bg-primary/5 shadow-[inset_0_0_0_2px_var(--primary)]'
@@ -1522,7 +1526,7 @@ const startedDescription = computed(() => {
               <!-- O nome é o que o padeiro lê: quebra em 2 linhas antes de
                    cortar (beta 05/11: "Kuro Pan…" e "Kuro Pan Burger" iguais). -->
               <p
-                class="min-w-0 line-clamp-2 break-words op-title"
+                class="min-w-0 line-clamp-2 break-normal hyphens-none op-title"
                 :title="rowLabel(row)"
                 data-row-name
               >
@@ -1930,7 +1934,7 @@ const startedDescription = computed(() => {
             :data-open-row-context="row.output_sku"
           >
             <div
-              class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-2.5 last:border-b-0 lg:h-14 lg:py-0"
+              class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-2.5 last:border-b-0 lg:min-h-14 lg:py-2"
               :class="[
                 openCols,
                 openRowPending(row) ? '' : 'bg-success/5',
@@ -1942,15 +1946,17 @@ const startedDescription = computed(() => {
               :data-sku="row.output_sku"
             >
               <div class="min-w-0" data-row-product>
-                <!-- Nome em até 2 linhas, nunca "Croissa…" no tablet deitado. -->
+                <!-- Nome em até 2 linhas, nunca "Croissa…" no tablet deitado. Quebra por
+                     palavra, nunca no meio dela ("Coelhinh o", #2959); o que não couber
+                     nas 2 linhas termina em reticências. -->
                 <p
-                  class="line-clamp-2 break-words op-title"
+                  class="line-clamp-2 break-normal hyphens-none op-title"
                   :title="rowLabel(row)"
                   data-row-name
                 >
                   {{ rowLabel(row) }}
                 </p>
-                <p class="flex items-center gap-1.5 op-micro text-muted-foreground">
+                <p class="mt-0.5 flex items-center gap-1.5 op-micro text-muted-foreground">
                   <span class="truncate font-mono">{{ row.output_sku }}</span>
                   <!-- Celular e tablet em pé: sem a coluna Planejado, o número vem aqui. -->
                   <span
