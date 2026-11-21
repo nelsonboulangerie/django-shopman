@@ -1,0 +1,75 @@
+import { expect, test } from '@playwright/test'
+import { checkoutSigningInByCode, paysPixOnTracking } from './support/customer'
+import { capture, newCustomerPhone, settled } from './support/stack'
+
+// J2 · A encomenda da fornada de amanhã (docs/plans/EXCELENCIA-STOREFRONT-PLANO.md, seção 8;
+// WP-L02).
+//
+// Papel: a cliente nova que quer o pão que só sai amanhã. A página do produto diz o dia e a
+// hora antes de ela montar a sacola, o botão é "Encomendar para amanhã", a sacola e o
+// checkout já vêm no dia da fornada (ela não escolhe uma data em que o pão não existe), e o
+// pedido sai com Pix e chega ao acompanhamento com o mesmo dia.
+//
+// O que a jornada supõe do seed `--profile qa`: a Tabatière só tem fornada amanhã (a vitrine
+// do perfil), e a loja da pilha está aberta.
+const PRODUCT = 'Tabatière'
+const PROMISE_TOMORROW = /^Fica\s+pronto\s+amanhã,\s+[a-zçá]+,\s+a\s+partir\s+das\s+\d{1,2}h(\d{2})?$/ // a loja usa espaço inseparável
+
+test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', async ({ page }, testInfo) => {
+  test.setTimeout(300_000)
+  const customer = { phone: newCustomerPhone(), name: 'Helena' }
+
+  await test.step('o produto diz quando fica pronto, antes de ela montar a sacola', async () => {
+    await page.goto('/menu')
+    await settled(page)
+    await expect(page.getByText(/^(Aberto|Últimos pedidos)\b/).first(), 'a loja da pilha precisa estar aberta agora').toBeVisible()
+    await page.getByRole('link', { name: PRODUCT }).first().click()
+    await expect(page).toHaveURL(/\/produto\//)
+    await settled(page)
+    await expect(page.getByRole('heading', { name: PRODUCT, level: 1 })).toBeVisible()
+    await expect(page.getByText(PROMISE_TOMORROW).first()).toBeVisible()
+    await capture(page, testInfo, 'produto-amanha')
+  })
+
+  await test.step('"Encomendar para amanhã" põe na sacola, e a sacola diz o mesmo dia', async () => {
+    await page.getByRole('button', { name: 'Encomendar para amanhã', exact: true }).first().click()
+    await expect(page.getByRole('group', { name: `Quantidade de ${PRODUCT}` })).toContainText('1')
+    await page.getByRole('link', { name: 'Sacola, 1 item', exact: true }).first().click()
+    await expect(page.getByRole('heading', { name: 'Sua sacola' })).toBeVisible()
+    await expect(page.getByText(PROMISE_TOMORROW).first()).toBeVisible()
+    await capture(page, testInfo, 'sacola-amanha')
+  })
+
+  const day = await test.step('no checkout, o Quando já está no dia da fornada', async () => {
+    await checkoutSigningInByCode(page, testInfo, customer)
+    await page.getByRole('radio', { name: /^Retirada/ }).click()
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+    // O dia vem marcado: "Amanhã" (ou "Próxima fornada", se amanhã a casa não abre).
+    const chosen = page.getByRole('radio', { name: /^(Amanhã|Próxima fornada)/, checked: true })
+    await expect(chosen).toBeVisible()
+    // Hoje não serve: o pão só existe amanhã. Se a opção aparece, aparece desligada.
+    const today = page.getByRole('radio', { name: /^Hoje/ })
+    if (await today.count()) await expect(today.first()).toBeDisabled()
+    // Turno da casa; o que começa antes de o pão ficar pronto vem riscado, com o motivo.
+    await page.getByRole('radio', { name: /^A partir das \d{1,2}h(\d{2})?$/ }).first().click()
+    await capture(page, testInfo, 'quando-amanha')
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+    await page.getByRole('radio', { name: /^Pix/ }).click()
+    await page.getByRole('button', { name: 'Revisar pedido' }).click()
+    await expect(page.getByRole('heading', { name: 'Revise seu pedido' })).toBeVisible()
+    const pickup = page.getByText(/^Retirada\s*·\s*[a-zá]{3},\s*\d{2}\/\d{2}\s*·\s*A\s+partir\s+das\s+\d{1,2}h(\d{2})?$/).first()
+    await expect(pickup).toBeVisible()
+    await page.waitForTimeout(600) // a folha da revisão termina de subir antes da captura
+    await capture(page, testInfo, 'revisao-amanha')
+    return (await pickup.textContent())!.match(/\d{2}\/\d{2}/)![0]
+  })
+
+  await test.step('envia, paga o Pix, e o acompanhamento diz o mesmo dia', async () => {
+    await page.getByRole('button', { name: 'Enviar pedido' }).click()
+    await expect(page).toHaveURL(/\/pedido\/[^/]+$/, { timeout: 60_000 })
+    await settled(page)
+    await paysPixOnTracking(page, testInfo)
+    await expect(page.locator('main'), `o acompanhamento deveria dizer o dia da fornada (${day})`).toContainText(day)
+    await capture(page, testInfo, 'acompanhamento-amanha')
+  })
+})
