@@ -38,12 +38,17 @@ def own_service() -> DeliveryService | None:
         "sort_order", "pk").first()
 
 
-def _holds_live_ride(person: Courier) -> bool:
-    """Está com uma rota da casa que o balcão ainda não fechou (a mesma régua do ``close_if_settled``)."""
+def _live_ride(person: Courier) -> list[Order] | None:
+    """Os pedidos da rota da casa que o balcão ainda não fechou (a régua do ``close_if_settled``).
+
+    None quando a pessoa não está com rota nenhuma.
+    """
     from shopman.shop.services import courier
 
     for link in person.links.filter(revoked_at__isnull=True, expires_at__isnull=True):
         by_ref = {order.ref: order for order in Order.objects.filter(ref__in=link.order_refs or [])}
+        live = []
+        holds = False
         for ref in link.order_refs or []:
             order = by_ref.get(ref)
             if order is None or order.status == Order.Status.CANCELLED:
@@ -51,11 +56,58 @@ def _holds_live_ride(person: Courier) -> bool:
             block = courier.get_block(order)
             if block.get("id_mch") != link.ride_ref:
                 continue
+            live.append(order)
             dispatch = (order.data or {}).get("dispatch") or {}
             needs_back = bool(dispatch.get("custody_at")) and not dispatch.get("courier_back_at")
-            if block.get("status") != "F" or needs_back:
-                return True
-    return False
+            holds = holds or block.get("status") != "F" or needs_back
+        if holds:
+            return live
+    return None
+
+
+#: Minutos por parada (entregar, cobrar) somados ao percurso para estimar a volta.
+STOP_MINUTES = 3
+
+
+def back_at(orders: list[Order]):
+    """Quando a pessoa deve voltar à loja: a saída mais o percurso de ida e volta pela cidade.
+
+    None antes de sair, ou sem coordenada (a tela diz só "Na rua").
+    """
+    from datetime import timedelta
+
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.adapters import courier_own_fleet
+    from shopman.shop.models import Shop
+    from shopman.shop.services import courier
+    from shopman.shop.services.dispatch_handoff import build_dispatch_payload
+
+    departed = [parse_datetime(str((courier.get_block(order).get("status_at") or {}).get("E") or ""))
+                for order in orders]
+    departed = [moment for moment in departed if moment is not None]
+    shop = Shop.objects.first()
+    if not departed or shop is None or shop.latitude is None or shop.longitude is None:
+        return None
+    places = []
+    for order in orders:
+        handoff = build_dispatch_payload(order)
+        places.append({"lat": handoff.get("latitude"), "lng": handoff.get("longitude")})
+    km = courier_own_fleet.route_km(pickup={"lat": shop.latitude, "lng": shop.longitude}, dropoff=places[-1],
+                                    stops=places[:-1], with_return=True)
+    if km is None:
+        return None
+    minutes = km / courier_own_fleet.CITY_SPEED_KMH * 60 + STOP_MINUTES * len(orders)
+    return min(departed) + timedelta(minutes=minutes)
+
+
+def busy_label(back) -> str:
+    """ "Volta 12h50" com a hora estimada; "Na rua" sem ela; "Voltando" quando a hora passou."""
+    if back is None:
+        return STATE_LABELS[BUSY]
+    if back <= timezone.now():
+        return "Voltando"
+    return f"Volta {timezone.localtime(back).strftime('%Hh%M')}"
 
 
 def _money(value_q: int | None) -> str:
@@ -70,7 +122,8 @@ def crew(refs: list[str] | None = None) -> dict:
     ``active``: o serviço da casa está ativo (sem ele, nem a linha "Entregadores de hoje"
     nem o "Quem leva" aparecem). ``default``: o serviço padrão do Admin, o que vem marcado.
     ``couriers``: todos os ativos, com ``on_shift`` (na escala de hoje), ``state``
-    (``free``/``busy``) e ``state_label`` ("Livre"/"Na rua"); com ``refs`` (na ordem da
+    (``free``/``busy``) e ``state_label`` ("Livre", "Volta 12h50" com a hora estimada da volta em
+    ``back_at``, "Na rua" antes de sair); com ``refs`` (na ordem da
     rota), o valor da tabela de cada um na escala (``value_q``/``value``), ``None`` sem
     coordenada ou sem linha na tabela.
     """
@@ -93,14 +146,18 @@ def crew(refs: list[str] | None = None) -> dict:
     today = timezone.localdate()
     for person in service.couriers.filter(is_active=True).order_by("name"):
         on_shift = person.is_on_shift(today)
-        state = BUSY if on_shift and _holds_live_ride(person) else FREE
+        live = _live_ride(person) if on_shift else None
+        state = BUSY if live is not None else FREE
+        back = back_at(live) if live else None
         value_q = None
         if on_shift and orders:
             estimate = own_fleet._estimate(orders, person)
             value_q = estimate.value_q if estimate is not None else None
         body["couriers"].append({
             "ref": person.ref, "name": person.name, "on_shift": on_shift, "state": state,
-            "state_label": STATE_LABELS[state], "value_q": value_q, "value": _money(value_q),
+            "state_label": busy_label(back) if state == BUSY else STATE_LABELS[FREE],
+            "back_at": back.isoformat() if back else None,
+            "value_q": value_q, "value": _money(value_q),
         })
     return body
 
@@ -150,7 +207,8 @@ def link_url(link: CourierLink) -> str:
 
 def send_ride(orders: list[Order], courier_ref: str, *, actor: str, operator=None,
               change_out_raw: dict | None = None, machine: str = "",
-              expected_revisions: dict[str, str] | None = None, ride_number: int | None = None) -> SentRide:
+              expected_revisions: dict[str, str] | None = None, ride_number: int | None = None,
+              note: str = "") -> SentRide:
     """Envia a corrida a um entregador da casa, com a custódia, e prepara o WhatsApp.
 
     A mesma porta da corrida da TaOn (``orders.courier_group_dispatch``): o troco de cada
@@ -202,6 +260,7 @@ def send_ride(orders: list[Order], courier_ref: str, *, actor: str, operator=Non
             assignment = own_fleet.assign(
                 orders, person, actor=actor, change_out=change_out_q, cash_shift=shift,
                 equipment=[machine] if machine and needs_machine else None, ride_number=ride_number,
+                note=note,
             )
     except courier.RideRevisionChanged as exc:
         raise OrderRideRevisionChanged(str(exc), refs=exc.refs) from exc

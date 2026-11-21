@@ -46,6 +46,10 @@ PROBLEMS = {
 PAYMENT_METHODS = {"card": "No cartão, na maquininha", "pix": "No Pix, na maquininha", "cash": "Em dinheiro"}
 
 
+#: O tamanho da observação da casa para o entregador.
+NOTE_MAX = 200
+
+
 class OwnFleetRefused(ValueError):
     """A ação não pode acontecer agora; a mensagem é a que a tela mostra."""
 
@@ -64,14 +68,16 @@ def _order_label(order) -> str:
 
 @transaction.atomic
 def assign(orders: list[Order], courier_person: Courier, *, actor: str, change_out: dict[str, int] | None = None,
-           cash_shift=None, equipment: list[str] | None = None, ride_number: int | None = None) -> Assignment:
+           cash_shift=None, equipment: list[str] | None = None, ride_number: int | None = None,
+           note: str = "") -> Assignment:
     """Designa a rota a um entregador da casa e emite o link dele.
 
     ``orders`` já vem na ordem da rota. Cada pedido grava o bloco ``courier`` da corrida da
     casa (``service`` = o serviço dos entregadores da casa, letra interna ``A``) e a
     custódia de troco e maquininha. A saída é a do primeiro pedido (``trip_ref``), e a
     maquininha é uma só para a rota. ``ride_number`` é o número (letra e cor) que a tela
-    mostrava; vale se ainda estiver livre.
+    mostrava; vale se ainda estiver livre. ``note`` é a observação da casa para o entregador
+    (a página do link mostra), até ``NOTE_MAX`` caracteres.
     """
     from shopman.shop.services import operator_orders
 
@@ -124,6 +130,10 @@ def assign(orders: list[Order], courier_person: Courier, *, actor: str, change_o
         )
         if len(refs) > 1:
             block["ride_orders"] = refs
+        if note.strip():
+            block["note"] = note.strip()[:NOTE_MAX]
+        else:
+            block.pop("note", None)
         if estimate is not None:
             block["estimate"] = {"value_q": estimate.value_q, "minutes": estimate.minutes, "km": estimate.km,
                                  "with_return": False}
@@ -310,6 +320,8 @@ def ride_view(link: CourierLink) -> dict:
     label = f"Rota {courier.ride_letter(number)}" if many and number else (
         f"Pedido {_order_label(orders[0])}" if orders else "")
     base.update(label=label, letter=courier.ride_letter(number) if (many and number) else "", value_q=value_q)
+    if first.get("note"):
+        base["note"] = str(first["note"])
     if link.expires_at is not None:
         return {**base, "moment": "closed", "today_q": _today_q(link.courier)}
     live = [(o, b) for o, b in zip(orders, blocks, strict=False) if _live(o, link)]

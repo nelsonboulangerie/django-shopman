@@ -1386,7 +1386,7 @@ export interface RidePlanProjection {
   service_options: DeliveryServiceOptionProjection[];
 }
 
-/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None, ride_plan: 'RidePlanProjection | None' = None) */
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, house_on: 'bool' = False, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None, ride_plan: 'RidePlanProjection | None' = None) */
 export interface DeliveriesProjection {
   origin: DeliveryPointProjection | null;
   waiting: DeliveryStopProjection[];
@@ -1394,6 +1394,7 @@ export interface DeliveriesProjection {
   max_stops: number;
   machines: Record<string, unknown>[];
   courier_on: boolean;
+  house_on: boolean;
   maps_key: string;
   group_action: Action | null;
   free_numbers: number[];
