@@ -531,7 +531,7 @@ class Shop(models.Model):
         help_text=(
             'Por propósito, a conexão de IA e o modelo. Propósito sem rota usa a rota "default"; '
             "sem ela, a única conexão ativa do formato. Propósitos: concierge, triage, intents, "
-            "labeling, copy, marketing, recipe, scenarios, benchmark, decision.\n\n"
+            "labeling, copy, marketing, recipe, scenarios, benchmark, decision, incident, incident_review.\n\n"
             "Exemplo:\n"
             "{\n"
             '  "default": {"connection": "anthropic"},\n'

@@ -30,6 +30,8 @@ formato. Com uma conexão só, tudo funciona sem rota nenhuma.
 | `scenarios` | cenários do B.I. | não |
 | `benchmark` | placar do de-para do B.I. | não |
 | `decision` | Jev (TypeSafe), formato próprio | conforme o uso |
+| `incident` | Incidentes: primeira leitura, modelo barato e tipado (Jev sem rota própria; aceita qualquer formato) | não |
+| `incident_review` | Incidentes: segunda opinião, modelo mais capaz (a rota padrão sem rota própria; aceita qualquer formato) | não |
 
 Propósito que leva mensagem de cliente só usa conexão marcada como **pode receber
 mensagem de cliente**. Credencial presente não basta: é a regra do Marketing, por

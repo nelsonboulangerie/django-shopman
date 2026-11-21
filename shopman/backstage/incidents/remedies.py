@@ -19,7 +19,7 @@ reseed, configuração de produção, infraestrutura.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from django.utils import timezone
@@ -61,6 +61,10 @@ class Remedy:
     check: Callable[..., Verdict]
     apply: Callable[..., str]
     confirm: Callable[..., bool | None]
+    #: Quando a regra diz ``judge``: as duas opções que o classificador pode escolher.
+    judge_criteria: dict[str, str] = field(default_factory=dict)
+    judge_act_reason: str = ""
+    judge_people_reason: str = ""
 
 
 def _order(ref: str):
@@ -205,6 +209,20 @@ REMEDIES: tuple[Remedy, ...] = (
         check=check_fiscal,
         apply=apply_fiscal,
         confirm=confirm_fiscal,
+        judge_criteria={
+            "act": (
+                "Indisponibilidade passageira dita como recusa: SEFAZ ou emissor fora do ar, serviço "
+                "paralisado, tempo esgotado, consumo indevido, lote em processamento. Reprocessar a "
+                "mesma nota resolve."
+            ),
+            "people": (
+                "Problema de cadastro ou de regra fiscal: NCM, CFOP, CST, GTIN, CPF ou CNPJ inválido, "
+                "certificado, valor ou totais que não fecham, duplicidade. Reprocessar sem mudar nada "
+                "falha de novo."
+            ),
+        },
+        judge_act_reason="o emissor recusou por indisponibilidade passageira",
+        judge_people_reason="a recusa do emissor é de cadastro ou regra fiscal: pede o cadastro ou o contador",
     ),
     Remedy(
         key="ifood_accept_retry",

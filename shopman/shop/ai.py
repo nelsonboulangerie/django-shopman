@@ -37,7 +37,16 @@ PURPOSES = {
     "scenarios": "Cenários do B.I.",
     "benchmark": "Placar do de-para do B.I.",
     "decision": "Modelo de decisão (Jev) da triagem e dos placares",
+    "incident": "Incidentes: primeira leitura, modelo barato e tipado (Jev por padrão)",
+    "incident_review": "Incidentes: segunda opinião, modelo mais capaz (a rota padrão)",
 }
+
+#: Propósitos cujo formato é o da conexão escolhida na rota: Jev ou Anthropic (DeepSeek,
+#: Kimi, GLM…). Sem rota própria, ``incident`` usa a única conexão Jev ativa e
+#: ``incident_review`` a rota padrão. Nunca levam mensagem de cliente.
+ANY_PROTOCOL_PURPOSES = frozenset({"incident", "incident_review"})
+#: Propósitos que, sem rota própria, ficam no Jev (a rota padrão é Anthropic).
+JEV_DEFAULT_PURPOSES = frozenset({"decision", "incident"})
 
 #: Propósitos que mandam texto de cliente ao provedor.
 CUSTOMER_TEXT_PURPOSES = frozenset({"concierge", "triage", "intents", "labeling"})
@@ -73,7 +82,7 @@ class Resolved:
 def _protocol_for(purpose: str) -> str:
     from shopman.shop.models import AIProtocol
 
-    return AIProtocol.JEV if purpose == "decision" else AIProtocol.ANTHROPIC
+    return AIProtocol.JEV if purpose in JEV_DEFAULT_PURPOSES else AIProtocol.ANTHROPIC
 
 
 def _routes() -> dict:
@@ -90,7 +99,7 @@ def _route(purpose: str) -> dict:
         route = routes.get(key)
         if isinstance(route, dict) and route.get("connection"):
             # A rota default não serve ao Jev: formato diferente.
-            if key == "default" and purpose == "decision":
+            if key == "default" and purpose in JEV_DEFAULT_PURPOSES:
                 continue
             return route
     return {}
@@ -114,6 +123,9 @@ def resolve(purpose: str) -> Resolved:
     protocol = _protocol_for(purpose)
     route = _route(purpose)
     active = AIConnection.objects.filter(is_active=True, protocol=protocol)
+    if route and purpose in ANY_PROTOCOL_PURPOSES:
+        # A rota escolhe a conexão, e o formato é o dela.
+        active = AIConnection.objects.filter(is_active=True)
     if route:
         connection = active.filter(ref=route["connection"]).first()
         if connection is None:

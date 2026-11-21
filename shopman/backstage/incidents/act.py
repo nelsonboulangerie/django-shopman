@@ -198,9 +198,11 @@ class IncidentActHandler:
 
 
 def _judge():
-    """O classificador (W3), quando houver. Sem ele, ``judge`` fica com gente."""
+    """O classificador em cascata (``judge.py``): Jev, depois o modelo mais capaz, depois gente."""
 
-    return None
+    from shopman.backstage.incidents.judge import judge
+
+    return judge
 
 
 def sweep(*, now=None) -> dict:

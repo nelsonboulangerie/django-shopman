@@ -275,7 +275,11 @@ def remedy_line(remedy: dict) -> str:
     parts = [f"{by_outcome[key]} {word}" for key, word in REMEDY_WORDS if by_outcome.get(key)]
     if not parts:
         return ""
-    return f"- Remédio do domínio ({remedy.get('label') or 'automático'}), 7 dias: {', '.join(parts)}"
+    line = f"- Remédio do domínio ({remedy.get('label') or 'automático'}), 7 dias: {', '.join(parts)}"
+    if remedy.get("ai_readings"):
+        cost = f"{remedy.get('ai_cost_usd') or 0:.5f}".replace(".", ",")
+        line += f"; {remedy['ai_readings']} leitura(s) de IA, US$ {cost}"
+    return line
 
 
 def _strip_conferido(text: str) -> str:

@@ -140,7 +140,7 @@ def summarize(*, now: datetime | None = None, window_days: int = WINDOW_DAYS) ->
 def _remedy_scores(since) -> dict[str, dict]:
     """Por tipo de alerta, quantas vezes o remédio do domínio foi acionado e o que deu."""
 
-    from django.db.models import Count
+    from django.db.models import Count, Sum
 
     from shopman.backstage.incidents.remedies import BY_ALERT_TYPE
     from shopman.backstage.models import IncidentAction
@@ -155,4 +155,13 @@ def _remedy_scores(since) -> dict[str, dict]:
         remedy = BY_ALERT_TYPE.get(row["alert_type"])
         entry = scores.setdefault(row["alert_type"], {"label": remedy.label if remedy else "", "by_outcome": {}})
         entry["by_outcome"][row["outcome"]] = row["total"]
+    readings = (
+        IncidentAction.objects.filter(created_at__gte=since, decided_by__startswith="ia:")
+        .values("alert_type")
+        .annotate(total=Count("pk"), cost=Sum("cost_usd"))
+    )
+    for row in readings:
+        entry = scores.setdefault(row["alert_type"], {"label": "", "by_outcome": {}})
+        entry["ai_readings"] = row["total"]
+        entry["ai_cost_usd"] = float(row["cost"] or 0)
     return scores

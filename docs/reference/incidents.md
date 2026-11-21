@@ -145,3 +145,26 @@ motivo, sem dado de cliente. O resumo da ponte leva o placar por tipo, e a issue
 `Shop.incident_remedies_mode` (Admin, Loja, Remédios automáticos de incidente):
 `on` aciona e confere (padrão, aprovado pelo dono em 21/11), `shadow` só registra o que
 faria, `off` não faz nada.
+
+## O classificador em cascata (W3)
+
+`shopman/backstage/incidents/judge.py`. Entra só quando a regra do remédio diz `judge`:
+por exemplo, o emissor recusou a NFC-e, e a resposta pode ser cadastro (pede gente) ou
+a SEFAZ fora do ar dita como recusa (reprocessar resolve).
+
+- **A pergunta é fechada:** para ESTE remédio, `act` ou `people`. O modelo nunca
+  escreve comando nem escolhe outro remédio; uma resposta fora das opções é descartada.
+- **A cascata é configurável** em Admin → Loja → rotas de IA, com qualquer conexão
+  (Jev, DeepSeek ou outra no formato Anthropic):
+  1. `incident`: o modelo barato e tipado. Sem rota própria, a única conexão Jev ativa
+     (saída `choice` com probabilidade, cerca de US$ 0,00003 por leitura).
+  2. `incident_review`: a segunda opinião, mais capaz. Sem rota própria, a rota padrão.
+     Só roda quando a primeira ficou abaixo de 0,8.
+  3. Gente: as duas abaixo de 0,8, ou nenhum modelo configurado. A leitura fica no
+     placar e o caso, com o dono da issue.
+- **Freio:** cada degrau passa pelo `ai_governor`, com teto próprio por dia
+  (`incident` US$ 0,10, `incident_review` US$ 0,50) e vira `AiInvocation`.
+- **Placar:** `decided_by` (`regra` ou `ia:<propósito>:<conexão>/<modelo>`), confiança e
+  custo de cada decisão. A issue mostra "2 leitura(s) de IA, US$ 0,00006".
+- **Privacidade:** vai ao provedor o tipo do alerta e a evidência com números longos e
+  e-mails mascarados. Nunca a mensagem do alerta.
