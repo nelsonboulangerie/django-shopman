@@ -44,6 +44,16 @@ MANYCHAT_INSTAGRAM = IncumbentProfile(
     "ManyChat AI no Instagram", reads_live_data=False, acts_on_commerce=False, free_text_in_channel=True
 )
 INCUMBENTS = (MANYCHAT_WHATSAPP, MANYCHAT_INSTAGRAM)
+#: A premissa de cada perfil, dita no placar (dono, 21/11/2026: "Não está ativado, como mediu?"):
+#: é ESTIMATIVA pela documentação pública e pelo que a conta mostra com o add-on desligado,
+#: nunca medição. Medir pede o add-on ligado e as mesmas falas rodando nele.
+INCUMBENT_PREMISES = {
+    MANYCHAT_WHATSAPP.name: "no WhatsApp a IA só reconhece intenção (Intention Recognition) e preenche "
+    "campo (AI Step), sem resposta livre; não lê estoque, preço do dia nem pedido",
+    MANYCHAT_INSTAGRAM.name: "no Instagram responde texto livre pela base de conhecimento (AI Replies, beta); "
+    "não lê estoque, preço do dia nem pedido, e não mexe na sacola",
+}
+ESTIMATED = "estimado pela documentação, não medido"
 
 REACH_LABELS = {
     "reaches": "alcançaria",
@@ -253,9 +263,10 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
     lines.append(f"  pronto (0 sem lastro, 0 silêncio, útil >= 90%): {'sim' if card.meets() else 'não'}")
     for name, reach in card.incumbents.items():
         ok = reach.get("reaches", 0)
-        lines.append(f"  {name} alcançaria {ok}/{scored} ({_pct(ok, scored)}): " + "; ".join(
+        lines.append(f"  {name} ({ESTIMATED}) alcançaria {ok}/{scored} ({_pct(ok, scored)}): " + "; ".join(
             f"{REACH_LABELS[k]} {v}" for k, v in sorted(reach.items(), key=lambda kv: -kv[1]) if k != "reaches"
         ))
+        lines.append(f"      premissa: {INCUMBENT_PREMISES.get(name, 'capacidade declarada pelo fornecedor')}")
     bad = [t for t in turns if outcome_of(t.evidence) not in (None, "useful") or t.evidence.repeated]
     if bad and show:
         lines.append("")
@@ -267,7 +278,7 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             lines.append(f"  [{t.evidence.turn_id}] {mark} · {t.evidence.topic or '?'}")
             lines.append(f"      cliente: {_redacted(t.customer)[:160]}")
             lines.append(f"      casa:    {_redacted(t.reply).replace(chr(10), ' / ')[:240] or '(nada)'}")
-            lines.append(f"      ManyChat AI faria: {REACH_LABELS[reach]}")
+            lines.append(f"      ManyChat AI no WhatsApp ({ESTIMATED}): {REACH_LABELS[reach]}")
     return "\n".join(lines)
 
 

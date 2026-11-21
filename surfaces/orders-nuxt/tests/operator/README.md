@@ -39,7 +39,15 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    export SHOPMAN_STOREFRONT_BASE_URL=http://127.0.0.1:3180 SHOPMAN_KDS_BASE_URL=http://127.0.0.1:3183 SHOPMAN_ORDERS_BASE_URL=http://127.0.0.1:3184
    export CSRF_TRUSTED_ORIGINS=http://127.0.0.1:3180,http://127.0.0.1:3183,http://127.0.0.1:3184
    unset REDIS_URL
+   # Relógio de teste e nota simulada (#2585): a suíte escreve nesta pasta.
+   export TEST_STACK_CONTROL_DIR=/tmp/operador-controle
+   export SHOPMAN_FISCAL_ADAPTER=shopman.shop.adapters.fiscal_simulated.SimulatedFiscalBackend
    ```
+
+   O relógio é o arquivo `clock` da pasta (um instante ISO 8601 com fuso; sem ele, a hora
+   real) e vale para o runserver e o worker ao mesmo tempo, sem reiniciar. A nota
+   simulada autoriza sempre, a não ser que `fiscal.json` peça a recusa da próxima. Regra
+   e limites em `docs/reference/settings.md`, seção "Pilha de teste local".
 
    Numa worktree, o `PYTHONPATH` precisa da worktree e de cada `packages/*` (o `.venv` da
    raiz aponta para a árvore principal). Se o Postgres local quebrar com
@@ -113,5 +121,8 @@ um dispositivo novo (contexto de navegador limpo).
   mesmo contexto.
 - **Digitar antes da hidratação perde o texto.** Os helpers esperam a tela assentar antes
   de preencher o login.
-- **Sem relógio de teste nem adapter fiscal na pilha**: virada do dia, encomenda no dia e
-  estados de nota não se exercitam aqui (J4 vive em teste de projeção e componente).
+- **O relógio de teste vale só para o Django.** O "agora" do Nuxt (servidor da loja e do
+  Gestor) segue a hora real; o do navegador a jornada acerta com o `clock` do Playwright.
+  Quem lê `datetime.now()` direto no Django (Concierge, Watchman) também segue a hora real.
+- **A nota simulada não tem XML nem DANFE hospedados**: a DANFE na tela e a bobina pedem o
+  XML autorizado do provedor, e a pilha não inventa um.

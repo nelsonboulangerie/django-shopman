@@ -819,6 +819,33 @@
       ]
     },
     {
+      "path": "shopman/shop/adapters/fiscal_simulated.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DEFAULT_REJECTION",
+            "REJECTION_CODE",
+            "SERIES",
+            "SimulatedFiscalBackend",
+            "UF_PR",
+            "_digits",
+            "_mod11",
+            "_shop_document",
+            "access_key"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/adapters/inventory.py",
       "touchpoints": [
         "adapter"
@@ -2846,6 +2873,7 @@
             "check_provider_environments_declared",
             "check_secret_key",
             "check_shared_cache_backend",
+            "check_simulated_fiscal_adapter",
             "check_sku_namespace_coherence",
             "check_staging_autopilot",
             "check_vapid_configuration",
@@ -7011,12 +7039,15 @@
             "ACCESS_BUTTON_COPY",
             "ACCESS_BUTTON_MAX_CHARS",
             "CUSTOMER_COPY",
+            "PROMISE_ITEMS_SITUATION",
             "PROMISE_ITEM_SITUATION",
             "PROMISE_PROPOSAL_COPY",
             "PROMISE_REFUND_ROUTE",
             "PROMISE_REMOVED",
             "_GENERIC_TEMPLATE_LABELS",
+            "_grouped_entries",
             "_gsm_ascii",
+            "_listed",
             "plain_bodies",
             "promise_proposal",
             "sms_bodies",

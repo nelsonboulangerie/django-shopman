@@ -98,7 +98,10 @@ def test_command_prints_the_scorecard_and_the_turns_to_fix(conversation, capsys)
     out = capsys.readouterr().out
     assert "útil (com lastro e próximo passo): 1/4" in out
     assert "silêncio (ninguém respondeu): 1/4" in out
-    assert "ManyChat AI no WhatsApp alcançaria 0/4" in out
+    # Estimativa pela documentação, nunca medição (dono, 21/11/2026), com a premissa dita.
+    assert "ManyChat AI no WhatsApp (estimado pela documentação, não medido) alcançaria 0/4" in out
+    assert "premissa: no WhatsApp a IA só reconhece intenção" in out
+    assert "ManyChat AI faria" not in out
     assert "pronto (0 sem lastro, 0 silêncio, útil >= 90%): não" in out
     assert "cliente: quero 2 croissant" in out
 
