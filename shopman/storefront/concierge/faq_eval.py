@@ -17,11 +17,14 @@ reprova o braço. Ninguém julga o tom por código: o placar imprime as resposta
 from __future__ import annotations
 
 import json
+import logging
 import pathlib
 import re
 import time
 import unicodedata
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 GOLDEN_FAQ_PATH = pathlib.Path(__file__).with_name("golden_faq.json")
 ARMS = ("faq", "model")
@@ -185,6 +188,7 @@ def answer_with_model(text: str, *, faqs: list, client, model: str) -> Answer:
     try:
         response = client.messages.create(**build_request(redacted, faqs, model=model))
     except Exception as exc:  # fora do ar, tempo, freio: vale a FAQ direta
+        logger.warning("concierge.faq_eval.model_failed exception_type=%s", type(exc).__name__)
         return Answer(refs=[], error=type(exc).__name__, ms=(time.perf_counter() - started) * 1000)
     elapsed = (time.perf_counter() - started) * 1000
     if getattr(response, "stop_reason", "") in {"max_tokens", "refusal"}:
