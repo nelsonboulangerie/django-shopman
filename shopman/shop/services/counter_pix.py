@@ -116,7 +116,13 @@ def start(order, *, actor: str, terminal_ref: str, attempt_id: str = "") -> dict
         raise CounterPixRefused("Esta encomenda já está paga: só entregue.")
     if due != order_composition.effective_total_q(order):
         raise CounterPixRefused(PARTIAL_BALANCE_MESSAGE)
-    _enforce_pix_policy(due)
+    # O teto do Pix de homologação da Efí: a mesma régua da venda.
+    from shopman.shop.services import pix_policy
+
+    try:
+        pix_policy.enforce_pix_test_amount_limit(due)
+    except pix_policy.PixPaymentPolicyError as exc:
+        raise CounterPixRefused(exc.message) from exc
 
     digital = counter_takeover.pending_digital_method(order)
     payment = _payment(order)
@@ -160,16 +166,6 @@ def start(order, *, actor: str, terminal_ref: str, attempt_id: str = "") -> dict
 
 
 # ── Peças ─────────────────────────────────────────────────────────────────────
-
-
-def _enforce_pix_policy(amount_q: int) -> None:
-    """O teto do Pix de homologação da Efí (o mesmo da venda)."""
-    from shopman.shop.services import pix_policy
-
-    try:
-        pix_policy.enforce_pix_test_amount_limit(amount_q)
-    except pix_policy.PixPaymentPolicyError as exc:
-        raise CounterPixRefused(exc.message) from exc
 
 
 def _intent_status(intent_ref: str) -> str:

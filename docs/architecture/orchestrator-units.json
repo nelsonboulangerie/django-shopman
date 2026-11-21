@@ -17810,6 +17810,49 @@
       ]
     },
     {
+      "id": "payment.counter-pix",
+      "question": "Como o saldo da encomenda é cobrado em Pix no balcão, do jeito da venda, sem duas cobranças vivas?",
+      "owner": "payment.counter-pix",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.counter_pix:governs",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/counter_pix.py",
+          "symbols": [
+            "start",
+            "governs",
+            "live_proof",
+            "CounterPixRefused",
+            "MARKER_KEY",
+            "TAKEOVER_HISTORY_KEY",
+            "PARTIAL_BALANCE_MESSAGE",
+            "NOT_CREATED_MESSAGE"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman",
+        "payman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_pos_preorder_counter_pix.py::test_pix_do_balcao_vencido_nao_cancela_a_encomenda"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.counter_pix:governs"
+      ]
+    },
+    {
       "id": "promotion.customer-group-sync",
       "question": "Como vantagens do grupo convergem para os descontos persistidos do cliente?",
       "owner": "promotion.customer-group-sync",

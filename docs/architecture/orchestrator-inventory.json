@@ -9318,6 +9318,36 @@
       ]
     },
     {
+      "path": "shopman/shop/services/counter_pix.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "payment.counter-pix"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_adoptable",
+            "_expired",
+            "_intent_status",
+            "_mark",
+            "_payment",
+            "_revert",
+            "_stamp_intent",
+            "_switch_to_pix",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/counter_takeover.py",
       "touchpoints": [
         "service"

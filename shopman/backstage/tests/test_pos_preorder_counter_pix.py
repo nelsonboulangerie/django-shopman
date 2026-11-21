@@ -297,6 +297,7 @@ def test_pix_do_balcao_vencido_nao_cancela_a_encomenda(balcao):
     order = _pay_at_pickup("CPX-VENCEU")
     intent_ref = _start_pix(balcao, order).json()["payment"]["intent_ref"]
     order.refresh_from_db()
+    assert counter_pix.governs(order) is True
     directive = Directive.objects.create(topic="payment.timeout", payload={
         "order_ref": order.ref, "intent_ref": intent_ref,
         "expires_at": (timezone.now() - timedelta(minutes=1)).isoformat(),
