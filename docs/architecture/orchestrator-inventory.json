@@ -180,6 +180,7 @@
             "open_counts",
             "open_pk",
             "open_rows",
+            "open_rows_with_ref",
             "recent_exists",
             "resolve",
             "resolve_matching",
