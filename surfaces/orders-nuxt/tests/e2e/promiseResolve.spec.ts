@@ -122,9 +122,10 @@ test.describe("Promessa em risco: o diálogo Resolver", () => {
     await expect(conclude).toHaveText("Escolha o que fazer");
     await expect(conclude).toBeDisabled();
     await expect(dialog.locator("[data-resolve-message-pending]")).toHaveText("Escolha o que fazer para ver a mensagem.");
-    await expect(dialog.locator("[data-resolve-interim]")).toHaveText(
-      "O envio automático ainda não existe: copie a mensagem ou chame o cliente no WhatsApp.",
+    await expect(dialog.locator("[data-resolve-notice-note]")).toHaveText(
+      'Primeiro, avise o cliente com o aviso "Faltou um item". Quando ele responder, mande a proposta da escolha.',
     );
+    await expect(dialog.locator("[data-resolve-notify]")).toHaveText("Avisar o cliente");
     // O detalhe de cada escolha está escrito ao lado dela.
     await expect(dialog).toContainText("6 disponíveis hoje");
     await expect(dialog).toContainText("R$ 44,00 serão estornados ao Pix do cliente.");

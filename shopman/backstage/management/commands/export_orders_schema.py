@@ -132,6 +132,7 @@ from shopman.backstage.projections.order_promise_resolution import (
     OrderPromiseConcludeProjection,
     OrderPromiseContactProjection,
     OrderPromiseEditLineProjection,
+    OrderPromiseNoticeProjection,
     OrderPromiseResolutionProjection,
 )
 from shopman.backstage.projections.order_queue import (
@@ -214,6 +215,7 @@ CONTRACT_DATACLASSES = (
     OrderPromiseItemProjection,
     OrderPromiseProjection,
     OrderPromiseContactProjection,
+    OrderPromiseNoticeProjection,
     OrderPromiseEditLineProjection,
     OrderPromiseConcludeProjection,
     OrderPromiseChoiceProjection,

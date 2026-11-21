@@ -77,7 +77,7 @@ import {
   type AcceptedPreorder,
 } from "~/presentation/preorderList";
 import { promiseRisk, waitsForBatch } from "~/presentation/orderPromise";
-import { CANCEL_HASH } from "~/presentation/promiseResolution";
+import { CANCEL_HASH, notifyHash, type NoticePick } from "~/presentation/promiseResolution";
 import {
   orderFocusKey,
   orderFocusKeys,
@@ -1461,6 +1461,11 @@ function openResolve(ref_: string) {
 function cancelFromResolve(ref_: string) {
   void navigateTo(`/${ref_}${CANCEL_HASH}`);
 }
+// "Avisar o cliente": o envio mora no detalhe do pedido, que abre o diálogo do G07 com
+// o aviso e os itens em risco marcados.
+function notifyFromResolve(ref_: string, pick: NoticePick) {
+  void navigateTo(`/${ref_}${notifyHash(pick)}`);
+}
 
 // O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
 // período, motivo e a aprovação do gerente; a leitura da Fila se refaz depois.
@@ -2644,6 +2649,7 @@ function compactClear() {
       @update:open="(value: boolean) => (resolveOpen = value)"
       @changed="refresh()"
       @cancel="cancelFromResolve"
+      @notify="notifyFromResolve"
     />
 
     <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->

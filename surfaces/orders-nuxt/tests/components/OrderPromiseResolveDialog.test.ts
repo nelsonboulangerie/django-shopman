@@ -238,15 +238,46 @@ describe("OrderPromiseResolveDialog: o conteúdo, de cima para baixo", () => {
       expect(w.get("[data-resolve-message]").text()).toBe(message);
       expect(conclude(w).text()).toBe(label);
       expect(locked(conclude(w))).toBe(false);
-      expect(w.get("[data-resolve-message-block]").text()).toContain("Mensagem para Nelson Dias");
+      expect(w.get("[data-resolve-message-block]").text()).toContain("Quando Nelson Dias responder");
     });
 
-  it("a nota interina do servidor fica escrita, em letra pequena", async () => {
+});
+
+describe("OrderPromiseResolveDialog: avisar o cliente primeiro", () => {
+  it("o aviso aprovado vem antes das escolhas, com a ordem dos passos escrita", async () => {
     const w = await opened();
-    expect(w.get("[data-resolve-interim]").text()).toBe(
-      "O envio automático ainda não existe: copie a mensagem ou chame o cliente no WhatsApp.",
+    const notice = w.get("[data-resolve-notice]");
+    expect(notice.get("[data-resolve-notice-note]").text()).toBe(
+      'Primeiro, avise o cliente com o aviso "Faltou um item". Quando ele responder, mande a proposta da escolha.',
     );
-    expect(w.get("[data-resolve-interim]").classes()).toContain("text-xs");
+    expect(notice.get("[data-resolve-notify]").text()).toBe("Avisar o cliente");
+    const html = w.html();
+    expect(html.indexOf("data-resolve-notice")).toBeLessThan(html.indexOf("data-resolve-choices"));
+  });
+
+  it("\"Avisar o cliente\" fecha o Resolver e entrega o aviso e os itens a quem monta", async () => {
+    const w = await opened();
+    await w.get("[data-resolve-notify]").trigger("click");
+    expect(w.emitted("update:open")?.at(-1)).toEqual([false]);
+    expect(w.emitted("notify")).toEqual([[RESOLUTION_REF, { kind: "item_missing", lines: ["L1"] }]]);
+  });
+
+  it("o aviso que não cabe some o botão e escreve o motivo e o que fazer no lugar", async () => {
+    const w = await opened(
+      resolution({
+        notice: {
+          enabled: false,
+          kind: "item_missing",
+          label: "Faltou um item",
+          note: "Copie a mensagem ou chame o cliente no WhatsApp.",
+          reason: "O pedido não tem o telefone do cliente.",
+          line_ids: [],
+        },
+      }),
+    );
+    expect(w.find("[data-resolve-notify]").exists()).toBe(false);
+    expect(w.get("[data-resolve-notice-reason]").text()).toBe("O pedido não tem o telefone do cliente.");
+    expect(w.get("[data-resolve-notice-note]").text()).toBe("Copie a mensagem ou chame o cliente no WhatsApp.");
   });
 });
 

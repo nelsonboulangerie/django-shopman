@@ -11,8 +11,12 @@ mora o que o diálogo mostra:
   remarcar, tirar só o item que falta, cancelar o pedido inteiro. Cada escolha
   diz se está aberta, o porquê quando não está, o que acontece com o dinheiro e
   como ela se conclui (``conclude``);
+- o aviso aprovado que abre a conversa (WP-G07, ``notice``): qual dos três
+  ("Faltou um item", "Precisamos remarcar", "Vai atrasar") e os itens que ele
+  marca. O diálogo do "Avisar o cliente" envia; aqui só se diz qual;
 - a mensagem ao cliente de cada escolha, pronta para conferir, copiar ou abrir
-  no WhatsApp. É PROPOSTA: o operador só conclui depois que o cliente responde.
+  no WhatsApp. É PROPOSTA: segue a conversa depois que o cliente responde ao
+  aviso, e o operador só conclui quando ele disser o que prefere.
 
 Nada aqui grava nem envia. As réguas são as que já existem, nenhuma
 reimplementada: as sugestões vêm de ``order_promise.alternatives_for`` (a mesma
@@ -21,9 +25,10 @@ do aviso); remarcar, de ``reschedule.state_refusal``; tirar o item, da prévia
 ``order_queue._cancel_capability`` e ``_cancel_money_effect``. As frases ao
 cliente moram em ``shop/notification_copy`` (``PROMISE_PROPOSAL_COPY``).
 
-Interino declarado: enviar pela API ainda não existe (WP-G07). Trocar e
-remarcar abrem o PDV; tirar o item usa ``POST orders/<ref>/edit/``; cancelar usa
-o cancelar que já existe.
+O modelo aprovado na Meta é fixo, e a proposta é sob medida (o produto
+oferecido, o valor devolvido): pela API sai só o modelo, que convida o cliente a
+responder. Trocar e remarcar abrem o PDV; tirar o item usa ``POST
+orders/<ref>/edit/``; cancelar usa o cancelar que já existe.
 
 O cartão do painel não leva nada disto (nenhum dado do cliente no painel,
 #2434): só a ação "Resolver". Por isso o endpoint é por pedido.
@@ -57,7 +62,8 @@ CONCLUDE_EDIT = "edit"
 CONCLUDE_CANCEL = "cancel"
 
 NOT_AT_RISK = "Este pedido não tem mais promessa em risco."
-INTERIM_NOTE = "O envio automático ainda não existe: copie a mensagem ou chame o cliente no WhatsApp."
+NOTICE_FIRST = 'Primeiro, avise o cliente com o aviso "{label}". Quando ele responder, mande a proposta da escolha.'
+NOTICE_REFUSED = "Copie a mensagem ou chame o cliente no WhatsApp."
 NO_WHATSAPP = "Este pedido não tem WhatsApp do cliente."
 POS_NOT_CONFIGURED = "O endereço do PDV não está configurado."
 ONLY_ITEM = "É o único item do pedido: cancele o pedido."
@@ -78,6 +84,25 @@ class OrderPromiseContactProjection:
 
     enabled: bool
     reason: str = ""
+
+
+@dataclass(frozen=True)
+class OrderPromiseNoticeProjection:
+    """O aviso aprovado que abre a conversa com o cliente (WP-G07).
+
+    ``kind`` é o do "Avisar o cliente" (``item_missing`` | ``reschedule`` |
+    ``delayed``) e ``label`` o nome do gesto. ``line_ids``: as linhas que o aviso
+    "Faltou um item" já traz marcadas (as dos itens em risco). ``enabled``:
+    o aviso cabe neste pedido; fechado, ``reason`` diz por quê. ``note`` é a
+    linha que diz a ordem dos passos.
+    """
+
+    enabled: bool
+    kind: str
+    label: str
+    note: str
+    reason: str = ""
+    line_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -140,8 +165,7 @@ class OrderPromiseResolutionProjection:
 
     ``facts``: uma frase por item em risco, as mesmas do aviso. ``choices``: as
     escolhas na ordem em que a tela as lista (trocas, remarcar, tirar o item,
-    cancelar). ``interim_note``: a linha que declara o interino (o envio
-    automático ainda não existe).
+    cancelar). ``notice``: o aviso aprovado que abre a conversa.
     """
 
     order_ref: str
@@ -149,7 +173,7 @@ class OrderPromiseResolutionProjection:
     customer_name: str
     facts: tuple[str, ...]
     contact: OrderPromiseContactProjection
-    interim_note: str
+    notice: OrderPromiseNoticeProjection
     choices: tuple[OrderPromiseChoiceProjection, ...]
 
 
@@ -192,8 +216,46 @@ def build_promise_resolution(order: Order, *, user=None) -> OrderPromiseResoluti
         ),
         facts=tuple(f"{item.label}. {item.detail}" for item in risky),
         contact=OrderPromiseContactProjection(enabled=bool(whatsapp_url), reason="" if whatsapp_url else NO_WHATSAPP),
-        interim_note=INTERIM_NOTE,
+        notice=_notice(reading),
         choices=(*_swap_choices(reading), _reschedule_choice(reading), _remove_choice(reading), _cancel_choice(reading)),
+    )
+
+
+def _notice(reading: _Reading) -> OrderPromiseNoticeProjection:
+    """Qual aviso aprovado abre a conversa, com os itens já marcados.
+
+    O lote atrasado (todos os itens em risco só atrasaram) é "Vai atrasar"; a
+    encomenda em que todos os itens estão em risco é "Precisamos remarcar"; o
+    resto é "Faltou um item", com as linhas dos itens em risco. O aviso que não
+    cabe (pedido do dia não remarca, encomenda de outro dia não atrasa) cai no
+    "Faltou um item". As réguas são as do ``customer_notice``.
+    """
+    from shopman.shop.services import customer_notice
+
+    order = reading.order
+    offered = {entry.kind: entry for entry in customer_notice.availability(order)}
+    risky_skus = {item.sku for item in reading.risky}
+    order_skus = {item.sku for item in order.items.all()}
+    if all(item.cause == order_promise.CAUSE_BATCH_LATE for item in reading.risky):
+        wanted = customer_notice.DELAYED
+    elif order_skus and order_skus <= risky_skus:
+        wanted = customer_notice.RESCHEDULE
+    else:
+        wanted = customer_notice.ITEM_MISSING
+    kind = wanted if offered[wanted].enabled else customer_notice.ITEM_MISSING
+    entry = offered[kind]
+    reason = reading.permission_reason or entry.reason
+    if reason:
+        return OrderPromiseNoticeProjection(
+            enabled=False, kind=kind, label=entry.label, note=NOTICE_REFUSED, reason=reason,
+        )
+    line_ids = (
+        tuple(line.line_id for line in order.items.all().order_by("pk") if line.sku in risky_skus)
+        if kind == customer_notice.ITEM_MISSING
+        else ()
+    )
+    return OrderPromiseNoticeProjection(
+        enabled=True, kind=kind, label=entry.label, note=NOTICE_FIRST.format(label=entry.label), line_ids=line_ids,
     )
 
 
