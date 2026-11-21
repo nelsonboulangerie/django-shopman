@@ -7,7 +7,10 @@
 //
 // Cada linha responde, sem abrir o pedido (WP-G03): quando, retirada ou entrega, se
 // está paga e se a produção cobre. A linha abre o pedido; "Remarcar no PDV" abre AQUELA
-// encomenda no PDV, onde mora o remarcar (D-003). O cabeçalho leva à lista do PDV.
+// encomenda no PDV, onde mora o remarcar (D-003). O cabeçalho leva à lista do PDV. Na
+// encomenda com a promessa em risco o gesto da linha é "Resolver", o mesmo diálogo do
+// aviso (uma situação, um gesto; coordenação, 21/11/2026, #2809 item 4): remarcar é
+// uma das escolhas de lá.
 //
 // A encomenda que perdeu o lastro (WP-G08) diz "Promessa em risco", o item sem
 // reserva e o que fazer agora, e a linha abre o pedido já na faixa das saídas.
@@ -25,6 +28,11 @@ const props = defineProps<{
   count: number;
   /** A encomenda recém-aceita, para quem veio do aviso achar a linha de relance. */
   highlightRef?: string;
+}>();
+
+const emit = defineEmits<{
+  /** "Resolver" na linha da encomenda em risco: quem monta abre o diálogo das escolhas. */
+  resolve: [ref: string];
 }>();
 
 const config = useRuntimeConfig();
@@ -155,7 +163,19 @@ const rows = computed(() =>
                abaixo" flutua no centro da base, e os dois não podem se encontrar
                (auditoria da prévia, 18/11/2026). O nome do gesto é o mesmo. -->
           <NuxtButton
-            v-if="line.href"
+            v-if="line.resolves"
+            class="ms-auto shrink-0"
+            type="button"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-list-checks"
+            label="Resolver"
+            :aria-label="`Resolver a promessa em risco da encomenda ${line.code}`"
+            data-preorder-resolve
+            @click="emit('resolve', line.ref)"
+          />
+          <NuxtButton
+            v-else-if="line.href"
             class="ms-auto shrink-0 sm:hidden"
             :to="line.href"
             :target="line.link.target"
@@ -168,7 +188,7 @@ const rows = computed(() =>
             data-preorder-reschedule="narrow"
           />
           <NuxtButton
-            v-if="line.href"
+            v-if="line.href && !line.resolves"
             class="hidden shrink-0 sm:inline-flex"
             :to="line.href"
             :target="line.link.target"

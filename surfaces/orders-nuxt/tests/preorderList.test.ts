@@ -52,6 +52,7 @@ describe("a linha responde quando, como, pagamento e produção", () => {
       awaitingPayment: false,
       production: "",
       needsYou: false,
+      resolves: false,
       items: "1x Pain de Campagne",
       total: "R$ 18,70",
     });
