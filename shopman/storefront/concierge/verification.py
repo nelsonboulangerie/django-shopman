@@ -759,12 +759,25 @@ def _nudge(conversation, record: dict, *, now: datetime) -> str:
     return "nudged"
 
 
+KEPT_OUT_OF_WINDOW = "kept_out_of_window"
+
+
 def _hand_off(conversation, record: dict, *, now: datetime) -> str:
-    """Segundo prazo: a conversa vai para a equipe, com a pergunta no cartão de handoff."""
+    """Segundo prazo: a conversa vai para a equipe, com a pergunta no cartão de handoff.
+
+    **Fora da janela de 24 horas, não passa** (#3005, regra escrita): o aviso "a equipe assume"
+    não chegaria ao cliente (texto livre fora da janela) e a equipe não conseguiria escrever no
+    Live Chat; a conversa calaria sem ninguém saber. A verificação e o cartão seguem abertos, e
+    a resposta da equipe pelo cartão chega pelo caminho do WP-16 (a mensagem aprovada pela Meta,
+    ou guardada para a próxima mensagem do cliente).
+    """
     from shopman.shop.models import Conversation, ConversationMessage
 
     from .service import mark_handoff, send_out_of_turn
 
+    window_until = _window_until(conversation)
+    if window_until is not None and now >= window_until:
+        return KEPT_OUT_OF_WINDOW
     claimed = _claim_step(conversation.pk, record["id"], step="handoff", now=now)
     if claimed is None:
         return ""
@@ -801,7 +814,8 @@ def sweep(*, now: datetime | None = None, limit: int = 200) -> dict[str, int]:
     from shopman.shop.services import business_calendar
 
     now = now or _now()
-    counts = {"open": 0, "nudged": 0, "nudge_not_sent": 0, "handed_off": 0, "closed_with_team": 0, "closed": 0}
+    counts = {"open": 0, "nudged": 0, "nudge_not_sent": 0, "handed_off": 0, "closed_with_team": 0, "closed": 0,
+              KEPT_OUT_OF_WINDOW: 0}
     rows = list(
         Conversation.objects.filter(**{f"flags__{FLAG_KEY}__status": OPEN}).order_by("pk")[: max(1, int(limit))]
     )
@@ -828,6 +842,8 @@ def sweep(*, now: datetime | None = None, limit: int = 200) -> dict[str, int]:
                 outcome = _hand_off(conversation, record, now=now)
                 if outcome.startswith("handed_off"):
                     counts["handed_off"] += 1
+                elif outcome == KEPT_OUT_OF_WINDOW:
+                    counts[KEPT_OUT_OF_WINDOW] += 1
                 elif outcome:
                     counts["closed"] += 1
             elif nudge_due is not None and now >= nudge_due and not record.get("nudged_at"):

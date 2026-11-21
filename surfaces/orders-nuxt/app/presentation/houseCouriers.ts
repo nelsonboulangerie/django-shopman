@@ -308,7 +308,8 @@ export function shiftChips(crew: HouseCrew | null | undefined): {
 export interface HouseGesture {
   /** Chave única no card ("depart", "deliver:WEB-A47"…). */
   key: string;
-  gesture: "depart" | "deliver" | "resend" | "release";
+  /** `slip` é imprimir a via da rota com o QR do link (#2406): não muda a corrida. */
+  gesture: "depart" | "deliver" | "resend" | "release" | "slip";
   /** O pedido do "Entregue". */
   ref?: string;
   action: Action;
@@ -334,7 +335,27 @@ export function houseGestures(ride: Pick<DeliveryRideProjection, "house">): Hous
     list.push({ key: "resend", gesture: "resend", action: house.resend_action, icon: "i-lucide-send", primary: false });
   if (house.release_action)
     list.push({ key: "release", gesture: "release", action: house.release_action, icon: "i-lucide-unlink", primary: false });
+  // A via impressa com o QR do link (decisão 2 do dono): enquanto a rota está aberta, que
+  // é quando o link vale (a mesma condição do "Reenviar o link").
+  if (house.resend_action)
+    list.push({ key: "slip", gesture: "slip", action: SLIP_ACTION, icon: "i-lucide-printer", primary: false });
   return list;
+}
+
+/** Imprimir a via não é gesto que mexe na corrida: sem confirmação, sem intenção. */
+const SLIP_ACTION: Action = {
+  ref: "house-slip", kind: "print", label: "Imprimir a via", priority: "", enabled: true, reason: "", href: "",
+  method: "POST", payload_schema: {}, idempotency: "none", confirmation: { required: false },
+};
+
+/** Onde a via da rota é composta (o servidor; a página só relaia ao agente da estação). */
+export function houseSlipPath(rideKey: string): string {
+  return `/api/v1/backstage/deliveries/couriers/rides/${encodeURIComponent(rideKey)}/slip/`;
+}
+
+/** "Via da corrida C impressa." ou, na segunda vez, "2ª via da corrida C impressa." */
+export function slipPrintedMessage(letter: string, reprint: boolean): string {
+  return `${reprint ? "2ª via" : "Via"} da corrida ${letter} impressa.`;
 }
 
 /** Os códigos do card, na ordem da rota, com o que já foi entregue. */

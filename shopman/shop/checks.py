@@ -30,6 +30,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E026  Ambiente de cobrança (EFI_SANDBOX) ou fiscal (FOCUS_NFE_ENVIRONMENT) não declarado em produção
   SHOPMAN_E027  Dinheiro ou nota de verdade com porta de teste aberta (em qualquer ambiente)
   SHOPMAN_E028  Caminho de SHOPMAN_FISCAL_EMISSION_RESOLVER que não importa ou não é chamável (todo check)
+  SHOPMAN_E029  Adapter fiscal de simulação (fiscal_simulated) fora de DEBUG
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -667,6 +668,31 @@ def check_fiscal_adapter(app_configs, **kwargs):
             )
         )
     return warnings
+
+
+@register()
+def check_simulated_fiscal_adapter(app_configs, **kwargs):
+    """O adapter fiscal de simulação só existe na pilha de teste local (#2585).
+
+    Ele responde como a SEFAZ sem ir a ela, e se declara homologação: num ambiente
+    servido, cada venda "teria nota" sem nota nenhuma. Fora de DEBUG é erro em todo
+    check, não só no ``--deploy``: o worker de um staging também não pode subir com ele.
+    """
+    if settings.DEBUG:
+        return []
+    paths = _declared_adapter_paths("fiscal", "SHOPMAN_FISCAL_ADAPTER")
+    return [
+        Error(
+            f"{origin} aponta para o adapter fiscal de simulação fora de DEBUG.",
+            hint=(
+                "fiscal_simulated é da pilha de teste local. Aponte para o emissor real "
+                "(shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend) ou apague a variável."
+            ),
+            id="SHOPMAN_E029",
+        )
+        for origin, path in sorted(paths.items())
+        if "fiscal_simulated" in path
+    ]
 
 
 @register(deploy=True)
@@ -1491,6 +1517,11 @@ def _open_test_doors() -> list[str]:
     for origin, path in sorted(_declared_adapter_paths("payment", "SHOPMAN_PAYMENT_ADAPTERS").items()):
         if "payment_mock" in path:
             doors.append(f"{origin}=payment_mock (pagamento simulado): aponte para o gateway real")
+    for origin, path in sorted(_declared_adapter_paths("fiscal", "SHOPMAN_FISCAL_ADAPTER").items()):
+        if "fiscal_simulated" in path:
+            doors.append(f"{origin}=fiscal_simulated (nota simulada): aponte para o emissor real")
+    if getattr(settings, "TEST_STACK_CONTROL_DIR", None):
+        doors.append("TEST_STACK_CONTROL_DIR (relógio de teste da pilha local): apague a variável")
     return doors
 
 
