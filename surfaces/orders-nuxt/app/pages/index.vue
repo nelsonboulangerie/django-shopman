@@ -2590,6 +2590,7 @@ function compactClear() {
           :groups="triagedPreorders"
           :count="preordersCount"
           :highlight-ref="acceptedPreorder?.ref"
+          @resolve="openResolve"
         />
       </template>
       <!-- Tem mais abaixo: a lista de Encomendas fica depois do painel de altura cheia.

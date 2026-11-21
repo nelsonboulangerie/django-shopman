@@ -31,6 +31,7 @@ import {
   contactSummary as buildContactSummary,
   datepickerDisabledDates as buildDatepickerDisabledDates,
   displayCheckoutDate,
+  orderDateMovedNotice,
   firstCheckoutError,
   fulfillmentIcon as resolveFulfillmentIcon,
   fulfillmentLabel as resolveFulfillmentLabel,
@@ -175,6 +176,14 @@ function clearFieldErrors (keys: string[]) {
 // Dica de encomenda quando o dia escolhido está fechado (backend: preorder_hint).
 // Aditivo: acompanha o erro do campo de data, não muda o roteamento do fieldError.
 const deliveryDateHint = ref('')
+// A data que a sacola moveu (#2411): o aviso do passo "Quando". A recusa "Sua sacola
+// mudou" do envio relê o checkout, e a releitura pode mover a data: quando move, o
+// aviso do dia novo já disse tudo, e o genérico não repete.
+const dateMovedNotice = ref('')
+let dateMovedNoticeShown = false
+// O X fecha o aviso, e ele volta na próxima releitura do checkout enquanto a causa
+// durar, isto é, enquanto ela não escolher uma data (regra do aviso de tela, #2095).
+const dateMovedDismissed = ref(false)
 const attemptKey = ref(createCheckoutAttemptKey())
 const addressSelection = ref<AddressSelection | null>(null)
 // Formulário do picker aberto com edição que o checkout ainda não recebeu
@@ -401,6 +410,9 @@ function isTyping (): boolean {
 async function refreshIfIdle () {
   if (submitting.value || isTyping()) return
   await refresh().catch(() => null)
+  // O aviso da data que a sacola moveu, fechado com a causa de pé (ela ainda não
+  // escolheu a data), volta nesta releitura (#2411; regra do aviso de tela, #2095).
+  if (dateMovedNotice.value) dateMovedDismissed.value = false
 }
 useConnectivity().watchConnectivity(refreshIfIdle)
 let calmRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -897,6 +909,7 @@ function pickDeliveryDate (value: string) {
   state.delivery_date = value
   clearFieldError('delivery_date')
   deliveryDateHint.value = ''
+  dateMovedNotice.value = ''
   datePopoverOpen.value = false
 }
 
@@ -982,6 +995,18 @@ function initializeDeliveryDate () {
   if (!parsed) return
   chosenDate.value = parsed
   state.delivery_date = value
+  // A sacola levou a data para depois da que ela tinha (#2411): a tela diz o dia
+  // novo, em vez de trocar calada. Vale para a volta à aba e para a recusa do envio.
+  // O aviso mora no passo "Quando" e fica até ela escolher uma data; quem já tinha
+  // passado do "Quando" volta a ele (um toast sumiria sob a barra de baixo).
+  const moved = orderDateMovedNotice(restoredDate, value, dateBounds.value, shopNow.value)
+  if (moved) {
+    dateMovedNotice.value = moved
+    dateMovedDismissed.value = false
+    dateMovedNoticeShown = true
+    const order = steps.value
+    if (order.indexOf(activeStep.value) > order.indexOf('when')) goToStep('when')
+  }
 }
 onMounted(initializeDeliveryDate)
 watch(checkout, initializeDeliveryDate, { flush: 'post' })
@@ -1632,8 +1657,11 @@ async function submitCheckout () {
     }
     if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {
       attemptKey.value = createCheckoutAttemptKey()
+      dateMovedNoticeShown = false
       await refresh()
-      if (import.meta.client) useSonner.error(serverError.value)
+      // O dia novo (se a releitura moveu a data) chega pelo `initializeDeliveryDate`.
+      await nextTick()
+      if (import.meta.client && !dateMovedNoticeShown) useSonner.error(serverError.value)
       return
     }
     // Dia fechado: o backend sugere a encomenda (preorder_hint) e a próxima data.
@@ -2081,6 +2109,21 @@ useSeoMeta({
             >
               <!-- Quando o pedido fica pronto para retirada (#2652): a promessa
                    do item mais tardio, a mesma do produto e da sacola. -->
+              <UiAlert v-if="dateMovedNotice && !dateMovedDismissed" variant="warning" data-checkout-date-moved>
+                <div class="flex items-start gap-2">
+                  <UiAlertTitle class="line-clamp-none min-w-0 flex-1 leading-snug">{{ dateMovedNotice }}</UiAlertTitle>
+                  <UiButton
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    icon="lucide:x"
+                    class="-my-2 -mr-2 size-11 shrink-0"
+                    aria-label="Fechar aviso"
+                    data-checkout-date-moved-close
+                    @click="dateMovedDismissed = true"
+                  />
+                </div>
+              </UiAlert>
               <p v-if="orderReadyNotice" class="flex items-center gap-1 shop-body" data-checkout-ready-promise>
                 <Icon name="lucide:clock" class="size-3.5 shrink-0" />
                 {{ orderReadyNotice }}

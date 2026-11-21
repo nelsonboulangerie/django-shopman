@@ -376,11 +376,24 @@ describe("OrderPreorderList: a encomenda em risco", () => {
     expect(row.find("[data-promise-exit]").exists()).toBe(false);
   });
 
-  it("a linha abre o pedido na faixa do \"Resolver\", sem diálogo próprio; \"Remarcar no PDV\" da lista segue ao lado", () => {
+  // #2809 item 4 (coordenação, 21/11/2026): uma situação, um gesto.
+  it("o gesto da linha em risco é \"Resolver\", no lugar do \"Remarcar no PDV\"", async () => {
     const w = mountList(card({ attention: "promise", promise: atRisk() }));
     const row = w.get('[data-preorder-row="NB-261118-W33"]');
 
     expect(row.get("a").attributes("href")).toBe("/NB-261118-W33#promise");
+    expect(row.find("[data-preorder-reschedule]").exists()).toBe(false);
+    const resolveButton = row.get("[data-preorder-resolve]");
+    expect(resolveButton.text()).toContain("Resolver");
+    await resolveButton.trigger("click");
+    expect(w.emitted("resolve")).toEqual([["NB-261118-W33"]]);
+  });
+
+  it("sem o \"Resolver\" para a conta, a linha em risco segue com \"Remarcar no PDV\"", () => {
+    const w = mountList(card({ attention: "promise", promise: atRisk({ actions: [resolve({ enabled: false, reason: "Sem permissão." })] }) }));
+    const row = w.get('[data-preorder-row="NB-261118-W33"]');
+
+    expect(row.find("[data-preorder-resolve]").exists()).toBe(false);
     expect(row.get('[data-preorder-reschedule=""]').html()).toContain("https://pdv.example.test/preorders/NB-261118-W33");
   });
 

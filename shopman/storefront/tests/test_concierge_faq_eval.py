@@ -188,3 +188,13 @@ def test_closing_hours_are_the_hours_question(surface):
     found = search_public_faq("fecham horas", channel_ref="whatsapp", shop=shop)
 
     assert found[0].ref == "hours"
+
+
+
+def test_the_scorecard_checks_that_the_text_says_what_was_asked(faqs):
+    case = {"ref": "x", "text": "aceitam pix?", "parts": [["payment"]], "mentions": ["pix"]}
+    said = faq_eval.score(case, faq_eval.Answer(refs=["payment"], text="Aceitamos Pix."), live={"payment"}, faqs=faqs, check_invention=False)
+    silent = faq_eval.score(case, faq_eval.Answer(refs=["payment"], text="Fale com a gente."), live={"payment"}, faqs=faqs, check_invention=False)
+
+    assert said.says is True and silent.says is False, "o ref certo não basta: o texto tem de dizer"
+    assert faq_eval.score({**case, "mentions": []}, said.answer, live={"payment"}, faqs=faqs, check_invention=False).says is None
