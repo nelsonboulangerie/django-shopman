@@ -438,6 +438,7 @@ useHead({
 
         <div
           class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
+          data-focus-obstruction
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
