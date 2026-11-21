@@ -269,6 +269,9 @@ PHASE_DONE = "done"
 
 #: O pedido já fechou: o trabalho do preparo (cozinha e aviso) não é mais devido.
 _CLOSED_STATUSES = frozenset({"completed", "cancelled", "returned"})
+#: Quem fecha o pedido por REPARO: os fatos do iFood aplicados quando chegam ou
+#: depois (``ifood_events``, ``reconcile_ifood_orders``), com ``system:ifood:<fato>``.
+_REPAIR_ACTOR_PREFIX = "system:ifood"
 
 
 def phase_superseded(order, phase: str) -> bool:
@@ -276,19 +279,33 @@ def phase_superseded(order, phase: str) -> bool:
 
     Dois casos, medidos nos alertas de 19/11/2026:
 
-    - o preparo que encontra o pedido já fechado. O reparo do iFood (#2817) leva o
-      pedido de ``accepted`` a ``completed`` num instante, e a fase do preparo,
-      enfileirada, chega depois. Rodá-la abriria cozinha para um pedido encerrado,
-      e o aviso "em preparo" chegaria depois do pedido entregue;
     - o pedido de TESTE (``is_test_order``): é inerte, não deve cozinha, nota nem
-      aviso a ninguém.
+      aviso a ninguém;
+    - o preparo que encontra o pedido FECHADO POR REPARO. O reparo do iFood (#2817)
+      leva o pedido de ``accepted`` a ``completed`` num instante, e a fase do
+      preparo, enfileirada, chega depois. Quem fechou foi o fato do iFood, não a casa.
 
-    O resto continua como estava: fase que não pode mais rodar num pedido real é
-    travamento, com o alerta crítico.
+    O preparo obsoleto de um pedido real fechado pela casa (cancelado no Gestor,
+    concluído no balcão) continua visível: a tarefa falha e o alerta sai, porque
+    alguém precisa saber que a cozinha nunca recebeu aquele pedido. Fase que não
+    pode mais rodar num pedido real é travamento, com o alerta crítico.
     """
     if is_test_order(order):
         return True
-    return phase == "on_preparing" and order.status in _CLOSED_STATUSES
+    if phase != "on_preparing" or order.status not in _CLOSED_STATUSES:
+        return False
+    return _closed_by_repair(order)
+
+
+def _closed_by_repair(order) -> bool:
+    """O último ``status_changed`` que levou o pedido ao estado atual veio do reparo?"""
+    actor = (
+        order.events.filter(type="status_changed", payload__new_status=order.status)
+        .order_by("-seq")
+        .values_list("actor", flat=True)
+        .first()
+    )
+    return bool(actor) and str(actor).startswith(_REPAIR_ACTOR_PREFIX)
 
 
 def phase_complete(order, phase: str) -> bool:
