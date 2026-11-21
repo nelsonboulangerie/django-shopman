@@ -585,7 +585,9 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
         links.append({"label": "Como chegar", "url": shop.maps_url})
 
     terms = set(_public_search_terms(needle))
-    if not items and not answers and catalog is not None and terms.intersection(_MENU_OVERVIEW_TERMS):
+    # "O que tem disponível?" é a pergunta do cardápio: ela vence a pergunta frequente que
+    # por acaso cite a palavra (ensaio do dono, 21/11/2026: saiu "não tenho essa informação").
+    if not items and catalog is not None and terms.intersection(_MENU_OVERVIEW_TERMS):
         return {
             **_menu_overview(list(catalog.items), catalog, available_only=True),
             "answers": [],
@@ -659,10 +661,25 @@ def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
                 ],
             }
         )
+    available_count = sum(1 for item in items if item.can_add_to_cart)
+    if available_only and not available_count:
+        # Nada à venda agora (antes de abrir, depois que acabou): dizer isso, e o caminho
+        # que existe, em vez de uma lista vazia com "qual dessas opções?".
+        return {
+            "ok": True,
+            "overview": True,
+            "available_count": 0,
+            "total_count": len(items),
+            "collections": [],
+            "message": (
+                "Neste momento não há produtos disponíveis para hoje. Dá para encomendar para "
+                "outro dia: é só me dizer o produto e o dia."
+            ),
+        }
     return {
         "ok": True,
         "overview": True,
-        "available_count": sum(1 for item in items if item.can_add_to_cart),
+        "available_count": available_count,
         "total_count": len(items),
         "collections": collections,
         "hint": "Para listar itens, chame de novo com o nome ou a coleção em `query`.",
