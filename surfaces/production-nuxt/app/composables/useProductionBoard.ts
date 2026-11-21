@@ -5,7 +5,7 @@
 //     GET canônico. Antes ninguém ouvia o canal e o lote aberto no tablet do forno
 //     levava até 60 s para aparecer no do planejamento (mapa de cenários, P2-18);
 //   - o poll de 60 s fica só de reserva (stream caído, deploy).
-// Writes (plan / start) go through the django proxy (CSRF handled there) and
+// Writes (plan / start / void) go through the django proxy (CSRF handled there) and
 // reconcile via refresh. Order-coverage shortage surfaces as a structured error.
 import type {
   ProductionBoardProjection,
@@ -15,6 +15,7 @@ import type {
 import {
   planProduction,
   startProductionWorkOrder,
+  voidProductionWorkOrder,
   type ProductionPlanMutationRequest,
 } from "~/generated/productionContract";
 import {
@@ -259,6 +260,26 @@ export function useProductionBoard(
     );
   }
 
+  // Cancelar o lote da matriz: a ação `void:<pk>` vem DESTA projeção, que traz o lote
+  // planejado e o aberto do dia escolhido (hoje ou outro). Antes o diálogo pedia a
+  // ação ao quadro dos lotes abertos de hoje (`production/kds/`), que nunca tem o
+  // planejado, e o "Confirmar cancelamento" voltava sem cancelar nada (#2957).
+  function voidOrder(
+    key: string,
+    woPk: number,
+    rev: number,
+    reason: string,
+  ): Promise<BoardActResult> {
+    return post(key, `void:${woPk}`, rev, (idempotencyKey, metadata, expectedRev) =>
+      voidProductionWorkOrder(woPk, {
+        reason,
+        expected_rev: expectedRev ?? rev,
+        ...metadata,
+        idempotency_key: idempotencyKey,
+      }),
+    );
+  }
+
   return {
     board,
     rows,
@@ -272,5 +293,6 @@ export function useProductionBoard(
     isBusy,
     plan,
     start,
+    voidOrder,
   };
 }

@@ -7842,7 +7842,13 @@ class POSManagerApprovalCheckView(APIView):
                 approval,
                 operator_username=_username(request),
                 action="sale_approval_check",
-                recovery_invalid="Confira o gerente e digite o PIN de novo.",
+                # A saída fala da porta que o gerente usou: com o crachá, "digite o
+                # PIN de novo" mandava refazer um gesto que ninguém fez (#2691).
+                recovery_invalid=(
+                    "Passe o crachá de novo, ou escolha o gerente e digite o PIN."
+                    if str(approval.get("badge") or "").strip()
+                    else "Confira o gerente e digite o PIN de novo."
+                ),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)

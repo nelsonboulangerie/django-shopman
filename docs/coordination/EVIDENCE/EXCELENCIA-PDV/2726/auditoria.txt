@@ -1,0 +1,54 @@
+# Auditoria por script da prévia do #2726
+# Sonda: surfaces/pos-nuxt/tests/e2e-live/j7-falha-no-dialogo-da-antessala.live.spec.ts
+# Pilha própria: Django :8072, PDV :3172, banco shopman_pdv_a2726, host pdva2726.localhost (seed local, nunca produção).
+# Fran (Caixa) com PIN; Joyce (Gerente) escolhida da lista, com o próprio PIN.
+# Falha forçada no navegador: a ida do POST cai (connectionreset), o servidor não vê o pedido.
+# Régua: contraste >= 4,5:1 (texto contra o fundo efetivo), letra >= 12 px, dentro da tela, sem corte,
+#        não encoberto (o meio do texto é o próprio texto), aviso dentro do diálogo e na área visível,
+#        alinhado à borda de conteúdo da coluna (columnLeft = siblingLefts), foco dentro do diálogo.
+
+## ANTES (build do origin/main 4ed9145a8): a falha vira toast; covered=true = o véu do diálogo cobre o toast.
+### 375 px
+AUDITORIA pedir troco phone (toast): [{"text":"O pedido de troco não foi enviado. Ninguém foi avisado ainda. Tente de","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":56,"right":342,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA atender troco phone (toast): [{"text":"O pedido de troco não foi atendido. A gaveta não abriu e o pedido segu","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":56,"right":342,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA cancelar troco phone (toast): [{"text":"O pedido de troco não foi cancelado. Ele segue na lista. Tente de novo","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":56,"right":342,"clipped":false,"inside":true,"covered":true},{"text":"Troco de R$ 50,00 atendido.","contrast":1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(53, 108, 59)","left":63,"right":230,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA acerto phone (toast): [{"text":"O acerto não foi registrado. Nada entrou na gaveta e o saldo do client","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":56,"right":342,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA gaveta phone: sem caminho de software neste dispositivo; o card está desabilitado.
+### 1366 px
+AUDITORIA pedir troco counter (toast): [{"text":"O pedido de troco não foi enviado. Ninguém foi avisado ainda. Tente de","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":545,"right":844,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA atender troco counter (toast): [{"text":"O pedido de troco não foi atendido. A gaveta não abriu e o pedido segu","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":545,"right":844,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA cancelar troco counter (toast): [{"text":"O pedido de troco não foi cancelado. Ele segue na lista. Tente de novo","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":545,"right":844,"clipped":false,"inside":true,"covered":true},{"text":"Troco de R$ 50,00 atendido.","contrast":1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(53, 108, 59)","left":552,"right":719,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA acerto counter (toast): [{"text":"O acerto não foi registrado. Nada entrou na gaveta e o saldo do client","contrast":6.1,"fontPx":13,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":545,"right":844,"clipped":false,"inside":true,"covered":true}]
+AUDITORIA gaveta counter: sem caminho de software neste dispositivo; o card está desabilitado.
+
+## DEPOIS (este branch): o aviso dentro do diálogo, com o botão que resolve e o foco nele.
+AUDITORIA pedir troco phone: [{"text":"O pedido de troco não foi enviado. Ninguém foi avisado ainda. Tente de","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":78,"right":279,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":78,"right":279,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA pedir troco phone (posição e foco): {"notice":[32,533,343,667],"dialog":[16,77,359,735],"inDialog":true,"onScreen":true,"columnLeft":32,"siblingLefts":[32],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA atender troco phone: [{"text":"O pedido de troco não foi atendido. A gaveta não abriu e o pedido segu","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":90,"right":267,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":90,"right":267,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA atender troco phone (posição e foco): {"notice":[44,328,331,482],"dialog":[16,147,359,666],"inDialog":true,"onScreen":true,"columnLeft":44,"siblingLefts":[44],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA cancelar troco phone: [{"text":"O pedido de troco não foi cancelado. Ele segue na lista. Tente de novo","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":102,"right":255,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":102,"right":255,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA cancelar troco phone (posição e foco): {"notice":[56,410,319,564],"dialog":[16,169,359,644],"inDialog":true,"onScreen":true,"columnLeft":56,"siblingLefts":[56],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA acerto phone: [{"text":"O acerto não foi registrado. Nada entrou na gaveta e o saldo do client","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":90,"right":267,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":90,"right":267,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA acerto phone (posição e foco): {"notice":[44,392,331,586],"dialog":[16,49,359,764],"inDialog":true,"onScreen":true,"columnLeft":44,"siblingLefts":[44],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA gaveta phone: sem caminho de software neste dispositivo; o card está desabilitado.
+AUDITORIA pedir troco counter: [{"text":"O pedido de troco não foi enviado. Ninguém foi avisado ainda. Tente de","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":497,"right":851,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":497,"right":639,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA pedir troco counter (posição e foco): {"notice":[451,516,915,630],"dialog":[427,70,939,698],"inDialog":true,"onScreen":true,"columnLeft":451,"siblingLefts":[451],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA atender troco counter: [{"text":"O pedido de troco não foi atendido. A gaveta não abriu e o pedido segu","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":509,"right":839,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":509,"right":651,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA atender troco counter (posição e foco): {"notice":[463,316,903,430],"dialog":[427,147,939,622],"inDialog":true,"onScreen":true,"columnLeft":463,"siblingLefts":[463],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA cancelar troco counter: [{"text":"O pedido de troco não foi cancelado. Ele segue na lista. Tente de novo","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":521,"right":827,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":521,"right":663,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA cancelar troco counter (posição e foco): {"notice":[475,388,891,502],"dialog":[427,179,939,590],"inDialog":true,"onScreen":true,"columnLeft":475,"siblingLefts":[475],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA acerto counter: [{"text":"O acerto não foi registrado. Nada entrou na gaveta e o saldo do client","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":509,"right":839,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":6.1,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(180, 51, 37)","left":509,"right":651,"clipped":false,"inside":true,"covered":false}]
+AUDITORIA acerto counter (posição e foco): {"notice":[463,404,903,538],"dialog":[427,155,939,614],"inDialog":true,"onScreen":true,"columnLeft":463,"siblingLefts":[463],"focusInDialog":true,"focused":"BUTTON"}
+AUDITORIA gaveta counter: sem caminho de software neste dispositivo; o card está desabilitado.
+
+## Hover (registrado, fora da régua)
+# No balcão o aviso nasce sob o ponteiro (onde estava o botão do gesto). Em hover, o 'Tentar de novo'
+# (fundo error/75, o mesmo de todo botão sólido de erro da suíte, via alertActions do operator-kit) mede:
+AUDITORIA atender troco counter: [{"text":"O pedido de troco não foi atendido. A gaveta não abriu e o pedido segu","contrast":5.23,"fontPx":14,"weight":"500","color":"rgb(180, 51, 37)","background":"rgb(247, 235, 233)","left":509,"right":839,"clipped":false,"inside":true,"covered":false},{"text":"Tentar de novo","contrast":4.03,"fontPx":14,"weight":"500","color":"rgb(255, 255, 255)","background":"rgb(197, 97, 86)","left":509,"right":651,"clipped":false,"inside":true,"covered":false}]
+# Em repouso mede 6,1:1. A sonda tira o ponteiro antes de medir.
+
+## Resultado
+# antes: as asserções do aviso reprovam (soft) nos 4 gestos, e os 4 toasts saem encobertos, em 375 e 1366.
+# depois: 2 passed (375 e 1366).
+# gaveta: no dispositivo da pilha não há caminho de software (nem agente do Balcão, nem relay), o card
+#         fica desabilitado com o motivo; a falha da gaveta está provada no vitest (página e composable).

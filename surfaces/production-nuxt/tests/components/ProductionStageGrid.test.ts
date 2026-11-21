@@ -90,6 +90,7 @@ const FULL_ACCESS = {
 // ── Composable stubs (refs controláveis por teste) ──────────────────────────
 const boardRows = ref<ProductionMatrixRowProjection[]>([]);
 const voidSpy = vi.fn().mockResolvedValue({ ok: true });
+const kdsVoidSpy = vi.fn().mockResolvedValue({ ok: true });
 const startSpy = vi.fn().mockResolvedValue({ ok: true });
 const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
@@ -137,6 +138,8 @@ function installGlobals() {
       isBusy: () => false,
       plan: planSpy,
       start: startSpy,
+      // O cancelar do lote é da matriz do dia (#2957): planejado e aberto.
+      voidOrder: voidSpy,
     };
   });
   vi.stubGlobal("useProductionKds", () => ({
@@ -148,7 +151,7 @@ function installGlobals() {
     refresh: vi.fn(),
     actionFor: (actionRef: string) => kdsActions.get(actionRef),
     isBusy: () => false,
-    voidOrder: voidSpy,
+    voidOrder: kdsVoidSpy,
     registerOldDough: vi.fn(),
     authorizeFormulaDeviation: vi.fn(),
   }));
@@ -312,6 +315,7 @@ beforeEach(() => {
   installGlobals();
   boardRows.value = [];
   voidSpy.mockClear().mockResolvedValue({ ok: true });
+  kdsVoidSpy.mockClear().mockResolvedValue({ ok: true });
   startSpy.mockClear().mockResolvedValue({ ok: true });
   planSpy.mockClear().mockResolvedValue({ ok: true });
   boardRefresh.mockClear();
@@ -1065,7 +1069,26 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
       .find('textarea[aria-label="Motivo do cancelamento"]')
       .setValue("queimou");
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
-    expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
+    expect(voidSpy).toHaveBeenCalledWith("PAO-001", 7, 2, "queimou");
+    // Nunca pelo quadro dos lotes abertos de hoje, que não traz o planejado.
+    expect(kdsVoidSpy).not.toHaveBeenCalled();
+  });
+
+  it("o lote PLANEJADO se cancela pelo ⋯ da linha, pela matriz do dia (#2957)", async () => {
+    // Antes o "Confirmar cancelamento" pedia a ação ao quadro dos abertos de hoje,
+    // que nunca tem o planejado, e voltava sem cancelar nada nem avisar.
+    boardRows.value = [
+      row({
+        planned_qty: "42",
+        planned_orders: [wo({ pk: 34, ref: "WO-034", rev: 5, status: "planned", planned_qty: "42", can_void: true })],
+      }),
+    ];
+    const w = mountGrid();
+
+    await byText(w, '[role="menuitem"]', "Cancelar lote…")!.trigger("click");
+    await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
+    expect(voidSpy).toHaveBeenCalledWith("PAO-001", 34, 5, "Cancelado pelo operador");
+    expect(kdsVoidSpy).not.toHaveBeenCalled();
   });
 
   it("sem can_void, o detalhe não oferece Cancelar lote e diz quem cancela", async () => {

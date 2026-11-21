@@ -45,6 +45,11 @@ MASSA_DA_PECA = {
     "coelhinho": "MASSA-BUTTER",
     "ursinho": "MASSA-BUTTER",
     "porquinho": "MASSA-BUTTER",
+    # Os três pãezinhos de tradição da aba TRAD da RECEITAS 2.4 (#2925). O Pão
+    # de Hambúrguer é tradição pela resposta 4 do dono (02/10), não butter.
+    "fendu": "MASSA-TRADICAO",
+    "tabatiere": "MASSA-TRADICAO",
+    "pao-hamburguer": "MASSA-TRADICAO",
     # Âncoras do que já estava certo: o croissant é de croissant, a ciabatta
     # de ciabatta.
     "croissant": "MASSA-CROISSANT",
@@ -70,3 +75,9 @@ def test_a_massa_de_cada_peca_e_a_que_o_dono_confirmou(monkeypatch):
             )
 
     assert not divergencias, "Ficha com massa errada:\n  " + "\n  ".join(divergencias)
+
+    # Feitos aqui em lote: numa data ainda sem lote planejado, a encomenda deles
+    # vira pedido à Produção, e não "Sem saldo" (#2925, regra do WP-E3).
+    from shopman.shop.adapters.production import get_batch_produced_skus
+
+    assert get_batch_produced_skus(["FENDU", "TABAT", "TRABB"]) == {"FENDU", "TABAT", "TRABB"}

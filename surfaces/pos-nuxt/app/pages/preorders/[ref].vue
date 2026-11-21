@@ -173,7 +173,10 @@ const redoAfterCancel = ref(false);
 
 function editOrder() {
   if (!detail.value) return;
-  void navigateTo({ path: "/", query: { edit: detail.value.ref } });
+  // A edição TROCA a página do detalhe no histórico (e a volta dela troca de novo):
+  // a ida e volta não empilha um segundo detalhe, e o "voltar" depois de entregar
+  // continua levando à lista de onde o operador veio.
+  void navigateTo({ path: "/", query: { edit: detail.value.ref } }, { replace: true });
 }
 
 function cancelAndRedo() {

@@ -26,6 +26,7 @@ import hmac
 import json
 import logging
 import secrets
+from datetime import UTC, datetime, timedelta
 
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
@@ -60,10 +61,55 @@ def button(probe_id: str, code: str, url: str) -> dict:
     }
 
 
-def send(subscriber_id: str, *, callback_url: str) -> dict:
+#: Mensagem livre no WhatsApp só dentro de 24 horas da última fala do contato.
+WINDOW = timedelta(hours=24)
+
+
+def _subscriber_info(subscriber_id: str) -> dict | None:
+    from shopman.guestman.contrib.manychat.resolver import ManychatSubscriberResolver
+
+    return ManychatSubscriberResolver.fetch_subscriber_info(subscriber_id)
+
+
+def window_open(subscriber_id: str, *, now: datetime | None = None) -> tuple[bool, str]:
+    """(aberta, última interação): fora da janela o ManyChat recusa, e o ensaio não prova nada."""
+    info = _subscriber_info(subscriber_id) or {}
+    raw = str(info.get("last_interaction") or "").strip()
+    try:
+        last = datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
+    except ValueError:
+        last = None
+    if last is None:
+        return False, raw
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    return (now or timezone.now()) - last <= WINDOW, raw
+
+
+def explain(result: dict) -> str:
+    """Uma linha para quem roda o ensaio: o que aconteceu, com o código do ManyChat."""
+    if result.get("success"):
+        return f"Enviado. Ensaio {result.get('probe')}, código {result.get('code')}: toque no botão e rode --show."
+    if result.get("error") == "outside_window":
+        return f"Não enviado: fora da janela de 24 horas (última interação: {result.get('last_interaction') or 'desconhecida'}). Mande um oi pelo WhatsApp e rode de novo."
+    parts = [f"Recusado pelo ManyChat: {result.get('error')}"]
+    if result.get("provider_http_status"):
+        parts.append(f"HTTP {result['provider_http_status']}")
+    if result.get("provider_code"):
+        parts.append(f"código {result['provider_code']}")
+    if result.get("probe"):
+        parts.append(f"ensaio {result['probe']}")
+    return ", ".join(parts) + "."
+
+
+def send(subscriber_id: str, *, callback_url: str, check_window: bool = True) -> dict:
     """Manda a mensagem de teste com o botão. Devolve o resultado do ``sendContent``."""
     from shopman.shop.adapters import notification_manychat as mc
 
+    if check_window:
+        is_open, last = window_open(subscriber_id)
+        if not is_open:
+            return {"success": False, "error": "outside_window", "last_interaction": last}
     probe_id = secrets.token_hex(6)
     code = f"{secrets.randbelow(10_000):04d}"
     config, subscriber = mc._prepare_call(subscriber_id, "button_probe")

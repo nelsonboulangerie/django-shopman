@@ -30,6 +30,7 @@ import type {
   SavedAddressProjection,
   StructuredAddressProjection,
 } from "~/types/pos";
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
 import {
@@ -73,7 +74,7 @@ import {
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
 import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { pixNeedsWholeBalance, type PosBalanceCharge } from "~/presentation/balanceCharge";
+import type { PosBalanceCharge } from "~/presentation/balanceCharge";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -129,7 +130,7 @@ const props = defineProps<{
    */
   managerApproved: boolean;
   managerApprovalError: string;
-  /** O PIN do gerente está sendo conferido no servidor (`checkManager`). */
+  /** A autorização do gerente (PIN ou crachá) está sendo conferida no servidor (`checkManager`). */
   managerCheckBusy?: boolean;
   /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
   managers: POSManagerProjection[];
@@ -234,11 +235,11 @@ const emit = defineEmits<{
   removeTender: [number];
   setSplitCount: [number];
   /**
-   * Confere o PIN do gerente ANTES de seguir (beta test de 05/11/2026): o
-   * diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
+   * Confere o gerente ANTES de seguir (beta test de 05/11/2026), pelo PIN
+   * (`{username, pin}`) ou pelo crachá (`{badge}`): o diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
    * Quem guarda a assinatura (na memória, presa ao retrato) é o `usePosSale`.
    */
-  checkManager: [string, string, (ok: boolean) => void];
+  checkManager: [ManagerApproval, (ok: boolean) => void];
   /** O diálogo do gerente fechou sem assinar: o erro velho não volta na próxima abertura. */
   managerAuthDismissed: [];
   selectTender: [number];
@@ -924,16 +925,6 @@ function returnToCart() {
 }
 
 /** O saldo em Pix: tira as outras linhas e a divisão, e o Pix assume o valor inteiro. */
-function keepOnlyWholePix() {
-  if (splitActive.value) emit("setSplitCount", 0);
-  const pixIndex = props.paymentTenders.findIndex((tender) => tender.method === "pix");
-  if (pixIndex < 0) return;
-  const removals = props.paymentTenders.map((_, index) => index).filter((index) => index !== pixIndex).reverse();
-  removals.forEach((index) => emit("removeTender", index));
-  emit("selectTender", pixIndex - removals.filter((index) => index < pixIndex).length);
-  emit("tenderExact");
-}
-
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
 // sete portões; a tela apresenta a mesma recusa e o caminho para resolvê-la.
 //
@@ -1086,16 +1077,6 @@ const ctaBlock = computed<{
       message: onDelivery.value
         ? `Escolha como o cliente vai pagar na ${props.fulfillmentType === "delivery" ? "entrega" : "retirada"}.`
         : "Escolha a forma de pagamento.",
-    };
-  }
-  // O SALDO EM PIX é UMA cobrança Pix do pedido, no valor inteiro, como a venda
-  // que fecha em Pix (#2897). Pix com outra forma, conta dividida ou Pix de outro
-  // valor não fecham: o toque deixa só o Pix, no valor do saldo.
-  if (props.balance && pixNeedsWholeBalance(props.paymentTenders, props.paymentTotalQ)) {
-    return {
-      message: "No saldo da encomenda, o Pix cobra o valor inteiro, sozinho.",
-      hint: "Ou tire o Pix e receba em dinheiro ou cartão.",
-      action: { label: "Deixar só o Pix no valor inteiro", run: keepOnlyWholePix },
     };
   }
   // `preorder_fired_unpaid` — a gêmea. Encomenda que já está na cozinha não
@@ -1362,9 +1343,19 @@ function proceed() {
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
-  // O PIN é conferido AQUI, com o diálogo aberto: errado, o erro aparece nele
-  // e nada adiante (maquininha, "Recebi o Pix") chegou a acontecer.
-  emit("checkManager", username, pin, (ok) => {
+  checkManager({ username, pin });
+}
+// O crachá é a MESMA autorização, pela outra porta (#2691): o diálogo convidava a
+// passar o crachá e a tela não escutava o `authorize-badge`, então o gerente com o
+// crachá no pescoço digitava o PIN mesmo assim. O servidor resolve a pessoa pelo
+// token, exige a mesma permissão e devolve o mesmo carimbo.
+function onManagerBadge(badge: string) {
+  checkManager({ badge });
+}
+function checkManager(approval: ManagerApproval) {
+  // Conferido AQUI, com o diálogo aberto: errado, o erro aparece nele e nada
+  // adiante (maquininha, "Recebi o Pix") chegou a acontecer.
+  emit("checkManager", approval, (ok) => {
     if (!ok) return;
     managerAuthOpen.value = false;
     proceed();
@@ -2579,13 +2570,15 @@ defineExpose({
              mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
              e taxas diferentes) e o valor. A forma vem primeiro, em pastilha
              cheia: é a primeira escolha no teclado do terminal, e a única que a
-             maquininha não perdoa em silêncio. -->
+             maquininha não perdoa em silêncio. Selo com maiúscula só na
+             primeira letra (dono, 16/11/2026) e a grafia da casa: "Pix",
+             "Crédito", "Débito", nunca em caixa alta. -->
         <div
           v-for="(line, idx) in confirmTenders"
           :key="`${line.method}-${idx}`"
           class="grid justify-items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-7"
         >
-          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold uppercase tracking-widest text-primary-foreground">
+          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold text-primary-foreground" data-pos-confirm-method>
             <Icon :name="line.icon" class="size-5 shrink-0" />
             {{ line.label }}
           </p>
@@ -2729,6 +2722,7 @@ defineExpose({
     :busy="loading || managerCheckBusy"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"
+    @authorize-badge="onManagerBadge"
   >
     <!-- Encomenda acima do plano: o gerente vê os dois números de cada linha
          ANTES de assinar (D-041). O carimbo vale só para eles. -->

@@ -24,8 +24,15 @@ cobranças vivas para o mesmo pedido.
   ``PaymentTimeoutHandler``): o cliente está na frente do balcão, e o caminho é
   gerar outro ou receber de outra forma.
 
-Fora daqui, e dito no PR: o Pix misto (Pix + dinheiro no mesmo saldo) e o saldo
-de encomenda com parte já paga (o ``initiate`` cobra o total efetivo do pedido).
+- **Encomenda com parte já paga** (#2917): o Pix cobra só o SALDO. O que já
+  entrou fica como linha recebida (``tenders`` com o ``intent_ref`` de cada
+  uma), o Pix entra como a linha pendente do saldo, e o valor da cobrança é o da
+  marca (:func:`charge_amount_q`, lido pelo ``payment.initiate``). O Payman soma
+  todos os intents do pedido (``payment.captured_balance_q``): pago o Pix, o
+  saldo vira zero sem tocar no que já tinha sido recebido.
+
+O Pix misto (Pix atestado ao lado de dinheiro ou cartão, #2916) não passa por
+aqui: é o acerto do balcão (``operator_orders.settle_delivery_cash``).
 """
 
 from __future__ import annotations
@@ -43,10 +50,6 @@ MARKER_KEY = "counter_pix"
 #: Os ``counter_takeover`` das rodadas anteriores (ver ``counter_takeover.cancelled_by_takeover``).
 TAKEOVER_HISTORY_KEY = "counter_takeover_history"
 
-PARTIAL_BALANCE_MESSAGE = (
-    "Esta encomenda já tem parte paga: o Pix do balcão ainda não cobra só o saldo. "
-    "Receba em dinheiro ou cartão."
-)
 NOT_CREATED_MESSAGE = "Não deu para gerar o Pix agora. Receba em dinheiro ou cartão, ou tente de novo."
 
 
@@ -72,6 +75,19 @@ def governs(order) -> bool:
         return False
     marked = str(marker.get("intent_ref") or "")
     return not marked or marked == str(payment.get("intent_ref") or "")
+
+
+def charge_amount_q(order) -> int | None:
+    """O valor da cobrança Pix do balcão: o saldo marcado no início — ou ``None``.
+
+    É o que o ``payment.initiate`` cobra quando o pedido está com o Pix do balcão
+    (:func:`governs`): na encomenda com parte paga, o saldo, nunca o total.
+    ``None`` fora do Pix do balcão (quem chama cobra o total efetivo).
+    """
+    if not governs(order):
+        return None
+    amount = int((_payment(order).get(MARKER_KEY) or {}).get("amount_q") or 0)
+    return amount if amount > 0 else None
 
 
 def live_proof(order) -> dict | None:
@@ -100,7 +116,7 @@ def start(order, *, actor: str, terminal_ref: str, attempt_id: str = "") -> dict
     cancelada: nada mudou). Idempotente: o Pix do balcão ainda pagável é
     devolvido como está.
     """
-    from shopman.shop.services import counter_takeover, operator_orders, order_composition
+    from shopman.shop.services import counter_takeover, operator_orders
     from shopman.shop.services import payment as payment_service
 
     order.refresh_from_db()
@@ -114,8 +130,6 @@ def start(order, *, actor: str, terminal_ref: str, attempt_id: str = "") -> dict
         raise CounterPixRefused(blocked)
     if not due:
         raise CounterPixRefused("Esta encomenda já está paga: só entregue.")
-    if due != order_composition.effective_total_q(order):
-        raise CounterPixRefused(PARTIAL_BALANCE_MESSAGE)
     # O teto do Pix de homologação da Efí: a mesma régua da venda.
     from shopman.shop.services import pix_policy
 
@@ -235,11 +249,14 @@ def _switch_to_pix(order, *, actor: str, terminal_ref: str, due: int) -> dict:
             history.append(payment.pop("counter_takeover"))
             payment[TAKEOVER_HISTORY_KEY] = history
         origin = {key: previous.get(key) for key in ("method", "collection", "tenders") if key in previous}
+        # O que já entrou fica (#2917): cada linha recebida com o seu intent, para
+        # o Payman continuar somando o que foi pago (``captured_balance_q``).
+        received = _received_lines(locked, previous)
         for key in (*_INTENT_PRESENTATION_KEYS, "error", "collection"):
             payment.pop(key, None)
         payment["method"] = "pix"
         payment["amount_q"] = int(due)
-        payment["tenders"] = [{
+        payment["tenders"] = [*received, {
             "method": "pix",
             "amount_q": int(due),
             "collection": "terminal",
@@ -261,6 +278,39 @@ def _switch_to_pix(order, *, actor: str, terminal_ref: str, due: int) -> dict:
         locked.save(update_fields=["data", "updated_at"])
     order.refresh_from_db()
     return previous
+
+
+def _received_lines(order, previous: dict) -> list[dict]:
+    """As linhas do que já entrou, cada uma com o seu intent (#2917).
+
+    As recebidas (e a conta da casa) ficam como estão. O intent capturado que só
+    morava em ``payment.intent_ref`` (pedido de um método só) vira linha recebida
+    explícita: sem ela, o Payman deixaria de somar o que já foi pago, e o saldo
+    voltaria a ser o total (cobrança dupla).
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    kept = [
+        dict(t) for t in previous.get("tenders") or []
+        if isinstance(t, dict) and (t.get("status") == "received" or t.get("method") == "account")
+    ]
+    referenced = {str(t.get("intent_ref") or "") for t in kept}
+    intent_ref = str(previous.get("intent_ref") or "")
+    if intent_ref and intent_ref not in referenced:
+        try:
+            intent = PaymentService.get(intent_ref)
+        except PaymentError:
+            intent = None
+        if intent is not None and intent.status == "captured":
+            net = int(PaymentService.captured_total(intent_ref)) - int(PaymentService.refunded_total(intent_ref))
+            if net > 0:
+                kept.append({
+                    "method": str(intent.method or previous.get("method") or ""),
+                    "amount_q": net,
+                    "status": "received",
+                    "intent_ref": intent_ref,
+                })
+    return kept
 
 
 def _stamp_intent(order, *, intent_ref: str) -> None:

@@ -112,7 +112,7 @@ def initiate(order) -> None:
     # O total que vale AGORA: pedido editado enquanto novo (concierge, Gestor)
     # tem o total no ajuste, e o ``total_q`` selado é o de nascimento. Cobrar o
     # selado mandava ao cliente um Pix com o valor antigo (P0-6).
-    amount_q = order_composition.effective_total_q(order)
+    amount_q = _charge_amount_q(order)
     adapter = get_adapter("payment", method=method)
     route_by_persisted_gateway = str(method).lower() == "pix"
     expected_gateway = (
@@ -303,6 +303,19 @@ def initiate(order) -> None:
 _INTENT_PRESENTATION_KEYS = ("intent_ref", "idempotency_key", "qr_code", "copy_paste", "expires_at", "checkout_url")
 
 
+def _charge_amount_q(order) -> int:
+    """O valor da cobrança do pedido: o total efetivo, ou o saldo do Pix do balcão.
+
+    O Pix do balcão de uma encomenda com parte paga cobra só o SALDO (#2917): o
+    valor vem da marca dele (``counter_pix.charge_amount_q``). Fora disso, o total
+    efetivo, como sempre.
+    """
+    from shopman.shop.services import counter_pix
+
+    balance = counter_pix.charge_amount_q(order)
+    return balance if balance is not None else order_composition.effective_total_q(order)
+
+
 def _retire_intent_with_old_amount(order, *, payment_data: dict, method: str, amount_q: int, intent_ref: str) -> bool:
     """A cobrança viva do pedido tem o valor de antes da edição? Cancela e libera a nova.
 
@@ -352,7 +365,7 @@ def restore_existing_intent(order) -> bool:
     """Restore a persisted Payman intent to Order data without contacting a provider."""
     payment_data = dict((order.data or {}).get("payment") or {})
     method = payment_data.get("method")
-    amount_q = order_composition.effective_total_q(order)
+    amount_q = _charge_amount_q(order)
     route_by_persisted_gateway = str(method or "").lower() == "pix"
     expected_gateway = (
         _gateway_for_adapter(get_adapter("payment", method=method)) or "__unresolved__"
@@ -1416,12 +1429,11 @@ def gateway_refund_owed_q(order) -> int:
         ceiling_q = refund_ceiling_q(order)
         return max(0, owed_q if ceiling_q is None else min(owed_q, ceiling_q))
 
-    from shopman.payman import PaymentService
 
     from shopman.shop.services import counter_takeover
 
     try:
-        intents = list(PaymentService.get_by_order(order.ref).filter(status__in=("captured", "refunded")).order_by("id"))
+        intents = _held_intents(order)
         if str(order.status) in _REFUND_ALL_STATUSES:
             due_q = sum(max(0, _net_held_q(intent)) for intent in intents)
             ceiling_q = refund_ceiling_q(order)
@@ -2710,6 +2722,35 @@ def lock_order_payment(order) -> None:
 
     intent_ref = str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")
     list(PaymentIntent.objects.select_for_update().filter(Q(order_ref=order.ref) | Q(ref=intent_ref)).order_by("pk"))
+
+
+def _held_intents(order) -> list:
+    """Os intents do pedido com dinheiro capturado, TODOS: os que ele referencia e os outros.
+
+    O pedido só guarda o intent da cobrança da vez (``payment.intent_ref``) e os dos
+    tenders; um Pix pago num intent anterior (o cliente pagou o QR velho depois de outro
+    ser gerado) continua sendo dinheiro do pedido no Payman (``order_ref``).
+    """
+    from shopman.payman import PaymentService
+
+    return list(PaymentService.get_by_order(order.ref).filter(status__in=("captured", "refunded")).order_by("id"))
+
+
+def held_by_order_q(order) -> int | None:
+    """O que entrou e continua na casa, somando TODOS os intents do pedido no Payman.
+
+    A régua do estorno do cancelamento (:func:`gateway_refund_owed_q`), para quem precisa
+    dizer o mesmo ANTES do gesto: a frase do dinheiro no diálogo de cancelar e de recusar
+    lia só os intents que o pedido referencia (:func:`captured_balance_q`) e dizia
+    "Nada foi cobrado" de um Pix pago num intent anterior, que o estorno devolve (#2710).
+    ``None`` quando o Payman não responde: "não sei" nunca vira zero.
+    """
+    try:
+        return sum(max(0, _net_held_q(intent)) for intent in _held_intents(order))
+    # silêncio-deliberado: sem o Payman, nada se afirma (o chamador cala a frase).
+    except Exception:
+        logger.warning("payment.held_by_order_unreadable order=%s", order.ref, exc_info=True)
+        return None
 
 
 def captured_balance_q(order, *, payment_reads=None) -> int | None:

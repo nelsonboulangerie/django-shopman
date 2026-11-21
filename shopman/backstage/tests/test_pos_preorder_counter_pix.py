@@ -334,26 +334,194 @@ def test_vencido_o_pix_do_balcao_gera_outro_e_o_velho_morre_antes(balcao):
 # ── O que o balcão não faz (e diz por quê) ────────────────────────────────
 
 
-@override_settings(**MOCK)
-def test_encomenda_com_parte_paga_nao_vira_pix_e_a_tela_sabe_por_que(balcao, operator):
-    order = _pay_at_pickup("CPX-PARCIAL", total_q=3600)
-    cash_intent = PaymentService.create_intent(order.ref, 1000, "cash")
-    PaymentService.authorize(cash_intent.ref)
-    PaymentService.capture(cash_intent.ref)
+def _partly_paid(ref: str, *, paid_q: int = 1000, total_q: int = 3600) -> tuple[Order, PaymentIntent]:
+    """A encomenda paga em parte no balcão e editada para mais (``order_edit``):
+    a linha recebida com o seu intent, e o saldo como linha pendente."""
+    order = _pay_at_pickup(ref, total_q=total_q)
+    paid = PaymentService.settle(order.ref, paid_q, "cash", idempotency_key=f"{ref}-sinal")
     payment = dict(order.data["payment"])
-    payment["intent_ref"] = cash_intent.ref
+    payment["method"] = "cash"
+    payment["intent_ref"] = paid.ref
+    payment["tenders"] = [
+        {"method": "cash", "amount_q": paid_q, "collection": "terminal", "status": "received", "intent_ref": paid.ref},
+        {"method": "cash", "amount_q": total_q - paid_q, "collection": "on_delivery", "status": "pending"},
+    ]
     order.data["payment"] = payment
     order.save(update_fields=["data"])
     order.refresh_from_db()
+    return order, paid
 
+
+# ── A encomenda com parte paga (#2917): o Pix cobra só o saldo ────────────
+
+
+@override_settings(**MOCK)
+def test_encomenda_com_parte_paga_o_pix_cobra_so_o_saldo(balcao, operator):
+    order, paid = _partly_paid("CPX-PARCIAL")
     hand_over = preorders.build_counter_block(order, user=operator).hand_over
+    assert (hand_over.allowed, hand_over.needs_payment, hand_over.amount_q) == (True, True, 2600)
+    assert hand_over.pix_block_reason == ""
+
     response = _start_pix(balcao, order)
 
-    assert (hand_over.allowed, hand_over.needs_payment, hand_over.amount_q) == (True, True, 2600)
-    assert hand_over.pix_block_reason == counter_pix.PARTIAL_BALANCE_MESSAGE
+    assert response.status_code == 200, response.json()
+    assert response.json()["payment"]["amount_q"] == 2600
+    [pix] = _pix_intents(order.ref)
+    assert pix.amount_q == 2600
+    order.refresh_from_db()
+    tenders = order.data["payment"]["tenders"]
+    # O que já entrou fica como estava, com o seu intent; o Pix é a linha do saldo.
+    assert tenders[0] == {"method": "cash", "amount_q": 1000, "collection": "terminal", "status": "received",
+                          "intent_ref": paid.ref}
+    assert (tenders[1]["method"], tenders[1]["amount_q"], tenders[1]["status"]) == ("pix", 2600, "pending")
+    assert payment_svc.balance_due_q(order) == 2600
+
+
+@override_settings(**MOCK)
+def test_o_pix_do_saldo_parcial_pago_quita_e_entrega_sem_cobrar_de_novo(balcao):
+    order, _paid = _partly_paid("CPX-PARCIAL-PAGO")
+    intent_ref = _start_pix(balcao, order).json()["payment"]["intent_ref"]
+
+    _pay(PaymentService.get(intent_ref), amount="26.00", e2e="E2E-PARCIAL")
+
+    order.refresh_from_db()
+    assert payment_svc.balance_due_q(order) == 0
+    assert payment_svc.captured_balance_q(order) == 3600
+    delivered = _hand_over(balcao, order, request_id="cpx-parcial-entrega")
+    assert delivered.status_code == 200, delivered.json()
+    assert delivered.json()["received_q"] == 0
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+    assert not Entry.objects.filter(order_ref=order.ref, kind="cod_settled").exists()
+
+
+@override_settings(**MOCK)
+def test_o_pix_do_saldo_parcial_que_vence_e_recebido_em_dinheiro_so_pelo_saldo(balcao):
+    order, paid = _partly_paid("CPX-PARCIAL-DINHEIRO")
+    intent_ref = _start_pix(balcao, order).json()["payment"]["intent_ref"]
+
+    response = _hand_over(
+        balcao, order, tenders=[{"method": "cash", "amount_q": 2600}], cash_tendered_q=3000,
+        request_id="cpx-parcial-dinheiro",
+    )
+
+    assert response.status_code == 200, response.json()
+    assert PaymentService.get(intent_ref).status == "cancelled"
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+    # A gaveta recebe o saldo, e o que já tinha entrado continua lá, uma vez só.
+    assert list(Entry.objects.filter(order_ref=order.ref, kind="cod_settled").values_list("amount_q", flat=True)) == [2600]
+    tenders = order.data["payment"]["tenders"]
+    assert tenders[0]["intent_ref"] == paid.ref and tenders[0]["amount_q"] == 1000
+    assert payment_svc.captured_balance_q(order) == 3600
+
+
+@override_settings(**MOCK)
+def test_o_intent_pago_que_so_morava_no_pedido_vira_linha_recebida(balcao):
+    """Pedido de um método só: o pago está em ``payment.intent_ref``, sem linha. O
+    Pix do saldo não pode apagá-lo, senão o saldo volta a ser o total."""
+    order = _pay_at_pickup("CPX-PARCIAL-SEM-LINHA")
+    paid = PaymentService.settle(order.ref, 1000, "cash", idempotency_key="sem-linha-sinal")
+    payment = dict(order.data["payment"])
+    payment["intent_ref"] = paid.ref
+    payment["tenders"] = [{"method": "cash", "amount_q": 2600, "collection": "on_delivery", "status": "pending"}]
+    order.data["payment"] = payment
+    order.save(update_fields=["data"])
+
+    response = _start_pix(balcao, order)
+
+    assert response.status_code == 200, response.json()
+    order.refresh_from_db()
+    assert order.data["payment"]["tenders"][0] == {
+        "method": "cash", "amount_q": 1000, "status": "received", "intent_ref": paid.ref,
+    }
+    assert payment_svc.balance_due_q(order) == 2600
+    assert _pix_intents(order.ref)[0].amount_q == 2600
+
+
+# ── O Pix misto no saldo (#2916): atestado no balcão, como na venda ───────
+
+
+@override_settings(**MOCK)
+def test_saldo_misto_dinheiro_e_pix_atestado_liquida_cada_um_no_seu_livro(balcao):
+    order = _pay_at_pickup("CPX-MISTO")
+
+    response = _hand_over(
+        balcao, order,
+        tenders=[{"method": "cash", "amount_q": 1600}, {"method": "pix", "amount_q": 2000, "pix_confirmed": True}],
+        cash_tendered_q=2000, request_id="cpx-misto",
+    )
+
+    assert response.status_code == 200, response.json()
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+    payment = order.data["payment"]
+    assert payment["method"] == "mixed"
+    pix_line = next(t for t in payment["tenders"] if t["method"] == "pix")
+    # Quem atestou o Pix e quando: a nota e o fechamento leem daqui.
+    assert pix_line["pix_confirmed_by"] == "marina" and pix_line["pix_confirmed_at"]
+    assert "pix_confirmed" not in pix_line
+    pix_intent = PaymentService.get(pix_line["intent_ref"])
+    assert (pix_intent.method, pix_intent.status, pix_intent.amount_q) == ("pix", "captured", 2000)
+    assert pix_intent.gateway_data["pix_confirmed_by"] == "marina"
+    # Só o dinheiro entra na gaveta; o Pix nunca passou por ela.
+    assert list(Entry.objects.filter(order_ref=order.ref, kind="cod_settled").values_list("amount_q", flat=True)) == [1600]
+    assert payment_svc.captured_balance_q(order) == 3600
+    # Nenhuma cobrança Pix no provedor: o Pix misto é a palavra do balcão.
+    assert [intent.gateway for intent in _pix_intents(order.ref)] == [""]
+
+
+@override_settings(**MOCK)
+def test_saldo_misto_sem_o_recebi_o_pix_e_recusado_sem_mudar_nada(balcao):
+    order = _pay_at_pickup("CPX-MISTO-SEM")
+
+    response = _hand_over(
+        balcao, order,
+        tenders=[{"method": "cash", "amount_q": 1600}, {"method": "pix", "amount_q": 2000}],
+        request_id="cpx-misto-sem",
+    )
+
     assert response.status_code == 400
-    assert response.json()["detail"] == counter_pix.PARTIAL_BALANCE_MESSAGE
+    assert response.json()["detail"] == operator_orders.PIX_MIXED_UNCONFIRMED_MESSAGE
+    order.refresh_from_db()
+    assert order.status != Order.Status.COMPLETED
     assert _pix_intents(order.ref) == []
+
+
+@override_settings(**MOCK)
+def test_pix_sozinho_atestado_nao_entra_pelo_acerto(balcao):
+    """Pix sozinho é a cobrança do balcão, com QR e provedor: atestado, nunca."""
+    order = _pay_at_pickup("CPX-SO-PIX")
+
+    response = _hand_over(
+        balcao, order, tenders=[{"method": "pix", "amount_q": 3600, "pix_confirmed": True}], request_id="cpx-so-pix",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == operator_orders.PIX_ALONE_MESSAGE
+    assert _pix_intents(order.ref) == []
+
+
+@override_settings(**MOCK)
+def test_saldo_misto_com_o_qr_do_balcao_vivo_cancela_o_qr_antes_e_estorna_o_tardio(balcao):
+    """Um gesto de dinheiro, uma cobrança: o QR do balcão morre antes do misto, e o
+    Pix pago nele depois volta sozinho."""
+    order = _pay_at_pickup("CPX-MISTO-QR")
+    intent_ref = _start_pix(balcao, order).json()["payment"]["intent_ref"]
+
+    response = _hand_over(
+        balcao, order,
+        tenders=[{"method": "cash", "amount_q": 1600}, {"method": "pix", "amount_q": 2000, "pix_confirmed": True}],
+        request_id="cpx-misto-qr",
+    )
+
+    assert response.status_code == 200, response.json()
+    assert PaymentService.get(intent_ref).status == "cancelled"
+    order.refresh_from_db()
+    assert order.data["payment"]["counter_takeover"]["cancelled_intent_ref"] == intent_ref
+    with patch.object(counter_takeover, "refund_late_payment") as refund:
+        _pay(PaymentService.get(intent_ref), e2e="E2E-MISTO-TARDE")
+    refund.assert_called_once()
 
 
 @override_settings(**MOCK)
