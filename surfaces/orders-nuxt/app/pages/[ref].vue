@@ -243,7 +243,7 @@ watch(
   },
   { immediate: true, flush: "post" },
 );
-// O "Chamar o cliente" do cartão e da Tabela (Pix vencido) chega com `#call-customer`:
+// O "Ver o contato do cliente" do cartão e da Tabela (Pix vencido) chega com `#call-customer`:
 // a página vai à faixa do pagamento com o teclado no "Chamar no WhatsApp" dela.
 const callCustomerTarget = computed(() =>
   route.hash === CALL_CUSTOMER_HASH &&

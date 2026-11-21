@@ -387,7 +387,7 @@ const notices = computed<CardNotice[]>(() => {
       description: card.advance_block_reason,
       // Pix ou link vencido nunca destrava sozinho: o próximo passo vem pronto.
       // O detalhe abre o cancelar com "Pagamento não confirmado" já marcado. Com
-      // telefone, "Chamar o cliente" abre o pedido no contato: o número não vem no
+      // telefone, "Ver o contato do cliente" abre o pedido no contato: o número não vem no
       // cartão (#2434), e o "Chamar no WhatsApp" de verdade mora no detalhe.
       actions: card.payment_lapsed
         ? [
@@ -403,7 +403,7 @@ const notices = computed<CardNotice[]>(() => {
               ? [
                   action(
                     {
-                      label: "Chamar o cliente",
+                      label: "Ver o contato do cliente",
                       icon: "i-lucide-arrow-up-right",
                       to: `/${card.ref}${CALL_CUSTOMER_HASH}`,
                     },

@@ -617,7 +617,7 @@ class OrderCardProjection:
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
     # A cobrança venceu e o pedido tem um telefone para chamar (``_has_order_phone``):
-    # o cartão leva "Chamar o cliente" ao lado do "Cancelar pedido", e o toque abre o
+    # o cartão leva "Ver o contato do cliente" ao lado do "Cancelar pedido", e o toque abre o
     # pedido no contato. O número NÃO vem no cartão (#2434, decisão do dono pendente).
     customer_callable: bool = False
     # O bloqueio anda sozinho, sem ninguém da casa agir ("Aguardando Pix", "Aguardando

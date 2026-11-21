@@ -231,7 +231,7 @@ export function refundRetryToast(
 }
 
 /**
- * "Chamar o cliente" do cartão e da Tabela no Pix vencido: o pedido abre com o
+ * "Ver o contato do cliente" do cartão e da Tabela no Pix vencido: o pedido abre com o
  * teclado no "Chamar no WhatsApp" da faixa do pagamento. O número não vai no cartão
  * (#2434, decisão do dono pendente); quem chama de verdade é o detalhe.
  */

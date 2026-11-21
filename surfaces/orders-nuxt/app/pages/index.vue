@@ -2437,7 +2437,7 @@ function compactClear() {
                 v-if="row.original.card.customer_callable"
                 :to="`/${row.original.card.ref}${CALL_CUSTOMER_HASH}`"
                 icon="i-lucide-arrow-up-right"
-                label="Chamar o cliente"
+                label="Ver o contato do cliente"
                 color="neutral"
                 variant="outline"
                 data-supervision-call-customer-cell
@@ -2577,7 +2577,7 @@ function compactClear() {
                     v-if="row.original.card.payment_lapsed && row.original.card.customer_callable && canManageOrders"
                     :to="`/${row.original.card.ref}${CALL_CUSTOMER_HASH}`"
                     icon="i-lucide-arrow-up-right"
-                    label="Chamar o cliente"
+                    label="Ver o contato do cliente"
                     color="neutral"
                     variant="outline"
                     data-supervision-call-customer
