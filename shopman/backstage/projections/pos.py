@@ -2425,9 +2425,23 @@ def _default_float_q(terminal) -> int:
 
 
 def account_balances() -> tuple[POSAccountBalanceProjection, ...]:
-    """Clientes com conta na casa e saldo em aberto, maior saldo primeiro."""
+    """Clientes com conta na casa e saldo em aberto, a dívida mais antiga primeiro.
+
+    Nunca pelo maior saldo: o topo da lista viraria um ranking de clientes pelo
+    dinheiro, e o dono não quer panorama de valores de clientes diferentes a quem
+    não audita o caixa (21/11/2026: "O problema seria poder ver valores de vários
+    registros agregados, sobretudo de clientes diferentes"). A ordem é a do que
+    cobrar primeiro: a conta aberta há mais tempo (``oldest_at``); no empate, o
+    nome. O Core devolve por saldo (``PaymentService.account_balances``); quem
+    reordena é esta projeção. O saldo de CADA cliente segue na linha.
+    """
     from shopman.shop.services import house_account
 
+    rows = sorted(
+        house_account.balances(),
+        # ``oldest_at`` é ISO do mesmo fuso (ordena como texto); sem data vai ao fim.
+        key=lambda row: (not row.oldest_at, row.oldest_at, str(row.customer_name).casefold(), row.customer_ref),
+    )
     return tuple(
         POSAccountBalanceProjection(
             customer_ref=row.customer_ref,
@@ -2437,7 +2451,7 @@ def account_balances() -> tuple[POSAccountBalanceProjection, ...]:
             intents=row.intents,
             oldest_at=row.oldest_at,
         )
-        for row in house_account.balances()
+        for row in rows
     )
 
 

@@ -4497,10 +4497,13 @@
           "symbols": [
             "KITCHEN_RELEASED_AT_KEY",
             "STALE_ALERT_FRACTION_OF_DEADLINE",
+            "_CLOSED_STATUSES",
+            "_REPAIR_ACTOR_PREFIX",
             "_alert_coupon_over_redeemed",
             "_alert_if_card_authorization_held",
             "_card_authorization_is_held",
             "_check_availability",
+            "_closed_by_repair",
             "_complete_after_handoff",
             "_counter_handoff",
             "_create_alert",
@@ -4525,6 +4528,7 @@
             "_payment_is_captured",
             "_payment_method",
             "_prep_starts_automatically",
+            "_promised_for_today",
             "_record_availability_decision",
             "_record_coupon_use",
             "_release_coupon_use",
@@ -4539,6 +4543,7 @@
             "awaits_kitchen_release",
             "kitchen_release_at",
             "logger",
+            "phase_superseded",
             "release_preorder_now"
           ]
         }
@@ -8189,6 +8194,8 @@
           "responsibility": "leitura",
           "symbols": [
             "CARRIER_TRACKING_URLS",
+            "COURIER_FRESH_SECONDS",
+            "COURIER_NEAR_METERS",
             "TERMINAL_STATUSES",
             "TrackingCancellationContactData",
             "TrackingData",
@@ -8225,6 +8232,7 @@
             "_contact_and_share",
             "_copy_message",
             "_copy_title",
+            "_courier_closeness",
             "_courier_tracking_url",
             "_eta_at",
             "_eta_not_before",
@@ -10352,6 +10360,7 @@
           "symbols": [
             "_KIND_BY_REF",
             "_kind",
+            "_translator",
             "courier_backend"
           ]
         },
@@ -10361,7 +10370,8 @@
             "capabilities",
             "new_ride_service_ref",
             "ride_state",
-            "service_for_new_ride"
+            "service_for_new_ride",
+            "state_since"
           ]
         }
       ]
@@ -14495,7 +14505,6 @@
           "responsibility": "leitura",
           "symbols": [
             "_service",
-            "suggestion_for",
             "waiting_pool"
           ]
         }
@@ -14667,6 +14676,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "HOLD_GAPS_KEY",
             "_adopt_holds_for_qty",
             "_alert_hold_gap",
             "_alert_unknown_sku",
@@ -14676,6 +14686,7 @@
             "_expand_if_bundle",
             "_hold_across_quants_or_nothing",
             "_hold_anchored_by",
+            "_hold_gap_entry",
             "_is_fermata_hold",
             "_is_untracked",
             "_items_to_hold",
@@ -14689,6 +14700,7 @@
             "_sale_consummated_outside",
             "_sku_absent_from_catalog",
             "_unknown_sku_error",
+            "_write_hold_gaps",
             "logger"
           ]
         }

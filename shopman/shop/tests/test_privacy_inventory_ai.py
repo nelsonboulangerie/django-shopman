@@ -371,13 +371,16 @@ def test_a_frase_dos_leitores_e_a_do_dono():
 
 def test_o_jev_le_tambem_a_ultima_mensagem_da_loja_e_a_frase_diz():
     """Adendo à D-040 (dono, 21/11/2026, "desde que seguro perante LGPD, sim"): o Jev
-    (TypeSafe) recebe também a última fala da casa, redigida, e a página diz isso."""
+    (TypeSafe) recebe também a última fala da casa, redigida, e a página diz isso. Com a
+    conferência antes do envio (dono, 21/11), recebe também a resposta a conferir, pelo
+    mesmo redator."""
     for purposes in ({"decision"}, {"decision", "labeling"}):
         _role, shares = ai_role_and_shares(purposes)
         assert shares == (
-            "só o texto da sua mensagem e a última mensagem da loja na conversa. Nome, "
+            "só o texto da sua mensagem, a última mensagem da loja na conversa e a resposta "
+            "que a loja vai enviar, para conferir antes do envio. Nome, "
             "documento, e-mail, telefone, endereço, pagamento, alergia ou doença que você "
-            "escrever não são enviados: a loja apaga tudo isso do texto antes. Da mensagem "
+            "escrever não são enviados: a loja apaga tudo isso do texto antes. Das mensagens "
             "da loja, a loja também apaga o número do pedido e os valores"
         ), shares
         assert "—" not in shares

@@ -291,7 +291,7 @@ function rideOrder(ref) {
       position: null, error: null, can_quote: false, can_dispatch: false, can_dispatch_again: false,
       can_cancel: cancel.canCancel,
       cancel_state: { state: cancel.state, message: cancel.message, at: cancel.state ? new Date().toISOString() : "" },
-      reminder: null, custody: { change_out_suggested_q: 0, needs_machine: false, recorded: false }, ride_offer: [],
+      reminder: null, custody: { change_out_suggested_q: 0, needs_machine: false, recorded: false },
       charge_outdated: null,
     },
   };
@@ -834,7 +834,7 @@ function callDetail(ref) {
       provider: "machine", status: "", status_label: "", active: false, driver: null, tracking_url: "", confirmation_code: "",
       estimate_display: "", final_value_display: "", attempts_count: 0, position: null, error: null, can_quote: false,
       can_dispatch: true, not_today: "", can_dispatch_again: false, can_cancel: false, cancel_state: null, reminder: null,
-      custody: { change_out_suggested_q: 0, needs_machine: false, recorded: false }, ride_offer: [], ride_suggestion: null,
+      custody: { change_out_suggested_q: 0, needs_machine: false, recorded: false },
       charge_outdated: null,
     },
   };

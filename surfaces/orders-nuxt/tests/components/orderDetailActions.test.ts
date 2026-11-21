@@ -108,7 +108,6 @@ vi.stubGlobal("useOrderDetail", () => ({
   resendPaymentLink: resendPaymentLink,
   saveNotes,
   addComment: vi.fn(),
-  courierDispatch: vi.fn(),
   courierCancel: vi.fn(),
   courierQuote: vi.fn(),
   markNotPickedUp,

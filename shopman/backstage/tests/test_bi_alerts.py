@@ -113,8 +113,11 @@ def test_o_alerta_do_balconista_nao_carrega_reais(revenue_rule):
 
     alerta = OperatorAlert.objects.latest("id")
     assert "R$" not in alerta.message, f"o balconista leu dinheiro: {alerta.message!r}"
+    # Nem a proporção do faturamento (dono, 21/11/2026: nenhum panorama do quanto a
+    # casa fatura a quem não audita): número nenhum na mensagem pública.
+    assert "%" not in alerta.message, f"o balconista leu a proporção do faturamento: {alerta.message!r}"
     # E não perdeu a informação que é DELE: o dia fraco continua dito.
-    assert "50% do esperado" in alerta.message
+    assert "abaixo do esperado" in alerta.message
     assert "B.I." in alerta.message
 
 

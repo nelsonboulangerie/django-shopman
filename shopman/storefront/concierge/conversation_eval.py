@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import timedelta
 
@@ -126,6 +127,8 @@ class Turn:
     customer: str
     reply: str
     conversation_id: int
+    #: O veredito da conferência antes do envio (``envelope["conference"]``), quando houve.
+    conference: dict | None = None
     #: As falas do cliente deste turno (para o replay refazê-las no código de hoje).
     inbound_ids: tuple[int, ...] = ()
 
@@ -179,6 +182,8 @@ def _conversation_turns(conversation, messages) -> list[Turn]:
             customer=" / ".join(m.text for m in inbound if m.text),
             reply="\n".join(r.text for r in replies if r.text),
             conversation_id=conversation.pk,
+            conference=next(((r.envelope or {}).get("conference") for r in replies
+                             if (r.envelope or {}).get("conference")), None),
             inbound_ids=tuple(m.pk for m in inbound),
         ))
         inbound.clear()
@@ -267,6 +272,22 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             f"{REACH_LABELS[k]} {v}" for k, v in sorted(reach.items(), key=lambda kv: -kv[1]) if k != "reaches"
         ))
         lines.append(f"      premissa: {INCUMBENT_PREMISES.get(name, 'capacidade declarada pelo fornecedor')}")
+    conferred = [t for t in turns if t.conference and outcome_of(t.evidence) is not None]
+    if conferred:
+        would_fall = [t for t in conferred if t.conference.get("decision") == "fallback"]
+        agree = sum(
+            (t.conference.get("decision") == "fallback") == (outcome_of(t.evidence) != "useful") for t in conferred
+        )
+        reasons = Counter(
+            f"{check}:{(row or {}).get('reason') or (row or {}).get('status')}"
+            for t in would_fall for check, row in (t.conference.get("checks") or {}).items()
+            if (row or {}).get("status") != "pass"
+        )
+        lines.append(
+            f"  conferência antes do envio (sombra): {len(conferred)} conferidos, reprovaria {len(would_fall)}, "
+            f"concorda com o placar em {agree}/{len(conferred)}"
+            + (": " + ", ".join(f"{k} {v}" for k, v in reasons.most_common()) if reasons else "")
+        )
     bad = [t for t in turns if outcome_of(t.evidence) not in (None, "useful") or t.evidence.repeated]
     if bad and show:
         lines.append("")
@@ -279,6 +300,8 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             lines.append(f"      cliente: {_redacted(t.customer)[:160]}")
             lines.append(f"      casa:    {_redacted(t.reply).replace(chr(10), ' / ')[:240] or '(nada)'}")
             lines.append(f"      ManyChat AI no WhatsApp ({ESTIMATED}): {REACH_LABELS[reach]}")
+            if t.conference:
+                lines.append(f"      conferência (sombra): {t.conference.get('decision')}")
     return "\n".join(lines)
 
 
@@ -381,6 +404,8 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
                         customer=turn.customer,
                         reply="\n".join(r.text for r in replies if r.text),
                         conversation_id=conv_pk,
+                        conference=next(((r.envelope or {}).get("conference") for r in replies
+                                         if (r.envelope or {}).get("conference")), None),
                         inbound_ids=turn.inbound_ids,
                     ))
                     conversation.refresh_from_db(fields=["state"])

@@ -257,6 +257,12 @@ class TrackingPromiseData:
     courier_stage: str = ""
     courier_driver: str = ""
     courier_pickup_eta_at: str | None = None
+    # Na rua (#2509, opção 1 da coordenação): a posição do entregador vira TEXTO, nunca
+    # mapa. ``courier_near`` diz que a posição fresca está a até
+    # ``COURIER_NEAR_METERS`` do endereço DESTE pedido; ``courier_seen_at`` (ISO) é a
+    # hora da última posição, para a frase dizer a idade quando ela envelhece.
+    courier_near: bool = False
+    courier_seen_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -987,6 +993,8 @@ def _promise(
     courier_stage: str = "",
     courier_driver: str = "",
     courier_pickup_eta_at: str | None = None,
+    courier_near: bool = False,
+    courier_seen_at: str | None = None,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -1015,6 +1023,8 @@ def _promise(
         courier_stage=courier_stage,
         courier_driver=courier_driver,
         courier_pickup_eta_at=courier_pickup_eta_at,
+        courier_near=courier_near,
+        courier_seen_at=courier_seen_at,
     )
 
 
@@ -1444,10 +1454,13 @@ def _build_promise(
         from shopman.shop.services.courier import driver_first_name, get_block
 
         driver = get_block(order).get("driver") if is_delivery else None
+        near, seen_at = _courier_closeness(order) if is_delivery else (False, None)
         return promise(
             state="dispatched",
             tone="info",
             eta_at=eta_at,
+            courier_near=near,
+            courier_seen_at=seen_at,
             courier_driver=driver_first_name(driver.get("name") or "") if isinstance(driver, dict) else "",
             requires_active_notification=True,
             notification_topic="order_dispatched",
@@ -1456,6 +1469,43 @@ def _build_promise(
 
     # ── 6. REPOUSO — recebido (fallback) ────────────────────────────
     return promise(state="received", tone="info")
+
+
+#: "Diego está chegando." a esta distância do endereço do pedido (tela aprovada, §4.5.2).
+COURIER_NEAR_METERS = 80
+#: Posição mais velha que isto não diz "chegando": a frase passa a dizer a idade.
+COURIER_FRESH_SECONDS = 60
+
+
+def _courier_closeness(order) -> tuple[bool, str | None]:
+    """Se o entregador está perto DESTE endereço, e desde quando é a posição (#2509).
+
+    Só a parada do cliente: a distância é até o endereço dele, e nada da rota sai daqui.
+    Sem corrida viva, sem posição ou sem coordenada do endereço, ``(False, None)``.
+    """
+    import math
+
+    from shopman.shop.services import courier_position
+    from shopman.shop.services.courier import get_block
+
+    block = get_block(order)
+    ride_ref = block.get("ride_ref")
+    if not ride_ref or str(block.get("status") or "") in _COURIER_ENDED_STATUSES:
+        return False, None
+    position = courier_position.read(ride_ref)
+    if position is None:
+        return False, None
+    address = (order.data or {}).get("delivery_address_structured") or {}
+    try:
+        lat, lng = float(address.get("latitude")), float(address.get("longitude"))
+    except (TypeError, ValueError):
+        return False, position["at"].isoformat()
+    phi1, phi2 = math.radians(lat), math.radians(position["latitude"])
+    dphi, dlmb = phi2 - phi1, math.radians(position["longitude"] - lng)
+    h = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    meters = 2 * 6_371_000 * math.asin(math.sqrt(h))
+    fresh = courier_position.age_seconds(position) <= COURIER_FRESH_SECONDS
+    return fresh and meters <= COURIER_NEAR_METERS, position["at"].isoformat()
 
 
 #: Letras da corrida (Machine) em que ela já acabou: finalizada, não atendida,

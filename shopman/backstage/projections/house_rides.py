@@ -19,6 +19,8 @@ from shopman.orderman.models import Order
 from shopman.utils.formatting import format_clock
 
 from shopman.shop.projections.types import Action
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
 
 
 @dataclass(frozen=True)
@@ -52,8 +54,6 @@ class DeliveryHouseRideProjection:
 
 def is_house(block: dict) -> bool:
     """A corrida é de um serviço em que a pessoa é escolhida e o estado não vem sozinho."""
-    from shopman.shop.services import delivery_services
-
     caps = delivery_services.capabilities(block) if block.get("service") else None
     return bool(caps and caps.assign and not caps.push_status)
 
@@ -83,12 +83,13 @@ def house_ride(lead: Order, *, user=None) -> DeliveryHouseRideProjection | None:
     orders = house_couriers.ride_orders(link)
     live = [order for order in orders
             if order.status != Order.Status.CANCELLED and courier.get_block(order).get("ride_ref") == ride_ref]
-    statuses = [str(courier.get_block(order).get("status") or "") for order in live]
-    delivered = sum(1 for status in statuses if status == "F")
+    # O estado da casa, não a letra (M1b-b, #2552).
+    statuses = [delivery_services.ride_state(courier.get_block(order)) for order in live]
+    delivered = sum(1 for status in statuses if status == RideState.DONE)
     total = len(live)
-    if statuses and all(status == "F" for status in statuses):
+    if statuses and all(status == RideState.DONE for status in statuses):
         moment = f"{name} entregou tudo"
-    elif "E" in statuses:
+    elif RideState.ON_ROUTE in statuses:
         moment = f"{name} na rua · {delivered} de {total} entregues"
     else:
         moment = f"{name} leva"
@@ -97,14 +98,15 @@ def house_ride(lead: Order, *, user=None) -> DeliveryHouseRideProjection | None:
         link_word = f"Abriu o link às {_hour(link.opened_at)}"
     else:
         link_word = "Ainda não abriu o link"
-    open_ride = link.expires_at is None and any(status in ("A", "E") for status in statuses)
+    open_ride = link.expires_at is None and any(
+        status in (RideState.ASSIGNED, RideState.ON_ROUTE) for status in statuses)
     hint = " · ".join(part for part in (
         "Entregador da casa",
         _money(value_q) if isinstance(value_q, int) and value_q > 0 else "",
         link_word if open_ride else "",
     ) if part)
     revision = house_couriers.ride_revision(link)
-    leaving = "A" in statuses and link.expires_at is None
+    leaving = RideState.ASSIGNED in statuses and link.expires_at is None
     deliver = tuple(
         HouseStopActionProjection(
             ref=order.ref, code=short_ref(order.ref),
@@ -113,7 +115,7 @@ def house_ride(lead: Order, *, user=None) -> DeliveryHouseRideProjection | None:
                 "description": f"Marcar {short_ref(order.ref)} como entregue? O cliente recebe o aviso agora.",
             }),
         )
-        for order, status in zip(live, statuses, strict=True) if status == "E" and link.expires_at is None
+        for order, status in zip(live, statuses, strict=True) if status == RideState.ON_ROUTE and link.expires_at is None
     )
     return DeliveryHouseRideProjection(
         courier_ref=link.courier.ref,
