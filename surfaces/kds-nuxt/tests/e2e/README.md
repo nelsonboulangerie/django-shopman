@@ -19,7 +19,7 @@ npm run test:e2e
 - **resilience.spec** — `OfflineBanner` aparece/some com a rede.
 - **overlap.spec** — a trava da sobreposição (`expectNoOperatorOverlap` do kit) nas seis
   larguras da régua (1440, 1360, 1280, 1024, 768, 390): Estações, as estações da prévia
-  (Bancada e Cafés cheias; Lanches, Encomendas e Saída vazias), a Bancada sem ticket, o
+  (Bancada e Cafés cheias; Lanches, Separação e Saída vazias), a Bancada sem ticket, o
   login e o `/pickup`. As estações cheias usam o cookie `e2e_kds=preview`, que liga os
   quadros da prévia só para aquela requisição, sem trocar o modo do mock.
 

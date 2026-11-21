@@ -48,7 +48,7 @@ beforeEach(() => {
     instances: [
       { ref: "cafes", name: "Cafés", type: "prep", type_display: "Preparo", active_count: 2 },
       { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: 7 },
-      { ref: "encomendas", name: "Encomendas", type: "picking", type_display: "Separação", active_count: 0 },
+      { ref: "picking", name: "Separação", type: "picking", type_display: "Separação", active_count: 0 },
       { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: 3 },
     ],
   };
@@ -61,7 +61,7 @@ describe("itens da Cozinha: as estações reais", () => {
     expect(sections.value.filter((s) => s.to).map((s) => [s.label, s.to])).toEqual([
       ["Cafés", "/cafes"],
       ["Bancada", "/bancada"],
-      ["Encomendas", "/encomendas"],
+      ["Separação", "/picking"],
       ["Saída", EXIT],
       ["Painel de retirada", "/pickup"],
     ]);
@@ -105,7 +105,7 @@ describe("barra da Cozinha na carga direta do quadro", () => {
     expect(nav.links()).toEqual([
       ["station:bancada", "/bancada"],
       ["station:cafes", "/cafes"],
-      ["station:encomendas", "/encomendas"],
+      ["station:picking", "/picking"],
       ["exit", EXIT],
     ]);
     expect(nav.current()).toBe("station:bancada");
@@ -126,7 +126,7 @@ describe("barra da Cozinha na carga direta do quadro", () => {
   });
 
   it("a memória de OUTRA estação (localStorage) não desvia a barra do quadro aberto", () => {
-    useKdsStation().remember("encomendas", "Encomendas");
+    useKdsStation().remember("picking", "Separação");
     goTo("/bancada");
     const nav = bar();
     expect(nav.links()[0]).toEqual(["station:bancada", "/bancada"]);
@@ -134,10 +134,10 @@ describe("barra da Cozinha na carga direta do quadro", () => {
   });
 
   it("fora do quadro, a estação deste dispositivo vai à frente (depois de montar)", () => {
-    useKdsStation().remember("encomendas", "Encomendas");
+    useKdsStation().remember("picking", "Separação");
     goTo("/");
     const nav = bar();
-    expect(nav.links()[0]).toEqual(["station:encomendas", "/encomendas"]);
+    expect(nav.links()[0]).toEqual(["station:picking", "/picking"]);
     expect(nav.current()).toBe("");
   });
 

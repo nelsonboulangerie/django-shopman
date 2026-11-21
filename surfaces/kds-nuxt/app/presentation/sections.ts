@@ -2,7 +2,7 @@
 // `cozinha-estacao4.html` e `cozinha-celular4.html`).
 //
 // Conceito (dono, 09/10/2026): cada item da operação é uma ESTAÇÃO DA CASA, pelo nome
-// que ela tem no cadastro (Cafés, Lanches, Encomendas…), e leva à bancada dela
+// que ela tem no cadastro (Cafés, Lanches, Separação…), e leva à bancada dela
 // (`/<ref>`). Estação é um posto de preparo específico: não existe estação chamada
 // "Preparo", e por isso não há item genérico "Preparo". A Saída é o atalho para a
 // coluna Saída do Gestor (SUITE-UX §15: a Cozinha não tem tela de Saída). Abaixo, na

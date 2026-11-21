@@ -8506,11 +8506,11 @@ class Command(BaseCommand):
             if col:
                 kds_cafes.collections.add(col)
 
-        # KDS Encomendas — Picking: separação de pedidos de balcão e agendados
+        # KDS Separação — Picking: separação de pedidos de balcão e agendados.
         KDSInstance.objects.update_or_create(
-            ref="preorders",
+            ref="picking",
             defaults={
-                "name": "Encomendas",
+                "name": "Separação",
                 "type": "picking",
                 "target_time_minutes": 5,
                 "sound_enabled": True,
@@ -8536,7 +8536,7 @@ class Command(BaseCommand):
 
         KDSInstance.objects.filter(ref__in=["padaria"]).delete()
 
-        self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Encomendas, Saída)")
+        self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Separação, Saída)")
 
     # ────────────────────────────────────────────────────────────────
     # Etiquetas de cliente

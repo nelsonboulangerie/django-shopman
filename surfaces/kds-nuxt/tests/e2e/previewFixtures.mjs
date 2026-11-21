@@ -267,7 +267,7 @@ export const PREVIEW_INDEX = {
     // cada uma pelo nome, e a Saída vira o atalho para o Gestor.
     { ref: "cafes", name: "Cafés", type: "prep", type_display: "Preparo", active_count: CHANGED_TICKETS.length },
     { ref: "lanches", name: "Lanches", type: "prep", type_display: "Preparo", active_count: 0 },
-    { ref: "encomendas", name: "Encomendas", type: "picking", type_display: "Separação", active_count: 1 },
+    { ref: "picking", name: "Separação", type: "picking", type_display: "Separação", active_count: 1 },
     { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: 3 },
   ],
 };

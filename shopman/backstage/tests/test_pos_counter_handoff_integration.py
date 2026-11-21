@@ -130,7 +130,7 @@ class CounterHandoffIntegrationTests(TestCase):
         from shopman.backstage.models import KDSInstance, KDSTicket
 
         # A catch-all de picking que transformava pão vendido em ticket.
-        KDSInstance.objects.create(ref="encomendas", name="Encomendas", type="picking", is_active=True)
+        KDSInstance.objects.create(ref="picking", name="Separação", type="picking", is_active=True)
 
         result = self._close(payment_method="cash", request_id="counter-kds")
 
