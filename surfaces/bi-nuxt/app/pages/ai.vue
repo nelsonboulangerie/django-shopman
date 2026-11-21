@@ -2,26 +2,25 @@
 // IA: quanto a casa gasta com IA (por papel e por modelo), a pauta da conferência antes do
 // envio e as respostas que caíram na alternativa segura. Só do Dono, só leitura: o que se
 // faz a respeito (responder a pergunta que falta, ajustar a resposta) mora no Admin.
-import {
-  readingChartCsv,
-  type ReadingChartPoint,
-  type ReadingChartSeries,
+import type {
+  ReadingChartPoint,
+  ReadingChartSeries,
 } from "../../../operator-kit/app/presentation/readingChart";
 import { formatInt, shortDate } from "~/presentation/bi";
 import {
   aiAnswer,
   conferenceHint,
-  csvUsdMicros,
+  csvBrl,
+  csvRate,
+  csvUsd,
   fallbacksTitle,
-  formatUsdMicros,
-  percent,
-  perCall,
-  type BIAiFallback,
-  type BIAiGap,
-  type BIAiReason,
-  type BIAiReport,
-  type BIAiSpendRow,
+  formatPerCall,
+  formatSpend,
+  perCallSort,
+  quoteHint,
+  whenLabel,
 } from "~/presentation/ai";
+import type { BIAiFallback, BIAiGap, BIAiReason, BIAiReport, BIAiSpendRow } from "~/types/bi";
 
 const { report, freshness, pending, error, refresh } = useBiReport<BIAiReport>("ai");
 const { selection, bounds, presets } = useBiWindow();
@@ -30,27 +29,36 @@ const { actions: readingActions, label: readingLabel } = useReadingPageActions(s
 
 const spendSeries: ReadingChartSeries[] = [{ key: "cost", label: "Gasto com IA", tone: "primary" }];
 const spendPoints = computed<ReadingChartPoint[]>(() =>
-  (report.value?.spend.days ?? []).map((row) => ({
+  (report.value?.days ?? []).map((row) => ({
     label: shortDate(row.date),
-    values: { cost: row.cost_usd_micros },
+    values: { cost: row.cost_brl_micros ?? 0 },
   })),
 );
+const formatChartValue = (micros: number) => formatSpend(micros, 0);
+const daysCsv = computed(() => ({
+  header: ["Dia", "Gasto (US$)", "Gasto (R$)", "PTAX de venda (R$ por US$)", "Dia da PTAX", "Provisória"],
+  rows: (report.value?.days ?? []).map((day) => [
+    day.date, csvUsd(day.cost_usd_micros), csvBrl(day.cost_brl_micros), day.rate ?? "", day.quoted_on ?? "", day.provisional ? "sim" : "não",
+  ]),
+}));
 
 const spendColumns = [
   { accessorKey: "purpose_label", header: "Papel", enableSorting: true, meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
   { accessorKey: "model", header: "Modelo", enableSorting: true, meta: { class: { th: "max-sm:hidden", td: "max-sm:hidden" } } },
   { accessorKey: "calls", header: "Chamadas", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
-  { id: "per_call", accessorFn: (row: BIAiSpendRow) => perCall(row.cost_usd_micros, row.calls), header: "Por chamada", enableSorting: true, meta: { class: { th: "text-right max-sm:hidden", td: "text-right tnum max-sm:hidden" } } },
-  { accessorKey: "cost_usd_micros", header: "Gasto", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { id: "per_call", accessorFn: (row: BIAiSpendRow) => perCallSort(row), header: "Por chamada", enableSorting: true, meta: { class: { th: "text-right max-sm:hidden", td: "text-right tnum max-sm:hidden" } } },
+  { id: "cost", accessorFn: (row: BIAiSpendRow) => row.cost_usd_micros, header: "Gasto", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
 ];
 const spendCsv = computed(() => ({
-  header: ["Papel", "Modelo", "Chamadas", "Erros", "Recusadas pelo teto", "Gasto (US$)", "Estimado"],
-  rows: (report.value?.spend.rows ?? []).map((row) => [
-    row.purpose_label, row.model, row.calls, row.errors, row.denied, csvUsdMicros(row.cost_usd_micros), row.estimated ? "sim" : "não",
+  header: ["Papel", "Modelo", "Chamadas", "Erros", "Recusadas pelo teto", "Gasto (US$)", "Gasto (R$)", "Cotação média (R$ por US$)", "Preço estimado"],
+  rows: (report.value?.rows ?? []).map((row) => [
+    row.purpose_label, row.model, row.calls, row.errors, row.denied,
+    csvUsd(row.cost_usd_micros), csvBrl(row.cost_brl_micros), csvRate(row.cost_brl_micros, row.cost_usd_micros),
+    row.estimated ? "sim" : "não",
   ]),
 }));
 
-const reasonMax = computed(() => Math.max(1, ...(report.value?.conference.reasons ?? []).map((row) => row.count)));
+const reasonMax = computed(() => Math.max(1, ...(report.value?.reasons ?? []).map((row) => row.count)));
 const reasonColumns = [
   { accessorKey: "label", header: "Motivo", meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
   { accessorKey: "count", header: "Respostas", meta: { class: { th: "text-right", td: "text-right tnum" } } },
@@ -70,10 +78,6 @@ const fallbackColumns = [
   { accessorKey: "reasons", header: "Por que reprovou", meta: { class: { td: "whitespace-normal" } } },
 ];
 
-function when(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
 </script>
 
 <template>
@@ -139,30 +143,30 @@ function when(iso: string): string {
           <OperatorMetric title="A resposta" :value="aiAnswer(report)" size="statement" class="col-span-2 xl:col-span-1" />
           <OperatorMetric
             title="Gasto com IA"
-            :value="formatUsdMicros(report.spend.cost_usd_micros)"
-            :hint="report.spend.estimated_calls ? `${formatInt(report.spend.estimated_calls)} chamadas com preço estimado` : undefined"
+            :value="formatSpend(report.cost_brl_micros, report.cost_usd_micros)"
+            :hint="quoteHint(report)"
           />
           <OperatorMetric
             title="Chamadas"
-            :value="formatInt(report.spend.calls)"
-            :hint="`${formatInt(report.spend.errors)} com erro, ${formatInt(report.spend.denied)} recusadas pelo teto`"
+            :value="formatInt(report.calls)"
+            :hint="`${formatInt(report.errors)} com erro, ${formatInt(report.denied)} recusadas pelo teto`"
           />
           <OperatorMetric
             title="Reprovadas na conferência"
-            :value="`${formatInt(report.conference.would_fall)} de ${formatInt(report.conference.conferred)}`"
+            :value="`${formatInt(report.would_fall)} de ${formatInt(report.conferred)}`"
             :hint="conferenceHint(report)"
-            :tone="report.conference.would_fall ? 'warning' : undefined"
+            :tone="report.would_fall ? 'warning' : undefined"
           />
         </div>
 
         <OperatorReadingCard
           title="Gasto por papel e modelo"
-          description="Cada chamada a um modelo de IA, pelo medidor da casa. Papel é para que a casa usou a IA."
+          description="Cada chamada a um modelo de IA, pelo medidor da casa. Papel é para que a casa usou a IA. Em reais pela PTAX de venda de cada dia."
           :csv="spendCsv"
         >
           <OperatorTable
             in-card
-            :data="report.spend.rows"
+            :data="report.rows"
             :columns="spendColumns"
             :row-key="(row) => `${row.purpose}-${row.model}`"
             caption="Gasto com IA por papel e modelo"
@@ -174,9 +178,9 @@ function when(iso: string): string {
               {{ row.original.purpose_label }}
               <span class="block text-xs font-normal text-muted sm:hidden">{{ row.original.model }}</span>
             </template>
-            <template #per_call-cell="{ row }">{{ formatUsdMicros(perCall(row.original.cost_usd_micros, row.original.calls)) }}</template>
-            <template #cost_usd_micros-cell="{ row }">
-              {{ formatUsdMicros(row.original.cost_usd_micros) }}
+            <template #per_call-cell="{ row }">{{ formatPerCall(row.original.cost_brl_micros, row.original.cost_usd_micros, row.original.calls) }}</template>
+            <template #cost-cell="{ row }">
+              {{ formatSpend(row.original.cost_brl_micros, row.original.cost_usd_micros) }}
               <span v-if="row.original.estimated" class="block text-xs font-normal text-muted">preço estimado</span>
             </template>
           </OperatorTable>
@@ -184,15 +188,15 @@ function when(iso: string): string {
 
         <OperatorReadingCard
           title="Gasto por dia"
-          description="Dia da chamada."
-          :csv="readingChartCsv('Dia', spendSeries, spendPoints)"
+          :description="`Dia da chamada. ${quoteHint(report)}.`"
+          :csv="daysCsv"
         >
           <OperatorReadingChart
             title="Gasto com IA por dia"
             axis-label="Dia"
             :series="spendSeries"
             :points="spendPoints"
-            :format="formatUsdMicros"
+            :format="formatChartValue"
             empty-title="Nenhuma chamada de IA no período"
             empty-description="O gasto aparece aqui a cada chamada que passa pelo medidor."
           />
@@ -205,7 +209,7 @@ function when(iso: string): string {
           >
             <OperatorTable
               in-card
-              :data="report.conference.reasons"
+              :data="report.reasons"
               :columns="reasonColumns"
               :row-key="(row: BIAiReason) => row.reason"
               caption="Motivos de reprovação na conferência"
@@ -225,7 +229,7 @@ function when(iso: string): string {
           >
             <OperatorTable
               in-card
-              :data="report.conference.gaps"
+              :data="report.gaps"
               :columns="gapColumns"
               :row-key="(row: BIAiGap) => row.question"
               caption="Perguntas sem resposta da casa"
@@ -236,7 +240,7 @@ function when(iso: string): string {
               <template #question-cell="{ row }">
                 <a :href="row.original.admin_url" class="underline decoration-dotted underline-offset-4 hover:text-primary">{{ row.original.question }}</a>
               </template>
-              <template #last_at-cell="{ row }">{{ when(row.original.last_at) }}</template>
+              <template #last_at-cell="{ row }">{{ whenLabel(row.original.last_at) }}</template>
             </OperatorTable>
           </OperatorReadingCard>
         </div>
@@ -256,11 +260,11 @@ function when(iso: string): string {
             data-bi-ai-fallbacks
           >
             <template #at-cell="{ row }">
-              <a :href="row.original.admin_url" class="underline decoration-dotted underline-offset-4 hover:text-primary">{{ when(row.original.at) }}</a>
+              <a :href="row.original.admin_url" class="underline decoration-dotted underline-offset-4 hover:text-primary">{{ whenLabel(row.original.at) }}</a>
             </template>
             <template #reasons-cell="{ row }">
               <span class="flex flex-wrap gap-1">
-                <NuxtBadge v-for="reason in row.original.reasons" :key="reason" color="warning" variant="soft" size="sm">{{ reason }}</NuxtBadge>
+                <NuxtBadge v-for="reason in row.original.reasons" :key="reason" color="warning" size="sm">{{ reason }}</NuxtBadge>
               </span>
             </template>
           </OperatorTable>

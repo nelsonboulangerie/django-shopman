@@ -1,86 +1,60 @@
 // A seção IA do B.I. (DEV-2026-067): quanto a casa gasta com IA, por papel e por modelo,
 // a pauta da conferência antes do envio e as respostas que caíram na alternativa segura.
-// Só do Dono, só leitura. Dinheiro de IA é em micro-dólar INTEIRO (`*_usd_micros`, o
-// medidor da porta de IA, `AiInvocation`): o custo da API é em dólar e o sufixo `_q`
-// (centavo de real) mentiria. A tela formata; a conta nunca passa por número quebrado.
+// Só do Dono, só leitura. O medidor guarda micro-dólar INTEIRO; o B.I. diz em reais pela
+// PTAX de venda do dia (decisão de 21/11/2026), e a cotação usada vem junto, por dia.
+// A tela formata: total com 2 casas, custo por chamada com 4. A conta nunca passa por
+// número quebrado; o CSV leva os dois (US$ com 6 casas e R$) e a cotação.
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
+import { STORE_TIME_ZONE } from "../../../operator-kit/app/presentation/dates";
+import type { BIAiReport, BIAiSpendRow } from "~/types/bi";
 
-export interface BIAiSpendRow {
-  purpose: string;
-  purpose_label: string;
-  model: string;
-  calls: number;
-  errors: number;
-  denied: number;
-  cost_usd_micros: number;
-  /** Alguma chamada da linha usou modelo fora da tabela de preço (contado pelo mais caro). */
-  estimated: boolean;
+const MICROS = 1_000_000;
+
+function brl(micros: number, digits: 2 | 4): string {
+  return (micros / MICROS).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }
 
-export interface BIAiSpendDay {
-  date: string;
-  cost_usd_micros: number;
+function usd(micros: number, digits: 2 | 4): string {
+  const value = (micros / MICROS).toLocaleString("pt-BR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return `US$ ${value}`;
 }
 
-export interface BIAiReason {
-  reason: string;
-  label: string;
-  count: number;
+/** Total em reais com 2 casas; sem cotação, o dólar, dito como dólar. */
+export function formatSpend(brlMicros: number | null, usdMicros: number): string {
+  return brlMicros === null ? usd(usdMicros, 2) : brl(brlMicros, 2);
 }
 
-export interface BIAiGap {
-  /** A pergunta do cliente, redigida (sem nome, contato, documento ou endereço). */
-  question: string;
-  count: number;
-  last_at: string;
-  /** O Admin, onde a resposta vira pergunta frequente (no B.I. não há ação). */
-  admin_url: string;
+/** Custo por chamada: frações de centavo, então 4 casas. */
+export function formatPerCall(brlMicros: number | null, usdMicros: number, calls: number): string {
+  if (!calls) return brlMicros === null ? usd(0, 4) : brl(0, 4);
+  return brlMicros === null ? usd(Math.round(usdMicros / calls), 4) : brl(Math.round(brlMicros / calls), 4);
 }
 
-export interface BIAiFallback {
-  at: string;
-  conversation_id: number;
-  customer_text: string;
-  reply_text: string;
-  reasons: string[];
-  admin_url: string;
+export function perCallSort(row: BIAiSpendRow): number {
+  const base = row.cost_brl_micros ?? row.cost_usd_micros;
+  return row.calls ? base / row.calls : 0;
 }
 
-export interface BIAiReport {
-  /** `shadow`: a conferência só mede, a resposta original saiu. `enforce`: a alternativa saiu. */
-  conference_mode: "shadow" | "enforce";
-  spend: {
-    cost_usd_micros: number;
-    calls: number;
-    errors: number;
-    denied: number;
-    estimated_calls: number;
-    rows: BIAiSpendRow[];
-    days: BIAiSpendDay[];
-  };
-  conference: {
-    conferred: number;
-    would_fall: number;
-    reasons: BIAiReason[];
-    gaps: BIAiGap[];
-  };
-  fallbacks: BIAiFallback[];
+/** O valor do CSV: dólar com 6 casas, sem arredondar o micro. */
+export function csvUsd(micros: number): string {
+  return (micros / MICROS).toFixed(6);
 }
 
-const MICROS_PER_USD = 1_000_000;
-
-/** "US$ 1,2345": quatro casas, porque uma chamada custa frações de centavo de dólar. */
-export function formatUsdMicros(micros: number): string {
-  const usd = micros / MICROS_PER_USD;
-  return `US$ ${usd.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+export function csvBrl(micros: number | null): string {
+  return micros === null ? "" : (micros / MICROS).toFixed(4);
 }
 
-/** O valor do CSV: dólar com ponto, sem arredondar o micro. */
-export function csvUsdMicros(micros: number): string {
-  return (micros / MICROS_PER_USD).toFixed(6);
-}
-
-export function perCall(micros: number, calls: number): number {
-  return calls > 0 ? Math.round(micros / calls) : 0;
+/** A cotação efetiva de uma linha que atravessa dias (R$ por US$, 4 casas). */
+export function csvRate(brlMicros: number | null, usdMicros: number): string {
+  return brlMicros === null || !usdMicros ? "" : (brlMicros / usdMicros).toFixed(4);
 }
 
 export function percent(part: number, total: number): string {
@@ -90,11 +64,21 @@ export function percent(part: number, total: number): string {
 
 /** A resposta do topo, numa frase. */
 export function aiAnswer(report: BIAiReport): string {
-  const { spend, conference } = report;
-  if (!spend.calls && !conference.conferred) return "Nenhum uso de IA no período";
-  const spent = `${formatUsdMicros(spend.cost_usd_micros)} em ${spend.calls.toLocaleString("pt-BR")} chamadas`;
-  if (!conference.conferred) return spent;
-  return `${spent}; ${percent(conference.would_fall, conference.conferred)} das respostas reprovadas na conferência`;
+  if (!report.calls && !report.conferred) return "Nenhum uso de IA no período";
+  const calls = report.calls === 1 ? "1 chamada" : `${report.calls.toLocaleString("pt-BR")} chamadas`;
+  const spent = `${formatSpend(report.cost_brl_micros, report.cost_usd_micros)} em ${calls}`;
+  if (!report.conferred) return spent;
+  return `${spent}; ${percent(report.would_fall, report.conferred)} das respostas reprovadas na conferência`;
+}
+
+/** De onde vêm os reais: a PTAX de venda, e quando alguma cotação ainda pode mudar. */
+export function quoteHint(report: BIAiReport): string {
+  if (report.cost_brl_micros === null) return "Sem cotação do dólar para algum dia: total em dólar";
+  const last = [...report.days].reverse().find((day) => day.rate);
+  const rate = last?.rate ? ` (última: R$ ${Number(last.rate).toLocaleString("pt-BR", { minimumFractionDigits: 4 })})` : "";
+  return report.provisional_quotes
+    ? `Pela PTAX de venda do dia${rate}; a de hoje ainda pode mudar`
+    : `Pela PTAX de venda do dia${rate}`;
 }
 
 export function conferenceHint(report: BIAiReport): string {
@@ -107,4 +91,9 @@ export function fallbacksTitle(report: BIAiReport): string {
   return report.conference_mode === "shadow"
     ? "Respostas que iriam para a alternativa segura"
     : "Respostas trocadas pela alternativa segura";
+}
+
+/** "21/11, 15h42": a hora da casa, pelo formatador da suíte. */
+export function whenLabel(iso: string): string {
+  return formatDateClock(iso, { day: "2-digit", month: "2-digit" }, { timeZone: STORE_TIME_ZONE });
 }

@@ -45,8 +45,6 @@ export const BI_SECTIONS: readonly OperatorSection[] = [
     form: "floor",
     quick: true,
   },
-  // Só do Dono: quanto a casa gasta com IA e como a Concierge está respondendo (DEV-2026-067).
-  { key: "ai", label: "IA", icon: "lucide:sparkles", to: "/ai", form: "office" },
   // Última: a IA propõe cenários sobre os agregados; o gestor decide.
   {
     key: "scenarios",
@@ -55,6 +53,9 @@ export const BI_SECTIONS: readonly OperatorSection[] = [
     to: "/scenarios",
     form: "office",
   },
+  // Só do Dono, depois de todas (a décima não tira a tecla de nenhuma): quanto a casa
+  // gasta com IA e como a Concierge está respondendo (DEV-2026-067).
+  { key: "ai", label: "IA", icon: "lucide:sparkles", to: "/ai", form: "office" },
 ];
 
 /**

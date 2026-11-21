@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
 
 const BACKEND = "http://127.0.0.1:" + (process.env.BI_VISUAL_BACKEND_PORT || "28794");
 
-const ROUTES = ["/", "/?view=lots", "/sales", "/cash", "/customers", "/profiles", "/explore", "/forecast", "/scenarios"];
+const ROUTES = ["/", "/?view=lots", "/sales", "/cash", "/customers", "/profiles", "/explore", "/forecast", "/scenarios", "/ai"];
 
 test.beforeAll(async ({ request }) => {
   await request.get(BACKEND + "/__visual/scenario?set=normal");
@@ -35,4 +35,15 @@ test("a Vendas mostra os descontos por tipo de grupo", async ({ page }) => {
   await expect(card.getByText("Equipe")).toBeVisible();
   await expect(card.getByText("Parceiro")).toBeVisible();
   await expect(card.getByText("605,50")).toBeVisible();
+});
+
+// A seção IA (DEV-2026-067): o gasto em reais, a pauta da conferência e a fala do cliente
+// redigida (documento e e-mail mascarados pelo redator da Concierge).
+test("a IA mostra o gasto em reais e a fala do cliente redigida", async ({ page }) => {
+  await page.goto("/ai");
+  // O modelo mora em duas células (coluna no computador, linha de baixo no celular): vale a que aparece.
+  await expect(page.locator("[data-bi-ai-spend]").getByText("deepseek-flash").filter({ visible: true }).first()).toBeVisible();
+  await expect(page.locator("[data-bi-ai-spend]").getByText("jev-latest").filter({ visible: true })).toBeVisible();
+  await expect(page.locator("[data-bi-ai-tiles]").getByText("R$ 10,10").first()).toBeVisible();
+  await expect(page.locator("[data-bi-ai-fallbacks]").getByText("[documento omitido]", { exact: false })).toBeVisible();
 });

@@ -92,6 +92,7 @@ from .settings_proxies import (
     ShopSearch,
 )
 from .shop import NotificationTemplate, Shop
+from .usd_brl_quote import UsdBrlQuote
 from .user_notification import (
     NotificationCategory,
     NotificationEventType,
@@ -106,6 +107,7 @@ __all__ = [
     "AIConnection",
     "AIProtocol",
     "AiInvocation",
+    "UsdBrlQuote",
     "AiOutcome",
     "AiSpendDay",
     "AttributeDefinition",
