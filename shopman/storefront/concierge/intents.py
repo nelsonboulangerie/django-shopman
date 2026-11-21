@@ -1725,7 +1725,7 @@ def run(conversation, *, binding, decision, client=None):
             memory=memory,
             memory_memos=memos,
         )
-    text = resolution.text or customer_text
+    text = resolution.text or getattr(conversation, "_closing_after_parts", None) or customer_text
     courtesy = small_talk.small_talk_kind(text)
     if courtesy:
         from shopman.shop.models import ConversationMessage, Shop
