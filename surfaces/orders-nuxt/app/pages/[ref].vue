@@ -39,6 +39,7 @@ import { PROMISE_HASH } from "~/presentation/preorderList";
 import { RESOLVE } from "~/presentation/orderPromise";
 import { CANCEL_HASH, RESOLVE_HASH, parseNotifyHash, type NoticePick } from "~/presentation/promiseResolution";
 import {
+  CALL_CUSTOMER_HASH,
   pendingFocusKey,
   PROMISE_PENDING_KEY,
   REFUND_RETRY,
@@ -239,6 +240,20 @@ watch(
   focusKey,
   (key, previous) => {
     if (key && key !== previous) reveal(key);
+  },
+  { immediate: true, flush: "post" },
+);
+// O "Chamar o cliente" do cartão e da Tabela (Pix vencido) chega com `#call-customer`:
+// a página vai à faixa do pagamento com o teclado no "Chamar no WhatsApp" dela.
+const callCustomerTarget = computed(() =>
+  route.hash === CALL_CUSTOMER_HASH &&
+  order.value?.pending?.some((item) => item.actions?.some((action) => action.ref === "contact-customer")),
+);
+watch(
+  callCustomerTarget,
+  (arrive) => {
+    if (arrive)
+      reveal(() => document.querySelector<HTMLElement>('[data-pending-action="contact-customer"]'), { align: "center" });
   },
   { immediate: true, flush: "post" },
 );

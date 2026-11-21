@@ -48,6 +48,7 @@ import {
   type PromiseExit,
 } from "~/presentation/orderPromise";
 import { orderFocusKey } from "~/presentation/promiseAlert";
+import { CALL_CUSTOMER_HASH } from "~/presentation/orderPending";
 import OrderCardActions from "./OrderCardActions.vue";
 import OrderCardNotices from "./OrderCardNotices.vue";
 
@@ -385,7 +386,9 @@ const notices = computed<CardNotice[]>(() => {
       title: card.advance_block_label?.replace(/…$/, "") || "Bloqueado",
       description: card.advance_block_reason,
       // Pix ou link vencido nunca destrava sozinho: o próximo passo vem pronto.
-      // O detalhe abre o cancelar com "Pagamento não confirmado" já marcado.
+      // O detalhe abre o cancelar com "Pagamento não confirmado" já marcado. Com
+      // telefone, "Chamar o cliente" abre o pedido no contato: o número não vem no
+      // cartão (#2434), e o "Chamar no WhatsApp" de verdade mora no detalhe.
       actions: card.payment_lapsed
         ? [
             action(
@@ -396,6 +399,18 @@ const notices = computed<CardNotice[]>(() => {
               },
               { "data-cancel-unpaid": "" },
             ),
+            ...(card.customer_callable
+              ? [
+                  action(
+                    {
+                      label: "Chamar o cliente",
+                      icon: "i-lucide-arrow-up-right",
+                      to: `/${card.ref}${CALL_CUSTOMER_HASH}`,
+                    },
+                    { "data-call-customer": "" },
+                  ),
+                ]
+              : []),
           ]
         : undefined,
       attrs: { "data-advance-block": "" },

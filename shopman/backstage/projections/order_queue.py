@@ -616,6 +616,10 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # A cobrança venceu e o pedido tem um telefone para chamar (``_has_order_phone``):
+    # o cartão leva "Chamar o cliente" ao lado do "Cancelar pedido", e o toque abre o
+    # pedido no contato. O número NÃO vem no cartão (#2434, decisão do dono pendente).
+    customer_callable: bool = False
     # O bloqueio anda sozinho, sem ninguém da casa agir ("Aguardando Pix", "Aguardando
     # o dia da encomenda", "Esperando o lote"): a tela não o pinta de vermelho
     # (``WAITING_BLOCK_LABELS``; decisão da coordenação com o mandato do dono, 21/11).
@@ -2909,6 +2913,7 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
+        customer_callable=block_label in LAPSED_PAYMENT_LABELS and _has_order_phone(order),
         advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,

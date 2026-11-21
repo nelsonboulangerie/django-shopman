@@ -78,6 +78,7 @@ import {
 } from "~/presentation/preorderList";
 import { blockWaits, promiseRisk } from "~/presentation/orderPromise";
 import { CANCEL_HASH, notifyHash, type NoticePick } from "~/presentation/promiseResolution";
+import { CALL_CUSTOMER_HASH } from "~/presentation/orderPending";
 import {
   orderFocusKey,
   orderFocusKeys,
@@ -2421,7 +2422,7 @@ function compactClear() {
                  que resolve vem junto, na própria célula (coordenação, 21/11/2026). -->
             <div
               v-if="row.original.card.payment_lapsed && canManageOrders"
-              class="mt-1.5 flex justify-end"
+              class="mt-1.5 flex flex-wrap justify-end gap-1.5"
             >
               <NuxtButton
                 :to="`/${row.original.card.ref}#cancel-unpaid`"
@@ -2430,6 +2431,16 @@ function compactClear() {
                 color="error"
                 variant="outline"
                 data-supervision-cancel-unpaid-cell
+              />
+              <!-- Abre o pedido no contato: o número não vem na linha (#2434). -->
+              <NuxtButton
+                v-if="row.original.card.customer_callable"
+                :to="`/${row.original.card.ref}${CALL_CUSTOMER_HASH}`"
+                icon="i-lucide-arrow-up-right"
+                label="Chamar o cliente"
+                color="neutral"
+                variant="outline"
+                data-supervision-call-customer-cell
               />
             </div>
             <NuxtAlert
@@ -2561,6 +2572,15 @@ function compactClear() {
                     color="error"
                     variant="outline"
                     data-supervision-cancel-unpaid
+                  />
+                  <NuxtButton
+                    v-if="row.original.card.payment_lapsed && row.original.card.customer_callable && canManageOrders"
+                    :to="`/${row.original.card.ref}${CALL_CUSTOMER_HASH}`"
+                    icon="i-lucide-arrow-up-right"
+                    label="Chamar o cliente"
+                    color="neutral"
+                    variant="outline"
+                    data-supervision-call-customer
                   />
                   <NuxtButton
                     v-if="canManageOrders"

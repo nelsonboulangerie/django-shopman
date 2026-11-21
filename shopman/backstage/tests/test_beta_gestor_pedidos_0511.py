@@ -203,6 +203,9 @@ def test_pix_vencido_nao_promete_avancar_e_diz_o_que_fazer(gestor):
         "Cancele o pedido ou chame o cliente para combinar o pagamento."
     ] * 2
     # O gesto que a frase manda está ao lado: cancelar e chamar no WhatsApp.
+    # O cartão sabe que dá para chamar (sem levar o número, #2434).
+    card = build_order_card(lapsed, user=gestor)
+    assert card.customer_callable is True
     (payment,) = [p for p in build_operator_order(lapsed, user=gestor).pending if p.key == "payment"]
     assert [action.label for action in payment.actions] == ["Cancelar pedido", "Chamar no WhatsApp"]
     assert payment.actions[1].href == "https://wa.me/5543999990000"
@@ -214,6 +217,7 @@ def test_pix_vencido_nao_promete_avancar_e_diz_o_que_fazer(gestor):
 
 def test_pix_vencido_sem_telefone_manda_so_cancelar(gestor):
     lapsed = _pix("B-Z74", minutes_ago=50)
+    assert build_order_card(lapsed, user=gestor).customer_callable is False
 
     assert _advance_reasons(lapsed, gestor) == [
         "O Pix venceu sem pagamento e o pedido não avança mais sozinho. Cancele o pedido."
