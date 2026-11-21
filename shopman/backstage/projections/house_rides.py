@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.projections.types import Action
 
@@ -59,9 +59,7 @@ def is_house(block: dict) -> bool:
 
 
 def _hour(iso_or_dt) -> str:
-    if iso_or_dt is None:
-        return ""
-    return timezone.localtime(iso_or_dt).strftime("%Hh%M")
+    return format_clock(iso_or_dt)
 
 
 def house_ride(lead: Order, *, user=None) -> DeliveryHouseRideProjection | None:
