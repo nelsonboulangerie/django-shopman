@@ -235,8 +235,12 @@ def test_the_phone_position_feeds_the_map_only_while_on_route(client, shop, dieg
     here = {"action": "position", "lat": -23.32, "lng": -51.17, "accuracy": 12}
     assert _post(client, "courier-ride-link-events", link.token, here).status_code == 200
     assert courier_position.read(link.ride_ref) is None  # no balcão o celular não é a moto
+    assert "map" not in _get(client, link.token).json()  # e o mapa é da tela "Dirigindo"
 
-    _post(client, "courier-ride-link-events", link.token, {"action": "depart"})
+    route = _post(client, "courier-ride-link-events", link.token, {"action": "depart"}).json()
+    # O mapa da corrida só na rua: a chave pública do navegador e onde fica a loja.
+    assert route["map"]["origin"] == {"lat": -23.3405, "lng": -51.158}
+    assert "key" in route["map"]
     _post(client, "courier-ride-link-events", link.token, here)
     position = courier_position.read(link.ride_ref)
     assert position is not None and position["source"] == courier_position.SOURCE_OWN_FLEET

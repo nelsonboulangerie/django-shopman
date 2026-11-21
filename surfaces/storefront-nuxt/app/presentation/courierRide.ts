@@ -458,9 +458,10 @@ export function routeLine (stops: readonly MapStop[], from: MapPoint | null): Ma
 /**
  * O mapa próprio, sem o Google (sem chave, sem rede): uma projeção plana que enquadra os
  * pontos na caixa com folga, na mesma escala nos dois eixos (o leste encolhe com a
- * latitude). Devolve a função que leva a coordenada ao pixel.
+ * latitude), sem usar a faixa de baixo (`padBottom`) onde ficam os botões sobre o mapa.
+ * Devolve a função que leva a coordenada ao pixel.
  */
-export function frameProjection (points: readonly MapPoint[], width: number, height: number, pad = 48): (p: MapPoint) => { x: number, y: number } {
+export function frameProjection (points: readonly MapPoint[], width: number, height: number, pad = 48, padBottom = pad): (p: MapPoint) => { x: number, y: number } {
   if (!points.length || width <= 0 || height <= 0) return () => ({ x: width / 2, y: height / 2 })
   const lat0 = points.reduce((sum, p) => sum + p.lat, 0) / points.length
   const k = Math.cos((lat0 * Math.PI) / 180)
@@ -468,9 +469,11 @@ export function frameProjection (points: readonly MapPoint[], width: number, hei
   const ys = points.map(p => p.lat)
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
   const spanX = Math.max(maxX - minX, 1e-4), spanY = Math.max(maxY - minY, 1e-4)
-  const scale = Math.min((width - 2 * pad) / spanX, (height - 2 * pad) / spanY)
+  const scale = Math.min((width - 2 * pad) / spanX, (height - pad - padBottom) / spanY)
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
-  return p => ({ x: width / 2 + (p.lng * k - cx) * scale, y: height / 2 - (p.lat - cy) * scale })
+  // A faixa de baixo (os botões sobre o mapa) fica fora do quadro dos pontos.
+  const midY = pad + (height - pad - padBottom) / 2
+  return p => ({ x: width / 2 + (p.lng * k - cx) * scale, y: midY - (p.lat - cy) * scale })
 }
 
 // ── O Desfazer ───────────────────────────────────────────────────────────────
