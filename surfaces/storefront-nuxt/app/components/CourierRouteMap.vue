@@ -164,7 +164,7 @@ onBeforeUnmount(() => {
     <div v-if="me" class="crm-me" :style="{ left: `${me.x}px`, top: `${me.y}px` }" data-map-me />
     <div class="crm-actions">
       <slot />
-      <button v-if="real && here && !following" type="button" class="crm-chip" @click="follow">Centralizar em mim</button>
+      <UiButton v-if="real && here && !following" variant="ghost" class="crm-chip" @click="follow">Centralizar em mim</UiButton>
     </div>
   </div>
 </template>
