@@ -88,6 +88,52 @@ export async function placePickupTodayWithPix (page: Page, testInfo: TestInfo): 
   return decodeURIComponent(new URL(page.url()).pathname.split('/').pop()!)
 }
 
+/** Finalizar com CARTÃO: retirada, hoje, o primeiro horário, cartão; revisar e enviar. A
+ *  loja passa pelo acompanhamento e leva sozinha à "página do Stripe" (o Stripe falso da
+ *  pilha, `fake_stripe.py`); ela paga e volta ao acompanhamento, já com a autorização
+ *  gravada (o fake entrega o webhook antes do redirect). Devolve o código do pedido. */
+export async function placePickupTodayPayingByCard (page: Page, testInfo: TestInfo): Promise<string> {
+  await page.getByRole('radio', { name: /^Retirada/ }).click()
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  await expect(page.getByText('Horário da retirada')).toBeVisible()
+  await page.getByRole('radio', { name: /^Hoje/ }).click().catch(() => undefined)
+  await page.getByRole('radio', { name: /^\d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/ }).first().click()
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  await page.getByRole('radio', { name: /^Cartão/ }).click()
+  await capture(page, testInfo, 'finalizar-cartao')
+  await page.getByRole('button', { name: 'Revisar pedido' }).click()
+  await expect(page.getByRole('heading', { name: 'Revise seu pedido' })).toBeVisible()
+  await capture(page, testInfo, 'revisar-cartao')
+
+  // A parada no acompanhamento antes do pagamento é curta: o código sai do caminho.
+  const visited: string[] = []
+  page.on('framenavigated', frame => { if (frame === page.mainFrame()) visited.push(frame.url()) })
+  await page.getByRole('button', { name: 'Enviar pedido' }).click()
+  await page.waitForURL(/\/pay\/cs_test_/, { timeout: 60_000 })
+  const ref = visited.map(url => url.match(/\/pedido\/([^/?#]+)/)?.[1]).find(Boolean)
+  expect(ref, `a loja deveria passar pelo acompanhamento antes do pagamento: ${visited.join(', ')}`).toBeTruthy()
+
+  await expect(page.getByRole('heading', { name: /Checkout de teste/ })).toBeVisible()
+  await capture(page, testInfo, 'stripe-falso')
+  await page.getByRole('button', { name: 'Pagar' }).click()
+  await page.waitForURL(new RegExp(`/pedido/${ref}(\\?.*)?$`), { timeout: 60_000 })
+  await settled(page)
+  await expect(page.getByText('Pagamento autorizado').first()).toBeVisible({ timeout: 30_000 })
+  await capture(page, testInfo, 'cartao-autorizado')
+  return decodeURIComponent(ref!)
+}
+
+/** No acompanhamento, cancela o pedido e confirma no diálogo, que diz do dinheiro antes. */
+export async function cancelsOnTracking (page: Page, testInfo: TestInfo, moneyBefore: RegExp): Promise<void> {
+  await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click()
+  const dialog = page.getByRole('alertdialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText(moneyBefore)
+  await capture(page, testInfo, 'cancelar-dialogo')
+  await dialog.getByRole('button', { name: 'Sim, cancelar' }).click()
+  await expect(page.getByRole('tabpanel', { name: 'Histórico' }).getByText(/^Cancelado/).first()).toBeVisible({ timeout: 60_000 })
+}
+
 /** No acompanhamento, paga o Pix com o pagamento simulado da pilha. */
 export async function paysPixOnTracking (page: Page, testInfo: TestInfo): Promise<void> {
   await capture(page, testInfo, 'pix')

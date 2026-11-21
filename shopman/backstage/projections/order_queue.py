@@ -39,13 +39,10 @@ from shopman.backstage.projections.notification_receipts import (
 )
 from shopman.backstage.projections.order_attention import (
     AcceptanceTimer,
-    PrepExpectation,
     QueueAwarenessProjection,
     acceptance_timer_goal,
     build_queue_awareness,
     card_attention,
-    prep_expectation,
-    ready_eta,
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
@@ -57,6 +54,7 @@ from shopman.shop.projections.types import (
 )
 from shopman.shop.services import operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
+from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
 
 if TYPE_CHECKING:
@@ -606,7 +604,7 @@ class OrderCardProjection:
     goal_minutes: int = 0
     goal_label: str = ""
     # Na Cozinha (aceito ou em preparo): quando deve ficar pronto, pelo início real e
-    # pelo tempo que os preparos estão levando agora (G10, ``order_attention.ready_eta``).
+    # pelo tempo que os preparos estão levando agora (G10, ``kitchen_eta.ready_eta``).
     ready_eta_iso: str = ""
     # Lembrete TEMPORÁRIO de chamar o entregador (``services.courier_reminder``):
     # entrega da casa em preparo sem corrida pedida. A tela mostra o aviso quando o
@@ -1288,6 +1286,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         operational = _early_start_actions(operational)
     if waits_batch:
         operational = _batch_wait_actions(operational, block_reason)
+    operational = _lapsed_payment_actions(operational, block_label)
     operational = _exit_gesture_actions(order, operational, customer_name=customer_name)
     actions = (*operational, *extra_actions)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
@@ -2516,6 +2515,17 @@ def batch_wait_refusal(order: Order) -> str:
     return order_promise.batch_wait_reason(promise)
 
 
+def _lapsed_payment_actions(actions, block_label: str) -> tuple:
+    """O avanço travado pela cobrança vencida diz o fato, não a espera (``LAPSED_ADVANCE_REASONS``)."""
+    reason = LAPSED_ADVANCE_REASONS.get(block_label)
+    if not reason:
+        return tuple(actions)
+    return tuple(
+        replace(action, reason=reason) if action.ref == "advance" and not action.enabled else action
+        for action in actions
+    )
+
+
 def _batch_wait_actions(actions, reason: str) -> tuple:
     """As ações do pedido que espera o lote: o gesto de iniciar existe, desligado e com o motivo."""
     return tuple(
@@ -2825,6 +2835,7 @@ def _build_card(
         actions = _early_start_actions(actions)
     if waits_batch:
         actions = _batch_wait_actions(actions, block_reason)
+    actions = _lapsed_payment_actions(actions, block_label)
     actions = _exit_gesture_actions(order, actions, customer_name=customer_name)
     if promise is not None and promise.state == order_promise.STATE_AT_RISK:
         promise = order_promise.with_actions(promise, _promise_actions(user, promise))
@@ -3442,6 +3453,19 @@ AWAITING_REPAYMENT_LABEL = "Aguardando novo pagamento"
 #: Os rótulos do bloqueio de pagamento que não destrava sozinho: a cobrança
 #: venceu ou foi recusada. A tela oferece cancelar com o motivo já marcado.
 LAPSED_PAYMENT_LABELS = frozenset({PIX_LAPSED_LABEL, PAYMENT_LAPSED_LABEL, CARD_CAPTURE_FAILED_LABEL})
+#: Por que o avanço não anda quando a cobrança venceu ou foi recusada: o fato, e o
+#: que a pessoa faz (a tela traz o "Cancelar pedido"; chamar o cliente está no
+#: pedido). A frase genérica do ``shop`` ("O pedido só avança depois que o dinheiro
+#: entra") mentia aqui: esse dinheiro não entra mais (coordenação, 21/11/2026).
+LAPSED_ADVANCE_REASONS = {
+    PIX_LAPSED_LABEL: "O Pix venceu sem pagamento e o pedido não avança mais sozinho. "
+    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
+    PAYMENT_LAPSED_LABEL: "O link de pagamento venceu sem pagamento e o pedido não avança mais sozinho. "
+    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
+    CARD_CAPTURE_FAILED_LABEL: "A cobrança do cartão foi recusada e o pedido não avança mais sozinho. "
+    "Cancele o pedido ou chame o cliente para combinar o pagamento.",
+}
+
 #: A situação na LINHA do pagamento quando a cobrança venceu. O bloqueio dizia "Pix
 #: expirado" e a linha do pagamento do mesmo pedido, "Pix · Aguardando pagamento": o
 #: mesmo fato em duas formas, uma delas falsa (ninguém mais espera aquele Pix).
