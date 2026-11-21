@@ -3,7 +3,8 @@
 // paradas, nunca pela moto.
 import { describe, expect, it } from "vitest";
 import { MAP_DARK, MAP_LIGHT, PIN_TEXT, contrast, fitKey, googleMapStyles, mapTokens, spreadOverlaps } from "../app/presentation/deliveriesMap";
-import { GLYPH_INK, GLYPH_PAPER, motoStroke, themeHalo } from "../app/presentation/mapGlyphs";
+import { DARK_LINE_HALO, GLYPH_INK, GLYPH_PAPER, lineHalo, motoStroke, themeHalo } from "../app/presentation/mapGlyphs";
+import { rideColor } from "../app/presentation/ridePalette";
 
 describe("cores do mapa", () => {
   const themes = [["claro", false], ["escuro", true]] as const;
@@ -21,6 +22,20 @@ describe("cores do mapa", () => {
     // a moto (sem papel) lê sobre o papel do mapa e sobre o próprio contorno
     expect(contrast(motoStroke(dark), t.paper)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(motoStroke(dark), themeHalo(dark))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(themes)("tema %s: a cor de toda corrida lê sobre o próprio contorno (3:1)", (_, dark) => {
+    for (let i = 0; i < 26; i += 1) {
+      expect(contrast(rideColor(i).bg, lineHalo(dark, rideColor(i))), `corrida ${i + 1}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("só o amarelo no claro e o preto no escuro saem do contorno do tema", () => {
+    const off = (dark: boolean) => [0, 1, 2, 3, 4, 5].filter((i) => lineHalo(dark, rideColor(i)) !== themeHalo(dark)).map((i) => rideColor(i).name);
+    expect(off(false)).toEqual(["Amarelo"]);
+    expect(off(true)).toEqual(["Preto"]);
+    expect(lineHalo(false, rideColor(2))).toBe(rideColor(2).ink);
+    expect(lineHalo(true, rideColor(5))).toBe(DARK_LINE_HALO);
   });
 
   it.each(themes)("tema %s: o pino branco destaca do papel (3:1)", (_, dark) => {

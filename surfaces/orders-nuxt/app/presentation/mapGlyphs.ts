@@ -12,6 +12,8 @@
 // A moto não tem papel: o traço dela é o contraste do tema (escuro no claro, branco no
 // escuro), como na prévia aprovada.
 
+import { contrast } from "./deliveriesMap";
+
 /** O desenho e o número dentro do papel branco, nos dois temas. */
 export const GLYPH_INK = "#111111";
 /** O papel do cupom e a parede da loja: brancos sempre. */
@@ -21,6 +23,21 @@ export const GLYPH_PAPER = "#ffffff";
 export function themeHalo(dark: boolean): string {
   return dark ? GLYPH_INK : GLYPH_PAPER;
 }
+/** O contorno claro do escuro, para a linha que some no #111 (o preto). */
+export const DARK_LINE_HALO = "#f1ece4";
+
+/**
+ * O contorno por baixo da linha de uma corrida: o do tema (base "c1"), menos para a
+ * cor que sumiria nele (abaixo de 3:1). Essa ganha o contorno de antes: a tinta da
+ * corrida no claro (o amarelo), o claro no escuro (o preto). Legibilidade não se
+ * negocia (coordenação, 21/11).
+ */
+export function lineHalo(dark: boolean, ride: { bg: string; ink: string }): string {
+  const halo = themeHalo(dark);
+  if (contrast(ride.bg, halo) >= 3) return halo;
+  return dark ? DARK_LINE_HALO : ride.ink;
+}
+
 /** O traço da moto: o contraste do tema. */
 export function motoStroke(dark: boolean): string {
   return dark ? GLYPH_PAPER : GLYPH_INK;

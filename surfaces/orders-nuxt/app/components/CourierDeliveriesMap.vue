@@ -28,7 +28,7 @@
 // coordenada não se desenha (antes ia parar na casa de um cliente).
 import { rideColor } from "~/presentation/ridePalette";
 import { PIN_TEXT, fitKey, googleMapStyles, mapTokens, spreadOverlaps } from "~/presentation/deliveriesMap";
-import { COUPON_PATH, COUPON_VIEWBOX, GLYPH_INK, GLYPH_PAPER, ICON_VIEWBOX, MOTO_PATHS, STORE_AWNING, STORE_PATH, STORE_WALL, motoStroke, themeHalo } from "~/presentation/mapGlyphs";
+import { COUPON_PATH, COUPON_VIEWBOX, GLYPH_INK, GLYPH_PAPER, ICON_VIEWBOX, MOTO_PATHS, lineHalo, STORE_AWNING, STORE_PATH, STORE_WALL, motoStroke, themeHalo } from "~/presentation/mapGlyphs";
 import { rideLetter } from "~/presentation/deliveries";
 import { metroLines } from "~/presentation/metroLines";
 import { courierPositionAge } from "~/presentation/courierPosition";
@@ -366,13 +366,14 @@ const places = computed(() => {
         opacity="0.75"
         :data-map-suggestion="g.key"
       />
-      <!-- o contorno na cor do tema, por baixo: separa a linha do mapa (base "c") -->
+      <!-- o contorno na cor do tema, por baixo: separa a linha do mapa (base "c"); a cor
+           que sumiria nele (o amarelo no claro, o preto no escuro) ganha o contorno de antes -->
       <path
         v-for="l in lines"
         :key="`o${l.live ? 'l' : 'b'}${l.id}`"
         :d="l.d"
         fill="none"
-        :stroke="halo"
+        :stroke="lineHalo(dark, rideColor(l.id - 1))"
         stroke-width="7"
         stroke-linecap="round"
         stroke-linejoin="round"
