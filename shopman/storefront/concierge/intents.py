@@ -115,6 +115,8 @@ CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
 CART_NEXT_COPY_KEY = "CONCIERGE_CART_NEXT"
 #: "as 2 baguettes que pedi" com sacola aberta: é a sacola de agora, não um pedido antigo.
 CART_NOW_COPY_KEY = "CONCIERGE_CART_NOW"
+#: A reclamação ouvida: a casa leva à equipe pelo "vou verificar" e NÃO se cala (ensaio, 21/11/2026).
+COMPLAINT_HEARD_COPY_KEY = "CONCIERGE_COMPLAINT_HEARD"
 DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 #: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
@@ -1056,7 +1058,21 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         id(act): text for act in plan_.acts if act.act == CANCEL
         for text in (_self_cancel(conversation, act),) if text
     }
-    run = Execution(team=[act for act in plan_.team_acts if id(act) not in self_cancel])
+    from . import verification
+
+    # Reclamação, sozinha, não cala a conversa (dono, 21/11/2026: "garanta sempre a questão
+    # de atribuição da conversa"): vai à equipe pelo "vou verificar" (cartão no sino, com
+    # prazo) e a Concierge segue. Com pessoa pedida, alergia, cancelamento fora do
+    # autoatendimento ou encomenda especial no turno, a equipe assume, como antes.
+    # Com pedido ou negociação no mesmo turno vale a decisão anterior do dono ("com
+    # reclamação no turno, nada muda a sacola"): a equipe assume, como antes.
+    complaint_by_verify = verification.can_verify(conversation) and not any(
+        act.act != COMPLAINT and id(act) not in self_cancel for act in plan_.team_acts
+    ) and not any(act.act in {ALLERGY, ORDER, NEGOTIATION} for act in plan_.acts)
+    run = Execution(team=[
+        act for act in plan_.team_acts
+        if id(act) not in self_cancel and not (complaint_by_verify and act.act == COMPLAINT)
+    ])
     offer = (copy(OFFER_TEAM_COPY_KEY) or "").strip()
     run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
     team_in_turn = bool(run.team)
@@ -1081,8 +1097,6 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             connection_key=str(getattr(binding, "connection_key", "") or ""),
             customer_text=text,
         )
-
-    from . import verification
 
     verifiable = verification.can_verify(conversation) and not team_in_turn
     unclear_before = bool((getattr(conversation, "flags", None) or {}).get(UNCLEAR_FLAG))
@@ -1154,6 +1168,18 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             continue
         if id(act) in self_cancel:
             run.replies.append(PartReply(act, text=self_cancel[id(act)], self_served=True, keeps_question=True))
+            continue
+        if act.act == COMPLAINT and complaint_by_verify:
+            reply = PartReply(act, text=copy(COMPLAINT_HEARD_COPY_KEY) or "", verifying=True)
+            cart = tools_module.execute("view_cart", {}, context("")) if _cart_authorized(conversation) else {}
+            if cart.get("lines"):
+                # "não posso acrescentar mais coisas?": a sacola de agora segue aberta, e diz.
+                reply.text = "\n".join(part for part in (
+                    reply.text, copy(CART_NOW_COPY_KEY), tools_module.render_result("view_cart", cart),
+                    copy(CART_NEXT_COPY_KEY),
+                ) if part)
+            run.replies.append(reply)
+            run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
             continue
         if act.act in TEAM_ACTS or act.act in OTHER_DESK_ACTS:
             topic = TEAM_TOPICS.get(act.act, "isso")
@@ -1275,6 +1301,10 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 if reply.verifying:
                     reply.verifying = False
                     reply.memo = {"found": False}
+                    if reply.act.act == COMPLAINT:
+                        # Sem cartão, "já levei à equipe" seria falso: a equipe assume, como antes.
+                        run.team.append(reply.act)
+                        reply.text = _fill(copy(TEAM_COPY_KEY) or "", topic=TEAM_TOPICS[COMPLAINT])
     return run
 
 
