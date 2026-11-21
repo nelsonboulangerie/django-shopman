@@ -13,6 +13,7 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 |---|---|---|
 | `j1-pedido-de-hoje.spec.ts` | J1: pedido de retirada para hoje, de ponta a ponta | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
 | `j2-recusar-com-motivo.spec.ts` | J2: recusar um pedido pago, lendo o destino do dinheiro antes de confirmar | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
+| `j3-aceitar-a-encomenda-com-o-dia.spec.ts` | J3: a cliente encomenda para amanhã e paga; o Caixa lê "Encomenda · Amanhã…" no Painel, na Fila, na Tabela e no sino, e aceita | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
 | `j5-cancelar-encomenda-paga.spec.ts` | J5: cancelar a encomenda paga antes do preparo e ver o estorno ("Estornado") | cliente novo (loja, 375 px) · Gerente com PIN (Gestor, 1366 px) |
 | `j6-lote-cancelado-promessa-em-risco.spec.ts` | J6: a Gerente cancela na Produção o lote planejado de amanhã e o Gestor mostra a encomenda paga em "Promessa em risco". Pede a Produção na pilha (`OPERATOR_PRODUCTION_URL`), e pula sem ela | cliente novo (loja, 375 px) · Caixa (Gestor, 1366 px) · Gerente com PIN (Produção, 1366 px) |
 | `j7-achar-o-pedido-de-ontem.spec.ts` | J7: achar o pedido de ontem pelo nome, ampliando o período; pede a pilha semeada na véspera, ou num dia em que a cliente ainda não tenha pedido concluído | Gerente com PIN (Gestor, 1366 px) |

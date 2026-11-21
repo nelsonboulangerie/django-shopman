@@ -34,7 +34,7 @@ def loja():
 
 
 def _bundle_ticket(*, components: list[tuple[str, str, int]], parent_name: str, qty: int = 1):
-    KDSInstance.objects.create(ref="separa", name="Encomendas", type="picking")
+    KDSInstance.objects.create(ref="separa", name="Separação", type="picking")
     Session.objects.create(session_key="BUNDLE-1", channel_ref="web")
     order = Order.objects.create(ref="BUNDLE-1", session_key="BUNDLE-1", status="preparing")
     parent = Product.objects.create(sku="PACOTE", name=parent_name)
@@ -135,7 +135,7 @@ def test_painel_do_cliente_nao_promete_preparo_sem_estacao(loja):
 
 def test_rota_diz_se_a_estacao_e_de_preparo(loja, monkeypatch):
     KDSInstance.objects.create(ref="cafes", name="Cafés", type="prep")
-    KDSInstance.objects.create(ref="separa", name="Encomendas", type="picking")
+    KDSInstance.objects.create(ref="separa", name="Separação", type="picking")
     Product.objects.create(sku="CAPU", name="Cappuccino")
     Product.objects.create(sku="CROI", name="Croissant")
     monkeypatch.setattr(kds, "_made_to_order_skus", lambda production, skus: {"CAPU"} & set(skus))
@@ -143,4 +143,4 @@ def test_rota_diz_se_a_estacao_e_de_preparo(loja, monkeypatch):
     routes = kds.kitchen_routes_for_skus(["CAPU", "CROI"])
 
     assert routes["CAPU"]["station"] == "Cafés" and routes["CAPU"]["prep"] is True
-    assert routes["CROI"]["station"] == "Encomendas" and routes["CROI"]["prep"] is False
+    assert routes["CROI"]["station"] == "Separação" and routes["CROI"]["prep"] is False

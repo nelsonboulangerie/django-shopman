@@ -15,6 +15,7 @@
 // para daqui a dez dias, quando o seed ainda não planejou lote nenhum, e lança 30
 // croissants. O tile não diz "Sem saldo"; a linha diz "Ainda sem lote planejado para
 // DD/MM: vira pedido à Produção", e a encomenda fecha sem gerente.
+import { audits } from "./support/audit";
 import { seedPlannedQty } from "./support/nextOpenDay";
 import { capture, cast, expect, settled, test, type Page } from "./support/operator";
 import { picksNextOpenDay, type ChosenDay } from "./support/schedule";
@@ -161,119 +162,6 @@ async function ordersQuantity(page: Page, product = PRODUCT, qty = QTY) {
 }
 
 /**
- * A AUDITORIA da prévia (regra da casa, 16/11): contraste do texto contra o fundo
- * efetivo, tamanho da letra, caixa dentro da tela e sem texto cortado. Mede o que
- * este WP pôs na tela e reprova abaixo de 4,5:1, abaixo de 12 px ou fora da tela.
- */
-async function audits(page: Page, label: string, selector: string) {
-  const report = await page.evaluate((sel) => {
-    const unparsed: string[] = [];
-    const parse = (value: string) => {
-      // `bg-warning/10` sai como `color(srgb r g b / a)`, com canais de 0 a 1.
-      const srgb = value.match(/color\(srgb ([^)]+)\)/);
-      if (srgb) {
-        const [r, g, b, a = "1"] = srgb[1]!.split(/[\s/]+/).filter(Boolean);
-        return [Number(r) * 255, Number(g) * 255, Number(b) * 255, Number(a)];
-      }
-      // Os tokens de cor da suíte saem em OKLab/OKLCH (`bg-warning/10`): converte
-      // para sRGB pela matriz de Björn Ottosson.
-      const ok = value.match(/okl(ab|ch)\(([^)]+)\)/);
-      if (ok) {
-        const [p0, p1, p2, alpha = "1"] = ok[2]!.split(/[\s/]+/).filter(Boolean);
-        const L = Number.parseFloat(p0!) / (p0!.endsWith("%") ? 100 : 1);
-        let A = Number(p1);
-        let B = Number(p2);
-        if (ok[1] === "ch") {
-          const h = (Number.parseFloat(p2!) * Math.PI) / 180;
-          [A, B] = [Number(p1) * Math.cos(h), Number(p1) * Math.sin(h)];
-        }
-        const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
-        const m2 = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
-        const s2 = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
-        const linear = [
-          4.0767416621 * l - 3.3077115913 * m2 + 0.2309699292 * s2,
-          -1.2684380046 * l + 2.6097574011 * m2 - 0.3413193965 * s2,
-          -0.0041960863 * l - 0.7034186147 * m2 + 1.707614701 * s2,
-        ];
-        const encoded = linear.map((c) => {
-          const v = Math.min(1, Math.max(0, c));
-          return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
-        });
-        return [...encoded, Number.parseFloat(alpha) / (alpha.endsWith("%") ? 100 : 1)];
-      }
-      const m = value.match(/rgba?\(([^)]+)\)/);
-      if (!m) {
-        if (value && value !== "transparent") unparsed.push(value);
-        return null;
-      }
-      const [r, g, b, a = "1"] = m[1]!.split(/[\s,/]+/).filter(Boolean);
-      return [Number(r), Number(g), Number(b), Number(a)];
-    };
-    const luminance = ([r, g, b]: number[]) => {
-      const [R, G, B] = [r, g, b].map((c) => {
-        const v = c! / 255;
-        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-      });
-      return 0.2126 * R! + 0.7152 * G! + 0.0722 * B!;
-    };
-    // O fundo efetivo: as camadas de baixo para cima, com a transparência de cada uma.
-    const background = (el: Element) => {
-      const layers: number[][] = [];
-      for (let node: Element | null = el; node; node = node.parentElement) {
-        const c = parse(getComputedStyle(node).backgroundColor);
-        if (c && c[3]! > 0) {
-          layers.push(c);
-          if (c[3] === 1) break;
-        }
-      }
-      let out = [255, 255, 255];
-      for (const layer of layers.reverse()) {
-        const alpha = layer[3]!;
-        out = out.map((v, i) => layer[i]! * alpha + v * (1 - alpha));
-      }
-      return out;
-    };
-    const rows = Array.from(document.querySelectorAll(sel))
-      .filter((el) => (el as HTMLElement).offsetParent !== null)
-      .map((el) => {
-        const style = getComputedStyle(el);
-        const fg = parse(style.color)!;
-        // A opacidade do elemento (e dos pais) também clareia a letra: `opacity-80`.
-        for (let node: Element | null = el; node; node = node.parentElement) fg[3] = fg[3]! * Number(getComputedStyle(node).opacity);
-        const bg = background(el);
-        const blended = fg.slice(0, 3).map((v, i) => v * fg[3]! + bg[i]! * (1 - fg[3]!));
-        const [l1, l2] = [luminance(blended), luminance(bg)].sort((x, y) => y - x);
-        const box = el.getBoundingClientRect();
-        return {
-          text: (el.textContent || "").trim().slice(0, 70),
-          contrast: Math.round(((l1! + 0.05) / (l2! + 0.05)) * 100) / 100,
-          fontPx: Number.parseFloat(style.fontSize),
-          color: style.color,
-          background: `rgb(${bg.map(Math.round).join(", ")})`,
-          left: Math.round(box.left),
-          right: Math.round(box.right),
-          clipped: (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1,
-          inside: box.left >= 0 && box.right <= window.innerWidth + 0.5,
-        };
-      });
-    return { rows, unparsed: [...new Set(unparsed)] };
-  }, selector).then(({ rows, unparsed }) => {
-    // Cor que o parser não lê seria um fundo ignorado: a auditoria não pode passar por omissão.
-    expect(unparsed, `cores não lidas pela auditoria: ${unparsed.join(" | ")}`).toEqual([]);
-    return rows;
-  });
-  console.log(`AUDITORIA ${label}: ${JSON.stringify(report)}`);
-  expect(report.length, `${label}: nada medido`).toBeGreaterThan(0);
-  for (const row of report) {
-    expect(row.contrast, `${label}: contraste de "${row.text}"`).toBeGreaterThanOrEqual(4.5);
-    expect(row.fontPx, `${label}: letra de "${row.text}"`).toBeGreaterThanOrEqual(12);
-    expect(row.inside, `${label}: "${row.text}" fora da tela`).toBe(true);
-    expect(row.clipped, `${label}: "${row.text}" cortado`).toBe(false);
-  }
-  return report;
-}
-
-/**
  * O resto da auditoria do WP-E3: BORDA (a pílula cabe no tile, sem encostar), FOCO (o
  * tile recebe o foco do teclado com anel visível) e ALINHAMENTO (o fato da linha começa
  * onde começa o nome do item).
@@ -326,7 +214,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(fact).toContainText(`Passa do plano: ${PLANNED} planejadas para ${day}`, { timeout: 30_000 });
       // A sobra de hoje não lastreia encomenda (dono, 18/11/2026): nenhum número além do plano.
       await expect(fact).not.toContainText("livres");
-      await audits(page, "linha", '[data-pos-line-plan="over"] > span');
+      await audits(page, "linha", '[data-pos-line-plan="over"] > span', { covered: false });
       await capture(page, testInfo, "linha-passa-do-plano");
 
       // 2 · No Pagamento: o aviso que trava diz os dois números; "Na retirada" não existe.
@@ -341,7 +229,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(page.getByText(`${PRODUCT}: ${QTY} pedidas, ${PLANNED} planejadas para ${day}`).locator("visible=true").first()).toBeVisible();
       const ask = page.getByRole("button", { name: /^Pedir autorização/ }).locator("visible=true").first();
       await expect(ask).toBeEnabled({ timeout: 30_000 });
-      await audits(page, "aviso", "li.border-warning > span > span");
+      await audits(page, "aviso", "li.border-warning > span > span", { covered: false });
       await capture(page, testInfo, "validar-travado");
 
       // 3 · Sem a assinatura não fecha: o diálogo abre, a Fran fecha, nada muda.
@@ -351,7 +239,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(dialog.locator("[data-over-plan-context]")).toContainText(`${QTY} pedidas, ${PLANNED} planejadas para ${day}`);
       // A captura espera a animação de entrada do diálogo terminar.
       await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
-      const context = await audits(page, "dialogo", "[data-over-plan-context] p");
+      const context = await audits(page, "dialogo", "[data-over-plan-context] p", { covered: false });
       // Alinhamento: o quadro dos números bate borda com o aviso "Você continua como".
       const edges = await page.evaluate(() => {
         const ctx = document.querySelector("[data-over-plan-context]")!.getBoundingClientRect();
@@ -401,7 +289,7 @@ for (const device of ["phone", "counter"] as const) {
       await expect(tile.locator("[data-pos-product-blocked]")).toHaveCount(0);
       await expect(tile.locator("[data-pos-product-unplanned]")).toContainText("Vira pedido à Produção", { timeout: 30_000 });
       await expect(tile.locator("[data-pos-product-unplanned]")).toHaveAttribute("title", note);
-      await audits(page, "pilula", "[data-pos-product-unplanned] > span[aria-hidden]");
+      await audits(page, "pilula", "[data-pos-product-unplanned] > span[aria-hidden]", { covered: false });
       const tileGeometry = await auditsGeometry(page, "button[data-pos-product]:has([data-pos-product-unplanned])");
       expect(tileGeometry.pillInsideTile, "a pílula cabe no tile, longe da borda").toBe(true);
       expect(tileGeometry.focused, "o tile recebe o foco do teclado").toBe(true);
@@ -412,7 +300,7 @@ for (const device of ["phone", "counter"] as const) {
       await ordersQuantity(page, "Croissant", "30");
       const fact = page.locator('[data-pos-line-plan="unplanned"]').locator("visible=true").first();
       await expect(fact).toHaveText(note, { timeout: 30_000 });
-      await audits(page, "linha", '[data-pos-line-plan="unplanned"] > span');
+      await audits(page, "linha", '[data-pos-line-plan="unplanned"] > span', { covered: false });
       const lineGeometry = await auditsGeometry(page, null);
       expect(lineGeometry.factLeft, "o fato da linha começa onde começa o nome").toBe(lineGeometry.nameLeft);
       await capture(page, testInfo, "linha-sem-plano");

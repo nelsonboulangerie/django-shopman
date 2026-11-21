@@ -58,6 +58,9 @@ import {
   houseRideResource,
   sendLabel,
   shiftChips,
+  houseGesturePath,
+  houseGestureResource,
+  type HouseGesture,
   type HouseRideResult,
 } from "~/presentation/houseCouriers";
 
@@ -481,6 +484,39 @@ function close() {
   void router.replace({ query: { ...route.query, ride: undefined } });
 }
 const busyRide = ref("");
+// ── a corrida da casa: os gestos do balcão (M3b, #2898) ─────────────────────
+// "Saiu" e "A47 entregue" quando o entregador está sem celular; "Reenviar o link" abre
+// o WhatsApp do dispositivo com o MESMO link (a aba nasce no toque, antes de esperar a
+// resposta, para o navegador não bloquear); "Soltar o link" solta o celular preso.
+const houseBusy = ref<Record<string, string>>({});
+async function houseGesture(ride: DeliveryRideProjection, item: HouseGesture) {
+  const tab = item.gesture === "resend" ? window.open("", "_blank") : null;
+  if (tab) tab.opener = null;
+  houseBusy.value = { ...houseBusy.value, [ride.key]: item.key };
+  try {
+    const result = (await intentions.executePath(
+      houseGestureResource(ride.key, item),
+      houseGesturePath(ride.key, item.gesture),
+      item.action,
+      item.ref ? { ref: item.ref } : {},
+      undefined,
+      { subject: "o gesto foi gravado", where: "a corrida" },
+    )) as unknown as HouseRideResult;
+    if (item.gesture === "resend" && result.whatsapp_url) {
+      if (tab) tab.location.href = result.whatsapp_url;
+      else window.open(result.whatsapp_url, "_blank", "noopener");
+    } else tab?.close();
+    if (result.detail) useSonner.success(result.detail);
+  } catch (err) {
+    tab?.close();
+    useSonner.error(httpErrorMessage(err, "Não foi possível agora. Atualize e tente de novo."));
+  } finally {
+    const { [ride.key]: _done, ...rest } = houseBusy.value;
+    houseBusy.value = rest;
+    await refresh();
+  }
+}
+
 async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
   const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
   busyRide.value = ride.key;
@@ -869,14 +905,23 @@ const sheetCallLabel = computed(() => {
             </h2>
             <p v-if="!rides.length" class="mt-2 op-body text-muted">Nenhuma corrida na rua.</p>
             <div class="mt-2 flex flex-col gap-2">
-              <CourierRideMirror
-                v-for="ride in rides"
-                :key="ride.key"
-                :ride="ride"
-                :now="now"
-                :busy="busyRide === ride.key"
-                @back="backRide = ride"
-              />
+              <template v-for="ride in rides" :key="ride.key">
+                <!-- A corrida da casa (M3b): forma E, quem leva e os gestos do balcão. -->
+                <HouseRideCard
+                  v-if="ride.house"
+                  :ride="ride"
+                  :busy="houseBusy[ride.key] || (busyRide === ride.key ? 'back' : '')"
+                  @gesture="(item) => houseGesture(ride, item)"
+                  @back="backRide = ride"
+                />
+                <CourierRideMirror
+                  v-else
+                  :ride="ride"
+                  :now="now"
+                  :busy="busyRide === ride.key"
+                  @back="backRide = ride"
+                />
+              </template>
             </div>
           </section>
         </div>

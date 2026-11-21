@@ -9,6 +9,11 @@ import {
   callSummaryByCarrier,
   carrierChips,
   chipLine,
+  houseCodes,
+  houseGesturePath,
+  houseGestureResource,
+  houseGestures,
+  ordersWord,
   mixedTotalLines,
   rideValueQ,
   chosenCarrier,
@@ -150,6 +155,57 @@ describe("a intenção de enviar à casa", () => {
     expect(houseRideInputs({ refs: ["A"], courier: "diego", change_out: { A: "20,00" }, machine: "", number: 2 })).toEqual({
       refs: ["A"], courier: "diego", change_out: { A: "20,00" }, machine: "", ride_number: 2,
     });
+  });
+});
+
+describe("a corrida da casa na lista (M3b)", () => {
+  const action = (label: string, confirm = true) =>
+    ({
+      ref: "x", kind: "mutation", label, priority: "", enabled: true, reason: "", href: "", method: "POST",
+      payload_schema: { base_revision: "r", expected_actor_id: 1 }, idempotency: "required",
+      confirmation: confirm ? { required: true, description: "?" } : { required: false },
+    }) as never;
+  const house = (extra: Record<string, unknown>) =>
+    ({
+      house: {
+        courier_ref: "diego", courier_name: "Diego", moment: "", hint: "", delivered: 0, total: 2, link_claimed: false,
+        depart_action: null, deliver_actions: [], resend_action: null, release_action: null, ...extra,
+      },
+    }) as never;
+
+  it("antes de sair: Saiu é o gesto do momento, o link vem depois", () => {
+    const list = houseGestures(house({ depart_action: action("Saiu"), resend_action: action("Reenviar o link", false) }));
+    expect(list.map((item) => [item.key, item.primary])).toEqual([["depart", true], ["resend", false]]);
+  });
+
+  it("na rua: um Entregue por parada aberta, o primeiro em destaque; soltar só com o link preso", () => {
+    const list = houseGestures(house({
+      deliver_actions: [
+        { ref: "WEB-A47", code: "A47", action: action("A47 entregue") },
+        { ref: "WEB-C03", code: "C03", action: action("C03 entregue") },
+      ],
+      release_action: action("Soltar o link"),
+    }));
+    expect(list.map((item) => [item.key, item.ref ?? "", item.primary])).toEqual([
+      ["deliver:WEB-A47", "WEB-A47", true], ["deliver:WEB-C03", "WEB-C03", false], ["release", "", false],
+    ]);
+  });
+
+  it("a TaOn não tem gesto da casa", () => {
+    expect(houseGestures({ house: null })).toEqual([]);
+  });
+
+  it("os códigos riscam o que foi entregue e a quantidade diz pedido ou pedidos", () => {
+    expect(houseCodes([{ code: "A47", done: true }, { code: "C03", done: false }])).toEqual([
+      { code: "A47", done: true }, { code: "C03", done: false },
+    ]);
+    expect(ordersWord(1)).toBe("1 pedido");
+    expect(ordersWord(2)).toBe("2 pedidos");
+  });
+
+  it("cada gesto tem a sua porta e a sua intenção", () => {
+    expect(houseGesturePath("CASA-1", "deliver")).toBe("/api/v1/backstage/deliveries/couriers/rides/CASA-1/deliver/");
+    expect(houseGestureResource("CASA-1", { key: "deliver:WEB-A47" })).toBe("house-ride:CASA-1:deliver:WEB-A47");
   });
 });
 

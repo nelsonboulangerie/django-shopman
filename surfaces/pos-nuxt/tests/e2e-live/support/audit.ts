@@ -1,9 +1,11 @@
-// A régua da prévia, para as sondas que precisam dela (#2726).
+// A régua da prévia, num lugar só (#2954).
 //
-// Mesma auditoria da J5 e da J7 (contraste do texto contra o fundo efetivo, letra,
-// caixa dentro da tela, nada cortado, nada encoberto), extraída para cá para a
-// sonda do erro dentro do diálogo da antessala. A J5 e a J7 seguem com a cópia
-// delas; trazê-las para cá é a #2954.
+// Contraste do texto contra o fundo efetivo, letra, caixa dentro da tela, nada
+// cortado, nada encoberto. A J5, a J6, a J7, a J11 e a J12 carregavam cada uma a sua
+// cópia, e as cópias tinham divergido: a J5 não olhava camada por cima, a J6 rolava
+// cada texto até a área visível, a J11 e a J12 cobravam a escala de letra e a coluna
+// esmagada. Aqui a medição é uma só, a mais completa, e o que cada jornada cobra a
+// mais vira uma regra com nome (`AuditRule`), escrita na chamada.
 import { expect, type Page } from "@playwright/test";
 
 /** Espera o diálogo parar de animar antes de medir ou capturar. */
@@ -16,21 +18,64 @@ export async function still(page: Page) {
   );
 }
 
+/** O que uma jornada cobra além do mínimo da casa (contraste, letra, tela, corte, camada). */
+export interface AuditRule {
+  /**
+   * Mede cada texto onde o operador o lê: rolado até o meio da área visível (no
+   * celular a página rola; na mesa, a coluna). Abaixo da dobra não é defeito;
+   * encoberto pela barra de baixo depois de rolar, é. A dica "tem mais abaixo"
+   * (`MoreBelow`) flutua por cima enquanto há o que rolar e não conta como camada.
+   */
+  scroll?: boolean;
+  /** Reprova o texto encoberto por outra camada (véu, toast, barra). Padrão: sim. */
+  covered?: boolean;
+  /** Só a escala de letra da casa: 12, 14, 16, 18 e 20 px. */
+  fontScale?: boolean;
+  /** Reprova a frase esmagada numa coluna estreita (uma palavra por linha). */
+  crushed?: boolean;
+}
+
+export interface AuditRow {
+  text: string;
+  contrast: number;
+  fontPx: number;
+  weight: string;
+  /** A cor da letra já misturada ao fundo, com a opacidade do texto e dos pais. */
+  color: string;
+  background: string;
+  left: number;
+  right: number;
+  top: number;
+  height: number;
+  visible: boolean;
+  clipped: boolean;
+  inside: boolean;
+  crushed: boolean;
+  covered: boolean;
+  coveredBy: string;
+  underScrollHint: boolean;
+}
+
 /**
- * A AUDITORIA da prévia (regra da casa, 16/11): contraste do texto contra o fundo
- * efetivo (com a opacidade do texto e dos pais), tamanho da letra, caixa dentro da
- * tela e sem texto cortado. Reprova abaixo de 4,5:1, abaixo de 12 px ou fora da tela.
- * Mesma régua da J5 (`j5-encomenda-acima-do-plano.live.spec.ts`).
+ * Mede os textos de `selector` sem reprovar nada: devolve as linhas e as cores que
+ * o parser não leu. Elementos sem texto (só ícone) ficam de fora.
  */
-export async function measure(page: Page, selector: string) {
-  return page.evaluate((sel) => {
+export async function measure(
+  page: Page,
+  selector: string,
+  rule: Pick<AuditRule, "scroll"> = {},
+): Promise<{ rows: AuditRow[]; unparsed: string[] }> {
+  return page.evaluate(({ sel, scroll }) => {
     const unparsed: string[] = [];
     const parse = (value: string) => {
+      // `bg-warning/10` sai como `color(srgb r g b / a)`, com canais de 0 a 1.
       const srgb = value.match(/color\(srgb ([^)]+)\)/);
       if (srgb) {
         const [r, g, b, a = "1"] = srgb[1]!.split(/[\s/]+/).filter(Boolean);
         return [Number(r) * 255, Number(g) * 255, Number(b) * 255, Number(a)];
       }
+      // Os tokens de cor da suíte saem em OKLab/OKLCH: converte para sRGB pela matriz
+      // de Björn Ottosson.
       const ok = value.match(/okl(ab|ch)\(([^)]+)\)/);
       if (ok) {
         const [p0, p1, p2, alpha = "1"] = ok[2]!.split(/[\s/]+/).filter(Boolean);
@@ -70,6 +115,7 @@ export async function measure(page: Page, selector: string) {
       });
       return 0.2126 * R! + 0.7152 * G! + 0.0722 * B!;
     };
+    // O fundo efetivo: as camadas de baixo para cima, com a transparência de cada uma.
     const background = (el: Element) => {
       const layers: number[][] = [];
       for (let node: Element | null = el; node; node = node.parentElement) {
@@ -86,51 +132,74 @@ export async function measure(page: Page, selector: string) {
       }
       return out;
     };
+    // O que está no ponto do meio do texto é ele mesmo, um filho dele ou um pai (texto
+    // que não recebe ponteiro): nenhuma outra camada por cima.
+    const topAt = (box: DOMRect) => document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const isSelf = (el: Element, top: Element | null) => Boolean(top && (top === el || el.contains(top) || top.contains(el)));
     const rows = Array.from(document.querySelectorAll(sel))
-      .filter((el) => (el as HTMLElement).offsetParent !== null)
+      .filter((el) => (el as HTMLElement).offsetParent !== null && (el.textContent || "").trim())
       .map((el) => {
         const style = getComputedStyle(el);
         const fg = parse(style.color)!;
+        // A opacidade do elemento (e dos pais) também clareia a letra: `opacity-80`.
         for (let node: Element | null = el; node; node = node.parentElement) fg[3] = fg[3]! * Number(getComputedStyle(node).opacity);
         const bg = background(el);
         const blended = fg.slice(0, 3).map((v, i) => v * fg[3]! + bg[i]! * (1 - fg[3]!));
         const [l1, l2] = [luminance(blended), luminance(bg)].sort((x, y) => y - x);
+        if (scroll) (el as HTMLElement).scrollIntoView({ block: "center", behavior: "instant" });
         const box = el.getBoundingClientRect();
+        const visible = box.bottom > 0 && box.top < window.innerHeight;
+        const top = topAt(box);
+        const underScrollHint = Boolean(top?.closest("[data-more-below]"));
+        // Sem rolar, o texto fora da área visível conta como encoberto (o meio dele não
+        // está na tela); rolando, só conta o que está à vista, e a dica de rolagem não.
+        const covered = scroll ? visible && !underScrollHint && !isSelf(el, top) : !isSelf(el, top);
         return {
-          text: (el.textContent || "").trim().slice(0, 70),
+          text: (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 70),
           contrast: Math.round(((l1! + 0.05) / (l2! + 0.05)) * 100) / 100,
           fontPx: Number.parseFloat(style.fontSize),
           weight: style.fontWeight,
-          color: style.color,
+          color: `rgb(${blended.map(Math.round).join(", ")})`,
           background: `rgb(${bg.map(Math.round).join(", ")})`,
           left: Math.round(box.left),
           right: Math.round(box.right),
+          top: Math.round(box.top),
+          height: Math.round(box.height),
+          visible,
           clipped: (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1,
           inside: box.left >= 0 && box.right <= window.innerWidth + 0.5,
-          // Nenhuma camada por cima (véu de diálogo, toast, banner): o ponto do meio
-          // do texto, na tela, é o próprio texto.
-          covered: (() => {
-            const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-            return !(top && (top === el || el.contains(top)));
-          })(),
+          // Coluna esmagada: a frase virou uma palavra por linha num espaço estreito.
+          crushed: box.width < 140 && box.height / (Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.4) >= 3.5,
+          covered,
+          coveredBy: isSelf(el, top) || !top
+            ? ""
+            : `${top.tagName.toLowerCase()} ${(top.getAttribute("class") || "").slice(0, 60)} ${(top.textContent || "").trim().slice(0, 40)}`,
+          underScrollHint,
         };
       });
     return { rows, unparsed: [...new Set(unparsed)] };
-  }, selector);
+  }, { sel: selector, scroll: Boolean(rule.scroll) });
 }
 
-export async function audits(page: Page, label: string, selector: string) {
-  const { rows, unparsed } = await measure(page, selector);
+/**
+ * A AUDITORIA da prévia (regra da casa, 16/11): mede, registra (`AUDITORIA <rótulo>`,
+ * para o `auditoria.txt` do PR) e reprova abaixo de 4,5:1, abaixo de 12 px, fora da
+ * tela, cortado ou encoberto, mais o que a `rule` pedir. Cor que o parser não lê
+ * seria um fundo ignorado: a auditoria não passa por omissão.
+ */
+export async function audits(page: Page, label: string, selector: string, rule: AuditRule = {}) {
+  const { rows, unparsed } = await measure(page, selector, rule);
   expect(unparsed, `cores não lidas pela auditoria: ${unparsed.join(" | ")}`).toEqual([]);
   console.log(`AUDITORIA ${label}: ${JSON.stringify(rows)}`);
   expect(rows.length, `${label}: nada medido`).toBeGreaterThan(0);
   for (const row of rows) {
     expect(row.contrast, `${label}: contraste de "${row.text}"`).toBeGreaterThanOrEqual(4.5);
     expect(row.fontPx, `${label}: letra de "${row.text}"`).toBeGreaterThanOrEqual(12);
+    if (rule.fontScale) expect([12, 14, 16, 18, 20], `${label}: letra de "${row.text}" fora da escala`).toContain(row.fontPx);
     expect(row.inside, `${label}: "${row.text}" fora da tela`).toBe(true);
     expect(row.clipped, `${label}: "${row.text}" cortado`).toBe(false);
-    expect(row.covered, `${label}: "${row.text}" encoberto por outra camada`).toBe(false);
+    if (rule.covered !== false) expect(row.covered, `${label}: "${row.text}" encoberto por outra camada`).toBe(false);
+    if (rule.crushed) expect(row.crushed, `${label}: "${row.text}" esmagado numa coluna estreita`).toBe(false);
   }
   return rows;
 }
-
