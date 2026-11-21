@@ -7,9 +7,12 @@ small public protocol without creating a dependency in the opposite direction.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from shopman.watchman.contracts import CheckContext, CheckResult, Scope, Status
+
+logger = logging.getLogger(__name__)
 
 LegacyCheck = Callable[[], tuple[str, str | None]]
 
@@ -202,6 +205,7 @@ class CourierWebhooksCheck:
         try:
             items = list_webhooks()
         except Exception as exc:
+            logger.warning("watchman.courier_webhooks listing_failed error=%s", type(exc).__name__)
             return CheckResult(
                 id=self.id,
                 status=Status.UNKNOWN,
