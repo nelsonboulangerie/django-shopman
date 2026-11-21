@@ -206,7 +206,7 @@ def test_sem_gerenciar_pedidos_a_acao_vem_apagada_e_a_rota_recusa(client, shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_a_linha_diz_o_estado_da_corrida(caixa, shop, status, label, tone):
     client, _ = caixa
-    _delivery(courier={"provider": "machine", "id_mch": "R1", "status": status},
+    _delivery(courier={"provider": "machine", "ride_ref": "R1", "status": status},
         **({"status": Order.Status.DISPATCHED} if status == "E" else {"status": Order.Status.DELIVERED} if status == "F" else {}))
 
     card = _row(client, "PDV-ENT")

@@ -56,7 +56,7 @@ class CourierCancelHandler:
                 return
             if state not in {"started", "unknown"}:
                 block = courier.get_block(order)
-                if block.get("id_mch") != ride_id or not courier.ride_cancellable(block):
+                if block.get("ride_ref") != ride_id or not courier.ride_cancellable(block):
                     self._record(message, "not_applied")
                     return
                 adapter = delivery_services.courier_backend(block)
@@ -103,7 +103,7 @@ class CourierCancelHandler:
         refs = [str(ref) for ref in payload.get("order_refs") or [payload.get("order_ref")] if ref]
         by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
         orders = [by_ref[ref] for ref in refs if ref in by_ref]
-        holding = [order for order in orders if courier.get_block(order).get("id_mch") == payload.get("courier_ref")]
+        holding = [order for order in orders if courier.get_block(order).get("ride_ref") == payload.get("courier_ref")]
         return (holding or orders or [None])[0]
 
     @staticmethod
@@ -113,7 +113,7 @@ class CourierCancelHandler:
             read_ride = getattr(adapter, "read_ride", None)
             letter = (read_ride(ride_id) or {}).get("status") if read_ride else adapter.get_status(ride_id)
         except Exception:
-            logger.info("courier.cancel_letter_unread id_mch=%s", ride_id, exc_info=True)
+            logger.info("courier.cancel_letter_unread ride_ref=%s", ride_id, exc_info=True)
             return ""
         letter = letter.strip().upper() if isinstance(letter, str) else ""
         return letter if letter in _KNOWN_LETTERS else ""
@@ -126,7 +126,7 @@ class CourierCancelHandler:
         except CourierError as exc:
             if CANCEL_REASON_REFUSED_CODE not in getattr(exc, "codes", ()):
                 raise
-            logger.warning("courier.cancel_reason_refused id_mch=%s letter=%s reason=%s", ride_id, letter, reason)
+            logger.warning("courier.cancel_reason_refused ride_ref=%s letter=%s reason=%s", ride_id, letter, reason)
         # A corrida mudou de fase entre a leitura e o envio (aceita, ou voltou
         # à procura). Vale a letra relida; se ela não muda o motivo, o da outra fase.
         again = self._fresh_letter(adapter, ride_id)
@@ -161,7 +161,7 @@ class CourierCancelHandler:
         refs = [str(ref) for ref in payload.get("order_refs") or [payload.get("order_ref")] if ref]
         by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
         return [by_ref[ref] for ref in refs
-                if ref in by_ref and courier.get_block(by_ref[ref]).get("id_mch") == payload.get("courier_ref")]
+                if ref in by_ref and courier.get_block(by_ref[ref]).get("ride_ref") == payload.get("courier_ref")]
 
     @classmethod
     def _adopt(cls, message):

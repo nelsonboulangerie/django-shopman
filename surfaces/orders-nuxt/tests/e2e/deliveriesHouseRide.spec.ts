@@ -15,7 +15,7 @@ test.describe("Entregas: a corrida da casa", () => {
   test.use({ viewport: { width: 1360, height: 900 } });
 
   test.beforeEach(async ({ context, page, baseURL }) => {
-    await context.addCookies([{ name: "e2e_house", value: "on", url: baseURL! }]);
+    await context.addCookies([{ name: "e2e_house", value: "on", url: baseURL! }, { name: "e2e_ns", value: "house-ride", url: baseURL! }]);
     await page.request.delete(`${MOCK}/api/v1/backstage/e2e/deliveries/house-ride/`);
     await context.route("https://wa.me/**", (route) => route.fulfill({ status: 200, body: "whatsapp" }));
   });

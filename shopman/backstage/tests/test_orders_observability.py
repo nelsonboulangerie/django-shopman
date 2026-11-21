@@ -171,7 +171,7 @@ def test_courier_attempt_trace_precedes_network_and_keeps_remote_classification(
     from shopman.shop.handlers.courier_cancel import CourierCancelHandler
 
     caplog.set_level(logging.INFO, logger="shopman.operational")
-    order = Order.objects.create(channel_ref="web", ref="OBS-RIDE", status="ready", data={"fulfillment_type": "delivery", "courier": {"id_mch": "remote-123", "status": "A"}})
+    order = Order.objects.create(channel_ref="web", ref="OBS-RIDE", status="ready", data={"fulfillment_type": "delivery", "courier": {"ride_ref": "remote-123", "status": "A"}})
     task = Directive.objects.create(topic="courier.cancel", payload={"order_ref": order.ref, "courier_ref": "remote-123", "actor": str(actor.pk)})
     def cancel(*args, **kwargs):
         assert not connection.in_atomic_block

@@ -223,7 +223,14 @@ def test_o_dialogo_traz_o_fato_as_quatro_familias_na_ordem_e_a_mensagem_de_cada_
         "customer_name": "Nelson Dias",
         "facts": ["Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado."],
         "contact": {"enabled": True, "reason": ""},
-        "interim_note": "O envio automático ainda não existe: copie a mensagem ou chame o cliente no WhatsApp.",
+        "notice": {
+            "enabled": True,
+            "kind": "item_missing",
+            "label": "Faltou um item",
+            "note": 'Primeiro, avise o cliente com o aviso "Faltou um item". Quando ele responder, mande a proposta da escolha.',
+            "reason": "",
+            "line_ids": ["L1"],
+        },
         "choices": [
             {
                 "key": "swap:BAGUETE:FENDU",
@@ -728,3 +735,36 @@ def test_a_copy_da_proposta_nao_tem_travessao_nem_palavra_de_bastidor():
     assert [key for key, text in notification_copy.PROMISE_PROPOSAL_COPY.items() if "💛" in text] == [
         "opening", "opening_without_shop",
     ]
+
+
+# ── O aviso aprovado que abre a conversa (WP-G07, #2809 item 1) ──────────────
+
+
+def test_a_encomenda_inteira_em_risco_abre_com_precisamos_remarcar(client, gerente, vitrine):
+    """Só baguete, e o lote de amanhã cancelado: o pedido inteiro não fica pronto na data."""
+    order = _order("WEB-REMARCAR", [(SKU, NAME, 4, 1100)])
+    _lost_lot(order, SKU, "4")
+
+    notice = _get(client, order.ref).json()["notice"]
+
+    assert notice == {
+        "enabled": True,
+        "kind": "reschedule",
+        "label": "Precisamos remarcar",
+        "note": 'Primeiro, avise o cliente com o aviso "Precisamos remarcar". Quando ele responder, mande a proposta da escolha.',
+        "reason": "",
+        "line_ids": [],
+    }
+
+
+def test_o_aviso_que_nao_cabe_diz_por_que_e_o_que_fazer_no_lugar(client, gerente, vitrine):
+    """Sem o telefone do cliente não há aviso pela casa: copiar ou chamar no WhatsApp."""
+    order = _baguete_e_cafe("WEB-SEM-FONE", customer={"name": "Nelson Dias"})
+    _lost_lot(order, SKU, "4")
+
+    notice = _get(client, order.ref).json()["notice"]
+
+    assert notice["enabled"] is False
+    assert notice["reason"] == "O pedido não tem o telefone do cliente."
+    assert notice["note"] == "Copie a mensagem ou chame o cliente no WhatsApp."
+    assert notice["line_ids"] == []

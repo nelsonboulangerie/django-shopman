@@ -681,6 +681,15 @@ export function suggestionQuoteLines(suggestion: RideSuggestion): QuoteLine[] {
   );
 }
 
+/**
+ * A etiqueta da rota sugerida no mapa (#2874): os códigos juntados e, cotada, o preço
+ * das juntas ("A47 + C03 · R$ 16,50"). Sem cotação, só os códigos: o mapa não inventa preço.
+ */
+export function suggestionMapLabel(suggestion: Pick<RideSuggestion, "codes" | "quoted" | "together_q">): string {
+  const codes = suggestion.codes.join(" + ");
+  return suggestion.quoted && suggestion.together_q !== null ? `${codes} · ${money(suggestion.together_q)}` : codes;
+}
+
 /** "C03 chega uns 6 min depois.": quem mais espera a mais por ir junto. */
 export function suggestionLate(suggestion: Pick<RideSuggestion, "late_code" | "late_minutes">): string {
   if (!suggestion.late_code || suggestion.late_minutes < 1) return "";

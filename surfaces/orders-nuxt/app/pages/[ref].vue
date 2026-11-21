@@ -37,7 +37,7 @@ import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTr
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { PROMISE_HASH } from "~/presentation/preorderList";
 import { RESOLVE } from "~/presentation/orderPromise";
-import { CANCEL_HASH } from "~/presentation/promiseResolution";
+import { CANCEL_HASH, parseNotifyHash, type NoticePick } from "~/presentation/promiseResolution";
 import {
   pendingFocusKey,
   PROMISE_PENDING_KEY,
@@ -145,11 +145,18 @@ const resolveOpen = ref(false);
 // recusa do envio fica escrita no diálogo, que segue aberto com a escolha marcada.
 const noticeOpen = ref(false);
 const noticeFailure = ref("");
+// O aviso e os itens que abrem marcados quando o pedido chega do "Resolver" (WP-G08);
+// pelo menu, nada vem marcado.
+const noticePick = ref<NoticePick>({ kind: "", lines: [] });
 const noticeAction = computed(() => projectedAction("customer-notice"));
-function openNotice() {
+function openNotice(pick: NoticePick = { kind: "", lines: [] }) {
   menuOpen.value = false;
   noticeFailure.value = "";
+  noticePick.value = pick;
   noticeOpen.value = true;
+}
+function notifyFromResolve(_ref: string, pick: NoticePick) {
+  openNotice(pick);
 }
 async function onSendNotice(inputs: Record<string, unknown>) {
   noticeFailure.value = "";
@@ -852,7 +859,7 @@ const detailMenuItems = computed(() => [
           icon: "i-lucide-message-circle-warning",
           "data-action": "customer-notice",
           disabled: busy.value || !noticeAction.value.enabled,
-          onSelect: openNotice,
+          onSelect: () => openNotice(),
         },
       ]
     : []),
@@ -1056,6 +1063,15 @@ watch(
   () => route.hash === CANCEL_UNPAID_HASH && cancelUnpaid.value,
   (arrive) => {
     if (arrive && !dialog.value) openCancelUnpaid();
+  },
+  { immediate: true },
+);
+// O "Avisar o cliente" do diálogo "Resolver" do painel chega com `#notify=...`: o
+// diálogo do G07, com o aviso e os itens em risco marcados.
+watch(
+  () => (noticeAction.value?.enabled ? parseNotifyHash(route.hash) : null),
+  (pick) => {
+    if (pick && !noticeOpen.value) openNotice(pick);
   },
   { immediate: true },
 );
@@ -1915,6 +1931,8 @@ const outside = useOutsideStore(
       :customer-name="order?.customer_name || ''"
       :busy="busy"
       :failure="noticeFailure"
+      :initial-kind="noticePick.kind"
+      :initial-lines="noticePick.lines"
       @update:open="(value: boolean) => (noticeOpen = value)"
       @send="onSendNotice"
     />
@@ -1925,6 +1943,7 @@ const outside = useOutsideStore(
       @update:open="(value: boolean) => (resolveOpen = value)"
       @changed="refresh()"
       @cancel="cancelFromResolve"
+      @notify="notifyFromResolve"
     />
 
     <!-- devolução depois da venda: itens, quantidade, motivo e o valor que volta -->

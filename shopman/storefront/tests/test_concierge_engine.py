@@ -1100,7 +1100,7 @@ def test_order_status_says_the_same_fact_as_the_order_page(ctx, django_capture_o
         **(order.data or {}),
         "payment": {"method": "cash"},
         "fulfillment_type": "delivery",
-        "courier": {"id_mch": "777", "status": "A", "driver": {"name": "Diego Souza"},
+        "courier": {"ride_ref": "777", "status": "A", "driver": {"name": "Diego Souza"},
                     "called_at": timezone.now().isoformat()},
     })
     order.refresh_from_db()

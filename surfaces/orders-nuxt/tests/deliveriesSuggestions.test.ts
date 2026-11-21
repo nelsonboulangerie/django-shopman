@@ -6,6 +6,7 @@ import {
   callAllLabel,
   ridesFromSuggestions,
   suggestionLate,
+  suggestionMapLabel,
   suggestionQuoteLines,
   suggestionsHeadline,
   visibleSuggestions,
@@ -95,5 +96,19 @@ describe("o cartão das sugestões", () => {
       { number: 3, refs: ["WEB-B12", "WEB-D14", "WEB-E02"] },
     ]);
     expect(ridesFromSuggestions([suggestion(), second], [1, 2], editing)).toBeNull();
+  });
+});
+
+describe("a etiqueta da rota sugerida no mapa (#2874)", () => {
+  it("leva os códigos juntados e o preço das juntas", () => {
+    expect(suggestionMapLabel(suggestion())).toBe("A47 + C03 · R$ 11,00");
+  });
+
+  it("sem cotação, só os códigos: o mapa não inventa preço", () => {
+    expect(suggestionMapLabel(suggestion({ quoted: false, together_q: null }))).toBe("A47 + C03");
+  });
+
+  it("o preço usa espaço comum, como a cotação do cartão", () => {
+    expect(suggestionMapLabel(suggestion())).not.toMatch(/\u00a0/);
   });
 });

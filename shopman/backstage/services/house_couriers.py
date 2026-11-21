@@ -55,7 +55,7 @@ def _live_ride(person: Courier) -> list[Order] | None:
             if order is None or order.status == Order.Status.CANCELLED:
                 continue
             block = courier.get_block(order)
-            if block.get("id_mch") != link.ride_ref:
+            if block.get("ride_ref") != link.ride_ref:
                 continue
             live.append(order)
             dispatch = (order.data or {}).get("dispatch") or {}

@@ -272,11 +272,11 @@ def test_redact_text_cuts_the_value_of_a_quoted_json_key():
 
 
 def test_ride_reference_survives_but_a_loose_phone_does_not():
-    """O id da corrida na TaOn tem nove dígitos e saía ``id_mch=[phone]``."""
-    line = "courier.sync_failed order=PDV-1 id_mch=776753357 request=776753357 sha256=123456789012 size=342"
+    """O id da corrida na TaOn tem nove dígitos e saía ``ride_ref=[phone]``."""
+    line = "courier.sync_failed order=PDV-1 ride_ref=776753357 request=776753357 sha256=123456789012 size=342"
     assert redact_text(line) == line
     assert redact_text("ligar 776753357") == "ligar [phone]"
-    assert redact_text("id_mch=776753357 fone 43999998888") == "id_mch=776753357 fone [phone]"
+    assert redact_text("ride_ref=776753357 fone 43999998888") == "ride_ref=776753357 fone [phone]"
 
 
 def test_both_formatters_keep_the_taon_driver_out_of_the_log():

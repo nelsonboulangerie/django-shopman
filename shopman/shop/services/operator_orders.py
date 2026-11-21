@@ -466,7 +466,7 @@ def advance_order(
         type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
-    if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("id_mch") != expected_courier_id:
+    if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("ride_ref") != expected_courier_id:
         raise OrderStateConflict("A corrida mudou. Confira a entrega atual.")
     from shopman.shop.services import order_undo
 
@@ -1444,7 +1444,7 @@ def confirm_received(order: Order, *, actor: str = "customer", expected_courier_
     """
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
-    if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("id_mch") != expected_courier_id:
+    if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("ride_ref") != expected_courier_id:
         return False
     if order.status != Order.Status.DISPATCHED or get_fulfillment_type(order) != "delivery":
         return False
