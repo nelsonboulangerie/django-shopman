@@ -379,10 +379,10 @@ def test_com_mais_de_um_item_em_falta_o_rotulo_diz_qual_e_o_endereco_leva_os_doi
     # O SKU desta escolha na frente; o outro item em falta com sugestão vai junto.
     assert parse_qs(urlsplit(choices["swap:BAGUETE:FENDU"]["conclude"]["href"]).query) == {"swap": ["BAGUETE", "BRIOCHE"]}
     assert parse_qs(urlsplit(choices["swap:BRIOCHE:FENDU"]["conclude"]["href"]).query) == {"swap": ["BRIOCHE", "BAGUETE"]}
-    # A mensagem conta os dois itens e propõe a troca desta escolha.
+    # A mensagem conta os dois itens numa oração só (mesma situação, #2809 item 5) e
+    # propõe a troca desta escolha.
     assert choices["swap:BRIOCHE:FENDU"]["message"] == (
-        f"{OPENING} No seu pedido DOIS, o item Baguete de tradição não vai ficar pronto amanhã "
-        f"e o item Brioche não vai ficar pronto amanhã{SORRY} "
+        f"{OPENING} No seu pedido DOIS, os itens Baguete de tradição e Brioche não vão ficar prontos amanhã{SORRY} "
         "Posso trocar Brioche por Fendu? Me avisa e eu ajusto por aqui ✨"
     )
     # Tirar os dois deixa o café: a lista final é só ele, e a mensagem fala "esses itens".
