@@ -127,6 +127,8 @@ COPY_KEYS = (TEAM_COPY_KEY, ORDER_WITH_TEAM_COPY_KEY, NOT_FOUND_COPY_KEY, UNCLEA
 JEV_CERTAIN = 0.8
 JEV_PRESENT = 0.5
 MULTIPLE_PARTS = "multiple_parts"
+#: A confiança do Jev na escolha da intenção (``choice.confidence``), junto das notas.
+JEV_CONFIDENCE = "jev_confidence"
 MULTIPLE_PARTS_DESCRIPTION = (
     "duas ou mais coisas diferentes, por exemplo uma pergunta e um pedido, ou perguntas sobre assuntos "
     "diferentes (cumprimento e agradecimento não contam)"
@@ -325,7 +327,12 @@ def gate(text: str, *, rules_intent: str, rules_source: str, jev_scores: dict | 
         present = {ref for p, ref in ranked if p >= JEV_PRESENT}
         if len(present) >= 2 and frozenset(present) not in COMPATIBLE:
             return GateDecision(False, "jev_two_intents")
-        if top_p >= JEV_CERTAIN or top == rules_intent or (rules_intent in present):
+        confidence = scores.get(JEV_CONFIDENCE)
+        if confidence is not None and confidence < JEV_PRESENT and top != rules_intent:
+            # O próprio Jev diz que não tem certeza da escolha, e a regra local não confirma.
+            return GateDecision(False, "jev_unsure")
+        sure = top_p >= JEV_CERTAIN or (confidence is not None and confidence >= JEV_CERTAIN)
+        if sure or top == rules_intent or (rules_intent in present):
             return GateDecision(True, "jev_certain", rules_intent if rules_intent in present else top)
         return GateDecision(False, "jev_unsure")
     if rules_source == "rules" and rules_intent in TRIAGE_INTENT_ACTS:
