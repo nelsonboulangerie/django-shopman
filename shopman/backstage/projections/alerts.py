@@ -112,6 +112,18 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
 
     verify_subjects = card_subjects(alert.pk for alert in alert_rows if alert.type == VERIFY_TYPE)
     handoff = handoff_cards([alert.pk for alert in alert_rows if alert.type == HANDOFF_TYPE])
+    # O dia fraco por papel (dono, 21/11/2026): quem tem o panorama (lê o B.I. ou
+    # audita o caixa) lê a proporção do esperado; o Gerente e o Caixa, a frase sem
+    # número que o alerta grava.
+    revenue_share: dict[int, str] = {}
+    if user is not None and any(alert.type == "bi_below_baseline" for alert in alert_rows):
+        from shopman.backstage.bi.alerts import revenue_share_messages
+        from shopman.backstage.permissions import can_audit_cash, can_view_bi
+
+        if can_view_bi(user) or can_audit_cash(user):
+            revenue_share = revenue_share_messages(
+                alert.pk for alert in alert_rows if alert.type == "bi_below_baseline"
+            )
     rows = tuple(
         OperatorAlertProjection(
             pk=alert.pk,
@@ -121,7 +133,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
             severity=alert.severity,
             severity_label=alert.get_severity_display(),
             audience=alert.audience,
-            message=_with_ago(readable_message(alert.message), handoff.get(alert.pk)),
+            message=_with_ago(readable_message(revenue_share.get(alert.pk) or alert.message), handoff.get(alert.pk)),
             order_ref=alert.order_ref,
             created_at_display=format_local(alert.created_at, "%d/%m às {clock}"),
             respond_by_iso=_deadline_iso(alert),
