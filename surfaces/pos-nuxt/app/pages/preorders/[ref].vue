@@ -13,7 +13,9 @@
 // - quem, a situação e o SALDO (quanto falta receber);
 // - os gestos (ENCOMENDAS-PDV-PLAN, WP-E3/E4/E6), em três alturas: o principal,
 //   **Receber e entregar** (ou só **Entregar**, quando já está paga), na largura
-//   inteira; os de uso médio (**Editar**, **Reagendar**, **Imprimir Via Pedido**)
+//   inteira. Receber abre a MESMA tela de Pagamento da venda, com o saldo como
+//   total (`PosPreorderBalancePayment`, EXCELENCIA-PDV WP-E5): gesto de dinheiro
+//   tem uma tela só (dono, 16/11/2026); os de uso médio (**Editar**, **Reagendar**, **Imprimir Via Pedido**)
 //   lado a lado; **Cancelar** separado, no pé. Cada um só quando o servidor diz
 //   que pode (`hand_over`, `edit`, `reschedule`, `cancel`). Quando não pode
 //   entregar, a tela diz por quê em vez de mostrar botão apagado. **Editar** abre
@@ -33,7 +35,7 @@
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import type { HandOverBody } from "~/presentation/preorderActions";
+import type { HandOverBody } from "~/presentation/balanceCharge";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
@@ -78,7 +80,10 @@ async function printTicket() {
 // ── Os gestos ──
 const { operator: activeOperator } = useOperatorLock("cashman.operate_pos");
 const actions = usePosPreorderActions({ detail, pos, refresh });
-const handOverOpen = ref(false);
+// Recebendo o saldo: a tela de Pagamento toma o lugar do detalhe (Esc ou Voltar
+// devolvem o detalhe; entregue, o PDV volta à lista).
+const receiving = ref(false);
+const confirmDelivery = useConfirm();
 const cancelOpen = ref(false);
 const rescheduleOpen = ref(false);
 
@@ -179,15 +184,49 @@ const handOverBar = computed<OperatorActionBarAction | null>(() => {
     label: handOverCta(handOver),
     icon: handOver.needs_payment ? "i-lucide-hand-coins" : "i-lucide-package-check",
     disabled: actions.busy.value,
-    onSelect: () => { handOverOpen.value = true; },
+    onSelect: () => void startHandOver(),
   };
 });
 
-async function confirmHandOver(body: HandOverBody) {
-  const done = await actions.handOver(body);
-  // Entregou, ou o cliente acabou de pagar online (o aviso fica na página).
-  if (done || actions.paidOnline.value) handOverOpen.value = false;
+/**
+ * O gesto principal. Com saldo, a tela de Pagamento da venda, com o saldo como
+ * total. Já paga, não há dinheiro: uma pergunta, com o que entregar faz com a
+ * Cozinha quando ela ainda não deu o pronto.
+ */
+async function startHandOver() {
+  const handOver = counter.value?.hand_over;
+  if (!handOver?.allowed || actions.busy.value) return;
+  if (handOver.needs_payment) {
+    receiving.value = true;
+    return;
+  }
+  const customer = card.value ? customerLine(card.value) : "";
+  const confirmed = await confirmDelivery({
+    tone: "primary",
+    title: customer ? `Entregar a encomenda de ${customer}?` : "Entregar a encomenda?",
+    description: ["A encomenda já está paga.", handOver.kitchen_notice || ""].filter(Boolean).join(" "),
+    confirmLabel: "Entregar",
+    cancelLabel: "Voltar",
+  });
+  if (confirmed) await deliver({});
 }
+
+async function deliver(body: HandOverBody, changeQ = 0) {
+  if (await actions.handOver(body, changeQ)) {
+    receiving.value = false;
+    // Entregue: a encomenda sai do balcão, e o PDV volta para o recorte de onde veio.
+    goBack();
+    return;
+  }
+  // O cliente acabou de pagar online: o detalhe avisa e oferece só Entregar.
+  if (actions.paidOnline.value) receiving.value = false;
+}
+
+// A leitura nova diz que não há mais o que receber aqui (outro balcão entregou, a
+// encomenda mudou de estado): a tela de Pagamento sai de cena.
+watch(() => [counter.value?.hand_over.allowed, counter.value?.hand_over.needs_payment] as const, ([allowed, needsPayment]) => {
+  if (receiving.value && !(allowed && needsPayment)) receiving.value = false;
+});
 
 async function confirmCancel(
   choice: { reasonKey: string; internalNote: string },
@@ -230,7 +269,7 @@ function signWithBadge(badge: string) {
 // o painel do Balcão segue com todos eles à vista.
 const compactOptions = computed<OperatorHeaderAction[]>(() => {
   const c = counter.value;
-  if (!c) return [];
+  if (!c || receiving.value) return [];
   const busy = actions.busy.value;
   const list: OperatorHeaderAction[] = [];
   if (c.reschedule.allowed) {
@@ -267,6 +306,10 @@ const compactOptions = computed<OperatorHeaderAction[]>(() => {
 // filtros) mora na URL dela — `?back=` ou o histórico —, e só sem nenhum dos
 // dois a volta é a casa da seção.
 function goBack() {
+  if (receiving.value) {
+    receiving.value = false;
+    return;
+  }
   const target = preorderBackTarget(route.query.back);
   if (target) void navigateTo(target);
   else if (import.meta.client && window.history.length > 1) window.history.back();
@@ -280,8 +323,9 @@ function goBack() {
     :pending="posPending || pending"
     :title="`Encomenda ${ref_}`"
     wide
+    :fill="receiving"
     :compact-options="compactOptions"
-    :alerts="swapAlerts"
+    :alerts="receiving ? [] : swapAlerts"
     @refresh="refreshPos(); refresh(); swapper.load()"
   >
     <!-- Celular: o voltar e a encomenda aberta na linha do chão (a identidade do
@@ -293,7 +337,7 @@ function goBack() {
         icon="i-lucide-arrow-left"
         square
         class="size-11 shrink-0 justify-center"
-        aria-label="Voltar às encomendas"
+        :aria-label="receiving ? 'Voltar à encomenda' : 'Voltar às encomendas'"
         data-compact-back
         @click="goBack"
       />
@@ -304,7 +348,30 @@ function goBack() {
         <span class="block break-all font-semibold">{{ ref_ }}</span>
       </p>
     </template>
-    <div class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">
+    <!-- RECEBENDO O SALDO: a tela de Pagamento da venda, inteira, no lugar do
+         detalhe. O voltar devolve o detalhe; Esc também. -->
+    <template v-if="receiving && detail && counter && card">
+      <div class="max-md:hidden">
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          label="Voltar à encomenda"
+          data-preorder-balance-back
+          @click="receiving = false"
+        />
+      </div>
+      <PosPreorderBalancePayment
+        class="md:min-h-0 md:flex-1"
+        :detail="detail"
+        :pos="pos"
+        :busy="actions.busy.value"
+        :operator-name="activeOperator?.name || ''"
+        @back="receiving = false"
+        @submit="deliver"
+      />
+    </template>
+    <div v-else class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">
       <div class="max-md:hidden">
         <NuxtButton
           color="neutral"
@@ -388,7 +455,7 @@ function goBack() {
               :label="handOverCta(counter.hand_over)"
               :disabled="actions.busy.value"
               data-preorder-hand-over
-              @click="handOverOpen = true"
+              @click="startHandOver"
             />
             <NuxtAlert
               v-else-if="card.situation !== 'delivered' && showsDeliveryExitNotice(card, detail.courier)"
@@ -539,15 +606,6 @@ function goBack() {
           </div>
         </div>
 
-        <PosPreorderHandOverDialog
-          v-model:open="handOverOpen"
-          :hand-over="counter.hand_over"
-          :customer-name="customerLine(card)"
-          :shop-name="pos?.shop_name || ''"
-          :order-ref="ref_"
-          :busy="actions.busy.value"
-          @confirm="confirmHandOver"
-        />
         <PosPreorderRescheduleDialog
           v-model:open="rescheduleOpen"
           :customer-name="customerLine(card)"
@@ -561,13 +619,18 @@ function goBack() {
           v-model:open="cancelOpen"
           :customer-name="customerLine(card)"
           :requires-approval="counter.cancel.requires_approval"
+          :money-effect="detail.cancel_money_effect || ''"
           :cancel-reasons="detail.cancel_reasons"
           :busy="actions.busy.value"
           @confirm="(choice: { reasonKey: string; internalNote: string }) => confirmCancel(choice)"
         />
+        <!-- P1-6: o gerente assina VENDO O VALOR. A frase do dinheiro é a do
+             servidor (`cancel_money_effect`, a mesma do Gestor): quanto volta e por
+             onde ("R$ 93,00 em dinheiro ficam a devolver no caixa."). -->
         <OperatorManagerAuth
           :open="!!actions.managerChallenge.value"
-          action="cancel_sale"
+          action="cancel_order"
+          :detail="detail.cancel_money_effect || ''"
           :operator-name="activeOperator?.name || ''"
           :managers="detail.managers"
           :busy="actions.busy.value"
@@ -600,7 +663,7 @@ function goBack() {
 
     <!-- CELULAR: o gesto principal na base, ao alcance do polegar (a mesa o tem no
          painel do Balcão). -->
-    <template v-if="handOverBar" #footer>
+    <template v-if="handOverBar && !receiving" #footer>
       <OperatorActionBar
         :action="handOverBar"
         :context-label="card ? customerLine(card) : ''"
