@@ -5734,7 +5734,7 @@ class Command(BaseCommand):
                     # Sem ela a fórmula deixaria a linha fora da conta.
                     piece = Product.objects.filter(sku=input_sku).only("unit_weight_g").first()
                     if piece is not None and piece.unit_weight_g:
-                        meta["unit_weight_g"] = piece.unit_weight_g
+                        meta["unit_weight_g"] = meta["grams_per_unit"] = piece.unit_weight_g
                 RecipeItem.objects.create(
                     recipe=recipe,
                     input_sku=input_sku,
@@ -5776,6 +5776,20 @@ class Command(BaseCommand):
                 fill_unit_weight_from_recipe(product)
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
+
+        # A linha em PEÇA (`units`) leva a ponte até grama no peso que o cadastro
+        # da peça anuncia AGORA, depois das derivações: o da BGL só existe depois
+        # que a ficha dela fecha. Antes do inventário, que lê a ponte. São duas
+        # chaves para o mesmo número: `unit_weight_g` é a da nutrição e do peso
+        # (`recipe_bom`); `grams_per_unit`, a da fórmula do inventário.
+        for rd in recipes_data:
+            for input_sku in rd.get("units", {}):
+                piece = Product.objects.filter(sku=input_sku).only("unit_weight_g").first()
+                if piece is None or not piece.unit_weight_g:
+                    continue
+                for item in RecipeItem.objects.filter(recipe__ref=rd["ref"], input_sku=input_sku):
+                    item.meta = {**(item.meta or {}), "unit_weight_g": piece.unit_weight_g, "grams_per_unit": piece.unit_weight_g}
+                    item.save(update_fields=["meta"])
 
         # Inventário de receitas (RECIPE-INVENTORY-PLAN §2): uma entry por ficha,
         # com a versão 1 publicada e a fórmula na forma base (partes dissolvidas).
