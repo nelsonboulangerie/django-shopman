@@ -145,7 +145,9 @@ describe("a fiação", () => {
   it("a custódia vem do kit nos dois apps (Gestor e PDV)", () => {
     const panel = app("components", "PosCourierPanel.vue");
     expect(panel).toContain('from "../../../operator-kit/app/presentation/custody"');
-    const gestor = readFileSync(resolve(here, "..", "..", "orders-nuxt", "app", "components", "OrderCourierPanel.vue"), "utf8");
+    // No Gestor, chamar o entregador é o sheet único (#2876): o troco e a maquininha da
+    // chamada vêm da apresentação das Entregas, que lê a custódia do kit.
+    const gestor = readFileSync(resolve(here, "..", "..", "orders-nuxt", "app", "presentation", "deliveries.ts"), "utf8");
     expect(gestor).toContain('from "../../../operator-kit/app/presentation/custody"');
     expect(app("presentation", "courier.ts")).not.toMatch(/export function (freeMachines|machinePhrase|moneyInput)/);
   });
