@@ -390,7 +390,7 @@ export function queueBlock(item: QueueItem): QueueBlock | null {
 }
 
 export interface QueueGesture {
-  /** O gesto principal: o fato humano, com o verbo da v4 ("Aceitar", "Saiu", "Retirou"). */
+  /** O gesto principal, com o nome que o servidor dá ("Aceitar", "Entregar a Ana", "Despachar M09"). */
   primary: (Affordance & { verb: string }) | null;
   /** O secundário, quando a prévia mostra um ("Recusar"). */
   secondary: Affordance | null;
@@ -398,7 +398,7 @@ export interface QueueGesture {
   shortcut: string;
 }
 
-/** O botão da linha: só o fato humano é botão (v4). O rótulo do servidor vira `title`. */
+/** O botão da linha: só o fato humano é botão (v4), com o nome que o servidor dá. */
 export function queueGesture(item: QueueItem): QueueGesture {
   // A negociação do iFood se responde no pedido (motivo, prova, contraproposta), não
   // com o gesto do cartão: a linha oferece "Responder", que é um link. A promessa em
@@ -447,16 +447,11 @@ export function queueGesture(item: QueueItem): QueueGesture {
       ? (affordances.find((aff) => aff.ref === "reject") ?? null)
       : null;
   if (!primary) return { primary: null, secondary, shortcut: "" };
-  let verb = primary.label;
-  if (!primary.disabled) {
-    if (primary.ref === "confirm") verb = "Aceitar";
-    else if (item.kind === "dispatch" && primary.ref === "advance")
-      verb = "Saiu";
-    else if (item.kind === "handoff" && primary.ref === "advance")
-      verb = item.card.fulfillment_type === "delivery" ? "Entregue" : "Retirou";
-  }
+  // Um nome por gesto em toda a suíte (coordenação, 21/11/2026; #2758 item 4): o botão
+  // diz o que o servidor nomeia, o mesmo do Painel e da Tabela ("Aceitar", "Entregar a
+  // Ana", "Despachar M09"). A Fila montava verbos próprios ("Saiu", "Retirou").
   return {
-    primary: { ...primary, verb },
+    primary: { ...primary, verb: primary.label },
     secondary,
     shortcut: primary.ref === "confirm" && !primary.disabled ? "A" : "Enter",
   };

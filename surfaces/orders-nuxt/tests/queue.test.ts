@@ -93,17 +93,19 @@ describe("Na Cozinha é só o que foi para a cozinha (beta 05/11: GES-13, PDV2-0
 });
 
 describe("queueGesture", () => {
-  it("o fato humano com o verbo da v4; o rótulo do servidor segue no title", () => {
-    const [dispatch] = queueItems([card()], NOW);
-    expect(queueGesture(dispatch!).primary).toMatchObject({ ref: "advance", verb: "Saiu", label: "Marcar saída para entrega" });
+  it("o botão diz o nome que o servidor dá ao gesto, o mesmo do Painel (#2758, item 4)", () => {
+    const [dispatch] = queueItems([card({ actions: [action("advance", { label: "Despachar M09" })] })], NOW);
+    expect(queueGesture(dispatch!).primary).toMatchObject({ ref: "advance", verb: "Despachar M09", label: "Despachar M09" });
     expect(queueGesture(dispatch!).shortcut).toBe("Enter");
 
-    const [pickup] = queueItems([card({ attention: "handoff", fulfillment_type: "pickup", next_status: "completed" })], NOW);
-    expect(queueGesture(pickup!).primary?.verb).toBe("Retirou");
+    const [pickup] = queueItems([card({ attention: "handoff", fulfillment_type: "pickup", next_status: "completed", actions: [action("advance", { label: "Entregar a Ana" })] })], NOW);
+    expect(queueGesture(pickup!).primary?.verb).toBe("Entregar a Ana");
+    // Nunca os verbos próprios da Fila de antes.
+    for (const item of [dispatch!, pickup!]) expect(["Saiu", "Retirou", "Entregue"]).not.toContain(queueGesture(item).primary?.verb);
   });
 
   it("pedido novo: Aceitar (A) e Recusar ao lado", () => {
-    const [item] = queueItems([card({ status: "new", attention: "confirm", actions: [action("confirm", { label: "Confirmar" }), action("reject", { label: "Recusar", priority: "danger" })] })], NOW);
+    const [item] = queueItems([card({ status: "new", attention: "confirm", actions: [action("confirm", { label: "Aceitar" }), action("reject", { label: "Recusar", priority: "danger" })] })], NOW);
     const gesture = queueGesture(item!);
     expect(gesture.primary).toMatchObject({ ref: "confirm", verb: "Aceitar" });
     expect(gesture.secondary).toMatchObject({ ref: "reject", label: "Recusar" });
