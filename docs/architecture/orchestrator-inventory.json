@@ -4497,10 +4497,13 @@
           "symbols": [
             "KITCHEN_RELEASED_AT_KEY",
             "STALE_ALERT_FRACTION_OF_DEADLINE",
+            "_CLOSED_STATUSES",
+            "_REPAIR_ACTOR_PREFIX",
             "_alert_coupon_over_redeemed",
             "_alert_if_card_authorization_held",
             "_card_authorization_is_held",
             "_check_availability",
+            "_closed_by_repair",
             "_complete_after_handoff",
             "_counter_handoff",
             "_create_alert",
@@ -4539,6 +4542,7 @@
             "awaits_kitchen_release",
             "kitchen_release_at",
             "logger",
+            "phase_superseded",
             "release_preorder_now"
           ]
         }
