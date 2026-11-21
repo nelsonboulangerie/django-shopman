@@ -719,7 +719,8 @@ _PLAIN_PRODUCT_WORDS = frozenset({
     "amanha", "agora", "unidade", "unidades",
 })
 #: "Ele é doce?" sem o produto resolvido: de quem se fala a busca não sabe.
-_REFERENT_WORDS = frozenset({"ele", "ela", "eles", "elas", "esse", "essa", "esses", "essas", "este", "esta", "isso"})
+#: Sem "esta": sem acento é o verbo ("está disponível?", "ainda está aí?"), não "esta aqui".
+_REFERENT_WORDS = frozenset({"ele", "ela", "eles", "elas", "esse", "essa", "esses", "essas", "este", "isso"})
 SHEET_ITEMS = 3
 
 
