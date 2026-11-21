@@ -107,6 +107,26 @@ export function isUnavailableProduct(
   return Boolean(productBlockedLabel(product));
 }
 
+/** "30/11" de "2026-11-30"; "" quando a data não se lê. */
+function dayMonthOf(dateIso: string): string {
+  const [, month = "", day = ""] = (dateIso || "").split("-");
+  return day && month ? `${day}/${month}` : "";
+}
+
+/**
+ * A frase do item sem lote planejado na data da encomenda (WP-E3, D2): o que a
+ * linha e o toque dizem. A Produção planeja LOTES (vocabulário da suíte, §4), e
+ * a encomenda dela vira pedido: "Ainda sem lote planejado para 30/11: vira pedido
+ * à Produção".
+ */
+export function unplannedOrderNote(dateIso: string): string {
+  const day = dayMonthOf(dateIso);
+  return day ? `Ainda sem lote planejado para ${day}: vira pedido à Produção` : "Ainda sem lote planejado: vira pedido à Produção";
+}
+
+/** A pílula curta do tile: a consequência, que é o que o operador precisa saber ao tocar. */
+export const UNPLANNED_TILE_LABEL = "Vira pedido à Produção";
+
 /**
  * A grade da ENCOMENDA PARA OUTRO DIA: o esgotado é o daquele dia, não o de hoje.
  *
@@ -116,25 +136,34 @@ export function isUnavailableProduct(
  * agendamento traz, para a data escolhida, o que não tem saldo
  * (`sold_out_skus`), pela régua da reserva; aqui só se aplica.
  *
+ * Duas réguas, duas respostas (WP-E3, P1-1). Plano esgotado (a data tem lote
+ * planejado e ele acabou) segue bloqueado: "Sem saldo para 30/11". Sem lote
+ * planejado na data (`unplanned_skus`), o item ENTRA, como pedido à Produção, e
+ * leva a frase que a tela diz (`unplanned_note`). Antes, as duas viravam "Sem
+ * saldo", e com a data a dez dias trinta e cinco pães da casa ficavam de fora.
+ *
  * Bloqueio com motivo próprio do catálogo (ex.: "Sem caixa") continua valendo:
  * ele não é saldo do dia. Sem a resposta da data escolhida, a grade fica como
  * está (o salvamento confere de qualquer jeito).
  */
 export function productsForOrderDate(
   products: POSProductProjection[],
-  schedule: { date: string; is_today: boolean; sold_out_skus?: string[] } | null | undefined,
+  schedule: { date: string; is_today: boolean; sold_out_skus?: string[]; unplanned_skus?: string[] } | null | undefined,
   deliveryDate: string,
 ): POSProductProjection[] {
   if (!schedule || !deliveryDate || schedule.is_today || schedule.date !== deliveryDate) return products;
   if (!Array.isArray(schedule.sold_out_skus)) return products;
   const soldOut = new Set(schedule.sold_out_skus);
-  const [, month = "", day = ""] = deliveryDate.split("-");
-  const reason = `Sem saldo para ${day}/${month}`;
+  const unplanned = new Set(schedule.unplanned_skus ?? []);
+  const reason = `Sem saldo para ${dayMonthOf(deliveryDate)}`;
+  const note = unplannedOrderNote(deliveryDate);
   return products.map((product) => {
     if (product.sold_out && product.sold_out_reason) return product;
     const sold = soldOut.has(product.sku);
-    if (sold === Boolean(product.sold_out) && !sold) return product;
-    return { ...product, sold_out: sold, sold_out_reason: sold ? reason : "" };
+    const unplannedNote = !sold && unplanned.has(product.sku) ? note : "";
+    if (!sold && !product.sold_out && !unplannedNote) return product;
+    const next = { ...product, sold_out: sold, sold_out_reason: sold ? reason : "" };
+    return unplannedNote ? { ...next, unplanned_note: unplannedNote } : next;
   });
 }
 

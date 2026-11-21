@@ -15,6 +15,7 @@ import type {
   POSPaymentResultProjection,
   POSPaymentTenderDraft,
 } from "~/types/pos";
+import { unplannedOrderNote } from "~/presentation/catalog";
 import { formatBRL } from "~/utils/posIntent";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
@@ -425,6 +426,9 @@ export interface PlanLineFact {
   /** O pedido desta linha passa do que o lote da data ainda tem sem encomenda:
    *  o Validar vai pedir o gerente. */
   over: boolean;
+  /** A data ainda não tem lote planejado do item: vira pedido à Produção, e
+   *  nada pede o gerente (WP-E3, D2). */
+  unplanned?: boolean;
 }
 
 /** O que do lote ainda está sem encomenda, nunca maior que o planejado. */
@@ -438,6 +442,10 @@ function unclaimedOf(planned: number, unclaimed: number): number {
  * planejadas para 17/11, 12 ainda sem encomenda"), porque é contra isso que o
  * pedido é medido. A régua é só o lote planejado PARA a data: a sobra de hoje não
  * lastreia encomenda (dono, 18/11/2026). Sem lote planejado informado, nada.
+ *
+ * O servidor manda os dois zeros quando a data ainda não tem lote planejado do
+ * item (WP-E3): a linha diz "Ainda sem lote planejado para 30/11: vira pedido à
+ * Produção", e não passa do plano (não há plano a passar; D2).
  */
 export function planLineFact(
   qty: number,
@@ -446,6 +454,7 @@ export function planLineFact(
 ): PlanLineFact | null {
   if (!backing) return null;
   const day = dayMonth(dateIso);
+  if (day && backing.planned_qty === 0) return { text: unplannedOrderNote(dateIso), over: false, unplanned: true };
   const planned = Number(backing.planned_qty) || 0;
   if (!day || planned <= 0) return null;
   const unclaimed = unclaimedOf(planned, Number(backing.unclaimed_qty) || 0);
