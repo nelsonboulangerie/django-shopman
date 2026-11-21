@@ -451,7 +451,8 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   // Corrida dos entregadores da casa (DEV-2026-030, M2; `services/own_fleet`): `provider` = "own_fleet", `service` = "casa",
   // `id_mch` = "CASA-…" (o identificador da corrida até a M1b renomear), as mesmas letras internas (A designada, E saiu,
   // F entregue, C cancelada), `driver` = {name, phone, vehicle_model} do cadastro, `courier_ref` = o `Courier.ref`,
-  // `estimate.value_q` = o valor da tabela (vira `final_value_q` na entrega) e
+  // `estimate.value_q` = o valor da tabela (vira `final_value_q` na entrega), `note` = a observação da casa para o
+  // entregador, escrita no "Quem leva" e mostrada na página do link (até 200 caracteres; M3c, #2899) e
   // "problems": [{"kind": "no_answer", "at": "iso", "by": "courier:diego", "payment": "card"}]  // a folha "Problema" do link
   "id_mch": "184532",              // corrida ATIVA (string); some quando N/C arquiva
   "status": "E",                   // letra Machine crua

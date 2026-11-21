@@ -38,6 +38,7 @@ import {
 } from "~/presentation/board";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
+import type { DeliveriesProjection, DeliveryRideProjection } from "~/generated/ordersContract";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { ReasonOrderFacts } from "~/presentation/orderReason";
 import {
@@ -185,6 +186,22 @@ const {
 } = context;
 // O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
 context.readLocation(route.query);
+// A corrida da casa na Saída (M3d, #2937): os pedidos de uma corrida de entregador da
+// casa viram UM cartão da corrida (forma E), com os gestos do balcão. Lê as corridas da
+// página Entregas sem o plano (que pergunta à central), e relê junto com a fila.
+const { data: houseDeliveries, refresh: refreshHouse } = useFetch<DeliveriesProjection>(
+  "/api/v1/backstage/deliveries/",
+  { key: "orders:board-house-rides", server: false, query: { plan: "0" } },
+);
+const houseRides = computed(() => (houseDeliveries.value?.rides ?? []).filter((ride) => ride.house));
+watch(queue, () => void refreshHouse());
+const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(async () => {
+  await Promise.all([refreshHouse(), refresh()]);
+});
+// "Entregador voltou" confere dinheiro e maquininha na página Entregas, no detalhe da corrida.
+function houseBack(ride: DeliveryRideProjection) {
+  void navigateTo({ path: "/delivery", query: { ride: ride.key } });
+}
 watch(
   () => route.query,
   (params) => {
@@ -2145,6 +2162,10 @@ function compactClear() {
                 :danfe-printing="danfePrint.isPrinting"
                 :swipe-actions="swipeActions"
                 :heading="!exitPostView"
+                :house-rides="houseRides"
+                :house-busy="houseBusy"
+                @house-gesture="houseGesture"
+                @house-back="houseBack"
                 @collapse="boardLayout.toggle(zone.key)"
                 @action="onAction"
                 @dismiss-error="clearActionError"
@@ -2201,6 +2222,10 @@ function compactClear() {
             :is-selected="isSelected"
             :danfe-printing="danfePrint.isPrinting"
             :swipe-actions="swipeActions"
+            :house-rides="houseRides"
+            :house-busy="houseBusy"
+            @house-gesture="houseGesture"
+            @house-back="houseBack"
             @action="onAction"
             @dismiss-error="clearActionError"
             @toggle-select="toggleSelect"

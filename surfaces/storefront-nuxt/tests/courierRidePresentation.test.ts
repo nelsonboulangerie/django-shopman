@@ -13,6 +13,7 @@ import {
   parsePending,
   parseTheme,
   paymentChoices,
+  storeNote,
   pendingIsDue,
   pickupBlocks,
   problemAck,
@@ -237,5 +238,16 @@ describe('peças', () => {
     const key = newDeviceKey(bytes => bytes.fill(255))
     expect(key).toHaveLength(43)
     expect(key).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+})
+
+describe('recado da loja (M3c, #2899)', () => {
+  it('mostra a observação escrita no Gestor, sem espaço sobrando', () => {
+    expect(storeNote({ moment: 'pickup', note: '  Interfone quebrado, ligue ao chegar.  ' })).toBe('Interfone quebrado, ligue ao chegar.')
+  })
+
+  it('sem observação, nada', () => {
+    expect(storeNote({ moment: 'pickup' })).toBe('')
+    expect(storeNote(null)).toBe('')
   })
 })

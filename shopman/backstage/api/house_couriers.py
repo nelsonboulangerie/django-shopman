@@ -15,6 +15,7 @@ from shopman.backstage.api.operations import _actor, _intention_receipt, _intent
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.services import house_couriers
 from shopman.backstage.services.exceptions import OrderConflict
+from shopman.shop.services.own_fleet import NOTE_MAX
 
 
 def _refs(raw) -> list[str]:
@@ -83,7 +84,8 @@ class HouseCourierRideView(APIView):
     ``courier-dispatch`` da projeção). Corpo: ``refs`` (1 a ``courier.MAX_RIDE_STOPS``, na
     ordem da rota), ``courier`` (o ``ref`` do entregador), ``change_out`` (``{ref:
     "20,00"}``), ``machine`` (a maquininha da rota) e ``ride_number`` (o número que a tela
-    mostrava).
+    mostrava) e ``note`` (a observação para o entregador, até 200 caracteres, mostrada na
+    página do link).
 
     Responde ``ride_ref``, ``link_url`` (a página do entregador), ``whatsapp_url`` (abre o
     WhatsApp do dispositivo com o texto pronto) e ``detail`` ("Rota A enviada para Diego.").
@@ -126,6 +128,11 @@ class HouseCourierRideView(APIView):
         if not valid:
             return Response({"detail": "Número de corrida inválido.", "field": "ride_number",
                              "errors": {"ride_number": ["Número de corrida inválido."]}}, status=400)
+        note = request.data.get("note") or ""
+        if not isinstance(note, str) or len(note.strip()) > NOTE_MAX:
+            message = f"A observação cabe em até {NOTE_MAX} caracteres."
+            return Response({"detail": message, "field": "note", "errors": {"note": [message]}}, status=400)
+        note = note.strip()
         refs = _refs(refs)
         revisions = request.data.get("base_revisions")
         if not isinstance(revisions, dict):
@@ -149,6 +156,7 @@ class HouseCourierRideView(APIView):
             sent = house_couriers.send_ride(
                 [found[ref] for ref in refs], who, actor=_actor(request), operator=request.user,
                 change_out_raw=change_out, machine=machine, expected_revisions=expected, ride_number=ride_number,
+                note=note,
             )
             return {"refs": refs, "ride_ref": sent.ride_ref, "link_url": sent.link_url,
                     "whatsapp_url": sent.whatsapp_url, "detail": sent.detail, "ride_number": sent.ride_number,
@@ -157,7 +165,7 @@ class HouseCourierRideView(APIView):
         return _intention_response(
             request, operation=self.intention_operation, resource="", base=base or "",
             inputs={"refs": refs, "courier": who, "change_out": change_out, "machine": machine,
-                    "ride_number": ride_number},
+                    "ride_number": ride_number, "note": note},
             execute=send, prepare=prepare, where="a fila",
         )
 

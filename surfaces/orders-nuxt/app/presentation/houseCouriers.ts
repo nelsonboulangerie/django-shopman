@@ -22,8 +22,10 @@ export interface HouseCourier {
   name: string;
   on_shift: boolean;
   state: "free" | "busy";
-  /** "Livre" ou "Na rua". */
+  /** "Livre", "Volta 12h50" (a hora estimada da volta), "Voltando" ou "Na rua". */
   state_label: string;
+  /** A hora estimada da volta à loja (ISO), só de quem já saiu. */
+  back_at?: string | null;
   value_q: number | null;
   /** "R$ 15,00", ou vazio sem valor na tabela. */
   value: string;
@@ -75,6 +77,23 @@ export function onShift(crew: HouseCrew | null | undefined): HouseCourier[] {
  * pessoa da casa na escala, com o estado e o valor da tabela para ESTA rota. Vazio quando
  * não há ninguém da casa na escala: a tela fica como era.
  */
+/** A chave do chip "Outro da casa" (com mais de 3 na escala, o último chip vira lista). */
+export const OTHER_CARRIER = "__other";
+/** Quantas pessoas da casa cabem em chip antes do "Outro da casa" (plano §3, item 5). */
+export const MAX_COURIER_CHIPS = 3;
+
+/** Quem está na escala, os livres primeiro (é quem se escolhe), na ordem do nome. */
+function shiftOrder(crew: HouseCrew | null | undefined): HouseCourier[] {
+  const people = onShift(crew);
+  return [...people.filter((courier) => courier.state === "free"), ...people.filter((courier) => courier.state !== "free")];
+}
+
+/** Quem não ganhou chip próprio: vai para a lista do "Outro da casa". */
+export function otherCouriers(crew: HouseCrew | null | undefined): HouseCourier[] {
+  const people = shiftOrder(crew);
+  return people.length > MAX_COURIER_CHIPS ? people.slice(MAX_COURIER_CHIPS - 1) : [];
+}
+
 export function carrierChips(
   crew: HouseCrew | null | undefined,
   ride: {
@@ -83,28 +102,48 @@ export function carrierChips(
     values?: Readonly<Record<string, string>>;
     /** O chip marcado (`DEFAULT_CARRIER` ou o `ref` da pessoa). */
     chosen?: string;
+    /** A central padrão está ligada. Sem ela, só a casa leva (e não há chip do serviço). */
+    serviceOn?: boolean;
   },
 ): CarrierChip[] {
-  const people = onShift(crew);
+  const people = shiftOrder(crew);
+  const serviceOn = ride.serviceOn ?? true;
   if (!people.length) return [];
-  const service: CarrierChip = {
-    key: DEFAULT_CARRIER,
-    label: crew?.default?.name || "Central",
-    state: "",
-    value: ride.quoting ? "Cotando…" : ride.quoteQ !== null ? money(ride.quoteQ) : "Sem cotação agora",
-    busy: false,
-    chosen: (ride.chosen ?? DEFAULT_CARRIER) === DEFAULT_CARRIER,
-  };
+  const chosen = ride.chosen ?? (serviceOn ? DEFAULT_CARRIER : (people[0]?.ref ?? ""));
+  const chip = (courier: HouseCourier): CarrierChip => ({
+    key: courier.ref,
+    label: courier.name,
+    state: courier.state_label,
+    value: ride.values?.[courier.ref] ?? courier.value,
+    busy: courier.state === "busy",
+    chosen: chosen === courier.ref,
+  });
+  const others = otherCouriers(crew);
+  const shown = others.length ? people.slice(0, MAX_COURIER_CHIPS - 1) : people;
+  const list: CarrierChip[] = shown.map(chip);
+  if (others.length) {
+    // O último chip vira "Outro da casa": com a pessoa escolhida da lista, diz quem é.
+    const picked = others.find((courier) => courier.ref === chosen);
+    list.push({
+      key: OTHER_CARRIER,
+      label: "Outro da casa",
+      state: picked ? picked.name : `Mais ${others.length} na escala`,
+      value: picked ? (ride.values?.[picked.ref] ?? picked.value) : "",
+      busy: picked?.state === "busy",
+      chosen: Boolean(picked),
+    });
+  }
+  if (!serviceOn) return list;
   return [
-    service,
-    ...people.map((courier) => ({
-      key: courier.ref,
-      label: courier.name,
-      state: courier.state_label,
-      value: ride.values?.[courier.ref] ?? courier.value,
-      busy: courier.state === "busy",
-      chosen: ride.chosen === courier.ref,
-    })),
+    {
+      key: DEFAULT_CARRIER,
+      label: crew?.default?.name || "Central",
+      state: "",
+      value: ride.quoting ? "Cotando…" : ride.quoteQ !== null ? money(ride.quoteQ) : "Sem cotação agora",
+      busy: false,
+      chosen: chosen === DEFAULT_CARRIER,
+    },
+    ...list,
   ];
 }
 
@@ -148,10 +187,32 @@ export function mixedTotalLines(values: readonly (number | null)[]): QuoteLine[]
 export function chosenCarrier(
   crew: HouseCrew | null | undefined,
   choice: string | undefined,
+  serviceOn = true,
 ): HouseCourier | null {
-  if (!choice) return null;
-  return onShift(crew).find((courier) => courier.ref === choice) ?? null;
+  const people = shiftOrder(crew);
+  if (choice) return people.find((courier) => courier.ref === choice) ?? null;
+  // Sem a central, quem leva é sempre da casa: vem marcado o primeiro livre (o caminho
+  // comum continua com os mesmos toques).
+  return serviceOn ? null : (people[0] ?? null);
 }
+
+/** A escolha do chip: o "Outro da casa" marca o primeiro da lista dele (troca na lista). */
+export function choiceFromChip(crew: HouseCrew | null | undefined, key: string): string {
+  return key === OTHER_CARRIER ? (otherCouriers(crew)[0]?.ref ?? "") : key;
+}
+
+/** O valor do rádio para o escolhido: quem está na lista do "Outro da casa" marca esse chip. */
+export function chipValue(crew: HouseCrew | null | undefined, chosen: string): string {
+  return otherCouriers(crew).some((courier) => courier.ref === chosen) ? OTHER_CARRIER : chosen;
+}
+
+/** O rótulo do campo de observação: "Observação para Diego (opcional)". */
+export function noteLabel(name: string): string {
+  return `Observação para ${name} (opcional)`;
+}
+
+/** O tamanho da observação (o mesmo do servidor). */
+export const NOTE_MAX = 200;
 
 /** A cotação de quem é da casa: uma linha, o valor da tabela. */
 export function houseQuoteLines(value: string): QuoteLine[] {
@@ -215,6 +276,7 @@ export function houseRideInputs(call: {
   change_out: Readonly<Record<string, string>>;
   machine: string;
   number?: number;
+  note?: string;
 }): Record<string, unknown> {
   return {
     refs: [...call.refs],
@@ -222,6 +284,7 @@ export function houseRideInputs(call: {
     change_out: { ...call.change_out },
     machine: call.machine,
     ...(call.number ? { ride_number: call.number } : {}),
+    ...(call.note?.trim() ? { note: call.note.trim() } : {}),
   };
 }
 
@@ -292,4 +355,55 @@ export function houseGesturePath(rideKey: string, gesture: HouseGesture["gesture
 /** Onde mora a intenção do gesto até a resposta definitiva (um por pedido no "Entregue"). */
 export function houseGestureResource(rideKey: string, item: Pick<HouseGesture, "key">): string {
   return `house-ride:${rideKey}:${item.key}`;
+}
+
+// ── a corrida da casa no detalhe e na Saída dos Pedidos (M3d, #2937) ────────
+
+/** "Ligar para Diego": só na corrida da casa e com o telefone do cadastro dele. */
+export function callCourier(
+  ride: Pick<DeliveryRideProjection, "house" | "driver">,
+): { label: string; href: string } | null {
+  const digits = (ride.driver?.phone ?? "").replace(/\D/g, "");
+  if (!ride.house || !digits) return null;
+  return { label: `Ligar para ${ride.house.courier_name}`, href: `tel:${digits}` };
+}
+
+/** Uma linha da coluna Saída: o cartão do pedido, ou a corrida da casa no lugar dele. */
+export interface ExitHouseRow<Card extends { ref: string }> {
+  card: Card;
+  heading: string;
+  /** A corrida da casa que este cartão abre (os outros pedidos dela saem da coluna). */
+  house?: DeliveryRideProjection;
+}
+
+/**
+ * Na coluna Saída dos Pedidos, os pedidos de uma corrida da casa viram UM cartão da
+ * corrida (forma E), no lugar do primeiro deles; os outros saem da coluna. O rótulo da
+ * parte ("A coletar", "Saiu para entrega") que estava num pedido que saiu passa para o
+ * próximo da mesma parte. Corrida da TaOn e pedido solto seguem como eram.
+ */
+export function withHouseRides<Card extends { ref: string }>(
+  rows: readonly { card: Card; heading: string }[],
+  rides: readonly DeliveryRideProjection[],
+): ExitHouseRow<Card>[] {
+  const rideOf = new Map<string, DeliveryRideProjection>();
+  for (const ride of rides) {
+    if (!ride.house) continue;
+    for (const stop of ride.stops) rideOf.set(stop.ref, ride);
+  }
+  const shown = new Set<string>();
+  const out: ExitHouseRow<Card>[] = [];
+  let carry = "";
+  for (const row of rows) {
+    const heading = row.heading || carry;
+    const ride = rideOf.get(row.card.ref);
+    if (ride && shown.has(ride.key)) {
+      carry = heading;
+      continue;
+    }
+    carry = "";
+    if (ride) shown.add(ride.key);
+    out.push({ card: row.card, heading, ...(ride ? { house: ride } : {}) });
+  }
+  return out;
 }

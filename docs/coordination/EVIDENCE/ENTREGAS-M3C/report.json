@@ -1,0 +1,110 @@
+{
+  "375-outro-da-casa": {
+    "checked": 25,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Chamar a corrida C",
+    "overflow": 0,
+    "small_targets": [
+      "INPUT:Troco para C03:40"
+    ],
+    "page_hscroll": false
+  },
+  "375-outro-escolhido": {
+    "checked": 25,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Enviar para Diego: A47 e C03",
+    "overflow": 0,
+    "small_targets": [
+      "INPUT:Observação para Diego (o:40",
+      "INPUT:Troco para C03:40"
+    ],
+    "page_hscroll": false
+  },
+  "375-alinhamento": {
+    "chips": [
+      48
+    ],
+    "select": [
+      48
+    ],
+    "note": [
+      48
+    ]
+  },
+  "375-so-com-a-casa": {
+    "checked": 4,
+    "fails": 0,
+    "min_contrast": 5.37,
+    "min_text": "Livre · R$ 12,00 ✔",
+    "overflow": 0,
+    "small_targets": [
+      "INPUT:Observação para Diego (o:40"
+    ],
+    "page_hscroll": false
+  },
+  "375-sem-servico": {
+    "checked": 3,
+    "fails": 0,
+    "min_contrast": 6.09,
+    "min_text": "Ligue a TaOn ou os entregadores da casa para chamar entregas daqui.",
+    "overflow": 0,
+    "small_targets": [],
+    "page_hscroll": false
+  },
+  "1366-outro-da-casa": {
+    "checked": 25,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Chamar a corrida C",
+    "overflow": 0,
+    "small_targets": [
+      "INPUT:Troco para C03:40"
+    ],
+    "page_hscroll": false
+  },
+  "1366-outro-escolhido": {
+    "checked": 25,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Enviar para Diego: A47 e C03",
+    "overflow": 0,
+    "small_targets": [
+      "INPUT:Observação para Diego (o:40",
+      "INPUT:Troco para C03:40"
+    ],
+    "page_hscroll": false
+  },
+  "1366-alinhamento": {
+    "chips": [
+      467
+    ],
+    "select": [
+      467
+    ],
+    "note": [
+      467
+    ]
+  },
+  "1366-so-com-a-casa": {
+    "checked": 4,
+    "fails": 0,
+    "min_contrast": 5.37,
+    "min_text": "Livre · R$ 12,00 ✔",
+    "overflow": 0,
+    "small_targets": [
+      "INPUT:Observação para Diego (o:40"
+    ],
+    "page_hscroll": false
+  },
+  "1366-sem-servico": {
+    "checked": 3,
+    "fails": 0,
+    "min_contrast": 6.09,
+    "min_text": "Ligue a TaOn ou os entregadores da casa para chamar entregas daqui.",
+    "overflow": 0,
+    "small_targets": [],
+    "page_hscroll": false
+  }
+}

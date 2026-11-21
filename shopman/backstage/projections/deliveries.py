@@ -222,8 +222,11 @@ class DeliveriesProjection:
     max_stops: int
     #: Maquininhas livres para a corrida que leva cartão.
     machines: tuple[dict, ...] = field(default_factory=tuple)
-    #: A integração com a TaOn está ligada (sem ela, a página só informa).
+    #: A integração com a TaOn está ligada.
     courier_on: bool = True
+    #: Os entregadores da casa estão ativos (M3c, #2899): com eles a página funciona
+    #: mesmo sem a TaOn; sem nenhum dos dois, a página só informa.
+    house_on: bool = False
     #: A chave PÚBLICA do Google Maps (a do navegador, a mesma do PDV e da loja):
     #: com ela o mapa é o de verdade; vazia, o desenho próprio fica no lugar.
     maps_key: str = ""
@@ -319,7 +322,9 @@ def _stop(order: Order, *, reads: _Reads, with_asks: bool = False, user=None) ->
     block = courier.get_block(order)
     error = block.get("error") if isinstance(block.get("error"), dict) else {}
     message = str(error.get("message") or "")
-    callable_here = with_asks and courier.is_enabled_for(order) and not courier.has_active_ride(order)
+    # Sem a TaOn, a casa ainda chama pelos próprios entregadores (M3c, #2899).
+    callable_here = with_asks and (courier.is_enabled_for(order) or _house_callable(order)) \
+        and not courier.has_active_ride(order)
     # A chamada sem resposta trava qualquer outra (não se sabe se a corrida abriu
     # lá): a mesma regra e a mesma frase do Painel (``order_queue._courier_block``).
     unresolved = courier.unresolved_dispatch(order, tasks=reads.tasks) is not None if callable_here else False
@@ -625,12 +630,27 @@ def build_deliveries(*, user=None, with_plan: bool = True) -> DeliveriesProjecti
         max_stops=courier.MAX_RIDE_STOPS,
         machines=tuple({"ref": PREFIX + str(device.ref), "label": device.label} for device in devices),
         courier_on=delivery_services.courier_backend() is not None,
+        house_on=_house_on(),
         maps_key=browser_api_key(),
         group_action=courier_ride_action([order for order in waiting if order.ref in joinable], user=user),
         free_numbers=free_numbers,
         next_number=free_numbers[0] if free_numbers else None,
         ride_plan=_ride_plan(waiting, stops, tasks=reads.tasks) if with_plan else None,
     )
+
+
+def _house_on() -> bool:
+    from shopman.backstage.services.house_couriers import own_service
+
+    return own_service() is not None
+
+
+def _house_callable(order) -> bool:
+    """Entrega da casa que um entregador da casa pode levar (serviço da casa ativo)."""
+    from shopman.shop.services import courier
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    return _house_on() and get_fulfillment_type(order) == "delivery" and courier.house_dispatches(order)
 
 
 def deliveries_waiting_count() -> int | None:
