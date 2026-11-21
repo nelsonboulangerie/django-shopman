@@ -87,7 +87,13 @@ from .feeds import (
     FeedRotationView,
     FeedSwitchView,
 )
-from .house_couriers import HouseCourierRideView, HouseCourierShiftView, HouseCouriersView, HouseRideGestureView
+from .house_couriers import (
+    HouseCourierRideView,
+    HouseCourierShiftView,
+    HouseCouriersView,
+    HouseRideGestureView,
+    HouseRideSlipView,
+)
 from .hub import HubView
 from .ifood_reviews import (
     IFoodReviewDetailView,
@@ -105,6 +111,7 @@ from .ifood_store import (
     IFoodStoreView,
     IFoodWidgetView,
 )
+from .incidents import IncidentsView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -812,6 +819,9 @@ urlpatterns = [
     path("deliveries/couriers/ride/", HouseCourierRideView.as_view(), name="api-backstage-house-courier-ride"),
     path("deliveries/couriers/<str:ref>/shift/", HouseCourierShiftView.as_view(),
          name="api-backstage-house-courier-shift"),
+    # A via impressa da rota, com o QR do link (#2406). ANTES do gesto: "slip" casaria com <gesture>.
+    path("deliveries/couriers/rides/<str:ride>/slip/", HouseRideSlipView.as_view(),
+         name="api-backstage-house-ride-slip"),
     # Os gestos do balcão na corrida da casa (M3b, #2898): depart, deliver, resend, release.
     path("deliveries/couriers/rides/<str:ride>/<str:gesture>/", HouseRideGestureView.as_view(),
          name="api-backstage-house-ride-gesture"),
@@ -950,6 +960,7 @@ urlpatterns = [
     path("feeds/automatic/", FeedAutomaticView.as_view(), name="api-backstage-feeds-automatic"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
     path("channels/health/", ChannelHealthView.as_view(), name="api-backstage-channel-health"),
+    path("incidents/", IncidentsView.as_view(), name="api-backstage-incidents"),
     # Histórico do Gestor: pedidos fechados, filtrados no servidor.
     # ⚠️ ANTES de `orders/<str:ref>/…`: `history` casaria com `<str:ref>`.
     path("orders/history/", OrderHistoryView.as_view(), name="api-backstage-order-history"),

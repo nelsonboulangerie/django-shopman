@@ -35,6 +35,7 @@ class LifecyclePhaseHandler:
         if phase not in lifecycle.QUEUED_PHASES:
             raise DirectiveTerminalError("Unsupported lifecycle phase")
         ref = payload.get("order_ref")
+        order = None
         try:
             with transaction.atomic():
                 order = Order.objects.select_for_update().filter(ref=ref).first()
@@ -57,6 +58,13 @@ class LifecyclePhaseHandler:
                     return
                 allowed = set(_LATE_RESUME.get(phase, ())) | {phase.removeprefix("on_")}
                 if order.status not in allowed:
+                    if lifecycle.phase_superseded(order, phase):
+                        # Nada devido: o pedido fechou antes (ou é de teste). A tarefa
+                        # termina sem erro e sem alerta (#3029).
+                        logger.info(
+                            "lifecycle.phase_superseded order=%s phase=%s status=%s", ref, phase, order.status,
+                        )
+                        return
                     raise DirectiveTerminalError(f"Phase {phase} cannot resume in {order.status}")
                 if phase == "on_returned" and not (order.data or {}).get("returns"):
                     raise DirectiveTerminalError("Legacy returned order has no authorized item record; reconcile before retry")
@@ -66,7 +74,8 @@ class LifecyclePhaseHandler:
                 lifecycle.dispatch(order, phase)
         except Exception as exc:
             logger.warning("lifecycle.phase_pending order=%s phase=%s directive=%s", ref, phase, message.pk, exc_info=True)
-            if isinstance(exc, DirectiveTerminalError) or message.attempts >= MAX_ATTEMPTS:
+            superseded = order is not None and lifecycle.phase_superseded(order, phase)
+            if not superseded and (isinstance(exc, DirectiveTerminalError) or message.attempts >= MAX_ATTEMPTS):
                 create_operator_alert(
                     type="lifecycle_phase_stuck", severity="critical", order_ref=ref,
                     message=lifecycle.phase_stuck_message(ref, phase, str(exc)),

@@ -674,3 +674,32 @@ def deliveries_waiting_count() -> int | None:
     except Exception:  # o selo nunca derruba o menu
         logger.warning("deliveries.waiting_count_failed", exc_info=True)
         return None
+
+
+def deliveries_waiting_summary() -> dict:
+    """O selo de Entregas e o "Chamar entregador" do cartão Pronto (#2876).
+
+    ``{waiting, call_refs}``: ``waiting`` é o selo (:func:`deliveries_waiting_count`,
+    ``None`` quando a leitura falhou) e ``call_refs`` os pedidos PRONTOS de Aguardando
+    que dá para chamar daqui agora, com a régua da lista (``_stop``): um serviço que
+    leva (a TaOn ou a casa), sem corrida viva e sem chamada sem resposta. Só com algum
+    pronto lê as tarefas de despacho, em lote.
+    """
+    from shopman.shop.services import courier
+
+    waiting = deliveries_waiting_count()
+    if not waiting:
+        return {"waiting": waiting, "call_refs": []}
+    try:
+        orders = _delivery_orders()
+        ready = [order for order in _split(orders, courier.dispatch_tasks_for(_tasks_needed(orders)))[1]
+                 if order.status == Order.Status.READY]
+        callable_now = [order for order in ready
+                        if (courier.is_enabled_for(order) or _house_callable(order))
+                        and not courier.has_active_ride(order)]
+        tasks = courier.dispatch_tasks_for(callable_now) if callable_now else {}
+        refs = [order.ref for order in callable_now if courier.unresolved_dispatch(order, tasks=tasks) is None]
+    except Exception:  # o botão nunca derruba o menu: sem a lista, o cartão fica como era
+        logger.warning("deliveries.call_refs_failed", exc_info=True)
+        refs = []
+    return {"waiting": waiting, "call_refs": refs}
