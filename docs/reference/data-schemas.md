@@ -251,13 +251,15 @@ mesmo formato, da resposta que não saiu (sem o texto dela). Nesse caso `Convers
 começa com `Regra da casa: R<n> <título>`. Registros anteriores a 03/10/2026 não têm a chave.
 Memória da conversa (OBS0310-N, bloco 2 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/dialogue.py`): `Conversation.flags["dialogue"]` = `{v: 1, fence, at,
-valid_until, pending?, listed?, focus?, order?, last_change?, parts?}`. `fence` é o `turn_fence` do turno que
+valid_until, pending?, listed?, focus?, order?, last_change?, parts?, closing?}`. `fence` é o `turn_fence` do turno que
 gravou (gravação na mesma transação da resposta; turno revogado não grava); `at` e `valid_until` são ISO
 8601. `valid_until` é o fim do PRÓXIMO dia de funcionamento depois do dia de `at`, pelo calendário da
 casa (`business_calendar`): vale para `listed`, `focus` e `last_change`. `pending` é a pergunta que a
 casa deixou no ar, `{kind, options?, token?, order_ref?, item?, sku?, qty?, add?, total_q?, day?}`, com `kind` em `offer_team`
 (busca sem resultado: "Posso chamar a equipe."), `choose` (lista com mais de um item), `confirm_order`
-(resumo pronto; `token` = `quote_token`, vale enquanto for o de `Conversation.quote`), `ask_address`,
+(resumo pronto; `token` = `quote_token`, vale enquanto for o de `Conversation.quote`), `ask_address`
+(`offer=true` quando é a oferta do endereço do cadastro), `ask_date` e `ask_fulfillment` (o dia e o
+recebimento do fechamento na conversa, WP-13), `ask_payment` (formas do canal, sem dinheiro),
 `ask_slot` (horários mostrados; `day` = a data deles), `choose_order` ("acrescentar ao pedido aberto ou
 pedido novo?"; vale enquanto `order_ref` estiver aberto; `sku`/`qty` quando o produto veio do foco),
 `confirm_add` ("Acrescento 4 croissant ao pedido X? Total novo, saldo a pagar. sim/não", de
@@ -272,7 +274,11 @@ deixam de valer); `last_change` = `{ref, qty}` (o último `set_item`, para "não
 `parts` (OBS0310-R) = `[{act, span, product, qty, state}]`, as partes da última mensagem lida pelas
 intenções no plural, com `act` em `intents.ACT_NAMES`, `span` o trecho redigido (até 120
 caracteres) e `state` em `answered`, `unanswered` (sem fato na busca, ou parte não entendida),
-`team` ou `suspended`; vale como `listed` e `focus`, e é o que a pergunta repetida ("você não
+`team` ou `suspended`; vale como `listed` e `focus`, e `closing` (WP-13, `concierge/order_closing.py`) =
+`{open: true, day?, kind?, applied?, asked?}`: o fechamento do pedido na conversa em curso, com o dia
+escolhido (ISO), o recebimento (`pickup`/`delivery`), o que já foi gravado na sacola (`applied` =
+`<kind>:<day>`) e a pergunta no ar; a verdade (recebimento, horário, endereço, orçamento) mora na
+sessão, e o pedido registrado encerra a chave. Vale como `listed` e `focus`; e é o que a pergunta repetida ("você não
 respondeu", "e a minha pergunta?") responde de novo (as `unanswered`; se nenhuma, todas menos as de
 equipe). Pedido
 recente (entregue ou cancelado há até `SHOPMAN_CONCIERGE["recent_order_days"]` dias, 7 por padrão, e

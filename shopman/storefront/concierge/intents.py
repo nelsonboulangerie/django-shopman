@@ -1460,6 +1460,15 @@ def run(conversation, *, binding, decision, client=None):
         return _answer_again(conversation, binding=binding, decision=decision, memory=memory,
                              channel_ref=channel_ref, client=client)
 
+    # Fechar o pedido na conversa (WP-13): a resposta à pergunta do fechamento que está
+    # no ar, a confirmação com o código, ou o "pode fechar" com sacola.
+    from . import order_closing
+
+    closing_turn = order_closing.handle(conversation, customer_text, binding=binding, channel_ref=channel_ref,
+                                        memory=memory)
+    if closing_turn is not None:
+        return closing_turn
+
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
     from .turn_outcome import addition_outcome
@@ -1530,7 +1539,9 @@ def run(conversation, *, binding, decision, client=None):
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)
-    return _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+    outcome = _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+    # Troca de assunto no meio do fechamento: a pergunta que estava no ar volta no fim.
+    return order_closing.resume(conversation, outcome, binding=binding, channel_ref=channel_ref, memory=memory)
 
 
 def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos, team_decided=False):

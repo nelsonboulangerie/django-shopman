@@ -156,6 +156,50 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
     ),
+    "CONCIERGE_CLOSE_ASK_ADDRESS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_ASK_DATE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_ASK_FULFILLMENT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_ASK_PAYMENT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_ASK_SLOT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_CONFIRM_CODE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_NO_CASH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_NO_DELIVERY_AT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_NO_PICKUP_AT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_NO_SLOTS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_SLOT_REFUSED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
     "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
