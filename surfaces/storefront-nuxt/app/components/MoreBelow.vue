@@ -32,7 +32,19 @@
 // estava; só o degradê desceu.
 import { HINT_GAP, hintMotionClass, hintScrollBehavior } from '~/presentation/moreBelow'
 
-const { sentinel, visible, offset, scrollToEnd } = useMoreBelow()
+// Dentro de uma caixa que rola (o corpo da folha, #2414), a dica mora na própria
+// caixa: grudada na base dela (`sticky`), sem teleporte, e o degradê desbota para
+// a cor da caixa, não da página.
+// `contained` decide o modo e não muda depois: o `container` chega só depois de a
+// caixa montar (a ref nasce vazia), e a decisão não pode esperar por ele.
+const props = withDefaults(defineProps<{
+  contained?: boolean
+  container?: HTMLElement | null
+  fadeFrom?: string
+}>(), { contained: false, container: null, fadeFrom: 'from-background' })
+const { sentinel, visible, offset, scrollToEnd } = useMoreBelow(
+  props.contained ? { container: () => props.container } : {}
+)
 
 // Menos movimento: a dica fica PARADA, não some. A informação é a mesma.
 const reducedMotion = ref(false)
@@ -63,7 +75,35 @@ function irAteOFim() {
     :style="{ scrollMarginBottom: `${offset}px` }"
     data-more-below-sentinel
   />
-  <ClientOnly>
+  <!-- Na caixa: altura zero e `sticky` na base, para a dica ficar na borda de baixo
+       da área à vista enquanto o conteúdo rola, sem somar altura ao fim dele. -->
+  <div v-if="contained" class="pointer-events-none sticky bottom-0 z-10 h-0" data-more-below-contained>
+    <Transition
+      enter-active-class="transition-opacity duration-300"
+      leave-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="visible" class="absolute inset-x-0 bottom-0" data-more-below>
+        <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t to-transparent" :class="fadeFrom" aria-hidden="true" />
+        <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
+          <UiButton
+            type="button"
+            variant="ghost"
+            size="icon"
+            class="pointer-events-auto size-12 rounded-full bg-background/33 text-foreground ring-1 ring-border/40 backdrop-blur-sm hover:bg-background/60"
+            :class="motionClass"
+            aria-label="Ir para o fim do conteúdo"
+            data-more-below-jump
+            @click="irAteOFim"
+          >
+            <Icon name="lucide:chevron-down" class="size-6" />
+          </UiButton>
+        </div>
+      </div>
+    </Transition>
+  </div>
+  <ClientOnly v-else>
     <Teleport to="body">
       <Transition
         enter-active-class="transition-opacity duration-300"

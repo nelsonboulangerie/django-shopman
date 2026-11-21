@@ -195,9 +195,9 @@ urlpatterns = [
         {"format-channels": ["fomo-{sku}"]},
         name="api-fomo-events",
     ),
-    # Loja viva (WP-L04): aviso público, sem conteúdo, de que a vitrine pode ter
-    # mudado. O canal cru de estoque não sai daqui (ADR-018 §5.1): a rota entrega só
-    # ``shelf-update``, com janela, e a página refaz a leitura canônica (ADR-016).
+    # Loja viva (WP-L04, #2784): aviso público de que o estado público de um SKU
+    # mudou, com o SKU. O canal cru de estoque não sai daqui (ADR-018 §5.1): a rota
+    # entrega só ``shelf-update``, e a página refaz a leitura canônica (ADR-016).
     path("storefront/shelf/events/", storefront_shelf_events_view, name="api-storefront-shelf-events"),
     # Catalog
     path("catalog/products/", ProductListView.as_view(), name="api-catalog-products"),

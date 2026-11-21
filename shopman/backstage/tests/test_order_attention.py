@@ -472,8 +472,8 @@ def test_pronto_antes_da_hora_combinada_nao_e_atraso_no_balcao(operator):
 
 
 def test_previsao_de_pronto_respeita_a_hora_combinada(operator):
-    from shopman.backstage.projections.order_attention import PrepExpectation, ready_eta
     from shopman.shop.services.fulfillment_window import promised_at
+    from shopman.shop.services.kitchen_eta import PrepExpectation, ready_eta
 
     order = _agreed("ATT-HC-ETA", status=Order.Status.ACCEPTED, at=timezone.now() + timedelta(hours=2))
     now = timezone.now()

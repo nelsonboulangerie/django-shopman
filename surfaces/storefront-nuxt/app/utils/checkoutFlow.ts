@@ -342,6 +342,35 @@ export function weekdayDateLabel (value: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
+/**
+ * A data do pedido mudou sem a cliente escolher (#2411): a sacola passou a esperar
+ * uma fornada depois da data que ela tinha (outra aba pôs um item de amanhã, por
+ * exemplo), e o checkout levou a data para o novo piso. Antes, a tela dizia só "Sua
+ * sacola mudou" e a data trocava calada: ela podia enviar para um dia que não
+ * escolheu sem perceber. A frase diz o dia novo, no meio da frase:
+ * "amanhã, domingo, 22/11", "segunda-feira, 23/11".
+ *
+ * Só fala quando quem mudou a data foi a SACOLA: a data anterior era de hoje em diante
+ * e ficou antes do piso da fornada (`bounds.floorValue`). A data de ontem num
+ * rascunho velho, ou o dia que o calendário fechou, também mudam, mas aí "Sua sacola
+ * mudou" seria mentira. Vazio também sem data anterior (a primeira escolha é da
+ * tela) ou com a mesma data.
+ */
+export function orderDateMovedNotice (
+  before: string,
+  after: string,
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'floorValue'>,
+  now = new Date()
+): string {
+  if (!before || !after || before === after) return ''
+  if (before < bounds.todayValue || before >= bounds.floorValue) return ''
+  const relative = displayCheckoutDate(after, now)
+  const full = weekdayDateLabel(after).toLowerCase()
+  if (!full) return ''
+  const day = relative === 'Hoje' ? `hoje, ${full}` : relative === 'Amanhã' ? `amanhã, ${full}` : full
+  return `Sua sacola mudou, e o pedido passou para ${day}. Confira os itens e a data antes de enviar.`
+}
+
 export function isCustomCheckoutDate (deliveryDate: string, quickOptions: Array<Pick<CheckoutQuickDateOption, 'value'>>): boolean {
   return !!deliveryDate && !quickOptions.some(option => option.value === deliveryDate)
 }

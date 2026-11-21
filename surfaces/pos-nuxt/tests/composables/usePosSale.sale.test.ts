@@ -771,7 +771,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     const h = saleReadyForCheckout(actionCall);
     await h.sale.submitSale(); // prepara
     await h.sale.submitSale(); // fecha
-    expect(h.sale.result.value?.nextUrl).toBe("http://gestor.test/PED-1");
+    expect(h.sale.result.value?.nextUrl).toBe("http://127.0.0.1:3004/PED-1");
     h.handles.dispose();
   });
 
@@ -1257,7 +1257,7 @@ describe("usePosSale — Pix polling pós-venda", () => {
     const options = vi.mocked(toast.warning).mock.calls.at(-1)![1] as { action: { onClick: () => void } };
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     options.action.onClick();
-    expect(open).toHaveBeenCalledWith("http://gestor.test/PED-3", "_self", undefined);
+    expect(open).toHaveBeenCalledWith("http://127.0.0.1:3004/PED-3", "_self", undefined);
     open.mockRestore();
     expect(h.sale.pendingPixOrderRefs.value).toEqual([]);
     h.handles.dispose();
