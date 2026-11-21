@@ -1322,7 +1322,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancel_reasons=_cancel_reasons(order.channel_ref or ""),
-        kitchen_note_tags=_kitchen_note_tags(),
+        kitchen_note_tags=_kitchen_note_tags(order),
         courier=courier_block,
         **_courier_change_fields(order),
         **_equipment_fields(order),
@@ -1838,21 +1838,35 @@ def _cancel_reasons(channel_ref: str = "") -> tuple[CancelReasonProjection, ...]
     )
 
 
-def _kitchen_note_tags() -> tuple[str, ...]:
-    """Store-configured kitchen-note tags (Admin/Unfold).
+def _kitchen_note_tags(order: Order) -> tuple[str, ...]:
+    """Os atalhos da nota da cozinha que valem para este pedido (Admin/Unfold).
 
-    The operator appends one with a tap in the gestor; the resulting note is shown
-    on the KDS ticket for the kitchen. Read from the Shop singleton; never fails
-    the projection.
+    O Caixa anexa um com um toque no Gestor, e a nota sai no ticket da Cozinha. Cada
+    atalho diz a que categorias e produtos se aplica; sem nenhum, vale para todos. O
+    pedido mostra só os que valem para algum item dele (decisão do dono, 21/11/2026:
+    "Sem cebola" num pedido de pão não ajuda ninguém). Nunca derruba a projeção.
     """
     try:
-        from shopman.shop.models import Shop
+        from shopman.offerman.models import CollectionItem
 
-        tags = Shop.load().kitchen_note_tags or []
+        from shopman.shop.models import KitchenNoteTag
+
+        skus = {item.sku for item in order.items.all()}
+        collection_ids = set(
+            CollectionItem.objects.filter(product__sku__in=skus).values_list("collection_id", flat=True)
+        )
+        out = []
+        for tag in KitchenNoteTag.objects.prefetch_related("collections", "products"):
+            tag_collections = {collection.pk for collection in tag.collections.all()}
+            tag_skus = {product.sku for product in tag.products.all()}
+            if not tag_collections and not tag_skus:
+                out.append(tag.label)
+            elif tag_skus & skus or tag_collections & collection_ids:
+                out.append(tag.label)
     except Exception:
         logger.debug("orders.kitchen_note_tags_read_failed", exc_info=True)
         return ()
-    return tuple(str(t).strip() for t in tags if str(t).strip())
+    return tuple(out)
 
 
 #: Segmentos RFM que mudam o atendimento, com rótulo e tom já resolvidos.

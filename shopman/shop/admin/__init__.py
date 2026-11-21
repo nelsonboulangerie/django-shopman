@@ -26,6 +26,7 @@ from shopman.shop.admin.delivery import (  # noqa: F401
 )
 from shopman.shop.admin.faq import FAQEntryAdmin  # noqa: F401
 from shopman.shop.admin.instance_apply import InstanceApplyRecordAdmin  # noqa: F401
+from shopman.shop.admin.kitchen_note import KitchenNoteTagAdmin  # noqa: F401
 from shopman.shop.admin.omotenashi import OmotenashiCopyAdmin  # noqa: F401
 from shopman.shop.admin.orders import OrderAdmin  # noqa: F401
 from shopman.shop.admin.price_tier import PriceTierAdmin  # noqa: F401
