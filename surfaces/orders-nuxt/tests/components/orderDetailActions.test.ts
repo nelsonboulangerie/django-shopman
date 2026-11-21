@@ -29,6 +29,8 @@ const fetchCancellationReasons = vi.fn(async () => []);
 const markNotPickedUp = vi.fn();
 // Tentar o estorno de novo (WP-G13).
 const retryRefund = vi.fn();
+// Estornar UM pedido (#2727, item 5).
+const refundOrder = vi.fn();
 const authorize = vi.fn();
 // A releitura do pedido (o diálogo "Resolver" a pede quando o pedido muda).
 const refreshDetail = vi.fn();
@@ -113,6 +115,7 @@ vi.stubGlobal("useOrderDetail", () => ({
   courierQuote: vi.fn(),
   markNotPickedUp,
   retryRefund,
+  refundOrder,
   authorize,
   managerChallenge,
   dismissManagerChallenge: vi.fn(),
@@ -239,6 +242,7 @@ const stubs = {
   CourierCallSheet: true,
   OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
+  OrderRefundDialog: defineComponent({ name: "OrderRefundDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, busy: Boolean }, emits: ["update:open", "confirm"], template: "<div />" }),
   OrderNoShowDialog: defineComponent({ name: "OrderNoShowDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, busy: Boolean }, emits: ["update:open", "confirm"], template: "<div />" }),
   OrderPromiseResolveDialog: defineComponent({ name: "OrderPromiseResolveDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, managers: { type: Array, default: () => [] } }, emits: ["update:open", "changed", "cancel"], template: "<div />" }),
   OperatorManagerAuth: defineComponent({ name: "OperatorManagerAuth", props: { open: Boolean, action: { type: String, default: "" }, detail: { type: String, default: "" } }, emits: ["update:open", "authorize", "authorize-badge"], template: "<div />" }),
@@ -1612,5 +1616,103 @@ describe("detalhe do pedido — a leitura que falhou diz por quê", () => {
       expect(failure).toContain("A leitura falhou. Confira a conexão e toque em Atualizar, no menu do pedido.");
       expect(failure).not.toContain("não encontrado");
     } finally { w.unmount(); }
+  });
+});
+
+// Estornar UM pedido (#2727, item 5): a porta é a ação `refund` do servidor, que só
+// chega a quem tem a permissão. A tela não decide nada: sem a ação, não há item.
+describe("detalhe do pedido — estornar", () => {
+  const refund = (over: Partial<OperatorOrderProjection["actions"][number]> = {}) => ({
+    ...fixtureActions({ can_confirm: true })[0]!,
+    ref: "refund",
+    label: "Estornar",
+    priority: "danger",
+    payload_schema: { base_revision: "detail-base", expected_actor_id: 1 },
+    confirmation: { required: true },
+    ...over,
+  });
+  const paid = (over: Partial<OperatorOrderProjection> = {}) =>
+    order({ status: "completed", status_label: "Concluído", can_confirm: false, actions: [refund()], ...over });
+
+  beforeEach(() => {
+    refundOrder.mockReset();
+    vi.mocked(useSonner.success).mockClear();
+    vi.mocked(useSonner.error).mockClear();
+  });
+
+  it("a ação veio do servidor: o item existe e abre o diálogo deste pedido", async () => {
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="refund"]');
+
+    expect(item.text()).toContain("Estornar");
+    expect(item.attributes("disabled")).toBeUndefined();
+    await item.trigger("click");
+    const dialog = w.getComponent({ name: "OrderRefundDialog" });
+    expect(dialog.props("open")).toBe(true);
+    expect(dialog.props("orderRef")).toBe("WEB-1");
+    w.unmount();
+  });
+
+  it("travada pelo servidor: o item fica no lugar, desabilitado, dizendo por quê", async () => {
+    const reason = "O valor desta cobrança já voltou inteiro ao cliente.";
+    const w = abrir(paid({ actions: [refund({ enabled: false, reason })] }));
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="refund"]');
+
+    expect(item.attributes("disabled")).toBeDefined();
+    expect(item.text()).toContain(reason);
+    w.unmount();
+  });
+
+  it("sem a ação (sem a permissão, sem cobrança online): o item não existe", async () => {
+    const w = abrir(paid({ actions: [] }));
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.find('[data-action="refund"]').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it("o dinheiro voltou: o diálogo fecha e diz quanto", async () => {
+    const contract = refund({ payload_schema: { base_revision: "preview-base", expected_actor_id: 1 } });
+    refundOrder.mockResolvedValueOnce({ outcome: "refunded", amount_q: 1250, refunded_q: 1250, available_q: 1750, message: "" });
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="refund"]').trigger("click");
+
+    w.getComponent({ name: "OrderRefundDialog" }).vm.$emit("confirm", { contract, amountQ: 1250 });
+    await flushPromises();
+
+    expect(refundOrder).toHaveBeenCalledWith(contract, 1250);
+    expect(w.getComponent({ name: "OrderRefundDialog" }).props("open")).toBe(false);
+    expect(useSonner.success).toHaveBeenCalledWith("R$ 12,50 devolvidos ao cliente pelo mesmo meio do pagamento.");
+    w.unmount();
+  });
+
+  it("o meio de pagamento recusou: a frase do balcão vira o aviso", async () => {
+    const message = "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
+    refundOrder.mockResolvedValueOnce({ outcome: "refused", amount_q: 1250, refunded_q: 0, available_q: 3000, message });
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="refund"]').trigger("click");
+
+    w.getComponent({ name: "OrderRefundDialog" }).vm.$emit("confirm", { contract: refund(), amountQ: 1250 });
+    await flushPromises();
+
+    expect(useSonner.error).toHaveBeenCalledWith(message);
+    expect(useSonner.success).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("nada foi aplicado: o diálogo continua aberto", async () => {
+    refundOrder.mockResolvedValueOnce(null);
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="refund"]').trigger("click");
+
+    w.getComponent({ name: "OrderRefundDialog" }).vm.$emit("confirm", { contract: refund(), amountQ: 1250 });
+    await flushPromises();
+
+    expect(w.getComponent({ name: "OrderRefundDialog" }).props("open")).toBe(true);
+    w.unmount();
   });
 });

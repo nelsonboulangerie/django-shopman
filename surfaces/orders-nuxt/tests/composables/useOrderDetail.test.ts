@@ -278,6 +278,36 @@ describe("useOrderDetail", () => {
     expect(env.sonner.error).toHaveBeenCalledWith("O estorno deste pedido já saiu.");
   });
 
+  it("estornar leva a ação da prévia, o valor e a confirmação, e devolve o recibo desta cobrança", async () => {
+    // #2727, item 5: a exceção financeira do Gerente. A base é a da prévia
+    // (`refund/preview/`), e o recibo diz se o meio de pagamento devolveu.
+    const contract = { ...fixtureActions({ can_confirm: true })[0]!, ref: "refund", label: "Estornar", enabled: true, payload_schema: { base_revision: "refund-preview-base", expected_actor_id: 1 } };
+    env.fetchData.value = { order: { ref: "WEB-EST", actions: [] } };
+    const receipt = { outcome: "refunded", amount_q: 1250, refunded_q: 1250, available_q: 1750, message: "" };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", refund: receipt });
+    const d = useOrderDetail("WEB-EST");
+
+    expect(await d.refundOrder(contract, 1250)).toEqual(receipt);
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/WEB-EST/refund/");
+    expect(env.fetchMock.mock.calls[0]![1].body).toEqual({
+      base_revision: "refund-preview-base", expected_actor_id: 1, amount_q: 1250, confirm: true,
+    });
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("estornar recusado pelo servidor não devolve recibo e diz a frase dele", async () => {
+    const contract = { ...fixtureActions({ can_confirm: true })[0]!, ref: "refund", enabled: true, payload_schema: { base_revision: "refund-preview-base", expected_actor_id: 1 } };
+    env.fetchData.value = { order: { ref: "WEB-EST2", actions: [] } };
+    env.fetchMock.mockRejectedValueOnce({
+      status: 409,
+      data: { detail: "Valor acima do disponível (R$ 30,00).", outcome: "not_applied" },
+    });
+    const d = useOrderDetail("WEB-EST2");
+
+    expect(await d.refundOrder(contract, 3001)).toBeNull();
+    expect(env.sonner.error).toHaveBeenCalledWith("Valor acima do disponível (R$ 30,00).");
+  });
+
   it("saveNotes/addComment enviam o corpo e tostam sucesso", async () => {
     env.fetchData.value = { order: { actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "notes", payload_schema: { base_revision: "note-base" } }, { ...fixtureActions({ can_advance: true })[0], ref: "comment", payload_schema: { base_revision: "comment-base" } }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });

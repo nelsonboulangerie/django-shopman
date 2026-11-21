@@ -47,6 +47,7 @@ import {
   refundRetryToast,
 } from "~/presentation/orderPending";
 import { contactRequestNotice } from "~/presentation/contactRequest";
+import { REFUND, refundToast } from "~/presentation/orderRefund";
 import { ifoodChatNotice } from "~/presentation/ifoodWidget";
 import { orderTicketMenuItem } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
@@ -101,6 +102,7 @@ const {
   returnOrder,
   markNotPickedUp,
   retryRefund,
+  refundOrder,
   settleCash,
   equipmentBack,
   courierBack,
@@ -467,6 +469,7 @@ const dialog = ref<
   | "courier-back"
   | "return"
   | "no-show"
+  | "refund"
 >("");
 // O motivo já marcado quando a tela sabe o porquê: cancelar o Pix vencido abre com
 // "Pagamento não confirmado" (o operador ainda pode trocar).
@@ -659,6 +662,21 @@ async function submitRefundRetry() {
 function onRefundRetryDone() {
   const told = refundRetryToast(order.value?.cancelled_money, order.value?.pending);
   if (told) useSonner.success(told);
+}
+
+// Estornar UM pedido (#2727, item 5): a exceção financeira do Gerente. A porta só
+// existe quando o servidor manda a ação `refund` (quem tem a permissão, pedido com
+// cobrança online paga). O diálogo lê a prévia (os valores DESTA cobrança), e o
+// recibo diz se o dinheiro voltou; a recusa do meio de pagamento vira o aviso, e a
+// tentativa fica na linha do tempo do pedido.
+const refundAction = computed(() => projectedAction(REFUND));
+async function submitRefund(payload: { contract: Action; amountQ: number }) {
+  const receipt = await refundOrder(payload.contract, payload.amountQ);
+  if (!receipt) return;
+  dialog.value = "";
+  const told = refundToast(receipt);
+  if (told?.tone === "success") useSonner.success(told.text);
+  else if (told) useSonner.error(told.text);
 }
 
 // O ato que o gerente assina e a frase que ele lê, pelo gesto que pediu a assinatura.
@@ -933,6 +951,22 @@ const detailMenuItems = computed(() => [
           disabled: busy.value || !noShowAction.value.enabled,
           title: noShowAction.value.reason || undefined,
           onSelect: () => menuDo(() => (dialog.value = "no-show")),
+        },
+      ]
+    : []),
+  // Estornar (#2727, item 5): só a quem tem a permissão, e o servidor diz se já pode.
+  ...(refundAction.value
+    ? [
+        {
+          label: "Estornar",
+          description:
+            (!refundAction.value.enabled && refundAction.value.reason) || undefined,
+          icon: "i-lucide-rotate-ccw",
+          "data-action": "refund",
+          color: "error" as const,
+          disabled: busy.value || !refundAction.value.enabled,
+          title: refundAction.value.reason || undefined,
+          onSelect: () => menuDo(() => (dialog.value = "refund")),
         },
       ]
     : []),
@@ -2012,6 +2046,19 @@ const outside = useOutsideStore(
         }
       "
       @confirm="submitNoShow"
+    />
+
+    <!-- estornar UM pedido: o pago, o disponível, o valor e a segunda confirmação -->
+    <OrderRefundDialog
+      :open="dialog === 'refund'"
+      :order-ref="orderRef"
+      :busy="busy"
+      @update:open="
+        (v) => {
+          if (!v) dialog = '';
+        }
+      "
+      @confirm="submitRefund"
     />
 
     <!-- entregador voltou: o MESMO diálogo da Fila (confere e fecha a saída inteira) -->
