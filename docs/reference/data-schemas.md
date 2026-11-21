@@ -475,7 +475,8 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   // `ride_ref` = "CASA-…", as mesmas letras internas (A designada, E saiu,
   // F entregue, C cancelada), `driver` = {name, phone, vehicle_model} do cadastro, `courier_ref` = o `Courier.ref`,
   // `estimate.value_q` = o valor da tabela (vira `final_value_q` na entrega), `note` = a observação da casa para o
-  // entregador, escrita no "Quem leva" e mostrada na página do link (até 200 caracteres; M3c, #2899) e
+  // entregador, escrita no "Quem leva" e mostrada na página do link (até 200 caracteres; M3c, #2899),
+  // `slip_printed_at` = ISO da PRIMEIRA via impressa da rota com o QR do link (`house_route_slip`; a seguinte sai "2a VIA"; #2406) e
   // "problems": [{"kind": "no_answer", "at": "iso", "by": "courier:diego", "payment": "card"}]  // a folha "Problema" do link
   "ride_ref": "184532",            // corrida ATIVA (string); some quando N/C arquiva. A TaOn o chama `id_mch`: o nome dela vive só na porta (`adapters/courier_machine.py` e o webhook); a migração `shop.0129` renomeou o que estava gravado (M1b-a, #2552)
   "status": "E",                   // letra Machine crua
