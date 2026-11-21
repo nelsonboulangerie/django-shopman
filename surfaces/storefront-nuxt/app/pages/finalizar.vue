@@ -31,6 +31,7 @@ import {
   contactSummary as buildContactSummary,
   datepickerDisabledDates as buildDatepickerDisabledDates,
   displayCheckoutDate,
+  orderDateMovedNotice,
   firstCheckoutError,
   fulfillmentIcon as resolveFulfillmentIcon,
   fulfillmentLabel as resolveFulfillmentLabel,
@@ -961,6 +962,9 @@ watch(() => checkout.value, value => {
 // existe. Na navegação cliente o fetch é lazy; usar o relógio local enquanto ele
 // ainda está pendente escolheria "hoje" mesmo num dia fechado e deixaria todos
 // os horários desabilitados. O watch cobre essa chegada tardia sem segurar a rota.
+// A recusa "Sua sacola mudou" do envio relê o checkout, e a releitura pode mover a
+// data: quando move, o aviso do dia novo já disse tudo, e o genérico não repete.
+let dateMovedNoticeShown = false
 function initializeDeliveryDate () {
   if (!checkout.value) return
   const restoredDate = state.delivery_date
@@ -982,6 +986,13 @@ function initializeDeliveryDate () {
   if (!parsed) return
   chosenDate.value = parsed
   state.delivery_date = value
+  // A sacola levou a data para depois da que ela tinha (#2411): a tela diz o dia
+  // novo, em vez de trocar calada. Vale para a volta à aba e para a recusa do envio.
+  const moved = orderDateMovedNotice(restoredDate, value, dateBounds.value, shopNow.value)
+  if (moved) {
+    dateMovedNoticeShown = true
+    if (import.meta.client) useSonner.info(moved)
+  }
 }
 onMounted(initializeDeliveryDate)
 watch(checkout, initializeDeliveryDate, { flush: 'post' })
@@ -1632,8 +1643,11 @@ async function submitCheckout () {
     }
     if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {
       attemptKey.value = createCheckoutAttemptKey()
+      dateMovedNoticeShown = false
       await refresh()
-      if (import.meta.client) useSonner.error(serverError.value)
+      // O dia novo (se a releitura moveu a data) chega pelo `initializeDeliveryDate`.
+      await nextTick()
+      if (import.meta.client && !dateMovedNoticeShown) useSonner.error(serverError.value)
       return
     }
     // Dia fechado: o backend sugere a encomenda (preorder_hint) e a próxima data.
