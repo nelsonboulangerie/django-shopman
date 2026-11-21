@@ -54,12 +54,24 @@ def test_test_orders_with_superseded_preparation_close_with_the_reason():
         assert alert.resolved_by == "sistema: pedido de teste"
 
 
-def test_real_order_preparation_after_close_also_closes():
-    _order("WEB-1", "completed")
+def test_real_order_closed_by_the_ifood_repair_closes():
+    """O reparo do iFood (#2817) fechou o pedido; o preparo enfileirado chegou depois."""
+    order = _order("WEB-1", "completed")
+    order.emit_event("status_changed", actor="system:ifood:repair", payload={"new_status": "completed"})
     alert = _stuck("WEB-1", "on_preparing")
     resolve_superseded_phase_alerts()
     alert.refresh_from_db()
     assert alert.resolved_by == "sistema: pedido já completed, etapa superada"
+
+
+def test_real_order_closed_by_the_house_keeps_the_alert():
+    """Regra do #3039: a casa fechou um pedido real e a cozinha nunca o recebeu. Alguém precisa saber."""
+    order = _order("WEB-3", "completed")
+    order.emit_event("status_changed", actor="operator:caixa", payload={"new_status": "completed"})
+    alert = _stuck("WEB-3", "on_preparing")
+    assert resolve_superseded_phase_alerts() == 0
+    alert.refresh_from_db()
+    assert alert.resolved_at is None
 
 
 def test_phase_that_completed_later_closes():
