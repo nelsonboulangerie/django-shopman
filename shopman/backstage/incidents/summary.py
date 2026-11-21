@@ -158,10 +158,10 @@ def _remedy_scores(since) -> dict[str, dict]:
     readings = (
         IncidentAction.objects.filter(created_at__gte=since, decided_by__startswith="ia:")
         .values("alert_type")
-        .annotate(total=Count("pk"), cost=Sum("cost_usd"))
+        .annotate(total=Count("pk"), cost=Sum("cost_usd_micros"))
     )
     for row in readings:
         entry = scores.setdefault(row["alert_type"], {"label": "", "by_outcome": {}})
         entry["ai_readings"] = row["total"]
-        entry["ai_cost_usd"] = float(row["cost"] or 0)
+        entry["ai_cost_usd"] = (row["cost"] or 0) / 1_000_000  # micro-dólares no banco; dólares no resumo
     return scores

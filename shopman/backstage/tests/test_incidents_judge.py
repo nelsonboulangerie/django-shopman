@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -27,8 +26,8 @@ def _resolved(purpose, protocol="jev"):
     return ai.Resolved(ref=f"{purpose}-conn", protocol=protocol, base_url="", api_key="k", model="m", customer_text_approved=False)
 
 
-def _reading(choice, confidence, cost="0.00003", purpose="incident"):
-    return judge.Reading(choice=choice, confidence=confidence, cost_usd=Decimal(cost), label=f"ia:{purpose}:x/m")
+def _reading(choice, confidence, cost=30, purpose="incident"):
+    return judge.Reading(choice=choice, confidence=confidence, cost_usd_micros=cost, label=f"ia:{purpose}:x/m")
 
 
 def test_cheap_tier_decides_when_confident():
@@ -39,12 +38,12 @@ def test_cheap_tier_decides_when_confident():
         verdict, decided_by, confidence, cost = judge.judge(_Alert(), FISCAL, JUDGE)
     assert verdict.kind == "act"
     assert decided_by.startswith("ia:incident:")
-    assert confidence == 0.93 and cost == Decimal("0.00003")
+    assert confidence == 0.93 and cost == 30
     assert ask.call_count == 1
 
 
 def test_low_confidence_escalates_to_the_capable_tier():
-    readings = [_reading("act", 0.55), _reading("people", 0.9, cost="0.0004", purpose="incident_review")]
+    readings = [_reading("act", 0.55), _reading("people", 0.9, cost=400, purpose="incident_review")]
     with (
         patch.object(ai, "resolve", side_effect=lambda p: _resolved(p)),
         patch.object(judge, "ask", side_effect=readings),
@@ -52,7 +51,7 @@ def test_low_confidence_escalates_to_the_capable_tier():
         verdict, decided_by, confidence, cost = judge.judge(_Alert(), FISCAL, JUDGE)
     assert verdict.kind == "no" and "contador" in verdict.reason
     assert decided_by.startswith("ia:incident_review:")
-    assert cost == Decimal("0.00043")
+    assert cost == 430
 
 
 def test_nobody_confident_stays_with_people_and_says_so():
@@ -112,7 +111,7 @@ def test_act_step_uses_the_model_and_records_who_decided():
     alert = OperatorAlert.objects.create(type="fiscal_emit_failed", severity="critical", message="x", order_ref=order.ref)
 
     def fake_judge(alert, remedy, verdict):
-        return Verdict("act", "o emissor recusou por indisponibilidade passageira (leitura do modelo)"), "ia:incident:jev/jev-1", 0.92, Decimal("0.00003")
+        return Verdict("act", "o emissor recusou por indisponibilidade passageira (leitura do modelo)"), "ia:incident:jev/jev-1", 0.92, 30
 
     with patch.object(act, "_judge", return_value=fake_judge):
         act.step(alert.pk, judge=act._judge())
@@ -121,7 +120,7 @@ def test_act_step_uses_the_model_and_records_who_decided():
     assert fiscal.status == "queued"
     action = IncidentAction.objects.get()
     assert (action.outcome, action.decided_by, action.confidence) == ("ran", "ia:incident:jev/jev-1", 0.92)
-    assert action.cost_usd == Decimal("0.00003")
+    assert action.cost_usd_micros == 30
 
 
 def test_decision_role_is_jev_only_and_reading_role_is_llm_only():

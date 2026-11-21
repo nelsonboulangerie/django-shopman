@@ -34,7 +34,6 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from decimal import Decimal
 
 from django.utils import timezone
 
@@ -62,7 +61,8 @@ def mask(text: str) -> str:
 class Reading:
     choice: str
     confidence: float
-    cost_usd: Decimal
+    #: Custo da leitura em micro-dólares (inteiro, como o ``AiInvocation``).
+    cost_usd_micros: int
     label: str
 
 
@@ -72,7 +72,7 @@ def judge(alert, remedy, verdict: Verdict):
     from shopman.shop import ai
 
     evidence = mask(verdict.evidence)
-    total = Decimal("0")
+    total = 0
     best: Reading | None = None
     for purpose in TIERS:
         try:
@@ -85,7 +85,7 @@ def judge(alert, remedy, verdict: Verdict):
         except Exception as exc:  # noqa: BLE001 - modelo fora não decide nada; o caso fica com gente
             logger.warning("incident.judge_failed purpose=%s error=%s", purpose, type(exc).__name__)
             continue
-        total += reading.cost_usd
+        total += reading.cost_usd_micros
         best = reading
         if reading.confidence >= ACCEPT_AT:
             if reading.choice == "act":
@@ -107,7 +107,7 @@ def ask(resolved, *, purpose: str, alert_type: str, remedy, evidence: str) -> Re
         choice, confidence = _ask_jev(resolved, purpose=purpose, alert_type=alert_type, remedy=remedy, evidence=evidence)
     else:
         choice, confidence = _ask_messages(purpose, alert_type=alert_type, remedy=remedy, evidence=evidence)
-    return Reading(choice=choice, confidence=confidence, cost_usd=_cost_since(purpose, started), label=label)
+    return Reading(choice=choice, confidence=confidence, cost_usd_micros=_cost_since(purpose, started), label=label)
 
 
 def _instructions(remedy) -> str:
@@ -210,17 +210,16 @@ def parse_json_choice(text: str) -> tuple[str, float]:
     return choice, max(0.0, min(1.0, float(confidence)))
 
 
-def _cost_since(purpose: str, started) -> Decimal:
-    """O custo que o freio gravou para este propósito desde o início da leitura."""
+def _cost_since(purpose: str, started) -> int:
+    """Os micro-dólares que o freio gravou para este propósito desde o início da leitura."""
 
     from django.db.models import Sum
 
     from shopman.shop.models import AiInvocation
 
-    micros = (
+    return int(
         AiInvocation.objects.filter(purpose=purpose, created_at__gte=started)
         .aggregate(total=Sum("cost_usd_micros"))
         .get("total")
         or 0
     )
-    return Decimal(micros) / Decimal(1_000_000)
