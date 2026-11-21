@@ -180,3 +180,62 @@ def test_identified_on_a_read_only_connection_the_bag_does_not_change(conversati
     _turn(conversation, "quero 2 croissant", [_act("order", "quero 2 croissant", "croissant", 2)])
 
     assert _cart(conversation) == {}
+
+
+def _substitutes(monkeypatch, skus, *, boom=False):
+    """O mecanismo da Loja (``substitutes.find``) devolvendo estes candidatos, na ordem dele."""
+    from shopman.shop.services import substitutes
+
+    seen = {}
+
+    def find(sku, **kwargs):
+        seen.update(sku=sku, **kwargs)
+        if boom:
+            raise RuntimeError("catálogo fora")
+        return [{"sku": s, "name": s} for s in skus]
+
+    monkeypatch.setattr(substitutes, "find", find)
+    return seen
+
+
+def test_unavailable_offers_the_shop_alternatives_checked_in_this_channel(conversation, outbox, menu, monkeypatch):
+    # Dono, 21/11/2026: "O sistema tem SIM mecanismo de sugestão de alternativas em casos de
+    # indisponibilidade, e a Concierge DEVE fazer uso disso."
+    seen = _substitutes(monkeypatch, ["CROISSANT", "SEM-CADASTRO", "PAIN-CHOCO"])
+
+    reply = _turn(conversation, "quero 2 brioche", [_act("order", "quero 2 brioche", "brioche", 2)])
+
+    assert _cart(conversation) == {}, reply  # oferecer não é pôr na sacola
+    assert seen["sku"] == "BRIOCHE" and seen["channel"] == conversation.channel_ref and int(seen["qty"]) == 2
+    assert "Brioche: Indisponível." in reply, reply
+    assert "No lugar, posso oferecer Croissant (R$ " in reply and " ou Pain au Chocolat (R$ " in reply, reply
+    assert reply.rstrip().endswith("Quer algum?"), reply
+    assert "SEM-CADASTRO" not in reply  # fora do cardápio deste canal não se oferece
+    assert "estoque" not in reply.lower()
+
+
+def test_the_customer_picks_an_offered_alternative_by_its_place_in_the_list(conversation, outbox, menu, monkeypatch):
+    _substitutes(monkeypatch, ["CROISSANT", "PAIN-CHOCO"])
+    _turn(conversation, "quero 2 brioche", [_act("order", "quero 2 brioche", "brioche", 2)])
+
+    reply = _turn(conversation, "o segundo", [_act("order", "Pain au Chocolat", "pain au chocolat", 2)])
+
+    assert _cart(conversation) == {"PAIN-CHOCO": 2}, reply
+
+
+def test_without_alternatives_or_when_the_mechanism_fails_it_says_only_unavailable(conversation, outbox, menu, monkeypatch):
+    _substitutes(monkeypatch, [])
+    reply = _turn(conversation, "quero 2 brioche", [_act("order", "quero 2 brioche", "brioche", 2)])
+    assert "Brioche: Indisponível." in reply and "No lugar" not in reply, reply
+
+    _substitutes(monkeypatch, ["CROISSANT"], boom=True)
+    reply = _turn(conversation, "quero 1 brioche", [_act("order", "quero 1 brioche", "brioche", 1)])
+    assert "Brioche: Indisponível." in reply and "No lugar" not in reply, reply
+
+
+def test_asking_if_there_is_one_that_is_unavailable_also_gets_the_alternatives(conversation, outbox, menu, monkeypatch):
+    _substitutes(monkeypatch, ["PAIN-CHOCO"])
+
+    reply = _turn(conversation, "tem brioche?", [_act("product_question", "tem brioche?", "brioche")])
+
+    assert "No lugar, posso oferecer Pain au Chocolat (R$ " in reply and "Quer algum?" in reply, reply

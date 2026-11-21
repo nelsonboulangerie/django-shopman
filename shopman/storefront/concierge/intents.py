@@ -111,6 +111,9 @@ CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
 CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
 CART_ASK_QTY_COPY_KEY = "CONCIERGE_CART_ASK_QTY"
 CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
+ALTERNATIVES_COPY_KEY = "CONCIERGE_ALTERNATIVES"
+#: Quantas alternativas a casa oferece no lugar do indisponível (uma frase de WhatsApp, não um cardápio).
+MAX_ALTERNATIVES = 3
 DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 #: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
@@ -865,6 +868,61 @@ def _cart_qty(context_fn, sku: str) -> int:
     return int(line.get("qty") or 0) if line else 0
 
 
+def _alternatives(sku: str, *, context, qty: int = 1) -> list[dict]:
+    """O que a casa oferece no lugar de um indisponível, pelo mecanismo da Loja.
+
+    ``shop/services/substitutes.find`` é o ponto único de substitutos (o mesmo do aviso de
+    estoque da Loja): parecido pelo Offerman, dentro da fronteira da casa, disponível. Cada
+    candidato é conferido no cardápio DESTE canal (``tools._catalog_item``): preço e "dá
+    para pedir" saem de lá, e o que não está à venda aqui não é oferecido. Falhou: nada
+    (oferecer sem lastro seria pior que não oferecer).
+    """
+    from decimal import Decimal
+
+    from shopman.shop.services import substitutes
+
+    from . import tools as tools_module
+
+    ctx = context("")
+    try:
+        found = substitutes.find(
+            sku, qty=Decimal(max(1, int(qty or 1))), channel=tools_module._catalog_channel_ref(ctx.channel_ref),
+            limit=MAX_ALTERNATIVES * 2,
+        )
+    except Exception:
+        logger.warning("concierge.alternatives_failed sku=%s", sku, exc_info=True)
+        return []
+    offered: list[dict] = []
+    for candidate in found:
+        item = tools_module._catalog_item(ctx, str(candidate.get("sku") or ""))
+        if item is None or item.sku == sku or not item.can_add_to_cart:
+            continue
+        offered.append(tools_module._item_payload(item))
+        if len(offered) >= MAX_ALTERNATIVES:
+            break
+    return offered
+
+
+def _offer_alternatives(text: str, sku: str, *, context, copy, qty: int = 1) -> tuple[str, dict, bool]:
+    """A frase do indisponível seguida das alternativas, e a memória que deixa o cliente escolher.
+
+    ``(texto, memo, pergunta_no_ar)``. Sem alternativa: a frase como veio, sem memória.
+    """
+    from . import dialogue
+
+    offered = _alternatives(sku, context=context, qty=qty)
+    template = copy(ALTERNATIVES_COPY_KEY) or ""
+    if not offered or not template:
+        return text, {}, False
+    names = [f"{item['name']} ({item['price']})" for item in offered]
+    options = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " ou " + names[-1]
+    found = {"ok": True, "found": True, "items": offered}
+    memo = dialogue.memo_of("search_storefront", {}, found) or {}
+    if len(offered) == 1:
+        memo["focus"] = {"ref": offered[0]["sku"], "name": offered[0]["name"]}
+    return "\n".join(part for part in (text, _fill(template, options=options)) if part), memo, True
+
+
 def _cart_change(act: Act, *, conversation, context, copy):
     """A sacola na conversa (WP-12): põe, troca e tira pelo ``set_item`` que já existe.
 
@@ -896,10 +954,14 @@ def _cart_change(act: Act, *, conversation, context, copy):
         return PartReply(act, text=text, memo=listed, keeps_question=True)
     item = items[0]
     name, sku = item.get("name", ""), item.get("sku", "")
-    if not removing and not item.get("can_order"):
-        # Para o cliente é só "Indisponível" (regra da casa).
-        return PartReply(act, text=_fill(copy(CART_UNAVAILABLE_COPY_KEY) or "", item=name))
     qty, relative = _order_qty(act)
+    if not removing and not item.get("can_order"):
+        # Para o cliente é só "Indisponível" (regra da casa), e no lugar, o que a casa tem
+        # (dono, 21/11/2026: "a Concierge DEVE fazer uso" das alternativas da Loja).
+        text, memo, asks = _offer_alternatives(
+            _fill(copy(CART_UNAVAILABLE_COPY_KEY) or "", item=name), sku, context=context, copy=copy, qty=qty or 1,
+        )
+        return PartReply(act, text=text, memo=memo, keeps_question=asks)
     if removing:
         target = 0
     elif not qty:
@@ -1130,6 +1192,14 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         if result.get("ok") and result.get("found"):
             reply.text = sheet or tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
+            items = result.get("items") or []
+            if consult and not sheet and len(items) == 1 and not items[0].get("can_order"):
+                # "tem croissant?" e não tem: no lugar, o que a casa tem (as alternativas da Loja).
+                reply.text, memo, asks = _offer_alternatives(
+                    reply.text, items[0].get("sku", ""), context=context, copy=copy, qty=act.qty or 1,
+                )
+                if asks:
+                    reply.memo, reply.keeps_question = memo, True
         elif consult and verifiable and verification.question_text(act):
             # Sem fato numa consulta: a casa não inventa e não larga o cliente. Diz que
             # não tem aqui, pergunta à equipe e, no fim da resposta, promete o prazo.

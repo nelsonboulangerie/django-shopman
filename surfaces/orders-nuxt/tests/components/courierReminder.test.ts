@@ -67,7 +67,7 @@ describe("o aviso no painel do entregador", () => {
     } finally { w.unmount(); }
   });
 
-  it("na hora: o aviso leva o Chamar (que arma a mesma confirmação) e o Dispensar, sem botão repetido", async () => {
+  it("na hora: o aviso leva o Chamar (que abre o MESMO sheet de chamar) e o Dispensar, sem botão repetido", async () => {
     nowMs.value = minutes(11);
     const w = mountPanel();
     try {
@@ -75,22 +75,11 @@ describe("o aviso no painel do entregador", () => {
       expect(aviso.text()).toContain("Pedido 0042 em preparo há 11 min. Já dá para chamar o entregador?");
       expect(w.findAll("button").filter((item) => item.text() === "Chamar entregador")).toHaveLength(1);
       await button(w, "Chamar entregador")!.trigger("click");
+      // Um toque nunca chama: pede o sheet, onde se confere e se chama (#2876).
       expect(w.emitted("dispatch")).toBeUndefined();
-      expect(w.get('[data-testid="courier-dispatch-question"]').text()).toBe(question);
-      expect(button(w, "Chamar entregador")).toBeUndefined();
-      await button(w, "Confirmar chamada")!.trigger("click");
-      expect(w.emitted("dispatch")).toHaveLength(1);
+      expect(w.emitted("call")).toHaveLength(1);
       await button(w, "Dispensar")!.trigger("click");
       expect(w.emitted("dismissReminder")).toHaveLength(1);
-    } finally { w.unmount(); }
-  });
-
-  it("vindo do cartão (#courier-call), abre com a pergunta já armada", () => {
-    nowMs.value = minutes(11);
-    const w = mountPanel({ armDispatch: true });
-    try {
-      expect(w.get('[data-testid="courier-dispatch-question"]').text()).toBe(question);
-      expect(button(w, "Confirmar chamada")).toBeTruthy();
     } finally { w.unmount(); }
   });
 
