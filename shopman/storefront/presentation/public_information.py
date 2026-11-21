@@ -237,15 +237,18 @@ def search_public_faq(
     channel_ref: str,
     shop=None,
     limit: int = 4,
+    items=None,
 ) -> tuple[FAQItemProjection, ...]:
-    """Return public answers ranked by normalized token overlap."""
+    """Return public answers ranked by normalized token overlap.
+
+    ``items``: outro conjunto de perguntas para a mesma busca (o placar das FAQs testa os
+    rascunhos sem publicá-los, WP-18). Sem ele, as públicas, como sempre.
+    """
     from shopman.shop.models import FAQEntry
 
-    items = build_public_faq(channel_ref=channel_ref, shop=shop)
-    curated_search_terms = {
-        f"curated-{ref}": terms
-        for ref, terms in FAQEntry.objects.filter(is_published=True).values_list("ref", "search_terms")
-    }
+    curated = FAQEntry.objects.all() if items is not None else FAQEntry.objects.filter(is_published=True)
+    items = tuple(items) if items is not None else build_public_faq(channel_ref=channel_ref, shop=shop)
+    curated_search_terms = {f"curated-{ref}": terms for ref, terms in curated.values_list("ref", "search_terms")}
     needle = _fold(query).strip()
     if not needle:
         return items[:limit]

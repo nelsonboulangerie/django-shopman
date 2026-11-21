@@ -635,6 +635,26 @@ Pronto: ver "Pronto quando" do WP-17.
 Compromisso: DEV-2026-058.
 ```
 
+### WP-18 · A IA responde as perguntas frequentes a partir das FAQs (experimento)
+
+- **Origem:** dono, 20/11/2026: "podemos inclusive dar uma chance à IA para responder mesmo
+  as perguntas frequentes, diretamente baseada nas nossas FAQs ... Vale o teste e comparar".
+- **Objetivo:** medir, antes de mudar qualquer resposta, se a IA compondo a partir das FAQs
+  publicadas responde melhor que a FAQ servida direto, sem inventar.
+- **Braços:** (A) a FAQ que melhor casa, como está; (B) a IA compõe usando SÓ as FAQs
+  publicadas (propósito `concierge`, texto redigido, sem raciocínio), cita as referências e
+  manda para "vou verificar" a parte que nenhuma FAQ cobre.
+- **Régua:** resposta certa (as FAQs certas, nem mais nem menos), pergunta coberta por
+  inteiro (a parte sem FAQ dita como "vou verificar"), texto vizinho, e **invenção zero**:
+  número, hora ou valor fora das FAQs citadas, referência inexistente ou resposta sem citar
+  reprova o braço. O tom é lido nas respostas que o placar imprime.
+- **Arquivos:** `concierge/faq_eval.py`, `concierge/golden_faq.json` (24 perguntas: 7 reais,
+  17 escritas pela sessão a conferir), `management/commands/concierge_faq_eval.py`, testes.
+- **Fora do escopo:** mudar a resposta da Concierge. Se B vencer, a troca é WP próprio, com a
+  palavra do dono.
+- **Pronto quando:** o placar dos dois braços em produção (B com `deepseek-flash` e, se o pro
+  vencer a revanche, com o pro), no relatório do ensaio.
+
 ## 4. Ondas
 
 Dois WPs da mesma onda não tocam o mesmo arquivo. Uma onda só começa com a anterior no `main`.
