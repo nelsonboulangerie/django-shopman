@@ -19,7 +19,8 @@ function bagLink (page: Page) {
 export async function addReadyProductFromMenu (page: Page, testInfo: TestInfo, product: string): Promise<void> {
   await page.goto('/menu')
   await settled(page)
-  await expect(page.getByText(/^Aberto/).first(), 'a loja da pilha precisa estar aberta agora (README: seed com a loja aberta)').toBeVisible()
+  // Aberta é "Aberto até 19h" ou, na última hora antes de fechar, "Últimos pedidos até 19h".
+  await expect(page.getByText(/^(Aberto|Últimos pedidos)\b/).first(), 'a loja da pilha precisa estar aberta agora (README: seed com a loja aberta)').toBeVisible()
   await capture(page, testInfo, 'cardapio')
 
   await page.getByRole('link', { name: product }).first().click()

@@ -15,9 +15,10 @@ import { capture, newCustomerPhone, settled } from './support/stack'
 const PRODUCT = 'Croissant'
 const CLOSING = process.env.JOURNEY_STORE_CLOSING === '1'
 
-/** "Aberto até 4h12", no alto da loja: a hora em que a casa fecha hoje, em Brasília. */
+/** "Últimos pedidos até 4h12" (ou "Aberto até", se faltar mais de uma hora), no alto da
+ *  loja: a hora em que a casa fecha hoje, em Brasília. */
 async function closingLabel (page: Page): Promise<string> {
-  return (await page.getByText(/^Aberto até \d{1,2}h(\d{2})?$/).first().textContent())!.trim()
+  return (await page.getByText(/^(Aberto|Últimos pedidos) até \d{1,2}h(\d{2})?$/).first().textContent())!.trim()
 }
 
 /** Quanto falta até a hora do rótulo, medido no NAVEGADOR (fuso da loja, `timezoneId` da
