@@ -1292,6 +1292,21 @@ def _add_to_order(act: Act, *, conversation, search, run: Execution) -> PartRepl
     return reply
 
 
+def _same_block(text: str, block: str) -> bool:
+    """A mesma frase, ou uma que só acrescenta a oferta à outra ("Sobre “bagel”, não tenho
+    essa informação aqui." e a mesma com "Se quiser, chamo alguém"): sai uma vez só.
+
+    Ensaio do dono (21/11/2026): duas partes sobre o mesmo produto, uma lida como pergunta e
+    outra como pedido, repetiam a frase na mesma resposta.
+    """
+    a, b = text.strip(), block.strip()
+    if a == b:
+        return True
+    shorter, longer = sorted((a, b), key=len)
+    # Só frase inteira: um "Sim." curto no começo de outra resposta não é repetição.
+    return len(shorter) >= 30 and shorter.endswith((".", "?", "!")) and longer.startswith(shorter)
+
+
 def compose(run: Execution) -> str:
     """Uma mensagem: as partes na ordem do cliente e uma pergunta só.
 
@@ -1310,7 +1325,7 @@ def compose(run: Execution) -> str:
         if reply.keeps_question and text:
             kept = text  # a confirmação que espera resposta vai para o fim
             continue
-        if text and text not in blocks:
+        if text and not any(_same_block(text, block) for block in blocks):
             blocks.append(text)
     if run.verify_note:
         # O prazo do "vou verificar" fecha as respostas (antes da confirmação no ar).
