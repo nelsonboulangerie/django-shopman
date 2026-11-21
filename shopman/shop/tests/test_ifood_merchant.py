@@ -632,3 +632,80 @@ def test_api_desligada_diz_so_que_esta_desligada(client):
 
     assert body["enabled"] is False
     assert body["channel_off"] is False
+
+
+# ── O aviso fecha quando o fato volta a dar certo (#3036) ────────────────────
+
+
+_FORBIDDEN = {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+
+
+def _open(alert_type):
+    from shopman.backstage.models import OperatorAlert
+
+    return OperatorAlert.objects.filter(type=alert_type, resolved_at__isnull=True)
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_leitura_que_volta_fecha_o_aviso_do_modulo_pendente(fake):
+    _shop()
+    fake.override[("GET", f"{BASE}/status")] = _Resp(403, _FORBIDDEN)
+    ifood_merchant.check_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_MODULE_PENDING).count() == 1
+
+    del fake.override[("GET", f"{BASE}/status")]
+    ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    assert not _open(ifood_merchant.ALERT_MODULE_PENDING).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_leitura_que_volta_fecha_o_aviso_da_conferencia_cega(fake):
+    _shop()
+    _ifood()
+    _switch(False, "1h")
+    fake.override[("GET", f"{BASE}/status")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+    ifood_merchant.check_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_SYNC_FAILED).count() == 1
+
+    del fake.override[("GET", f"{BASE}/status")]
+    ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    assert not _open(ifood_merchant.ALERT_SYNC_FAILED).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_gravacao_que_volta_fecha_o_aviso_do_horario(fake):
+    _shop()
+    _ifood()
+    fake.override[("GET", f"{BASE}/opening-hours")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_SYNC_FAILED).count() == 1
+
+    del fake.override[("GET", f"{BASE}/opening-hours")]
+    ifood_merchant.sync_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    assert not _open(ifood_merchant.ALERT_SYNC_FAILED).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_pausa_que_chega_depois_fecha_so_o_aviso_dela(fake):
+    from shopman.shop.models import IFoodInterruption
+
+    _shop()
+    _ifood()
+    fake.override[("POST", f"{BASE}/interruptions")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+    _switch(False, "1h")
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_SYNC_FAILED).count() == 1
+    record = IFoodInterruption.objects.get()
+
+    del fake.override[("POST", f"{BASE}/interruptions")]
+    ifood_merchant._create_remote(record, remote=[], now=TUESDAY_10H + timedelta(minutes=5), tz=TZ)
+
+    assert not _open(ifood_merchant.ALERT_SYNC_FAILED).exists()
+
+
+def test_o_marcador_da_pausa_fecha_o_numero():
+    assert ifood_merchant._pause_marker(12) == "ifood_store_sync_failed:pause:12:"
+    assert not ifood_merchant._pause_marker(123).startswith(ifood_merchant._pause_marker(12))
