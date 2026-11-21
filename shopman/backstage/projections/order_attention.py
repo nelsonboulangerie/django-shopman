@@ -41,7 +41,7 @@ from shopman.utils.formatting import format_clock
 
 from shopman.backstage.projections import order_promise
 from shopman.backstage.projections.feeds import ChannelSwitchProjection, ManagerOptionProjection
-from shopman.shop.config import STAGE_GOAL_DEFAULTS
+from shopman.shop.services.kitchen_eta import PrepExpectation, stage_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -97,16 +97,12 @@ def stage_goal(kind: str, channel_config=None) -> int:
     """A meta, em minutos, da etapa que o fato ``kind`` espera, no canal do pedido.
 
     O canal manda (``fulfillment.stage_goal_minutes``, já com a cascata loja e
-    padrões); sem config, valem os padrões do dono.
+    padrões); sem config, valem os padrões do dono (``kitchen_eta.stage_minutes``).
     """
     stage = _GOAL_STAGE.get(kind)
     if stage is None:
         return CONFIRM_GOAL_MINUTES
-    goals = channel_config.fulfillment.stage_goal_minutes if channel_config is not None else {}
-    value = goals.get(stage) if isinstance(goals, dict) else None
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        return STAGE_GOAL_DEFAULTS[stage]
-    return value
+    return stage_minutes(stage, channel_config)
 
 
 class AcceptanceTimer(NamedTuple):
@@ -369,71 +365,6 @@ def commitment_day_label(day, *, today=None) -> str:
     return f"{formats.date_format(day, 'D')}, {formats.date_format(day, 'd/m')}"
 
 
-# ── "Na Cozinha · próximo pronto em ~4 min" (G10) ───────────────────────
-
-#: Janela dos preparos reais que medem o tempo da Cozinha agora.
-PREP_SAMPLE_HOURS = 3
-#: Abaixo disto a mediana não diz nada: vale a meta da estação.
-PREP_MIN_SAMPLES = 3
-
-
-@dataclass(frozen=True)
-class PrepExpectation:
-    """Quanto um preparo está levando agora: a mediana real ou, sem amostra, a meta."""
-
-    #: Minutos medidos (mediana de ``preparing_at`` → ``ready_at``); ``None`` sem amostra.
-    minutes: float | None
-    samples: int
-
-    @property
-    def basis(self) -> str:
-        if self.minutes is None:
-            return "pela meta da estação (sem preparos suficientes nas últimas 3 horas)"
-        return f"pela mediana de {self.samples} preparos nas últimas {PREP_SAMPLE_HOURS} horas"
-
-
-def prep_expectation(*, now: datetime) -> PrepExpectation:
-    """A mediana dos preparos que terminaram nas últimas horas (uma consulta)."""
-    since = now - timedelta(hours=PREP_SAMPLE_HOURS)
-    rows = Order.objects.filter(
-        ready_at__gte=since, ready_at__lte=now, preparing_at__isnull=False,
-    ).order_by("-ready_at").values_list("preparing_at", "ready_at")[:60]
-    minutes = sorted((ready - start).total_seconds() / 60 for start, ready in rows if ready > start)
-    if len(minutes) < PREP_MIN_SAMPLES:
-        return PrepExpectation(minutes=None, samples=len(minutes))
-    middle = len(minutes) // 2
-    median = minutes[middle] if len(minutes) % 2 else (minutes[middle - 1] + minutes[middle]) / 2
-    return PrepExpectation(minutes=median, samples=len(minutes))
-
-
-def ready_eta(order: Order, expectation: PrepExpectation, channel_config=None, *, now: datetime) -> datetime | None:
-    """Quando o pedido na Cozinha deve ficar pronto: o início real mais o tempo de agora.
-
-    O início é o primeiro "Iniciar" do KDS (``Order.data["kds_started"]``) ou o
-    ``preparing_at``; o tempo é a mediana real (``prep_expectation``) ou a meta da
-    estação do canal. Pedido que ainda não começou não fica pronto antes de começar:
-    conta a partir de agora.
-    """
-    if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING):
-        return None
-    expected = expectation.minutes if expectation.minutes is not None else stage_goal("station", channel_config)
-    starts = []
-    for record in ((order.data or {}).get("kds_started") or {}).values():
-        at = _parse(record.get("at")) if isinstance(record, dict) else None
-        if at is not None:
-            starts.append(at)
-    start = min(starts) if starts else order.preparing_at
-    if start is None:
-        # Ainda não começou e tem hora combinada: fica pronto na hora combinada,
-        # não daqui a um preparo (a retirada das 18h não é "próximo pronto em ~4 min").
-        from shopman.shop.services.fulfillment_window import promised_at
-
-        promised = promised_at(order)
-        ready = now + timedelta(minutes=expected)
-        return max(ready, promised) if promised is not None else ready
-    return start + timedelta(minutes=expected)
-
-
 # ── A consciência ao lado da Fila ────────────────────────────────────────
 
 
@@ -690,7 +621,6 @@ __all__ = [
     "CONFIRM_GOAL_MINUTES",
     "SYSTEM_WINDOW_MINUTES",
     "MenuChannelProjection",
-    "PrepExpectation",
     "MenuOutageProjection",
     "QueueAwarenessProjection",
     "SystemActionProjection",
@@ -698,7 +628,5 @@ __all__ = [
     "attention_kind",
     "build_queue_awareness",
     "card_attention",
-    "prep_expectation",
-    "ready_eta",
     "stage_goal",
 ]

@@ -1,0 +1,410 @@
+{
+  "1-painel-cartao-pronto-375-light": {
+    "texts": 40,
+    "contrastFails": [],
+    "smallTargets": [
+      {
+        "label": "Abrir pedido WEB-20261116-0B08",
+        "w": 85,
+        "h": 37
+      },
+      {
+        "label": "Mais ações do pedido 0B08",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0A47",
+        "w": 88,
+        "h": 37
+      },
+      {
+        "label": "Despachar A47",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0A47",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0C03",
+        "w": 88,
+        "h": 37
+      },
+      {
+        "label": "Despachar C03",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0C03",
+        "w": 32,
+        "h": 32
+      }
+    ],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "Entrega",
+      "3 itens",
+      "2× Baguete · 1× Pain au chocolat",
+      "Gleba Palhano"
+    ]
+  },
+  "4-faixa-saida-375-light": {
+    "texts": 3,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": []
+  },
+  "2-sheet-do-painel-375-light": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "C",
+      "Corrida C",
+      "A47 → C03",
+      "A47 · Ana",
+      "· Gleba Palhano",
+      "C03 · Caio",
+      "· Gleba Palhano",
+      "O entregador sai da loja e segue esta or",
+      "O entregador leva"
+    ]
+  },
+  "3-sheet-do-detalhe-375-light": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "C",
+      "Corrida C",
+      "A47 → C03",
+      "A47 · Ana",
+      "· Gleba Palhano",
+      "C03 · Caio",
+      "· Gleba Palhano",
+      "O entregador sai da loja e segue esta or",
+      "O entregador leva"
+    ]
+  },
+  "1-painel-cartao-pronto-1366-light": {
+    "texts": 27,
+    "contrastFails": [],
+    "smallTargets": [
+      {
+        "label": "Recolher a coluna Prontos (atalho: 3)",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0B08",
+        "w": 52,
+        "h": 20
+      },
+      {
+        "label": "Mais ações do pedido 0B08",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0A47",
+        "w": 50,
+        "h": 20
+      },
+      {
+        "label": "Despachar A47",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0A47",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0C03",
+        "w": 54,
+        "h": 20
+      },
+      {
+        "label": "Despachar C03",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0C03",
+        "w": 32,
+        "h": 32
+      }
+    ],
+    "clipped": [],
+    "offscreen": [],
+    "covered": []
+  },
+  "4-faixa-saida-1366-light": {
+    "texts": 3,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": []
+  },
+  "2-sheet-do-painel-1366-light": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "Troco do pedido C03",
+      "R$",
+      "Sai da gaveta: R$ 20,00 de troco."
+    ]
+  },
+  "3-sheet-do-detalhe-1366-light": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "Troco do pedido C03",
+      "R$",
+      "Sai da gaveta: R$ 20,00 de troco."
+    ]
+  },
+  "1-painel-cartao-pronto-375-dark": {
+    "texts": 40,
+    "contrastFails": [],
+    "smallTargets": [
+      {
+        "label": "Abrir pedido WEB-20261116-0B08",
+        "w": 85,
+        "h": 37
+      },
+      {
+        "label": "Mais ações do pedido 0B08",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0A47",
+        "w": 88,
+        "h": 37
+      },
+      {
+        "label": "Despachar A47",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0A47",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0C03",
+        "w": 88,
+        "h": 37
+      },
+      {
+        "label": "Despachar C03",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 271,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0C03",
+        "w": 32,
+        "h": 32
+      }
+    ],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "Entrega",
+      "3 itens",
+      "2× Baguete · 1× Pain au chocolat",
+      "Gleba Palhano"
+    ]
+  },
+  "4-faixa-saida-375-dark": {
+    "texts": 3,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": []
+  },
+  "2-sheet-do-painel-375-dark": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "C",
+      "Corrida C",
+      "A47 → C03",
+      "A47 · Ana",
+      "· Gleba Palhano",
+      "C03 · Caio",
+      "· Gleba Palhano",
+      "O entregador sai da loja e segue esta or",
+      "O entregador leva"
+    ]
+  },
+  "3-sheet-do-detalhe-375-dark": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "C",
+      "Corrida C",
+      "A47 → C03",
+      "A47 · Ana",
+      "· Gleba Palhano",
+      "C03 · Caio",
+      "· Gleba Palhano",
+      "O entregador sai da loja e segue esta or",
+      "O entregador leva"
+    ]
+  },
+  "1-painel-cartao-pronto-1366-dark": {
+    "texts": 27,
+    "contrastFails": [],
+    "smallTargets": [
+      {
+        "label": "Recolher a coluna Prontos (atalho: 3)",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0B08",
+        "w": 52,
+        "h": 20
+      },
+      {
+        "label": "Mais ações do pedido 0B08",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0A47",
+        "w": 50,
+        "h": 20
+      },
+      {
+        "label": "Despachar A47",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0A47",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "label": "Abrir pedido WEB-20261116-0C03",
+        "w": 54,
+        "h": 20
+      },
+      {
+        "label": "Despachar C03",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Chamar entregador",
+        "w": 263,
+        "h": 32
+      },
+      {
+        "label": "Mais ações do pedido 0C03",
+        "w": 32,
+        "h": 32
+      }
+    ],
+    "clipped": [],
+    "offscreen": [],
+    "covered": []
+  },
+  "4-faixa-saida-1366-dark": {
+    "texts": 3,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": []
+  },
+  "2-sheet-do-painel-1366-dark": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "Troco do pedido C03",
+      "R$",
+      "Sai da gaveta: R$ 20,00 de troco."
+    ]
+  },
+  "3-sheet-do-detalhe-1366-dark": {
+    "texts": 28,
+    "contrastFails": [],
+    "smallTargets": [],
+    "clipped": [],
+    "offscreen": [],
+    "covered": [
+      "Troco do pedido C03",
+      "R$",
+      "Sai da gaveta: R$ 20,00 de troco."
+    ]
+  }
+}

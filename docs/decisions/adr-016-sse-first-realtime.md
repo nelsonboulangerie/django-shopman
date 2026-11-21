@@ -62,10 +62,13 @@ Regras do padrão:
   da loja releem quando chega o aviso público da vitrine (`/sse/loja`,
   `shopman/storefront/api/shelf_events.py`). A rota **não repassa** o canal
   `stock-<canal>`: cada evento dele é uma venda ou uma entrada de lote com o SKU,
-  e aberto ao público entregaria o ritmo da loja (ADR-018 §5.1). Sai só um
-  `shelf-update` sem conteúdo, no máximo um a cada 5 s por conexão. Regra para o
-  próximo stream público: o que ele carrega tem de caber no que a página pública
-  já mostra.
+  e aberto ao público entregaria o ritmo da loja (ADR-018 §5.1). Desde o #2784
+  (21/11/2026) o shop publica o canal público `shelf-<canal>` só quando muda o que
+  qualquer visitante vê de um SKU (o estado do card, as últimas unidades, o dia da
+  promessa; `shopman/shop/services/public_shelf.py`), e o `shelf-update` leva esse
+  SKU: a página do produto relê só pelo aviso dela. Dez vendas que não mudam nada
+  disso não geram aviso. Regra para o próximo stream público: o que ele carrega tem
+  de caber no que a página pública já mostra.
 - **Candidatos a migrar/adotar:** KDS, gestor de pedidos, produção/fornadas,
   qualquer badge/contador que hoje faz poll. Migração incremental — cada tela
   ganha o push mantendo o poll como rede de segurança.

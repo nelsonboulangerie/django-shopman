@@ -468,6 +468,7 @@ useSeoMeta({
       <div
         v-if="!cart.is_empty"
         class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
+        data-focus-obstruction
       >
         <div class="flex items-baseline justify-between gap-3">
           <p class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</p>
