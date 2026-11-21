@@ -48,13 +48,12 @@ test('J7: a cliente desiste do pedido e o repete do acompanhamento, com as escol
     // Já entrou: o checkout abre direto, sem pedir o código de novo.
     await expect(page).toHaveURL(/\/finalizar/)
     await settled(page)
-    // O contato já vem preenchido com quem ela é.
-    await expect(page.getByText(customer.name, { exact: true }).first()).toBeVisible()
+    // O contato já vem feito, com quem ela é (nome e telefone na mesma linha).
+    await expect(page.getByText(new RegExp(`^${customer.name} \\(\\d{2}\\) \\d{4,5}-\\d{4}$`)).first()).toBeVisible()
+    // As escolhas da outra vez voltam: retirada, hoje, Pix.
+    await expect(page.getByRole('radio', { name: /^Retirada/ })).toBeChecked()
+    await expect(page.getByText(/^Hoje · \d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/).first()).toBeVisible()
+    await expect(page.locator('[data-checkout-step="payment"]').getByText('Pix', { exact: true }).first()).toBeVisible()
     await capture(page, testInfo, 'checkout-lembrado')
-    const remembered = await page.evaluate(() => Array.from(document.querySelectorAll('[data-checkout-step]')).map(step => ({
-      step: step.getAttribute('data-checkout-step'),
-      text: (step.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 140)
-    })))
-    console.log('J7 CHECKOUT', JSON.stringify(remembered))
   })
 })
