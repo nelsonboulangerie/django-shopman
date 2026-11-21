@@ -321,16 +321,21 @@ class AIUse:
 
 #: Ordem: do que menos sai para o que mais sai.
 AI_USES: tuple[AIUse, ...] = (
-    # `triage.jev_scores` (e a sombra, `intent_pilot.shadow_triage`): o texto, depois de
+    # `triage.jev_scores` (e a sombra, `intent_pilot.shadow_triage`) e o juiz da conferência
+    # (`conference.JevJudge`, a resposta a enviar pelo mesmo `house_line`): o texto, depois de
     # `redact_observation_text`, e a última fala da casa pelo mesmo redator, sem código de
     # pedido nem valores (`triage.house_line`; adendo à D-040, dono 21/11/2026).
     AIUse(
         purpose="decision",
         helps_to="entender a sua mensagem",
-        sends=("o texto da sua mensagem", "a última mensagem da loja na conversa"),
+        sends=(
+            "o texto da sua mensagem",
+            "a última mensagem da loja na conversa",
+            "a resposta que a loja vai enviar, para conferir antes do envio",
+        ),
         keeps_profile=True,
         redacts=True,
-        also="Da mensagem da loja, a loja também apaga o número do pedido e os valores",
+        also="Das mensagens da loja, a loja também apaga o número do pedido e os valores",
     ),
     # `intent_pilot` (pré-rótulo do gabarito): mensagens já recebidas, pelo
     # `MessageIntentSample.redacted_text`.

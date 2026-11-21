@@ -100,15 +100,21 @@ def test_group_action_is_absent_with_fewer_than_two_orders(operator):
     assert build_deliveries(user=operator).group_action is None
 
 
-def test_order_detail_offers_the_ride_action_with_the_companions(client, operator):
+def test_the_call_sheet_reads_the_ride_action_with_the_companions_from_deliveries(client, operator):
+    # O sheet único (#2876) chama pela ação de grupo das Entregas; o detalhe do pedido
+    # não monta mais a dele (#3003).
+    from shopman.backstage.projections.deliveries import build_deliveries
+
     a, b = _pair()
-    detail = client.get(reverse("api-backstage-order-detail", args=[a.ref])).json()["order"]
-    action = next(row for row in detail["actions"] if row["ref"] == "courier-ride")
-    assert action["enabled"] and action["idempotency"] == "required"
-    assert action["payload_schema"]["expected_actor_id"] == operator.pk
-    assert action["payload_schema"]["base_revisions"] == {
+    action = build_deliveries(user=operator).group_action
+    assert action is not None and action.ref == "courier-ride"
+    assert action.enabled and action.idempotency == "required"
+    assert action.payload_schema["expected_actor_id"] == operator.pk
+    assert action.payload_schema["base_revisions"] == {
         a.ref: courier.dispatch_revision(a), b.ref: courier.dispatch_revision(b),
     }
+    detail = client.get(reverse("api-backstage-order-detail", args=[a.ref])).json()["order"]
+    assert "courier-ride" not in [row["ref"] for row in detail["actions"]]
 
 
 # ── As quatro portas ────────────────────────────────────────────────
