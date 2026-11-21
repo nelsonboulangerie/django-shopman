@@ -79,6 +79,20 @@ do v1 e não confirma o v2.
 nível da sacola. A **posse** (cerca do turno, transferência à equipe, claim vencido,
 identidade trocada) é reconferida igual, na transação do efeito (#2625).
 
+### 4. A identidade por esse ingresso vem do provedor, pelo assinante (emenda de 21/11/2026)
+
+A autoridade de sacola pede o vínculo `verified_customer`, mas o `run_turn` pulava a
+identificação no ingresso sem identificador de mensagem (guarda de 12/09/2026): pelo ManyChat,
+o vínculo verificado nunca nascia e a sacola não abria para ninguém. Medido no banco de produção
+em 21/11/2026: o vínculo ativo do número do dono estava em `configured_transport`, sem cliente.
+
+A identificação passa a rodar nesse ingresso com uma condição: **o perfil que veio no corpo da
+mensagem não entra** (`profile={}`). Pelo ManyChat, quem identifica é o `getInfo` do assinante
+(`ManychatIdentityBridge`): o telefone verificado pelo WhatsApp casa com o cadastro do cliente.
+O assinante é o do vínculo, autenticado pela chave do ingresso; o que o ingresso não prova é a
+identidade e a hora de cada mensagem, e isso continua tratado pelos itens 1 a 3. A autoridade
+COMERCIAL continua falsa nesse ingresso, e a de sacola respeita o só leitura.
+
 ## Consequências
 
 - O pedido na conversa fica possível com o ManyChat de hoje, sem esperar identificador.
