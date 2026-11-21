@@ -166,6 +166,40 @@ def test_depart_waits_for_every_order_to_be_ready(client, shop, diego):
     assert refused.status_code == 409 and "ficar pronto" in refused.json()["detail"]
 
 
+def test_order_still_in_the_kitchen_says_when_it_gets_ready(client, shop, diego):
+    """#2647: "Fica pronto às 12h48", a mesma previsão da Fila do Gestor (kitchen_eta)."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    started = timezone.now() - timedelta(minutes=4)
+    a47 = _order("WEB-A47")
+    c03 = _order("WEB-C03", status=Order.Status.PREPARING)
+    Order.objects.filter(pk=c03.pk).update(preparing_at=started)
+    token = own_fleet.assign([a47, c03], diego, actor="operator:ana").link.token
+    stops = _post(client, "courier-ride-link-claim", token).json()["stops"]
+    assert "ready_at" not in stops[0]  # o pronto não tem previsão
+    # Sem preparos medidos, vale a meta da estação do canal.
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services.kitchen_eta import stage_minutes
+
+    goal = stage_minutes("station", ChannelConfig.for_channel("web"))
+    expected = timezone.localtime(started + timedelta(minutes=goal)).strftime("%H:%M")
+    assert stops[1]["ready_at"] == expected
+
+
+def test_a_late_kitchen_shows_no_past_hour(client, shop, diego):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    c03 = _order("WEB-C03", status=Order.Status.PREPARING)
+    Order.objects.filter(pk=c03.pk).update(preparing_at=timezone.now() - timedelta(hours=3))
+    token = own_fleet.assign([c03], diego, actor="operator:ana").link.token
+    stop = _post(client, "courier-ride-link-claim", token).json()["stops"][0]
+    assert "ready_at" not in stop  # hora vencida não é previsão: a tela diz "Ainda não ficou pronto"
+
+
 def test_events_need_the_confirmation_first(client, shop, diego):
     token = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link.token
     assert _post(client, "courier-ride-link-events", token, {"action": "depart"}).status_code == 409

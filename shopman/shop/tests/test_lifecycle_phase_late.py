@@ -88,10 +88,16 @@ def _alerts(order: Order):
     return OperatorAlert.objects.filter(type="lifecycle_phase_stuck", order_ref=order.ref)
 
 
+def _closed_by(order: Order, status: str, actor: str) -> None:
+    """O fechamento como o ``transition_status`` grava: um ``status_changed`` com o ator."""
+    order.emit_event("status_changed", actor=actor, payload={"old_status": "accepted", "new_status": status})
+
+
 @pytest.mark.parametrize("status", ["completed", "cancelled"])
-def test_preparo_que_chega_com_o_pedido_fechado_termina_sem_alerta(channel, status):
+def test_preparo_que_chega_com_o_pedido_fechado_pelo_reparo_termina_sem_alerta(channel, status):
     """O reparo do iFood leva o pedido a concluído num instante; o preparo chega depois."""
     order = _order(f"LATE-PREP-{status}", status)
+    _closed_by(order, status, "system:ifood:CON")
     directive = _phase_directive(order, "on_preparing")
 
     LifecyclePhaseHandler().handle(message=directive, ctx={})
@@ -99,6 +105,18 @@ def test_preparo_que_chega_com_o_pedido_fechado_termina_sem_alerta(channel, stat
     order.refresh_from_db()
     assert "on_preparing" not in ((order.data or {}).get("lifecycle") or {})
     assert not _alerts(order).exists()
+
+
+def test_preparo_obsoleto_de_pedido_real_fechado_pela_casa_segue_visivel(channel):
+    """Cancelado no Gestor: a cozinha nunca recebeu o pedido, e alguém precisa saber."""
+    order = _order("LATE-PREP-CASA", "cancelled")
+    _closed_by(order, "cancelled", "operator:joyce")
+    directive = _phase_directive(order, "on_preparing")
+
+    with pytest.raises(DirectiveTerminalError):
+        LifecyclePhaseHandler().handle(message=directive, ctx={})
+
+    assert _alerts(order).get().severity == "critical"
 
 
 def test_pedido_de_teste_nao_gera_alerta_critico(channel):

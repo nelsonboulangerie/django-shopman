@@ -362,6 +362,9 @@ PROMISE_PROPOSAL_COPY: dict[str, str] = {
     "one_item": "O item {item} do seu pedido {order_ref_short} {what}, e sinto muito por isso.",
     "many_items": "No seu pedido {order_ref_short}, {items}, e sinto muito por isso.",
     "many_items_entry": "o item {item} {what}",
+    # Vários itens na MESMA situação, uma oração só (coordenação, 21/11/2026, #2809
+    # item 5): "os itens Focaccia e Brioche não vão ficar prontos amanhã".
+    "many_items_group": "os itens {items} {what}",
     # O que a casa propõe, uma frase por escolha do diálogo.
     "swap": "Posso trocar por {offer}? Me avisa e eu ajusto por aqui ✨",
     "swap_named": "Posso trocar {item} por {offer}? Me avisa e eu ajusto por aqui ✨",
@@ -388,6 +391,16 @@ PROMISE_ITEM_SITUATION: dict[str, str] = {
     "out_of_stock_partial": "está em falta em parte ({lacking})",
     "may_be_missing": "pode faltar",
     "may_be_missing_partial": "pode faltar em parte ({lacking})",
+}
+
+#: O plural de cada situação, para os itens que estão na mesma (#2809 item 5). A falta
+#: em parte não tem plural: cada item diz quanto falta dele, numa oração própria.
+PROMISE_ITEMS_SITUATION: dict[str, str] = {
+    "not_ready": "não vão ficar prontos{day}",
+    "may_not_be_ready": "podem não ficar prontos{day}",
+    "late": "estão atrasados",
+    "out_of_stock": "estão em falta",
+    "may_be_missing": "podem faltar",
 }
 
 #: O que sai do pedido no "tirar o item": um item inteiro, vários inteiros, ou só a parte que falta.
@@ -434,11 +447,52 @@ def promise_proposal(
             item=told[0][0], what=told[0][1], order_ref_short=order_ref_short,
         )
     else:
-        entries = [PROMISE_PROPOSAL_COPY["many_items_entry"].format(item=item, what=what) for item, what in told]
+        entries = _grouped_entries(items)
         happened = PROMISE_PROPOSAL_COPY["many_items"].format(
-            items=", ".join(entries[:-1]) + " e " + entries[-1], order_ref_short=order_ref_short,
+            items=_listed(entries), order_ref_short=order_ref_short,
         )
     return " ".join((opening, happened, PROMISE_PROPOSAL_COPY[proposal].format(**values)))
+
+
+def _listed(parts: list[str]) -> str:
+    """ "A", "A e B", "A, B e C"."""
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " e " + parts[-1]
+
+
+def _grouped_entries(items: list[dict[str, str]]) -> list[str]:
+    """Uma oração por situação: os itens na mesma situação (e no mesmo dia) juntos.
+
+    A ordem é a da primeira aparição de cada situação. A falta em parte fica sozinha:
+    cada item diz quanto falta dele.
+    """
+    groups: dict[tuple[str, str], list[str]] = {}
+    order: list[tuple[str, ...]] = []
+    for index, item in enumerate(items):
+        situation, day = str(item["situation"]), str(item.get("day", ""))
+        if situation in PROMISE_ITEMS_SITUATION:
+            key = (situation, day)
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(str(item["name"]))
+        else:
+            order.append(("single", str(index)))
+    entries = []
+    for key in order:
+        if key[0] == "single":
+            item = items[int(key[1])]
+            what = PROMISE_ITEM_SITUATION[item["situation"]].format(day=item.get("day", ""), lacking=item.get("lacking", ""))
+            entries.append(PROMISE_PROPOSAL_COPY["many_items_entry"].format(item=item["name"], what=what))
+            continue
+        situation, day = key
+        names = groups[key]
+        if len(names) == 1:
+            what = PROMISE_ITEM_SITUATION[situation].format(day=day, lacking="")
+            entries.append(PROMISE_PROPOSAL_COPY["many_items_entry"].format(item=names[0], what=what))
+        else:
+            what = PROMISE_ITEMS_SITUATION[situation].format(day=day)
+            entries.append(PROMISE_PROPOSAL_COPY["many_items_group"].format(items=_listed(names), what=what))
+    return entries
 
 
 def plain_bodies() -> dict[str, str]:
