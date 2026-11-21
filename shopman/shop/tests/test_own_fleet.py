@@ -105,7 +105,7 @@ def test_assign_writes_the_house_ride_and_issues_the_link(shop, diego):
         order.refresh_from_db()
         block = courier.get_block(order)
         assert block["service"] == "casa" and block["provider"] == "own_fleet"
-        assert block["status"] == "A" and block["id_mch"] == result.ride_ref
+        assert block["status"] == "A" and block["ride_ref"] == result.ride_ref
         assert block["driver"]["name"] == "Diego" and block["ride_orders"] == ["WEB-A47", "WEB-C03"]
         assert block["estimate"]["value_q"] >= 1200
     assert result.link.order_refs == ["WEB-A47", "WEB-C03"]

@@ -7977,7 +7977,9 @@
           "responsibility": "leitura",
           "symbols": [
             "CustomerOrderSummary",
+            "_REFUND_OUTCOMES",
             "_apply_history_filter",
+            "_refund",
             "_summaries_from_orders",
             "history_summaries_for_customer",
             "history_summaries_for_customer_ref",

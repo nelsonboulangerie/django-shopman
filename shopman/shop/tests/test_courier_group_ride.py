@@ -75,7 +75,7 @@ def test_one_ride_carries_every_order_in_route_order(shop):
     for order in (far, near, farthest):
         order.refresh_from_db()
         block = courier.get_block(order)
-        assert block["id_mch"] == ride_id
+        assert block["ride_ref"] == ride_id
         assert block["ride_orders"] == ["CR-B", "CR-A", "CR-C"]
     # Cada pedido guarda a observação da SUA parada.
     assert courier.get_block(farthest)["door_charge_note"].startswith("Pedido C · Cobrar R$ 50,00 em dinheiro")
@@ -90,7 +90,7 @@ def test_one_reading_moves_every_order_of_the_ride(shop):
     a, b = _at("CR-A", -23.30, -51.16), _at("CR-B", -23.335, -51.158)
     _run(courier.request_group_dispatch([a, b], actor="operator:ana"))
     a.refresh_from_db()
-    ride_id = courier.get_block(a)["id_mch"]
+    ride_id = courier.get_block(a)["ride_ref"]
 
     courier_mock.set_status(ride_id, "E")
     CourierSyncHandler().handle(message=Directive.objects.get(topic=COURIER_SYNC), ctx={})

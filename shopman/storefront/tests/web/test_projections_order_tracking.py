@@ -559,7 +559,7 @@ class TestOrderProgressSteps:
         """P1-11: o link da TaOn ia só no aviso do WhatsApp; a página não o mostrava."""
         proj = self._dispatch_with_courier(
             order,
-            {"provider": "machine", "id_mch": "184532", "status": "E", "tracking_url": "https://taon.example/r/abc",
+            {"provider": "machine", "ride_ref": "184532", "status": "E", "tracking_url": "https://taon.example/r/abc",
              "tracking_match": "single"},
         )
 
@@ -596,7 +596,7 @@ class TestOrderProgressSteps:
     def test_stop_of_a_shared_ride_follows_its_own_proven_link(self, order, match):
         proj = self._dispatch_with_courier(
             order,
-            {"provider": "machine", "id_mch": "184532", "status": "E", "ride_orders": ["ORD-000", "ORD-001"],
+            {"provider": "machine", "ride_ref": "184532", "status": "E", "ride_orders": ["ORD-000", "ORD-001"],
              "tracking_url": "https://taon.example/r/parada-2", "tracking_match": match},
         )
 

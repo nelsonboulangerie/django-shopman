@@ -72,7 +72,7 @@ def house_ride(lead: Order, *, user=None) -> DeliveryHouseRideProjection | None:
     from shopman.shop.services.operator_orders import short_ref
 
     block = courier.get_block(lead)
-    ride_ref = str(block.get("id_mch") or "")
+    ride_ref = str(block.get("ride_ref") or "")
     if not ride_ref or not is_house(block):
         return None
     link = (CourierLink.objects.select_related("courier")
@@ -82,7 +82,7 @@ def house_ride(lead: Order, *, user=None) -> DeliveryHouseRideProjection | None:
     name = link.courier.name
     orders = house_couriers.ride_orders(link)
     live = [order for order in orders
-            if order.status != Order.Status.CANCELLED and courier.get_block(order).get("id_mch") == ride_ref]
+            if order.status != Order.Status.CANCELLED and courier.get_block(order).get("ride_ref") == ride_ref]
     statuses = [str(courier.get_block(order).get("status") or "") for order in live]
     delivered = sum(1 for status in statuses if status == "F")
     total = len(live)

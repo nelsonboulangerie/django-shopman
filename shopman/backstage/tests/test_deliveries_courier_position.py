@@ -44,7 +44,7 @@ def shop():
 
 def _accepted(shop):
     order = _dispatched_order(shop)
-    courier_mock.set_status(courier.get_block(order)["id_mch"], "A")
+    courier_mock.set_status(courier.get_block(order)["ride_ref"], "A")
     courier.apply_status(order, "A", source="poll")
     order.refresh_from_db()
     return order
@@ -53,7 +53,7 @@ def _accepted(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_the_ride_shows_where_when_and_who_said(shop):
     order = _accepted(shop)
-    ride_id = courier.get_block(order)["id_mch"]
+    ride_id = courier.get_block(order)["ride_ref"]
     courier_position.store_position(ride_id, -23.31, -51.16, source=courier_position.SOURCE_WEBHOOK,
                                     at="2026-11-20T15:45:00Z")
 
@@ -76,7 +76,7 @@ def test_reading_the_screen_never_asks_the_service(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_the_house_courier_position_says_it_came_from_his_phone(shop):
     order = _accepted(shop)
-    courier_position.store_position(courier.get_block(order)["id_mch"], -23.31, -51.16,
+    courier_position.store_position(courier.get_block(order)["ride_ref"], -23.31, -51.16,
                                     source=courier_position.SOURCE_OWN_FLEET)
     (ride,) = build_deliveries().rides
     assert ride.position.source_label == "pelo celular do entregador"
@@ -85,7 +85,7 @@ def test_the_house_courier_position_says_it_came_from_his_phone(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_the_order_panel_reads_the_same_position(shop):
     order = _accepted(shop)
-    courier_position.store_position(courier.get_block(order)["id_mch"], -23.31, -51.16,
+    courier_position.store_position(courier.get_block(order)["ride_ref"], -23.31, -51.16,
                                     source=courier_position.SOURCE_POLL, at="2026-11-20T15:45:00Z")
     position = _courier_block(order)["position"]
     assert position == {"latitude": -23.31, "longitude": -51.16, "at": "2026-11-20T15:45:00+00:00",

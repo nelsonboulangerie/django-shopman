@@ -77,7 +77,7 @@ def test_courier_status_letters_keep_the_hour_each_arrived(settings):
 
     settings.SHOPMAN_COURIER_ADAPTER = "shopman.shop.adapters.courier_mock"
     order = _order("COL-RIDE", status=Order.Status.READY)
-    order.data = {**order.data, "courier": {"id_mch": "M1", "status": "D", "status_at": {"D": "2026-10-13T12:00:00+00:00"}}}
+    order.data = {**order.data, "courier": {"ride_ref": "M1", "status": "D", "status_at": {"D": "2026-10-13T12:00:00+00:00"}}}
     order.save(update_fields=["data"])
 
     courier.apply_status(order, "A", source="poll", details={})
@@ -114,9 +114,9 @@ def test_bi_reads_real_prep_by_sku_hour_weekday_and_courier_arrival(station):
     OrderItem.objects.create(order=two, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=500, line_total_q=500)
     # Corrida: aberta 19:15, aceita 19:18 (3), coletou 19:30 (15); uma arquivada aceita em 5.
     two.data = {**two.data, "courier": {
-        "id_mch": "M2", "status": "E", "requested_at": _at(19, 15).isoformat(),
+        "ride_ref": "M2", "status": "E", "requested_at": _at(19, 15).isoformat(),
         "status_at": {"D": _at(19, 15).isoformat(), "A": _at(19, 18).isoformat(), "E": _at(19, 30).isoformat()},
-        "attempts": [{"id_mch": "M1", "status": "N", "requested_at": _at(19, 5).isoformat(),
+        "attempts": [{"ride_ref": "M1", "status": "N", "requested_at": _at(19, 5).isoformat(),
                       "status_at": {"A": _at(19, 10).isoformat()}}],
     }}
     two.save(update_fields=["data"])

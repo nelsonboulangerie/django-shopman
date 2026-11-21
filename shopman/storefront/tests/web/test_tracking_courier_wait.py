@@ -86,7 +86,7 @@ def _page(order):
 
 
 def _ride(status: str, **extra) -> dict:
-    return {"id_mch": "777", "status": status, "called_at": _ago(2), "requested_at": _ago(2), **extra}
+    return {"ride_ref": "777", "status": status, "called_at": _ago(2), "requested_at": _ago(2), **extra}
 
 
 def _assert_customer_voice(title: str, message: str) -> None:
@@ -213,7 +213,7 @@ def test_the_house_courier_reads_the_same_neutral_states(channel, monkeypatch):
     from shopman.shop.services import delivery_services
 
     monkeypatch.setattr(delivery_services, "courier_backend", lambda block=None: courier_own_fleet)
-    block = _ride("A", id_mch="CASA-1", driver={"name": "Marcos"})
+    block = _ride("A", ride_ref="CASA-1", driver={"name": "Marcos"})
 
     title, _, _ = _page(_order(channel, courier_block=block))
 
@@ -233,7 +233,7 @@ def test_owner_edited_copy_wins(channel):
 
 
 def test_customer_wait_never_reads_the_raw_letter_without_the_service():
-    """Sem corrida (sem ``id_mch``) não há estado a ler."""
+    """Sem corrida (sem ``ride_ref``) não há estado a ler."""
     assert courier.customer_wait({})["stage"] == ""
     assert courier.customer_wait({"status": "A"})["stage"] == ""
 

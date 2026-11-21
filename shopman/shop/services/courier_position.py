@@ -129,7 +129,7 @@ def _push(ride_ref: str) -> None:
 
         emit_courier_position(ride_ref)
     except Exception:
-        logger.warning("courier.position_push_failed id_mch=%s", ride_ref, exc_info=True)
+        logger.warning("courier.position_push_failed ride_ref=%s", ride_ref, exc_info=True)
 
 
 def read(ride_ref) -> dict | None:
@@ -168,7 +168,7 @@ def poll_if_silent(block: dict) -> bool:
     """
     from shopman.shop.services import delivery_services
 
-    ride_ref = str((block or {}).get("id_mch") or "")
+    ride_ref = str((block or {}).get("ride_ref") or "")
     if not ride_ref:
         return False
     state = delivery_services.ride_state(block)
@@ -180,12 +180,12 @@ def poll_if_silent(block: dict) -> bool:
     try:
         answer = get_position(ride_ref)
     except Exception as exc:
-        logger.warning("courier.position_poll_failed id_mch=%s error=%s", ride_ref, type(exc).__name__)
+        logger.warning("courier.position_poll_failed ride_ref=%s error=%s", ride_ref, type(exc).__name__)
         return False
     if not isinstance(answer, dict):
         return False
     stored = store_position(ride_ref, answer.get("lat"), answer.get("lng"), source=SOURCE_POLL)
-    logger.info("courier.position_poll id_mch=%s stored=%s", ride_ref, "yes" if stored else "no")
+    logger.info("courier.position_poll ride_ref=%s stored=%s", ride_ref, "yes" if stored else "no")
     return stored
 
 

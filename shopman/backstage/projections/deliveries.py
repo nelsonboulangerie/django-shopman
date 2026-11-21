@@ -6,7 +6,7 @@ Três partes, as mesmas no mapa e na coluna (desenho do dono, 14/11/2026, PR #24
   que ainda não têm corrida chamada. É o que o operador junta em corridas.
 - **Editando**: não mora aqui. É estado da tela (as corridas que o operador
   está juntando antes de chamar), nada é gravado até o "Chamar".
-- **Corridas**: as chamadas e vivas, agrupadas pela corrida da TaOn (``id_mch``),
+- **Corridas**: as chamadas e vivas, agrupadas pela corrida da TaOn (``ride_ref``),
   com o número que a corrida ganhou na chamada (``courier.next_ride_number``):
   ele dá a cor e a LETRA dela na tela (``courier.ride_letter``; corrida se nomeia
   por letra, nunca por número), o entregador, a posição, as paradas na ordem do
@@ -378,7 +378,7 @@ def _state(block: dict, progress: dict, *, back: bool) -> str:
     status = str(block.get("status") or "")
     if back:
         return "back"
-    if block.get("id_mch") and status == "U":
+    if block.get("ride_ref") and status == "U":
         # A própria TaOn juntou esta corrida a outra, que já tem entregador:
         # nunca é "Ninguém aceitou", e não há o que chamar de novo.
         return "grouped"
@@ -386,7 +386,7 @@ def _state(block: dict, progress: dict, *, back: bool) -> str:
         # O entregador desistiu e a TaOn já redistribui a mesma corrida: a
         # espera conta de novo, e chamar outra seria pagar duas.
         return "reopened"
-    if not block.get("id_mch") or status in ("D", "G", "P"):
+    if not block.get("ride_ref") or status in ("D", "G", "P"):
         waited = _minutes_since(str(block.get("called_at") or block.get("requested_at") or ""))
         return "late" if waited is not None and waited >= courier.LATE_SEARCH_MINUTES else "searching"
     if status in ("A", "S"):
@@ -429,7 +429,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
     raw_driver = block.get("driver") if isinstance(block.get("driver"), dict) else None
     driver = None
     if raw_driver and raw_driver.get("name"):
-        ride_id = str(block.get("id_mch") or "")
+        ride_id = str(block.get("ride_ref") or "")
         driver = DeliveryDriverProjection(
             name=str(raw_driver["name"]),
             phone=str(raw_driver.get("phone") or ""),
@@ -438,8 +438,8 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
                        if state in ("coming", "atStore", "route") and courier.has_driver_photo(ride_id) else ""),
         )
     position = None
-    if block.get("id_mch") and state in ("coming", "atStore", "route"):
-        position = courier_position_projection(block["id_mch"])
+    if block.get("ride_ref") and state in ("coming", "atStore", "route"):
+        position = courier_position_projection(block["ride_ref"])
     # A cotação da rota mora no pedido que abriu a corrida, que nem sempre é o
     # primeiro da fila: vale a primeira parada que tem um custo honesto.
     stop_refs = [stop.ref for stop in stops]
@@ -455,7 +455,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
     custody_line = (_custody_line([by_ref[ref] for ref in sequence])
                     if driver is not None and state in ("coming", "atStore") else "")
     return DeliveryRideProjection(
-        key=str(block.get("id_mch") or f"call:{lead.ref}"),
+        key=str(block.get("ride_ref") or f"call:{lead.ref}"),
         number=int(block.get("ride_number") or 0),
         letter=courier.ride_letter(block.get("ride_number")),
         state=state,
@@ -537,7 +537,7 @@ def _split(orders: list[Order], tasks: dict) -> tuple[dict[str, list[Order]], li
     for order in orders:
         block = courier.get_block(order)
         if block.get("ride_number") and courier.ride_is_live(order, tasks=tasks):
-            key = str(block.get("id_mch") or f"call:{block.get('ride_number')}:{block.get('called_at') or order.ref}")
+            key = str(block.get("ride_ref") or f"call:{block.get('ride_number')}:{block.get('called_at') or order.ref}")
             rides.setdefault(key, []).append(order)
         elif order.status in courier.RIDE_ORDER_STATUSES and not _is_future_preorder(order, today=today):
             waiting.append(order)
@@ -555,7 +555,7 @@ def _tasks_needed(orders: list[Order]) -> list[Order]:
     needed = []
     for order in orders:
         block = courier.get_block(order)
-        if not block.get("id_mch") or order.status in courier.RIDE_ORDER_STATUSES:
+        if not block.get("ride_ref") or order.status in courier.RIDE_ORDER_STATUSES:
             needed.append(order)
     return needed
 
@@ -667,7 +667,7 @@ def deliveries_waiting_count() -> int | None:
         orders = _delivery_orders()
         pending = [
             order for order in orders
-            if courier.get_block(order).get("ride_number") and not courier.get_block(order).get("id_mch")
+            if courier.get_block(order).get("ride_number") and not courier.get_block(order).get("ride_ref")
         ]
         tasks = courier.dispatch_tasks_for(pending) if pending else {}
         return len(_split(orders, tasks)[1])

@@ -118,6 +118,31 @@ test.describe("Entregas: sugestões da casa", () => {
     await page.getByRole("button", { name: "Agora não", exact: true }).click();
     await expect(page.locator("[data-ride-suggestions]")).toHaveCount(0);
   });
+
+  // #2874 (prévia 2A): a sugestão também aparece no mapa, tracejada e cinza, com o preço.
+  test("a rota sugerida aparece no mapa enquanto a sugestão está no cartão", async ({ page }) => {
+    await page.goto("/delivery");
+    const map = page.locator("[data-deliveries-map]").first();
+    await expect(map.locator("path[data-map-suggestion]")).toHaveCount(1);
+    await expect(map.locator("[data-map-suggestion-label]")).toHaveText("A47 + C03 · R$ 16,50");
+    await expect(map.locator("[data-map-legend-suggestion]")).toHaveText("Sugestão");
+    // Só leitura: a etiqueta não é alvo de toque e não cobre o pino de ninguém.
+    await expect(map.locator("[data-map-suggestion-label]")).toHaveCSS("pointer-events", "none");
+    await page.getByRole("button", { name: "Agora não", exact: true }).click();
+    await expect(map.locator("[data-map-suggestion]")).toHaveCount(0);
+    await expect(map.locator("[data-map-suggestion-label]")).toHaveCount(0);
+    await expect(map.locator("[data-map-legend-suggestion]")).toHaveCount(0);
+  });
+
+  test("a rota sugerida some quando a sugestão vira corrida em edição", async ({ page }) => {
+    await page.goto("/delivery");
+    const map = page.locator("[data-deliveries-map]").first();
+    await expect(map.locator("path[data-map-suggestion]")).toHaveCount(1);
+    await page.getByRole("button", { name: "Chamar juntas", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Chamar a corrida C" })).toBeVisible();
+    await expect(map.locator("[data-map-suggestion]")).toHaveCount(0);
+    await expect(map.locator("[data-map-suggestion-label]")).toHaveCount(0);
+  });
 });
 
 // #2908: no celular a legenda aberta cobria pinos ("Entregador" saía "Entrega…" sob o A47).

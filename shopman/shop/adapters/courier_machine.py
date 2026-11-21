@@ -344,7 +344,10 @@ def estimate(*, pickup: dict, dropoff: dict, with_return: bool = False,
 
 
 def dispatch(payload: dict) -> CourierDispatchResult:
-    """Abre a corrida (POST /abrirSolicitacao). Retorna o ``id_mch``.
+    """Abre a corrida (POST /abrirSolicitacao). Retorna o identificador da corrida.
+
+    A TaOn o chama ``id_mch`` (campo dela, que só vive aqui); dentro da casa ele é o
+    ``ride_ref`` do bloco ``courier``.
 
     ``payload`` é o corpo pronto da Machine (montado por
     ``shopman.shop.services.courier.build_machine_payload``).
@@ -633,7 +636,7 @@ def read_ride(courier_ref: str) -> dict:
             continue
         cache.set(_READ_VIA_CACHE_KEY, via, 3600)
         if errors:
-            logger.warning("courier.read_fallback id_mch=%s via=%s antes=%s", courier_ref, via,
+            logger.warning("courier.read_fallback ride_ref=%s via=%s antes=%s", courier_ref, via,
                            " | ".join(str(e) for e in errors))
         return {**snapshot, "via": via}
     raise CourierError(

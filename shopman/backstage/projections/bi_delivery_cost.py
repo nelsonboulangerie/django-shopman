@@ -6,7 +6,7 @@ clientes pagaram nos mesmos pedidos. A diferença é o que a entrega deixa ou
 custa à casa.
 
 - **Custo** = ``final_value_q`` de cada corrida (o valor que a TaOn fecha no
-  ``F``), contado UMA vez por corrida (``id_mch``): numa corrida com várias
+  ``F``), contado UMA vez por corrida (``ride_ref``): numa corrida com várias
   paradas cada pedido guarda o valor inteiro, e somar por pedido contaria em
   dobro. Corrida terminada sem valor final entra pela cotação
   (``estimate.value_q``) e é contada em ``estimated_rides``. Corrida cancelada
@@ -135,7 +135,7 @@ def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | Non
         for ride in [*(block.get("attempts") or []), block]:
             if not isinstance(ride, dict):
                 continue
-            ride_id = str(ride.get("id_mch") or "")
+            ride_id = str(ride.get("ride_ref") or "")
             if not ride_id or ride_id in seen:
                 continue
             requested = _parse(ride.get("requested_at"))

@@ -149,7 +149,7 @@ pedido que teve "Chamar de novo" já abriu duas corridas com o mesmo `id_externo
 ```python
 from shopman.orderman.models import Order
 sum(1 for o in Order.objects.filter(data__courier__has_key="attempts")
-    if len(o.data["courier"]["attempts"]) > 1 or o.data["courier"].get("id_mch"))
+    if len(o.data["courier"]["attempts"]) > 1 or o.data["courier"].get("ride_ref"))
 ```
 
 Maior que zero: a TaOn aceita o `id_externo` repetido depois de uma corrida encerrada.

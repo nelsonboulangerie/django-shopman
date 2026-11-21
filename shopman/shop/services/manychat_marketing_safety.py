@@ -150,6 +150,9 @@ _ORDER = ("order_ref_short",)
 _ORDER_BUTTON = ("order_ref", "order_ref_short")
 TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "order_received": (*_CUSTOMER, *_ORDER_BUTTON),
+    # A resposta da equipe que chegou fora da janela de 24 horas (WP-16, Concierge): o
+    # modelo não tem variável; a resposta sai na próxima mensagem do cliente.
+    "concierge_answer_ready": (),
     "order_received_outside_hours": (*_CUSTOMER, *_ORDER_BUTTON),
     "order_accepted": (*_ORDER_BUTTON, "total", "order_total_display"),
     # Variante do `order_accepted` na encomenda (`pedido_encomenda_confirmada`):

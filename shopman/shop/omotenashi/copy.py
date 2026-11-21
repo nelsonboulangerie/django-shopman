@@ -584,6 +584,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STATUS_PAYMENT_EXPIRED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento expirado")},
     },
+    # Pedido cancelado cujo dinheiro já voltou / ainda está voltando (lista da Conta).
+    "TRACKING_STATUS_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
+    },
+    "TRACKING_STATUS_REFUND_IN_PROGRESS": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolução em andamento")},
+    },
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando a loja")},
     },

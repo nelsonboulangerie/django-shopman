@@ -77,7 +77,7 @@ def test_background_writer_keeps_note_and_captured_payment(writer):
     fresh.save(update_fields=["data"])
     if writer == "courier":
         with patch.object(courier, "_emit_sse"):
-            courier._save_block(stale, {"id_mch": "LAB", "status": "A"})
+            courier._save_block(stale, {"ride_ref": "LAB", "status": "A"})
     elif writer == "gateway_throttle":
         payment._stamp_gateway_check(stale)
     else:

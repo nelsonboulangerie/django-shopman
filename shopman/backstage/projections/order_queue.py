@@ -1770,17 +1770,17 @@ def _courier_block(order: Order) -> dict | None:
             return None
 
         ride_status = str(block.get("status") or "")
-        active = bool(block.get("id_mch")) and ride_status not in TERMINAL_STATUSES
+        active = bool(block.get("ride_ref")) and ride_status not in TERMINAL_STATUSES
         order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
         estimate_display = courier_estimate_display(estimate)
 
         position = None
-        if active and block.get("id_mch"):
+        if active and block.get("ride_ref"):
             from shopman.backstage.projections.courier_position import courier_position_projection
 
-            point = courier_position_projection(block["id_mch"])
+            point = courier_position_projection(block["ride_ref"])
             position = asdict(point) if point else None
 
         from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
