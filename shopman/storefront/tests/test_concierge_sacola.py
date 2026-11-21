@@ -138,3 +138,45 @@ def test_without_purchase_authority_the_reply_is_todays(conversation, outbox, me
 
     assert _cart(conversation) == {}
     assert "Croissant" in reply, "a resposta de hoje: o cardápio"
+
+
+def test_a_manychat_customer_is_identified_by_the_subscriber_and_gets_the_bag(conversation, outbox, menu, customer, monkeypatch):
+    """Ingresso sem identificador (ManyChat): a identidade vem do provedor pelo assinante,
+    nunca do perfil do corpo, e o vínculo verificado abre a sacola do ADR-050."""
+    from shopman.shop.models import ConversationBinding
+    from shopman.storefront.concierge import transport
+    from shopman.storefront.concierge.contracts import IdentityResolution
+
+    ConversationBinding.objects.filter(conversation=conversation).update(identity_assurance="transport_subject")
+    Conversation.objects.filter(pk=conversation.pk).update(customer_ref="", phone="", customer_name="")
+    seen = []
+
+    def identity_for(binding, profile=None):
+        seen.append(dict(profile or {}))
+        return IdentityResolution(customer_uuid=customer.uuid, assurance="verified_customer",
+                                  phone=customer.phone, name=customer.name)
+
+    monkeypatch.setattr(transport, "identity_for", identity_for)
+
+    reply = _turn(conversation, "quero 2 croissant", [_act("order", "quero 2 croissant", "croissant", 2)])
+
+    assert seen == [{}], "o perfil do corpo não entra na identificação"
+    assert ConversationBinding.objects.get(conversation=conversation).identity_assurance == "verified_customer"
+    conversation.refresh_from_db()
+    assert conversation.customer_ref == customer.ref
+    assert _cart(conversation) == {"CROISSANT": 2}, reply
+
+
+def test_identified_on_a_read_only_connection_the_bag_does_not_change(conversation, outbox, menu, customer, monkeypatch, settings):
+    from shopman.shop.models import ConversationBinding
+    from shopman.storefront.concierge import transport
+    from shopman.storefront.concierge.contracts import IdentityResolution
+
+    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "read_only": True}
+    ConversationBinding.objects.filter(conversation=conversation).update(identity_assurance="transport_subject")
+    monkeypatch.setattr(transport, "identity_for", lambda binding, profile=None: IdentityResolution(
+        customer_uuid=customer.uuid, assurance="verified_customer", phone=customer.phone, name=customer.name))
+
+    _turn(conversation, "quero 2 croissant", [_act("order", "quero 2 croissant", "croissant", 2)])
+
+    assert _cart(conversation) == {}

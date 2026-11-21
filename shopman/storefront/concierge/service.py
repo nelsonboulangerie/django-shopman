@@ -909,6 +909,14 @@ def _claim(conversation_id: int, binding_id: int):
         return conversation, binding, inbound
 
 
+def _read_only(binding) -> bool:
+    """A conexão (ou a Concierge inteira) está em só leitura: nada muda a sacola."""
+    from . import transport
+
+    connection = transport.connection_for(binding)
+    return bool(config().get("read_only") or (connection and connection.options.get("read_only")))
+
+
 def _bump_turn_counter(conversation: Conversation) -> int:
     today = timezone.localdate()
     if conversation.turns_day != today:
@@ -1006,19 +1014,18 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
         # Intenções no plural (OBS0310-Q), o único caminho (WP-08): a parte sensível não
         # cala as outras. A decisão de equipe vai junto para o turno, que responde as
         # dúvidas simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
-        if (
-            binding.identity_assurance
-            != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
-            and not conversation._limited_event_assurance
-        ):
-            identify(conversation, binding, inbound[0].envelope.get("profile") or {})
+        if binding.identity_assurance != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER:
+            # Ingresso sem identificador de mensagem (o do ManyChat, ADR-050): a identidade vem
+            # do provedor pelo assinante (``getInfo`` no ManyChat), nunca do perfil que veio no
+            # corpo. Sem isto, o vínculo verificado nunca nascia por esse ingresso, e a sacola
+            # do ADR-050 não abria para ninguém.
+            limited = conversation._limited_event_assurance
+            identify(conversation, binding, {} if limited else (inbound[0].envelope.get("profile") or {}))
             # O nome que a identificação trouxe agora também sai do que vai à leitura.
             observation_privacy.bind_known_names(conversation.customer_name or "")
-            conversation._commercial_authority = bool(
-                conversation.customer_ref
-                and binding.identity_assurance == "verified_customer"
-            )
-            conversation._cart_authority = conversation._cart_authority or conversation._commercial_authority
+            verified = bool(conversation.customer_ref and binding.identity_assurance == "verified_customer")
+            conversation._commercial_authority = verified and not limited
+            conversation._cart_authority = conversation._cart_authority or (verified and not _read_only(binding))
         assert_turn_authority(conversation, for_mutation=False)
         if all(
             (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES

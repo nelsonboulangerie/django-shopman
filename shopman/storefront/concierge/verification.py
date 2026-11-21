@@ -62,6 +62,12 @@ TAKEN_OVER = "taken_over"
 NOW = "now"  # casa aberta: "em até 10 minutos"
 LATER = "later"  # casa fechada (ou fechando): "até amanhã às 7h10"
 NO_PROMISE = "no_promise"  # a resposta não caberia na janela de 24 horas
+#: A equipe respondeu fora da janela (WP-16): saiu a mensagem aprovada pela Meta, e a
+#: resposta espera a próxima mensagem do cliente, que reabre a janela.
+STORED = "stored"
+#: O evento de notificação do modelo aprovado ("A equipe respondeu a sua pergunta..."):
+#: ligado quando tem flow no ManyChat (``MANYCHAT_FLOW_MAP`` ou ``NotificationTemplate``).
+ANSWER_READY_EVENT = "concierge_answer_ready"
 
 #: Perguntas num cartão só; a partir daí a equipe já tem o bastante para assumir.
 MAX_QUESTIONS = 5
@@ -147,6 +153,33 @@ def memory_view(conversation) -> dict | None:
     }
 
 
+def stored_view(conversation) -> dict | None:
+    """A resposta da equipe guardada (fora da janela) que a próxima mensagem do cliente recebe."""
+    record = (getattr(conversation, "flags", None) or {}).get(FLAG_KEY)
+    if isinstance(record, dict) and record.get("v") == VERSION and record.get("status") == STORED and record.get("reply"):
+        return {"id": record.get("id", ""), "reply": record["reply"]}
+    return None
+
+
+def deliver_stored(flags: dict, record_id: str) -> dict:
+    """``flags`` com a resposta guardada marcada como entregue (uma vez só)."""
+    record = flags.get(FLAG_KEY)
+    if isinstance(record, dict) and record.get("id") == record_id and record.get("status") == STORED:
+        flags = {**flags, FLAG_KEY: {**record, "status": ANSWERED, "delivered_at": _now().isoformat()}}
+    return flags
+
+
+def answer_template_ready() -> bool:
+    """O modelo aprovado pela Meta está ligado (tem flow)? Sem ele, nada sai fora da janela."""
+    try:
+        from shopman.shop.adapters import notification_manychat
+
+        return bool(notification_manychat.sends_as_flow(ANSWER_READY_EVENT))
+    except Exception:
+        logger.warning("concierge.verification.template_lookup_failed", exc_info=True)
+        return False
+
+
 # ── O prazo honesto ───────────────────────────────────────────────────
 
 
@@ -189,7 +222,10 @@ def promise_for(conversation, *, now: datetime | None = None) -> dict:
     nudge_due, state = business_calendar.next_operational_deadline(timeout=timedelta(minutes=nudge), now=now)
     handoff_due, _state = business_calendar.next_operational_deadline(timeout=timedelta(minutes=handoff), now=now)
     window_until = _window_until(conversation)
-    if nudge_due is None or handoff_due is None or (window_until is not None and handoff_due > window_until):
+    # Com o modelo aprovado ligado (WP-16), a resposta da equipe chega mesmo depois da
+    # janela: a promessa vale fora dela. Sem ele, falha fechado (WP-05).
+    beyond_window = window_until is not None and handoff_due is not None and handoff_due > window_until
+    if nudge_due is None or handoff_due is None or (beyond_window and not answer_template_ready()):
         when = business_calendar.format_next_opening(state.next_open_at, now=now) if state.is_closed else ""
         return {"kind": NO_PROMISE, "minutes": nudge, "when": when, "nudge_due_at": "", "handoff_due_at": ""}
     kind = NOW if state.is_open and nudge_due <= now + timedelta(minutes=nudge, seconds=59) else LATER
@@ -516,6 +552,11 @@ def answer(alert_pk: int, text: str, *, actor: str):
     if reviewed.held:
         return DeskResult(False, "house_rule_held", ",".join(sorted({v.rule for v in reviewed.held})), reply)
     reply = reviewed.texts[0]
+    window_until = _window_until(conversation)
+    if window_until is not None and _now() >= window_until:
+        # Fora da janela de 24 horas (WP-16): texto livre não chega. Com o modelo aprovado,
+        # ele avisa e a resposta fica guardada para a próxima mensagem do cliente.
+        return _answer_later(conversation, record, cleaned, reply, actor=actor)
     message = send_out_of_turn(conversation, reply, receipts=frozenset({house_rules.VERIFY}))
     if message is None or message.transport_state != "accepted":
         code = (getattr(message, "envelope", None) or {}).get("code") or getattr(message, "transport_state", "")
@@ -523,6 +564,43 @@ def answer(alert_pk: int, text: str, *, actor: str):
     closed = _close(conversation.pk, record["id"], status=ANSWERED, actor=actor, answer=cleaned)
     if closed is not None:
         _resolve_card(conversation, closed, actor=actor or ACTOR)
+    return DeskResult(True, sent_text=reply)
+
+
+def _answer_later(conversation, record: dict, cleaned: str, reply: str, *, actor: str):
+    from shopman.shop.adapters import notification_manychat
+    from shopman.shop.concierge_verification import DeskResult
+    from shopman.shop.models import ConversationMessage
+
+    if not answer_template_ready():
+        return DeskResult(False, "not_sent", "window_closed", reply)
+    latest = (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND, binding__isnull=False)
+        .select_related("binding").order_by("-pk").first()
+    )
+    if latest is None:
+        return DeskResult(False, "not_sent", "no_binding", reply)
+    try:
+        sent = notification_manychat.send(
+            latest.binding.subject, ANSWER_READY_EVENT, {"customer_name": conversation.customer_name or ""},
+        )
+    except Exception:
+        logger.warning("concierge.verification.template_failed conversation=%s", conversation.pk, exc_info=True)
+        sent = False
+    if not (sent is True or (isinstance(sent, dict) and sent.get("success"))):
+        return DeskResult(False, "not_sent", "template_not_sent", reply)
+    stored = _close(conversation.pk, record["id"], status=STORED, actor=actor, answer=cleaned)
+    if stored is None:
+        return DeskResult(False, "not_open")
+    from shopman.shop.models import Conversation
+
+    with transaction.atomic():
+        locked = Conversation.objects.select_for_update().get(pk=conversation.pk)
+        flags = dict(locked.flags or {})
+        if (flags.get(FLAG_KEY) or {}).get("id") == record["id"]:
+            flags[FLAG_KEY] = {**flags[FLAG_KEY], "reply": reply}
+            Conversation.objects.filter(pk=conversation.pk).update(flags=flags)
+    _resolve_card(conversation, stored, actor=actor or ACTOR)
     return DeskResult(True, sent_text=reply)
 
 

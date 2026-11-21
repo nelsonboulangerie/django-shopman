@@ -39,7 +39,7 @@ import type { BalancePixStatus, HandOverBody } from "~/presentation/balanceCharg
 import type { POSPaymentResultProjection } from "~/types/pos";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { orderUrl } from "~/presentation/crossAppLinks";
-import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
+import { PREORDERS_HOME, preorderBackTarget, promiseAlert } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
 import { courierPanelVisible, showsDeliveryExitNotice } from "~/presentation/courier";
@@ -155,6 +155,19 @@ const swapAlerts = computed<OperatorScreenAlert[]>(() => {
   }
   return [];
 });
+// A promessa em risco (#2721 item 3): o mesmo fato do Gestor, no topo, com o botão
+// que resolve ("Resolver no Gestor"). O Gestor abre na janela certa: instalado, ele
+// tem janela própria; na aba, a mesma (quem decide é o kit).
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
+function openInOrders(href: string) {
+  const attrs = crossAppAttrs(href);
+  window.open(href, attrs.target, attrs.rel);
+}
+const promiseAlerts = computed<OperatorScreenAlert[]>(() => {
+  const alert = promiseAlert(detail.value?.promise, openInOrders);
+  return alert ? [alert] : [];
+});
+
 function goToComment() {
   reveal(() => layout.value?.querySelector<HTMLElement>("[data-order-comment] textarea"), { align: "center" });
 }
@@ -371,7 +384,7 @@ function goBack() {
     wide
     :fill="receiving"
     :compact-options="compactOptions"
-    :alerts="receiving ? pixAlerts : swapAlerts"
+    :alerts="receiving ? pixAlerts : [...swapAlerts, ...promiseAlerts]"
     @refresh="refreshPos(); refresh(); swapper.load()"
   >
     <!-- Celular: o voltar e a encomenda aberta na linha do chão (a identidade do

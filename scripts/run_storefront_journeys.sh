@@ -6,6 +6,11 @@
 #
 #   DATABASE_URL=postgres://… scripts/run_storefront_journeys.sh            # todas
 #   DATABASE_URL=postgres://… scripts/run_storefront_journeys.sh j7 --grep J7
+#   JOURNEYS_CLOSING_IN_MINUTES=4 DATABASE_URL=postgres://… scripts/run_storefront_journeys.sh j5 --grep J5
+#
+# Com JOURNEYS_CLOSING_IN_MINUTES=N a pilha é a da casa que fecha (J5): hoje a loja abre à
+# 0h e fecha daqui a N minutos (`seed --closing-in-minutes`), sem o 24 h. Só a J5 serve
+# nessa pilha; as outras precisam da loja aberta.
 #
 # O banco é APAGADO pelo seed (`--flush`): use um banco só de jornada, nunca o de dev.
 # Só mata o que este script subiu.
@@ -74,16 +79,24 @@ for port in "${DJANGO_PORT}" "${PROXY_PORT}" "${STORE_PORT}" "${GESTOR_PORT}"; d
   fi
 done
 
-echo "── Banco e seed (loja aberta 24 h) ──"
-"${PYTHON_BIN}" manage.py migrate --noinput
-# O interruptor do piloto de staging abre a loja a qualquer hora; restrito a um canal que
-# não existe, ele não aceita pedido nenhum sozinho. Só o seed o recebe.
-SHOPMAN_STAGING_AUTOPILOT=true SHOPMAN_STAGING_AUTOPILOT_CHANNELS=nenhum-canal \
-  "${PYTHON_BIN}" manage.py seed --flush --profile qa
-
+# Os builds vêm antes do seed: na pilha da casa que fecha (J5), o relógio começa a contar
+# no seed, e minutos de build não podem comer o tempo até o fechamento.
 echo "── Builds da loja e do Gestor ──"
 (cd "${STORE_DIR}" && npx nuxt build) >"${LOGS}/build-loja.log" 2>&1
 (cd "${GESTOR_DIR}" && npx nuxt build) >"${LOGS}/build-gestor.log" 2>&1
+
+"${PYTHON_BIN}" manage.py migrate --noinput
+if [[ -n "${JOURNEYS_CLOSING_IN_MINUTES:-}" ]]; then
+  echo "── Banco e seed (a casa fecha daqui a ${JOURNEYS_CLOSING_IN_MINUTES} min) ──"
+  "${PYTHON_BIN}" manage.py seed --flush --profile qa --closing-in-minutes "${JOURNEYS_CLOSING_IN_MINUTES}"
+  export JOURNEY_STORE_CLOSING=1
+else
+  echo "── Banco e seed (loja aberta 24 h) ──"
+  # O interruptor do piloto de staging abre a loja a qualquer hora; restrito a um canal que
+  # não existe, ele não aceita pedido nenhum sozinho. Só o seed o recebe.
+  SHOPMAN_STAGING_AUTOPILOT=true SHOPMAN_STAGING_AUTOPILOT_CHANNELS=nenhum-canal \
+    "${PYTHON_BIN}" manage.py seed --flush --profile qa
+fi
 
 echo "── Pilha ──"
 DJANGO_SETTINGS_MODULE=shopman.shop.tests.e2e.settings_e2e \
