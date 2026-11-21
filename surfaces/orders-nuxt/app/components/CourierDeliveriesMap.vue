@@ -93,6 +93,11 @@ const bounds = computed(() => {
 });
 const box = ref<HTMLElement | null>(null);
 const size = ref({ w: 1, h: 1 });
+// No mapa estreito (celular) a legenda aberta cobriria pinos: ela começa recolhida num
+// botão no canto e abre por cima do mapa só quando o operador pede (#2908).
+const LEGEND_INLINE_MIN_WIDTH = 560;
+const legendCollapsible = computed(() => size.value.w < LEGEND_INLINE_MIN_WIDTH);
+const legendOpen = ref(false);
 let observer: ResizeObserver | null = null;
 
 // ── o mapa de verdade ──
@@ -111,6 +116,10 @@ let programmatic = false;
 const google = useGoogleMap();
 let mapLibs: Awaited<ReturnType<typeof google.load>> | null = null;
 const real = computed(() => Boolean(pane.value) && !google.refused.value);
+// A faixa do topo é da legenda (aberta no mapa largo, o botão "Legenda" no estreito): o
+// quadro começa abaixo dela, para nenhum pino ficar escondido por baixo (#2908).
+const LEGEND_BAND = 64;
+const topBand = computed(() => (props.bare ? 0 : LEGEND_BAND));
 
 function px(p: LatLng): { x: number; y: number } {
   if (real.value && overlay) {
@@ -121,7 +130,7 @@ function px(p: LatLng): { x: number; y: number } {
   const b = bounds.value;
   return {
     x: ((p.longitude - b.minLng) / (b.maxLng - b.minLng)) * size.value.w,
-    y: (1 - (p.latitude - b.minLat) / (b.maxLat - b.minLat)) * size.value.h,
+    y: topBand.value + (1 - (p.latitude - b.minLat) / (b.maxLat - b.minLat)) * (size.value.h - topBand.value),
   };
 }
 
@@ -133,7 +142,7 @@ function fit(force = false) {
   const area = new mapLibs.core.LatLngBounds();
   for (const p of everyPoint.value) area.extend({ lat: p.latitude, lng: p.longitude });
   programmatic = true;
-  map.fitBounds(area, props.bare ? 28 : 56);
+  map.fitBounds(area, props.bare ? 28 : { top: 56 + topBand.value, right: 56, bottom: 56, left: 56 });
 }
 function showAll() {
   userMoved.value = false;
@@ -377,12 +386,16 @@ const places = computed(() => {
     </Teleport>
 
     <!-- legenda pela FORMA, nunca pela cor: a cor é sempre a da corrida -->
-    <div v-if="!bare" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :style="{ background: tokens.chip, color: tokens.text }" data-map-legend>
+    <div v-if="!bare && legendCollapsible && !legendOpen" class="absolute top-3 left-3 z-30 rounded-md shadow-sm">
+      <NuxtButton color="neutral" variant="outline" icon="i-lucide-info" label="Legenda" class="min-h-11" aria-expanded="false" data-map-legend-toggle @click="legendOpen = true" />
+    </div>
+    <div v-if="!bare && (!legendCollapsible || legendOpen)" class="absolute inset-x-3 top-3 mx-auto flex w-fit flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 op-micro shadow-sm" :class="legendCollapsible ? 'z-40 pr-1' : ''" :style="{ background: tokens.chip, color: tokens.text }" data-map-legend>
       <span class="flex items-center gap-1"><span class="size-3.5 rounded-full border-2 border-black bg-white" />Aguardando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M2 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-dasharray="0.1 5" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><defs><pattern id="legend-stripe" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="3" fill="#fff" /><rect width="1.1" height="3" :fill="tokens.neutral" /></pattern></defs><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="url(#legend-stripe)" :stroke="tokens.neutral" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 3.2" /></svg>Editando</span>
       <span class="flex items-center gap-1"><svg width="16" height="6" aria-hidden="true"><path d="M1 3H15" :stroke="tokens.neutral" stroke-width="3" stroke-linecap="round" /></svg><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" fill="#fff" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Corrida</span>
       <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polygon points="12.2,9.1 9.1,12.2 4.9,12.2 1.8,9.1 1.8,4.9 4.9,1.8 9.1,1.8 12.2,4.9" :fill="tokens.neutral" :stroke="tokens.neutral" stroke-width="2.5" stroke-linejoin="round" /></svg>Entregue</span>
       <span class="flex items-center gap-1"><span class="grid h-4 w-6 place-items-center rounded-full" :style="{ background: tokens.neutral, color: tokens.chip }"><NuxtIcon name="i-lucide-bike" class="size-3" /></span>Entregador</span>
+      <NuxtButton v-if="legendCollapsible" color="neutral" variant="ghost" icon="i-lucide-x" class="min-h-11 min-w-11 justify-center" aria-label="Fechar a legenda" aria-expanded="true" data-map-legend-close @click="legendOpen = false" />
     </div>
 
     <!-- Depois do gesto do operador o mapa fica onde ele deixou; isto devolve o quadro inteiro. -->
