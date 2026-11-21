@@ -75,6 +75,21 @@ describe('BottomSheet: "tem mais abaixo"', () => {
     expect(hint()).toBeNull()
   })
 
+  // O toque na dica foca o botão dela. Trazer ESSE foco à vista (o que a folha faz
+  // com campo focado, por causa do teclado) cancelava a rolagem até o fim.
+  it('o foco no botão da dica não puxa a rolagem de volta', async () => {
+    await mountSheet()
+    deliver!([still])
+    await nextTick()
+    const jump = hint()!.querySelector('[data-more-below-jump]') as HTMLElement
+    const reveal = vi.fn()
+    jump.scrollIntoView = reveal
+    jump.focus()
+    jump.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await new Promise(resolve => requestAnimationFrame(() => resolve(null)))
+    expect(reveal).not.toHaveBeenCalled()
+  })
+
   it('a dica mora na folha (sem teleporte) e desbota para a cor dela', async () => {
     await mountSheet('muted')
     deliver!([still])

@@ -61,6 +61,9 @@ function revealFocused () {
   if (!import.meta.client) return
   const active = document.activeElement as HTMLElement | null
   if (!active || !scrollEl.value?.contains(active)) return
+  // O toque na dica "tem mais abaixo" foca o botão dela, e trazer ESSE foco à vista
+  // cancelava a rolagem suave até o fim que o próprio toque pediu (#2414).
+  if (active.closest('[data-more-below]')) return
   active.scrollIntoView({ block: 'nearest' })
 }
 function onFocusIn () {
