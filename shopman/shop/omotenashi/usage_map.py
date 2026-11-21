@@ -144,6 +144,14 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
     ),
+    "CONCIERGE_CART_NEXT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_NOW": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
     "CONCIERGE_CART_REMOVED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),

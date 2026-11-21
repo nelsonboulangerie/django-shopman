@@ -111,6 +111,10 @@ CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
 CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
 CART_ASK_QTY_COPY_KEY = "CONCIERGE_CART_ASK_QTY"
 CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
+#: O próximo passo depois de mostrar a sacola: o cliente sabe o que pode fazer (conferência, 21/11/2026).
+CART_NEXT_COPY_KEY = "CONCIERGE_CART_NEXT"
+#: "as 2 baguettes que pedi" com sacola aberta: é a sacola de agora, não um pedido antigo.
+CART_NOW_COPY_KEY = "CONCIERGE_CART_NOW"
 DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
 #: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
@@ -912,7 +916,8 @@ def _cart_change(act: Act, *, conversation, context, copy):
     if not result.get("ok"):
         return PartReply(act, text=tools_module.render_result("set_item", result), tool_events=events)
     lead = _fill(copy(CART_REMOVED_COPY_KEY if removing else CART_UPDATED_COPY_KEY) or "", item=name)
-    text = "\n".join(part for part in (lead, tools_module.render_result("set_item", result)) if part)
+    following = copy(CART_NEXT_COPY_KEY) if result.get("lines") else ""
+    text = "\n".join(part for part in (lead, tools_module.render_result("set_item", result), following) if part)
     memo = dialogue.memo_of("set_item", {"sku": sku, "qty": target}, result) or {}
     return PartReply(act, text=text, memo=memo, tool_events=events)
 
@@ -1182,6 +1187,20 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             run.replies.append(search(act))
             continue
         if act.act == STATUS:
+            cart = (
+                tools_module.execute("view_cart", {}, context(""))
+                if conversation is not None and _cart_authorized(conversation) else {}
+            )
+            if cart.get("lines"):
+                # Com sacola aberta, "o que pedi" é a sacola de agora (ensaio do dono, 21/11/2026:
+                # "as 2 baguettes que pedi" trouxe um pedido de 17/11 com o total vazio).
+                text = "\n".join(part for part in (
+                    copy(CART_NOW_COPY_KEY), tools_module.render_result("view_cart", cart), copy(CART_NEXT_COPY_KEY),
+                ) if part)
+                run.replies.append(PartReply(
+                    act, text=text, tool_events=[{"name": "view_cart", "input": {}, "ok": True}],
+                ))
+                continue
             result = tools_module.execute("order_status", {}, context(act.span))
             run.replies.append(PartReply(
                 act, text=tools_module.render_result("order_status", result),
