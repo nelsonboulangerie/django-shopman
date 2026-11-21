@@ -17,11 +17,11 @@ export const operationalCopy = {
       description: 'Atualize a página ou tente novamente pelo cardápio.'
     },
     checkout: {
-      title: 'Não foi possível carregar o checkout',
-      description: 'Volte ao carrinho, revise os itens e tente novamente.'
+      title: 'Não foi possível carregar a finalização do pedido',
+      description: 'Volte à sacola, revise os itens e tente novamente.'
     },
     cart: {
-      title: 'Não foi possível carregar o carrinho',
+      title: 'Não foi possível carregar a sacola',
       description: 'Atualize a página antes de finalizar o pedido.'
     }
   },

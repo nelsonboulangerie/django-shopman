@@ -951,6 +951,51 @@ def _cart_correction(conversation, resolution, *, memory, memos, binding, channe
     )
 
 
+def build_faq_client():
+    """``(cliente, modelo)`` da conversa (propósito ``concierge``), ou ``(None, "")``.
+
+    Sem conexão, sem chave, sem liberação para mensagem de cliente ou com o freio fechado
+    (``ai.AINotConfigured`` e suas filhas): ``(None, "")``, e vale a FAQ direta.
+    """
+    from shopman.shop import ai
+
+    try:
+        return ai.anthropic_client("concierge", timeout=READ_TIMEOUT_S * 2, max_retries=0)
+    except ai.AINotConfigured:
+        return None, ""
+
+
+def _faq_by_model(act: Act, *, conversation, channel_ref: str):
+    """A resposta da pergunta da casa pela IA a partir das FAQs, já verificada (#2935).
+
+    ``None``: vale a FAQ direta (sem modelo, freio, falha do provedor, ou a resposta
+    inventou algo, que o verificador do placar pega). ``Answer`` com ``refs`` vazias: a IA
+    disse que nenhuma FAQ cobre, e a casa verifica.
+    """
+    from . import faq_answer
+    from .faq_eval import live_faq
+
+    faqs = live_faq(channel_ref)
+    if not faqs:
+        return None
+    client, model = build_faq_client()
+    if client is None:
+        return None
+    meter = getattr(conversation, "_meter", None)
+    if meter is not None:
+        client = meter.wrap(client, "faq")
+    answer = faq_answer.answer_with_model(act.span, faqs=faqs, client=client, model=model)
+    if answer.error:
+        return None
+    invented = faq_answer.inventions(answer, faqs)
+    if invented:
+        logger.warning("concierge.faq_answer.held reasons=%s", ",".join(i.split(":")[0] for i in invented))
+        return None
+    if not answer.refs and answer.text.strip():
+        return None
+    return answer
+
+
 def _cancellation():
     """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``).
 
@@ -1036,8 +1081,29 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 return PartReply(act, text=copy(dialogue.ASK_PRODUCT_KEY) or "", keeps_question=True)
             act = Act(act.act, span=act.span, product=referent, qty=act.qty)
 
+        uncovered_by_faq = False
+        if consult and act.act in {HOURS, HOUSE}:
+            # A pergunta da casa: a IA compõe a partir das FAQs publicadas, citando as que
+            # usou (dono, 21/11/2026, #2935). Sem modelo, freio fechado ou invenção: a FAQ direta.
+            composed = _faq_by_model(act, conversation=conversation, channel_ref=channel_ref)
+            if composed is not None and composed.refs:
+                faq_reply = PartReply(
+                    act, text=composed.text,
+                    memo={"tool": "faq_answer", "refs": composed.refs},
+                    tool_events=[{"name": "faq_answer", "input": {}, "ok": True}],
+                )
+                if composed.uncovered.strip() and verifiable:
+                    # A parte que nenhuma FAQ cobre vai à equipe ("vou verificar").
+                    faq_reply.verifying = True
+                    run.verify.append({"text": _clip(composed.uncovered), "product": ""})
+                return faq_reply
+            # A IA disse que nenhuma FAQ cobre: a casa verifica, sem colar FAQ vizinha.
+            uncovered_by_faq = composed is not None
+
         query = _search_text(act)
         result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
+        if uncovered_by_faq:
+            result = {**result, "found": False}
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
         sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
         # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é

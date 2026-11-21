@@ -11,7 +11,9 @@ O teste cobra a frase que o cliente lê, pela mesma apresentação da página.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.test import override_settings
@@ -43,6 +45,15 @@ def _no_payment(monkeypatch):
     monkeypatch.setattr(ps, "payment_deadline_passed", lambda order: False)
     monkeypatch.setattr(ps, "get_payment_status", lambda order: None)
     monkeypatch.setattr(order_tracking, "store_review_deferred_state", lambda order, state=None: None)
+
+
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+
+
+def _frozen_at(hour: int, minute: int):
+    """O relógio parado num horário de 20/11/2026 em Brasília: a frase depende do dia."""
+    at = datetime(2026, 11, 20, hour, minute, tzinfo=SAO_PAULO)
+    return patch("django.utils.timezone.now", return_value=at.astimezone(UTC))
 
 
 def _ago(minutes: float) -> str:
@@ -100,6 +111,22 @@ def test_called_and_nobody_coming_yet(channel):
     _assert_customer_voice(title, message)
 
 
+def test_coming_to_the_store_after_midnight_says_the_day(channel):
+    """Às 23h55, a chegada em 12 minutos é no dia seguinte: a frase leva a data."""
+    with _frozen_at(23, 55):
+        eta = timezone.localtime(timezone.now() + timedelta(minutes=12)).replace(second=0, microsecond=0)
+        block = _ride(
+            "A",
+            driver={"name": "DIEGO SOUZA LIMA", "phone": "43999990000"},
+            progress={"pickup_eta_at": eta.isoformat()},
+            tracking_url=TRACK,
+        )
+
+        _title, message, _actions = _page(_order(channel, courier_block=block))
+
+    assert message == "Chega à loja por volta de 0h07 de 21/11."
+
+
 def test_nobody_takes_it_for_too_long(channel):
     late = courier.LATE_SEARCH_MINUTES + 1
     block = _ride("D", called_at=_ago(late), requested_at=_ago(late))
@@ -120,19 +147,20 @@ def test_the_service_gave_up_finding_someone_reads_as_late(channel):
 
 
 def test_coming_to_the_store_with_name_and_time(channel):
-    eta = timezone.localtime(timezone.now() + timedelta(minutes=12)).replace(second=0, microsecond=0)
-    block = _ride(
-        "A",
-        driver={"name": "DIEGO SOUZA LIMA", "phone": "43999990000"},
-        progress={"pickup_eta_at": eta.isoformat()},
-        tracking_url=TRACK,
-    )
+    # Meio do dia: o horário de chegada cai no mesmo dia, e a frase diz só a hora.
+    with _frozen_at(12, 0):
+        eta = timezone.localtime(timezone.now() + timedelta(minutes=12)).replace(second=0, microsecond=0)
+        block = _ride(
+            "A",
+            driver={"name": "DIEGO SOUZA LIMA", "phone": "43999990000"},
+            progress={"pickup_eta_at": eta.isoformat()},
+            tracking_url=TRACK,
+        )
 
-    title, message, actions = _page(_order(channel, courier_block=block))
+        title, message, actions = _page(_order(channel, courier_block=block))
 
     assert title == "Diego vem buscar seu pedido"
-    clock = f"{eta.hour}h{eta.minute:02d}" if eta.minute else f"{eta.hour}h"
-    assert message == f"Chega à loja por volta de {clock}."
+    assert message == "Chega à loja por volta de 12h12."
     # Decisão 7 = B: o link existe desde o aceite, mas só aparece depois da coleta.
     assert "track_courier" not in actions
     _assert_customer_voice(title, message)
