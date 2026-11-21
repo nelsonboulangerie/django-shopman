@@ -165,7 +165,7 @@ const machineLabel = (value: string) => props.machineItems.find((item) => item.v
                 <NuxtCheckbox
                   :model-value="choice.checked"
                   :disabled="choice.disabled"
-                  class="min-h-11 items-center"
+                  class="min-h-11 items-start py-2.5"
                   :aria-label="`Levar ${choice.code} junto`"
                   @update:model-value="emit('toggle', choice.ref)"
                 >

@@ -71,13 +71,17 @@ test.describe("Chamar entregador do Painel e do detalhe", () => {
 
   test("Voltar fecha sem chamar nada", async ({ page }) => {
     await page.goto("/?view=board&columns=all");
+    // O mock guarda as chamadas dos testes anteriores: conta só o que este toque fizer.
+    const callsOfC03 = async () =>
+      ((await (await page.request.get(`${MOCK}/api/v1/backstage/e2e/call/`)).json()) as { calls: { ref: string }[] }).calls
+        .filter((call) => call.ref === C03).length;
+    const callsBefore = await callsOfC03();
     const before = (await rides(page)).filter((ride) => ride.refs.includes(C03)).length;
     await page.locator("article").filter({ hasText: "C03" }).first().getByRole("button", { name: "Chamar entregador", exact: true }).click();
     const sheet = page.getByRole("dialog", { name: "Chamar entregador para C03" });
     await sheet.getByRole("button", { name: "Voltar", exact: true }).click();
     await expect(sheet).toBeHidden();
-    const sent = (await (await page.request.get(`${MOCK}/api/v1/backstage/e2e/call/`)).json()) as { calls: unknown[] };
-    expect(sent.calls).toHaveLength(0);
+    expect(await callsOfC03()).toBe(callsBefore);
     expect((await rides(page)).filter((ride) => ride.refs.includes(C03))).toHaveLength(before);
   });
 });
