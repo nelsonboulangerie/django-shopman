@@ -536,6 +536,16 @@ export interface OrderPromiseContactProjection {
   reason: string;
 }
 
+/** O aviso aprovado que abre a conversa com o cliente (WP-G07). */
+export interface OrderPromiseNoticeProjection {
+  enabled: boolean;
+  kind: string;
+  label: string;
+  note: string;
+  reason: string;
+  line_ids: string[];
+}
+
 /** Uma linha da lista FINAL de itens, no formato de ``POST orders/<ref>/edit/``. */
 export interface OrderPromiseEditLineProjection {
   line_id: string;
@@ -573,7 +583,7 @@ export interface OrderPromiseResolutionProjection {
   customer_name: string;
   facts: string[];
   contact: OrderPromiseContactProjection;
-  interim_note: string;
+  notice: OrderPromiseNoticeProjection;
   choices: OrderPromiseChoiceProjection[];
 }
 

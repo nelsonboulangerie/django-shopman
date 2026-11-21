@@ -3,7 +3,9 @@
 // Abre pelo ⋯ do pedido. De cima para baixo:
 //
 //   1. "Qual aviso": Vai atrasar, Faltou um item, Precisamos remarcar; o travado
-//      escreve o motivo, e nada vem marcado;
+//      escreve o motivo, e nada vem marcado. A exceção é quem chega do "Resolver" da
+//      promessa em risco (WP-G08): o aviso e os itens em risco vêm marcados, para
+//      conferir, e a pessoa ainda pode trocar;
 //   2. o que o aviso pede, com toques e sem campo: a nova previsão entre horas prontas,
 //      ou os itens que vão faltar;
 //   3. a mensagem como o cliente vai ler, montada pelo servidor;
@@ -40,8 +42,12 @@ const props = withDefaults(
     busy?: boolean;
     /** A recusa do envio, com as palavras do servidor; o diálogo segue aberto. */
     failure?: string;
+    /** O aviso que abre marcado (vindo do "Resolver"); vazio: nada marcado. */
+    initialKind?: string;
+    /** As linhas que o "Faltou um item" abre marcadas. */
+    initialLines?: string[];
   }>(),
-  { customerName: "", busy: false, failure: "" },
+  { customerName: "", busy: false, failure: "", initialKind: "", initialLines: () => [] },
 );
 
 const emit = defineEmits<{
@@ -94,6 +100,20 @@ const inputs = computed(() =>
 watch(kind, () => {
   eta.value = "";
   lines.value = [];
+});
+
+// Vindo do "Resolver": marca o aviso sugerido (só se ele cabe agora) e, depois que a
+// troca de aviso limpou a escolha, os itens em risco que são linhas deste pedido.
+watch(state, async (value) => {
+  if (value !== "ready" || !props.open || !props.initialKind) return;
+  const suggested = (options.value?.notices ?? []).find(
+    (entry) => entry.kind === props.initialKind && entry.enabled,
+  );
+  if (!suggested) return;
+  kind.value = suggested.kind as CustomerNoticeKind;
+  await nextTick();
+  const known = new Set((suggested.lines ?? []).map((line) => line.line_id));
+  lines.value = props.initialLines.filter((id) => known.has(id));
 });
 
 // A mensagem acompanha a escolha completa; incompleta, o lugar diz o que falta.

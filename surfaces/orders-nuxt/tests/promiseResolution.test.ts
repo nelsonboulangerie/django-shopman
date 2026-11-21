@@ -14,6 +14,8 @@ import {
   concludeButton,
   messageHeading,
   needsManager,
+  notifyHash,
+  parseNotifyHash,
   pickedChoice,
   removedSentence,
   resolutionTitle,
@@ -44,8 +46,8 @@ describe("os nomes fechados do diálogo", () => {
   });
 
   it("a mensagem diz de quem é", () => {
-    expect(messageHeading("Nelson Dias")).toBe("Mensagem para Nelson Dias");
-    expect(messageHeading("  ")).toBe("Mensagem para o cliente");
+    expect(messageHeading("Nelson Dias")).toBe("Quando Nelson Dias responder");
+    expect(messageHeading("  ")).toBe("Quando o cliente responder");
   });
 });
 
@@ -143,5 +145,20 @@ describe("o gerente e a frase do que foi feito", () => {
   it("depois de tirar o item: o que foi feito e a frase do dinheiro do servidor", () => {
     expect(removedSentence(removeChoice())).toBe("O que faltava saiu do pedido. R$ 44,00 serão estornados ao Pix do cliente.");
     expect(removedSentence(removeChoice({ detail: "" }))).toBe("O que faltava saiu do pedido.");
+  });
+});
+
+describe("o aviso do Resolver a partir do painel", () => {
+  it("o endereço leva o aviso e os itens, e o detalhe lê de volta o mesmo", () => {
+    const hash = notifyHash({ kind: "item_missing", lines: ["L1", "L 2"] });
+    expect(hash.startsWith("#notify=item_missing&")).toBe(true);
+    expect(parseNotifyHash(hash)).toEqual({ kind: "item_missing", lines: ["L1", "L 2"] });
+    expect(parseNotifyHash(notifyHash({ kind: "reschedule", lines: [] }))).toEqual({ kind: "reschedule", lines: [] });
+  });
+
+  it("outro endereço não abre aviso nenhum", () => {
+    expect(parseNotifyHash(CANCEL_HASH)).toBeNull();
+    expect(parseNotifyHash("")).toBeNull();
+    expect(parseNotifyHash("#notify=")).toBeNull();
   });
 });
