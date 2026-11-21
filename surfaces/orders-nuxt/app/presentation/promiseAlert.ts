@@ -9,7 +9,7 @@
 // que a tela compõe (`manyOrdersStep`), a única frase que nasce aqui.
 import type { OrderCardProjection } from "~/types/orders";
 import { splitRef } from "./board";
-import { OPEN_PRODUCTION, SUGGESTIONS_HEADING, promiseRisk } from "./orderPromise";
+import { OPEN_PRODUCTION, RESOLVE, SUGGESTIONS_HEADING, promiseRisk } from "./orderPromise";
 import { preorderFocusKey } from "./preorderList";
 
 type AlertSource = Pick<OrderCardProjection, "ref"> &
@@ -29,6 +29,9 @@ export interface PromiseRiskAlert {
   /** Um pedido só, e a conta abre o detalhe: o aviso abre o pedido, na faixa que tem
    *  as saídas. Senão, a tela vai até o primeiro. */
   opensOrder: boolean;
+  /** Um pedido só, com o "Resolver" aberto para esta conta: o aviso abre o diálogo
+   *  direto, no painel (uma situação, um gesto; coordenação, 21/11/2026, #2809 item 3). */
+  opensResolver: boolean;
 }
 
 /** Quantos códigos o aviso escreve antes de resumir o resto num número. */
@@ -78,7 +81,8 @@ export function promiseRiskAlert(
   if (!first) return null;
   const refs = risky.map((entry) => entry.ref);
   const id = `promise-risk:${[...refs].sort().join(",")}`;
-  if (risky.length === 1)
+  if (risky.length === 1) {
+    const resolves = canOpen && first.risk.exits.some((exit) => exit.ref === RESOLVE && !exit.disabled);
     return {
       id,
       title: `${first.risk.label} no pedido ${first.code}`,
@@ -100,11 +104,13 @@ export function promiseRiskAlert(
       ]
         .filter(Boolean)
         .join(" "),
-      actionLabel: canOpen ? "Abrir o pedido" : `Ver o ${first.code}`,
+      actionLabel: resolves ? "Resolver" : canOpen ? "Abrir o pedido" : `Ver o ${first.code}`,
       refs,
       firstRef: first.ref,
-      opensOrder: canOpen,
+      opensOrder: canOpen && !resolves,
+      opensResolver: resolves,
     };
+  }
   const codes = risky.map((entry) => entry.code);
   const named = codes.slice(0, NAMED_ORDERS);
   const rest = codes.length - named.length;
@@ -120,6 +126,7 @@ export function promiseRiskAlert(
     refs,
     firstRef: first.ref,
     opensOrder: false,
+    opensResolver: false,
   };
 }
 
