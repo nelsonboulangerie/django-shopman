@@ -49,16 +49,7 @@ def model_field(key: str) -> str:
 def _protocol(key: str) -> str:
     from shopman.shop.models import AIProtocol
 
-    return AIProtocol.JEV if key in ai.JEV_DEFAULT_PURPOSES else AIProtocol.ANTHROPIC
-
-
-def _protocols(key: str) -> tuple[str, ...]:
-    """Os formatos que a função aceita: os de incidente aceitam qualquer um."""
-    from shopman.shop.models import AIProtocol
-
-    if key in ai.ANY_PROTOCOL_PURPOSES:
-        return (AIProtocol.JEV, AIProtocol.ANTHROPIC)
-    return (_protocol(key),)
+    return AIProtocol.JEV if key in ai.JEV_PURPOSES else AIProtocol.ANTHROPIC
 
 
 def form_fields() -> dict[str, forms.Field]:
@@ -98,7 +89,7 @@ def _connection_label(connection, key: str) -> str:
 def _empty_connection_label(key: str) -> str:
     if key == DEFAULT_ROUTE:
         return "Sem rota padrão: a única conexão ativa"
-    if key in ai.JEV_DEFAULT_PURPOSES:
+    if key in ai.JEV_PURPOSES:
         return "Sem rota própria: a única conexão Jev ativa"
     return "Sem rota própria: a rota padrão"
 
@@ -107,7 +98,7 @@ def connection_choices(key: str, current: str) -> list[tuple[str, str]]:
     """Só conexão ativa do formato da função; a gravada que saiu da lista fica, marcada."""
     from shopman.shop.models import AIConnection
 
-    active = AIConnection.objects.filter(is_active=True, protocol__in=_protocols(key)).order_by("name", "ref")
+    active = AIConnection.objects.filter(is_active=True, protocol=_protocol(key)).order_by("name", "ref")
     choices = [("", _empty_connection_label(key))]
     choices += [(connection.ref, _connection_label(connection, key)) for connection in active]
     if current and current not in {ref for ref, _label in choices}:
@@ -119,10 +110,10 @@ def model_choices(key: str, current: str) -> list[tuple[str, str]]:
     """Os modelos com preço conhecido e os das conexões ativas do formato."""
     from shopman.shop.models import AIConnection
 
-    known = [] if key == "decision" else list(LLM_PRICES)
+    known = [] if key in ai.JEV_PURPOSES else list(LLM_PRICES)
     known += [
         model
-        for model in AIConnection.objects.filter(is_active=True, protocol__in=_protocols(key))
+        for model in AIConnection.objects.filter(is_active=True, protocol=_protocol(key))
         .exclude(model="")
         .order_by("model")
         .values_list("model", flat=True)
@@ -150,7 +141,7 @@ def why_unusable(key: str, ref: str) -> str:
     if connection is None:
         return "não existe mais"
     wanted = _protocol(key)
-    if connection.protocol not in _protocols(key):
+    if connection.protocol != wanted:
         have = PROTOCOL_NAMES.get(connection.protocol, connection.protocol)
         return f"é do formato {have}, não {PROTOCOL_NAMES.get(wanted, wanted)}"
     if not connection.is_active:
@@ -163,7 +154,7 @@ def _route_ref(purpose: str) -> str:
     routes = _routes_of(_shop())
     for key in (purpose, DEFAULT_ROUTE):
         route = routes.get(key)
-        if key == DEFAULT_ROUTE and purpose in ai.JEV_DEFAULT_PURPOSES:
+        if key == DEFAULT_ROUTE and purpose in ai.JEV_PURPOSES:
             continue
         if isinstance(route, dict) and route.get("connection"):
             return str(route["connection"])
@@ -368,7 +359,7 @@ def warnings() -> list[dict]:
     grouped: dict[tuple[str, str, str], list[str]] = {}
     for purpose in ai.PURPOSES:
         has_route = isinstance(routes.get(purpose), dict) or (
-            purpose != "decision" and isinstance(routes.get(DEFAULT_ROUTE), dict)
+            purpose not in ai.JEV_PURPOSES and isinstance(routes.get(DEFAULT_ROUTE), dict)
         )
         if not has_route:
             continue

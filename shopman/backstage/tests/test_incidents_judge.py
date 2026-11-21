@@ -124,7 +124,8 @@ def test_act_step_uses_the_model_and_records_who_decided():
     assert action.cost_usd == Decimal("0.00003")
 
 
-def test_incident_routes_take_any_format_and_default_to_jev():
+def test_decision_role_is_jev_only_and_reading_role_is_llm_only():
+    """Jev e LLM não se trocam (dono, 21/11): cada papel só aceita o seu formato."""
     Shop.objects.create(name="Loja", ai_routes={"default": {"connection": "ds-teste"}})
     AIConnection.objects.update(is_active=False)
     for ref, name, protocol, model in (("jev-teste", "Jev", "jev", "jev-1"), ("ds-teste", "DeepSeek", "anthropic", "deepseek-flash")):
@@ -137,5 +138,32 @@ def test_incident_routes_take_any_format_and_default_to_jev():
     shop = Shop.objects.get()
     shop.ai_routes = {"incident": {"connection": "ds-teste"}, "incident_review": {"connection": "jev-teste"}}
     shop.save()
-    assert ai.resolve("incident").protocol == "anthropic"
-    assert ai.resolve("incident_review").protocol == "jev"
+    with pytest.raises(ai.AINotConfigured):
+        ai.resolve("incident")
+    with pytest.raises(ai.AINotConfigured):
+        ai.resolve("incident_review")
+
+
+def test_without_jev_the_llm_alone_decides():
+    """Só LLM é arranjo válido: sem Jev, a leitura decide sozinha."""
+    def resolve(purpose):
+        if purpose == "incident":
+            raise ai.AINotConfigured("sem Jev")
+        return _resolved(purpose, protocol="anthropic")
+
+    with (
+        patch.object(ai, "resolve", side_effect=resolve),
+        patch.object(judge, "ask", return_value=_reading("act", 0.9, purpose="incident_review")) as ask,
+    ):
+        verdict, decided_by, _c, _cost = judge.judge(_Alert(), FISCAL, JUDGE)
+    assert verdict.kind == "act" and decided_by.startswith("ia:incident_review:")
+    assert ask.call_count == 1
+
+
+def test_confident_jev_never_wakes_the_llm():
+    with (
+        patch.object(ai, "resolve", side_effect=lambda p: _resolved(p)) as resolve,
+        patch.object(judge, "ask", return_value=_reading("people", 0.97)),
+    ):
+        judge.judge(_Alert(), FISCAL, JUDGE)
+    assert [call.args[0] for call in resolve.call_args_list] == ["incident"]

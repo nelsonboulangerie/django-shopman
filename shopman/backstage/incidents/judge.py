@@ -7,15 +7,19 @@ A pergunta é sempre a mesma e fechada: para ESTE remédio, ``act`` (acionar) ou
 ``people`` (fica com gente). O modelo nunca escreve comando nem escolhe outro
 remédio: a lista é do código.
 
-A cascata, configurável em Admin → Loja → rotas de IA:
+Os dois papéis NÃO são intercambiáveis (dono, 21/11/2026: "Jev e outros modelos LLM
+NÃO SÃO DIRETAMENTE INTERCAMBIÁVEIS"). Cada um tem o seu propósito e a sua conexão,
+configurável em Admin → Loja → rotas de IA:
 
-1. ``incident``: modelo barato e tipado. Sem rota própria, a única conexão Jev ativa
-   (saída ``choice`` com probabilidade, ~US$ 0,00003 por leitura).
-2. ``incident_review``: segunda opinião, modelo mais capaz. Sem rota própria, a rota
-   padrão (ex.: DeepSeek no formato Anthropic). Só roda se a primeira não teve
-   confiança.
-3. Gente: abaixo de ``ACCEPT_AT`` nas duas, ou sem modelo, o caso fica com o dono da
-   issue, com a leitura registrada.
+- **decisão** (``incident``): o Jev, motor de decisão tipada. Devolve probabilidade e
+  confiança num ``choice``. Só aceita conexão Jev (~US$ 0,00003 por leitura).
+- **leitura** (``incident_review``): um LLM (deepseek-flash, por exemplo, no formato
+  Anthropic). Só aceita conexão desse formato, e só é chamado quando estritamente
+  necessário: a decisão do Jev ficou abaixo de ``ACCEPT_AT``, o Jev falhou, ou não há
+  Jev configurado.
+
+Arranjos válidos: Jev + LLM (o LLM só na dúvida) ou só LLM. Abaixo de ``ACCEPT_AT`` no
+fim, ou sem modelo, o caso fica com gente, com a leitura registrada.
 
 Cada degrau passa pelo freio de gasto (``ai_governor``, teto por propósito) e vira
 ``AiInvocation``. O custo da decisão vai para o placar.
@@ -98,6 +102,7 @@ def ask(resolved, *, purpose: str, alert_type: str, remedy, evidence: str) -> Re
 
     label = f"ia:{purpose}:{resolved.ref}/{resolved.model}"[:80]
     started = timezone.now()
+    # O formato é do papel: ``incident`` só resolve para Jev, ``incident_review`` só para LLM.
     if resolved.protocol == AIProtocol.JEV:
         choice, confidence = _ask_jev(resolved, purpose=purpose, alert_type=alert_type, remedy=remedy, evidence=evidence)
     else:
