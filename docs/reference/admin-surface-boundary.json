@@ -43,7 +43,7 @@
         "orderman.session", "payman.paymentintent", "shop.aiinvocation", "shop.aispendday", "shop.audiencesnapshot", "shop.contactrelease", "shop.conversationaldecision",
         "shop.conversationaloutcome", "shop.instanceapplyrecord",
         "shop.marketingauditevent", "shop.marketingcommandreceipt", "shop.marketingplatformauditevent",
-        "shop.marketingsecurityevent", "storefront.intentpilotreport", "storefront.stockalertdelivery",
+        "shop.marketingsecurityevent", "shop.paidapicall", "storefront.intentpilotreport", "storefront.stockalertdelivery",
         "storefront.stockalertoccurrence"
       ]
     },

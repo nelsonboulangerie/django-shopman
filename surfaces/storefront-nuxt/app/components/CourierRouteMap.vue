@@ -7,7 +7,11 @@
 import {
   type MapPoint,
   type MapStop,
+  type RouteGuide,
   frameProjection,
+  guidePath,
+  maneuverDistance,
+  maneuverIcon,
   routeLine
 } from '~/presentation/courierRide'
 
@@ -18,6 +22,8 @@ const props = defineProps<{
   mapsKey: string
   tone: { bg: string, fg: string } | null
   dark: boolean
+  /** A rota por ruas e a próxima manobra (Routes API); sem ela, a linha reta entre as paradas. */
+  guide?: RouteGuide | null
 }>()
 
 const box = ref<HTMLElement | null>(null)
@@ -34,11 +40,16 @@ let programmatic = false
 
 const framed = computed<MapPoint[]>(() => [
   ...(props.here ? [props.here] : props.origin ? [props.origin] : []),
-  ...props.stops.filter(stop => !stop.done)
+  ...props.stops.filter(stop => !stop.done),
+  // A rota por ruas pode passar fora do retângulo das paradas: ela entra no quadro.
+  ...guidePath(props.guide)
 ])
 /** A faixa de baixo onde moram "Abrir no Waze", "Abrir no mapa" e "Centralizar em mim". */
 const CHIPS_BAND = 96
-const flat = computed(() => frameProjection(framed.value.length ? framed.value : props.stops, size.value.w, size.value.h, 48, CHIPS_BAND))
+/** A faixa de cima, quando há manobra a mostrar. */
+const TURN_BAND = 120
+const flat = computed(() => frameProjection(framed.value.length ? framed.value : props.stops, size.value.w, size.value.h, 48, CHIPS_BAND,
+  props.guide?.next ? TURN_BAND : 48))
 
 function px (p: MapPoint): { x: number, y: number } {
   if (real.value && overlay) {
@@ -49,7 +60,9 @@ function px (p: MapPoint): { x: number, y: number } {
   return flat.value(p)
 }
 
-const line = computed(() => routeLine(props.stops, props.here ?? props.origin).map(px))
+const streets = computed(() => guidePath(props.guide))
+const line = computed(() => (streets.value.length > 1 ? streets.value : routeLine(props.stops, props.here ?? props.origin)).map(px))
+const turn = computed(() => props.guide?.next ?? null)
 const path = computed(() => line.value.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' '))
 const pins = computed(() => props.stops.map(stop => ({ ...stop, ...px(stop) })))
 const me = computed(() => (props.here ? px(props.here) : null))
@@ -77,7 +90,7 @@ function fit () {
   const area = new google.maps.LatLngBounds()
   for (const p of framed.value) area.extend({ lat: p.lat, lng: p.lng })
   programmatic = true
-  map.fitBounds(area, { top: 56, right: 56, bottom: CHIPS_BAND, left: 56 })
+  map.fitBounds(area, { top: props.guide?.next ? TURN_BAND : 56, right: 56, bottom: CHIPS_BAND, left: 56 })
 }
 
 function follow () {
@@ -158,6 +171,14 @@ onBeforeUnmount(() => {
     >
       {{ pin.code }}
     </div>
+    <!-- A próxima manobra, no topo: a distância grande e a instrução do Google. -->
+    <div v-if="turn" class="crm-turn" data-map-turn>
+      <Icon :name="maneuverIcon(turn.maneuver)" class="crm-turn-icon" aria-hidden="true" />
+      <div class="crm-turn-text">
+        <span v-if="maneuverDistance(turn.meters)" class="crm-turn-far">{{ maneuverDistance(turn.meters) }}</span>
+        <span class="crm-turn-say">{{ turn.instruction }}</span>
+      </div>
+    </div>
     <div v-if="me" class="crm-me" :style="{ left: `${me.x}px`, top: `${me.y}px` }" data-map-me />
     <div class="crm-actions">
       <slot />
@@ -208,6 +229,25 @@ onBeforeUnmount(() => {
   pointer-events: none;
   z-index: 2;
 }
+.crm-turn {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  left: max(0.75rem, env(safe-area-inset-left));
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 1rem;
+  background: var(--cr-strong);
+  color: var(--cr-on-strong);
+  padding: 0.75rem 1rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.crm-turn-icon { width: 2.25rem; height: 2.25rem; flex-shrink: 0; }
+.crm-turn-text { display: flex; min-width: 0; flex-direction: column; }
+.crm-turn-far { font-size: 1.75rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.crm-turn-say { font-size: 1.125rem; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
 .crm-actions {
   position: absolute;
   right: max(0.75rem, env(safe-area-inset-right));

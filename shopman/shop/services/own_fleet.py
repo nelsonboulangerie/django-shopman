@@ -192,7 +192,47 @@ def depart(link: CourierLink, *, source: str = SOURCE) -> list[str]:
     for order in orders:
         if courier.apply_status(order, "E", source=source) == "applied":
             applied.append(order.ref)
+    if applied:
+        _guide_route(link, _shop_point())
     return applied
+
+
+def _shop_point() -> tuple[float, float] | None:
+    from shopman.shop.models import Shop
+
+    shop = Shop.objects.first()
+    if not (shop and shop.latitude and shop.longitude):
+        return None
+    return float(shop.latitude), float(shop.longitude)
+
+
+def _guide_route(link: CourierLink, origin: tuple[float, float] | None) -> bool:
+    """A rota por ruas da manobra (#2509, ``route_guide``), de ``origin`` pelas paradas abertas.
+
+    Uma chamada na saída e outra só quando ele sai da rota. Nunca levanta: sem rota, a
+    página desenha a linha reta.
+    """
+    from shopman.shop.services import route_guide
+    from shopman.shop.services.dispatch_handoff import build_dispatch_payload
+
+    if origin is None:
+        return False
+    stops = []
+    for order in _ride_orders(link):
+        if not _live(order, link) or courier.get_block(order).get("status") != "E":
+            continue
+        handoff = build_dispatch_payload(order)
+        try:
+            stops.append((float(handoff["latitude"]), float(handoff["longitude"])))
+        except (TypeError, ValueError, KeyError):
+            continue
+    if not stops:
+        return False
+    try:
+        return route_guide.compute(link.ride_ref, origin, stops)
+    except Exception:  # noqa: BLE001 — a manobra é luxo: a corrida segue sem ela
+        logger.warning("own_fleet.route_guide_failed ride_ref=%s", link.ride_ref, exc_info=True)
+        return False
 
 
 def deliver(link: CourierLink, order_ref: str, *, source: str = SOURCE) -> bool:
@@ -250,8 +290,16 @@ def report_position(link: CourierLink, latitude, longitude, *, accuracy=None, at
                    for order in _ride_orders(link) if _live(order, link))
     if not on_route:
         return False
-    return courier_position.store_position(link.ride_ref, latitude, longitude,
-                                           source=courier_position.SOURCE_OWN_FLEET, at=at)
+    stored = courier_position.store_position(link.ride_ref, latitude, longitude,
+                                             source=courier_position.SOURCE_OWN_FLEET, at=at)
+    if stored:
+        # Saiu da rota guardada: uma chamada nova, a partir de onde ele está (#2509).
+        from shopman.shop.services import route_guide
+
+        here = (float(latitude), float(longitude))
+        if route_guide.off_route(link.ride_ref, here):
+            _guide_route(link, here)
+    return stored
 
 
 def report_problem(link: CourierLink, order_ref: str, kind: str, *, payment: str = "") -> None:
@@ -423,11 +471,11 @@ def ride_view(link: CourierLink) -> dict:
         "settle": {"cash_q": cash_back_q, "cash": f"R$ {format_money(cash_back_q)}", "machine": machine,
                    "bags_back": [s["code"] for s in stops if s["state"] == "cancelled"]},
 
-        **({"map": _map_view()} if moment == "route" else {}),
+        **({"map": _map_view(link)} if moment == "route" else {}),
     }
 
 
-def _map_view() -> dict:
+def _map_view(link: CourierLink) -> dict:
     """O mapa da corrida na tela "Dirigindo" (#2509): a chave pública do navegador e a loja.
 
     A mesma chave que a loja já entrega ao cliente (restrita por domínio). Sem chave, a
@@ -439,7 +487,16 @@ def _map_view() -> dict:
     shop = Shop.objects.first()
     origin = ({"lat": float(shop.latitude), "lng": float(shop.longitude)}
               if shop and shop.latitude and shop.longitude else None)
-    return {"key": browser_api_key(), "origin": origin}
+    view = {"key": browser_api_key(), "origin": origin}
+    # A rota por ruas e a próxima manobra, quando o Routes API respondeu (#2509).
+    from shopman.shop.services import courier_position, route_guide
+
+    position = courier_position.read(link.ride_ref)
+    here = (position["latitude"], position["longitude"]) if position else None
+    guide = route_guide.view(link.ride_ref, here)
+    if guide is not None:
+        view["guide"] = guide
+    return view
 
 
 def _today_q(courier_person: Courier) -> int:

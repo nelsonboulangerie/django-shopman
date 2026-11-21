@@ -1870,6 +1870,7 @@
             "AIConnectionForm",
             "AiInvocationAdmin",
             "AiSpendDayAdmin",
+            "PaidApiCallAdmin",
             "_ReadOnlyAdmin"
           ]
         }
@@ -6746,6 +6747,26 @@
           "responsibility": "configuração",
           "symbols": [
             "OperatorPasskey"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/paid_api_call.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "PaidApiCall",
+            "PaidApiOutcome"
           ]
         }
       ]
@@ -13310,11 +13331,13 @@
             "SOURCE",
             "_RIDE_PREFIX",
             "_estimate",
+            "_guide_route",
             "_live",
             "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",
+            "_shop_point",
             "_stop_view",
             "_today_q",
             "assign",
@@ -14442,6 +14465,48 @@
             "_service",
             "suggestion_for",
             "waiting_pool"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/route_guide.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "COST_USD_MICROS",
+            "DEFAULTS",
+            "FIELD_MASK",
+            "KEEP_SECONDS",
+            "MAX_CALLS_PER_DAY",
+            "PROVIDER",
+            "PURPOSE",
+            "REQUEST_TIMEOUT_SECONDS",
+            "ROUTES_URL",
+            "_guide",
+            "_key",
+            "_meters",
+            "_nearest",
+            "_record",
+            "_request",
+            "_spend_today",
+            "compute",
+            "decode_polyline",
+            "forget",
+            "logger",
+            "off_route",
+            "read",
+            "settings_for_shop",
+            "view"
           ]
         }
       ]

@@ -9,7 +9,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.widgets import UnfoldAdminPasswordWidget, UnfoldBooleanSwitchWidget
 
-from shopman.shop.models import AIConnection, AiInvocation, AiSpendDay
+from shopman.shop.models import AIConnection, AiInvocation, AiSpendDay, PaidApiCall
 
 
 class AIConnectionForm(forms.ModelForm):
@@ -105,5 +105,18 @@ class AiInvocationAdmin(_ReadOnlyAdmin):
     date_hierarchy = "created_at"
 
     @admin.display(description="custo (US$)", ordering="cost_usd_micros")
+    def cost_display(self, obj):
+        return f"{obj.cost_usd:.6f}"
+
+
+@admin.register(PaidApiCall)
+class PaidApiCallAdmin(_ReadOnlyAdmin):
+    """As APIs pagas que não são IA (DEV-2026-067): hoje, a manobra do entregador (#2509)."""
+
+    list_display = ("created_at", "provider", "purpose", "outcome", "cost_display", "latency_ms")
+    list_filter = ("provider", "outcome", "purpose")
+    date_hierarchy = "created_at"
+
+    @admin.display(description="custo estimado (US$)", ordering="cost_usd_micros")
     def cost_display(self, obj):
         return f"{obj.cost_usd:.6f}"

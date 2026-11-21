@@ -65,6 +65,7 @@ from .instance_apply import InstanceApplyRecord
 from .kitchen_note import KitchenNoteTag
 from .omotenashi_copy import OmotenashiCopy
 from .operator_passkey import OperatorPasskey
+from .paid_api_call import PaidApiCall, PaidApiOutcome
 from .privacy import (
     PrivacyRequestOperation,
     PrivacyRequestReceipt,
@@ -108,6 +109,8 @@ __all__ = [
     "AiInvocation",
     "AiOutcome",
     "AiSpendDay",
+    "PaidApiCall",
+    "PaidApiOutcome",
     "AttributeDefinition",
     "AttributePurpose",
     "AttributeSource",
