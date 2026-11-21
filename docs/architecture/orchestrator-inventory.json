@@ -501,6 +501,7 @@
             "READ_VIAS",
             "RIDE_STATES",
             "RIDE_STATUSES",
+            "STATUS_DETAILS",
             "TERMINAL_STATUSES",
             "USER_AGENT_PRODUCT",
             "_ESTIMATE_ADDRESS_FIELDS",
@@ -538,6 +539,7 @@
             "ride_state",
             "snapshot_from_details",
             "snapshot_from_listing",
+            "status_detail",
             "tracking_links",
             "user_agent"
           ]
@@ -8209,7 +8211,6 @@
             "TrackingRatingFollowupData",
             "TrackingStatusData",
             "TrackingTimelineEventData",
-            "_COURIER_ENDED_STATUSES",
             "_DIGITAL_PAYMENT_METHODS",
             "_STORE_DECISION_STATES",
             "_WAITLIST_NONE",
@@ -8233,6 +8234,7 @@
             "_copy_message",
             "_copy_title",
             "_courier_closeness",
+            "_courier_ride_ended",
             "_courier_tracking_url",
             "_eta_at",
             "_eta_not_before",
@@ -10361,6 +10363,7 @@
             "_KIND_BY_REF",
             "_kind",
             "_translator",
+            "_vocabulary",
             "courier_backend"
           ]
         },
@@ -10371,6 +10374,8 @@
             "new_ride_service_ref",
             "ride_state",
             "service_for_new_ride",
+            "service_name",
+            "state_detail",
             "state_since"
           ]
         }

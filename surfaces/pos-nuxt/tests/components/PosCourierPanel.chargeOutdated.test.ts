@@ -7,7 +7,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime";
 import PosCourierPanel from "~/components/PosCourierPanel.vue";
 
 const COURIER = {
-  provider: "machine", status: "A", status_label: "Entregador a caminho da loja", active: true,
+  provider: "machine", status: "A", ride_state: "assigned", status_label: "Entregador a caminho da loja", active: true,
   driver: null, tracking_url: "", confirmation_code: "", attempts_count: 0, error: null,
   can_dispatch: false, can_dispatch_again: false,
   charge_outdated: {

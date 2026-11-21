@@ -32,7 +32,7 @@ const cancelAction = {
   },
 };
 const courier = {
-  status: "A", status_label: "Entregador a caminho da loja", active: true, can_quote: false,
+  status: "A", ride_state: "assigned", status_label: "Entregador a caminho da loja", active: true, can_quote: false,
   can_dispatch: false, can_cancel: true, attempts_count: 0, charge_outdated: outdated,
 } as unknown as CourierBlock;
 const mountPanel = (over: Partial<CourierBlock> = {}) => mount(Panel, {
@@ -68,7 +68,7 @@ describe("a corrida leva a cobrança antiga", () => {
   });
 
   it("depois da coleta: o telefone, sem botão de cancelar no aviso", () => {
-    const w = mountPanel({ status: "E", can_cancel: false, charge_outdated: { ...outdated, collected: true } });
+    const w = mountPanel({ status: "E", ride_state: "on_route", can_cancel: false, charge_outdated: { ...outdated, collected: true } });
     try {
       const aviso = w.get("[data-courier-charge-outdated]");
       expect(aviso.text()).toContain("O entregador já coletou: ligue para ele e passe a cobrança nova.");

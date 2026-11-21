@@ -42,7 +42,7 @@ function cancelAction(accepted: boolean, over: Partial<Action> = {}): Action {
 
 // ── Painel do pedido ────────────────────────────────────────────────────────
 const courier = {
-  status: "D", status_label: "Procurando entregador", active: true, can_quote: false,
+  status: "D", ride_state: "searching", status_label: "Procurando entregador", active: true, can_quote: false,
   can_dispatch: false, can_cancel: true, attempts_count: 0, charge_outdated: null, error: null,
 } as unknown as CourierBlock;
 const mountPanel = (over: Partial<CourierBlock> = {}, action: Action | undefined = cancelAction(false)) =>
@@ -69,7 +69,7 @@ describe("Painel do pedido: cancelar a corrida", () => {
   });
 
   it("depois do aceite: a confirmação traz os três motivos, e cada botão já é o motivo", async () => {
-    const w = mountPanel({ status: "A", status_label: "Entregador a caminho da loja" }, cancelAction(true));
+    const w = mountPanel({ status: "A", ride_state: "assigned", status_label: "Entregador a caminho da loja" }, cancelAction(true));
     try {
       await w.get("[data-courier-cancel]").trigger("click");
       expect(w.emitted("cancel")).toBeUndefined();
@@ -87,7 +87,7 @@ describe("Painel do pedido: cancelar a corrida", () => {
   });
 
   it("Manter a corrida desarma e nada é enviado", async () => {
-    const w = mountPanel({ status: "A" }, cancelAction(true));
+    const w = mountPanel({ status: "A", ride_state: "assigned" }, cancelAction(true));
     try {
       await w.get("[data-courier-cancel]").trigger("click");
       await w.get("[data-courier-cancel-keep]").trigger("click");
