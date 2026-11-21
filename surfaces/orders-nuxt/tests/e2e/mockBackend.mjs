@@ -675,8 +675,26 @@ function rideQuote(url) {
 // existe; sem ele, o serviço da casa está desligado e a tela é a de antes. Diego está
 // na escala; Rui não. As paradas ganham a ação `courier-dispatch` (a revisão que a tela
 // leu), que é de onde sai a intenção de enviar à casa.
-const crewState = { diego: true, rui: false };
-const housePosts = [];
+// Cada arquivo de spec tem o seu estado (cookie `e2e_ns`): os workers da suíte rodam
+// arquivos em paralelo contra este mesmo mock, e o `beforeEach` que limpa o estado de um
+// arquivo não pode apagar a corrida que outro acabou de enviar (fila, 21/11/2026, #2991).
+const houseStores = new Map();
+function houseStore(req) {
+  const ns = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_ns=([\w-]+)(?:;|$)/)?.[1] ?? "";
+  if (!houseStores.has(ns))
+    houseStores.set(ns, {
+      crewState: { diego: true, rui: false },
+      housePosts: [],
+      houseState: { departed: false, delivered: [], claimed: true, gestures: [] },
+    });
+  return houseStores.get(ns);
+}
+// Apontados para o estado do arquivo que fez o pedido, no começo de cada pedido e de
+// novo em cada resposta assíncrona (outro pedido pode ter trocado o apontamento).
+let crewState, housePosts, houseState;
+function useHouseStore(store) {
+  ({ crewState, housePosts, houseState } = store);
+}
 function crewBody(url, mode = "on") {
   const refs = new URL(url, "http://mock").searchParams.getAll("refs");
   const value = (q) => (refs.length ? `R$ ${Math.floor(q / 100)},${String(q % 100).padStart(2, "0")}` : "");
@@ -711,7 +729,6 @@ function crewDeliveries() {
 // M3b (#2898): a corrida da casa na lista de Corridas, com o cookie `e2e_house=on`. A
 // corrida C é do Diego (A47 ∙ C03); os gestos do balcão mudam o estado do mock: "Saiu"
 // põe a rota na rua, "A47 entregue" risca a parada. A corrida A (TaOn) segue igual.
-const houseState = { departed: false, delivered: [], claimed: true, gestures: [] };
 const HOUSE_STOPS = [
   ["WEB-20261116-0A47", "Ana", "Gleba Palhano", 0.006, 0.004, 2, "Troco para R$ 50,00"],
   ["WEB-20261116-0C03", "Caio", "Gleba Palhano", 0.008, 0.007, 1, ""],
@@ -784,6 +801,8 @@ function json(res, status, body) {
 }
 
 const server = createServer((req, res) => {
+  const store = houseStore(req);
+  useHouseStore(store);
   res.setHeader("content-type", "application/json");
   res.setHeader("set-cookie", "csrftoken=e2e-mock; Path=/");
   const url = req.url || "";
@@ -803,6 +822,7 @@ const server = createServer((req, res) => {
   if (houseGesture) {
     if (req.method !== "POST") return json(res, 202, { outcome: "unknown" });
     return void readBody(req).then((body) => {
+      useHouseStore(store);
       const gesture = houseGesture[2];
       houseState.gestures.push({ gesture, ref: body.ref ?? "", base_revision: body.base_revision });
       let detail = "";
@@ -834,6 +854,7 @@ const server = createServer((req, res) => {
   const shiftPost = url.match(/\/deliveries\/couriers\/([a-z]+)\/shift\/?(\?|$)/);
   if (shiftPost && req.method === "POST") {
     return void readBody(req).then((body) => {
+      useHouseStore(store);
       crewState[shiftPost[1]] = Boolean(body.on_shift);
       json(res, 200, crewBody(""));
     });
@@ -841,6 +862,7 @@ const server = createServer((req, res) => {
   if (/\/deliveries\/couriers\/ride\/?(\?|$)/.test(url)) {
     if (req.method !== "POST") return json(res, 202, { outcome: "unknown" });
     return void readBody(req).then((body) => {
+      useHouseStore(store);
       housePosts.push(body);
       const name = body.courier === "rui" ? "Rui" : "Diego";
       const many = body.refs.length > 1;

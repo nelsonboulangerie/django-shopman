@@ -12,7 +12,7 @@ async function house(page: Page): Promise<HouseState> {
 }
 
 async function crew(page: Page, baseURL: string, mode: string) {
-  await page.context().addCookies([{ name: "e2e_crew", value: mode, url: baseURL }]);
+  await page.context().addCookies([{ name: "e2e_crew", value: mode, url: baseURL }, { name: "e2e_ns", value: "house-refinements", url: baseURL }]);
   await page.request.delete(`${MOCK}/api/v1/backstage/e2e/deliveries/house/`);
   await page.context().route("https://wa.me/**", (route) => route.fulfill({ status: 200, body: "whatsapp" }));
 }
