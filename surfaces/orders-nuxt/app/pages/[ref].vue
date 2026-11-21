@@ -37,7 +37,7 @@ import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTr
 import { COURIER_CALL_HASH } from "~/presentation/courier";
 import { PROMISE_HASH } from "~/presentation/preorderList";
 import { RESOLVE } from "~/presentation/orderPromise";
-import { CANCEL_HASH, parseNotifyHash, type NoticePick } from "~/presentation/promiseResolution";
+import { CANCEL_HASH, RESOLVE_HASH, parseNotifyHash, type NoticePick } from "~/presentation/promiseResolution";
 import {
   pendingFocusKey,
   PROMISE_PENDING_KEY,
@@ -1072,6 +1072,18 @@ watch(
   () => (noticeAction.value?.enabled ? parseNotifyHash(route.hash) : null),
   (pick) => {
     if (pick && !noticeOpen.value) openNotice(pick);
+  },
+  { immediate: true },
+);
+// O "Resolver no Gestor" das Encomendas do PDV chega com `#resolve`: o diálogo das
+// escolhas abre, se a promessa ainda está em risco e a pessoa pode resolver.
+watch(
+  () =>
+    route.hash === RESOLVE_HASH &&
+    order.value?.promise?.state === "at_risk" &&
+    Boolean(order.value?.promise?.actions?.some((action) => action.ref === RESOLVE && action.enabled)),
+  (arrive) => {
+    if (arrive && !resolveOpen.value) resolveOpen.value = true;
   },
   { immediate: true },
 );

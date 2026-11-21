@@ -768,3 +768,45 @@ def test_o_aviso_que_nao_cabe_diz_por_que_e_o_que_fazer_no_lugar(client, gerente
     assert notice["reason"] == "O pedido não tem o telefone do cliente."
     assert notice["note"] == "Copie a mensagem ou chame o cliente no WhatsApp."
     assert notice["line_ids"] == []
+
+
+# ── A promessa nas Encomendas do PDV (#2721 item 3) ──────────────────────────
+
+
+def test_o_pdv_le_a_promessa_em_risco_e_a_saida_e_o_resolver_do_gestor(settings, gerente, vitrine):
+    from shopman.backstage.projections.order_queue import build_operator_order
+
+    settings.SHOPMAN_SURFACE_URLS = {"pos": f"{PDV}/", "gestor": "https://gestor.example.com/"}
+    order = _baguete_e_cafe("WEB-PDV-RISCO")
+    _lost_lot(order, SKU, "4")
+
+    promise = build_operator_order(Order.objects.get(pk=order.pk), user=gerente, context="pos").promise
+
+    assert promise is not None and promise.state == "at_risk"
+    assert [item.label for item in promise.items if item.at_risk] == [f"Faltam 4x {NAME}"]
+    (resolve,) = promise.actions
+    assert (resolve.ref, resolve.kind, resolve.label, resolve.enabled) == ("resolve", "link", "Resolver no Gestor", True)
+    assert resolve.href == "https://gestor.example.com/WEB-PDV-RISCO#resolve"
+
+
+def test_no_pdv_a_promessa_de_pe_nao_aparece(gerente, vitrine):
+    from shopman.backstage.projections.order_queue import build_operator_order
+
+    order = _baguete_e_cafe("WEB-PDV-OK")
+
+    assert build_operator_order(order, user=gerente, context="pos").promise is None
+
+
+def test_no_pdv_sem_o_endereco_do_gestor_a_saida_diz_por_que(settings, gerente, vitrine):
+    from shopman.backstage.projections.order_queue import build_operator_order
+
+    settings.SHOPMAN_SURFACE_URLS = {"pos": f"{PDV}/"}
+    settings.DEBUG = False
+    order = _baguete_e_cafe("WEB-PDV-SEM-GESTOR")
+    _lost_lot(order, SKU, "4")
+
+    (resolve,) = build_operator_order(Order.objects.get(pk=order.pk), user=gerente, context="pos").promise.actions
+
+    assert resolve.enabled is False
+    assert resolve.href == ""
+    assert resolve.reason == "O endereço do Gestor não está configurado."

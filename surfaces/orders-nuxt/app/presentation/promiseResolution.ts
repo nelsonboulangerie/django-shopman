@@ -95,6 +95,8 @@ export const PICK_FIRST_LABEL = "Escolha o que fazer";
  * diálogo de cancelar que já existe, com o motivo por escolher e o dinheiro escrito.
  */
 export const CANCEL_HASH = "#cancel";
+/** O "Resolver no Gestor" das Encomendas do PDV (#2721 item 3): o pedido abre com o diálogo. */
+export const RESOLVE_HASH = "#resolve";
 /** O passo que abre a conversa: o nome do gesto do G07, o mesmo do menu do pedido. */
 export const NOTIFY_LABEL = "Avisar o cliente";
 /**

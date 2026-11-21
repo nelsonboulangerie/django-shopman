@@ -1,8 +1,9 @@
 // A volta do detalhe da encomenda: o recorte da lista vai no link (`?back=`), e
 // só caminho da própria seção vale (o parâmetro nunca vira redirecionamento aberto).
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { preorderBackTarget, preorderDetailPath } from "../app/presentation/preorderDetail";
+import { PROMISE_ALERT_TITLE, preorderBackTarget, preorderDetailPath, promiseAlert } from "../app/presentation/preorderDetail";
+import type { PreorderPromise } from "../app/types/preorders";
 
 describe("preorderDetailPath — o link leva a volta junto", () => {
   it("o recorte da lista vai em ?back=", () => {
@@ -28,5 +29,47 @@ describe("preorderDetailPath — o link leva a volta junto", () => {
     const from = "/preorders?mode=week&fulfillment=delivery&q=Ana";
     const link = new URL(preorderDetailPath("NB-7", from), "http://pdv.test");
     expect(preorderBackTarget(link.searchParams.get("back"))).toBe(from);
+  });
+});
+
+// #2721 item 3: a promessa em risco no topo do detalhe, com o "Resolver" do Gestor.
+function promise(over: Partial<PreorderPromise> = {}): PreorderPromise {
+  return {
+    state: "at_risk",
+    label: "Promessa em risco",
+    items: [
+      { sku: "CRO", at_risk: true, label: "Falta 1x Croissant", detail: "O lote de amanhã foi cancelado." },
+      { sku: "CHA", at_risk: false, label: "Chá", detail: "" },
+    ],
+    actions: [{ ref: "resolve", label: "Resolver no Gestor", href: "https://gestor.example/NB-1#resolve", enabled: true, reason: "" }],
+    ...over,
+  };
+}
+
+describe("promiseAlert — a promessa em risco no topo", () => {
+  it("o fato do Gestor, item a item, e o botão que abre o Resolver de lá", () => {
+    const open = vi.fn();
+    const alert = promiseAlert(promise(), open)!;
+    expect(alert.title).toBe(PROMISE_ALERT_TITLE);
+    expect(alert.description).toBe("Falta 1x Croissant. O lote de amanhã foi cancelado.");
+    expect(alert.color).toBe("error");
+    expect(alert.action?.label).toBe("Resolver no Gestor");
+    alert.action?.onSelect?.(new Event("click"));
+    expect(open).toHaveBeenCalledWith("https://gestor.example/NB-1#resolve");
+  });
+
+  it("travada, a saída some e o motivo entra no texto", () => {
+    const alert = promiseAlert(
+      promise({ actions: [{ ref: "resolve", label: "Resolver no Gestor", href: "", enabled: false, reason: "O endereço do Gestor não está configurado." }] }),
+      vi.fn(),
+    )!;
+    expect(alert.action).toBeUndefined();
+    expect(alert.description).toBe("Falta 1x Croissant. O lote de amanhã foi cancelado. O endereço do Gestor não está configurado.");
+  });
+
+  it("sem promessa em risco, não há aviso", () => {
+    expect(promiseAlert(null, vi.fn())).toBeNull();
+    expect(promiseAlert(undefined, vi.fn())).toBeNull();
+    expect(promiseAlert(promise({ state: "waiting_batch" }), vi.fn())).toBeNull();
   });
 });
