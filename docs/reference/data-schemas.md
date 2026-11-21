@@ -237,6 +237,13 @@ partes vieram de `flags["dialogue"]["parts"]`), `reason=asked_again:<motivo do p
 `source` da leitura (a última fala do cliente que perguntava algo) ou `source=memory,
 reason=asked_again_nothing` (nada achado, a Concierge pediu para repetir).
 Registros anteriores a 03/10/2026 têm `usage = {}`.
+Conferência antes do envio (dono, 21/11/2026; `shopman/storefront/concierge/conference.py`, regra em
+`conversational_commerce/reply/conference.py`): o PRIMEIRO bloco de resposta do turno grava
+`ConversationMessage.envelope["conference"]` = `{decision: send|fallback, checks: {acceptable, correct,
+useful: {status: pass|fail|unavailable, reason?}}, judge?: {answer: answers|off_target|contradicts,
+confidence}}`. Em sombra: o veredito é gravado e o envio não muda. `judge` só existe quando o Jev
+respondeu; a chamada dele entra em `usage.calls` com `stage: conference` e em `latency_ms.conference`.
+Lida por `concierge_conversation_eval` (linha "conferência antes do envio").
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
 `purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
@@ -1895,8 +1902,9 @@ o padrão; nenhuma desliga o freio de preço.
 
 O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
 deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o
-"Vai junto nesta corrida?" do Painel do pedido (`courier.ride_offer[].suggested` e
-`courier.ride_suggestion`) e a contagem `ride_suggestions` do quadro.
+"Vai junto nesta corrida?" do sheet de chamar (o mesmo nas Entregas, no Painel e no detalhe
+do pedido, que lê `DeliveriesProjection.ride_plan`, #2876) e a contagem `ride_suggestions`
+do quadro.
 
 ### Marketing — `Shop.defaults["marketing"]`
 
