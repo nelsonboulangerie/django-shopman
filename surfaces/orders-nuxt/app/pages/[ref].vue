@@ -111,9 +111,7 @@ const {
   notifyCustomer,
   saveNotes,
   addComment,
-  courierDispatch,
   courierDispatchAgain,
-  courierRide,
   courierReminderDismiss,
   resolveContactRequest,
   courierCancel,
@@ -122,6 +120,22 @@ const {
   authorize,
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
+
+// Chamar entregador abre o MESMO sheet das Entregas (`CourierCallSheet`, #2876), com
+// quem a casa sugere levar junto já marcado. Vindo do lembrete do cartão
+// (`#courier-call`), a página abre já com o sheet.
+const courierCall = useOrderCourierCall({ onCalled: () => refresh() });
+const courierSheet = courierCall.sheet;
+let courierArmed = false;
+watch(
+  () => Boolean(order.value?.courier?.can_dispatch),
+  (can) => {
+    if (!can || courierArmed || route.hash !== COURIER_CALL_HASH) return;
+    courierArmed = true;
+    void courierCall.open(order.value?.ref ?? orderRef.value);
+  },
+  { immediate: true },
+);
 
 // "O que falta neste pedido" (WP-G05): a faixa só aponta; o gesto é o que a página já
 // tem. Cancelar a cobrança que venceu abre com o motivo marcado, como no cartão.
@@ -1772,9 +1786,8 @@ const outside = useOutsideStore(
             :dispatch-action="
               order.actions.find((action) => action.ref === 'courier-dispatch')
             "
-            :equipment-options="order.equipment_options ?? []"
             :busy="busy"
-            :arm-dispatch="route.hash === COURIER_CALL_HASH"
+            :calling="courierCall.calling.value === order.ref"
             :dispatch-again-action="
               order.actions.find(
                 (action) => action.ref === 'courier-dispatch-again',
@@ -1782,11 +1795,9 @@ const outside = useOutsideStore(
             "
             :quoting="quoting"
             :quote-error="quoteError"
-            :order-ref="order.ref"
             @quote="onCourierQuote"
             @dismiss-quote-error="quoteError = ''"
-            @dispatch="courierDispatch"
-            @dispatch-ride="courierRide"
+            @call="courierCall.open(order.ref)"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
             @dismiss-reminder="courierReminderDismiss"
@@ -2137,6 +2148,19 @@ const outside = useOutsideStore(
       "
       @authorize="signWithPin"
       @authorize-badge="signWithBadge"
+    />
+
+    <!-- Chamar entregador: o MESMO sheet das Entregas e do cartão Pronto (#2876). -->
+    <CourierCallSheet
+      v-bind="courierSheet"
+      @close="courierCall.closeSheet"
+      @confirm="courierCall.confirmSheet"
+      @alone="courierCall.confirmAlone"
+      @toggle="courierCall.toggleCompanion"
+      @change="courierCall.setChange"
+      @machine="courierCall.chooseMachine"
+      @carrier="courierCall.chooseCarrier"
+      @note="courierCall.setNote"
     />
   </main>
 </template>

@@ -15,7 +15,11 @@ from django.test import override_settings
 from rest_framework.test import APIClient
 from shopman.orderman.models import Order
 
-from shopman.backstage.projections.deliveries import build_deliveries, deliveries_waiting_count
+from shopman.backstage.projections.deliveries import (
+    build_deliveries,
+    deliveries_waiting_count,
+    deliveries_waiting_summary,
+)
 from shopman.shop.adapters import courier_mock
 from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
 from shopman.shop.models import Shop
@@ -161,7 +165,7 @@ def test_endpoint_answers_for_who_runs_the_board(shop):
 
     assert [stop["ref"] for stop in body["waiting"]] == ["EN-A"]
     assert body["waiting"][0]["dispatch_action"]["payload_schema"]["expected_actor_id"] == user.pk
-    assert count == {"waiting": 1}
+    assert count == {"waiting": 1, "call_refs": ["EN-A"]}
 
 
 def test_anonymous_is_refused():
@@ -428,3 +432,31 @@ def test_waiting_brings_the_house_suggestion_and_the_badge_never_asks_the_centra
     from shopman.shop.services import ride_plan
     with mock.patch.object(ride_plan, "ride_plan", side_effect=AssertionError("o selo montou o plano")):
         assert deliveries_waiting_count() == 2
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_card_call_refs_are_the_ready_ones_that_can_be_called_now(shop):
+    """O "Chamar entregador" do cartão Pronto (#2876): só o pronto que aguarda e dá
+    para chamar agora; o em preparo conta no selo, a corrida na rua não aparece."""
+    _at("EN-PRONTO", -23.30, -51.16)
+    _at("EN-PREPARO", -23.30, -51.17, status=Order.Status.PREPARING)
+    _call(_at("EN-RUA", -23.31, -51.16))
+
+    summary = deliveries_waiting_summary()
+
+    assert summary == {"waiting": 2, "call_refs": ["EN-PRONTO"]}
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_card_call_refs_skip_a_call_without_answer(shop):
+    """Chamada sem resposta da central trava outra: o cartão não oferece chamar."""
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    order = _at("EN-A", -23.30, -51.16)
+    _at("EN-B", -23.30, -51.17)
+    Directive.objects.create(topic=COURIER_DISPATCH, status="failed",
+        payload={"order_ref": order.ref, "actor": "lab", "dispatch_attempt": {"state": "unknown"}})
+
+    assert deliveries_waiting_summary() == {"waiting": 2, "call_refs": ["EN-B"]}

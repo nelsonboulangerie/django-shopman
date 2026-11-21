@@ -18,6 +18,7 @@ import type { ButtonProps } from "#ui/types";
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
+  withCourierCall,
   cardAuthorizationNotice,
   cardClock,
   cardSeal,
@@ -70,6 +71,8 @@ const props = withDefaults(
      *  quatro linhas (código, selo e valor; quem; itens; o gesto e o ⋮). O que é
      *  exceção (avisos, erro, desfazer, DANFE) só aparece quando existe. */
     compact?: boolean;
+    /** Pronto de entrega que dá para chamar agora (#2876): o gesto é "Chamar entregador". */
+    callCourier?: boolean;
   }>(),
   { canOpen: true },
 );
@@ -105,7 +108,9 @@ const attentionStations = computed(() =>
 );
 
 const onRoad = computed(() => onRoadLine(props.card));
-const affordances = computed(() => cardAffordances(props.card));
+const affordances = computed(() =>
+  withCourierCall(cardAffordances(props.card), Boolean(props.callCourier)),
+);
 const primary = computed(
   () =>
     affordances.value.find((a) => a.priority === "primary" || a.disabled) ??
