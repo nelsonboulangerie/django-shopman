@@ -1573,6 +1573,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_CART_NOW": {
         WILDCARD: {WILDCARD: CopyEntry(message="Sua sacola de agora:")},
     },
+    "CONCIERGE_NOT_IN_MENU": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não encontrei “{part}” no cardápio de hoje. O que temos agora:")},
+    },
     "CONCIERGE_CART_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
     },

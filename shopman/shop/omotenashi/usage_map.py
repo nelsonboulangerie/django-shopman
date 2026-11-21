@@ -300,6 +300,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
     ),
+    "CONCIERGE_NOT_IN_MENU": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
     "CONCIERGE_NO_PHONE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
     ),
