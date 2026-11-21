@@ -46,10 +46,10 @@ async function opensOrder(page: Page) {
 
 async function identifiesCustomer(page: Page) {
   await page.getByRole("button", { name: "Identificar cliente" }).locator("visible=true").first().click();
-  const search = page.getByPlaceholder("Buscar por nome, telefone, CPF ou e-mail").locator("visible=true").first();
+  const search = page.getByRole("combobox", { name: "Buscar cliente" }).locator("visible=true").first();
   await search.click();
   await search.pressSequentially(CUSTOMER_PHONE);
-  const dialog = page.getByRole("dialog").filter({ has: page.getByPlaceholder("Buscar por nome, telefone, CPF ou e-mail") });
+  const dialog = page.getByRole("dialog").filter({ has: page.getByRole("combobox", { name: "Buscar cliente" }) });
   await dialog.getByRole("option", { name: exact(CUSTOMER) }).first().click({ timeout: 30_000 });
   const done = dialog.getByRole("button", { name: "Concluir", exact: true });
   await expect(async () => {
