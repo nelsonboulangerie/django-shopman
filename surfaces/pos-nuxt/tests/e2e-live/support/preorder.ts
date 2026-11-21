@@ -10,9 +10,9 @@ import { expect, type Page } from "@playwright/test";
 import { cast, settled } from "./operator";
 
 /**
- * Cancela pela tela a encomenda `ref`, paga em dinheiro: o motivo, o gerente da
- * lista com o próprio PIN, e "Encomenda cancelada.". O dinheiro fica a devolver no
- * caixa, como numa desistência de verdade.
+ * Cancela pela tela a encomenda `ref`, paga em dinheiro: o motivo e o gerente da
+ * lista com o próprio PIN. O dinheiro fica a devolver no caixa, como numa
+ * desistência de verdade.
  */
 export async function cancelsPaidPreorder(page: Page, ref: string): Promise<void> {
   await page.goto(`/preorders/${encodeURIComponent(ref)}`);
@@ -32,9 +32,18 @@ export async function cancelsPaidPreorder(page: Page, ref: string): Promise<void
 
   const manager = page.getByRole("dialog", { name: "Autorizar cancelamento" });
   await expect(manager).toBeVisible({ timeout: 30_000 });
+  // A prova é a resposta do cancelamento, não o aviso: cancelada, a encomenda sai das
+  // Encomendas e a tela volta ao quadro, e o aviso "Encomenda cancelada." é breve. A
+  // escuta nasce antes do PIN, porque o último dígito já pode cancelar.
+  const cancelled = page.waitForResponse(
+    (r) => r.url().includes(`/orders/${encodeURIComponent(ref)}/cancel/`) && r.request().method() === "POST",
+    { timeout: 60_000 },
+  );
   await manager.getByRole("button", { name: new RegExp(cast.manager.name) }).first().click();
   for (const digit of cast.manager.pin) await manager.getByRole("button", { name: digit, exact: true }).click();
   const confirm = manager.getByRole("button", { name: /^Confirmar|^Autorizar/ }).first();
   if (await confirm.isVisible({ timeout: 2000 }).catch(() => false)) await confirm.click();
-  await expect(page.getByText("Encomenda cancelada.").first()).toBeVisible({ timeout: 60_000 });
+  const response = await cancelled;
+  expect(response.status(), `o cancelamento da encomenda ${ref}`).toBe(200);
+  await expect(manager).toBeHidden({ timeout: 30_000 });
 }
