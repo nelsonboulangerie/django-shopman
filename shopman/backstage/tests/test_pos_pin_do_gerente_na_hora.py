@@ -65,6 +65,35 @@ def test_pin_errado_recusa_no_dialogo_e_conta_na_trava(balcao):
     assert balcao["manager"].pin_credential.attempts == 1
 
 
+# O CRACHÁ (#2691): o diálogo "Autorizar a venda" convida a passar o crachá, e a
+# conferência dele é a mesma porta do PIN, com o mesmo carimbo.
+BADGE = "4337f822b0e6"
+
+
+def _check_badge(client, badge: str):
+    return client.post(URL, {"manager_approval": {"badge": badge}}, content_type="application/json")
+
+
+def test_cracha_certo_devolve_o_carimbo_como_o_pin(balcao):
+    credential = balcao["manager"].pin_credential
+    credential.set_badge(BADGE)
+    credential.save(update_fields=["badge_hash"])
+    response = _check_badge(balcao["client"], BADGE)
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["approved_by"] == "joyce"
+    assert body["token"] and BADGE not in body["token"]
+
+
+def test_cracha_desconhecido_recusa_com_a_saida_do_cracha(balcao):
+    response = _check_badge(balcao["client"], "000000000000")
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "manager_approval_invalid"
+    # Quem passou o crachá não digitou PIN nenhum: a saída fala do crachá.
+    assert error["recovery"] == "Passe o crachá de novo, ou escolha o gerente e digite o PIN."
+
+
 def test_sem_pin_pede_a_aprovacao(balcao):
     response = balcao["client"].post(URL, {}, content_type="application/json")
     assert response.status_code == 422
