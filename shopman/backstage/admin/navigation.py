@@ -190,6 +190,10 @@ def get_sidebar_navigation(request):
             _model_item("Trabalhos de impressão", "receipt_long", "backstage.PrintJob"),
             _model_item("Agentes de impressão", "devices", "backstage.PrintAgentCredential"),
         ]),
+        # A ponte que leva o alerta de produção a uma issue com dono no GitHub.
+        _group("Incidentes", "emergency_home", [
+            _model_item("Credenciais da ponte", "key", "backstage.IncidentReaderCredential"),
+        ]),
         _group("Estoque", "inventory_2", [
             _model_item("Saldos", "point_scan", "stockman.Quant"),
             _model_item("Reservas", "keep", "stockman.Hold"),
