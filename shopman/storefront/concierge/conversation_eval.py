@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -108,6 +109,8 @@ class Turn:
     customer: str
     reply: str
     conversation_id: int
+    #: O veredito da conferência antes do envio (``envelope["conference"]``), quando houve.
+    conference: dict | None = None
 
 
 def _acts(usage: dict) -> set[str]:
@@ -159,6 +162,8 @@ def _conversation_turns(conversation, messages) -> list[Turn]:
             customer=" / ".join(m.text for m in inbound if m.text),
             reply="\n".join(r.text for r in replies if r.text),
             conversation_id=conversation.pk,
+            conference=next(((r.envelope or {}).get("conference") for r in replies
+                             if (r.envelope or {}).get("conference")), None),
         ))
         inbound.clear()
         replies.clear()
@@ -237,6 +242,22 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
         lines.append(f"  {name} alcançaria {ok}/{scored} ({_pct(ok, scored)}): " + "; ".join(
             f"{REACH_LABELS[k]} {v}" for k, v in sorted(reach.items(), key=lambda kv: -kv[1]) if k != "reaches"
         ))
+    conferred = [t for t in turns if t.conference and outcome_of(t.evidence) is not None]
+    if conferred:
+        would_fall = [t for t in conferred if t.conference.get("decision") == "fallback"]
+        agree = sum(
+            (t.conference.get("decision") == "fallback") == (outcome_of(t.evidence) != "useful") for t in conferred
+        )
+        reasons = Counter(
+            f"{check}:{(row or {}).get('reason') or (row or {}).get('status')}"
+            for t in would_fall for check, row in (t.conference.get("checks") or {}).items()
+            if (row or {}).get("status") != "pass"
+        )
+        lines.append(
+            f"  conferência antes do envio (sombra): {len(conferred)} conferidos, reprovaria {len(would_fall)}, "
+            f"concorda com o placar em {agree}/{len(conferred)}"
+            + (": " + ", ".join(f"{k} {v}" for k, v in reasons.most_common()) if reasons else "")
+        )
     bad = [t for t in turns if outcome_of(t.evidence) not in (None, "useful") or t.evidence.repeated]
     if bad and show:
         lines.append("")
@@ -249,4 +270,6 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             lines.append(f"      cliente: {_redacted(t.customer)[:160]}")
             lines.append(f"      casa:    {_redacted(t.reply).replace(chr(10), ' / ')[:240] or '(nada)'}")
             lines.append(f"      ManyChat AI faria: {REACH_LABELS[reach]}")
+            if t.conference:
+                lines.append(f"      conferência (sombra): {t.conference.get('decision')}")
     return "\n".join(lines)
