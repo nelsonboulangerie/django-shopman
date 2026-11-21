@@ -867,9 +867,10 @@ class OperatorSessionView(APIView):
         is_gestor = surface_perm_codes(required_perm) == GESTOR_SURFACE_PERMISSIONS
         surface_role = gestor_surface_role(operador) if is_gestor and operador and not locked else None
         if required_perm == "backstage.view_bi" and operador and not locked:
-            # O B.I. tem duas personas: quem audita o caixa (o Dono) e quem lê o
-            # resto (o Gerente). O rail esconde o Caixa de quem não audita, em vez
-            # de abrir uma tela que só sabe dizer "tentar de novo" (beta 05/11, ge:BI-07).
+            # O B.I. é do Dono (dono, 21/11/2026). Quem lê sem auditar o caixa (o
+            # superusuário de suporte, uma concessão avulsa) segue sem a seção do
+            # Caixa: o rail a esconde em vez de abrir uma tela que só sabe dizer
+            # "tentar de novo" (beta 05/11, ge:BI-07).
             from shopman.backstage.permissions import can_audit_cash
 
             surface_role = "cash_auditor" if can_audit_cash(operador) else "reader"
@@ -2461,14 +2462,16 @@ class DeliveriesView(APIView):
 
 
 class DeliveriesCountView(APIView):
-    """O selo de Entregas no menu: ``{waiting}``, entregas do dia sem corrida chamada."""
+    """O selo de Entregas no menu e o "Chamar entregador" do cartão Pronto do Painel:
+    ``{waiting, call_refs}`` (entregas do dia sem corrida chamada; os prontos que dá
+    para chamar agora, #2876)."""
 
     permission_classes = [HasOrderBoardAccess]
 
     def get(self, request):
-        from shopman.backstage.projections.deliveries import deliveries_waiting_count
+        from shopman.backstage.projections.deliveries import deliveries_waiting_summary
 
-        return Response({"waiting": deliveries_waiting_count()})
+        return Response(deliveries_waiting_summary())
 
 
 class DeliveryDriverPhotoView(APIView):

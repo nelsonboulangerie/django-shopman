@@ -170,8 +170,12 @@ class Command(BaseCommand):
             return False
 
     def _alert(self, order, phase: str) -> None:
-        from shopman.shop.lifecycle import phase_stuck_message
+        from shopman.shop.lifecycle import phase_stuck_message, phase_superseded
         from shopman.shop.services.observability import create_operator_alert
+
+        # Fase superada (o pedido fechou antes, ou é de teste) não é travamento (#3029).
+        if phase_superseded(order, phase):
+            return
 
         create_operator_alert(
             type="lifecycle_phase_stuck",
