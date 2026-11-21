@@ -127,6 +127,7 @@ def _publish_for_sku(sku: str, *, event_type: str, payload: dict) -> None:
         logger.warning("django_eventstream not installed; SSE emit skipped")
         return
 
+    channel_refs: list[str] = []
     try:
         channel_refs = _channels_for_sku(sku)
         for ref in channel_refs:
@@ -140,9 +141,28 @@ def _publish_for_sku(sku: str, *, event_type: str, payload: dict) -> None:
         logger.warning(
             "SSE emit failed sku=%s type=%s", sku, event_type, exc_info=True,
         )
+    # A vitrine pública (#2784): o SKU só sai quando o que qualquer visitante vê dele
+    # mudou. Depois do bloco acima, que já apagou o cache de disponibilidade do canal:
+    # a assinatura é lida fresca.
+    _publish_public_shelf(sku, channel_refs)
     # Estoque mexeu ⇒ "Últimas X unidades" pode ter mudado. Independente do
     # bloco acima: uma falha no stream de estoque não deve calar o FOMO.
     _publish_fomo(sku, reason=event_type)
+
+
+def _publish_public_shelf(sku: str, channel_refs: list[str]) -> None:
+    try:
+        from django_eventstream import send_event
+
+        from shopman.shop.services import public_shelf
+
+        targets = [(sku, channel_refs)]
+        targets += [(bundle, _channels_for_sku(bundle)) for bundle in public_shelf.bundles_using(sku)]
+        for target, refs in targets:
+            for ref in public_shelf.changed_channels(target, refs):
+                send_event(public_shelf.shelf_channel(ref), public_shelf.SHELF_EVENT, {"sku": target})
+    except Exception:
+        logger.warning("SSE public shelf emit failed sku=%s", sku, exc_info=True)
 
 
 # ── FOMO badges ──────────────────────────────────────────────────────
@@ -195,6 +215,8 @@ def _publish_surface_changed(surface_ref: str) -> None:
         return
     try:
         send_event(f"stock-{surface_ref}", "listing-changed", {"surface_ref": surface_ref})
+        # A vitrine pública relê tudo: sem SKU, o aviso vale para qualquer página (#2784).
+        send_event(f"shelf-{surface_ref}", "shelf-update", {})
         # A TV (menuboard) assina ``stock-catalog``, não ``stock-{ref}``: sem este
         # segundo envio, ligar/desligar, trocar coleções ou rotação só chegava ao
         # quadro no poll de 30 s. O quadro filtra nada — relê o próprio estado.
