@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { courierProgress } from "../app/presentation/courierProgress";
+import { aroundClock, courierProgress } from "../app/presentation/courierProgress";
 
 // O andamento da corrida da TaOn: a frase anda com o relógio da tela, entre leituras.
 
@@ -16,7 +16,7 @@ describe("courierProgress", () => {
       NOW,
     );
     expect(view.pickup).toBe("Chega para coletar em ~7 min");
-    expect(view.delivery).toBe("Entrega prevista ~15h58");
+    expect(view.delivery).toBe("Entrega prevista por volta das 15h58");
     expect(view.stale).toBe("");
   });
 
@@ -44,7 +44,7 @@ describe("courierProgress", () => {
       NOW,
     );
     expect(picked.pickup).toBe("");
-    expect(picked.delivery).toBe("Entrega prevista ~16h01");
+    expect(picked.delivery).toBe("Entrega prevista por volta das 16h01");
     const done = courierProgress(
       { status: "F", ride_state: "done", delivery_eta_at: "2026-10-13T19:01:00+00:00", sync_since: "2026-10-13T18:42:00+00:00" },
       NOW,
@@ -89,5 +89,13 @@ describe("courierProgress", () => {
 
   it("sem corrida, nada", () => {
     expect(courierProgress(null, NOW)).toEqual({ pickup: "", delivery: "", stale: "", waiting: "" });
+  });
+});
+
+describe("aroundClock: a entrega prevista é um horário, nunca uma duração", () => {
+  it("diz por volta das/da, no fuso da loja", () => {
+    expect(aroundClock(Date.parse("2026-11-16T15:58:00-03:00"))).toBe("por volta das 15h58");
+    expect(aroundClock(Date.parse("2026-11-16T01:43:00-03:00"))).toBe("por volta da 1h43");
+    expect(aroundClock(Date.parse("2026-11-16T00:20:00-03:00"))).toBe("por volta da 0h20");
   });
 });
