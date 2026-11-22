@@ -962,6 +962,13 @@ def _login_rate_limited_response(usage: dict | None) -> Response:
     )
 
 
+def _password_opens_station(user) -> bool:
+    """Num posto vinculado, a senha entra só para quem vincula postos e para o Dono."""
+    from shopman.backstage.permissions import can_audit_cash
+
+    return user.has_perm(station_trust.PROVISION_PERM) or can_audit_cash(user)
+
+
 @method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
 class OperatorLoginView(APIView):
     """Login de operador NO PRÓPRIO app (sem bounce pro Django admin).
@@ -1019,6 +1026,25 @@ class OperatorLoginView(APIView):
                 {"detail": "Usuário ou senha inválidos.", "error": {"code": "operator_login_invalid"}},
                 status=403,
             )
+        # Num posto vinculado a senha não é a porta de quem opera (#2334): ali se
+        # entra pelo PIN ou pelo crachá, que têm bloqueio progressivo e aviso ao
+        # gerente. Até aqui qualquer staff com senha abria sessão num posto pela API,
+        # pulando a régua que a trava já cobra (``OperatorUnlockPasswordView``).
+        # Ficam com a senha: quem vincula postos (o reparo do posto é com a senha
+        # dela) e o Dono, que não tem PIN (a mesma exceção da trava, 06/11/2026).
+        # A senha está certa daqui para baixo: a recusa é da porta e não conta como
+        # senha errada; fica na trilha, como toda recusa.
+        if station_trust.is_trusted_station(request) and not _password_opens_station(user):
+            codigo = "operator_password_station_pin_only"
+            sign_in_audit.record(
+                user=user,
+                method=SignInMethod.PASSWORD,
+                outcome=SignInOutcome.FAILED,
+                request=request,
+                reason=codigo,
+            )
+            frase = "Neste posto, entre pelo PIN ou pelo crachá. Sem PIN, peça um ao gerente."
+            return Response({"detail": frase, "error": {"code": codigo}}, status=403)
         # Quem sabe por qual porta a pessoa entrou é quem abre a porta: o
         # backend de autenticação não distingue senha de PIN nem de crachá. A
         # linha da trilha quem grava é o receiver do `user_logged_in`.

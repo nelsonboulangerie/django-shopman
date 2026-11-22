@@ -138,7 +138,10 @@ class SignInAuditTests(TestCase):
     # ── Senha ─────────────────────────────────────────────────────────────
 
     def test_login_por_senha_no_app_de_operador(self):
-        resp = self.client.post(
+        # Fora de posto: num posto vinculado, a senha da Caixa é recusada e ela entra
+        # pelo PIN (#2334; ``test_operator_login_no_posto``). A trilha da senha é a
+        # mesma de qualquer dispositivo pessoal.
+        resp = self.client_class().post(
             LOGIN, {"username": "ana", "password": "senha-forte-123"},
             content_type="application/json",
         )
