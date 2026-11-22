@@ -135,6 +135,9 @@ class StripeWebhookView(APIView):
 
         response_body = {"status": "ok"}
         webhook_idempotency.mark_done(claim, response_body=response_body)
+        from shopman.shop.services import observability
+
+        observability.record_webhook_success("stripe")
         return Response(response_body, status=status.HTTP_200_OK)
 
     @staticmethod

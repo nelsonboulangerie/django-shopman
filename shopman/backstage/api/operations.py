@@ -5244,6 +5244,29 @@ class OrderCourierCancelView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Close here the ride the courier central never closed (delivered or back at the store)",
+        responses={200: OpenApiResponse(description="Ride closed here.")},
+    ),
+)
+class OrderCourierCloseHereView(_OrderActionBase):
+    intention_operation = "courier-close-here"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        outcome = str(request.data.get("outcome") or "")
+
+        def execute(base):
+            closed = orders_service.courier_close_here(order, outcome=outcome, actor=_actor(request), expected_revision=base)
+            return {"closed": closed, "outcome": outcome}
+
+        return self._context_response(request, order, self.intention_operation, {"outcome": outcome}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Quote the external courier ride without dispatching",
         responses={200: OpenApiResponse(description="Courier quote.")},
     ),

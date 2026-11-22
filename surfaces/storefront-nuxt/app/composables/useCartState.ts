@@ -506,11 +506,13 @@ export function useCartState () {
     )
   }
 
+  // `notice`: o cupom entrou no lugar de um desconto que já valia, e a resposta diz
+  // de qual (o maior ganha, os descontos não se somam).
   async function mutateCoupon (method: 'POST' | 'DELETE', body?: Record<string, unknown>) {
     beginMutation()
-    let response: { cart: CartProjection }
+    let response: { cart: CartProjection, notice?: string }
     try {
-      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath('/api/v1/cart/coupon/'), {
+      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection, notice?: string }>(apiPath('/api/v1/cart/coupon/'), {
         method,
         headers: await csrfHeaders(),
         body,
@@ -521,22 +523,23 @@ export function useCartState () {
       queueDepth -= 1
     }
     if (queueDepth === 0) applyServerCart(response.cart)
-    return response.cart
+    return response
   }
 
   async function applyCoupon (coupon_code: string) {
-    const nextCart = await mutateCoupon('POST', { code: coupon_code })
-    // "Cupom aplicado" só quando o total caiu (beta SMS-04).
+    const { cart: nextCart, notice } = await mutateCoupon('POST', { code: coupon_code })
+    // "Cupom aplicado" só quando o total caiu (beta SMS-04); com o desconto que o
+    // cupom substituiu, quando substituiu.
     if (import.meta.client) {
       const toast = couponAppliedToast(nextCart)
-      if (toast.kind === 'success') useSonner.success(toast.message)
+      if (toast.kind === 'success') useSonner.success(notice || toast.message)
       else useSonner.info(toast.message)
     }
     return nextCart
   }
 
   async function removeCoupon () {
-    const nextCart = await mutateCoupon('DELETE')
+    const { cart: nextCart } = await mutateCoupon('DELETE')
     if (import.meta.client) useSonner('Cupom removido.')
     return nextCart
   }

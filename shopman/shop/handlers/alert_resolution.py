@@ -246,6 +246,8 @@ def _synthetic_reason(alert_type: str, ref: str, message: str = "") -> str:
         return "pedido de teste"
     if _is_seed_order(order):
         return "pedido do seed"
+    if alert_type == "fiscal_cancel_failed" and (order.data or {}).get("nfce_cancelled"):
+        return "NFC-e já cancelada"
     status = str(order.status)
     if status in {"delivered", "completed"} and alert_type in (*RESOLVED_BY_LEAVING_NEW, *RESOLVED_BY_DELIVERY):
         return "pedido já entregue"
@@ -264,7 +266,8 @@ def resolve_alerts_ended_by_fact() -> int:
       fechado ou cancelado. É a mesma regra que o ciclo aplica na hora
       (:func:`on_order_changed`, ``production_alerts``), valendo para os avisos
       que nasceram antes dela;
-    - tipo que o código não cria mais, e evento do iFood que já ganhou destino escrito.
+    - tipo que o código não cria mais, e evento do iFood que já ganhou destino escrito;
+    - cancelamento da NFC-e que falhou e depois saiu (a nota já consta cancelada).
 
     No padrão do
     :func:`resolve_superseded_phase_alerts`: quem fecha aparece como o sistema,

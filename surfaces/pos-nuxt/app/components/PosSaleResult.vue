@@ -41,8 +41,11 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** Sai para o quadro de comandas (F2 também). */
+  /** "Nova venda" (F2 também): a grade da próxima comanda livre. */
   newSale: [];
+  /** Volta ao quadro de comandas: "Voltar às comandas" da encomenda e o fim da
+   *  contagem, que não é toque de ninguém e por isso não abre comanda. */
+  toTabs: [];
   /** ENCOMENDA: abre a próxima encomenda, como a "Nova encomenda" da seção. */
   newOrder: [];
   printReceipt: [];
@@ -113,15 +116,15 @@ onMounted(() => {
     countdown.value -= 1;
     if (countdown.value <= 0) {
       cancelCountdown();
-      emit("newSale");
+      emit("toTabs");
     }
   }, 1000);
 });
 onBeforeUnmount(() => cancelCountdown());
 
-function onNewSale() {
+function onToTabs() {
   cancelCountdown();
-  emit("newSale");
+  emit("toTabs");
 }
 
 function onPrimary() {
@@ -375,7 +378,7 @@ function onPrimary() {
           size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           data-sale-result-to-tabs
-          @click="onNewSale"
+          @click="onToTabs"
         >
           <Icon name="lucide:layout-grid" class="size-4" />
           Voltar às comandas

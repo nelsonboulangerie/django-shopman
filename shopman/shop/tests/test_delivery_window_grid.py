@@ -111,15 +111,22 @@ def test_dia_fechado_nao_tem_grade(loja):
 
 
 def test_a_grade_da_concierge_e_a_do_site_sao_a_mesma_funcao():
-    """A concierge e a projeção do checkout leem a grade daqui, e de nenhum outro lugar."""
+    """A concierge e a projeção do checkout leem a grade daqui, e de nenhum outro lugar.
+
+    As duas listam a entrega pela MESMA função anotada (preparo e prazo de aceite,
+    #3266), que lê ``fulfillment_window.annotate``; e conferem com
+    ``delivery_window_error``.
+    """
     from pathlib import Path
 
     import shopman.storefront.concierge.tools as concierge_tools
+    import shopman.storefront.presentation.checkout as checkout_presentation
     import shopman.storefront.services.pickup_slots as storefront_slots
 
     concierge = Path(concierge_tools.__file__).read_text()
     assert "delivery_slots_for" not in concierge
-    assert "delivery_windows_for(day)" in concierge
+    assert "annotate_delivery_windows_for_checkout(" in concierge
+    assert "annotate_delivery_windows_for_checkout(" in Path(checkout_presentation.__file__).read_text()
     assert "delivery_window_error(" in concierge
     assert "fulfillment_window.annotate(day" in Path(storefront_slots.__file__).read_text()
     assert fulfillment_window.annotate.__module__ == fulfillment_window.delivery_windows_for.__module__

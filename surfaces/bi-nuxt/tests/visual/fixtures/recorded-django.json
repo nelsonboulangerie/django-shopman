@@ -4134,5 +4134,189 @@
       ],
       "reports": []
     }
+  },
+  "/api/v1/backstage/bi/ai/": {
+    "bi": {
+      "date_from": "2026-11-15",
+      "date_to": "2026-11-21",
+      "conference_mode": "shadow",
+      "cost_usd_micros": 1739300,
+      "cost_brl_micros": 10100911,
+      "calls": 1758,
+      "errors": 2,
+      "denied": 0,
+      "estimated_calls": 0,
+      "provisional_quotes": false,
+      "rows": [
+        {
+          "purpose": "concierge",
+          "purpose_label": "Concierge: atendimento no WhatsApp",
+          "model": "deepseek-flash",
+          "calls": 532,
+          "errors": 2,
+          "denied": 0,
+          "cost_usd_micros": 1069000,
+          "cost_brl_micros": 6211227,
+          "estimated": false
+        },
+        {
+          "purpose": "decision",
+          "purpose_label": "Modelo de decisão (Jev) da triagem e dos placares",
+          "model": "jev-latest",
+          "calls": 1035,
+          "errors": 0,
+          "denied": 0,
+          "cost_usd_micros": 517500,
+          "cost_brl_micros": 3003915,
+          "estimated": false
+        },
+        {
+          "purpose": "triage",
+          "purpose_label": "Triagem das mensagens de clientes",
+          "model": "deepseek-flash",
+          "calls": 191,
+          "errors": 0,
+          "denied": 0,
+          "cost_usd_micros": 152800,
+          "cost_brl_micros": 885769,
+          "estimated": false
+        }
+      ],
+      "days": [
+        {
+          "date": "2026-11-15",
+          "cost_usd_micros": 214000,
+          "cost_brl_micros": 1209485,
+          "rate": "5.6518",
+          "quoted_on": "2026-11-13",
+          "provisional": false
+        },
+        {
+          "date": "2026-11-16",
+          "cost_usd_micros": 252400,
+          "cost_brl_micros": 1446858,
+          "rate": "5.7324",
+          "quoted_on": "2026-11-16",
+          "provisional": false
+        },
+        {
+          "date": "2026-11-17",
+          "cost_usd_micros": 268000,
+          "cost_brl_micros": 1550407,
+          "rate": "5.7851",
+          "quoted_on": "2026-11-17",
+          "provisional": false
+        },
+        {
+          "date": "2026-11-18",
+          "cost_usd_micros": 299800,
+          "cost_brl_micros": 1741898,
+          "rate": "5.8102",
+          "quoted_on": "2026-11-18",
+          "provisional": false
+        },
+        {
+          "date": "2026-11-19",
+          "cost_usd_micros": 281700,
+          "cost_brl_micros": 1658903,
+          "rate": "5.8889",
+          "quoted_on": "2026-11-19",
+          "provisional": false
+        },
+        {
+          "date": "2026-11-20",
+          "cost_usd_micros": 221000,
+          "cost_brl_micros": 1301447,
+          "rate": "5.8889",
+          "quoted_on": "2026-11-19",
+          "provisional": false
+        },
+        {
+          "date": "2026-11-21",
+          "cost_usd_micros": 202400,
+          "cost_brl_micros": 1191913,
+          "rate": "5.8889",
+          "quoted_on": "2026-11-19",
+          "provisional": false
+        }
+      ],
+      "conferred": 31,
+      "would_fall": 9,
+      "reasons": [
+        {
+          "reason": "no_next_step",
+          "label": "Sem próximo passo para o cliente",
+          "count": 6
+        },
+        {
+          "reason": "judge_off_target",
+          "label": "Fala de outra coisa",
+          "count": 2
+        },
+        {
+          "reason": "unconferred",
+          "label": "Ficou sem conferir (o juiz não respondeu)",
+          "count": 1
+        },
+        {
+          "reason": "held",
+          "label": "A verificação de saída segurou",
+          "count": 1
+        }
+      ],
+      "gaps": [
+        {
+          "question": "Vocês aceitam encomenda de bolo para 30 pessoas?",
+          "count": 3,
+          "last_at": "2026-11-21T15:42:00-03:00",
+          "admin_url": "/admin/shop/faqentry/add/?question=Voc%C3%AAs+aceitam+encomenda+de+bolo+para+30+pessoas%3F"
+        },
+        {
+          "question": "entrega na [endereço omitido] apto 3?",
+          "count": 2,
+          "last_at": "2026-11-20T09:10:00-03:00",
+          "admin_url": "/admin/shop/faqentry/add/?question=entrega"
+        },
+        {
+          "question": "Tem estacionamento na frente da loja?",
+          "count": 1,
+          "last_at": "2026-11-19T18:03:00-03:00",
+          "admin_url": "/admin/shop/faqentry/add/?question=Tem+estacionamento"
+        }
+      ],
+      "fallbacks": [
+        {
+          "at": "2026-11-21T15:42:00-03:00",
+          "conversation_id": 42,
+          "customer_text": "quero 2 croissants e um café, dá pra buscar 16h?",
+          "reply_text": "Anotei 2 croissants. O café é só no balcão.",
+          "reasons": [
+            "Sem próximo passo para o cliente"
+          ],
+          "admin_url": "/admin/shop/conversation/42/change/"
+        },
+        {
+          "at": "2026-11-21T11:05:00-03:00",
+          "conversation_id": 57,
+          "customer_text": "oi, meu cpf é [documento omitido], pode emitir a nota? meu zap é [telefone omitido]",
+          "reply_text": "Hoje temos baguete, ciabatta e pão de campanha.",
+          "reasons": [
+            "Fala de outra coisa"
+          ],
+          "admin_url": "/admin/shop/conversation/57/change/"
+        },
+        {
+          "at": "2026-11-20T17:30:00-03:00",
+          "conversation_id": 61,
+          "customer_text": "manda o recibo pra [e-mail omitido] por favor",
+          "reply_text": "Seu pedido está confirmado.",
+          "reasons": [
+            "Sem próximo passo para o cliente",
+            "Ficou sem conferir (o juiz não respondeu)"
+          ],
+          "admin_url": "/admin/shop/conversation/61/change/"
+        }
+      ]
+    }
   }
 }

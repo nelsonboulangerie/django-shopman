@@ -17,6 +17,11 @@ class RedactedObservation:
     categories: tuple[str, ...]
 
 
+#: O que o dono lê no lugar do contato. O boundary de telemetria (logs, Sentry) segue com
+#: ``[email]`` e ``[phone]``; na fala de cliente que aparece em tela, tudo em português.
+PHONE_PLACEHOLDER = "[telefone omitido]"
+EMAIL_PLACEHOLDER = "[e-mail omitido]"
+
 # O boundary canônico remove contatos e segredos comuns. Aqui ficam somente
 # formas próprias de fala comercial que precisam ser omitidas do corpus.
 _DOMAIN_PATTERNS = (
@@ -24,6 +29,13 @@ _DOMAIN_PATTERNS = (
         "cpf",
         re.compile(r"(?<!\d)\d{3}[.\s-]?\d{3}[.\s-]?\d{3}[-.\s]?\d{2}(?!\d)"),
         "[documento omitido]",
+    ),
+    (
+        # Telefone com o DDD entre parênteses ("(11) 98765-4321", "+55 (43) 3025-1234"): o
+        # boundary de telemetria começa no primeiro dígito e deixava o "(" para trás.
+        "phone",
+        re.compile(r"(?:\+?\d{2}\s*)?\(\s*\d{2}\s*\)\s*\d{4,5}[\s.-]?\d{4}(?!\d)"),
+        PHONE_PLACEHOLDER,
     ),
     (
         "numeric_identifier",
@@ -222,6 +234,7 @@ def redact_observation_text(value: str, *, names: Iterable[str] = ()) -> Redacte
     for marker, category in (("[email]", "email"), ("[phone]", "phone"), (REDACTED, "secret")):
         if marker in text and category not in found:
             found.append(category)
+    text = text.replace("[email]", EMAIL_PLACEHOLDER).replace("[phone]", PHONE_PLACEHOLDER)
     text, url_count = _URL_RE.subn("[link omitido]", text)
     if url_count and "url" not in found:
         found.append("url")
