@@ -1616,6 +1616,11 @@ class ShopForm(forms.ModelForm):
         self.fields.pop("defaults", None)
         self.fields.pop("integrations", None)
 
+        if "incident_remedies_mode" in self.fields:
+            # Opcional no form: salvar a página sem mexer nele (ou um POST antigo, sem
+            # o campo) mantém o modo gravado. Ver ``clean_incident_remedies_mode``.
+            self.fields["incident_remedies_mode"].required = False
+
         if "social_links" in self.fields:
             self.fields["social_links"].required = False
             self.fields["social_links"].help_text = (
@@ -1640,6 +1645,14 @@ class ShopForm(forms.ModelForm):
         self._set_defaults_initial(_shop_defaults(self.instance))
         self._set_integrations_initial(getattr(self.instance, "integrations", None) or {})
         ai_routes.set_initial(self)
+
+    def clean_incident_remedies_mode(self):
+        """Vazio ou ausente mantém o modo da loja; sem modo gravado, o padrão do modelo ("on")."""
+        value = self.cleaned_data.get("incident_remedies_mode")
+        if value:
+            return value
+        current = getattr(self.instance, "incident_remedies_mode", "") if self.instance.pk else ""
+        return current or Shop._meta.get_field("incident_remedies_mode").default
 
     def _set_integrations_initial(self, integrations: dict) -> None:
         if not isinstance(integrations, dict):
@@ -3108,6 +3121,12 @@ _INTEGRATIONS_FIELDSETS = (
         "Decisão em sombra da Concierge",
         {
             "fields": ("conversational_shadow_enabled", "conversational_shadow_history"),
+        },
+    ),
+    (
+        "Remédios automáticos de incidente",
+        {
+            "fields": ("incident_remedies_mode",),
         },
     ),
     (

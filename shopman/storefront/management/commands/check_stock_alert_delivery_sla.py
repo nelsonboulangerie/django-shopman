@@ -47,4 +47,13 @@ class Command(BaseCommand):
                 ),
                 dedupe_key="stock-alert-delivery-sla",
             )
+        else:
+            # Nenhuma entrega passou do prazo: o aviso de atraso deixa de ser verdade.
+            from shopman.shop.adapters import alert as alert_adapter
+
+            alert_adapter.resolve_matching(
+                "stock_alert_delivery_stuck",
+                message_contains="Dedupe: stock-alert-delivery-sla",
+                actor="sistema: nenhuma entrega de aviso de estoque atrasada",
+            )
         self.stdout.write(f"stuck={total} counts={counts}")

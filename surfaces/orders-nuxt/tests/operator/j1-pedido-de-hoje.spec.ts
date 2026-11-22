@@ -33,13 +33,14 @@ test("J1: pedido de retirada para hoje, da loja à entrega", async ({ browser, b
   await operatorUnlocksWithPin(gestor, cast.cashier);
   await capture(gestor, testInfo, "gestor-caixa");
 
-  // Cozinha: a Gerente abre a estação de Encomendas e bloqueia; Diofer entra com PIN.
+  // Cozinha: a Gerente abre a estação de Separação (a do pão pronto) e bloqueia; Diofer
+  // entra com PIN.
   const kitchenContext = await roleContext(browser, stack.kitchen);
   const kitchen = await kitchenContext.newPage();
   await managerSignsIn(kitchen);
   await kitchen.getByRole("button", { name: "Usar sem vincular" }).click();
-  await kitchen.getByRole("link", { name: /^Encomendas/ }).first().click();
-  await expect(kitchen.getByRole("heading", { name: "Encomendas", level: 1 })).toBeVisible();
+  await kitchen.getByRole("link", { name: /^Separação/ }).first().click();
+  await expect(kitchen.getByRole("heading", { name: "Separação", level: 1 })).toBeVisible();
   await lockDevice(kitchen);
   await operatorUnlocksWithPin(kitchen, cast.kitchen);
   await capture(kitchen, testInfo, "cozinha-diofer");

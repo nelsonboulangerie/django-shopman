@@ -37,6 +37,8 @@ class IncidentGroup:
     recurring: bool
     home: str
     order_refs: tuple[str, ...] = field(default_factory=tuple)
+    #: O placar do remédio do tipo na janela: {"label", "ran", "resolved", "not_resolved", "skipped"}.
+    remedy: dict = field(default_factory=dict)
 
     @property
     def fingerprint(self) -> str:
@@ -61,6 +63,7 @@ class IncidentGroup:
             "recurring": self.recurring,
             "home": self.home,
             "order_refs": list(self.order_refs),
+            "remedy": dict(self.remedy),
         }
 
 
@@ -97,6 +100,7 @@ def summarize(*, now: datetime | None = None, window_days: int = WINDOW_DAYS) ->
     for row in rows:
         by_type.setdefault(row["type"], []).append(row)
 
+    scores = _remedy_scores(since)
     groups = []
     for alert_type, alerts in by_type.items():
         open_alerts = [a for a in alerts if a["resolved_at"] is None]
@@ -126,7 +130,38 @@ def summarize(*, now: datetime | None = None, window_days: int = WINDOW_DAYS) ->
                 recurring=episodes >= RECURRING_EPISODES,
                 home=home_for(alert_type),
                 order_refs=tuple(refs[:MAX_ORDER_REFS]),
+                remedy=scores.get(alert_type, {}),
             )
         )
     groups.sort(key=lambda g: (-g.open_count, -_SEVERITY_RANK.get(g.severity, 0), g.type))
     return groups
+
+
+def _remedy_scores(since) -> dict[str, dict]:
+    """Por tipo de alerta, quantas vezes o remédio do domínio foi acionado e o que deu."""
+
+    from django.db.models import Count, Sum
+
+    from shopman.backstage.incidents.remedies import BY_ALERT_TYPE
+    from shopman.backstage.models import IncidentAction
+
+    scores: dict[str, dict] = {}
+    rows = (
+        IncidentAction.objects.filter(created_at__gte=since)
+        .values("alert_type", "outcome")
+        .annotate(total=Count("pk"))
+    )
+    for row in rows:
+        remedy = BY_ALERT_TYPE.get(row["alert_type"])
+        entry = scores.setdefault(row["alert_type"], {"label": remedy.label if remedy else "", "by_outcome": {}})
+        entry["by_outcome"][row["outcome"]] = row["total"]
+    readings = (
+        IncidentAction.objects.filter(created_at__gte=since, decided_by__startswith="ia:")
+        .values("alert_type")
+        .annotate(total=Count("pk"), cost=Sum("cost_usd_micros"))
+    )
+    for row in readings:
+        entry = scores.setdefault(row["alert_type"], {"label": "", "by_outcome": {}})
+        entry["ai_readings"] = row["total"]
+        entry["ai_cost_usd"] = (row["cost"] or 0) / 1_000_000  # micro-dólares no banco; dólares no resumo
+    return scores

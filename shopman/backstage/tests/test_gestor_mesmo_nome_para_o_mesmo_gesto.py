@@ -17,7 +17,7 @@ from shopman.backstage.projections import order_queue
 
 
 def test_corrida_agrupada_diz_com_o_que_esta_junto():
-    assert order_queue.COURIER_STATUS_LABELS["U"] == "Junto com outra corrida"
+    assert order_queue.courier_state_label({"status": "U"}) == "Junto com outra corrida"
 
 
 def test_o_acerto_diz_o_caixa_e_a_hora_do_turno_nao_o_id():

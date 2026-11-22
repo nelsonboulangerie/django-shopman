@@ -209,6 +209,25 @@ def deliver(link: CourierLink, order_ref: str, *, source: str = SOURCE) -> bool:
     return courier.apply_status(order, "F", source=source, details=details) == "applied"
 
 
+#: O tema da página como a página o chama ("system" é o "Do celular", gravado vazio).
+PAGE_THEMES = {"light": Courier.THEME_LIGHT, "dark": Courier.THEME_DARK, "system": Courier.THEME_DEVICE}
+
+
+def page_theme(courier_: Courier) -> str:
+    """O tema da página no cadastro do entregador, no vocabulário da página (#2648)."""
+    return next((key for key, value in PAGE_THEMES.items() if value == courier_.page_theme), "system")
+
+
+def remember_theme(link: CourierLink, theme: str) -> None:
+    """Grava no cadastro o tema que o entregador escolheu na página (#2648)."""
+    if theme not in PAGE_THEMES:
+        raise OwnFleetRefused("Tema desconhecido.")
+    who = link.courier
+    if who.page_theme != PAGE_THEMES[theme]:
+        who.page_theme = PAGE_THEMES[theme]
+        who.save(update_fields=["page_theme"])
+
+
 def report_problem(link: CourierLink, order_ref: str, kind: str, *, payment: str = "") -> None:
     """A folha "Problema": grava o caso no pedido e avisa o balcão. Nunca muda o pedido sozinha."""
     from shopman.shop.adapters import alert as alert_adapter
@@ -332,7 +351,7 @@ def ride_view(link: CourierLink) -> dict:
 
     close_if_settled(link)
     link.refresh_from_db()
-    base = {"courier": link.courier.name, "ride_ref": link.ride_ref}
+    base = {"courier": link.courier.name, "ride_ref": link.ride_ref, "theme": page_theme(link.courier)}
     if link.revoked_at is not None:
         return {**base, "moment": "cancelled" if link.revoked_reason == courier_links.CANCELLED else "reassigned"}
     orders = _ride_orders(link)
