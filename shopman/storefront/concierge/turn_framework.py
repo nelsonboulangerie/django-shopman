@@ -9,10 +9,9 @@ As regras (decisão de 22/11/2026, "o motor fala"):
 1. **A chave é da loja, por classe** (``Shop.conversational_live_*``, ADR-042), e todas nascem
    desligadas. Desligar "pedido" é o freio da escrita: informar e passar à equipe continuam.
 2. **O motor só fala onde a casa tem a frase de hoje.** Os moldes da Nice (``nice_templates``)
-   saem da MESMA copy do caminho de hoje. Molde sem frase aprovada fica fora, e o turno que
-   precisaria dele cai no caminho de hoje, nunca numa frase genérica do pacote. Hoje são dois:
-   o agradecimento e o "Combinado". As frases que mudam esperam a palavra do dono (prévia
-   ``previa-n9-frases``).
+   saem da copy da casa: a MESMA do caminho de hoje ou a frase nova que o dono aprovou na
+   prévia ``previa-n9-frases`` (#3298). Molde sem frase aprovada fica fora, e o turno que
+   precisaria dele cai no caminho de hoje, nunca numa frase genérica do pacote.
 3. **Primeiro a sombra, depois o vivo.** O turno roda antes em ``environment=shadow`` (sem
    enviar, sem efeito, sem equipe). Só se todos os movimentos escolhidos são de classes
    ligadas e todos os moldes usados (``Composed.template_ids``) são da Nice, o turno roda de
@@ -45,12 +44,51 @@ SWITCH_FIELD = {"inform": "conversational_live_inform", "handoff": "conversation
                 "order": "conversational_live_order"}
 CLASS_OF_MOVE = {move: name for name, moves in ACTION_CLASSES.items() for move in moves}
 
-#: Molde do motor → a chave de copy do caminho de hoje com a MESMA frase (prévia de 22/11:
-#: "Igual"). As frases que mudam entram só com a palavra do dono, num PR de seguimento.
+#: Molde do motor → a chave de copy com a frase da Nice. As duas primeiras são a MESMA frase do
+#: caminho de hoje (prévia de 22/11: "Igual"); as cinco seguintes são as frases novas que o dono
+#: aprovou na prévia frase a frase (22/11, #3298). As que ele recusou (``ask_clarification.which``,
+#: ``inform.price``, ``cover_readings.prices``, ``inform_limitation.offer_team``,
+#: ``present_terms.changed``) ficam de fora de propósito: o turno que precisaria delas segue o
+#: caminho de hoje, com a frase de hoje.
 NICE_TEMPLATE_COPY = {
     "acknowledge.got_it": "CONCIERGE_MEMORY_DECLINED",
     "acknowledge.thanks": "CONCIERGE_SMALL_TALK_THANKS",
+    "ask_clarification.more": "CONCIERGE_ENGINE_ASK_MORE",
+    "effect.failed": "CONCIERGE_ENGINE_EFFECT_FAILED",
+    "handoff.routed": "CONCIERGE_ENGINE_HANDOFF_ROUTED",
+    "handoff.routed_no_deadline": "CONCIERGE_ENGINE_HANDOFF_ROUTED_NO_DEADLINE",
+    "handoff.not_accepted": "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED",
 }
+
+#: Quem atende, dito ao cliente. O dono do compromisso é um papel interno ("operator_on_duty",
+#: a fila): o cliente lê só que pediu a alguém da equipe, nunca o nome do papel.
+OWNER_TEXT = "alguém da equipe"
+
+
+def owner_text(value) -> str:
+    return OWNER_TEXT
+
+
+def deadline_text(value) -> str:
+    """O prazo em hora local, como a casa fala: "hoje às 15h", "amanhã às 7h10", "24/11 às 9h"."""
+    from datetime import datetime, timedelta
+
+    from django.utils import timezone
+
+    moment = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if timezone.is_naive(moment):
+        moment = timezone.make_aware(moment, timezone.utc)
+    local = timezone.localtime(moment)
+    today = timezone.localdate()
+    day = {today: "hoje", today + timedelta(days=1): "amanhã"}.get(local.date()) or local.strftime("%d/%m")
+    clock = f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
+    return f"{day} às {clock}"
+
+
+def nice_formatters() -> dict:
+    from conversational_commerce.engine.format import DEFAULT_FORMATTERS
+
+    return {**DEFAULT_FORMATTERS, "owner": owner_text, "deadline": deadline_text}
 
 ENVIRONMENT = "live"
 
@@ -148,7 +186,7 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
             ToolContext(conversation=conversation, channel_ref=channel_ref))),
         staff=NiceStaff(), store=ShopmanStore(), clock=ShopmanClock(ctx), outcomes=ShopmanOutcomes())
     return Engine(ports, profile, rules=NiceRules(), resolve_content=resolve_text, subject_of=subject_for(conversation),
-                  house_templates=nice_templates(), bodies=bodies,
+                  house_templates=nice_templates(), bodies=bodies, formatters=nice_formatters(),
                   ledger=receipt_ledger(ctx), commitments=commitment_ledger(ctx),
                   memory=memory_store(ctx, subject_of(conversation.pk)), exposures=exposure_ledger(ctx))
 
@@ -206,3 +244,90 @@ def run(conversation, message, *, channel=None):
         logger.warning("concierge.turn_framework.failed conversation=%s", getattr(conversation, "pk", None),
                        exc_info=True)
         return None
+
+
+#: O aviso de prazo vencido sai pelos moldes ``wait.*`` (``Engine.tick``, ``only=("wait",)``).
+TICK_MOVE = "wait"
+
+
+def tick_templates_missing() -> tuple[str, ...]:
+    """Os moldes do aviso de prazo sem frase da Nice. Enquanto houver um, o tick não fala."""
+    approved = set(NICE_TEMPLATE_COPY)
+    return tuple(sorted(t.template_id for t in templates().values()
+                        if t.move == TICK_MOVE and t.template_id not in approved))
+
+
+def _due_conversations(ctx: TrustedContext) -> list[int]:
+    """As conversas com compromisso do motor aberto e vencido, no inquilino e ambiente do turno vivo."""
+    from conversational_commerce.contracts import Commitment
+    from django.utils import timezone
+
+    from shopman.shop.conversational.store import _scope, instant
+    from shopman.shop.models import Conversation, ConversationalCommitment, ConversationalEpisode
+
+    from .ports import SUBJECT_PREFIX
+
+    now = instant(timezone.now())
+    episodes = set()
+    for row in ConversationalCommitment.objects.filter(**_scope(ctx), is_open=True).exclude(episode_id=""):
+        deadline = getattr(Commitment.from_document(row.commitment).deadline, "at", None)
+        if deadline and str(deadline) <= now:
+            episodes.add(row.episode_id)
+    subjects = set(ConversationalEpisode.objects.filter(**_scope(ctx), episode_id__in=episodes)
+                   .values_list("subject", flat=True))
+    pks = sorted({int(s[len(SUBJECT_PREFIX):]) for s in subjects
+                  if s.startswith(SUBJECT_PREFIX) and s[len(SUBJECT_PREFIX):].isdigit()})
+    return list(Conversation.objects.filter(pk__in=pks).values_list("pk", flat=True))
+
+
+def _only_this_conversation(engine, conversation) -> None:
+    """O livro do motor carrega todo compromisso aberto do inquilino; o tick desta conversa só vê os dela."""
+    from shopman.shop.conversational.store import _scope
+    from shopman.shop.models import ConversationalEpisode
+
+    from .ports import subject_of
+
+    ctx = engine.ports.clock.ctx
+    mine = set(ConversationalEpisode.objects.filter(**_scope(ctx), subject=subject_of(conversation.pk))
+               .values_list("episode_id", flat=True))
+    ledger = engine.commitments
+    ledger.entries = {cid: entry for cid, entry in ledger.entries.items() if entry.commitment.episode_id in mine}
+
+
+def tick(*, channel=None) -> dict:
+    """Os prazos do motor vencidos, conversa a conversa: avisa o cliente UMA vez (K22), pelo envio de hoje.
+
+    Roda no ``maintenance_worker`` (``concierge_engine_tick``). Não faz nada com as classes
+    desligadas, nem enquanto algum molde do aviso (``wait.*``) não tem frase da Nice: aviso em
+    frase genérica do pacote nunca sai (condição 1 da decisão de 22/11/2026). Cada conversa tem
+    o próprio motor, com o contexto e o envio dela; a falha numa não derruba as outras.
+    """
+    from shopman.shop.models import Conversation
+
+    counts = {"conversations": 0, "notices": 0, "failed": 0, "skipped": ""}
+    if not live_classes():
+        counts["skipped"] = "classes_off"
+        return counts
+    missing = tick_templates_missing()
+    if missing:
+        counts["skipped"] = f"no_nice_template:{','.join(missing)}"
+        return counts
+    from .profile import build_profile
+
+    profile = build_profile(environment=ENVIRONMENT)
+    for pk in _due_conversations(TrustedContext(tenant=profile.tenant, environment=ENVIRONMENT, subject="")):
+        conversation = Conversation.objects.filter(pk=pk).first()
+        if conversation is None:
+            continue
+        counts["conversations"] += 1
+        try:
+            engine = build_engine(conversation, environment=ENVIRONMENT, channel=channel)
+            if engine is None:
+                continue
+            _only_this_conversation(engine, conversation)
+            results = engine.tick(engine.ports.clock.ctx)
+            counts["notices"] += sum(1 for result in results if getattr(result, "reply", None) is not None)
+        except Exception:  # noqa: BLE001 — uma conversa que falha não derruba o tick das outras
+            counts["failed"] += 1
+            logger.warning("concierge.turn_framework.tick_failed conversation=%s", pk, exc_info=True)
+    return counts

@@ -244,6 +244,26 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
     ),
+    "CONCIERGE_ENGINE_ASK_MORE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_EFFECT_FAILED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED_NO_DEADLINE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
     "CONCIERGE_HANDOFF_ACK": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
