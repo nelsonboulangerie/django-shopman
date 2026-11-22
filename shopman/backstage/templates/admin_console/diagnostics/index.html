@@ -103,6 +103,54 @@
         </form>
       </div>
     {% endcomponent %}
+
+    {# Central de entregas: a sonda do console, no processo que tem a credencial (#2489). #}
+    {% if courier_probe_allowed %}
+    {% component "unfold/components/card.html" %}
+      <div class="flex flex-col gap-4" data-courier-probe>
+        {% component "unfold/components/title.html" with class="text-lg" %}
+          Central de entregas
+        {% endcomponent %}
+        {% component "unfold/components/text.html" with class="text-base-500" %}
+          A mesma sonda do comando courier_machine_probe, rodando aqui, onde está a
+          credencial. Ler não muda nada na central. Escrever cancela, agrupa, tira
+          parada, impulsiona ou cadastra avisos de verdade, e só sai com a
+          confirmação. O laudo não mostra nome, telefone, placa, endereço nem token.
+        {% endcomponent %}
+
+        <form method="post" class="flex flex-col gap-4">
+          {% csrf_token %}
+          <input type="hidden" name="probe" value="courier">
+          {% include "unfold/helpers/field.html" with field=courier_form.action %}
+          {% include "unfold/helpers/field.html" with field=courier_form.rides %}
+          {% include "unfold/helpers/field.html" with field=courier_form.window %}
+          {% include "unfold/helpers/field.html" with field=courier_form.recent %}
+          {% include "unfold/helpers/field.html" with field=courier_form.value %}
+          {% include "unfold/helpers/field.html" with field=courier_form.confirm %}
+          <div class="flex">
+            {% component "unfold/components/button.html" with submit=1 variant="primary" size="sm" icon="local_shipping" %}
+              Rodar a sonda
+            {% endcomponent %}
+          </div>
+        </form>
+
+        {% if courier_result %}
+          <div class="flex flex-col gap-2" data-courier-probe-result>
+            <div class="flex flex-wrap items-center gap-2">
+              {% if courier_result.ok and courier_result.wrote %}
+                {% include "unfold/helpers/label.html" with text="Escreveu na central" type="warning" %}
+              {% elif courier_result.ok %}
+                {% include "unfold/helpers/label.html" with text="Respondeu" type="success" %}
+              {% else %}
+                {% include "unfold/helpers/label.html" with text="Recusou ou falhou" type="danger" %}
+              {% endif %}
+            </div>
+            {% component "unfold/components/text.html" with class="font-mono text-sm whitespace-pre-wrap break-words" %}{{ courier_result.report }}{% endcomponent %}
+          </div>
+        {% endif %}
+      </div>
+    {% endcomponent %}
+    {% endif %}
   </div>
 {% endcomponent %}
 </main>
