@@ -104,7 +104,10 @@ def ensure_confirmable(order, *, channel_config=None) -> None:
 
     raise InvalidTransition(
         code="availability_not_approved",
-        message="O pedido não pode ser aceito: a disponibilidade dos itens ainda não foi confirmada. Atualize o quadro.",
+        message=(
+            "O pedido ainda não pode ser aceito: a disponibilidade dos itens ainda não foi confirmada. "
+            "Tente de novo em instantes; se continuar, recuse com o motivo."
+        ),
         context={
             "order_ref": order.ref,
             "status": order.status,
