@@ -11178,6 +11178,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]

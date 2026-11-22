@@ -204,11 +204,21 @@ def _is_seed_work_order(work_order) -> bool:
     return str(work_order.source_ref or "").startswith("seed:") or bool((work_order.meta or {}).get("seed"))
 
 
-def _synthetic_reason(alert_type: str, ref: str) -> str:
+_IFOOD_UNHANDLED_MARKER = re.compile(r"Dedupe: ifood_event_unhandled:(?P<code>\S+)")
+
+
+def _synthetic_reason(alert_type: str, ref: str, message: str = "") -> str:
     """O fato que encerra o aviso, ou ``""`` quando ele é de gente."""
 
     if alert_type in RETIRED_TYPES:
         return "tipo que o código não cria mais"
+    if alert_type == "ifood_event_unhandled":
+        from shopman.shop.services import ifood_events
+
+        found = _IFOOD_UNHANDLED_MARKER.search(message or "")
+        if found and ifood_events.is_known_code(found.group("code")):
+            return "evento do iFood que já tem destino escrito"
+        return ""
     if not ref:
         return ""
     if ref.startswith("WO-"):
@@ -254,7 +264,7 @@ def resolve_alerts_ended_by_fact() -> int:
       fechado ou cancelado. É a mesma regra que o ciclo aplica na hora
       (:func:`on_order_changed`, ``production_alerts``), valendo para os avisos
       que nasceram antes dela;
-    - tipo que o código não cria mais.
+    - tipo que o código não cria mais, e evento do iFood que já ganhou destino escrito.
 
     No padrão do
     :func:`resolve_superseded_phase_alerts`: quem fecha aparece como o sistema,
@@ -267,9 +277,9 @@ def resolve_alerts_ended_by_fact() -> int:
     from shopman.shop.adapters import alert as alert_adapter
 
     closed = 0
-    for pk, alert_type, order_ref in alert_adapter.open_rows_with_ref():
+    for pk, alert_type, order_ref, message in alert_adapter.open_rows_with_ref():
         try:
-            why = _synthetic_reason(alert_type, str(order_ref or ""))
+            why = _synthetic_reason(alert_type, str(order_ref or ""), message)
             if why:
                 closed += alert_adapter.resolve_pk(pk, actor=f"sistema: {why}")
         except Exception:
