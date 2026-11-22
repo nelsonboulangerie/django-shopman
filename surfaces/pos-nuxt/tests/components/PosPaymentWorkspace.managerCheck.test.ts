@@ -98,6 +98,28 @@ describe("PosPaymentWorkspace: o PIN do gerente é conferido antes de seguir", (
     expect(w.text()).toContain("Pedir autorização");
   });
 
+  it("autorizada, a venda diz quem autorizou e o quê; o retrato muda e a frase sai (#2666)", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: {
+        ...props(),
+        review: review({
+          requires_manager_approval: true,
+          approval_reasons: ["discount_over_threshold"],
+          manager_approval_threshold_q: 500,
+          order_discount_q: 994,
+        }),
+        managerApproved: true,
+        managerApprovedBy: "Joyce",
+      },
+    });
+    const notices = w.find('[aria-label="Avisos"]').text().replace(/\u00a0/g, " ");
+    expect(notices).toContain("Autorizada por Joyce.");
+    expect(notices).toContain("Desconto de R$ 9,94, acima de R$ 5,00.");
+    await w.setProps({ managerApproved: false, managerApprovedBy: "" });
+    expect(w.text()).not.toContain("Autorizada por");
+    expect(w.text()).toContain("Esta venda precisa de um gerente.");
+  });
+
   it("fechar o diálogo com erro na tela pede para limpar o erro", async () => {
     const { w, dialog, done } = await autorizar("0000");
     await w.setProps({ managerApprovalError: "Confira o gerente e digite o PIN de novo." });

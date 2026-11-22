@@ -4253,7 +4253,8 @@ def _stamp_tab_prices_from_engine_lines(payload: dict, session) -> bool:
 
     A última gravação passou pelo motor com estas linhas e estes descontos. Onde o
     desconto manual não venceu a linha, o preço antes dele é a etiqueta menos o
-    desconto automático vencedor (``meta._disc`` de linha), ou a própria etiqueta.
+    desconto automático vencedor (``meta._disc``, de linha ou a fatia do fixo de
+    pedido), ou a própria etiqueta.
     Onde o manual venceu, o automático que perdeu não fica gravado em lugar
     nenhum: devolve ``False`` e quem responde é a sonda do motor.
     """
@@ -4272,8 +4273,12 @@ def _stamp_tab_prices_from_engine_lines(payload: dict, session) -> bool:
         disc = meta.get("_disc") if isinstance(meta.get("_disc"), dict) else {}
         if disc.get("type") == "manual":
             return False
-        line_disc_q = 0 if disc.get("scope") == "order" else _int_q(disc.get("amount_q"))
-        prices[index] = max(0, list_q - line_disc_q)
+        # A fatia do fixo de pedido (promoção ou cupom de valor fixo, ``scope``
+        # "order") também é preço do motor: o rateio já a tirou do unitário da
+        # linha, e a revisão só subtrai à parte o desconto MANUAL de pedido.
+        # Devolver a etiqueta aqui prometia o preço cheio e o selo do fechamento
+        # recusava com "O total mudou" (#3244). ``amount_q`` é por unidade nos dois.
+        prices[index] = max(0, list_q - _int_q(disc.get("amount_q")))
     items = payload.get("items") or []
     for index, price_q in prices.items():
         items[index]["unit_price_q"] = price_q

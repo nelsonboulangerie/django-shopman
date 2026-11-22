@@ -45,6 +45,7 @@ import {
   wazeUrl,
   themeToAdopt,
   trackingText,
+  mapStops,
   type CourierTheme,
   UNDO_SECONDS
 } from '~/presentation/courierRide'
@@ -150,6 +151,9 @@ function syncThemeColor () {
 }
 watch(theme, syncThemeColor)
 onMounted(syncThemeColor)
+// O mapa da corrida pinta o papel no tema da página.
+const isDark = computed(() => themeColor.value === '#000000')
+const routeStops = computed(() => mapStops(view.value, driving.value?.ref))
 useHead(() => ({ meta: [{ key: 'theme-color', name: 'theme-color', content: themeColor.value }] }))
 
 const firstName = (stop: CourierStop | null) => stop?.name || ''
@@ -300,6 +304,37 @@ v-for="choice in THEME_CHOICES"
     </template>
 
     <!-- ══ Dirigindo: o endereço em destaque ══ -->
+    <!-- Com as coordenadas da rota, o mapa da corrida ocupa a tela (#2509): em pé, a parada
+         embaixo; deitado, à direita, do lado do polegar. -->
+    <template v-else-if="screen === 'drive' && driving && routeStops.length">
+      <CourierRouteMap
+        :stops="routeStops"
+        :here="ride.here.value"
+        :origin="view?.map?.origin ?? null"
+        :maps-key="view?.map?.key ?? ''"
+        :tone="tone"
+        :dark="isDark"
+      >
+        <a class="crm-chip" :href="wazeUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no Waze</a>
+        <a class="crm-chip" :href="mapsUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no mapa</a>
+      </CourierRouteMap>
+      <div class="cr-footer cr-drive">
+        <div class="cr-stack">
+          <p class="cr-small cr-inline">
+            <span v-if="tone" class="cr-letter-sm" :style="{ background: tone.bg, color: tone.fg }">{{ view?.letter }}</span>
+            {{ remainingText(remaining) }}
+          </p>
+          <h1 class="cr-big">{{ driving.street }}</h1>
+          <p class="cr-inline">
+            <span class="cr-badge">{{ driving.code }}</span>
+            <span class="cr-base">{{ firstName(driving) }}</span>
+          </p>
+        </div>
+        <p v-if="trackingLine" class="cr-small" :data-tracking="ride.tracking.value">{{ trackingLine }}</p>
+        <UiButton variant="ghost" class="cr-primary" @click="ride.arrive(driving.ref)">Cheguei</UiButton>
+      </div>
+    </template>
+
     <template v-else-if="screen === 'drive' && driving">
       <div class="cr-screen cr-center-y">
         <div class="cr-stack">
@@ -539,6 +574,9 @@ variant="ghost"
     max(1rem, env(safe-area-inset-bottom))
     max(1.25rem, env(safe-area-inset-left));
 }
+
+/* "Dirigindo" com o mapa: a parada e o "Cheguei" num rodapé só, embaixo ou à direita. */
+.cr-drive { gap: 0.75rem; padding-top: 1rem; }
 
 .cr-primary, .cr-secondary, .cr-chip, .cr-bar-action, .cr-choice {
   height: auto;
