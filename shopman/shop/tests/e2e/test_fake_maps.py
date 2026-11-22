@@ -82,7 +82,7 @@ def test_sem_cep_no_texto_acha_pela_rua(fake):
 
 
 def test_endereco_fora_da_tabela_nao_tem_coordenada(fake):
-    assert geocoding.forward_geocode("Rua Jorge Velho, 140 - Bela Suíça, Londrina - PR, 86050-480") is None
+    assert geocoding.forward_geocode("Rua Sergipe, 500 - Centro, Londrina - PR, 86010-360") is None
 
 
 def test_o_reverso_acha_o_endereco_perto_da_coordenada(fake):
