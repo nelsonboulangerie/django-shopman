@@ -242,6 +242,18 @@ def test_a_mercadoria_vence_o_dinheiro_na_situacao(status, situation):
     assert card.balance_q == 3600  # o saldo continua no card, com campo próprio
 
 
+def test_encomenda_que_ninguem_aceitou_e_novo_mesmo_paga():
+    """F-2 do laudo do Gestor (#3166): o Gestor diz "Novo" e o PDV dizia "Pago"."""
+    paid = _order("NOVO-PAGO", status="new", delivery_date=timezone.localdate().isoformat())
+    _pay(paid, 3600)
+
+    card = _card(_list(), "NOVO-PAGO")
+
+    assert (card.situation, card.situation_label) == ("new", "Novo")
+    # O dinheiro segue à parte: os filtros A receber · Pagas leem o estado de pagamento.
+    assert card.payment_state == "paid"
+
+
 # ── O dinheiro à parte: estado de pagamento e "a receber" ────────────────
 
 

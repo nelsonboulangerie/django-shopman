@@ -762,3 +762,40 @@ export function ridesFromSuggestions(
   }
   return rides;
 }
+
+// ── a corrida que falhou (ninguém aceitou, cancelada; #2737) ────────────────
+
+/** A corrida que acabou sem levar os pedidos, como a página a lê (`FailedRideProjection`). */
+export interface FailedRide {
+  key: string;
+  message: string;
+  refs: readonly string[];
+  codes: readonly string[];
+  places: string;
+  number: number | null;
+}
+
+/** Os cartões que a tela mostra: nenhum com pedido já em edição nem dispensado ("Agora não"). */
+export function visibleFailedRides(
+  failed: readonly FailedRide[],
+  editing: readonly EditingRide[],
+  dismissed: readonly string[],
+): FailedRide[] {
+  const taken = new Set(editing.flatMap((ride) => ride.refs));
+  return failed.filter((ride) => !dismissed.includes(ride.key) && ride.refs.every((ref) => !taken.has(ref)));
+}
+
+/**
+ * "Chamar de novo" a corrida que falhou: ela volta inteira como corrida em edição,
+ * com a MESMA letra quando ela segue livre (senão, a próxima livre). `null` sem letra livre.
+ */
+export function rideFromFailed(
+  failed: FailedRide,
+  free: readonly number[],
+  editing: readonly EditingRide[],
+): EditingRide | null {
+  const taken = editing.map((ride) => ride.number);
+  const same = failed.number !== null && free.includes(failed.number) && !taken.includes(failed.number);
+  const number = same ? failed.number : nextFreeNumber(free, taken);
+  return number === null ? null : { number, refs: [...failed.refs] };
+}

@@ -102,6 +102,24 @@ não. Qualquer reprovação leva à alternativa segura que o adaptador monta (o 
 fontes, ou o "vou verificar" com dono e prazo), nunca ao erro. `conferred(..., mode="shadow")`
 devolve sempre a candidata: é como a conferência se mede antes de valer.
 
+## 4.2 Escada de conferência (`ladder.py`)
+
+**Papéis separados, nunca intercambiáveis:** o conferente (`ReplyJudge`) é um decisor tipado
+(escolha entre opções fechadas, com confiança) e não redige; o redator (`Drafter`) é um modelo
+de linguagem e não se confere; só o redator sobe de degrau, e só quando o de baixo foi
+reprovado, com teto. A configuração é por papel.
+
+`climb(...) -> LadderResult` parte da resposta da casa já conferida. Reprovada, cada degrau
+(`Drafter`, do barato ao capaz; com mais tentativas que degraus, o último se repete) reescreve
+recebendo **só os fatos** da tentativa reprovada, os **passos permitidos** (o que a casa cumpre
+no turno seguinte) e o **motivo** da reprovação; a reescrita é conferida de novo sem o benefício
+da construção (precisa do juiz) e com `numbers_outside` (número fora dos fatos segura). Para
+quando uma passa, quando as tentativas acabam (`LadderPolicy.max_attempts`, contando a da casa),
+quando o custo chegaria ao teto do turno, ou quando o custo de um degrau é desconhecido (não se
+sobe às cegas). Esgotou: a alternativa segura do adaptador. Degrau que cai é tentativa
+reprovada. `LadderResult.rejections` é a pauta (os motivos somados); em `mode="shadow"`, `text`
+é sempre a resposta da casa.
+
 ## 5. Prova
 
 `make test-conversational-commerce`, em `conversational_commerce/tests/reply/test_reply.py`:
@@ -112,6 +130,7 @@ devolve sempre a candidata: é como a conferência se mede antes de valer.
 | K24 ação afirmada sem recibo de sucesso: segurada, pelo movimento e pela regra da casa | `adapter` |
 | K27 o que se pode prometer não sai como unidade em mãos | `adapter` |
 | Conferência: juiz que cai não é "passou"; molde sai sem juiz, redigida não; sombra não muda o envio | núcleo |
+| Escada: regera com o motivo e só os fatos; sobe de degrau; número fora dos fatos nunca sai; teto e custo desconhecido param; degrau que cai segue; sombra manda a da casa | núcleo |
 | Fato vencido não sustenta; espaço sem lastro é erro; reparo não toca o bloco travado nem cria número | núcleo |
 
 Os três K são `adapter`: o adaptador real repete com os moldes e as regras da casa dele.

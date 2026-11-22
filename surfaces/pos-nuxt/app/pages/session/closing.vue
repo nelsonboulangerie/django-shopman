@@ -362,6 +362,8 @@ const bar = computed<ClosingBar | null>(() => {
       kind: "cash",
       action: {
         label: `Contei ${drawerDisplay.value} · Confirmar`,
+        // O curto que a ação declara (#3157): sem ele, no celular, o kit cai direto no ícone.
+        shortLabel: "Confirmar",
         icon: "i-lucide-wallet",
         loading: cashBusy.value,
         disabled: cashBusy.value,
@@ -374,12 +376,13 @@ const bar = computed<ClosingBar | null>(() => {
       kind: "day",
       action: {
         label: `Fechar o dia ${current.today_display}`,
+        shortLabel: "Fechar o dia",
         icon: "i-lucide-lock",
         loading: submitting.value,
         disabled: !canSubmit.value || submitting.value,
         onSelect: () => void confirmSubmit(),
       },
-      secondary: { label: "Vitrine", icon: "i-lucide-arrow-left", onSelect: () => { step.value = "count"; } },
+      secondary: { label: "Vitrine", shortLabel: "Vitrine", icon: "i-lucide-arrow-left", onSelect: () => { step.value = "count"; } },
     };
   }
   if (current.has_items) {
@@ -387,6 +390,7 @@ const bar = computed<ClosingBar | null>(() => {
       kind: "count",
       action: {
         label: `Contei ${piecesLabel(summary.value.keep + summary.value.loss + summary.value.mixed)} · Revisar e fechar o dia`,
+        shortLabel: "Revisar e fechar",
         icon: "i-lucide-list-checks",
         disabled: !canSubmit.value || submitting.value,
         // A dica aponta o item, não "todos": procurar um campo vazio numa lista
