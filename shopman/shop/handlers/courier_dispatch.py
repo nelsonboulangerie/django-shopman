@@ -312,18 +312,21 @@ class CourierDispatchHandler:
         codes = [short_ref(order.ref) for order in cancelled]
         subject = (f"O pedido {codes[0]} foi cancelado" if len(codes) == 1
                    else f"Os pedidos {', '.join(codes[:-1])} e {codes[-1]} foram cancelados")
+        # O nome do serviço da corrida, como o cadastro diz (#3139).
+        service = courier.service_name(lead)
+        opening = f"enquanto a {service} abria a corrida"
         try:
             courier.cancel_ride(lead, actor="courier.dispatch", intent=CANCEL_INTENT_ORDER_CANCELLED)
             severity = "warning"
-            message = f"{subject} enquanto a TaOn abria a corrida. Pedimos à TaOn o cancelamento da corrida."
+            message = f"{subject} {opening}. Pedimos à {service} o cancelamento da corrida."
         except OrderStateConflict:  # silêncio-deliberado: o cancelamento desta corrida já está pedido, o worker cuida dele
             return
         except ValueError:
             severity = "critical"
-            message = f"{subject} enquanto a TaOn abria a corrida. Cancele a corrida pela central da TaOn."
+            message = f"{subject} {opening}. Cancele a corrida pela central da {service}."
         try:
             if not alert_adapter.recent_exists("integration_failed", None, order_ref=lead.ref,
-                                               message_contains="enquanto a TaOn abria a corrida"):
+                                               message_contains=opening):
                 alert_adapter.create("integration_failed", severity, message, order_ref=lead.ref)
         except Exception:
             logger.warning("courier.alert_failed order=%s", lead.ref, exc_info=True)

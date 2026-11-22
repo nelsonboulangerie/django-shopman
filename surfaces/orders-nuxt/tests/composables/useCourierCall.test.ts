@@ -50,7 +50,8 @@ function deliveries(extra: Partial<DeliveriesProjection> = {}): DeliveriesProjec
         key: `${A47}+${C03}`, refs: [A47, C03], codes: ["A47", "C03"], places: "Gleba Palhano", quoted: true, suggested: true,
         late_code: "C03", late_minutes: 6, together_q: 1100, minutes: 18, km: 7.4, with_return: false, separate_q: 1700, saving_q: 600,
       }],
-      service: "taon", service_reason: "default", service_options: [],
+      service: "taon", service_reason: "default",
+      service_options: [{ ref: "taon", name: "TaOn", kind: "machine", is_default: true }],
     } as never,
     ...extra,
   };

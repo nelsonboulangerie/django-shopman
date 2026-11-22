@@ -9,6 +9,10 @@ describe("refreshScopeForChannel — o aviso de comanda relê só o quadro", () 
 
   it("o stream de estoque relê só os selos da grade (WP-E4)", () => {
     expect(refreshScopeForChannel("/sse/stock")).toBe("availability");
+    expect(refreshScopeForChannel("/sse/stock", "stock-update")).toBe("availability");
+    // Pausa e mutação do canal mudam quem está na grade: releitura inteira (#2586).
+    expect(refreshScopeForChannel("/sse/stock", "product-paused")).toBe("all");
+    expect(refreshScopeForChannel("/sse/stock", "listing-changed")).toBe("all");
   });
 
   it("caixa, poll e volta à aba relêem a projeção inteira", () => {

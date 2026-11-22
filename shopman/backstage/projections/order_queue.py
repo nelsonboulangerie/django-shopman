@@ -1566,9 +1566,10 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
     extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
         enabled=authorized and courier_block["can_dispatch_again"],
         reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-            "" if courier_block["can_dispatch_again"] else "Não há chamada sem resposta da TaOn neste pedido."),
+            "" if courier_block["can_dispatch_again"] else
+            f"Não há chamada sem resposta da {courier_block['service_name']} neste pedido."),
         method="POST", idempotency="required",
-        confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+        confirmation={"required": True, "description": courier_dispatch_again_confirmation(courier_block["service_name"])},
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Cancelar corrida",
         enabled=authorized and courier_block["can_cancel"],
@@ -1759,24 +1760,24 @@ COURIER_REOPENED_LABEL = "Procurando outro entregador"
 def _courier_dispatch_question(order: Order) -> str:
     """A pergunta do toque de confirmação: quem vem, para qual pedido, quem paga.
 
-    O nome da central é configuração do deployment (``SHOPMAN_MACHINE["company_name"]``),
-    nunca código; sem ele, a frase diz "da central de entregas".
+    O nome é o do serviço que leva a corrida, como o cadastro diz (M1b-b3, #3139).
     """
-    from django.conf import settings
+    from shopman.shop.services import courier, delivery_services
 
-    company = str((getattr(settings, "SHOPMAN_MACHINE", {}) or {}).get("company_name") or "").strip()
-    who = f"da {company}" if company else "da central de entregas"
-    return (f"Chamar um entregador {who} para o pedido {operator_orders.short_ref(order.ref)}? "
+    who = delivery_services.service_name(courier.get_block(order))
+    return (f"Chamar um entregador da {who} para o pedido {operator_orders.short_ref(order.ref)}? "
             "A corrida é cobrada da casa.")
 
 
-#: A última chamada à TaOn ficou sem resposta: não se sabe se a corrida abriu lá.
-COURIER_NO_ANSWER_MESSAGE = "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu."
+def courier_no_answer_message(service: str) -> str:
+    """A última chamada ao serviço ficou sem resposta: não se sabe se a corrida abriu lá."""
+    return f"A {service} não respondeu à última chamada. Veja na central se a corrida abriu."
 
-#: A confirmação do "Chamar de novo", uma frase: o que aconteceu e o que conferir antes.
-COURIER_DISPATCH_AGAIN_CONFIRMATION = (
-    "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."
-)
+
+def courier_dispatch_again_confirmation(service: str) -> str:
+    """A confirmação do "Chamar de novo", uma frase: o que aconteceu e o que conferir antes."""
+    return (f"A {service} não respondeu à última chamada. "
+            "Veja na central se a corrida abriu antes de chamar de novo.")
 
 
 def _courier_block(order: Order) -> dict | None:
@@ -1812,12 +1813,14 @@ def _courier_block(order: Order) -> dict | None:
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
         estimate_display = courier_estimate_display(estimate)
+        # O nome do serviço da corrida, como o cadastro diz: as frases o usam (#3139).
+        service = delivery_services.service_name(block)
 
         position = None
         if active and block.get("ride_ref"):
             from shopman.backstage.projections.courier_position import courier_position_projection
 
-            point = courier_position_projection(block["ride_ref"])
+            point = courier_position_projection(block["ride_ref"], service=service)
             position = asdict(point) if point else None
 
         from shopman.shop.services.courier import (
@@ -1845,7 +1848,7 @@ def _courier_block(order: Order) -> dict | None:
 
         unresolved = unresolved_dispatch(order) if health["unresolved"] else None
         if unresolved is not None:
-            error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
+            error = {"message": courier_no_answer_message(service), "at": unresolved.updated_at.isoformat()}
         progress = health["progress"]
         tracking = health["tracking"]
         reopened = health["reopened"] if active else {"at": "", "driver": "", "reason": ""}
@@ -1860,8 +1863,8 @@ def _courier_block(order: Order) -> dict | None:
             # O estado no vocabulário da casa (``RideState``): é o que a tela lê.
             "ride_state": state.value if state else "",
             # O nome do serviço como o cadastro diz, para a frase do operador.
-            "service_name": delivery_services.service_name(block),
-            "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
+            "service_name": service,
+            "status_label": f"Sem resposta da {service}" if unresolved is not None else status_label,
             # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
             **progress,
             # O entregador desistiu e a TaOn procura outro para a MESMA corrida:
@@ -2919,7 +2922,7 @@ def _build_card(
         fulfillment_label=fulfillment_label,
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
-        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config),
+        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config, waitlist_state=batch_state),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
         next_status=next_status if undo_block_allows_advance(order) else "",
         undo=_undo_projection(order),
@@ -4167,7 +4170,7 @@ _EVENT_LABELS = {
     "payment_collected": "Pagamento recebido",
     "payment_switched_to_pix": "Cliente trocou o cartão recusado por Pix",
     "equipment_returned": "Maquininha devolvida",
-    "partner_custody_recorded": "Separado para o entregador da TaOn (troco ou maquininha)",
+    "partner_custody_recorded": "Separado para o entregador da {service} (troco ou maquininha)",
     "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
     # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
@@ -4178,13 +4181,14 @@ _EVENT_LABELS = {
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
-    "courier_dispatch_requested": "Entregador da TaOn chamado",
-    "courier_ride_opened": "Corrida aberta na TaOn",
-    # A mesma corrida segue chamada: a TaOn redistribui sozinha (``will_reopen``).
-    "courier_ride_reopened": "O entregador desistiu e a TaOn procura outro",
-    "courier_ride_restored": "A TaOn retomou a corrida que constava como encerrada",
-    "courier_dispatch_released": "Chamada da TaOn feita de novo",
-    "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
+    # ``{service}`` é o nome do serviço da corrida do pedido (``_build_timeline``).
+    "courier_dispatch_requested": "Entregador da {service} chamado",
+    "courier_ride_opened": "Corrida aberta na {service}",
+    # A mesma corrida segue chamada: o serviço redistribui sozinho (``will_reopen``).
+    "courier_ride_reopened": "O entregador desistiu e a {service} procura outro",
+    "courier_ride_restored": "A {service} retomou a corrida que constava como encerrada",
+    "courier_dispatch_released": "Chamada da {service} feita de novo",
+    "courier_cancel_requested": "Cancelamento da corrida pedido à {service}",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
     # Entregador da casa (``services/own_fleet``): a casa escolheu a pessoa, e ela
     # marcou um caso na folha "Problema" do link.
@@ -4215,7 +4219,7 @@ _EVENT_LABELS = {
     "customer_contact_resolved": "Ouvidoria resolvida",
     # A letra da corrida vira a frase do Gestor (``courier_state_label``) em
     # ``_build_timeline``; este é o rótulo da letra que ninguém nomeou.
-    "courier_status": "Corrida da TaOn atualizada",
+    "courier_status": "Corrida da {service} atualizada",
     # O dinheiro, nos três fatos que o Payman distingue. Autorizar NÃO é cobrar:
     # o Gestor dizia "Payment.authorized · Pagamento confirmado" para um cartão
     # só reservado (beta 06/11, F4).
@@ -4293,7 +4297,8 @@ _SYSTEM_ACTOR_LABELS = {
 _SYSTEM_ACTOR_PREFIXES = (
     ("system:ifood", "iFood"),
     ("ifood", "iFood"),
-    ("courier", "TaOn"),
+    # O nome do serviço da corrida, trocado em ``_build_timeline``.
+    ("courier", "{service}"),
 )
 # Prefixos que só dizem DE ONDE a pessoa agiu; o nome vem depois dos dois-pontos.
 _PERSON_ACTOR_PREFIXES = frozenset({
@@ -4372,6 +4377,7 @@ def _cancellation_detail(order: Order) -> str:
 def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
     events = list(order.events.order_by("seq"))
     names = _actor_names(event.actor for event in events)
+    service = _courier_service_name({"service": _courier_service_ref(order)})
     result: list[tuple] = []
     for event in events:
         payload = event.payload or {}
@@ -4385,11 +4391,11 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
         elif event.type == "customer_contact_requested" and payload.get("origin") == "cancellation":
             label = "Cliente quis cancelar com o preparo começado e pediu para falar com o responsável"
         elif event.type == "courier_status" and (ride_label := courier_state_label(
-            ride_event := {"service": _courier_service_ref(order), "status": payload.get("status")}
+            {"service": _courier_service_ref(order), "status": payload.get("status")}
         )):
-            label = ": ".join(part for part in (_courier_service_name(ride_event), ride_label) if part)
+            label = f"{service}: {ride_label}"
         elif event.type in _EVENT_LABELS:
-            label = _EVENT_LABELS[event.type]
+            label = _EVENT_LABELS[event.type].replace("{service}", service)
         else:
             # Tipo que ninguém rotulou. Identificador não é texto de tela: a linha
             # diz que houve um registro, em português, e o defeito grita no log com
@@ -4416,7 +4422,7 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
                     label=label,
                     event_type=event.type,
                     timestamp_display=_format_datetime(event.created_at),
-                    actor=_timeline_actor(event.actor, names),
+                    actor=_timeline_actor(event.actor, names).replace("{service}", service),
                     detail=detail,
                 ),
             )
