@@ -303,6 +303,9 @@ class OperatorAlert(models.Model):
         ("bi_below_baseline", "B.I.: movimento abaixo do esperado"),
         ("bi_source_conflict", "B.I.: pedido nativo apagou histórico"),
         ("bi_cash_variance", "B.I.: quebra de caixa acumulada passou da régua"),
+        # O custo congelado da fornada (ADR-023 §3) saiu com lacuna: um insumo sem
+        # custo preferencial, unidade que não converte, ficha sem rendimento (#2360).
+        ("production_cost_gap", "Fornada fechou sem custo"),
         ("bi_curation_pending", "B.I.: de-para de produto pendente"),
         ("marketing_consent_violation", "Marketing: envio após opt-out/expiração"),
         ("marketing_duplicate_confirmed", "Marketing: efeito duplicado confirmado"),
@@ -436,6 +439,8 @@ class OperatorAlert(models.Model):
         "cash_sale_after_shift_close",
         "cash_out_of_tolerance",
         "bi_cash_variance",
+        # Custo é financeiro: o gerente não tem permissão financeira (dono, 21/11/2026).
+        "production_cost_gap",
     }
     ORDER_TYPES = {
         "payment_failed",

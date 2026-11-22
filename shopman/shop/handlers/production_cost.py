@@ -68,4 +68,31 @@ def freeze_work_order_cost(work_order) -> dict | None:
             locked.ref,
             "; ".join(snapshot["gaps"]),
         )
+        _alert_cost_gap(locked, snapshot["gaps"])
     return snapshot
+
+
+#: O aviso da fornada que fechou sem custo (#2360), um por fornada.
+COST_GAP_ALERT_TYPE = "production_cost_gap"
+
+
+def _alert_cost_gap(work_order, gaps: list[str]) -> None:
+    """Avisa quem cuida do custo que a fornada fechou sem ele, com o motivo (#2360).
+
+    O congelado grava uma vez só: a lacuna desta fornada não se corrige depois, só a
+    das próximas. Por isso o aviso: o log em WARNING ninguém lê, e a lacuna ficava
+    só no ``cost_snapshot``. Público financeiro (só o dono), sem valor nenhum na
+    frase; o botão leva ao Compras, onde mora o custo preferencial.
+    """
+    from shopman.shop.services.observability import create_operator_alert
+
+    recipe = getattr(getattr(work_order, "recipe", None), "name", "") or work_order.output_sku
+    create_operator_alert(
+        type=COST_GAP_ALERT_TYPE,
+        severity="warning",
+        message=f"A fornada {work_order.ref} de {recipe} fechou sem custo. {' '.join(gaps)}",
+        dedupe_key=f"{COST_GAP_ALERT_TYPE}:{work_order.ref}",
+        # Um aviso por fornada já é garantido: o congelado grava uma vez só (a chave
+        # do snapshot trava o segundo ``finish``), então a frase não leva carimbo.
+        stamp_dedupe=False,
+    )
