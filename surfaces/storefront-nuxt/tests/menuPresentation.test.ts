@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  appliedFilterChips,
   buildSectionsBySku,
   choiceGroupCard,
   choiceGroupsByName,
   collectionDisplayLabel,
+  collectionListIcon,
   collectionTargetForSearchOption,
   collectionSearchOptions,
   dynamicCollectionMenuTarget,
@@ -13,6 +13,7 @@ import {
   filterKey,
   itemMatchesAnyFilter,
   keywordDisplayLabel,
+  keywordSearchActionLabel,
   keywordSearchOptions,
   orderedSections,
   parseFilterKey,
@@ -239,14 +240,6 @@ describe('menu presentation — sections and filters', () => {
     expect(parseFilterKey(filterKey('keyword', 'café: especial'))).toEqual({ kind: 'keyword', value: 'café: especial' })
     expect(parseFilterKey('nonsense')).toBeNull()
   })
-
-  it('describes applied filters with human labels', () => {
-    const chips = appliedFilterChips([filterKey('keyword', 'chocolate'), filterKey('collection', 'doces'), 'nonsense'], sections)
-    expect(chips).toEqual([
-      { key: 'keyword:chocolate', label: 'chocolate' },
-      { key: 'collection:doces', label: 'Doces' }
-    ])
-  })
 })
 
 describe('menu presentation — search options', () => {
@@ -287,9 +280,6 @@ describe('menu presentation — search options', () => {
       icon: 'lucide:rows-3',
       section: paes
     })).toBe('/colecao/paes')
-    expect(appliedFilterChips([filterKey('collection', 'featured')], [])).toEqual([
-      { key: 'collection:featured', label: 'Destaques' }
-    ])
   })
 
   it('ranks products by name, then tags, then catalog context', () => {
@@ -306,7 +296,7 @@ describe('menu presentation — search options', () => {
   it('aggregates keyword options with item counts', () => {
     const options = keywordSearchOptions(allItems, 'chocolate', sectionBySku, sectionsBySku)
     expect(options).toHaveLength(1)
-    expect(options[0]!.label).toBe('chocolate')
+    expect(options[0]!.label).toBe('Buscar por “chocolate”')
     expect(options[0]!.meta).toBe('1 item')
   })
 
@@ -317,7 +307,7 @@ describe('menu presentation — search options', () => {
 
     const pao = item({ sku: 'PAO-DOCE', name: 'Pão doce', category: 'Pães', search_terms: ['pao', 'pao-doce', 'cafe'] })
     const options = keywordSearchOptions([pao], 'pao', sectionBySku, sectionsBySku)
-    expect(options.map(o => o.label)).toContain('Pão')
+    expect(options.map(o => o.label)).toContain('Buscar por “Pão”')
     expect(options.map(o => o.label)).not.toContain('pao')
     expect(options.map(o => o.label)).not.toContain('pao-doce')
   })
@@ -327,7 +317,7 @@ describe('menu presentation — search options', () => {
     const options = keywordSearchOptions([leaky], 'croissant', sectionBySku, sectionsBySku)
     expect(options.map(o => o.label)).toEqual([])
     const legit = keywordSearchOptions([leaky], 'cafe', sectionBySku, sectionsBySku)
-    expect(legit.map(o => o.label)).toEqual(['café da manhã'])
+    expect(legit.map(o => o.label)).toEqual(['Buscar por “café da manhã”'])
   })
 
   it('lists all collections vertically when the query is empty and marks the favorite', () => {
@@ -395,5 +385,44 @@ describe('cartão de escolha (choice_group)', () => {
   it('rótulo da escolha vem de choice_group_label; ausente, fica vazio', () => {
     expect(choiceGroupCard(group, [camille, rouge]).choiceLabel).toBe('')
     expect(choiceGroupCard(group, [item({ ...camille, choice_group_label: null }), item({ ...rouge, choice_group_label: ' Sabor ' })]).choiceLabel).toBe('Sabor')
+  })
+})
+
+// #3253: o filtro de palavra-chave não pode ter o mesmo nome de uma coleção, e a lista de
+// coleções usa o ícone do cadastro de cada uma.
+describe('menu presentation — busca sem colisão e com o ícone do cadastro', () => {
+  const croissant = item({ sku: 'CROIS', name: 'Croissant', category: 'Folhados', search_terms: ['folhado'] })
+  const sections = [
+    section({ ref: 'folhados', label: 'Folhados', icon: 'croissant', items: [croissant] }),
+    section({ ref: 'combos', label: 'Combos', icon: '', items: [croissant] })
+  ]
+  const bySku = buildSectionsBySku(sections)
+  const panelFor = (search: string) => searchPanelView({
+    sections,
+    items: [croissant],
+    search,
+    favoriteRef: '',
+    sectionBySku: primarySectionBySku(bySku),
+    sectionsBySku: bySku
+  })
+
+  it('o filtro de palavra-chave diz que é uma busca', () => {
+    expect(keywordSearchActionLabel('folhado')).toBe('Buscar por “folhado”')
+  })
+
+  it('a coleção usa o ícone do cadastro, e o padrão da lista quando não há', () => {
+    expect(collectionListIcon({ icon: 'croissant' })).toBe('lucide:croissant')
+    expect(collectionListIcon({ icon: '' })).toBe('lucide:rows-3')
+    expect(collectionListIcon({ icon: '  ' })).toBe('lucide:rows-3')
+  })
+
+  it('com a busca vazia, cada coleção da lista leva o próprio ícone', () => {
+    expect(panelFor('').collections.map(c => c.icon)).toEqual(['lucide:croissant', 'lucide:rows-3'])
+  })
+
+  it('com um termo, a palavra-chave e a coleção não têm o mesmo nome', () => {
+    const labels = panelFor('folha').chips.map(c => c.label)
+    expect(labels).toContain('Folhados')
+    expect(labels).toContain('Buscar por “folhado”')
   })
 })

@@ -133,7 +133,7 @@ def test_after_preparation_there_is_no_cancel_only_the_manager(order_paid):
     assert "cancel_order" not in refs
     assert "request_cancellation_contact" in refs
     action = next(action for action in proj.actions if action.ref == "request_cancellation_contact")
-    assert action.label == "Pedir contato sobre cancelamento"
+    assert action.label == "Quero falar com o responsável"
     assert proj.cancellation_contact is not None and proj.cancellation_contact.requested is False
     assert proj.copy.cancellation_contact_message == (
         "O preparo já começou e o pedido é feito para você, então ele não pode mais ser cancelado. "

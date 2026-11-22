@@ -183,7 +183,9 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
         "sessionid=admin-session; shopman_operator_sessionid=operator-session",
     });
 
-    await proxyDjangoPath(event, "/api/v1/backstage/operator/lock");
+    // A rota que de fato encerra a sessão ("Sair"): só ela leva a apagada ao
+    // navegador (#3170). O Bloquear trava e deixa a sessão viva.
+    await proxyDjangoPath(event, "/api/v1/backstage/operator/logout");
 
     expect(raw.mock.calls[0]?.[1].headers.cookie).toBe(
       "sessionid=operator-session",
@@ -243,5 +245,47 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
 
     expect(runtimeConfig.djangoProxySecret).toBe("");
     expect(runtimeConfig.public).not.toHaveProperty("djangoProxySecret");
+  });
+});
+
+describe("proxyDjangoPath — só o Sair apaga a sessão no navegador (F-17, #3170)", () => {
+  const DELETE_SESSION = 'sessionid=""; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/';
+
+  beforeEach(() => {
+    vi.stubGlobal("useRuntimeConfig", () => ({ djangoBaseUrl: DJANGO }));
+    vi.stubGlobal("warnOnApiVersionMismatch", vi.fn());
+  });
+
+  it("a resposta atrasada de uma requisição com o cookie velho não apaga a sessão nova", async () => {
+    const raw = vi.fn().mockResolvedValue(upstream(403, { detail: "x" }, { "set-cookie": DELETE_SESSION }));
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event, res } = makeEvent({ host: "gestor.boulangerie.com.br" });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/marketing/v2");
+
+    expect(res.getHeader("set-cookie")).toBeUndefined();
+  });
+
+  it("o Sair continua apagando a sessão", async () => {
+    const raw = vi.fn().mockResolvedValue(upstream(200, { ok: true }, { "set-cookie": DELETE_SESSION }));
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event, res } = makeEvent({ host: "gestor.boulangerie.com.br" });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/operator/logout");
+
+    expect(String(res.getHeader("set-cookie"))).toContain("shopman_operator_sessionid=");
+    expect(String(res.getHeader("set-cookie"))).toContain("Max-Age=0");
+  });
+
+  it("a sessão nova do login passa em qualquer rota", async () => {
+    const raw = vi.fn().mockResolvedValue(
+      upstream(200, { ok: true }, { "set-cookie": "sessionid=nova; Path=/; HttpOnly; SameSite=Lax" }),
+    );
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event, res } = makeEvent({ host: "gestor.boulangerie.com.br" });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/operator/unlock");
+
+    expect(res.getHeader("set-cookie")).toBe("shopman_operator_sessionid=nova; Path=/; HttpOnly; SameSite=Lax");
   });
 });

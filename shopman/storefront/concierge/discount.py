@@ -181,9 +181,13 @@ def _grant(*, conversation, session, channel_ref: str, percent: Decimal, custome
                 conversation_id=conversation.pk,
                 valid_for=COUPON_VALIDITY,
             )
-            applied, _name = cart_service.validate_and_apply_coupon(
-                session_key=session.session_key, channel_ref=channel_ref, code=code,
-            )
+            try:
+                applied, _name = cart_service.validate_and_apply_coupon(
+                    session_key=session.session_key, channel_ref=channel_ref, code=code,
+                )
+            except cart_service.CouponNotBetter:
+                # A linha já tem desconto igual ou maior: nada foi concedido.
+                raise _NotApplied from None
             applied_q = int(((applied.pricing or {}).get("coupon") or {}).get("discount_q") or 0)
             if applied_q <= 0:
                 # As portas do cupom recusaram em silêncio (linha já com desconto

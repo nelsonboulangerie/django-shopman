@@ -423,14 +423,16 @@ def _handle_started(work_order, product_ref, date):
 
     from shopman.stockman.services.movements import StockMovements
     from shopman.stockman.services.planning import StockPlanning
-    from shopman.stockman.services.queries import StockQueries
 
     started_qty = work_order.started_qty or work_order.quantity
     position = _resolve_position(work_order.position_ref)
 
-    planned_quant = StockQueries.get_quant(product_ref, target_date=date, position=position)
-    if planned_quant is None:
-        planned_quant = StockQueries.get_quant(product_ref, target_date=date)
+    # O mesmo achado das outras pernas (ajuste, cancelamento, fechamento): a WO
+    # já tem a posição NOVA quando o início é anunciado, e o plano mora na do
+    # plano. Procurar só na posição nova ou na nula não o achava, e o lote que
+    # abria em outra posição deixava o plano inteiro e ainda criava o saldo em
+    # produção: o estoque de produção dobrava (#2716).
+    planned_quant = _find_planned_quant(work_order, product_ref, date)
 
     started_quant = StockMovements.receive(
         quantity=started_qty,

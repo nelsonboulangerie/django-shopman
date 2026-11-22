@@ -171,6 +171,12 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
         delivery_date = delivery_date_from_payload(payload.get("schedule") or {})
         if delivery_date is not None:
             order_data["delivery_date"] = delivery_date.isoformat()
+            # O mesmo carimbo que o commit grava (``orderman.services.commit``): o
+            # pedido do iFood nasce aqui, fora do commit, e é o carimbo que a régua
+            # única de "é encomenda?" lê no pedido (``order_helpers.is_preorder``, #3163).
+            from django.utils import timezone
+
+            order_data["is_preorder"] = delivery_date > timezone.localdate()
 
     # Prazo do marketplace, gravado no pedido em vez de recalculado: é fato da
     # ingestão (quando ELE nasceu lá, com o SLA que valia então), não config de hoje.
