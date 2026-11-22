@@ -154,6 +154,13 @@ export function renameRefusal(typed: string, clean: string, disallowedChars: str
   return "";
 }
 
+/** "Aberta às 14:05 por Fran": a hora e quem abriu, o que houver dos dois. */
+function openedLine(tab: POSTabProjection): string {
+  const at = tab.opened_at_display ? ` às ${tab.opened_at_display}` : "";
+  const by = tab.opened_by_display ? ` por ${tab.opened_by_display}` : "";
+  return at || by ? `Aberta${at}${by}` : "";
+}
+
 export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardView {
   const isInUse = tab.state === "in_use";
   const hasItems = tab.item_count > 0;
@@ -173,9 +180,10 @@ export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardVie
     // O cartão sem item não repete o selo (dono, 13/10/2026): "Livre" mora SÓ no selo,
     // e o corpo fica vazio em vez de dizer "Livre" de novo e "Comanda livre".
     // A comanda "Em uso" sem item e sem cliente dizia nada: o balcão não sabia se
-    // era de agora ou esquecida (beta test de 05/11/2026, PDV-19). Diz a hora.
+    // era de agora ou esquecida (beta test de 05/11/2026, PDV-19). Diz a hora e
+    // quem abriu (#2443).
     identity: tab.customer_name || tab.items_preview
-      || (isInUse && !hasItems && tab.opened_at_display ? `Aberta às ${tab.opened_at_display}` : ""),
+      || (isInUse && !hasItems ? openedLine(tab) : ""),
     summary: hasItems
       ? `${tab.item_count} ${tab.item_count === 1 ? "item" : "itens"} · ${tab.total_display}`
       : "",

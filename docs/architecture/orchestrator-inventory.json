@@ -1567,6 +1567,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "active_tab_refs",
             "ensure_tab",
             "upsert_tab"
           ]

@@ -312,6 +312,7 @@ from .operations import (
     POSTabMoveLinesView,
     POSTabOpenView,
     POSTabRenameView,
+    POSTabReserveNextFreeView,
     POSTabSaveView,
     POSTabUnfireView,
     POSView,
@@ -1428,6 +1429,7 @@ urlpatterns = [
     ),
     # POS — tab (comanda) lifecycle
     path("pos/tabs/", POSTabCreateView.as_view(), name="api-backstage-pos-tab-create"),
+    path("pos/tabs/next-free/", POSTabReserveNextFreeView.as_view(), name="api-backstage-pos-tab-next-free"),
     path("pos/tabs/<str:tab_ref>/open/", POSTabOpenView.as_view(), name="api-backstage-pos-tab-open"),
     path("pos/tabs/save/", POSTabSaveView.as_view(), name="api-backstage-pos-tab-save"),
     path("pos/tabs/rename/", POSTabRenameView.as_view(), name="api-backstage-pos-tab-rename"),

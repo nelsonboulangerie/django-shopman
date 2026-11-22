@@ -379,6 +379,9 @@ export function usePosSale(deps: PosSaleDeps) {
   // Auto-persist the comanda (Odoo-style): no manual "Salvar". tabLoading guards
   // against re-saving right after a programmatic load (setFromTabPayload).
   const tabLoading = ref(false);
+  // A conta da comanda que ESTA estação pôs em uso (a abertura voltou `created`).
+  // É a única que sair vazia devolve ao quadro (#2443).
+  let createdHereSessionKey = "";
   const firing = ref(false);
   const renamingTab = ref(false);
   const cancellingSale = ref(false);
@@ -2194,7 +2197,14 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function openTab(
     tab: POSTabProjection | string,
-    options: { preserveDraft?: boolean; drawerChecked?: boolean; salesMode?: "counter" | "order" } = {},
+    options: {
+      preserveDraft?: boolean;
+      drawerChecked?: boolean;
+      salesMode?: "counter" | "order";
+      // A "Próxima livre": o servidor escolhe e RESERVA a comanda (#2443). O
+      // `tab` é só a leitura do quadro, que vale sem conexão.
+      nextFree?: boolean;
+    } = {},
   ) {
     if (busy.value) return; // guarda de reentrância
     const tabRef = sanitizeTabRef(typeof tab === "string" ? tab : tab.ref);
@@ -2235,12 +2245,17 @@ export function usePosSale(deps: PosSaleDeps) {
     }
     busy.value = true;
     try {
-      const path = concreteActionHref(
-        actions.value,
-        "open_tab",
-        "/api/v1/backstage/pos/tabs/{tab_ref}/open/",
-        { tab_ref: tabRef },
-      );
+      // Duas estações que tocavam juntas na "Próxima livre" abriam a MESMA comanda:
+      // a escolha era deste quadro, e o servidor só carregava a conta da outra.
+      // Agora o servidor escolhe e reserva; o número pode ser outro que o do botão.
+      const path = options.nextFree
+        ? concreteActionHref(actions.value, "open_next_free_tab", "/api/v1/backstage/pos/tabs/next-free/", {})
+        : concreteActionHref(
+          actions.value,
+          "open_tab",
+          "/api/v1/backstage/pos/tabs/{tab_ref}/open/",
+          { tab_ref: tabRef },
+        );
       const payload = await action.call<POSTabPayload>(path);
       if (options.preserveDraft && cart.items.length) {
         if ((payload.items || []).length) {
@@ -2251,6 +2266,9 @@ export function usePosSale(deps: PosSaleDeps) {
         invalidateReview();
       } else {
         await setFromTabPayload(payload);
+        // A comanda que ESTA abertura pôs em uso é desta estação: sair dela vazia
+        // a devolve ao quadro (`releaseAbandonedTab`). A que já estava em uso não.
+        createdHereSessionKey = payload.created ? cart.tabSessionKey : "";
         // `salesMode`: a comanda abre já no modo pedido (a "Nova encomenda" da
         // seção Encomendas). Só numa comanda VAZIA: se outra estação a ocupou no
         // meio do caminho, ela abre como está, e a venda de quem a ocupou não
@@ -2298,11 +2316,13 @@ export function usePosSale(deps: PosSaleDeps) {
         // encomenda o leva), e não de volta à busca do quadro, que sai da tela.
         returnFocusOnConfirm: false,
       }))) return false;
-      // A fila pode mudar enquanto o operador decide. Escolhe pela leitura atual.
+      // Quem escolhe a comanda é o servidor, na hora (#2443); a leitura do quadro
+      // só vale sem conexão.
       const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
       if (!tabRef) return false;
-      await openTab(tabRef, { salesMode: "order" });
-      return cart.tabRef === tabRef;
+      const before = cart.tabSessionKey;
+      await openTab(tabRef, { salesMode: "order", nextFree: true });
+      return cart.localTab ? cart.tabRef === tabRef : Boolean(cart.tabSessionKey) && cart.tabSessionKey !== before;
     } finally {
       openingNewOrder = false;
     }
@@ -2313,19 +2333,25 @@ export function usePosSale(deps: PosSaleDeps) {
    * para a GRADE da próxima comanda livre, sem passar pelo quadro (WP-E8, D5 do
    * dono). Responde se a comanda abriu; senão, quem chama mostra o quadro, que é o
    * caminho de sempre (comanda nenhuma livre, gaveta pedindo conferência, falha).
-   * A comanda aberta aqui é LEMBRADA: se o operador sair dela sem lançar nada, ela
-   * volta a ser livre (``releaseAbandonedTab``), e o quadro não enche de vazias.
+   * A comanda é reservada pelo servidor (#2443) e, como toda comanda que esta
+   * estação põe em uso, volta a ser livre se o operador sair dela sem lançar nada
+   * (``releaseAbandonedTab``): o quadro não enche de vazias.
    */
-  let nextSaleSessionKey = "";
   async function openNextSale(): Promise<boolean> {
     dismissResult();
     if (busy.value) return false;
     const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
     if (!tabRef) return false;
-    await openTab(tabRef);
-    if (cart.tabRef !== tabRef || !cart.tabSessionKey) return false;
-    nextSaleSessionKey = cart.tabSessionKey;
-    return true;
+    const before = cart.tabSessionKey;
+    await openTab(tabRef, { nextFree: true });
+    return Boolean(cart.tabSessionKey) && cart.tabSessionKey !== before;
+  }
+
+  /** O "Próxima livre" do quadro: a comanda que o servidor reservar (#2443). */
+  async function openNextFreeTab(): Promise<void> {
+    const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
+    if (!tabRef) return;
+    await openTab(tabRef, { nextFree: true });
   }
 
   async function openTabFromDialog(tab: POSTabProjection | string) {
@@ -4129,22 +4155,24 @@ export function usePosSale(deps: PosSaleDeps) {
       && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
   }
 
-  /** A comanda que a "Nova venda" abriu sozinha e que segue sem item nem cliente. */
-  function isAbandonedNextSaleTab(): boolean {
-    return Boolean(nextSaleSessionKey) && cart.tabSessionKey === nextSaleSessionKey && !cart.localTab
+  /** A comanda que esta estação pôs em uso e que segue sem item nem cliente. */
+  function isAbandonedCreatedTab(): boolean {
+    return Boolean(createdHereSessionKey) && cart.tabSessionKey === createdHereSessionKey && !cart.localTab
       && !cart.items.length && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
   }
 
   /**
-   * Sair da venda com a comanda ainda vazia LIBERA a comanda: a encomenda nova e a
-   * comanda que a "Nova venda" abriu sozinha. Antes ela ficava "Em uso" com 0
-   * itens, a próxima pegava outra e o quadro enchia de comandas vazias (beta test
-   * de 05/11/2026, PDV2-13). A comanda que o operador abriu pelo quadro é escolha
-   * dele e fica. Sem item não há nada a perder; se o servidor recusar, a comanda
-   * segue no quadro como estava.
+   * Sair da venda com a comanda ainda vazia LIBERA a comanda: a encomenda nova e
+   * toda comanda que ESTA estação pôs em uso (Próxima livre, Nova venda, número
+   * digitado ou cartão livre do quadro). Antes ela ficava "Em uso" com 0 itens, a
+   * próxima pegava outra e o quadro enchia de comandas vazias (beta test de
+   * 05/11/2026, PDV2-13; a de balcão no #2443). A comanda que já estava em uso
+   * quando o operador a abriu é de quem a abriu e fica. Sem item não há nada a
+   * perder; se o servidor recusar (outra estação mexeu nela), a comanda segue no
+   * quadro como estava.
    */
   async function releaseAbandonedTab(options: { resetAfter?: boolean } = {}) {
-    if (!isAbandonedOrderTab() && !isAbandonedNextSaleTab()) return;
+    if (!isAbandonedOrderTab() && !isAbandonedCreatedTab()) return;
     const sessionKey = cart.tabSessionKey;
     const path = concreteActionHref(
       actions.value,
@@ -4647,6 +4675,7 @@ export function usePosSale(deps: PosSaleDeps) {
     openNewOrder,
     releaseAbandonedTab,
     openNextSale,
+    openNextFreeTab,
     // draft + flags
     cart,
     tabInput,

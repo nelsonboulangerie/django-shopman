@@ -1855,23 +1855,61 @@ def open_pos_tab(
     operator_username: str,
 ) -> Session:
     """Open or load the current order for a POS tab (returns the open session)."""
+    return open_pos_tab_reporting(
+        channel_ref=channel_ref, tab_ref=tab_ref, actor=actor, operator_username=operator_username,
+    ).session
+
+
+@dataclass(frozen=True)
+class PosTabOpening:
+    """A comanda aberta e se FOI esta chamada que a abriu (``created``).
+
+    ``created`` é o que deixa o PDV devolver ao quadro a comanda que ele mesmo
+    abriu e deixou vazia (#2443). Comanda que já estava em uso (de outra estação,
+    ou de antes) não é dele para liberar.
+    """
+
+    session: Session
+    created: bool
+
+
+def _new_pos_tab_session_data(*, ref: str, tab_display: str, operator_username: str) -> dict:
+    """O dado de uma comanda que nasce agora.
+
+    ``pos_opened_by`` é QUEM ABRIU e não muda mais: ``pos_operator`` é quem
+    mexeu por último, e abrir a mesma comanda em outra estação o reescrevia (o
+    quadro não sabia de quem era a comanda vazia, beta de 05/11, PDV-19).
+    """
+    return {
+        "origin_channel": "pos",
+        "fulfillment_type": "pickup",
+        "tab_ref": ref,
+        "tab_display": tab_display,
+        "pos_operator": operator_username,
+        "pos_opened_by": operator_username,
+        "last_touched_at": timezone.now().isoformat(),
+    }
+
+
+def open_pos_tab_reporting(
+    *,
+    channel_ref: str,
+    tab_ref: str,
+    actor: str,
+    operator_username: str,
+) -> PosTabOpening:
+    """``open_pos_tab`` dizendo se a comanda nasceu nesta chamada."""
     channel, config = _channel_and_config(channel_ref)
     ref = normalize_tab_ref(tab_ref)
     tab_display = _ensure_pos_tab(ref, display=_tab_label_from_input(tab_ref, ref))
     session = _get_open_pos_tab_session(channel_ref=channel.ref, tab_ref=ref)
+    created = session is None
     if session is None:
         session = session_service.create_session(
             channel.ref,
             handle_type="pos_tab",
             handle_ref=ref,
-            data={
-                "origin_channel": "pos",
-                "fulfillment_type": "pickup",
-                "tab_ref": ref,
-                "tab_display": tab_display,
-                "pos_operator": operator_username,
-                "last_touched_at": timezone.now().isoformat(),
-            },
+            data=_new_pos_tab_session_data(ref=ref, tab_display=tab_display, operator_username=operator_username),
         )
     else:
         session_service.assign_handle(
@@ -1895,7 +1933,72 @@ def open_pos_tab(
         session.refresh_from_db()
 
     logger.info("pos_open_tab tab=%s session=%s operator=%s", ref, session.session_key, operator_username)
-    return session
+    return PosTabOpening(session=session, created=created)
+
+
+# Quantas vezes a reserva tenta a seguinte quando outra estação levou a livre no
+# mesmo instante. Cada volta perde para uma reserva que DEU certo: esgotar isto
+# pede uma fila de estações maior que o balcão de uma padaria.
+_NEXT_FREE_ATTEMPTS = 20
+
+
+def _next_free_numeric_tab_ref(channel_ref: str) -> str:
+    """A menor comanda numérica cadastrada sem conta aberta; sem nenhuma, a seguinte à maior.
+
+    A mesma regra que o quadro do PDV mostra no botão (``nextFreeNumericTabRef``),
+    agora respondida pelo servidor, que é quem vê todas as estações.
+    """
+    occupied = {
+        str((data or {}).get("tab_ref") or handle_ref or "").strip()
+        for handle_ref, data in Session.objects.filter(channel_ref=channel_ref, state="open")
+        .filter(Q(handle_type="pos_tab") | Q(data__has_key="tab_ref"))
+        .values_list("handle_ref", "data")
+    }
+    numbers = sorted(
+        {int(ref) for ref in pos_adapter.active_tab_refs() if is_numeric_tab_ref(ref)}
+        | {int(ref) for ref in occupied if is_numeric_tab_ref(ref)}
+    )
+    for number in numbers:
+        ref = str(number).zfill(MAX_NUMERIC_TAB_REF_DIGITS)
+        if ref not in occupied:
+            return ref
+    return str((numbers[-1] + 1) if numbers else 1).zfill(MAX_NUMERIC_TAB_REF_DIGITS)
+
+
+def reserve_next_free_pos_tab(*, channel_ref: str, operator_username: str) -> Session:
+    """A "Próxima livre" reservada no servidor, de forma atômica (#2443).
+
+    O quadro escolhia a livre no navegador e abria pelo número: duas estações
+    que tocavam juntas abriam a MESMA comanda, e a segunda só carregava a conta
+    da primeira. Aqui a reserva é a criação da conta, e a trava é a do banco (uma
+    conta aberta por comanda, ``ord_uniq_open_session_handle``): quem perde a
+    corrida leva a seguinte, nunca a mesma.
+    """
+    channel, _config = _channel_and_config(channel_ref)
+    for _attempt in range(_NEXT_FREE_ATTEMPTS):
+        ref = _next_free_numeric_tab_ref(channel.ref)
+        tab_display = _ensure_pos_tab(ref)
+        try:
+            with transaction.atomic():
+                session = session_service.create_session(
+                    channel.ref,
+                    handle_type="pos_tab",
+                    handle_ref=ref,
+                    data=_new_pos_tab_session_data(
+                        ref=ref, tab_display=tab_display, operator_username=operator_username,
+                    ),
+                )
+        except IntegrityError:
+            # silêncio-deliberado: outra estação reservou esta no mesmo instante;
+            # a próxima volta lê o quadro de novo e leva a seguinte.
+            continue
+        logger.info("pos_reserve_next_free_tab tab=%s session=%s operator=%s", ref, session.session_key, operator_username)
+        return session
+    raise PosIntentError(
+        code="next_free_tab_contended",
+        message="Outras estações abriram comandas ao mesmo tempo. Toque de novo em Próxima livre.",
+        status=409,
+    )
 
 
 def save_pos_tab(

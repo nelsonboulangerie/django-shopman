@@ -491,6 +491,9 @@ class POSTabProjection:
     # Hora em que a comanda abriu ("aberta 21:48", v4 tablet): é o relógio da
     # mesa, diferente do último toque.
     opened_at_display: str = ""
+    # Quem abriu a comanda (o primeiro nome), que não muda quando outra estação a
+    # abre depois: o quadro diz de quem é a comanda vazia (PDV-19, #2443).
+    opened_by_display: str = ""
     # A mesa do Salão vinculada a esta comanda (opcional), para o quadro e o Salão.
     seating_spot_ref: str = ""
     # A cozinha terminou tudo o que foi disparado (todo ticket vivo no Pronto):
@@ -1063,6 +1066,9 @@ def build_pos_tabs(
     ready_keys = kitchen_done_session_keys(
         [session.session_key for session in sessions.values() if (session.data or {}).get("fired_lines")]
     )
+    opener_names = _operator_first_names(
+        {str((session.data or {}).get("pos_opened_by") or "") for session in sessions.values()} - {""}
+    )
     tabs = []
     for ref in refs:
         session = sessions.get(ref)
@@ -1072,6 +1078,7 @@ def build_pos_tabs(
             session=session,
             display_ref=session_display or tab_displays.get(ref, ""),
             kitchen_ready=session is not None and session.session_key in ready_keys,
+            opener_names=opener_names,
         )
         if query_norm and query_norm not in _tab_haystack(tab, sessions.get(ref)):
             continue
@@ -1521,6 +1528,16 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
             payload_schema={"path": {"tab_ref": "string"}},
+            idempotency="none",
+        ),
+        Action(
+            ref="open_next_free_tab",
+            kind="mutation",
+            label="Próxima livre",
+            priority="secondary",
+            method="POST",
+            href="/api/v1/backstage/pos/tabs/next-free/",
+            payload_schema={},
             idempotency="none",
         ),
         Action(ref="read_tab", kind="navigation", label="Atualizar comanda", priority="quiet",
@@ -2841,8 +2858,26 @@ def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
         return set()
 
 
+def _operator_first_names(usernames: set[str]) -> dict[str, str]:
+    """O primeiro nome de cada operador, numa consulta só (o quadro inteiro)."""
+    if not usernames:
+        return {}
+    from django.contrib.auth import get_user_model
+
+    return {
+        username: (first_name or "").strip() or username
+        for username, first_name in get_user_model().objects.filter(username__in=usernames)
+        .values_list("username", "first_name")
+    }
+
+
 def _tab_projection(
-    *, ref: str, session: Session | None, display_ref: str = "", kitchen_ready: bool = False,
+    *,
+    ref: str,
+    session: Session | None,
+    display_ref: str = "",
+    kitchen_ready: bool = False,
+    opener_names: dict[str, str] | None = None,
 ) -> POSTabProjection:
     from shopman.shop.services.pos_sales_mode import sales_mode
 
@@ -2898,9 +2933,17 @@ def _tab_projection(
         fired=bool(data.get("fired_lines")),
         sales_mode=sales_mode(data),
         opened_at_display=_format_time(session.opened_at) if session.opened_at else "",
+        opened_by_display=_opened_by_display(data, opener_names),
         seating_spot_ref=str(data.get("seating_spot_ref") or ""),
         kitchen_ready=kitchen_ready,
     )
+
+
+def _opened_by_display(data: dict, opener_names: dict[str, str] | None) -> str:
+    username = str(data.get("pos_opened_by") or "").strip()
+    if not username:
+        return ""
+    return (opener_names or {}).get(username) or username
 
 
 def _parse_dt(value, *, fallback):
