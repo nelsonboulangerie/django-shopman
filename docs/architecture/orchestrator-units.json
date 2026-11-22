@@ -1065,7 +1065,14 @@
             "RESOLVED_BY_REFUND",
             "RESOLVED_BY_UNDO",
             "_PHASE_STUCK_MARKER",
-            "resolve_superseded_phase_alerts"
+            "resolve_superseded_phase_alerts",
+            "RETIRED_TYPES",
+            "_WORK_ORDER_ACTION_BY_STATUS",
+            "_WORK_ORDER_STATE_WORDS",
+            "_is_seed_order",
+            "_is_seed_work_order",
+            "_synthetic_reason",
+            "resolve_alerts_ended_by_fact"
           ]
         }
       ],
@@ -1073,6 +1080,7 @@
         "handler"
       ],
       "domains": [
+        "craftsman",
         "orderman"
       ],
       "ports": [],
