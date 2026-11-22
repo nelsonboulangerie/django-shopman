@@ -16,6 +16,7 @@ DANFE impressa (``backstage.services.order_danfe``).
 from __future__ import annotations
 
 import logging
+import re
 
 from django.db import transaction
 
@@ -96,6 +97,26 @@ def on_nfce_authorized(sender, order=None, **kwargs) -> None:
     ref = getattr(order, "ref", "")
     if ref:
         resolve_on_commit(ref, RESOLVED_BY_AUTHORIZATION, actor="nfce-authorized")
+        transaction.on_commit(lambda: _resolve_emit_integration_failure(ref))
+
+
+def _resolve_emit_integration_failure(ref: str) -> None:
+    """A nota deste pedido saiu: a falha de integração na emissão dele acabou (#3097).
+
+    O aviso é por pedido no texto (``fiscal:emit_nfce:pedido <ref>: ...``), sem
+    ``order_ref``; o marcador nas duas grafias que o código grava.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    for word in ("pedido", "Pedido"):
+        try:
+            alert_adapter.resolve_matching(
+                "integration_failed",
+                message_contains=f"Dedupe: fiscal:emit_nfce:{word} {ref}:",
+                actor="nfce-authorized",
+            )
+        except Exception:
+            logger.exception("alert_resolution.emit_integration_failed", extra={"order_ref": ref})
 
 
 def connect() -> None:
@@ -113,3 +134,47 @@ def connect() -> None:
         dispatch_uid="shopman.shop.alert_resolution.on_nfce_authorized",
         weak=False,
     )
+
+
+#: O marcador que ``create_operator_alert`` grava no fim da mensagem da etapa travada.
+_PHASE_STUCK_MARKER = re.compile(r"Dedupe: lifecycle_phase_stuck:(?P<ref>[^:\s]+):(?P<phase>on_\w+)")
+
+
+def resolve_superseded_phase_alerts() -> int:
+    """Fecha a "etapa travada" cuja etapa não deve mais nada. Retroativo de propósito.
+
+    O fato é do domínio (``lifecycle``): a etapa concluiu (marcador ``done``), ou foi
+    superada (``phase_superseded``: pedido de teste, ou o preparo que chegou com o
+    pedido já fechado). Desde o #3039 esses casos nem abrem alerta; aqui fecham os que
+    nasceram antes (os nove de 18 e 19/11/2026, #3029), e qualquer outro que a etapa
+    supere depois. Quem fecha aparece como o sistema, com o motivo.
+
+    O caso real (pedido de verdade, etapa que não pode mais rodar) fica aberto: é
+    travamento, e quem decide é gente.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop import lifecycle
+    from shopman.shop.adapters import alert as alert_adapter
+
+    closed = 0
+    for pk, order_ref, message in alert_adapter.open_rows("lifecycle_phase_stuck"):
+        found = _PHASE_STUCK_MARKER.search(message or "")
+        if not found:
+            continue
+        ref = order_ref or found.group("ref")
+        phase = found.group("phase")
+        order = Order.objects.filter(ref=ref).first()
+        if order is None:
+            continue
+        if lifecycle.phase_complete(order, phase):
+            why = "etapa concluída depois"
+        elif lifecycle.phase_superseded(order, phase):
+            why = "pedido de teste" if lifecycle.is_test_order(order) else f"pedido já {order.status}, etapa superada"
+        else:
+            continue
+        try:
+            closed += alert_adapter.resolve_pk(pk, actor=f"sistema: {why}")
+        except Exception:
+            logger.exception("alert_resolution.superseded_failed", extra={"alert_pk": pk, "order_ref": ref})
+    return closed

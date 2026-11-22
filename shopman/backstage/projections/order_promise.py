@@ -124,6 +124,8 @@ CAUSE_PLAN_SHORT = "plan_short"
 CAUSE_NO_BATCH = "no_batch"
 CAUSE_STOCK_SHORT = "stock_short"
 CAUSE_HOLD_RELEASED = "hold_released"
+#: O pedido entrou sem conseguir reservar o item (``Order.data["hold_gaps"]``, #2721).
+CAUSE_NEVER_HELD = "never_held"
 
 #: Da causa que mais pesa à que menos pesa, quando um item tem mais de uma reserva.
 _CAUSE_ORDER = (
@@ -133,6 +135,7 @@ _CAUSE_ORDER = (
     CAUSE_PLAN_SHORT,
     CAUSE_NO_BATCH,
     CAUSE_STOCK_SHORT,
+    CAUSE_NEVER_HELD,
     CAUSE_HOLD_RELEASED,
     CAUSE_BATCH_LATE,
     CAUSE_BATCH_WAITING,
@@ -141,7 +144,7 @@ _CAUSE_ORDER = (
 BATCH_NOT_OUT = frozenset({CAUSE_BATCH_WAITING, CAUSE_BATCH_LATE})
 
 #: Causas que não falam de lote nenhum: o item não ganha dia de lote.
-_NO_BATCH_CAUSES = frozenset({CAUSE_STOCK_SHORT, CAUSE_HOLD_RELEASED})
+_NO_BATCH_CAUSES = frozenset({CAUSE_STOCK_SHORT, CAUSE_NEVER_HELD, CAUSE_HOLD_RELEASED})
 
 #: As saídas de uma promessa em risco, no aviso (``order_queue._promise_actions``).
 #: "Resolver" abre o diálogo com as escolhas e a mensagem ao cliente; "Abrir a
@@ -154,7 +157,8 @@ ACTION_OPEN_PRODUCTION = "open-production"
 PRODUCTION_CAUSES = frozenset({CAUSE_NO_BATCH, CAUSE_PLAN_SHORT})
 #: Causas em que o item não vai existir como combinado: a casa oferece outro no lugar.
 _ALTERNATIVE_CAUSES = frozenset({
-    CAUSE_BATCH_CANCELLED, CAUSE_BATCH_SHORT, CAUSE_BATCH_CLOSED, CAUSE_STOCK_SHORT, CAUSE_HOLD_RELEASED,
+    CAUSE_BATCH_CANCELLED, CAUSE_BATCH_SHORT, CAUSE_BATCH_CLOSED, CAUSE_STOCK_SHORT, CAUSE_NEVER_HELD,
+    CAUSE_HOLD_RELEASED,
 })
 #: A ordem das frases do pedido: primeiro o que protege o cliente, depois o que
 #: se pede à Produção.
@@ -163,6 +167,7 @@ _NEXT_STEP_ORDER = (
     CAUSE_BATCH_SHORT,
     CAUSE_BATCH_CLOSED,
     CAUSE_STOCK_SHORT,
+    CAUSE_NEVER_HELD,
     CAUSE_HOLD_RELEASED,
     CAUSE_BATCH_LATE,
     CAUSE_PLAN_SHORT,
@@ -209,8 +214,8 @@ class OrderPromiseItemProjection:
     ``reservation``: ``whole`` | ``partial`` | ``lost``. ``cause``: por que o
     item aparece (``batch_waiting``, ``batch_late``, ``batch_cancelled``,
     ``batch_short``, ``batch_closed``, ``plan_short``, ``no_batch``,
-    ``stock_short``, ``hold_released``). ``qty`` é o que o pedido reservou do
-    produto e ``missing_qty`` o que ficou sem lastro, já como texto de tela
+    ``stock_short``, ``never_held``, ``hold_released``). ``qty`` é o que o pedido
+    pediu do produto, reservado ou não, e ``missing_qty`` o que ficou sem lastro, já como texto de tela
     ("10", "0,35"). ``label`` diz o produto e quanto falta; ``detail``, o
     porquê, com a hora do lote quando ela é conhecida.
 
@@ -293,6 +298,7 @@ class _Claim:
     cause: str = ""
     day: date | None = None
     since: datetime | None = None
+    gap: bool = False  # o que o pedido nunca conseguiu reservar (``hold_gaps``)
 
 
 def _decimal(value) -> Decimal:
@@ -342,7 +348,34 @@ def _order_claims(orders) -> list[_Claim]:
             logger.error("order_promise: hold_ids ilegível order=%s", order.ref, exc_info=True)
             continue
         claims.extend(own)
+        claims.extend(_gap_claims(order, start=-len(claims) - 1))
     return claims
+
+
+def _gap_claims(order, *, start: int) -> list[_Claim]:
+    """O que o pedido pediu e o estoque não conseguiu reservar (``Order.data["hold_gaps"]``).
+
+    Gravado por ``services/stock`` (o componente, com o combo já expandido): a
+    leitura não abre catálogo. Sem reserva não há ``Hold``, então o ``pk`` é
+    negativo, só para a reserva que falta ter uma chave que nenhuma de verdade usa.
+    O dia é o da reserva que faltou; sem ele, o dia combinado do pedido.
+    """
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    gaps: list[_Claim] = []
+    try:
+        for entry in (order.data or {}).get("hold_gaps") or ():
+            qty = _decimal(entry.get("qty"))
+            if not entry.get("sku") or qty <= 0:
+                continue
+            day = date.fromisoformat(entry["target_date"]) if entry.get("target_date") else get_commitment_date(order)
+            gaps.append(_Claim(
+                order_ref=order.ref, sku=str(entry["sku"]), pk=start - len(gaps), qty=qty, day=day, gap=True,
+            ))
+    except (AttributeError, TypeError, ValueError, ArithmeticError):
+        logger.error("order_promise: hold_gaps ilegível order=%s", order.ref, exc_info=True)
+        return []
+    return gaps
 
 
 def _cover(supply: Decimal, rows: list[dict]) -> dict[int, Decimal]:
@@ -465,7 +498,10 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
     live_statuses = (HoldStatus.PENDING, HoldStatus.CONFIRMED)
 
     # 1. As reservas dos pedidos, em qualquer estado.
-    holds = {hold.pk: hold for hold in Hold.objects.filter(pk__in={claim.pk for claim in claims}).select_related("quant")}
+    holds = {
+        hold.pk: hold
+        for hold in Hold.objects.filter(pk__in={claim.pk for claim in claims if not claim.gap}).select_related("quant")
+    }
 
     def is_live(hold) -> bool:
         return hold.status in live_statuses and (hold.expires_at is None or hold.expires_at >= now)
@@ -475,6 +511,12 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
     pool_keys: set[tuple[str, date]] = set()
     lot_keys: set[tuple[str, date]] = set()
     for claim in claims:
+        if claim.gap:
+            claim.day = claim.day or today
+            pending.append(claim)
+            if claim.day > today:
+                lot_keys.add((claim.sku, claim.day))
+            continue
         hold = holds.get(claim.pk)
         if hold is not None and hold.status == HoldStatus.FULFILLED:
             continue  # já baixada: o produto saiu do estoque para este pedido
@@ -552,6 +594,17 @@ def read_for(orders, *, now: datetime | None = None) -> dict[str, OrderPromisePr
     # Cada reserva pendente: o que falta dela e por quê.
     waiting: list[_Claim] = []
     for claim in pending:
+        if claim.gap:
+            # Nunca reservou. Para hoje (ou dia que passou), o estoque já foi medido
+            # na hora do pedido e não cobria; para outro dia, a Produção ainda
+            # resolve, e a régua é a do lote da data.
+            claim.missing = claim.qty
+            if claim.day <= today:
+                claim.cause = CAUSE_NEVER_HELD
+            else:
+                key = (claim.sku, claim.day)
+                claim.cause = _gap_cause(lots[key], claim.day, today, anchored=False) if lots[key] else CAUSE_NO_BATCH
+            continue
         hold = holds.get(claim.pk)
         if hold is None or not is_live(hold):
             claim.day = hold.target_date if hold is not None else today
@@ -928,6 +981,8 @@ def _detail(cause: str, *, day: date | None, lots: list[dict], ready_at: datetim
         return f"Não há lote planejado para {when}."
     if cause == CAUSE_STOCK_SHORT:
         return "O estoque é menor que o reservado."
+    if cause == CAUSE_NEVER_HELD:
+        return "Não havia estoque para reservar quando o pedido entrou."
     if cause == CAUSE_HOLD_RELEASED:
         return "A reserva deste item foi solta."
     return ""

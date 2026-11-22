@@ -134,11 +134,34 @@ def open_pk(type: str) -> int | None:
     )
 
 
+def open_rows(type: str) -> list[tuple[int, str, str]]:
+    """``(pk, order_ref, mensagem)`` dos avisos abertos deste tipo, do mais velho ao mais novo."""
+    from shopman.backstage.models import OperatorAlert
+
+    return list(
+        OperatorAlert.objects.filter(type=type, resolved_at__isnull=True)
+        .order_by("pk")
+        .values_list("pk", "order_ref", "message")
+    )
+
+
 def resolve(type: str, *, order_ref: str, actor: str) -> int:
     """Resolve active alert causes through the canonical audited service."""
     from shopman.backstage.services.alerts import resolve_alerts
 
     return resolve_alerts(type, order_ref=order_ref, actor=actor)
+
+
+def oldest_open_created_at(type: str):
+    """Quando nasceu o aviso aberto mais velho deste tipo, ou ``None`` sem aviso aberto."""
+    from shopman.backstage.models import OperatorAlert
+
+    return (
+        OperatorAlert.objects.filter(type=type, resolved_at__isnull=True)
+        .order_by("created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
 
 
 def resolve_matching(type: str, *, message_contains: str, actor: str) -> int:

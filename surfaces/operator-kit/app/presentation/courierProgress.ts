@@ -12,7 +12,10 @@ import { STORE_TIME_ZONE } from "./dates";
 import { formatClock } from "./clock";
 
 export interface CourierProgressInput {
+  /** A letra crua do serviço: presente quando há corrida. Não se compara; o estado é `ride_state`. */
   status: string;
+  /** O estado da corrida no vocabulário da casa (`RideState` do servidor). */
+  ride_state?: string;
   pickup_eta_at?: string;
   arrived_pickup_at?: string;
   delivery_eta_at?: string;
@@ -40,6 +43,9 @@ export interface CourierProgressView {
 }
 
 const EMPTY: CourierProgressView = { pickup: "", delivery: "", stale: "", waiting: "" };
+
+/** Os estados em que a corrida já acabou (`RideState`). */
+const ENDED_STATES = ["done", "not_served", "cancelled"];
 
 /** O que a TaOn faz depois da desistência: a mesma corrida, outro entregador. */
 export const REOPENED_HINT = "A TaOn já procura outro";
@@ -73,7 +79,8 @@ export function courierProgress(
   nowMs: number,
 ): CourierProgressView {
   if (!courier?.status) return EMPTY;
-  const ended = ["F", "N", "C"].includes(courier.status);
+  const state = courier.ride_state ?? "";
+  const ended = ENDED_STATES.includes(state);
   const view = { ...EMPTY };
 
   const sync = epoch(courier.sync_since);
@@ -81,7 +88,7 @@ export function courierProgress(
     view.stale = `A TaOn não informa a corrida desde ${clockHHMM(sync)}.`;
 
   const reopened = epoch(courier.reopened_at);
-  if (courier.status === "U") view.waiting = `${GROUPED_TITLE}. ${GROUPED_HINT}.`;
+  if (state === "grouped") view.waiting = `${GROUPED_TITLE}. ${GROUPED_HINT}.`;
   else if (reopened !== null && !ended)
     view.waiting =
       courier.reopened_reason === "transfer"
@@ -90,7 +97,7 @@ export function courierProgress(
 
   const arrived = epoch(courier.arrived_pickup_at);
   const pickupEta = epoch(courier.pickup_eta_at);
-  if (courier.status === "A" || courier.status === "S") {
+  if (state === "assigned") {
     if (arrived !== null) view.pickup = `Chegou à loja às ${clockHHMM(arrived)}`;
     else if (pickupEta !== null) {
       const minutes = Math.ceil((pickupEta - nowMs) / 60_000);

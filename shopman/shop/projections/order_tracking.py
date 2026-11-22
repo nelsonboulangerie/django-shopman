@@ -1490,7 +1490,7 @@ def _courier_closeness(order) -> tuple[bool, str | None]:
 
     block = get_block(order)
     ride_ref = block.get("ride_ref")
-    if not ride_ref or str(block.get("status") or "") in _COURIER_ENDED_STATUSES:
+    if not ride_ref or _courier_ride_ended(block):
         return False, None
     position = courier_position.read(ride_ref)
     if position is None:
@@ -1508,9 +1508,13 @@ def _courier_closeness(order) -> tuple[bool, str | None]:
     return fresh and meters <= COURIER_NEAR_METERS, position["at"].isoformat()
 
 
-#: Letras da corrida (Machine) em que ela já acabou: finalizada, não atendida,
-#: cancelada. O link da parada deixa de mostrar o entregador.
-_COURIER_ENDED_STATUSES = frozenset({"F", "N", "C"})
+def _courier_ride_ended(block: dict) -> bool:
+    """A corrida já acabou (entregue, não atendida, cancelada): a parada deixa de
+    mostrar o entregador. O estado vem do serviço da corrida (``RideState``)."""
+    from shopman.shop.protocols import RideState
+    from shopman.shop.services import delivery_services
+
+    return delivery_services.ride_state(block) in (RideState.DONE, RideState.NOT_SERVED, RideState.CANCELLED)
 
 
 def _pickup_from_phrase(order, *, business_state: BusinessCalendarState) -> str:
@@ -1551,7 +1555,7 @@ def _courier_tracking_url(order) -> str:
     courier = (order.data or {}).get("courier")
     if not isinstance(courier, dict):
         return ""
-    if str(courier.get("status") or "") in _COURIER_ENDED_STATUSES:
+    if _courier_ride_ended(courier):
         return ""
     url = proven_tracking(courier)["url"].strip()
     if not url.lower().startswith(("https://", "http://")):

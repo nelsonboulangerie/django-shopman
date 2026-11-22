@@ -2,7 +2,8 @@
 // contraste provado, pinos sobrepostos abertos em círculo e enquadramento pelas
 // paradas, nunca pela moto.
 import { describe, expect, it } from "vitest";
-import { MAP_DARK, MAP_LIGHT, PIN_TEXT, contrast, fitKey, googleMapStyles, lineOutline, mapTokens, spreadOverlaps } from "../app/presentation/deliveriesMap";
+import { MAP_DARK, MAP_LIGHT, PIN_TEXT, contrast, fitKey, googleMapStyles, mapTokens, spreadOverlaps } from "../app/presentation/deliveriesMap";
+import { DARK_BLACK_ROUTE, GLYPH_INK, GLYPH_PAPER, HALO_WIDTH, PACKAGE_PATH, ROUTE_WIDTH, routeColor, textOn, themeHalo } from "../app/presentation/mapGlyphs";
 import { rideColor } from "../app/presentation/ridePalette";
 
 describe("cores do mapa", () => {
@@ -13,21 +14,30 @@ describe("cores do mapa", () => {
     expect(contrast(t.text, t.chip)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(t.text, t.paper)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(t.neutral, t.chip)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(t.chip, t.neutral)).toBeGreaterThanOrEqual(4.5); // o ícone do entregador na legenda
-    expect(contrast(t.storeText, t.store)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it.each(themes)("tema %s: a loja e a linha de toda corrida destacam do papel (3:1)", (_, dark) => {
-    const t = mapTokens(dark);
-    expect(contrast(t.store, t.paper)).toBeGreaterThanOrEqual(3);
-    for (let i = 0; i < 6; i += 1) {
-      const outline = lineOutline(t, rideColor(i));
-      expect(contrast(outline, t.paper), `corrida ${i + 1}`).toBeGreaterThanOrEqual(3);
-      // a cor da corrida não se perde dentro do próprio contorno
-      if (outline !== rideColor(i).bg && outline !== rideColor(i).ink) {
-        expect(contrast(rideColor(i).bg, outline), `corrida ${i + 1} no halo`).toBeGreaterThanOrEqual(3);
-      }
+  it.each(themes)("tema %s: o contorno é a cor do tema, 2 px de cada lado da rota", (_, dark) => {
+    expect(themeHalo(dark)).toBe(dark ? GLYPH_INK : GLYPH_PAPER);
+    expect(HALO_WIDTH - ROUTE_WIDTH).toBe(4);
+  });
+
+  it("a rota é a cor da amostra; só a preta vira quase branca, e só no escuro", () => {
+    for (let i = 0; i < 26; i += 1) {
+      expect(routeColor(false, rideColor(i))).toBe(rideColor(i).bg);
+      expect(routeColor(true, rideColor(i))).toBe(rideColor(i).bg === "#111111" ? DARK_BLACK_ROUTE : rideColor(i).bg);
     }
+  });
+
+  it.each(themes)("tema %s: o código lê sobre o pacote cheio de toda corrida (texto, 4,5:1)", (_, dark) => {
+    for (let i = 0; i < 26; i += 1) {
+      const fill = routeColor(dark, rideColor(i));
+      expect(contrast(textOn(fill), fill), `corrida ${i + 1}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("o pacote: picote em cima, base reta embaixo (a base pousa no ponto)", () => {
+    expect(PACKAGE_PATH.startsWith("M2 40 H32 V6")).toBe(true);
+    expect(PACKAGE_PATH).toContain("L2.00 6.0");
   });
 
   it.each(themes)("tema %s: o pino branco destaca do papel (3:1)", (_, dark) => {
@@ -38,11 +48,6 @@ describe("cores do mapa", () => {
   it("mapTokens devolve o conjunto do tema", () => {
     expect(mapTokens(false)).toBe(MAP_LIGHT);
     expect(mapTokens(true)).toBe(MAP_DARK);
-    expect(mapTokens(true).store).toBe("#ffffff");
-    expect(lineOutline(MAP_LIGHT, rideColor(2))).toBe(rideColor(2).ink);
-    expect(lineOutline(MAP_DARK, rideColor(0))).toBe(MAP_DARK.halo); // azul
-    expect(lineOutline(MAP_DARK, rideColor(5))).toBe(MAP_DARK.halo); // preto
-    expect(lineOutline(MAP_DARK, rideColor(2))).toBe(rideColor(2).bg); // amarelo lê sozinho
   });
 
   it("o Google escuro leva o papel escuro; os dois apagam comércio e ônibus", () => {
@@ -53,10 +58,8 @@ describe("cores do mapa", () => {
     expect(JSON.stringify(googleMapStyles(true))).toContain(MAP_DARK.paper);
   });
 
-  it("o número da parada (tinta da corrida) lê sobre o octógono branco em toda corrida", () => {
-    for (let i = 0; i < 26; i += 1) {
-      expect(contrast(rideColor(i).ink, "#ffffff"), `corrida ${i + 1}`).toBeGreaterThanOrEqual(4.5);
-    }
+  it("o número e o desenho leem sobre o papel branco do cupom e da loja (AA)", () => {
+    expect(contrast(GLYPH_INK, GLYPH_PAPER)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("as cores são fixas por tema: nenhuma vem de token do tema", () => {
@@ -91,6 +94,21 @@ describe("pinos sobrepostos", () => {
     expect(a).not.toEqual(b);
     const gap = Math.hypot(50 + a.dx - (52 + b.dx), 50 + a.dy - (51 + b.dy));
     expect(gap).toBeGreaterThanOrEqual(30);
+  });
+
+  it("pacotes altos e a moto larga no mesmo ponto: depois de abrir, nenhuma caixa toca outra", () => {
+    const boxes = [
+      { key: "a", x: 0, y: -23, w: 44, h: 50 },
+      { key: "b", x: 30, y: -23, w: 44, h: 50 },
+      { key: "courier:1", x: 10, y: 0, w: 64, h: 40 },
+    ];
+    const out = spreadOverlaps(boxes);
+    const placed = boxes.map((m) => ({ ...m, x: m.x + out.get(m.key)!.dx, y: m.y + out.get(m.key)!.dy }));
+    for (const a of placed) for (const b of placed) {
+      if (a === b) continue;
+      const apart = Math.abs(a.x - b.x) >= (a.w + b.w) / 2 || Math.abs(a.y - b.y) >= (a.h + b.h) / 2;
+      expect(apart, `${a.key} × ${b.key}`).toBe(true);
+    }
   });
 
   it("a moto em cima da parada também se separa, e o grupo inteiro ganha lugar", () => {

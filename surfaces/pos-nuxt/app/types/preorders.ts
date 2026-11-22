@@ -177,8 +177,12 @@ export interface PreorderPromise {
 /** O bloco da corrida — espelho do `CourierBlock` do Gestor (`orders-nuxt/types/orders.ts`). */
 export interface PreorderCourier {
   provider: string;
-  /** A letra da TaOn (D/G/P/U procurando, A/S aceita, E coletou, F entregue, N/C não concluída). */
+  /** A letra crua do serviço: só diz se há corrida. O estado é `ride_state`. */
   status: string;
+  /** O estado da corrida no vocabulário da casa (`RideState` do servidor). */
+  ride_state: string;
+  /** O nome do serviço da corrida como o cadastro diz. */
+  service_name: string;
   status_label: string;
   active: boolean;
   driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string; vehicle_color?: string } | null;
