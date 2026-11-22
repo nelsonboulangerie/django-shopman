@@ -3000,7 +3000,7 @@ def _build_card(
         today=today,
     )
     if expectation is not None:
-        eta = ready_eta(order, expectation, channel_config, now=now)
+        eta = ready_eta(order, expectation, now=now)
         if eta is not None:
             attention = {**attention, "ready_eta_iso": eta.isoformat()}
     return replace(card, **attention) if attention else card
