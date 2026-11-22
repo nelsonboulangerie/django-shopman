@@ -3050,6 +3050,9 @@
             "_reconcile_pending_links",
             "order_requirement_for_work_order",
             "_order_sku_quantity",
+            "_SHELF_HOLD_STATUSES",
+            "_shelf_quantities",
+            "_production_quantity",
             "_adjusted_active_order_ids",
             "_append_order_work_order_link",
             "_unlink_inactive_order",
@@ -3068,7 +3071,8 @@
       ],
       "domains": [
         "craftsman",
-        "orderman"
+        "orderman",
+        "stockman"
       ],
       "ports": [],
       "events": [],
