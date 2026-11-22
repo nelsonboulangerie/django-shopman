@@ -13402,6 +13402,7 @@
             "advance_block",
             "gestor_advance_block",
             "advance_block_message",
+            "_preorder_day",
             "advance_block_reason",
             "advance_order",
             "_handoff_hold_seconds",
