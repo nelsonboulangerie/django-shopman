@@ -13381,7 +13381,6 @@
             "_ready_at",
             "_ride_orders",
             "_stop_view",
-            "_today_q",
             "assign",
             "close_if_settled",
             "deliver",
@@ -13391,7 +13390,8 @@
             "remember_theme",
             "report_position",
             "report_problem",
-            "ride_view"
+            "ride_view",
+            "today_settlement"
           ]
         }
       ]
