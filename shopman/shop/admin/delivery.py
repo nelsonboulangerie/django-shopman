@@ -148,7 +148,7 @@ class CourierAdmin(ModelAdmin):
     inlines = (CourierRateInline,)
     fieldsets = (
         (None, {
-            "fields": ("service", "name", "ref", "phone", "vehicle", "is_active", "on_shift_on"),
+            "fields": ("service", "name", "ref", "phone", "vehicle", "is_active", "on_shift_on", "page_theme"),
             "description": (
                 "O entregador recebe o link da corrida pelo WhatsApp. O veículo aparece na Saída "
                 "para o balcão conferir antes de entregar as sacolas. Sem valor combinado, vale a "

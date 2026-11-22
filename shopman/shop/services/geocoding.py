@@ -47,6 +47,14 @@ def _record_failure(operation: str, detail: str, *, exc: BaseException | None = 
     )
 
 
+def _record_success() -> None:
+    """O Google respondeu com resultado: fecha os avisos do geocoding, inclusive o do
+    antifraude que rodou cego por causa dele."""
+    from shopman.shop.services.observability import record_integration_success
+
+    record_integration_success("google_geocoding")
+
+
 class GeocodingError(Exception):
     """Raised when reverse geocoding cannot produce a canonical result."""
 
@@ -221,6 +229,7 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
 
     parsed = _parse_result(results[0], lat, lng)
     cache.set(key, parsed.to_dict(), CACHE_TTL_SECONDS)
+    _record_success()
     return parsed
 
 
@@ -285,4 +294,5 @@ def forward_geocode_structured(address: str) -> ReverseGeocodeResult | None:
 
     parsed = _parse_result(results[0], float(lat), float(lng))
     cache.set(key, parsed.to_dict(), CACHE_TTL_SECONDS)
+    _record_success()
     return parsed

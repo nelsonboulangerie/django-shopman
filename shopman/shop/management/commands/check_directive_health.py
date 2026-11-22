@@ -38,6 +38,16 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+def _resolve(alert_type: str, marker: str, why: str) -> None:
+    """A verificação que acusa também encerra: a condição passou, o aviso fecha com o motivo."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    try:
+        alert_adapter.resolve_matching(alert_type, message_contains=marker, actor=f"sistema: {why}")
+    except Exception:
+        logger.exception("directive_health.resolve_failed", extra={"alert_type": alert_type})
+
+
 def _tasks(count: int) -> str:
     """Contagem na língua do operador: tarefa de fundo, nunca "directive(s)"."""
     return "1 tarefa de fundo" if count == 1 else f"{count} tarefas de fundo"
@@ -81,9 +91,13 @@ class Command(BaseCommand):
 
         if failed_recent >= max(1, failed_threshold):
             self._alert_failed_spike(failed_recent, failed_window)
+        else:
+            self._resolve_failed_spike(failed_window)
 
         if backlog_overdue >= max(1, backlog_threshold):
             self._alert_backlog(backlog_overdue, backlog_age)
+        elif backlog_overdue == 0:
+            _resolve("directive_backlog", "Dedupe: directive_backlog", "a fila de tarefas de fundo esvaziou")
 
         self._check_worker_heartbeat(now, heartbeat_stale)
 
@@ -111,6 +125,26 @@ class Command(BaseCommand):
             ),
             dedupe_key="directive_failed_spike",
         )
+
+    def _resolve_failed_spike(self, window_minutes: int) -> None:
+        """Fecha o pico quando nenhuma tarefa que falhou desde ele segue falhada.
+
+        O pico diz que tarefas "não vão ser tentadas de novo sozinhas": a janela
+        passar não resolve nada. O fato é a falha ter sido reprocessada (ou
+        descartada) por alguém. Tarefa que falhou antes do pico não conta.
+        """
+        from shopman.orderman.models import Directive
+
+        from shopman.shop.adapters import alert as alert_adapter
+
+        since = alert_adapter.oldest_open_created_at("directive_failed_spike")
+        if since is None:
+            return
+        still_failed = Directive.objects.filter(
+            status="failed", updated_at__gte=since - timedelta(minutes=max(1, window_minutes))
+        ).exists()
+        if not still_failed:
+            _resolve("directive_failed_spike", "Dedupe: directive_failed_spike", "as tarefas que falharam foram reprocessadas")
 
     def _alert_backlog(self, count: int, age_minutes: int) -> None:
         from shopman.shop.services.observability import create_operator_alert
@@ -142,6 +176,11 @@ class Command(BaseCommand):
 
         age = now - last
         if age < timedelta(minutes=max(1, stale_minutes)):
+            _resolve(
+                "directive_worker_stale",
+                "Dedupe: directive_worker_stale:process_directives",
+                "o processo de tarefas de fundo voltou a terminar rodadas",
+            )
             return
 
         alert = create_operator_alert(

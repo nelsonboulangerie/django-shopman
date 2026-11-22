@@ -130,6 +130,9 @@ def test_detail_active_ride_shows_driver_and_labels(client, operator, shop):
     client.force_login(operator)
     block = _detail(client, order.ref)["courier"]
     assert block["status"] == "A"
+    # A tela lê o estado da casa, não a letra (M1b-b2, #3117), e o nome do serviço vem pronto.
+    assert block["ride_state"] == "assigned"
+    assert isinstance(block["service_name"], str)
     assert block["status_label"] == "Entregador a caminho da loja"
     assert block["active"] is True
     assert block["driver"]["name"] == "Entregador Mock"
@@ -173,9 +176,22 @@ def test_detail_carries_the_ride_progress_and_the_reading_gap(client, operator, 
 
 def test_on_hold_is_not_at_the_shop():
     """S é "em espera" (termina outra entrega antes), não "na loja"."""
-    from shopman.backstage.projections.order_queue import COURIER_STATUS_LABELS
+    from shopman.backstage.projections.order_queue import courier_state_label
 
-    assert "loja" not in COURIER_STATUS_LABELS["S"]
+    assert "loja" not in courier_state_label({"status": "S"})
+
+
+def test_a_frase_vem_do_estado_e_a_nuance_do_servico():
+    """O Gestor lê o ``RideState`` (M1b-b2, #3117); a letra só acrescenta o que o
+    serviço sabe a mais ("Aguardando aceite"), e letra estranha não vira frase."""
+    from shopman.backstage.projections.order_queue import courier_state_label
+
+    assert courier_state_label({"status": "D"}) == "Procurando entregador"
+    assert courier_state_label({"status": "G"}) == "Aguardando aceite"
+    assert courier_state_label({"status": "A"}) == "Entregador a caminho da loja"
+    assert courier_state_label({"status": "E"}) == "Saiu para entrega"
+    assert courier_state_label({"status": "Z"}) == ""
+    assert courier_state_label({}) == ""
 
 
 # ── Ações ───────────────────────────────────────────────────────────

@@ -457,7 +457,7 @@ def test_tentativa_sem_resposta_no_gestor_deixa_no_sino_a_frase_do_balcao(client
     assert resp.json()["refund"]["outcome"] == "unconfirmed"
     ambiguous = OperatorAlert.objects.get(order_ref=order.ref, message__contains="ficou sem resposta")
     assert ambiguous.message.split("\n\nDedupe:")[0] == (
-        f"O estorno do pedido {order.ref}, tentado de novo no Gestor de pedidos, ficou sem resposta do meio "
+        f"O estorno do pedido {order.ref}, feito no Gestor de pedidos, ficou sem resposta do meio "
         "de pagamento, e pode ter saído. Tente de novo no Gestor em alguns minutos: a tentativa seguinte "
         "confere esta e não devolve duas vezes."
     )
