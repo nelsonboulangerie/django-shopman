@@ -4,6 +4,7 @@ import { useOnline } from "@vueuse/core";
 import type {
   Action,
   POSAddressAutocompleteProjection,
+  POSDeliveryFeeQuote,
   POSCartItem,
   POSLineAuthorship,
   POSCheckoutCapabilities,
@@ -1302,17 +1303,86 @@ export function usePosSale(deps: PosSaleDeps) {
       over_plan: [...(shown.preorder_over_plan || [])],
     };
   }
-  const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
-  const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
-  const deliveryFeeWaiver = computed(() => review.value?.delivery_fee_waiver ?? null);
-  // A review (que resolve a taxa) só roda no pagamento. Fora dele, a tela de
-  // Recebimento diz isso, em vez de mostrar R$ 0,00 como se fosse a taxa.
+  // A TAXA NA TELA DE VENDA (#2402). A review, que resolve a taxa, só roda no
+  // pagamento; o Recebimento dizia "calculada no pagamento" com o cliente no
+  // telefone perguntando quanto fica. Fora do pagamento, a tela pergunta a taxa à
+  // porta `pos/delivery-fee/` (o mesmo motor da review) assim que há endereço de
+  // entrega, e de novo quando o endereço, o cliente ou o valor da venda mudam
+  // (frete grátis depende dos dois últimos). No pagamento, a review manda.
+  const deliveryQuote = ref<(POSDeliveryFeeQuote & { key: string }) | null>(null);
+  const deliveryQuoteBusy = ref(false);
+  const deliveryQuoteFailed = ref(false);
+  let deliveryQuoteTimer: ReturnType<typeof setTimeout> | null = null;
+  let deliveryQuoteSeq = 0;
+  const deliveryQuoteKey = computed(() => {
+    if (cart.fulfillmentType !== "delivery") return "";
+    if (!cart.deliveryAddress.trim() && !cart.deliveryNeighborhood.trim()) return "";
+    return JSON.stringify([
+      cart.deliveryAddress, cart.deliveryNeighborhood, cart.deliveryStreetNumber,
+      cart.deliveryAddressStructured, cart.customerRef, cartNetTotalQ(cart.items),
+    ]);
+  });
+  /** A resposta da porta vale para o endereço e a venda de AGORA, e só fora do pagamento. */
+  const freshDeliveryQuote = computed(() => {
+    const quote = deliveryQuote.value;
+    return !review.value && quote && quote.key === deliveryQuoteKey.value ? quote : null;
+  });
+  async function fetchDeliveryQuote(key: string) {
+    const seq = ++deliveryQuoteSeq;
+    deliveryQuoteBusy.value = true;
+    deliveryQuoteFailed.value = false;
+    try {
+      const intent = buildCurrentIntent();
+      const response = await $fetch<POSDeliveryFeeQuote>(apiPath("/api/v1/backstage/pos/delivery-fee/"), {
+        method: "POST",
+        credentials: "include",
+        headers: requestHeaders,
+        signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
+        body: {
+          delivery_address_structured: intent.delivery_address_structured || {},
+          delivery_address: intent.delivery_address || "",
+          customer_ref: cart.customerRef,
+          merchandise_q: cartNetTotalQ(cart.items),
+        },
+      });
+      // Resposta velha chegando depois da nova trocaria a taxa pela do endereço anterior.
+      if (seq !== deliveryQuoteSeq) return;
+      deliveryQuote.value = { ...response, key };
+    } catch {
+      if (seq === deliveryQuoteSeq) deliveryQuoteFailed.value = true;
+    } finally {
+      if (seq === deliveryQuoteSeq) deliveryQuoteBusy.value = false;
+    }
+  }
+  watch([deliveryQuoteKey, checkoutMode], ([key, inCheckout]) => {
+    if (deliveryQuoteTimer) clearTimeout(deliveryQuoteTimer);
+    deliveryQuoteTimer = null;
+    if (!key || inCheckout) return;
+    if (deliveryQuote.value?.key === key) return;
+    deliveryQuoteTimer = setTimeout(() => {
+      deliveryQuoteTimer = null;
+      void fetchDeliveryQuote(key);
+    }, 300);
+  });
+  const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? freshDeliveryQuote.value?.delivery_fee_q ?? 0);
+  const deliveryFeeSource = computed(
+    () => review.value?.delivery_fee_source ?? freshDeliveryQuote.value?.delivery_fee_source ?? "",
+  );
+  const deliveryFeeWaiver = computed(
+    () => review.value?.delivery_fee_waiver ?? freshDeliveryQuote.value?.delivery_fee_waiver ?? null,
+  );
+  // No pagamento a taxa é a da review. Fora dele, a da porta da taxa; enquanto ela
+  // não respondeu para o endereço de agora, "Calculando".
   const deliveryFeeStatus = computed<"resolved" | "calculating" | "failed" | "at_payment">(() => {
     if (review.value) return "resolved";
-    if (!checkoutMode.value) return "at_payment";
-    return reviewFailed.value ? "failed" : "calculating";
+    if (checkoutMode.value) return reviewFailed.value ? "failed" : "calculating";
+    if (freshDeliveryQuote.value) return "resolved";
+    if (!deliveryQuoteKey.value) return "at_payment";
+    return deliveryQuoteFailed.value && !deliveryQuoteBusy.value ? "failed" : "calculating";
   });
-  const deliveryDistanceKm = computed(() => review.value?.delivery_distance_km ?? null);
+  const deliveryDistanceKm = computed(
+    () => review.value?.delivery_distance_km ?? freshDeliveryQuote.value?.delivery_distance_km ?? null,
+  );
   // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
   // último termo é o que faz o formulário abrir já respondendo — a review só
   // existe depois que há endereço, e até lá o campo ficava vazio, que é
