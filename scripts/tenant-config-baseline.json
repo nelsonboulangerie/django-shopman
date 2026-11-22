@@ -14,7 +14,7 @@
     "JEV"
   ],
   "totals": {
-    "settings": 311,
+    "settings": 310,
     "env": 24,
     "settings_env": 170
   },
@@ -117,9 +117,6 @@
       "settings": 1
     },
     "shopman/backstage/projections/hub_queue.py": {
-      "settings": 1
-    },
-    "shopman/backstage/projections/order_queue.py": {
       "settings": 1
     },
     "shopman/backstage/projections/pos.py": {

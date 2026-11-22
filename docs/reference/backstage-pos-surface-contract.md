@@ -394,8 +394,13 @@ Minimum audit artifacts:
 - customer POS capture metadata;
 - cancellation event plus correction reason when supplied.
 
-Future event streams may expose POS refresh, but current contract is polling via
-projection refresh. A surface must not invent push state as authoritative.
+Realtime is SSE push on top of the canonical projection fetch (ADR-016). The
+terminal subscribes, through the same-origin BFF (`usePosEvents.ts`), to
+`/sse/cash`, `/sse/tabs` and `/sse/stock`, and the Encomendas screen to
+`/sse/orders`. Each event re-fetches only the projection scope it touches
+(`refreshScopeForChannel`). The projection fetch stays the source of truth:
+polling runs only as a calm fallback (60 s) while the stream is down, and a
+surface must not treat a pushed payload as authoritative state.
 
 ## Errors And Recovery
 

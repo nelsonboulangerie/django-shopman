@@ -464,11 +464,22 @@ def _check_order_intent_amounts(
     settled = [intent for intent in order_intents if intent.status in _SETTLED_STATUSES]
     order_total_q = order_composition.effective_total_q(order)
     adjusted = order_composition.is_adjusted(order)
+    # O pagamento digital que chegou DEPOIS de o balcão receber (#1176, #2346) não
+    # pagou o pedido: o cliente pagou duas vezes e esse dinheiro volta inteiro, no
+    # mesmo meio. Entra pelo líquido: devolvido, soma zero; estorno que falhou
+    # continua somando e a divergência aparece, como deve.
+    late = [intent for intent in settled if _late_takeover_payment(order, intent)]
+    settled = [intent for intent in settled if intent not in late]
 
-    if settled:
+    if settled or late:
         settled_q = sum(int(intent.amount_q or 0) for intent in settled)
         if adjusted:
             settled_q -= sum(PaymentService.refunded_total(intent.ref) for intent in settled)
+        late_net_q = sum(
+            int(intent.amount_q or 0) - PaymentService.refunded_total(intent.ref) for intent in late
+        )
+        settled_q += late_net_q
+        settled = settled + [intent for intent in late if int(intent.amount_q or 0) > PaymentService.refunded_total(intent.ref)]
         if settled_q != order_total_q:
             context: dict[str, int | str] = {
                 "order_total_q": order_total_q,
@@ -575,6 +586,7 @@ def _check_intent(
         data_intent_ref
         and intent.order_ref == order.ref
         and intent.ref not in _referenced_intent_refs(payment)
+        and not _replaced_by_counter_takeover(order, intent)
     ):
         issues.append(
             FinancialReconciliationIssue(
@@ -934,6 +946,24 @@ def _check_courier_change(
             },
         )
     )
+
+
+def _late_takeover_payment(order: Order, intent: PaymentIntent) -> bool:
+    """O pagamento que chegou depois de o balcão receber o pedido (#1176)."""
+    from shopman.shop.services import counter_takeover
+
+    return counter_takeover.late_payment_of_takeover(order, intent)
+
+
+def _replaced_by_counter_takeover(order: Order, intent: PaymentIntent) -> bool:
+    """A cobrança online que o balcão cancelou ao receber, ou o pagamento tardio dela.
+
+    Os dois são do pedido e não são o que ``Order.data.payment`` aponta (quem pagou
+    foi o balcão): a referência diferente é o estado certo, não um defeito.
+    """
+    from shopman.shop.services import counter_takeover
+
+    return counter_takeover.cancelled_by_takeover(order, intent.ref) or _late_takeover_payment(order, intent)
 
 
 def _net_is_the_retained_no_show_amount(order: Order) -> bool:

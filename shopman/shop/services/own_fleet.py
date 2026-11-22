@@ -421,7 +421,24 @@ def ride_view(link: CourierLink) -> dict:
         "machine": machine,
         "settle": {"cash_q": cash_back_q, "cash": f"R$ {format_money(cash_back_q)}", "machine": machine,
                    "bags_back": [s["code"] for s in stops if s["state"] == "cancelled"]},
+
+        **({"map": _map_view()} if moment == "route" else {}),
     }
+
+
+def _map_view() -> dict:
+    """O mapa da corrida na tela "Dirigindo" (#2509): a chave pública do navegador e a loja.
+
+    A mesma chave que a loja já entrega ao cliente (restrita por domínio). Sem chave, a
+    página desenha o mapa próprio, só com as linhas e os pontos.
+    """
+    from shopman.shop.google_maps_credentials import browser_api_key
+    from shopman.shop.models import Shop
+
+    shop = Shop.objects.first()
+    origin = ({"lat": float(shop.latitude), "lng": float(shop.longitude)}
+              if shop and shop.latitude and shop.longitude else None)
+    return {"key": browser_api_key(), "origin": origin}
 
 
 def _today_q(courier_person: Courier) -> int:

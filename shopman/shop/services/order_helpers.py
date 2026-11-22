@@ -246,6 +246,54 @@ def get_commitment_date(source) -> date | None:
     return parse_commitment_date(data.get("delivery_date"))
 
 
+# ── "É encomenda?": uma régua só, duas perguntas (#3163, F-8 e F-9) ─────────
+#
+# Antes havia quatro réguas: o carimbo do commit (``data.is_preorder``, a data
+# depois do dia da venda), o Gestor (data depois de HOJE, na leitura), a Cozinha
+# (feito antes do dia combinado) e a fila de espera (o carimbo). O reagendamento
+# regravava o carimbo como "depois de hoje", e a encomenda não paga trazida para
+# hoje voltava a ser fila (fermata). São duas perguntas diferentes, cada uma com
+# o seu nome, e todo mundo pergunta aqui.
+
+
+def is_preorder(source) -> bool:
+    """Encomenda: feita ANTES do dia combinado.
+
+    No PEDIDO a resposta é o carimbo ``data.is_preorder``: o commit grava "a data
+    é depois do dia da venda", e o reagendamento regrava "foi feito antes do novo
+    dia" (:mod:`services.reschedule`). É o carimbo que separa a encomenda do pedido
+    da fila de espera para a fornada de amanhã, que também tem data futura e não é
+    encomenda. Na SESSÃO (a comanda da Cozinha, sem carimbo), a mesma pergunta
+    pelas datas: ``created_at`` antes de ``data.delivery_date``.
+    """
+    from django.utils import timezone
+
+    data = getattr(source, "data", None) or {}
+    # O pedido pelo model do Django, sem importar o Orderman aqui (quem chama já
+    # tem o pedido na mão; a sessão é o outro caso).
+    if getattr(getattr(source, "_meta", None), "model_name", "") == "order":
+        return bool(data.get("is_preorder"))
+    commitment = get_commitment_date(source)
+    created_at = getattr(source, "created_at", None)
+    if commitment is None or created_at is None:
+        return False
+    return timezone.localdate(created_at) < commitment
+
+
+def is_for_a_later_day(source, *, today: date | None = None) -> bool:
+    """A data combinada é DEPOIS de hoje (o pedido ainda não é trabalho do dia).
+
+    É outra pergunta: a encomenda de hoje responde não aqui e sim em
+    :func:`is_preorder`. ``today`` é o dia da leitura de quem chama: quem pergunta
+    mais de uma vez na mesma leitura passa o mesmo dia, senão a leitura que cruza
+    a meia-noite responde "amanhã" numa lista e "hoje" na outra.
+    """
+    from django.utils import timezone
+
+    commitment = get_commitment_date(source)
+    return commitment is not None and commitment > (today or timezone.localdate())
+
+
 def is_counter_takeaway(order) -> bool:
     """Venda de balcão por NATUREZA: o cliente leva a mercadoria agora?
 

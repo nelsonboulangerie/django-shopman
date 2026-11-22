@@ -108,14 +108,19 @@ def state_detail(block: dict | None) -> str:
     return detail(block.get("status")) if detail else ""
 
 
-def service_name(block: dict | None = None) -> str:
-    """O nome do serviço da corrida como o cadastro diz ("TaOn", "Entregadores da casa").
+#: A palavra das frases quando não há serviço cadastrado: "a central", "da central".
+SERVICE_FALLBACK_NAME = "central"
 
-    Sem serviço gravado na corrida vale o padrão do Admin; sem nenhum, "".
+
+def service_name(block: dict | None = None) -> str:
+    """O nome do serviço da corrida como o cadastro diz ("TaOn"), para a frase do operador.
+
+    Sem serviço gravado na corrida vale o padrão do Admin; sem nenhum, "central". As
+    frases tratam o serviço no feminino ("a TaOn", "a central"), como a empresa.
     """
     ref = str((block or {}).get("service") or "")
     service = DeliveryService.objects.filter(ref=ref).first() if ref else service_for_new_ride()
-    return service.name if service else ""
+    return (service.name.strip() if service else "") or SERVICE_FALLBACK_NAME
 
 
 def state_since(block: dict | None, state: RideState) -> str | None:
