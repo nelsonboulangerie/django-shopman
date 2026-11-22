@@ -389,12 +389,13 @@ def test_fechar_abaixo_do_ja_entregue_com_o_pedido_ativo_e_recusado(lote, caixa,
     assert (_saldo("em_producao"), _saldo("vitrine")) == (D("6"), D("0"))
 
 
-def test_fechar_abaixo_do_ja_entregue_falha_fechado_no_ledger(lote, caixa, django_capture_on_commit_callbacks):
-    """O pedido já saiu da conta dos ativos (concluído): quem recusa é o ledger.
+def test_fechar_abaixo_do_ja_entregue_recusa_com_o_motivo(lote, caixa, django_capture_on_commit_callbacks):
+    """O pedido já saiu da conta dos ativos (concluído): a recusa diz o motivo (#2731).
 
-    4 entregues, 3 produzidas. Os 3 abatem do lote, e a unidade sem lastro não
-    vira saldo negativo nem perda inventada: a ponte procura 7 de quebra, acha
-    6 e desfaz o fechamento inteiro. O lote segue aberto e nada mudou.
+    4 entregues, 3 produzidas. Antes, quem recusava era o ledger, com a frase
+    genérica do estoque ("[INSUFFICIENT_AVAILABLE] Quantidade solicitada
+    indisponível"), e o forneiro não lia que declarou menos do que já saiu. O lote
+    segue aberto e nada mudou.
     """
     with django_capture_on_commit_callbacks(execute=True):
         _iniciar(lote)
@@ -406,7 +407,10 @@ def test_fechar_abaixo_do_ja_entregue_falha_fechado_no_ledger(lote, caixa, djang
     with pytest.raises(production.ProductionError) as error:
         _fechar(lote, "3", yield_deviation_confirmed=True, yield_deviation_reason="Contagem conferida.")
 
-    assert "INSUFFICIENT_AVAILABLE" in str(error.value)
+    assert str(error.value) == (
+        f"Não dá para fechar o lote {lote.ref} com 3 un.: 4 un. dele já foram entregues. "
+        "Confira a contagem: o lote rendeu pelo menos isso."
+    )
     lote.refresh_from_db()
     assert lote.status == "started"
     assert (_saldo("em_producao"), _saldo("vitrine")) == (D("6"), D("0"))
@@ -715,3 +719,27 @@ def test_entrega_que_outro_lote_do_dia_cobre_nao_trava_o_cancelamento(
     lote.refresh_from_db()
     assert lote.status == WorkOrder.Status.VOID
     assert outro.status == WorkOrder.Status.PLANNED
+
+
+
+# ── #2731, item 3: a venda antecipada entra na receita da fornada ───────────
+
+
+def test_a_venda_antes_de_o_lote_fechar_entra_na_receita_da_fornada(lote, caixa, django_capture_on_commit_callbacks):
+    """A reserva entregue antes do fechamento aponta para o lote que a pagou (#2724), e
+    o rateio do B.I. lê exatamente isso: a venda antecipada é receita desta fornada."""
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        order = _vender_no_balcao(caixa, 4)
+    with django_capture_on_commit_callbacks(execute=True):
+        _fechar(lote)
+
+    lote.refresh_from_db()
+    owners = bi_production._stock_batch_owners([lote])
+    hoje = timezone.localdate()
+    revenue, traced = bi_production._batch_revenue(owners, hoje, hoje)
+
+    order.refresh_from_db()
+    assert traced == {lote.ref: D("4")}
+    assert revenue == {lote.ref: order.total_q}

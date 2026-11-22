@@ -70,9 +70,9 @@ export function groupedTitle(service?: string): string {
 }
 export const GROUPED_HINT = "Ela já tem entregador";
 
-/** "Diego desistiu às 14:32" (sem o nome: "O entregador desistiu às 14:32"). */
+/** "Diego desistiu às 14h32" ou "à 1h31" (sem o nome: "O entregador desistiu às 14h32"). */
 export function withdrawalTitle(driver: string | null | undefined, atMs: number): string {
-  return `${driver?.trim() || "O entregador"} desistiu às ${clockHHMM(atMs)}`;
+  return `${driver?.trim() || "O entregador"} desistiu ${atClock(atMs)}`;
 }
 
 function epoch(iso: string | undefined): number | null {
@@ -81,15 +81,24 @@ function epoch(iso: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/** Zero hora e uma hora pedem o singular: "a 1h43", "as 15h50". A regra é uma só. */
+function hourIsSingular(clock: string): boolean {
+  return Number.parseInt(clock, 10) <= 1;
+}
+
 /**
  * "para as 15h50" ou "para a 1h43": o horário previsto, que não se confunde com
  * duração (o "~1h43" tinha as duas leituras). "Prevista" já diz que é estimativa.
- * Zero hora e uma hora pedem o singular.
  */
 export function clockTarget(ms: number): string {
   const clock = clockHHMM(ms);
-  const hour = Number.parseInt(clock, 10);
-  return `para ${hour <= 1 ? "a" : "as"} ${clock}`;
+  return `para ${hourIsSingular(clock) ? "a" : "as"} ${clock}`;
+}
+
+/** "às 15h50" ou "à 1h31": o instante em que algo aconteceu. */
+export function atClock(ms: number): string {
+  const clock = clockHHMM(ms);
+  return `${hourIsSingular(clock) ? "à" : "às"} ${clock}`;
 }
 
 /** "15h50", no fuso da loja (o dispositivo pode estar em outro). */
@@ -121,7 +130,7 @@ export function courierProgress(
   const arrived = epoch(courier.arrived_pickup_at);
   const pickupEta = epoch(courier.pickup_eta_at);
   if (state === "assigned") {
-    if (arrived !== null) view.pickup = `Chegou à loja às ${clockHHMM(arrived)}`;
+    if (arrived !== null) view.pickup = `Chegou à loja ${atClock(arrived)}`;
     else if (pickupEta !== null) {
       const minutes = Math.ceil((pickupEta - nowMs) / 60_000);
       view.pickup =

@@ -510,30 +510,11 @@ class CouponNotBetter(CouponRejected):
     que segue valendo (``standing_label``, ``standing_q``).
     """
 
-    def __init__(self, *, coupon_code: str, standing_label: str, standing_q: int, coupon_q: int = 0, fixed: bool = False):
+    def __init__(self, *, coupon_code: str, standing_label: str, standing_q: int):
         super().__init__("coupon_not_better")
         self.coupon_code = coupon_code
         self.standing_label = standing_label
         self.standing_q = standing_q
-        # Quanto o cupom valeria nestes itens, para a frase não afirmar "igual ou maior"
-        # quando não é: o cupom de valor fixo não entra no lugar do desconto por item.
-        self.coupon_q = coupon_q
-        self.fixed = fixed
-
-
-def _coupon_potential_q(session, promotion) -> int:
-    """Quanto o cupom daria nos itens que alcança, pelo preço cheio de cada um."""
-    from shopman.utils.monetary import monetary_mult
-
-    lines = []
-    for item in session.items or []:
-        meta = item.get("meta") or {}
-        list_q = int(meta.get("_list_q") or item.get("unit_price_q") or 0)
-        if list_q > 0:
-            lines.append((Decimal(str(item.get("qty") or 0)), list_q))
-    if promotion.type == "fixed":
-        return min(int(promotion.value or 0), sum(monetary_mult(qty, unit) for qty, unit in lines))
-    return sum(monetary_mult(qty, unit * int(promotion.value or 0) // 100) for qty, unit in lines)
 
 
 def _line_discounts(session) -> dict[str, dict]:
@@ -691,15 +672,8 @@ def validate_and_apply_coupon(
     if int(coupon_pricing.get("discount_q") or 0) <= 0 and coupon_pricing.get("reason") == "already_discounted":
         standing = [d for d in discounts_after.values() if d["type"] != "coupon" and d["total_q"] > 0]
         label, standing_q = _summarize(standing)
-        coupon_q = _coupon_potential_q(session, promotion)
         remove_coupon_code(session_key=session_key, channel_ref=channel_ref)
-        raise CouponNotBetter(
-            coupon_code=code,
-            standing_label=label,
-            standing_q=standing_q,
-            coupon_q=coupon_q,
-            fixed=promotion.type == "fixed",
-        )
+        raise CouponNotBetter(coupon_code=code, standing_label=label, standing_q=standing_q)
     replaced = [
         discounts_before[key]
         for key, disc in discounts_after.items()

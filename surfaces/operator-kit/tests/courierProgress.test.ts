@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clockTarget, courierProgress } from "../app/presentation/courierProgress";
+import { atClock, clockTarget, courierProgress } from "../app/presentation/courierProgress";
 
 // O andamento da corrida da TaOn: a frase anda com o relógio da tela, entre leituras.
 
@@ -116,5 +116,13 @@ describe("clockTarget: a entrega prevista é um horário, nunca uma duração", 
     expect(clockTarget(Date.parse("2026-11-16T15:58:00-03:00"))).toBe("para as 15h58");
     expect(clockTarget(Date.parse("2026-11-16T01:43:00-03:00"))).toBe("para a 1h43");
     expect(clockTarget(Date.parse("2026-11-16T00:20:00-03:00"))).toBe("para a 0h20");
+  });
+});
+
+describe("atClock: o instante, no singular para 0h e 1h", () => {
+  it("diz às/à, no fuso da loja", () => {
+    expect(atClock(Date.parse("2026-11-16T14:32:00-03:00"))).toBe("às 14h32");
+    expect(atClock(Date.parse("2026-11-16T01:31:00-03:00"))).toBe("à 1h31");
+    expect(atClock(Date.parse("2026-11-16T00:05:00-03:00"))).toBe("à 0h05");
   });
 });

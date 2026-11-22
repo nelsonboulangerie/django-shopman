@@ -290,6 +290,25 @@ _HOLD_LIFECYCLE_METADATA = frozenset({
 })
 
 
+def is_held_by_a_cart(hold) -> bool:
+    """A reserva é de uma SACOLA (sessão aberta), e não de um compromisso?
+
+    A régua é a ``reference`` do hold, a mesma do ``is_cart_hold`` e da
+    varredura de órfãos: sacola é a chave da sessão; pedido é ``order:<ref>``
+    desde o commit. Não são de sacola o pedido, a reserva manual do operador
+    (sem referência) e a reserva de insumo da produção (``purpose=workorder``).
+
+    Diferente do ``is_cart_hold``, aqui a sacola na fila da fornada (``planned``,
+    sem prazo) também conta como sacola: ela é intenção de compra, não palavra
+    da casa, e só vira compromisso quando a sessão vira pedido.
+    """
+    metadata = hold.metadata or {}
+    reference = str(metadata.get("reference") or "")
+    if not reference or reference.startswith("order:"):
+        return False
+    return metadata.get("purpose") != "workorder"
+
+
 def is_cart_hold(hold) -> bool:
     """A reserva é de CARRINHO — pode ceder à venda já consumada?
 
@@ -308,12 +327,9 @@ def is_cart_hold(hold) -> bool:
       prazo: quem está na fila recebeu a palavra da casa, inclusive nos 15 min
       de confirmação depois que o lote sai.
     """
+    if not is_held_by_a_cart(hold):
+        return False
     metadata = hold.metadata or {}
-    reference = str(metadata.get("reference") or "")
-    if not reference or reference.startswith("order:"):
-        return False
-    if metadata.get("purpose") == "workorder":
-        return False
     if metadata.get("planned") or metadata.get("on_demand"):
         return False
     return hold.expires_at is not None
