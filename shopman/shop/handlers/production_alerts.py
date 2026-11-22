@@ -225,6 +225,7 @@ class ProductionLateCheckHandler:
         late = check_late_started_orders()
         forgotten = check_forgotten_planned_orders()
         unfinished = check_unfinished_started_orders()
+        _announce_late_lots_to_orders()
         if late or forgotten or unfinished:
             logger.info(
                 "production.late_check: %d atrasada(s), %d esquecida(s), %d sem conclusão",
@@ -288,6 +289,21 @@ def maybe_create_low_yield_alert(work_order) -> bool:
         actor="system:production-outcome-recorded",
     )
     return True
+
+
+def _announce_late_lots_to_orders() -> int:
+    """O lote que passou da hora com encomenda esperando vira fato do pedido (#2594).
+
+    Na mesma batida do heartbeat: nenhuma tela precisa estar aberta. Falhar aqui
+    não derruba as outras varreduras nem o reagendamento.
+    """
+    from shopman.shop.services import production_promise
+
+    try:
+        return production_promise.announce_late_lots()
+    except Exception:
+        logger.warning("production.late_check: falha ao avisar os pedidos do lote atrasado", exc_info=True)
+        return 0
 
 
 def check_late_started_orders(*, selected_date=None) -> int:
