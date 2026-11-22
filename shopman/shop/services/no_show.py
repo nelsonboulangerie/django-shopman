@@ -334,6 +334,17 @@ def _commitment_day(order, promised: datetime | None):
     return timezone.localtime(anchor).date() if anchor is not None else None
 
 
+def commitment_day(order):
+    """O dia combinado do pedido (o mesmo que a régua de hora usa), ou ``None``.
+
+    Público para o fechamento do dia, que lista só o que era daquele dia ou de
+    antes (#2684).
+    """
+    from shopman.shop.services import fulfillment_window
+
+    return _commitment_day(order, fulfillment_window.promised_at(order))
+
+
 def release_gate(order, *, now: datetime | None = None) -> tuple[datetime | None, str]:
     """``(a partir de quando, a frase do porquê)``. ``None`` = já liberado.
 

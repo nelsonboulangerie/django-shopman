@@ -39,6 +39,148 @@ class PendingProductionBlocksClosing(ValueError):
         self.field = field
 
 
+class PendingReadyOrdersBlockClosing(ValueError):
+    """Há pedido pronto que ninguém veio buscar, e o fechamento não foi assinado.
+
+    Decisão do plano do Gestor (seção 10, pergunta 5 do mapa do "Não retirado"):
+    o fechamento segura enquanto houver pedido pronto de retirada não resolvido,
+    lista os pedidos e resolve com UMA autorização de Gerente, aplicando a cada um
+    o mesmo "Não retirado" do Gestor (#2684). A camada HTTP responde 409 com
+    ``code="pending_ready_orders"``.
+    """
+
+    code = "pending_ready_orders"
+
+    def __init__(self, message: str, *, field: str = "ready_orders_release"):
+        super().__init__(message)
+        self.field = field
+
+
+#: O que o fechamento faz com cada pedido pronto não retirado.
+READY_RESOLVE = "resolve"  # o "Não retirado" já pode ser feito: segura o dia até a assinatura
+READY_IN_TIME = "in_time"  # ainda no prazo combinado: aparece, não segura (o Gestor resolve depois)
+READY_OWNER = "owner"  # o gesto não serve a este pedido (conta acertada, venda mista): fica com o Dono
+
+
+def pending_ready_orders(closing_date: date, *, now=None) -> list[dict]:
+    """Pedidos de retirada prontos, do dia ou de antes, que ninguém veio buscar.
+
+    Cada um com o que o fechamento faz com ele (:data:`READY_RESOLVE`,
+    :data:`READY_IN_TIME`, :data:`READY_OWNER`) e, para os que se resolvem agora,
+    a prévia do "Não retirado" (a frase do dinheiro e a base que a tela leu). O
+    pedido combinado para depois do dia que fecha não entra: ainda não é do dia.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import fulfillment_window, no_show
+
+    now = now or timezone.now()
+    rows: list[dict] = []
+    for order in Order.objects.filter(status=Order.Status.READY).order_by("ready_at", "ref"):
+        if not no_show.is_candidate(order):
+            continue
+        day = no_show.commitment_day(order)
+        if day is not None and day > closing_date:
+            continue
+        promised = fulfillment_window.promised_at(order)
+        customer = (order.data or {}).get("customer") or {}
+        row = {
+            "ref": order.ref,
+            "customer_name": str(customer.get("name") or ""),
+            "promised_at": promised.isoformat() if promised is not None else "",
+            "state": READY_RESOLVE,
+            "reason": "",
+            "money_sentence": "",
+            "revision": "",
+        }
+        reason = no_show.eligibility_reason(order)
+        if reason:
+            row.update(state=READY_OWNER, reason=reason)
+        else:
+            releases_at, why = no_show.release_gate(order, now=now)
+            if releases_at is not None:
+                row.update(state=READY_IN_TIME, reason=why)
+            else:
+                preview = no_show.preview(order, now=now)
+                if not preview["allowed"]:
+                    row.update(state=READY_OWNER, reason=preview["block_reason"])
+                else:
+                    row.update(money_sentence=preview["money_sentence"], revision=preview["revision"])
+        rows.append(row)
+    return rows
+
+
+def _authorize_ready_orders(
+    *, user, resolvable: list[dict], release: dict | None, production_release: dict | None, production_record: dict | None,
+) -> str:
+    """Quem assina o "Não retirado" do fechamento: o ``username`` do Gerente.
+
+    Uma autorização só: com a produção liberada pelo MESMO gerente no mesmo envio,
+    o PIN já conferido vale para as duas (conferir de novo gastaria uma tentativa
+    dele à toa).
+    """
+    from shopman.shop.services.pos import validate_manager_override
+
+    quantos = len(resolvable)
+    if not release:
+        pronto = "Um pedido pronto não foi retirado" if quantos == 1 else f"{quantos} pedidos prontos não foram retirados"
+        raise PendingReadyOrdersBlockClosing(
+            f"{pronto}. Para fechar o dia, um gerente encerra como não retirado, aqui mesmo."
+        )
+    approval = release.get("manager_approval") or {}
+    if production_record and approval == ((production_release or {}).get("manager_approval") or {}):
+        return production_record["approved_by"]
+    approver = validate_manager_override(
+        approval,
+        operator_username=user.get_username() if user is not None else "",
+        action="day_closing_not_picked_up",
+    )
+    return approver.get_username()
+
+
+def _resolve_ready_orders(*, user, approver_username: str, resolvable: list[dict], release: dict | None) -> dict:
+    """Aplica o "Não retirado" a cada pedido da lista, com a assinatura do fechamento.
+
+    A tela manda a base que leu de cada pedido (``orders: [{ref, revision}]``). Pedido
+    novo na lista, que a tela não mostrou, ou pedido que mudou depois da leitura
+    recusam o fechamento inteiro: ninguém assina o que não viu.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import no_show
+
+    sent = {
+        str(row.get("ref") or ""): str(row.get("revision") or "")
+        for row in ((release or {}).get("orders") or [])
+        if isinstance(row, dict)
+    }
+    if any(row["ref"] not in sent for row in resolvable):
+        raise PendingReadyOrdersBlockClosing(
+            "Há pedido pronto que a tela ainda não mostrava. Confira a lista e assine de novo."
+        )
+    actor = user.get_username() if user is not None else ""
+    resolved = []
+    for row in resolvable:
+        order = Order.objects.get(ref=row["ref"])
+        try:
+            no_show.mark_not_picked_up(
+                order, actor=actor, approved_by=approver_username, expected_revision=sent[row["ref"]],
+            )
+        except no_show.NoShowStale as exc:
+            raise PendingReadyOrdersBlockClosing(
+                f"O pedido {row['ref']} mudou depois que a lista foi aberta. Confira e assine de novo."
+            ) from exc
+        except no_show.NoShowRefused as exc:
+            raise PendingReadyOrdersBlockClosing(f"Pedido {row['ref']}: {exc}") from exc
+        resolved.append(row["ref"])
+    return {
+        "approved_by": approver_username,
+        "requested_by": actor,
+        "at": timezone.now().isoformat(),
+        "orders": resolved,
+    }
+
+
 def _authorize_production_release(*, user, pending: list[dict], release: dict | None) -> dict:
     """A liberação do fechamento com produção aberta, assinada e com o porquê.
 
@@ -84,6 +226,7 @@ def perform_day_closing(
     quantities_by_sku: dict[str, str],
     closing_date: date | None = None,
     production_release: dict | None = None,
+    ready_orders_release: dict | None = None,
 ) -> date:
     """Execute day closing and return the closing date.
 
@@ -92,6 +235,13 @@ def perform_day_closing(
     {"username", "pin"} | {"badge"}}``. A liberação fica gravada no próprio
     ``DayClosing`` (``data["pending_production_release"]``): quem pediu, quem
     autorizou, quando, por quê e quais ordens.
+
+    Pedido pronto de retirada que ninguém buscou e cujo "Não retirado" já pode ser
+    feito também impede (#2684), salvo ``ready_orders_release`` = ``{"orders":
+    [{"ref", "revision"}], "manager_approval": {...}}``: a mesma assinatura encerra
+    todos, cada um pelo serviço do Gestor (``no_show.mark_not_picked_up``), na
+    mesma transação do fechamento. Com produção aberta também, um PIN só vale
+    para as duas liberações. Fica gravado em ``data["ready_orders_resolution"]``.
     """
     closing_date = closing_date or timezone.localdate()
     if DayClosing.objects.filter(date=closing_date).exists():
@@ -104,8 +254,25 @@ def perform_day_closing(
             user=user, pending=pending_production, release=production_release
         )
 
+    ready_rows = pending_ready_orders(closing_date)
+    resolvable = [row for row in ready_rows if row["state"] == READY_RESOLVE]
+    ready_approver = ""
+    if resolvable:
+        ready_approver = _authorize_ready_orders(
+            user=user,
+            resolvable=resolvable,
+            release=ready_orders_release,
+            production_release=production_release,
+            production_record=release_record,
+        )
+
     snapshot = []
+    ready_record = None
     with transaction.atomic():
+        if resolvable:
+            ready_record = _resolve_ready_orders(
+                user=user, approver_username=ready_approver, resolvable=resolvable, release=ready_orders_release,
+            )
         for item in items:
             sku = item.sku
             qty_reported = _parse_qty(quantities_by_sku.get(sku, "0"), sku=sku)
@@ -157,6 +324,8 @@ def perform_day_closing(
                 "production_by_version": production_summary_by_version(closing_date),
                 "pending_production": pending_production,
                 "pending_production_release": release_record,
+                "pending_ready_orders": ready_rows,
+                "ready_orders_resolution": ready_record,
                 "cash_shift_summary": cash_summary,
                 "reconciliation_errors": _reconciliation_errors(
                     closing_date=closing_date,

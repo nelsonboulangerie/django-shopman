@@ -79,6 +79,25 @@ class ReconciliationError:
 
 
 @dataclass(frozen=True)
+class PendingReadyOrderProjection:
+    """Um pedido de retirada pronto que ninguém veio buscar, no fechamento do dia (#2684).
+
+    ``state``: ``resolve`` (o "Não retirado" já pode ser feito, e o dia só fecha
+    com a assinatura do gerente), ``in_time`` (ainda no prazo combinado: aparece e
+    não segura) ou ``owner`` (o gesto não serve a este pedido: fica com o Dono).
+    O valor é o DESTE pedido, nunca uma soma (regra do dono, 21/11/2026).
+    """
+
+    ref: str
+    customer_name: str
+    promised_display: str  # "Combinado para 15h" ou "Combinado para 20/11 às 15h"; "" sem hora
+    state: str
+    reason: str  # in_time e owner: o porquê, por extenso
+    money_sentence: str  # resolve: o que o gesto faz com o dinheiro
+    revision: str  # resolve: a base que a tela leu, devolvida na assinatura
+
+
+@dataclass(frozen=True)
 class PendingProductionProjection:
     """An open WorkOrder surfaced at day closing (planned or started)."""
 
@@ -157,6 +176,10 @@ class DayClosingProjection:
     hourly_shape: dict | None = None
     # Quem está fechando ("Admin · gerência"), para o chip do cabeçalho do corredor.
     operator_display: str = ""
+    # Pedidos prontos que ninguém veio buscar (#2684). ``has_pending_ready_orders``
+    # é verdade quando algum SEGURA o dia (``state == "resolve"``).
+    pending_ready_orders: tuple[PendingReadyOrderProjection, ...] = ()
+    has_pending_ready_orders: bool = False
 
 
 # ── Builder ────────────────────────────────────────────────────────────
@@ -188,6 +211,7 @@ def build_day_closing() -> DayClosingProjection:
 
     pending_production = _pending_production(today)
     upcoming_preorders = _upcoming_preorders(today)
+    pending_ready = () if existing else _pending_ready_orders(today)
 
     pending_episodes = _pending_episodes(today)
 
@@ -209,6 +233,8 @@ def build_day_closing() -> DayClosingProjection:
         episode_options=_episode_options() if pending_episodes else (),
         has_pending_episodes=bool(pending_episodes),
         hourly_shape=_hourly_shape(today),
+        pending_ready_orders=pending_ready,
+        has_pending_ready_orders=any(row.state == "resolve" for row in pending_ready),
     )
 
 
@@ -442,6 +468,45 @@ def _pending_production(today: date) -> tuple[PendingProductionProjection, ...]:
     except Exception:
         logger.debug("closing.pending_production_failed", exc_info=True)
         return ()
+
+
+def _promised_display(iso: str, today: date) -> str:
+    if not iso:
+        return ""
+    from datetime import datetime
+
+    from shopman.utils.formatting import format_local
+
+    moment = timezone.localtime(datetime.fromisoformat(iso))
+    clock = format_clock(moment)
+    if moment.date() == today:
+        return f"Combinado para {clock}"
+    return f"Combinado para {format_local(moment, '%d/%m')} às {clock}"
+
+
+def _pending_ready_orders(today: date) -> tuple[PendingReadyOrderProjection, ...]:
+    """Os prontos não retirados do dia, com o que o fechamento faz com cada um (#2684)."""
+    from shopman.backstage.services.closing import pending_ready_orders
+
+    try:
+        rows = pending_ready_orders(today)
+    except Exception:
+        # A lista some, mas o fechamento confere de novo no servidor e recusa com o
+        # motivo: a leitura que falha não deixa ninguém fechar por cima de um pedido.
+        logger.warning("closing.pending_ready_orders_failed", exc_info=True)
+        return ()
+    return tuple(
+        PendingReadyOrderProjection(
+            ref=row["ref"],
+            customer_name=row["customer_name"],
+            promised_display=_promised_display(row["promised_at"], today),
+            state=row["state"],
+            reason=row["reason"],
+            money_sentence=row["money_sentence"],
+            revision=row["revision"],
+        )
+        for row in rows
+    )
 
 
 def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...]:

@@ -2296,14 +2296,21 @@ class DayClosingView(APIView):
                 {"detail": "Envie a liberação como um objeto (motivo e autorização).", "field": "production_release"},
                 status=400,
             )
+        ready_release = request.data.get("ready_orders_release") if hasattr(request, "data") else None
+        if ready_release is not None and not isinstance(ready_release, dict):
+            return Response(
+                {"detail": "Envie a assinatura dos pedidos não retirados como um objeto.", "field": "ready_orders_release"},
+                status=400,
+            )
         try:
             closing_date = closing_service.perform_day_closing(
                 user=request.user,
                 items=list(closing.items),
                 quantities_by_sku={str(k): str(v) for k, v in quantities.items()},
                 production_release=release,
+                ready_orders_release=ready_release,
             )
-        except closing_service.PendingProductionBlocksClosing as exc:
+        except (closing_service.PendingProductionBlocksClosing, closing_service.PendingReadyOrdersBlockClosing) as exc:
             # Produção aberta impede selar (decisão do dono, 05/11/2026). 409: o
             # pedido está certo, o estado do dia é que não deixa.
             return Response(
