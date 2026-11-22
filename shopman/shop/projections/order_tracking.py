@@ -2118,7 +2118,11 @@ def _confirmation_deadline(order, *, action: str | None = "confirm") -> datetime
 def _eta_at(order) -> str | None:
     """ETA ISO for the two windows the customer cares about:
 
-    - ``preparing`` → quando o pedido fica pronto (prep_time).
+    - ``preparing`` → quando o pedido fica pronto: a MESMA conta do Gestor e da
+      página do entregador (``kitchen_eta.ready_eta``: o início real do preparo
+      mais a mediana dos preparos de agora, ou a meta da estação). Antes era o
+      ``prep_time_minutes`` fixo da loja, e o cliente e o balcão liam horas
+      diferentes para o mesmo pedido (#3168).
     - ``dispatched`` + delivery → janela estimada de CHEGADA (saída + tempo médio
       de entrega). Couriers são terceirizados/sem rastreio, então é uma estimativa
       honesta por configuração, não um horário rastreado.
@@ -2130,12 +2134,23 @@ def _eta_at(order) -> str | None:
         shop = Shop.load()
         round_to_5 = False
         not_before: datetime | None = None
+        ready_at = None
         if order.status == "preparing":
-            minutes = getattr(shop, "prep_time_minutes", None) or 30
+            from shopman.shop.config import ChannelConfig
+            from shopman.shop.services import kitchen_eta
+
+            minutes = 0
             baseline = getattr(order, "preparing_at", None)
             if baseline is None:
                 event = _event_for_status(order, "preparing")
                 baseline = event.created_at if event else None
+            now = timezone.now()
+            ready_at = kitchen_eta.ready_eta(
+                order,
+                kitchen_eta.prep_expectation(now=now),
+                ChannelConfig.for_channel(order.channel_ref),
+                now=now,
+            )
             not_before = _eta_not_before(order)
         elif order.status == "dispatched":
             data = order.data or {}
@@ -2160,7 +2175,7 @@ def _eta_at(order) -> str | None:
         # mas não inventa um horário para o cliente nem para a notificação.
         if order.status == "preparing" and timezone.localdate(baseline) < timezone.localdate():
             return None
-        eta = baseline + timezone.timedelta(minutes=int(round(minutes)))
+        eta = ready_at if ready_at is not None else baseline + timezone.timedelta(minutes=int(round(minutes)))
         if not_before is not None and not_before > eta:
             eta = not_before
         if round_to_5:
