@@ -3384,6 +3384,7 @@
             "announce_late_lots",
             "announce_lost_holds",
             "announce_short_lot",
+            "fulfill_failure_fact",
             "order_ref_from_hold_reference"
           ]
         },
