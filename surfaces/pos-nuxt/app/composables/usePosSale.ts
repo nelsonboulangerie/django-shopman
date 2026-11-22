@@ -433,7 +433,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
   const closeGuardUnavailableMessage = "Este navegador não conseguiu ativar a proteção contra cobrança duplicada. Nenhuma cobrança foi iniciada. Confira o armazenamento do navegador e reconcilie a venda antes de tentar novamente.";
   const closeGuardCoordinationUnavailableMessage = "Este navegador não oferece a coordenação segura entre abas exigida para cobrar. Nenhuma cobrança foi iniciada. Atualize o navegador ou use uma estação compatível.";
-  const closeGuardActiveMessage = "Outra aba deste PDV está finalizando uma venda. Aguarde o resultado naquela aba antes de tentar de novo.";
+  const closeGuardActiveMessage = "Outra aba deste PDV está validando uma venda. Aguarde o resultado naquela aba antes de tentar de novo.";
   const closeGuardReconciliationFailedMessage = "Não foi possível registrar a reconciliação porque o armazenamento do navegador está indisponível. A proteção continua ativa e nenhuma nova cobrança será iniciada.";
 
   // Quem segura a trava agora? `navigator.locks.query()` responde sem pegá-la.
@@ -2284,7 +2284,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (!(await confirmNewOrder({
         tone: "primary",
         title: "Iniciar nova encomenda?",
-        description: "A próxima comanda livre ficará em uso para montar esta encomenda. O pedido só será registrado ao finalizar.",
+        description: "A próxima comanda livre ficará em uso para montar esta encomenda. O pedido só será registrado ao validar.",
         confirmLabel: "Iniciar encomenda",
         cancelLabel: "Voltar sem iniciar",
         // O sim troca a tela: o foco vai à etapa da vez do assistente (quem abre a
@@ -3801,7 +3801,7 @@ export function usePosSale(deps: PosSaleDeps) {
       return;
     }
     if (orderSetupPending.value || !cart.fulfillmentConfirmed) {
-      serverError.value = "Escolha Entrega ou Retirada antes de finalizar.";
+      serverError.value = "Escolha Entrega ou Retirada antes de validar.";
       return;
     }
     // Spec: the commit click must not hide an implicit review. If the review is
@@ -3903,7 +3903,7 @@ export function usePosSale(deps: PosSaleDeps) {
       } else if (failure?.focus === "customer") {
         // Recusa que se resolve identificando o cliente (ex.: agendado sem
         // cliente): o toast diz o porquê e a tela abre a identificação.
-        serverError.value = failure.recovery || failure.message || "Identifique o cliente para finalizar a venda.";
+        serverError.value = failure.recovery || failure.message || "Identifique o cliente para validar a venda.";
         customerFocusNonce.value += 1;
       } else if (failure?.order_created && failure.order_ref) {
         serverError.value = [failure.message || `Venda ${failure.order_ref} criada.`, failure.recovery].filter(Boolean).join(" ");
@@ -4083,7 +4083,7 @@ export function usePosSale(deps: PosSaleDeps) {
           attempts: 0,
         });
       } catch {
-        serverError.value = "A venda não foi guardada neste dispositivo e não está registrada. Tente finalizar de novo.";
+        serverError.value = "A venda não foi guardada neste dispositivo e não está registrada. Tente validar de novo.";
         return;
       }
       await completeSale({ ok: true, order_ref: offlineSaleLabel(id), fiscal_expected: false }, offlineSaleLabel(id), { capturedAt, id });

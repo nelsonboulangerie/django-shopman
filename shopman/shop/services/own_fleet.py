@@ -363,10 +363,9 @@ def _ready_at(order: Order, expectation, *, now) -> str:
     A mesma previsão da Fila do Gestor (``kitchen_eta.ready_eta``). Hora que já passou
     não é previsão: o entregador lê "Ainda não ficou pronto", nunca uma hora vencida.
     """
-    from shopman.shop.config import ChannelConfig
     from shopman.shop.services.kitchen_eta import ready_eta
 
-    eta = ready_eta(order, expectation, ChannelConfig.for_channel(order.channel_ref), now=now)
+    eta = ready_eta(order, expectation, now=now)
     if eta is None or eta <= now:
         return ""
     return timezone.localtime(eta).strftime("%H:%M")  # hora-ok: contrato HH:MM, a página formata (clock.ts)

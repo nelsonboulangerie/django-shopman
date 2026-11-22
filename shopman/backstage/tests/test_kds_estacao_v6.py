@@ -82,6 +82,8 @@ def test_venda_do_dia_nao_e_encomenda_e_a_encomenda_diz_a_hora(forno):
             "customer": {"name": "Café Parisiense"},
             "delivery_date": timezone.localdate().isoformat(),
             "delivery_time_slot": "22:30-23:00",
+            # O carimbo que o commit grava na encomenda (#3163).
+            "is_preorder": True,
         },
         created_days_ago=2,
     )

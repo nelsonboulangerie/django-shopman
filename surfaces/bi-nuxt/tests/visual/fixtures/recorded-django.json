@@ -2006,6 +2006,13 @@
       "revenue_total_q": 23875575,
       "average_ticket_q": 7817,
       "cancelled_total": 0,
+      "no_show": {
+        "orders": 0,
+        "paid_q": 0,
+        "refund_q": 0,
+        "retained_q": 0,
+        "loss_q": 0
+      },
       "historical_days": 0,
       "sources": [
         "shopman"
