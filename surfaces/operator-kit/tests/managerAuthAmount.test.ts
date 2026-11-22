@@ -119,4 +119,10 @@ describe("managerAuth: tentar o estorno de novo no Gestor", () => {
     expect(fixed).toBe("O estorno do pedido cancelado não saiu.");
     expect(`${managerAuthTitle("refund_retry")} ${fixed}`).not.toMatch(/[—–]/);
   });
+
+  it("encomenda acima do plano tem nome na descrição (#2676)", () => {
+    expect(managerAuthReason({ reasons: ["preorder_over_plan"] })).toBe("Encomenda acima do plano da data.");
+    expect(managerAuthReason({ reasons: ["preorder_over_plan", "discount_over_threshold"], thresholdQ: 500, discountQ: 1200 }))
+      .toContain("Encomenda acima do plano da data.");
+  });
 });

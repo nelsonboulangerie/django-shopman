@@ -326,8 +326,9 @@ const overPlanLines = computed(() =>
   props.review?.approval_reasons?.includes("preorder_over_plan") ? (props.review.preorder_over_plan ?? []) : [],
 );
 const overPlanText = computed(() => overPlanSummary(overPlanLines.value));
-// Os outros motivos seguem a copy do diálogo (`managerAuthReason`); o do plano
-// fala pelos números, no próprio aviso e no contexto do diálogo.
+// No AVISO, os outros motivos seguem a copy do diálogo (`managerAuthReason`) e o do
+// plano fala pelos números, com a frase própria. O diálogo recebe todos: lá o do
+// plano tem nome na descrição e os números no contexto (#2676).
 const otherApprovalReasons = computed(() =>
   (props.review?.approval_reasons ?? []).filter((reason) => reason !== "preorder_over_plan"),
 );
@@ -2715,7 +2716,7 @@ defineExpose({
     action="sale_approval"
     :threshold-q="managerThresholdQ"
     :discount-q="manualDiscountQ"
-    :reasons="otherApprovalReasons"
+    :reasons="review?.approval_reasons || []"
     :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"
     :managers="managers"

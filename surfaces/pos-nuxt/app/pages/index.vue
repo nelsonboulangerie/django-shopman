@@ -2025,7 +2025,7 @@ onBeforeUnmount(() => {
       action="sale_approval"
       :threshold-q="closeRecheckApproval?.threshold_q || 0"
       :discount-q="closeRecheckApproval?.discount_q || 0"
-      :reasons="(closeRecheckApproval?.reasons || []).filter((reason) => reason !== 'preorder_over_plan')"
+      :reasons="closeRecheckApproval?.reasons || []"
       :house-account-limit="closeRecheckApproval?.house_account_limit"
       :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
