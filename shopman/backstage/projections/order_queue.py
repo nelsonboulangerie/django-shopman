@@ -4159,6 +4159,8 @@ _EVENT_LABELS = {
     "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
     "return_initiated": "Devolução iniciada",
     "refund_processed": "Estorno processado",
+    # Venda só em conta: a devolução ou o não retirado tira o valor da conta (#2606, #2697).
+    "account_debt_reduced": "Valor tirado da conta do cliente",
     "volume_checked": "Volume conferido",
     "volume_check_wrong_bag": "Sacola de outro pedido lida na conferência",
     # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
@@ -4204,7 +4206,7 @@ UNLABELLED_EVENT_LABEL = "Registro do sistema"
 _OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
 
 #: Os eventos de dinheiro levam o meio e o valor como detalhe.
-_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded"})
+_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded", "account_debt_reduced"})
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
 #: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.

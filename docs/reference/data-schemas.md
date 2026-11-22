@@ -244,6 +244,14 @@ useful: {status: pass|fail|unavailable, reason?}}, judge?: {answer: answers|off_
 confidence}}`. Em sombra: o veredito é gravado e o envio não muda. `judge` só existe quando o Jev
 respondeu; a chamada dele entra em `usage.calls` com `stage: conference` e em `latency_ms.conference`.
 Lida por `concierge_conversation_eval` (linha "conferência antes do envio").
+Escada em sombra (`conference.shadow_climb`, regra em `conversational_commerce/reply/ladder.py`): quando a
+conferência reprova, DEPOIS do envio, o mesmo primeiro bloco ganha `envelope["ladder"]` = `{chosen:
+house|concierge_rewrite|concierge_escalation|safe, stopped, cost_usd, attempts: [{source, text, cost_usd, ms,
+error?, conference?}], safe_text?}` (`safe_text` em sombra é o TIPO da alternativa: `house_literal` ou
+`verify`). Os degraus são os propósitos de IA `concierge_rewrite` e `concierge_escalation`, só com rota
+explícita em `Shop.ai_routes`. A política mora em `Shop.ai_limits["conference"]` = `{max_attempts (padrão 3,
+teto 5), turn_usd (padrão 0,01, teto 0,05)}`; o teto do dia de cada degrau é o do freio
+(`ai_limits["purposes"]`).
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
 `purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
@@ -763,6 +771,7 @@ services que ele chama leem o bloco.
 | `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
 | `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
 | `retained_q` | `int` | `paid_q − refund_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
+| `on_account` | `bool` | Venda SÓ na conta da casa (#2697): `paid_q` é a dívida em aberto do pedido (`payment.open_account_debt_q`), `refund_q` sai da conta (`payment.reduce_account_debt`, evento `account_debt_reduced`) e `retained_q` continua devido. A conta já acertada e a venda que mistura a conta com outra forma não passam pelo gesto |
 
 Pedido não pago: `paid_q = refund_q = retained_q = 0`. A validade do lote é lida de
 `Batch.expiry_date` (pelo `Quant.batch`); sem lote com validade, do `shelf_life_days` do

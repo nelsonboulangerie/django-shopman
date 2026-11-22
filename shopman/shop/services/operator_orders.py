@@ -849,13 +849,33 @@ def trip_id(order: Order) -> str:
     return str(((order.data or {}).get("dispatch") or {}).get("trip_ref") or order.ref)
 
 
-def trip_members(order: Order) -> list[Order]:
-    """Os pedidos que saíram juntos com este (inclui ele), na ordem de criação."""
+def trip_members(order: Order, *, among: list[Order] | None = None) -> list[Order]:
+    """Os pedidos que saíram juntos com este (inclui ele), na ordem de criação.
+
+    ``among``: os pedidos já lidos em lote (:func:`trip_members_for`); com ele a
+    leitura não vai ao banco, para a tela não pagar uma consulta por pedido.
+    """
     from django.db.models import Q
 
     tid = trip_id(order)
-    members = list(Order.objects.filter(Q(ref=tid) | Q(data__dispatch__trip_ref=tid)).order_by("pk"))
+    if among is None:
+        members = list(Order.objects.filter(Q(ref=tid) | Q(data__dispatch__trip_ref=tid)).order_by("pk"))
+    else:
+        members = sorted(
+            (m for m in among if m.ref == tid or ((m.data or {}).get("dispatch") or {}).get("trip_ref") == tid),
+            key=lambda m: m.pk,
+        )
     return members if any(m.pk == order.pk for m in members) else [order, *members]
+
+
+def trip_members_for(orders) -> list[Order]:
+    """Todos os pedidos das saídas destes, numa consulta só (o ``among`` de :func:`trip_members`)."""
+    from django.db.models import Q
+
+    tids = sorted({trip_id(order) for order in orders})
+    if not tids:
+        return []
+    return list(Order.objects.filter(Q(ref__in=tids) | Q(data__dispatch__trip_ref__in=tids)).order_by("pk"))
 
 
 def _locked_trip_members(order: Order) -> list[Order]:
@@ -912,8 +932,11 @@ def _trip_open(order: Order) -> bool:
     )
 
 
-def courier_return_members(order: Order) -> list[Order]:
-    """Os pedidos que "Entregador voltou" fecha a partir deste; vazio se não há o que voltar."""
+def courier_return_members(order: Order, *, among: list[Order] | None = None) -> list[Order]:
+    """Os pedidos que "Entregador voltou" fecha a partir deste; vazio se não há o que voltar.
+
+    ``among``: os pedidos das saídas já lidos em lote (:func:`trip_members_for`).
+    """
     def return_open(member: Order) -> bool:
         # O cancelamento posterior à coleta não transforma a venda em
         # recebimento. O troco e a maquininha que já saíram, porém, continuam
@@ -926,7 +949,7 @@ def courier_return_members(order: Order) -> list[Order]:
 
     if not return_open(order):
         return []
-    members = [m for m in trip_members(order) if return_open(m)]
+    members = [m for m in trip_members(order, among=among) if return_open(m)]
     return members if any(
         must_come_back(m) if m.status != Order.Status.CANCELLED else return_open(m)
         for m in members
