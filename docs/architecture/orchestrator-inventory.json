@@ -844,10 +844,13 @@
             "SERIES",
             "SimulatedFiscalBackend",
             "UF_PR",
+            "_NO_STREET",
+            "_TPAG",
             "_digits",
             "_mod11",
             "_shop_document",
-            "access_key"
+            "access_key",
+            "authorized_nfce_xml"
           ]
         }
       ]
@@ -10266,6 +10269,8 @@
             "DanfeSourceError",
             "MAX_XML_BYTES",
             "NS",
+            "backend_authorized_xml",
+            "logger",
             "parse_authorized_xml",
             "read_authorized_xml",
             "value"

@@ -157,3 +157,89 @@ def test_the_simulator_and_the_clock_are_open_test_doors(settings, tmp_path):
 
     assert "fiscal_simulated" in doors
     assert "TEST_STACK_CONTROL_DIR" in doors
+
+
+# ── #3124: a DANFE da nota simulada ─────────────────────────────────────────
+
+REAL_ITEMS = [
+    {"sku": "CRO", "name": "Croissant", "qty": "3", "unit": "UN", "unit_price_q": 1300, "total_q": 3900},
+]
+
+
+def test_the_emitted_note_has_an_authorized_xml_that_passes_the_provider_validation(backend):
+    from shopman.shop.services.danfe_xml import NS, parse_authorized_xml, value
+
+    result = backend.emit(reference="ORD-XML-1", items=REAL_ITEMS, payment={"method": "pix", "amount_q": 3900})
+
+    content = backend.authorized_xml(result.access_key)
+    root = parse_authorized_xml(content, result.access_key)  # a mesma régua da Focus
+    info = root.find("n:NFe/n:infNFe", NS)
+    assert value(info, "ide/tpAmb") == "2"
+    assert value(info, "ide/indPres") == "1"
+    assert value(info, "total/ICMSTot/vNF") == "39.00"
+    assert value(info, "det/prod/xProd") == "Croissant"
+    assert value(info, "pag/detPag/tPag") == "17"
+
+
+def test_a_delivery_with_a_document_goes_out_remote_with_the_recipient(backend):
+    from shopman.shop.services.danfe_xml import NS, parse_authorized_xml, value
+
+    result = backend.emit(
+        reference="ORD-XML-2",
+        items=REAL_ITEMS,
+        payment={"method": "card", "amount_q": 3900},
+        customer={"name": "Marta", "tax_id": "52998224725"},
+        delivery={"address": {"route": "Rua Santos", "street_number": "450", "city": "Londrina", "state_code": "PR"}},
+    )
+
+    root = parse_authorized_xml(backend.authorized_xml(result.access_key), result.access_key)
+    info = root.find("n:NFe/n:infNFe", NS)
+    assert value(info, "ide/indPres") == "4"
+    assert value(info, "dest/CPF") == "52998224725"
+    assert value(info, "dest/enderDest/xLgr") == "Rua Santos"
+
+
+def test_an_unknown_key_has_no_xml(backend):
+    assert backend.authorized_xml("4" * 44) is None
+
+
+def test_the_danfe_reads_the_xml_from_the_simulator_and_never_from_a_made_up_url(settings, tmp_path):
+    from shopman.orderman.models import Order
+
+    from shopman.shop.fiscal import fiscal_pool
+    from shopman.shop.views.fiscal_danfe import build_danfe
+
+    settings.TEST_STACK_CONTROL_DIR = str(tmp_path)
+    settings.SHOPMAN_FISCAL_ADAPTER = SIMULATED
+    fiscal_pool.reset()
+    try:
+        result = SimulatedFiscalBackend().emit(
+            reference="ORD-XML-3", items=REAL_ITEMS, payment={"method": "pix", "amount_q": 3900}
+        )
+        order = Order.objects.create(
+            ref="ORD-XML-3", channel_ref="web", status="completed", total_q=3900,
+            data={"nfce_access_key": result.access_key, "nfce_number": result.document_number, "nfce_status": "autorizado"},
+        )
+
+        document = build_danfe(order.ref)
+    finally:
+        fiscal_pool.reset()
+
+    assert document is not None
+    assert not document.source_problem
+    assert document.item_count == 1
+
+
+def test_a_production_backend_is_never_asked_for_the_xml(monkeypatch):
+    """Backend que não se declara homologação não responde XML: a nota vem do provedor."""
+    from shopman.shop.fiscal import fiscal_pool
+    from shopman.shop.services.danfe_xml import backend_authorized_xml
+
+    class ProductionLike:
+        is_homologation = False
+
+        def authorized_xml(self, key):
+            raise AssertionError("backend de produção não fornece XML")
+
+    monkeypatch.setattr(fiscal_pool, "get_backend", lambda *args, **kwargs: ProductionLike())
+    assert backend_authorized_xml("4" * 44) is None
