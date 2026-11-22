@@ -1820,23 +1820,35 @@ def _courier_block(order: Order) -> dict | None:
             point = courier_position_projection(block["ride_ref"])
             position = asdict(point) if point else None
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
+        from shopman.shop.services.courier import (
+            can_quote,
+            failure_message,
+            not_today_refusal,
+            ride_health,
+            unresolved_dispatch,
+        )
 
-        unresolved = unresolved_dispatch(order)
+        # Tudo o que a tela diz da corrida sai da fonte única, a mesma da página
+        # Entregas (``courier.ride_health``).
+        health = ride_health(order)
         # A encomenda de outro dia: chamar recusa com a frase (a régua do servidor).
         not_today = not_today_refusal(order) if order_can_ride and not active else ""
         # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
         # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
-        cancel = courier_cancel_state(order)
+        cancel = health["cancel"]
+        failure = health["last_failure"]
+        if error is None and failure is not None:
+            # A corrida que ninguém aceitou ou que foi cancelada: o pedido voltou a
+            # esperar, e a tela diz por quê (a mesma frase da página Entregas).
+            error = {"message": failure_message(failure), "at": failure["at"]}
 
+        unresolved = unresolved_dispatch(order) if health["unresolved"] else None
         if unresolved is not None:
             error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view, proven_tracking, reopen_view
-
-        progress = progress_view(block)
-        tracking = proven_tracking(block)
-        reopened = reopen_view(block) if active else {"at": "", "driver": "", "reason": ""}
+        progress = health["progress"]
+        tracking = health["tracking"]
+        reopened = health["reopened"] if active else {"at": "", "driver": "", "reason": ""}
         status_label = courier_state_label(block)
         if state == RideState.ASSIGNED and progress["arrived_pickup_at"]:
             status_label = COURIER_STATE_LABELS[RideState.AT_STORE]
@@ -1890,7 +1902,7 @@ def _courier_block(order: Order) -> dict | None:
             "custody": operator_orders.partner_custody_asks(order),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
-            "charge_outdated": charge_outdated(order),
+            "charge_outdated": health["charge_outdated"],
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
@@ -2988,7 +3000,7 @@ def _build_card(
         today=today,
     )
     if expectation is not None:
-        eta = ready_eta(order, expectation, channel_config, now=now)
+        eta = ready_eta(order, expectation, now=now)
         if eta is not None:
             attention = {**attention, "ready_eta_iso": eta.isoformat()}
     return replace(card, **attention) if attention else card
@@ -3570,7 +3582,7 @@ def _advance_block_copy(order: Order, advance_block, method: str, *, payment_pen
                 f"{times}. Sem pagamento no prazo, o pedido cancela sozinho."
             )
         return _payment_wait_copy(order, method)
-    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block)
+    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block, order)
 
 
 def advance_block_label(advance_block: operator_orders.AdvanceBlock) -> str:
@@ -3786,12 +3798,21 @@ _FISCAL_PILL = {
     "not_expected": ("not_requested", "NFC-e não solicitada"),
 }
 
-#: O pedido cancelado que ainda ESPERAVA o pagamento: a nota não vai sair, e a pill
-#: diz o fato em vez de prometer (#3127: "NFC-e sai quando o pagamento confirmar"
-#: num pedido cujo Pix venceu era rótulo que mente).
-_CANCELLED_BEFORE_NOTE = {
-    "awaiting_payment": ("not_issued", "Sem NFC-e: o pedido foi cancelado antes do pagamento"),
-}
+#: O pedido cancelado sem nenhuma tentativa de emissão (``not_issued``): a nota não
+#: vai sair, e a pill diz o fato em vez de prometer. "NFC-e sai quando o pagamento
+#: confirmar" num Pix vencido (#3127) e "NFC-e em emissão" num cancelado sem nota
+#: (#3130) eram rótulos que mentiam. Quando a cobrança digital nunca confirmou, a
+#: frase diz por quê.
+_NOT_ISSUED_LABEL = "Sem NFC-e: o pedido foi cancelado"
+_NOT_ISSUED_BEFORE_PAYMENT_LABEL = "Sem NFC-e: o pedido foi cancelado antes do pagamento"
+
+
+def _not_issued_label(order: Order) -> str:
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return _NOT_ISSUED_BEFORE_PAYMENT_LABEL
+    return _NOT_ISSUED_LABEL
 
 
 class _FiscalEvidence(NamedTuple):
@@ -3818,8 +3839,8 @@ def _fiscal_status(
         # Nota cancelada é fato posterior à autorização: a chave continua lá, o
         # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
         status, label = "cancelled", "NFC-e cancelada"
-    elif order.status == Order.Status.CANCELLED and state in _CANCELLED_BEFORE_NOTE:
-        status, label = _CANCELLED_BEFORE_NOTE[state]
+    elif state == "not_issued":
+        status, label = "not_issued", _not_issued_label(order)
     else:
         status, label = _FISCAL_PILL[state]
 

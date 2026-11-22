@@ -228,6 +228,32 @@ def remember_theme(link: CourierLink, theme: str) -> None:
         who.save(update_fields=["page_theme"])
 
 
+#: Posição com incerteza maior que isto (metros) não desenha a moto: é palpite do celular.
+POSITION_MAX_ACCURACY_M = 150
+
+
+def report_position(link: CourierLink, latitude, longitude, *, accuracy=None, at=None) -> bool:
+    """A posição do celular do entregador da casa, enquanto a rota está na rua (#2509).
+
+    Vai para o mesmo cache e o mesmo mapa da posição da TaOn (``courier_position``, via
+    ``own_fleet``). Só com a rota na rua: antes de "Saí da loja" e depois da última
+    entrega, o celular não é a moto. Devolve se gravou.
+    """
+    from shopman.shop.services import courier_position
+
+    try:
+        if accuracy is not None and float(accuracy) > POSITION_MAX_ACCURACY_M:
+            return False
+    except (TypeError, ValueError):
+        return False
+    on_route = any(courier.get_block(order).get("status") == "E"
+                   for order in _ride_orders(link) if _live(order, link))
+    if not on_route:
+        return False
+    return courier_position.store_position(link.ride_ref, latitude, longitude,
+                                           source=courier_position.SOURCE_OWN_FLEET, at=at)
+
+
 def report_problem(link: CourierLink, order_ref: str, kind: str, *, payment: str = "") -> None:
     """A folha "Problema": grava o caso no pedido e avisa o balcão. Nunca muda o pedido sozinha."""
     from shopman.shop.adapters import alert as alert_adapter
@@ -289,10 +315,9 @@ def _ready_at(order: Order, expectation, *, now) -> str:
     A mesma previsão da Fila do Gestor (``kitchen_eta.ready_eta``). Hora que já passou
     não é previsão: o entregador lê "Ainda não ficou pronto", nunca uma hora vencida.
     """
-    from shopman.shop.config import ChannelConfig
     from shopman.shop.services.kitchen_eta import ready_eta
 
-    eta = ready_eta(order, expectation, ChannelConfig.for_channel(order.channel_ref), now=now)
+    eta = ready_eta(order, expectation, now=now)
     if eta is None or eta <= now:
         return ""
     return timezone.localtime(eta).strftime("%H:%M")  # hora-ok: contrato HH:MM, a página formata (clock.ts)

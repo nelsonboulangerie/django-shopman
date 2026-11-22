@@ -207,7 +207,9 @@ class ReturnService:
                 order, amount_q, idempotency_key=refund_reference or f"return:{order.ref}",
             )
             result["refund"] = {"success": True, "amount_q": amount_q, "on_account": True}
-        elif payment_data.get("intent_ref"):
+        elif payment_data.get("intent_ref") or payment_service._pays_on_account(payment_data):
+            # A venda mista com conta da casa passa por aqui mesmo sem ``intent_ref``:
+            # o ``refund`` tira da conta primeiro e devolve só o resto (#3151).
             try:
                 # Devolução PARCIAL estorna só o valor devolvido — nunca o
                 # saldo capturado inteiro. ``refund_reference`` (por índice de
@@ -221,20 +223,20 @@ class ReturnService:
                 # (que o Gestor e a loja do cliente mostram) só nasce com dinheiro
                 # que de fato voltou, e com o valor dele.
                 refunded_before_q = _order_refunded_q(order)
-                payment_service.refund(
-                    order,
-                    amount_q=amount_q,
-                    idempotency_key=refund_reference or f"return:{order.ref}",
-                )
+                refund_key = refund_reference or f"return:{order.ref}"
+                payment_service.refund(order, amount_q=amount_q, idempotency_key=refund_key)
                 returned_q = max(0, _order_refunded_q(order) - refunded_before_q)
+                # O que saiu da conta da casa (venda mista) não é dinheiro que volta.
+                from_account_q = payment_service.account_debt_reduced_q(order, refund_key) or 0
+                money_q = max(0, amount_q - from_account_q)
                 if returned_q > 0:
                     order.emit_event(
                         event_type="refund_processed",
                         actor=actor,
                         payload={"amount_q": returned_q, "success": True},
                     )
-                if returned_q >= amount_q:
-                    result["refund"] = {"success": True, "amount_q": returned_q}
+                if returned_q >= money_q:
+                    result["refund"] = {"success": True, "amount_q": returned_q + from_account_q}
                 else:
                     reason = _refund_not_returned_reason(order)
                     logger.warning(
