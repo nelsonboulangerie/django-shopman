@@ -149,8 +149,13 @@ if [[ "${PDV_LIVE_SKIP_SEED:-}" != "1" ]]; then
     echo "   (tempo esgotado numa migração; tentativa ${attempt} de 3, continuando)"
   done
   [ "$migrated" = 1 ] || { tail -40 "${LOG_DIR}/migrate.log" >&2; exit 1; }
-  echo "── seed --flush (o elenco de setup_operators vem junto: joyce, fran, diofer)"
-  manage seed --flush >"${LOG_DIR}/seed.log" 2>&1 || { tail -40 "${LOG_DIR}/seed.log" >&2; exit 1; }
+  # A casa abre todo dia, o dia inteiro, sem feriado (#3295): é o único efeito do
+  # SHOPMAN_STAGING_AUTOPILOT no seed, e a pilha do Gestor semeia igual. Com o
+  # horário real, a jornada que vende "Hoje" (J6) caía no domingo, com o rádio
+  # "Hoje, Dom 22/11 · fechado". A variável vale SÓ para o seed: o runserver e o
+  # worker sobem sem ela, senão o piloto automático daria os passos da Caixa.
+  echo "── seed --flush (o elenco de setup_operators vem junto: joyce, fran, diofer; casa aberta todo dia)"
+  SHOPMAN_STAGING_AUTOPILOT=true manage seed --flush >"${LOG_DIR}/seed.log" 2>&1 || { tail -40 "${LOG_DIR}/seed.log" >&2; exit 1; }
 fi
 
 # Ajuste DECLARADO do ambiente de teste: a trava automática do terminal de teste

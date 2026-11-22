@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { controlDir } from "./support/clock";
+import { atCounterHour, backToRealTime, controlDir } from "./support/clock";
 import { customerOrdersDeliveryToday } from "./support/customer";
 import { sefazAuthorizesAll, simulatedNote } from "./support/fiscal";
 import { cashierAccepts, cashierStartsPreparing, orderCard } from "./support/gestor";
@@ -29,10 +29,12 @@ const ADDRESS = {
 };
 
 test.skip(!controlDir, "pede a nota simulada da pilha (OPERATOR_CONTROL_DIR; README)");
+test.afterAll(() => backToRealTime());
 
 test("F2: a entrega sem CPF sai com NFC-e autorizada, antes da saída", async ({ browser, baseURL }, testInfo) => {
+  const at = await atCounterHour();
   sefazAuthorizesAll();
-  const gestorContext = await roleContext(browser, baseURL!);
+  const gestorContext = await roleContext(browser, baseURL!, false, at);
   const gestor = await gestorContext.newPage();
   await acknowledgeOtherOrdersAlarms(gestor);
   await managerSignsIn(gestor);
@@ -43,7 +45,7 @@ test("F2: a entrega sem CPF sai com NFC-e autorizada, antes da saída", async ({
   await operatorUnlocksWithPin(gestor, cast.cashier);
 
   // Cozinha: a Gerente abre a estação de Separação e bloqueia; Diofer entra com PIN.
-  const kitchenContext = await roleContext(browser, stack.kitchen);
+  const kitchenContext = await roleContext(browser, stack.kitchen, false, at);
   const kitchen = await kitchenContext.newPage();
   await managerSignsIn(kitchen);
   await kitchen.getByRole("button", { name: "Usar sem vincular" }).click();
@@ -52,7 +54,7 @@ test("F2: a entrega sem CPF sai com NFC-e autorizada, antes da saída", async ({
   await lockDevice(kitchen);
   await operatorUnlocksWithPin(kitchen, cast.kitchen);
 
-  const storeContext = await roleContext(browser, stack.store, true);
+  const storeContext = await roleContext(browser, stack.store, true, at);
   const store = await storeContext.newPage();
   const ref = await customerOrdersDeliveryToday(store, testInfo, {
     product: "Croissant",
