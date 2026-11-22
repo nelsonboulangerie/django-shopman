@@ -610,6 +610,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("reconcile_ifood_orders"),
         # O sinal de vida do polling do iFood: calado sem credencial.
         call("check_ifood_polling"),
+        call("act_on_incidents"),
         call("check_card_machines_out"),
         call("sweep_danfe_print_jobs"),
         call("sweep_kitchen_print_jobs"),

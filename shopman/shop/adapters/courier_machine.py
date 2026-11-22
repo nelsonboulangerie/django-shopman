@@ -429,6 +429,20 @@ def ride_state(status: str) -> RideState | None:
     """O estado da casa para a letra da TaOn, ou None para letra desconhecida."""
     return RIDE_STATES.get(str(status or "").strip().upper())
 
+
+#: O que a letra diz a mais que o estado da casa: ``G`` ainda procura, mas já ofereceu
+#: a corrida a alguém; ``S`` já aceitou, mas termina outra entrega antes de vir. "Na
+#: loja" é a chegada (``progress.arrived_pickup_at``), não o ``S``.
+STATUS_DETAILS: dict[str, str] = {
+    "G": "Aguardando aceite",
+    "S": "Entregador vem após outra entrega",
+}
+
+
+def status_detail(status: str) -> str:
+    """A nuance da letra da TaOn sobre o estado da casa, ou ""."""
+    return STATUS_DETAILS.get(str(status or "").strip().upper(), "")
+
 #: Ordem da leitura. Medido no alpha em 13/10/2026: ``/solicitacaoStatus``
 #: devolveu 400 ``[67] O usuário informado não pode realizar essa operação.``
 #: em toda batida da primeira corrida real, e o status ficou parado em D. As

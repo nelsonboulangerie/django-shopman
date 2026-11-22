@@ -46,6 +46,16 @@ def _masked(target: str) -> str:
     return f"***{digits[-4:]}" if digits else ""
 
 
+def _record_success() -> None:
+    """A Comtele aceitou: o aviso de falha de envio fecha (nunca derruba o login)."""
+    try:
+        from shopman.shop.services.observability import record_integration_success
+
+        record_integration_success("comtele_sms")
+    except Exception:  # pragma: no cover - observabilidade nunca derruba o login
+        logger.exception("Comtele SMS: falha ao registrar o envio aceito")
+
+
 def _record_failure(detail: str, *, exc: BaseException | None = None, **context) -> None:
     """Falha de envio GRITA: evento ERROR (vira evento no Sentry pela integração de
     logging), ``OperatorAlert`` ``integration_failed`` com debounce e aviso no sino do
@@ -118,6 +128,7 @@ class ComteleSMSSender:
                 if body.get("hasError") is False:
                     duration = elapsed_ms()
                     _accepted_event(duration, route=route, target=target)
+                    _record_success()
                     return True
                 reason = str(body.get("message"))[:300]
                 logger.warning("Comtele SMS rejected: %s", reason)

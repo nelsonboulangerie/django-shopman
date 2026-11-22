@@ -45,6 +45,10 @@ HARD_CAP_USD_PER_DAY = 20.0
 DEFAULT_PURPOSE_USD_PER_DAY: dict[str, float] = {
     "support_triage": 0.50,
     "support_summary": 1.00,
+    # Incidentes (DEV-2026-066): a primeira leitura custa ~US$ 0,00003 no Jev; a segunda
+    # opinião só roda quando a primeira não tem confiança.
+    "incident": 0.10,
+    "incident_review": 0.50,
 }
 #: Fração do teto que dispara o aviso.
 WARNING_FRACTION = 0.80

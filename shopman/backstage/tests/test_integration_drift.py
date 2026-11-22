@@ -164,3 +164,26 @@ def test_comando_roda_contra_a_prontidao_real():
     call_command("check_integration_drift", "--dry-run", stdout=out)
 
     assert "integration_drift:" in out.getvalue()
+
+
+# ── a integração que volta a ficar pronta fecha o próprio aviso (#3092) ──────
+
+
+def test_aviso_fecha_quando_o_provedor_fica_pronto():
+    from shopman.backstage.models import OperatorAlert
+
+    _run(_readiness(status="warning"))
+    alert = OperatorAlert.objects.get(type="integration_config_drift")
+    _run(_readiness(status="ready", missing=()))
+    alert.refresh_from_db()
+    assert alert.resolved_by == "sistema: integração efi_pix pronta de novo"
+
+
+def test_aviso_de_outro_provedor_nao_fecha():
+    from shopman.backstage.models import OperatorAlert
+
+    _run(_readiness(status="warning"))
+    alert = OperatorAlert.objects.get(type="integration_config_drift")
+    _run(_readiness(provider="focus_nfce", status="ready", missing=()))
+    alert.refresh_from_db()
+    assert alert.resolved_at is None

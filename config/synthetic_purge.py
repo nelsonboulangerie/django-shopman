@@ -343,6 +343,7 @@ POLICY: dict[str, Rule] = {
     "backstage.OperationEpisode": _purge(_AUDIT),
     "backstage.ShelfOutage": _purge(_AUDIT),
     "backstage.OperatorAlert": _purge(_AUDIT),
+    "backstage.IncidentAction": _purge(_AUDIT),
     "backstage.BIAlertEvent": _purge(_AUDIT),
     "backstage.SignInEvent": _purge(_AUDIT),
     "backstage.PrintJob": _purge("impressões do ensaio"),
