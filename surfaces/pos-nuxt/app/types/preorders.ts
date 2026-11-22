@@ -12,6 +12,8 @@ import type { CourierCancelState } from "../../../operator-kit/app/presentation/
 import type { POSManagerProjection, POSPaymentResultProjection, POSTabPayload } from "./pos";
 
 export type PreorderSituation =
+  /** Ninguém aceitou ainda (o "Novo" do Gestor, #3166). */
+  | "new"
   | "to_pay"
   | "paid"
   | "on_account"

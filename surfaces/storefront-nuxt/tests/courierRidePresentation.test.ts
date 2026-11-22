@@ -5,6 +5,7 @@ import {
   type CourierStop,
   bagTip,
   themeToAdopt,
+  trackingText,
   closedTitle,
   doorMoney,
   machineText,
@@ -263,3 +264,13 @@ describe('o tema do cadastro (#2648)', () => {
   })
 })
 
+
+describe('a posição para a loja (#2509)', () => {
+  it('o entregador sabe se a loja o vê', () => {
+    expect(trackingText('off')).toBe('')
+    expect(trackingText('unavailable')).toBe('')
+    expect(trackingText('asking')).toBe('Permita a localização para a loja ver onde você está.')
+    expect(trackingText('on')).toBe('A loja vê onde você está enquanto esta tela estiver aberta.')
+    expect(trackingText('denied')).toContain('Libere nas configurações do navegador.')
+  })
+})

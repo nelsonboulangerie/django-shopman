@@ -149,14 +149,16 @@ def _hold_entries(order) -> list[dict]:
     ]
 
 
-def _line_facts(order, items, *, now: datetime) -> dict[str, LineFacts]:
-    """``line_id`` → os fatos da linha, lidos do estoque e das fichas."""
+def _sku_facts(order, skus: list[str], *, now: datetime) -> dict[str, LineFacts]:
+    """SKU → os fatos dele no pedido, lidos do estoque e das fichas.
+
+    Um SKU por vez, para que o combo decida cada componente pelos fatos dele
+    (#2697): o croissant vencido do combo não leva o café junto para a perda.
+    """
     from shopman.shop.adapters import get_adapter
     from shopman.shop.services import made_to_order
 
-    components = {item.line_id: _components(item.sku, _decimal(item.qty)) for item in items}
-    skus = sorted({sku for comps in components.values() for sku, _qty in comps})
-    recipes = made_to_order.made_to_order_recipes(skus)
+    recipes = made_to_order.made_to_order_recipes(sorted(set(skus)))
     entries = _hold_entries(order)
     lots = get_adapter("stock").hold_lot_facts(
         [entry["hold_id"] for entry in entries], on=next_selling_day(now)
@@ -166,15 +168,47 @@ def _line_facts(order, items, *, now: datetime) -> dict[str, LineFacts]:
         by_sku.setdefault(str(entry.get("sku") or ""), []).append(lots.get(entry["hold_id"]) or {})
 
     facts: dict[str, LineFacts] = {}
-    for item in items:
-        comp_skus = [sku for sku, _qty in components[item.line_id]]
-        held = [by_sku.get(sku) or [] for sku in comp_skus]
-        facts[item.line_id] = LineFacts(
-            made_to_order=any(sku in recipes for sku in comp_skus),
-            stock_fulfilled=bool(held) and all(lot and all(fact.get("fulfilled") for fact in lot) for lot in held),
-            lot_expired=any(fact.get("expired") for lot in held for fact in lot),
+    for sku in skus:
+        held = by_sku.get(sku) or []
+        facts[sku] = LineFacts(
+            made_to_order=sku in recipes,
+            stock_fulfilled=bool(held) and all(fact.get("fulfilled") for fact in held),
+            lot_expired=any(fact.get("expired") for fact in held),
         )
     return facts
+
+
+def _component_values(components: list[tuple[str, Decimal]], total_q: int) -> list[int]:
+    """O valor da linha do combo rateado pelos componentes, pelo preço de cada um.
+
+    Proporcional ao preço de tabela vezes a quantidade (o mesmo rateio da NFC-e,
+    ``fiscal_focusnfe._apportion_over_items``); o resíduo do arredondamento vai no
+    último, para a soma bater com o valor pago pela linha. Sem preço nenhum, por
+    quantidade.
+    """
+    from shopman.offerman.models import Product
+
+    prices = dict(Product.objects.filter(sku__in=[sku for sku, _qty in components]).values_list("sku", "base_price_q"))
+    weights = [Decimal(int(prices.get(sku) or 0)) * qty for sku, qty in components]
+    if not any(weights):
+        weights = [qty for _sku, qty in components]
+    weight_sum = sum(weights) or Decimal(len(components))
+    values: list[int] = []
+    allocated = 0
+    for index, weight in enumerate(weights):
+        if index == len(weights) - 1:
+            share = total_q - allocated
+        else:
+            share = int(Decimal(total_q) * weight / weight_sum)
+        allocated += share
+        values.append(share)
+    return values
+
+
+def _product_names(skus: list[str]) -> dict[str, str]:
+    from shopman.offerman.models import Product
+
+    return dict(Product.objects.filter(sku__in=skus).values_list("sku", "name"))
 
 
 def next_selling_day(now: datetime):
@@ -207,24 +241,55 @@ def line_decisions(order, *, now: datetime | None = None) -> list[dict]:
 
     O valor é o mesmo cálculo da devolução (``handlers/returns``): o preço pago
     por unidade (já com o desconto rateado) vezes a quantidade.
+
+    O combo vira uma linha por componente (#2697): cada componente tem o destino
+    dele (o que volta à venda volta, o que se perdeu fica com a loja) e uma parte
+    do valor do combo, rateada pelo preço de cada componente. ``line_id`` do
+    componente é ``"<linha>:<sku>"``, e ``combo`` diz de qual combo ele veio.
     """
     now = now or timezone.now()
     items = _merchandise_items(order)
-    facts = _line_facts(order, items, now=now)
+    expanded = {item.line_id: _components(item.sku, _decimal(item.qty)) for item in items}
+    facts = _sku_facts(order, sorted({sku for comps in expanded.values() for sku, _qty in comps}), now=now)
+    combo_skus = sorted({sku for item in items for sku, _qty in expanded[item.line_id] if not _is_itself(item, expanded)})
+    names = _product_names(combo_skus) if combo_skus else {}
     lines = []
     for item in items:
         qty = _decimal(item.qty)
-        destiny, why = decide_destiny(facts[item.line_id])
-        lines.append({
-            "line_id": item.line_id,
-            "sku": item.sku,
-            "name": item.name or item.sku,
-            "qty": _decimal_text(qty),
-            "destiny": destiny,
-            "reason": why,
-            "value_q": int(item.unit_price_q * qty),
-        })
+        value_q = int(item.unit_price_q * qty)
+        components = expanded[item.line_id]
+        if _is_itself(item, expanded):
+            destiny, why = decide_destiny(facts[item.sku])
+            lines.append({
+                "line_id": item.line_id,
+                "sku": item.sku,
+                "name": item.name or item.sku,
+                "qty": _decimal_text(qty),
+                "destiny": destiny,
+                "reason": why,
+                "value_q": value_q,
+            })
+            continue
+        combo_name = item.name or item.sku
+        for (sku, comp_qty), comp_value in zip(components, _component_values(components, value_q), strict=True):
+            destiny, why = decide_destiny(facts[sku])
+            lines.append({
+                "line_id": f"{item.line_id}:{sku}",
+                "sku": sku,
+                "name": f"{names.get(sku) or sku} (combo {combo_name})",
+                "qty": _decimal_text(comp_qty),
+                "destiny": destiny,
+                "reason": why,
+                "value_q": comp_value,
+                "combo": {"line_id": item.line_id, "sku": item.sku, "name": combo_name},
+            })
     return lines
+
+
+def _is_itself(item, expanded) -> bool:
+    """A linha não é combo: ela tira do estoque ela mesma."""
+    components = expanded[item.line_id]
+    return len(components) == 1 and components[0][0] == item.sku
 
 
 # ── O dinheiro ───────────────────────────────────────────────────────────────
