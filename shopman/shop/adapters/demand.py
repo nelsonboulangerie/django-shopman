@@ -72,7 +72,7 @@ class LedgerAwareDemandBackend(OrderingDemandBackend):
         encomenda e a fila da fornada, a reserva manual do operador e o insumo
         da produção. A sacola entra quando vira pedido, no commit.
         """
-        from shopman.stockman.models.hold import Hold
+        from shopman.stockman import Hold
 
         from shopman.shop.adapters.stock import is_held_by_a_cart
 
