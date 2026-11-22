@@ -332,6 +332,7 @@ const draft = reactive({
   shelf_life_days: "" as number | "",
   storage_tip: "",
   production_cycle_hours: "" as number | "",
+  preorder_prep_minutes: "" as number | "",
   is_published: true,
   is_sellable: true,
   allows_next_day_sale: false,
@@ -357,6 +358,20 @@ const draft = reactive({
 });
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
+
+// Preparo da encomenda (#2304): em branco, vale o preparo padrão da loja, e a tela
+// diz quanto ele é. A frase explica o efeito: é o que decide a hora de a encomenda
+// chegar à Cozinha.
+const preorderPrepDefault = computed(
+  () => props.detail?.preorder_prep_default_minutes ?? null,
+);
+const preorderPrepPlaceholder = computed(() =>
+  preorderPrepDefault.value === null
+    ? "Em branco = preparo padrão"
+    : `Em branco = preparo padrão (${preorderPrepDefault.value} min)`,
+);
+const preorderPrepHint =
+  "A encomenda chega à Cozinha este tempo antes da hora combinada, mais a antecedência da loja.";
 const numOrBlank = (v: number | null) =>
   v === null || v === undefined ? "" : v;
 
@@ -375,6 +390,7 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.production_cycle_hours = numOrBlank(
     detail?.production_cycle_hours ?? null,
   );
+  draft.preorder_prep_minutes = numOrBlank(detail?.preorder_prep_minutes ?? null);
   draft.is_published = detail?.is_published ?? true;
   draft.is_sellable = detail?.is_sellable ?? true;
   draft.allows_next_day_sale = detail?.allows_next_day_sale ?? false;
@@ -538,6 +554,11 @@ function buildPatch(): ProductDetailPatch {
     "production_cycle_hours",
     nullableInt(draft.production_cycle_hours),
     current.production_cycle_hours,
+  );
+  put(
+    "preorder_prep_minutes",
+    nullableInt(draft.preorder_prep_minutes),
+    current.preorder_prep_minutes ?? null,
   );
   put("is_published", draft.is_published, current.is_published);
   put("is_sellable", draft.is_sellable, current.is_sellable);
@@ -714,6 +735,7 @@ const conflictLabels: Record<string, string> = {
   shelf_life_days: "Validade",
   storage_tip: "Conservação",
   production_cycle_hours: "Tempo de produção",
+  preorder_prep_minutes: "Preparo da encomenda",
   is_published: "Publicado",
   is_sellable: "Disponível para venda",
   allows_next_day_sale: "Venda no dia seguinte",
@@ -1272,6 +1294,23 @@ const sectionClass =
                   type="number"
                   :min="0"
                   placeholder="Ex.: 4"
+                />
+              </NuxtFormField>
+
+              <!-- Preparo da encomenda (#2304): o mesmo valor do Admin (Configurações ›
+                   Pedidos e entrega › Encomenda na Cozinha), nunca uma segunda fonte. -->
+              <NuxtFormField
+                label="Preparo da encomenda (min)"
+                :description="preorderPrepHint"
+                data-testid="preorder-prep"
+              >
+                <NuxtInput
+                  v-model.number="draft.preorder_prep_minutes"
+                  class="w-full"
+                  type="number"
+                  :min="0"
+                  :max="720"
+                  :placeholder="preorderPrepPlaceholder"
                 />
               </NuxtFormField>
 

@@ -78,7 +78,7 @@ describe("Vai junto nesta corrida?", () => {
 
   it("sem cotação da TaOn, a frase convida a marcar; pedido em preparo avisa que a hora não é certa", () => {
     const unquoted = companionChoices(anchor, [anchor, mate], [A47], { plan: plan({ quoted: false, suggested: false }), maxStops: 4 });
-    expect(companionNote(plan({ quoted: false }), unquoted)).toEqual({
+    expect(companionNote(plan({ quoted: false }), unquoted, "TaOn")).toEqual({
       text: "A TaOn não cotou agora. Marque C03 se quiser levar junto.", warning: true,
     });
     const preparing = companionChoices(anchor, [anchor, stop(C03, { stage: "Em preparo" })], [A47], { plan: null, maxStops: 4 });

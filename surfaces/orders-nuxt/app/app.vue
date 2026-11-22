@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { operatorSupportContext } from "../../operator-kit/app/presentation/support";
 import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteChrome";
 import { verificationInbox } from "~/presentation/conciergeVerification";
 import { gestorSwitcherSections } from "~/presentation/gestorSections";
+import { gestorSupportContext } from "~/presentation/supportContext";
 
 // Gestor de Pedidos surface shell. Thin shell — the order hub is a board + detail,
 // each at its own URL, so it uses pages/ routing (like the KDS, unlike the POS
@@ -63,8 +63,8 @@ watch(
 );
 const route = useRoute();
 
-// O chamado do Gestor leva app e tela; o resto o servidor sabe.
-const supportContext = computed(() => operatorSupportContext("orders", route.path));
+// O chamado do Gestor leva app, tela e o pedido aberto (#2515); o resto o servidor sabe.
+const supportContext = computed(() => gestorSupportContext(route));
 const { landingPath } = useGestorAccess();
 const redirectingToRoleLanding = computed(
   () =>

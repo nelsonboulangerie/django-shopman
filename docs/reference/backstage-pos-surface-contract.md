@@ -269,8 +269,9 @@ capture. Gateway/webhook/Payman status remains authoritative.
 - `fiscal_expected` (bool, kept for compatibility): the emission rule says a
   NFC-e will exist for this sale.
 - `fiscal_state`: one of `not_expected` | `queued` | `awaiting_payment` |
-  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed`
-  (`shopman.shop.services.fiscal.fiscal_state`). A counter sale (takes the
+  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed` |
+  `not_issued` (`shopman.shop.services.fiscal.fiscal_state`). `not_issued` is a
+  cancelled order with no emission attempt: no note will ever exist. A counter sale (takes the
   goods now) emits at sale close, or at capture for `pix`/card; an order with a
   pickup/delivery ahead (encomenda) gets only the non-fiscal receipt at payment
   and the note is born when the goods leave — at pickup (`awaiting_pickup`) or
@@ -393,8 +394,13 @@ Minimum audit artifacts:
 - customer POS capture metadata;
 - cancellation event plus correction reason when supplied.
 
-Future event streams may expose POS refresh, but current contract is polling via
-projection refresh. A surface must not invent push state as authoritative.
+Realtime is SSE push on top of the canonical projection fetch (ADR-016). The
+terminal subscribes, through the same-origin BFF (`usePosEvents.ts`), to
+`/sse/cash`, `/sse/tabs` and `/sse/stock`, and the Encomendas screen to
+`/sse/orders`. Each event re-fetches only the projection scope it touches
+(`refreshScopeForChannel`). The projection fetch stays the source of truth:
+polling runs only as a calm fallback (60 s) while the stream is down, and a
+surface must not treat a pushed payload as authoritative state.
 
 ## Errors And Recovery
 

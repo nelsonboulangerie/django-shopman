@@ -1369,6 +1369,7 @@ export interface DeliveryRideProjection {
   status_label: string;
   stops: DeliveryStopProjection[];
   driver: DeliveryDriverProjection | null;
+  service_name: string;
   position: DeliveryCourierPositionProjection | null;
   called_at: string;
   called_by: string;

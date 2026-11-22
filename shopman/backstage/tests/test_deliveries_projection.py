@@ -380,9 +380,9 @@ def test_a_call_without_answer_offers_call_again_never_call_alone(shop):
     from shopman.orderman.models import Directive
 
     from shopman.backstage.projections.order_queue import (
-        COURIER_DISPATCH_AGAIN_CONFIRMATION,
-        COURIER_NO_ANSWER_MESSAGE,
         _courier_block,
+        courier_dispatch_again_confirmation,
+        courier_no_answer_message,
     )
     from shopman.shop.directives import COURIER_DISPATCH
 
@@ -396,8 +396,10 @@ def test_a_call_without_answer_offers_call_again_never_call_alone(shop):
     assert stop.dispatch_again_action is not None
     assert stop.dispatch_again_action.ref == "courier-dispatch-again"
     assert stop.dispatch_again_action.confirmation == {
-        "required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION}
-    assert stop.error == COURIER_NO_ANSWER_MESSAGE
+        "required": True, "description": courier_dispatch_again_confirmation("TaOn")}
+    # O nome é o do serviço cadastrado (a TaOn, padrão da migração), não texto fixo (#3139).
+    assert stop.error == courier_no_answer_message("TaOn")
+    assert stop.error.startswith("A TaOn não respondeu")
     # Não entra em corrida com outros, e diz por quê.
     assert stop.group_refusal
     # Paridade com o Painel: a mesma condição decide os dois gestos.
