@@ -281,21 +281,53 @@ def test_house_account_order_with_everything_back_on_sale_leaves_nothing_owed(pa
     assert payment.open_account_debt_q(order) == 0
 
 
-def test_house_account_already_settled_or_mixed_is_refused_with_a_clear_reason(paes, relogio):
+def test_house_account_already_settled_is_refused_with_a_clear_reason(paes, relogio):
     from shopman.payman import PaymentService
 
     relogio(10)
     settled = world.ready_order("NS-CONTA-ACERTADA", [("CROIS", 1, 935)])
     PaymentService.capture(_on_account(settled))
-    mixed = world.ready_order(
-        "NS-CONTA-MISTA", [("CROIS", 1, 935)],
-        payment={"method": "account", "tenders": [{"method": "account", "amount_q": 500}, {"method": "cash", "amount_q": 435}]},
-    )
 
     assert no_show.eligibility_reason(settled) == "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
-    assert no_show.eligibility_reason(mixed) == (
-        "Parte na conta da casa e parte em outra forma de pagamento: o não retirado deste pedido é com o Dono."
+
+
+def test_mixed_sale_takes_the_debt_out_first(paes, relogio):
+    """Venda mista (#3151): R$ 20,00 na conta e R$ 28,70 em dinheiro. Volta R$ 18,70
+    (o croissant); se perdem R$ 30,00 (o bolo). A conta sai primeiro: nenhum dinheiro
+    volta, R$ 1,30 continuam na conta e o dinheiro inteiro fica com a loja."""
+    from shopman.payman import PaymentService
+
+    from shopman.shop.services import payment
+
+    relogio(10)
+    order = world.ready_order(
+        "NS-MISTA", [("CROIS", 2, 935), ("BOLO", 1, 3000)], held=False,
+        payment={"method": "mixed", "tenders": [{"method": "account", "amount_q": 2000}, {"method": "cash", "amount_q": 2870}]},
     )
+    order.data["hold_ids"] = [world.fulfilled_hold("CROIS", 2, order_ref=order.ref)]
+    order.save(update_fields=["data", "updated_at"])
+    PaymentService.charge_to_account(order.ref, 2000, customer_ref="CLI-MISTA", idempotency_key=f"order-payment:{order.ref}:account:terminal")
+    world.pay(order, "cash", 2870)
+    assert no_show.eligibility_reason(order) == ""
+
+    relogio(19, 5)
+    preview = no_show.preview(order)
+    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 1870, 3000)
+    assert preview["money_sentence"] == (
+        "R$ 18,70 saem da conta do cliente. R$ 1,30 continuam na conta e R$ 28,70 ficam com a loja, pelo que se perdeu."
+    )
+    assert preview["customer_text"] == (
+        "O pedido ficou pronto e não foi retirado. Tiramos R$ 18,70 da sua conta na loja, pelo que ainda pôde "
+        "voltar à venda. R$ 1,30 continuam na sua conta e R$ 28,70 ficaram com a loja, como dizem os Termos."
+    )
+
+    block = no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    assert (block["from_account_q"], block["money_q"], block["debt_left_q"], block["kept_q"]) == (1870, 0, 130, 2870)
+    order.refresh_from_db()
+    payment.refund(order)
+    payment.refund(order)  # retry do cancelamento: nada sai duas vezes
+    assert payment.open_account_debt_q(order) == 130
+    assert [p for p in payment.pending_cash_refunds() if p.order_ref == order.ref] == []
 
 
 def test_account_customer_text_says_what_left_the_account():

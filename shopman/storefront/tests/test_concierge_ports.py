@@ -119,6 +119,61 @@ def test_text_is_resolved_on_the_shopman_side_only():
     assert resolve_text("message:999999") == "" and resolve_text("file:/etc/passwd") == ""
 
 
+# ── o leitor entrega o que o ``change_cart`` do framework pede (#3198) ─────────────────────────
+
+def _read(text):
+    request = InterpretRequest(request=ModelRequest(purpose="interpret", data_class="redacted",
+                                                    budget={"max_calls": 0, "max_spend": {
+                                                        "amount_minor": 0, "currency": "BRL"}}),
+                               event_id="evt-cart", content_ref=f"text:{text}", allowed_acts=ACTS)
+    understanding, consumption = LocalReader().interpret(CTX, request)
+    assert consumption.calls == 0
+    return [a for a in understanding.acts if a.act == "change_quantity"]
+
+
+def _menu(monkeypatch, items):
+    from shopman.storefront.concierge import tools
+
+    monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": items})
+
+
+CROISSANT = {"sku": "CROISSANT", "name": "Croissant", "can_order": True}
+
+
+@pytest.fixture
+def conversation(db):
+    return Conversation.objects.create(pk=1, channel_ref="whatsapp")
+
+
+def test_the_reader_resolves_the_product_and_the_quantity(conversation, monkeypatch):
+    _menu(monkeypatch, [CROISSANT])
+    [act] = _read("quero 2 croissant")
+    assert dict(act.fields) == {"item": "CROISSANT", "quantity": "2"}
+
+
+def test_more_is_relative_and_removing_is_zero(conversation, monkeypatch):
+    _menu(monkeypatch, [CROISSANT])
+    [more] = _read("quero mais 2 croissant")
+    assert dict(more.fields) == {"item": "CROISSANT", "quantity": "2", "relative": True}
+    [removed] = _read("quero tirar o croissant")
+    assert dict(removed.fields) == {"item": "CROISSANT", "quantity": "0"}
+
+
+def test_a_tie_between_products_stays_without_item_and_calls_no_model(conversation, monkeypatch):
+    from shopman.storefront.concierge import intents
+
+    monkeypatch.setattr(intents, "_jev_picks_sku", lambda *a, **k: pytest.fail("o leitor não chama modelo"))
+    _menu(monkeypatch, [{"sku": "PAO-FRANCES", "name": "Pão francês"}, {"sku": "PAO-ITALIANO", "name": "Pão italiano"}])
+    [act] = _read("quero 2 pao")
+    assert dict(act.fields) == {"quantity": "2"}  # sem item, o framework pergunta qual
+
+
+def test_without_the_conversation_only_the_quantity_is_read(db, monkeypatch):
+    _menu(monkeypatch, [CROISSANT])
+    [act] = _read("quero 2 croissant")
+    assert dict(act.fields) == {"quantity": "2"}
+
+
 # ── o canal envia pelo mesmo caminho da resposta (#3198, peça 2; decisão de 22/11: o motor fala) ──
 
 

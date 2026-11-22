@@ -97,3 +97,28 @@ export async function operatorUnlocksWithPin(page: Page, who: { name: string; pi
   // Quem está operando aparece no pé do menu lateral (Gestor e Cozinha).
   await expect(page.getByRole("complementary").getByText(who.name, { exact: true }).first()).toBeVisible();
 }
+
+/** No PDV a oferta do posto é um diálogo, que sobe sozinho depois do login da Gerente
+ *  ("Vincular este dispositivo a um posto de trabalho?", operator-kit
+ *  OperatorStationSetup); o seed cria o "PDV principal". Mesmo gesto do helper da suíte
+ *  do PDV (pos-nuxt/tests/e2e-live/support/operator.ts). */
+export async function managerBindsPosStation(page: Page, station = "PDV principal"): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: /Vincular este dispositivo/ });
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+  const choice = dialog.getByRole("combobox").first();
+  if (!(await choice.textContent())?.includes(station)) {
+    await choice.click();
+    await page.getByRole("option", { name: station }).first().click();
+    await expect(choice).toContainText(station);
+  }
+  await dialog.getByRole("button", { name: "Vincular a este posto", exact: true }).click();
+  // Posto que já tem outro dispositivo: o servidor pede a segunda palavra.
+  const shared = dialog.getByRole("button", { name: "Vincular também a este posto", exact: true });
+  const next = await Promise.race([
+    shared.waitFor({ state: "visible", timeout: 90_000 }).then(() => "shared", () => "gone"),
+    dialog.waitFor({ state: "hidden", timeout: 90_000 }).then(() => "gone", () => "stuck"),
+  ]);
+  if (next === "shared") await shared.click();
+  await expect(dialog).toBeHidden({ timeout: 90_000 });
+  await settled(page);
+}

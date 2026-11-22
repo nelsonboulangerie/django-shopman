@@ -37,6 +37,11 @@ class StorefrontConfig(AppConfig):
         concierge_verification.register(
             answer=verification.answer, take_over=verification.take_over, promote_faq=faq_promotion.promote
         )
+        # O B.I. mostra fala de cliente (a seção IA): só pelo redator da Concierge.
+        from shopman.shop import concierge_reading
+        from shopman.storefront.concierge.observation_privacy import redact_observation_text
+
+        concierge_reading.register(redact=lambda text: redact_observation_text(text).text)
         # Loja viva (#2784): o canal da loja tem vitrine pública. O shop só calcula o
         # estado público do SKU (e publica ``shelf-<canal>``) para canal registrado aqui.
         from shopman.shop.services import public_shelf

@@ -222,3 +222,36 @@ test.describe("Entregas: a corrida que falhou", () => {
     await expect(sheet.getByText("A47 → C03", { exact: true })).toBeVisible();
   });
 });
+
+// #2747: o detalhe põe o frete dos clientes ao lado do custo, com o que sobra ou falta.
+test("o detalhe da corrida diz o frete cobrado e o que falta para o custo", async ({ page }) => {
+  await page.goto("/delivery?ride=776753358");
+  const detail = page.getByRole("dialog", { name: "Corrida B" });
+  await expect(detail.locator("[data-ride-balance]")).toHaveText("Frete cobrado R$ 12,00 · Falta R$ 2,50");
+});
+
+// #2736: a corrida que a TaOn nunca fechou se encerra aqui, pelo botão do próprio aviso,
+// com as duas saídas e o que cada uma faz com o dinheiro.
+test.describe("Entregas: encerrar aqui", () => {
+  test.use({ viewport: { width: 1360, height: 900 } });
+  test.beforeEach(async ({ context }) => {
+    await context.addCookies([{ name: "e2e_close", value: "on", url: "http://127.0.0.1" }]);
+  });
+
+  test("o aviso traz o Encerrar aqui; a confirmação diz o efeito de cada saída e manda a escolhida", async ({ page }) => {
+    await page.request.delete(`${MOCK}/api/v1/backstage/e2e/close-here/`);
+    await page.goto("/delivery?ride=776753357");
+    const detail = page.getByRole("dialog", { name: "Corrida A" });
+    const notice = detail.locator("[data-ride-notice]");
+    await expect(notice.getByText("Corrida aberta há muito tempo.", { exact: true })).toBeVisible();
+    await notice.getByRole("button", { name: "Encerrar aqui", exact: true }).click();
+    const confirm = detail.locator("[data-ride-close-here]");
+    await expect(confirm.getByText("A TaOn não encerrou a corrida A. Encerre aqui só se souber o que aconteceu.", { exact: true })).toBeVisible();
+    await expect(confirm.locator('[data-ride-close-outcome="delivered"]').getByText("O pedido fica entregue. O troco fica para o gesto “Entregador voltou”.", { exact: true })).toBeVisible();
+    await expect(confirm.locator('[data-ride-close-outcome="returned"]').getByText("O pedido volta para Aguardando. O troco volta para a gaveta.", { exact: true })).toBeVisible();
+    await confirm.getByRole("button", { name: "Voltou para a loja", exact: true }).click();
+    await expect
+      .poll(async () => (await (await page.request.get(`${MOCK}/api/v1/backstage/e2e/close-here/`)).json()).posts)
+      .toEqual([expect.objectContaining({ ref: "WEB-20261116-0B12", outcome: "returned" })]);
+  });
+});

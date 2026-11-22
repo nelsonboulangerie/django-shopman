@@ -45,8 +45,42 @@ def site(monkeypatch):
     return ConciergeEffectSite(ToolContext(conversation=conversation, channel_ref=CHANNEL))
 
 
-def test_the_site_declares_the_four_existing_effects(site):
-    assert site.actions == ACTIONS == ("commit_order", "grant_discount", "cancel_order", "amend_order")
+def test_the_site_declares_the_existing_effects(site):
+    assert site.actions == ACTIONS == ("change_cart", "commit_order", "grant_discount", "cancel_order", "amend_order")
+
+
+def test_change_cart_locks_the_cart_without_terms(site):
+    with transaction.atomic():
+        reading = site.lock(CTX, command("change_cart", "sess-1", item="CROISSANT", quantity="2"))
+    assert reading.versions == {"sess-1": Session.objects.get(session_key="sess-1").rev}
+    assert reading.terms_ref is None  # mudar a sacola é reversível e não fecha nada
+
+
+@pytest.mark.parametrize("result, applied, code", [
+    ({"ok": True, "items": []}, True, None),
+    ({"ok": False, "code": "unknown_sku"}, False, ErrorCode.INVALID_CONTENT.value),
+    ({"ok": False, "code": "invalid_qty"}, False, ErrorCode.INVALID_CONTENT.value),
+    ({"ok": False, "code": "insufficient_supply"}, False, ErrorCode.FACT_UNAVAILABLE.value),
+])
+def test_change_cart_is_the_existing_set_item(site, monkeypatch, result, applied, code):
+    calls = []
+    monkeypatch.setattr("shopman.storefront.concierge.tools.set_item",
+                        lambda ctx, sku, qty: calls.append((sku, qty)) or result)
+    done = site.apply(CTX, command("change_cart", "sess-1", item="CROISSANT", quantity="3"))
+    assert calls == [("CROISSANT", 3)]  # quantidade absoluta, a do pedido
+    assert done.applied is applied
+    if applied:
+        assert done.domain_refs == {"cart": "sess-1", "item": "CROISSANT"}
+    else:
+        assert done.refusal == code
+
+
+@pytest.mark.parametrize("parameters", [{"item": "CROISSANT"}, {"quantity": "2"}, {"item": "X", "quantity": "-1"},
+                                        {"item": "X", "quantity": "1.5"}])
+def test_change_cart_without_item_or_whole_quantity_is_invalid_content(site, monkeypatch, parameters):
+    monkeypatch.setattr("shopman.storefront.concierge.tools.set_item", lambda *a: pytest.fail("não deveria chamar"))
+    done = site.apply(CTX, command("change_cart", "sess-1", **parameters))
+    assert (done.applied, done.refusal) == (False, ErrorCode.INVALID_CONTENT.value)
 
 
 def test_lock_reads_epoch_version_and_terms_of_the_conversation(site):

@@ -722,6 +722,18 @@ def courier_cancel(order, *, actor: str, reason_id=None, expected_revision=None)
         raise OrderError(str(exc) or "Não foi possível cancelar a corrida.") from exc
 
 
+def courier_close_here(order, *, outcome: str, actor: str, expected_revision=None) -> list[str]:
+    """"Encerrar aqui": a corrida que a central nunca fechou (#2736)."""
+    from shopman.shop.services import courier
+
+    try:
+        return courier.close_here(order, outcome=outcome, actor=actor, expected_revision=expected_revision)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc) or "Não foi possível encerrar a corrida.") from exc
+
+
 def courier_quote(order) -> dict:
     """Cotação avulsa da entrega ("só cotar", sem abrir corrida)."""
     from shopman.utils.monetary import format_money

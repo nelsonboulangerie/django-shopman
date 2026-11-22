@@ -30,6 +30,20 @@ afterEach(() => {
 });
 
 describe("OperatorPinPad", () => {
+  // F6 do plano de excelência do PDV (#2563): toda tecla tem nome para o leitor de
+  // tela. O dígito pelo próprio texto; apagar e confirmar, que são só ícone, pelo
+  // `aria-label`. É o nome que as jornadas ao vivo usam para digitar o PIN.
+  it("toda tecla do teclado tem nome acessível, e o nome diz o que ela faz", async () => {
+    const wrapper = await mount({ pin: "12" });
+    const names = wrapper
+      .findAll("button")
+      .filter((button) => button.element.closest("[data-operator-pin-field]") === null)
+      .filter((button) => !button.element.closest("[data-operator-pin-error]"))
+      .map((button) => (button.attributes("aria-label") || button.text()).trim());
+    expect(names).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "Apagar o último dígito", "0", "Confirmar"]);
+    expect(names.every(Boolean)).toBe(true);
+  });
+
   it("o campo nasce com 4 casas, o mínimo do PIN", async () => {
     const wrapper = await mount({ pin: "" });
     expect(boxes(wrapper)).toHaveLength(4);

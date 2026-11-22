@@ -45,6 +45,11 @@ recente do sujeito (para a correlação), e `latest_record(episode_id, schema)` 
 registro de um contrato gravado no episódio (o turno lê ali a pergunta no ar do turno
 anterior). As duas entraram com o F7.
 
+Convenção de `channel`: o `send` recebe a mensagem pronta por referência (`body_ref =
+reply:<plano>`) e o hash do conteúdo. O `ReplyPlan` guarda as partes e o lastro, não a frase; o
+canal de verdade lê o texto em `Engine.bodies[body_ref]`, um mapa em memória que o adaptador
+compartilha com o canal na montagem. O texto nunca entra num registro.
+
 ## 3. A autoridade não é porta: a guarda
 
 O núcleo emite a concessão e entrega ao executor uma `EffectGuard` (v2 5.4). O executor
