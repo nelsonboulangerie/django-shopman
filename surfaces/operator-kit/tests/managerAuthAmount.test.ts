@@ -56,6 +56,12 @@ describe("managerAuth: o gerente lê o valor que assina", () => {
       managerAuthReason({ action: "day_closing_production", detail: "3 ordens de produção seguem abertas." }),
     ).toBe("3 ordens de produção seguem abertas.");
     expect(managerAuthReason({ action: "day_closing_production" })).toBe("Há produção aberta.");
+    // Pedido pronto não retirado também segura o dia (#2684): o mesmo título, e o detalhe diz quais.
+    expect(managerAuthTitle("day_closing_not_picked_up")).toBe("Autorizar fechar o dia");
+    expect(
+      managerAuthReason({ action: "day_closing_not_picked_up", detail: "Um pedido pronto não foi retirado." }),
+    ).toBe("Um pedido pronto não foi retirado.");
+    expect(managerAuthReason({ action: "day_closing_not_picked_up" })).toBe("Há pedido pronto não retirado.");
   });
 });
 

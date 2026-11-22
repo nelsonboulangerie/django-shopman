@@ -206,3 +206,62 @@ describe("Fim do dia: produção aberta impede selar (decisão do dono, 05/11)",
     page.unmount();
   });
 });
+
+const READY = [
+  {
+    ref: "NB-261121-W77",
+    customer_name: "Ana",
+    promised_display: "Combinado para 15h",
+    state: "resolve",
+    reason: "",
+    money_sentence: "R$ 13,00 serão estornados ao Pix do cliente.",
+    revision: "rev-w77",
+  },
+  {
+    ref: "NB-261121-K10",
+    customer_name: "Caio",
+    promised_display: "Combinado para 17h30",
+    state: "in_time",
+    reason: "A retirada foi combinada para as 17h30: o não retirado libera às 18h30.",
+    money_sentence: "",
+    revision: "",
+  },
+];
+
+describe("Fim do dia: pedido pronto não retirado segura o dia (#2684)", () => {
+  it("o resumo lista cada pedido com o valor dele, e o selo pede o gerente", async () => {
+    call.mockClear();
+    const page = await openScreen(
+      projection({ pending_ready_orders: READY as never, has_pending_ready_orders: true, pending_episodes: [], has_pending_episodes: false }),
+    );
+    for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
+    await page.find("[data-closing-review]").trigger("click");
+
+    const card = page.find("[data-closing-ready-orders]").text();
+    expect(card).toContain("Um pedido pronto não foi retirado.");
+    expect(card).toContain("NB-261121-W77 · Ana");
+    expect(card).toContain("R$ 13,00 serão estornados ao Pix do cliente.");
+    expect(card).toContain("Vira não retirado");
+    expect(card).toContain("Ainda no prazo");
+    expect(card).toContain("libera às 18h30");
+
+    await page.find("[data-closing-seal]").trigger("click");
+    await flushPromises();
+    expect(call).not.toHaveBeenCalled();
+    const auth = document.body.querySelector("[data-drawer-manager-auth]");
+    expect(auth?.textContent).toContain("Autorizar fechar o dia");
+    expect(auth?.textContent).toContain("fecha e não reabre.");
+    page.unmount();
+  });
+
+  it("só pedido no prazo não segura: o resumo diz que nenhum segura o dia", async () => {
+    const page = await openScreen(
+      projection({ pending_ready_orders: [READY[1]] as never, has_pending_ready_orders: false, pending_episodes: [], has_pending_episodes: false }),
+    );
+    for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
+    await page.find("[data-closing-review]").trigger("click");
+
+    expect(page.find("[data-closing-ready-orders]").text()).toContain("nenhum segura o dia");
+    page.unmount();
+  });
+});

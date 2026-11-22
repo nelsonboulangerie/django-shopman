@@ -43,6 +43,26 @@ export interface ClosingPendingProduction {
   is_overdue: boolean;
 }
 
+/**
+ * Um pedido de retirada pronto que ninguém veio buscar (#2684). `resolve`: o "Não
+ * retirado" já pode ser feito, e o dia só fecha com a assinatura de um gerente;
+ * `in_time`: ainda no prazo combinado, aparece e não segura; `owner`: o gesto não
+ * serve a este pedido, fica com o Dono. O valor é o DESTE pedido, nunca somado.
+ */
+export interface ClosingPendingReadyOrder {
+  ref: string;
+  customer_name: string;
+  /** "Combinado para 15h"; "" sem hora combinada. */
+  promised_display: string;
+  state: "resolve" | "in_time" | "owner";
+  /** `in_time` e `owner`: o porquê, por extenso. */
+  reason: string;
+  /** `resolve`: o que acontece com o dinheiro. */
+  money_sentence: string;
+  /** `resolve`: a base que a tela leu, devolvida na assinatura. */
+  revision: string;
+}
+
 export interface ClosingUpcomingPreorder {
   date: string;
   date_display: string;
@@ -71,6 +91,10 @@ export interface DayClosingProjection {
   hourly_shape?: ClosingHourlyShape | null;
   /** Quem fecha ("Admin · gerência"). */
   operator_display?: string;
+  /** Pedidos prontos que ninguém veio buscar (#2684). */
+  pending_ready_orders?: ClosingPendingReadyOrder[];
+  /** Algum deles SEGURA o dia (`state === "resolve"`). */
+  has_pending_ready_orders?: boolean;
 }
 
 /** Algo estranho que o sistema notou no dia e ninguém explicou (`OperationEpisode`). */

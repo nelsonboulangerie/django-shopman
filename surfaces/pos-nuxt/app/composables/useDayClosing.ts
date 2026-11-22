@@ -8,6 +8,15 @@ export interface ProductionRelease {
   manager_approval: { username?: string; pin?: string; badge?: string };
 }
 
+/**
+ * A assinatura que encerra como não retirado os pedidos prontos do dia (#2684): a
+ * base que a tela leu de cada um e o gerente. Uma assinatura só para todos.
+ */
+export interface ReadyOrdersRelease {
+  orders: Array<{ ref: string; revision: string }>;
+  manager_approval: { username?: string; pin?: string; badge?: string };
+}
+
 interface DayClosingDeps {
   action: { call: (path: string, opts?: { body?: Record<string, unknown> }) => Promise<unknown> };
 }
@@ -41,26 +50,37 @@ export async function useDayClosing({ action }: DayClosingDeps) {
   // ao diálogo do gerente, não a um toast: a saída É assinar de novo.
   const productionBlock = ref("");
   const releaseChallenge = ref<{ code: string; message: string } | null>(null);
+  // Pedido pronto não retirado também segura o dia (#2684): 409 `pending_ready_orders`
+  // quando falta a assinatura, ou quando a lista mudou depois que a tela leu.
+  const readyBlock = ref("");
 
   async function submit(
     quantities: Record<string, string>,
     release: ProductionRelease | null = null,
+    readyRelease: ReadyOrdersRelease | null = null,
   ): Promise<boolean> {
     if (submitting.value) return false;
     submitting.value = true;
     const body: Record<string, unknown> = { quantities };
     if (release) body.production_release = release;
+    if (readyRelease) body.ready_orders_release = readyRelease;
     try {
       await action.call("/api/v1/backstage/closing/", { body });
       productionBlock.value = "";
+      readyBlock.value = "";
       releaseChallenge.value = null;
       await refresh();
-      toast.success(release ? "Fechamento do dia registrado, com a liberação do gerente." : "Fechamento do dia registrado.");
+      toast.success(release || readyRelease ? "Fechamento do dia registrado, com a autorização do gerente." : "Fechamento do dia registrado.");
       return true;
     } catch (err) {
       const code = httpErrorCode(err);
       if (code === "pending_production") {
         productionBlock.value = httpErrorMessage(err, "Há produção aberta.");
+        await refresh();
+        return false;
+      }
+      if (code === "pending_ready_orders") {
+        readyBlock.value = httpErrorMessage(err, "Há pedido pronto que ninguém veio buscar.");
         await refresh();
         return false;
       }
@@ -106,6 +126,7 @@ export async function useDayClosing({ action }: DayClosingDeps) {
     submitting,
     submit,
     productionBlock,
+    readyBlock,
     releaseChallenge,
     answering,
     answerEpisode,

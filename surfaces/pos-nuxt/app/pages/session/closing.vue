@@ -47,7 +47,7 @@ import {
   productionRows,
   sanitizeQtyInput,
 } from "~/presentation/closing";
-import { oldestPendingDate, productionGridUrl, productionWorkOrderUrl } from "~/presentation/crossAppLinks";
+import { oldestPendingDate, orderUrl, productionGridUrl, productionWorkOrderUrl } from "~/presentation/crossAppLinks";
 import type { ClosingPendingProduction } from "~/types/closing";
 import { DRAWER_DENOMINATIONS, closeShiftDevicesWarning, formatAmountInput, shiftOpenedLine } from "~/presentation/cash";
 import { toast } from "vue-sonner";
@@ -62,6 +62,8 @@ const runtimeConfig = useRuntimeConfig();
 // do título (`#phone-actions`) e o `#actions` não é declarado.
 const { belowMd: phoneHeader } = useScreen();
 const productionUrl = computed(() => String(runtimeConfig.public.productionUrl || ""));
+// O pedido no Gestor, para quem quer ver antes de assinar (#2684).
+const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 // Sair do PDV para a Produção é troca de APP: instalado, o destino tem janela
 // própria. Quem decide `target`/`rel` é o kit, nunca um `_blank` na mão.
 const { attrsFor } = useOperatorAppLink();
@@ -84,6 +86,7 @@ const {
   submitting,
   submit,
   productionBlock,
+  readyBlock,
   releaseChallenge,
   answering,
   answerEpisode,
@@ -291,7 +294,11 @@ const pendingProductionLine = computed(() =>
 // consequência tem de estar escrita onde o PIN é digitado.
 const releaseAuthDetail = computed(() => {
   const day = closing.value?.today_display || "";
-  return `${pendingProductionLine.value} ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
+  // Com pedido pronto não retirado também, a MESMA assinatura encerra os dois (#2684).
+  const ready = closing.value?.has_pending_ready_orders
+    ? ` ${(closing.value.pending_ready_orders ?? []).filter((row) => row.state === "resolve").length === 1 ? "Um pedido pronto não retirado é encerrado" : "Os pedidos prontos não retirados são encerrados"} como não retirado.`
+    : "";
+  return `${pendingProductionLine.value}${ready} ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
 });
 const managers = computed(() => pos.value?.managers ?? []);
 const releaseOpen = ref(false);
@@ -307,8 +314,12 @@ const releaseError = computed(() =>
 watch(productionBlock, (message) => {
   if (message) releaseOpen.value = true;
 });
+// A assinatura recusada volta ao MESMO diálogo que a pediu (produção ou pedidos).
+const lastAuth = ref<"production" | "ready">("production");
 watch(releaseChallenge, (challenge) => {
-  if (challenge) releaseAuthOpen.value = true;
+  if (!challenge) return;
+  if (lastAuth.value === "ready") readyAuthOpen.value = true;
+  else releaseAuthOpen.value = true;
 });
 function askRelease() {
   if (!releaseReason.value.trim()) return;
@@ -318,13 +329,58 @@ function askRelease() {
 async function authorizeRelease(approval: { username?: string; pin?: string; badge?: string }) {
   if (!closing.value) return;
   releaseAuthOpen.value = false;
-  const done = await submit(buildQuantitiesPayload(closing.value.items, quantities), {
-    reason: releaseReason.value.trim(),
-    manager_approval: approval,
-  });
+  lastAuth.value = "production";
+  const done = await submit(
+    buildQuantitiesPayload(closing.value.items, quantities),
+    { reason: releaseReason.value.trim(), manager_approval: approval },
+    readyRelease(approval),
+  );
   if (done) {
     for (const key of Object.keys(quantities)) quantities[key] = "";
     releaseReason.value = "";
+    justClosedDay.value = true;
+  }
+}
+
+// ── Pedido pronto que ninguém veio buscar SEGURA o dia (#2684) ──────────────
+// Plano do Gestor, pergunta 5 do mapa do "Não retirado": o fechamento lista os
+// pedidos e resolve com UMA autorização de gerente, o mesmo "Não retirado" do
+// Gestor para cada um. Com produção aberta também, o mesmo PIN vale para as duas.
+const readyOrders = computed(() => closing.value?.pending_ready_orders ?? []);
+const readyToResolve = computed(() => readyOrders.value.filter((row) => row.state === "resolve"));
+const readyLine = computed(() =>
+  readyToResolve.value.length === 1
+    ? "Um pedido pronto não foi retirado."
+    : `${readyToResolve.value.length} pedidos prontos não foram retirados.`,
+);
+const READY_STATE_LABEL = { resolve: "Vira não retirado", in_time: "Ainda no prazo", owner: "Fica com o Dono" } as const;
+function readyOrderHref(ref: string): string {
+  return ordersUrl.value ? orderUrl(ordersUrl.value, ref) : "";
+}
+function readyRelease(approval: { username?: string; pin?: string; badge?: string }) {
+  if (!readyToResolve.value.length) return null;
+  return {
+    orders: readyToResolve.value.map((row) => ({ ref: row.ref, revision: row.revision })),
+    manager_approval: approval,
+  };
+}
+const readyAuthOpen = ref(false);
+const readyAuthDetail = computed(() => {
+  const day = closing.value?.today_display || "";
+  return `${readyLine.value} Cada um é encerrado como não retirado, com o dinheiro como mostrado na lista. ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
+});
+// O servidor é quem sabe: se recusou porque a lista mudou, a tela já releu e a
+// assinatura sobe de novo, agora com a lista certa.
+watch(readyBlock, (message) => {
+  if (message) toast.warning(message);
+});
+async function authorizeReady(approval: { username?: string; pin?: string; badge?: string }) {
+  if (!closing.value) return;
+  readyAuthOpen.value = false;
+  lastAuth.value = "ready";
+  const done = await submit(buildQuantitiesPayload(closing.value.items, quantities), null, readyRelease(approval));
+  if (done) {
+    for (const key of Object.keys(quantities)) quantities[key] = "";
     justClosedDay.value = true;
   }
 }
@@ -334,6 +390,10 @@ async function confirmSubmit() {
   if (!closing.value || !canSubmit.value) return;
   if (closing.value.has_pending_production) {
     releaseOpen.value = true;
+    return;
+  }
+  if (closing.value.has_pending_ready_orders) {
+    readyAuthOpen.value = true;
     return;
   }
   const day = closing.value.today_display;
@@ -950,6 +1010,55 @@ const discrepancyColumns = [
               </div>
             </NuxtCard>
 
+            <!-- PEDIDOS PRONTOS NÃO RETIRADOS (#2684): cada um com o que o fechamento faz
+                 com ele e o valor DELE (nunca somado). Os que viram não retirado seguram
+                 o dia até a assinatura de um gerente; os demais só aparecem. -->
+            <NuxtCard v-if="readyOrders.length" data-closing-ready-orders>
+              <div class="grid gap-3">
+                <div class="flex items-center gap-3">
+                  <Icon
+                    :name="readyToResolve.length ? 'lucide:triangle-alert' : 'lucide:info'"
+                    class="size-5 shrink-0"
+                    :class="readyToResolve.length ? 'text-warning' : 'text-muted-foreground'"
+                  />
+                  <p class="min-w-0 flex-1 op-body">
+                    {{ readyToResolve.length
+                      ? `${readyLine} Fechar o dia encerra como não retirado, com a autorização de um gerente.`
+                      : "Pedidos prontos esperando a retirada: nenhum segura o dia." }}
+                  </p>
+                </div>
+                <ul class="grid gap-1.5" aria-label="Pedidos prontos não retirados">
+                  <li
+                    v-for="row in readyOrders"
+                    :key="row.ref"
+                    class="grid gap-1 rounded-lg bg-secondary px-3 py-2"
+                    :data-closing-ready-order="row.state"
+                  >
+                    <span class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span class="min-w-0 font-medium">
+                        {{ row.ref }}<template v-if="row.customer_name"> · {{ row.customer_name }}</template>
+                      </span>
+                      <NuxtBadge
+                        :color="row.state === 'resolve' ? 'warning' : 'neutral'"
+                        variant="subtle"
+                        :label="READY_STATE_LABEL[row.state]"
+                      />
+                    </span>
+                    <span v-if="row.promised_display" class="op-micro text-muted-foreground">{{ row.promised_display }}</span>
+                    <span class="op-micro">{{ row.state === "resolve" ? row.money_sentence : row.reason }}</span>
+                    <a
+                      v-if="readyOrderHref(row.ref)"
+                      class="justify-self-start op-micro font-semibold underline underline-offset-4"
+                      :href="readyOrderHref(row.ref)"
+                      v-bind="attrsFor(readyOrderHref(row.ref))"
+                      :aria-label="`Abrir o pedido ${row.ref} no Gestor`"
+                      data-closing-ready-order-link
+                    >Abrir no Gestor</a>
+                  </li>
+                </ul>
+              </div>
+            </NuxtCard>
+
             <!-- EXPLICAR O DIA ESTRANHO: só aparece quando o sistema notou um sinal. A
                  resposta marca o dia (o plano e o B.I. não aprendem com ele). -->
             <NuxtCard
@@ -1088,6 +1197,17 @@ const discrepancyColumns = [
         </div>
       </template>
     </NuxtModal>
+
+    <OperatorManagerAuth
+      v-model:open="readyAuthOpen"
+      action="day_closing_not_picked_up"
+      :detail="readyAuthDetail"
+      :managers="managers"
+      :busy="submitting"
+      :error="releaseError"
+      @authorize="(username: string, pin: string) => authorizeReady({ username, pin })"
+      @authorize-badge="(badge: string) => authorizeReady({ badge })"
+    />
 
     <OperatorManagerAuth
       v-model:open="releaseAuthOpen"
