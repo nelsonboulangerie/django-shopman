@@ -52,6 +52,11 @@ Um espaço é preenchido só quando o lastro vale **e** é de um tipo que o espa
 o espaço fica vazio e a verificação segura a mensagem. Espaço sem lastro informado é erro de
 programação, nunca texto vazio que passa.
 
+Cada parte composta registra o molde que a compôs (`RenderedPart.template_id`, e a lista em
+`Composed.template_ids`). É só registro: não muda texto, lastro nem verificação. Serve ao
+adaptador que decide ou mede por molde (por exemplo, ligar o motor só onde a casa tem a frase
+dela).
+
 ## 3. Compor (`compose.py`)
 
 `compose(specs, templates, evidence, rules, formatters, decision_id, record) -> Composed(plan,
