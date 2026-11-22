@@ -4033,6 +4033,60 @@ class OrderResendPaymentLinkView(_OrderActionBase):
         responses={200: OpenApiResponse(description="Available dates and readiness-annotated windows.")},
     ),
 )
+class POSDeliveryFeeView(APIView):
+    """A taxa de entrega na tela de venda, antes do pagamento (#2402).
+
+    ``POST {delivery_address_structured, delivery_address, merchandise_q,
+    customer_ref}``. Responde os mesmos campos de taxa da review, para o
+    Recebimento mostrar o número que a loja calcula, em vez de "calculada no
+    pagamento". A geocodificação de quem chega sem coordenada é por endereço e
+    fica em cache, então perguntar de novo quando a venda muda não sai caro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        body = request.data or {}
+        address = body.get("delivery_address_structured")
+        try:
+            merchandise_q = max(0, int(body.get("merchandise_q") or 0))
+        except (TypeError, ValueError):
+            frase = "O valor dos produtos chegou ilegível."
+            return Response(
+                {"detail": frase, "field": "merchandise_q", "errors": {"merchandise_q": [frase]}},
+                status=400,
+            )
+        delivery = pos_tabs_service.resolve_delivery_fee(
+            address_structured=address if isinstance(address, dict) else {},
+            address_text=str(body.get("delivery_address") or ""),
+            merchandise_q=merchandise_q,
+            channel_ref=POS_CHANNEL_REF,
+            customer_ref=str(body.get("customer_ref") or "").strip(),
+        )
+        return Response({"ok": True, **_delivery_fee_quote_payload(delivery)})
+
+
+def _delivery_fee_quote_payload(delivery) -> dict:
+    """Os campos de taxa da review (``_pos_sale_review_payload``), para a mesma tela ler."""
+    waiver = delivery.waiver
+    waiver_review = None
+    if waiver is not None and delivery.source not in ("manual", "blocked"):
+        waiver_review = {
+            "reason": waiver.reason,
+            "promotion_name": waiver.promotion_name,
+            "threshold_q": waiver.threshold_q,
+            "base_fee_q": waiver.base_fee_q,
+            "group_name": waiver.group_name,
+        }
+    return {
+        "delivery_fee_q": delivery.fee_q,
+        "delivery_fee_source": delivery.source,
+        "delivery_distance_km": delivery.distance_km,
+        "delivery_fee_waiver": _delivery_fee_waiver_payload(waiver_review),
+    }
+
+
 class POSScheduleView(APIView):
     """As datas e janelas combináveis — perguntado na ABERTURA, não no pagamento.
 
