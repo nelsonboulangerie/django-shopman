@@ -68,10 +68,11 @@ async function goesToSignInFromBag (page: Page, testInfo: TestInfo, replyButton:
   await expect(page).toHaveURL(/\/entrar\?next=%2Ffinalizar|\/entrar\?next=\/finalizar/)
   await settled(page)
   await expect(page.getByRole('heading', { name: 'Entre pelo WhatsApp', level: 1 })).toBeVisible()
-  // A sacola segue com o item enquanto ela entra. (A frase "Sua sacola está guardada."
-  // não aparece nesta chegada: entrar.vue lê a sacola do shell em cache, carregado
-  // quando a sacola ainda estava vazia. Achado da J14, fora do que ela afirma.)
+  // A sacola segue com o item enquanto ela entra, e a página diz isso (#3271: ela lia
+  // a sacola do shell em cache, vazio, e caía no neutro "Sem senha, rápido e seguro.").
   await expect(page.getByRole('link', { name: 'Sacola, 1 item', exact: true }).first()).toBeVisible()
+  await expect(page.getByText('Sua sacola está guardada.')).toBeVisible()
+  await expect(page.getByText('Sem senha, rápido e seguro.')).toHaveCount(0)
 
   const panel = page.locator('[data-login-whatsapp-open]')
   // O porquê vem antes dos passos.
@@ -119,6 +120,15 @@ async function opensWhatsapp (page: Page, testInfo: TestInfo): Promise<string> {
   await expect(waiting).toBeVisible()
   await expect(waiting).toContainText('Mensagem enviada?')
   await expect(waiting.locator('[data-login-whatsapp-manual]')).toContainText(message)
+  // A frase inteira cabe na tela, com a referência NB-… no fim: quebra a linha, nunca se
+  // corta (#3271: o `truncate` deixava "Olá! Quero entrar n…").
+  const shown = waiting.locator('[data-login-whatsapp-manual-message]')
+  await expect(shown).toHaveText(message)
+  expect(await shown.evaluate(el => el.scrollWidth <= el.clientWidth), 'a mensagem não transborda').toBe(true)
+  await shown.scrollIntoViewIfNeeded()
+  await untilStill(page)
+  await capture(page, testInfo, 'plano-b-mensagem-inteira')
+  await page.evaluate(() => window.scrollTo(0, 0))
   await untilStill(page)
   await capture(page, testInfo, 'esperando-a-mensagem')
   return message
@@ -328,11 +338,25 @@ test('J14: no computador, a mensagem chega e a aba só entra com o toque em "Lib
     expect(link.released).toBe(true)
   })
 
-  await test.step('sem o toque em "Liberar", a aba continua do lado de fora', async () => {
-    await page.getByRole('button', { name: 'Já enviei. Conferir agora' }).click()
-    await expect(page.getByRole('button', { name: 'Já enviei. Conferir agora' })).toBeEnabled()
+  await test.step('sem o toque em "Liberar", a aba continua do lado de fora e diz que a mensagem chegou', async () => {
+    // A conferência automática pode já ter visto a mensagem; o botão é o mesmo.
+    const check = page.locator('[data-login-whatsapp-check]')
+    await check.click()
+    const waiting = page.locator('[data-login-whatsapp-waiting]')
+    // #3271: a tela dizia "Conferimos agora e sua mensagem ainda não chegou".
+    await expect(waiting.locator('[data-login-whatsapp-arrived]')).toContainText('Sua mensagem chegou')
+    await expect(waiting.locator('[data-login-whatsapp-arrived]')).toContainText('toque em “Liberar o Chrome”')
+    await expect(page.locator('[data-login-whatsapp-not-arrived]')).toHaveCount(0)
+    await expect(waiting).not.toContainText('ainda não chegou')
+    await expect(check).toHaveText('Já liberei. Conferir agora')
+    await expect(check).toBeEnabled()
+    // A ajuda abaixo não desmente o "Sua mensagem chegou": pergunta pela resposta.
+    const support = page.locator('[data-login-support]')
+    await expect(support).toContainText('Não recebeu a resposta no WhatsApp?')
+    await expect(support).not.toContainText('Enviou e nada aconteceu?')
+    await expect(support.getByRole('link', { name: 'Falar com a loja' })).toBeVisible()
     await expect(page).toHaveURL(/\/entrar/)
-    await expect(page.locator('[data-login-whatsapp-waiting]')).toBeVisible()
+    await untilStill(page)
     await capture(page, testInfo, 'mensagem-chegou-sem-liberar')
   })
 

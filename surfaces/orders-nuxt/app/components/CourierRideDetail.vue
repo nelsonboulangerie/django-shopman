@@ -18,8 +18,10 @@ import type {
 import { rideColor } from "~/presentation/ridePalette";
 import { rideChargeNotices, rideLine, rideNotice, rideStale, whatsappLink } from "~/presentation/deliveries";
 import { callCourier, type HouseGesture } from "~/presentation/houseCouriers";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 import { courierPositionLine } from "~/presentation/courierPosition";
 
 const props = defineProps<{
@@ -31,7 +33,7 @@ const props = defineProps<{
   /** O gesto da casa que está rodando nesta corrida (chave), ou vazio. */
   houseBusy?: string;
 }>();
-const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number]; gesture: [gesture: HouseGesture] }>();
+const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number]; closeHere: [outcome: string]; gesture: [gesture: HouseGesture] }>();
 const house = computed(() => props.ride.house ?? null);
 const call = computed(() => callCourier(props.ride));
 const tone = computed(() => rideColor(props.ride.number - 1));
@@ -41,6 +43,22 @@ const line = computed(() => rideLine(props.ride, props.now));
 const notice = computed(() => (house.value ? null : rideNotice(props.ride, props.now)));
 const noticeDismissedFor = ref("");
 const showNotice = computed(() => notice.value !== null && noticeDismissedFor.value !== notice.value.key);
+// "Encerrar aqui" (#2736): a corrida que a central nunca fechou. O botão mora no
+// próprio aviso; a confirmação abre embaixo com as saídas e o que cada uma faz.
+type CloseOutcome = { key: string; label: string; consequence: string };
+const closeConfirmation = computed(
+  () => (props.ride.close_here_action?.confirmation ?? {}) as { description?: string; outcomes?: CloseOutcome[] },
+);
+const closeArmed = ref(false);
+const noticeButtons = computed(() =>
+  notice.value?.key === "open_too_long" && props.ride.close_here_action && !closeArmed.value
+    ? [{ label: "Encerrar aqui", class: "min-h-11", onClick: () => { closeArmed.value = true; } }]
+    : [],
+);
+function closeHere(outcome: string) {
+  closeArmed.value = false;
+  emit("closeHere", outcome);
+}
 function dismissNotice() {
   noticeDismissedFor.value = notice.value?.key ?? "";
 }
@@ -86,10 +104,12 @@ function confirmCancel(reasonId?: number) {
 // Sem o botão de cancelar, o rodapé diz por quê SEGUNDO o estado: "já saiu com as
 // sacolas" só depois da coleta. Antes dela, o botão some por outro motivo (o serviço
 // não cancela por aqui), e a frase da coleta contradiria "Entregador na loja".
+// O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
+const service = computed(() => deliveryServiceName(props.ride.service_name));
 const noCancelLine = computed(() =>
   props.ride.picked_up_at
-    ? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn."
-    : "Para cancelar esta corrida, use a central da TaOn.",
+    ? `Ele já saiu com as sacolas: cancelar agora só pela central da ${service.value}.`
+    : `Para cancelar esta corrida, use a central da ${service.value}.`,
 );
 const cancelState = computed(() => courierCancelNotice(props.ride.cancel_state, props.ride.cancel_message));
 const cancelDismissed = ref("");
@@ -127,11 +147,20 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         :icon="notice.icon"
         :title="notice.title"
         :description="notice.description"
+        :actions="alertActions(notice.color, noticeButtons)"
         close
         role="status"
         data-ride-notice
         @update:open="dismissNotice"
       />
+      <div v-if="closeArmed && ride.close_here_action" class="mx-5 mt-2 flex flex-col gap-3 rounded-xl bg-elevated/60 p-3" data-ride-close-here>
+        <p class="op-body text-highlighted">{{ closeConfirmation.description }}</p>
+        <div v-for="item in closeConfirmation.outcomes ?? []" :key="item.key" class="flex flex-col gap-1.5" :data-ride-close-outcome="item.key">
+          <NuxtButton block class="min-h-11 justify-center" color="neutral" variant="outline" :label="item.label" :loading="busy" @click="closeHere(item.key)" />
+          <p class="op-micro text-muted">{{ item.consequence }}</p>
+        </div>
+        <NuxtButton class="min-h-11 self-start" color="neutral" variant="ghost" label="Agora não" @click="closeArmed = false" />
+      </div>
 
       <!-- A margem mora no invólucro: o aviso é `w-full`, e com a margem nele o X vazava do painel. -->
       <div v-if="showCancelState && cancelState" class="mx-5 mt-4">
@@ -152,7 +181,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
           variant="subtle"
           icon="i-lucide-cloud-off"
           :title="stale"
-          description="O que está aqui pode ter mudado. Confira na central da TaOn ou ligue para o entregador."
+          :description="`O que está aqui pode ter mudado. Confira na central da ${service} ou ligue para o entregador.`"
           close
           role="status"
           data-ride-stale
@@ -244,7 +273,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         <p class="op-micro font-semibold text-muted">O que aconteceu</p>
         <ul class="mt-2 flex flex-col gap-1.5 op-body">
           <li v-if="ride.called_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.called_at) }}</span><span class="text-highlighted">Corrida chamada</span></li>
-          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_reason === "transfer" ? "A TaOn trocou o entregador" : `${ride.reopened_driver || "O entregador"} desistiu` }}</span></li>
+          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_reason === "transfer" ? `A ${service} trocou o entregador` : `${ride.reopened_driver || "O entregador"} desistiu` }}</span></li>
           <li v-if="ride.pickup_eta_at && ride.state === 'coming'" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.pickup_eta_at) }}</span><span class="text-highlighted">Chegada prevista na loja</span></li>
           <li v-if="ride.near_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.near_pickup_at) }}</span><span class="text-highlighted">Perto da loja</span></li>
           <li v-if="ride.arrived_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.arrived_pickup_at) }}</span><span class="text-highlighted">Chegou na loja</span></li>
@@ -280,7 +309,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
           <NuxtButton color="error" variant="ghost" icon="i-lucide-circle-x" :label="ride.cancel_action.label" :loading="busy" :disabled="!ride.cancel_action.enabled" :title="ride.cancel_action.reason || undefined" data-ride-cancel @click="confirmingCancel = true" />
         </template>
       </template>
-      <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da TaOn antes de pedir o cancelamento de novo.</p>
+      <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da {{ service }} antes de pedir o cancelamento de novo.</p>
       <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? noCancelLine }}</p>
     </footer>
   </aside>

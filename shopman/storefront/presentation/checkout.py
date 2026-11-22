@@ -263,7 +263,9 @@ def build_checkout(
     policy = channel_capabilities(interaction.channel_ref)
     payment_methods = _payment_methods(channel_ref)
     requested_date = _delivery_date_from_context(request, delivery_date)
-    pickup_slots, earliest_slot_ref, pickup_grid = _pickup_slots(cart, delivery_date=requested_date)
+    pickup_slots, earliest_slot_ref, pickup_grid = _pickup_slots(
+        cart, delivery_date=requested_date, channel_ref=channel_ref,
+    )
     max_preorder_days, closed_dates, support_whatsapp_url = _shop_config()
     available_dates, closed_weekdays, today_over = checkout_projection.availability_dates(max_preorder_days)
 
@@ -274,7 +276,9 @@ def build_checkout(
 
     fulfillment_options = policy.fulfillment_types
     delivery_windows, earliest_delivery_window_ref = (
-        _delivery_windows(cart, delivery_date=requested_date) if "delivery" in fulfillment_options else ((), None)
+        _delivery_windows(cart, delivery_date=requested_date, channel_ref=channel_ref)
+        if "delivery" in fulfillment_options
+        else ((), None)
     )
     remembered_fulfillment = str(remembered_defaults.get("fulfillment_type") or "")
     default_fulfillment_type = (
@@ -586,6 +590,7 @@ def _pickup_slots(
     cart: CartProjection,
     *,
     delivery_date: str = "",
+    channel_ref: str | None = None,
 ) -> tuple[tuple[PickupSlotProjection, ...], str | None, str]:
     """Os horários de retirada da data pedida, anotados para o carrinho.
 
@@ -595,7 +600,9 @@ def _pickup_slots(
     try:
         from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
 
-        ctx = annotate_slots_for_checkout([item.sku for item in cart.items], delivery_date=delivery_date)
+        ctx = annotate_slots_for_checkout(
+            [item.sku for item in cart.items], delivery_date=delivery_date, channel_ref=channel_ref,
+        )
     except Exception:
         # Sem grade não há horário a escolher, e o servidor recusaria qualquer um.
         logger.warning("checkout_projection_slots_failed", exc_info=True)
@@ -618,6 +625,7 @@ def _delivery_windows(
     cart: CartProjection,
     *,
     delivery_date: str = "",
+    channel_ref: str | None = None,
 ) -> tuple[tuple[PickupSlotProjection, ...], str | None]:
     """As janelas de entrega da data pedida (hoje, sem data), anotadas para o carrinho.
 
@@ -629,7 +637,9 @@ def _delivery_windows(
     try:
         from shopman.storefront.services.pickup_slots import annotate_delivery_windows_for_checkout
 
-        context = annotate_delivery_windows_for_checkout([item.sku for item in cart.items], delivery_date=delivery_date)
+        context = annotate_delivery_windows_for_checkout(
+            [item.sku for item in cart.items], delivery_date=delivery_date, channel_ref=channel_ref,
+        )
     except Exception:
         # Sem grade não há janela a escolher, e o servidor recusaria qualquer
         # uma: a tela precisa saber que a leitura falhou, não só ver a lista vazia.

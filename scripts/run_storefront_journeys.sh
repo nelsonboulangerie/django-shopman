@@ -62,6 +62,10 @@ unset MANYCHAT_API_TOKEN
 export SHOPMAN_STOREFRONT_BASE_URL="${STORE_URL}"
 export SHOPMAN_ORDERS_BASE_URL="${GESTOR_URL}"
 export CSRF_TRUSTED_ORIGINS="${STORE_URL},${GESTOR_URL}"
+# Exportar e excluir a conta assinam um recibo com chave própria; sem ela a loja diz
+# "Solicitações temporariamente indisponíveis" e desliga os dois botões (J11). Chave só
+# desta pilha, nunca usada fora dela.
+export SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY="${SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY:-jornadas-local-only-privacy-receipt-key-0123456789}"
 
 PIDS=()
 cleanup() {

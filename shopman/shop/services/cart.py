@@ -502,6 +502,51 @@ class CouponRejected(Exception):
         self.code = code
 
 
+class CouponNotBetter(CouponRejected):
+    """O cupom é válido, mas não vence o desconto que os itens dele já têm.
+
+    Os descontos não se somam e o maior ganha; no empate, fica o que já valia. O
+    cupom sai da sacola sem ser gasto, e a superfície diz por quê, com o desconto
+    que segue valendo (``standing_label``, ``standing_q``).
+    """
+
+    def __init__(self, *, coupon_code: str, standing_label: str, standing_q: int):
+        super().__init__("coupon_not_better")
+        self.coupon_code = coupon_code
+        self.standing_label = standing_label
+        self.standing_q = standing_q
+
+
+def _line_discounts(session) -> dict[str, dict]:
+    """O desconto vencedor de cada linha (``meta._disc``), por linha.
+
+    ``{chave da linha: {"type", "label", "total_q"}}``. ``amount_q`` é por unidade;
+    a fatia de um desconto de pedido rateado vem em ``line_amount_q``.
+    """
+    from shopman.utils.monetary import monetary_mult
+
+    out: dict[str, dict] = {}
+    for index, item in enumerate(session.items or []):
+        disc = (item.get("meta") or {}).get("_disc") or {}
+        if not disc:
+            continue
+        if disc.get("scope") == "order":
+            total_q = int(disc.get("line_amount_q") or 0)
+        else:
+            total_q = monetary_mult(Decimal(str(item.get("qty") or 0)), int(disc.get("amount_q") or 0))
+        key = str(item.get("line_id") or f"{item.get('sku', '')}:{index}")
+        out[key] = {"type": disc.get("type") or "", "label": str(disc.get("label") or ""), "total_q": int(total_q)}
+    return out
+
+
+def _summarize(discounts: list[dict]) -> tuple[str, int]:
+    """Um rótulo e a soma: o rótulo do maior, que é o que a cliente reconhece."""
+    if not discounts:
+        return "", 0
+    biggest = max(discounts, key=lambda d: d["total_q"])
+    return biggest["label"], sum(d["total_q"] for d in discounts)
+
+
 def promotion_shopper(customer) -> Shopper:
     """Os eixos de ``customer`` que uma promoção pode exigir: grupo, RFM e aniversário.
 
@@ -611,11 +656,36 @@ def validate_and_apply_coupon(
             "price_tiers": [tier.ref for tier in customer.price_tiers.all()],
         }
 
+    before = Session.objects.filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
+    discounts_before = _line_discounts(before) if before is not None else {}
     session = apply_coupon_code(
         session_key=session_key, channel_ref=channel_ref, code=code, customer=payload
     )
     if session is None:
         raise CouponRejected("no_cart")
+
+    # O maior desconto ganha, e os descontos não se somam. O cupom que não vence o
+    # que os itens dele já têm sai da sacola sem ser gasto, e a cliente sabe por quê;
+    # o que vence entra no lugar, e a cliente sabe de quê.
+    coupon_pricing = (session.pricing or {}).get("coupon") or {}
+    discounts_after = _line_discounts(session)
+    if int(coupon_pricing.get("discount_q") or 0) <= 0 and coupon_pricing.get("reason") == "already_discounted":
+        standing = [d for d in discounts_after.values() if d["type"] != "coupon" and d["total_q"] > 0]
+        label, standing_q = _summarize(standing)
+        remove_coupon_code(session_key=session_key, channel_ref=channel_ref)
+        raise CouponNotBetter(coupon_code=code, standing_label=label, standing_q=standing_q)
+    replaced = [
+        discounts_before[key]
+        for key, disc in discounts_after.items()
+        if disc["type"] == "coupon"
+        and key in discounts_before
+        and discounts_before[key]["type"] not in ("", "coupon")
+        and discounts_before[key]["total_q"] > 0
+    ]
+    if replaced:
+        label, replaced_q = _summarize(replaced)
+        # Transitório, para a superfície avisar; não vai para o banco.
+        session.coupon_replaced = {"label": label, "total_q": replaced_q}
     return session, promotion.name
 
 

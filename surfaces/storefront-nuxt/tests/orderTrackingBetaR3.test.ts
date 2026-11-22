@@ -7,6 +7,7 @@ import {
   shouldRetryExpiryReconcile,
   showsTrackingSkeleton,
   timelineStepSrSuffix,
+  trackingSideActionsPrimary,
 } from '~/presentation/orderTracking'
 
 // Acompanhamento do pedido: achados da 3a rodada do beta (06/11/2026).
@@ -77,5 +78,32 @@ describe('Concluído não é anunciado como em andamento', () => {
     expect(timelineStepSrSuffix({ key: 'completed', state: 'pending' })).toBe(', ainda não')
     expect(timelineStepSrSuffix({ key: 'completed', state: 'completed' })).toBe('')
     expect(timelineStepSrSuffix({ key: 'preparing', state: 'current' })).toBe(', em andamento')
+  })
+})
+
+describe('#3257: depois do preparo, falar com o responsável é a ação principal', () => {
+  const none = { cancellationContact: false, rate: false, reorder: false, support: false }
+
+  it('com o contato disponível, ele vence o Ajuda (WhatsApp)', () => {
+    expect(trackingSideActionsPrimary({ ...none, cancellationContact: true, support: true })).toBe('cancellation_contact')
+  })
+
+  it('sem o contato (já pedido, ou antes do preparo), volta a ordem de sempre', () => {
+    expect(trackingSideActionsPrimary({ ...none, support: true })).toBe('support')
+    expect(trackingSideActionsPrimary({ ...none, reorder: true, support: true })).toBe('reorder')
+    expect(trackingSideActionsPrimary({ ...none, rate: true, reorder: true, support: true })).toBe('rate')
+    expect(trackingSideActionsPrimary(none)).toBeNull()
+  })
+
+  it('o Ajuda não usa o balão do falar com o responsável: são gestos diferentes', () => {
+    const supportButtons = page.match(/<UiButton[^>]*:href="supportUrl"[^>]*>/g) || []
+    expect(supportButtons.length).toBeGreaterThan(0)
+    for (const button of supportButtons) expect(button).toContain('icon="lucide:circle-help"')
+    expect(page).toMatch(/icon="lucide:message-circle"\s+:loading="!!actionPending\[cancellationContactAction\.ref\]"/)
+  })
+
+  it('o botão do bloco segue a regra, e o pedido já feito não o deixa principal', () => {
+    expect(page).toMatch(/:variant="sideActionsPrimary === 'cancellation_contact' \? 'default' : 'secondary'"/)
+    expect(page).toMatch(/cancellationContact: Boolean\(cancellationContactAction\.value && !cancellationContact\.value\?\.requested\)/)
   })
 })
