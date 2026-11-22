@@ -12,17 +12,24 @@ import type {
 } from "~/types/preorders";
 import type { POSPaymentResultProjection, POSProjection } from "~/types/pos";
 import { detailAction } from "../../../operator-kit/app/presentation/orderDetail";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 /** Os gestos do entregador que o balcão faz (as ações do detalhe com o mesmo `ref`). */
 type CourierGesture = "courier-dispatch" | "courier-dispatch-again" | "courier-cancel" | "courier-back";
 
-/** O que o aviso diz quando o gesto passa, e o que diz quando não passa. */
-const COURIER_GESTURE_COPY: Record<CourierGesture, { done: string; failed: string }> = {
-  "courier-dispatch": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
-  "courier-dispatch-again": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
-  "courier-cancel": { done: "Cancelamento da corrida enviado à TaOn.", failed: "Não deu para cancelar a corrida." },
-  "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
-};
+/**
+ * O que o aviso diz quando o gesto passa, e o que diz quando não passa. `service` é o
+ * nome do serviço da corrida, como o cadastro diz ("TaOn").
+ */
+function courierGestureCopy(ref: CourierGesture, service: string): { done: string; failed: string } {
+  const copy: Record<CourierGesture, { done: string; failed: string }> = {
+    "courier-dispatch": { done: `Pedido de entregador enviado à ${service}.`, failed: "Não deu para chamar o entregador." },
+    "courier-dispatch-again": { done: `Pedido de entregador enviado à ${service}.`, failed: "Não deu para chamar o entregador." },
+    "courier-cancel": { done: `Cancelamento da corrida enviado à ${service}.`, failed: "Não deu para cancelar a corrida." },
+    "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
+  };
+  return copy[ref];
+}
 
 export interface ManagerChallenge {
   code: string;
@@ -297,11 +304,11 @@ export function usePosPreorderActions(options: {
     try {
       await action.call(path, { body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) } });
       lastAttempt = null;
-      toast.success(COURIER_GESTURE_COPY[ref].done);
+      toast.success(courierGestureCopy(ref, deliveryServiceName(detail.courier?.service_name)).done);
       await options.refresh();
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, COURIER_GESTURE_COPY[ref].failed)} Confira a encomenda e tente de novo.`);
+      toast.error(`${httpErrorMessage(error, courierGestureCopy(ref, "").failed)} Confira a encomenda e tente de novo.`);
       await options.refresh();
       return false;
     } finally {

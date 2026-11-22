@@ -649,3 +649,69 @@ def test_lote_sem_baixa_antecipada_fecha_como_sempre(lote, django_capture_on_com
         ("planejado", D("10")), ("em_producao", D("10")), ("em_producao", D("-10")), ("vitrine", D("10")),
     ]
     assert not Move.objects.filter(quant__sku=SKU, kind=Move.Kind.SELL).exists()
+
+
+
+# ── #2729: cancelar o lote que já entregou pão é recusado ───────────────────
+
+
+def _cancelar(work_order) -> None:
+    work_order.refresh_from_db()
+    production.apply_void(
+        work_order_id=work_order.pk, actor=ACTOR, expected_rev=work_order.rev,
+        idempotency_key=f"void-{work_order.pk}",
+    )
+
+
+def test_cancelar_o_lote_que_ja_entregou_e_recusado_e_nada_muda(lote, caixa, django_capture_on_commit_callbacks):
+    """Medido em 18/11: o balcão entrega 4 do lote aberto e o lote é cancelado.
+
+    Antes: o cancelamento passava, a entrega ficava num saldo de produção zerado, de
+    um lote que não produziu nada (``-6 adjust``), sem aviso nenhum.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.services.production import ProductionError
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _vender_no_balcao(caixa, 4)
+    antes = (_saldo("em_producao"), _vendido_no_ledger())
+
+    with pytest.raises(ProductionError, match=r"4 un\. dele já foram entregues\. Feche o lote com o que ele rendeu"):
+        _cancelar(lote)
+
+    lote.refresh_from_db()
+    assert lote.status == WorkOrder.Status.STARTED
+    assert (_saldo("em_producao"), _vendido_no_ledger()) == antes
+
+
+def test_lote_sem_entrega_continua_podendo_ser_cancelado(lote, django_capture_on_commit_callbacks):
+    from shopman.craftsman.models import WorkOrder
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _cancelar(lote)
+
+    lote.refresh_from_db()
+    assert lote.status == WorkOrder.Status.VOID
+
+
+def test_entrega_que_outro_lote_do_dia_cobre_nao_trava_o_cancelamento(
+    ficha, lote, caixa, django_capture_on_commit_callbacks,
+):
+    from shopman.craftsman.models import WorkOrder
+
+    outro = _planejar(ficha)
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _vender_no_balcao(caixa, 4)
+    with django_capture_on_commit_callbacks(execute=True):
+        _cancelar(lote)
+
+    lote.refresh_from_db()
+    assert lote.status == WorkOrder.Status.VOID
+    assert outro.status == WorkOrder.Status.PLANNED
