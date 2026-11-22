@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('shop', '0134_conversational_commitment'),
+        ('shop', '0135_paid_api_call'),
     ]
 
     operations = [
