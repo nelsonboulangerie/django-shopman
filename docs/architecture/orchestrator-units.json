@@ -7529,7 +7529,6 @@
             "apply_coupon_code",
             "remove_coupon_code",
             "CouponNotBetter",
-            "_coupon_potential_q",
             "_line_discounts",
             "_summarize"
           ]
@@ -20218,6 +20217,41 @@
       "tests": [
         "shopman/shop/tests/test_shelf_recheck.py::test_a_lapsed_reservation_tells_the_shelf",
         "shopman/shop/tests/test_shelf_recheck.py::test_a_renewed_reservation_wakes_nobody"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "pricing.fixed-coupon-competition",
+      "question": "O desconto de valor fixo de pedido vence, e o cupom fixo entra no lugar do desconto por item que vale menos?",
+      "owner": "pricing.fixed-coupon-competition",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.fixed_discount:swap_fixed_coupon",
+      "authoritative_symbols": [
+        "shopman.shop.services.fixed_discount:swap_fixed_coupon"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/fixed_discount.py",
+          "symbols": [
+            "best_fixed_discount",
+            "swap_in_fixed_coupon",
+            "swap_fixed_coupon"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_cupom_que_nao_vence.py::test_a_troca_do_cupom_fixo_devolve_a_linha_ao_preco_de_lista_e_tira_o_registro_deslocado"
       ],
       "test_gap_reason": null,
       "policy": false,

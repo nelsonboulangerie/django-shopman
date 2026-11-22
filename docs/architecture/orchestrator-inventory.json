@@ -10704,6 +10704,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/fixed_discount.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "pricing.fixed-coupon-competition"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/fomo.py",
       "touchpoints": [
         "service"
