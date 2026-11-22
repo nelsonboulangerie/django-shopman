@@ -153,7 +153,7 @@ def test_cancelled_order_without_attempt_is_not_issued_even_without_the_rule(set
     order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-CANCELLED-NORULE", status="cancelled", total_q=1000,
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
     with patch("shopman.shop.services.fiscal.fiscal_pool.get_backend", return_value=None):
-        assert fiscal_service.fiscal_state(order) == fiscal_service.FISCAL_STATE_NOT_ISSUED
+        assert fiscal_service.fiscal_state(order) == "not_issued"
 
 
 def test_cancelled_order_with_an_authorized_note_keeps_saying_so(_backend_present, settings):

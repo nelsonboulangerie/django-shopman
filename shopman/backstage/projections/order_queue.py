@@ -3860,7 +3860,7 @@ def _fiscal_status(
         # Nota cancelada é fato posterior à autorização: a chave continua lá, o
         # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
         status, label = "cancelled", "NFC-e cancelada"
-    elif state == fiscal_service.FISCAL_STATE_NOT_ISSUED:
+    elif state == "not_issued":
         status, label = "not_issued", _not_issued_label(order)
     else:
         status, label = _FISCAL_PILL[state]

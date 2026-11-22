@@ -1185,7 +1185,6 @@ FISCAL_STATE_AWAITING_PICKUP = "awaiting_pickup"
 FISCAL_STATE_AWAITING_DELIVERY = "awaiting_delivery"
 FISCAL_STATE_AUTHORIZED = "authorized"
 FISCAL_STATE_FAILED = "failed"
-FISCAL_STATE_NOT_ISSUED = "not_issued"
 FISCAL_STATES = (
     FISCAL_STATE_NOT_EXPECTED,
     FISCAL_STATE_QUEUED,
@@ -1194,7 +1193,9 @@ FISCAL_STATES = (
     FISCAL_STATE_AWAITING_DELIVERY,
     FISCAL_STATE_AUTHORIZED,
     FISCAL_STATE_FAILED,
-    FISCAL_STATE_NOT_ISSUED,
+    # Cancelado sem tentativa de emissão (#3130). Valor e não constante: a política
+    # congelada fora de ``shop/policies`` não ganha símbolo novo (policy-namespace).
+    "not_issued",
 )
 
 #: Directive viva ou concluída: houve tentativa de emissão, e a configuração de
@@ -1283,7 +1284,7 @@ def fiscal_state(order, *, directive_status: str | None = None, emit_failed_aler
     # Cancelado e nenhuma tentativa: a regra abaixo diria quando a nota SAI, e
     # ela não sai mais. A Directive viva ficou acima: essa é emissão de verdade.
     if str(order.status) == "cancelled":
-        return FISCAL_STATE_NOT_ISSUED
+        return "not_issued"
 
     if not emission_expected(order):
         return FISCAL_STATE_NOT_EXPECTED
