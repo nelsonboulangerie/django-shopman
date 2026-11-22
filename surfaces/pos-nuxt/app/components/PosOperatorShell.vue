@@ -196,7 +196,7 @@ const supportContext = computed(() =>
       :title="sessionEnded ? 'Sua sessão terminou' : 'Entre para operar o caixa'"
       :description="
         sessionEnded
-          ? 'Entre de novo para continuar de onde parou.'
+          ? 'Entre de novo para continuar.'
           : 'Acesse com sua conta autorizada a operar o caixa.'
       "
     />

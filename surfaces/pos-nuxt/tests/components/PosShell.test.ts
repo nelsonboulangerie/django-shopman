@@ -156,7 +156,10 @@ describe("app.vue — um shell por rota", () => {
       await nextTick();
 
       expect(wrapper.text()).toContain("Sua sessão terminou");
-      expect(wrapper.text()).toContain("Entre de novo para continuar de onde parou.");
+      expect(wrapper.text()).toContain("Entre de novo para continuar.");
+      // "De onde parou" prometia o que a casa não garante: o que foi lançado depois do
+      // último salvamento não chega ao servidor com a sessão caída.
+      expect(wrapper.text()).not.toContain("de onde parou");
       expect(wrapper.text()).not.toContain("Entre para operar o caixa");
     } finally {
       window.sessionStorage.clear();
