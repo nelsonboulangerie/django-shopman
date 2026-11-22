@@ -292,6 +292,10 @@ describe("danfeOffer — a DANFE por existência da nota, não por previsão", (
     expect(fiscalStateLabel("awaiting_pickup")).toBe("NFC-e sai na retirada");
     expect(fiscalStateLabel("awaiting_delivery")).toBe("NFC-e sai na entrega");
   });
+  it("venda cancelada sem tentativa de emissão diz o fato, sem DANFE a esperar (#3130)", () => {
+    expect(fiscalStateLabel("not_issued")).toBe("Sem NFC-e: o pedido foi cancelado");
+    expect(danfeOffer("not_issued")).toBeNull();
+  });
 });
 
 describe("P2-31: a próxima ação da tela de resultado", () => {

@@ -3798,12 +3798,21 @@ _FISCAL_PILL = {
     "not_expected": ("not_requested", "NFC-e não solicitada"),
 }
 
-#: O pedido cancelado que ainda ESPERAVA o pagamento: a nota não vai sair, e a pill
-#: diz o fato em vez de prometer (#3127: "NFC-e sai quando o pagamento confirmar"
-#: num pedido cujo Pix venceu era rótulo que mente).
-_CANCELLED_BEFORE_NOTE = {
-    "awaiting_payment": ("not_issued", "Sem NFC-e: o pedido foi cancelado antes do pagamento"),
-}
+#: O pedido cancelado sem nenhuma tentativa de emissão (``not_issued``): a nota não
+#: vai sair, e a pill diz o fato em vez de prometer. "NFC-e sai quando o pagamento
+#: confirmar" num Pix vencido (#3127) e "NFC-e em emissão" num cancelado sem nota
+#: (#3130) eram rótulos que mentiam. Quando a cobrança digital nunca confirmou, a
+#: frase diz por quê.
+_NOT_ISSUED_LABEL = "Sem NFC-e: o pedido foi cancelado"
+_NOT_ISSUED_BEFORE_PAYMENT_LABEL = "Sem NFC-e: o pedido foi cancelado antes do pagamento"
+
+
+def _not_issued_label(order: Order) -> str:
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return _NOT_ISSUED_BEFORE_PAYMENT_LABEL
+    return _NOT_ISSUED_LABEL
 
 
 class _FiscalEvidence(NamedTuple):
@@ -3830,8 +3839,8 @@ def _fiscal_status(
         # Nota cancelada é fato posterior à autorização: a chave continua lá, o
         # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
         status, label = "cancelled", "NFC-e cancelada"
-    elif order.status == Order.Status.CANCELLED and state in _CANCELLED_BEFORE_NOTE:
-        status, label = _CANCELLED_BEFORE_NOTE[state]
+    elif state == "not_issued":
+        status, label = "not_issued", _not_issued_label(order)
     else:
         status, label = _FISCAL_PILL[state]
 
