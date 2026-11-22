@@ -10,11 +10,12 @@ import {
   courierTone,
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
-import type { Action } from "~/generated/ordersContract";
+import type { Action, EquipmentOptionProjection } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
+import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
 import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 const props = defineProps<{
@@ -30,6 +31,9 @@ const props = defineProps<{
   quoting?: boolean;
   /** A última cotação falhou: a frase do servidor, ou vazio. */
   quoteError?: string;
+  /** "Separar de novo" (`courier-custody`, #2500) e as maquininhas do pedido. */
+  custodyAction?: Action;
+  equipmentOptions?: EquipmentOptionProjection[];
 }>();
 const emit = defineEmits<{
   quote: [];
@@ -40,6 +44,8 @@ const emit = defineEmits<{
   dispatchAgain: [];
   dismissReminder: [];
   dismissQuoteError: [];
+  /** "Separar de novo": o troco e a maquininha da corrida retomada. */
+  separate: [body: { change_out?: string; equipment?: string[] }];
 }>();
 
 // O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
@@ -121,6 +127,65 @@ const chargeActions = computed(() => [
       ...{ "data-courier-charge-cancel": "" },
     },
 ]);
+
+// A TaOn retomou a corrida encerrada (#2500): o troco e a maquininha tinham
+// voltado para a casa. O aviso diz o que voltou e leva o "Separar de novo", que
+// abre aqui o troco (já com o valor da chamada) e a maquininha livre.
+const toSeparate = computed(() => props.courier.custody_to_separate ?? null);
+const separateWhat = computed(() => {
+  const missing = toSeparate.value;
+  if (!missing) return "";
+  const parts = [missing.change_out_suggested_q > 0 && "O troco", missing.needs_machine && "a maquininha"].filter(Boolean);
+  return parts.length === 2 ? "O troco e a maquininha voltaram" : `${parts[0] === "O troco" ? "O troco" : "A maquininha"} voltou`;
+});
+const separating = ref(false);
+const separateChange = ref("");
+const separateMachines = computed(() => freeMachines(props.equipmentOptions ?? []));
+const separateMachine = ref("");
+watch(
+  toSeparate,
+  (missing) => {
+    separating.value = false;
+    separateChange.value = missing ? moneyInput(missing.change_out_suggested_q) : "";
+    separateMachine.value = "";
+  },
+  { immediate: true },
+);
+watch(separateMachines, (free) => {
+  if (!free.some((option) => option.ref === separateMachine.value)) separateMachine.value = free[0]?.ref ?? "";
+}, { immediate: true });
+const separateBlocked = computed(
+  () => Boolean(toSeparate.value?.needs_machine) && !separateMachine.value,
+);
+const separateActions = computed(() => [
+  !separating.value && {
+    label: props.custodyAction?.label || "Separar de novo",
+    icon: "i-lucide-hand-coins",
+    disabled: props.busy || !props.custodyAction?.enabled,
+    onClick: () => {
+      separating.value = true;
+    },
+    ...{ "data-courier-separate": "" },
+  },
+]);
+// Gesto de dinheiro: o rótulo diz tudo o que sai ("Separar R$ 26,00 e a maquininha Azul").
+const separateLabel = computed(() => {
+  const missing = toSeparate.value;
+  const money = missing && missing.change_out_suggested_q > 0 && separateChange.value.trim()
+    ? `R$ ${separateChange.value.trim()}` : "";
+  const label = separateMachines.value.find((option) => option.ref === separateMachine.value)?.label ?? "";
+  const machine = missing?.needs_machine && separateMachine.value ? `a ${machinePhrase(label)}` : "";
+  const parts = [money, machine].filter(Boolean);
+  return parts.length ? `Separar ${parts.join(" e ")}` : "Separar";
+});
+function confirmSeparate() {
+  if (separateBlocked.value) return;
+  const missing = toSeparate.value;
+  emit("separate", {
+    ...(missing && missing.change_out_suggested_q > 0 ? { change_out: separateChange.value } : {}),
+    ...(missing?.needs_machine && separateMachine.value ? { equipment: [separateMachine.value] } : {}),
+  });
+}
 
 // Chamar entregador abre o MESMO sheet das Entregas (`CourierCallSheet`, #2876): a
 // página é dona dele (custódia, quem vai junto, cotação da sugestão). Aqui o toque só
@@ -346,6 +411,60 @@ const vehicle = computed(() =>
           title="Falha ao abrir a corrida"
           :description="courier.error.message"
         />
+
+        <!-- a TaOn retomou a corrida encerrada: separar de novo o que voltou (#2500) -->
+        <NuxtAlert
+          v-if="toSeparate"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-hand-coins"
+          :title="`${separateWhat} para a casa`"
+          :description="`A ${service} retomou a corrida. Separe de novo antes de entregar a sacola.`"
+          :actions="alertActions('warning', separateActions)"
+          role="status"
+          data-courier-custody-missing
+        />
+        <div v-if="toSeparate && separating" class="flex flex-col gap-3 rounded-lg border border-default p-3" data-courier-separate-form>
+          <NuxtFormField v-if="toSeparate.change_out_suggested_q > 0" label="Troco a levar" name="change_out">
+            <NuxtInput v-model="separateChange" inputmode="decimal" class="w-40" data-courier-separate-change>
+              <template #leading><span class="text-muted">R$</span></template>
+            </NuxtInput>
+          </NuxtFormField>
+          <NuxtFormField v-if="toSeparate.needs_machine" label="Maquininha" name="equipment">
+            <NuxtSelect
+              v-if="separateMachines.length"
+              v-model="separateMachine"
+              :items="separateMachines.map((option) => ({ value: option.ref, label: option.label }))"
+              class="w-60"
+              data-courier-separate-machine
+            />
+            <p v-else class="text-sm text-error" data-courier-separate-no-machine>
+              Nenhuma maquininha livre agora. Receba uma de volta antes de separar.
+            </p>
+          </NuxtFormField>
+          <div class="flex flex-wrap gap-2">
+            <NuxtButton
+              type="button"
+              color="primary"
+              icon="i-lucide-check"
+              :label="separateLabel"
+              :disabled="busy || separateBlocked || !custodyAction?.enabled"
+              :loading="busy"
+              class="min-h-11"
+              data-courier-separate-go
+              @click="confirmSeparate"
+            />
+            <NuxtButton
+              type="button"
+              color="neutral"
+              variant="outline"
+              label="Agora não"
+              class="min-h-11"
+              data-courier-separate-keep
+              @click="separating = false"
+            />
+          </div>
+        </div>
 
         <!-- o pedido mudou depois da chamada: a corrida leva a cobrança antiga -->
         <NuxtAlert

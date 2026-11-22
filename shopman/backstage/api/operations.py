@@ -5244,6 +5244,40 @@ class OrderCourierCancelView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Separate again the change and the card machine of a ride the courier central resumed",
+        responses={200: OpenApiResponse(description="Custody recorded.")},
+    ),
+)
+class OrderCourierCustodyView(_OrderActionBase):
+    intention_operation = "courier-custody"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        # O mesmo formato da custódia da chamada (``OrderCourierDispatchView``).
+        equipment = request.data.get("equipment") or []
+        if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
+            return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
+        equipment = sorted(set(equipment))
+        change_out = request.data.get("change_out")
+        if change_out is not None and not isinstance(change_out, str | int | float):
+            return Response({"detail": "Troco inválido."}, status=400)
+        change_out = None if change_out is None else str(change_out)
+
+        def execute(base):
+            return orders_service.courier_custody(
+                order, actor=_actor(request), expected_revision=base, operator=request.user,
+                change_out_raw=change_out, equipment=equipment,
+            )
+
+        return self._context_response(request, order, self.intention_operation,
+                                      {"change_out": change_out, "equipment": equipment}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Close here the ride the courier central never closed (delivered or back at the store)",
         responses={200: OpenApiResponse(description="Ride closed here.")},
     ),
