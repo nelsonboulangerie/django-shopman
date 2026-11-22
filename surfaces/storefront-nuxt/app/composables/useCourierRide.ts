@@ -11,6 +11,8 @@ import {
   type CourierTheme,
   type PendingDelivery,
   type ProblemKind,
+  type TrackingState,
+  POSITION_SECONDS,
   newDeviceKey,
   parsePending,
   parseTheme,
@@ -225,6 +227,88 @@ export function useCourierRide (token: Ref<string>) {
     undoLeft.value = 0
   }
 
+  // ── A posição e a tela acesa, com a rota na rua (#2509) ───────────────────
+  //
+  // Depois de "Saí da loja", a página pede a localização e manda a última posição a cada
+  // 15 s enquanto estiver aberta, e mantém a tela acesa (Screen Wake Lock). Com a tela
+  // apagada ou outro app na frente o navegador para de dar posição: a loja vê a idade.
+
+  const tracking = ref<TrackingState>('off')
+  /** Onde o celular está agora, para o mapa da corrida seguir a moto (#2509). */
+  const here = ref<{ lat: number, lng: number } | null>(null)
+  let watchId: number | null = null
+  let sendTimer: ReturnType<typeof setInterval> | null = null
+  let lastFix: { lat: number, lng: number, accuracy: number, at: string } | null = null
+  let wakeLock: { release: () => Promise<void> } | null = null
+
+  async function keepAwake () {
+    const nav = navigator as Navigator & { wakeLock?: { request: (kind: 'screen') => Promise<{ release: () => Promise<void> }> } }
+    if (wakeLock || !nav.wakeLock || document.visibilityState !== 'visible') return
+    try {
+      wakeLock = await nav.wakeLock.request('screen')
+      ;(wakeLock as unknown as EventTarget).addEventListener?.('release', () => { wakeLock = null })
+    } catch {
+      wakeLock = null // bateria fraca ou o sistema recusou: a corrida segue, só a tela apaga
+    }
+  }
+
+  function letSleep () {
+    void wakeLock?.release().catch(() => {})
+    wakeLock = null
+  }
+
+  async function sendFix () {
+    const fix = lastFix
+    if (!fix || document.visibilityState !== 'visible' || pending.value) return
+    lastFix = null
+    await call('events/', { action: 'position', ...fix })
+  }
+
+  function startTracking () {
+    void keepAwake()
+    if (watchId !== null || tracking.value === 'denied') return
+    if (!('geolocation' in navigator)) {
+      tracking.value = 'unavailable'
+      return
+    }
+    tracking.value = 'asking'
+    watchId = navigator.geolocation.watchPosition(
+      (where) => {
+        tracking.value = 'on'
+        here.value = { lat: where.coords.latitude, lng: where.coords.longitude }
+        lastFix = {
+          lat: where.coords.latitude,
+          lng: where.coords.longitude,
+          accuracy: Math.round(where.coords.accuracy),
+          at: new Date(where.timestamp).toISOString()
+        }
+      },
+      (failure) => {
+        if (failure.code === failure.PERMISSION_DENIED) {
+          tracking.value = 'denied'
+          stopTracking()
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 30_000 }
+    )
+    sendTimer = setInterval(() => { void sendFix() }, POSITION_SECONDS * 1000)
+  }
+
+  function stopTracking () {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId)
+    watchId = null
+    if (sendTimer) clearInterval(sendTimer)
+    sendTimer = null
+    lastFix = null
+    if (tracking.value !== 'denied') tracking.value = 'off'
+    letSleep()
+  }
+
+  watch(() => view.value?.moment, (moment) => {
+    if (moment === 'route') startTracking()
+    else stopTracking()
+  })
+
   // ── Problema ──────────────────────────────────────────────────────────────
 
   async function problem (orderRef: string, kind: ProblemKind, payment = '') {
@@ -255,7 +339,10 @@ export function useCourierRide (token: Ref<string>) {
   // ── Ciclo de vida ─────────────────────────────────────────────────────────
 
   function onVisible () {
-    if (document.visibilityState === 'visible') void refresh()
+    if (document.visibilityState !== 'visible') return
+    void refresh()
+    // O sistema solta a tela acesa quando a página some; na volta, pede de novo.
+    if (view.value?.moment === 'route') void keepAwake()
   }
 
   onMounted(async () => {
@@ -278,6 +365,7 @@ export function useCourierRide (token: Ref<string>) {
     if (pollTimer) clearInterval(pollTimer)
     if (undoTimer) clearInterval(undoTimer)
     if (noticeTimer) clearTimeout(noticeTimer)
+    stopTracking()
     document.removeEventListener('visibilitychange', onVisible)
   })
 
@@ -289,6 +377,8 @@ export function useCourierRide (token: Ref<string>) {
     notice,
     busy,
     offline,
+    tracking,
+    here,
     refresh,
     claim,
     depart,

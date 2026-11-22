@@ -1065,7 +1065,15 @@
             "RESOLVED_BY_REFUND",
             "RESOLVED_BY_UNDO",
             "_PHASE_STUCK_MARKER",
-            "resolve_superseded_phase_alerts"
+            "resolve_superseded_phase_alerts",
+            "RETIRED_TYPES",
+            "_WORK_ORDER_ACTION_BY_STATUS",
+            "_WORK_ORDER_STATE_WORDS",
+            "_is_seed_order",
+            "_is_seed_work_order",
+            "_synthetic_reason",
+            "_IFOOD_UNHANDLED_MARKER",
+            "resolve_alerts_ended_by_fact"
           ]
         }
       ],
@@ -1073,6 +1081,7 @@
         "handler"
       ],
       "domains": [
+        "craftsman",
         "orderman"
       ],
       "ports": [],
@@ -7518,7 +7527,11 @@
           "symbols": [
             "validate_and_apply_coupon",
             "apply_coupon_code",
-            "remove_coupon_code"
+            "remove_coupon_code",
+            "CouponNotBetter",
+            "_coupon_potential_q",
+            "_line_discounts",
+            "_summarize"
           ]
         }
       ],
@@ -8322,6 +8335,7 @@
             "cancel_asks_reason",
             "cancel_refused_message",
             "ride_name",
+            "service_name",
             "CANCEL_PENDING_MESSAGE",
             "CANCEL_UNKNOWN_MESSAGE",
             "CANCEL_NOT_SENT_MESSAGE"
@@ -8494,10 +8508,19 @@
             "_status_out_of_order",
             "record_reopen",
             "reopen_view",
+            "last_failure",
+            "failure_message",
+            "ride_health",
+            "close_here",
+            "close_here_outcomes",
+            "CLOSE_DELIVERED",
+            "CLOSE_RETURNED",
             "progress_since",
             "restore_archived_ride",
             "orders_with_archived_ride",
-            "archived_ride_ended_at"
+            "archived_ride_ended_at",
+            "CANCEL_ALERT_MARKERS",
+            "_resolve_cancel_alerts"
           ]
         }
       ],
@@ -11155,6 +11178,51 @@
       ]
     },
     {
+      "id": "shop.services-demand-anchor",
+      "question": "Quando o plano de uma data cresce, a demanda sem fornada dela se prende às unidades novas?",
+      "owner": "stock.demand-anchor",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.demand_anchor:anchor_demand",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/demand_anchor.py",
+          "symbols": [
+            "_ORDER_REFERENCE_PREFIX",
+            "_resolve_over_plan_alert",
+            "anchor_demand",
+            "connect",
+            "on_production_changed"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "craftsman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:stock"
+      ],
+      "events": [
+        "production_changed"
+      ],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_plano_que_cresce_prende_a_demanda.py::test_o_plano_que_cresce_prende_a_demanda_da_encomenda_e_o_livre_fica_zero"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.demand_anchor:anchor_demand"
+      ]
+    },
+    {
       "id": "shop.services-lead-time",
       "question": "Lead time de encomenda — antecedência mínima entre o pedido e a data prometida?",
       "owner": "fulfillment.lead.time",
@@ -12446,6 +12514,7 @@
       "domains": [
         "doorman",
         "guestman",
+        "orderman",
         "payman"
       ],
       "ports": [
@@ -13432,6 +13501,7 @@
             "advance_block",
             "gestor_advance_block",
             "advance_block_message",
+            "_preorder_day",
             "advance_block_reason",
             "advance_order",
             "_handoff_hold_seconds",
@@ -14499,7 +14569,9 @@
             "_open_account_intents",
             "open_account_debt_q",
             "account_debt_settled",
-            "reduce_account_debt"
+            "reduce_account_debt",
+            "account_debt_reduced_q",
+            "money_tender_methods"
           ]
         }
       ],
@@ -19688,6 +19760,43 @@
       "out_of_extraction": false
     },
     {
+      "id": "shop.pickup-window-in-use",
+      "question": "Uma janela da grade pode sair (ou trocar de ref) com pedido aberto nela?",
+      "owner": "fulfillment.pickup-window-in-use",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.pickup_window_in_use:removal_refusal",
+      "authoritative_symbols": [
+        "shopman.shop.policies.pickup_window_in_use:removal_refusal"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/pickup_window_in_use.py",
+          "symbols": [
+            "LISTED_ORDERS",
+            "_order_line",
+            "removal_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_admin_janela_em_uso.py::test_a_politica_lista_os_pedidos_e_resume_o_resto"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.preorder-kitchen-policy",
       "question": "Quando o card da encomenda chega à Cozinha (hora combinada menos preparo menos antecedência)?",
       "owner": "preorder.kitchen-policy",
@@ -19704,6 +19813,7 @@
             "BLOCK",
             "DEFAULT_LEAD_MINUTES",
             "DEFAULT_PREP_MINUTES",
+            "MAX_MINUTES",
             "PreorderKitchenPolicy",
             "_minutes",
             "resolve_preorder_kitchen_policy"
@@ -19790,6 +19900,7 @@
             "BASE_TEXT",
             "customer_text",
             "_account_text",
+            "_mixed_text",
             "_amount"
           ]
         }
@@ -19805,6 +19916,7 @@
     {
       "entrypoint_kind": "symbol",
       "domains": [
+        "offerman",
         "orderman"
       ],
       "ports": [
@@ -19847,7 +19959,10 @@
             "_merchandise_items",
             "_components",
             "_hold_entries",
-            "_line_facts",
+            "_sku_facts",
+            "_component_values",
+            "_product_names",
+            "_is_itself",
             "next_selling_day",
             "line_decisions",
             "money_split",
@@ -19855,6 +19970,10 @@
             "money_sentence",
             "_account_sentence",
             "_on_account",
+            "_mixed_account",
+            "_mixed_sentence",
+            "_money_destination",
+            "account_split",
             "is_candidate",
             "eligibility_reason",
             "_paid_q",

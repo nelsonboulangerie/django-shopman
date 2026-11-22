@@ -179,11 +179,10 @@ def test_order_still_in_the_kitchen_says_when_it_gets_ready(client, shop, diego)
     token = own_fleet.assign([a47, c03], diego, actor="operator:ana").link.token
     stops = _post(client, "courier-ride-link-claim", token).json()["stops"]
     assert "ready_at" not in stops[0]  # o pronto não tem previsão
-    # Sem preparos medidos, vale a meta da estação do canal.
-    from shopman.shop.config import ChannelConfig
-    from shopman.shop.services.kitchen_eta import stage_minutes
+    # Sem preparos medidos, vale a meta de preparo do canal ou os 30 min da loja (#3178).
+    from shopman.shop.services.kitchen_eta import prep_goal_minutes
 
-    goal = stage_minutes("station", ChannelConfig.for_channel("web"))
+    goal = prep_goal_minutes("web")
     expected = timezone.localtime(started + timedelta(minutes=goal)).strftime("%H:%M")
     assert stops[1]["ready_at"] == expected
 
@@ -224,6 +223,42 @@ def test_an_unknown_theme_is_refused_and_unconfirmed_links_change_nothing(client
     assert refused.status_code == 409
     diego.refresh_from_db()
     assert diego.page_theme == ""
+
+
+def test_the_phone_position_feeds_the_map_only_while_on_route(client, shop, diego):
+    """#2509: a posição do celular vai para o mesmo mapa da TaOn, só com a rota na rua."""
+    from shopman.shop.services import courier_position
+
+    link = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link
+    _post(client, "courier-ride-link-claim", link.token)
+    here = {"action": "position", "lat": -23.32, "lng": -51.17, "accuracy": 12}
+    assert _post(client, "courier-ride-link-events", link.token, here).status_code == 200
+    assert courier_position.read(link.ride_ref) is None  # no balcão o celular não é a moto
+    assert "map" not in _get(client, link.token).json()  # e o mapa é da tela "Dirigindo"
+
+    route = _post(client, "courier-ride-link-events", link.token, {"action": "depart"}).json()
+    # O mapa da corrida só na rua: a chave pública do navegador e onde fica a loja.
+    assert route["map"]["origin"] == {"lat": -23.3405, "lng": -51.158}
+    assert "key" in route["map"]
+    _post(client, "courier-ride-link-events", link.token, here)
+    position = courier_position.read(link.ride_ref)
+    assert position is not None and position["source"] == courier_position.SOURCE_OWN_FLEET
+    assert (position["latitude"], position["longitude"]) == (-23.32, -51.17)
+
+
+def test_a_vague_or_foreign_position_is_not_drawn(client, shop, diego):
+    from shopman.shop.services import courier_position
+
+    link = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link
+    _post(client, "courier-ride-link-claim", link.token)
+    _post(client, "courier-ride-link-events", link.token, {"action": "depart"})
+    _post(client, "courier-ride-link-events", link.token,
+          {"action": "position", "lat": -23.32, "lng": -51.17, "accuracy": 900})
+    assert courier_position.read(link.ride_ref) is None  # palpite de 900 m não desenha a moto
+    # Outro celular não fala por esta rota.
+    refused = _post(client, "courier-ride-link-events", link.token,
+                    {"action": "position", "lat": -23.32, "lng": -51.17}, device=OTHER_PHONE)
+    assert refused.status_code == 403 and courier_position.read(link.ride_ref) is None
 
 
 def test_events_need_the_confirmation_first(client, shop, diego):

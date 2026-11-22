@@ -16,6 +16,10 @@ export interface PickupOrder {
   window?: string;
   /** CPF ou CNPJ na nota (o "CPF na nota?" da retirada, no passo do pagamento). */
   taxId?: string;
+  /** `false`: a cliente envia o pedido e não paga o Pix (fica no acompanhamento). */
+  pays?: boolean;
+  /** `true`: a loja está fechada agora e a cliente encomenda para a próxima abertura (L1). */
+  storeClosed?: boolean;
 }
 
 /** Cliente novo pede retirada (hoje, ou amanhã: a encomenda) e paga com Pix (pagamento
@@ -25,7 +29,8 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
 
   await page.getByRole("radio", { name: /^Retirada/ }).click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
-  await expect(page.getByText("Horário da retirada")).toBeVisible();
+  // O passo "Quando": a escolha do dia ("Hoje"; ou "Amanhã" quando hoje já encerrou).
+  await expect(page.getByRole("radio", { name: /^(Hoje|Amanhã)/ }).first()).toBeVisible();
   const day = order.day ?? "Hoje";
   if (day === "Hoje") await page.getByRole("radio", { name: /^Hoje/ }).click().catch(() => undefined);
   else await page.getByRole("radio", { name: new RegExp(`^${day}`) }).click();
@@ -55,18 +60,20 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   await expect(page.getByText(new RegExp(`Retirada · ${day}`)).last()).toBeVisible();
   if (order.window) await expect(page.getByText(order.window).last()).toBeVisible();
   await capture(page, testInfo, "loja-revisar");
-  return customerSendsAndPaysPix(page, testInfo);
+  return customerSendsAndPaysPix(page, testInfo, order.pays ?? true);
 }
 
 /** Cardápio → sacola → entrar com o código → nome: a cliente nova chega ao Finalizar. */
 async function customerReachesCheckout(
   page: Page,
   testInfo: TestInfo,
-  order: { product: string; phone: string; name: string; quantity?: number },
+  order: { product: string; phone: string; name: string; quantity?: number; storeClosed?: boolean },
 ): Promise<void> {
   await page.goto("/menu");
   await settled(page);
-  await expect(page.getByText(/^Aberto/).first(), "a loja da pilha precisa estar aberta agora (README: expediente)").toBeVisible();
+  if (order.storeClosed) await expect(page.getByRole("banner").first(), "a loja da pilha precisa estar fechada agora").toContainText(/Fechado agora/);
+  // Na última hora antes de fechar a loja diz "Últimos pedidos até", e ainda está aberta.
+  else await expect(page.getByText(/^(Aberto|Últimos pedidos)/).first(), "a loja da pilha precisa estar aberta agora (README: expediente)").toBeVisible();
   await page.getByRole("button", { name: `Adicionar ${order.product}`, exact: true }).first().click();
   // A sacola tem dois caminhos no celular: o ícone do topo e a aba da barra de baixo.
   const bag = page.getByRole("link", { name: /^Sacola, 1 item/ }).first();
@@ -110,12 +117,18 @@ async function customerReachesCheckout(
   await settled(page);
 }
 
-/** Revisado: envia e paga com o Pix simulado da pilha. Devolve o código do pedido. */
-async function customerSendsAndPaysPix(page: Page, testInfo: TestInfo): Promise<string> {
+/** Revisado: envia e paga com o Pix simulado da pilha (ou não paga, com `pays` falso).
+ *  Devolve o código do pedido. */
+async function customerSendsAndPaysPix(page: Page, testInfo: TestInfo, pays = true): Promise<string> {
   await page.getByRole("button", { name: "Enviar pedido" }).click();
   await expect(page).toHaveURL(/\/pedido\/[^/]+$/, { timeout: 60_000 });
   const ref = decodeURIComponent(new URL(page.url()).pathname.split("/").pop()!);
   await settled(page);
+  if (!pays) {
+    await expect(page.getByRole("button", { name: "Simular pagamento" })).toBeVisible({ timeout: 60_000 });
+    await capture(page, testInfo, "loja-pix-sem-pagar");
+    return ref;
+  }
   await page.getByRole("button", { name: "Simular pagamento" }).click();
   await expect(page.getByText("Pagamento recebido")).toBeVisible({ timeout: 60_000 });
   await capture(page, testInfo, "loja-pago");

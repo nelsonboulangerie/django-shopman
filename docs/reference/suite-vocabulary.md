@@ -60,7 +60,7 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **RevPASH · RFM** | traduzir no texto de tela; identificador, campo e comentário continuam em inglês | 22/09 | — |
 | **Validar** | fica no PDV, com precedente explícito (o Odoo usa assim) | 18/09 | — |
 | **Finalizar** | o último passo da Finalização, e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
-| **Saída** | a estação do **KDS** por onde o pedido pronto sai (entregar no balcão, despachar a entrega). A mesma palavra em dois apps mandava gente para a tela errada; a tela de finalização de lote da Produção se chama **Finalização**, e *Expedição* é só o posto da saída dos pedidos (`workstation_vocabulary.py`). O `type` gravado continua `expedition` (identificador), e o ref da estação do seed é `exit` (`backstage.0094`, 07/11: URL de operador é em inglês) | 26/09 | — |
+| **Saída** | (sozinha) a estação do **KDS** por onde o pedido pronto sai; o gesto de dinheiro do caixa é a palavra composta **Saída de caixa** (atos do PDV) (entregar no balcão, despachar a entrega). A mesma palavra em dois apps mandava gente para a tela errada; a tela de finalização de lote da Produção se chama **Finalização**, e *Expedição* é só o posto da saída dos pedidos (`workstation_vocabulary.py`). O `type` gravado continua `expedition` (identificador), e o ref da estação do seed é `exit` (`backstage.0094`, 07/11: URL de operador é em inglês) | 26/09 | — |
 | **estação** (navegação da Cozinha) | cada item da navegação da Cozinha é uma estação da casa pelo NOME do cadastro (Cafés, Lanches, Separação), levando à sua bancada (`/<ref>`; o ref é o caminho, então é em inglês: `/coffee`, `/snacks`, `/picking`, sem redirect do nome antigo), com "Estação · N pendências"; a lista vem do índice do servidor. A **Saída** leva ao Gestor. O título da bancada é o nome da estação. ⛔ item ou título genérico *Preparo*: estação é um posto específico, não existe estação chamada "Preparo"; ⛔ estação *Encomendas* (o nome é da lista do Gestor; a de separação é **Separação**, `/picking`, dono 21/11/2026) | 09/10 · 21/11 | `kds-nuxt/tests/sections.test.ts` + `useKdsShell.test.ts` |
 | **Transferir** | a AÇÃO ÚNICA de levar itens de uma comanda para outra (dono, N=1, 13/10/2026), sem modos: some "Outra comanda / Comanda nova / Juntar comandas" e nada de Juntar ou Separar como botão. O diálogo "Transferir" tem um campo, **"Para qual comanda?"**, que recebe o leitor, a digitação e a escolha na lista das comandas em uso; a ação padrão, já escolhida ao abrir, é a comanda nova pré-nomeada (`13-2`, editável ali). Vão os itens marcados, ou todos sem marca. O botão diz o RESULTADO: **"Levar 3 itens para a #12"** · **"Levar tudo para a #12 e liberar a #13"** · **"Separar 2 itens na comanda nova 13-2"** (*Separar* só nessa frase de resultado). A origem que fica vazia é liberada sozinha, com Desfazer (T2=1). A **mesa do Salão** também é destino (M=1): a ocupada leva à comanda dela (**"Levar 3 itens para a Mesa 4 (#12)"**); a livre abre a comanda nova já nela (**"Separar 2 itens na comanda nova 13-2 (Mesa 5)"**), pelas listas "Comandas em uso" e "Mesas livres". O rastro: selo **"Transf. da #13"** na comanda nova, texto inteiro **"Transferida da comanda #13"** na dica e no detalhe do pedido (T1=1). **Dividir conta** é só pagar em partes e mora SÓ no Pagamento; o ⋯ da comanda fica só com Liberar (na folha do tablet e do celular, sem o pé, Transferir segue no ⋯). ⛔ *Juntar comandas*, *Outra comanda / Comanda nova* como modos, *Separada da #13*, *Veio da #13*; ⛔ *dividir* para mover itens; *Mesclar* fora, por técnico demais | 10/10 · 13/10 | `presentation/moveLines.ts`, `tests/presentation.test.ts`, `PosMoveLinesDialog.test.ts` |
 | **Envio: Auto · Manual** | o modo do envio à cozinha no cabeçalho da comanda do PDV: um controle de dois botões ("Envio" + Auto · Manual) que grava o interruptor das estações desta comanda (o mesmo de Ajustes › Envio à cozinha; vale para todas as comandas). O QUANDO do Auto (ao sair da comanda ou depois de 90 s parada) e o alcance moram na dica. ⛔ *envio automático: desligado*, *automático desligado* | 13/10 | `presentation/ticketColumn.ts`, `tests/ticketColumn.test.ts` |
@@ -270,6 +270,7 @@ de quem escreve e de quem revisa.
 | **marcados** | o alvo das ações da comanda (dono, 13/10/2026): tocar um item marca só ele; a caixa soma. O título conta ITENS ("5 itens marcados"), e os botões dizem o alcance: **Enviar marcados**, **Transferir marcados**. Sem nada marcado: **Enviar à cozinha** (com a contagem) e **Transferir itens** valem para a comanda inteira. ⛔ *3 linhas marcadas* |
 | **liberar** | devolve a comanda ao balcão |
 | **fechar caixa** | encerra o turno de custódia |
+| **Saída de caixa · Entrada de caixa** | o gesto de tirar e de pôr dinheiro na gaveta, no botão do PDV, no diálogo do gerente ("Saída de caixa de R$ 50,00 (Troco).") e no comprovante. O nome diz a direção do dinheiro, porque quem confere as filipetas dias depois não estava no balcão (commit `2264c6ad0`, 17/08). No livro do caixa é `cashman.Entry.Kind` `cash_out`/`cash_in`; *sangria*/*suprimento* sobrevivem só como `kind` da API do backstage. ⛔ *Retirada* para o dinheiro que sai (é a forma de receber o pedido); ⛔ *Saída* sozinha (é a estação do KDS). Coordenação, 22/11/2026, #2690. Trava: `operator-kit/tests/guardrails.vocabulary.test.ts` |
 
 ⚠️ **Dívida com endereço:** `PosMoveLinesDialog.vue` tem `|| "Mover itens"` como rótulo de
 reserva — um **quarto verbo** para os três atos acima, e ele aparece exatamente quando o modo
@@ -355,6 +356,15 @@ que estava" e "Mantém o L05". Em 20/11, à pergunta "vale em algum caso? 1) em 
 na encomenda; 3) nos dois", respondeu "2". A encomenda que espera a loja continua dizendo o
 prazo (#2770). O PR que levava o prazo ao pedido do dia (#2869) foi fechado como *not
 planned*, e o item 1 do #2749 registra a decisão.
+
+⛔ **Falar com o responsável tem um nome só: "Quero falar com o responsável"** (coordenação,
+22/11/2026, #3257). É o mesmo gesto nas duas portas da ouvidoria do acompanhamento: depois
+de avaliar com nota baixa (`TRACKING_RATING_CONTACT_CTA`) e quando o preparo já começou e
+a cliente queria cancelar (`TRACKING_CANCELLATION_CONTACT_CTA`). O nome antigo da segunda
+porta, *"Pedir contato sobre cancelamento"*, falava em cancelamento logo depois de a tela
+dizer que não há mais cancelamento. No bloco "Quer cancelar?" esse botão é a ação
+principal, e o **Ajuda** (WhatsApp da loja) fica secundário: quem chegou ali quer desistir,
+e o caminho é a ouvidoria, que abre o caso no Gestor.
 
 ---
 

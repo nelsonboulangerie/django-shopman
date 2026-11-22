@@ -94,18 +94,65 @@ def test_devolucao_total_zera_a_divida_do_pedido(paes):
     assert PaymentService.account_balance_q(CLIENTE) == 0
 
 
-def test_conta_ja_acertada_e_venda_mista_seguem_com_o_dono(paes):
+def test_conta_ja_acertada_segue_com_o_dono(paes):
     acertada = _vendido_na_conta("CONTA-ACERTADA")
     PaymentService.capture(acertada.data["payment"]["intent_ref"])
-    mista = _vendido_na_conta(
-        "CONTA-MISTA",
-        payment={"method": "account", "tenders": [{"method": "account", "amount_q": 1200}, {"method": "cash", "amount_q": 1200}]},
-    )
 
     assert order_return.return_block_reason(acertada) == "A conta deste pedido já foi acertada: a devolução dele é com o Dono."
-    assert order_return.return_block_reason(mista) == (
-        "Parte na conta da casa e parte em outra forma de pagamento: a devolução deste pedido é com o Dono."
-    )
+
+
+MISTA = {"method": "mixed", "tenders": [{"method": "account", "amount_q": 1200}, {"method": "cash", "amount_q": 1200}]}
+
+
+def _vendido_misto(ref: str) -> Order:
+    """2 x R$ 12,00: R$ 12,00 na conta e R$ 12,00 em dinheiro na gaveta."""
+    order = world.ready_order(ref, [("CROIS", 2, 1200)], payment=dict(MISTA))
+    PaymentService.charge_to_account(order.ref, 1200, customer_ref=CLIENTE, idempotency_key=f"order-payment:{order.ref}:account:terminal")
+    PaymentService.settle(order.ref, 1200, "cash", idempotency_key=f"order-payment:{order.ref}:cash:terminal")
+    order.data["customer_ref"] = CLIENTE
+    order.save(update_fields=["data", "updated_at"])
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.COMPLETED)
+    order.refresh_from_db()
+    return order
+
+
+def _dinheiro_a_devolver(order: Order) -> int:
+    return sum(p.amount_q for p in payment_service.pending_cash_refunds() if p.order_ref == order.ref)
+
+
+def test_venda_mista_a_divida_sai_primeiro(paes):
+    """Decisão da coordenação (21/11/2026, #3151): o cliente deixa de dever antes de
+    qualquer dinheiro sair do caixa."""
+    order = _vendido_misto("MISTA-PARCIAL")
+    assert order_return.return_block_reason(order) == ""
+    assert order_return.money_destination(order) == (True, "em dinheiro ficam a devolver no caixa do PDV.")
+
+    _devolver(order, 1)
+
+    assert payment_service.open_account_debt_q(order) == 0
+    assert _dinheiro_a_devolver(order) == 0
+    assert order.events.get(type="account_debt_reduced").payload["amount_q"] == 1200
+
+
+def test_venda_mista_o_que_passa_da_divida_volta_em_dinheiro(paes):
+    order = _vendido_misto("MISTA-TOTAL")
+
+    _devolver(order, 2)
+
+    assert payment_service.open_account_debt_q(order) == 0
+    assert _dinheiro_a_devolver(order) == 1200
+
+
+def test_venda_mista_repetida_nao_devolve_dinheiro_a_mais(paes):
+    """No retry o abatimento devolve o MESMO valor: zero ali devolveria tudo em dinheiro."""
+    order = _vendido_misto("MISTA-RETRY")
+    _devolver(order, 1)
+
+    ReturnService.process_refund(order, 1200, "return.process", refund_reference=f"return:{order.ref}:0")
+
+    assert payment_service.open_account_debt_q(order) == 0
+    assert _dinheiro_a_devolver(order) == 0
+    assert order.events.filter(type="account_debt_reduced").count() == 1
 
 
 def test_cancelar_a_venda_na_conta_ainda_apaga_a_divida_inteira(paes):

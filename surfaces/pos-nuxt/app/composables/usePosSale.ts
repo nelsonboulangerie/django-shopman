@@ -433,7 +433,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
   const closeGuardUnavailableMessage = "Este navegador não conseguiu ativar a proteção contra cobrança duplicada. Nenhuma cobrança foi iniciada. Confira o armazenamento do navegador e reconcilie a venda antes de tentar novamente.";
   const closeGuardCoordinationUnavailableMessage = "Este navegador não oferece a coordenação segura entre abas exigida para cobrar. Nenhuma cobrança foi iniciada. Atualize o navegador ou use uma estação compatível.";
-  const closeGuardActiveMessage = "Outra aba deste PDV está finalizando uma venda. Aguarde o resultado naquela aba antes de tentar de novo.";
+  const closeGuardActiveMessage = "Outra aba deste PDV está validando uma venda. Aguarde o resultado naquela aba antes de tentar de novo.";
   const closeGuardReconciliationFailedMessage = "Não foi possível registrar a reconciliação porque o armazenamento do navegador está indisponível. A proteção continua ativa e nenhuma nova cobrança será iniciada.";
 
   // Quem segura a trava agora? `navigator.locks.query()` responde sem pegá-la.
@@ -634,14 +634,14 @@ export function usePosSale(deps: PosSaleDeps) {
         if (approval) {
           const shown = marker.approval || NO_APPROVAL_FIGURES;
           try {
-            const token = await requestSaleApprovalToken(approval, {
+            const signed = await requestSaleApprovalToken(approval, {
               tab_ref: typeof marker.body.tab_ref === "string" ? marker.body.tab_ref : "",
               reasons: shown.reasons,
               discount_q: shown.discount_q,
               account_over_q: shown.house_account_limit?.over_q || 0,
               over_plan: shown.over_plan,
             });
-            if (token) signature = { token };
+            if (signed.token) signature = { token: signed.token };
           } catch (error) {
             const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
             closeRecheckApproval.value = shown;
@@ -1243,7 +1243,7 @@ export function usePosSale(deps: PosSaleDeps) {
   // quando o retrato muda, quando a venda acaba e depois de cada tentativa de
   // fechar (a retentativa pede a assinatura de novo). O servidor confere o mesmo
   // do lado dele: carimbo de outro valor ou de outra comanda é recusa.
-  const managerSignature = shallowRef<{ token: string; portrait: string } | null>(null);
+  const managerSignature = shallowRef<{ token: string; portrait: string; approvedBy: string } | null>(null);
   const currentApprovalPortrait = computed(() => approvalPortrait({
     tabRef: cart.localTab ? "" : cart.tabRef,
     tabSessionKey: cart.tabSessionKey,
@@ -1258,6 +1258,13 @@ export function usePosSale(deps: PosSaleDeps) {
   }));
   /** O gerente assinou ESTE retrato. É o que libera "Validar". */
   const managerApproved = computed(() => managerSignature.value?.portrait === currentApprovalPortrait.value);
+  /** Quem assinou o retrato da tela, pelo nome da lista de gerentes (#2666): a venda
+   *  autorizada diz quem autorizou. Some junto com a assinatura. */
+  const managerApprovedBy = computed(() => {
+    const username = managerApproved.value ? managerSignature.value?.approvedBy || "" : "";
+    if (!username) return "";
+    return pos.value?.managers?.find((manager) => manager.username === username)?.name || username;
+  });
   // A assinatura não espera o próximo fechamento para sumir: mudou o retrato, sai agora.
   watch(currentApprovalPortrait, (portrait) => {
     if (managerSignature.value && managerSignature.value.portrait !== portrait) managerSignature.value = null;
@@ -2284,7 +2291,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (!(await confirmNewOrder({
         tone: "primary",
         title: "Iniciar nova encomenda?",
-        description: "A próxima comanda livre ficará em uso para montar esta encomenda. O pedido só será registrado ao finalizar.",
+        description: "A próxima comanda livre ficará em uso para montar esta encomenda. O pedido só será registrado ao validar.",
         confirmLabel: "Iniciar encomenda",
         cancelLabel: "Voltar sem iniciar",
         // O sim troca a tela: o foco vai à etapa da vez do assistente (quem abre a
@@ -2738,7 +2745,7 @@ export function usePosSale(deps: PosSaleDeps) {
   async function requestSaleApprovalToken(
     approval: ManagerApproval,
     shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number; over_plan?: POSOverPlanLine[] },
-  ): Promise<string> {
+  ): Promise<{ token: string; approvedBy: string }> {
     const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
     const scope = {
       tab_ref: shown.tab_ref,
@@ -2751,8 +2758,11 @@ export function usePosSale(deps: PosSaleDeps) {
     // PIN (`{username, pin}`) ou crachá (`{badge}`): o servidor aceita as duas portas
     // (`validate_manager_override`) e devolve o mesmo carimbo (#2691).
     const managerApproval = approval.badge ? { badge: approval.badge } : { username: approval.username, pin: approval.pin };
-    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: managerApproval, scope } });
-    return typeof answer?.token === "string" ? answer.token : "";
+    const answer = await action.call<{ token?: string; approved_by?: string }>(path, { body: { manager_approval: managerApproval, scope } });
+    return {
+      token: typeof answer?.token === "string" ? answer.token : "",
+      approvedBy: typeof answer?.approved_by === "string" ? answer.approved_by : "",
+    };
   }
 
   const managerCheckBusy = ref(false);
@@ -2768,15 +2778,15 @@ export function usePosSale(deps: PosSaleDeps) {
       // vale só para isso. O PIN fica no diálogo; o carimbo mora na memória da
       // aba, preso ao retrato (`managerSignature`).
       const current = review.value;
-      const token = await requestSaleApprovalToken(approval, {
+      const signed = await requestSaleApprovalToken(approval, {
         tab_ref: cart.localTab ? "" : cart.tabRef,
         reasons: current?.approval_reasons || [],
         discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
         account_over_q: current?.house_account_limit?.over_q || 0,
         over_plan: current?.preorder_over_plan || [],
       });
-      if (!token) return false;
-      managerSignature.value = { token, portrait };
+      if (!signed.token) return false;
+      managerSignature.value = { token: signed.token, portrait, approvedBy: signed.approvedBy };
       return currentApprovalPortrait.value === portrait;
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
@@ -3821,7 +3831,7 @@ export function usePosSale(deps: PosSaleDeps) {
       return;
     }
     if (orderSetupPending.value || !cart.fulfillmentConfirmed) {
-      serverError.value = "Escolha Entrega ou Retirada antes de finalizar.";
+      serverError.value = "Escolha Entrega ou Retirada antes de validar.";
       return;
     }
     // Spec: the commit click must not hide an implicit review. If the review is
@@ -3923,7 +3933,7 @@ export function usePosSale(deps: PosSaleDeps) {
       } else if (failure?.focus === "customer") {
         // Recusa que se resolve identificando o cliente (ex.: agendado sem
         // cliente): o toast diz o porquê e a tela abre a identificação.
-        serverError.value = failure.recovery || failure.message || "Identifique o cliente para finalizar a venda.";
+        serverError.value = failure.recovery || failure.message || "Identifique o cliente para validar a venda.";
         customerFocusNonce.value += 1;
       } else if (failure?.order_created && failure.order_ref) {
         serverError.value = [failure.message || `Venda ${failure.order_ref} criada.`, failure.recovery].filter(Boolean).join(" ");
@@ -4103,7 +4113,7 @@ export function usePosSale(deps: PosSaleDeps) {
           attempts: 0,
         });
       } catch {
-        serverError.value = "A venda não foi guardada neste dispositivo e não está registrada. Tente finalizar de novo.";
+        serverError.value = "A venda não foi guardada neste dispositivo e não está registrada. Tente validar de novo.";
         return;
       }
       await completeSale({ ok: true, order_ref: offlineSaleLabel(id), fiscal_expected: false }, offlineSaleLabel(id), { capturedAt, id });
@@ -4658,6 +4668,7 @@ export function usePosSale(deps: PosSaleDeps) {
     serverError,
     managerApprovalError,
     managerApproved,
+    managerApprovedBy,
     managerCheckBusy,
     checkManagerApproval,
     gridProducts,

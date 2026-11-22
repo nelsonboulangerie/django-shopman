@@ -207,6 +207,9 @@ MAINTENANCE_COMMANDS = (
     # pelo campo da Shop, não toca em nada; ligada, só grava (nem envia, nem escreve no
     # comércio, nem chama modelo).
     "concierge_shadow_decisions",
+    # A PTAX final dos dias com gasto de IA (o B.I. diz em reais e só lê a cotação). Sem dia
+    # faltando, não chama a API do BCB.
+    "record_usd_brl_quotes",
     # Piloto de intenções (INTENT-PILOT-PLAN): sorteia a mensagem observada
     # recente, pré-marca as intenções e mede os classificadores. DEPOIS da
     # limpeza, de propósito: nunca sorteia o que acabou de vencer. Tetos próprios

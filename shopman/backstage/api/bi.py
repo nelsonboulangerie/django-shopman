@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.permissions import CASH_AUDIT_PERMISSION, can_audit_cash
+from shopman.backstage.projections.bi_ai import build_bi_ai
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_change import build_bi_change
 from shopman.backstage.projections.bi_customers import build_bi_customers
@@ -123,12 +124,12 @@ class BIPreorderKitchenView(_BIBase):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="B.I. delivery cost: what the house pays the courier partner per ride, against the delivery fee charged",
+        summary="B.I. delivery cost: what the house pays per ride, by delivery service, against the delivery fee charged",
         responses={200: OpenApiResponse(description="B.I. delivery cost report.")},
     ),
 )
 class BIDeliveryCostView(_BIBase):
-    """Quanto a casa paga à TaOn pelas entregas, e quanto o frete cobre."""
+    """Quanto a casa paga pelas entregas, por serviço, e quanto o frete cobre."""
 
     def get(self, request):
         report = build_bi_delivery_cost(
@@ -225,6 +226,29 @@ class BICashView(_BIBase):
 
     def get(self, request):
         report = build_bi_cash(
+            date_from=_query_date(request, "date_from"),
+            date_to=_query_date(request, "date_to"),
+        )
+        return _bi_reading(report)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. AI: spend by role and model (USD micros and BRL by PTAX), pre-send conference and safe fallbacks",
+        responses={200: OpenApiResponse(description="B.I. AI report.")},
+    ),
+)
+class BIAiView(_BIBase):
+    """Quanto a casa gasta com IA e como a Concierge está respondendo.
+
+    Só do Dono (a mesma permissão do Caixa): é gasto da casa e fala de cliente, e o
+    Gerente não lê agregado financeiro (dono, 21/11/2026)."""
+
+    required_permission = ("backstage.view_bi", CASH_AUDIT_PERMISSION)
+
+    def get(self, request):
+        report = build_bi_ai(
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )

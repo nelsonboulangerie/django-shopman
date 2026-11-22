@@ -493,3 +493,51 @@ def test_encomenda_recebida_no_balcao_reagendada_para_hoje_baixa_na_entrega(vitr
 
     stock.fulfill(order)
     assert _vendidos() == Decimal("2"), "uma baixa só"
+
+
+
+# ── Uma régua só para "é encomenda?" (#3163, F-8 e F-9) ──────────────────────
+
+
+def test_encomenda_de_ontem_trazida_para_hoje_continua_encomenda(vitrine):
+    """F-9: o reagendamento regravava o carimbo como "data depois de hoje", e a
+    encomenda não paga trazida para hoje voltava a ser fila (fermata)."""
+    from shopman.shop.services import waitlist
+    from shopman.shop.services.order_helpers import is_for_a_later_day, is_preorder
+
+    StockMovements.receive(quantity=Decimal("10"), sku=SKU, position=vitrine, reason="prateleira")
+    _plan(3, 5, vitrine)
+    order = _encomenda("RS-ONTEM-HOJE", 3)
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(days=1))
+    order.refresh_from_db()
+
+    late = timezone.make_aware(datetime.combine(timezone.localdate(), time(23, 30)))
+    with patch("django.utils.timezone.now", return_value=late):
+        reschedule(order, date=timezone.localdate().isoformat(), slot="", actor="pos:marina")
+
+    order.refresh_from_db()
+    assert order.data["is_preorder"] is True
+    assert is_preorder(order) is True
+    assert is_for_a_later_day(order) is False
+    assert waitlist.is_preorder(order) is True
+    assert waitlist.is_outside_the_queue(order) is True
+
+
+def test_as_duas_perguntas_da_regua_unica():
+    """Encomenda é o que foi feito ANTES do dia combinado; "de outro dia" é o que
+    ainda está depois de hoje. Pedido sem data não é nenhum dos dois."""
+    from types import SimpleNamespace
+
+    from shopman.shop.services.order_helpers import is_for_a_later_day, is_preorder
+
+    today = timezone.localdate()
+    now = timezone.now()
+
+    def pedido(created_days_ago: int, day_offset: int | None):
+        data = {} if day_offset is None else {"delivery_date": (today + timedelta(days=day_offset)).isoformat()}
+        return SimpleNamespace(created_at=now - timedelta(days=created_days_ago), data=data)
+
+    assert (is_preorder(pedido(0, 2)), is_for_a_later_day(pedido(0, 2), today=today)) == (True, True)
+    assert (is_preorder(pedido(1, 0)), is_for_a_later_day(pedido(1, 0), today=today)) == (True, False)
+    assert (is_preorder(pedido(0, 0)), is_for_a_later_day(pedido(0, 0), today=today)) == (False, False)
+    assert (is_preorder(pedido(0, None)), is_for_a_later_day(pedido(0, None), today=today)) == (False, False)

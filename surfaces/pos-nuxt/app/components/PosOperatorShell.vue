@@ -80,13 +80,13 @@ const forbidden = computed(() => surface.value.showForbidden);
 // (login/lock) os canais são negados e o EventSource entraria no ciclo de
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
 // O aviso de comanda relê só o quadro (`refreshTabs`); o de estoque, só os selos
-// da grade (`refreshAvailability`); o do caixa, o poll e a volta à aba relêem a
-// projeção inteira.
+// da grade (`refreshAvailability`); produto pausado e mutação do canal, o do caixa,
+// o poll e a volta à aba relêem a projeção inteira.
 // Recusado não relê: a resposta seria o mesmo 403.
 const { realtime } = usePosEvents(
-  (channel) => {
+  (channel, event) => {
     if (forbidden.value) return;
-    const scope = refreshScopeForChannel(channel?.path);
+    const scope = refreshScopeForChannel(channel?.path, event);
     if (scope === "tabs") return refreshTabs();
     if (scope === "availability") return refreshAvailability();
     return refresh();
