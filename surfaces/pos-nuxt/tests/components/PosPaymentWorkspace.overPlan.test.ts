@@ -55,8 +55,9 @@ describe("PosPaymentWorkspace: encomenda acima do plano pede o gerente com os n�
     await w.vm.$nextTick();
     const dialog = w.findComponent({ name: "OperatorManagerAuth" });
     expect(dialog.props("open")).toBe(true);
-    // O motivo do plano fala pelos números (contexto), não pela copy genérica.
-    expect(dialog.props("reasons")).toEqual([]);
+    // O motivo do plano tem nome na descrição (#2676) e os números no contexto.
+    expect(dialog.props("reasons")).toEqual(["preorder_over_plan"]);
+    expect(document.body.textContent).toContain("Encomenda acima do plano da data.");
     const context = document.body.querySelector("[data-over-plan-context]");
     expect(context?.textContent).toContain("200 pedidas, 22 planejadas para 17/11");
     expect(w.emitted("submit")).toBeUndefined();

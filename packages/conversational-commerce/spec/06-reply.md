@@ -42,6 +42,12 @@ O pacote traz só moldes genéricos mínimos (`GENERIC_TEMPLATES`), para os test
 exemplo da forma. A voz e a língua da casa são do perfil e do adaptador. A formatação também
 (dinheiro, data e quantidade, por `formatters`); a padrão é neutra.
 
+O adaptador entrega os moldes dele ao `Engine` em `house_templates`, pelo `template_id`. Cada molde
+da casa troca a frase de um molde do pacote e mantém o movimento e os espaços (nome, lastro aceito
+e faceta), porque é isso que a parte montada pelo movimento preenche. Um molde sem par no pacote,
+ou com outro movimento ou outros espaços, reprova na criação do `Engine`. O que a casa não trocar
+segue com o do pacote.
+
 Um espaço é preenchido só quando o lastro vale **e** é de um tipo que o espaço aceita. Se não,
 o espaço fica vazio e a verificação segura a mensagem. Espaço sem lastro informado é erro de
 programação, nunca texto vazio que passa.

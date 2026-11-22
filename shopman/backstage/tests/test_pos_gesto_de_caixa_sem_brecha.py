@@ -117,7 +117,9 @@ def test_tentativa_sem_chave_nomeia_o_campo(balcao):
 
 def test_fechar_venda_sem_revisao_da_comanda_fala_o_dialeto(balcao):
     resposta = balcao["client"].post(
-        BASE + "/pos/sale/close/", data=json.dumps({"tab_ref": "00001007"}), content_type="application/json",
+        # Com a chave da tentativa (#2565): o que este teste prova é a revisão da comanda.
+        BASE + "/pos/sale/close/", data=json.dumps({"tab_ref": "00001007", "client_request_id": "pos-revisao-1"}),
+        content_type="application/json",
     )
     assert resposta.status_code == 422
     corpo = resposta.json()

@@ -214,3 +214,28 @@ def test_agreed_value_saved_from_the_courier_form_inherits_his_service(admin_cli
     rate = ana.rates.get()
     assert rate.service_id == casa.pk
     assert ride_value(casa, km=9, courier=ana).value_q == 1000
+
+
+# ── o nome que a frase do operador diz (M1b-b3, #3139) ───────────────────────
+
+
+def test_the_phrase_says_the_name_from_the_record(taon):
+    """A frase do operador diz o nome do cadastro, não "TaOn" escrito no código: o
+    serviço da corrida, ou o padrão do Admin para a corrida sem serviço gravado."""
+    from shopman.backstage.projections.order_queue import courier_no_answer_message
+    from shopman.shop.services import delivery_services
+
+    assert delivery_services.service_name({"service": "taon"}) == "TaOn"
+    taon.name = "Lalamove"
+    taon.save(update_fields=["name"])
+    assert delivery_services.service_name({"service": "taon"}) == "Lalamove"
+    assert delivery_services.service_name({}) == "Lalamove"  # o padrão do Admin
+    assert courier_no_answer_message("Lalamove").startswith("A Lalamove não respondeu")
+
+
+def test_without_any_service_the_phrase_says_central(taon, casa):
+    from shopman.shop.services import delivery_services
+
+    DeliveryService.objects.all().delete()
+    assert delivery_services.service_name({}) == delivery_services.SERVICE_FALLBACK_NAME == "central"
+    assert delivery_services.service_name({"service": "taon"}) == "central"
