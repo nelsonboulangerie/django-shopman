@@ -98,10 +98,13 @@ def set_qty_by_sku(
         with _perf_step(perf, f"mutate_{intent.action}"):
             if intent.action == "remove":
                 if intent.line_id is not None:
+                    # O stepper por SKU mostra a soma da linha com a parte que o
+                    # rateio partiu dela (#3240): a quantidade é do produto inteiro.
                     mutated_session = CartService.remove_item(
                         request,
                         line_id=intent.line_id,
                         sku=intent.sku,
+                        whole_product=True,
                     )
             elif intent.action == "update":
                 mutated_session = CartService.update_qty(
@@ -109,6 +112,7 @@ def set_qty_by_sku(
                     line_id=intent.line_id,
                     qty=intent.qty,
                     sku=intent.sku,
+                    whole_product=True,
                 )
             else:
                 # O nome do produto tem que viajar JUNTO com a linha. Sem ele o

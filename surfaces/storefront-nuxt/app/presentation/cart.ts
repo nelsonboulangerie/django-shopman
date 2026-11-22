@@ -389,7 +389,13 @@ export function applySkuQty (cart: CartProjection, meta: ProductMutationMeta, qt
   if (qty <= 0) {
     items = cart.items.filter(line => !isPlainSkuLine(line, meta.sku))
   } else if (hasLine) {
-    items = cart.items.map(line => (isPlainSkuLine(line, meta.sku) ? withQty(line, qty) : line))
+    // Duas linhas sem escolha do mesmo SKU são a linha que o rateio do desconto
+    // partiu (#3240): o PUT por SKU põe o total na primeira e a parte sai, e o
+    // preço a refaz se ainda couber. O otimista faz o mesmo, e nunca soma duas vezes.
+    const first = cart.items.find(line => isPlainSkuLine(line, meta.sku))
+    items = cart.items
+      .filter(line => line === first || !isPlainSkuLine(line, meta.sku))
+      .map(line => (line === first ? withQty(line, qty) : line))
   } else {
     items = [...cart.items, optimisticLine(meta, qty)]
   }

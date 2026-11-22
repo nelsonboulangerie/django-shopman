@@ -332,6 +332,7 @@ def _register_loyalty_handler() -> None:
 
 
 def _register_pricing_modifiers() -> None:
+    from shopman.shop.discount_spread import SplitLineMergeModifier
     from shopman.shop.handlers.pricing import ItemPricingModifier, OffermanPricingBackend, SessionTotalModifier
     from shopman.shop.modifiers import (
         CustomerPricingModifier,
@@ -348,6 +349,8 @@ def _register_pricing_modifiers() -> None:
         # O cliente vira contexto ANTES do preço: a cascata "faixa do cliente ->
         # listing" do ItemPricingModifier depende dele (ordem 5 < 10).
         CustomerPricingModifier(),
+        # A linha que o rateio partiu volta inteira antes do preço (ordem 8 < 10).
+        SplitLineMergeModifier(),
         ItemPricingModifier(backend=backend),
         LotDiscountModifier(),
         DiscountModifier(),
