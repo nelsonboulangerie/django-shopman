@@ -449,6 +449,26 @@ class Shop(models.Model):
         ),
     )
 
+    # ── Framework conversacional: o turno da Concierge pelo motor, por classe de ação (N9) ──
+    # Cada classe liga sozinha, e todas nascem desligadas. O motor só fala onde a casa tem o
+    # molde com a frase de hoje; o resto do turno segue pelo caminho de hoje. Desligar
+    # "Pedido" é o freio da escrita: informar e passar à equipe continuam.
+    conversational_live_inform = models.BooleanField(
+        "motor: informar e conversar",
+        default=False,
+        help_text="Saudação, agradecimento, informação e pedido de esclarecimento pelo motor do framework.",
+    )
+    conversational_live_handoff = models.BooleanField(
+        "motor: passar à equipe",
+        default=False,
+        help_text="O motor passa a conversa à equipe e diz até quando alguém assume.",
+    )
+    conversational_live_order = models.BooleanField(
+        "motor: pedido na conversa",
+        default=False,
+        help_text="Sacola, resumo e fechamento do pedido pelo motor. Desligar é o freio da escrita.",
+    )
+
     # ── Incidentes: o Watchman aciona o remédio do domínio (DEV-2026-066) ──
     INCIDENT_REMEDIES_MODES = [
         ("on", "Ligado: aciona e confere"),
