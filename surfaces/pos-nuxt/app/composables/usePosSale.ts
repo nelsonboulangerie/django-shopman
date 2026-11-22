@@ -95,6 +95,14 @@ import { crossAppLinkAttrs } from "../../../operator-kit/app/presentation/appLau
 import { isInstalledDisplay } from "../../../operator-kit/app/utils/displayMode";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+
+import {
+  clearTabDraft,
+  draftMatchesServer,
+  pickTabDraftFields,
+  readTabDraft,
+  writeTabDraft,
+} from "~/utils/tabDraft";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { pendingPixDeadlineMs, pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
 import { sourceReleasedMessage } from "~/presentation/moveLines";
@@ -2004,6 +2012,10 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function resetCart() {
+    // Só se chega aqui depois de algo que o servidor confirmou (venda validada,
+    // comanda liberada, itens transferidos) ou no caminho sem conexão, que tem fila
+    // própria: o rascunho desta comanda não tem mais o que devolver.
+    clearTabDraft();
     tabConflict.value = false;
     receiptIdentityChoices.value = [];
     pendingCustomerPrefs.value = {};
@@ -2251,6 +2263,7 @@ export function usePosSale(deps: PosSaleDeps) {
         invalidateReview();
       } else {
         await setFromTabPayload(payload);
+        await applyTabDraft(payload);
         // `salesMode`: a comanda abre já no modo pedido (a "Nova encomenda" da
         // seção Encomendas). Só numa comanda VAZIA: se outra estação a ocupou no
         // meio do caminho, ela abre como está, e a venda de quem a ocupou não
@@ -3429,6 +3442,8 @@ export function usePosSale(deps: PosSaleDeps) {
       // O autosave fica na comanda: a autoria que o servidor carimbou volta aqui.
       applyLineAuthors(cart.items, saved?.line_authors);
       unsaved.value = savedContent !== intentContent();
+      // O servidor tem tudo o que está na tela: o rascunho do dispositivo sai (#3315).
+      if (!unsaved.value) clearTabDraft();
       // E o preço que cada linha cobra, decidido pelo servidor (desconto manual
       // contra o automático). Só quando a tela ainda é a que foi gravada: um toque
       // feito durante a ida já tem o próprio preço, e o próximo salvar o confirma.
@@ -3503,7 +3518,84 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryFeeOverrideInput,
     cart.deliveryFeeOverride,
     cart.orderNotes,
-  ], () => scheduleAutosave(), { deep: true });
+  ], () => {
+    recordTabDraft();
+    scheduleAutosave();
+  }, { deep: true });
+
+  // O QUE NÃO CHEGOU AO SERVIDOR (#3315). Com a sessão caída, o salvamento volta
+  // 401, a casca troca a venda pelo login e o login recarrega a página: o que foi
+  // lançado depois do último salvamento sumia. Cada mudança ainda não salva fica no
+  // dispositivo (`utils/tabDraft`); depois de entrar de novo, a comanda reabre e o
+  // rascunho volta por cima dela, se ela não mudou no servidor nesse meio tempo.
+  const { data: operatorSessionData } = useNuxtData<{ operator?: { id?: number | string } | null }>("operator-session");
+  function currentOperatorId(): string {
+    const id = operatorSessionData.value?.operator?.id;
+    return id == null ? "" : String(id);
+  }
+  function recordTabDraft() {
+    if (!import.meta.client) return;
+    if (tabLoading.value || !hasOpenTab.value || cart.localTab || !cart.tabSessionKey) return;
+    if (lastPersistedContent && intentContent() === lastPersistedContent) {
+      clearTabDraft();
+      return;
+    }
+    const previous = readTabDraft();
+    const sameTab = previous?.tabSessionKey === cart.tabSessionKey;
+    writeTabDraft({
+      tabRef: cart.tabRef,
+      tabSessionKey: cart.tabSessionKey,
+      // A revisão de quando o rascunho COMEÇOU: é contra ela que a volta confere se
+      // outra estação mexeu na comanda.
+      baseRevision: sameTab ? previous!.baseRevision : cart.expectedRevision,
+      operatorId: currentOperatorId(),
+      savedAt: new Date().toISOString(),
+      fields: pickTabDraftFields(cart),
+    });
+  }
+  /** A comanda acabou de abrir: o rascunho dela, se houver, volta por cima. */
+  async function applyTabDraft(payload: POSTabPayload) {
+    if (!import.meta.client) return;
+    const draft = readTabDraft();
+    if (!draft || draft.tabSessionKey !== (payload.tab_session_key || payload.session_key)) return;
+    if (draft.operatorId !== currentOperatorId()) return; // é de outra pessoa: espera por ela
+    if (draftMatchesServer(draft, payload.items || [])) {
+      // A gravação chegou e só a resposta se perdeu: nada a devolver.
+      clearTabDraft();
+      return;
+    }
+    if ((payload.revision || "") !== draft.baseRevision) {
+      // Outra estação mexeu na comanda: reaplicar por cima apagaria o que ela fez.
+      clearTabDraft();
+      const lost = draft.fields.items.length;
+      toast.warning(
+        `A comanda ${cart.tabDisplay || cart.tabRef} mudou em outro dispositivo enquanto a sessão estava fora. `
+          + `O que foi lançado aqui antes (${lost === 1 ? "1 item" : `${lost} itens`} na tela) não foi reaplicado: confira a comanda.`,
+      );
+      return;
+    }
+    Object.assign(cart, draft.fields);
+    await nextTick();
+    tabLoading.value = false;
+    unsaved.value = true;
+    scheduleAutosave();
+    toast.success("O que foi lançado antes de a sessão cair voltou para a comanda.");
+  }
+  // Depois de entrar de novo (o login recarrega a página), a venda reabre sozinha na
+  // comanda do rascunho, uma vez, quando o terminal já respondeu. Retomar não é
+  // começar venda nova: a trava da gaveta não morde aqui.
+  let draftResumeTried = false;
+  watch(() => pos.value, (projection) => {
+    if (!import.meta.client || draftResumeTried || !projection) return;
+    draftResumeTried = true;
+    const draft = readTabDraft();
+    if (!draft || draft.operatorId !== currentOperatorId()) return;
+    // Depois do setup: a venda inteira já existe quando a comanda abre.
+    void nextTick(() => {
+      if (hasOpenTab.value || cart.items.length) return;
+      void openTab(draft.tabRef, { drawerChecked: true });
+    });
+  }, { immediate: true });
 
   async function saveTab() {
     if (tabRequiredForSave.value && !hasOpenTab.value) {
