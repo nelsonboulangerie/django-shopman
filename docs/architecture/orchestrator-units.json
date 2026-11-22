@@ -14464,7 +14464,12 @@
             "_REFUND_ALL_STATUSES",
             "_PAYMAN_REFUND_REASONS",
             "retained_q",
-            "refund_ceiling_q"
+            "refund_ceiling_q",
+            "pays_only_on_account",
+            "_open_account_intents",
+            "open_account_debt_q",
+            "account_debt_settled",
+            "reduce_account_debt"
           ]
         }
       ],
@@ -19754,6 +19759,7 @@
             "LABEL",
             "BASE_TEXT",
             "customer_text",
+            "_account_text",
             "_amount"
           ]
         }
@@ -19817,6 +19823,8 @@
             "money_split",
             "_refund_destination",
             "money_sentence",
+            "_account_sentence",
+            "_on_account",
             "is_candidate",
             "eligibility_reason",
             "_paid_q",
