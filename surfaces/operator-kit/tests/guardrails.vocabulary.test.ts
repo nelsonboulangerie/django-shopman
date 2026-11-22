@@ -355,6 +355,27 @@ describe("na tela, a navegação lateral se chama barra lateral", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO: no PDV o ato se chama **Validar** (suite-vocabulary). A
+// varredura de copy do WP-E9 (#3196) trocou "finalizar" frase a frase e deixou para
+// trás o título "Vai ao finalizar" do diálogo Cozinha, porque nada reprovava: era
+// regra sem trava. Só o PDV: "finalizar" não é palavra proibida nos outros apps.
+// Comentário é descontado: a trava é sobre o texto que chega ao operador.
+const BANNED_FINALIZE = /finaliz/i;
+const POS_APP_SOURCES = APP_SOURCES.filter((file) => relative(surfacesDir, file).startsWith("pos-nuxt/app/"));
+
+describe("no PDV o ato é Validar", () => {
+  it("nenhum texto do PDV diz 'finalizar'", () => {
+    expect(POS_APP_SOURCES.length).toBeGreaterThan(0);
+    const leaks = POS_APP_SOURCES.flatMap((file) => offenders(file, BANNED_FINALIZE, stripComments));
+    expect(
+      leaks,
+      "No PDV o ato é 'Validar' (docs/reference/suite-vocabulary.md).\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Guardrail de VOCABULÁRIO: o gesto de dinheiro do caixa se chama **Saída de caixa**
 // e **Entrada de caixa**, o nome que o PDV dá aos botões desde 17/08/2026 (commit
 // 2264c6ad0: quem confere as filipetas dias depois não estava no balcão, e
