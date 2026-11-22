@@ -687,12 +687,15 @@ RIDE_LETTERS = 26
 _RIDE_NUMBER_LOCK = 0x52494445  # "RIDE"
 
 
-def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None) -> bool:
+def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None,
+                 trips: list | None = None) -> bool:
     """A corrida deste pedido ainda ocupa uma letra (e uma cor) na tela.
 
     Viva: chamada à espera da TaOn, corrida aberta ainda não terminada, ou
     terminada com o entregador ainda devendo voltar (troco, dinheiro, maquininha).
-    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`);
+    ``trips``: os pedidos das saídas já lidos em lote
+    (``operator_orders.trip_members_for``), para a corrida finalizada com volta.
     """
     block = get_block(order)
     if not block.get("ride_number"):
@@ -705,7 +708,7 @@ def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None) -> b
             return False
         from shopman.shop.services import operator_orders
 
-        return bool(operator_orders.courier_return_members(order))
+        return bool(operator_orders.courier_return_members(order, among=trips))
     if tasks is not None:
         return any(task.status in _LIVE_TASK_STATUSES for task in tasks.get(order.ref, []))
     from shopman.shop.directives import COURIER_DISPATCH

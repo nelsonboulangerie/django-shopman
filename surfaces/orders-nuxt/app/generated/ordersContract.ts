@@ -419,9 +419,7 @@ export interface RideCandidateProjection {
   label: string;
   place: string;
   stage: string;
-  distance_label: string;
   change_label: string;
-  suggested: boolean;
 }
 
 /** Ouvidoria aberta: o cliente pediu para falar com o responsável. */
@@ -680,7 +678,7 @@ export interface OrderCardProjection {
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
   payment_lapsed: boolean;
-  customer_callable: boolean;
+  customer_whatsapp_url: string;
   advance_block_waits: boolean;
   promise: OrderPromiseProjection | null;
 }
@@ -1424,7 +1422,7 @@ export interface DeliveryServiceOptionProjection {
   is_default: boolean;
 }
 
-/** O plano das corridas (``ride_plan``): o MESMO do Painel e do ``ride_offer``. */
+/** O plano das corridas (``ride_plan``): o MESMO do sheet de chamar e do Painel. */
 export interface RidePlanProjection {
   suggestions: RideSuggestionProjection[];
   service: string;

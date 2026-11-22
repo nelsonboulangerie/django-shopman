@@ -12,9 +12,6 @@ import {
   cardAffordances,
   channelOptions,
   elapsedLabel,
-  courierRideCallLabel,
-  rideOfferLine,
-  courierRideQuestion,
   equipmentOutLabel,
   MAX_RIDE_STOPS,
   equipmentOutLine,
@@ -1026,46 +1023,6 @@ describe("uma corrida para várias entregas", () => {
     expect(buildRidesLabel(0)).toBe("Montar corridas");
     expect(buildRidesLabel(1)).toBe("Montar corridas (1 sugerida)");
     expect(buildRidesLabel(2)).toBe("Montar corridas (2 sugeridas)");
-  });
-});
-
-describe("a corrida conjunta diz a maquininha", () => {
-  it("o botão diz a maquininha que vai", () => {
-    expect(courierRideCallLabel(3)).toBe("Chamar uma corrida para 3 pedidos");
-    expect(courierRideCallLabel(2, "Azul")).toBe(
-      "Chamar uma corrida para 2 pedidos com a maquininha Azul",
-    );
-  });
-});
-
-describe("quem pode ir junto na corrida", () => {
-  it("diz em que pé está, para onde vai, quão perto e o que leva", () => {
-    expect(
-      rideOfferLine({
-        stage: "Em preparo",
-        place: "Gleba Palhano",
-        distance_label: "a 1,2 km",
-        needs_machine: true,
-        change_out_suggested_q: 0,
-      }),
-    ).toBe("Em preparo · Gleba Palhano · a 1,2 km · leva a maquininha");
-    expect(
-      rideOfferLine({
-        stage: "Pronto",
-        place: "Centro",
-        distance_label: "",
-        needs_machine: false,
-        change_out_suggested_q: 2600,
-      }),
-    ).toBe("Pronto · Centro · leva troco");
-  });
-});
-
-describe("a pergunta da corrida com várias paradas", () => {
-  it("diz quem vai e quem paga", () => {
-    expect(courierRideQuestion(["WEB-A47", "WEB-B12", "WEB-C03"])).toBe(
-      "Uma corrida da TaOn leva os pedidos A47, B12 e C03, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.",
-    );
   });
 });
 

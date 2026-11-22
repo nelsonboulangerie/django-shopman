@@ -530,11 +530,42 @@ def _outcome(step: Step, *, memory, memos):
     )
 
 
+#: O "pode fechar" dentro de uma fala com mais coisa ("quero 2 croissant e pode fechar"), no texto original.
+_START_PHRASE_RE = re.compile(
+    r"[,;.]?\s*(?:\be\s+)?(?:\bj[aá]\s+)?(?:\bpode\s+(?:j[aá]\s+)?)?"
+    r"(?:\bfecha\w*|\bfinaliz\w*|\bconclu\w*)(?:\s+(?:o|meu)\s+pedido)?"
+    r"|[,;.]?\s*(?:\be\s+)?[eé]\s+s[oó]\s+isso\b|[,;.]?\s*(?:\be\s+)?\bera\s+isso\b",
+    re.IGNORECASE,
+)
+_REST_FILLER = {"e", "ok", "entao", "por", "favor", "pfv", "obrigado", "obrigada", "isso", "so", "ja", "pode", "a", "o"}
+
+
+def split_start(text: str) -> str | None:
+    """O resto da fala quando o "pode fechar" vem junto de outro pedido (#2990); ``None`` quando é só fechar.
+
+    "quero 2 croissant e pode fechar" → "quero 2 croissant": as partes põem o item na sacola e o
+    fechamento começa no fim do mesmo turno (``resume``). Sem o pedido junto, o fechamento é o turno.
+    """
+    if not _START_RE.search(_fold(text)):
+        return None
+    rest = _START_PHRASE_RE.sub(" ", str(text or ""))
+    words = [w for w in re.findall(r"[a-z0-9]+", _fold(rest)) if w not in _REST_FILLER]
+    return " ".join(rest.split()).strip(" ,;.") if words else None
+
+
 def handle(conversation, text: str, *, binding, channel_ref: str, memory, memos=(), copy=None):
     """O turno do fechamento, ou ``None`` quando a fala não é dele (segue para as partes)."""
     from .intents import _cart_authorized
 
-    if conversation is None or not _cart_authorized(conversation) or not memory.facts.cart:
+    if conversation is None or not _cart_authorized(conversation):
+        return None
+    if memory.state.get("closing") is None:
+        rest = split_start(text)
+        if rest is not None:
+            # Item e "pode fechar" na mesma fala: primeiro a sacola, o fechamento no fim (#2990).
+            conversation._closing_after_parts = rest
+            return None
+    if not memory.facts.cart:
         return None
     if copy is None:
         from .service import copy_message as copy
@@ -567,6 +598,8 @@ def resume(conversation, outcome, *, binding, channel_ref: str, memory, copy=Non
     from .intents import _cart_authorized
 
     closing = memory.state.get("closing")
+    if closing is None and conversation is not None and getattr(conversation, "_closing_after_parts", None):
+        closing = {}  # o "pode fechar" da mesma fala: começa agora, com a sacola já com o item
     if closing is None or outcome.handoff or not outcome.reply_text or conversation is None:
         return outcome
     if not _cart_authorized(conversation):
@@ -574,6 +607,11 @@ def resume(conversation, outcome, *, binding, channel_ref: str, memory, copy=Non
     if copy is None:
         from .service import copy_message as copy
     ctx = _context(conversation, binding=binding, channel_ref=channel_ref, text="")
+    if not memory.state.get("closing"):
+        from . import tools
+
+        if not (tools.execute("view_cart", {}, ctx).get("lines")):
+            return outcome  # o item não entrou: sem sacola, nada a fechar
     try:
         step = advance(ctx, Said(), closing, copy=copy)
     except Exception:

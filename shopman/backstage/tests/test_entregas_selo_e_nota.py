@@ -166,3 +166,40 @@ def test_a_stop_with_nothing_fiscal_to_do_says_nothing(shop):
     (stop,) = build_deliveries().waiting
     assert stop.fiscal_status != "failed"
     assert stop.danfe_state in ("", "on_dispatch")
+
+
+# ── Corrida finalizada com volta pendente: a saída em lote (#2891) ────
+
+COD = {"method": "cash", "collection": "on_delivery"}
+
+
+def _finished_with_return(ref):
+    """Entregue pela TaOn (``F``) com dinheiro a voltar: a corrida segue viva até o "Entregador voltou"."""
+    order = _at(ref, -23.31, -51.16, payment=COD)
+    _call(order)
+    Directive.objects.filter(status=Directive.Status.QUEUED).update(status=Directive.Status.DONE)
+    for status in ("A", "E", "F"):
+        courier.apply_status(order, status, source="test")
+        order.refresh_from_db()
+    return order
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_badge_reads_the_trips_once_however_many_rides_wait_for_the_courier(shop):
+    """A volta pendente pergunta pela saída inteira: uma leitura em lote, igual com 1 ou 4 corridas."""
+
+    def badge() -> int:
+        with CaptureQueriesContext(connection) as captured:
+            assert deliveries_waiting_count() == 2
+        return len(captured)
+
+    _at("EN-0", -23.30, -51.16)
+    _at("EN-1", -23.30, -51.16)
+    first = _finished_with_return("EN-VOLTA-0")
+    assert first.status in (Order.Status.DISPATCHED, Order.Status.DELIVERED)
+    assert [ride.state for ride in build_deliveries().rides] == ["back"]
+    few = badge()
+    for index in range(1, 4):
+        _finished_with_return(f"EN-VOLTA-{index}")
+    assert [ride.state for ride in build_deliveries().rides] == ["back"] * 4
+    assert badge() == few <= COUNT_QUERY_CEILING

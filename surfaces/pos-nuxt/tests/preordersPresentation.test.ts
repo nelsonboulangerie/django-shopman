@@ -319,6 +319,8 @@ describe("o tom da situação — amarelo só para o que pede gesto", () => {
   it("cobrar e conferir pedem gesto; pronto é verde; o resto é neutro", () => {
     expect(situationTone("to_pay")).toBe("warning");
     expect(situationTone("check_payment")).toBe("warning");
+    // O pedido que ninguém aceitou pede um gesto (#3166).
+    expect(situationTone("new")).toBe("warning");
     expect(situationTone("ready")).toBe("success");
     expect(situationTone("out_for_delivery")).toBe("info");
     expect(situationTone("paid")).toBe("neutral");
@@ -656,6 +658,8 @@ describe("a linha da encomenda: uma forma só", () => {
     expect(rowShowsSituation("paid")).toBe(false);
     expect(rowShowsSituation("on_account")).toBe(false);
     expect(rowShowsSituation("check_payment")).toBe(false);
+    // O pedido que ninguém aceitou: o dinheiro não diz isso (#3166).
+    expect(rowShowsSituation("new")).toBe(true);
     expect(rowShowsSituation("ready")).toBe(true);
     expect(rowShowsSituation("out_for_delivery")).toBe(true);
     expect(rowShowsSituation("delivered")).toBe(true);

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import timedelta
 
@@ -126,6 +127,13 @@ class Turn:
     customer: str
     reply: str
     conversation_id: int
+    #: O veredito da conferência antes do envio (``envelope["conference"]``), quando houve.
+    conference: dict | None = None
+    #: A escada em sombra (``envelope["ladder"]``): o que a reescrita teria mandado.
+    ladder: dict | None = None
+    #: Dia do turno e o gasto dele (régua do turno + escada), em US$; ``None`` = desconhecido.
+    day: str = ""
+    cost_usd: float | None = 0.0
     #: As falas do cliente deste turno (para o replay refazê-las no código de hoje).
     inbound_ids: tuple[int, ...] = ()
 
@@ -156,6 +164,20 @@ def _evidence(turn_id: str, inbound: list, replies: list, *, with_team: bool) ->
     )
 
 
+def _turn_cost(replies) -> float | None:
+    """O gasto do turno: a régua (``usage.cost_usd``) mais a escada em sombra. Desconhecido não é zero."""
+    total = 0.0
+    for reply in replies:
+        # Só conta o que foi gravado: chave ausente é "nada gasto aqui"; ``None`` gravado é desconhecido.
+        for source in (reply.usage or {}, (reply.envelope or {}).get("ladder") or {}):
+            if "cost_usd" not in source:
+                continue
+            if source["cost_usd"] is None:
+                return None
+            total += float(source["cost_usd"])
+    return round(total, 6)
+
+
 def _conversation_turns(conversation, messages) -> list[Turn]:
     """Os turnos de uma conversa, com a posse (casa ou equipe) acompanhada pelas notas."""
     from shopman.shop.models import Conversation, ConversationMessage
@@ -179,6 +201,11 @@ def _conversation_turns(conversation, messages) -> list[Turn]:
             customer=" / ".join(m.text for m in inbound if m.text),
             reply="\n".join(r.text for r in replies if r.text),
             conversation_id=conversation.pk,
+            conference=next(((r.envelope or {}).get("conference") for r in replies
+                             if (r.envelope or {}).get("conference")), None),
+            ladder=next(((r.envelope or {}).get("ladder") for r in replies if (r.envelope or {}).get("ladder")), None),
+            day=inbound[0].created_at.date().isoformat(),
+            cost_usd=_turn_cost(replies),
             inbound_ids=tuple(m.pk for m in inbound),
         ))
         inbound.clear()
@@ -267,6 +294,45 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             f"{REACH_LABELS[k]} {v}" for k, v in sorted(reach.items(), key=lambda kv: -kv[1]) if k != "reaches"
         ))
         lines.append(f"      premissa: {INCUMBENT_PREMISES.get(name, 'capacidade declarada pelo fornecedor')}")
+    conferred = [t for t in turns if t.conference and outcome_of(t.evidence) is not None]
+    if conferred:
+        would_fall = [t for t in conferred if t.conference.get("decision") == "fallback"]
+        agree = sum(
+            (t.conference.get("decision") == "fallback") == (outcome_of(t.evidence) != "useful") for t in conferred
+        )
+        reasons = Counter(
+            f"{check}:{(row or {}).get('reason') or (row or {}).get('status')}"
+            for t in would_fall for check, row in (t.conference.get("checks") or {}).items()
+            if (row or {}).get("status") != "pass"
+        )
+        lines.append(
+            f"  conferência antes do envio (sombra): {len(conferred)} conferidos, reprovaria {len(would_fall)}, "
+            f"concorda com o placar em {agree}/{len(conferred)}"
+            + (": " + ", ".join(f"{k} {v}" for k, v in reasons.most_common()) if reasons else "")
+        )
+    climbed = [t for t in turns if t.ladder]
+    if climbed:
+        chosen = Counter(t.ladder.get("chosen", "?") for t in climbed)
+        pauta = Counter(
+            reason for t in climbed for a in t.ladder.get("attempts", [])
+            for check, row in ((a.get("conference") or {}).get("checks") or {}).items()
+            if (row or {}).get("status") != "pass"
+            for reason in [f"{check}:{(row or {}).get('reason') or (row or {}).get('status')}"]
+        )
+        lines.append(
+            f"  escada (sombra): {len(climbed)} subidas; escolheria "
+            + ", ".join(f"{k} {v}" for k, v in chosen.most_common())
+            + ("; pauta (motivos): " + ", ".join(f"{k} {v}" for k, v in pauta.most_common(6)) if pauta else "")
+        )
+    by_day: dict[str, float | None] = {}
+    for t in turns:
+        if t.day:
+            current = by_day.get(t.day, 0.0)
+            by_day[t.day] = None if current is None or t.cost_usd is None else round(current + t.cost_usd, 6)
+    if by_day:
+        lines.append("  gasto por dia (régua do turno + escada): " + ", ".join(
+            f"{day} {'desconhecido' if v is None else f'US$ {v:.4f}'}" for day, v in sorted(by_day.items())
+        ))
     bad = [t for t in turns if outcome_of(t.evidence) not in (None, "useful") or t.evidence.repeated]
     if bad and show:
         lines.append("")
@@ -279,6 +345,12 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             lines.append(f"      cliente: {_redacted(t.customer)[:160]}")
             lines.append(f"      casa:    {_redacted(t.reply).replace(chr(10), ' / ')[:240] or '(nada)'}")
             lines.append(f"      ManyChat AI no WhatsApp ({ESTIMATED}): {REACH_LABELS[reach]}")
+            if t.conference:
+                lines.append(f"      conferência (sombra): {t.conference.get('decision')}")
+            if t.ladder:
+                chosen = t.ladder.get("chosen")
+                text = next((a.get("text") for a in t.ladder.get("attempts", []) if a.get("source") == chosen), "")
+                lines.append(f"      escada escolheria: {chosen}" + (f" · {_redacted(text)[:200]}" if text else ""))
     return "\n".join(lines)
 
 
@@ -381,6 +453,12 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
                         customer=turn.customer,
                         reply="\n".join(r.text for r in replies if r.text),
                         conversation_id=conv_pk,
+                        conference=next(((r.envelope or {}).get("conference") for r in replies
+                                         if (r.envelope or {}).get("conference")), None),
+                        ladder=next(((r.envelope or {}).get("ladder") for r in replies
+                                     if (r.envelope or {}).get("ladder")), None),
+                        day=(new_inbound[0].created_at.date().isoformat() if new_inbound else turn.day),
+                        cost_usd=_turn_cost(replies),
                         inbound_ids=turn.inbound_ids,
                     ))
                     conversation.refresh_from_db(fields=["state"])

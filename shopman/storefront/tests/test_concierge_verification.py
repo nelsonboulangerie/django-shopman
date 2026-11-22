@@ -155,11 +155,11 @@ def test_1_the_first_deadline_comes_from_the_channel_config_in_the_admin(convers
 
 
 def test_1_a_question_with_the_team_called_in_the_turn_opens_no_verification(conversation, outbox):  # noqa: F811
-    """Com reclamação junto, a equipe assume e vê todas as partes: não há verificação à parte."""
+    """Com pessoa pedida junto, a equipe assume e vê todas as partes: não há verificação à parte."""
     result = _turn(
         conversation,
-        "o pão de ontem veio queimado, quero reclamar. e vocês têm estacionamento?",
-        [_act("complaint", "o pão de ontem veio queimado, quero reclamar"), _act("house_info", "vocês têm estacionamento?")],
+        "quero falar com uma pessoa. e vocês têm estacionamento?",
+        [_act("human", "quero falar com uma pessoa"), _act("house_info", "vocês têm estacionamento?")],
         "verificar-reclamacao",
     )
 

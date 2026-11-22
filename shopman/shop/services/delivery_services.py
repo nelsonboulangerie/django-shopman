@@ -8,7 +8,8 @@ O contrato de um módulo de serviço de entrega (hoje ``adapters/courier_machine
 M2, o entregador da casa) é o que a TaOn já expõe, mais duas peças:
 
 - ``CAPABILITIES``: um ``DeliveryCapabilities`` (``shopman.shop.protocols``);
-- ``ride_state(status)``: o estado próprio do serviço traduzido para ``RideState``.
+- ``ride_state(status)``: o estado próprio do serviço traduzido para ``RideState``;
+- ``state_since(block, state)``: quando a corrida chegou a um ``RideState`` (pelo ``status_at``).
 
 Comportamento na M1, de propósito igual ao de antes: a corrida da TaOn resolve o mesmo
 módulo de sempre (``get_adapter("courier")``: ``Shop.integrations`` e depois ``settings``),
@@ -75,5 +76,60 @@ def ride_state(block: dict | None) -> RideState | None:
     """O estado da corrida no vocabulário da casa, a partir do estado cru do serviço."""
     if not block:
         return None
-    translate = getattr(courier_backend(block), "ride_state", None)
-    return translate(block.get("status")) if translate else None
+    return _translator(block)(block.get("status"))
+
+
+def _vocabulary(block: dict):
+    """O módulo que conhece as letras do bloco: o serviço da corrida ou, sem serviço ligado
+    (corrida antiga, loja sem central), o vocabulário da TaOn, que é também o das letras
+    internas da casa (``courier_own_fleet``). Ler a letra crua dava esse mesmo resultado."""
+    from shopman.shop.adapters import courier_machine
+
+    backend = courier_backend(block)
+    return backend if getattr(backend, "ride_state", None) else courier_machine
+
+
+def _translator(block: dict):
+    """Quem traduz a letra do bloco em :class:`RideState` (ver :func:`_vocabulary`)."""
+    from shopman.shop.adapters import courier_machine
+
+    return getattr(courier_backend(block), "ride_state", None) or courier_machine.ride_state
+
+
+def state_detail(block: dict | None) -> str:
+    """A nuance que o serviço dá a um estado, quando dá ("Aguardando aceite"), ou "".
+
+    O estado da casa diz o que a tela precisa; a letra de alguns serviços diz um pouco
+    mais, e só quem fala aquela língua sabe dizer o quê (M1b-b2, #3117).
+    """
+    if not block:
+        return ""
+    detail = getattr(_vocabulary(block), "status_detail", None)
+    return detail(block.get("status")) if detail else ""
+
+
+def service_name(block: dict | None = None) -> str:
+    """O nome do serviço da corrida como o cadastro diz ("TaOn", "Entregadores da casa").
+
+    Sem serviço gravado na corrida vale o padrão do Admin; sem nenhum, "".
+    """
+    ref = str((block or {}).get("service") or "")
+    service = DeliveryService.objects.filter(ref=ref).first() if ref else service_for_new_ride()
+    return service.name if service else ""
+
+
+def state_since(block: dict | None, state: RideState) -> str | None:
+    """Quando a corrida chegou a ``state`` (o ISO mais cedo de ``status_at``), ou None.
+
+    ``status_at`` guarda a hora de cada letra crua do serviço; quem lê pergunta pelo
+    estado da casa (M1b-b, #2552), e duas letras do mesmo estado ("A" e "S" da TaOn)
+    valem pela primeira.
+    """
+    if not block:
+        return None
+    translate = _translator(block)
+    stamps = block.get("status_at") if isinstance(block.get("status_at"), dict) else {}
+    if not stamps:
+        return None
+    hits = sorted(str(at) for letter, at in stamps.items() if at and translate(letter) == state)
+    return hits[0] if hits else None

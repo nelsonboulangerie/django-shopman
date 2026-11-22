@@ -33,6 +33,8 @@ from shopman.backstage.projections.courier_position import (
 from shopman.backstage.projections.house_rides import DeliveryHouseRideProjection, house_ride
 from shopman.shop.google_maps_credentials import browser_api_key
 from shopman.shop.projections.types import Action
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +203,7 @@ class DeliveryServiceOptionProjection:
 
 @dataclass(frozen=True)
 class RidePlanProjection:
-    """O plano das corridas (``ride_plan``): o MESMO do Painel e do ``ride_offer``.
+    """O plano das corridas (``ride_plan``): o MESMO do sheet de chamar e do Painel.
 
     ``service`` é o serviço sugerido (o padrão do Admin), ``service_reason`` diz por quê
     (``default``) e ``service_options`` são os serviços ativos: o contrato com a frente
@@ -375,10 +377,11 @@ def _minutes_since(iso: str) -> float | None:
 def _state(block: dict, progress: dict, *, back: bool) -> str:
     from shopman.shop.services import courier
 
-    status = str(block.get("status") or "")
+    # O estado da casa, não a letra do serviço (M1b-b, #2552).
+    state = delivery_services.ride_state(block)
     if back:
         return "back"
-    if block.get("ride_ref") and status == "U":
+    if block.get("ride_ref") and state == RideState.GROUPED:
         # A própria TaOn juntou esta corrida a outra, que já tem entregador:
         # nunca é "Ninguém aceitou", e não há o que chamar de novo.
         return "grouped"
@@ -386,10 +389,10 @@ def _state(block: dict, progress: dict, *, back: bool) -> str:
         # O entregador desistiu e a TaOn já redistribui a mesma corrida: a
         # espera conta de novo, e chamar outra seria pagar duas.
         return "reopened"
-    if not block.get("ride_ref") or status in ("D", "G", "P"):
+    if not block.get("ride_ref") or state == RideState.SEARCHING:
         waited = _minutes_since(str(block.get("called_at") or block.get("requested_at") or ""))
         return "late" if waited is not None and waited >= courier.LATE_SEARCH_MINUTES else "searching"
-    if status in ("A", "S"):
+    if state == RideState.ASSIGNED:
         return "atStore" if progress.get("arrived_pickup_at") else "coming"
     return "route"
 
@@ -423,7 +426,8 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
     sequence += [order.ref for order in orders if order.ref not in sequence]
     stops = tuple(_stop(by_ref[ref], reads=reads) for ref in sequence)
     progress = courier.progress_view(block)
-    back_members = operator_orders.courier_return_members(lead) if str(block.get("status") or "") == "F" else []
+    back_members = (operator_orders.courier_return_members(lead)
+                    if delivery_services.ride_state(block) == RideState.DONE else [])
     back = bool(back_members)
     state = _state(block, progress, back=back)
     raw_driver = block.get("driver") if isinstance(block.get("driver"), dict) else None
@@ -529,14 +533,19 @@ def _delivery_orders() -> list[Order]:
 def _split(orders: list[Order], tasks: dict) -> tuple[dict[str, list[Order]], list[Order]]:
     """As corridas vivas (por corrida) e o que aguarda entregador."""
     from shopman.backstage.projections.order_queue import _is_future_preorder
-    from shopman.shop.services import courier
+    from shopman.shop.services import courier, operator_orders
 
     today = timezone.localdate()
     rides: dict[str, list[Order]] = {}
     waiting: list[Order] = []
+    # A corrida finalizada com volta pendente pergunta pela saída inteira: uma
+    # leitura em lote para todas, nunca uma por pedido (#2891).
+    finished = [order for order in orders
+                if courier.get_block(order).get("ride_ref") and courier.get_block(order).get("status") == "F"]
+    trips = operator_orders.trip_members_for(finished) if finished else None
     for order in orders:
         block = courier.get_block(order)
-        if block.get("ride_number") and courier.ride_is_live(order, tasks=tasks):
+        if block.get("ride_number") and courier.ride_is_live(order, tasks=tasks, trips=trips):
             key = str(block.get("ride_ref") or f"call:{block.get('ride_number')}:{block.get('called_at') or order.ref}")
             rides.setdefault(key, []).append(order)
         elif order.status in courier.RIDE_ORDER_STATUSES and not _is_future_preorder(order, today=today):
