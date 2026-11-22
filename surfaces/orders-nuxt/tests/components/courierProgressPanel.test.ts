@@ -42,7 +42,7 @@ describe("andamento da corrida", () => {
     );
     const progress = wrapper.get('[data-testid="courier-progress"]').text();
     expect(progress).toContain("Chega para coletar em ~7 min");
-    expect(progress).toContain("Entrega prevista por volta das 15h58");
+    expect(progress).toContain("Entrega prevista para as 15h58");
     expect(wrapper.find('[data-testid="courier-stale"]').exists()).toBe(false);
     wrapper.unmount();
   });

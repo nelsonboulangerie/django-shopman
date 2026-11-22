@@ -31,7 +31,7 @@ export interface CourierProgressView {
   /** "Chega para coletar em ~7 min", "Chega para coletar a qualquer momento" ou "Chegou à loja às 15:50". */
   pickup: string;
   /**
-   * "Entrega prevista por volta das 16h05": é um HORÁRIO. Com o til solto
+   * "Entrega prevista para as 16h05": é um HORÁRIO. Com o til solto
    * ("~1h43") lia-se também como duração (uma hora e 43 minutos).
    */
   delivery: string;
@@ -73,14 +73,14 @@ function epoch(iso: string | undefined): number | null {
 }
 
 /**
- * "por volta das 15h50" ou "por volta da 1h43": o horário aproximado, que não se
- * confunde com duração (o "~1h43" tinha as duas leituras). Uma hora e meia-noite
- * pedem o singular.
+ * "para as 15h50" ou "para a 1h43": o horário previsto, que não se confunde com
+ * duração (o "~1h43" tinha as duas leituras). "Prevista" já diz que é estimativa.
+ * Zero hora e uma hora pedem o singular.
  */
-export function aroundClock(ms: number): string {
+export function clockTarget(ms: number): string {
   const clock = clockHHMM(ms);
   const hour = Number.parseInt(clock, 10);
-  return `por volta ${hour <= 1 ? "da" : "das"} ${clock}`;
+  return `para ${hour <= 1 ? "a" : "as"} ${clock}`;
 }
 
 /** "15h50", no fuso da loja (o dispositivo pode estar em outro). */
@@ -124,6 +124,6 @@ export function courierProgress(
 
   const deliveryEta = epoch(courier.delivery_eta_at);
   if (deliveryEta !== null && !ended)
-    view.delivery = `Entrega prevista ${aroundClock(deliveryEta)}`;
+    view.delivery = `Entrega prevista ${clockTarget(deliveryEta)}`;
   return view;
 }
