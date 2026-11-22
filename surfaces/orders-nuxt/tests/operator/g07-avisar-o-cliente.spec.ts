@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { atCounterHour, backToRealTime, controlDir } from "./support/clock";
 import { customerOrdersPickupToday } from "./support/customer";
 import { cashierAccepts, orderCard, shortCode } from "./support/gestor";
 import {
@@ -17,8 +18,12 @@ import { capture, cast, newCustomerPhone, roleContext, stack } from "./support/s
 // hora já escritos), marca o que vai faltar e envia. A tela diz que o aviso foi para a
 // fila e o recibo aparece no pedido com o nome do gesto. A pilha não manda nada de
 // verdade: os adaptadores ficam inertes em DEBUG.
+test.skip(!controlDir, "pede o relógio de teste da pilha (OPERATOR_CONTROL_DIR; README)");
+test.afterAll(() => backToRealTime());
+
 test("G07: avisar o cliente com um toque, lendo a mensagem antes de enviar", async ({ browser, baseURL }, testInfo) => {
-  const gestorContext = await roleContext(browser, baseURL!);
+  const at = await atCounterHour();
+  const gestorContext = await roleContext(browser, baseURL!, false, at);
   const gestor = await gestorContext.newPage();
   await acknowledgeOtherOrdersAlarms(gestor);
   await managerSignsIn(gestor);
@@ -28,7 +33,7 @@ test("G07: avisar o cliente com um toque, lendo a mensagem antes de enviar", asy
   await lockDevice(gestor);
   await operatorUnlocksWithPin(gestor, cast.cashier);
 
-  const storeContext = await roleContext(browser, stack.store, true);
+  const storeContext = await roleContext(browser, stack.store, true, at);
   const store = await storeContext.newPage();
   const ref = await customerOrdersPickupToday(store, testInfo, { product: "Croissant", phone: newCustomerPhone(), name: "Teresa" });
 

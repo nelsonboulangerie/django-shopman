@@ -38,6 +38,7 @@ const emit = defineEmits<{ lock: []; hide: [] }>();
 const supportEntry = useSupportEntry();
 
 const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
+const { forgetSignedIn } = useOperatorSession();
 const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
 
 // Sair deste dispositivo: encerra a sessão. Só fora de um posto (o celular de
@@ -58,6 +59,8 @@ const { run: signOut, pending: signOutPending } = usePendingAction(async () => {
     useSonner.error(httpErrorMessage(err, "Não foi possível sair. Tente de novo."));
     return;
   }
+  // Saiu de propósito: o login que sobe é um começo, não "sua sessão terminou".
+  forgetSignedIn();
   // Recarregar zera o que a tela guardava da pessoa; o app sobe no login.
   window.location.reload();
 });

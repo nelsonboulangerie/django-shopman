@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { atCounterHour, backToRealTime, controlDir } from "./support/clock";
 import { customerCancelsOwnOrder, customerOrdersPickupToday } from "./support/customer";
 import { shortCode } from "./support/gestor";
 import {
@@ -16,9 +17,13 @@ import { capture, cast, newCustomerPhone, roleContext, settled, stack } from "./
 // aviso "O cliente cancelou o pedido…" no sino. Quem está no Gestor é a Cozinha (Diofer,
 // só expede, com PIN): ela toca no aviso, e o detalhe do pedido diz por que não abre e
 // para onde ela volta, sem "tentar de novo" (WP-G05, P1-20).
+test.skip(!controlDir, "pede o relógio de teste da pilha (OPERATOR_CONTROL_DIR; README)");
+test.afterAll(() => backToRealTime());
+
 test("J8: quem só expede abre um aviso de pedido no sino e lê por que o detalhe não abre", async ({ browser, baseURL }, testInfo) => {
+  const at = await atCounterHour();
   // Balcão: a Gerente abre o dispositivo e o bloqueia; Diofer, da Cozinha, entra com PIN.
-  const gestorContext = await roleContext(browser, baseURL!);
+  const gestorContext = await roleContext(browser, baseURL!, false, at);
   const gestor = await gestorContext.newPage();
   await acknowledgeOtherOrdersAlarms(gestor);
   await managerSignsIn(gestor);
@@ -29,7 +34,7 @@ test("J8: quem só expede abre um aviso de pedido no sino e lê por que o detalh
   await operatorUnlocksWithPin(gestor, cast.kitchen);
 
   // A cliente pede, paga e cancela sozinha antes do preparo.
-  const storeContext = await roleContext(browser, stack.store, true);
+  const storeContext = await roleContext(browser, stack.store, true, at);
   const store = await storeContext.newPage();
   const ref = await customerOrdersPickupToday(store, testInfo, { product: "Croissant", phone: newCustomerPhone(), name: "Lúcia" });
   await customerCancelsOwnOrder(store, testInfo);

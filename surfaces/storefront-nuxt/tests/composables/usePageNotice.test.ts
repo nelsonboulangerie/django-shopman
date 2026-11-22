@@ -32,4 +32,20 @@ describe('usePageNotice', () => {
     reader.dismiss()
     expect(writer.notice.value).toBeNull()
   })
+
+  it('a ação e o tom são opcionais e só entram quando vêm (#3267)', async () => {
+    const notice = await mountNotice()
+    notice.show('Sua sacola ficou vazia antes do envio.', '/finalizar', {
+      tone: 'attention',
+      action: { label: 'Ver o cardápio', to: '/menu' }
+    })
+    expect(notice.notice.value).toEqual({
+      message: 'Sua sacola ficou vazia antes do envio.',
+      path: '/finalizar',
+      tone: 'attention',
+      action: { label: 'Ver o cardápio', to: '/menu' }
+    })
+    notice.show('Pronto.', '/')
+    expect(notice.notice.value).toEqual({ message: 'Pronto.', path: '/' })
+  })
 })

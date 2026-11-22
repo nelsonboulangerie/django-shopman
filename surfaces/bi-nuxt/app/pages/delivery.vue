@@ -3,7 +3,7 @@
 // clientes cobre. A corrida é custo da casa (o frete não muda com ela); a projection
 // conta cada corrida uma vez, mesmo quando ela leva vários pedidos. Uma linha por
 // serviço (o nome do cadastro) e o total embaixo: comparar os serviços (#3144).
-import type { BIDeliveryCostReport } from "~/types/bi";
+import type { BIDeliveryCostReport, BIDeliveryTimingReport } from "~/types/bi";
 import {
   readingChartCsv,
   type ReadingChartPoint,
@@ -17,7 +17,12 @@ import {
   deliveryServiceRows,
   estimatedRidesHint,
   ridesHint,
+  rideAcceptLabel,
+  rideMinutes,
+  rideTimingCsv,
+  rideTimingRows,
   type DeliveryServiceRow,
+  type RideTimingRow,
 } from "~/presentation/delivery";
 
 const { report, freshness, pending, error, refresh } =
@@ -45,7 +50,24 @@ const serviceColumns = [
   { accessorKey: "cost_per_delivery_q", header: "Custo por entrega", meta: { class: NUM } },
 ];
 const serviceRows = computed<DeliveryServiceRow[]>(() => (report.value ? deliveryServiceRows(report.value) : []));
-const isTotal = (row: DeliveryServiceRow) => row.service === DELIVERY_TOTAL_KEY;
+const isTotal = (row: { service: string }) => row.service === DELIVERY_TOTAL_KEY;
+
+// Tempo das corridas (#2467): a mesma janela, outra leitura. Cada corrida uma vez, por
+// serviço, em medianas; sem esta leitura, a página de custo segue inteira.
+const { report: timing } = useBiReport<BIDeliveryTimingReport>("delivery-timing");
+// Minutos numa linha só ("3,5 min", nunca "3,5" em cima de "min"): no celular a tabela rola.
+const TIME = { th: "text-right", td: "text-right tnum whitespace-nowrap" } as const;
+const timingColumns = [
+  { accessorKey: "name", header: "Serviço", meta: { class: NAME } },
+  { accessorKey: "rides", header: "Corridas", meta: { class: NUM } },
+  { accessorKey: "accept_minutes", header: "Até aceitar", meta: { class: TIME } },
+  { accessorKey: "pickup_minutes", header: "Até a coleta", meta: { class: TIME } },
+  { accessorKey: "street_minutes", header: "Na rua", meta: { class: TIME } },
+  { accessorKey: "total_minutes", header: "Total", meta: { class: TIME } },
+];
+const timingRows = computed<RideTimingRow[]>(() =>
+  timing.value ? rideTimingRows(timing.value, report.value?.services.map((row) => row.service) ?? []) : [],
+);
 
 const dailyPoints = computed<ReadingChartPoint[]>(() =>
   (report.value?.days ?? []).map((row) => ({
@@ -190,6 +212,42 @@ const dailyPoints = computed<ReadingChartPoint[]>(() =>
             </template>
             <template #cost_per_delivery_q-cell="{ row }">
               <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatMoney(row.original.cost_per_delivery_q) }}</span>
+            </template>
+          </OperatorTable>
+        </OperatorReadingCard>
+
+        <OperatorReadingCard
+          title="Tempo das corridas"
+          description="Mediana, em minutos, contada da chamada. Até aceitar e até a coleta: quanto o entregador leva para aceitar e para pegar as sacolas. Na rua: da coleta à última entrega. Total: da chamada à última entrega. Na chamada: o entregador da casa aceita quando é chamado, sem espera. Uma corrida com várias entregas conta uma vez."
+          :csv="timingRows.length ? rideTimingCsv(timingRows) : undefined"
+        >
+          <OperatorTable
+            in-card
+            :data="timingRows"
+            :columns="timingColumns"
+            :row-key="(row) => row.service"
+            caption="Tempo das corridas por serviço"
+            empty-icon="i-lucide-timer"
+            empty-title="Nenhuma corrida no período"
+            data-bi-delivery-timing
+          >
+            <template #name-cell="{ row }">
+              <span :class="isTotal(row.original) ? 'font-semibold text-highlighted' : undefined">{{ row.original.name }}</span>
+            </template>
+            <template #rides-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatInt(row.original.rides) }}</span>
+            </template>
+            <template #accept_minutes-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ rideAcceptLabel(row.original.accept_minutes) }}</span>
+            </template>
+            <template #pickup_minutes-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ rideMinutes(row.original.pickup_minutes) }}</span>
+            </template>
+            <template #street_minutes-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ rideMinutes(row.original.street_minutes) }}</span>
+            </template>
+            <template #total_minutes-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ rideMinutes(row.original.total_minutes) }}</span>
             </template>
           </OperatorTable>
         </OperatorReadingCard>
