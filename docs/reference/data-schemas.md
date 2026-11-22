@@ -768,6 +768,7 @@ services que ele chama leem o bloco.
 | `lines[].destiny` | `"restock"` \| `"loss"` | `restock`: a linha volta à venda, no MESMO lote de onde saiu, e o cliente recebe `value_q`. `loss`: vira perda de estoque com motivo, e a loja fica com `value_q`. Decidido pelo servidor (`no_show.decide_destiny`) |
 | `lines[].reason` | `string` | Por que é perda: `made_to_order` (ficha vigente "Na hora"), `no_stock` (sem reserva de estoque baixada: não há o que devolver ao balcão), `lot_expired` (o lote venceu na hora do gesto). Vazio em `restock` |
 | `lines[].qty` | `string` (decimal) | A quantidade da linha |
+| `lines[].line_id`, `lines[].combo` | `string`, `dict` | O combo vira uma linha por componente (#2697): `line_id` é `"<linha>:<sku>"`, o destino é o de cada componente e `value_q` é a parte do valor do combo rateada pelo preço de tabela vezes a quantidade (o resíduo no último). `combo` = `{line_id, sku, name}` do combo de onde o componente veio; ausente na linha que não é combo |
 | `lines[].value_q` | `int` | O valor da linha: `unit_price_q × qty` sobre `order_composition.effective_items` (o mesmo cálculo da devolução) |
 | `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
 | `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |

@@ -686,3 +686,72 @@ def test_cancellation_notice_carries_the_text_with_the_money(paes, relogio, djan
     assert kwargs["status_note"] == "O pedido ficou pronto e não foi retirado."
     context = derive_context({"order_ref": order.ref, "status_note": kwargs["status_note"]})
     assert context["cancellation_reason_suffix"] == ". O pedido ficou pronto e não foi retirado."
+
+
+# ── O combo, componente por componente (#2697, item 2) ──────────────────────
+
+
+def _combo(order_ref: str, *, crois_qty: int, crois_expires=None, paid: bool = False):
+    from shopman.offerman.models import ProductComponent
+
+    cafe = world.product("CAFE", price_q=600)
+    crois = world.product("CROIS", price_q=900)
+    combo = world.product("COMBO", price_q=1200)
+    ProductComponent.objects.create(parent=combo, component=cafe, qty=Decimal("1"))
+    ProductComponent.objects.create(parent=combo, component=crois, qty=Decimal(crois_qty))
+    world.lot("CAFE")
+    world.lot("CROIS", expires=crois_expires)
+    order = world.ready_order(order_ref, [("COMBO", 1, 1200)], held=False)
+    order.data["hold_ids"] = [
+        world.fulfilled_hold("CAFE", 1, order_ref=order.ref),
+        world.fulfilled_hold("CROIS", crois_qty, order_ref=order.ref),
+    ]
+    order.save(update_fields=["data", "updated_at"])
+    if paid:
+        world.pay(order, "pix")
+    return order
+
+
+def test_combo_decides_each_component_and_splits_the_value_by_price(shop, relogio):
+    """O croissant vencido do combo vira perda; o café, que ainda vende, volta."""
+    relogio(10)
+    order = _combo("NS-COMBO", crois_qty=1, crois_expires=timezone.localdate(), paid=True)
+
+    lines = no_show.line_decisions(order, now=world.at(8, days=1))
+
+    assert [(line["line_id"], line["sku"], line["destiny"], line["reason"], line["value_q"]) for line in lines] == [
+        ("L1:CAFE", "CAFE", "restock", "", 480),
+        ("L1:CROIS", "CROIS", "loss", "lot_expired", 720),
+    ]
+    assert lines[0]["name"] == "Cafe (combo Combo)"
+    assert all(line["combo"] == {"line_id": "L1", "sku": "COMBO", "name": "Combo"} for line in lines)
+    # O valor do combo inteiro, nem um centavo a mais ou a menos.
+    assert sum(line["value_q"] for line in lines) == 1200
+    assert no_show.money_split(lines, 1200) == (480, 720)
+
+
+def test_combo_whose_components_all_go_back_returns_everything(shop, relogio):
+    relogio(10)
+    order = _combo("NS-COMBO-VOLTA", crois_qty=2)
+
+    lines = no_show.line_decisions(order)
+
+    assert [(line["sku"], line["qty"], line["destiny"]) for line in lines] == [
+        ("CAFE", "1", "restock"),
+        ("CROIS", "2", "restock"),
+    ]
+    # Rateio pelo preço vezes a quantidade: 600 contra 1800.
+    assert [line["value_q"] for line in lines] == [300, 900]
+
+
+def test_combo_stock_plan_returns_only_the_component_that_goes_back(shop, relogio):
+    relogio(10)
+    order = _combo("NS-COMBO-ESTOQUE", crois_qty=1, crois_expires=timezone.localdate(), paid=True)
+
+    relogio(8, days=1)
+    no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    order.refresh_from_db()
+    plan = no_show.stock_plan(order)
+
+    by_sku = {entry["sku"]: plan[entry["hold_id"]] for entry in order.data["hold_ids"]}
+    assert by_sku == {"CAFE": (Decimal("1"), Decimal("0")), "CROIS": (Decimal("0"), Decimal("1"))}
