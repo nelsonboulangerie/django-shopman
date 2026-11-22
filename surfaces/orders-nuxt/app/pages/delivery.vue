@@ -39,7 +39,7 @@ import {
   type RideSuggestion,
 } from "~/presentation/deliveries";
 import { deliveriesFiscalAlerts } from "~/presentation/deliveriesFiscal";
-import { DEFAULT_CARRIER, busyNotice, chipValue, noteLabel } from "~/presentation/houseCouriers";
+import { DEFAULT_CARRIER, busyNotice, chipValue, noteLabel, toPayToday } from "~/presentation/houseCouriers";
 import { NOBODY_TAKES } from "~/composables/useCourierCall";
 
 const route = useRoute();
@@ -71,6 +71,8 @@ const {
   callLabel, machineMissing, nobodyTakes, canCall, summary, call, callSeparately,
   openSheet, toggleCompanion, closeSheet, confirmSheet, confirmAlone, sheet,
 } = useCourierCall({ data, refresh, editing, active });
+// O acerto do dia de cada entregador da casa, sob a escala (M4, #2527).
+const payToday = computed(() => toPayToday(crew.value));
 const editingNumbers = computed(() => editing.value.map((ride) => ride.number));
 function ensureEditing() {
   if (editing.value.length) return;
@@ -356,6 +358,18 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
                 @click="toggleShift(person.ref, !person.on)"
               />
             </div>
+            <!-- O acerto do dia (M4, #2527): o sistema soma, o pagamento é por fora. -->
+            <ul v-if="payToday.length" class="flex flex-col gap-1" data-house-pay-today>
+              <li
+                v-for="line in payToday"
+                :key="line.ref"
+                class="flex items-center gap-2 op-body tabular-nums text-highlighted"
+                :data-house-pay-today-person="line.ref"
+              >
+                <NuxtIcon name="i-lucide-wallet" class="size-4 shrink-0 text-muted" />
+                {{ line.text }}
+              </li>
+            </ul>
           </section>
           <!-- 1. aguardando -->
           <section>
