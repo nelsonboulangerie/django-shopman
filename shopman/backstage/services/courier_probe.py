@@ -41,7 +41,7 @@ class CourierProbeResult:
     report: str
 
 
-def _run(command: str, *args, **options) -> tuple[bool, str]:
+def run_command(command: str, *args, **options) -> tuple[bool, str]:
     out = io.StringIO()
     try:
         call_command(command, *args, stdout=out, stderr=out, **options)
@@ -60,7 +60,7 @@ def rides_from(text: str) -> list[str]:
 
 def read(*, rides: list[str], window: int = 0, recent: int = 0) -> CourierProbeResult:
     """Só leitura: conta, avisos cadastrados, categorias, janela e corridas."""
-    ok, report = _run(
+    ok, report = run_command(
         "courier_machine_probe", ride=list(rides)[:MAX_RIDES], window=int(window or 0), recent=int(recent or 0),
     )
     return CourierProbeResult(ok=ok, report=report)
@@ -68,8 +68,8 @@ def read(*, rides: list[str], window: int = 0, recent: int = 0) -> CourierProbeR
 
 def webhooks(public_base: str) -> CourierProbeResult:
     """Só leitura: os avisos cadastrados na TaOn, com o token mascarado."""
-    ok, report = _run("machine_register_webhook", public_base, list=True)
+    ok, report = run_command("machine_register_webhook", public_base, list=True)
     return CourierProbeResult(ok=ok, report=report)
 
 
-__all__ = ["CourierProbeResult", "MAX_RIDES", "read", "rides_from", "webhooks"]
+__all__ = ["CourierProbeResult", "MAX_RIDES", "read", "rides_from", "run_command", "webhooks"]

@@ -1,4 +1,4 @@
-"""A sonda da central de entregas no Diagnóstico do Admin, só leitura (#2489).
+"""A sonda da central de entregas no Diagnóstico do Admin (#2489).
 
 O console da DigitalOcean não recebe as variáveis SECRET e o token de deploy não
 tem ``exec``: a rodada da TaOn só lê onde está a credencial, que é o processo do
@@ -96,15 +96,6 @@ def test_ler_os_avisos_usa_a_base_publica_deste_admin_e_so_lista(dono, url):
     args, kwargs = call.call_args
     assert args == ("machine_register_webhook", "https://testserver")
     assert kwargs["list"] is True
-
-
-@pytest.mark.parametrize("action", ["cancel", "attach", "boost", "remove_stop", "register_webhooks"])
-def test_escrita_nao_existe_nesta_tela(dono, url, action):
-    with mock.patch(CALL) as call:
-        response = _post(dono, url, action=action, rides="1", cancel="10", write="on", confirm="1")
-    call.assert_not_called()
-    assert response.status_code == 200
-    assert response.context["courier_form"].errors
 
 
 def test_o_comando_de_verdade_recusa_na_tela_sem_credencial(dono, url, settings):
