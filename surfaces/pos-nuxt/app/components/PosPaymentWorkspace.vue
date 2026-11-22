@@ -129,6 +129,9 @@ const props = defineProps<{
    * o gerente de novo, com o valor novo (P0-1). O PIN não passa por aqui.
    */
   managerApproved: boolean;
+  /** Quem assinou (nome da lista de gerentes): a venda autorizada diz quem a
+   *  autorizou (#2666). Vazio enquanto ninguém assinou este retrato. */
+  managerApprovedBy?: string;
   managerApprovalError: string;
   /** A autorização do gerente (PIN ou crachá) está sendo conferida no servidor (`checkManager`). */
   managerCheckBusy?: boolean;
@@ -1152,6 +1155,16 @@ const ctaBlock = computed<{
 // do valor — e rouba a largura das três colunas para isso.
 //
 // Nada é dito duas vezes na mesma tela.
+/** O que o gerente assina, fora a encomenda acima do plano (que tem a própria frase). */
+const approvalReasonText = computed(() => (otherApprovalReasons.value.length
+  ? managerAuthReason({
+    reasons: otherApprovalReasons.value,
+    thresholdQ: managerThresholdQ.value,
+    discountQ: manualDiscountQ.value,
+    houseAccountLimit: props.review?.house_account_limit,
+  })
+  : ""));
+
 type CheckoutNotice = {
   key: string;
   icon: string;
@@ -1190,14 +1203,7 @@ const notices = computed<CheckoutNotice[]>(() => {
     // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
     // o diálogo já os traduz; o aviso os ignorava, e o operador tinha de
     // chamar o gerente para só então descobrir o motivo.
-    const others = otherApprovalReasons.value.length
-      ? managerAuthReason({
-        reasons: otherApprovalReasons.value,
-        thresholdQ: managerThresholdQ.value,
-        discountQ: manualDiscountQ.value,
-        houseAccountLimit: props.review?.house_account_limit,
-      })
-      : "";
+    const others = approvalReasonText.value;
     notes.push({
       key: "auth",
       tone: "block",
@@ -1208,6 +1214,16 @@ const notices = computed<CheckoutNotice[]>(() => {
         ? "A encomenda passa do plano. Só o gerente libera."
         : "Esta venda precisa de um gerente.",
       hint: [overPlanText.value, others].filter(Boolean).join(" "),
+    });
+  }
+  // Autorizada: a faixa do gerente não some calada (#2666). Diz quem assinou e o
+  // quê, e some junto com a assinatura quando a venda muda (o retrato).
+  else if (props.review?.requires_manager_approval && props.managerApproved && props.managerApprovedBy) {
+    notes.push({
+      key: "auth-ok",
+      icon: "lucide:shield-check",
+      message: `Autorizada por ${props.managerApprovedBy}.`,
+      hint: [overPlanText.value, approvalReasonText.value].filter(Boolean).join(" "),
     });
   }
   // Nada trava: entra quanto pedir à pessoa da vez. É a frase que o operador

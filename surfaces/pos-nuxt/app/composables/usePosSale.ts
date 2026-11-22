@@ -634,14 +634,14 @@ export function usePosSale(deps: PosSaleDeps) {
         if (approval) {
           const shown = marker.approval || NO_APPROVAL_FIGURES;
           try {
-            const token = await requestSaleApprovalToken(approval, {
+            const signed = await requestSaleApprovalToken(approval, {
               tab_ref: typeof marker.body.tab_ref === "string" ? marker.body.tab_ref : "",
               reasons: shown.reasons,
               discount_q: shown.discount_q,
               account_over_q: shown.house_account_limit?.over_q || 0,
               over_plan: shown.over_plan,
             });
-            if (token) signature = { token };
+            if (signed.token) signature = { token: signed.token };
           } catch (error) {
             const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
             closeRecheckApproval.value = shown;
@@ -1243,7 +1243,7 @@ export function usePosSale(deps: PosSaleDeps) {
   // quando o retrato muda, quando a venda acaba e depois de cada tentativa de
   // fechar (a retentativa pede a assinatura de novo). O servidor confere o mesmo
   // do lado dele: carimbo de outro valor ou de outra comanda é recusa.
-  const managerSignature = shallowRef<{ token: string; portrait: string } | null>(null);
+  const managerSignature = shallowRef<{ token: string; portrait: string; approvedBy: string } | null>(null);
   const currentApprovalPortrait = computed(() => approvalPortrait({
     tabRef: cart.localTab ? "" : cart.tabRef,
     tabSessionKey: cart.tabSessionKey,
@@ -1258,6 +1258,13 @@ export function usePosSale(deps: PosSaleDeps) {
   }));
   /** O gerente assinou ESTE retrato. É o que libera "Validar". */
   const managerApproved = computed(() => managerSignature.value?.portrait === currentApprovalPortrait.value);
+  /** Quem assinou o retrato da tela, pelo nome da lista de gerentes (#2666): a venda
+   *  autorizada diz quem autorizou. Some junto com a assinatura. */
+  const managerApprovedBy = computed(() => {
+    const username = managerApproved.value ? managerSignature.value?.approvedBy || "" : "";
+    if (!username) return "";
+    return pos.value?.managers?.find((manager) => manager.username === username)?.name || username;
+  });
   // A assinatura não espera o próximo fechamento para sumir: mudou o retrato, sai agora.
   watch(currentApprovalPortrait, (portrait) => {
     if (managerSignature.value && managerSignature.value.portrait !== portrait) managerSignature.value = null;
@@ -2718,7 +2725,7 @@ export function usePosSale(deps: PosSaleDeps) {
   async function requestSaleApprovalToken(
     approval: ManagerApproval,
     shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number; over_plan?: POSOverPlanLine[] },
-  ): Promise<string> {
+  ): Promise<{ token: string; approvedBy: string }> {
     const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
     const scope = {
       tab_ref: shown.tab_ref,
@@ -2731,8 +2738,11 @@ export function usePosSale(deps: PosSaleDeps) {
     // PIN (`{username, pin}`) ou crachá (`{badge}`): o servidor aceita as duas portas
     // (`validate_manager_override`) e devolve o mesmo carimbo (#2691).
     const managerApproval = approval.badge ? { badge: approval.badge } : { username: approval.username, pin: approval.pin };
-    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: managerApproval, scope } });
-    return typeof answer?.token === "string" ? answer.token : "";
+    const answer = await action.call<{ token?: string; approved_by?: string }>(path, { body: { manager_approval: managerApproval, scope } });
+    return {
+      token: typeof answer?.token === "string" ? answer.token : "",
+      approvedBy: typeof answer?.approved_by === "string" ? answer.approved_by : "",
+    };
   }
 
   const managerCheckBusy = ref(false);
@@ -2748,15 +2758,15 @@ export function usePosSale(deps: PosSaleDeps) {
       // vale só para isso. O PIN fica no diálogo; o carimbo mora na memória da
       // aba, preso ao retrato (`managerSignature`).
       const current = review.value;
-      const token = await requestSaleApprovalToken(approval, {
+      const signed = await requestSaleApprovalToken(approval, {
         tab_ref: cart.localTab ? "" : cart.tabRef,
         reasons: current?.approval_reasons || [],
         discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
         account_over_q: current?.house_account_limit?.over_q || 0,
         over_plan: current?.preorder_over_plan || [],
       });
-      if (!token) return false;
-      managerSignature.value = { token, portrait };
+      if (!signed.token) return false;
+      managerSignature.value = { token: signed.token, portrait, approvedBy: signed.approvedBy };
       return currentApprovalPortrait.value === portrait;
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
@@ -4630,6 +4640,7 @@ export function usePosSale(deps: PosSaleDeps) {
     serverError,
     managerApprovalError,
     managerApproved,
+    managerApprovedBy,
     managerCheckBusy,
     checkManagerApproval,
     gridProducts,
