@@ -50,3 +50,24 @@ export function usePageNotice () {
 
   return { notice, show, dismiss }
 }
+
+/**
+ * Onde o aviso mora (#3267, regra do dono: abaixo de TODAS as barras do topo). A faixa do
+ * breadcrumb é uma barra: a página que a tem mostra o aviso logo depois dela
+ * (`Ui/Breadcrumbs` reivindica o lugar enquanto está montado), e o aviso do shell
+ * (`app.vue`, primeiro filho de `#main-content`) só aparece quando nenhuma faixa o
+ * reivindicou. Um aviso só no DOM.
+ */
+export function usePageNoticeAnchor () {
+  const claims = useState<number>('storefront-page-notice-anchor', () => 0)
+
+  function claim () {
+    claims.value += 1
+  }
+
+  function release () {
+    claims.value = Math.max(0, claims.value - 1)
+  }
+
+  return { claims, claim, release }
+}

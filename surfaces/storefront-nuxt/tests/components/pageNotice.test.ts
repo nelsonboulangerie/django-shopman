@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import PageNotice from '~/components/PageNotice.vue'
-import { usePageNotice } from '~/composables/usePageNotice'
+import { usePageNotice, usePageNoticeAnchor } from '~/composables/usePageNotice'
 
 describe('PageNotice', () => {
   beforeEach(() => {
     usePageNotice().dismiss()
+    usePageNoticeAnchor().claims.value = 0
   })
 
   it('mostra a frase e o botão da ação, que leva ao destino', async () => {
