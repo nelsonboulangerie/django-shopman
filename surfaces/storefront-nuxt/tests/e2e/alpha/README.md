@@ -12,14 +12,14 @@ npm ci                      # na primeira vez (surfaces/storefront-nuxt)
 npx playwright test --config=tests/e2e/alpha/playwright.config.ts
 ```
 
-Cobertura (25 testes):
+Cobertura (22 testes):
 
 | Spec | O que cobre |
 |---|---|
-| `01-smoke` | home, menu, PDP, busca, 404, terms/privacy, sem erros de console |
+| `01-smoke` | home, menu, PDP, 404, terms/privacy, sem erros de console |
 | `02-happy-path` | login → menu → carrinho → checkout (retirada) → pedido → tracking |
 | `03-personas` | convidado (guardas), cliente recorrente (conta/histórico), entrega com CEP novo |
-| `04-scenarios` | coleção, oferta, busca vazia, cupom inválido, favoritos, refazer, cancelamento |
+| `04-scenarios` | coleção, oferta, cupom inválido, favoritos, refazer, cancelamento |
 | `05-edge-cases` | telefone inválido, OTP errado, quantidade, sacola vazia, loja fechada, checkout vazio |
 
 ## Cuidados

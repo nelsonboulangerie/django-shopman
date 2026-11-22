@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { hasOptionGroups } from '~/presentation/productOptions'
 import type { ProductMutationMeta, ProductOptionGroup } from '~/types/shopman'
-import { claimEarlyTap } from '~/utils/earlyTap'
+import { claimEarlyTap, forgetEarlyTap, rememberEarlyTap } from '~/utils/earlyTap'
 
 const props = withDefaults(defineProps<{
   meta: ProductMutationMeta
@@ -56,6 +56,9 @@ async function addOne () {
   if (pending.value) return
   const nextQty = props.addTargetQty ?? 1
   const keepKeyboardFocus = import.meta.client && actionRoot.value?.contains(document.activeElement)
+  // Em voo, o toque fica na aba: se a cliente sair da página antes da resposta, a
+  // página nova o executa (#3171). O PUT é absoluto, então repetir não soma.
+  rememberEarlyTap(earlyTapKey.value, props.meta.name)
   const mutation = setSkuQty(props.meta, nextQty)
   if (keepKeyboardFocus) {
     await nextTick()
@@ -70,6 +73,8 @@ async function addOne () {
       actionRoot.value?.querySelector<HTMLElement>('button')?.focus()
     }
     throw error
+  } finally {
+    forgetEarlyTap(earlyTapKey.value)
   }
 }
 </script>
@@ -95,6 +100,7 @@ async function addOne () {
       :class="tone === 'inverted' ? 'shop-action-inverted' : ''"
       :aria-label="`Adicionar ${meta.name}`"
       :data-early-tap="earlyTap"
+      :data-early-tap-name="earlyTap ? meta.name : undefined"
       :disabled="disabled"
       :loading="pending || adding"
       @click="add"
@@ -106,6 +112,7 @@ async function addOne () {
       icon="lucide:shopping-bag"
       :class="tone === 'inverted' ? 'shop-action-inverted' : ''"
       :data-early-tap="earlyTap"
+      :data-early-tap-name="earlyTap ? meta.name : undefined"
       :disabled="disabled"
       :loading="pending || adding"
       @click="add"

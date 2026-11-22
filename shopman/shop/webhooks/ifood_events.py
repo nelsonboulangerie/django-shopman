@@ -241,6 +241,11 @@ class IFoodEventsWebhookView(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
+        if order_events:
+            from shopman.shop.services import observability
+
+            observability.record_webhook_success("ifood")
+
         if keepalives:
             body = _presence_body(keepalives)
             logger.info("ifood_events_webhook: presence probe answered with %s", body)

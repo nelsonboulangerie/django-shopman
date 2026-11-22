@@ -4,8 +4,9 @@
 //
 // Decisão 1 = A do dono (16/11): o companheiro da sugestão da casa já vem marcado como
 // "Sugestão da casa", e a cotação juntas×separadas é SÓ leitura (o ✔ não é botão).
-import type { DeliveryStopProjection } from "~/generated/ordersContract";
+import type { DeliveryStopProjection, RidePlanProjection } from "~/generated/ordersContract";
 import { formatBRL } from "../../../operator-kit/app/utils/money";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 import { joinCodes } from "~/presentation/houseCouriers";
 import type { RideSuggestion } from "~/presentation/deliveries";
 
@@ -108,17 +109,30 @@ export function companionChoices(
 }
 
 /**
+ * O nome do serviço que leva a corrida que ainda vai abrir: o sugerido no plano
+ * (`ride_plan.service`, o padrão do Admin), como o cadastro diz; "central" sem ele.
+ */
+export function planServiceName(plan: Pick<RidePlanProjection, "service" | "service_options"> | null | undefined): string {
+  const option = plan?.service_options?.find((item) => item.ref === plan.service);
+  return deliveryServiceName(option?.name);
+}
+
+/**
  * A frase sob os companheiros quando a sugestão não vem com preço, ou quando um
  * companheiro ainda está em preparo. `null` quando a cotação já diz tudo.
  */
 export function companionNote(
   plan: RideSuggestion | null,
   choices: readonly CompanionChoice[],
+  service?: string,
 ): { text: string; warning: boolean } | null {
   if (plan && !plan.quoted) {
     const mates = choices.filter((choice) => plan.refs.includes(choice.ref)).map((choice) => choice.code);
     if (mates.length)
-      return { text: `A TaOn não cotou agora. Marque ${joinCodes(mates)} se quiser levar junto.`, warning: true };
+      return {
+        text: `A ${deliveryServiceName(service)} não cotou agora. Marque ${joinCodes(mates)} se quiser levar junto.`,
+        warning: true,
+      };
   }
   const preparing = choices.filter((choice) => choice.stage && choice.stage !== "Pronto");
   if (preparing.length) {

@@ -31,7 +31,7 @@ async function login(page: Page) {
     }).toPass({ timeout: 20_000 });
     await enter.click();
   }
-  const station = page.getByRole("button", { name: /^É este balcão|^Vincular a este posto/ });
+  const station = page.getByRole("button", { name: /^É este balcão|^Vincular a este posto|^Vincular também a este posto/ });
   const board = page.getByRole("button", { name: /Próxima livre/ });
   await station.or(board).first().waitFor({ timeout: 30_000 });
   await expect(async () => {
@@ -80,7 +80,8 @@ test("J4: a última unidade vendida num dispositivo vira Esgotado no outro, sem 
   const b = await device(browser, "B");
 
   // O cabeçalho só diz "Ao vivo" com o push de pé: é a promessa que este WP cumpre.
-  await expect(b.getByText("Ao vivo").first()).toBeVisible({ timeout: 30_000 });
+  // O selo mostra só a hora da leitura; "Ao vivo" é o nome acessível dele.
+  await expect(b.getByRole("status", { name: /^Ao vivo/ }).first()).toBeVisible({ timeout: 30_000 });
 
   await openFreshTab(b);
   const tileB = await tileOf(b, LAST_UNIT);

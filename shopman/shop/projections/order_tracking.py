@@ -882,7 +882,7 @@ def _build_order_actions(
             _action(
                 ref="request_cancellation_contact",
                 kind="mutation",
-                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Pedir contato sobre cancelamento"),
+                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Quero falar com o responsável"),
                 priority="secondary",
                 href=f"/api/v1/orders/{order.ref}/contact-request/",
                 method="POST",
@@ -1899,6 +1899,13 @@ def _bill_line_of(item, discount_records: list[dict]) -> tuple[int, int, int]:
         return sum(int(d.get("discount_q", 0) or 0) * int(d.get("qty", 0) or 0) for d in rows)
 
     coupon_q = _off([d for d in records if d.get("type") == "coupon"])
+    # O cupom de valor FIXO é de PEDIDO: o registro dele (sem ``line_id`` e sem
+    # ``sku``) não casa com linha nenhuma, mas o rateio já tirou a fatia do preço
+    # desta linha e a carimbou em ``meta._disc`` (``scope="order"``). Sem
+    # devolvê-la, o resumo subtraía o cupom de novo (#3246).
+    order_disc = (item.meta or {}).get("_disc") or {}
+    if order_disc.get("scope") == "order" and order_disc.get("type") == "coupon":
+        coupon_q += int(order_disc.get("line_amount_q", 0) or 0)
     bill_total_q = charged_q + coupon_q
     listed = (item.meta or {}).get("_list_q")
     if listed is not None:

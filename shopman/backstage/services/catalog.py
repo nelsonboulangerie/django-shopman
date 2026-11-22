@@ -861,6 +861,11 @@ def _detail_payload(product) -> dict:
         # Hora declarada de prontidão ("HH:MM", "" = deduzir do histórico). É o
         # que impede prometer a baguete de tradição para as 9h.
         "ready_from": str(metadata.get("ready_from") or ""),
+        # Preparo da encomenda na Cozinha (#2304): o tempo PRÓPRIO do SKU em
+        # ``Shop.defaults["preorder_kitchen"]["prep_minutes_by_sku"]``, a mesma
+        # fonte do Admin; ``None`` = usa o preparo padrão da loja, que vai ao lado
+        # (somente leitura) para a tela dizer quanto é.
+        **_preorder_prep_payload(product.sku),
         "nutrition_facts": _nutrition_payload(product),
         "social": _social_attrs_payload(product),
         "fiscal": _fiscal_payload(product),
@@ -1174,7 +1179,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"collection_choices", "listing_links", "sku", "production", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
+    readonly = {"collection_choices", "listing_links", "sku", "production", "preorder_prep_default_minutes", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
@@ -1317,6 +1322,47 @@ def _apply_product_components(product, rows):
     # para depois do commit. Falha de outbox não pode confirmar a composição.
     product_updated.send(sender=Product, instance=product, sku=product.sku)
     emit_catalog_changed()
+
+
+def _preorder_prep_payload(sku: str) -> dict:
+    from shopman.shop.policies.preorder_kitchen_policy import resolve_preorder_kitchen_policy
+
+    policy = resolve_preorder_kitchen_policy()
+    return {
+        "preorder_prep_minutes": policy.prep_minutes_by_sku.get(sku),
+        "preorder_prep_default_minutes": policy.default_prep_minutes,
+    }
+
+
+def _apply_preorder_prep(sku: str, raw) -> None:
+    """Grava (ou apaga, com vazio) o preparo da encomenda do SKU na loja (#2304).
+
+    Escreve no MESMO ``Shop.defaults["preorder_kitchen"]["prep_minutes_by_sku"]``
+    que o Admin edita: não há segunda fonte. Vazio devolve o SKU ao preparo padrão.
+    """
+    from shopman.shop.models import Shop
+    from shopman.shop.policies.preorder_kitchen_policy import BLOCK, MAX_MINUTES
+
+    minutes = _as_nullable_int(raw, "Preparo da encomenda")
+    if minutes is not None and not 0 <= minutes <= MAX_MINUTES:
+        raise _field_error(
+            f"Preparo da encomenda: use de 0 a {MAX_MINUTES} minutos, ou deixe em branco para o preparo padrão.",
+            "preorder_prep_minutes",
+        )
+    shop = Shop.objects.select_for_update().order_by("pk").first()
+    if shop is None:
+        raise CatalogError("A loja ainda não foi configurada: não há onde gravar o preparo.")
+    defaults = dict(shop.defaults or {})
+    kitchen = dict(defaults.get(BLOCK) if isinstance(defaults.get(BLOCK), dict) else {})
+    by_sku = dict(kitchen.get("prep_minutes_by_sku") if isinstance(kitchen.get("prep_minutes_by_sku"), dict) else {})
+    if minutes is None:
+        by_sku.pop(sku, None)
+    else:
+        by_sku[sku] = minutes
+    kitchen["prep_minutes_by_sku"] = by_sku
+    defaults[BLOCK] = kitchen
+    shop.defaults = defaults
+    shop.save(update_fields=["defaults"])
 
 
 def get_product_detail(sku: str) -> dict:
@@ -1571,6 +1617,13 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     if "collections" in data:
         _apply_product_collections(product, data["collections"], expected_revision=(expected_revisions or {}).get("collections"))
         data = {key: value for key, value in data.items() if key != "collections"}
+        if not data:
+            return _detail_payload(product)
+    # O preparo da encomenda mora na loja (``Shop.defaults``), não no produto:
+    # grava à parte, na mesma transação, e sozinho não regrava o produto.
+    if "preorder_prep_minutes" in data:
+        _apply_preorder_prep(product.sku, data["preorder_prep_minutes"])
+        data = {key: value for key, value in data.items() if key != "preorder_prep_minutes"}
         if not data:
             return _detail_payload(product)
     # A vocação mora fora do produto (``ProductConsumptionTag``): grava à parte,
