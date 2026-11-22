@@ -13052,6 +13052,7 @@
           "symbols": [
             "trip_id",
             "trip_members",
+            "trip_members_for",
             "_locked_trip_members",
             "_open_trip",
             "trip_machine",
