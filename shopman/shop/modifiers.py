@@ -46,8 +46,8 @@ from shopman.shop.policies.promotion import (
     coupon_zero_reason,
     is_birthday_promotion,
     promotion_matches,
-    promotion_minimum_eligible,
 )
+from shopman.shop.services import fixed_discount
 from shopman.shop.services import promotions as promotion_service
 
 logger = logging.getLogger(__name__)
@@ -919,10 +919,6 @@ class DiscountModifier:
         modified = False
         total_coupon_discount_q = 0
         discounts_applied = []  # Persisted in session.pricing
-        # O registro por-linha que ESTA rodada gravou, por linha (``id`` do dict):
-        # se o cupom de valor fixo entrar no lugar do desconto da linha (troca do
-        # passo de valor fixo, abaixo), é este registro que sai da transparência.
-        line_records: dict[int, dict] = {}
 
         # ``pricing`` é o mesmo objeto de ``session.pricing`` para que
         # ``_reverse_prior_pricing`` (best-wins) reconcilie a transparência do
@@ -1057,7 +1053,6 @@ class DiscountModifier:
                 if source_group:
                     record["discount_group"] = source_group
                 discounts_applied.append(record)
-                line_records[id(item)] = record
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
 
@@ -1074,7 +1069,7 @@ class DiscountModifier:
                 and int(item.get("line_total_q", 0)) > 0
                 and promotion_matches(promo, promotion_context(ctx, sku=item.get("sku", "")))
             ]
-        fixed = self._best_fixed_discount(
+        fixed = fixed_discount.best_fixed_discount(
             promotions,
             coupon_promo,
             coupon_code,
@@ -1088,28 +1083,13 @@ class DiscountModifier:
         # dá mais no total. Só o cupom: a promoção automática de valor fixo segue sem
         # deslocar o desconto por-linha (o PDV mostra no botão o preço por-linha, e
         # nunca o fixo de pedido; trocar ali faria a cobrança divergir do botão).
-        swapped = self._swap_in_fixed_coupon(
-            items,
-            pricing,
-            coupon_promo,
-            coupon_code,
-            session_total,
-            standing_fixed_q=fixed[0] if fixed is not None else 0,
-            reaches=lambda item: promotion_matches(
-                coupon_promo, promotion_context(ctx, sku=item.get("sku", ""))
-            ),
+        fixed, coupon_back_q, swapped = fixed_discount.swap_fixed_coupon(
+            items, pricing, coupon_promo, coupon_code, session_total, fixed=fixed,
+            reaches=lambda item: promotion_matches(coupon_promo, promotion_context(ctx, sku=item.get("sku", ""))),
+            discounts_applied=discounts_applied,
         )
-        if swapped is not None:
-            modified = True
-            swap_value_q, displaced = swapped
-            for item in displaced:
-                record = line_records.pop(id(item), None)
-                if record is None:
-                    continue
-                discounts_applied.remove(record)
-                if record.get("type") == "coupon":
-                    total_coupon_discount_q -= _record_total_q(record)
-            fixed = (swap_value_q, ("coupon", coupon_code or "", None, ""), coupon_promo)
+        total_coupon_discount_q -= coupon_back_q
+        modified = modified or swapped
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
             eligible = _fixed_eligible_lines(fixed_promo)
@@ -1270,121 +1250,6 @@ class DiscountModifier:
             value = min(max(int(promo.value or 0), 0), 100)
             return monetary_div(price_q * value, 100)
         return max(0, min(promo.value, price_q))
-
-    @staticmethod
-    def _best_fixed_discount(
-        promotions: list[Any],
-        coupon_promo: Any,
-        coupon_code: str | None,
-        session_total: int,
-        *,
-        group_refs: set[str] = frozenset(),
-        group_meta=None,
-        applicable_q=None,
-    ) -> tuple[int, tuple[str, str, str | None, str], Any] | None:
-        """Largest applicable FIXED discount, as a single order-level candidate.
-
-        Fixed promotions and the fixed coupon compete on value (best wins, no
-        stacking of two fixed discounts). min_order_q is gated against the gross
-        order subtotal. Compete o que aplica, ``min(valor, applicable_q(promo))`` (subtotal que o
-        escopo alcança): fixo sem linha não vence o cupom (beta SMS-04). A fixed discount of the
-        customer's own group carries its (discount_kind, group_ref) per the WINNING group, not the
-        primary one. Returns (value_q, source, promo), source = (type, name, discount_kind, group_ref), or None.
-        """
-        best: tuple[int, tuple[str, str, str | None, str], Any] | None = None
-        for promo in promotions:
-            if promo.type != "fixed":
-                continue
-            if not promotion_minimum_eligible(
-                min_order_q=promo.min_order_q,
-                merchandise_subtotal_q=session_total,
-            ):
-                continue
-            value = min(max(0, int(promo.value or 0)), applicable_q(promo) if applicable_q else 1 << 62)
-            if value > 0 and (best is None or value > best[0]):
-                kind, group_ref = None, ""
-                if getattr(promo, "ref", "") in group_refs and group_meta is not None:
-                    group_ref, kind, _step = group_meta(promo)
-                best = (value, ("promotion", promo.name, kind, group_ref), promo)
-        if coupon_promo is not None and coupon_promo.type == "fixed":
-            if promotion_minimum_eligible(
-                min_order_q=coupon_promo.min_order_q,
-                merchandise_subtotal_q=session_total,
-            ):
-                value = min(max(0, int(coupon_promo.value or 0)), applicable_q(coupon_promo) if applicable_q else 1 << 62)
-                if value > 0 and (best is None or value > best[0]):  # empate não gasta o cupom
-                    best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
-        return best
-
-    @staticmethod
-    def _swap_in_fixed_coupon(
-        items: list[dict],
-        pricing: dict,
-        coupon_promo: Any,
-        coupon_code: str | None,
-        session_total: int,
-        *,
-        standing_fixed_q: int,
-        reaches,
-    ) -> tuple[int, list[dict]] | None:
-        """O cupom de valor fixo entra no lugar do desconto por-linha que vale hoje?
-
-        Os descontos não se somam e o maior ganha, também para o cupom de valor fixo:
-        R$ 5,00 contra os 10% de aniversário de 3 Croissants (R$ 3,90) é o cupom.
-        Sem a troca, ``_fixed_eligible_lines`` deixa de fora toda linha que já tem
-        desconto, e o cupom valia zero por maior que fosse.
-
-        A troca alcança as linhas que o cupom alcança, COM ou sem desconto. Ela vale
-        ``min(valor do cupom, subtotal de LISTA dessas linhas)`` e desloca o desconto
-        por-linha que elas têm hoje (``meta._disc``). Entra só quando o desconto total
-        depois dela é ESTRITAMENTE maior do que sem ela: o deslocado mais o fixo que já
-        venceria nas linhas sem desconto (``standing_fixed_q``). No empate fica o que
-        já valia, e o cupom não é gasto à toa (a mesma régua do percentual).
-
-        Quando entra, cada linha deslocada volta ao preço de lista pelo mesmo caminho
-        do vencedor percentual (``_reverse_prior_pricing`` reconcilia a transparência
-        do desconto deslocado, como o lote) e perde o ``_disc``. Devolve
-        ``(valor da troca, linhas deslocadas)``; o rateio e o registro do cupom ficam
-        com o passo de valor fixo, igual a qualquer desconto de pedido. ``None`` quando
-        não há troca.
-        """
-        if coupon_promo is None or coupon_promo.type != "fixed":
-            return None
-        if not promotion_minimum_eligible(
-            min_order_q=coupon_promo.min_order_q,
-            merchandise_subtotal_q=session_total,
-        ):
-            return None
-        reached = [
-            item
-            for item in items
-            if not _is_non_merchandise_line(item)
-            and int(item.get("line_total_q", 0) or 0) > 0
-            and reaches(item)
-        ]
-        displaced = [item for item in reached if (item.get("meta") or {}).get("_disc")]
-        if not displaced:
-            return None  # nada a deslocar: o passo de valor fixo já cuida do cupom
-
-        def _displaced_q(item: dict) -> int:
-            disc = item["meta"]["_disc"]
-            if disc.get("scope") == "order":
-                return int(disc.get("line_amount_q") or 0)
-            return monetary_mult(_qty_decimal(item), int(disc.get("amount_q") or 0))
-
-        list_subtotal_q = sum(monetary_mult(_qty_decimal(item), _list_price_q(item)) for item in reached)
-        swap_value_q = min(max(0, int(coupon_promo.value or 0)), list_subtotal_q)
-        standing_q = sum(_displaced_q(item) for item in displaced) + max(0, int(standing_fixed_q))
-        if swap_value_q <= standing_q:
-            return None
-
-        for item in displaced:
-            _reverse_prior_pricing(pricing, item)
-            list_q = _list_price_q(item)
-            item["unit_price_q"] = list_q
-            item["line_total_q"] = monetary_mult(_qty_decimal(item), list_q)
-            item["meta"].pop("_disc", None)
-        return swap_value_q, displaced
 
     @staticmethod
     def _distribute_order_discount(

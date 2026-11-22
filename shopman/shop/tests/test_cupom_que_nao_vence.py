@@ -173,6 +173,46 @@ def test_cupom_fixo_maior_que_o_desconto_por_item_entra_no_lugar_dele(web):
     assert session.pricing["discount"]["total_discount_q"] == 501
 
 
+def test_a_troca_do_cupom_fixo_devolve_a_linha_ao_preco_de_lista_e_tira_o_registro_deslocado():
+    """A unidade sozinha: a linha deslocada volta ao preço de lista, perde o ``_disc``, e o
+    registro que o passe já tinha feito para ela sai, para o fixo ser rateado no lugar."""
+    from types import SimpleNamespace
+
+    from shopman.shop.services import fixed_discount
+
+    promo = SimpleNamespace(type="fixed", value=500, min_order_q=0)
+    item = {
+        "line_id": "L1", "sku": "CRO", "qty": 3, "unit_price_q": 1170, "line_total_q": 3510,
+        "meta": {"_list_q": 1300, "_disc": {"type": "promotion", "label": "Aniversário", "amount_q": 130}},
+    }
+    record = {"line_id": "L1", "sku": "CRO", "type": "promotion", "name": "Aniversário", "discount_q": 130, "qty": 3}
+    # O registro de pedido (sku vazio) não é de linha nenhuma e fica.
+    order_level = {"line_id": "", "sku": "", "type": "promotion", "name": "Frete", "discount_q": 100, "qty": 1}
+    discounts = [record, order_level]
+
+    fixed, coupon_back_q, swapped = fixed_discount.swap_fixed_coupon(
+        [item], {}, promo, "CINCO", 3900, fixed=None, reaches=lambda line: True,
+        discounts_applied=discounts,
+    )
+
+    assert swapped is True
+    assert fixed[0] == 500 and fixed[1][:2] == ("coupon", "CINCO")
+    assert (discounts, coupon_back_q) == ([order_level], 0)
+    assert "_disc" not in item["meta"]
+    assert (item["unit_price_q"], item["line_total_q"]) == (1300, 3900)
+
+    # Empate (R$ 3,90 contra R$ 3,90): nada muda.
+    tie = SimpleNamespace(type="fixed", value=390, min_order_q=0)
+    line = {"sku": "CRO", "qty": 3, "unit_price_q": 1170, "line_total_q": 3510,
+            "meta": {"_list_q": 1300, "_disc": {"type": "promotion", "label": "Aniversário", "amount_q": 130}}}
+    kept, _back, swapped = fixed_discount.swap_fixed_coupon(
+        [line], {}, tie, "EMPATE", 3900, fixed=None, reaches=lambda x: True,
+        discounts_applied=[],
+    )
+    assert (kept, swapped) == (None, False)
+    assert line["meta"]["_disc"]["amount_q"] == 130
+
+
 def test_cupom_fixo_que_empata_com_o_desconto_por_item_nao_entra(web):
     """R$ 3,90 contra os 10% de 3 Croissants (R$ 3,90): no empate fica o que já valia."""
     _promotion("aniversario", "Desconto de aniversário", 10)
