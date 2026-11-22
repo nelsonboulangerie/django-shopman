@@ -94,7 +94,8 @@ class TestBuildCatalogShape:
         assert isinstance(proj, CatalogProjection)
         assert proj.items == ()
         assert proj.sections == ()
-        assert proj.featured == ()
+        # #2361: o cardápio não leva mais ``featured`` (a loja nunca o leu).
+        assert not hasattr(proj, "featured")
         assert proj.has_items is False
         assert proj.active_category_ref is None
 
