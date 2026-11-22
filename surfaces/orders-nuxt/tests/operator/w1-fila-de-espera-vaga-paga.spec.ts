@@ -46,7 +46,7 @@ async function boardCard(gestor: Page, ref: string, check: (card: Locator) => Pr
 
 const accept = (card: Locator) => card.getByRole("button", { name: "Aceitar", exact: true });
 
-test("W1: a cliente entra na fila, a fornada sai, ela confirma a vaga e paga", async ({ browser, baseURL }, testInfo) => {
+test("W1: a cliente entra na fila, o lote fica pronto, ela confirma a vaga e paga", async ({ browser, baseURL }, testInfo) => {
   test.setTimeout(600_000);
   const morning = shopInstant(shopDate(), MORNING_HOUR);
   await travelTo(morning);
