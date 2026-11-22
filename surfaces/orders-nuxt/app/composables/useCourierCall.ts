@@ -60,6 +60,7 @@ import {
   orderCallDescription,
   orderCallLabel,
   orderCallTitle,
+  planServiceName,
   suggestionFor,
 } from "~/presentation/courierCall";
 
@@ -94,6 +95,8 @@ export function useCourierCall(options: CourierCallOptions) {
   const ready = computed(() => editing.value.filter((ride) => ride.refs.length));
   const editingCount = computed(() => ready.value.reduce((sum, ride) => sum + ride.refs.length, 0));
   const planSuggestions = computed(() => (data.value?.ride_plan?.suggestions ?? []) as RideSuggestion[]);
+  // O serviço que leva a corrida a chamar, como o cadastro diz: as frases o usam (#3139).
+  const planService = computed(() => planServiceName(data.value?.ride_plan));
 
   watch(freeNumbers, (free) => {
     // Uma corrida chamada enquanto se editava (em outro dispositivo) pode ter pego o
@@ -338,7 +341,7 @@ export function useCourierCall(options: CourierCallOptions) {
     if (opened)
       useSonner.success(
         opened === 1 && calls.length === 1
-          ? sentDetail || already || "Corrida chamada. A TaOn avisa quando alguém aceitar."
+          ? sentDetail || already || `Corrida chamada. A ${planService.value} avisa quando alguém aceitar.`
           : `${opened} ${opened === 1 ? "corrida chamada" : "corridas chamadas"}.`,
       );
     const done = new Set(called);
@@ -516,7 +519,7 @@ export function useCourierCall(options: CourierCallOptions) {
       choices,
       lines: plan ? suggestionQuoteLines(plan) : [],
       late: plan ? suggestionLate(plan) : "",
-      note: companionNote(plan, choices),
+      note: companionNote(plan, choices, planService.value),
     };
   });
   const sheetMap = computed<CallSheetMap | null>(() => {

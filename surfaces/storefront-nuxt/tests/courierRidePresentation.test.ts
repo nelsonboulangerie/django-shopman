@@ -6,6 +6,9 @@ import {
   bagTip,
   themeToAdopt,
   trackingText,
+  mapStops,
+  routeLine,
+  frameProjection,
   closedTitle,
   doorMoney,
   machineText,
@@ -272,5 +275,43 @@ describe('a posição para a loja (#2509)', () => {
     expect(trackingText('asking')).toBe('Permita a localização para a loja ver onde você está.')
     expect(trackingText('on')).toBe('A loja vê onde você está enquanto esta tela estiver aberta.')
     expect(trackingText('denied')).toContain('Libere nas configurações do navegador.')
+  })
+})
+
+describe('o mapa da corrida (#2509)', () => {
+  const view = (stops: Partial<CourierStop>[]) => ({ moment: 'route', stops }) as CourierRideView
+  const a = { ref: 'R-A', code: 'A47', lat: -23.33, lng: -51.18, state: 'done' } as const
+  const c = { ref: 'R-C', code: 'C03', lat: -23.31, lng: -51.16, state: 'open' } as const
+  const x = { ref: 'R-X', code: 'X09', lat: -23.30, lng: -51.15, state: 'cancelled' } as const
+  const semPonto = { ref: 'R-S', code: 'S01', lat: null, lng: null, state: 'open' } as const
+
+  it('as paradas com coordenada, na ordem, a próxima marcada e o cancelado fora', () => {
+    expect(mapStops(view([a, c, x, semPonto]), 'R-C')).toEqual([
+      { ref: 'R-A', code: 'A47', lat: -23.33, lng: -51.18, done: true, next: false },
+      { ref: 'R-C', code: 'C03', lat: -23.31, lng: -51.16, done: false, next: true }
+    ])
+  })
+
+  it('a linha que falta sai de onde ele está e passa só pelas abertas', () => {
+    const stops = mapStops(view([a, c]), 'R-C')
+    expect(routeLine(stops, { lat: -23.34, lng: -51.19 })).toEqual([{ lat: -23.34, lng: -51.19 }, { lat: -23.31, lng: -51.16 }])
+    expect(routeLine(stops, null)).toEqual([{ lat: -23.31, lng: -51.16 }])
+  })
+
+  it('o mapa próprio enquadra os pontos com folga e o norte em cima', () => {
+    const project = frameProjection([{ lat: -23.33, lng: -51.18 }, { lat: -23.31, lng: -51.16 }], 375, 500)
+    const sul = project({ lat: -23.33, lng: -51.18 })
+    const norte = project({ lat: -23.31, lng: -51.16 })
+    expect(norte.y).toBeLessThan(sul.y)
+    expect(norte.x).toBeGreaterThan(sul.x)
+    for (const p of [sul, norte]) {
+      expect(p.x).toBeGreaterThanOrEqual(48 - 0.01)
+      expect(p.x).toBeLessThanOrEqual(375 - 48 + 0.01)
+      expect(p.y).toBeGreaterThanOrEqual(48 - 0.01)
+      expect(p.y).toBeLessThanOrEqual(500 - 48 + 0.01)
+    }
+    // Com a faixa dos botões embaixo, nenhum ponto desce até ela.
+    const banded = frameProjection([{ lat: -23.33, lng: -51.18 }, { lat: -23.31, lng: -51.16 }], 740, 360, 48, 96)
+    expect(banded({ lat: -23.33, lng: -51.18 }).y).toBeLessThanOrEqual(360 - 96 + 0.01)
   })
 })

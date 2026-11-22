@@ -7,7 +7,8 @@ import { capture, inboxMark, readLoginCode, settled, withInbox } from './stack'
 
 export interface NewCustomer {
   phone: string
-  name: string
+  /** Só a cliente nova diz o nome; a que volta (o seed, `--profile qa`) entra direto. */
+  name?: string
 }
 
 /** O link da sacola: "Sacola, 1 item", na barra de baixo (celular) e no cabeçalho (desktop). */
@@ -58,11 +59,13 @@ export async function checkoutSigningInByCode (page: Page, testInfo: TestInfo, w
   await page.keyboard.type(code)
   await capture(page, testInfo, 'codigo')
 
-  // Cliente nova: a loja pergunta como chamar.
-  const name = page.getByRole('textbox', { name: 'Nome', exact: true })
-  await expect(name).toBeVisible()
-  await name.pressSequentially(who.name)
-  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  // Cliente nova: a loja pergunta como chamar. A que volta já tem nome.
+  if (who.name) {
+    const name = page.getByRole('textbox', { name: 'Nome', exact: true })
+    await expect(name).toBeVisible()
+    await name.pressSequentially(who.name)
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  }
   await expect(page).toHaveURL(/\/finalizar/)
   await settled(page)
 }

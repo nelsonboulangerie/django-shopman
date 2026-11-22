@@ -374,6 +374,49 @@ def _require_creation_attempt(*, actor: str, idempotency_key: str | None) -> Non
         )
 
 
+def _refuse_void_with_deliveries(work_order) -> None:
+    """Cancelar o lote que já entregou pão é recusado, como reduzir e fechar abaixo (#2729).
+
+    A entrega feita antes do fechamento é baixa contra o saldo de produção da data
+    (#2724). Cancelar o lote deixava essa entrega registrada num saldo zerado, de um
+    lote que não produziu nada, sem aviso: saía pão sem produção. Reduzir o plano
+    abaixo do comprometido e fechar abaixo do entregue já são recusados; o
+    cancelamento é o único que passava.
+
+    Só a ENTREGA trava. A reserva sem entrega continua podendo ser cancelada: vira
+    fato do pedido (#2547). E a entrega que outro lote aberto do mesmo produto e dia
+    ainda cobre não trava.
+    """
+    from shopman.craftsman.models import WorkOrder
+    from shopman.stockman.models import Quant
+    from shopman.stockman.services.planning import _early_deliveries
+
+    if not work_order.target_date or work_order.status not in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED):
+        return
+    quants = Quant.objects.filter(sku=work_order.output_sku, target_date=work_order.target_date)
+    delivered = sum(
+        (part for quant in quants for _hold, part, _kind, _settles in _early_deliveries(quant, limit=Decimal("1e30"))),
+        Decimal("0"),
+    )
+    if delivered <= 0:
+        return
+    others = (
+        WorkOrder.objects.filter(
+            output_sku=work_order.output_sku,
+            target_date=work_order.target_date,
+            status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+        )
+        .exclude(pk=work_order.pk)
+        .values_list("quantity", flat=True)
+    )
+    if sum((Decimal(str(qty)) for qty in others), Decimal("0")) >= delivered:
+        return
+    raise ProductionError(
+        f"Não dá para cancelar o lote {work_order.ref}: {_qty(delivered)} un. dele já foram entregues. "
+        "Feche o lote com o que ele rendeu."
+    )
+
+
 def apply_void(
     work_order_id,
     *,
@@ -394,6 +437,7 @@ def apply_void(
     try:
         with transaction.atomic():
             work_order = WorkOrder.objects.select_for_update().get(pk=work_order_id)
+            _refuse_void_with_deliveries(work_order)
             result = production_core.void_work_order(
                 work_order_id,
                 actor=actor,

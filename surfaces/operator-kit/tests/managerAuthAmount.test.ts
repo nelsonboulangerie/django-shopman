@@ -9,7 +9,7 @@ import { formatBRL } from "../app/utils/money";
 describe("managerAuth: o gerente lê o valor que assina", () => {
   it("a retirada diz o valor e o motivo", () => {
     expect(managerAuthReason({ action: "cash_out", amountQ: 500000, detail: "Sangria" })).toBe(
-      `Retirada de ${formatBRL(500000)} (Sangria).`,
+      `Saída de caixa de ${formatBRL(500000)} (Sangria).`,
     );
   });
 
@@ -118,5 +118,11 @@ describe("managerAuth: tentar o estorno de novo no Gestor", () => {
     const fixed = managerAuthReason({ action: "refund_retry" });
     expect(fixed).toBe("O estorno do pedido cancelado não saiu.");
     expect(`${managerAuthTitle("refund_retry")} ${fixed}`).not.toMatch(/[—–]/);
+  });
+
+  it("encomenda acima do plano tem nome na descrição (#2676)", () => {
+    expect(managerAuthReason({ reasons: ["preorder_over_plan"] })).toBe("Encomenda acima do plano da data.");
+    expect(managerAuthReason({ reasons: ["preorder_over_plan", "discount_over_threshold"], thresholdQ: 500, discountQ: 1200 }))
+      .toContain("Encomenda acima do plano da data.");
   });
 });

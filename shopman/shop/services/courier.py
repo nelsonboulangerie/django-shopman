@@ -837,7 +837,8 @@ def group_refusal(order, *, tasks: dict[str, list[Directive]] | None = None) -> 
     if has_active_ride(order):
         return f"O pedido {code} já tem corrida."
     if unresolved_dispatch(order, tasks=tasks) is not None:
-        return f"O pedido {code} tem uma chamada sem resposta da TaOn. Confira na central antes."
+        return (f"O pedido {code} tem uma chamada sem resposta da {service_name(order)}. "
+                "Confira na central antes.")
     return ""
 
 
@@ -1104,9 +1105,28 @@ def latest_cancellation(order, *, pending_only=False):
 
 
 #: O que a tela diz de um cancelamento pedido, por estado (:func:`cancel_state`).
-CANCEL_PENDING_MESSAGE = "Pedido de cancelamento enviado. Esperando a TaOn confirmar."
+#: ``{service}`` é o nome do serviço da corrida (:func:`service_name`).
+CANCEL_PENDING_MESSAGE = "Pedido de cancelamento enviado. Esperando a {service} confirmar."
 CANCEL_UNKNOWN_MESSAGE = "Cancelamento sem resultado confirmado. Confira esta corrida na central antes de reenviar."
-CANCEL_NOT_SENT_MESSAGE = "O cancelamento não foi enviado à TaOn. Tente de novo."
+CANCEL_NOT_SENT_MESSAGE = "O cancelamento não foi enviado à {service}. Tente de novo."
+
+
+def service_name(order) -> str:
+    """O nome do serviço da corrida deste pedido, como o cadastro diz ("TaOn")."""
+    return delivery_services.service_name(get_block(order))
+
+
+#: Os avisos de cancelamento da corrida (``integration_failed``), pelo trecho da
+#: frase que cada um grava: a recusa da central (:func:`cancel_refused_message`),
+#: o envio sem resultado (:data:`CANCEL_UNKNOWN_MESSAGE`) e o pedido cancelado com
+#: a corrida aberta (:func:`on_order_cancelled`). Com a corrida encerrada (C, N ou
+#: F) nenhum deles é mais verdade, e saem sozinhos (#2496). Os outros avisos
+#: ``integration_failed`` do pedido ficam.
+CANCEL_ALERT_MARKERS = (
+    "não cancelou",
+    "Cancelamento sem resultado confirmado",
+    "a corrida segue aberta na central",
+)
 
 
 def ride_name(order) -> str:
@@ -1119,7 +1139,8 @@ def ride_name(order) -> str:
 
 def cancel_refused_message(order) -> str:
     """A recusa da central, na frase que a tela e o aviso mostram."""
-    return f"A TaOn não cancelou {ride_name(order)}. Cancele pela central da TaOn."
+    service = service_name(order)
+    return f"A {service} não cancelou {ride_name(order)}. Cancele pela central da {service}."
 
 
 def cancel_state(order) -> dict:
@@ -1145,12 +1166,12 @@ def cancel_state(order) -> dict:
     if state == "refused":
         return {"state": "failed", "message": cancel_refused_message(order), "at": at}
     if state == "not_applied":
-        return {"state": "failed", "message": CANCEL_NOT_SENT_MESSAGE, "at": at}
+        return {"state": "failed", "message": CANCEL_NOT_SENT_MESSAGE.format(service=service_name(order)), "at": at}
     live = task.status in (Directive.Status.QUEUED, Directive.Status.RUNNING)
     if state == "unknown" or (state == "started" and not live):
         return {"state": "unknown", "message": CANCEL_UNKNOWN_MESSAGE, "at": at}
     if live or state in ("started", "accepted"):
-        return {"state": "pending", "message": CANCEL_PENDING_MESSAGE, "at": at}
+        return {"state": "pending", "message": CANCEL_PENDING_MESSAGE.format(service=service_name(order)), "at": at}
     return empty
 
 
@@ -1161,10 +1182,11 @@ def last_failure(order) -> dict | None:
     vai para o histórico (``attempts[-1]``) e o pedido volta para Aguardando. Sem
     isto ele voltava calado, como se nunca tivesse sido chamado.
 
-    ``{"key", "state", "by_house", "at", "refs", "number"}``: ``key`` é a corrida
+    ``{"key", "state", "by_house", "at", "refs", "number", "service"}``: ``key`` é a corrida
     (o ``ride_ref`` dela), ``refs`` os pedidos que iam nela (o "Chamar de novo"
     chama a corrida inteira), ``by_house`` diz que o cancelamento saiu daqui e
-    ``number`` é o da letra que ela tinha. ``None`` com corrida viva, sem
+    ``number`` é o da letra que ela tinha; ``service`` é o nome do serviço no
+    cadastro, para a frase. ``None`` com corrida viva, sem
     histórico, quando o fim não foi falha, ou quando uma chamada mais nova já
     falhou por outro motivo (``block["error"]``, que a tela mostra no lugar).
     """
@@ -1192,6 +1214,7 @@ def last_failure(order) -> dict | None:
         "at": at,
         "refs": refs,
         "number": block.get("ride_number"),
+        "service": delivery_services.service_name(block),
     }
 
 
@@ -1217,7 +1240,8 @@ def failure_message(failure: dict, *, live_numbers=None) -> str:
         return f"Ninguém aceitou {ride}{when}."
     if failure.get("by_house"):
         return f"A casa cancelou {ride}{when}."
-    return f"A TaOn cancelou {ride}{when}."
+    service = failure.get("service") or delivery_services.SERVICE_FALLBACK_NAME
+    return f"A {service} cancelou {ride}{when}."
 
 
 def ride_health(order, *, tasks: dict[str, list[Directive]] | None = None) -> dict:
@@ -1709,14 +1733,15 @@ def _alert_ride_restored(order, ride_id: str, outcome: str) -> None:
     code = short_ref(order.ref)
     if outcome == "restored":
         severity, message = "warning", (
-            f"A TaOn retomou a corrida {letter + ' ' if letter else ''}do pedido {code}, que {_RESTORED_ALERT_MARKER}. "
+            f"A {service_name(order)} retomou a corrida {letter + ' ' if letter else ''}do pedido {code}, "
+            f"que {_RESTORED_ALERT_MARKER}. "
             "Não chame outro entregador. Se o troco ou a maquininha voltaram para a casa, "
             "separe de novo antes de entregar a sacola."
         )
     else:
         severity, message = "critical", (
-            f"A TaOn deu notícia de uma corrida do pedido {code} que {_RESTORED_ALERT_MARKER}, e o pedido já tem outra. "
-            "Confira na central da TaOn para a casa não pagar duas corridas."
+            f"A {service_name(order)} deu notícia de uma corrida do pedido {code} que {_RESTORED_ALERT_MARKER}, "
+            f"e o pedido já tem outra. Confira na central da {service_name(order)} para a casa não pagar duas corridas."
         )
     logger.warning("courier.archived_ride_alive order=%s ride_ref=%s outcome=%s", order.ref, ride_id, outcome)
     try:
@@ -1835,6 +1860,8 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
                 # A foto e a posição eram da corrida: com ela encerrada (ou sem o
                 # entregador que saiu), saem do cache.
                 _forget_driver_caches(ride_id)
+    if outcome == "applied" and status in ("C", "N", "F"):
+        _resolve_cancel_alerts(order, status)
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
     if failed_ride and not observed.get("dispatched_at"):
@@ -1854,6 +1881,23 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             # a tempo): o mesmo aviso de "já coletou", uma vez por pedido.
             on_order_cancelled(order)
     return outcome
+
+
+def _resolve_cancel_alerts(order, status: str) -> None:
+    """A corrida acabou: os avisos de cancelamento dela deixam de ser verdade (#2496)."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    ref = order.ref
+
+    def _resolve():
+        for marker in CANCEL_ALERT_MARKERS:
+            try:
+                alert_adapter.resolve_matching("integration_failed", message_contains=marker,
+                                               actor=f"courier:{status}", order_ref=ref)
+            except Exception:
+                logger.warning("courier.cancel_alert_resolve_failed order=%s", ref, exc_info=True)
+
+    transaction.on_commit(_resolve)
 
 
 def recover_local_status(order, *, ride_id: str) -> None:
@@ -2077,13 +2121,13 @@ def _alert_ride_failed(order, status: str) -> None:
     if status == "N":
         alert_type, message = (
             "courier_not_attended",
-            f"Nenhum entregador da TaOn aceitou a corrida do pedido {order.ref}. "
+            f"Nenhum entregador da {service_name(order)} aceitou a corrida do pedido {order.ref}. "
             "Abra o pedido e chame o entregador de novo.",
         )
     else:
         alert_type, message = (
             "courier_ride_cancelled",
-            f"A TaOn cancelou a corrida do pedido {order.ref}. "
+            f"A {service_name(order)} cancelou a corrida do pedido {order.ref}. "
             "Abra o pedido e chame o entregador de novo.",
         )
     try:
@@ -2109,12 +2153,12 @@ def _sync_failures_key(ride_id: str) -> str:
 
 
 def _sync_alert_marker(ride_id: str) -> str:
-    """O trecho do aviso que identifica a corrida na TaOn (dedupe e resolução).
+    """O trecho do aviso que identifica a corrida na central (dedupe e resolução).
 
     É a referência para achá-la no painel da central, não o nome dela: na casa a
     corrida se chama pela letra (:func:`ride_letter`).
     """
-    return f"número {ride_id} na TaOn"
+    return f"número {ride_id} na central"
 
 
 #: O que cada marco do progresso lido prova sobre a corrida, na ordem em que acontece.
@@ -2332,9 +2376,9 @@ def _alert_sync_failed(order, ride_id: str) -> None:
         alert_adapter.create(
             _SYNC_ALERT_TYPE,
             "warning",
-            f"A TaOn não está informando o andamento da {name} do pedido "
+            f"A {service_name(order)} não está informando o andamento da {name} do pedido "
             f"{short_ref(order.ref)} ({marker}). "
-            "O status na tela pode estar parado: confira no painel da TaOn.",
+            f"O status na tela pode estar parado: confira no painel da {service_name(order)}.",
             order_ref=order.ref,
         )
     except Exception:
@@ -2554,7 +2598,7 @@ def alert_auto_completed_blind(order) -> None:
             _SYNC_ALERT_TYPE,
             "warning",
             f"O pedido {short_ref(order.ref)} foi marcado entregue pelo prazo, mas {name} "
-            "segue aberta e a TaOn não informa o andamento. Confira com o entregador.",
+            f"segue aberta e a {service_name(order)} não informa o andamento. Confira com o entregador.",
             order_ref=order.ref,
         )
     except Exception:
