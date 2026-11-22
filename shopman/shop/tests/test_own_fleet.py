@@ -125,7 +125,7 @@ def test_assign_refuses_order_with_a_live_ride(shop, diego):
 def test_unconfirmed_link_shows_only_who_the_ride_is_for(client, shop, diego):
     token = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link.token
     body = _get(client, token).json()
-    assert body == {"moment": "confirm", "courier": "Diego"}  # nada da rota antes de confirmar
+    assert body == {"moment": "confirm", "courier": "Diego", "theme": "system"}  # nada da rota antes de confirmar
 
 
 def test_full_ride_through_the_link(client, shop, diego):
@@ -198,6 +198,32 @@ def test_a_late_kitchen_shows_no_past_hour(client, shop, diego):
     token = own_fleet.assign([c03], diego, actor="operator:ana").link.token
     stop = _post(client, "courier-ride-link-claim", token).json()["stops"][0]
     assert "ready_at" not in stop  # hora vencida não é previsão: a tela diz "Ainda não ficou pronto"
+
+
+def test_the_page_theme_lives_in_the_courier_record(client, shop, diego):
+    """#2648: o tema escolhido na página vai para o cadastro; o celular novo já abre nele."""
+    first = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link.token
+    assert _post(client, "courier-ride-link-claim", first).json()["theme"] == "system"
+    chosen = _post(client, "courier-ride-link-events", first, {"action": "theme", "theme": "dark"}).json()
+    assert chosen["theme"] == "dark"
+    diego.refresh_from_db()
+    assert diego.page_theme == "dark"
+    # A corrida seguinte, num celular novo: a confirmação já vem no tema do cadastro.
+    second = own_fleet.assign([_order("WEB-C03")], diego, actor="operator:ana").link.token
+    assert _get(client, second, device=OTHER_PHONE).json() == {"moment": "confirm", "courier": "Diego", "theme": "dark"}
+    _post(client, "courier-ride-link-events", first, {"action": "theme", "theme": "system"})
+    diego.refresh_from_db()
+    assert diego.page_theme == ""  # "Do celular" grava vazio
+
+
+def test_an_unknown_theme_is_refused_and_unconfirmed_links_change_nothing(client, shop, diego):
+    token = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link.token
+    assert _post(client, "courier-ride-link-events", token, {"action": "theme", "theme": "dark"}).status_code == 409
+    _post(client, "courier-ride-link-claim", token)
+    refused = _post(client, "courier-ride-link-events", token, {"action": "theme", "theme": "roxo"})
+    assert refused.status_code == 409
+    diego.refresh_from_db()
+    assert diego.page_theme == ""
 
 
 def test_events_need_the_confirmation_first(client, shop, diego):

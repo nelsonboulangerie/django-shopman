@@ -181,6 +181,7 @@
             "open_counts",
             "open_pk",
             "open_rows",
+            "open_rows_with_ref",
             "recent_exists",
             "resolve",
             "resolve_matching",
@@ -3637,6 +3638,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "stock.materialized-holds-receiver",
         "stock.production-void-receiver"
       ],
@@ -4330,6 +4332,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "production.batch-traceability-alert",
         "production.change-alert-receiver",
         "production.forgotten-planned-orders",
@@ -13360,6 +13363,7 @@
             "ORDER_PROBLEM",
             "OTHER_PAYMENT",
             "OwnFleetRefused",
+            "PAGE_THEMES",
             "PAYMENT_METHODS",
             "PROBLEMS",
             "REFUSED",
@@ -13377,6 +13381,8 @@
             "deliver",
             "depart",
             "logger",
+            "page_theme",
+            "remember_theme",
             "report_problem",
             "ride_view"
           ]

@@ -537,14 +537,19 @@ def _delivery_orders() -> list[Order]:
 def _split(orders: list[Order], tasks: dict) -> tuple[dict[str, list[Order]], list[Order]]:
     """As corridas vivas (por corrida) e o que aguarda entregador."""
     from shopman.backstage.projections.order_queue import _is_future_preorder
-    from shopman.shop.services import courier
+    from shopman.shop.services import courier, operator_orders
 
     today = timezone.localdate()
     rides: dict[str, list[Order]] = {}
     waiting: list[Order] = []
+    # A corrida finalizada com volta pendente pergunta pela saída inteira: uma
+    # leitura em lote para todas, nunca uma por pedido (#2891).
+    finished = [order for order in orders
+                if courier.get_block(order).get("ride_ref") and courier.get_block(order).get("status") == "F"]
+    trips = operator_orders.trip_members_for(finished) if finished else None
     for order in orders:
         block = courier.get_block(order)
-        if block.get("ride_number") and courier.ride_is_live(order, tasks=tasks):
+        if block.get("ride_number") and courier.ride_is_live(order, tasks=tasks, trips=trips):
             key = str(block.get("ride_ref") or f"call:{block.get('ride_number')}:{block.get('called_at') or order.ref}")
             rides.setdefault(key, []).append(order)
         elif order.status in courier.RIDE_ORDER_STATUSES and not _is_future_preorder(order, today=today):

@@ -137,6 +137,18 @@ class Courier(models.Model):
         blank=True,
         help_text="Dia em que está na escala. Só quem está na escala de hoje aparece ao chamar o entregador.",
     )
+    THEME_DEVICE = ""
+    THEME_LIGHT = "light"
+    THEME_DARK = "dark"
+    THEME_CHOICES = [(THEME_DEVICE, "Do celular"), (THEME_LIGHT, "Claro"), (THEME_DARK, "Escuro")]
+    page_theme = models.CharField(
+        "tema da página",
+        max_length=8,
+        blank=True,
+        default=THEME_DEVICE,
+        choices=THEME_CHOICES,
+        help_text="O tema da página da corrida. O entregador escolhe na página; o celular novo já abre nele.",
+    )
 
     class Meta:
         ordering = ["name"]
