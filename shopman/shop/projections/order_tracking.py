@@ -882,7 +882,7 @@ def _build_order_actions(
             _action(
                 ref="request_cancellation_contact",
                 kind="mutation",
-                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Pedir contato sobre cancelamento"),
+                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Quero falar com o responsável"),
                 priority="secondary",
                 href=f"/api/v1/orders/{order.ref}/contact-request/",
                 method="POST",

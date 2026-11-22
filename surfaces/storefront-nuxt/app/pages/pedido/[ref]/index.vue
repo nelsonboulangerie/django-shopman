@@ -14,6 +14,7 @@ import {
   trackingPanelClass,
   trackingPanelIcon,
   trackingPanelIconClass,
+  trackingSideActionsPrimary,
   trackingStatusPanelActions
 } from '~/presentation/orderTracking'
 import { countdownPct, deadlineCountdown, isCountdownUrgent, remainingPhrase, serverClockOffsetMs } from '~/presentation/deadline'
@@ -139,15 +140,13 @@ const showReorderAction = computed(() => Boolean(
 const showSupportAction = computed(() => Boolean(
   tracking.value?.whatsapp_url && !showSupportInStatusPanel.value
 ))
-// Um (e só um) botão primary no card de Ações: o topo da pilha não-destrutiva.
-// Prioridade: Avaliar > Pedir de novo > Falar conosco. Cancelar fica destructive
-// à parte. Assim nunca sobra um card só com botões secundários (faubourg).
-const sideActionsPrimary = computed(() => {
-  if (rateAction.value) return 'rate'
-  if (showReorderAction.value) return 'reorder'
-  if (showSupportAction.value) return 'support'
-  return null
-})
+// Um (e só um) botão primary no card de Ações (regra em `trackingSideActionsPrimary`).
+const sideActionsPrimary = computed(() => trackingSideActionsPrimary({
+  cancellationContact: Boolean(cancellationContactAction.value && !cancellationContact.value?.requested),
+  rate: Boolean(rateAction.value),
+  reorder: showReorderAction.value,
+  support: showSupportAction.value
+}))
 const showSideActions = computed(() => Boolean(
   tracking.value &&
   (cancelAction.value || cancellationContact.value || showReorderAction.value || showSupportAction.value ||
@@ -1039,7 +1038,7 @@ useSeoMeta({
                 <p class="text-sm text-muted-foreground">{{ tracking.copy.cancellation_contact_message }}</p>
                 <UiButton
                   class="h-auto min-h-9 w-full whitespace-normal py-2 text-center"
-                  variant="secondary"
+                  :variant="sideActionsPrimary === 'cancellation_contact' ? 'default' : 'secondary'"
                   icon="lucide:message-circle"
                   :loading="!!actionPending[cancellationContactAction.ref]"
                   @click="requestCancellationContact"
