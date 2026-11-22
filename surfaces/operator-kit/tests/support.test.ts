@@ -101,7 +101,7 @@ describe("presentation/support", () => {
     expect(rows.some((row) => row.value === "/pos")).toBe(false);
     expect(rows).toContainEqual({ label: "Posto", value: "pdv-02" });
     expect(rows).toContainEqual({ label: "Terminal", value: "PDV-02" });
-    expect(rows).toContainEqual({ label: "Em foco", value: "order ORD-1" });
+    expect(rows).toContainEqual({ label: "Em foco", value: "Pedido ORD-1" });
     expect(rows.some((row) => row.label === "empty")).toBe(false);
   });
 

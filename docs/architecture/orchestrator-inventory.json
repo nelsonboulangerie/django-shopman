@@ -10369,6 +10369,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "SERVICE_FALLBACK_NAME",
             "_KIND_BY_REF",
             "_kind",
             "_translator",
@@ -11178,6 +11179,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]
@@ -11668,6 +11670,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PREP_MIN_SAMPLES",
+            "PREP_PROMISE_FALLBACK_MINUTES",
             "PREP_SAMPLE_HOURS",
             "_parse"
           ]
@@ -11675,7 +11678,9 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "_configured_station_goal",
             "prep_expectation",
+            "prep_goal_minutes",
             "ready_eta",
             "stage_minutes"
           ]
@@ -13309,6 +13314,8 @@
             "get_fulfillment_type",
             "house_owns_the_delivery",
             "is_counter_takeaway",
+            "is_for_a_later_day",
+            "is_preorder",
             "is_test_order",
             "json_quantity",
             "logger",
@@ -13371,6 +13378,7 @@
             "_RIDE_PREFIX",
             "_estimate",
             "_live",
+            "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",

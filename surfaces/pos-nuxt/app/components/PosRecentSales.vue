@@ -344,9 +344,12 @@ async function submitCancel(aprovacao: Record<string, string>) {
 }
 
 // O chip fala o MESMO rótulo da tela de resultado quando o servidor manda o
-// estado canônico; sem ele, o rótulo pronto do servidor.
+// estado canônico; sem ele, o rótulo pronto do servidor. A venda cancelada sem
+// nota (`not_issued`) também usa o rótulo do servidor: só ele sabe se o Pix
+// chegou a confirmar ("... antes do pagamento"), a mesma frase do Gestor.
 function fiscalChipLabel(sale: RecentSale): string {
-  return sale.fiscal_state ? fiscalStateLabel(sale.fiscal_state) : sale.fiscal_label;
+  if (!sale.fiscal_state || sale.fiscal_state === "not_issued") return sale.fiscal_label;
+  return fiscalStateLabel(sale.fiscal_state);
 }
 function fiscalChipStatus(sale: RecentSale): string {
   if (!sale.fiscal_state) return sale.fiscal_status;
@@ -358,6 +361,7 @@ function fiscalChipClass(status: string): string {
   if (status === "failed") return "bg-destructive/10 text-destructive border-destructive/30";
   if (status === "cancelled") return "bg-muted text-muted-foreground border-border";
   if (status === "not_requested") return "bg-muted text-muted-foreground border-border";
+  if (status === "not_issued") return "bg-muted text-muted-foreground border-border";
   // Encomenda: a nota está marcada para a saída — não há nada a fazer agora.
   if (status === "awaiting_pickup" || status === "awaiting_delivery") return "bg-muted text-muted-foreground border-border";
   return "bg-warning/10 text-warning-foreground border-warning/30";

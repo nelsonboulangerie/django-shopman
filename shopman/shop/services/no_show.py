@@ -332,6 +332,8 @@ def money_sentence(order, *, paid_q: int, refund_q: int, retained_q: int) -> str
     """O que o gesto faz com o dinheiro, por extenso, dito ao Gerente antes de confirmar."""
     if _on_account(order):
         return _account_sentence(refund_q=refund_q, retained_q=retained_q)
+    if _mixed_account(order):
+        return _mixed_sentence(order, **account_split(order, refund_q=refund_q, retained_q=retained_q))
     if paid_q <= 0:
         return "O pedido não foi pago: não há dinheiro a devolver."
     if refund_q <= 0:
@@ -352,6 +354,39 @@ def _account_sentence(*, refund_q: int, retained_q: int) -> str:
     if retained_q <= 0:
         return out
     return f"{out} R$ {format_money(retained_q)} continuam nela, pelo que se perdeu."
+
+
+def _money_destination(order) -> str:
+    """O fim da frase do dinheiro na venda mista: a forma de dinheiro dela, se for uma só."""
+    from shopman.shop.services import payment
+    from shopman.shop.services.order_edit import CARD_MACHINE_METHODS
+
+    methods = payment.money_tender_methods((order.data or {}).get("payment") or {})
+    method = methods[0] if len(methods) == 1 else ""
+    if method in _GATEWAY_REFUND_DESTINATION:
+        return f"serão estornados {_GATEWAY_REFUND_DESTINATION[method]}."
+    if method == "cash":
+        return "em dinheiro ficam a devolver no caixa do PDV."
+    if method in CARD_MACHINE_METHODS:
+        return "ficam a estornar na maquininha, pelo PDV."
+    return "ficam a devolver ao cliente."
+
+
+def _mixed_sentence(order, *, from_account_q: int, money_q: int, debt_left_q: int, kept_q: int) -> str:
+    """A venda mista: a conta primeiro, o dinheiro só no que passa dela, e o que fica."""
+    parts = []
+    if from_account_q > 0:
+        parts.append(f"R$ {format_money(from_account_q)} saem da conta do cliente.")
+    if money_q > 0:
+        parts.append(f"R$ {format_money(money_q)} {_money_destination(order)}")
+    stay = []
+    if debt_left_q > 0:
+        stay.append(f"R$ {format_money(debt_left_q)} continuam na conta")
+    if kept_q > 0:
+        stay.append(f"R$ {format_money(kept_q)} ficam com a loja")
+    if stay:
+        parts.append(f"{' e '.join(stay)}, pelo que se perdeu.")
+    return " ".join(parts) or "Nada a devolver: este pedido não deve nem pagou nada."
 
 
 # ── Quem pode, e a partir de quando ──────────────────────────────────────────
@@ -390,13 +425,10 @@ def eligibility_reason(order) -> str:
     if pos_sales_mode.is_pos_counter_order(order):
         return "Venda de balcão não tem retirada a esperar."
     payment_data = (order.data or {}).get("payment") or {}
-    if payment._pays_on_account(payment_data):
-        # Só em conta: a dívida fica com o valor do que se perdeu (#2697). A conta
-        # já acertada e a venda que mistura a conta com outra forma não passam.
-        if not payment.pays_only_on_account(payment_data):
-            return "Parte na conta da casa e parte em outra forma de pagamento: o não retirado deste pedido é com o Dono."
-        if payment.account_debt_settled(order):
-            return "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
+    if payment._pays_on_account(payment_data) and payment.account_debt_settled(order):
+        # Conta da casa (#2697) e venda mista (#3151) passam com a dívida em aberto.
+        # A conta acertada é dinheiro já recebido: estornar é com o Dono.
+        return "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
     if not order.can_transition_to(Order.Status.CANCELLED):
         return "Este canal não permite encerrar um pedido pronto como não retirado."
     return ""
@@ -408,17 +440,48 @@ def _on_account(order) -> bool:
     return payment.pays_only_on_account((order.data or {}).get("payment") or {})
 
 
+def _mixed_account(order) -> bool:
+    """Venda MISTA: parte na conta da casa, parte em outra forma (#3151)."""
+    from shopman.shop.services import payment
+
+    data = (order.data or {}).get("payment") or {}
+    return payment._pays_on_account(data) and not payment.pays_only_on_account(data)
+
+
 def _paid_q(order) -> int | None:
-    """O que o cliente pagou ou, na venda só em conta, o que ele deve dela.
+    """O que o cliente pagou ou deve deste pedido.
 
     Na conta da casa a régua é a mesma: o que se perdeu fica (como dívida), o
-    resto sai da conta.
+    resto sai da conta. Na venda mista, o capturado mais a dívida em aberto.
     """
     from shopman.shop.services import payment
 
     if _on_account(order):
         return payment.open_account_debt_q(order)
-    return payment.captured_balance_q(order)
+    captured = payment.captured_balance_q(order)
+    if captured is not None and _mixed_account(order):
+        return captured + payment.open_account_debt_q(order)
+    return captured
+
+
+def account_split(order, *, refund_q: int, retained_q: int) -> dict:
+    """Na venda mista, como o dinheiro se divide entre a conta e o caixa (#3151).
+
+    A DÍVIDA sai primeiro (decisão da coordenação, 21/11/2026): do devolvível,
+    ``from_account_q`` sai da conta e só ``money_q`` volta em dinheiro. Do retido,
+    ``debt_left_q`` continua na conta e ``kept_q`` fica com a loja.
+    """
+    from shopman.shop.services import payment
+
+    debt_q = payment.open_account_debt_q(order)
+    from_account_q = min(max(0, refund_q), debt_q)
+    debt_left_q = debt_q - from_account_q
+    return {
+        "from_account_q": from_account_q,
+        "money_q": max(0, refund_q - from_account_q),
+        "debt_left_q": debt_left_q,
+        "kept_q": max(0, retained_q - debt_left_q),
+    }
 
 
 def _commitment_day(order, promised: datetime | None):
@@ -524,6 +587,7 @@ def _plan(order, *, now: datetime) -> dict:
         "retained_q": retained_q,
         "payment_known": known,
         "on_account": _on_account(order),
+        "split": account_split(order, refund_q=refund_q, retained_q=retained_q) if _mixed_account(order) else {},
     }
 
 
@@ -562,7 +626,7 @@ def preview(order, *, now: datetime | None = None) -> dict:
     if not reason and not plan["payment_known"]:
         reason = "Não deu para ler o pagamento deste pedido agora. Tente de novo em instantes."
     block = {"paid_q": plan["paid_q"], "refund_q": plan["refund_q"], "retained_q": plan["retained_q"]}
-    customer_block = {**block, "on_account": plan["on_account"]}
+    customer_block = {**block, "on_account": plan["on_account"], **plan["split"]}
     return {
         "allowed": not reason,
         "block_reason": reason,
@@ -627,6 +691,8 @@ def mark_not_picked_up(
             "retained_q": plan["retained_q"],
             # Venda só em conta: ``paid_q`` é a dívida, e ``refund_q`` sai da conta.
             "on_account": plan["on_account"],
+            # Venda mista: quanto sai da conta, quanto volta em dinheiro e o que fica.
+            **plan["split"],
         }
         cancelled = cancel(
             locked,

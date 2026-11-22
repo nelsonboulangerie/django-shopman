@@ -142,3 +142,41 @@ export function discountCsv(rows: readonly DiscountKindRow[], totalQ: number): R
     rows: [...rows.map((row) => [row.label, csvMoney(row.amount_q)]), ["Total", csvMoney(totalQ)]],
   };
 }
+
+/** Uma linha do quadro "Não retirados": o que aconteceu e quanto. */
+export interface NoShowRow {
+  key: "orders" | "refund" | "retained" | "loss";
+  label: string;
+  value: string;
+}
+
+/**
+ * O não retirado do período (#2698): o pedido de retirada que ficou pronto e o cliente
+ * não buscou. Ele termina cancelado (já está em "Cancelados", fora do faturamento); o
+ * quadro diz o destino do dinheiro e o valor de venda do que se perdeu. Sem nenhum no
+ * período, nenhuma linha: o quadro mostra o vazio.
+ */
+export function noShowRows(report: Pick<BISalesReport, "no_show">): NoShowRow[] {
+  const noShow = report.no_show;
+  if (!noShow || !noShow.orders) return [];
+  return [
+    { key: "orders", label: "Pedidos não retirados", value: String(noShow.orders) },
+    { key: "refund", label: "Voltou ao cliente", value: formatMoney(noShow.refund_q) },
+    { key: "retained", label: "Ficou com a loja, pelo que se perdeu", value: formatMoney(noShow.retained_q) },
+    { key: "loss", label: "Perda de estoque, a preço de venda", value: formatMoney(noShow.loss_q) },
+  ];
+}
+
+/** O CSV do quadro "Não retirados", com os valores em reais. */
+export function noShowCsv(report: Pick<BISalesReport, "no_show">): ReadingCsv {
+  const noShow = report.no_show;
+  return {
+    header: ["Não retirados", "Valor"],
+    rows: [
+      ["Pedidos não retirados", String(noShow.orders)],
+      ["Voltou ao cliente (R$)", csvMoney(noShow.refund_q)],
+      ["Ficou com a loja (R$)", csvMoney(noShow.retained_q)],
+      ["Perda de estoque a preço de venda (R$)", csvMoney(noShow.loss_q)],
+    ],
+  };
+}

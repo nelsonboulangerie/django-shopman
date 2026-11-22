@@ -1072,6 +1072,7 @@
             "_is_seed_order",
             "_is_seed_work_order",
             "_synthetic_reason",
+            "_IFOOD_UNHANDLED_MARKER",
             "resolve_alerts_ended_by_fact"
           ]
         }
@@ -8330,6 +8331,7 @@
             "cancel_asks_reason",
             "cancel_refused_message",
             "ride_name",
+            "service_name",
             "CANCEL_PENDING_MESSAGE",
             "CANCEL_UNKNOWN_MESSAGE",
             "CANCEL_NOT_SENT_MESSAGE"
@@ -8508,7 +8510,9 @@
             "progress_since",
             "restore_archived_ride",
             "orders_with_archived_ride",
-            "archived_ride_ended_at"
+            "archived_ride_ended_at",
+            "CANCEL_ALERT_MARKERS",
+            "_resolve_cancel_alerts"
           ]
         }
       ],
@@ -12457,6 +12461,7 @@
       "domains": [
         "doorman",
         "guestman",
+        "orderman",
         "payman"
       ],
       "ports": [
@@ -14511,7 +14516,9 @@
             "_open_account_intents",
             "open_account_debt_q",
             "account_debt_settled",
-            "reduce_account_debt"
+            "reduce_account_debt",
+            "account_debt_reduced_q",
+            "money_tender_methods"
           ]
         }
       ],
@@ -19716,6 +19723,7 @@
             "BLOCK",
             "DEFAULT_LEAD_MINUTES",
             "DEFAULT_PREP_MINUTES",
+            "MAX_MINUTES",
             "PreorderKitchenPolicy",
             "_minutes",
             "resolve_preorder_kitchen_policy"
@@ -19802,6 +19810,7 @@
             "BASE_TEXT",
             "customer_text",
             "_account_text",
+            "_mixed_text",
             "_amount"
           ]
         }
@@ -19870,6 +19879,10 @@
             "money_sentence",
             "_account_sentence",
             "_on_account",
+            "_mixed_account",
+            "_mixed_sentence",
+            "_money_destination",
+            "account_split",
             "is_candidate",
             "eligibility_reason",
             "_paid_q",
