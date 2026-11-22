@@ -419,7 +419,7 @@ const vehicle = computed(() =>
           variant="subtle"
           icon="i-lucide-hand-coins"
           :title="`${separateWhat} para a casa`"
-          :description="`A ${deliveryServiceName(courier.service_name)} retomou a corrida. Separe de novo antes de entregar a sacola.`"
+          :description="`A ${service} retomou a corrida. Separe de novo antes de entregar a sacola.`"
           :actions="alertActions('warning', separateActions)"
           role="status"
           data-courier-custody-missing
