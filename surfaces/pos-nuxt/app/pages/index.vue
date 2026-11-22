@@ -124,6 +124,7 @@ const {
   lookupBusy,
   managerApprovalError,
   managerApproved,
+  managerApprovedBy,
   managerCheckBusy,
   checkManagerApproval,
   gridProducts,
@@ -1581,6 +1582,7 @@ onBeforeUnmount(() => {
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
         :manager-approved="managerApproved"
+        :manager-approved-by="managerApprovedBy"
         :manager-approval-error="managerApprovalError"
         :manager-check-busy="managerCheckBusy"
         @check-manager="(approval, done) => { void checkManagerApproval(approval).then(done) }"

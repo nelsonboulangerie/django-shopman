@@ -129,6 +129,21 @@ describe("usePosSale — a assinatura do gerente vale para o retrato que ele viu
     h.handles.dispose();
   });
 
+  it("a venda autorizada diz quem autorizou, pelo nome da lista, e o nome sai com a assinatura (#2666)", async () => {
+    const actionCall = router([]);
+    const h = await saleWithDiscount(actionCall, "6,00");
+    h.handles.posValue.value = { ...h.handles.posValue.value!, managers: [{ username: "joyce", name: "Joyce" }] };
+    expect(h.sale.managerApprovedBy.value).toBe("");
+
+    await h.sale.checkManagerApproval({ username: "joyce", pin: PIN });
+    expect(h.sale.managerApprovedBy.value).toBe("Joyce");
+
+    h.sale.cart.discountValue = "30,00";
+    await nextTick();
+    expect(h.sale.managerApprovedBy.value).toBe("");
+    h.handles.dispose();
+  });
+
   it("item, quantidade e forma de pagamento também apagam a assinatura", async () => {
     const actionCall = router([]);
     const h = await saleWithDiscount(actionCall, "6,00");
