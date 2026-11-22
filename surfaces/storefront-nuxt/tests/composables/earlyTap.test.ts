@@ -2,7 +2,7 @@
 // texto que vai no <head>. A repetição pelo componente está em
 // tests/components/cartQuantityAction.test.ts.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { claimEarlyTap, EARLY_TAP_QUEUE, EARLY_TAP_SCRIPT, EARLY_TAP_STORE, parseCartAddKey, takeOrphanEarlyTaps } from '~/utils/earlyTap'
+import { claimEarlyTap, EARLY_TAP_QUEUE, EARLY_TAP_SCRIPT, EARLY_TAP_STORE, forgetEarlyTap, parseCartAddKey, rememberEarlyTap, takeOrphanEarlyTaps } from '~/utils/earlyTap'
 
 type EarlyTapWindow = Window & { [EARLY_TAP_QUEUE]?: string[] }
 const queue = () => (window as EarlyTapWindow)[EARLY_TAP_QUEUE]!
@@ -105,6 +105,21 @@ describe('toque antes da hidratação (script inline)', () => {
     // O plugin do app, depois de montar, não recebe nada para repetir.
     expect(takeOrphanEarlyTaps()).toEqual([])
     expect(claimEarlyTap('cart-add:PAO:1')).toBe(false)
+  })
+
+  it('o Adicionar em voo fica na aba e sai quando a escrita termina', () => {
+    rememberEarlyTap('cart-add:PAO:1', 'Pão')
+    rememberEarlyTap('cart-add:PAO:1', 'Pão')
+    expect(JSON.parse(window.sessionStorage.getItem(EARLY_TAP_STORE)!)).toEqual([{ k: 'cart-add:PAO:1', n: 'Pão' }])
+    forgetEarlyTap('cart-add:PAO:1')
+    expect(window.sessionStorage.getItem(EARLY_TAP_STORE)).toBeNull()
+  })
+
+  it('a página que a cliente deixou com a escrita em voo: a página nova a executa, uma vez', () => {
+    rememberEarlyTap('cart-add:PAO:1', 'Pão')
+    // Recarregou: a página nova não tem o botão do Pão, e o app pega o que sobrou.
+    expect(takeOrphanEarlyTaps()).toEqual([{ key: 'cart-add:PAO:1', name: 'Pão' }])
+    expect(takeOrphanEarlyTaps()).toEqual([])
   })
 
   it('aba com lixo não derruba nada', () => {

@@ -94,6 +94,25 @@ export interface EarlyTap {
 }
 
 /**
+ * O Adicionar do app hidratado também passa pela aba enquanto a escrita está em voo
+ * (#3171): a cliente que toca e sai da página no mesmo instante (recarrega, ou o link
+ * da Sacola numa troca dura) cancela a requisição no navegador, e a página nova executa
+ * o que ficou. `forgetEarlyTap` quando a escrita termina, com sucesso ou erro: o erro
+ * já tem aviso próprio, e repetir não o resolveria.
+ */
+export function rememberEarlyTap (key: string, name: string): void {
+  if (!import.meta.client) return
+  const taps = storedTaps().filter(tap => tap.key !== key)
+  saveStoredTaps([...taps, { key, name }])
+}
+
+export function forgetEarlyTap (key: string): void {
+  if (!import.meta.client) return
+  const taps = storedTaps()
+  if (taps.some(tap => tap.key === key)) saveStoredTaps(taps.filter(tap => tap.key !== key))
+}
+
+/**
  * Os toques que nenhum botão reclamou: os da aba (de uma página que a cliente deixou
  * antes de hidratar) e os da memória sem botão montado. Saem dos dois lugares; quem
  * recebe executa. O app chama depois de montar, quando cada botão já reclamou o seu.
