@@ -244,6 +244,14 @@ useful: {status: pass|fail|unavailable, reason?}}, judge?: {answer: answers|off_
 confidence}}`. Em sombra: o veredito é gravado e o envio não muda. `judge` só existe quando o Jev
 respondeu; a chamada dele entra em `usage.calls` com `stage: conference` e em `latency_ms.conference`.
 Lida por `concierge_conversation_eval` (linha "conferência antes do envio").
+Escada em sombra (`conference.shadow_climb`, regra em `conversational_commerce/reply/ladder.py`): quando a
+conferência reprova, DEPOIS do envio, o mesmo primeiro bloco ganha `envelope["ladder"]` = `{chosen:
+house|concierge_rewrite|concierge_escalation|safe, stopped, cost_usd, attempts: [{source, text, cost_usd, ms,
+error?, conference?}], safe_text?}` (`safe_text` em sombra é o TIPO da alternativa: `house_literal` ou
+`verify`). Os degraus são os propósitos de IA `concierge_rewrite` e `concierge_escalation`, só com rota
+explícita em `Shop.ai_routes`. A política mora em `Shop.ai_limits["conference"]` = `{max_attempts (padrão 3,
+teto 5), turn_usd (padrão 0,01, teto 0,05)}`; o teto do dia de cada degrau é o do freio
+(`ai_limits["purposes"]`).
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
 `purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
