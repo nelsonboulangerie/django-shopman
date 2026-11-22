@@ -69,8 +69,13 @@ export const TAB_DRAFT_FIELDS: ReadonlyArray<keyof TabDraftFields> = [
 export interface TabDraft {
   tabRef: string;
   tabSessionKey: string;
-  /** A revisão da comanda que o servidor tinha quando o rascunho começou. */
-  baseRevision: string;
+  /**
+   * Os itens que o servidor tinha quando o rascunho começou (`tabItemsKey`). É contra
+   * eles que a volta confere se outra estação mexeu na comanda. Não é a revisão:
+   * abrir a comanda grava a sessão e muda a revisão a cada abertura (medido na
+   * pilha: v1:4 → v1:5 entre duas aberturas seguidas).
+   */
+  baseItemsKey: string;
   /** Quem lançava: o rascunho volta para a mesma pessoa, não para quem entrar. */
   operatorId: string;
   /** ISO de quando foi guardado. */
@@ -91,7 +96,7 @@ function isTabDraft(value: unknown): value is TabDraft {
   const fields = draft.fields as Record<string, unknown> | undefined;
   return typeof draft.tabRef === "string" && draft.tabRef !== ""
     && typeof draft.tabSessionKey === "string" && draft.tabSessionKey !== ""
-    && typeof draft.baseRevision === "string"
+    && typeof draft.baseItemsKey === "string"
     && typeof draft.operatorId === "string"
     && typeof draft.savedAt === "string" && !Number.isNaN(Date.parse(draft.savedAt))
     && Boolean(fields) && Array.isArray(fields?.items);
@@ -131,9 +136,12 @@ export function clearTabDraft(): void {
   }
 }
 
+/** A identidade dos itens de uma comanda: linha, SKU, quantidade e observação. */
+export function tabItemsKey(items: POSCartItem[] | null | undefined): string {
+  return JSON.stringify((items || []).map((item) => [item.line_id || "", item.sku, item.qty, item.notes || ""]));
+}
+
 /** O rascunho já é o que o servidor tem (a gravação chegou, a resposta não): nada a reaplicar. */
 export function draftMatchesServer(draft: TabDraft, serverItems: POSCartItem[]): boolean {
-  const key = (items: POSCartItem[]) =>
-    JSON.stringify(items.map((item) => [item.line_id || "", item.sku, item.qty, item.notes || ""]));
-  return key(draft.fields.items) === key(serverItems || []);
+  return tabItemsKey(draft.fields.items) === tabItemsKey(serverItems);
 }

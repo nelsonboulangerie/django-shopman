@@ -8,7 +8,7 @@ import { nextTick, ref } from "vue";
 import { toast } from "vue-sonner";
 
 import type { POSCartItem } from "~/types/pos";
-import { TAB_DRAFT_STORAGE_KEY, readTabDraft, writeTabDraft, type TabDraft } from "~/utils/tabDraft";
+import { TAB_DRAFT_STORAGE_KEY, readTabDraft, tabItemsKey, writeTabDraft, type TabDraft } from "~/utils/tabDraft";
 import { makeSale, makeTabPayload } from "./_posSaleHarness";
 
 const { operatorId } = vi.hoisted(() => ({ operatorId: { value: 7 as number | string } }));
@@ -20,13 +20,13 @@ const GERGELIM: POSCartItem = { sku: "PAO", name: "Pão", qty: 1, unit_price_q: 
 const LANCHE: POSCartItem = { sku: "CAFE", name: "Café", qty: 2, unit_price_q: 300, line_id: "L2" } as POSCartItem;
 
 type Harness = ReturnType<typeof makeSale>;
-let instances: Harness[] = [];
+const instances: Harness[] = [];
 
 function draftFor(items: POSCartItem[], overrides: Partial<TabDraft> = {}): TabDraft {
   return {
     tabRef: "1009",
     tabSessionKey: "sess-1",
-    baseRevision: "rev-1",
+    baseItemsKey: tabItemsKey([GERGELIM]),
     operatorId: "7",
     savedAt: new Date().toISOString(),
     fields: {
@@ -89,7 +89,7 @@ describe("usePosSale: o rascunho da comanda no dispositivo", () => {
     await settle();
     const draft = readTabDraft();
     expect(draft?.tabSessionKey).toBe("sess-1");
-    expect(draft?.baseRevision).toBe("rev-1");
+    expect(draft?.baseItemsKey).toBe(tabItemsKey([GERGELIM]));
     expect(draft?.fields.items.map((item) => item.sku)).toEqual(["PAO", "CAFE"]);
 
     await settle(1300); // o salvamento automático
@@ -113,6 +113,17 @@ describe("usePosSale: o rascunho da comanda no dispositivo", () => {
     expect(saves.length).toBeGreaterThan(0);
     const body = saves.at(-1)![1]!.body as { items: POSCartItem[] };
     expect(body.items.map((item) => item.sku)).toEqual(["PAO", "CAFE"]);
+  });
+
+  it("abrir a comanda muda a revisão; o rascunho volta mesmo assim (medido na pilha)", async () => {
+    writeTabDraft(draftFor([GERGELIM, LANCHE]));
+    const { sale: s } = sale(serverWith([GERGELIM], "v1:5:depois-de-abrir"));
+
+    await s.openTab("1009", { drawerChecked: true });
+    await settle();
+
+    expect(s.cart.items.map((item) => item.sku)).toEqual(["PAO", "CAFE"]);
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 
   it("depois de entrar de novo, a venda reabre sozinha na comanda do rascunho", async () => {

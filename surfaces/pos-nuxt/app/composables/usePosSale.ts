@@ -101,6 +101,7 @@ import {
   draftMatchesServer,
   pickTabDraftFields,
   readTabDraft,
+  tabItemsKey,
   writeTabDraft,
 } from "~/utils/tabDraft";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
@@ -387,6 +388,9 @@ export function usePosSale(deps: PosSaleDeps) {
   // Auto-persist the comanda (Odoo-style): no manual "Salvar". tabLoading guards
   // against re-saving right after a programmatic load (setFromTabPayload).
   const tabLoading = ref(false);
+  // Os itens que o servidor tem desta comanda, pela última leitura ou gravação aceita:
+  // é a base do rascunho do dispositivo (#3315, `utils/tabDraft`).
+  let serverItemsKey = "";
   const firing = ref(false);
   const renamingTab = ref(false);
   const cancellingSale = ref(false);
@@ -2100,6 +2104,7 @@ export function usePosSale(deps: PosSaleDeps) {
     const fulfillmentWasConfirmed = sameTab && cart.fulfillmentConfirmed && cart.fulfillmentType === payload.fulfillment_type;
     assignTabIdentityFromPayload(payload);
     cart.items = (payload.items || []).map((item) => ({ ...item }));
+    serverItemsKey = tabItemsKey(payload.items);
     cart.customerName = payload.customer_name || "";
     cart.customerRef = payload.customer_ref || "";
     cart.customerPhone = payload.customer_phone || "";
@@ -3439,6 +3444,7 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       cart.expectedRevision = saved?.revision || cart.expectedRevision;
       lastPersistedContent = savedContent;
+      serverItemsKey = tabItemsKey(body.items as POSCartItem[]);
       // O autosave fica na comanda: a autoria que o servidor carimbou volta aqui.
       applyLineAuthors(cart.items, saved?.line_authors);
       unsaved.value = savedContent !== intentContent();
@@ -3545,9 +3551,9 @@ export function usePosSale(deps: PosSaleDeps) {
     writeTabDraft({
       tabRef: cart.tabRef,
       tabSessionKey: cart.tabSessionKey,
-      // A revisão de quando o rascunho COMEÇOU: é contra ela que a volta confere se
-      // outra estação mexeu na comanda.
-      baseRevision: sameTab ? previous!.baseRevision : cart.expectedRevision,
+      // Os itens que o servidor tinha quando o rascunho COMEÇOU: é contra eles que a
+      // volta confere se outra estação mexeu na comanda.
+      baseItemsKey: sameTab ? previous!.baseItemsKey : serverItemsKey,
       operatorId: currentOperatorId(),
       savedAt: new Date().toISOString(),
       fields: pickTabDraftFields(cart),
@@ -3564,7 +3570,7 @@ export function usePosSale(deps: PosSaleDeps) {
       clearTabDraft();
       return;
     }
-    if ((payload.revision || "") !== draft.baseRevision) {
+    if (tabItemsKey(payload.items) !== draft.baseItemsKey) {
       // Outra estação mexeu na comanda: reaplicar por cima apagaria o que ela fez.
       clearTabDraft();
       const lost = draft.fields.items.length;
