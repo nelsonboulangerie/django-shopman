@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  appliedFilterChips,
   buildSectionsBySku,
   choiceGroupCard,
   choiceGroupsByName,
@@ -239,14 +238,6 @@ describe('menu presentation — sections and filters', () => {
     expect(parseFilterKey(filterKey('keyword', 'café: especial'))).toEqual({ kind: 'keyword', value: 'café: especial' })
     expect(parseFilterKey('nonsense')).toBeNull()
   })
-
-  it('describes applied filters with human labels', () => {
-    const chips = appliedFilterChips([filterKey('keyword', 'chocolate'), filterKey('collection', 'doces'), 'nonsense'], sections)
-    expect(chips).toEqual([
-      { key: 'keyword:chocolate', label: 'chocolate' },
-      { key: 'collection:doces', label: 'Doces' }
-    ])
-  })
 })
 
 describe('menu presentation — search options', () => {
@@ -287,9 +278,6 @@ describe('menu presentation — search options', () => {
       icon: 'lucide:rows-3',
       section: paes
     })).toBe('/colecao/paes')
-    expect(appliedFilterChips([filterKey('collection', 'featured')], [])).toEqual([
-      { key: 'collection:featured', label: 'Destaques' }
-    ])
   })
 
   it('ranks products by name, then tags, then catalog context', () => {

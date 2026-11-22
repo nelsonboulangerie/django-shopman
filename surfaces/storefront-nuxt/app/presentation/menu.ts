@@ -566,25 +566,6 @@ export function keywordSearchOptions (
     .slice(0, 8)
 }
 
-// Chips dos filtros já aplicados — visíveis ao reabrir a busca, para
-// desempilhar ou conferir o que está ativo.
-export function appliedFilterChips (
-  keys: string[],
-  sections: ReadonlyArray<CatalogSection>
-): Array<{ key: string, label: string }> {
-  return keys
-    .map(key => {
-      const parsed = parseFilterKey(key)
-      if (!parsed) return null
-      if (parsed.kind === 'collection') {
-        const section = sections.find(s => s.ref === parsed.value)
-        return { key, label: section ? collectionDisplayLabel(section) : COLLECTION_LABEL_BY_REF[parsed.value] || humanizeRefLabel(parsed.value) }
-      }
-      return { key, label: parsed.value }
-    })
-    .filter((chip): chip is { key: string, label: string } => chip !== null)
-}
-
 export function searchPanelView (input: {
   sections: ReadonlyArray<CatalogSection>
   items: ReadonlyArray<CatalogItemProjection>
