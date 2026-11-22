@@ -69,16 +69,20 @@ const located = computed(() =>
 // Sem coordenada da loja, o mapa desenha só as paradas (a loja não vai para a casa do cliente).
 const mapOrigin = computed(() => props.origin ?? null);
 const nextRef = computed(() => props.ride.stops.find((stop) => !stop.done)?.ref ?? "");
-const copied = ref(false);
-function copyLink() {
+// Qual link foi copiado agora: "ride" (o da corrida de uma parada) ou o ref da parada.
+const copied = ref("");
+function copyLink(url: string, key: string) {
   void navigator.clipboard
-    .writeText(props.ride.tracking_url)
+    .writeText(url)
     .then(() => {
-      copied.value = true;
-      setTimeout(() => (copied.value = false), 2000);
+      copied.value = key;
+      setTimeout(() => (copied.value = copied.value === key ? "" : copied.value), 2000);
     })
-    .catch(() => (copied.value = false));
+    .catch(() => (copied.value = ""));
 }
+// Na corrida de várias paradas o link é de cada parada (#2491): "o link da corrida"
+// seria o de um cliente só, pronto para ir a outro.
+const stopLinks = computed(() => props.ride.stops.length > 1 && !house.value);
 const at = (iso: string) => (iso ? clockHHMM(Date.parse(iso)) : "");
 // "Posição agora, pela TaOn" · "Última posição há 3 min (12h45), pela TaOn" (F7b).
 const positionClock = useNowTick();
@@ -254,7 +258,19 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
                 </span>
               </p>
               <p class="truncate op-micro text-muted">{{ stop.address }}</p>
-              <NuxtButton class="-ml-2 min-h-11" color="neutral" variant="ghost" label="Abrir o pedido" trailing-icon="i-lucide-arrow-up-right" :to="`/${encodeURIComponent(stop.ref)}`" />
+              <div class="-ml-2 flex flex-wrap gap-x-1">
+                <NuxtButton class="min-h-11" color="neutral" variant="ghost" label="Abrir o pedido" trailing-icon="i-lucide-arrow-up-right" :to="`/${encodeURIComponent(stop.ref)}`" />
+                <NuxtButton
+                  v-if="stopLinks && stop.tracking_url && !stop.done"
+                  class="min-h-11"
+                  color="neutral"
+                  variant="ghost"
+                  :icon="copied === stop.ref ? 'i-lucide-check' : 'i-lucide-copy'"
+                  :label="copied === stop.ref ? 'Copiado' : 'Copiar link de acompanhamento'"
+                  data-ride-stop-link
+                  @click="copyLink(stop.tracking_url, stop.ref)"
+                />
+              </div>
             </div>
           </li>
         </ol>
@@ -263,7 +279,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
       <section v-if="ride.tracking_url && !house" class="mx-5 mt-5 flex items-center gap-3 rounded-xl border border-default p-3">
         <NuxtIcon name="i-lucide-map-pinned" class="size-5 text-muted" />
         <p class="min-w-0 flex-1 op-body text-toned">Link de acompanhamento da corrida.</p>
-        <NuxtButton color="neutral" variant="outline" :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'" :label="copied ? 'Copiado' : 'Copiar link'" @click="copyLink" />
+        <NuxtButton color="neutral" variant="outline" :icon="copied === 'ride' ? 'i-lucide-check' : 'i-lucide-copy'" :label="copied === 'ride' ? 'Copiado' : 'Copiar link'" @click="copyLink(ride.tracking_url, 'ride')" />
       </section>
 
       <section class="mx-5 mt-5">

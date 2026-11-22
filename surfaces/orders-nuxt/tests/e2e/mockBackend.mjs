@@ -511,7 +511,7 @@ const DELIVERIES = {
       key: "776753358", number: 2, letter: "B", state: "route", status_label: "Em rota",
       stops: [
         deliveryStop("WEB-20261116-0E02", "Edu", "Aeroporto", 0.004, -0.012, { done: true }),
-        deliveryStop("WEB-20261116-0F09", "Flora", "Aeroporto", 0.009, -0.015),
+        deliveryStop("WEB-20261116-0F09", "Flora", "Aeroporto", 0.009, -0.015, { tracking_url: "https://rastreio.example/776753358/flora" }),
       ],
       driver: { name: "Marina", phone: "(43) 99999-0002", vehicle: "Moto preta · XYZ9K88" },
       // Posição velha (F7b): sem aviso há 3 min, a moto esmaece e diz desde quando.

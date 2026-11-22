@@ -83,6 +83,10 @@ class DeliveryStopProjection:
     #: ou foi cancelada, ``courier.last_failure``). As paradas com a mesma chave
     #: formam um cartão de :class:`FailedRideProjection`. Vazio quando não há.
     failure_key: str = ""
+    #: Numa parada de corrida: o link de acompanhamento DESTE pedido, só quando o
+    #: casamento foi provado (``courier.proven_tracking``). Na corrida de várias
+    #: paradas é o único link oferecido: a corrida não tem um link dela (#2491).
+    tracking_url: str = ""
     #: A NFC-e do pedido, a MESMA chave da pílula do cartão (``order_queue._FISCAL_PILL``):
     #: ``failed`` pede o "Reprocessar NFC-e" no pedido. Só avisa: nunca segura a
     #: chamada nem a saída (dono, 17/09/2026).
@@ -406,6 +410,7 @@ def _stop(order: Order, *, reads: _Reads, with_asks: bool = False, user=None) ->
         ) if unresolved else None,
         charge_outdated=None if with_asks else courier.charge_outdated(order),
         failure_key=(failure["key"] or f"ended:{order.ref}") if failure and not unresolved and not message else "",
+        tracking_url="" if with_asks else courier.proven_tracking(block)["url"],
         fiscal_status=fiscal_status,
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
