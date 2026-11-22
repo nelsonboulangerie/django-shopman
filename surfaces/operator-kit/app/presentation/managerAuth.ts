@@ -213,7 +213,9 @@ export function managerAuthTitle(action?: ManagerAction): string {
  * Sem valor (a tela não sabe), cai na frase fixa do ato.
  */
 const AMOUNT_COPY: Partial<Record<ManagerAction, (amount: string, detail: string) => string>> = {
-  cash_out: (amount, detail) => `Retirada de ${amount}${detail ? ` (${detail})` : ""}.`,
+  // O gesto do caixa é "Saída de caixa", o nome que o PDV dá ao botão (suite-vocabulary,
+  // 22/11): "Saída" sozinha é a estação do KDS, e "Retirada" é a forma de receber (#2690).
+  cash_out: (amount, detail) => `Saída de caixa de ${amount}${detail ? ` (${detail})` : ""}.`,
   refund_cash: (amount) => `Devolução de ${amount} em dinheiro.`,
   serve_change: (amount) => `Troco de ${amount}. Atender abre a gaveta.`,
   card_machine_refund: (amount) => `Estorno de ${amount} no cartão do cliente.`,

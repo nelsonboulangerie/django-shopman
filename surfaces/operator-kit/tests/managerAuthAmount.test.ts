@@ -9,7 +9,7 @@ import { formatBRL } from "../app/utils/money";
 describe("managerAuth: o gerente lê o valor que assina", () => {
   it("a retirada diz o valor e o motivo", () => {
     expect(managerAuthReason({ action: "cash_out", amountQ: 500000, detail: "Sangria" })).toBe(
-      `Retirada de ${formatBRL(500000)} (Sangria).`,
+      `Saída de caixa de ${formatBRL(500000)} (Sangria).`,
     );
   });
 
