@@ -166,14 +166,14 @@ def _action(order, ref):
 @pytest.mark.parametrize("state", ["started", "unknown"])
 def test_dispatch_again_releases_the_unanswered_call_and_queues_a_new_one(client, context, state):
     """Gesto "Chamar de novo": a chamada sem resposta da TaOn é liberada e outra entra na fila."""
-    from shopman.backstage.projections.order_queue import COURIER_DISPATCH_AGAIN_CONFIRMATION
+    from shopman.backstage.projections.order_queue import courier_dispatch_again_confirmation
 
     _, order = context
     stuck = _stuck_dispatch(order, state)
     assert not _action(order, "courier-dispatch").enabled
     again = _action(order, "courier-dispatch-again")
     assert again.enabled and again.label == "Chamar de novo"
-    assert again.confirmation == {"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION}
+    assert again.confirmation == {"required": True, "description": courier_dispatch_again_confirmation("TaOn")}
     response = client.post(reverse("api-backstage-order-courier-dispatch-again", args=[order.ref]),
         again.payload_schema, content_type="application/json", HTTP_IDEMPOTENCY_KEY="again-once")
     assert response.status_code == 200, response.content

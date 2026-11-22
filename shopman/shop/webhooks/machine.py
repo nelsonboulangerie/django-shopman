@@ -116,7 +116,14 @@ class MachineWebhookView(APIView):
         body = request.body if isinstance(request.body, bytes) else b""
         if not _check_signature(request, body):
             return Response({"error": "Unauthorized"}, status=http.HTTP_401_UNAUTHORIZED)
+        response = self._handle(request, body)
+        if 200 <= response.status_code < 300:
+            from shopman.shop.services import observability
 
+            observability.record_webhook_success("machine")
+        return response
+
+    def _handle(self, request: Request, body: bytes) -> Response:
         event = request.data if isinstance(request.data, dict) else {}
         if isinstance(event.get("data"), list):
             # Lote de posição (formato documentado atual).

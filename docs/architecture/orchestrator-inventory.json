@@ -3516,6 +3516,7 @@
             "_register_courier_handlers",
             "_register_customer_strategies",
             "_register_delivery_auto_complete_handler",
+            "_register_demand_anchor",
             "_register_fiscal_handlers",
             "_register_fiscal_publication_gate",
             "_register_fulfillment_handler",
@@ -7517,6 +7518,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/pickup_window_in_use.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.pickup-window-in-use"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/promise_expiry_margin.py",
       "touchpoints": [
         "outro"
@@ -10369,6 +10384,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "SERVICE_FALLBACK_NAME",
             "_KIND_BY_REF",
             "_kind",
             "_translator",
@@ -10386,6 +10402,28 @@
             "service_name",
             "state_detail",
             "state_since"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/demand_anchor.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-demand-anchor"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
           ]
         }
       ]
@@ -11178,6 +11216,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]
@@ -13021,7 +13060,8 @@
             "record_integration_failure",
             "record_integration_success",
             "record_payment_reconciliation_failure",
-            "record_webhook_failure"
+            "record_webhook_failure",
+            "record_webhook_success"
           ]
         }
       ]
@@ -13143,6 +13183,7 @@
             "_preorder_not_due",
             "_sync_delivery_fulfillment",
             "_waiting_for_the_batch",
+            "_waitlist_wait_reason",
             "logger"
           ]
         }
@@ -13376,6 +13417,7 @@
             "_RIDE_PREFIX",
             "_estimate",
             "_live",
+            "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",

@@ -238,6 +238,9 @@ class EfiPixWebhookView(APIView):
             response_status = status.HTTP_409_CONFLICT
         else:
             response_status = status.HTTP_200_OK
+            from shopman.shop.services import observability
+
+            observability.record_webhook_success("efi")
         return Response(
             {
                 "status": "ok" if not errors else "retry",

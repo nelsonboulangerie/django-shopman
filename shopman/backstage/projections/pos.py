@@ -2871,11 +2871,15 @@ def _tab_projection(
     # Uma peça pesada é UM item no contador (0,312 kg não é "0 itens"), e o
     # valor dela é peso × preço do quilo sem truncar o peso.
     item_count = sum(_qty_int(item.get("qty", 1)) or 1 for item in items)
+    # As linhas gravadas já são o preço do motor: o ``ManualDiscountModifier``
+    # rateou o desconto manual de pedido no ``unit_price_q`` de cada uma na
+    # gravação. Subtrair ``manual_discount.discount_q`` de novo tirava o
+    # desconto duas vezes, e o card prometia menos do que o fechamento cobra
+    # (#3245).
     total_q = sum(
         monetary_mult(Decimal(str(weighed_sale.qty_number(item.get("qty", 1)))), int(item.get("unit_price_q", 0)))
         for item in items
     )
-    discount_q = int((data.get("manual_discount") or {}).get("discount_q", 0))
 
     return POSTabProjection(
         ref=ref,
@@ -2888,7 +2892,7 @@ def _tab_projection(
         customer_phone=str(customer.get("phone") or ""),
         item_count=item_count,
         line_count=len(items),
-        total_display=f"R$ {format_money(max(0, total_q - discount_q))}",
+        total_display=f"R$ {format_money(max(0, total_q))}",
         last_touched_display=_format_time(last_touched),
         items_preview=_items_preview(items),
         fired=bool(data.get("fired_lines")),

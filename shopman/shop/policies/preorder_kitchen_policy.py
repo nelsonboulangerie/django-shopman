@@ -27,6 +27,9 @@ from dataclasses import dataclass, field
 
 DEFAULT_LEAD_MINUTES = 15
 DEFAULT_PREP_MINUTES = 30
+#: Teto de cada tempo da encomenda na Cozinha (preparo, antecedência), em minutos.
+#: O Admin e o painel do produto do Gestor recusam acima disto.
+MAX_MINUTES = 720
 
 BLOCK = "preorder_kitchen"
 

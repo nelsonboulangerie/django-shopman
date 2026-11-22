@@ -332,12 +332,15 @@ def resolve_alerts_matching(
     *,
     message_contains: str,
     actor: str,
+    order_ref: str = "",
 ) -> int:
     """Resolve causas SEM pedido (um serviço, uma integração) pelo marcador de dedupe.
 
     Gêmea de ``resolve_alerts`` para os alertas cujo dono não é um pedido: o
     marcador que ``create_operator_alert`` grava na mensagem é a identidade da
-    causa. Mesmo lock, mesma trilha (quem/quando/revisão).
+    causa. Mesmo lock, mesma trilha (quem/quando/revisão). Com ``order_ref``, só
+    os avisos daquele pedido: um tipo genérico (``integration_failed``) pode ter
+    várias causas no mesmo pedido, e o trecho da frase separa a que acabou.
     """
     from shopman.backstage.models import OperatorAlert
 
@@ -350,7 +353,8 @@ def resolve_alerts_matching(
     with transaction.atomic():
         rows = list(
             OperatorAlert.objects.select_for_update()
-            .filter(type=type, resolved_at__isnull=True, message__contains=marker)
+            .filter(type=type, resolved_at__isnull=True, message__contains=marker,
+                    **({"order_ref": str(order_ref).strip()} if str(order_ref or "").strip() else {}))
             .order_by("pk")
         )
         resolved_at = timezone.now()

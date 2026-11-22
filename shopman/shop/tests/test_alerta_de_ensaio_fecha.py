@@ -136,3 +136,20 @@ def test_hold_gap_closes_live_when_the_order_is_delivered(django_capture_on_comm
     with django_capture_on_commit_callbacks(execute=True):
         on_order_changed(None, order=order, event_type="status_changed", actor="caixa")
     assert _closed_by(alert) == "order-status:caixa"
+
+
+def test_ifood_event_alert_closes_once_the_code_has_a_written_destination():
+    """#3090: os três DELIVERY_* ganharam fato de logística em 12/11, e CHANGE_PREPARATION_TIME é inerte."""
+    from shopman.shop.services import ifood_events
+
+    known = []
+    for code in ("DELIVERY_DROP_CODE_REQUESTED", "CHANGE_PREPARATION_TIME"):
+        ifood_events._alert_unhandled_event(code, "order-1")
+        known.append(OperatorAlert.objects.get(type="ifood_event_unhandled", message__contains=f":{code}"))
+    ifood_events._alert_unhandled_event("CODIGO_NOVO_QUALQUER", "order-2")
+    unknown = OperatorAlert.objects.get(type="ifood_event_unhandled", message__contains=":CODIGO_NOVO_QUALQUER")
+
+    resolve_alerts_ended_by_fact()
+    for alert in known:
+        assert _closed_by(alert) == "sistema: evento do iFood que já tem destino escrito"
+    assert _closed_by(unknown) is None, "código sem destino continua gritando"
