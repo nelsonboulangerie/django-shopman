@@ -93,6 +93,38 @@ def test_a_failed_emission_reads_as_failed_in_both_vocabularies(_backend_present
     assert order_queue._fiscal_status(order)[:3] == ("failed", "NFC-e não autorizada", "failed")
 
 
+@pytest.mark.parametrize(
+    "payment,extra,expected_label",
+    [
+        # O Pix venceu e o worker cancelou: o pagamento nunca vai confirmar (#3127).
+        ({"method": "pix"}, {"origin_channel": "pos"}, "Sem NFC-e: o pedido foi cancelado antes do pagamento"),
+        # A loja online, retirada: mesmo fato, a mesma frase.
+        ({"method": "pix"}, {}, "Sem NFC-e: o pedido foi cancelado antes do pagamento"),
+    ],
+)
+def test_cancelled_order_never_promises_a_note(_backend_present, settings, payment, extra, expected_label):
+    """O pedido cancelado que ainda esperava o ponto da nota diz o fato, sem prometer."""
+    settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = ALWAYS
+    Shop.objects.create(name="Synthetic fiscal cancelled lab")
+    data = {"payment": payment, "fulfillment_type": "pickup", **extra}
+    order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-CANCELLED", status="cancelled", total_q=1000, data=data)
+
+    status, label, _state, _ = order_queue._fiscal_status(order)
+
+    assert (status, label) == ("not_issued", expected_label)
+    assert "sai " not in label
+
+
+def test_cancelled_order_with_an_authorized_note_keeps_saying_so(_backend_present, settings):
+    """A nota que já saiu continua dizendo o que é: o cancelamento não a apaga."""
+    settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = ALWAYS
+    Shop.objects.create(name="Synthetic fiscal cancelled lab")
+    order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-CANCELLED-AUTH", status="cancelled", total_q=1000,
+        data={"payment": {"method": "cash"}, "fulfillment_type": "pickup", "nfce_access_key": "chave"})
+
+    assert order_queue._fiscal_status(order)[:2] == ("authorized", "NFC-e autorizada")
+
+
 def test_not_requested_stays_not_requested(_backend_present, settings):
     settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = "shopman.shop.fiscal_resolvers.on_request_or_tax_id"
     Shop.objects.create(name="Synthetic fiscal copy lab")
