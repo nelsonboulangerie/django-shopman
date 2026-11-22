@@ -3136,6 +3136,16 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Concierge pelo motor do framework",
+        {
+            "fields": ("conversational_live_inform", "conversational_live_handoff", "conversational_live_order"),
+            "description": (
+                "Cada classe passa a sair pelo motor do framework conversacional só onde a casa tem a frase "
+                "de hoje; o resto do turno segue como hoje. Desligar \"pedido na conversa\" é o freio da escrita."
+            ),
+        },
+    ),
+    (
         "Remédios automáticos de incidente",
         {
             "fields": ("incident_remedies_mode",),
