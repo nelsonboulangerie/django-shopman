@@ -31,6 +31,13 @@ test.skip(!stack.production, "pede a Produção na pilha (OPERATOR_PRODUCTION_UR
 test.afterAll(() => backToRealTime());
 
 const BATCH_IN_PROGRESS = `${PRODUCT}: o lote de hoje está em andamento`;
+// O selo da fila e o porquê do aceite desligado (#3177), sem falar em pagamento: na
+// fila, nada foi cobrado (shop/services/operator_orders._waitlist_wait_reason).
+const IN_THE_QUEUE = "Na fila de espera";
+const WAITING_THE_CUSTOMER = "Aguardando o cliente confirmar";
+const ACCEPT_WAITS_THE_BATCH = "Na fila de espera: o pedido espera o lote ficar pronto. Nada foi cobrado do cliente.";
+
+const waitlistBadge = (card: Locator) => card.locator("[data-waitlist-badge]");
 
 /** O card do pedido no painel, relido até `check` passar (o worker abre a vaga). */
 async function boardCard(gestor: Page, ref: string, check: (card: Locator) => Promise<void>): Promise<Locator> {
@@ -76,11 +83,13 @@ test("W1: a cliente entra na fila, o lote fica pronto, ela confirma a vaga e pag
 
   // O Caixa vê o pedido na fila de espera.
   await acknowledgeOtherOrdersAlarms(gestor, ref);
-  // No painel da mesa o card diz que o lote está saindo, e o aceite espera (#3177: o
-  // selo "Na fila de espera" só aparece no card do celular).
+  // No painel da mesa o card diz que o lote está saindo, leva o selo da fila, e o
+  // aceite espera dizendo o porquê sem falar em pagamento.
   await boardCard(gestor, ref, async (card) => {
     await expect(card).toContainText(BATCH_IN_PROGRESS, { timeout: 5_000 });
+    await expect(waitlistBadge(card)).toHaveText(IN_THE_QUEUE, { timeout: 5_000 });
     await expect(accept(card)).toBeDisabled();
+    await expect(accept(card)).toHaveAttribute("title", ACCEPT_WAITS_THE_BATCH);
   });
   await capture(gestor, testInfo, "gestor-na-fila");
 
@@ -103,9 +112,10 @@ test("W1: a cliente entra na fila, o lote fica pronto, ela confirma a vaga e pag
   await expect(production.getByRole("button", { name: `Finalizar o lote de ${PRODUCT}` })).toHaveCount(0, { timeout: 60_000 });
   await capture(production, testInfo, "producao-lote-finalizado");
 
-  // O Gestor: o lote saiu, e a vez é da cliente.
+  // O Gestor: o lote saiu, e a vez é da cliente. O selo diz que o pedido espera ela.
   await boardCard(gestor, ref, async (card) => {
     await expect(card).not.toContainText(BATCH_IN_PROGRESS, { timeout: 5_000 });
+    await expect(waitlistBadge(card)).toHaveText(WAITING_THE_CUSTOMER, { timeout: 5_000 });
   });
   await capture(gestor, testInfo, "gestor-aguardando-cliente");
 
