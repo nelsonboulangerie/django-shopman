@@ -1513,13 +1513,10 @@ class TestStatusColours:
 
         # A MESMA hora do Gestor e da página do entregador (#3168): o início do
         # preparo mais o tempo de agora (``kitchen_eta``), nunca o ``created_at``.
-        from shopman.shop.config import ChannelConfig
         from shopman.shop.services import kitchen_eta
 
         now = timezone.now()
-        gestor_eta = kitchen_eta.ready_eta(
-            order, kitchen_eta.prep_expectation(now=now), ChannelConfig.for_channel(order.channel_ref), now=now,
-        )
+        gestor_eta = kitchen_eta.ready_eta(order, kitchen_eta.prep_expectation(now=now), now=now)
         assert gestor_eta > preparing_at
         expected_eta = format_clock(timezone.localtime(gestor_eta))
         assert proj.eta_display == expected_eta

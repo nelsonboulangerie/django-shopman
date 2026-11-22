@@ -2136,7 +2136,6 @@ def _eta_at(order) -> str | None:
         not_before: datetime | None = None
         ready_at = None
         if order.status == "preparing":
-            from shopman.shop.config import ChannelConfig
             from shopman.shop.services import kitchen_eta
 
             minutes = 0
@@ -2148,7 +2147,6 @@ def _eta_at(order) -> str | None:
             ready_at = kitchen_eta.ready_eta(
                 order,
                 kitchen_eta.prep_expectation(now=now),
-                ChannelConfig.for_channel(order.channel_ref),
                 now=now,
             )
             not_before = _eta_not_before(order)

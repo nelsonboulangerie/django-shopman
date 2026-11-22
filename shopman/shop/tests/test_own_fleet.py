@@ -179,11 +179,10 @@ def test_order_still_in_the_kitchen_says_when_it_gets_ready(client, shop, diego)
     token = own_fleet.assign([a47, c03], diego, actor="operator:ana").link.token
     stops = _post(client, "courier-ride-link-claim", token).json()["stops"]
     assert "ready_at" not in stops[0]  # o pronto não tem previsão
-    # Sem preparos medidos, vale a meta da estação do canal.
-    from shopman.shop.config import ChannelConfig
-    from shopman.shop.services.kitchen_eta import stage_minutes
+    # Sem preparos medidos, vale a meta de preparo do canal ou os 30 min da loja (#3178).
+    from shopman.shop.services.kitchen_eta import prep_goal_minutes
 
-    goal = stage_minutes("station", ChannelConfig.for_channel("web"))
+    goal = prep_goal_minutes("web")
     expected = timezone.localtime(started + timedelta(minutes=goal)).strftime("%H:%M")
     assert stops[1]["ready_at"] == expected
 
