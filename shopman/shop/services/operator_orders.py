@@ -2325,7 +2325,7 @@ def _waitlist_wait_reason(order: Order, *, state: str | None = None) -> str:
             until = format_clock(deadline) if deadline else ""
             turn = f"ele tem até {until} para confirmar a vaga" if until else "falta ele confirmar a vaga"
             return f"O lote ficou pronto e a vez é do cliente: {turn}. Nada foi cobrado ainda."
-    except Exception:
+    except Exception:  # silêncio-deliberado: a frase da fila só refina o motivo; sem ela vale a de pagamento, e a regra do aceite não muda
         logger.debug("operator_orders._waitlist_wait_reason degraded ref=%s", order.ref, exc_info=True)
     return ""
 
