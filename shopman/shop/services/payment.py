@@ -1049,12 +1049,27 @@ def refund(
     # Venda SÓ em conta com valor decidido (devolução de parte, não retirado com
     # perda): a dívida perde só aquela parte (#2606, #2697). O resto do pedido
     # continua devido.
+    #
+    # Venda MISTA (conta + outra forma, #3151, decisão da coordenação de
+    # 21/11/2026): a DÍVIDA sai primeiro. O cliente deixa de dever antes de
+    # qualquer dinheiro sair do caixa; só o que passa da dívida volta pelo meio
+    # em que entrou.
     if _pays_on_account(payment_data):
-        if pays_only_on_account(payment_data) and (requested_q is not None or retained_q(order) > 0):
+        decided = requested_q is not None or retained_q(order) > 0
+        if not decided:
+            _cancel_open_account_intents(order)
+        elif pays_only_on_account(payment_data):
             forgive_q = requested_q if requested_q is not None else max(0, open_account_debt_q(order) - retained_q(order))
             reduce_account_debt(order, forgive_q, idempotency_key=idempotency_key)
+        elif requested_q is not None:
+            from_account_q = reduce_account_debt(order, requested_q, idempotency_key=idempotency_key)
+            amount_q = max(0, int(requested_q) - from_account_q)
         else:
-            _cancel_open_account_intents(order)
+            # Não retirado com perda: o devolvível (``refund_q`` do bloco) sai da
+            # conta primeiro; o dinheiro que volta é o teto de sempre (capturado
+            # menos retido), que já desconta a parte da conta.
+            block = (order.data or {}).get("no_show") or {}
+            reduce_account_debt(order, int(block.get("refund_q") or 0), idempotency_key=idempotency_key)
     intents = _gateway_refund_intents(order, payment_data=payment_data)
     try:
         _refund_gateway_intents(
@@ -1167,18 +1182,20 @@ def reduce_account_debt(order, amount_q: int, *, idempotency_key: str) -> int:
 
     Do mais novo para o mais antigo: a parte mais recente da conta sai primeiro.
 
-    Idempotente pela chave: o saldo relançado leva ``{chave}:{intent}``, e a
-    mesma chave de novo (retry, directive) encontra o relançamento e não abate
-    duas vezes. Abatimento que zera a dívida não relança nada, e o retry não
-    acha mais o que abater.
+    Idempotente pela chave: o abatimento grava o evento ``account_debt_reduced``
+    com a chave, na mesma transação. A mesma chave de novo (retry, directive)
+    acha o evento e devolve o MESMO valor, sem abater outra vez. Devolver o valor
+    (e não zero) importa na venda mista: quem chama desconta a parte da conta do
+    dinheiro que volta, e zero no retry devolveria o valor inteiro em dinheiro.
     """
-    from shopman.payman import PaymentIntent, PaymentService
+    from shopman.payman import PaymentService
 
     remaining_q = max(0, int(amount_q or 0))
     if remaining_q <= 0:
         return 0
-    if PaymentIntent.objects.filter(order_ref=order.ref, idempotency_key__startswith=f"{idempotency_key}:").exists():
-        return 0
+    done = account_debt_reduced_q(order, idempotency_key)
+    if done is not None:
+        return done
     reduced_q = 0
     with transaction.atomic():
         for intent in _open_account_intents(order).select_for_update().order_by("-id"):
@@ -1201,17 +1218,40 @@ def reduce_account_debt(order, amount_q: int, *, idempotency_key: str) -> int:
                 )
             remaining_q -= take_q
             reduced_q += take_q
-    if reduced_q > 0:
-        try:
+        if reduced_q > 0:
+            # Na mesma transação do abatimento: é a marca de idempotência.
             order.emit_event(
                 event_type="account_debt_reduced",
                 actor="system",
                 payload={"method": "account", "amount_q": reduced_q, "idempotency_key": idempotency_key},
             )
-        except Exception:
-            logger.warning("payment.reduce_account_debt: could not record event on %s", order.ref, exc_info=True)
     logger.info("payment.reduce_account_debt order=%s reduced_q=%s key=%s", order.ref, reduced_q, idempotency_key)
     return reduced_q
+
+
+def account_debt_reduced_q(order, idempotency_key: str) -> int | None:
+    """Quanto o abatimento com esta chave já tirou da conta, ou ``None`` se não houve."""
+    event = (
+        order.events.filter(type="account_debt_reduced", payload__idempotency_key=idempotency_key)
+        .order_by("pk")
+        .values_list("payload", flat=True)
+        .first()
+    )
+    if event is None:
+        return None
+    return max(0, int((event or {}).get("amount_q") or 0))
+
+
+def money_tender_methods(payment_data: dict) -> list[str]:
+    """As formas de dinheiro de uma venda (tudo que não é a conta da casa), na ordem dos tenders."""
+    methods = []
+    for tender in payment_data.get("tenders") or []:
+        if not isinstance(tender, dict) or not int(tender.get("amount_q") or 0):
+            continue
+        method = str(tender.get("method") or "").lower()
+        if method and method != "account" and method not in methods:
+            methods.append(method)
+    return methods
 
 
 def _cancel_open_account_intents(order) -> None:

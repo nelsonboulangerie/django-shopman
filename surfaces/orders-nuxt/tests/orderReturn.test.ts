@@ -88,3 +88,30 @@ describe("orderReturn", () => {
     expect(returnLineHint(queijo)).toBe("Pode voltar 0,5 kg de 0,5 kg");
   });
 });
+
+
+describe("venda mista com conta da casa: a dívida sai primeiro (#3151)", () => {
+  // O `formatBRL` separa "R$" do número com espaço não separável.
+  const plain = (text: string) => text.replace(/\u00a0/g, " ");
+  const mixed = {
+    ref: "PDV-9",
+    allowed: true,
+    block_reason: "",
+    lines: [],
+    money_returns: true,
+    money_destination: "em dinheiro ficam a devolver no caixa do PDV.",
+    account_debt_q: 1000,
+    managers: [],
+    action: {} as never,
+  };
+
+  it("até o valor da conta, só a conta", () => {
+    expect(plain(returnMoneySentence(mixed, 800))).toBe("R$ 8,00 saem da conta do cliente.");
+  });
+
+  it("o que passa da conta volta pelo dinheiro", () => {
+    expect(plain(returnMoneySentence(mixed, 1500))).toBe(
+      "R$ 10,00 saem da conta do cliente, e R$ 5,00 em dinheiro ficam a devolver no caixa do PDV.",
+    );
+  });
+});
