@@ -165,3 +165,37 @@ class ConversationalWork(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["tenant", "environment", "work_id"], name="shop_convwork_unique_id"),
         ]
+
+
+class ConversationalCommitment(models.Model):
+    """O compromisso do motor como o livro dele o guarda, para sobreviver ao turno (#3198, 3b).
+
+    O ``cc.commitment`` (registro do contrato, em ``ConversationalRecord``) leva o compromisso,
+    mas não o que o livro precisa para retomá-lo: o movimento e a necessidade de origem, o vínculo
+    do canal, quem recebe, o ticket da equipe, se o cliente já foi avisado, se já subiu, os prazos
+    já tratados e os eventos. Uma linha por compromisso, atualizada a cada mudança do livro.
+    """
+
+    tenant = models.CharField("inquilino", max_length=64)
+    environment = models.CharField("ambiente", max_length=16)
+    commitment_id = models.CharField("compromisso", max_length=128)
+    episode_id = models.CharField("episódio", max_length=128, blank=True)
+    is_open = models.BooleanField("aberto", default=True)
+    commitment = models.JSONField("registro vigente")
+    history = models.JSONField("histórico", default=list)
+    entry = models.JSONField("o que retoma", default=dict)
+    notified = models.BooleanField("cliente avisado", default=False)
+    escalated = models.BooleanField("subiu", default=False)
+    handled = models.JSONField("prazos tratados", default=list)
+    events = models.JSONField("eventos", default=list)
+    updated_at = models.DateTimeField("atualizado em", auto_now=True)
+
+    class Meta:
+        app_label = "shop"
+        verbose_name = "compromisso conversacional"
+        verbose_name_plural = "compromissos conversacionais"
+        indexes = [models.Index(fields=["tenant", "environment", "is_open"], name="shop_convcommit_open")]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "environment", "commitment_id"],
+                                    name="shop_convcommit_unique_id"),
+        ]

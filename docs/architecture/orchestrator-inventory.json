@@ -6629,6 +6629,7 @@
         {
           "responsibility": "configuração",
           "symbols": [
+            "ConversationalCommitment",
             "ConversationalDecision",
             "ConversationalEpisode",
             "ConversationalOutcome",
@@ -15703,6 +15704,32 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/ledgers.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DurableCommitmentLedger",
+            "DurableExposureLedger",
+            "_need_document",
+            "_need_of",
+            "commitment_ledger",
+            "exposure_ledger",
+            "memory_store",
+            "receipt_ledger"
           ]
         }
       ]
