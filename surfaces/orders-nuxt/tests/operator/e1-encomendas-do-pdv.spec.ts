@@ -6,7 +6,7 @@ import {
   acknowledgeOtherOrdersAlarms,
   lockDevice,
   managerBindsDevice,
-  managerBindsPosStation,
+  managerBindsStation,
   managerChoosesPosto,
   managerSignsIn,
   operatorUnlocksWithPin,
@@ -57,7 +57,7 @@ test("E1: a encomenda da loja aparece nas Encomendas do PDV, Novo antes do aceit
   const posContext = await roleContext(browser, stack.pos);
   const pos = await posContext.newPage();
   await managerSignsIn(pos);
-  await managerBindsPosStation(pos);
+  await managerBindsStation(pos, "PDV principal");
   await lockDevice(pos);
   await operatorUnlocksWithPin(pos, cast.cashier);
 
