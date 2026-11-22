@@ -1329,12 +1329,10 @@ def ticket_seen(ticket) -> bool:
 
 
 def _is_preorder(source) -> bool:
-    """Encomenda: o pedido tem data combinada e foi feito antes dela."""
-    commitment = get_commitment_date(source)
-    created_at = getattr(source, "created_at", None)
-    if commitment is None or created_at is None:
-        return False
-    return timezone.localdate(created_at) < commitment
+    """Encomenda: a régua única do shop (``order_helpers.is_preorder``, #3163)."""
+    from shopman.shop.services.order_helpers import is_preorder
+
+    return is_preorder(source)
 
 
 def _due_time_display(source, promised, *, is_delivery: bool) -> str:

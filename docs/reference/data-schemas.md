@@ -380,7 +380,7 @@ for key in (
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `is_preorder` | `bool` | `True` se `delivery_date > hoje`. Calculado no commit |
+| `is_preorder` | `bool` | Encomenda: feita ANTES do dia combinado. Gravado no commit (`delivery_date > dia da venda`), na entrada do iFood agendado (`ifood_ingest`, a mesma conta) e no reagendamento (`reschedule`: feita antes do NOVO dia, então a encomenda de ontem trazida para hoje continua encomenda, #3163). Quem pergunta "é encomenda?" não lê a chave à mão: usa a régua única `shop.services.order_helpers.is_preorder` (no pedido, esta chave; na sessão, as datas). "A data é depois de hoje?" é outra pergunta: `order_helpers.is_for_a_later_day` |
 
 ### Chaves adicionadas por handlers pós-commit
 

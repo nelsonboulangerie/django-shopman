@@ -13306,6 +13306,8 @@
             "get_fulfillment_type",
             "house_owns_the_delivery",
             "is_counter_takeaway",
+            "is_for_a_later_day",
+            "is_preorder",
             "is_test_order",
             "json_quantity",
             "logger",
