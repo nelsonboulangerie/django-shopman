@@ -54,15 +54,19 @@ const isTotal = (row: { service: string }) => row.service === DELIVERY_TOTAL_KEY
 // Tempo das corridas (#2467): a mesma janela, outra leitura. Cada corrida uma vez, por
 // serviço, em medianas; sem esta leitura, a página de custo segue inteira.
 const { report: timing } = useBiReport<BIDeliveryTimingReport>("delivery-timing");
+// Minutos numa linha só ("3,5 min", nunca "3,5" em cima de "min"): no celular a tabela rola.
+const TIME = { th: "text-right", td: "text-right tnum whitespace-nowrap" } as const;
 const timingColumns = [
   { accessorKey: "name", header: "Serviço", meta: { class: NAME } },
   { accessorKey: "rides", header: "Corridas", meta: { class: NUM } },
-  { accessorKey: "accept_minutes", header: "Até aceitar", meta: { class: NUM } },
-  { accessorKey: "pickup_minutes", header: "Até a coleta", meta: { class: NUM } },
-  { accessorKey: "street_minutes", header: "Na rua", meta: { class: NUM } },
-  { accessorKey: "total_minutes", header: "Total", meta: { class: NUM } },
+  { accessorKey: "accept_minutes", header: "Até aceitar", meta: { class: TIME } },
+  { accessorKey: "pickup_minutes", header: "Até a coleta", meta: { class: TIME } },
+  { accessorKey: "street_minutes", header: "Na rua", meta: { class: TIME } },
+  { accessorKey: "total_minutes", header: "Total", meta: { class: TIME } },
 ];
-const timingRows = computed<RideTimingRow[]>(() => (timing.value ? rideTimingRows(timing.value) : []));
+const timingRows = computed<RideTimingRow[]>(() =>
+  timing.value ? rideTimingRows(timing.value, report.value?.services.map((row) => row.service) ?? []) : [],
+);
 
 const dailyPoints = computed<ReadingChartPoint[]>(() =>
   (report.value?.days ?? []).map((row) => ({

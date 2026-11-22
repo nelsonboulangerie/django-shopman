@@ -88,6 +88,12 @@ describe("entregas: tempo das corridas por serviço (#2467)", () => {
     expect(rideTimingRows({ services: [] })).toEqual([]);
   });
 
+  it("cada serviço na mesma linha da tabela de custo; o total sempre embaixo", () => {
+    expect(rideTimingRows({ services }, ["taon", "casa"]).map((row) => row.service)).toEqual(["taon", "casa", DELIVERY_TOTAL_KEY]);
+    // Serviço sem custo no período (nada fechou valor) vem depois dos que a tabela de custo tem.
+    expect(rideTimingRows({ services }, ["taon"]).map((row) => row.service)).toEqual(["taon", "casa", DELIVERY_TOTAL_KEY]);
+  });
+
   it("minutos com vírgula; zero é medida; sem marco no período diz Sem medida", () => {
     expect(rideMinutes(4.5)).toBe("4,5 min");
     expect(rideMinutes(0)).toBe("0 min");

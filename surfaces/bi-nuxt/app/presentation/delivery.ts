@@ -95,9 +95,22 @@ export type RideTimingRow = BIRideTimingService;
 /** "4 min", "12,5 min"; "Sem medida" quando nenhuma corrida chegou àquele marco no período. */
 export const rideMinutes = minutesLabel;
 
-/** As linhas por serviço, na ordem do nome, e o total embaixo (o servidor já manda assim). */
-export function rideTimingRows(report: Pick<BIDeliveryTimingReport, "services">): RideTimingRow[] {
-  return [...report.services];
+/**
+ * As linhas por serviço e o total embaixo. Com `order` (os serviços da tabela de custo,
+ * na ordem dela), cada serviço fica na mesma linha nas duas tabelas da página; o que a
+ * tabela de custo não tem vem depois, na ordem do servidor (a do nome).
+ */
+export function rideTimingRows(
+  report: Pick<BIDeliveryTimingReport, "services">,
+  order: readonly string[] = [],
+): RideTimingRow[] {
+  const total = report.services.filter((row) => row.service === DELIVERY_TOTAL_KEY);
+  const services = report.services.filter((row) => row.service !== DELIVERY_TOTAL_KEY);
+  const rank = (row: RideTimingRow) => {
+    const at = order.indexOf(row.service);
+    return at === -1 ? order.length : at;
+  };
+  return [...services].sort((a, b) => rank(a) - rank(b)).concat(total);
 }
 
 /** O CSV da tabela de tempos, em minutos, com o total na última linha. */
