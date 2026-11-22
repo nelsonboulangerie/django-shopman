@@ -4737,8 +4737,17 @@ def _compute_engine_delivery_fee(payload: dict) -> DeliveryFeeResolution:
             fee_q=0, source="blocked", distance_km=distance_km, blocked=True, out_of_area=True,
         )
 
-    source = "zone" if postal_code or neighborhood else "distance"
-    if distance_km is None and not (postal_code or neighborhood):
+    # A origem é a que DECIDIU a taxa, não a que o endereço tem (#3311). Antes, CEP
+    # ou bairro preenchidos davam "zone" sempre, e a tela dizia "Tabela do
+    # bairro/CEP" para a taxa que a faixa de distância calculou. Zona é a que
+    # casou; sem ela, a faixa (com distância) ou a taxa padrão da loja (sem).
+    from shopman.shop.services import promotions as promotion_service
+
+    if promotion_service.match_delivery_zone(postal_code, neighborhood) is not None:
+        source = "zone"
+    elif distance_km is not None:
+        source = "distance"
+    else:
         source = "default"
     waiver = _delivery_fee_waiver(base_fee_q, payload)
     return DeliveryFeeResolution(
