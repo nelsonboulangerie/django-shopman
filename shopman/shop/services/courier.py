@@ -1084,6 +1084,64 @@ def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | N
     return redispatch(order, actor=actor)
 
 
+#: As duas saídas do "Encerrar aqui" (#2736): só o operador sabe o que aconteceu.
+CLOSE_DELIVERED = "delivered"
+CLOSE_RETURNED = "returned"
+
+
+def close_here_outcomes(order) -> tuple[str, ...]:
+    """As saídas que o "Encerrar aqui" oferece a esta corrida. Vazio quando não cabe.
+
+    Só a corrida aberta além da idade em que uma corrida real dura
+    (:func:`ride_open_too_long`): a central já não a encerra. "Voltou para a
+    loja" só antes da coleta; depois dela o pedido saiu para entrega e não volta
+    a pronto (a sacola que volta é outro fluxo, o da devolução).
+    """
+    from shopman.shop.protocols import RideState
+
+    block = get_block(order)
+    if not ride_open_too_long(block):
+        return ()
+    collected = bool(block.get("dispatched_at")) or delivery_services.ride_state(block) == RideState.ON_ROUTE
+    return (CLOSE_DELIVERED,) if collected else (CLOSE_DELIVERED, CLOSE_RETURNED)
+
+
+def close_here(order, *, outcome: str, actor: str, expected_revision: str | None = None) -> list[str]:
+    """"Encerrar aqui": a casa encerra a corrida que a central nunca fechou.
+
+    ``delivered`` ("Foi entregue") termina a corrida como o ``F`` da central: os
+    pedidos ficam entregues, e o troco e a maquininha ficam pendentes no
+    "Entregador voltou", como num fim normal. ``returned`` ("Voltou para a
+    loja") termina como um cancelamento da casa: os pedidos voltam para
+    Aguardando, e o troco e a maquininha voltam para a gaveta. Nas duas a letra
+    fica livre. Nada vai à central: ela já não responde por esta corrida.
+
+    Devolve os pedidos encerrados. Recusa o que mudou desde a leitura da tela
+    (``expected_revision``) e a saída que esta corrida não oferece
+    (:func:`close_here_outcomes`).
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and dispatch_revision(locked) != expected_revision:
+            raise OrderStateConflict("O pedido ou a corrida mudou. Confira o contexto antes de encerrar.")
+        if outcome not in close_here_outcomes(locked):
+            raise ValueError("Esta corrida não se encerra assim agora. Atualize a tela.")
+        ride_id = get_block(locked).get("ride_ref")
+        members = [locked, *ride_companions(locked)]
+        locked.emit_event(event_type="courier_closed_here", actor=actor,
+                          payload={"ride_ref": ride_id, "outcome": outcome, "orders": [m.ref for m in members]})
+    status = "F" if outcome == CLOSE_DELIVERED else "C"
+    closed = []
+    for member in members:
+        if apply_status(member, status, source=f"operator:{actor}") in ("applied", "noop"):
+            closed.append(member.ref)
+    logger.info("courier.closed_here ride_ref=%s outcome=%s orders=%s actor=%s",
+                ride_id, outcome, ",".join(closed), actor)
+    return closed
+
+
 def latest_cancellation(order, *, pending_only=False):
     """The existing Directive owns queued and unresolved cancellation attempts.
 

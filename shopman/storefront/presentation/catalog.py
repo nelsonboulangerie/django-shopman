@@ -360,7 +360,7 @@ def _build_categories() -> tuple[CategoryProjection, ...]:
             CategoryProjection(
                 ref=col.ref,
                 name=col.name,
-                icon=collection_icon(col.ref),
+                icon=collection_icon(col),
                 url=_menu_anchor_url(col.ref),
             ),
         )
@@ -885,7 +885,7 @@ def _build_sections(
                 skus=slice_skus,
                 ref=category.ref if category else "outros",
                 label=category.name if category else "Outros",
-                icon=category.icon if category else "restaurant_menu",
+                icon=category.icon if category else "",
             )
         )
     return tuple(sections)

@@ -246,7 +246,7 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     if for_commit and fulfillment_type == "delivery" and not payload["delivery_address"]:
         raise PosIntentError(
             code="delivery_address_required",
-            message="Informe o endereço de entrega antes de finalizar.",
+            message="Informe o endereço de entrega antes de validar.",
             field="delivery_address",
             focus="delivery_address",
             recovery="Preencha endereço, referência e horário prometido.",
@@ -354,7 +354,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         if for_commit:
             raise PosIntentError(
                 code="cart_empty",
-                message="Carrinho vazio. Adicione produtos antes de fechar.",
+                message="A venda está vazia. Lance um produto antes de validar.",
                 field="items",
                 focus="search",
             )
@@ -363,10 +363,10 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
     seen_line_ids: set[str] = set()
     for idx, item in enumerate(raw):
         if not isinstance(item, dict):
-            raise PosIntentError("invalid_item", "Item inválido no carrinho.", field=f"items.{idx}", focus="search")
+            raise PosIntentError("invalid_item", "Item inválido na venda.", field=f"items.{idx}", focus="search")
         sku = _text(item.get("sku"), limit=120)
         if not sku:
-            raise PosIntentError("item_sku_required", "Item sem SKU no carrinho.", field=f"items.{idx}.sku", focus="search")
+            raise PosIntentError("item_sku_required", "Item sem SKU na venda.", field=f"items.{idx}.sku", focus="search")
         weighed = _weighed(item.get("weighed"), f"items.{idx}.weighed")
         # Linha pesada: a quantidade NÃO vem do navegador. Ela sai do que o
         # operador tem em mãos (valor da etiqueta ou peso), convertido pelo preço
@@ -396,7 +396,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             if line_id in seen_line_ids:
                 raise PosIntentError(
                     code="duplicate_line_id",
-                    message="Duas linhas do carrinho têm a mesma identidade.",
+                    message="Duas linhas da venda estão registradas como o mesmo item.",
                     field=f"items.{idx}.line_id",
                     focus="cart",
                 )

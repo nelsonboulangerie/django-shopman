@@ -7527,7 +7527,10 @@
           "symbols": [
             "validate_and_apply_coupon",
             "apply_coupon_code",
-            "remove_coupon_code"
+            "remove_coupon_code",
+            "CouponNotBetter",
+            "_line_discounts",
+            "_summarize"
           ]
         }
       ],
@@ -8507,6 +8510,10 @@
             "last_failure",
             "failure_message",
             "ride_health",
+            "close_here",
+            "close_here_outcomes",
+            "CLOSE_DELIVERED",
+            "CLOSE_RETURNED",
             "progress_since",
             "restore_archived_ride",
             "orders_with_archived_ride",
@@ -11167,6 +11174,51 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.services.kds:reconcile_to_lines"
+      ]
+    },
+    {
+      "id": "shop.services-demand-anchor",
+      "question": "Quando o plano de uma data cresce, a demanda sem fornada dela se prende às unidades novas?",
+      "owner": "stock.demand-anchor",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.demand_anchor:anchor_demand",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/demand_anchor.py",
+          "symbols": [
+            "_ORDER_REFERENCE_PREFIX",
+            "_resolve_over_plan_alert",
+            "anchor_demand",
+            "connect",
+            "on_production_changed"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "craftsman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:stock"
+      ],
+      "events": [
+        "production_changed"
+      ],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_plano_que_cresce_prende_a_demanda.py::test_o_plano_que_cresce_prende_a_demanda_da_encomenda_e_o_livre_fica_zero"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.demand_anchor:anchor_demand"
       ]
     },
     {
@@ -19863,6 +19915,7 @@
     {
       "entrypoint_kind": "symbol",
       "domains": [
+        "offerman",
         "orderman"
       ],
       "ports": [
@@ -19938,10 +19991,6 @@
       ],
       "touchpoints": [
         "service"
-      ],
-      "domains": [
-        "offerman",
-        "orderman"
       ],
       "tests": [
         "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",
@@ -20168,6 +20217,41 @@
       "tests": [
         "shopman/shop/tests/test_shelf_recheck.py::test_a_lapsed_reservation_tells_the_shelf",
         "shopman/shop/tests/test_shelf_recheck.py::test_a_renewed_reservation_wakes_nobody"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "pricing.fixed-coupon-competition",
+      "question": "O desconto de valor fixo de pedido vence, e o cupom fixo entra no lugar do desconto por item que vale menos?",
+      "owner": "pricing.fixed-coupon-competition",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.fixed_discount:swap_fixed_coupon",
+      "authoritative_symbols": [
+        "shopman.shop.services.fixed_discount:swap_fixed_coupon"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/fixed_discount.py",
+          "symbols": [
+            "best_fixed_discount",
+            "swap_in_fixed_coupon",
+            "swap_fixed_coupon"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_cupom_que_nao_vence.py::test_a_troca_do_cupom_fixo_devolve_a_linha_ao_preco_de_lista_e_tira_o_registro_deslocado"
       ],
       "test_gap_reason": null,
       "policy": false,
