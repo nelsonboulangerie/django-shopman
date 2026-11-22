@@ -1393,6 +1393,7 @@ export interface DeliveryRideProjection {
   reopened_reason: string;
   custody_line: string;
   open_too_long: boolean;
+  close_here_action: Action | null;
   cancel_state: string;
   cancel_message: string;
   sync_since: string;

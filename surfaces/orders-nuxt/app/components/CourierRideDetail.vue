@@ -18,6 +18,7 @@ import type {
 import { rideColor } from "~/presentation/ridePalette";
 import { rideChargeNotices, rideLine, rideNotice, rideStale, whatsappLink } from "~/presentation/deliveries";
 import { callCourier, type HouseGesture } from "~/presentation/houseCouriers";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierPositionLine } from "~/presentation/courierPosition";
@@ -31,7 +32,7 @@ const props = defineProps<{
   /** O gesto da casa que está rodando nesta corrida (chave), ou vazio. */
   houseBusy?: string;
 }>();
-const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number]; gesture: [gesture: HouseGesture] }>();
+const emit = defineEmits<{ close: []; back: []; cancel: [reasonId?: number]; closeHere: [outcome: string]; gesture: [gesture: HouseGesture] }>();
 const house = computed(() => props.ride.house ?? null);
 const call = computed(() => callCourier(props.ride));
 const tone = computed(() => rideColor(props.ride.number - 1));
@@ -41,6 +42,22 @@ const line = computed(() => rideLine(props.ride, props.now));
 const notice = computed(() => (house.value ? null : rideNotice(props.ride, props.now)));
 const noticeDismissedFor = ref("");
 const showNotice = computed(() => notice.value !== null && noticeDismissedFor.value !== notice.value.key);
+// "Encerrar aqui" (#2736): a corrida que a central nunca fechou. O botão mora no
+// próprio aviso; a confirmação abre embaixo com as saídas e o que cada uma faz.
+type CloseOutcome = { key: string; label: string; consequence: string };
+const closeConfirmation = computed(
+  () => (props.ride.close_here_action?.confirmation ?? {}) as { description?: string; outcomes?: CloseOutcome[] },
+);
+const closeArmed = ref(false);
+const noticeButtons = computed(() =>
+  notice.value?.key === "open_too_long" && props.ride.close_here_action && !closeArmed.value
+    ? [{ label: "Encerrar aqui", class: "min-h-11", onClick: () => { closeArmed.value = true; } }]
+    : [],
+);
+function closeHere(outcome: string) {
+  closeArmed.value = false;
+  emit("closeHere", outcome);
+}
 function dismissNotice() {
   noticeDismissedFor.value = notice.value?.key ?? "";
 }
@@ -127,11 +144,20 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         :icon="notice.icon"
         :title="notice.title"
         :description="notice.description"
+        :actions="alertActions(notice.color, noticeButtons)"
         close
         role="status"
         data-ride-notice
         @update:open="dismissNotice"
       />
+      <div v-if="closeArmed && ride.close_here_action" class="mx-5 mt-2 flex flex-col gap-3 rounded-xl bg-elevated/60 p-3" data-ride-close-here>
+        <p class="op-body text-highlighted">{{ closeConfirmation.description }}</p>
+        <div v-for="item in closeConfirmation.outcomes ?? []" :key="item.key" class="flex flex-col gap-1.5" :data-ride-close-outcome="item.key">
+          <NuxtButton block class="min-h-11 justify-center" color="neutral" variant="outline" :label="item.label" :loading="busy" @click="closeHere(item.key)" />
+          <p class="op-micro text-muted">{{ item.consequence }}</p>
+        </div>
+        <NuxtButton class="min-h-11 self-start" color="neutral" variant="ghost" label="Agora não" @click="closeArmed = false" />
+      </div>
 
       <!-- A margem mora no invólucro: o aviso é `w-full`, e com a margem nele o X vazava do painel. -->
       <div v-if="showCancelState && cancelState" class="mx-5 mt-4">

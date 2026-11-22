@@ -550,6 +550,21 @@ const DELIVERIES = {
     service_options: [{ ref: "taon", name: "TaOn", kind: "machine", is_default: true }],
   },
 };
+/** #2736 (cookie `e2e_close=on`): a corrida A está aberta há muito tempo, antes da coleta. */
+const CLOSE_HERE_ACTION = {
+  ref: "courier-close-here", kind: "mutation", label: "Encerrar aqui", enabled: true, reason: "",
+  method: "POST", idempotency: "required",
+  confirmation: {
+    required: true,
+    description: "A TaOn não encerrou a corrida A. Encerre aqui só se souber o que aconteceu.",
+    outcomes: [
+      { key: "delivered", label: "Foi entregue", consequence: "O pedido fica entregue. O troco fica para o Entregador voltou." },
+      { key: "returned", label: "Voltou para a loja", consequence: "O pedido volta para Aguardando. O troco volta para a gaveta." },
+    ],
+  },
+  payload_schema: { base_revision: "r-b12", expected_actor_id: 1 },
+};
+const closePosts = [];
 /** As corridas que acabaram sem levar os pedidos (#2737), no topo de Aguardando. */
 const FAILED_RIDES = [
   {
@@ -973,6 +988,20 @@ const server = createServer((req, res) => {
   const callOrder = callScenario ? url.match(/\/orders\/([A-Z0-9-]+)\/?(\?|$)/) : null;
   if (callOrder && callDetail(callOrder[1])) return json(res, 200, { order: callDetail(callOrder[1]) });
   if (f10Scenario === "fiscal" && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, f10Deliveries());
+  if (/(?:^|;\s*)e2e_close=on(?:;|$)/.test(req.headers.cookie || "") && /\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, { ...DELIVERIES, rides: DELIVERIES.rides.map((ride) => ride.letter === "A"
+      ? { ...ride, open_too_long: true, close_here_action: CLOSE_HERE_ACTION } : ride) });
+  if (/\/e2e\/close-here\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") closePosts.length = 0;
+    return json(res, 200, { posts: closePosts });
+  }
+  const closePost = url.match(/\/orders\/([A-Z0-9-]+)\/courier-close-here\/?(\?|$)/);
+  if (closePost && req.method === "POST") {
+    return void readBody(req).then((body) => {
+      closePosts.push({ ref: closePost[1], ...body });
+      json(res, 200, { outcome: "applied", closed: [closePost[1]], order: null });
+    });
+  }
   // #2737 (cookie `e2e_failed=on`): a corrida C de A47 e C03 voltou porque ninguém
   // aceitou, e a de D12 a TaOn cancelou (a letra dela já é de outra corrida).
   if (/(?:^|;\s*)e2e_failed=on(?:;|$)/.test(req.headers.cookie || "") && /\/backstage\/deliveries\/?(\?|$)/.test(url))

@@ -222,20 +222,30 @@ const busyRide = ref("");
 // ── a corrida da casa: os gestos do balcão (M3b, #2898) ─────────────────────
 const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(() => refresh());
 
-async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
-  const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
+async function rideAction(
+  ride: DeliveryRideProjection,
+  operation: "courier-back" | "courier-cancel" | "courier-close-here",
+  reasonId?: number,
+  outcome?: string,
+) {
+  const action = operation === "courier-back" ? ride.back_action : operation === "courier-close-here" ? ride.close_here_action : ride.cancel_action;
   busyRide.value = ride.key;
   try {
     // Cancelar só chega aqui pela confirmação do detalhe (`CourierCancelConfirm`);
     // depois do aceite ela já traz o motivo, que vai à TaOn como `reason_id`.
-    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : {});
-    useSonner.success(operation === "courier-back" ? `Corrida ${ride.letter} encerrada.` : "Pedido de cancelamento enviado à TaOn.");
+    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : outcome ? { outcome } : {});
+    useSonner.success(
+      operation === "courier-cancel" ? "Pedido de cancelamento enviado à TaOn." : `Corrida ${ride.letter} encerrada.`,
+    );
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível. Atualize e tente de novo."));
   } finally {
     busyRide.value = "";
     await refresh();
   }
+}
+function closeOpenRideHere(outcome: string) {
+  if (openRide.value) void rideAction(openRide.value, "courier-close-here", undefined, outcome);
 }
 function cancelOpenRide(reasonId?: number) {
   if (openRide.value) void rideAction(openRide.value, "courier-cancel", reasonId);
@@ -649,6 +659,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
           @close="close"
           @back="backRide = openRide"
           @cancel="cancelOpenRide"
+          @close-here="closeOpenRideHere"
           @gesture="(item) => houseGesture(openRide!, item)"
         />
       </template>

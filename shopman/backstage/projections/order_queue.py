@@ -1830,7 +1830,7 @@ def _courier_block(order: Order) -> dict | None:
             # ``withdrew`` (o entregador desistiu) ou ``transfer`` (a TaOn trocou o entregador).
             "reopened_reason": reopened["reason"],
             "active": active,
-            "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
+            "driver": _courier_driver(block, active=active),
             # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
             "tracking_url": tracking["url"] if active else "",
             "confirmation_code": tracking["code"],
@@ -1866,6 +1866,23 @@ def _courier_block(order: Order) -> dict | None:
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
         return None
+
+
+def _courier_driver(block: dict, *, active: bool) -> dict | None:
+    """O entregador da corrida, com a foto enquanto ela vive (#2736).
+
+    A foto é a MESMA da página Entregas: servida pelo servidor
+    (``DeliveryDriverPhotoView``), só em cache e só com a corrida viva
+    (decisão do dono, LGPD). Sem foto, ``photo_url`` vazio e a tela mostra o ícone.
+    """
+    from shopman.shop.services import courier
+
+    driver = block.get("driver")
+    if not isinstance(driver, dict):
+        return None
+    ride_id = str(block.get("ride_ref") or "")
+    has_photo = active and bool(ride_id) and courier.has_driver_photo(ride_id)
+    return {**driver, "photo_url": f"/api/v1/backstage/deliveries/{ride_id}/driver-photo/" if has_photo else ""}
 
 
 def _cancel_reasons(channel_ref: str = "") -> tuple[CancelReasonProjection, ...]:
@@ -4099,6 +4116,7 @@ _EVENT_LABELS = {
     "courier_ride_reopened": "O entregador desistiu e a TaOn procura outro",
     "courier_ride_restored": "A TaOn retomou a corrida que constava como encerrada",
     "courier_dispatch_released": "Chamada da TaOn feita de novo",
+    "courier_closed_here": "Corrida encerrada aqui",
     "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
     # Entregador da casa (``services/own_fleet``): a casa escolheu a pessoa, e ela

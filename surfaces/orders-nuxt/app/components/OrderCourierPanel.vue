@@ -370,12 +370,15 @@ const vehicle = computed(() =>
         </p>
 
         <!-- entregador -->
+        <!-- A foto da TaOn enquanto a corrida vive, a mesma da página Entregas (#2736). -->
         <NuxtAlert
           v-if="courier.driver?.name"
           color="info"
           variant="subtle"
-          icon="i-lucide-user"
+          :icon="courier.driver.photo_url ? undefined : 'i-lucide-user'"
+          :avatar="courier.driver.photo_url ? { src: courier.driver.photo_url, alt: courier.driver.name, size: 'lg' } : undefined"
           :title="courier.driver.name"
+          data-order-courier-driver
         >
           <template #description
             ><div class="flex flex-wrap items-center gap-x-4 gap-y-1">
