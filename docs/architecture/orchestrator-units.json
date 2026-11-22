@@ -11166,6 +11166,51 @@
       ]
     },
     {
+      "id": "shop.services-demand-anchor",
+      "question": "Quando o plano de uma data cresce, a demanda sem fornada dela se prende às unidades novas?",
+      "owner": "stock.demand-anchor",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.demand_anchor:anchor_demand",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/demand_anchor.py",
+          "symbols": [
+            "_ORDER_REFERENCE_PREFIX",
+            "_resolve_over_plan_alert",
+            "anchor_demand",
+            "connect",
+            "on_production_changed"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "craftsman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:stock"
+      ],
+      "events": [
+        "production_changed"
+      ],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_plano_que_cresce_prende_a_demanda.py::test_o_plano_que_cresce_prende_a_demanda_da_encomenda_e_o_livre_fica_zero"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.demand_anchor:anchor_demand"
+      ]
+    },
+    {
       "id": "shop.services-lead-time",
       "question": "Lead time de encomenda — antecedência mínima entre o pedido e a data prometida?",
       "owner": "fulfillment.lead.time",
