@@ -14,6 +14,8 @@ export type {
   BIDeliveryCostDay,
   BIDeliveryCostReport,
   BIDeliveryCostService,
+  BIDeliveryTimingReport,
+  BIRideTimingService,
   BIForecastReport,
   BIOvenTimeRow,
   BIPreorderKitchenReport,

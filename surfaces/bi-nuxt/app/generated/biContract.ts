@@ -402,6 +402,42 @@ export interface BIDeliveryCostReport {
   services: BIDeliveryCostService[];
 }
 
+/** Uma linha do recorte: quantos casos e a mediana, em minutos. */
+export interface BITimingRow {
+  key: string;
+  label: string;
+  samples: number;
+  median_minutes: number;
+}
+
+/** Os tempos das corridas de um serviço: quantas e a mediana de cada trecho, em minutos. */
+export interface BIRideTimingService {
+  service: string;
+  name: string;
+  rides: number;
+  accept_minutes: number | null;
+  pickup_minutes: number | null;
+  street_minutes: number | null;
+  total_minutes: number | null;
+}
+
+/** BIDeliveryTimingReport(date_from: 'str', date_to: 'str', prep_samples: 'int', prep_start_fallbacks: 'int', prep_by_sku: 'tuple[BITimingRow, ...]', prep_by_hour: 'tuple[BITimingRow, ...]', prep_by_weekday: 'tuple[BITimingRow, ...]', rides: 'int', courier_accept_by_hour: 'tuple[BITimingRow, ...]', courier_accept_by_weekday: 'tuple[BITimingRow, ...]', courier_pickup_by_hour: 'tuple[BITimingRow, ...]', courier_pickup_by_weekday: 'tuple[BITimingRow, ...]', services: "tuple['BIRideTimingService', ...]" = ()) */
+export interface BIDeliveryTimingReport {
+  date_from: string;
+  date_to: string;
+  prep_samples: number;
+  prep_start_fallbacks: number;
+  prep_by_sku: BITimingRow[];
+  prep_by_hour: BITimingRow[];
+  prep_by_weekday: BITimingRow[];
+  rides: number;
+  courier_accept_by_hour: BITimingRow[];
+  courier_accept_by_weekday: BITimingRow[];
+  courier_pickup_by_hour: BITimingRow[];
+  courier_pickup_by_weekday: BITimingRow[];
+  services: BIRideTimingService[];
+}
+
 /** Uma encomenda: quando chegou à Cozinha, quando começou, quando ficou pronta. */
 export interface BIPreorderKitchenRow {
   ref: string;

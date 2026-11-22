@@ -148,3 +148,59 @@ def test_bi_endpoint_is_for_who_reads_the_bi(client, station):
     body = client.get(url).json()["bi"]
     assert body["prep_samples"] == 0
     assert body["prep_by_sku"] == []
+
+
+def _ride(order, ride_ref, service, stamps, *, status="F", **extra):
+    order.data = {**order.data, "courier": {
+        "ride_ref": ride_ref, "service": service, "status": status,
+        "requested_at": stamps["D"].isoformat(),
+        "status_at": {letter: at.isoformat() for letter, at in stamps.items()}, **extra,
+    }}
+    order.save(update_fields=["data"])
+
+
+@pytest.mark.django_db
+def test_bi_counts_each_ride_once_and_splits_the_times_by_service(station):
+    """#2467: a corrida de dois pedidos conta UMA vez; cada serviço com o nome do cadastro.
+
+    TaOn, corrida M5 com A47 e C03: aberta 19:00, aceita 19:04, coletou 19:15, entregou
+    A47 19:25 e C03 19:31. Na rua 16 min (da coleta à ÚLTIMA entrega), total 31.
+    Casa, corrida CASA-1 com B11: aberta 20:00, aceita 20:00 (na hora), saiu 20:05,
+    entregou 20:17. Na rua 12, total 17.
+    """
+    a47, c03, b11 = _order("TMP-A47"), _order("TMP-C03"), _order("TMP-B11")
+    _ride(a47, "M5", "taon", {"D": _at(19), "A": _at(19, 4), "E": _at(19, 15), "F": _at(19, 25)},
+          ride_orders=["TMP-A47", "TMP-C03"])
+    _ride(c03, "M5", "taon", {"D": _at(19), "A": _at(19, 4), "E": _at(19, 15), "F": _at(19, 31)},
+          ride_orders=["TMP-A47", "TMP-C03"])
+    _ride(b11, "CASA-1", "casa", {"D": _at(20), "A": _at(20), "E": _at(20, 5), "F": _at(20, 17)})
+
+    report = build_bi_delivery_timing()
+
+    assert report.rides == 2  # três pedidos, duas corridas
+    rows = [(r.name, r.rides, r.accept_minutes, r.pickup_minutes, r.street_minutes, r.total_minutes)
+            for r in report.services]
+    assert rows == [
+        ("Entregadores da casa", 1, 0.0, 5.0, 12.0, 17.0),  # a casa aceita na hora da chamada: zero medido
+        ("TaOn", 1, 4.0, 15.0, 16.0, 31.0),
+        ("Total", 2, 2.0, 10.0, 14.0, 24.0),
+    ]
+    assert report.services[-1].service == "__total__"
+
+
+@pytest.mark.django_db
+def test_bi_reads_the_service_of_an_archived_ride(station):
+    """A corrida arquivada guarda o serviço dela; a antiga, sem ele, vale pelo do bloco."""
+    order = _order("TMP-ARQ")
+    order.data = {**order.data, "courier": {
+        "service": "casa", "ride_ref": "CASA-2", "status": "A", "requested_at": _at(18, 30).isoformat(),
+        "status_at": {"A": _at(18, 31).isoformat()},
+        "attempts": [{"ride_ref": "M9", "service": "taon", "status": "N", "requested_at": _at(18).isoformat(),
+                      "status_at": {"D": _at(18).isoformat(), "N": _at(18, 20).isoformat()}}],
+    }}
+    order.save(update_fields=["data"])
+
+    report = build_bi_delivery_timing()
+
+    assert [(r.name, r.rides) for r in report.services] == [
+        ("Entregadores da casa", 1), ("TaOn", 1), ("Total", 2)]

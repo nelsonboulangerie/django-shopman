@@ -5,6 +5,9 @@ import {
   deliveryServiceCsv,
   deliveryServiceRows,
   estimatedRidesHint,
+  rideMinutes,
+  rideTimingCsv,
+  rideTimingRows,
   ridesHint,
 } from "~/presentation/delivery";
 
@@ -70,5 +73,31 @@ describe("entregas: uma linha por serviço e o total embaixo (#3144)", () => {
     const csv = deliveryServiceCsv(deliveryServiceRows(report));
     expect(csv.header[0]).toBe("Serviço");
     expect(csv.rows.map((row) => row[0])).toEqual(["TaOn", "Entregadores da casa", "Total"]);
+  });
+});
+
+describe("entregas: tempo das corridas por serviço (#2467)", () => {
+  const services = [
+    { service: "casa", name: "Entregadores da casa", rides: 1, accept_minutes: 0, pickup_minutes: 5, street_minutes: 12, total_minutes: 17 },
+    { service: "taon", name: "TaOn", rides: 3, accept_minutes: 4.5, pickup_minutes: 15, street_minutes: null, total_minutes: null },
+    { service: DELIVERY_TOTAL_KEY, name: "Total", rides: 4, accept_minutes: 3, pickup_minutes: 12.5, street_minutes: 12, total_minutes: 17 },
+  ];
+
+  it("as linhas vêm do servidor como estão: serviços pelo nome e o total embaixo", () => {
+    expect(rideTimingRows({ services }).map((row) => row.name)).toEqual(["Entregadores da casa", "TaOn", "Total"]);
+    expect(rideTimingRows({ services: [] })).toEqual([]);
+  });
+
+  it("minutos com vírgula; zero é medida; sem marco no período diz Sem medida", () => {
+    expect(rideMinutes(4.5)).toBe("4,5 min");
+    expect(rideMinutes(0)).toBe("0 min");
+    expect(rideMinutes(null)).toBe("Sem medida");
+  });
+
+  it("o CSV em minutos, com a célula vazia onde não houve medida", () => {
+    const csv = rideTimingCsv(services);
+    expect(csv.header).toEqual(["Serviço", "Corridas", "Até aceitar (min)", "Até a coleta (min)", "Na rua (min)", "Total (min)"]);
+    expect(csv.rows[1]).toEqual(["TaOn", 3, "4,5", "15", "", ""]);
+    expect(csv.rows[2]?.[0]).toBe("Total");
   });
 });

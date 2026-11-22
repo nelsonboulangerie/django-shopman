@@ -46,6 +46,11 @@ from shopman.backstage.projections.bi_delivery_cost import (
     BIDeliveryCostReport,
     BIDeliveryCostService,
 )
+from shopman.backstage.projections.bi_delivery_timing import (
+    BIDeliveryTimingReport,
+    BIRideTimingService,
+    BITimingRow,
+)
 from shopman.backstage.projections.bi_explore import (
     BIExploreMetricOption,
     BIExploreReport,
@@ -151,6 +156,9 @@ CONTRACT_DATACLASSES = (
     BIDeliveryCostService,
     BIDeliveryCostDay,
     BIDeliveryCostReport,
+    BITimingRow,
+    BIRideTimingService,
+    BIDeliveryTimingReport,
     BIPreorderKitchenRow,
     BIPreorderKitchenReport,
     BIExploreRow,

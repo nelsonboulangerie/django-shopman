@@ -3,9 +3,15 @@
 // corrida uma vez; aqui só a frase da resposta, as linhas por serviço e a forma das
 // séries. Uma linha por serviço e o total embaixo: a casa entrega por mais de um
 // serviço e o B.I. existe para compará-los (#3144).
-import type { BIDeliveryCostReport, BIDeliveryCostService } from "~/types/bi";
+import type {
+  BIDeliveryCostReport,
+  BIDeliveryCostService,
+  BIDeliveryTimingReport,
+  BIRideTimingService,
+} from "~/types/bi";
 import type { ReadingCsv } from "../../../operator-kit/app/presentation/readingChart";
 import { csvMoney, formatInt, formatMoney } from "~/presentation/bi";
+import { minutesLabel } from "~/presentation/preorderKitchen";
 
 /** A resposta em uma frase: quanto a entrega custou e se o frete cobriu. */
 export function deliveryAnswer(
@@ -79,4 +85,33 @@ export function ridesHint(
   const deliveries = `${formatInt(report.deliveries)} ${report.deliveries === 1 ? "entrega" : "entregas"}`;
   const rides = `${formatInt(report.rides)} ${report.rides === 1 ? "corrida" : "corridas"}`;
   return `${deliveries} em ${rides}`;
+}
+
+// ── Tempo das corridas (#2467) ───────────────────────────────────────────────
+
+/** Uma linha da tabela de tempos: a de um serviço, ou a do total (`service = DELIVERY_TOTAL_KEY`). */
+export type RideTimingRow = BIRideTimingService;
+
+/** "4 min", "12,5 min"; "Sem medida" quando nenhuma corrida chegou àquele marco no período. */
+export const rideMinutes = minutesLabel;
+
+/** As linhas por serviço, na ordem do nome, e o total embaixo (o servidor já manda assim). */
+export function rideTimingRows(report: Pick<BIDeliveryTimingReport, "services">): RideTimingRow[] {
+  return [...report.services];
+}
+
+/** O CSV da tabela de tempos, em minutos, com o total na última linha. */
+export function rideTimingCsv(rows: readonly RideTimingRow[]): ReadingCsv {
+  const cell = (value: number | null) => (value === null ? "" : String(value).replace(".", ","));
+  return {
+    header: ["Serviço", "Corridas", "Até aceitar (min)", "Até a coleta (min)", "Na rua (min)", "Total (min)"],
+    rows: rows.map((row) => [
+      row.name,
+      row.rides,
+      cell(row.accept_minutes),
+      cell(row.pickup_minutes),
+      cell(row.street_minutes),
+      cell(row.total_minutes),
+    ]),
+  };
 }
