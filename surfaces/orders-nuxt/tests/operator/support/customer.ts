@@ -14,6 +14,8 @@ export interface PickupOrder {
   /** A janela como a loja a escreve: meia hora hoje ("17h às 17h30"), turno na encomenda
    *  ("A partir das 15h"); padrão: a primeira livre. */
   window?: string;
+  /** CPF ou CNPJ na nota (o "CPF na nota?" da retirada, no passo do pagamento). */
+  taxId?: string;
 }
 
 /** Cliente novo pede retirada (hoje, ou amanhã: a encomenda) e paga com Pix (pagamento
@@ -73,6 +75,15 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   } else await page.getByRole("radio", { name: /^\d{1,2}h(\d{2})? às \d{1,2}h(\d{2})?$/ }).first().click();
   await page.getByRole("button", { name: "Continuar", exact: true }).click();
   await page.getByRole("radio", { name: /^Pix/ }).click();
+  if (order.taxId) {
+    await page.getByRole("switch", { name: /CPF ou CNPJ na nota\?/ }).click();
+    const taxId = page.getByRole("textbox", { name: "CPF ou CNPJ na nota", exact: true });
+    await taxId.click();
+    await taxId.pressSequentially(order.taxId);
+    // Com o campo em foco o teclado do celular está aberto e o card do total recolhe:
+    // a cliente fecha o teclado antes de revisar.
+    await taxId.blur();
+  }
   await capture(page, testInfo, "loja-finalizar");
   await page.getByRole("button", { name: "Revisar pedido" }).click();
   await expect(page.getByText(new RegExp(`Retirada · ${day}`)).last()).toBeVisible();

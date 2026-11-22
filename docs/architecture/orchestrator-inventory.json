@@ -2442,6 +2442,7 @@
             "EXTRAS_BY_HOST",
             "FittedClient",
             "JEV_DEFAULT_URL",
+            "JEV_PURPOSES",
             "PURPOSES",
             "Resolved",
             "_FittedMessages",
@@ -3222,6 +3223,7 @@
             "IFOOD_MERCHANT_INTERRUPTION",
             "IFOOD_MERCHANT_SYNC",
             "IFOOD_STATUS_CALLBACK",
+            "INCIDENT_ACT",
             "KDS_TICKET_LATE",
             "LIFECYCLE_PHASE_RECEIPT_SCOPE",
             "LOYALTY_EARN",
@@ -4530,6 +4532,7 @@
             "_payment_is_captured",
             "_payment_method",
             "_prep_starts_automatically",
+            "_promised_for_today",
             "_record_availability_decision",
             "_record_coupon_use",
             "_release_coupon_use",
@@ -8195,6 +8198,8 @@
           "responsibility": "leitura",
           "symbols": [
             "CARRIER_TRACKING_URLS",
+            "COURIER_FRESH_SECONDS",
+            "COURIER_NEAR_METERS",
             "TERMINAL_STATUSES",
             "TrackingCancellationContactData",
             "TrackingData",
@@ -8231,6 +8236,7 @@
             "_contact_and_share",
             "_copy_message",
             "_copy_title",
+            "_courier_closeness",
             "_courier_tracking_url",
             "_eta_at",
             "_eta_not_before",
@@ -10358,6 +10364,7 @@
           "symbols": [
             "_KIND_BY_REF",
             "_kind",
+            "_translator",
             "courier_backend"
           ]
         },
@@ -10367,7 +10374,8 @@
             "capabilities",
             "new_ride_service_ref",
             "ride_state",
-            "service_for_new_ride"
+            "service_for_new_ride",
+            "state_since"
           ]
         }
       ]
@@ -10723,7 +10731,8 @@
             "_hour_pair",
             "_local_today",
             "_window_start",
-            "logger"
+            "logger",
+            "window_end"
           ]
         }
       ]
@@ -11476,6 +11485,7 @@
             "block_reason",
             "defer_stock_hold",
             "delivery_date_from_payload",
+            "delivery_end",
             "delivery_start",
             "dispatch_before_window",
             "is_due",
@@ -14491,6 +14501,7 @@
             "Candidate",
             "Group",
             "_cache_key",
+            "_deadline",
             "_point",
             "_ready_key",
             "km_between",
@@ -14501,7 +14512,6 @@
           "responsibility": "leitura",
           "symbols": [
             "_service",
-            "suggestion_for",
             "waiting_pool"
           ]
         }
@@ -14673,6 +14683,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "HOLD_GAPS_KEY",
             "_adopt_holds_for_qty",
             "_alert_hold_gap",
             "_alert_unknown_sku",
@@ -14682,6 +14693,7 @@
             "_expand_if_bundle",
             "_hold_across_quants_or_nothing",
             "_hold_anchored_by",
+            "_hold_gap_entry",
             "_is_fermata_hold",
             "_is_untracked",
             "_items_to_hold",
@@ -14695,6 +14707,7 @@
             "_sale_consummated_outside",
             "_sku_absent_from_catalog",
             "_unknown_sku_error",
+            "_write_hold_gaps",
             "logger"
           ]
         }

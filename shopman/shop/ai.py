@@ -37,7 +37,14 @@ PURPOSES = {
     "scenarios": "Cenários do B.I.",
     "benchmark": "Placar do de-para do B.I.",
     "decision": "Modelo de decisão (Jev) da triagem e dos placares",
+    "incident": "Incidentes: decisão tipada do Jev sobre a evidência",
+    "incident_review": "Incidentes: leitura por LLM, só quando a decisão não tem confiança ou não há Jev",
 }
+
+#: Propósitos de DECISÃO tipada: só conexão Jev (probabilidade e confiança num
+#: ``choice``/``noul``). O Jev não é um LLM e não se troca por um: o papel de leitura
+#: de texto livre é outro propósito, no formato Anthropic.
+JEV_PURPOSES = frozenset({"decision", "incident"})
 
 #: Propósitos que mandam texto de cliente ao provedor.
 CUSTOMER_TEXT_PURPOSES = frozenset({"concierge", "triage", "intents", "labeling"})
@@ -73,7 +80,7 @@ class Resolved:
 def _protocol_for(purpose: str) -> str:
     from shopman.shop.models import AIProtocol
 
-    return AIProtocol.JEV if purpose == "decision" else AIProtocol.ANTHROPIC
+    return AIProtocol.JEV if purpose in JEV_PURPOSES else AIProtocol.ANTHROPIC
 
 
 def _routes() -> dict:
@@ -90,7 +97,7 @@ def _route(purpose: str) -> dict:
         route = routes.get(key)
         if isinstance(route, dict) and route.get("connection"):
             # A rota default não serve ao Jev: formato diferente.
-            if key == "default" and purpose == "decision":
+            if key == "default" and purpose in JEV_PURPOSES:
                 continue
             return route
     return {}

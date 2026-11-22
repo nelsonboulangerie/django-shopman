@@ -84,7 +84,7 @@ from .surface import (
     StorefrontShellView,
     StorefrontSiteView,
 )
-from .telemetry import AddressEventView, ClientErrorView
+from .telemetry import AddressEventView, ClientErrorView, ClientPwaUpdateView
 from .tracking import (
     OrderCancelView,
     OrderConfirmReceiptView,
@@ -143,6 +143,12 @@ urlpatterns = [
     path("storefront/products/<str:sku>/", StorefrontProductView.as_view(), name="api-storefront-product"),
     path("storefront/cart/", StorefrontCartView.as_view(), name="api-storefront-cart"),
     path("storefront/client-error/", ClientErrorView.as_view(), name="api-storefront-client-error"),
+    # Telemetria — troca de versão da loja instalada (PWA), relatada no boot seguinte (#2379)
+    path(
+        "storefront/client-pwa-update/",
+        ClientPwaUpdateView.as_view(),
+        name="api-storefront-client-pwa-update",
+    ),
     path("storefront/address-event/", AddressEventView.as_view(), name="api-storefront-address-event"),
     path("storefront/checkout/", StorefrontCheckoutView.as_view(), name="api-storefront-checkout"),
     # Auth

@@ -155,3 +155,16 @@ def test_unknown_schema_fails_loudly():
 
     with pytest.raises(RuntimeError):
         bridge.incidents_from_shop({"schema_version": 2, "groups": []})
+
+
+def test_status_shows_the_domain_remedy_score():
+    group = _group()
+    group["remedy"] = {"label": "Reprocessar a NFC-e", "by_outcome": {"resolved": 2, "not_resolved": 1, "skipped": 1}}
+    text = bridge.status_text(_incidents(group)[0], now=NOW)
+    assert "Remédio do domínio (Reprocessar a NFC-e), 7 dias: 2 resolveu, 1 não resolveu, 1 ficou com gente" in text
+    assert bridge.remedy_line({}) == ""
+
+
+def test_status_shows_ai_readings_and_cost():
+    line = bridge.remedy_line({"label": "Reprocessar a NFC-e", "by_outcome": {"resolved": 1}, "ai_readings": 2, "ai_cost_usd": 0.00006})
+    assert line.endswith("2 leitura(s) de IA, US$ 0,00006")

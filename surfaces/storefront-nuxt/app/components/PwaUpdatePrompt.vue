@@ -20,6 +20,7 @@ import {
   shouldApplyPwaUpdateOnNavigation,
   shouldBlockForPwaUpdate
 } from '~/presentation/pwaRuntime'
+import { markPwaUpdateApplied, takePwaUpdateMark } from '~/utils/pwaUpdateReport'
 
 const props = defineProps<{ copy?: PwaCopyProjection }>()
 
@@ -28,6 +29,8 @@ const router = useRouter()
 const online = useOnline()
 const pwa = usePwaUpdate()
 usePwaUpdateCheck()
+// A versão que está rodando, lida no setup: o `update` também roda do gancho do router.
+const runningVersion = String(useRuntimeConfig().public.appVersion ?? '')
 
 const updating = ref(false)
 const title = computed(() => props.copy?.update_title.title || 'A loja tem uma versão nova')
@@ -46,8 +49,18 @@ const blocking = computed(() => updating.value || shouldBlockForPwaUpdate({
 async function update (destination?: string) {
   if (updating.value) return
   updating.value = true
+  // A marca vai ANTES da troca: a carga nova apaga a memória, e é o boot seguinte que
+  // conta ao Django que a loja saiu desta versão (#2379, `pwaUpdateReport.client.ts`).
+  markPwaUpdateApplied({
+    trigger: destination ? 'navigation' : 'prompt',
+    from_version: runningVersion
+  })
   const accepted = await pwa.update(destination)
-  if (!accepted) updating.value = false
+  if (!accepted) {
+    // A troca não aconteceu: a marca sai, para o próximo boot não contar o que não houve.
+    takePwaUpdateMark()
+    updating.value = false
+  }
 }
 
 // Porta 1: a troca de tela no cliente é cancelada e vira carga completa no DESTINO,

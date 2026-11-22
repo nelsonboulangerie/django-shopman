@@ -307,7 +307,7 @@ Na prática, a única fonte é o celular do entregador. Três caminhos, do mais 
    pede a permissão de localização do navegador e manda a posição a cada 15 s enquanto
    estiver aberta. A posição entra no mesmo cache e no mesmo mapa das Entregas que já
    desenham o entregador da TaOn, e, para o cliente, só na parada dele, com a idade visível
-   ("Posição de há 20 s"). **Limite honesto:** navegador não manda posição com a tela
+   ("Última posição há 2 min", só quando passa de 1 min; #2509). **Limite honesto:** navegador não manda posição com a tela
    apagada nem com outro app na frente (Waze, Maps); no iPhone isso é regra do sistema. Com
    o celular no suporte e a nossa página na tela, funciona; navegando pelo Waze, a posição
    congela e a tela diz "Última posição há 4 min".

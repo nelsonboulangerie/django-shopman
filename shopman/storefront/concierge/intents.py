@@ -111,6 +111,12 @@ CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
 CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
 CART_ASK_QTY_COPY_KEY = "CONCIERGE_CART_ASK_QTY"
 CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
+#: O próximo passo depois de mostrar a sacola: o cliente sabe o que pode fazer (conferência, 21/11/2026).
+CART_NEXT_COPY_KEY = "CONCIERGE_CART_NEXT"
+#: "as 2 baguettes que pedi" com sacola aberta: é a sacola de agora, não um pedido antigo.
+CART_NOW_COPY_KEY = "CONCIERGE_CART_NOW"
+#: A reclamação ouvida: a casa leva à equipe pelo "vou verificar" e NÃO se cala (ensaio, 21/11/2026).
+COMPLAINT_HEARD_COPY_KEY = "CONCIERGE_COMPLAINT_HEARD"
 #: O que o cliente citou não está no cardápio de hoje: diz isso e mostra o que há (ensaio, 21/11/2026).
 NOT_IN_MENU_COPY_KEY = "CONCIERGE_NOT_IN_MENU"
 ALTERNATIVES_COPY_KEY = "CONCIERGE_ALTERNATIVES"
@@ -939,6 +945,80 @@ def dialogue_number_words() -> frozenset:
     return frozenset(dialogue._NUMBER_WORDS)
 
 
+#: O Jev escolhe o SKU sozinho só com confiança alta; abaixo, a casa pergunta "qual deles?".
+SKU_CHOICE_MIN_CONFIDENCE = 0.85
+SKU_CHOICE_QUESTION = "sku"
+SKU_CHOICE_INSTRUCTIONS = (
+    "Um cliente de padaria pediu um produto pelo WhatsApp. Qual destes produtos do cardápio é o que ele "
+    "pediu? Escolha 'other' se nenhum for claramente o pedido, ou se mais de um servir igualmente."
+)
+SKU_CHOICE_OTHER = "Nenhum destes com certeza: o cliente precisa dizer qual."
+
+
+def _jev_picks_sku(act: Act, items: list[dict], *, conversation) -> dict | None:
+    """O Jev decide entre os candidatos da busca ("quero 2 baguettes": Tradition ou Jambon-Beurre?).
+
+    Decisor tipado (``choice`` com ``other``, no padrão do ``JevMatcher`` do B.I.): só nome e
+    descrição dos candidatos e a fala do cliente, redigida, pela porta (freio e medidor). Devolve
+    o item só com confiança de pelo menos ``SKU_CHOICE_MIN_CONFIDENCE``; com dúvida, ``other``,
+    erro ou sem Jev, ``None``, e a casa pergunta "qual deles?". Abaixo da confiança não há LLM de
+    reserva: a pergunta ao cliente custa zero e não erra; um modelo de texto seria um chute sobre
+    outro chute.
+    """
+    import time
+
+    from shopman.shop import ai
+
+    from .intent_benchmark import parse_jev_choice
+    from .observation_privacy import redact_observation_text
+
+    candidates = items[:dialogue_max_listed()]
+    keyed = {f"p{n}": item for n, item in enumerate(candidates, 1)}
+    criteria = {key: " ".join(part for part in (item.get("name", ""), item.get("description", "")) if part)[:200]
+                for key, item in keyed.items()}
+    criteria["other"] = SKU_CHOICE_OTHER
+    try:
+        url, api_key, model = ai.jev_endpoint(customer_text=True)
+    except ai.AINotConfigured:
+        return None
+    body = {
+        "model": model,
+        "state": {"customer_message": redact_observation_text(act.span or act.product).text},
+        "questions": {SKU_CHOICE_QUESTION: {"type": "choice", "instructions": SKU_CHOICE_INSTRUCTIONS,
+                                            "criteria": criteria}},
+    }
+    meter = getattr(conversation, "_meter", None)
+    started = time.perf_counter()
+    try:
+        import requests
+
+        response = ai.jev_post(requests.Session(), url, api_key, body, timeout=3.0, model=model)
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+        probabilities, confidence = parse_jev_choice(payload, question=SKU_CHOICE_QUESTION)
+    except Exception:  # noqa: BLE001 — o decisor que cai nunca escolhe: a casa pergunta
+        logger.warning("concierge.sku_choice.failed", exc_info=True)
+        return None
+    finally:
+        if meter is not None:
+            meter.add_time("sku_choice", (time.perf_counter() - started) * 1000)
+    if meter is not None:
+        usage = payload.get("usage") or {}
+        meter.add_call("sku_choice", model, {"input_tokens": usage.get("input_tokens", usage.get("prompt_tokens", 0))},
+                       provider="typesafe")
+    choice = max(probabilities, key=probabilities.get) if probabilities else "other"
+    if choice not in keyed or (confidence or 0.0) < SKU_CHOICE_MIN_CONFIDENCE:
+        return None
+    return keyed[choice]
+
+
+def dialogue_max_listed() -> int:
+    from . import dialogue
+
+    return dialogue.MAX_LISTED
+
+
 def _alternatives(sku: str, *, context, qty: int = 1) -> list[dict]:
     """O que a casa oferece no lugar de um indisponível, pelo mecanismo da Loja.
 
@@ -1021,6 +1101,10 @@ def _cart_change(act: Act, *, conversation, context, copy):
     if exact:
         items = exact[:1]
     if len(items) > 1:
+        chosen = _jev_picks_sku(act, items, conversation=conversation)
+        if chosen is not None:
+            items = [chosen]
+    if len(items) > 1:
         listed = dialogue.memo_of("search_storefront", {}, found) or {}
         options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
         text = _fill(copy(dialogue.ASK_WHICH_KEY) or "", options=dialogue._options_text(options))
@@ -1047,7 +1131,8 @@ def _cart_change(act: Act, *, conversation, context, copy):
     if not result.get("ok"):
         return PartReply(act, text=tools_module.render_result("set_item", result), tool_events=events)
     lead = _fill(copy(CART_REMOVED_COPY_KEY if removing else CART_UPDATED_COPY_KEY) or "", item=name)
-    text = "\n".join(part for part in (lead, tools_module.render_result("set_item", result)) if part)
+    following = copy(CART_NEXT_COPY_KEY) if result.get("lines") else ""
+    text = "\n".join(part for part in (lead, tools_module.render_result("set_item", result), following) if part)
     memo = dialogue.memo_of("set_item", {"sku": sku, "qty": target}, result) or {}
     return PartReply(act, text=text, memo=memo, tool_events=events)
 
@@ -1186,7 +1271,21 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         id(act): text for act in plan_.acts if act.act == CANCEL
         for text in (_self_cancel(conversation, act),) if text
     }
-    run = Execution(team=[act for act in plan_.team_acts if id(act) not in self_cancel])
+    from . import verification
+
+    # Reclamação, sozinha, não cala a conversa (dono, 21/11/2026: "garanta sempre a questão
+    # de atribuição da conversa"): vai à equipe pelo "vou verificar" (cartão no sino, com
+    # prazo) e a Concierge segue. Com pessoa pedida, alergia, cancelamento fora do
+    # autoatendimento ou encomenda especial no turno, a equipe assume, como antes.
+    # Com pedido ou negociação no mesmo turno vale a decisão anterior do dono ("com
+    # reclamação no turno, nada muda a sacola"): a equipe assume, como antes.
+    complaint_by_verify = verification.can_verify(conversation) and not any(
+        act.act != COMPLAINT and id(act) not in self_cancel for act in plan_.team_acts
+    ) and not any(act.act in {ALLERGY, ORDER, NEGOTIATION} for act in plan_.acts)
+    run = Execution(team=[
+        act for act in plan_.team_acts
+        if id(act) not in self_cancel and not (complaint_by_verify and act.act == COMPLAINT)
+    ])
     offer = (copy(OFFER_TEAM_COPY_KEY) or "").strip()
     run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
     team_in_turn = bool(run.team)
@@ -1211,8 +1310,6 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             connection_key=str(getattr(binding, "connection_key", "") or ""),
             customer_text=text,
         )
-
-    from . import verification
 
     verifiable = verification.can_verify(conversation) and not team_in_turn
     unclear_before = bool((getattr(conversation, "flags", None) or {}).get(UNCLEAR_FLAG))
@@ -1308,6 +1405,18 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         if id(act) in self_cancel:
             run.replies.append(PartReply(act, text=self_cancel[id(act)], self_served=True, keeps_question=True))
             continue
+        if act.act == COMPLAINT and complaint_by_verify:
+            reply = PartReply(act, text=copy(COMPLAINT_HEARD_COPY_KEY) or "", verifying=True)
+            cart = tools_module.execute("view_cart", {}, context("")) if _cart_authorized(conversation) else {}
+            if cart.get("lines"):
+                # "não posso acrescentar mais coisas?": a sacola de agora segue aberta, e diz.
+                reply.text = "\n".join(part for part in (
+                    reply.text, copy(CART_NOW_COPY_KEY), tools_module.render_result("view_cart", cart),
+                    copy(CART_NEXT_COPY_KEY),
+                ) if part)
+            run.replies.append(reply)
+            run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
+            continue
         if act.act in TEAM_ACTS or act.act in OTHER_DESK_ACTS:
             topic = TEAM_TOPICS.get(act.act, "isso")
             run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=topic)))
@@ -1340,6 +1449,20 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             run.replies.append(search(act))
             continue
         if act.act == STATUS:
+            cart = (
+                tools_module.execute("view_cart", {}, context(""))
+                if conversation is not None and _cart_authorized(conversation) else {}
+            )
+            if cart.get("lines"):
+                # Com sacola aberta, "o que pedi" é a sacola de agora (ensaio do dono, 21/11/2026:
+                # "as 2 baguettes que pedi" trouxe um pedido de 17/11 com o total vazio).
+                text = "\n".join(part for part in (
+                    copy(CART_NOW_COPY_KEY), tools_module.render_result("view_cart", cart), copy(CART_NEXT_COPY_KEY),
+                ) if part)
+                run.replies.append(PartReply(
+                    act, text=text, tool_events=[{"name": "view_cart", "input": {}, "ok": True}],
+                ))
+                continue
             result = tools_module.execute("order_status", {}, context(act.span))
             run.replies.append(PartReply(
                 act, text=tools_module.render_result("order_status", result),
@@ -1414,6 +1537,10 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 if reply.verifying:
                     reply.verifying = False
                     reply.memo = {"found": False}
+                    if reply.act.act == COMPLAINT:
+                        # Sem cartão, "já levei à equipe" seria falso: a equipe assume, como antes.
+                        run.team.append(reply.act)
+                        reply.text = _fill(copy(TEAM_COPY_KEY) or "", topic=TEAM_TOPICS[COMPLAINT])
     return run
 
 
@@ -1676,7 +1803,7 @@ def run(conversation, *, binding, decision, client=None):
             memory=memory,
             memory_memos=memos,
         )
-    text = resolution.text or customer_text
+    text = resolution.text or getattr(conversation, "_closing_after_parts", None) or customer_text
     courtesy = small_talk.small_talk_kind(text)
     if courtesy:
         from shopman.shop.models import ConversationMessage, Shop

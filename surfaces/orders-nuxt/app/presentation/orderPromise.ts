@@ -81,6 +81,7 @@ export const OPEN_PRODUCTION = "open-production";
 const EXIT_ICONS: Record<string, string> = {
   [RESOLVE]: "i-lucide-list-checks",
   [OPEN_PRODUCTION]: "i-lucide-croissant",
+  "contact-customer": "i-lucide-message-circle",
 };
 
 function exit(action: Action): PromiseExit {

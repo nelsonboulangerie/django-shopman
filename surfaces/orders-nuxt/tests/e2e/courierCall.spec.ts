@@ -13,6 +13,9 @@ async function rides(page: import("@playwright/test").Page): Promise<Ride[]> {
 }
 
 test.describe("Chamar entregador do Painel e do detalhe", () => {
+  // O mock guarda as chamadas num estado só, e o beforeEach o zera: em paralelo, o
+  // zerar de um teste apagava o que o outro estava contando. Um de cada vez.
+  test.describe.configure({ mode: "serial" });
   test.use({ viewport: { width: 1366, height: 900 } });
   test.beforeEach(async ({ context, baseURL, page }) => {
     await context.addCookies([{ name: "e2e_call", value: "on", url: baseURL! }]);
@@ -71,7 +74,6 @@ test.describe("Chamar entregador do Painel e do detalhe", () => {
 
   test("Voltar fecha sem chamar nada", async ({ page }) => {
     await page.goto("/?view=board&columns=all");
-    // O mock guarda as chamadas dos testes anteriores: conta só o que este toque fizer.
     const callsOfC03 = async () =>
       ((await (await page.request.get(`${MOCK}/api/v1/backstage/e2e/call/`)).json()) as { calls: { ref: string }[] }).calls
         .filter((call) => call.ref === C03).length;

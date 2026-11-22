@@ -236,3 +236,31 @@ def test_giving_up_at_the_summary_registers_nothing_and_keeps_the_bag(conversati
     assert _say(conversation, "confirmo 0000") != "", "o fechamento acabou: a fala segue para as partes"
     assert not Order.objects.exists()
 
+
+
+# ── Item e "pode fechar" na mesma mensagem (#2990) ─────────────────────
+
+
+def test_item_and_close_in_one_message_puts_the_item_and_asks_the_first_question(conversation, outbox, shop):
+    reply = _say(conversation, "quero 2 pão francês e pode fechar", ORDER_TWO)
+
+    assert "2 × “Pão Francês”" in reply, reply  # a sacola recebeu o item
+    assert reply.endswith("Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?"), reply
+    assert "não entendi" not in reply.lower()
+
+
+def test_close_alone_with_an_empty_bag_does_not_start(conversation, outbox, shop):
+    reply = _say(conversation, "pode fechar")
+    assert "Para quando é o pedido?" not in reply, reply
+
+
+@pytest.mark.parametrize(("text", "rest"), [
+    ("quero 2 croissant e pode fechar", "quero 2 croissant"),
+    ("2 baguettes, é só isso", "2 baguettes"),
+    ("pode fechar", None),
+    ("pode fechar o pedido, obrigada", None),
+])
+def test_split_start(text, rest):
+    from shopman.storefront.concierge import order_closing
+
+    assert order_closing.split_start(text) == rest
