@@ -5,6 +5,10 @@ grupo) só ia para a sessão na próxima escrita da sacola: o Finalizar mostrava
 do anônimo enquanto o servidor já devia o desconto dela (aniversário, grupo). Medido na
 prévia do cupom × aniversário: a Maria do seed via R$ 39,00 com R$ 3,90 de aniversário
 valendo.
+
+A reprecificação acontece no login, que é comando. As leituras da sacola e do checkout
+não gravam nada (``test_get_handlers_do_not_invoke_commands_or_write``): elas só
+mostram o preço que o login já pôs.
 """
 
 from __future__ import annotations
@@ -39,7 +43,7 @@ def _cart(client) -> dict:
     return client.get("/api/v1/storefront/cart/").json()["cart"]
 
 
-def test_entrar_com_a_sacola_cheia_poe_o_desconto_da_cliente_no_total(client):
+def _maria_de_aniversario_com_a_sacola_anonima(client):
     J.seed_shop()
     J.seed_web_channel()
     listing = J.seed_listing()
@@ -54,11 +58,26 @@ def test_entrar_com_a_sacola_cheia_poe_o_desconto_da_cliente_no_total(client):
     status, _body = J.set_cart_qty(client, CROISSANT, 3)
     assert status == 200
     assert _cart(client)["discount_total_q"] == 0
+    return maria
 
-    # Entra. O Finalizar já mostra o aniversário, sem outra mudança na sacola.
+
+def test_entrar_com_a_sacola_cheia_poe_o_desconto_da_cliente_no_total(client):
+    maria = _maria_de_aniversario_com_a_sacola_anonima(client)
+
+    # Entra. A sacola e o Finalizar já mostram o aniversário, sem outra mudança na sacola.
     J.authenticate(client, maria)
+    assert _cart(client)["discount_total_q"] == 390
     checkout = client.get("/api/v1/storefront/checkout/")
     assert checkout.status_code == 200
+    assert _cart(client)["discount_total_q"] == 390
+
+
+def test_entrar_pelo_codigo_reprecifica_a_sacola(client):
+    """A porta de verdade: o código digitado no /entrar, pelo POST do verify-code."""
+    _maria_de_aniversario_com_a_sacola_anonima(client)
+
+    result = J.otp_login(client)
+    assert result["status"] == 200, result
     assert _cart(client)["discount_total_q"] == 390
 
 

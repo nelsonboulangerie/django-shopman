@@ -60,6 +60,18 @@ class StorefrontConfig(AppConfig):
             weak=False,
         )
 
+        # Entrar com a sacola cheia reprecifica a sacola (#3235): no login, que é
+        # comando, e nunca no GET da sacola ou do checkout.
+        from django.contrib.auth.signals import user_logged_in
+
+        from shopman.storefront.cart import reprice_cart_on_login
+
+        user_logged_in.connect(
+            reprice_cart_on_login,
+            dispatch_uid="storefront.cart.reprice_on_login",
+            weak=False,
+        )
+
         # Continuum 0.2: a escrita no catálogo marca a read model pública como
         # suja e põe a reconstrução na fila do worker (``build_catalog`` dentro
         # do ``CatalogStructureRefreshHandler``). O GET do snapshot e o shadow do
