@@ -451,6 +451,16 @@ def _mark_phase_complete(order, phase: str) -> None:
     from shopman.shop.services.order_helpers import merge_order_data
 
     merge_order_data(order, {phase: PHASE_DONE}, block=LIFECYCLE_DATA_KEY)
+    if phase == "on_ready":
+        # A TV do salão espera esta fase para dizer "Pronto para retirar" (a janela
+        # de desfazer do pronto, #3167). Sem o aviso, o número só subia na leitura
+        # de reserva, até 30 s depois do aviso ao cliente.
+        try:
+            from shopman.shop.handlers._sse_emitters import emit_pickup_board_changed
+
+            emit_pickup_board_changed()
+        except Exception:
+            logger.warning("lifecycle.pickup_board_emit_failed order=%s", order.ref, exc_info=True)
 
 
 def _record_coupon_use(order) -> None:
