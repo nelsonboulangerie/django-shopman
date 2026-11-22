@@ -19808,7 +19808,10 @@
             "_merchandise_items",
             "_components",
             "_hold_entries",
-            "_line_facts",
+            "_sku_facts",
+            "_component_values",
+            "_product_names",
+            "_is_itself",
             "next_selling_day",
             "line_decisions",
             "money_split",
@@ -19832,6 +19835,10 @@
       ],
       "touchpoints": [
         "service"
+      ],
+      "domains": [
+        "offerman",
+        "orderman"
       ],
       "tests": [
         "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",
