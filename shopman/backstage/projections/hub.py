@@ -3,9 +3,8 @@
 Read model do "launcher" do operador: uma grade de tiles das superfícies de operador
 (PDV · Cozinha · Gestor · Produção · Marketing · Loja), **permission-aware** — o app que o
 operador não pode acessar nem aparece. Não hospeda CRUD: cada linha de app traz a linha de
-estado e, quando há, a pendência mais urgente dele (``next_item``, de
-``projections/hub_queue.py``), que leva direto ao item no app certo; os apps com pendência
-sobem para o topo (dono, 09/10/2026: a seção "Precisa de você" saiu da Central). O tile
+estado e o número do que pede alguém (``attention_count``); o detalhe mora dentro do app
+(#2134: "lista de apps simples, grade de ícones com um número só"). O tile
 Loja abre a **loja do cliente** (storefront) em nova aba — fora da zona de operador.
 
 Registry declarativo (tipado aqui; caminho claro p/ configurável no Admin depois). Cada
@@ -37,7 +36,6 @@ from shopman.backstage.permissions import (
 )
 from shopman.backstage.projections.hub_queue import (
     HubQueueCollection,
-    HubQueueItemProjection,
     HubQueueProjection,
     collect_hub_queue,
 )
@@ -78,10 +76,6 @@ class HubTileProjection:
     #: O estado bom e sabido ("Caixa aberto", "Aberta"): o ponto do bloco fica verde
     #: quando nada pede alguém. Vazio quando o app não tem estado positivo a dizer.
     status_positive: str = ""
-    #: A pendência mais urgente deste app para este operador (o item exato, com o link
-    #: que leva a ele), ou ``None``. É a ação direta da linha do app na Central, e os apps
-    #: com pendência sobem para o topo da lista (dono, 09/10/2026).
-    next_item: HubQueueItemProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -89,7 +83,7 @@ class OperatorHubProjection:
     operator_name: str
     tiles: tuple[HubTileProjection, ...]
     #: A soma das filas dos papéis do operador (`projections/hub_queue.py`): quantas
-    #: pendências e o relógio do servidor. Os itens vão na linha de cada app (``next_item``).
+    #: pendências e o relógio do servidor.
     queue: HubQueueProjection
     #: O nome inteiro da casa (``Shop.name``, "Nelson Boulangerie"), para a assinatura
     #: "Shopman · Nelson Boulangerie" da Central (prévia v4). O nome curto é do PWA.
@@ -223,10 +217,10 @@ def collect_operator_queue(user) -> HubQueueCollection:
 
 def build_operator_hub(user) -> OperatorHubProjection:
     """Monta a Central para `user`: APENAS os tiles que ele pode acessar, cada um com a
-    sua linha de estado e a pendência mais urgente em que ele pode agir."""
+    sua linha de estado e o número do que pede alguém."""
     urls, visible = _visible_specs(user)
     collected = collect_operator_queue(user)
-    statuses, most_urgent = collected.statuses, collected.most_urgent
+    statuses = collected.statuses
     tiles = tuple(
         HubTileProjection(
             ref=spec.ref,
@@ -239,7 +233,6 @@ def build_operator_hub(user) -> OperatorHubProjection:
             attention_count=statuses[spec.ref].attention_count if spec.ref in statuses else 0,
             status_summary=statuses[spec.ref].summary if spec.ref in statuses else "",
             status_positive=statuses[spec.ref].positive if spec.ref in statuses else "",
-            next_item=most_urgent.get(spec.ref),
         )
         for spec in visible
     )

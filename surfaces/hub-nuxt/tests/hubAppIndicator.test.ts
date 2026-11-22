@@ -27,7 +27,6 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   attention_count: 0,
   status_summary: "",
   status_positive: "",
-  next_item: null,
   ...over,
 });
 
