@@ -5,6 +5,23 @@ from django.test import override_settings
 
 
 @pytest.fixture(autouse=True)
+def _copy_cache_per_test():
+    """Cada teste lê a copy do PRÓPRIO banco.
+
+    A copy da casa (``OmotenashiCopy``) fica num cache do processo, invalidado no
+    save/delete, mas não no rollback do fim do teste. Um teste que grava a linha
+    (o ``seed`` grava "Hora da Xepa") e lê a copy deixava o cache cheio; o vizinho
+    no mesmo worker, já sem a linha no banco, lia o rótulo dela. Era o instável do
+    ``test_pos_grade_preco_da_xepa``. A suíte do Storefront já faz o mesmo.
+    """
+    from shopman.shop.omotenashi.copy import invalidate_cache
+
+    invalidate_cache()
+    yield
+    invalidate_cache()
+
+
+@pytest.fixture(autouse=True)
 def _ratelimit_counters_per_test():
     """Cada teste conta as próprias tentativas no rate-limit.
 
