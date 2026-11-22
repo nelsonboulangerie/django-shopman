@@ -220,6 +220,20 @@ def _line_for_sku(session, sku: str) -> dict | None:
     return None
 
 
+def _availability_label(item) -> str:
+    """O rótulo como a loja o mostra (``tileBadge`` do storefront-nuxt).
+
+    O item que espera fornada diz QUANDO fica pronto, com a frase da promessa do
+    servidor (``presentation/promise``); "Lista de espera" só sobra sem promessa.
+    """
+    from shopman.shop.projections.types import Availability
+
+    promise = getattr(item, "promise", None)
+    if item.availability == Availability.PLANNED_OK and promise is not None and promise.text:
+        return promise.text
+    return item.availability_label
+
+
 def _item_payload(item) -> dict:
     adjustment = item.quote.adjustments[0] if item.quote.adjustments else None
     return {
@@ -228,7 +242,7 @@ def _item_payload(item) -> dict:
         "price": _money(item.quote.final_unit_price_q),
         "price_q": int(item.quote.final_unit_price_q),
         "availability": str(item.availability),
-        "availability_label": item.availability_label,
+        "availability_label": _availability_label(item),
         "available_qty": item.available_qty,
         "can_order": bool(item.can_add_to_cart),
         "description": item.short_description or "",
