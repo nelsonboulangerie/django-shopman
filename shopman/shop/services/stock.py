@@ -474,6 +474,7 @@ def hold(order, *, require_all: bool = False) -> None:
         and _sale_consummated_outside(order)
     )
     ceded_holds: list[dict] = []
+    hold_gaps: list[dict] = []
 
     # Prior availability decisions (from _check_availability at on_commit).
     # Keyed by item SKU. Empty for channels that skip the availability gate (e.g. POS).
@@ -691,6 +692,7 @@ def hold(order, *, require_all: bool = False) -> None:
                         order, comp_sku, unmet_qty,
                         "lead_time" if lead_time_earliest is not None else result.get("error_code"),
                     )
+                    hold_gaps.append(_hold_gap_entry(comp_sku, unmet_qty, target_date))
                 continue
 
             if comp_sku in late_skus and not _hold_anchored_by(result["hold_id"], order_day):
@@ -720,6 +722,7 @@ def hold(order, *, require_all: bool = False) -> None:
         adapter.release_holds(sorted(late_ids))
 
     order.data["hold_ids"] = hold_ids
+    _write_hold_gaps(order.data, hold_gaps)
     if ceded_holds:
         # Trilha para o operador: de quais sacolas saiu o que esta venda levou.
         order.data["stock_ceded_holds"] = ceded_holds
@@ -1058,6 +1061,13 @@ def reconcile_to_items(order, *, items: list[dict], reference: str, require_all:
 
     data = dict(order.data or {})
     data["hold_ids"] = entries
+    # O que a edição ainda não conseguiu reservar substitui o que faltava antes:
+    # a reconciliação já tentou de novo tudo o que não estava em ``hold_ids``.
+    _write_hold_gaps(data, [
+        _hold_gap_entry(gap["sku"], gap["qty"], commitment_date)
+        for gap in summary["gaps"]
+        if gap.get("reason") != "fulfill_failed"
+    ])
     order.data = data
     order.save(update_fields=["data", "updated_at"])
     logger.info("stock.reconcile_to_items: order=%s %s", order.ref, summary)
@@ -1369,6 +1379,29 @@ def unknown_sku_alert_sku(message: str) -> str:
     """O SKU de um aviso ``stock_unknown_sku``, lido do marcador; ``""`` sem ele."""
     match = _UNKNOWN_SKU_MARK.search(str(message or ""))
     return match.group(1) if match else ""
+
+
+#: ``Order.data["hold_gaps"]``: o que o pedido pediu e o estoque não conseguiu
+#: reservar, por componente (o combo já expandido), com a data da reserva que
+#: faltou. Nasce junto do aviso ``stock_hold_gap`` e é reescrito por quem reescreve
+#: ``hold_ids``; sem falta, a chave some. É o que a "Promessa em risco" lê do
+#: pedido que nunca reservou (``backstage/projections/order_promise``, #2721).
+HOLD_GAPS_KEY = "hold_gaps"
+
+
+def _hold_gap_entry(sku: str, qty, target_date) -> dict:
+    return {
+        "sku": sku,
+        "qty": float(qty),
+        "target_date": target_date.isoformat() if target_date is not None else "",
+    }
+
+
+def _write_hold_gaps(data: dict, gaps: list[dict]) -> None:
+    if gaps:
+        data[HOLD_GAPS_KEY] = gaps
+    else:
+        data.pop(HOLD_GAPS_KEY, None)
 
 
 def _alert_hold_gap(order, sku: str, qty, error_code) -> None:

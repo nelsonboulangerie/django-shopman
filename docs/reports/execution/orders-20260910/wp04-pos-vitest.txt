@@ -1,5 +1,0 @@
-
-> test
-> vitest run --run tests/composables/usePosSale.resend.test.ts
-
-sh: vitest: command not found
