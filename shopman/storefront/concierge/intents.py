@@ -111,6 +111,8 @@ CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
 CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
 CART_ASK_QTY_COPY_KEY = "CONCIERGE_CART_ASK_QTY"
 CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
+#: O que o cliente citou não está no cardápio de hoje: diz isso e mostra o que há (ensaio, 21/11/2026).
+NOT_IN_MENU_COPY_KEY = "CONCIERGE_NOT_IN_MENU"
 ALTERNATIVES_COPY_KEY = "CONCIERGE_ALTERNATIVES"
 #: Quantas alternativas a casa oferece no lugar do indisponível (uma frase de WhatsApp, não um cardápio).
 MAX_ALTERNATIVES = 3
@@ -869,6 +871,148 @@ def _cart_qty(context_fn, sku: str) -> int:
     return int(line.get("qty") or 0) if line else 0
 
 
+#: Palavras que todo item da padaria pode citar: casar SÓ por elas não é achar o que o cliente
+#: pediu ("pão de ensaio A" casava Baguette e Croque pelo "pão"; ensaio do dono, 21/11/2026).
+_GENERIC_PRODUCT_WORDS = frozenset({
+    "pao", "paes", "paozinho", "doce", "doces", "salgado", "salgados", "produto", "produtos", "item", "itens",
+    "quais", "qual", "vende", "vendem", "tipo", "tipos", "sabor", "sabores", "hoje", "agora", "ainda", "algum", "alguma",
+})
+
+
+def _weak_match(act: Act, conversation, items: list[dict]) -> bool:
+    """Nenhum item achado cita uma palavra DISTINTIVA do que o cliente pediu: casou só pelo genérico."""
+    from shopman.storefront.presentation.public_information import word_stem
+
+    from . import tools as tools_module
+
+    wanted = act.product or _cited(act, conversation)
+    distinctive = {
+        word_stem(word) for word in tools_module._public_search_terms(wanted)
+        if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER and word not in _ORDER_WORDS
+    }
+    if not distinctive or not items:
+        return False
+    for item in items:
+        said = _fold(" ".join(str(item.get(key) or "") for key in ("name", "description", "collection")))
+        for word in {word_stem(w) for w in re.findall(r"[a-z0-9]+", said) if len(w) >= 3}:
+            # "franceses" é "francês": basta um prefixo comum de quatro letras ou mais.
+            if any(d == word or (min(len(d), len(word)) >= 4 and (d.startswith(word) or word.startswith(d)))
+                   for d in distinctive):
+                return False
+    return True
+
+
+#: O que diz o gesto de pedir, não o produto ("acrescenta 2 pães no meu pedido").
+_ORDER_WORDS = frozenset({
+    "acrescenta", "acrescentar", "acrescente", "adiciona", "adicionar", "adicione", "pedido", "pedi", "pedir",
+    "meu", "minha", "nos", "num", "numa", "separa", "separar", "reserva", "reservar", "encomenda", "encomendar",
+})
+
+
+_CITE_LEADING = _ORDER_FILLER | {"tem", "temos", "teria", "voce", "voces", "vc", "vcs", "ainda", "hoje", "ai"}
+
+
+def _cited(act: Act, conversation) -> str:
+    """O que o cliente pediu, nas palavras DELE (com acento), sem o "quero 2" do começo.
+
+    A leitura local devolve o trecho dobrado ("quero 2 pao de ensaio a"); a citação ao
+    cliente sai da fala original, caractere a caractere, e perde só o que abre o pedido.
+    """
+    from .turn_outcome import current_customer_text
+
+    original = current_customer_text(conversation) if conversation is not None else ""
+    folded_chars = [_fold(ch) or " " for ch in original]
+    folded = "".join(ch[:1] for ch in folded_chars)
+    target = _fold(act.product or act.span).strip()
+    start = folded.find(target) if target else -1
+    piece = original[start:start + len(target)] if start >= 0 else (act.product or act.span)
+    words = piece.split()
+    while words and (_fold(words[0]).strip("?!.,") in _CITE_LEADING or words[0].isdigit()
+                     or _fold(words[0]) in dialogue_number_words()):
+        words.pop(0)
+    return " ".join(words).strip(" ?!.,") or (act.product or act.span)
+
+
+def dialogue_number_words() -> frozenset:
+    from . import dialogue
+
+    return frozenset(dialogue._NUMBER_WORDS)
+
+
+#: O Jev escolhe o SKU sozinho só com confiança alta; abaixo, a casa pergunta "qual deles?".
+SKU_CHOICE_MIN_CONFIDENCE = 0.85
+SKU_CHOICE_QUESTION = "sku"
+SKU_CHOICE_INSTRUCTIONS = (
+    "Um cliente de padaria pediu um produto pelo WhatsApp. Qual destes produtos do cardápio é o que ele "
+    "pediu? Escolha 'other' se nenhum for claramente o pedido, ou se mais de um servir igualmente."
+)
+SKU_CHOICE_OTHER = "Nenhum destes com certeza: o cliente precisa dizer qual."
+
+
+def _jev_picks_sku(act: Act, items: list[dict], *, conversation) -> dict | None:
+    """O Jev decide entre os candidatos da busca ("quero 2 baguettes": Tradition ou Jambon-Beurre?).
+
+    Decisor tipado (``choice`` com ``other``, no padrão do ``JevMatcher`` do B.I.): só nome e
+    descrição dos candidatos e a fala do cliente, redigida, pela porta (freio e medidor). Devolve
+    o item só com confiança de pelo menos ``SKU_CHOICE_MIN_CONFIDENCE``; com dúvida, ``other``,
+    erro ou sem Jev, ``None``, e a casa pergunta "qual deles?". Abaixo da confiança não há LLM de
+    reserva: a pergunta ao cliente custa zero e não erra; um modelo de texto seria um chute sobre
+    outro chute.
+    """
+    import time
+
+    from shopman.shop import ai
+
+    from .intent_benchmark import parse_jev_choice
+    from .observation_privacy import redact_observation_text
+
+    candidates = items[:dialogue_max_listed()]
+    keyed = {f"p{n}": item for n, item in enumerate(candidates, 1)}
+    criteria = {key: " ".join(part for part in (item.get("name", ""), item.get("description", "")) if part)[:200]
+                for key, item in keyed.items()}
+    criteria["other"] = SKU_CHOICE_OTHER
+    try:
+        url, api_key, model = ai.jev_endpoint(customer_text=True)
+    except ai.AINotConfigured:
+        return None
+    body = {
+        "model": model,
+        "state": {"customer_message": redact_observation_text(act.span or act.product).text},
+        "questions": {SKU_CHOICE_QUESTION: {"type": "choice", "instructions": SKU_CHOICE_INSTRUCTIONS,
+                                            "criteria": criteria}},
+    }
+    meter = getattr(conversation, "_meter", None)
+    started = time.perf_counter()
+    try:
+        import requests
+
+        response = ai.jev_post(requests.Session(), url, api_key, body, timeout=3.0, model=model)
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+        probabilities, confidence = parse_jev_choice(payload, question=SKU_CHOICE_QUESTION)
+    except Exception:  # noqa: BLE001 — o decisor que cai nunca escolhe: a casa pergunta
+        logger.warning("concierge.sku_choice.failed", exc_info=True)
+        return None
+    finally:
+        if meter is not None:
+            meter.add_time("sku_choice", (time.perf_counter() - started) * 1000)
+    if meter is not None:
+        usage = payload.get("usage") or {}
+        meter.add_call("sku_choice", model, {"input_tokens": usage.get("input_tokens", usage.get("prompt_tokens", 0))},
+                       provider="typesafe")
+    choice = max(probabilities, key=probabilities.get) if probabilities else "other"
+    if choice not in keyed or (confidence or 0.0) < SKU_CHOICE_MIN_CONFIDENCE:
+        return None
+    return keyed[choice]
+
+
+def dialogue_max_listed() -> int:
+    from . import dialogue
+
+    return dialogue.MAX_LISTED
+
+
 def _alternatives(sku: str, *, context, qty: int = 1) -> list[dict]:
     """O que a casa oferece no lugar de um indisponível, pelo mecanismo da Loja.
 
@@ -945,9 +1089,15 @@ def _cart_change(act: Act, *, conversation, context, copy):
     items = list(found.get("items") or []) if found.get("ok") and not found.get("overview") else []
     if not items:
         return None
+    if _weak_match(act, conversation, items):
+        return None  # nada do cardápio é o que o cliente citou: a parte segue para a busca, que diz
     exact = [i for i in items if _fold(i.get("name", "")) == _fold(query)]
     if exact:
         items = exact[:1]
+    if len(items) > 1:
+        chosen = _jev_picks_sku(act, items, conversation=conversation)
+        if chosen is not None:
+            items = [chosen]
     if len(items) > 1:
         listed = dialogue.memo_of("search_storefront", {}, found) or {}
         options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
@@ -1180,6 +1330,16 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
         if uncovered_by_faq:
             result = {**result, "found": False}
+        not_in_menu = (
+            act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found") and not result.get("overview")
+            and _weak_match(act, conversation, list(result.get("items") or []))
+        )
+        if not_in_menu:
+            # O que o cliente citou não está no cardápio de hoje: no lugar de "qual deles?" com
+            # itens sem relação, o cardápio do que há (o mesmo de "o que tem disponível?").
+            overview = tools_module.execute("search_storefront", {}, context("o que tem disponível"))
+            result = {**overview, "code": "not_in_menu"} if overview.get("overview") else {**result, "found": False}
+
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
         sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
         # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é
@@ -1194,7 +1354,12 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             reply.text = sheet or tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
             items = result.get("items") or []
-            if consult and not sheet and len(items) == 1 and not items[0].get("can_order"):
+            if result.get("code") == "not_in_menu":
+                # Nada do cardápio casa com o que o cliente citou: nada de "qual deles?" com
+                # itens sem relação. Diz que não achou e mostra o que há hoje.
+                lead = _fill(copy(NOT_IN_MENU_COPY_KEY) or "", part=_clip(_cited(act, conversation)))
+                reply.text = "\n".join(part for part in (lead, reply.text) if part)
+            elif consult and not sheet and len(items) == 1 and not items[0].get("can_order"):
                 # "tem croissant?" e não tem: no lugar, o que a casa tem (as alternativas da Loja).
                 reply.text, memo, asks = _offer_alternatives(
                     reply.text, items[0].get("sku", ""), context=context, copy=copy, qty=act.qty or 1,
@@ -1589,7 +1754,7 @@ def run(conversation, *, binding, decision, client=None):
             memory=memory,
             memory_memos=memos,
         )
-    text = resolution.text or customer_text
+    text = resolution.text or getattr(conversation, "_closing_after_parts", None) or customer_text
     courtesy = small_talk.small_talk_kind(text)
     if courtesy:
         from shopman.shop.models import ConversationMessage, Shop

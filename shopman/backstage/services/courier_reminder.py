@@ -31,11 +31,14 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from shopman.orderman.models import Order
 
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
+
 #: Padrão do dono (13/10/2026): 10 minutos depois do início do preparo, ligado.
 DEFAULT_MINUTES = 10
 MAX_MINUTES = 240
 
-#: Depois de uma corrida que terminou sem entregar (N/C), o lembrete volta em 2 min.
+#: Depois de uma corrida que terminou sem entregar (ninguém atendeu ou cancelada), o lembrete volta em 2 min.
 AFTER_FAILED_RIDE_MINUTES = 2
 
 #: Onde o pedido ainda espera entregador: no preparo ou pronto no balcão.
@@ -124,13 +127,14 @@ def _call_in_flight(order: Order) -> bool:
 
 
 def _last_failed_ride_end(order: Order) -> datetime | None:
-    """Quando terminou a última corrida que não entregou (N/C), se houve."""
+    """Quando terminou a última corrida que não entregou (ninguém atendeu ou cancelada), se houve."""
     block = (order.data or {}).get("courier")
     attempts = block.get("attempts") if isinstance(block, dict) else None
     ends = [
         _parse(attempt.get("ended_at"))
         for attempt in attempts or []
-        if isinstance(attempt, dict) and attempt.get("status") in ("N", "C")
+        if isinstance(attempt, dict)
+        and delivery_services.ride_state(attempt) in (RideState.NOT_SERVED, RideState.CANCELLED)
     ]
     ends = [moment for moment in ends if moment is not None]
     return max(ends) if ends else None

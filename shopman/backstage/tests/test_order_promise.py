@@ -1217,3 +1217,90 @@ def test_a_busca_de_alternativas_custa_o_mesmo_para_um_ou_cinco_pedidos_do_mesmo
     assert len(five) == len(one)
     # Medido em 19/11/2026: 19 consultas, das quais 11 são a busca de substitutos.
     assert len(one) <= 24
+
+
+# ── O pedido que nunca reservou (#2721, item 2) ──────────────────────────────
+
+
+def _gap(order: Order, qty: str, *, day=None, sku: str = SKU) -> None:
+    """O que o pedido pediu e o estoque não reservou, como ``services/stock`` grava."""
+    order.data.setdefault("hold_gaps", []).append({
+        "sku": sku, "qty": float(qty), "target_date": day.isoformat() if day is not None else "",
+    })
+    order.save(update_fields=["data"])
+
+
+def test_pedido_de_hoje_que_nunca_reservou_esta_em_risco(baguete):
+    """Sem ``hold_ids`` não havia claim: o pedido aparecia sem pendência."""
+    order = _order("HOJE-SEM-RESERVA", days=0)
+    _gap(order, "4", day=_day())
+
+    promise = _promise(order)
+    item = _one(promise)
+    assert promise.state == "at_risk"
+    assert (item.reservation, item.cause) == ("lost", "never_held")
+    assert (item.qty, item.missing_qty) == ("4", "4")
+    assert item.label == "Faltam 4x Baguete de tradição"
+    assert item.detail == "Não havia estoque para reservar quando o pedido entrou."
+    assert item.batch_date == ""
+    assert item.next_step == "Nenhum produto parecido disponível hoje."
+    assert promise.recommended_action == "resolve"
+
+
+def test_o_que_coube_e_o_que_faltou_somam_no_mesmo_item(baguete):
+    """Reservou 1 da vitrine e faltaram 3: o item diz "Faltam 3 de 4"."""
+    loja = Position.objects.get(ref="loja")
+    stock.receive(quantity=Decimal("1"), sku=SKU, position=loja, reason="vitrine")
+    quant = Quant.objects.get(sku=SKU, position=loja, target_date__isnull=True)
+    order = _order("HOJE-EM-PARTE", days=None)
+    _reserve(order, "1", day=_day(), quant=quant)
+    _gap(order, "3")
+
+    item = _one(_promise(order))
+    assert (item.reservation, item.cause) == ("partial", "never_held")
+    assert (item.qty, item.missing_qty) == ("4", "3")
+
+
+def test_encomenda_que_nunca_reservou_sem_lote_pede_a_producao(baguete):
+    """Para outro dia a Produção ainda resolve, e nada a avisa: sem reserva, nem demanda há."""
+    order = _order("ENC-SEM-RESERVA", days=2)
+    _gap(order, "4", day=_day(2))
+
+    promise = _promise(order)
+    item = _one(promise)
+    assert (item.cause, item.missing_qty) == ("no_batch", "4")
+    assert item.next_step == "Peça à Produção para planejar."
+    assert promise.recommended_action == "open-production"
+
+
+def test_encomenda_que_nunca_reservou_com_lote_planejado_pede_mais_lote(ficha):
+    _lot(ficha, "10", days=2)
+    order = _order("ENC-SEM-RESERVA-COM-LOTE", days=2)
+    _gap(order, "4", day=_day(2))
+
+    item = _one(_promise(order))
+    assert (item.cause, item.missing_qty) == ("plan_short", "4")
+    assert item.next_step == "Peça à Produção para aumentar o lote."
+
+
+def test_falta_sem_data_vale_o_dia_combinado_do_pedido(baguete):
+    order = _order("ENC-SEM-DATA-NA-FALTA", days=3)
+    _gap(order, "2")
+
+    item = _one(_promise(order))
+    assert (item.cause, item.batch_date) == ("no_batch", _day(3).isoformat())
+
+
+def test_pedido_fechado_com_falta_registrada_nao_aparece(baguete):
+    order = _order("HOJE-ENTREGUE", days=0, status="completed")
+    _gap(order, "4", day=_day())
+
+    assert order_promise.read_for([order]) == {}
+
+
+def test_falta_ilegivel_fica_de_fora_sem_derrubar_o_painel(baguete):
+    order = _order("HOJE-TORTO", days=0)
+    order.data["hold_gaps"] = [{"sku": SKU, "qty": 2, "target_date": "ontem"}]
+    order.save(update_fields=["data"])
+
+    assert order_promise.read_for([order]) == {}

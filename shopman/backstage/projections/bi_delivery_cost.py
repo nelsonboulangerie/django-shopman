@@ -31,6 +31,9 @@ from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
 
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
+
 DEFAULT_WINDOW_DAYS = 28
 MAX_WINDOW_DAYS = 366
 
@@ -103,7 +106,7 @@ def ride_cost_q(ride: dict) -> tuple[int, bool] | None:
         return int(final), False
     # Na corrida com várias paradas, só vale a cotação da ROTA (gravada com as
     # paradas na chamada); a de um pedido sozinho não diz o custo da corrida.
-    if ride.get("status") == "F":
+    if delivery_services.ride_state(ride) == RideState.DONE:
         estimate = ride.get("estimate") or {}
         members = ride.get("ride_orders")
         if members and sorted(estimate.get("stops") or []) != sorted(members):
