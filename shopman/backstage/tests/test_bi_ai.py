@@ -164,7 +164,7 @@ def test_conference_agenda_and_fallbacks_with_the_customer_text_redacted():
     # Só as falas que esta resposta respondeu, e redigidas pelo redator da Concierge.
     assert "tem pão hoje" not in fallback.customer_text
     assert "[documento omitido]" in fallback.customer_text
-    assert "[email]" in fallback.customer_text
+    assert "[e-mail omitido]" in fallback.customer_text
     assert "123.456.789-09" not in fallback.customer_text
     assert "gmail" not in fallback.customer_text
     assert fallback.reply_text == "Hoje temos ciabatta."

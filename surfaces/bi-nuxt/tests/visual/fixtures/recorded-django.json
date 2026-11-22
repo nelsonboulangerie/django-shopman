@@ -4291,7 +4291,7 @@
         {
           "at": "2026-11-21T11:05:00-03:00",
           "conversation_id": 57,
-          "customer_text": "oi, meu cpf é [documento omitido], pode emitir a nota? meu zap é ([phone]",
+          "customer_text": "oi, meu cpf é [documento omitido], pode emitir a nota? meu zap é [telefone omitido]",
           "reply_text": "Hoje temos baguete, ciabatta e pão de campanha.",
           "reasons": [
             "Fala de outra coisa"
@@ -4301,7 +4301,7 @@
         {
           "at": "2026-11-20T17:30:00-03:00",
           "conversation_id": 61,
-          "customer_text": "manda o recibo pra [email] por favor",
+          "customer_text": "manda o recibo pra [e-mail omitido] por favor",
           "reply_text": "Seu pedido está confirmado.",
           "reasons": [
             "Sem próximo passo para o cliente",
