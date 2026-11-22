@@ -1074,18 +1074,29 @@ def _offer_alternatives(text: str, sku: str, *, context, copy, qty: int = 1) -> 
     return "\n".join(part for part in (text, _fill(template, options=options)) if part), memo, True
 
 
-def _cart_change(act: Act, *, conversation, context, copy):
-    """A sacola na conversa (WP-12): põe, troca e tira pelo ``set_item`` que já existe.
+@dataclass(frozen=True)
+class CartItemReading:
+    """O produto que a parte de pedido cita, achado no cardápio do canal.
 
-    ``None``: não é com a sacola (sem autoridade de compra, ou o produto não foi achado), e
-    a parte segue para a resposta de hoje. A quantidade é ABSOLUTA, calculada pela casa
-    ("mais 2" = o que há na sacola + 2); preço e total vêm do serviço da loja, nunca do texto.
+    ``items`` com um só é o produto; com mais de um, a escolha fica com o cliente. ``found`` é a
+    busca inteira (a memória da lista oferecida sai dela).
+    """
+
+    items: list
+    found: dict
+    removing: bool
+
+
+def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemReading | None:
+    """O produto da parte de pedido, pela MESMA busca da sacola na conversa (WP-12).
+
+    ``None``: nada do cardápio é o que o cliente citou. ``pick(items)`` desempata quando a busca
+    devolve mais de um (no turno, o Jev); sem ``pick``, nenhum modelo é chamado e o empate
+    fica com o cliente. Ler não é agir: a autoridade de compra é do turno, não daqui.
     """
     from . import dialogue
     from . import tools as tools_module
 
-    if conversation is None or not _cart_authorized(conversation):
-        return None
     tokens = dialogue.words(act.span)
     removing = bool(set(tokens) & _REMOVE_WORDS)
     query = act.product or " ".join(t for t in tokens if t not in _ORDER_FILLER and not t.isdigit() and t not in dialogue._NUMBER_WORDS)
@@ -1100,10 +1111,30 @@ def _cart_change(act: Act, *, conversation, context, copy):
     exact = [i for i in items if _fold(i.get("name", "")) == _fold(query)]
     if exact:
         items = exact[:1]
-    if len(items) > 1:
-        chosen = _jev_picks_sku(act, items, conversation=conversation)
+    if len(items) > 1 and pick is not None:
+        chosen = pick(items)
         if chosen is not None:
             items = [chosen]
+    return CartItemReading(items=items, found=found, removing=removing)
+
+
+def _cart_change(act: Act, *, conversation, context, copy):
+    """A sacola na conversa (WP-12): põe, troca e tira pelo ``set_item`` que já existe.
+
+    ``None``: não é com a sacola (sem autoridade de compra, ou o produto não foi achado), e
+    a parte segue para a resposta de hoje. A quantidade é ABSOLUTA, calculada pela casa
+    ("mais 2" = o que há na sacola + 2); preço e total vêm do serviço da loja, nunca do texto.
+    """
+    from . import dialogue
+    from . import tools as tools_module
+
+    if conversation is None or not _cart_authorized(conversation):
+        return None
+    reading = read_cart_item(act, conversation=conversation, context=context,
+                             pick=lambda items: _jev_picks_sku(act, items, conversation=conversation))
+    if reading is None:
+        return None
+    items, found, removing = reading.items, reading.found, reading.removing
     if len(items) > 1:
         listed = dialogue.memo_of("search_storefront", {}, found) or {}
         options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
