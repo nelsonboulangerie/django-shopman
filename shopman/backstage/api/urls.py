@@ -214,6 +214,7 @@ from .operations import (
     OrderConfirmView,
     OrderCourierBackView,
     OrderCourierCancelView,
+    OrderCourierCloseHereView,
     OrderCourierDispatchAgainView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
@@ -1044,6 +1045,7 @@ urlpatterns = [
         "orders/<str:ref>/equipment-back/", OrderEquipmentBackView.as_view(), name="api-backstage-order-equipment-back"
     ),
     path("orders/<str:ref>/courier-back/", OrderCourierBackView.as_view(), name="api-backstage-order-courier-back"),
+    path("orders/<str:ref>/courier-close-here/", OrderCourierCloseHereView.as_view(), name="api-backstage-order-courier-close-here"),
     path(
         "orders/<str:ref>/requeue-fiscal/", OrderRequeueFiscalView.as_view(), name="api-backstage-order-requeue-fiscal"
     ),
