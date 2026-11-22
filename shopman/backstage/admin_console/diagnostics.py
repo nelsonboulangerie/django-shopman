@@ -51,23 +51,21 @@ logger = logging.getLogger(__name__)
 
 
 class CourierProbeForm(forms.Form):
-    """O que a sonda da central de entregas pergunta: as opções do comando, com nome de gente."""
+    """O que a sonda da central de entregas pergunta: as opções de leitura do comando, com nome de gente."""
 
     action = forms.ChoiceField(
-        label="O que fazer",
+        label="O que ler",
         required=False,
         choices=(
-            ("read", "Ler a conta e as corridas (só leitura)"),
-            ("webhooks", "Ler os avisos cadastrados (só leitura)"),
-            *((key, f"ESCREVE: {label}") for key, (label, _hint) in courier_probe.WRITE_ACTIONS.items()),
-            (courier_probe.REGISTER_WEBHOOKS, "ESCREVE: cadastrar os avisos que faltam"),
+            ("read", "A conta e as corridas"),
+            ("webhooks", "Os avisos cadastrados"),
         ),
         widget=UnfoldAdminSelectWidget,
     )
     rides = forms.CharField(
         label="Corridas",
         required=False,
-        help_text=f"O número da corrida na TaOn, até {courier_probe.MAX_RIDES}, separados por vírgula. A escrita pede uma só.",
+        help_text=f"O número da corrida na TaOn, até {courier_probe.MAX_RIDES}, separados por vírgula.",
         widget=UnfoldAdminTextInputWidget,
     )
     window = forms.IntegerField(
@@ -79,21 +77,6 @@ class CourierProbeForm(forms.Form):
         label="Últimas corridas gravadas nos pedidos",
         required=False, min_value=0, max_value=5,
         widget=UnfoldAdminIntegerFieldWidget,
-    )
-    value = forms.CharField(
-        label="Valor da escrita",
-        required=False,
-        help_text="; ".join(f"{label}: {hint}" for label, hint in courier_probe.WRITE_ACTIONS.values()) + ".",
-        widget=UnfoldAdminTextInputWidget,
-    )
-    confirm = forms.CharField(
-        label="Confirmação da escrita",
-        required=False,
-        help_text=(
-            "Repita o número da corrida. Para cadastrar os avisos, escreva "
-            f"{courier_probe.REGISTER_CONFIRMATION}. Sem isto nada é enviado."
-        ),
-        widget=UnfoldAdminTextInputWidget,
     )
 
 
@@ -116,7 +99,7 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
         return self._email_probe(request)
 
     def _courier_probe(self, request: HttpRequest) -> HttpResponse:
-        """A sonda da central de entregas: só superusuário, porque também escreve na TaOn."""
+        """A sonda da central de entregas, só leitura. Só superusuário: o laudo descreve a conta da casa."""
         if not request.user.is_superuser:
             messages.error(request, "A sonda da central de entregas é só para superusuário.")
             return self._redirect()
@@ -126,33 +109,15 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
         data = form.cleaned_data
         action = data.get("action") or "read"
         rides = courier_probe.rides_from(data.get("rides", ""))
-        public_base = f"https://{request.get_host()}"
-        if action == "read":
-            result = courier_probe.read(rides=rides, window=data.get("window") or 0, recent=data.get("recent") or 0)
-        elif action == "webhooks":
-            result = courier_probe.webhooks(public_base)
-        elif action == courier_probe.REGISTER_WEBHOOKS:
-            if str(data.get("confirm") or "").strip().upper() != courier_probe.REGISTER_CONFIRMATION:
-                result = courier_probe.CourierProbeResult(
-                    ok=False, wrote=False,
-                    report=f"Para cadastrar os avisos, escreva {courier_probe.REGISTER_CONFIRMATION} na confirmação. Nada foi enviado.",
-                )
-            else:
-                result = courier_probe.register_webhooks(public_base)
-        elif len(rides) != 1:
-            result = courier_probe.CourierProbeResult(
-                ok=False, wrote=False, report="A escrita pede exatamente uma corrida. Nada foi enviado.",
-            )
+        if action == "webhooks":
+            result = courier_probe.webhooks(f"https://{request.get_host()}")
         else:
-            result = courier_probe.write(
-                ride=rides[0], action=action, value=str(data.get("value") or ""), confirm=str(data.get("confirm") or ""),
-            )
+            result = courier_probe.read(rides=rides, window=data.get("window") or 0, recent=data.get("recent") or 0)
         logger.info(
-            "diagnostics.courier_probe user=%s action=%s rides=%s ok=%s wrote=%s",
-            request.user.pk, action, ",".join(rides), result.ok, result.wrote,
+            "diagnostics.courier_probe user=%s action=%s rides=%s ok=%s",
+            request.user.pk, action, ",".join(rides), result.ok,
         )
-        # A confirmação não volta preenchida: cada escrita pede o gesto de novo.
-        refilled = CourierProbeForm(initial={**{k: v for k, v in data.items() if v not in (None, "")}, "confirm": ""})
+        refilled = CourierProbeForm(initial={k: v for k, v in data.items() if v not in (None, "")})
         return self.render_to_response(self.get_context_data(courier_form=refilled, courier_result=result))
 
     def _email_probe(self, request: HttpRequest) -> HttpResponse:

@@ -108,14 +108,27 @@
     {% if courier_probe_allowed %}
     {% component "unfold/components/card.html" %}
       <div class="flex flex-col gap-4" data-courier-probe>
-        {% component "unfold/components/title.html" with class="text-lg" %}
-          Central de entregas
+        <div class="flex flex-wrap items-center gap-2">
+          {% if diagnostics.courier.adapter_on and diagnostics.courier.configured %}
+            {% include "unfold/helpers/label.html" with text="Configurada" type="success" %}
+          {% elif diagnostics.courier.configured %}
+            {% include "unfold/helpers/label.html" with text="Desligada" type="warning" %}
+          {% else %}
+            {% include "unfold/helpers/label.html" with text="Sem credencial" type="danger" %}
+          {% endif %}
+          {% component "unfold/components/title.html" with class="text-lg" %}
+            Central de entregas
+          {% endcomponent %}
+        </div>
+        {% component "unfold/components/text.html" %}
+          Ambiente: {{ diagnostics.courier.environment }}.
+          Credencial no processo: {% if diagnostics.courier.configured %}sim{% else %}não{% endif %}.
+          Despacha as corridas: {% if diagnostics.courier.adapter_on %}sim{% else %}não{% endif %}.
         {% endcomponent %}
         {% component "unfold/components/text.html" with class="text-base-500" %}
           A mesma sonda do comando courier_machine_probe, rodando aqui, onde está a
-          credencial. Ler não muda nada na central. Escrever cancela, agrupa, tira
-          parada, impulsiona ou cadastra avisos de verdade, e só sai com a
-          confirmação. O laudo não mostra nome, telefone, placa, endereço nem token.
+          credencial. Só lê: nada muda na central. O laudo não mostra nome,
+          telefone, placa, endereço nem token.
         {% endcomponent %}
 
         <form method="post" class="flex flex-col gap-4">
@@ -125,11 +138,9 @@
           {% include "unfold/helpers/field.html" with field=courier_form.rides %}
           {% include "unfold/helpers/field.html" with field=courier_form.window %}
           {% include "unfold/helpers/field.html" with field=courier_form.recent %}
-          {% include "unfold/helpers/field.html" with field=courier_form.value %}
-          {% include "unfold/helpers/field.html" with field=courier_form.confirm %}
           <div class="flex">
             {% component "unfold/components/button.html" with submit=1 variant="primary" size="sm" icon="local_shipping" %}
-              Rodar a sonda
+              Ler na central
             {% endcomponent %}
           </div>
         </form>
@@ -137,9 +148,7 @@
         {% if courier_result %}
           <div class="flex flex-col gap-2" data-courier-probe-result>
             <div class="flex flex-wrap items-center gap-2">
-              {% if courier_result.ok and courier_result.wrote %}
-                {% include "unfold/helpers/label.html" with text="Escreveu na central" type="warning" %}
-              {% elif courier_result.ok %}
+              {% if courier_result.ok %}
                 {% include "unfold/helpers/label.html" with text="Respondeu" type="success" %}
               {% else %}
                 {% include "unfold/helpers/label.html" with text="Recusou ou falhou" type="danger" %}
