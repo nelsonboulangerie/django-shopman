@@ -12,10 +12,12 @@ import {
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
 import type {
+  CourierBlock,
   OperatorOrderProjection,
   OrderDetailResponse,
 } from "~/types/orders";
 import type { Action } from "~/generated/ordersContract";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 import type { OrderRefundReceipt } from "~/presentation/orderRefund";
 
 export function useOrderDetail(orderRef: string) {
@@ -175,6 +177,7 @@ export function useOrderDetail(orderRef: string) {
           "courier-dispatch",
           "courier-dispatch-again",
           "courier-cancel",
+          "courier-custody",
           "courier-quote",
           "undo-handoff",
           "undo-ready",
@@ -384,11 +387,15 @@ export function useOrderDetail(orderRef: string) {
   // "just quote" (stores the estimate; refresh shows it in the panel). Chamar a
   // primeira vez é o sheet único das Entregas (#2876), fora daqui.
 
-  // "Chamar de novo": a última chamada ficou sem resposta da TaOn. Libera a
+  // O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
+  const courierService = () => deliveryServiceName((order.value?.courier as CourierBlock | null)?.service_name);
+
+  // "Chamar de novo": a última chamada ficou sem resposta do serviço. Libera a
   // chamada pendente e chama outra (a confirmação é da página).
   async function courierDispatchAgain(): Promise<boolean> {
+    const service = courierService();
     const ok = await act("courier-dispatch-again");
-    if (ok) useSonner.success("Pedido de entregador enviado à TaOn.");
+    if (ok) useSonner.success(`Pedido de entregador enviado à ${service}.`);
     return ok;
   }
 
@@ -406,11 +413,19 @@ export function useOrderDetail(orderRef: string) {
 
   /** `reasonId`: o motivo escolhido na confirmação (só depois do aceite). */
   async function courierCancel(reasonId?: number): Promise<boolean> {
+    const service = courierService();
     const ok = await act(
       "courier-cancel",
       reasonId ? { reason_id: reasonId } : undefined,
     );
-    if (ok) useSonner.success("Pedido de cancelamento enviado à TaOn.");
+    if (ok) useSonner.success(`Pedido de cancelamento enviado à ${service}.`);
+    return ok;
+  }
+
+  /** "Separar de novo" (#2500): a custódia da corrida que a TaOn retomou. */
+  async function courierCustody(body: { change_out?: string; equipment?: string[] }): Promise<boolean> {
+    const ok = await act("courier-custody", body);
+    if (ok) useSonner.success("Separado de novo. Entregue com a sacola.");
     return ok;
   }
 
@@ -437,6 +452,7 @@ export function useOrderDetail(orderRef: string) {
     advance,
     reject,
     cancel,
+    courierCustody,
     returnOrder,
     markNotPickedUp,
     retryRefund,

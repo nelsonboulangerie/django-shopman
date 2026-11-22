@@ -389,12 +389,13 @@ def test_fechar_abaixo_do_ja_entregue_com_o_pedido_ativo_e_recusado(lote, caixa,
     assert (_saldo("em_producao"), _saldo("vitrine")) == (D("6"), D("0"))
 
 
-def test_fechar_abaixo_do_ja_entregue_falha_fechado_no_ledger(lote, caixa, django_capture_on_commit_callbacks):
-    """O pedido já saiu da conta dos ativos (concluído): quem recusa é o ledger.
+def test_fechar_abaixo_do_ja_entregue_recusa_com_o_motivo(lote, caixa, django_capture_on_commit_callbacks):
+    """O pedido já saiu da conta dos ativos (concluído): a recusa diz o motivo (#2731).
 
-    4 entregues, 3 produzidas. Os 3 abatem do lote, e a unidade sem lastro não
-    vira saldo negativo nem perda inventada: a ponte procura 7 de quebra, acha
-    6 e desfaz o fechamento inteiro. O lote segue aberto e nada mudou.
+    4 entregues, 3 produzidas. Antes, quem recusava era o ledger, com a frase
+    genérica do estoque ("[INSUFFICIENT_AVAILABLE] Quantidade solicitada
+    indisponível"), e o forneiro não lia que declarou menos do que já saiu. O lote
+    segue aberto e nada mudou.
     """
     with django_capture_on_commit_callbacks(execute=True):
         _iniciar(lote)
@@ -406,7 +407,10 @@ def test_fechar_abaixo_do_ja_entregue_falha_fechado_no_ledger(lote, caixa, djang
     with pytest.raises(production.ProductionError) as error:
         _fechar(lote, "3", yield_deviation_confirmed=True, yield_deviation_reason="Contagem conferida.")
 
-    assert "INSUFFICIENT_AVAILABLE" in str(error.value)
+    assert str(error.value) == (
+        f"Não dá para fechar o lote {lote.ref} com 3 un.: 4 un. dele já foram entregues. "
+        "Confira a contagem: o lote rendeu pelo menos isso."
+    )
     lote.refresh_from_db()
     assert lote.status == "started"
     assert (_saldo("em_producao"), _saldo("vitrine")) == (D("6"), D("0"))
@@ -649,3 +653,93 @@ def test_lote_sem_baixa_antecipada_fecha_como_sempre(lote, django_capture_on_com
         ("planejado", D("10")), ("em_producao", D("10")), ("em_producao", D("-10")), ("vitrine", D("10")),
     ]
     assert not Move.objects.filter(quant__sku=SKU, kind=Move.Kind.SELL).exists()
+
+
+
+# ── #2729: cancelar o lote que já entregou pão é recusado ───────────────────
+
+
+def _cancelar(work_order) -> None:
+    work_order.refresh_from_db()
+    production.apply_void(
+        work_order_id=work_order.pk, actor=ACTOR, expected_rev=work_order.rev,
+        idempotency_key=f"void-{work_order.pk}",
+    )
+
+
+def test_cancelar_o_lote_que_ja_entregou_e_recusado_e_nada_muda(lote, caixa, django_capture_on_commit_callbacks):
+    """Medido em 18/11: o balcão entrega 4 do lote aberto e o lote é cancelado.
+
+    Antes: o cancelamento passava, a entrega ficava num saldo de produção zerado, de
+    um lote que não produziu nada (``-6 adjust``), sem aviso nenhum.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.services.production import ProductionError
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _vender_no_balcao(caixa, 4)
+    antes = (_saldo("em_producao"), _vendido_no_ledger())
+
+    with pytest.raises(ProductionError, match=r"4 un\. dele já foram entregues\. Feche o lote com o que ele rendeu"):
+        _cancelar(lote)
+
+    lote.refresh_from_db()
+    assert lote.status == WorkOrder.Status.STARTED
+    assert (_saldo("em_producao"), _vendido_no_ledger()) == antes
+
+
+def test_lote_sem_entrega_continua_podendo_ser_cancelado(lote, django_capture_on_commit_callbacks):
+    from shopman.craftsman.models import WorkOrder
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _cancelar(lote)
+
+    lote.refresh_from_db()
+    assert lote.status == WorkOrder.Status.VOID
+
+
+def test_entrega_que_outro_lote_do_dia_cobre_nao_trava_o_cancelamento(
+    ficha, lote, caixa, django_capture_on_commit_callbacks,
+):
+    from shopman.craftsman.models import WorkOrder
+
+    outro = _planejar(ficha)
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        _vender_no_balcao(caixa, 4)
+    with django_capture_on_commit_callbacks(execute=True):
+        _cancelar(lote)
+
+    lote.refresh_from_db()
+    assert lote.status == WorkOrder.Status.VOID
+    assert outro.status == WorkOrder.Status.PLANNED
+
+
+
+# ── #2731, item 3: a venda antecipada entra na receita da fornada ───────────
+
+
+def test_a_venda_antes_de_o_lote_fechar_entra_na_receita_da_fornada(lote, caixa, django_capture_on_commit_callbacks):
+    """A reserva entregue antes do fechamento aponta para o lote que a pagou (#2724), e
+    o rateio do B.I. lê exatamente isso: a venda antecipada é receita desta fornada."""
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote)
+    with django_capture_on_commit_callbacks(execute=True):
+        order = _vender_no_balcao(caixa, 4)
+    with django_capture_on_commit_callbacks(execute=True):
+        _fechar(lote)
+
+    lote.refresh_from_db()
+    owners = bi_production._stock_batch_owners([lote])
+    hoje = timezone.localdate()
+    revenue, traced = bi_production._batch_revenue(owners, hoje, hoje)
+
+    order.refresh_from_db()
+    assert traced == {lote.ref: D("4")}
+    assert revenue == {lote.ref: order.total_q}

@@ -1029,7 +1029,6 @@ class TestNavigation:
             storefront_links.path_cart(),
             storefront_links.path_checkout(),
             storefront_links.path_login(),
-            "/busca",
         ],
     )
     def test_store_pages_load(self, page, store_base_url, path):

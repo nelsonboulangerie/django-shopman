@@ -391,7 +391,7 @@ def ride_view(link: CourierLink) -> dict:
     if first.get("note"):
         base["note"] = str(first["note"])
     if link.expires_at is not None:
-        return {**base, "moment": "closed", "today_q": _today_q(link.courier)}
+        return {**base, "moment": "closed", "today_q": today_settlement(link.courier)[0]}
     live = [(o, b) for o, b in zip(orders, blocks, strict=False) if _live(o, link)]
     statuses = {b.get("status") for _, b in live}
     on_route = "E" in statuses
@@ -421,11 +421,33 @@ def ride_view(link: CourierLink) -> dict:
         "machine": machine,
         "settle": {"cash_q": cash_back_q, "cash": f"R$ {format_money(cash_back_q)}", "machine": machine,
                    "bags_back": [s["code"] for s in stops if s["state"] == "cancelled"]},
+
+        **({"map": _map_view()} if moment == "route" else {}),
     }
 
 
-def _today_q(courier_person: Courier) -> int:
-    """O que a casa deve ao entregador hoje: o valor das rotas fechadas dele no dia."""
+def _map_view() -> dict:
+    """O mapa da corrida na tela "Dirigindo" (#2509): a chave pública do navegador e a loja.
+
+    A mesma chave que a loja já entrega ao cliente (restrita por domínio). Sem chave, a
+    página desenha o mapa próprio, só com as linhas e os pontos.
+    """
+    from shopman.shop.google_maps_credentials import browser_api_key
+    from shopman.shop.models import Shop
+
+    shop = Shop.objects.first()
+    origin = ({"lat": float(shop.latitude), "lng": float(shop.longitude)}
+              if shop and shop.latitude and shop.longitude else None)
+    return {"key": browser_api_key(), "origin": origin}
+
+
+def today_settlement(courier_person: Courier) -> tuple[int, int]:
+    """O que a casa deve ao entregador hoje: o valor das rotas fechadas dele no dia e quantas são.
+
+    Fonte única do acerto do dia (decisão 5 do dono, 16/11: o sistema soma, o pagamento é
+    por fora): a página da rota mostra ao entregador, o Gestor mostra à casa. Uma rota conta
+    uma vez (``ride_ref``), com o valor final quando houve ajuste e o da tabela sem ele.
+    """
     today = timezone.localdate()
     total = 0
     seen: set[str] = set()
@@ -437,4 +459,4 @@ def _today_q(courier_person: Courier) -> int:
         order = Order.objects.filter(ref=link.order_refs[0]).first()
         block = courier.get_block(order) if order else {}
         total += int(block.get("final_value_q") or (block.get("estimate") or {}).get("value_q") or 0)
-    return total
+    return total, len(seen)

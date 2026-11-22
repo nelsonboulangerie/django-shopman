@@ -34,7 +34,7 @@ from shopman.shop.conversational.commerce_read import instant
 SUBJECT_PREFIX = "conversation:"
 MESSAGE_PREFIX = "message:"
 TEXT_PREFIX = "text:"
-READER = Producer(name="concierge-local-rules", version="1")
+READER = Producer(name="concierge-local-rules", version="2")
 UNAVAILABLE = {"status": "unavailable", "reason": "no_calibration"}
 
 # Ato da Concierge (``intents``) → ato da lista fechada do framework. O que não tem par vira
@@ -145,6 +145,35 @@ class NiceChannel:
         raise PortError("capability_missing", "a transferência da Nice segue pelo caminho legado até o N9")
 
 
+def _cart_fields(act, conversation, text: str) -> dict:
+    """O que o ``change_cart`` do framework pede: o produto (SKU) e a quantidade, com a relatividade.
+
+    O produto sai da MESMA busca da sacola na conversa (``intents.read_cart_item``), sem modelo:
+    empate entre produtos fica sem ``item`` e o framework pergunta. A quantidade é a da fala;
+    "mais 2" vai como ``relative`` (o framework não trata relativa como absoluta), e "tira" é 0.
+    """
+    from .intents import _order_qty, read_cart_item
+    from .tools import ToolContext
+
+    qty, relative = _order_qty(act)
+    fields: dict = {}
+    if conversation is not None:
+        def context(query: str) -> ToolContext:
+            return ToolContext(conversation=conversation, channel_ref=conversation.channel_ref or "whatsapp",
+                               customer_text=query or text)
+
+        reading = read_cart_item(act, conversation=conversation, context=context)
+        if reading is not None and len(reading.items) == 1 and reading.items[0].get("sku"):
+            fields["item"] = str(reading.items[0]["sku"])
+            if reading.removing:
+                return {**fields, "quantity": "0"}
+    if qty:
+        fields["quantity"] = str(qty)
+        if relative:
+            fields["relative"] = True
+    return fields
+
+
 class LocalReader:
     """``ModelPort`` pelo leitor local por regra da Concierge: sem modelo, sem custo inventado."""
 
@@ -162,11 +191,12 @@ class LocalReader:
         text = resolve_text(request.content_ref)
         allowed = set(request.allowed_acts)
         acts = []
+        conversation = _conversation(ctx)
         for act in local_acts(text):
             name = ACT_MAP.get(act.act, "unknown")
             if allowed and name not in allowed:
                 name = "unknown"
-            fields = {"qty": str(act.qty)} if act.qty else {}
+            fields = _cart_fields(act, conversation, text) if name == "change_quantity" else {}
             acts.append({"act": name, "fields": fields, "confidence": UNAVAILABLE})
         now = instant(datetime.now(UTC))
         understanding = Understanding(

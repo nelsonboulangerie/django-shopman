@@ -118,6 +118,7 @@ def register_all() -> None:
     _register_validators()
     _register_stock_signals()
     _register_production_alerts()
+    _register_demand_anchor()
     _register_production_cost()
     _register_kds_alerts()
     _register_production_order_sync()
@@ -390,11 +391,24 @@ def _register_stock_signals() -> None:
     try:
         from shopman.craftsman.signals import production_changed
 
-        from shopman.shop.handlers._stock_receivers import on_production_finished, on_production_voided
+        from shopman.shop.handlers._stock_receivers import (
+            on_production_adjusted,
+            on_production_finished,
+            on_production_voided,
+        )
         production_changed.connect(on_production_voided, weak=False)
+        production_changed.connect(on_production_adjusted, weak=False)
         production_changed.connect(on_production_finished, weak=False)
     except ImportError:
         pass
+
+
+def _register_demand_anchor() -> None:
+    """Plano que cresce prende primeiro a demanda sem fornada da data (#2701)."""
+    from shopman.shop.services import demand_anchor
+
+    demand_anchor.connect()
+    logger.info("shopman.handlers: connected demand anchor receiver.")
 
 
 def _register_production_alerts() -> None:

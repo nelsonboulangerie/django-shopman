@@ -87,6 +87,9 @@ export default defineNuxtConfig({
     // pacote do cliente aqui (fora dele, o ícone vinha vazio, medido em 02/11/2026).
     "icon:clientBundleIcons": (bundle: Set<string>) => {
       for (const app of Object.values(OPERATOR_APPS)) bundle.add(`lucide:${app.fallbackIcon}`);
+      // Os ícones dos motivos de cancelar a corrida moram como DADO em
+      // `presentation/courierCancel.ts` (Gestor e PDV, #2494): a varredura não os acha.
+      for (const name of ["ban", "user-x", "timer-off", "phone-off"]) bundle.add(`lucide:${name}`);
     },
     // Catálogo vivo somente no harness explícito. Nenhum consumer publica esta
     // rota em produção, mesmo que estenda a layer inteira.

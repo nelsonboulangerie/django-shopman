@@ -1299,7 +1299,7 @@ POLICY_FIELD_EXEMPTIONS: dict[tuple[str, str, str], str] = {
 # Teto de tamanho: o arquivo não volta a crescer por acúmulo (A7-5). Baixar o teto
 # quando o arquivo encolher; subir pede extrair uma unidade em vez disso.
 SOURCE_BUDGETS: dict[str, dict[str, int]] = {
-    "shopman/shop/modifiers.py": {"max_lines": 1880, "max_classes": 9},
+    "shopman/shop/modifiers.py": {"max_lines": 1847, "max_classes": 9},
 }
 
 
