@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountLoyalty, AccountSummary, Action, OrderHistoryItem } from '~/types/shopman'
 import {
+  ACCOUNT_DELETED_MESSAGE,
   ORDER_FILTER_OPTIONS,
   accountGreeting,
   accountNavCards,
@@ -336,5 +337,16 @@ describe('account presentation: o botão que abre o pedido', () => {
       expect(template).toContain('.label }}')
       expect(template).toContain('orderOpenLabel(')
     }
+  })
+})
+
+describe('conta excluída (#3242)', () => {
+  it('a frase confirma e repete só o que a Política de Privacidade promete', () => {
+    expect(ACCOUNT_DELETED_MESSAGE).toMatch(/^Pronto, sua conta foi excluída\./)
+    for (const erased of ['nome', 'telefone', 'e-mail', 'endereços', 'preferências']) {
+      expect(ACCOUNT_DELETED_MESSAGE).toContain(erased)
+    }
+    expect(ACCOUNT_DELETED_MESSAGE).toContain('prazo da lei fiscal')
+    expect(ACCOUNT_DELETED_MESSAGE).not.toContain('—')
   })
 })

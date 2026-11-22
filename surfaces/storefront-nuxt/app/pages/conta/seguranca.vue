@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AccountAccessProjection, AccountAccessResponse, AccountDeviceProjection, AccountDeviceResponse } from '~/types/shopman'
-import { deviceIcon, profileActionIsExternal, profileIssueFrom, type ProfileIssue } from '~/presentation/account'
+import { ACCOUNT_DELETED_MESSAGE, deviceIcon, profileActionIsExternal, profileIssueFrom, type ProfileIssue } from '~/presentation/account'
 import { pendingCodeFromCooldown } from '~/presentation/auth'
 import { authPhonePayload, displayE164Phone, maskPhoneInput } from '~/utils/authPhone'
 import { formatCount } from '~/utils/display'
@@ -374,6 +374,9 @@ async function deleteAccount () {
     deleteAccountIdempotencyKey.value = ''
     session.reset()
     deleteAccountOpen.value = false
+    // O fim do gesto mais grave da conta não é silêncio (#3242). Só chega aqui o que o
+    // servidor terminou, e a frase repete o que a Política de Privacidade promete, nada a mais.
+    if (import.meta.client) useSonner.success(ACCOUNT_DELETED_MESSAGE, { duration: 10_000 })
     await navigateTo('/')
   } catch (e) {
     // A chave de idempotência NÃO é descartada aqui: é ela que faz a retomada continuar a
