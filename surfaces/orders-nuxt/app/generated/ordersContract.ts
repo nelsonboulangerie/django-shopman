@@ -1316,6 +1316,7 @@ export interface DeliveryStopProjection {
   dispatch_again_action: Action | null;
   charge_outdated: Record<string, unknown> | null;
   failure_key: string;
+  tracking_url: string;
   fiscal_status: string;
   danfe_state: string;
   danfe_problem: string;
@@ -1394,6 +1395,7 @@ export interface DeliveryRideProjection {
   reopened_reason: string;
   custody_line: string;
   open_too_long: boolean;
+  close_here_action: Action | null;
   cancel_state: string;
   cancel_message: string;
   sync_since: string;

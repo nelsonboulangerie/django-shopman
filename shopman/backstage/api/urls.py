@@ -17,6 +17,7 @@ from .alerts import (
 )
 from .backup import BackupExportView
 from .bi import (
+    BIAiView,
     BICashView,
     BIChangeView,
     BIConsumptionProfilesView,
@@ -214,6 +215,8 @@ from .operations import (
     OrderConfirmView,
     OrderCourierBackView,
     OrderCourierCancelView,
+    OrderCourierCloseHereView,
+    OrderCourierCustodyView,
     OrderCourierDispatchAgainView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
@@ -782,6 +785,7 @@ urlpatterns = [
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
+    path("bi/ai/", BIAiView.as_view(), name="api-backstage-bi-ai"),
     path("bi/delivery-cost/", BIDeliveryCostView.as_view(), name="api-backstage-bi-delivery-cost"),
     path("bi/delivery-timing/", BIDeliveryTimingView.as_view(), name="api-backstage-bi-delivery-timing"),
     path("bi/preorder-kitchen/", BIPreorderKitchenView.as_view(), name="api-backstage-bi-preorder-kitchen"),
@@ -1044,6 +1048,8 @@ urlpatterns = [
         "orders/<str:ref>/equipment-back/", OrderEquipmentBackView.as_view(), name="api-backstage-order-equipment-back"
     ),
     path("orders/<str:ref>/courier-back/", OrderCourierBackView.as_view(), name="api-backstage-order-courier-back"),
+    path("orders/<str:ref>/courier-close-here/", OrderCourierCloseHereView.as_view(), name="api-backstage-order-courier-close-here"),
+    path("orders/<str:ref>/courier-custody/", OrderCourierCustodyView.as_view(), name="api-backstage-order-courier-custody"),
     path(
         "orders/<str:ref>/requeue-fiscal/", OrderRequeueFiscalView.as_view(), name="api-backstage-order-requeue-fiscal"
     ),

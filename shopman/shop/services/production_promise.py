@@ -18,7 +18,11 @@ Três fatos chegam aqui, cada um com o seu evento e a sua frase:
 - o lote que RENDEU MENOS do que as reservas (``production_short``, #2594): a
   reserva fica, presa a um saldo que não existe;
 - o lote ATRASADO com encomenda da data (``production_late``, #2594): passou da
-  hora de prontidão do produto e o lote ainda não fechou.
+  hora de prontidão do produto e o lote ainda não fechou;
+- o lote que ficou pronto COM DESCONTO (``production_grade``, #2723): rendeu o que
+  devia, mas com um grau que a reserva do pedido não aceita (o canal remoto não
+  vende pão com desconto, ``realize``/``_accepts_output_grade``). A reserva fica
+  presa ao saldo de produção zerado, como no lote curto, e a frase diz o que houve.
 
 Nunca cancela, remarca nem fala com o cliente: a conversa é decisão de gente, como
 no dia fechado (``closed_day_orders``).
@@ -37,15 +41,18 @@ ALERT_TYPE = "order_promise_lost"
 EVENT_TYPE = "production_hold_lost"
 EVENT_TYPE_SHORT = "production_hold_short"
 EVENT_TYPE_LATE = "production_lot_late"
+EVENT_TYPE_GRADE = "production_hold_grade"
 
 REASON_VOIDED = "production_voided"
 REASON_SHORT = "production_short"
 REASON_LATE = "production_late"
+REASON_GRADE = "production_grade"
 
 _EVENT_BY_REASON = {
     REASON_VOIDED: EVENT_TYPE,
     REASON_SHORT: EVENT_TYPE_SHORT,
     REASON_LATE: EVENT_TYPE_LATE,
+    REASON_GRADE: EVENT_TYPE_GRADE,
 }
 
 #: Pedido que ainda vai sair da loja. Os demais já saíram (ou acabaram) e o
@@ -84,6 +91,8 @@ def _what_happened(reason: str, *, name: str, day: str, lot: str, qty_text: str)
     lacks = "falta" if qty_text == "1" else "faltam"
     if reason == REASON_SHORT:
         return f"o lote de {name} para {day} rendeu menos que o reservado{lot}: {lacks} {qty_text} un."
+    if reason == REASON_GRADE:
+        return f"o lote de {name} para {day} ficou pronto com desconto{lot}, e o canal deste pedido não vende com desconto: {lacks} {qty_text} un."
     if reason == REASON_LATE:
         waiting = "espera" if qty_text == "1" else "esperam"
         return f"o lote de {name} para {day} passou da hora de ficar pronto{lot}: {qty_text} un. {waiting} por ele."
@@ -143,6 +152,8 @@ def announce_lost_holds(
                     _emit_fact(order, EVENT_TYPE_SHORT, payload)
                 elif reason == REASON_LATE:
                     _emit_fact(order, EVENT_TYPE_LATE, payload)
+                elif reason == REASON_GRADE:
+                    _emit_fact(order, EVENT_TYPE_GRADE, payload)
                 else:
                     _emit_fact(order, EVENT_TYPE, payload)
         except Exception:
@@ -217,9 +228,45 @@ def announce_short_lot(product_ref: str, date, *, work_order=None) -> int:
             spare -= qty
             continue
         lost.append(hold)
-    return announce_lost_holds(
-        _by_order(_order_hold_rows(lost)), sku=product_ref, date=date, work_order=work_order, reason=REASON_SHORT,
+    # O lote que rendeu tudo, mas com um grau que a reserva não aceita, não "rendeu
+    # menos": a frase do pedido diz que ficou pronto com desconto (#2723).
+    grades = _output_grades(work_order, product_ref)
+    by_grade = [hold for hold in lost if grades and not _accepts_any(hold, grades)]
+    short = [hold for hold in lost if hold not in by_grade]
+    created = announce_lost_holds(
+        _by_order(_order_hold_rows(short)), sku=product_ref, date=date, work_order=work_order, reason=REASON_SHORT,
     )
+    return created + announce_lost_holds(
+        _by_order(_order_hold_rows(by_grade)), sku=product_ref, date=date, work_order=work_order, reason=REASON_GRADE,
+    )
+
+
+def _output_grades(work_order, product_ref: str) -> set[str]:
+    """Os graus com que o lote ficou pronto (a partição de qualidade, ADR-017)."""
+    if work_order is None:
+        return set()
+    from shopman.craftsman.models import WorkOrderItem
+
+    return {
+        grade
+        for grade in WorkOrderItem.objects.filter(
+            work_order=work_order, kind=WorkOrderItem.Kind.OUTPUT, item_ref=product_ref,
+        ).values_list("quality_grade_ref", flat=True)
+        if grade
+    }
+
+
+def _accepts_any(hold, grades: set[str]) -> bool:
+    """A reserva aceita algum dos graus do lote? A mesma régua do ``realize``.
+
+    Sem lista de graus na reserva, ela aceita qualquer um.
+    """
+    from shopman.stockman.services.holds import QUALITY_GRADE_ALLOWLIST_METADATA_KEY
+
+    allowlist = (hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
+    if allowlist is None:
+        return True
+    return bool(grades & set(allowlist))
 
 
 def announce_late_lots(*, now=None) -> int:
@@ -268,3 +315,43 @@ def announce_late_lots(*, now=None) -> int:
         if late:
             created += announce_lost_holds(late, sku=sku, date=day, work_order=lot, reason=REASON_LATE)
     return created
+
+
+def fulfill_failure_fact(order, skus) -> str:
+    """O fato de produção que explica a baixa que falhou deste pedido, ou ``""`` (#3229).
+
+    A reserva que o lote não cobriu (rendeu menos, ficou pronto num grau que o
+    pedido não aceita, foi cancelado) fica presa ao saldo de produção zerado, e a
+    baixa dela falha no banco. Quem lê o aviso da baixa precisa da causa real, que
+    já está no pedido (o evento que este módulo gravou), e não de "conte a
+    prateleira": a prateleira está certa.
+    """
+    wanted = {str(sku) for sku in skus if sku}
+    manager = getattr(order, "events", None)
+    if manager is None:
+        # Sem linha do tempo (pedido que não é do orderman): não há fato a ler.
+        return ""
+    events = manager.filter(type__in=set(_EVENT_BY_REASON.values())).order_by("-created_at", "-pk")
+    for event in events:
+        payload = event.payload or {}
+        if wanted and str(payload.get("sku") or "") not in wanted:
+            continue
+        reason = str(payload.get("reason") or "")
+        if reason == REASON_LATE:
+            # Atraso não tira o lastro: a baixa que falha não é por ele.
+            continue
+        try:
+            from datetime import date as date_type
+
+            day = date_type.fromisoformat(str(payload.get("date") or "")).strftime("%d/%m")
+        except ValueError:
+            day = str(payload.get("date") or "")
+        wo_ref = str(payload.get("work_order_ref") or "")
+        return _what_happened(
+            reason,
+            name=str(payload.get("product_name") or payload.get("sku") or ""),
+            day=day,
+            lot=f" (lote {wo_ref})" if wo_ref else "",
+            qty_text=str(payload.get("qty") or ""),
+        )
+    return ""

@@ -271,6 +271,15 @@ def pop_site_release(request) -> dict | None:
 
     A mensagem deixa a liberação esperando; sem o toque em "Liberar o Chrome no Windows"
     ela volta para a espera e a aba continua do lado de fora.
+
+    Três respostas, porque a tela diz coisas diferentes em cada uma (#3271):
+
+    - ``None``: nada chegou para este navegador (a mensagem não chegou, ou o "Não foi
+      você?" desfez a entrada);
+    - ``{"confirmed": False}``: a mensagem chegou e a liberação espera o toque no botão
+      da resposta. Ela volta para a espera intacta; o que sai daqui não abre nada;
+    - ``{"confirmed": True, "token": …, "revoke_ref": …}``: o botão foi tocado, a aba
+      pode entrar, e a liberação foi consumida.
     """
     from shopman.doorman.services.link_state import (
         get_revocation,
@@ -292,8 +301,8 @@ def pop_site_release(request) -> dict | None:
         return None
     if not record.get("confirmed_at"):
         release_to_origin(origin, token=str(release.get("token") or ""), revoke_ref=revoke_ref)
-        return None
-    return release
+        return {"confirmed": False}
+    return {**release, "confirmed": True}
 
 
 def record_site_release_login(revoke_ref: str, *, request, response) -> None:

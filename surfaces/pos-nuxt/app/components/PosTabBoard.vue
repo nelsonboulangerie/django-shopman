@@ -85,6 +85,16 @@ function updateInput(value: unknown) {
   }));
 }
 
+// Enter no campo vazio é a "Próxima livre": o mesmo toque do botão, sem a mão sair
+// do teclado (P2-3 do WP-E8). Antes era mudo, porque o "Abrir comanda" fica
+// desabilitado sem referência e o navegador não envia o formulário.
+function onEmptyEnter(event: KeyboardEvent) {
+  if ((event.target as HTMLElement | null)?.tagName !== "INPUT") return;
+  if (props.modelValue.trim() || event.isComposing || props.busy) return;
+  event.preventDefault();
+  openNextFree();
+}
+
 function submitInput() {
   if (!props.modelValue.trim()) return;
   // Enter com UM único card filtrado abre exatamente aquele card — digitou
@@ -110,7 +120,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
   <section class="flex h-full min-h-0 flex-col gap-3">
     <!-- No celular a busca ocupa a linha inteira e os dois botões dividem a de baixo:
          nada colapsa num quadrado vazio nem sai da tela (régua da v4). -->
-    <form class="flex shrink-0 flex-wrap gap-2" @submit.prevent="submitInput">
+    <form class="flex shrink-0 flex-wrap gap-2" @submit.prevent="submitInput" @keydown.enter="onEmptyEnter">
       <!-- Autofocus: o board remonta a cada volta (inclusive pós-venda) e a
            primeira ação do operador é digitar a comanda — o foco já espera lá. -->
       <div class="relative min-w-0 max-sm:basis-full sm:max-w-xs sm:flex-1">

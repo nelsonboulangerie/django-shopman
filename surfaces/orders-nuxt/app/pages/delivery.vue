@@ -39,7 +39,7 @@ import {
   type RideSuggestion,
 } from "~/presentation/deliveries";
 import { deliveriesFiscalAlerts } from "~/presentation/deliveriesFiscal";
-import { DEFAULT_CARRIER, busyNotice, chipValue, noteLabel } from "~/presentation/houseCouriers";
+import { DEFAULT_CARRIER, busyNotice, chipValue, noteLabel, toPayToday } from "~/presentation/houseCouriers";
 import { NOBODY_TAKES } from "~/composables/useCourierCall";
 import { planServiceName } from "~/presentation/courierCall";
 import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
@@ -75,6 +75,8 @@ const {
   callLabel, machineMissing, nobodyTakes, canCall, summary, call, callSeparately,
   openSheet, toggleCompanion, closeSheet, confirmSheet, confirmAlone, sheet,
 } = useCourierCall({ data, refresh, editing, active });
+// O acerto do dia de cada entregador da casa, sob a escala (M4, #2527).
+const payToday = computed(() => toPayToday(crew.value));
 const editingNumbers = computed(() => editing.value.map((ride) => ride.number));
 function ensureEditing() {
   if (editing.value.length) return;
@@ -226,22 +228,30 @@ const busyRide = ref("");
 // ── a corrida da casa: os gestos do balcão (M3b, #2898) ─────────────────────
 const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(() => refresh());
 
-async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
-  const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
+async function rideAction(
+  ride: DeliveryRideProjection,
+  operation: "courier-back" | "courier-cancel" | "courier-close-here",
+  reasonId?: number,
+  outcome?: string,
+) {
+  const action = operation === "courier-back" ? ride.back_action : operation === "courier-close-here" ? ride.close_here_action : ride.cancel_action;
   busyRide.value = ride.key;
   try {
     // Cancelar só chega aqui pela confirmação do detalhe (`CourierCancelConfirm`);
     // depois do aceite ela já traz o motivo, que vai à TaOn como `reason_id`.
-    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : {});
-    useSonner.success(operation === "courier-back"
-      ? `Corrida ${ride.letter} encerrada.`
-      : `Pedido de cancelamento enviado à ${deliveryServiceName(ride.service_name)}.`);
+    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : outcome ? { outcome } : {});
+    useSonner.success(operation === "courier-cancel"
+      ? `Pedido de cancelamento enviado à ${deliveryServiceName(ride.service_name)}.`
+      : `Corrida ${ride.letter} encerrada.`);
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível. Atualize e tente de novo."));
   } finally {
     busyRide.value = "";
     await refresh();
   }
+}
+function closeOpenRideHere(outcome: string) {
+  if (openRide.value) void rideAction(openRide.value, "courier-close-here", undefined, outcome);
 }
 function cancelOpenRide(reasonId?: number) {
   if (openRide.value) void rideAction(openRide.value, "courier-cancel", reasonId);
@@ -362,6 +372,18 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
                 @click="toggleShift(person.ref, !person.on)"
               />
             </div>
+            <!-- O acerto do dia (M4, #2527): o sistema soma, o pagamento é por fora. -->
+            <ul v-if="payToday.length" class="flex flex-col gap-1" data-house-pay-today>
+              <li
+                v-for="line in payToday"
+                :key="line.ref"
+                class="flex items-center gap-2 op-body tabular-nums text-highlighted"
+                :data-house-pay-today-person="line.ref"
+              >
+                <NuxtIcon name="i-lucide-wallet" class="size-4 shrink-0 text-muted" />
+                {{ line.text }}
+              </li>
+            </ul>
           </section>
           <!-- 1. aguardando -->
           <section>
@@ -654,6 +676,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
           @close="close"
           @back="backRide = openRide"
           @cancel="cancelOpenRide"
+          @close-here="closeOpenRideHere"
           @gesture="(item) => houseGesture(openRide!, item)"
         />
       </template>

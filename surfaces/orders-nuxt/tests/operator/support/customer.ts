@@ -7,6 +7,8 @@ import { capture, djangoLogMark, readLoginCode, settled } from "./stack";
 
 export interface PickupOrder {
   product: string;
+  /** Quantas unidades (o seletor da sacola); padrão: 1. */
+  quantity?: number;
   phone: string;
   name: string;
   /** O dia da retirada como a loja o oferece ("Hoje", "Amanhã"); padrão: hoje. */
@@ -20,6 +22,9 @@ export interface PickupOrder {
   pays?: boolean;
   /** `true`: a loja está fechada agora e a cliente encomenda para a próxima abertura (L1). */
   storeClosed?: boolean;
+  /** `true`: o item é da fornada de hoje que ainda não ficou pronta. A cliente envia e
+   *  entra na fila de espera, sem Pix: a cobrança só nasce quando ela confirma a vaga. */
+  queued?: boolean;
 }
 
 /** Cliente novo pede retirada (hoje, ou amanhã: a encomenda) e paga com Pix (pagamento
@@ -60,7 +65,36 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   await expect(page.getByText(new RegExp(`Retirada · ${day}`)).last()).toBeVisible();
   if (order.window) await expect(page.getByText(order.window).last()).toBeVisible();
   await capture(page, testInfo, "loja-revisar");
+  if (order.queued) return customerSendsIntoTheQueue(page, testInfo);
   return customerSendsAndPaysPix(page, testInfo, order.pays ?? true);
+}
+
+/** Revisado, com item da fornada que ainda não saiu: envia e cai na fila, sem cobrança. */
+async function customerSendsIntoTheQueue(page: Page, testInfo: TestInfo): Promise<string> {
+  await page.getByRole("button", { name: "Enviar pedido" }).click();
+  await expect(page).toHaveURL(/\/pedido\/[^/]+$/, { timeout: 60_000 });
+  const ref = decodeURIComponent(new URL(page.url()).pathname.split("/").pop()!);
+  await settled(page);
+  const queue = page.locator('[data-waitlist="fermata"]');
+  await expect(queue).toContainText("Você está na fila", { timeout: 60_000 });
+  await expect(queue).toContainText("Nada foi cobrado ainda.");
+  await expect(page.getByRole("button", { name: "Simular pagamento" })).toHaveCount(0);
+  await capture(page, testInfo, "loja-na-fila");
+  return ref;
+}
+
+/** A fornada saiu: no acompanhamento, a cliente confirma a vaga e paga o Pix simulado. */
+export async function customerConfirmsTheSlotAndPays(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.reload();
+  await settled(page);
+  await expect(page.getByText("Chegou a sua vez!").first()).toBeVisible({ timeout: 60_000 });
+  const slot = page.locator('[data-waitlist="confirming"]');
+  await expect(slot).toContainText(/Faltam \d+ min/);
+  await capture(page, testInfo, "loja-chegou-a-vez");
+  await slot.getByRole("button", { name: "Confirmar meu pedido" }).click();
+  await page.getByRole("button", { name: "Simular pagamento" }).click({ timeout: 60_000 });
+  await expect(page.getByText("Pagamento recebido").first()).toBeVisible({ timeout: 60_000 });
+  await capture(page, testInfo, "loja-vaga-paga");
 }
 
 /** Cardápio → sacola → entrar com o código → nome: a cliente nova chega ao Finalizar. */

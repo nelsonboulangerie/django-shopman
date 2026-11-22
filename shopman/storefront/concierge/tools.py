@@ -220,6 +220,20 @@ def _line_for_sku(session, sku: str) -> dict | None:
     return None
 
 
+def _availability_label(item) -> str:
+    """O rótulo como a loja o mostra (``tileBadge`` do storefront-nuxt).
+
+    O item que espera fornada diz QUANDO fica pronto, com a frase da promessa do
+    servidor (``presentation/promise``); "Lista de espera" só sobra sem promessa.
+    """
+    from shopman.shop.projections.types import Availability
+
+    promise = getattr(item, "promise", None)
+    if item.availability == Availability.PLANNED_OK and promise is not None and promise.text:
+        return promise.text
+    return item.availability_label
+
+
 def _item_payload(item) -> dict:
     adjustment = item.quote.adjustments[0] if item.quote.adjustments else None
     return {
@@ -228,7 +242,7 @@ def _item_payload(item) -> dict:
         "price": _money(item.quote.final_unit_price_q),
         "price_q": int(item.quote.final_unit_price_q),
         "availability": str(item.availability),
-        "availability_label": item.availability_label,
+        "availability_label": _availability_label(item),
         "available_qty": item.available_qty,
         "can_order": bool(item.can_add_to_cart),
         "description": item.short_description or "",
@@ -822,8 +836,10 @@ def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillmen
     """Dias e horários em que a casa consegue entregar/servir esta sacola."""
     from shopman.shop.services.business_calendar import available_dates
     from shopman.shop.services.channel_policy import resolve_channel_policy
-    from shopman.shop.services.fulfillment_window import delivery_windows_for
-    from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
+    from shopman.storefront.services.pickup_slots import (
+        annotate_delivery_windows_for_checkout,
+        annotate_slots_for_checkout,
+    )
 
     if fulfillment_type not in resolve_channel_policy(ctx.channel_ref).fulfillment_types:
         label = "entrega" if fulfillment_type == "delivery" else "retirada"
@@ -844,15 +860,28 @@ def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillmen
 
     payload: dict = {"ok": True, "date": when, "available_dates": dates}
     if fulfillment_type == "delivery":
+        # A mesma grade anotada do checkout: o horário que começa antes de o item
+        # ficar pronto ou antes do prazo de aceite da loja sai indisponível, com o
+        # motivo (#3266), em vez de oferecido e recusado depois.
         try:
-            slots = delivery_windows_for(day)
+            windows = annotate_delivery_windows_for_checkout(
+                skus, delivery_date=when, channel_ref=ctx.channel_ref,
+            ).get("windows") or []
         except Exception:
             logger.debug("concierge.delivery_slots degraded", exc_info=True)
-            slots = []
-        payload["delivery_slots"] = [{"ref": s.get("ref"), "label": s.get("label")} for s in slots]
+            windows = []
+        payload["delivery_slots"] = [
+            {
+                "ref": window.get("ref"),
+                "label": window.get("label"),
+                "available": bool(window.get("enabled")),
+                "reason": window.get("reason") or "",
+            }
+            for window in windows
+        ]
         return payload
 
-    annotated = annotate_slots_for_checkout(skus, delivery_date=when)
+    annotated = annotate_slots_for_checkout(skus, delivery_date=when, channel_ref=ctx.channel_ref)
     payload["pickup_slots"] = [
         {
             "ref": slot.get("ref"),
@@ -947,7 +976,9 @@ def set_fulfillment(
         values["fiscal"] = {}
         if slot_ref:
             skus = [str(item.get("sku")) for item in (session.items or [])]
-            error = validate_pickup_slot_selection(slot_ref, delivery_date=when, cart_skus=skus)
+            error = validate_pickup_slot_selection(
+                slot_ref, delivery_date=when, cart_skus=skus, channel_ref=ctx.channel_ref,
+            )
             if error:
                 errors["delivery_time_slot"] = error
             else:
@@ -1042,8 +1073,11 @@ def set_fulfillment(
             values["delivery_address"] = structured["formatted_address"]
         if slot_ref:
             from shopman.shop.services.fulfillment_window import delivery_window_error
+            from shopman.storefront.services.pickup_slots import acceptance_slot_error
 
-            slot_error = delivery_window_error(day, slot_ref)
+            slot_error = delivery_window_error(day, slot_ref) or acceptance_slot_error(
+                day, slot_ref, ctx.channel_ref,
+            )
             if slot_error:
                 errors["delivery_time_slot"] = slot_error
             else:
@@ -1199,8 +1233,17 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         ctx.conversation.save(update_fields=["flags", "updated_at"])
     if not missing:
         token = _quote_token(session)
+        previous = ctx.conversation.quote or {}
+        if previous.get("token") == token:
+            code = offered_quote_code(ctx.conversation, token)  # o mesmo orçamento, o mesmo código
+        else:
+            # Resumo novo nunca repete o código do anterior desta conversa (#3291): com o mesmo
+            # código, o "confirmo" do resumo antigo confirmaria o novo.
+            code = quote_code(token, avoid=offered_quote_code(ctx.conversation, previous["token"])
+                              if previous.get("token") else "")
         ctx.conversation.quote = {
             "token": token,
+            "code": code,
             "session_key": session.session_key,
             "customer_ref": ctx.conversation.customer_ref,
             "phone": ctx.conversation.phone,
@@ -1217,7 +1260,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         if not getattr(ctx.conversation, "_commercial_authority", False):
             # Sem identificador de mensagem (ADR-050), o "sim" não prova que veio depois
             # deste resumo: a confirmação leva o código deste orçamento.
-            result["quote_code"] = quote_code(token)
+            result["quote_code"] = code
     return result
 
 
@@ -1297,13 +1340,30 @@ def _confirmation(ctx: ToolContext, token: str):
     return messages[-1]
 
 
-def quote_code(token: str) -> str:
+def quote_code(token: str, *, avoid: str = "") -> str:
     """O código curto deste orçamento (ADR-050): quatro dígitos tirados do ``quote_token``.
 
-    Muda quando a sacola, a entrega ou o pagamento mudam (o token muda), então um "sim"
-    a um resumo antigo nunca confirma o novo.
+    Muda quando a sacola, a entrega ou o pagamento mudam (o token muda). Quatro dígitos de
+    tokens diferentes podem coincidir (1 em 10.000), e aí um "sim" ao resumo antigo
+    confirmaria o novo (#3291): ``avoid`` é o código do resumo anterior da conversa, e a
+    derivação continua, com o número da tentativa como sal, até sair outro. Determinística:
+    o mesmo token e o mesmo anterior dão sempre o mesmo código.
     """
-    return f"{int(hashlib.sha256(str(token).encode()).hexdigest(), 16) % 10_000:04d}"
+    attempt = 0
+    while True:
+        seed = str(token) if attempt == 0 else f"{token}:{attempt}"
+        code = f"{int(hashlib.sha256(seed.encode()).hexdigest(), 16) % 10_000:04d}"
+        if code != avoid:
+            return code
+        attempt += 1
+
+
+def offered_quote_code(conversation, token: str) -> str:
+    """O código oferecido ao cliente para o orçamento ``token``: o gravado com ele na conversa."""
+    quote = getattr(conversation, "quote", None) or {}
+    if quote.get("token") == token and quote.get("code"):
+        return str(quote["code"])
+    return quote_code(token)
 
 
 def _code_confirmation(ctx: ToolContext, token: str):
@@ -1328,7 +1388,7 @@ def _code_confirmation(ctx: ToolContext, token: str):
     messages = list(inbound.order_by("pk"))
     if not messages:
         return None
-    code = quote_code(token)
+    code = offered_quote_code(ctx.conversation, token)
     accepted = {code, f"confirmo {code}", f"confirmar {code}", f"sim {code}", f"sim, {code}", f"sim, confirmo {code}"}
     for message in messages:
         if " ".join(_fold(message.text).rstrip(".! ").split()) not in accepted:
@@ -1461,13 +1521,20 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             if locked.data.get("fulfillment_type") == "pickup":
                 from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
                 slot_error = validate_pickup_slot_selection(locked.data.get("delivery_time_slot", ""),
-                    delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items])
+                    delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items],
+                    channel_ref=ctx.channel_ref)
                 if slot_error:
                     errors["delivery_time_slot"] = slot_error
             elif locked.data.get("fulfillment_type") == "delivery" and locked.data.get("delivery_time_slot"):
                 from shopman.shop.services.fulfillment_window import delivery_window_error
+                from shopman.storefront.services.pickup_slots import acceptance_slot_error
                 locked_day = _parse_date(locked.data.get("delivery_date", ""))
-                if locked_day is None or delivery_window_error(locked_day, locked.data["delivery_time_slot"]):
+                locked_slot = locked.data["delivery_time_slot"]
+                if (
+                    locked_day is None
+                    or delivery_window_error(locked_day, locked_slot)
+                    or acceptance_slot_error(locked_day, locked_slot, ctx.channel_ref)
+                ):
                     errors["delivery_time_slot"] = "O horário não está mais disponível para entrega."
             if errors:
                 return _error("revision_conflict", "A data mudou de disponibilidade. Escolha um horário válido.", errors=errors), 409

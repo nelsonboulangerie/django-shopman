@@ -33,7 +33,10 @@ export interface CourierProgressInput {
 export interface CourierProgressView {
   /** "Chega para coletar em ~7 min", "Chega para coletar a qualquer momento" ou "Chegou à loja às 15:50". */
   pickup: string;
-  /** "Entrega prevista ~16:05". */
+  /**
+   * "Entrega prevista para as 16h05": é um HORÁRIO. Com o til solto
+   * ("~1h43") lia-se também como duração (uma hora e 43 minutos).
+   */
   delivery: string;
   /** "A TaOn não informa a corrida desde 15h42." (vazio com a leitura em dia; o nome é o do serviço). */
   stale: string;
@@ -67,15 +70,35 @@ export function groupedTitle(service?: string): string {
 }
 export const GROUPED_HINT = "Ela já tem entregador";
 
-/** "Diego desistiu às 14:32" (sem o nome: "O entregador desistiu às 14:32"). */
+/** "Diego desistiu às 14h32" ou "à 1h31" (sem o nome: "O entregador desistiu às 14h32"). */
 export function withdrawalTitle(driver: string | null | undefined, atMs: number): string {
-  return `${driver?.trim() || "O entregador"} desistiu às ${clockHHMM(atMs)}`;
+  return `${driver?.trim() || "O entregador"} desistiu ${atClock(atMs)}`;
 }
 
 function epoch(iso: string | undefined): number | null {
   if (!iso) return null;
   const ms = Date.parse(iso);
   return Number.isFinite(ms) ? ms : null;
+}
+
+/** Zero hora e uma hora pedem o singular: "a 1h43", "as 15h50". A regra é uma só. */
+function hourIsSingular(clock: string): boolean {
+  return Number.parseInt(clock, 10) <= 1;
+}
+
+/**
+ * "para as 15h50" ou "para a 1h43": o horário previsto, que não se confunde com
+ * duração (o "~1h43" tinha as duas leituras). "Prevista" já diz que é estimativa.
+ */
+export function clockTarget(ms: number): string {
+  const clock = clockHHMM(ms);
+  return `para ${hourIsSingular(clock) ? "a" : "as"} ${clock}`;
+}
+
+/** "às 15h50" ou "à 1h31": o instante em que algo aconteceu. */
+export function atClock(ms: number): string {
+  const clock = clockHHMM(ms);
+  return `${hourIsSingular(clock) ? "à" : "às"} ${clock}`;
 }
 
 /** "15h50", no fuso da loja (o dispositivo pode estar em outro). */
@@ -107,7 +130,7 @@ export function courierProgress(
   const arrived = epoch(courier.arrived_pickup_at);
   const pickupEta = epoch(courier.pickup_eta_at);
   if (state === "assigned") {
-    if (arrived !== null) view.pickup = `Chegou à loja às ${clockHHMM(arrived)}`;
+    if (arrived !== null) view.pickup = `Chegou à loja ${atClock(arrived)}`;
     else if (pickupEta !== null) {
       const minutes = Math.ceil((pickupEta - nowMs) / 60_000);
       view.pickup =
@@ -119,6 +142,6 @@ export function courierProgress(
 
   const deliveryEta = epoch(courier.delivery_eta_at);
   if (deliveryEta !== null && !ended)
-    view.delivery = `Entrega prevista ~${clockHHMM(deliveryEta)}`;
+    view.delivery = `Entrega prevista ${clockTarget(deliveryEta)}`;
   return view;
 }

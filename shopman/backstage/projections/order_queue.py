@@ -1577,6 +1577,12 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
             "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
         method="POST", idempotency="required", confirmation=courier_cancel_confirmation(order),
         payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-custody", kind="mutation", label="Separar de novo",
+        enabled=authorized and bool(courier_block.get("custody_to_separate")),
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block.get("custody_to_separate") else "Esta corrida não pede o troco nem a maquininha agora."),
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
         enabled=authorized and courier_block["can_quote"],
         reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
@@ -1825,6 +1831,7 @@ def _courier_block(order: Order) -> dict | None:
 
         from shopman.shop.services.courier import (
             can_quote,
+            custody_to_separate,
             failure_message,
             not_today_refusal,
             ride_health,
@@ -1874,7 +1881,7 @@ def _courier_block(order: Order) -> dict | None:
             # ``withdrew`` (o entregador desistiu) ou ``transfer`` (a TaOn trocou o entregador).
             "reopened_reason": reopened["reason"],
             "active": active,
-            "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
+            "driver": _courier_driver(block, active=active),
             # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
             "tracking_url": tracking["url"] if active else "",
             "confirmation_code": tracking["code"],
@@ -1903,6 +1910,10 @@ def _courier_block(order: Order) -> dict | None:
             # O que a chamada pergunta: troco da gaveta e maquininha da casa
             # que vão com o entregador da TaOn (``partner_custody_asks``).
             "custody": operator_orders.partner_custody_asks(order),
+            # A TaOn retomou a corrida encerrada e o troco e a maquininha tinham
+            # voltado para a casa: o que separar de novo (``courier.custody_to_separate``,
+            # #2500), ou ``None``. O gesto é ``courier-custody``.
+            "custody_to_separate": custody_to_separate(order),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
             "charge_outdated": health["charge_outdated"],
@@ -1910,6 +1921,23 @@ def _courier_block(order: Order) -> dict | None:
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
         return None
+
+
+def _courier_driver(block: dict, *, active: bool) -> dict | None:
+    """O entregador da corrida, com a foto enquanto ela vive (#2736).
+
+    A foto é a MESMA da página Entregas: servida pelo servidor
+    (``DeliveryDriverPhotoView``), só em cache e só com a corrida viva
+    (decisão do dono, LGPD). Sem foto, ``photo_url`` vazio e a tela mostra o ícone.
+    """
+    from shopman.shop.services import courier
+
+    driver = block.get("driver")
+    if not isinstance(driver, dict):
+        return None
+    ride_id = str(block.get("ride_ref") or "")
+    has_photo = active and bool(ride_id) and courier.has_driver_photo(ride_id)
+    return {**driver, "photo_url": f"/api/v1/backstage/deliveries/{ride_id}/driver-photo/" if has_photo else ""}
 
 
 def _cancel_reasons(channel_ref: str = "") -> tuple[CancelReasonProjection, ...]:
@@ -2922,7 +2950,7 @@ def _build_card(
         fulfillment_label=fulfillment_label,
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
-        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config),
+        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config, waitlist_state=batch_state),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
         next_status=next_status if undo_block_allows_advance(order) else "",
         undo=_undo_projection(order),
@@ -4178,6 +4206,8 @@ _EVENT_LABELS = {
     # O lote rendeu menos do que as reservas, ou passou da hora com o pedido esperando (#2594).
     "production_hold_short": "Lote rendeu menos: o item ficou em falta",
     "production_lot_late": "Lote atrasado: o item ainda não ficou pronto",
+    # O lote ficou pronto com desconto, que a reserva deste pedido não aceita (#2723).
+    "production_hold_grade": "Lote ficou pronto com desconto: o item ficou em falta",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -4187,7 +4217,9 @@ _EVENT_LABELS = {
     # A mesma corrida segue chamada: o serviço redistribui sozinho (``will_reopen``).
     "courier_ride_reopened": "O entregador desistiu e a {service} procura outro",
     "courier_ride_restored": "A {service} retomou a corrida que constava como encerrada",
+    "courier_custody_separated": "Troco e maquininha separados de novo",
     "courier_dispatch_released": "Chamada da {service} feita de novo",
+    "courier_closed_here": "Corrida encerrada aqui",
     "courier_cancel_requested": "Cancelamento da corrida pedido à {service}",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
     # Entregador da casa (``services/own_fleet``): a casa escolheu a pessoa, e ela
@@ -4469,7 +4501,9 @@ def _payment_event_detail(payload: dict) -> str:
 _PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
 #: Os três fatos da promessa de produção (cancelado, rendeu menos, atrasado) têm o
 #: mesmo detalhe: o item e o lote.
-_PRODUCTION_PROMISE_EVENTS = frozenset({_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late"})
+_PRODUCTION_PROMISE_EVENTS = frozenset(
+    {_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late", "production_hold_grade"}
+)
 
 
 def _production_hold_lost_detail(payload: dict) -> str:

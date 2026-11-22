@@ -103,7 +103,7 @@ onde a pessoa tocou se confirma sozinha.
 | POST | `/api/v1/auth/whatsapp/start/` | pública (rate-limit 10/min) | Site: gera o código NB + deep link. Body opcional `{"next": "/checkout"}`; a sacola vem da sessão. |
 | POST | `/api/auth/access/create/` | **API key S2S** | ManyChat: gera o access link. Aceita `access_code` (a mensagem inteira; o código é extraído). |
 | POST | `/api/v1/auth/access/` | pública | Exchange do token → sessão logada + adoção de sacola + redirect. |
-| POST | `/api/v1/auth/whatsapp/claim/` | pública (CSRF, 40/min) | A aba de origem entra se a mensagem já chegou (`status: done`) ou segue esperando (`pending`). |
+| POST | `/api/v1/auth/whatsapp/claim/` | pública (CSRF, 40/min) | A aba de origem entra (`status: done`), espera o toque em "Liberar o Chrome" da resposta, com a mensagem já recebida (`awaiting_release`, só no computador), ou segue esperando a mensagem (`pending`). |
 | POST | `/api/v1/auth/whatsapp/release/` | pública (CSRF, 10/min) | "Liberar o Chrome": `{ref}` deixa a aba do computador entrar. |
 | POST | `/api/v1/auth/whatsapp/revoke/` | pública (CSRF, 10/min) | "Não foi você?": `{ref}` desfaz a entrada liberada pela mensagem. |
 

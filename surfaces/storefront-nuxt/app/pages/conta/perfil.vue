@@ -127,6 +127,8 @@ const stepUpSendPending = ref(false)
 const stepUpSent = ref(false)
 const stepUpIssue = ref('')
 const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
+// A espera de reenvio sem código que valha (#3241): a tela conta o tempo, sem erro.
+const { waitSeconds: stepUpWaitSeconds, fromCooldown: stepUpFromCooldown, reset: resetStepUpWait } = useResendWait(stepUpOpen)
 // Uma retomada por gesto: se o servidor recusar logo depois do código, a tela DIZ o motivo
 // em vez de pedir código para sempre.
 let stepUpResumed = false
@@ -140,6 +142,7 @@ async function sendStepUpCode () {
   if (stepUpSendPending.value) return
   stepUpSendPending.value = true
   stepUpIssue.value = ''
+  resetStepUpWait()
   try {
     await $fetch(apiPath('/api/auth/request-code/'), {
       method: 'POST',
@@ -149,6 +152,8 @@ async function sendStepUpCode () {
     })
     stepUpSent.value = true
   } catch (e) {
+    // Espera de reenvio sem código que valha: não é erro de ninguém.
+    if (stepUpFromCooldown(httpError(e).data as Record<string, unknown> | null | undefined)) return
     stepUpIssue.value = errorDetail(e, 'Não foi possível enviar o código agora.')
   } finally {
     stepUpSendPending.value = false
@@ -392,20 +397,24 @@ useSeoMeta({ title: 'Perfil' })
           <UiDialogHeader>
             <UiDialogTitle>Confirme sua identidade</UiDialogTitle>
             <UiDialogDescription>
-              Antes de trocar o e-mail, confirme que a conta é sua: enviamos um código para o
-              número atual, {{ phoneDisplayLabel }}. O e-mail novo é salvo assim que você confirmar.
+              Antes de trocar o e-mail, confirme que a conta é sua com um código no número
+              atual, {{ phoneDisplayLabel }}. O e-mail novo é salvo assim que você confirmar.
             </UiDialogDescription>
           </UiDialogHeader>
           <UiAlert v-if="stepUpIssue" variant="destructive">
             <UiAlertTitle>Não foi possível confirmar</UiAlertTitle>
             <UiAlertDescription>{{ stepUpIssue }}</UiAlertDescription>
           </UiAlert>
+          <p v-else-if="stepUpWaitSeconds > 0" class="shop-meta" role="status" data-step-up-wait>
+            {{ resendWaitMessage(stepUpWaitSeconds) }}
+          </p>
           <div class="space-y-2">
             <UiPinInput
               v-model="stepUpCode"
               :input-count="6"
               type="number"
               otp
+              :disabled="!stepUpSent"
               :aria-invalid="!!stepUpIssue"
               class="justify-between sm:justify-start"
             />
@@ -414,7 +423,7 @@ useSeoMeta({ title: 'Perfil' })
               size="sm"
               class="px-0"
               :loading="stepUpSendPending"
-              :disabled="stepUpSendPending"
+              :disabled="stepUpSendPending || stepUpWaitSeconds > 0"
               @click="sendStepUpCode"
             >
               {{ stepUpSent ? 'Reenviar código' : 'Enviar código' }}

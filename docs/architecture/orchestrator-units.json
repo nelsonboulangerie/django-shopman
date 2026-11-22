@@ -3313,6 +3313,41 @@
       "out_of_extraction": false
     },
     {
+      "id": "stock.production-shrink-receiver",
+      "question": "Como o plano de produção que encolhe abaixo das sacolas solta só a reserva de sacola que perdeu lastro, e nunca a do pedido?",
+      "owner": "stock.production-shrink-receiver",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.handlers._stock_receivers:on_production_adjusted",
+      "authoritative_symbols": [
+        "shopman.shop.handlers._stock_receivers:on_production_adjusted"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/handlers/_stock_receivers.py",
+          "symbols": [
+            "on_production_adjusted"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "handler"
+      ],
+      "domains": [
+        "stockman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_sacola_fora_da_sugestao.py::test_o_receiver_do_plano_solta_a_sacola_antes_do_pedido"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "stock.production-void-receiver",
       "question": "Como a anulação de produção libera apenas reservas presas aos quants anulados?",
       "owner": "stock.production-void-receiver",
@@ -3365,23 +3400,28 @@
         {
           "path": "shopman/shop/services/production_promise.py",
           "symbols": [
-            "order_ref_from_hold_reference",
-            "_format_qty",
-            "_product_name",
-            "announce_lost_holds",
-            "EVENT_TYPE_SHORT",
+            "EVENT_TYPE_GRADE",
             "EVENT_TYPE_LATE",
-            "REASON_VOIDED",
-            "REASON_SHORT",
+            "EVENT_TYPE_SHORT",
+            "REASON_GRADE",
             "REASON_LATE",
+            "REASON_SHORT",
+            "REASON_VOIDED",
             "_EVENT_BY_REASON",
-            "_emit_fact",
-            "_what_happened",
+            "_accepts_any",
             "_already_recorded",
-            "_order_hold_rows",
             "_by_order",
+            "_emit_fact",
+            "_format_qty",
+            "_order_hold_rows",
+            "_output_grades",
+            "_product_name",
+            "_what_happened",
+            "announce_late_lots",
+            "announce_lost_holds",
             "announce_short_lot",
-            "announce_late_lots"
+            "fulfill_failure_fact",
+            "order_ref_from_hold_reference"
           ]
         },
         {
@@ -7527,7 +7567,10 @@
           "symbols": [
             "validate_and_apply_coupon",
             "apply_coupon_code",
-            "remove_coupon_code"
+            "remove_coupon_code",
+            "CouponNotBetter",
+            "_line_discounts",
+            "_summarize"
           ]
         }
       ],
@@ -8507,8 +8550,14 @@
             "last_failure",
             "failure_message",
             "ride_health",
+            "close_here",
+            "close_here_outcomes",
+            "CLOSE_DELIVERED",
+            "CLOSE_RETURNED",
             "progress_since",
             "restore_archived_ride",
+            "custody_to_separate",
+            "custody_phrase",
             "orders_with_archived_ride",
             "archived_ride_ended_at",
             "CANCEL_ALERT_MARKERS",
@@ -19908,6 +19957,7 @@
     {
       "entrypoint_kind": "symbol",
       "domains": [
+        "offerman",
         "orderman"
       ],
       "ports": [
@@ -19983,10 +20033,6 @@
       ],
       "touchpoints": [
         "service"
-      ],
-      "domains": [
-        "offerman",
-        "orderman"
       ],
       "tests": [
         "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",
@@ -20213,6 +20259,41 @@
       "tests": [
         "shopman/shop/tests/test_shelf_recheck.py::test_a_lapsed_reservation_tells_the_shelf",
         "shopman/shop/tests/test_shelf_recheck.py::test_a_renewed_reservation_wakes_nobody"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "pricing.fixed-coupon-competition",
+      "question": "O desconto de valor fixo de pedido vence, e o cupom fixo entra no lugar do desconto por item que vale menos?",
+      "owner": "pricing.fixed-coupon-competition",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.fixed_discount:swap_fixed_coupon",
+      "authoritative_symbols": [
+        "shopman.shop.services.fixed_discount:swap_fixed_coupon"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/fixed_discount.py",
+          "symbols": [
+            "best_fixed_discount",
+            "swap_in_fixed_coupon",
+            "swap_fixed_coupon"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_cupom_que_nao_vence.py::test_a_troca_do_cupom_fixo_devolve_a_linha_ao_preco_de_lista_e_tira_o_registro_deslocado"
       ],
       "test_gap_reason": null,
       "policy": false,

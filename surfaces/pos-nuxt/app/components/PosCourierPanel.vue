@@ -7,6 +7,8 @@
 //   "Entregador não chamado", "Procurando entregador", "Entregador a caminho da
 //   loja", "Saiu para entrega", "Entregue", "Não atendida", "Sem resposta da TaOn";
 // - quem vem (nome, telefone, veículo), o rastreio e o código, quando a TaOn diz;
+// - quem desistiu e quando ("Diego desistiu às 14:32. A TaOn já procura outro."),
+//   ou que a TaOn juntou com outra corrida: a mesma linha do Gestor (#2499);
 // - **Chamar entregador** (ou **Chamar outro entregador**, depois de uma corrida
 //   que não terminou): confirmação inline com a pergunta do servidor e a custódia
 //   que sai com ele (troco da gaveta, maquininha), o mesmo corpo do Gestor;
@@ -14,7 +16,9 @@
 //   resposta: a confirmação é a do diálogo da casa, com a frase do servidor.
 //
 // - **Cancelar a corrida** (dono, P=1, 14/10/2026), antes da coleta: a ação
-//   `courier-cancel` do Gestor, com a mesma confirmação de dois toques;
+//   `courier-cancel` do Gestor, com a MESMA confirmação (#2494): o primeiro toque
+//   só arma; antes do aceite, a pergunta e um botão; depois, o motivo é o próprio
+//   botão e vai como `reason_id` (`cancelConfirmation`, do kit);
 // - **Entregador voltou** (idem): a ação `courier-back` do Gestor, que fecha a
 //   saída (entrega, dinheiro, troco e maquininha) depois de conferir a lista do que
 //   deve estar na mão (`courier_return_lines`, a mesma do diálogo do Gestor).
@@ -24,7 +28,7 @@ import type { OrderDetailAction } from "../../../operator-kit/app/types/orderDet
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
-import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
+import { cancelConfirmation, courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import {
   courierBadgeColor as badgeColor,
   COURIER_BACK_DIFFERENT_LINE,
@@ -52,7 +56,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   dispatch: [custody: { change_out?: string; equipment?: string[] }];
   dispatchAgain: [];
-  cancel: [];
+  cancel: [reasonId?: number];
   back: [];
 }>();
 
@@ -109,17 +113,15 @@ function confirmCall() {
   emit("dispatch", custodyBody(custody.value, { changeOut: changeOut.value, machineRef: machineRef.value }));
 }
 
-// ── Cancelar a corrida: o toque de confirmação do Gestor (dois toques) ──
+// ── Cancelar a corrida: a confirmação do Gestor (o primeiro toque só arma) ──
 const confirmingCancel = ref(false);
 watch(() => JSON.stringify(props.cancelAction?.payload_schema), () => { confirmingCancel.value = false; });
 const showsCancel = computed(() => Boolean(props.courier.can_cancel && props.cancelAction));
-function requestCancel() {
-  if (!confirmingCancel.value) {
-    confirmingCancel.value = true;
-    return;
-  }
+const cancelCopy = computed(() => cancelConfirmation(props.cancelAction));
+const cancelOff = computed(() => props.busy || !props.cancelAction?.enabled);
+function confirmCancel(reasonId?: number) {
   confirmingCancel.value = false;
-  emit("cancel");
+  emit("cancel", reasonId);
 }
 
 // ── Entregador voltou: conferir a lista, depois fechar a saída ──
@@ -159,7 +161,13 @@ async function callAgain() {
         />
       </div>
 
-      <div v-if="progress.pickup || progress.delivery" class="grid gap-0.5" data-pos-courier-progress>
+      <div v-if="progress.waiting || progress.pickup || progress.delivery" class="grid gap-0.5" data-pos-courier-progress>
+        <!-- O entregador desistiu (a TaOn procura outro para a MESMA corrida) ou a
+             TaOn juntou com outra: a corrida segue chamada, sem nada a fazer. A
+             mesma frase do Gestor (`courierProgress(...).waiting`, #2499). -->
+        <p v-if="progress.waiting" class="text-sm font-medium tabular-nums" role="status" data-pos-courier-waiting>
+          {{ progress.waiting }}
+        </p>
         <p v-if="progress.pickup" class="text-sm font-medium tabular-nums" role="status">{{ progress.pickup }}</p>
         <p
           v-if="progress.delivery"
@@ -321,20 +329,79 @@ async function callAgain() {
         </div>
       </template>
 
-      <!-- Cancelar a corrida, antes da coleta: o segundo toque confirma (o mesmo
-           gesto do Gestor); sair do botão desarma. -->
-      <div v-if="showsCancel">
+      <!-- Cancelar a corrida, antes da coleta: o toque só arma a confirmação do
+           Gestor. Antes do aceite, a pergunta e um botão; depois, o motivo é o
+           próprio botão. Nada vai à TaOn antes do segundo toque. -->
+      <div v-if="showsCancel && confirmingCancel" class="grid gap-2" data-pos-courier-cancel-confirm>
+        <template v-if="cancelCopy.reasons.length">
+          <NuxtAlert
+            color="error"
+            variant="subtle"
+            icon="i-lucide-ban"
+            :title="cancelCopy.reasonQuestion"
+            :description="cancelCopy.consequence"
+          />
+          <NuxtButton
+            v-for="reason in cancelCopy.reasons"
+            :key="reason.id"
+            block
+            type="button"
+            color="error"
+            variant="outline"
+            :icon="reason.icon"
+            :label="reason.label"
+            :disabled="cancelOff"
+            class="min-h-11"
+            :data-pos-courier-cancel-reason="reason.id"
+            @click="confirmCancel(reason.id)"
+          />
+          <NuxtButton
+            block
+            type="button"
+            color="neutral"
+            variant="ghost"
+            label="Manter a corrida"
+            class="min-h-11"
+            data-pos-courier-cancel-keep
+            @click="confirmingCancel = false"
+          />
+        </template>
+        <NuxtAlert v-else color="error" variant="subtle" icon="i-lucide-ban" :title="cancelCopy.question">
+          <template #actions>
+            <NuxtButton
+              type="button"
+              color="error"
+              variant="solid"
+              :label="cancelCopy.confirmLabel"
+              :disabled="cancelOff"
+              :loading="busy"
+              class="min-h-11"
+              data-pos-courier-cancel-go
+              @click="confirmCancel()"
+            />
+            <NuxtButton
+              type="button"
+              color="error"
+              variant="outline"
+              label="Manter a corrida"
+              class="min-h-11"
+              data-pos-courier-cancel-keep
+              @click="confirmingCancel = false"
+            />
+          </template>
+        </NuxtAlert>
+      </div>
+      <div v-else-if="showsCancel">
         <NuxtButton
           type="button"
           color="error"
           variant="outline"
           icon="i-lucide-ban"
-          :label="confirmingCancel ? 'Confirmar o cancelamento?' : 'Cancelar a corrida'"
+          label="Cancelar a corrida"
           :disabled="busy || !cancelAction?.enabled"
           :title="cancelAction?.enabled ? undefined : cancelAction?.reason || undefined"
           data-pos-courier-cancel
-          @blur="confirmingCancel = false"
-          @click="requestCancel"
+          @click="confirmingCancel = true"
         />
       </div>
 

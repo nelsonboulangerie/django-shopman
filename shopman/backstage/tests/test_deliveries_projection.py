@@ -140,6 +140,47 @@ def test_the_ride_link_is_offered_only_when_the_ride_has_one_stop(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_each_stop_of_a_shared_ride_offers_its_own_link(shop):
+    """#2491: na corrida de várias paradas, o link é oferecido na linha de cada pedido."""
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    for order in (a, b):
+        courier.apply_status(order, "A", source="test")
+        order.refresh_from_db()
+
+    (shared,) = build_deliveries().rides
+    links = {stop.ref: stop.tracking_url for stop in shared.stops}
+    assert links == {
+        "EN-A": courier.proven_tracking(courier.get_block(a))["url"],
+        "EN-B": courier.proven_tracking(courier.get_block(b))["url"],
+    }
+    assert all(links.values()) and links["EN-A"] != links["EN-B"]
+    assert shared.tracking_url == ""
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_stop_link_not_proven_is_not_offered(shop):
+    """Link gravado sem o casamento provado não diz de qual parada é: falha fechada."""
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    for order in (a, b):
+        courier.apply_status(order, "A", source="test")
+        order.refresh_from_db()
+    order = a
+    data = dict(order.data)
+    block = dict(data["courier"])
+    block.pop("tracking_match", None)
+    data["courier"] = block
+    order.data = data
+    order.save(update_fields=["data"])
+
+    (shared,) = build_deliveries().rides
+    links = {stop.ref: stop.tracking_url for stop in shared.stops}
+    assert links["EN-A"] == ""
+    assert links["EN-B"]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_bags_sum_the_declared_volumes_and_name_who_is_missing(shop):
     a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
     a.data = {**a.data, "volumes": 2}
@@ -629,3 +670,142 @@ def test_the_fee_of_a_cancelled_order_never_counts(shop):
     Order.objects.filter(pk=cancelled.pk).update(status=Order.Status.CANCELLED)
 
     assert fees_for(["EN-A", "EN-B"]) == {"EN-A": 700}
+
+
+# ── "Encerrar aqui": a corrida que a central nunca fechou (#2736) ─────
+
+
+def _too_long(*orders):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    old = (timezone.now() - timedelta(hours=courier.MAX_POLL_HOURS + 1)).isoformat()
+    for order in orders:
+        block = courier.get_block(order)
+        block["requested_at"] = old
+        order.data = {**order.data, "courier": block}
+        order.save(update_fields=["data"])
+
+
+def _outcomes(ride):
+    return {item["key"]: item for item in ride.close_here_action.confirmation["outcomes"]}
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_ride_open_too_long_offers_both_ways_out_before_the_pickup(shop):
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    _ended(a, "A")
+    _ended(b, "A")
+    _too_long(a, b)
+
+    (ride,) = build_deliveries().rides
+    assert ride.close_here_action is not None and ride.close_here_action.label == "Encerrar aqui"
+    assert ride.close_here_action.confirmation["description"] == \
+        "A TaOn não encerrou a corrida A. Encerre aqui só se souber o que aconteceu."
+    outcomes = _outcomes(ride)
+    assert outcomes["delivered"]["label"] == "Foi entregue"
+    assert outcomes["delivered"]["consequence"] == "Os pedidos ficam entregues."
+    assert outcomes["returned"] == {"key": "returned", "label": "Voltou para a loja",
+                                    "consequence": "Os pedidos voltam para Aguardando."}
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_after_the_pickup_only_delivered_is_offered(shop):
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    _ended(order, "A")
+    _ended(order, "E")
+    _too_long(order)
+
+    (ride,) = build_deliveries().rides
+    assert list(_outcomes(ride)) == ["delivered"]
+    with pytest.raises(ValueError):
+        courier.close_here(order, outcome="returned", actor="operator:ana")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_ride_within_the_normal_time_is_never_closed_here(shop):
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    _ended(order, "A")
+
+    (ride,) = build_deliveries().rides
+    assert ride.close_here_action is None
+    with pytest.raises(ValueError):
+        courier.close_here(order, outcome="delivered", actor="operator:ana")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_closed_here_as_delivered_the_orders_are_delivered_and_the_letter_is_free(shop):
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    _ended(a, "A")
+    _ended(b, "A")
+    _too_long(a, b)
+
+    closed = courier.close_here(a, outcome="delivered", actor="operator:ana")
+
+    assert sorted(closed) == ["EN-A", "EN-B"]
+    for order in (a, b):
+        order.refresh_from_db()
+        assert order.status in (Order.Status.DELIVERED, Order.Status.COMPLETED)
+    assert build_deliveries().rides == ()
+    assert courier.next_ride_number() == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_closed_here_as_returned_the_orders_wait_again_saying_the_house_closed_it(shop):
+    a = _at("EN-A", -23.30, -51.16)
+    _call(a)
+    _ended(a, "A")
+    _too_long(a)
+
+    courier.close_here(a, outcome="returned", actor="operator:ana")
+
+    deliveries = build_deliveries()
+    assert [stop.ref for stop in deliveries.waiting] == ["EN-A"]
+    (card,) = deliveries.failed_rides
+    assert card.message.startswith("A casa cancelou a corrida A (")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_confirmation_says_where_the_change_and_the_machine_go(shop, monkeypatch):
+    from types import SimpleNamespace
+
+    from shopman.shop.services import operator_orders
+
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    _ended(order, "A")
+    _too_long(order)
+    monkeypatch.setattr(operator_orders, "courier_change", lambda o: SimpleNamespace(pending=True))
+    monkeypatch.setattr(operator_orders, "equipment_custody", lambda o: SimpleNamespace(pending=True))
+
+    outcomes = _outcomes(build_deliveries().rides[0])
+    assert outcomes["delivered"]["consequence"] == \
+        "O pedido fica entregue. O troco e a maquininha ficam para o gesto “Entregador voltou”."
+    assert outcomes["returned"]["consequence"] == \
+        "O pedido volta para Aguardando. O troco volta para a gaveta e a maquininha fica livre."
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_order_panel_shows_the_driver_photo_while_the_ride_lives(shop, monkeypatch):
+    """O Painel do pedido mostra a MESMA foto da página Entregas, só com a corrida viva (#2736)."""
+    from shopman.backstage.projections.order_queue import _courier_block
+
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    _ended(order, "A")
+    block = courier.get_block(order)
+    block["driver"] = {"name": "Diego", "phone": "43999990001"}
+    order.data = {**order.data, "courier": block}
+    order.save(update_fields=["data"])
+    ride_id = block["ride_ref"]
+    monkeypatch.setattr(courier, "has_driver_photo", lambda ride: ride == ride_id)
+
+    assert _courier_block(order)["driver"]["photo_url"] == f"/api/v1/backstage/deliveries/{ride_id}/driver-photo/"
+
+    monkeypatch.setattr(courier, "has_driver_photo", lambda ride: False)
+    assert _courier_block(order)["driver"]["photo_url"] == ""

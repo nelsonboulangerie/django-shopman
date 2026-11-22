@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { courierProgress } from "../app/presentation/courierProgress";
+import { atClock, clockTarget, courierProgress } from "../app/presentation/courierProgress";
 
 // O andamento da corrida da TaOn: a frase anda com o relógio da tela, entre leituras.
 
@@ -16,7 +16,7 @@ describe("courierProgress", () => {
       NOW,
     );
     expect(view.pickup).toBe("Chega para coletar em ~7 min");
-    expect(view.delivery).toBe("Entrega prevista ~15h58");
+    expect(view.delivery).toBe("Entrega prevista para as 15h58");
     expect(view.stale).toBe("");
   });
 
@@ -44,7 +44,7 @@ describe("courierProgress", () => {
       NOW,
     );
     expect(picked.pickup).toBe("");
-    expect(picked.delivery).toBe("Entrega prevista ~16h01");
+    expect(picked.delivery).toBe("Entrega prevista para as 16h01");
     const done = courierProgress(
       { status: "F", ride_state: "done", service_name: "TaOn", delivery_eta_at: "2026-10-13T19:01:00+00:00", sync_since: "2026-10-13T18:42:00+00:00" },
       NOW,
@@ -108,5 +108,21 @@ describe("o nome do serviço nas frases (M1b-b3, #3139)", () => {
       NOW,
     );
     expect(view.stale).toBe("A TaOn não informa a corrida desde 15h41.");
+  });
+});
+
+describe("clockTarget: a entrega prevista é um horário, nunca uma duração", () => {
+  it("diz para as/a, no fuso da loja", () => {
+    expect(clockTarget(Date.parse("2026-11-16T15:58:00-03:00"))).toBe("para as 15h58");
+    expect(clockTarget(Date.parse("2026-11-16T01:43:00-03:00"))).toBe("para a 1h43");
+    expect(clockTarget(Date.parse("2026-11-16T00:20:00-03:00"))).toBe("para a 0h20");
+  });
+});
+
+describe("atClock: o instante, no singular para 0h e 1h", () => {
+  it("diz às/à, no fuso da loja", () => {
+    expect(atClock(Date.parse("2026-11-16T14:32:00-03:00"))).toBe("às 14h32");
+    expect(atClock(Date.parse("2026-11-16T01:31:00-03:00"))).toBe("à 1h31");
+    expect(atClock(Date.parse("2026-11-16T00:05:00-03:00"))).toBe("à 0h05");
   });
 });
