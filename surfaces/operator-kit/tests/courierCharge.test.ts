@@ -12,12 +12,12 @@ const OUTDATED = {
 
 describe("courierChargeNotice", () => {
   it("sem diferença, sem aviso", () => {
-    expect(courierChargeNotice(null, { cancelHere: true })).toBeNull();
-    expect(courierChargeNotice(undefined, { cancelHere: false })).toBeNull();
+    expect(courierChargeNotice(null, { cancelHere: true, service: "TaOn" })).toBeNull();
+    expect(courierChargeNotice(undefined, { cancelHere: false, service: "TaOn" })).toBeNull();
   });
 
   it("antes da coleta, no Gestor: o que a corrida leva, o de agora e cancelar para chamar de novo", () => {
-    const notice = courierChargeNotice(OUTDATED, { cancelHere: true });
+    const notice = courierChargeNotice(OUTDATED, { cancelHere: true, service: "TaOn" });
     expect(notice?.title).toBe(COURIER_CHARGE_TITLE);
     expect(notice?.description).toBe(
       "Na corrida: Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00. "
@@ -27,13 +27,13 @@ describe("courierChargeNotice", () => {
   });
 
   it("no PDV, o cancelamento mora no Gestor", () => {
-    expect(courierChargeNotice(OUTDATED, { cancelHere: false })?.description).toContain(
+    expect(courierChargeNotice(OUTDATED, { cancelHere: false, service: "TaOn" })?.description).toContain(
       "no Gestor de pedidos, solicite o cancelamento",
     );
   });
 
   it("depois da coleta, o telefone", () => {
-    const notice = courierChargeNotice({ ...OUTDATED, collected: true }, { cancelHere: true });
+    const notice = courierChargeNotice({ ...OUTDATED, collected: true }, { cancelHere: true, service: "TaOn" });
     expect(notice?.description).toMatch(/O entregador já coletou: ligue para ele e passe a cobrança nova\.$/);
   });
 
@@ -44,5 +44,16 @@ describe("courierChargeNotice", () => {
         expect(`${notice?.title} ${notice?.description}`).not.toMatch(/[—–]/);
       }
     }
+  });
+});
+
+describe("o nome do serviço (M1b-b3, #3139)", () => {
+  it("diz o nome do cadastro, e 'central' quando o servidor não disse", () => {
+    expect(courierChargeNotice(OUTDATED, { cancelHere: true, service: "Lalamove" })?.description).toContain(
+      "A Lalamove não muda a corrida aberta",
+    );
+    expect(courierChargeNotice(OUTDATED, { cancelHere: true })?.description).toContain(
+      "A central não muda a corrida aberta",
+    );
   });
 });

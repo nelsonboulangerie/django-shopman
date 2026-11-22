@@ -94,6 +94,12 @@ _INERT_CODES = {
     "RECOMMENDED_PREPARATION_START",
     # Pedido de cancelamento em trânsito: quem fecha é o CAN, que é tratado.
     "CANCELLATION_REQUESTED",
+    # Tempo de preparo mudado do lado do iFood (portal ou plataforma). Muda só a
+    # previsão que o iFood mostra ao cliente e ao entregador; o preparo daqui
+    # segue o KDS e o ``preparationStartDateTime`` do pedido. Chegou no vivo em
+    # 19/11/2026 (#3090) e não consta da referência pública de eventos: se um
+    # dia trouxer efeito para a casa, sai daqui e ganha processador.
+    "CHANGE_PREPARATION_TIME",
 }
 # Andamento do entregador do iFood. Não é trabalho da loja, mas é o que o balcão
 # precisa ver para não abrir o portal deles (dono, 12/11/2026): cada código vira
@@ -375,6 +381,16 @@ def _process_placed(event_id: str, order_id: str) -> str:
 
     webhook_idempotency.mark_done(claim, response_body={"status": "accepted", "order_ref": created.ref})
     return "ingested"
+
+
+def is_known_code(code: str) -> bool:
+    """O código tem destino escrito: processador, fato de logística ou inerte com motivo."""
+
+    code = str(code or "").upper()
+    return code in (
+        _PLACED_CODES | _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES | _DISPATCH_CODES
+        | _HANDSHAKE_CODES | _PATCH_CODES | _CANCELLATION_REFUSED_CODES | _LOGISTICS_CODES | _INERT_CODES
+    )
 
 
 def _alert_unhandled_event(code: str, order_id: str) -> None:

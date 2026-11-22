@@ -134,7 +134,9 @@ def reschedule(order, *, date, slot, actor: str, reason: str = "", notify: bool 
         data.update({
             "delivery_date": to_date,
             "delivery_time_slot": new_slot,
-            "is_preorder": new_day > today,
+            # O carimbo segue a régua única (#3163): feito antes do dia combinado.
+            # "Depois de hoje" tirava a encomenda trazida para hoje da encomenda.
+            "is_preorder": timezone.localdate(locked.created_at) < new_day,
             HISTORY_KEY: history,
         })
         locked.data = data

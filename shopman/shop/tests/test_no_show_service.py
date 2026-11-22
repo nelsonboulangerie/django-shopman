@@ -5,7 +5,7 @@ Regra do dono numa frase: o dinheiro segue o produto. O que estes testes prendem
 - a política de ``Shop.defaults["no_show"]`` e os padrões dela;
 - a hora em que o gesto libera, para pedido pago e não pago, com e sem hora
   combinada, em dia passado e em dia sem expediente;
-- quem pode (pronto, retirada, fora do iFood, do balcão e da conta da casa);
+- quem pode (pronto, retirada, fora do iFood e do balcão; a conta da casa só em aberto e sem outra forma junto);
 - o destino de cada linha, decidido pelo servidor a partir de fatos;
 - ``refund_q`` e ``retained_q`` com pedido todo de volta, todo perdido e misto;
 - o comando grava o bloco e cancela com o motivo próprio, sob lock, uma vez só,
@@ -222,11 +222,124 @@ def test_only_a_ready_pickup_order_outside_ifood_and_the_counter_is_a_candidate(
     assert no_show.eligibility_reason(counter) == "Venda de balcão não tem retirada a esperar."
 
 
-def test_house_account_order_is_refused_with_a_clear_reason(paes, relogio):
-    relogio(10)
-    order = world.ready_order("NS-CONTA", [("CROIS", 1, 935)], payment={"method": "account"})
+def _on_account(order, amount_q: int | None = None, *, customer_ref: str = "CLI-CONTA") -> str:
+    """Lança o pedido na conta da casa, como o fechamento do PDV faz. Devolve o ``intent_ref``."""
+    from shopman.payman import PaymentService
 
-    assert no_show.eligibility_reason(order) == "Venda na conta da casa: o não retirado ainda não passa pelo Gestor."
+    intent = PaymentService.charge_to_account(
+        order.ref, amount_q if amount_q is not None else order.total_q,
+        customer_ref=customer_ref, idempotency_key=f"order-payment:{order.ref}:account:terminal",
+    )
+    order.data["payment"] = {**(order.data.get("payment") or {}), "method": "account", "intent_ref": intent.ref}
+    order.save(update_fields=["data", "updated_at"])
+    return intent.ref
+
+
+def test_house_account_order_with_open_debt_can_be_closed_as_not_picked_up(paes, relogio):
+    """A conta da casa entra no gesto (#2697): o que se perdeu fica como dívida, o resto sai da conta."""
+    from shopman.shop.services import payment
+
+    relogio(10)
+    order = world.ready_order("NS-CONTA", [("CROIS", 2, 935), ("BOLO", 1, 3000)], held=False)
+    order.data["hold_ids"] = [world.fulfilled_hold("CROIS", 2, order_ref=order.ref)]
+    order.save(update_fields=["data", "updated_at"])
+    _on_account(order)
+    assert no_show.eligibility_reason(order) == ""
+
+    relogio(19, 5)
+    preview = no_show.preview(order)
+    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 1870, 3000)
+    assert preview["money_sentence"] == "R$ 18,70 saem da conta do cliente. R$ 30,00 continuam nela, pelo que se perdeu."
+    assert "Tiramos R$ 18,70 da sua conta na loja" in preview["customer_text"]
+    assert "R$ 30,00 continuam na conta" in preview["customer_text"]
+
+    block = no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    assert block["on_account"] is True
+    order.refresh_from_db()
+    # O que o ``on_cancelled`` faz com o dinheiro: a dívida fica com o valor da perda.
+    payment.refund(order)
+    assert payment.open_account_debt_q(order) == 3000
+    event = order.events.get(type="account_debt_reduced")
+    assert event.payload["amount_q"] == 1870
+    # De novo (retry do cancelamento): nada sai duas vezes.
+    payment.refund(order)
+    assert payment.open_account_debt_q(order) == 3000
+
+
+def test_house_account_order_with_everything_back_on_sale_leaves_nothing_owed(paes, relogio):
+    from shopman.shop.services import payment
+
+    relogio(10)
+    order = world.ready_order("NS-CONTA-TUDO", [("CROIS", 1, 935)])
+    _on_account(order)
+
+    relogio(19, 5)
+    no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    order.refresh_from_db()
+    payment.refund(order)
+
+    assert payment.open_account_debt_q(order) == 0
+
+
+def test_house_account_already_settled_is_refused_with_a_clear_reason(paes, relogio):
+    from shopman.payman import PaymentService
+
+    relogio(10)
+    settled = world.ready_order("NS-CONTA-ACERTADA", [("CROIS", 1, 935)])
+    PaymentService.capture(_on_account(settled))
+
+    assert no_show.eligibility_reason(settled) == "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
+
+
+def test_mixed_sale_takes_the_debt_out_first(paes, relogio):
+    """Venda mista (#3151): R$ 20,00 na conta e R$ 28,70 em dinheiro. Volta R$ 18,70
+    (o croissant); se perdem R$ 30,00 (o bolo). A conta sai primeiro: nenhum dinheiro
+    volta, R$ 1,30 continuam na conta e o dinheiro inteiro fica com a loja."""
+    from shopman.payman import PaymentService
+
+    from shopman.shop.services import payment
+
+    relogio(10)
+    order = world.ready_order(
+        "NS-MISTA", [("CROIS", 2, 935), ("BOLO", 1, 3000)], held=False,
+        payment={"method": "mixed", "tenders": [{"method": "account", "amount_q": 2000}, {"method": "cash", "amount_q": 2870}]},
+    )
+    order.data["hold_ids"] = [world.fulfilled_hold("CROIS", 2, order_ref=order.ref)]
+    order.save(update_fields=["data", "updated_at"])
+    PaymentService.charge_to_account(order.ref, 2000, customer_ref="CLI-MISTA", idempotency_key=f"order-payment:{order.ref}:account:terminal")
+    world.pay(order, "cash", 2870)
+    assert no_show.eligibility_reason(order) == ""
+
+    relogio(19, 5)
+    preview = no_show.preview(order)
+    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 1870, 3000)
+    assert preview["money_sentence"] == (
+        "R$ 18,70 saem da conta do cliente. R$ 1,30 continuam na conta e R$ 28,70 ficam com a loja, pelo que se perdeu."
+    )
+    assert preview["customer_text"] == (
+        "O pedido ficou pronto e não foi retirado. Tiramos R$ 18,70 da sua conta na loja, pelo que ainda pôde "
+        "voltar à venda. R$ 1,30 continuam na sua conta e R$ 28,70 ficaram com a loja, como dizem os Termos."
+    )
+
+    block = no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    assert (block["from_account_q"], block["money_q"], block["debt_left_q"], block["kept_q"]) == (1870, 0, 130, 2870)
+    order.refresh_from_db()
+    payment.refund(order)
+    payment.refund(order)  # retry do cancelamento: nada sai duas vezes
+    assert payment.open_account_debt_q(order) == 130
+    assert [p for p in payment.pending_cash_refunds() if p.order_ref == order.ref] == []
+
+
+def test_account_customer_text_says_what_left_the_account():
+    everything = {"paid_q": 935, "refund_q": 935, "retained_q": 0, "on_account": True}
+    nothing = {"paid_q": 935, "refund_q": 0, "retained_q": 935, "on_account": True}
+
+    assert no_show_reason.customer_text(everything) == (
+        "O pedido ficou pronto e não foi retirado. Tiramos R$ 9,35 da sua conta na loja."
+    )
+    assert no_show_reason.customer_text(nothing) == (
+        "O pedido ficou pronto e não foi retirado. O valor continua na sua conta na loja, como dizem os Termos."
+    )
 
 
 def test_channel_whose_cycle_does_not_let_ready_be_cancelled_is_refused(paes, relogio):
@@ -605,3 +718,72 @@ def test_cancellation_notice_carries_the_text_with_the_money(paes, relogio, djan
     assert kwargs["status_note"] == "O pedido ficou pronto e não foi retirado."
     context = derive_context({"order_ref": order.ref, "status_note": kwargs["status_note"]})
     assert context["cancellation_reason_suffix"] == ". O pedido ficou pronto e não foi retirado."
+
+
+# ── O combo, componente por componente (#2697, item 2) ──────────────────────
+
+
+def _combo(order_ref: str, *, crois_qty: int, crois_expires=None, paid: bool = False):
+    from shopman.offerman.models import ProductComponent
+
+    cafe = world.product("CAFE", price_q=600)
+    crois = world.product("CROIS", price_q=900)
+    combo = world.product("COMBO", price_q=1200)
+    ProductComponent.objects.create(parent=combo, component=cafe, qty=Decimal("1"))
+    ProductComponent.objects.create(parent=combo, component=crois, qty=Decimal(crois_qty))
+    world.lot("CAFE")
+    world.lot("CROIS", expires=crois_expires)
+    order = world.ready_order(order_ref, [("COMBO", 1, 1200)], held=False)
+    order.data["hold_ids"] = [
+        world.fulfilled_hold("CAFE", 1, order_ref=order.ref),
+        world.fulfilled_hold("CROIS", crois_qty, order_ref=order.ref),
+    ]
+    order.save(update_fields=["data", "updated_at"])
+    if paid:
+        world.pay(order, "pix")
+    return order
+
+
+def test_combo_decides_each_component_and_splits_the_value_by_price(shop, relogio):
+    """O croissant vencido do combo vira perda; o café, que ainda vende, volta."""
+    relogio(10)
+    order = _combo("NS-COMBO", crois_qty=1, crois_expires=timezone.localdate(), paid=True)
+
+    lines = no_show.line_decisions(order, now=world.at(8, days=1))
+
+    assert [(line["line_id"], line["sku"], line["destiny"], line["reason"], line["value_q"]) for line in lines] == [
+        ("L1:CAFE", "CAFE", "restock", "", 480),
+        ("L1:CROIS", "CROIS", "loss", "lot_expired", 720),
+    ]
+    assert lines[0]["name"] == "Cafe (combo Combo)"
+    assert all(line["combo"] == {"line_id": "L1", "sku": "COMBO", "name": "Combo"} for line in lines)
+    # O valor do combo inteiro, nem um centavo a mais ou a menos.
+    assert sum(line["value_q"] for line in lines) == 1200
+    assert no_show.money_split(lines, 1200) == (480, 720)
+
+
+def test_combo_whose_components_all_go_back_returns_everything(shop, relogio):
+    relogio(10)
+    order = _combo("NS-COMBO-VOLTA", crois_qty=2)
+
+    lines = no_show.line_decisions(order)
+
+    assert [(line["sku"], line["qty"], line["destiny"]) for line in lines] == [
+        ("CAFE", "1", "restock"),
+        ("CROIS", "2", "restock"),
+    ]
+    # Rateio pelo preço vezes a quantidade: 600 contra 1800.
+    assert [line["value_q"] for line in lines] == [300, 900]
+
+
+def test_combo_stock_plan_returns_only_the_component_that_goes_back(shop, relogio):
+    relogio(10)
+    order = _combo("NS-COMBO-ESTOQUE", crois_qty=1, crois_expires=timezone.localdate(), paid=True)
+
+    relogio(8, days=1)
+    no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    order.refresh_from_db()
+    plan = no_show.stock_plan(order)
+
+    by_sku = {entry["sku"]: plan[entry["hold_id"]] for entry in order.data["hold_ids"]}
+    assert by_sku == {"CAFE": (Decimal("1"), Decimal("0")), "CROIS": (Decimal("0"), Decimal("1"))}

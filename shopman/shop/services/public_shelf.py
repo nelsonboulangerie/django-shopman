@@ -73,7 +73,7 @@ def public_signature(sku: str, *, channel_ref: str) -> tuple:
     raw = catalog_context.availability_for_sku(sku, channel_ref=channel_ref)
     threshold = Decimal(str(ChannelConfig.for_channel(channel_ref).stock.low_stock_threshold))
     basic = catalog_context.basic_availability(raw, is_sellable=True, low_stock_threshold=threshold)
-    remaining = basic.available_qty if basic.state == "low_stock" else None
+    remaining = basic.available_qty if basic.status == "low_stock" else None
 
     facts = read_promise_facts([sku], channel_ref=channel_ref)
     if facts.today_orderable.get(sku, True):
@@ -81,7 +81,7 @@ def public_signature(sku: str, *, channel_ref: str) -> tuple:
     else:
         next_day = facts.next_batch.get(sku)
         promise_day = next_day.isoformat() if next_day else ""
-    return (basic.state, remaining, promise_day)
+    return (basic.status, remaining, promise_day)
 
 
 def bundles_using(sku: str) -> list[str]:

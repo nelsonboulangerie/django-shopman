@@ -16,6 +16,7 @@ import { courierCancelNotice } from "../../../operator-kit/app/presentation/cour
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 const props = defineProps<{
   courier: CourierBlock;
@@ -47,6 +48,8 @@ const emit = defineEmits<{
   separate: [body: { change_out?: string; equipment?: string[] }];
 }>();
 
+// O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
+const service = computed(() => deliveryServiceName(props.courier.service_name));
 const steps = computed(() => courierSteps(props.courier.ride_state));
 const tone = computed(() => courierTone(props.courier.ride_state));
 const failed = computed(() => courierFailed(props.courier.ride_state));
@@ -105,7 +108,7 @@ const showCancelState = computed(
 // aviso amarelo leva o "Cancelar corrida", que arma a MESMA confirmação de baixo;
 // cancelada a corrida, o "Chamar entregador" de sempre leva a cobrança nova.
 const chargeNotice = computed(() =>
-  courierChargeNotice(props.courier.charge_outdated, { cancelHere: true }),
+  courierChargeNotice(props.courier.charge_outdated, { cancelHere: true, service: props.courier.service_name }),
 );
 // O aviso leva o gesto: o botão de baixo só volta para confirmar (um lugar só).
 const chargeOffersCancel = computed(
@@ -341,7 +344,7 @@ const vehicle = computed(() =>
           variant="subtle"
           icon="i-lucide-cloud-off"
           :title="progress.stale"
-          description="O status na tela pode estar parado. Confira no painel da TaOn."
+          :description="`O status na tela pode estar parado. Confira no painel da ${service}.`"
           close
           data-testid="courier-stale"
           @update:open="staleDismissedFor = courier.sync_since ?? ''"
@@ -368,7 +371,7 @@ const vehicle = computed(() =>
           variant="subtle"
           icon="i-lucide-circle-help"
           :title="
-            courier.error?.message || 'A TaOn não respondeu à última chamada.'
+            courier.error?.message || `A ${service} não respondeu à última chamada.`
           "
           data-courier-no-answer
         >
@@ -416,7 +419,7 @@ const vehicle = computed(() =>
           variant="subtle"
           icon="i-lucide-hand-coins"
           :title="`${separateWhat} para a casa`"
-          :description="`A ${courier.service_name || 'central'} retomou a corrida. Separe de novo antes de entregar a sacola.`"
+          :description="`A ${deliveryServiceName(courier.service_name)} retomou a corrida. Separe de novo antes de entregar a sacola.`"
           :actions="alertActions('warning', separateActions)"
           role="status"
           data-courier-custody-missing

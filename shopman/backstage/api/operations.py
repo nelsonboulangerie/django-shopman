@@ -3365,6 +3365,95 @@ class OrderRefundRetryView(_OrderActionBase):
         return self._context_response(request, order, "refund-retry", {}, execute, prepare=prepare)
 
 
+#: Estornar UM pedido: a exceção financeira do Gerente (#2727, item 5). Pede quem
+#: opera o Gestor E a permissão dedicada; ``payman.*`` nunca entra aqui.
+_ORDER_REFUND_PERMISSIONS = ("shop.manage_orders", "backstage.refund_single_order")
+
+
+class OrderRefundPreviewView(OperationalObservationMixin, APIView):
+    """O que o diálogo "Estornar" mostra: o valor pago naquela cobrança, o que já
+    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança, a
+    deste pedido; nenhuma soma, nenhuma lista (``order_refund.preview``)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = _ORDER_REFUND_PERMISSIONS
+
+    def get(self, request, ref: str):
+        from shopman.backstage.services import order_refund
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(order_refund.preview(order, user=request.user))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Refund one order's online charge (full or partial), from the order detail",
+        responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
+    ),
+)
+class OrderRefundView(_OrderActionBase):
+    """Estornar UM pedido no Gestor (#2727, item 5; dono, 21/11/2026).
+
+    ``POST {base_revision, expected_actor_id, amount_q?, confirm: true}``. Só com
+    ``backstage.refund_single_order``: o Gerente estorna partindo do pedido e vê só o
+    valor daquela cobrança, sem ``payman.view_paymentintent`` (o Admin de cobranças
+    lista, e listar é proibido a ele). ``amount_q`` em centavos, até o disponível; sem
+    ele, o disponível inteiro. ``confirm`` é a segunda confirmação, a mesma marca do
+    diálogo do Admin: sem ela, nada é estornado.
+
+    O dinheiro sai por ``payment.refund_intent_at_gateway``, o mesmo caminho do
+    estorno do Admin (``order_refund.refund``). A chave da intenção
+    (``Idempotency-Key``) é a chave da tentativa: repetir a mesma devolve o mesmo
+    recibo sem falar com o gateway de novo.
+
+    A resposta é 200 também quando o gateway recusa: a tentativa FOI gravada (o
+    evento ``payment.order_refund``), e ``refund`` diz o que houve:
+    ``{outcome, amount_q, refunded_q, available_q, message}``, só desta cobrança.
+    """
+
+    required_permission = _ORDER_REFUND_PERMISSIONS
+    intention_operation = "refund"
+
+    def post(self, request, ref: str):
+        from shopman.backstage.services import order_refund
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        attempt_key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        if request.data.get("confirm") is not True:
+            return Response(
+                {"detail": order_refund.CONFIRM_REQUIRED, "field": "confirm",
+                 "errors": {"confirm": [order_refund.CONFIRM_REQUIRED]}},
+                status=400,
+            )
+        try:
+            amount_q = order_refund.parse_amount_q(request.data.get("amount_q"))
+        except order_refund.OrderRefundRefused as exc:
+            return Response({"detail": str(exc), "field": "amount_q", "errors": {"amount_q": [str(exc)]}}, status=400)
+
+        def execute(base):
+            try:
+                result = order_refund.refund(
+                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key, expected_revision=base,
+                )
+            except order_refund.OrderRefundStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except order_refund.OrderRefundRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund": result}
+
+        # Sem a leitura do pedido na resposta (``_context_response``): o que volta é só o
+        # recibo desta cobrança, e a tela relê o pedido pelo caminho de sempre.
+        return _intention_response(
+            request, operation="refund", resource=order.ref, inputs={"amount_q": amount_q}, execute=execute,
+        )
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -5488,8 +5577,12 @@ class OrderCourierRideQuoteView(APIView):
         else:
             estimate = courier.estimate_for_ride(orders)
         if estimate is None:
+            from shopman.shop.services import delivery_services
+
+            # A corrida que ainda vai abrir vai pelo serviço padrão do Admin.
             return Response({"estimate": None,
-                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+                             "detail": f"A {delivery_services.service_name()} não cotou esta corrida agora. "
+                                       "Dá para chamar mesmo assim."})
         order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
         compare = {}
         if len(orders) > 1:

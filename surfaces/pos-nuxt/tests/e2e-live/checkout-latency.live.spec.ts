@@ -22,7 +22,7 @@ async function login(page: Page) {
     }).toPass({ timeout: 20_000 });
     await enter.click();
   }
-  const station = page.getByRole("button", { name: /^É este balcão|^Vincular a este posto/ });
+  const station = page.getByRole("button", { name: /^É este balcão|^Vincular a este posto|^Vincular também a este posto/ });
   const board = page.getByRole("button", { name: /Próxima livre/ });
   await station.or(board).first().waitFor({ timeout: 30_000 });
   await expect(async () => {

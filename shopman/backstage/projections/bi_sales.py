@@ -113,6 +113,22 @@ class BISalesDiscountKindRow:
 
 
 @dataclass(frozen=True)
+class BISalesNoShow:
+    """Pedido de retirada que ficou pronto e o cliente não veio (#2698).
+
+    Ele termina cancelado (conta em ``cancelled_total``, fora do faturamento);
+    aqui o dinheiro e a perda dele. ``loss_q`` é o valor de VENDA do que se
+    perdeu, não o custo; ``retained_q`` é o que ficou com a loja por essa perda.
+    """
+
+    orders: int
+    paid_q: int
+    refund_q: int
+    retained_q: int
+    loss_q: int
+
+
+@dataclass(frozen=True)
 class BISalesReport:
     date_from: str
     date_to: str
@@ -125,6 +141,8 @@ class BISalesReport:
     revenue_total_q: int
     average_ticket_q: int
     cancelled_total: int
+    #: O não retirado da janela: já contado em ``cancelled_total``.
+    no_show: BISalesNoShow
     historical_days: int  # dias da janela preenchidos pelo histórico (yooga)
     sources: tuple[str, ...]  # fontes que entraram na janela — hora e dia da semana as somam
     source_conflicts: tuple[BISourceConflict, ...]
@@ -219,6 +237,7 @@ def build_bi_sales(
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
         cancelled_total=window.cancelled_native,
+        no_show=_no_show(date_from, date_to, channel=channel_key),
         historical_days=len(window.historical_days),
         sources=window.sources,
         source_conflicts=tuple(
@@ -241,6 +260,13 @@ def build_bi_sales(
         ),
         discount_kind_total_q=kind_total,
     )
+
+
+def _no_show(date_from: date, date_to: date, *, channel: str) -> BISalesNoShow:
+    from shopman.backstage.bi.canonical import local_window
+    from shopman.backstage.bi.sources.orderman import read_no_shows
+
+    return BISalesNoShow(**read_no_shows(local_window(date_from, date_to), channel=channel))
 
 
 def _compare_window(date_from: date, date_to: date, compare: str) -> tuple[date, date]:

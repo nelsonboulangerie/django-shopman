@@ -92,6 +92,9 @@ from shopman.shop.policies.preorder_kitchen_policy import (
     DEFAULT_PREP_MINUTES,
     PreorderKitchenPolicy,
 )
+from shopman.shop.policies.preorder_kitchen_policy import (
+    MAX_MINUTES as PREORDER_KITCHEN_MAX_MINUTES,
+)
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
 from shopman.shop.resale_markup import DEFAULT_RESALE_MARKUP_PCT, MAX_RESALE_MARKUP_PCT, ResaleMarkup
@@ -555,8 +558,9 @@ def _parse_markup_by_collection(raw: str) -> dict[str, int]:
     return result
 
 
-#: Teto de cada tempo da encomenda na Cozinha (preparo, antecedência), em minutos.
-MAX_PREORDER_KITCHEN_MINUTES = 720
+#: Teto de cada tempo da encomenda na Cozinha: o da política, que o painel do
+#: produto do Gestor também usa.
+MAX_PREORDER_KITCHEN_MINUTES = PREORDER_KITCHEN_MAX_MINUTES
 MAX_NO_SHOW_MINUTES = 1440
 
 
