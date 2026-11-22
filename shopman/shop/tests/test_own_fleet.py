@@ -261,6 +261,35 @@ def test_a_vague_or_foreign_position_is_not_drawn(client, shop, diego):
     assert refused.status_code == 403 and courier_position.read(link.ride_ref) is None
 
 
+def test_the_maneuver_costs_one_call_on_departure_and_another_only_off_route(client, shop, diego):
+    """#2509: a rota por ruas na saída; de novo só quando ele sai dela, nunca por tempo."""
+    from unittest.mock import patch
+
+    from django.test import override_settings
+
+    from shopman.shop.services import route_guide
+    from shopman.shop.tests.test_route_guide import ANSWER
+
+    link = own_fleet.assign([_order("WEB-A47", lat=-23.33, lng=-51.165)], diego, actor="operator:ana").link
+    _post(client, "courier-ride-link-claim", link.token)
+    with override_settings(GOOGLE_MAPS_SERVER_API_KEY="server-key-test"), \
+            patch.object(route_guide, "_request", return_value=ANSWER) as call:
+        route = _post(client, "courier-ride-link-events", link.token, {"action": "depart"}).json()
+        assert call.call_count == 1
+        assert call.call_args.args[0] == (-23.3405, -51.158)  # da loja
+        assert route["map"]["guide"]["next"]["instruction"]
+        on_line = {"action": "position", "lat": -23.3381, "lng": -51.1601, "accuracy": 10}
+        _post(client, "courier-ride-link-events", link.token, on_line)
+        _post(client, "courier-ride-link-events", link.token, on_line)
+        assert call.call_count == 1  # na rota, nenhuma chamada a mais
+        cache.delete("courier:pos:push:" + link.ride_ref)
+        away = {"action": "position", "lat": -23.3500, "lng": -51.1800, "accuracy": 10,
+                "at": "2099-01-01T00:00:00+00:00"}
+        _post(client, "courier-ride-link-events", link.token, away)
+        assert call.call_count == 2
+        assert call.call_args.args[0] == (-23.35, -51.18)  # de onde ele está
+
+
 def test_events_need_the_confirmation_first(client, shop, diego):
     token = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link.token
     assert _post(client, "courier-ride-link-events", token, {"action": "depart"}).status_code == 409
