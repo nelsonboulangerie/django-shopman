@@ -439,7 +439,7 @@ def ride_view(link: CourierLink) -> dict:
     if first.get("note"):
         base["note"] = str(first["note"])
     if link.expires_at is not None:
-        return {**base, "moment": "closed", "today_q": _today_q(link.courier)}
+        return {**base, "moment": "closed", "today_q": today_settlement(link.courier)[0]}
     live = [(o, b) for o, b in zip(orders, blocks, strict=False) if _live(o, link)]
     statuses = {b.get("status") for _, b in live}
     on_route = "E" in statuses
@@ -498,8 +498,13 @@ def _map_view(link: CourierLink) -> dict:
     return view
 
 
-def _today_q(courier_person: Courier) -> int:
-    """O que a casa deve ao entregador hoje: o valor das rotas fechadas dele no dia."""
+def today_settlement(courier_person: Courier) -> tuple[int, int]:
+    """O que a casa deve ao entregador hoje: o valor das rotas fechadas dele no dia e quantas são.
+
+    Fonte única do acerto do dia (decisão 5 do dono, 16/11: o sistema soma, o pagamento é
+    por fora): a página da rota mostra ao entregador, o Gestor mostra à casa. Uma rota conta
+    uma vez (``ride_ref``), com o valor final quando houve ajuste e o da tabela sem ele.
+    """
     today = timezone.localdate()
     total = 0
     seen: set[str] = set()
@@ -511,4 +516,4 @@ def _today_q(courier_person: Courier) -> int:
         order = Order.objects.filter(ref=link.order_refs[0]).first()
         block = courier.get_block(order) if order else {}
         total += int(block.get("final_value_q") or (block.get("estimate") or {}).get("value_q") or 0)
-    return total
+    return total, len(seen)

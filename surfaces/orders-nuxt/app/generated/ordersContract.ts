@@ -1316,6 +1316,7 @@ export interface DeliveryStopProjection {
   dispatch_again_action: Action | null;
   charge_outdated: Record<string, unknown> | null;
   failure_key: string;
+  tracking_url: string;
   fiscal_status: string;
   danfe_state: string;
   danfe_problem: string;

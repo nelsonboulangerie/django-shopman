@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AccountAccessProjection, AccountAccessResponse, AccountDeviceProjection, AccountDeviceResponse } from '~/types/shopman'
-import { deviceIcon, profileActionIsExternal, profileIssueFrom, type ProfileIssue } from '~/presentation/account'
+import { ACCOUNT_DELETED_MESSAGE, deviceIcon, profileActionIsExternal, profileIssueFrom, type ProfileIssue } from '~/presentation/account'
 import { pendingCodeFromCooldown } from '~/presentation/auth'
 import { authPhonePayload, displayE164Phone, maskPhoneInput } from '~/utils/authPhone'
 import { formatCount } from '~/utils/display'
@@ -52,6 +52,10 @@ const pendingStepUpPurpose = ref<StepUpPurpose>('export')
 // código, o problema é outro e a tela tem de DIZER, em vez de pedir código para sempre.
 let stepUpResumed = false
 const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
+// A espera de reenvio sem código que valha (#3241): a tela conta o tempo, sem erro.
+const { waitSeconds: stepUpWaitSeconds, fromCooldown: stepUpFromCooldown, reset: resetStepUpWait } = useResendWait(stepUpOpen)
+// O fim da exclusão é lido na página seguinte, abaixo das barras do topo (#3242).
+const { show: showPageNotice } = usePageNotice()
 
 const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices } = await useFetch<AccountDeviceResponse>(apiPath('/api/v1/account/devices/'), {
   credentials: 'include',
@@ -372,6 +376,9 @@ async function deleteAccount () {
     deleteAccountIdempotencyKey.value = ''
     session.reset()
     deleteAccountOpen.value = false
+    // O fim do gesto mais grave da conta não é silêncio (#3242). Só chega aqui o que o
+    // servidor terminou, e a frase repete o que a Política de Privacidade promete, nada a mais.
+    showPageNotice(ACCOUNT_DELETED_MESSAGE, '/')
     await navigateTo('/')
   } catch (e) {
     // A chave de idempotência NÃO é descartada aqui: é ela que faz a retomada continuar a
@@ -494,6 +501,7 @@ async function sendStepUpCode () {
   stepUpSendPending.value = true
   stepUpIssue.value = ''
   stepUpNotice.value = ''
+  resetStepUpWait()
   try {
     await $fetch(apiPath('/api/auth/request-code/'), {
       method: 'POST',
@@ -511,6 +519,8 @@ async function sendStepUpCode () {
       stepUpNotice.value = errorDetail(e, 'O código que enviamos há pouco ainda vale.')
       return
     }
+    // Espera de reenvio sem código que valha: não é erro de ninguém.
+    if (stepUpFromCooldown(data)) return
     stepUpIssue.value = errorDetail(e, 'Não foi possível enviar o código agora.')
   } finally {
     stepUpSendPending.value = false
@@ -1177,11 +1187,14 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiDialogTitle>Confirme sua identidade</UiDialogTitle>
             <UiDialogDescription>
               <template v-if="pendingStepUpPurpose === 'phone'">
-                Antes de mudar o número, confirme que a conta é sua: enviamos um código para o
-                número atual, {{ currentPhoneDisplay }}. Depois, você informa o número novo.
+                Antes de mudar o número, confirme que a conta é sua com um código no número
+                atual, {{ currentPhoneDisplay }}. Depois, você informa o número novo.
+              </template>
+              <template v-else-if="stepUpSent">
+                Enviamos um código para o seu telefone. Digite-o para continuar com esta ação.
               </template>
               <template v-else>
-                Enviamos um código para o seu telefone. Digite-o para continuar com esta ação.
+                Para continuar com esta ação, confirme que é você com um código no seu telefone.
               </template>
             </UiDialogDescription>
           </UiDialogHeader>
@@ -1192,12 +1205,16 @@ useSeoMeta({ title: 'Segurança e dados' })
           <p v-else-if="stepUpNotice" class="shop-meta" role="status">
             {{ stepUpNotice }}
           </p>
+          <p v-else-if="stepUpWaitSeconds > 0" class="shop-meta" role="status" data-step-up-wait>
+            {{ resendWaitMessage(stepUpWaitSeconds) }}
+          </p>
           <div class="space-y-2">
             <UiPinInput
               v-model="stepUpCode"
               :input-count="6"
               type="number"
               otp
+              :disabled="!stepUpSent"
               :aria-invalid="!!stepUpIssue"
               class="justify-between sm:justify-start"
             />
@@ -1206,7 +1223,7 @@ useSeoMeta({ title: 'Segurança e dados' })
               size="sm"
               class="px-0"
               :loading="stepUpSendPending"
-              :disabled="stepUpSendPending"
+              :disabled="stepUpSendPending || stepUpWaitSeconds > 0"
               @click="sendStepUpCode"
             >
               {{ stepUpSent ? 'Reenviar código' : 'Enviar código' }}

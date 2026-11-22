@@ -132,6 +132,42 @@ def test_crew_says_na_rua_while_the_courier_holds_a_live_house_ride(client, oper
     assert (row["state"], row["state_label"]) == ("busy", "Na rua")
 
 
+def _close_ride(orders, person):
+    """Uma rota da casa do começo ao fim: enviar, sair, entregar tudo (pago, sem custódia)."""
+    link = own_fleet.assign(orders, person, actor="operator:marina").link
+    own_fleet.depart(link)
+    for order in orders:
+        own_fleet.deliver(link, order.ref)
+    link.refresh_from_db()
+    assert own_fleet.close_if_settled(link) or link.expires_at is not None
+    return link
+
+
+def test_crew_sums_what_to_pay_each_courier_today(client, operator, casa, diego):
+    """O acerto do dia (M4, #2527): o sistema soma as rotas fechadas hoje; o pagamento é por fora."""
+    rui = _courier(casa, "rui", "Rui")
+    _close_ride([_order("WEB-A47"), _order("WEB-C03", lat=-23.305, lng=-51.165)], diego)  # 12,00 + 3,00
+    _close_ride([_order("WEB-B11")], diego)  # 12,00
+    body = client.get(reverse(CREW)).json()
+    rows = {c["ref"]: c for c in body["couriers"]}
+    assert rows["diego"]["to_pay_today"] == "A pagar a Diego hoje: R$ 27,00 (2 corridas)"
+    assert rows["rui"]["to_pay_today"] == ""  # sem rota fechada hoje, nada a dizer
+    assert own_fleet.today_settlement(rui) == (0, 0)
+
+
+def test_crew_does_not_count_a_ride_still_on_the_street(client, operator, diego):
+    link = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:marina").link
+    own_fleet.depart(link)
+    assert client.get(reverse(CREW)).json()["couriers"][0]["to_pay_today"] == ""
+
+
+def test_to_pay_today_names_one_ride_in_the_singular():
+    from shopman.backstage.services.house_couriers import to_pay_today
+
+    assert to_pay_today("Diego", 1200, 1) == "A pagar a Diego hoje: R$ 12,00 (1 corrida)"
+    assert to_pay_today("Diego", 0, 0) == ""
+
+
 def test_crew_is_inactive_when_the_house_service_is_off(client, operator, casa, diego):
     DeliveryService.objects.filter(pk=casa.pk).update(is_active=False)
     assert client.get(reverse(CREW)).json() == {"active": False, "service": None,

@@ -39,9 +39,11 @@ def test_catalog_pricing_delegates_the_minimum(monkeypatch):
 
 
 def test_order_discount_delegates_the_minimum(monkeypatch):
-    monkeypatch.setattr(modifiers, "promotion_minimum_eligible", lambda **_kwargs: False)
+    from shopman.shop.services import fixed_discount
 
-    result = modifiers.DiscountModifier._best_fixed_discount(
+    monkeypatch.setattr(fixed_discount, "promotion_minimum_eligible", lambda **_kwargs: False)
+
+    result = fixed_discount.best_fixed_discount(
         [_promotion(kind="fixed", value=500)],
         coupon_promo=None,
         coupon_code=None,

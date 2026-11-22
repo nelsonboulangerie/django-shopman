@@ -259,24 +259,33 @@ test('J11: a cliente nova exclui a própria conta e sai da loja', async ({ page 
 
   await test.step('confirma a identidade com o código do SMS', async () => {
     const stepUp = page.getByRole('dialog', { name: 'Confirme sua identidade' })
-    const issue = stepUp.getByText(/Você pode pedir outro em (\d+) segundos?/)
+    const wait = stepUp.locator('[data-step-up-wait]')
     const code = await withInbox(async () => {
       const mark = inboxMark()
       await page.getByRole('alertdialog', { name: 'Excluir sua conta?' }).getByRole('button', { name: 'Continuar' }).click()
       await expect(stepUp).toBeVisible()
-      await expect(stepUp).toContainText('Enviamos um código para o seu telefone')
-      // O código do login acabou de ser usado. Se a loja ainda está na espera do reenvio
-      // (60 s desde o código do login), ela diz quanto falta; a cliente espera e pede de novo.
+      // O código do login acabou de ser usado. Na espera do reenvio (60 s desde ele), nada
+      // foi enviado agora: a loja diz isso e quanto falta, sem erro e sem "Enviamos" (#3241).
       const outcome = await Promise.race([
         readLoginCode(mark).then(value => ({ code: value })),
-        issue.waitFor({ timeout: 60_000 }).then(() => ({ code: '' }))
+        wait.waitFor({ timeout: 60_000 }).then(() => ({ code: '' }))
       ])
-      if (outcome.code) return outcome.code
+      if (outcome.code) {
+        await expect(stepUp).toContainText('Enviamos um código para o seu telefone')
+        return outcome.code
+      }
+      await expect(wait).toContainText(/^O código enviado há pouco já não vale\. Peça um novo em \d+ segundos?\.$/)
+      await expect(stepUp).not.toContainText('Enviamos um código')
+      await expect(stepUp.getByText('Não foi possível confirmar')).toHaveCount(0)
+      const send = stepUp.getByRole('button', { name: 'Enviar código', exact: true })
+      await expect(send).toBeDisabled()
+      // Sem código que valha, não há o que digitar: os campos esperam o código novo.
+      await expect(stepUp.getByRole('textbox', { name: 'Dígito 1 de 6' })).toBeDisabled()
       await capture(page, testInfo, 'identidade-espera-do-reenvio')
-      const seconds = Number((await issue.textContent())!.match(/(\d+) segundos?/)![1])
-      testInfo.annotations.push({ type: 'achado', description: `confirmar identidade logo após entrar: "${(await issue.textContent())!.trim()}"` })
-      await page.waitForTimeout((seconds + 2) * 1000)
-      await stepUp.getByRole('button', { name: /^(Reenviar|Enviar) código$/ }).click()
+      // A espera acaba: o botão liga, ela pede, e aí sim o código vai.
+      await expect(send).toBeEnabled({ timeout: 70_000 })
+      await send.click()
+      await expect(stepUp).toContainText('Enviamos um código para o seu telefone')
       return await readLoginCode(mark)
     })
     await stepUp.getByRole('textbox', { name: 'Dígito 1 de 6' }).click()
@@ -287,6 +296,11 @@ test('J11: a cliente nova exclui a própria conta e sai da loja', async ({ page 
 
   await test.step('a conta sai e ela volta à loja sem estar conectada', async () => {
     await expect.poll(() => new URL(page.url()).pathname, { timeout: 60_000 }).toBe('/')
+    // O fim do gesto não é silêncio: a loja diz que excluiu e o que isso significou (#3242).
+    const notice = page.locator('[data-page-notice]')
+    await expect(notice).toContainText('Pronto, sua conta foi excluída.')
+    await expect(notice).toContainText('sem nenhum dado seu')
+    await expect(notice.getByRole('button', { name: 'Fechar aviso' })).toBeVisible()
     await settled(page)
     await capture(page, testInfo, 'excluida-inicio')
     // A Conta pede para entrar de novo: a sessão dela acabou junto com a conta.

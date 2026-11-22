@@ -50,7 +50,7 @@ const runtimeConfig = useRuntimeConfig();
 // subdomain from the POS — so the DANFE link must be ABSOLUTE to that host, not
 // relative to the POS origin.
 const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
-// Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
+// Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir o pedido no Gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 // Link de um app de operador para OUTRO: instalado, o destino tem janela
 // própria. Quem decide `target`/`rel` é o kit — nunca um `_blank` escrito à mão.
@@ -2083,6 +2083,7 @@ onBeforeUnmount(() => {
       v-model:open="cancelSaleDialogOpen"
       v-model:reason="cancelSaleReason"
       :order-ref="result?.orderRef || ''"
+      :noun="result?.salesMode === 'order' ? 'encomenda' : 'venda'"
       :total-display="result?.receipt?.totalDisplay || ''"
       :max-age-minutes="saleCorrection?.max_age_minutes || 0"
       :busy="cancellingSale"

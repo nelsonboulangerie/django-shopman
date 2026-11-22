@@ -177,6 +177,7 @@ export function useOrderDetail(orderRef: string) {
           "courier-dispatch",
           "courier-dispatch-again",
           "courier-cancel",
+          "courier-custody",
           "courier-quote",
           "undo-handoff",
           "undo-ready",
@@ -421,6 +422,13 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
+  /** "Separar de novo" (#2500): a custódia da corrida que a TaOn retomou. */
+  async function courierCustody(body: { change_out?: string; equipment?: string[] }): Promise<boolean> {
+    const ok = await act("courier-custody", body);
+    if (ok) useSonner.success("Separado de novo. Entregue com a sacola.");
+    return ok;
+  }
+
   async function courierQuote(): Promise<boolean> {
     const ok = await act("courier-quote");
     if (ok) useSonner.success("Cotação atualizada.");
@@ -444,6 +452,7 @@ export function useOrderDetail(orderRef: string) {
     advance,
     reject,
     cancel,
+    courierCustody,
     returnOrder,
     markNotPickedUp,
     retryRefund,

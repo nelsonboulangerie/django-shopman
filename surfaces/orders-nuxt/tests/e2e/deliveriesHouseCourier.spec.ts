@@ -105,6 +105,13 @@ test.describe("Entregas: quem leva", () => {
     await page.getByRole("button", { name: /A47 · Ana/ }).click();
     await expect(page.locator("[data-ride-quote]").getByRole("radio")).toHaveCount(3);
   });
+
+  test("o acerto do dia: o quanto pagar a cada entregador da casa, sob a escala", async ({ page }) => {
+    await page.goto("/delivery");
+    const pay = page.locator("[data-house-pay-today]");
+    await expect(pay.getByText("A pagar a Diego hoje: R$ 27,00 (2 corridas)", { exact: true })).toBeVisible();
+    await expect(pay.locator("[data-house-pay-today-person]")).toHaveCount(1);  // Rui não fechou rota hoje
+  });
 });
 
 test.describe("Entregas: sem ninguém da casa", () => {

@@ -10,6 +10,8 @@ export const stack = {
   kitchen: process.env.OPERATOR_KITCHEN_URL!.replace(/\/$/, ""),
   // A Produção só entra nas jornadas que a pedem (J6); sem ela, essas jornadas pulam.
   production: (process.env.OPERATOR_PRODUCTION_URL || "").replace(/\/$/, ""),
+  // O PDV também: só a jornada das Encomendas do PDV (E1) o pede.
+  pos: (process.env.OPERATOR_POS_URL || "").replace(/\/$/, ""),
   djangoLog: process.env.OPERATOR_DJANGO_LOG!,
 };
 

@@ -140,6 +140,47 @@ def test_the_ride_link_is_offered_only_when_the_ride_has_one_stop(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_each_stop_of_a_shared_ride_offers_its_own_link(shop):
+    """#2491: na corrida de várias paradas, o link é oferecido na linha de cada pedido."""
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    for order in (a, b):
+        courier.apply_status(order, "A", source="test")
+        order.refresh_from_db()
+
+    (shared,) = build_deliveries().rides
+    links = {stop.ref: stop.tracking_url for stop in shared.stops}
+    assert links == {
+        "EN-A": courier.proven_tracking(courier.get_block(a))["url"],
+        "EN-B": courier.proven_tracking(courier.get_block(b))["url"],
+    }
+    assert all(links.values()) and links["EN-A"] != links["EN-B"]
+    assert shared.tracking_url == ""
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_stop_link_not_proven_is_not_offered(shop):
+    """Link gravado sem o casamento provado não diz de qual parada é: falha fechada."""
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    for order in (a, b):
+        courier.apply_status(order, "A", source="test")
+        order.refresh_from_db()
+    order = a
+    data = dict(order.data)
+    block = dict(data["courier"])
+    block.pop("tracking_match", None)
+    data["courier"] = block
+    order.data = data
+    order.save(update_fields=["data"])
+
+    (shared,) = build_deliveries().rides
+    links = {stop.ref: stop.tracking_url for stop in shared.stops}
+    assert links["EN-A"] == ""
+    assert links["EN-B"]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_bags_sum_the_declared_volumes_and_name_who_is_missing(shop):
     a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
     a.data = {**a.data, "volumes": 2}

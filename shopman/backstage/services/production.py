@@ -374,6 +374,39 @@ def _require_creation_attempt(*, actor: str, idempotency_key: str | None) -> Non
         )
 
 
+def _delivered_beyond_other_lots(work_order) -> Decimal:
+    """Quanto já foi ENTREGUE contra o saldo de produção da data e os outros lotes não cobrem.
+
+    A entrega feita antes do fechamento é baixa contra o saldo de produção (#2724),
+    lida do ledger pela conta do Stockman (``_early_deliveries``, a mesma do
+    ``carry_deliveries``): a baixa, menos o que já seguiu ou voltou. Os outros lotes
+    abertos (planejados ou iniciados) do mesmo produto e dia ainda podem cobri-la.
+    """
+    from shopman.craftsman.models import WorkOrder
+    from shopman.stockman.models import Quant
+    from shopman.stockman.services.planning import _early_deliveries
+
+    if not work_order.target_date:
+        return Decimal("0")
+    quants = Quant.objects.filter(sku=work_order.output_sku, target_date=work_order.target_date)
+    delivered = sum(
+        (part for quant in quants for _hold, part, _kind, _settles in _early_deliveries(quant, limit=Decimal("1e30"))),
+        Decimal("0"),
+    )
+    if delivered <= 0:
+        return Decimal("0")
+    others = (
+        WorkOrder.objects.filter(
+            output_sku=work_order.output_sku,
+            target_date=work_order.target_date,
+            status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+        )
+        .exclude(pk=work_order.pk)
+        .values_list("quantity", flat=True)
+    )
+    return max(delivered - sum((Decimal(str(qty)) for qty in others), Decimal("0")), Decimal("0"))
+
+
 def _refuse_void_with_deliveries(work_order) -> None:
     """Cancelar o lote que já entregou pão é recusado, como reduzir e fechar abaixo (#2729).
 
@@ -388,33 +421,31 @@ def _refuse_void_with_deliveries(work_order) -> None:
     ainda cobre não trava.
     """
     from shopman.craftsman.models import WorkOrder
-    from shopman.stockman.models import Quant
-    from shopman.stockman.services.planning import _early_deliveries
 
-    if not work_order.target_date or work_order.status not in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED):
+    if work_order.status not in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED):
         return
-    quants = Quant.objects.filter(sku=work_order.output_sku, target_date=work_order.target_date)
-    delivered = sum(
-        (part for quant in quants for _hold, part, _kind, _settles in _early_deliveries(quant, limit=Decimal("1e30"))),
-        Decimal("0"),
-    )
-    if delivered <= 0:
-        return
-    others = (
-        WorkOrder.objects.filter(
-            output_sku=work_order.output_sku,
-            target_date=work_order.target_date,
-            status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+    delivered = _delivered_beyond_other_lots(work_order)
+    if delivered > 0:
+        raise ProductionError(
+            f"Não dá para cancelar o lote {work_order.ref}: {_qty(delivered)} un. dele já foram entregues. "
+            "Feche o lote com o que ele rendeu."
         )
-        .exclude(pk=work_order.pk)
-        .values_list("quantity", flat=True)
-    )
-    if sum((Decimal(str(qty)) for qty in others), Decimal("0")) >= delivered:
-        return
-    raise ProductionError(
-        f"Não dá para cancelar o lote {work_order.ref}: {_qty(delivered)} un. dele já foram entregues. "
-        "Feche o lote com o que ele rendeu."
-    )
+
+
+def _refuse_finish_below_delivered(work_order, finished: Decimal) -> None:
+    """Fechar o lote com menos do que já foi entregue dele é recusado com o motivo (#2731).
+
+    Com o pedido ainda ativo, a guarda dos pedidos recusa antes, com a frase das
+    unidades comprometidas. Com o pedido já concluído, quem recusava era o ledger,
+    com a frase genérica do estoque ("[INSUFFICIENT_AVAILABLE] Quantidade
+    solicitada indisponível"), e o forneiro não lia o motivo.
+    """
+    delivered = _delivered_beyond_other_lots(work_order)
+    if delivered > finished:
+        raise ProductionError(
+            f"Não dá para fechar o lote {work_order.ref} com {_qty(finished)} un.: "
+            f"{_qty(delivered)} un. dele já foram entregues. Confira a contagem: o lote rendeu pelo menos isso."
+        )
 
 
 def apply_void(
@@ -3303,6 +3334,7 @@ def apply_finish(
             )
             if order_shortage is not None:
                 raise order_shortage
+            _refuse_finish_below_delivered(work_order, saleable_quantity)
 
             missing = check_finish_materials(work_order)
             if force:
