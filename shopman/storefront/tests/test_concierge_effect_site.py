@@ -60,7 +60,7 @@ def test_change_cart_locks_the_cart_without_terms(site):
     ({"ok": True, "items": []}, True, None),
     ({"ok": False, "code": "unknown_sku"}, False, ErrorCode.INVALID_CONTENT.value),
     ({"ok": False, "code": "invalid_qty"}, False, ErrorCode.INVALID_CONTENT.value),
-    ({"ok": False, "code": "insufficient_stock"}, False, ErrorCode.FACT_UNAVAILABLE.value),
+    ({"ok": False, "code": "insufficient_supply"}, False, ErrorCode.FACT_UNAVAILABLE.value),
 ])
 def test_change_cart_is_the_existing_set_item(site, monkeypatch, result, applied, code):
     calls = []
