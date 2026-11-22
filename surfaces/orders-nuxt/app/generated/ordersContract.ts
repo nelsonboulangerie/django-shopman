@@ -1368,6 +1368,7 @@ export interface DeliveryRideProjection {
   status_label: string;
   stops: DeliveryStopProjection[];
   driver: DeliveryDriverProjection | null;
+  service_name: string;
   position: DeliveryCourierPositionProjection | null;
   called_at: string;
   called_by: string;
@@ -1380,6 +1381,8 @@ export interface DeliveryRideProjection {
   tracking_url: string;
   cost_display: string;
   cost_label: string;
+  fee_display: string;
+  balance_display: string;
   bags: number;
   undeclared: string[];
   lead_ref: string;

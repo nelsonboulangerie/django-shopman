@@ -819,7 +819,10 @@ const discrepancyColumns = [
                 <span>Contagem cega: conte o que sobrou do que a casa produz (revenda não entra). Nada sobrou? Digite 0. O sistema trata destino e perdas.</span>
               </p>
               <p v-if="!closing.has_items" class="op-body text-muted-foreground">Nada produzido na casa em estoque para contar.</p>
-              <div v-else ref="countList" class="grid gap-1.5">
+              <!-- A coluna é a largura da lista (#3160): na trilha `auto` a grade crescia
+                   até o nome inteiro (o `truncate` não quebra linha), e no celular a
+                   linha passava da tela, cortada pelo cartão. -->
+              <div v-else ref="countList" class="grid grid-cols-[minmax(0,1fr)] gap-1.5">
                 <div
                   v-for="(item, index) in countItems"
                   :key="item.sku"
@@ -827,14 +830,24 @@ const discrepancyColumns = [
                   :class="/^\d+$/.test((quantities[item.sku] ?? '').trim()) ? 'bg-elevated' : 'bg-muted/40'"
                 >
                   <div class="min-w-0 flex-1">
-                    <p class="truncate op-title" :title="item.name">{{ item.name }}</p>
-                    <p class="op-micro font-mono text-muted-foreground">{{ item.sku }}</p>
+                    <!-- O nome quebra linha, nunca corta (#3160): "Pain au C…" e "Pain de C…"
+                         são a mesma linha para quem conta. No celular o selo desce para junto
+                         do código, e o nome fica com a largura da linha. -->
+                    <p class="op-title [overflow-wrap:anywhere] sm:truncate" :title="item.name">{{ item.name }}</p>
+                    <p class="flex flex-wrap items-center gap-x-2 gap-y-1 op-micro font-mono text-muted-foreground">
+                      {{ item.sku }}
+                      <span
+                        class="inline-flex h-6 shrink-0 items-center rounded-full border px-2 font-sans font-semibold sm:hidden"
+                        :class="closingBadge(item.classification).css"
+                        data-count-badge-phone
+                      >{{ closingBadge(item.classification).label }}</span>
+                    </p>
                     <p v-if="/[-−]/.test(quantities[item.sku] || '')" :id="`count-error-${item.sku}`" class="text-sm text-destructive" role="alert">
                       Informe zero ou uma quantidade inteira positiva.
                     </p>
                   </div>
                   <span
-                    class="inline-flex h-6 shrink-0 items-center rounded-full border px-2 op-micro font-semibold"
+                    class="hidden h-6 shrink-0 items-center rounded-full border px-2 op-micro font-semibold sm:inline-flex"
                     :class="closingBadge(item.classification).css"
                   >
                     {{ closingBadge(item.classification).label }}

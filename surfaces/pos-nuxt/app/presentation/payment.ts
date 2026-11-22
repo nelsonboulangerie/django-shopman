@@ -317,8 +317,8 @@ export function paymentConfirmView(options: { machine: number; pix: number }): P
     };
   }
   return {
-    title: "Passe na maquininha",
-    description: "Digite este valor no terminal e conclua a operação com o cliente.",
+    title: "Cobre na maquininha",
+    description: "Digite este valor na maquininha e passe o cartão do cliente.",
     cta: "OK, cobrei na maquininha",
   };
 }

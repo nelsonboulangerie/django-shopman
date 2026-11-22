@@ -27,6 +27,7 @@
 import type { OrderDetailAction } from "../../../operator-kit/app/types/orderDetail";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 import { cancelConfirmation, courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import {
   courierBadgeColor as badgeColor,
@@ -67,6 +68,8 @@ const noAnswer = computed(() => Boolean(props.courier.can_dispatch_again));
 // quando a entrega está prevista e, se a TaOn parou de informar, desde quando.
 const nowMs = useNowTick();
 const progress = computed(() => courierProgress(props.courier, nowMs.value));
+// O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
+const service = computed(() => deliveryServiceName(props.courier.service_name));
 const staleDismissedFor = ref("");
 const showStale = computed(
   () => Boolean(progress.value.stale) && staleDismissedFor.value !== (props.courier.sync_since ?? ""),
@@ -74,7 +77,7 @@ const showStale = computed(
 
 // O pedido mudou depois da chamada (editar a encomenda é daqui): a corrida leva a
 // cobrança antiga, e cancelar para chamar de novo é no Gestor (P2-28).
-const chargeNotice = computed(() => courierChargeNotice(props.courier.charge_outdated, { cancelHere: false }));
+const chargeNotice = computed(() => courierChargeNotice(props.courier.charge_outdated, { cancelHere: false, service: props.courier.service_name }));
 // O cancelamento pedido (no PDV ou no Gestor): esperando a TaOn, sem resposta, ou recusado.
 const cancelNotice = computed(() =>
   courierCancelNotice(props.courier.cancel_state?.state, props.courier.cancel_state?.message),
@@ -181,7 +184,7 @@ async function callAgain() {
         variant="subtle"
         icon="i-lucide-cloud-off"
         :title="progress.stale"
-        description="O status na tela pode estar parado. Confira no painel da TaOn."
+        :description="`O status na tela pode estar parado. Confira no painel da ${service}.`"
         close
         data-pos-courier-stale
         @update:open="staleDismissedFor = courier.sync_since ?? ''"
@@ -194,7 +197,7 @@ async function callAgain() {
         color="warning"
         variant="subtle"
         icon="i-lucide-circle-help"
-        :title="courier.error?.message || 'A TaOn não respondeu à última chamada.'"
+        :title="courier.error?.message || `A ${service} não respondeu à última chamada.`"
         data-pos-courier-no-answer
       >
         <template #actions>

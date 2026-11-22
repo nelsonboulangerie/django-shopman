@@ -124,6 +124,7 @@ const {
   lookupBusy,
   managerApprovalError,
   managerApproved,
+  managerApprovedBy,
   managerCheckBusy,
   checkManagerApproval,
   gridProducts,
@@ -1581,6 +1582,7 @@ onBeforeUnmount(() => {
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
         :manager-approved="managerApproved"
+        :manager-approved-by="managerApprovedBy"
         :manager-approval-error="managerApprovalError"
         :manager-check-busy="managerCheckBusy"
         @check-manager="(approval, done) => { void checkManagerApproval(approval).then(done) }"
@@ -2025,7 +2027,7 @@ onBeforeUnmount(() => {
       action="sale_approval"
       :threshold-q="closeRecheckApproval?.threshold_q || 0"
       :discount-q="closeRecheckApproval?.discount_q || 0"
-      :reasons="(closeRecheckApproval?.reasons || []).filter((reason) => reason !== 'preorder_over_plan')"
+      :reasons="closeRecheckApproval?.reasons || []"
       :house-account-limit="closeRecheckApproval?.house_account_limit"
       :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"

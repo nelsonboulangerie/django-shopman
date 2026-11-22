@@ -1672,9 +1672,9 @@ describe("a frase da cozinha no checkout conta unidades", () => {
 
   it("nada enviado: anuncia o que vai sair", () => {
     expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3 })]))
-      .toBe("Ao finalizar, os 3 itens vão para a cozinha.");
+      .toBe("Ao validar, os 3 itens vão para a cozinha.");
     expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1 })]))
-      .toBe("Ao finalizar, o item vai para a cozinha.");
+      .toBe("Ao validar, o item vai para a cozinha.");
   });
 
   it("encomenda para outro dia: vai para a cozinha no DIA, não ao finalizar", () => {
@@ -1689,7 +1689,7 @@ describe("a frase da cozinha no checkout conta unidades", () => {
       linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 }),
       linha({ sku: "PAO", qty: 2 }),
     ]);
-    expect(note).toBe("3 itens já estão na cozinha; mais 2 vão ao finalizar.");
+    expect(note).toBe("3 itens já estão na cozinha; mais 2 vão ao validar.");
   });
 
   it("tudo enviado: fala do total, não de 'todos'", () => {
@@ -1723,7 +1723,7 @@ describe("a frase da cozinha no checkout conta unidades", () => {
     expect(kitchenHandoffNote([linha({ sku: "CROI", qty: 4 }), linha({ sku: "BAG", qty: 2 })], { goesToKitchen: goes }))
       .toBe("");
     expect(kitchenHandoffNote([linha({ sku: "CROI", qty: 4 }), linha({ sku: "CAPU", qty: 1 })], { goesToKitchen: goes }))
-      .toBe("Ao finalizar, o item vai para a cozinha.");
+      .toBe("Ao validar, o item vai para a cozinha.");
   });
 
   it("a comanda continua vendo a separação: o Enviar dela manda tudo que tem estação (revisão #2152)", () => {

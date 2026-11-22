@@ -339,9 +339,9 @@ def test_a_call_without_answer_offers_call_again_never_call_alone(shop):
     from shopman.orderman.models import Directive
 
     from shopman.backstage.projections.order_queue import (
-        COURIER_DISPATCH_AGAIN_CONFIRMATION,
-        COURIER_NO_ANSWER_MESSAGE,
         _courier_block,
+        courier_dispatch_again_confirmation,
+        courier_no_answer_message,
     )
     from shopman.shop.directives import COURIER_DISPATCH
 
@@ -355,8 +355,10 @@ def test_a_call_without_answer_offers_call_again_never_call_alone(shop):
     assert stop.dispatch_again_action is not None
     assert stop.dispatch_again_action.ref == "courier-dispatch-again"
     assert stop.dispatch_again_action.confirmation == {
-        "required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION}
-    assert stop.error == COURIER_NO_ANSWER_MESSAGE
+        "required": True, "description": courier_dispatch_again_confirmation("TaOn")}
+    # O nome é o do serviço cadastrado (a TaOn, padrão da migração), não texto fixo (#3139).
+    assert stop.error == courier_no_answer_message("TaOn")
+    assert stop.error.startswith("A TaOn não respondeu")
     # Não entra em corrida com outros, e diz por quê.
     assert stop.group_refusal
     # Paridade com o Painel: a mesma condição decide os dois gestos.
@@ -572,3 +574,58 @@ def test_ride_health_contract(shop, monkeypatch):
     assert panel["delivery_eta_at"] == ride.delivery_eta_at == "marca-eta"
     assert panel["tracking_url"] == ride.tracking_url == "https://marca.example/track"
     assert panel["charge_outdated"] == marked["charge_outdated"]
+
+
+# ── O frete dos clientes ao lado do custo da corrida (#2747) ──────────
+
+
+def _fee(order, value_q):
+    from shopman.orderman.models import OrderItem
+
+    OrderItem.objects.create(order=order, line_id="fee", sku="__DELIVERY_FEE__", name="Entrega", qty=1,
+                             unit_price_q=value_q, line_total_q=value_q)
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_joined_ride_says_what_the_fee_leaves_or_costs(shop):
+    """Corrida juntada com um frete grátis: o frete pago soma 8,00 contra 10,00 pagos à TaOn."""
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _fee(a, 800)
+    _fee(b, 0)  # frete grátis de promoção: a linha existe e vale zero
+    _call(a, b)
+    for order in (a, b):
+        block = courier.get_block(order)
+        block["final_value_q"] = 1000
+        order.data = {**order.data, "courier": block}
+        order.save(update_fields=["data"])
+
+    (ride,) = build_deliveries().rides
+    assert (ride.cost_label, ride.cost_display) == ("Valor pago à TaOn", "R$ 10,00")
+    assert (ride.fee_display, ride.balance_display) == ("Frete cobrado R$ 8,00", "Falta R$ 2,00")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_ride_without_an_honest_cost_says_nothing_about_the_fee(shop):
+    order = _at("EN-A", -23.30, -51.16)
+    _fee(order, 800)
+    _call(order)
+    block = courier.get_block(order)
+    block.pop("estimate", None)
+    order.data = {**order.data, "courier": block}
+    order.save(update_fields=["data"])
+
+    (ride,) = build_deliveries().rides
+    assert ride.cost_display == ""
+    assert (ride.fee_display, ride.balance_display) == ("", "")
+
+
+def test_the_fee_of_a_cancelled_order_never_counts(shop):
+    """A mesma conta do B.I.: pedido cancelado não pagou frete."""
+    from shopman.backstage.projections.bi_delivery_cost import fees_for
+
+    kept, cancelled = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.31, -51.17)
+    _fee(kept, 700)
+    _fee(cancelled, 900)
+    Order.objects.filter(pk=cancelled.pk).update(status=Order.Status.CANCELLED)
+
+    assert fees_for(["EN-A", "EN-B"]) == {"EN-A": 700}

@@ -20,6 +20,7 @@ import { rideChargeNotices, rideLine, rideNotice, rideStale, whatsappLink } from
 import { callCourier, type HouseGesture } from "~/presentation/houseCouriers";
 import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 import { courierPositionLine } from "~/presentation/courierPosition";
 
 const props = defineProps<{
@@ -86,10 +87,12 @@ function confirmCancel(reasonId?: number) {
 // Sem o botão de cancelar, o rodapé diz por quê SEGUNDO o estado: "já saiu com as
 // sacolas" só depois da coleta. Antes dela, o botão some por outro motivo (o serviço
 // não cancela por aqui), e a frase da coleta contradiria "Entregador na loja".
+// O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
+const service = computed(() => deliveryServiceName(props.ride.service_name));
 const noCancelLine = computed(() =>
   props.ride.picked_up_at
-    ? "Ele já saiu com as sacolas: cancelar agora só pela central da TaOn."
-    : "Para cancelar esta corrida, use a central da TaOn.",
+    ? `Ele já saiu com as sacolas: cancelar agora só pela central da ${service.value}.`
+    : `Para cancelar esta corrida, use a central da ${service.value}.`,
 );
 const cancelState = computed(() => courierCancelNotice(props.ride.cancel_state, props.ride.cancel_message));
 const cancelDismissed = ref("");
@@ -152,7 +155,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
           variant="subtle"
           icon="i-lucide-cloud-off"
           :title="stale"
-          description="O que está aqui pode ter mudado. Confira na central da TaOn ou ligue para o entregador."
+          :description="`O que está aqui pode ter mudado. Confira na central da ${service} ou ligue para o entregador.`"
           close
           role="status"
           data-ride-stale
@@ -244,7 +247,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         <p class="op-micro font-semibold text-muted">O que aconteceu</p>
         <ul class="mt-2 flex flex-col gap-1.5 op-body">
           <li v-if="ride.called_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.called_at) }}</span><span class="text-highlighted">Corrida chamada</span></li>
-          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_reason === "transfer" ? "A TaOn trocou o entregador" : `${ride.reopened_driver || "O entregador"} desistiu` }}</span></li>
+          <li v-if="ride.state === 'reopened' && ride.reopened_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.reopened_at) }}</span><span class="font-semibold text-highlighted">{{ ride.reopened_reason === "transfer" ? `A ${service} trocou o entregador` : `${ride.reopened_driver || "O entregador"} desistiu` }}</span></li>
           <li v-if="ride.pickup_eta_at && ride.state === 'coming'" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.pickup_eta_at) }}</span><span class="text-highlighted">Chegada prevista na loja</span></li>
           <li v-if="ride.near_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.near_pickup_at) }}</span><span class="text-highlighted">Perto da loja</span></li>
           <li v-if="ride.arrived_pickup_at" class="flex gap-3"><span class="w-11 shrink-0 tabular-nums text-muted">{{ at(ride.arrived_pickup_at) }}</span><span class="text-highlighted">Chegou na loja</span></li>
@@ -258,6 +261,8 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         <div v-if="ride.cost_display" class="rounded-xl bg-elevated/60 p-3">
           <p class="op-micro text-muted">{{ ride.cost_label }}</p>
           <p class="op-title font-semibold tabular-nums text-highlighted">{{ ride.cost_display }}</p>
+          <!-- O frete dos clientes ao lado do custo (#2747): a mesma conta do B.I., em tom neutro. -->
+          <p v-if="ride.balance_display" class="op-micro tabular-nums text-muted" data-ride-balance>{{ ride.fee_display }} · {{ ride.balance_display }}</p>
         </div>
         <div v-if="ride.back_lines.length" class="rounded-xl bg-elevated/60 p-3">
           <p class="op-micro text-muted">Volta com</p>
@@ -278,7 +283,7 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
           <NuxtButton color="error" variant="ghost" icon="i-lucide-circle-x" :label="ride.cancel_action.label" :loading="busy" :disabled="!ride.cancel_action.enabled" :title="ride.cancel_action.reason || undefined" data-ride-cancel @click="confirmingCancel = true" />
         </template>
       </template>
-      <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da TaOn antes de pedir o cancelamento de novo.</p>
+      <p v-else-if="ride.cancel_state === 'unknown'" class="min-w-0 flex-1 op-micro text-muted">Confira esta corrida na central da {{ service }} antes de pedir o cancelamento de novo.</p>
       <p v-else class="min-w-0 flex-1 op-micro text-muted">{{ notice?.footer ?? noCancelLine }}</p>
     </footer>
   </aside>
