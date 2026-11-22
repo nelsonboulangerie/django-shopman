@@ -831,6 +831,25 @@ function rideCard(ref) {
   });
 }
 
+function cancelConfirmation(ref, block) {
+  const code = ref.replace("NB-", "");
+  const confirmation = {
+    required: true,
+    description: `Cancelar a corrida A? O pedido ${code} volta para Aguardando.`,
+    confirm_label: "Cancelar a corrida A",
+  };
+  if (!["A", "S"].includes(block.status)) return confirmation;
+  return {
+    ...confirmation,
+    reason_question: "Por que cancelar a corrida A?",
+    consequence: `O pedido ${code} volta para Aguardando.`,
+    reasons: [
+      { id: 12, label: "O entregador não está vindo" },
+      { id: 37, label: "Está demorando demais" },
+      { id: 40, label: "Não consegui falar com o entregador" },
+    ],
+  };
+}
 function rideDetail(ref) {
   const block = rideBlock(ref);
   const theCard = rideCard(ref);
@@ -848,7 +867,9 @@ function rideDetail(ref) {
       ...preorderDetail.actions,
       action("courier-dispatch", "Chamar entregador", block.can_dispatch, `Chamar um entregador da TaOn para o pedido ${ref.replace("NB-", "")}? A corrida é cobrada da casa.`),
       action("courier-dispatch-again", "Chamar de novo", block.can_dispatch_again, "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."),
-      { ...action("courier-cancel", "Cancelar corrida", block.can_cancel), confirmation: { required: true } },
+      // A confirmação do servidor (``courier_cancel_confirmation``): antes do aceite,
+      // a pergunta e um botão; depois, os três motivos (#2494).
+      { ...action("courier-cancel", "Cancelar corrida", block.can_cancel), confirmation: cancelConfirmation(ref, block) },
       ...(RIDES[ref].returnLines && !RIDES[ref].returned
         ? [{ ...action("courier-back", "Entregador voltou", true), priority: "primary", confirmation: { required: true } }]
         : []),

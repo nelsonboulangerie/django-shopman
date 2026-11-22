@@ -287,7 +287,10 @@ export function usePosPreorderActions(options: {
    * custódia da chamada (troco da gaveta, maquininha) vai no mesmo corpo do Gestor.
    * A corrida se acompanha pelo SSE dos pedidos.
    */
-  async function courier(ref: CourierGesture, custody: { change_out?: string; equipment?: string[] } = {}): Promise<boolean> {
+  async function courier(
+    ref: CourierGesture,
+    custody: { change_out?: string; equipment?: string[]; reason_id?: number } = {},
+  ): Promise<boolean> {
     const detail = options.detail.value;
     const offered = detailAction(detail, ref);
     if (!detail || !offered?.enabled || busy.value) return false;
@@ -317,7 +320,9 @@ export function usePosPreorderActions(options: {
     busy, managerChallenge, paidOnline, handOver, startPix, cancel, redo, reschedule, comment, dismissManagerChallenge,
     courierDispatch: (custody: { change_out?: string; equipment?: string[] } = {}) => courier("courier-dispatch", custody),
     courierDispatchAgain: () => courier("courier-dispatch-again"),
-    courierCancel: () => courier("courier-cancel"),
+    // O motivo escolhido na confirmação (depois do aceite) vai como `reason_id`;
+    // antes do aceite não há escolha e o servidor usa o da fase.
+    courierCancel: (reasonId?: number) => courier("courier-cancel", reasonId ? { reason_id: reasonId } : {}),
     courierBack: () => courier("courier-back"),
   };
 }

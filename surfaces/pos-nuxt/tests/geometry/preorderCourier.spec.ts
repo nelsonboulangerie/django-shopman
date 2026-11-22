@@ -58,12 +58,15 @@ for (const scheme of ["light", "dark"] as const) {
           await expect(page.locator("[data-pos-courier-confirm]")).toBeVisible();
           await expect(page.locator("[data-pos-courier-question]")).toContainText("A corrida é cobrada da casa.");
         }
-        // Cancelar a corrida armado (o segundo toque) e a conferência do Entregador
-        // voltou abertos: os estados mais largos do painel (dono, P=1, 14/10).
+        // Cancelar a corrida armado (a confirmação do Gestor, #2494) e a conferência
+        // do Entregador voltou abertos: os estados mais largos do painel.
         const cancel = page.locator("[data-pos-courier-cancel]");
         if (await cancel.count()) {
           await cancel.click();
-          await expect(cancel).toHaveText("Confirmar o cancelamento?");
+          await expect(page.locator("[data-pos-courier-cancel-confirm]")).toBeVisible();
+          const targets = await page.locator("[data-pos-courier-cancel-confirm] button").evaluateAll((els) =>
+            els.map((el) => Math.round(el.getBoundingClientRect().height)));
+          expect(Math.min(...targets)).toBeGreaterThanOrEqual(44);
         }
         const returned = page.locator("[data-pos-courier-returned]");
         if (await returned.count()) {
@@ -109,14 +112,28 @@ test("o andamento da TaOn: chega para coletar, entrega prevista e o aviso de sem
   await expect(page.locator("[data-pos-courier-stale]")).toContainText("A TaOn não informa a corrida desde", { timeout: 90_000 });
 });
 
-test("cancelar a corrida antes da coleta pede o segundo toque (mock: nunca a TaOn)", async ({ page }) => {
+test("cancelar a corrida antes do aceite: a pergunta e um botão, sem motivo (mock: nunca a TaOn)", async ({ page }) => {
   await open(page, "/preorders/NB-1057", { width: 1366, height: 768 }, "light");
   const cancel = page.locator("[data-pos-courier-cancel]");
   await expect(cancel).toHaveText("Cancelar a corrida", { timeout: 90_000 });
   await cancel.click();
-  await cancel.click();
+  await expect(page.locator("[data-pos-courier-cancel-reason]")).toHaveCount(0);
+  const sent = page.waitForRequest((request) => request.url().endsWith("/courier-cancel/") && request.method() === "POST");
+  await page.locator("[data-pos-courier-cancel-go]").click();
+  expect((await sent).postDataJSON().reason_id).toBeUndefined();
   await expect(page.locator("[data-pos-courier-state]")).toHaveText("Corrida cancelada");
   await expect(page.locator("[data-pos-courier-cancel]")).toHaveCount(0);
+});
+
+test("cancelar a corrida depois do aceite: o motivo é o botão e vai como reason_id (mock)", async ({ page }) => {
+  await open(page, "/preorders/NB-1053", { width: 1366, height: 768 }, "light");
+  await page.locator("[data-pos-courier-cancel]").click({ timeout: 90_000 });
+  await expect(page.locator("[data-pos-courier-cancel-confirm]")).toContainText("Por que cancelar a corrida A?");
+  await expect(page.locator("[data-pos-courier-cancel-reason]")).toHaveCount(3);
+  const sent = page.waitForRequest((request) => request.url().endsWith("/courier-cancel/") && request.method() === "POST");
+  await page.locator('[data-pos-courier-cancel-reason="40"]').click();
+  expect((await sent).postDataJSON().reason_id).toBe(40);
+  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Corrida cancelada");
 });
 
 test("entregador voltou: confere a lista e fecha a saída (mock)", async ({ page }) => {
