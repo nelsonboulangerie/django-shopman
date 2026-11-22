@@ -499,8 +499,12 @@ def test_delivery_slots_are_the_same_grid_the_site_offers(ctx):
     slots = tools.list_fulfillment_slots(ctx, tomorrow, "delivery")
 
     assert slots["ok"], slots
-    assert slots["delivery_slots"] == delivery_windows_for(date.fromisoformat(tomorrow))
+    # As mesmas janelas e os mesmos rótulos; a concierge diz também se cada uma é
+    # oferecida e por quê (preparo, prazo de aceite), como o site (#3266).
+    listed = [{"ref": s["ref"], "label": s["label"]} for s in slots["delivery_slots"]]
+    assert listed == delivery_windows_for(date.fromisoformat(tomorrow))
     assert [s["ref"] for s in slots["delivery_slots"]] == ["slot-09", "slot-12", "slot-15"]
+    assert all({"available", "reason"} <= set(s) for s in slots["delivery_slots"])
 
 
 def test_set_item_reserves_stock_and_tells_the_real_balance(ctx, conversation):

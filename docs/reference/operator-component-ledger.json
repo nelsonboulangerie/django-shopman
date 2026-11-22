@@ -304,6 +304,32 @@
           "status": "pending"
         },
         {
+          "id": "ai",
+          "source_files": [
+            "app/pages/ai.vue"
+          ],
+          "routes": [
+            "/ai"
+          ],
+          "variants": [
+            "kpis",
+            "spend",
+            "daily",
+            "conference",
+            "fallbacks"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
           "id": "profiles",
           "source_files": [
             "app/pages/profiles.vue"

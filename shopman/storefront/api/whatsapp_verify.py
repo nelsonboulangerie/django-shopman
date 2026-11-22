@@ -97,8 +97,13 @@ class WhatsAppVerifyClaimView(APIView):
     está na tela). Não manda nada: a liberação é procurada pela impressão digital da
     sessão DESTE navegador, então só quem gerou o código a encontra.
 
-    ``status``: ``done`` (entrou — vem o payload da sessão, igual ao do link) ou
-    ``pending`` (a mensagem ainda não chegou).
+    ``status``:
+
+    - ``done``: entrou; vem o payload da sessão, igual ao do link;
+    - ``awaiting_release``: a mensagem chegou (login começado no computador) e falta o
+      toque no botão "Liberar o Chrome no Windows" da resposta. A tela diz isso, e não
+      que a mensagem ainda não chegou (#3271);
+    - ``pending``: nada chegou para este navegador ainda.
     """
 
     permission_classes = [AllowAny]
@@ -116,7 +121,7 @@ class WhatsAppVerifyClaimView(APIView):
         from shopman.storefront.identity import get_authenticated_customer, knows_only_the_number
 
         release = access_service.pop_site_release(request)
-        if not release:
+        if not release or not release.get("confirmed"):
             # No celular a mensagem não libera esta aba: o botão "Voltar à loja" entra no
             # navegador que ele abre. Quando é este mesmo navegador, o cookie já é de
             # quem entrou, e a aba que esperava só percebe: nada foi liberado à distância.
@@ -125,6 +130,10 @@ class WhatsAppVerifyClaimView(APIView):
             customer = get_authenticated_customer(request)
             if customer is not None and not knows_only_the_number(request):
                 return Response({"status": "done", **_session_payload(customer)})
+            # A mensagem chegou e a liberação espera o toque na resposta: dizer "pending"
+            # aqui fazia a tela afirmar que a mensagem não tinha chegado.
+            if release:
+                return Response({"status": "awaiting_release"})
             return Response({"status": "pending"})
 
         response = exchange_access_token(request, str(release.get("token") or ""))

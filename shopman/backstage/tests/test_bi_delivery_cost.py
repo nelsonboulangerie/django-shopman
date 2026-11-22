@@ -97,3 +97,30 @@ def test_endpoint_serves_the_reading(client):
     body = client.get(reverse("api-backstage-bi-delivery-cost")).json()
     assert body["bi"]["cost_q"] == 1200
     assert body["bi"]["fee_q"] == 800
+
+
+def test_one_line_per_service_with_the_record_name_and_the_total_matches():
+    """Uma linha por serviço, com o nome do cadastro (#3144). O pedido que a TaOn não
+    atendeu e a casa levou: a corrida e o custo de cada uma ficam onde aconteceram, e a
+    entrega e o frete contam no serviço da corrida mais recente, o que entregou."""
+    now = timezone.now()
+    # TaOn (o padrão do Admin): a corrida sem serviço gravado conta nela.
+    _order("NB-T1", ride=_ride("920", final_value_q=1500))
+    _order("NB-T2", ride={**_ride("921", final_value_q=1200), "service": "taon"})
+    # A TaOn não atendeu com taxa, e o entregador da casa levou depois.
+    taon_failed = {**_ride("922", status="C", final_value_q=300, when=now - timedelta(minutes=30)), "service": "taon"}
+    _order("NB-H1", ride={**_ride("923", estimate_q=900, when=now), "service": "casa", "attempts": [taon_failed]})
+
+    report = build_bi_delivery_cost()
+
+    by_name = {row.name: row for row in report.services}
+    assert set(by_name) == {"TaOn", "Entregadores da casa"}
+    taon, casa = by_name["TaOn"], by_name["Entregadores da casa"]
+    assert (taon.rides, taon.deliveries, taon.cost_q, taon.fee_q) == (3, 2, 1500 + 1200 + 300, 1600)
+    assert (casa.rides, casa.deliveries, casa.cost_q, casa.fee_q) == (1, 1, 900, 800)
+    assert taon.balance_q == 1600 - 3000
+    # O que mais custou vem primeiro, e as linhas somam o total.
+    assert report.services[0].service == "taon"
+    assert sum(row.cost_q for row in report.services) == report.cost_q
+    assert sum(row.deliveries for row in report.services) == report.deliveries
+    assert sum(row.fee_q for row in report.services) == report.fee_q

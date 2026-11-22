@@ -1,42 +1,19 @@
-"""Collection → Material Symbols ligature mapping.
+"""O ícone de uma coleção na loja: o do cadastro.
 
-Presentation layer only. Keys are matched by substring against the
-collection ref, so ``cafes`` and ``cafe-gourmet`` both get ``local_cafe``.
-Unknown refs fall back to ``restaurant_menu``.
+Cada coleção guarda o próprio ícone em ``metadata.icon`` (nome Lucide, sem o prefixo
+``lucide:``), o mesmo que veste o card de produto sem foto (``category_icon``). A loja
+não adivinha ícone pelo ``ref``: sem ícone no cadastro, devolve ``""`` e a tela usa o
+padrão dela (#3253).
 """
 
 from __future__ import annotations
 
-COLLECTION_ICONS: dict[str, str] = {
-    "rusticos": "bakery_dining",
-    "macios": "breakfast_dining",
-    "folhados": "bakery_dining",
-    "doces": "cookie",
-    "cafes": "local_cafe",
-    "cafe": "local_cafe",
-    "quentes": "local_cafe",
-    "geladas": "local_drink",
-    "bebidas": "local_drink",
-    "drinks": "local_drink",
-    "combos": "inventory_2",
-    "kits": "inventory_2",
-    "ofertas": "sell",
-    "promocoes": "sell",
-    "snacks": "lunch_dining",
-    "salgados": "lunch_dining",
-    "lanches": "restaurant",
-    "especiais": "star",
-}
-
-DEFAULT_ICON = "restaurant_menu"
+from typing import Any
 
 
-def collection_icon(ref: str) -> str:
-    """Return the Material Symbols ligature for a collection ref."""
-    if not ref:
-        return DEFAULT_ICON
-    ref_lower = ref.lower()
-    for key, icon in COLLECTION_ICONS.items():
-        if key in ref_lower:
-            return icon
-    return DEFAULT_ICON
+def collection_icon(collection: Any) -> str:
+    """Nome Lucide do ícone do cadastro da coleção, ou ``""`` quando não há."""
+    metadata = getattr(collection, "metadata", None)
+    if not isinstance(metadata, dict):
+        return ""
+    return str(metadata.get("icon") or "").strip()

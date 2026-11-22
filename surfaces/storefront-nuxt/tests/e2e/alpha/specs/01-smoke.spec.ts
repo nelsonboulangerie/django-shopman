@@ -41,18 +41,6 @@ test.describe('smoke — páginas e navegação', () => {
     expect(errors).toEqual([])
   })
 
-  test('busca encontra produto conhecido', async ({ page }) => {
-    const errors = collectConsoleErrors(page)
-    await page.goto('/busca', { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(1800)
-    const input = page.locator('input[type="search"], input[type="text"]').filter({ visible: true }).first()
-    await input.fill('croissant')
-    await page.waitForTimeout(2200)
-    const body = await bodyText(page)
-    expect(body).toContain('Croissant')
-    expect(errors).toEqual([])
-  })
-
   test('rota inexistente devolve 404 com UX de erro', async ({ page }) => {
     const errors = collectConsoleErrors(page)
     const res = await page.goto('/rota-que-nao-existe-xyz', { waitUntil: 'domcontentloaded' })

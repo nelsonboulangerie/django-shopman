@@ -112,3 +112,15 @@ it("a barra do quadro é um grupo do rótulo que cabe: completo, curto à mão e
   expect(w.find('[data-tab-badge="unpaid"]').html()).not.toContain("flame");
   w.unmount();
 });
+
+it("Enter no campo vazio é a Próxima livre (P2-3); com referência, segue abrindo a digitada", async () => {
+  const w = await board([tab({ ref: "1", session_key: "sk-1", state: "in_use", item_count: 1 })]);
+  const input = w.find("input");
+  await input.trigger("keydown", { key: "Enter" });
+  expect(w.emitted("open")).toEqual([["2"]]);
+
+  await w.setProps({ modelValue: "7" });
+  await w.find("form").trigger("submit");
+  expect(w.emitted("open")).toEqual([["2"], ["7"]]);
+  w.unmount();
+});

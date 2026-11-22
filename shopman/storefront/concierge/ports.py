@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from conversational_commerce.contracts import InteractionEvent, Producer, Understanding
+from conversational_commerce.contracts import ExposureEvent, InteractionEvent, Producer, Understanding, sha256_hash
 from conversational_commerce.ports import Capabilities, Consumption, PortError, TrustedContext
 from conversational_commerce.ports.channel import OPERATIONS as CHANNEL_OPERATIONS
 from conversational_commerce.ports.model import OPERATIONS as MODEL_OPERATIONS
@@ -34,7 +34,7 @@ from shopman.shop.conversational.commerce_read import instant
 SUBJECT_PREFIX = "conversation:"
 MESSAGE_PREFIX = "message:"
 TEXT_PREFIX = "text:"
-READER = Producer(name="concierge-local-rules", version="1")
+READER = Producer(name="concierge-local-rules", version="2")
 UNAVAILABLE = {"status": "unavailable", "reason": "no_calibration"}
 
 # Ato da Concierge (``intents``) → ato da lista fechada do framework. O que não tem par vira
@@ -94,11 +94,26 @@ class ConversationOwnership:
         return Order.objects.filter(identity).filter(ref__iexact=order_ref).exists()
 
 
+#: O estado do envio da Concierge (``OutboundAttempt.State``) no vocabulário da exposição.
+EXPOSURE_STATE = {"prepared": "prepared", "executing": "submitted", "accepted": "accepted",
+                  "not_applied": "not_applied", "unknown": "unknown", "delivered": "delivered", "read": "read"}
+EXPOSURE_PREFIX = "exp-msg-"
+REALIZER = Producer(name="concierge-channel", version="1")
+
+
 @dataclass
 class NiceChannel:
-    """``ChannelPort`` sobre o adaptador da conexão da Concierge."""
+    """``ChannelPort`` sobre o adaptador da conexão da Concierge.
+
+    O envio (decisão de 22/11/2026, "o motor fala") passa pelo MESMO caminho da resposta de
+    hoje: ``service.send_out_of_turn`` prepara com as regras da casa e a prova de janela, e o
+    ``_dispatch_reply`` envia. O texto vem de ``bodies`` (o ``Engine.bodies`` do turno, pelo
+    ``body_ref``). A exposição diz o que de fato aconteceu: o hash é o do texto que saiu (as
+    regras da casa podem consertar a frase) e o estado é o do transporte.
+    """
 
     adapter: Any
+    bodies: Mapping[str, str] | None = None
     PORT = "channel"
 
     def capabilities(self) -> Capabilities:
@@ -106,7 +121,7 @@ class NiceChannel:
         window = caps.response_window
         return Capabilities(
             port="channel", operations=CHANNEL_OPERATIONS,
-            unsupported=("send", "delivery_status", "request_handoff"),
+            unsupported=("request_handoff",),
             guarantees={"stable_event_identity_verified": bool(caps.stable_event_identity_verified),
                         "read_receipts": False, "delivery_receipts": bool(caps.delivery_receipts),
                         "supports_handoff": bool(caps.supports_handoff),
@@ -136,13 +151,76 @@ class NiceChannel:
             if subject else [])
 
     def send(self, ctx, prepared, idempotency_key):
-        raise PortError("capability_missing", "o envio da Nice segue pelo caminho legado até o N9")
+        from .service import send_out_of_turn
+
+        conversation = _conversation(ctx)
+        if conversation is None:
+            raise PortError("object_forbidden", "o contexto não é uma conversa da Concierge")
+        text = (self.bodies or {}).get(prepared.body_ref)
+        if not text:
+            raise PortError("invalid_content", f"sem o texto de {prepared.body_ref}: nada foi enviado")
+        message = send_out_of_turn(conversation, text, send_key=idempotency_key)
+        if message is None:
+            raise PortError("provider_unavailable", "a conversa não tem entrada por vínculo ativo: nada foi enviado")
+        return self._exposure(ctx, message, decision_id=prepared.decision_id, recipient=prepared.recipient)
 
     def delivery_status(self, ctx, exposure_id):
-        raise PortError("capability_missing", "a entrega da Nice é lida pelo caminho legado até o N9")
+        from shopman.shop.models import ConversationMessage
+
+        conversation = _conversation(ctx)
+        ref = exposure_id[len(EXPOSURE_PREFIX):].split("-", 1)[0] if exposure_id.startswith(EXPOSURE_PREFIX) else ""
+        message = (ConversationMessage.objects.filter(pk=int(ref), conversation=conversation).first()
+                   if ref.isdigit() and conversation is not None else None)
+        if message is None:
+            raise PortError("object_forbidden", f"exposição que não é desta conversa: {exposure_id}")
+        envelope = message.envelope or {}
+        return self._exposure(ctx, message, decision_id=str(envelope.get("decision_id") or ""),
+                              recipient=str(envelope.get("recipient") or ""))
+
+    def _exposure(self, ctx, message, *, decision_id: str, recipient: str) -> ExposureEvent:
+        if decision_id and recipient and not (message.envelope or {}).get("decision_id"):
+            message.envelope = {**(message.envelope or {}), "decision_id": decision_id, "recipient": recipient}
+            message.save(update_fields=["envelope"])
+        state = EXPOSURE_STATE.get(str(message.transport_state or ""), "unknown")
+        attempts = max(1, message.outbound_attempts.count())
+        return ExposureEvent(
+            id=f"{EXPOSURE_PREFIX}{message.pk}-{state}", tenant=ctx.tenant, environment=ctx.environment,
+            trace_id=f"trace-{decision_id or message.pk}", occurred_at=instant(datetime.now(UTC)),
+            producer=REALIZER, decision_id=decision_id or f"message-{message.pk}",
+            content_hash=sha256_hash({"text": message.text}), realizer=REALIZER,
+            recipient=recipient or "unknown", attempt=attempts, state=state)
 
     def request_handoff(self, ctx, request):
         raise PortError("capability_missing", "a transferência da Nice segue pelo caminho legado até o N9")
+
+
+def _cart_fields(act, conversation, text: str) -> dict:
+    """O que o ``change_cart`` do framework pede: o produto (SKU) e a quantidade, com a relatividade.
+
+    O produto sai da MESMA busca da sacola na conversa (``intents.read_cart_item``), sem modelo:
+    empate entre produtos fica sem ``item`` e o framework pergunta. A quantidade é a da fala;
+    "mais 2" vai como ``relative`` (o framework não trata relativa como absoluta), e "tira" é 0.
+    """
+    from .intents import _order_qty, read_cart_item
+    from .tools import ToolContext
+
+    qty, relative = _order_qty(act)
+    fields: dict = {}
+    if conversation is not None:
+        def context(query: str) -> ToolContext:
+            return ToolContext(conversation=conversation, channel_ref=conversation.channel_ref or "whatsapp",
+                               customer_text=query or text)
+
+        reading = read_cart_item(act, conversation=conversation, context=context)
+        if reading is not None and len(reading.items) == 1 and reading.items[0].get("sku"):
+            fields["item"] = str(reading.items[0]["sku"])
+            if reading.removing:
+                return {**fields, "quantity": "0"}
+    if qty:
+        fields["quantity"] = str(qty)
+        if relative:
+            fields["relative"] = True
+    return fields
 
 
 class LocalReader:
@@ -162,11 +240,12 @@ class LocalReader:
         text = resolve_text(request.content_ref)
         allowed = set(request.allowed_acts)
         acts = []
+        conversation = _conversation(ctx)
         for act in local_acts(text):
             name = ACT_MAP.get(act.act, "unknown")
             if allowed and name not in allowed:
                 name = "unknown"
-            fields = {"qty": str(act.qty)} if act.qty else {}
+            fields = _cart_fields(act, conversation, text) if name == "change_quantity" else {}
             acts.append({"act": name, "fields": fields, "confidence": UNAVAILABLE})
         now = instant(datetime.now(UTC))
         understanding = Understanding(

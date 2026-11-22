@@ -104,7 +104,10 @@ def ensure_confirmable(order, *, channel_config=None) -> None:
 
     raise InvalidTransition(
         code="availability_not_approved",
-        message="O pedido não pode ser aceito: a disponibilidade dos itens ainda não foi confirmada. Atualize o quadro.",
+        message=(
+            "O pedido ainda não pode ser aceito: a disponibilidade dos itens ainda não foi confirmada. "
+            "Tente de novo em instantes; se continuar, recuse com o motivo."
+        ),
         context={
             "order_ref": order.ref,
             "status": order.status,
@@ -1127,7 +1130,9 @@ def awaits_kitchen_release(order) -> bool:
     data = order.data or {}
     if data.get(KITCHEN_RELEASED_AT_KEY):
         return False
-    if not (data.get("is_preorder") or _has_live_preorder_alarm(order) or _promised_for_today(order, target)):
+    from shopman.shop.services.order_helpers import is_preorder
+
+    if not (is_preorder(order) or _has_live_preorder_alarm(order) or _promised_for_today(order, target)):
         return False
     available_at, _ = preorder_activation_at(order)
     return available_at is not None and available_at > timezone.now()

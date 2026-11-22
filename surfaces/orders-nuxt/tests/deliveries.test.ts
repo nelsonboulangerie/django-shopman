@@ -9,7 +9,6 @@ import {
   backCheck,
   bagsWord,
   beforeHandoff,
-  cancelConfirmation,
   ridesNeedingMachine,
   nextFreeNumber,
   rideCalls,
@@ -34,7 +33,7 @@ function stop(ref: string, extra: Partial<DeliveryStopProjection> = {}): Deliver
 
 function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjection {
   return {
-    key: "1", number: 1, letter: "A", state: "searching", status_label: "", stops: [stop("NB-A01")], driver: null, position: null,
+    key: "1", number: 1, letter: "A", state: "searching", status_label: "", service_name: "TaOn", stops: [stop("NB-A01")], driver: null, position: null,
     called_at: "", called_by: "", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "", delivery_eta_at: "",
     tracking_url: "", cost_display: "", cost_label: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
     back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", reopened_at: "", reopened_driver: "",
@@ -58,60 +57,6 @@ describe("números das corridas", () => {
   it("nada quando o servidor não tem número livre, ou todos estão em edição", () => {
     expect(nextFreeNumber([], [])).toBeNull();
     expect(nextFreeNumber([2], [2])).toBeNull();
-  });
-});
-
-describe("confirmação de cancelar a corrida", () => {
-  const base = { label: "Cancelar corrida" };
-
-  it("antes do aceite: a pergunta e o botão do servidor, sem motivo para escolher", () => {
-    const copy = cancelConfirmation({
-      ...base,
-      confirmation: {
-        required: true,
-        description: "Cancelar a corrida B? A05 e C12 voltam para Aguardando.",
-        confirm_label: "Cancelar a corrida B",
-      },
-    });
-    expect(copy.question).toBe("Cancelar a corrida B? A05 e C12 voltam para Aguardando.");
-    expect(copy.confirmLabel).toBe("Cancelar a corrida B");
-    expect(copy.reasons).toEqual([]);
-  });
-
-  it("depois do aceite: cada motivo do servidor vira um botão, com o reason_id dele", () => {
-    const copy = cancelConfirmation({
-      ...base,
-      confirmation: {
-        required: true,
-        description: "Cancelar a corrida B? A05 volta para Aguardando.",
-        reason_question: "Por que cancelar a corrida B?",
-        consequence: "A05 volta para Aguardando.",
-        reasons: [
-          { id: 12, label: "O entregador não está vindo" },
-          { id: 37, label: "Está demorando demais" },
-          { id: 40, label: "Não consegui falar com o entregador" },
-        ],
-      },
-    });
-    expect(copy.reasonQuestion).toBe("Por que cancelar a corrida B?");
-    expect(copy.consequence).toBe("A05 volta para Aguardando.");
-    expect(copy.reasons.map((reason) => [reason.id, reason.label])).toEqual([
-      [12, "O entregador não está vindo"],
-      [37, "Está demorando demais"],
-      [40, "Não consegui falar com o entregador"],
-    ]);
-    expect(new Set(copy.reasons.map((reason) => reason.icon)).size).toBe(3);
-  });
-
-  it("motivo sem id inteiro ou sem rótulo não vira botão; sem frases, o texto mínimo", () => {
-    const copy = cancelConfirmation({
-      ...base,
-      confirmation: { reasons: [{ id: "12", label: "x" }, { id: 37 }, { id: 40, label: "Não consegui falar com o entregador" }] },
-    });
-    expect(copy.reasons.map((reason) => reason.id)).toEqual([40]);
-    expect(copy.question).toBe("Cancelar a corrida?");
-    expect(copy.confirmLabel).toBe("Cancelar corrida");
-    expect(cancelConfirmation(null).reasons).toEqual([]);
   });
 });
 

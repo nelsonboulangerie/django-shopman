@@ -1304,6 +1304,7 @@ def _prepare_reply(
     house_rules_held=None,
     house_rules_found=(),
     conference=None,
+    send_key="",
 ):
     """Grava a resposta para envio. Toda resposta passa aqui, e aqui passa pelas regras da casa.
 
@@ -1364,6 +1365,9 @@ def _prepare_reply(
             # A conferência antes do envio, em sombra (``concierge/conference``): só no
             # primeiro bloco do turno.
             **({"conference": conference} if conference else {}),
+            # A chave de envio do motor do framework (``send:<decisão>``): a mesma chave nunca
+            # envia duas vezes (``send_out_of_turn``).
+            **({"send_key": send_key} if send_key else {}),
         },
         usage=_turn_usage(meter),
     )
@@ -1523,7 +1527,7 @@ def _send_reply(
 
 
 def send_out_of_turn(
-    conversation: Conversation, text: str, *, purpose: str = "reply", receipts=frozenset()
+    conversation: Conversation, text: str, *, purpose: str = "reply", receipts=frozenset(), send_key: str = ""
 ) -> ConversationMessage | None:
     """Uma mensagem da casa ao cliente FORA de um turno, pelo mesmo caminho da resposta.
 
@@ -1535,26 +1539,43 @@ def send_out_of_turn(
     da última entrada do cliente. Não mexe no ``turn_fence``: um turno em andamento
     segue valendo. Devolve a mensagem com o desfecho do envio (``transport_state`` e
     ``envelope["code"]``), ou ``None`` quando a conversa não tem entrada por vínculo ativo.
+
+    ``send_key``: a chave de envio do motor do framework. Com ela, a mesma chave devolve a
+    mensagem já gravada e nunca grava outra (a conferência é feita com a conversa travada); se
+    a gravada ficou só preparada (o processo caiu antes do envio), o envio dela é retomado.
     """
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
-        inbound = list(
-            current.messages.filter(
-                kind=ConversationMessage.Kind.INBOUND,
-                binding__status=ConversationBinding.Status.ACTIVE,
-            ).order_by("-pk")[:20]
-        )
-        if not inbound:
-            return None
-        binding = ConversationBinding.objects.get(pk=inbound[0].binding_id)
-        evidence = _best_window_evidence(
-            binding, [message for message in inbound if message.binding_id == binding.pk], purpose=purpose
-        )
-        current._inbound_max_id = inbound[0].pk
-        message = _prepare_reply(
-            current, binding, text, purpose=purpose, window_evidence=evidence, receipts=frozenset(receipts)
-        )
-    return _dispatch_reply(current, message)
+        sent = (current.messages.filter(kind=ConversationMessage.Kind.REPLY, envelope__send_key=send_key).first()
+                if send_key else None)
+        if sent is not None:
+            message = sent
+        else:
+            message = _prepare_out_of_turn(current, text, purpose=purpose, receipts=receipts, send_key=send_key)
+            if message is None:
+                return None
+    return _dispatch_reply(current, message)  # só envia o que ainda está ``prepared``
+
+
+def _prepare_out_of_turn(current, text, *, purpose, receipts, send_key):
+    """A mensagem fora de turno, preparada com a conversa já travada por quem chama."""
+    inbound = list(
+        current.messages.filter(
+            kind=ConversationMessage.Kind.INBOUND,
+            binding__status=ConversationBinding.Status.ACTIVE,
+        ).order_by("-pk")[:20]
+    )
+    if not inbound:
+        return None
+    binding = ConversationBinding.objects.get(pk=inbound[0].binding_id)
+    evidence = _best_window_evidence(
+        binding, [message for message in inbound if message.binding_id == binding.pk], purpose=purpose
+    )
+    current._inbound_max_id = inbound[0].pk
+    return _prepare_reply(
+        current, binding, text, purpose=purpose, window_evidence=evidence, receipts=frozenset(receipts),
+        send_key=send_key,
+    )
 
 
 # ── Handoff ───────────────────────────────────────────────────────────

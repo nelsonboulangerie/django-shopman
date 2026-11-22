@@ -38,8 +38,9 @@ que possam ter um panorama sobre o quanto está sendo faturado pela casa."
    O que a trava confere, na seção "Nenhum agregado", é a AUSÊNCIA DE AGREGADO
    servido ao Gerente: soma do período nas encomendas, total somado no Histórico,
    a lista de contas ordenada pelo saldo (um ranking), o filtro por faixa de
-   valor no Admin, a proporção do faturamento no aviso do B.I. e exportação de
-   pedido, venda ou pagamento com valor.
+   valor no Admin, a proporção do faturamento no aviso do B.I., exportação de
+   pedido, venda ou pagamento com valor, e o total do dia somando os entregadores
+   da casa (o acerto é por pessoa, na ordem do nome).
 """
 
 from __future__ import annotations
@@ -479,6 +480,67 @@ def test_o_aviso_do_bi_ao_balcao_nao_traz_numero_do_faturamento():
 
     assert "R$" not in public and "%" not in public, public
     assert "14/08 (sexta)" in public and "abaixo do esperado" in public
+
+
+@pytest.mark.channels("web")
+def test_o_acerto_dos_entregadores_e_por_pessoa_sem_total_do_dia(client):
+    """O acerto do dia (#2527) é a conta de UMA pessoa, como o saldo de um cliente: "A
+    pagar a Diego hoje". Ao balcão nunca chega o total somando todos os entregadores, nem
+    a lista ordenada pelo valor (um ranking): a ordem é a do nome."""
+    from django.utils import timezone
+    from shopman.orderman.models import Order, OrderItem
+
+    from shopman.shop.models import Courier, CourierRate, DeliveryService, Shop
+    from shopman.shop.services import own_fleet
+
+    Shop.objects.create(name="Loja", route="Rua da Loja", street_number="10", city="Londrina",
+                        state_code="PR", latitude=-23.3405, longitude=-51.1580)
+    casa = DeliveryService.objects.get(ref="casa")
+    CourierRate.objects.create(service=casa, max_km=None, value_q=1200, extra_stop_q=300)
+
+    def person(ref, name):
+        return Courier.objects.create(service=casa, ref=ref, name=name, phone="+5543999990000",
+                                      on_shift_on=timezone.localdate())
+
+    def delivery(ref, lat):
+        order = Order.objects.create(ref=ref, channel_ref="web", status=Order.Status.READY, total_q=5800, data={
+            "customer": {"name": "Ana Souza", "phone": "5543988887777"}, "fulfillment_type": "delivery",
+            "payment": {"method": "pix", "status": "captured"},
+            "delivery_address_structured": {"route": "Rua Caracas", "street_number": "420", "city": "Londrina",
+                                            "state_code": "PR", "latitude": lat, "longitude": -51.16}})
+        OrderItem.objects.create(order=order, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=5800,
+                                 line_total_q=5800)
+        return order
+
+    def close(orders, who):
+        link = own_fleet.assign(orders, who, actor="operator:dono").link
+        own_fleet.depart(link)
+        for order in orders:
+            own_fleet.deliver(link, order.ref)
+        own_fleet.close_if_settled(link)
+
+    ana, diego = person("ana", "Ana"), person("diego", "Diego")
+    close([delivery("ENT-1", -23.31)], ana)                                   # Ana: R$ 12,00
+    close([delivery("ENT-2", -23.31), delivery("ENT-3", -23.305)], diego)     # Diego: R$ 15,00 (uma rota, duas paradas)
+
+    for user in (_gerente(), _user_in("caixa-trava", "Caixa")):
+        client.force_login(user)
+        response = client.get("/api/v1/backstage/deliveries/couriers/")
+        if response.status_code == 403:
+            continue  # quem não abre a página Entregas não lê acerto nenhum
+        assert response.status_code == 200, response.content
+        body = response.json()
+        assert not _money_sums(body), f"total do dia servido ao balcão: {_money_sums(body)}"
+        rows = body["couriers"]
+        assert [row["name"] for row in rows] == ["Ana", "Diego"], "a ordem é a do nome, nunca a do valor"
+        assert rows[0]["to_pay_today"] == "A pagar a Ana hoje: R$ 12,00 (1 corrida)"
+        assert rows[1]["to_pay_today"] == "A pagar a Diego hoje: R$ 15,00 (1 corrida)"
+        for row in rows:
+            assert set(row) <= {"ref", "name", "on_shift", "state", "state_label", "back_at", "value_q", "value",
+                                "to_pay_today"}, f"campo novo no entregador: {set(row)}"
+        outside = {key: value for key, value in body.items() if key != "couriers"}
+        assert "R$" not in str(outside), f"dinheiro fora da linha de cada entregador: {outside}"
+        client.logout()
 
 
 # ── A exceção: estornar UM pedido (#2727, item 5) ────────────────────────────

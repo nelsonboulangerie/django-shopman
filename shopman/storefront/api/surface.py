@@ -1006,6 +1006,39 @@ class OfferClaimView(APIView):
         return Response({**outcome.response_body, "cart": _cart_payload(request), "replayed": outcome.replayed}, status=outcome.response_code)
 
 
+def _brl(value_q: int) -> str:
+    from shopman.utils.monetary import format_money
+
+    return f"R$ {format_money(int(value_q or 0))}"
+
+
+def coupon_not_better_message(result: dict) -> str:
+    """O cupom não vence o desconto que os itens dele já têm (o maior ganha)."""
+    code = str(result.get("coupon_code") or "").strip().upper() or "cupom"
+    label = str(result.get("standing_label") or "").strip()
+    standing_q = int(result.get("standing_q") or 0)
+    if label and standing_q > 0:
+        return (
+            f"Os itens deste cupom já têm desconto de {_brl(standing_q)} ({label}), "
+            f"igual ou maior que o do {code}. Os descontos não se somam: guarde o cupom para outra compra."
+        )
+    return (
+        "Os itens deste cupom já têm um desconto igual ou maior. "
+        f"Os descontos não se somam: guarde o {code} para outra compra."
+    )
+
+
+def coupon_replaced_notice(replaced: dict | None) -> str:
+    """O cupom venceu e entrou no lugar de um desconto que já valia."""
+    if not replaced:
+        return ""
+    label = str(replaced.get("label") or "").strip()
+    total_q = int(replaced.get("total_q") or 0)
+    if not label or total_q <= 0:
+        return ""
+    return f"Cupom aplicado no lugar do desconto que já valia ({label}, {_brl(total_q)}), porque dá mais."
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["cart"],
@@ -1081,9 +1114,20 @@ class CartCouponView(APIView):
 
         result = CartService.apply_coupon(request, code)
         if result.get("ok"):
-            return Response({"cart": _cart_payload(request)})
+            body = {"cart": _cart_payload(request)}
+            notice = coupon_replaced_notice(result.get("replaced"))
+            if notice:
+                body["notice"] = notice
+            return Response(body)
 
         error_key = result.get("error", "invalid_coupon")
+        if error_key == "coupon_not_better":
+            # O cupom é válido (não é oráculo nem tentativa recusada): só não vence o
+            # desconto que já vale, e não foi gasto.
+            return Response(
+                {"detail": coupon_not_better_message(result), "error_code": error_key},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if error_key in self.ERROR_MESSAGES:
             return Response(
                 {"detail": self.ERROR_MESSAGES[error_key], "error_code": error_key},

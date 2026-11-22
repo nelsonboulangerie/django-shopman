@@ -166,7 +166,8 @@ consumo por posição. `transport_state` distingue legacy/prepared/executing/acc
 not_applied/unknown; `delivered` legado não comprova receipt do fornecedor.
 A retenção continua sob G04; hashes não promovem identidade/consentimento.
 
-`Conversation.quote` v2 contém token, session_key, customer_ref/phone vinculados,
+`Conversation.quote` v2 contém token, `code` (o código curto da confirmação sem identificador,
+ADR-050: nunca repete o do resumo anterior da conversa, #3291), session_key, customer_ref/phone vinculados,
 snapshot factual, revision de Session, payment_method selecionado, total_q completo,
 lines_total_q, issued_at e validity=`session_open_and_current_policy`. Sem TTL comercial inventado: Session aberta, holds, preço, data/slot são revalidados; G05 decide eventual validade adicional. Não concede autorização: Message de revisão aceita pelo
 provider + nova entrada verificada são a evidência; replay usa IdempotencyKey.
@@ -388,7 +389,7 @@ for key in (
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `is_preorder` | `bool` | `True` se `delivery_date > hoje`. Calculado no commit |
+| `is_preorder` | `bool` | Encomenda: feita ANTES do dia combinado. Gravado no commit (`delivery_date > dia da venda`), na entrada do iFood agendado (`ifood_ingest`, a mesma conta) e no reagendamento (`reschedule`: feita antes do NOVO dia, então a encomenda de ontem trazida para hoje continua encomenda, #3163). Quem pergunta "é encomenda?" não lê a chave à mão: usa a régua única `shop.services.order_helpers.is_preorder` (no pedido, esta chave; na sessão, as datas). "A data é depois de hoje?" é outra pergunta: `order_helpers.is_for_a_later_day` |
 
 ### Chaves adicionadas por handlers pós-commit
 
@@ -773,6 +774,7 @@ services que ele chama leem o bloco.
 | `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
 | `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
 | `retained_q` | `int` | `paid_q − refund_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
+| `from_account_q`, `money_q`, `debt_left_q`, `kept_q` | `int` | Venda MISTA, parte na conta da casa e parte em outra forma (#3151): a DÍVIDA sai primeiro (decisão da coordenação, 21/11/2026). Do devolvível, `from_account_q` sai da conta e só `money_q` volta em dinheiro; do retido, `debt_left_q` continua na conta e `kept_q` fica com a loja (`no_show.account_split`). Ausentes fora da venda mista |
 | `on_account` | `bool` | Venda SÓ na conta da casa (#2697): `paid_q` é a dívida em aberto do pedido (`payment.open_account_debt_q`), `refund_q` sai da conta (`payment.reduce_account_debt`, evento `account_debt_reduced`) e `retained_q` continua devido. A conta já acertada e a venda que mistura a conta com outra forma não passam pelo gesto |
 
 Pedido não pago: `paid_q = refund_q = retained_q = 0`. A validade do lote é lida de
