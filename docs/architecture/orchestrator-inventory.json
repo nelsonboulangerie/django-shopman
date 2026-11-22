@@ -15555,6 +15555,28 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/conversational/ledgers.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DurableExposureLedger",
+            "exposure_ledger",
+            "memory_store",
+            "receipt_ledger"
+          ]
+        }
+      ]
     }
   ]
 }
