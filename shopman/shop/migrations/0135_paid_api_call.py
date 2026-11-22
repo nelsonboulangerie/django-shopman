@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('shop', '0133_usd_brl_quote'),
+        ('shop', '0134_conversational_commitment'),
     ]
 
     operations = [
