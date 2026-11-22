@@ -2664,7 +2664,7 @@ defineExpose({
   <NuxtModal
     v-model:open="discountSheetOpen"
     title="Desconto"
-    description="Tipo, valor e motivo. A loja confere e aplica."
+    description="Escolha o tipo, o valor e o motivo."
     :ui="{ content: 'sm:max-w-md' }"
     data-pos-discount-modal
   >
