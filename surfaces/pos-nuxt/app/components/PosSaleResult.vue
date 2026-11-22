@@ -390,9 +390,10 @@ function onPrimary() {
           size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           :href="result.nextUrl"
+          v-bind="attrsFor(result.nextUrl)"
         >
           <Icon name="lucide:external-link" class="size-4" />
-          Abrir no gestor
+          Abrir o pedido no Gestor
         </NuxtButton>
         <NuxtButton
           v-if="danfe?.kind === 'print' && danfeScreenUrl"
@@ -415,7 +416,7 @@ function onPrimary() {
           @click="emit('cancelSale')"
         >
           <Icon name="lucide:undo-2" class="size-4" />
-          Cancelar venda
+          {{ isOrder ? "Cancelar encomenda" : "Cancelar venda" }}
         </NuxtButton>
       </div>
     </div>
