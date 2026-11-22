@@ -78,6 +78,39 @@ describe('useWhatsappReturn — recuperação da volta', () => {
     await mounted.wrapper.unmount()
   })
 
+  it('a mensagem chegou e falta liberar: não vira "ainda não chegou" (#3271)', async () => {
+    claim = vi.fn(async () => ({ status: 'awaiting_release' }))
+    const mounted = await mountReturn()
+    mounted.result.arm()
+
+    await mounted.result.checkNow()
+
+    expect(mounted.result.awaitingRelease.value).toBe(true)
+    expect(mounted.result.notArrived.value).toBe(false)
+    // Continua esperando: só o toque em "Liberar" na resposta deixa a aba entrar.
+    expect(mounted.result.waiting.value).toBe(true)
+    expect(mounted.onDone).not.toHaveBeenCalled()
+
+    // Abrir o WhatsApp de novo começa uma tentativa nova, sem o estado da anterior.
+    mounted.result.arm()
+    expect(mounted.result.awaitingRelease.value).toBe(false)
+    await mounted.wrapper.unmount()
+  })
+
+  it('a conferência automática também traz a notícia de que a mensagem chegou', async () => {
+    claim = vi.fn(async () => ({ status: 'awaiting_release' }))
+    const now = Date.now()
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, startedAt: now, expiresAt: now + 60_000 }))
+
+    const mounted = await mountReturn()
+    await flushPromises()
+
+    expect(claim).toHaveBeenCalledOnce()
+    expect(mounted.result.awaitingRelease.value).toBe(true)
+    expect(mounted.result.notArrived.value).toBe(false)
+    await mounted.wrapper.unmount()
+  })
+
   it('a conferência automática que volta vazia não fala por cima da pessoa', async () => {
     const now = Date.now()
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, startedAt: now, expiresAt: now + 60_000 }))

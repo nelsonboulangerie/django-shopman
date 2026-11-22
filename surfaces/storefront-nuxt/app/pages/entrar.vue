@@ -47,6 +47,7 @@ const {
   waiting: waWaiting,
   checking: waChecking,
   notArrived: waNotArrived,
+  awaitingRelease: waAwaitingRelease,
   arm: waArm,
   stop: waStop,
   checkNow: waCheckNow
@@ -134,8 +135,17 @@ const defaultDdd = computed(() => loginShell.value?.shell.public_config?.default
 const isCheckoutReturn = computed(() => /checkout|finalizar/.test(nextUrl.value))
 // Omotenashi aqui precisa ser factual: `next=/finalizar` não prova que existe sacola.
 // Só a projeção canônica do carrinho autoriza copy de "sacola guardada".
+// ⚠️ Na navegação pelo cliente vale a sacola VIVA (useCartState, a mesma do cabeçalho),
+// nunca a do shell: o `shopman-shell` é o cache da primeira carga, e quem pôs o item
+// depois chegava da sacola com 1 item e lia a frase neutra (#3271). Na carga pelo
+// servidor o shell é desta requisição, e o app.vue não semeia a sacola nas rotas de
+// login: o servidor e a hidratação leem o shell (a mesma resposta dos dois lados), e,
+// montada a página, a sacola é relida e passa a valer a viva.
+const nuxtApp = useNuxtApp()
+const { cart: liveCart, refreshCart } = useCartState()
+const cartFromShell = ref(import.meta.server || nuxtApp.isHydrating)
 const cartHasItems = computed(() => {
-  const cart = loginShell.value?.cart
+  const cart = cartFromShell.value ? loginShell.value?.cart : liveCart.value
   return Boolean(cart && cart.items_count > 0 && !cart.is_empty)
 })
 // ⚠️ A copy da sacola pergunta pela SACOLA, não pela rota. Ela era
@@ -189,6 +199,8 @@ const waWaitingMessage = computed(() => withButton(copyMessage(
     ? 'Na resposta do WhatsApp, toque em “{button}”. Esta tela entra logo depois.'
     : 'Na resposta do WhatsApp, toque em “{button}”. A loja abre com você dentro.'
 )))
+// A mensagem chegou e falta o toque no botão da resposta (só no computador, #3271).
+const waArrivedMessage = computed(() => withButton('Agora, na resposta do WhatsApp, toque em “{button}”. Esta tela entra logo depois.'))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'O WhatsApp não abriu?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Mande a mensagem abaixo para {phone} no WhatsApp.'))
 const supportUrl = computed(() => withWhatsAppText(
@@ -222,6 +234,13 @@ const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSave
   ? copyMessage(authCopy.value?.device_trust_saved, 'Aparelho salvo. Cada entrada renova o prazo.')
   : ''
 )
+
+// Carga pelo servidor: a sacola é relida depois de montar e passa a valer a viva (o
+// cabeçalho ganha a mesma). Sem resposta, fica a do shell, que é desta carga.
+onMounted(() => {
+  if (!cartFromShell.value) return
+  void refreshCart().then(() => { cartFromShell.value = false }).catch(() => null)
+})
 
 onMounted(async () => {
   nowMs.value = Date.now()
@@ -709,6 +728,8 @@ useSeoMeta({
             :return-state="waReturnState"
             :checking="waChecking"
             :not-arrived="waNotArrived"
+            :awaiting-release="waAwaitingRelease"
+            :arrived-message="waArrivedMessage"
             :why="waWhy"
             :steps="waSteps"
             :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Abrir o WhatsApp')"

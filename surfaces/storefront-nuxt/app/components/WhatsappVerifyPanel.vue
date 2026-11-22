@@ -25,12 +25,15 @@ const props = withDefaults(defineProps<{
   returnState?: WhatsappReturnState
   checking?: boolean
   notArrived?: boolean
+  awaitingRelease?: boolean
   helpHref?: string
   why?: string
   steps?: string[]
   ctaLabel?: string
   waitingTitle?: string
   waitingMessage?: string
+  arrivedTitle?: string
+  arrivedMessage?: string
   manualTitle?: string
   manualIntro?: string
 }>(), {
@@ -43,12 +46,15 @@ const props = withDefaults(defineProps<{
   returnState: 'idle',
   checking: false,
   notArrived: false,
+  awaitingRelease: false,
   helpHref: '/faq',
   why: '',
   steps: () => [],
   ctaLabel: 'Abrir o WhatsApp',
   waitingTitle: 'Mensagem enviada?',
   waitingMessage: 'Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.',
+  arrivedTitle: 'Sua mensagem chegou',
+  arrivedMessage: 'Agora, na resposta do WhatsApp, toque no botão de liberar. Esta tela entra logo depois.',
   manualTitle: 'O WhatsApp não abriu?',
   manualIntro: 'Mande a mensagem abaixo para {phone} no WhatsApp.'
 })
@@ -62,24 +68,41 @@ const isStarting = computed(() => props.status === 'idle' || props.status === 'l
 const canOpenWhatsApp = computed(() => !!props.deepLink)
 const ctaText = computed(() => canOpenWhatsApp.value ? props.ctaLabel : 'Gerando link')
 const isWaiting = computed(() => props.waiting || ['waiting', 'slow', 'offline-or-error'].includes(props.returnState))
+// A mensagem chegou e falta o toque em "Liberar o Chrome" (só no computador): a tela diz
+// o que é verdade e o que falta, em vez de "ainda não chegou" (#3271). Vem antes da
+// demora, que seria meia verdade; a falha de rede vem antes de tudo, porque a última
+// conferência não respondeu.
 const waitingView = computed(() => {
-  if (props.returnState === 'slow') {
-    return {
-      icon: 'lucide:clock-3',
-      title: 'Está demorando mais que o normal',
-      message: 'Não precisa enviar outra mensagem. Vamos continuar conferindo por aqui.'
-    }
-  }
   if (props.returnState === 'offline-or-error') {
     return {
       icon: 'lucide:wifi-off',
       title: 'Não consegui conferir agora',
-      message: 'Confira sua internet. Sua mensagem e sua sacola continuam guardadas.'
+      message: 'Confira sua internet. Sua mensagem e sua sacola continuam guardadas.',
+      spin: false
     }
   }
-  return { icon: 'lucide:loader-circle', title: props.waitingTitle, message: props.waitingMessage }
+  if (props.awaitingRelease) {
+    return { icon: 'lucide:message-circle-check', title: props.arrivedTitle, message: props.arrivedMessage, spin: false }
+  }
+  if (props.returnState === 'slow') {
+    return {
+      icon: 'lucide:clock-3',
+      title: 'Está demorando mais que o normal',
+      message: 'Não precisa enviar outra mensagem. Vamos continuar conferindo por aqui.',
+      spin: false
+    }
+  }
+  return { icon: 'lucide:loader-circle', title: props.waitingTitle, message: props.waitingMessage, spin: props.returnState === 'waiting' }
 })
+const arrived = computed(() => props.awaitingRelease && props.returnState !== 'offline-or-error')
+const checkLabel = computed(() => arrived.value ? 'Já liberei. Conferir agora' : 'Já enviei. Conferir agora')
 const manualMessage = computed(() => props.message || (props.code ? `#menu ${props.code}` : ''))
+// A frase quebra a linha onde precisar, mas a referência NB-… não se parte no hífen:
+// "NB-" numa linha e o resto na outra confunde quem copia à mão (#3271).
+const manualMessageParts = computed(() => manualMessage.value
+  .split(/(NB-[A-Za-z0-9]+)/)
+  .filter(Boolean)
+  .map(text => ({ text, isRef: /^NB-[A-Za-z0-9]+$/.test(text) })))
 // 554333231997 → "(43) 3323-1997"; chat "cru" (sem mensagem) para o envio manual.
 const waNumberDisplay = computed(() => props.waNumber ? phoneDisplay(`+${props.waNumber}`) : '')
 const chatLink = computed(() => props.waNumber ? `https://wa.me/${props.waNumber}` : '')
@@ -184,12 +207,12 @@ async function copyMessage () {
         <Icon
           :name="waitingView.icon"
           :size="22"
-          :class="['mt-0.5 shrink-0 text-muted-foreground', returnState === 'waiting' ? 'animate-spin' : '']"
+          :class="['mt-0.5 shrink-0', arrived ? 'text-foreground' : 'text-muted-foreground', waitingView.spin ? 'animate-spin' : '']"
           aria-hidden="true"
         />
-        <div class="min-w-0">
+        <div class="min-w-0" :data-login-whatsapp-arrived="arrived ? '' : undefined">
           <p class="shop-item-title font-semibold">{{ waitingView.title }}</p>
-          <p class="mt-1 shop-muted">{{ waitingView.message }}</p>
+          <p :class="['mt-1', arrived ? 'shop-body' : 'shop-muted']">{{ waitingView.message }}</p>
         </div>
       </div>
 
@@ -203,12 +226,12 @@ async function copyMessage () {
         data-login-whatsapp-check
         @click="emit('check')"
       >
-        Já enviei. Conferir agora
+        {{ checkLabel }}
       </UiButton>
       <!-- A resposta ao toque: conferiu e a mensagem ainda não chegou. Sem isto o botão
            só girava e voltava igual (beta 05/11). -->
       <p
-        v-if="notArrived && !checking && returnState !== 'offline-or-error'"
+        v-if="notArrived && !arrived && !checking && returnState !== 'offline-or-error'"
         class="shop-meta text-center"
         role="status"
         data-login-whatsapp-not-arrived
@@ -216,14 +239,18 @@ async function copyMessage () {
         Conferimos agora e sua mensagem ainda não chegou. Se você já enviou, espere alguns segundos: seguimos conferindo por aqui.
       </p>
 
-      <div v-if="manualMessage" class="shop-surface-faubourg rounded-md border p-4 shop-stack-micro" data-login-whatsapp-manual>
+      <!-- O plano B é para quem viu o WhatsApp não abrir. Com a mensagem já recebida, ele
+           seria uma segunda coisa a entender no lugar do toque que falta. -->
+      <div v-if="manualMessage && !arrived" class="shop-surface-faubourg rounded-md border p-4 shop-stack-micro" data-login-whatsapp-manual>
         <p v-if="manualTitle" class="shop-body font-semibold" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
         <p class="shop-meta" data-login-whatsapp-manual-intro>
           {{ manualIntroParts.before }}<span v-if="waNumberDisplay" class="whitespace-nowrap font-semibold text-foreground">{{ waNumberDisplay }}</span>{{ manualIntroParts.after }}
         </p>
         <!-- `bg-card`, não `bg-background`: sobre o Faubourg o canvas creme some. -->
-        <div class="flex items-center gap-2 rounded-md border bg-card py-1 pr-1 pl-3">
-          <span class="min-w-0 flex-1 truncate font-mono text-base tracking-wider text-muted-foreground">{{ manualMessage }}</span>
+        <!-- A mensagem é uma frase inteira, e a referência NB-… fica no fim: ela QUEBRA a
+             linha, nunca se corta. Quem digita à mão precisa ler tudo (#3271). -->
+        <div class="flex items-start gap-2 rounded-md border bg-card py-1 pr-1 pl-3">
+          <span class="min-w-0 flex-1 self-center py-2 font-mono text-base break-words text-foreground" data-login-whatsapp-manual-message><template v-for="(part, index) in manualMessageParts" :key="index"><span v-if="part.isRef" class="whitespace-nowrap" data-login-whatsapp-manual-ref>{{ part.text }}</span><template v-else>{{ part.text }}</template></template></span>
           <UiButton
             type="button"
             variant="ghost"
