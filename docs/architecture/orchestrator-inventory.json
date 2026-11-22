@@ -10369,6 +10369,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "SERVICE_FALLBACK_NAME",
             "_KIND_BY_REF",
             "_kind",
             "_translator",
