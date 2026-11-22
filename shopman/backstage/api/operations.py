@@ -5520,8 +5520,12 @@ class OrderCourierRideQuoteView(APIView):
         else:
             estimate = courier.estimate_for_ride(orders)
         if estimate is None:
+            from shopman.shop.services import delivery_services
+
+            # A corrida que ainda vai abrir vai pelo serviço padrão do Admin.
             return Response({"estimate": None,
-                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+                             "detail": f"A {delivery_services.service_name()} não cotou esta corrida agora. "
+                                       "Dá para chamar mesmo assim."})
         order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
         compare = {}
         if len(orders) > 1:

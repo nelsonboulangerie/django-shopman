@@ -521,3 +521,50 @@ describe("a casa diz ficar pronto, nunca sair do forno", () => {
     expect(paths).toContain("production-nuxt/app/pages/close.vue");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO, a regra do serviço de entrega (M1b-b3, #3139): a tela
+// do operador diz o nome do serviço da corrida COMO O CADASTRO DIZ, nunca "TaOn"
+// escrito no código. A casa entrega por mais de um serviço (DEV-2026-030: a TaOn,
+// os entregadores da casa, outra central amanhã), e o nome chega pronto do servidor
+// (`service_name` no bloco do entregador e na corrida das Entregas; `ride_plan` no
+// sheet de chamar). A frase monta com `deliveryServiceName` (presentation/
+// deliveryService.ts), que diz "central" quando o servidor não disse.
+//
+// Só o código das telas (`app/`, `server/`): o teste e o mock usam "TaOn" como DADO
+// do cadastro, que é exatamente o que a tela recebe. Comentário é descontado: dizer
+// que a TaOn faz isto ou aquilo continua sendo verdade sobre a TaOn.
+
+const BANNED_SERVICE = /\bTaOn\b/;
+
+// O B.I. de entregas fica de fora até decidir o que o custo soma com mais de um
+// serviço (#3144): lá não é troca de nome, é o que o número significa. A issue fecha
+// esta exceção; o teste abaixo dela trava a lista pelo conteúdo.
+const EXEMPT_FROM_SERVICE = ["bi-nuxt/app/pages/delivery.vue", "bi-nuxt/app/presentation/delivery.ts"];
+
+const SCREEN_SOURCES = SOURCES.filter((file) => {
+  const path = relative(surfacesDir, file);
+  return /\/(app|server)\//.test(path) && !EXEMPT_FROM_SERVICE.includes(path);
+});
+
+describe("o nome do serviço de entrega vem do cadastro", () => {
+  it("nenhum texto de operador diz 'TaOn' fixo", () => {
+    const leaks = SCREEN_SOURCES.flatMap((file) => offenders(file, BANNED_SERVICE, stripComments));
+
+    expect(
+      leaks,
+      "O nome do serviço da corrida vem do cadastro (service_name), não do código.\n" +
+        "Use deliveryServiceName(<o service_name do bloco ou da corrida>) na frase.\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
+
+  it("a varredura enxerga as telas, não um recorte", () => {
+    const apps = new Set(SCREEN_SOURCES.map((file) => relative(surfacesDir, file).split("/")[0]));
+    expect([...apps]).toEqual(expect.arrayContaining(["orders-nuxt", "pos-nuxt", "operator-kit"]));
+  });
+
+  it("a exceção do B.I. é só a do #3144, e não cresce", () => {
+    expect(EXEMPT_FROM_SERVICE).toEqual(["bi-nuxt/app/pages/delivery.vue", "bi-nuxt/app/presentation/delivery.ts"]);
+  });
+});

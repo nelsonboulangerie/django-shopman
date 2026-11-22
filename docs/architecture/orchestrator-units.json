@@ -8331,6 +8331,7 @@
             "cancel_asks_reason",
             "cancel_refused_message",
             "ride_name",
+            "service_name",
             "CANCEL_PENDING_MESSAGE",
             "CANCEL_UNKNOWN_MESSAGE",
             "CANCEL_NOT_SENT_MESSAGE"
