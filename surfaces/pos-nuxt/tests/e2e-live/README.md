@@ -26,7 +26,10 @@ Na CI, ou numa máquina só sua, o script roda sem ele.
 O script, em ordem:
 
 1. cria o banco `shopman_pdv_e12` se faltar, roda `migrate` e `seed --flush` (o elenco de
-   `setup_operators` vem junto);
+   `setup_operators` vem junto). O seed roda com `SHOPMAN_STAGING_AUTOPILOT=true`, que no
+   seed só abre a casa todo dia, o dia inteiro, sem feriado, como na pilha do Gestor.
+   Assim a jornada que vende "Hoje" roda em qualquer dia; com o horário real, ela caía no
+   domingo (#3295). O runserver e o worker sobem sem a variável;
 2. põe a trava automática do PDV principal em **900 s** (ver "Ajustes declarados");
 3. compila o PDV e a Cozinha (`nuxt build`, um de cada vez);
 4. sobe Django `:8052` (com o worker de directives), PDV `:3162` e Cozinha `:3163`;

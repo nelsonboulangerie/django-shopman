@@ -287,6 +287,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_MEMORY_DECLINED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_MEMORY_ORDER_THANKS": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -358,6 +359,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_SMALL_TALK_THANKS": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_TURN_LIMIT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),

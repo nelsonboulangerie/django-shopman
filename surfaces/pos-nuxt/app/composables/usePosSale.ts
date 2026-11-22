@@ -675,7 +675,7 @@ export function usePosSale(deps: PosSaleDeps) {
           const code = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error;
           if (code?.code === "manager_approval_invalid" || code?.code === "manager_approval_required") {
             closeRecheckApproval.value = marker.approval || { ...NO_APPROVAL_FIGURES };
-            closeRecheckApprovalError.value = code.recovery || code.message || "Aprovação gerencial inválida.";
+            closeRecheckApprovalError.value = code.recovery || code.message || "Confira o gerente e digite o PIN de novo.";
             return "approval" as const;
           }
           // A reenvio não prova nada além do "ok": nem um 4xx (a regra pode ter
@@ -4027,7 +4027,7 @@ export function usePosSale(deps: PosSaleDeps) {
         // Aprovação recusada: a assinatura já foi gasta na tentativa; o diálogo
         // reabre com a mensagem, em vez de o CTA reenviar credencial errada.
         forgetManagerApproval();
-        managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
+        managerApprovalError.value = failure.recovery || failure.message || "Confira o gerente e digite o PIN de novo.";
       } else if (failure?.focus === "customer") {
         // Recusa que se resolve identificando o cliente (ex.: agendado sem
         // cliente): o toast diz o porquê e a tela abre a identificação.

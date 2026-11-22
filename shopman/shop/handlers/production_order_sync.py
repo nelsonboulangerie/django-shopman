@@ -292,11 +292,13 @@ def order_requirement_for_work_order(work_order) -> Decimal:
     if not refs:
         return Decimal("0")
     total = Decimal("0")
-    for order in Order.objects.filter(
+    orders = list(Order.objects.filter(
         ref__in=refs,
         status__in=ACTIVE_ORDER_STATUSES,
-    ).prefetch_related("items"):
-        total += _order_sku_quantity(order, work_order.output_sku)
+    ).prefetch_related("items"))
+    shelf = _shelf_quantities(orders)
+    for order in orders:
+        total += _production_quantity(order, work_order.output_sku, shelf)
     return total
 
 
@@ -532,12 +534,15 @@ def _allocate_pending_links(
     fulfilled_order_skus = {
         (order.ref, sku) for order in orders for sku in _fulfilled_order_skus(order, all_work_orders)
     }
+    shelf = _shelf_quantities(orders)
 
     if strategy == "manual":
         for work_order in pending_work_orders:
             work_order_refs = set(linked_order_refs(work_order))
             for order in orders:
                 if (order.ref, work_order.output_sku) in fulfilled_order_skus:
+                    continue
+                if _production_quantity(order, work_order.output_sku, shelf) <= 0:
                     continue
                 order_refs = set((order.data or {}).get(ORDER_AWAITING_WO_REFS_KEY) or ())
                 if order.ref not in work_order_refs and work_order.ref not in order_refs:
@@ -570,7 +575,7 @@ def _allocate_pending_links(
         for sku in _order_skus(order):
             if (order.ref, sku) in fulfilled_order_skus:
                 continue
-            required = _order_sku_quantity(order, sku)
+            required = _production_quantity(order, sku, shelf)
             if required <= 0:
                 continue
             candidates = _ordered_candidate_work_orders(
@@ -613,6 +618,42 @@ def _order_sku_quantity(order, sku: str) -> Decimal:
         (item.qty for item in order_composition.effective_items(order) if item.sku == sku),
         Decimal("0"),
     )
+
+
+#: A reserva que ainda cobre o pedido: viva ou já baixada. A liberada não cobre nada.
+_SHELF_HOLD_STATUSES = ("pending", "confirmed", "fulfilled")
+
+
+def _shelf_quantities(orders) -> dict[tuple[str, str], Decimal]:
+    """O que cada pedido já tem na prateleira, por SKU (#2721 item 8).
+
+    Prateleira é o saldo sem data (``Quant.target_date`` nulo): o pão que já existe.
+    A reserva do pedido ali, viva ou já baixada, não espera lote nenhum. Sem este
+    desconto, o pedido servido da vitrine era ligado ao lote planejado do dia: o
+    cartão dizia "Produção de Croissant: não começou" de um croissant já reservado,
+    e o lote o contava como comprometido. Uma consulta para todos os pedidos.
+    """
+    refs = {f"order:{order.ref}": order.ref for order in orders}
+    if not refs:
+        return {}
+    from shopman.stockman import Hold
+
+    totals: dict[tuple[str, str], Decimal] = {}
+    rows = Hold.objects.filter(
+        metadata__reference__in=list(refs),
+        status__in=_SHELF_HOLD_STATUSES,
+        quant__isnull=False,
+        quant__target_date__isnull=True,
+    ).values_list("metadata__reference", "sku", "quantity")
+    for reference, sku, quantity in rows:
+        key = (refs[reference], sku)
+        totals[key] = totals.get(key, Decimal("0")) + Decimal(str(quantity))
+    return totals
+
+
+def _production_quantity(order, sku: str, shelf: dict[tuple[str, str], Decimal]) -> Decimal:
+    """O que a produção ainda deve ao pedido: o pedido, menos o que já está na prateleira."""
+    return max(_order_sku_quantity(order, sku) - shelf.get((order.ref, sku), Decimal("0")), Decimal("0"))
 
 
 def _adjusted_active_order_ids(skus) -> set[int]:
