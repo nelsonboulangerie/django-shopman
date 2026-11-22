@@ -3570,7 +3570,7 @@ def _advance_block_copy(order: Order, advance_block, method: str, *, payment_pen
                 f"{times}. Sem pagamento no prazo, o pedido cancela sozinho."
             )
         return _payment_wait_copy(order, method)
-    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block)
+    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block, order)
 
 
 def advance_block_label(advance_block: operator_orders.AdvanceBlock) -> str:
