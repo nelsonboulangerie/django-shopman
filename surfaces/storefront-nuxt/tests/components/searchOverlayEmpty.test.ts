@@ -4,7 +4,7 @@ import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import SearchOverlay from '~/components/SearchOverlay.vue'
 
 // Beta 05/11 (LOJA-12): a busca do cardápio terminava em "veja o cardápio completo"
-// sem botão nenhum, enquanto a página /busca, com a mesma frase, tinha o botão.
+// sem botão nenhum.
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
 mockNuxtImport('$fetch', () => fetchMock)

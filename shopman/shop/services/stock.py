@@ -810,16 +810,28 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
         # Pedido pago/confirmado sem baixa de estoque é exatamente o drift que
         # o fechamento não enxerga — fail-loud, nunca só log.
         logger.error("stock.fulfill: %d errors for order %s", errors, order.ref)
+        from shopman.shop.services import production_promise
         from shopman.shop.services.observability import create_operator_alert
 
-        create_operator_alert(
-            type="stock_fulfill_failed",
-            severity="critical",
-            message=(
+        # A causa já pode estar no pedido: o lote que não cobriu a reserva (rendeu
+        # menos, ficou pronto com desconto, foi cancelado) deixou o fato gravado. Aí
+        # a prateleira está certa, e a frase diz o que resolver, no pedido (#3229).
+        fact = production_promise.fulfill_failure_fact(order, failed_skus)
+        if fact:
+            message = (
+                f"A baixa de estoque do pedido {order.ref} não saiu: {fact} A prateleira está certa. "
+                "Resolva no pedido: avise o cliente, remarque ou cancele."
+            )
+        else:
+            message = (
                 f"A baixa de estoque do pedido {order.ref} não saiu "
                 f"({errors} item(ns): {', '.join(failed_skus) or 'ver logs'}). O estoque do sistema "
                 "ficou acima do que há na prateleira. Conte esses itens e ajuste no Estoque."
-            ),
+            )
+        create_operator_alert(
+            type="stock_fulfill_failed",
+            severity="critical",
+            message=message,
             order_ref=order.ref,
             dedupe_key=f"stock_fulfill_failed:{order.ref}",
         )

@@ -314,6 +314,7 @@ v-for="choice in THEME_CHOICES"
         :maps-key="view?.map?.key ?? ''"
         :tone="tone"
         :dark="isDark"
+        :guide="view?.map?.guide ?? null"
       >
         <a class="crm-chip" :href="wazeUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no Waze</a>
         <a class="crm-chip" :href="mapsUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no mapa</a>

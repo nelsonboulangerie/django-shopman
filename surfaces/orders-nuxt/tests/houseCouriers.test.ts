@@ -33,6 +33,7 @@ import {
   joinCodes,
   sendLabel,
   shiftChips,
+  toPayToday,
   type HouseCourier,
   type HouseCrew,
 } from "~/presentation/houseCouriers";
@@ -337,5 +338,24 @@ describe("entregadores de hoje", () => {
 
   it("sem o serviço da casa ativo, a linha não aparece", () => {
     expect(shiftChips(crew([person("diego", "Diego")], { active: false }))).toEqual([]);
+  });
+});
+
+describe("o acerto do dia (M4)", () => {
+  it("uma linha por entregador com rota fechada hoje, a frase do servidor", () => {
+    const lines = toPayToday(crew([
+      person("diego", "Diego", { to_pay_today: "A pagar a Diego hoje: R$ 27,00 (2 corridas)" }),
+      person("rui", "Rui", { to_pay_today: "" }),
+      person("ana", "Ana", { on_shift: false, to_pay_today: "A pagar a Ana hoje: R$ 12,00 (1 corrida)" }),
+    ]));
+    expect(lines).toEqual([
+      { ref: "diego", text: "A pagar a Diego hoje: R$ 27,00 (2 corridas)" },
+      { ref: "ana", text: "A pagar a Ana hoje: R$ 12,00 (1 corrida)" },
+    ]);
+  });
+
+  it("sem o serviço da casa ativo, nada", () => {
+    expect(toPayToday(crew([person("diego", "Diego", { to_pay_today: "A pagar a Diego hoje: R$ 12,00 (1 corrida)" })], { active: false }))).toEqual([]);
+    expect(toPayToday(null)).toEqual([]);
   });
 });

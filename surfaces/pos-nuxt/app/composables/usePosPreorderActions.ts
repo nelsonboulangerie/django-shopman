@@ -12,17 +12,24 @@ import type {
 } from "~/types/preorders";
 import type { POSPaymentResultProjection, POSProjection } from "~/types/pos";
 import { detailAction } from "../../../operator-kit/app/presentation/orderDetail";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 /** Os gestos do entregador que o balcão faz (as ações do detalhe com o mesmo `ref`). */
 type CourierGesture = "courier-dispatch" | "courier-dispatch-again" | "courier-cancel" | "courier-back";
 
-/** O que o aviso diz quando o gesto passa, e o que diz quando não passa. */
-const COURIER_GESTURE_COPY: Record<CourierGesture, { done: string; failed: string }> = {
-  "courier-dispatch": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
-  "courier-dispatch-again": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
-  "courier-cancel": { done: "Cancelamento da corrida enviado à TaOn.", failed: "Não deu para cancelar a corrida." },
-  "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
-};
+/**
+ * O que o aviso diz quando o gesto passa, e o que diz quando não passa. `service` é o
+ * nome do serviço da corrida, como o cadastro diz ("TaOn").
+ */
+function courierGestureCopy(ref: CourierGesture, service: string): { done: string; failed: string } {
+  const copy: Record<CourierGesture, { done: string; failed: string }> = {
+    "courier-dispatch": { done: `Pedido de entregador enviado à ${service}.`, failed: "Não deu para chamar o entregador." },
+    "courier-dispatch-again": { done: `Pedido de entregador enviado à ${service}.`, failed: "Não deu para chamar o entregador." },
+    "courier-cancel": { done: `Cancelamento da corrida enviado à ${service}.`, failed: "Não deu para cancelar a corrida." },
+    "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
+  };
+  return copy[ref];
+}
 
 export interface ManagerChallenge {
   code: string;
@@ -287,7 +294,10 @@ export function usePosPreorderActions(options: {
    * custódia da chamada (troco da gaveta, maquininha) vai no mesmo corpo do Gestor.
    * A corrida se acompanha pelo SSE dos pedidos.
    */
-  async function courier(ref: CourierGesture, custody: { change_out?: string; equipment?: string[] } = {}): Promise<boolean> {
+  async function courier(
+    ref: CourierGesture,
+    custody: { change_out?: string; equipment?: string[]; reason_id?: number } = {},
+  ): Promise<boolean> {
     const detail = options.detail.value;
     const offered = detailAction(detail, ref);
     if (!detail || !offered?.enabled || busy.value) return false;
@@ -297,11 +307,11 @@ export function usePosPreorderActions(options: {
     try {
       await action.call(path, { body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) } });
       lastAttempt = null;
-      toast.success(COURIER_GESTURE_COPY[ref].done);
+      toast.success(courierGestureCopy(ref, deliveryServiceName(detail.courier?.service_name)).done);
       await options.refresh();
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, COURIER_GESTURE_COPY[ref].failed)} Confira a encomenda e tente de novo.`);
+      toast.error(`${httpErrorMessage(error, courierGestureCopy(ref, "").failed)} Confira a encomenda e tente de novo.`);
       await options.refresh();
       return false;
     } finally {
@@ -317,7 +327,9 @@ export function usePosPreorderActions(options: {
     busy, managerChallenge, paidOnline, handOver, startPix, cancel, redo, reschedule, comment, dismissManagerChallenge,
     courierDispatch: (custody: { change_out?: string; equipment?: string[] } = {}) => courier("courier-dispatch", custody),
     courierDispatchAgain: () => courier("courier-dispatch-again"),
-    courierCancel: () => courier("courier-cancel"),
+    // O motivo escolhido na confirmação (depois do aceite) vai como `reason_id`;
+    // antes do aceite não há escolha e o servidor usa o da fase.
+    courierCancel: (reasonId?: number) => courier("courier-cancel", reasonId ? { reason_id: reasonId } : {}),
     courierBack: () => courier("courier-back"),
   };
 }

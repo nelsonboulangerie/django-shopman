@@ -44,6 +44,11 @@ class Composed:
     verification: VerifyResult
     text: str | None
 
+    @property
+    def template_ids(self) -> tuple[str | None, ...]:
+        """Os moldes que compuseram a resposta, na ordem das partes."""
+        return tuple(part.template_id for part in self.verification.parts)
+
 
 def render_part(spec: PartSpec, template: Template, evidence: Evidence,
                 formatters: Mapping[str, Formatter]) -> RenderedPart:
@@ -72,7 +77,7 @@ def render_part(spec: PartSpec, template: Template, evidence: Evidence,
         segments.append(Segment(template.text[cursor:]))
     if not claims:
         claims.append(RenderedClaim("courtesy", "courtesy", None))
-    return RenderedPart(spec.move, tuple(segments), tuple(claims))
+    return RenderedPart(spec.move, tuple(segments), tuple(claims), template.template_id)
 
 
 def compose(*, specs: Iterable[PartSpec], templates: Mapping[str, Template], evidence: Evidence,

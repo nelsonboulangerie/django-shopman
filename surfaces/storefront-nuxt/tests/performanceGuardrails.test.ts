@@ -61,7 +61,6 @@ describe('storefront performance guardrails', () => {
     const home = source('app/composables/useStorefrontHome.ts')
     const continuum = source('app/composables/useContinuousProjection.ts')
     const lazyPages = [
-      'app/pages/busca.vue',
       'app/pages/colecao/[ref].vue',
       'app/pages/produto/[sku].vue',
       'app/pages/finalizar.vue',

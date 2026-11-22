@@ -71,6 +71,11 @@ async function typesAddressByCep (page: Page, address: TableAddress) {
   await expect(step.locator('#address-neighborhood')).toHaveValue(address.neighborhood)
   await expect(step.locator('#address-city')).toHaveValue('Londrina')
   await step.locator('#address-number').fill(address.number)
+  // Fecha o teclado antes do toque. Na emulação de celular não há teclado de verdade: com o
+  // número em foco a loja recolhe a barra de baixo, e no clique o campo perde o foco, a barra
+  // volta por cima do botão e o toque se perde (medido a 375 px: o endereço ficou sem
+  // confirmar). No aparelho, o teclado ocupa esse lugar.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   await step.locator('[data-address-confirm]').click()
 }
 

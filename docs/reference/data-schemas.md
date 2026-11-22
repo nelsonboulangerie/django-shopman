@@ -166,7 +166,8 @@ consumo por posição. `transport_state` distingue legacy/prepared/executing/acc
 not_applied/unknown; `delivered` legado não comprova receipt do fornecedor.
 A retenção continua sob G04; hashes não promovem identidade/consentimento.
 
-`Conversation.quote` v2 contém token, session_key, customer_ref/phone vinculados,
+`Conversation.quote` v2 contém token, `code` (o código curto da confirmação sem identificador,
+ADR-050: nunca repete o do resumo anterior da conversa, #3291), session_key, customer_ref/phone vinculados,
 snapshot factual, revision de Session, payment_method selecionado, total_q completo,
 lines_total_q, issued_at e validity=`session_open_and_current_policy`. Sem TTL comercial inventado: Session aberta, holds, preço, data/slot são revalidados; G05 decide eventual validade adicional. Não concede autorização: Message de revisão aceita pelo
 provider + nova entrada verificada são a evidência; replay usa IdempotencyKey.
@@ -2073,9 +2074,23 @@ Seleção de adapters por tipo. Sobreescreve `settings.py` sem exigir redeploy.
   "fiscal": "<módulo Python>",
   "manychat": {
     "live_chat_account": "<conta do ManyChat, ex.: fb486126>"
+  },
+  "google_routes": {
+    "enabled": true,
+    "calls_per_day": 100,
+    "reroute_meters": 80
   }
 }
 ```
+
+`google_routes` não é adapter: é o freio da manobra da tela "Dirigindo" do entregador da
+casa, pelo Routes API do Google (#2509, `shop/services/route_guide.py`). `enabled: false`
+desliga na hora; `calls_per_day` é o teto de chamadas por dia (padrão 100, nunca acima de
+1.000 sem mudança no código); `reroute_meters` é o desvio da linha que pede rota nova (padrão
+80, mínimo 30). Uma chamada na saída e outra só no desvio, nunca por tempo. Cada chamada,
+inclusive a recusada pelo teto, vira uma linha de `PaidApiCall` (DEV-2026-067). No teto, sem
+chave ou com erro, a página do entregador volta à linha reta e ao "Abrir no Waze" (ADR-042:
+nunca por env).
 
 `manychat.live_chat_account` não é adapter: é a conta (página) do ManyChat da loja, o trecho
 de `https://app.manychat.com/<conta>/chat/<subscriber_id>`. Editado no Admin em Integrações

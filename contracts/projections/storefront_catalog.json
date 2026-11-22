@@ -2,7 +2,7 @@
   "active_category_ref": null,
   "categories": [
     {
-      "icon": "restaurant_menu",
+      "icon": "wheat",
       "name": "Pães",
       "ref": "paes",
       "url": "/menu#paes"
@@ -212,14 +212,14 @@
   "sections": [
     {
       "category": {
-        "icon": "restaurant_menu",
+        "icon": "wheat",
         "name": "Pães",
         "ref": "paes",
         "url": "/menu#paes"
       },
       "description": "",
       "dynamic_ref": null,
-      "icon": "restaurant_menu",
+      "icon": "wheat",
       "is_dynamic": false,
       "label": "Pães",
       "ref": "paes",

@@ -766,7 +766,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     h.handles.dispose();
   });
 
-  it("venda fechada aponta 'Abrir no gestor' para o orders app (não o Django admin)", async () => {
+  it("venda fechada aponta 'Abrir o pedido no Gestor' para o orders app (não o Django admin)", async () => {
     const actionCall = saleRouter(null);
     const h = saleReadyForCheckout(actionCall);
     await h.sale.submitSale(); // prepara

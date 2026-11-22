@@ -126,12 +126,15 @@ class TestBuildProductDetailShape:
         self, listing, collection, collection_item, product,
     ):
         _publish_on_listing(listing, product)
+        collection.metadata = {**(collection.metadata or {}), "icon": "wheat"}
+        collection.save(update_fields=["metadata"])
         proj = build_product_detail(sku=product.sku, channel_ref="web")
         assert proj is not None
         assert proj.breadcrumb_category is not None
         assert proj.breadcrumb_category.ref == "paes"
         assert proj.breadcrumb_category.name == "Pães"
-        assert proj.breadcrumb_category.icon
+        # O ícone do cadastro (``metadata.icon``), não um palpite pelo ``ref`` (#3253).
+        assert proj.breadcrumb_category.icon == "wheat"
         assert proj.breadcrumb_category.url == "/menu#paes"
 
     def test_pdp_exposes_primary_collection_color_and_icon(

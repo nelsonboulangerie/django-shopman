@@ -131,6 +131,18 @@ Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 pelos testes de composables que o adotam — os projetos `unit` desses apps
 declaram `resolve.dedupe: ["vue"]` para garantir instância única do Vue.
 
+As jornadas pela tela (Playwright) também têm os gestos de operador num lugar só:
+`tests/support/operatorGestures.ts` (#2580). São eles a Gerente que entra com senha
+(`managerSignsIn`) e vincula o posto (`managerBindsStation`), alguém que trava
+(`lockDevice`) e quem toca no nome e digita o PIN (`operatorUnlocksWithPin`). Entram também a espera de
+hidratação (`settled`), a captura numerada (`capture`), um contexto por dispositivo
+(`newDevice`, 375 px ou 1366 px) e o elenco do seed (`cast`). O PDV ao vivo
+(`pos-nuxt/tests/e2e-live/support/operator.ts`) e as jornadas do Gestor
+(`orders-nuxt/tests/operator/support/`) importam daqui e guardam só o que é de cada app.
+⚠️ O módulo importa só **tipos** do `@playwright/test`: o kit tem a própria cópia, e
+importar o `expect` dela em tempo de execução carregaria um segundo Playwright na suíte
+do app. As esperas são de locator (`waitFor`, clique de ensaio).
+
 As superfícies de operador compartilham SSO pelo domínio-pai usando
 `shopman_operator_sessionid` e `shopman_operator_csrftoken`. O BFF traduz esses
 nomes para `sessionid`/`csrftoken` somente na conexão interna com o Django e

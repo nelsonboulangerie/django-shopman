@@ -436,7 +436,7 @@ watch(sectionOptions, options => {
 })
 
 onMounted(() => {
-  // A /busca aplica filtros e aponta seções por query param.
+  // A busca (overlay) aplica filtros e aponta seções por query param.
   const filtro = String(route.query.filtro || '').split(',').map(part => part.trim()).filter(Boolean)
   if (filtro.length) {
     appliedFilterKeys.value = filtro

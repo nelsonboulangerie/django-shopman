@@ -82,6 +82,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Integrações", "shop_shopintegrations", "Serviços externos: pagamento, mensagens, iFood, o mínimo de público das campanhas de WhatsApp e os limites de capacidade dos apps de operação.", "extension"),
             _model("Conexões de IA", "shop_aiconnection", "Provedor, endereço, chave e modelo de cada IA: Anthropic, DeepSeek, Jev.", "smart_toy"),
             _model("Gasto de IA por dia", "shop_aispendday", "Quanto a IA gastou em cada dia, na loja e em cada função, e quantas chamadas o freio recusou. Só leitura.", "savings"),
+            _model("Chamadas de API paga", "shop_paidapicall", "Cada chamada a um serviço pago que não é IA (hoje, a rota do entregador da casa pelo Google): resultado e custo estimado. O teto do dia fica em Integrações. Só leitura.", "route"),
             _model("Chamadas de IA", "shop_aiinvocation", "Cada chamada a um modelo: função, modelo, resultado, tokens e custo. Não guarda o texto. Só leitura.", "receipt_long"),
             _model("Decisões em sombra", "shop_conversationaldecision", "O que o framework de conversa faria com cada mensagem da Concierge, sem responder nem mexer em pedido. Não guarda o texto. Só leitura.", "psychology"),
             _model("Resultados das decisões em sombra", "shop_conversationaloutcome", "Quantos pedidos o cliente fez em 24 horas e em 7 dias depois de cada decisão em sombra. Só leitura.", "insights"),
