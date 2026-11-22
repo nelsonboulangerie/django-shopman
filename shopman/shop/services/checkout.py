@@ -278,7 +278,7 @@ class RefusedCart:
     """Onde está a sacola que o envio não conseguiu selar.
 
     ``sent_order_ref``: a sacola já virou pedido (outra aba a enviou primeiro).
-    ``gone``: a sacola não existe mais como sacola: foi encerrada (outro aparelho
+    ``gone``: a sacola não existe mais como sacola: foi encerrada (outro dispositivo
     da mesma pessoa enviou um pedido), apagada pela limpeza ou ficou sem item.
     Nenhum dos dois: a sacola segue viva, e a recusa é dela mesmo.
     """
