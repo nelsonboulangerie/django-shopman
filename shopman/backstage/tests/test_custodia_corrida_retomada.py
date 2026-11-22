@@ -15,20 +15,19 @@ from shopman.orderman.models import Directive, Order
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.services.delivery_devices import PREFIX
+from shopman.backstage.tests import test_entregador_custodia as custodia
 from shopman.backstage.tests._order_intent import context_payload
-from shopman.backstage.tests.test_entregador_custodia import (  # noqa: F401 (fixtures)
-    _call,
-    _detail,
-    _mock_courier,
-    _order,
-    machines,
-    operator,
-)
 from shopman.shop.directives import COURIER_DISPATCH
 from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
 from shopman.shop.services import courier
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("_mock_courier")]
+
+# As fixtures e os passos do "Chamar entregador" com custódia (o mesmo cenário).
+_mock_courier = custodia._mock_courier
+operator = custodia.operator
+machines = custodia.machines
+_call, _detail, _order = custodia._call, custodia._detail, custodia._order
 
 
 def _open_then_resume(ref):
