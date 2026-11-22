@@ -193,7 +193,6 @@ def _serialize(proj) -> dict:
             }
             for s in proj.sections
         ],
-        "featured_skus": [i.sku for i in proj.featured],
         "categories": [{"ref": c.ref, "name": c.name} for c in proj.categories],
         "active_category_ref": proj.active_category_ref,
     }
