@@ -5,7 +5,7 @@ Regra do dono numa frase: o dinheiro segue o produto. O que estes testes prendem
 - a política de ``Shop.defaults["no_show"]`` e os padrões dela;
 - a hora em que o gesto libera, para pedido pago e não pago, com e sem hora
   combinada, em dia passado e em dia sem expediente;
-- quem pode (pronto, retirada, fora do iFood, do balcão e da conta da casa);
+- quem pode (pronto, retirada, fora do iFood e do balcão; a conta da casa só em aberto e sem outra forma junto);
 - o destino de cada linha, decidido pelo servidor a partir de fatos;
 - ``refund_q`` e ``retained_q`` com pedido todo de volta, todo perdido e misto;
 - o comando grava o bloco e cancela com o motivo próprio, sob lock, uma vez só,
@@ -222,11 +222,92 @@ def test_only_a_ready_pickup_order_outside_ifood_and_the_counter_is_a_candidate(
     assert no_show.eligibility_reason(counter) == "Venda de balcão não tem retirada a esperar."
 
 
-def test_house_account_order_is_refused_with_a_clear_reason(paes, relogio):
-    relogio(10)
-    order = world.ready_order("NS-CONTA", [("CROIS", 1, 935)], payment={"method": "account"})
+def _on_account(order, amount_q: int | None = None, *, customer_ref: str = "CLI-CONTA") -> str:
+    """Lança o pedido na conta da casa, como o fechamento do PDV faz. Devolve o ``intent_ref``."""
+    from shopman.payman import PaymentService
 
-    assert no_show.eligibility_reason(order) == "Venda na conta da casa: o não retirado ainda não passa pelo Gestor."
+    intent = PaymentService.charge_to_account(
+        order.ref, amount_q if amount_q is not None else order.total_q,
+        customer_ref=customer_ref, idempotency_key=f"order-payment:{order.ref}:account:terminal",
+    )
+    order.data["payment"] = {**(order.data.get("payment") or {}), "method": "account", "intent_ref": intent.ref}
+    order.save(update_fields=["data", "updated_at"])
+    return intent.ref
+
+
+def test_house_account_order_with_open_debt_can_be_closed_as_not_picked_up(paes, relogio):
+    """A conta da casa entra no gesto (#2697): o que se perdeu fica como dívida, o resto sai da conta."""
+    from shopman.shop.services import payment
+
+    relogio(10)
+    order = world.ready_order("NS-CONTA", [("CROIS", 2, 935), ("BOLO", 1, 3000)], held=False)
+    order.data["hold_ids"] = [world.fulfilled_hold("CROIS", 2, order_ref=order.ref)]
+    order.save(update_fields=["data", "updated_at"])
+    _on_account(order)
+    assert no_show.eligibility_reason(order) == ""
+
+    relogio(19, 5)
+    preview = no_show.preview(order)
+    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 1870, 3000)
+    assert preview["money_sentence"] == "R$ 18,70 saem da conta do cliente. R$ 30,00 continuam nela, pelo que se perdeu."
+    assert "Tiramos R$ 18,70 da sua conta na loja" in preview["customer_text"]
+    assert "R$ 30,00 continuam na conta" in preview["customer_text"]
+
+    block = no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    assert block["on_account"] is True
+    order.refresh_from_db()
+    # O que o ``on_cancelled`` faz com o dinheiro: a dívida fica com o valor da perda.
+    payment.refund(order)
+    assert payment.open_account_debt_q(order) == 3000
+    event = order.events.get(type="account_debt_reduced")
+    assert event.payload["amount_q"] == 1870
+    # De novo (retry do cancelamento): nada sai duas vezes.
+    payment.refund(order)
+    assert payment.open_account_debt_q(order) == 3000
+
+
+def test_house_account_order_with_everything_back_on_sale_leaves_nothing_owed(paes, relogio):
+    from shopman.shop.services import payment
+
+    relogio(10)
+    order = world.ready_order("NS-CONTA-TUDO", [("CROIS", 1, 935)])
+    _on_account(order)
+
+    relogio(19, 5)
+    no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
+    order.refresh_from_db()
+    payment.refund(order)
+
+    assert payment.open_account_debt_q(order) == 0
+
+
+def test_house_account_already_settled_or_mixed_is_refused_with_a_clear_reason(paes, relogio):
+    from shopman.payman import PaymentService
+
+    relogio(10)
+    settled = world.ready_order("NS-CONTA-ACERTADA", [("CROIS", 1, 935)])
+    PaymentService.capture(_on_account(settled))
+    mixed = world.ready_order(
+        "NS-CONTA-MISTA", [("CROIS", 1, 935)],
+        payment={"method": "account", "tenders": [{"method": "account", "amount_q": 500}, {"method": "cash", "amount_q": 435}]},
+    )
+
+    assert no_show.eligibility_reason(settled) == "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
+    assert no_show.eligibility_reason(mixed) == (
+        "Parte na conta da casa e parte em outra forma de pagamento: o não retirado deste pedido é com o Dono."
+    )
+
+
+def test_account_customer_text_says_what_left_the_account():
+    everything = {"paid_q": 935, "refund_q": 935, "retained_q": 0, "on_account": True}
+    nothing = {"paid_q": 935, "refund_q": 0, "retained_q": 935, "on_account": True}
+
+    assert no_show_reason.customer_text(everything) == (
+        "O pedido ficou pronto e não foi retirado. Tiramos R$ 9,35 da sua conta na loja."
+    )
+    assert no_show_reason.customer_text(nothing) == (
+        "O pedido ficou pronto e não foi retirado. O valor continua na sua conta na loja, como dizem os Termos."
+    )
 
 
 def test_channel_whose_cycle_does_not_let_ready_be_cancelled_is_refused(paes, relogio):

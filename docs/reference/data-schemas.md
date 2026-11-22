@@ -763,6 +763,7 @@ services que ele chama leem o bloco.
 | `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
 | `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
 | `retained_q` | `int` | `paid_q − refund_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
+| `on_account` | `bool` | Venda SÓ na conta da casa (#2697): `paid_q` é a dívida em aberto do pedido (`payment.open_account_debt_q`), `refund_q` sai da conta (`payment.reduce_account_debt`, evento `account_debt_reduced`) e `retained_q` continua devido. A conta já acertada e a venda que mistura a conta com outra forma não passam pelo gesto |
 
 Pedido não pago: `paid_q = refund_q = retained_q = 0`. A validade do lote é lida de
 `Batch.expiry_date` (pelo `Quant.batch`); sem lote com validade, do `shelf_life_days` do

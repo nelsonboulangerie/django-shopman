@@ -198,7 +198,16 @@ class ReturnService:
 
         result = {"refund": None, "fiscal": None}
 
-        if (order.data.get("payment") or {}).get("intent_ref"):
+        payment_data = order.data.get("payment") or {}
+        if payment_service.pays_only_on_account(payment_data):
+            # Venda só em conta: nada foi pago, e a devolução tira o valor da conta
+            # do cliente (#2606). A régua de quem pode passou antes
+            # (``order_return.return_block_reason``: a conta em aberto).
+            payment_service.reduce_account_debt(
+                order, amount_q, idempotency_key=refund_reference or f"return:{order.ref}",
+            )
+            result["refund"] = {"success": True, "amount_q": amount_q, "on_account": True}
+        elif payment_data.get("intent_ref"):
             try:
                 # Devolução PARCIAL estorna só o valor devolvido — nunca o
                 # saldo capturado inteiro. ``refund_reference`` (por índice de
