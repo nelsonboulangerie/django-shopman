@@ -305,7 +305,6 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
           :live="mapLive"
           :suggested="mapSuggested"
           :active="active"
-          :live-opacity="0.5"
           :maps-key="data.maps_key"
           @toggle="toggle"
           @fill="fill"

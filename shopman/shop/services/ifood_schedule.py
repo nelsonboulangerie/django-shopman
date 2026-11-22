@@ -95,6 +95,19 @@ def delivery_start(order) -> datetime | None:
     return _parse(schedule.get("delivery_start_at"))
 
 
+def delivery_end(order) -> datetime | None:
+    """Fim da janela de entrega que o iFood prometeu ao cliente (UTC).
+
+    A mesma validação de :func:`delivery_start`: agendamento ilegível não tem fim.
+    """
+    if not is_scheduled(order):
+        return None
+    schedule = ((order.data or {}).get("ifood") or {}).get("schedule") or {}
+    if _validate_schedule(schedule) is None:
+        return None
+    return _parse(schedule.get("delivery_end_at"))
+
+
 def block_reason(order, *, now: datetime | None = None) -> str:
     """Human reason preventing physical work; confirmation remains allowed."""
     if not is_scheduled(order):

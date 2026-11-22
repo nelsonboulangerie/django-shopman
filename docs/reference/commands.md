@@ -46,6 +46,8 @@ DigitalOcean ou do Sentry.
 | [`bake_alpha_tradi_daily`](#bake_alpha_tradi_daily) | backstage | Manutenção | Só no alpha: a fornada diária da TRADI pelo caminho do operador, para o Google ler a baguete disponível. Segura a própria cadência |
 | [`propose_product_attributes`](#propose_product_attributes) | shop | Catálogo | Propõe natureza, sabor e temperatura pela coleção primária, para o gestor revisar |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
+| [`act_on_incidents`](#act_on_incidents) | backstage | Manutenção | Repescagem do acionador de incidentes: refaz a directive perdida e vence a conferência atrasada. Não aciona nada sozinha |
+| [`issue_incident_reader_credential`](#issue_incident_reader_credential) | backstage | Operação | Emite a credencial de leitura da ponte de incidentes (GitHub) e imprime o token uma vez |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
 | [`repair_corrupted_tags`](#repair_corrupted_tags) | shop | Dados | Conserta etiquetas gravadas pelo Admin como repr de objeto ("[<Tag: pao>"); sem `--apply` só relata |
@@ -134,6 +136,23 @@ deploys seguintes.
 
 ```bash
 python manage.py setup_commercial_groups
+```
+
+### act_on_incidents
+
+Roda no `maintenance_worker`. O acionador de incidentes nasce com o alerta (Directive
+`incident.act`); aqui entra o alerta com remédio cuja directive se perdeu, e a
+conferência que passou do prazo vira "não resolveu". Contrato em
+[incidents.md](incidents.md).
+
+### issue_incident_reader_credential
+
+Emite a credencial de LEITURA da ponte de incidentes e imprime o token uma vez. Ele vira
+o segredo `INCIDENTS_TOKEN` do repositório; o banco guarda só o HMAC. Revoga-se no
+Admin (Incidentes, Credenciais da ponte). Só lê `/api/v1/backstage/incidents/`.
+
+```bash
+python manage.py issue_incident_reader_credential --ttl-days 365
 ```
 
 ### issue_menuboard_player_credential

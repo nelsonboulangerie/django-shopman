@@ -235,6 +235,37 @@ def promised_at(source) -> datetime | None:
     return timezone.make_aware(datetime.combine(day, start))
 
 
+def window_end(source) -> datetime | None:
+    """A hora em que a janela combinada TERMINA, no dia combinado: o prazo da entrega.
+
+    Só a meia hora tem fim (``"14:00-14:30"`` → 14h30); o turno da encomenda
+    (*A partir das 12h*) é aberto por desenho e devolve ``None``, como o pedido
+    sem hora combinada. iFood agendado termina onde o iFood disse
+    (``delivery_end_at``). É a régua de quem não pode juntar uma entrega que
+    chegaria depois do prometido (``ride_plan``, #2875).
+    """
+    from django.utils import timezone
+
+    from shopman.shop.services import ifood_schedule
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if source is None:
+        return None
+    if ifood_schedule.is_scheduled(source):
+        return ifood_schedule.delivery_end(source)
+    data = getattr(source, "data", None) or {}
+    par = _hour_pair(str(data.get("delivery_time_slot") or "").strip())
+    if par is None:
+        return None
+    day = get_commitment_date(source)
+    if day is None:
+        created_at = getattr(source, "created_at", None)
+        if created_at is None:
+            return None
+        day = timezone.localtime(created_at).date()
+    return timezone.make_aware(datetime.combine(day, par[1]))
+
+
 def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict]:
     """A grade que vale para ``day``: meia hora hoje, slot canônico no resto.
 

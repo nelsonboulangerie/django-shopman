@@ -610,10 +610,12 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
-    # A cobrança venceu e o pedido tem um telefone para chamar (``_has_order_phone``):
-    # o cartão leva "Ver o contato do cliente" ao lado do "Cancelar pedido", e o toque abre o
-    # pedido no contato. O número NÃO vem no cartão (#2434, decisão do dono pendente).
-    customer_callable: bool = False
+    # O WhatsApp do cliente, SÓ no pedido que pede ação (a cobrança venceu, ou a
+    # promessa está em risco) e só quando o pedido tem telefone que não é o relé do
+    # iFood (decisão do dono, #2434, "1:b"): o cartão e a Tabela levam "Chamar no
+    # WhatsApp" direto, sem escrever o número. Nos outros pedidos fica vazio: o
+    # contato do cliente não mora no cartão.
+    customer_whatsapp_url: str = ""
     # O bloqueio anda sozinho, sem ninguém da casa agir ("Aguardando Pix", "Aguardando
     # o dia da encomenda", "Esperando o lote"): a tela não o pinta de vermelho
     # (``WAITING_BLOCK_LABELS``; decisão da coordenação com o mandato do dono, 21/11).
@@ -2859,11 +2861,17 @@ def _build_card(
         actions = _early_start_actions(actions)
     if waits_batch:
         actions = _batch_wait_actions(actions, block_reason)
+    promise_at_risk = promise is not None and promise.state == order_promise.STATE_AT_RISK
+    whatsapp_url = (
+        _board_whatsapp_url(order) if block_label in LAPSED_PAYMENT_LABELS or promise_at_risk else ""
+    )
     if block_label in LAPSED_PAYMENT_LABELS:
-        actions = _lapsed_payment_actions(actions, block_label, can_call=_has_order_phone(order))
+        actions = _lapsed_payment_actions(actions, block_label, can_call=bool(whatsapp_url))
     actions = _exit_gesture_actions(order, actions, customer_name=customer_name)
-    if promise is not None and promise.state == order_promise.STATE_AT_RISK:
-        promise = order_promise.with_actions(promise, _promise_actions(user, promise))
+    if promise_at_risk:
+        promise = order_promise.with_actions(
+            promise, (*_promise_actions(user, promise), *_contact_customer_action(whatsapp_url)),
+        )
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order, batch=accept_batch)
@@ -2924,7 +2932,7 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
-        customer_callable=block_label in LAPSED_PAYMENT_LABELS and _has_order_phone(order),
+        customer_whatsapp_url=whatsapp_url,
         advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
@@ -3771,6 +3779,13 @@ _FISCAL_PILL = {
     "not_expected": ("not_requested", "NFC-e não solicitada"),
 }
 
+#: O pedido cancelado que ainda ESPERAVA o pagamento: a nota não vai sair, e a pill
+#: diz o fato em vez de prometer (#3127: "NFC-e sai quando o pagamento confirmar"
+#: num pedido cujo Pix venceu era rótulo que mente).
+_CANCELLED_BEFORE_NOTE = {
+    "awaiting_payment": ("not_issued", "Sem NFC-e: o pedido foi cancelado antes do pagamento"),
+}
+
 
 class _FiscalEvidence(NamedTuple):
     """Evidência fiscal lida em LOTE para um quadro: uma query por fonte, não por card."""
@@ -3796,6 +3811,8 @@ def _fiscal_status(
         # Nota cancelada é fato posterior à autorização: a chave continua lá, o
         # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
         status, label = "cancelled", "NFC-e cancelada"
+    elif order.status == Order.Status.CANCELLED and state in _CANCELLED_BEFORE_NOTE:
+        status, label = _CANCELLED_BEFORE_NOTE[state]
     else:
         status, label = _FISCAL_PILL[state]
 
@@ -3948,19 +3965,41 @@ def _is_masked_name(label: str) -> bool:
     return bool(label) and set(label) <= _MASKED_NAME_CHARS and any(ch in "*·•…" for ch in label)
 
 
-def _has_order_phone(order: Order) -> bool:
-    """O pedido tem um telefone para chamar no WhatsApp, sem consultar o cadastro.
+def _board_whatsapp_url(order: Order) -> str:
+    """O WhatsApp do cliente para o cartão, sem consultar o cadastro.
 
     A leitura barata do quadro (o cadastro só entra no detalhe): o telefone do
-    pedido ou o handle que é o cliente. O relé do iFood é voz, não WhatsApp.
+    pedido ou o handle que é o cliente, o mesmo número que o detalhe usa
+    (``_customer_contact``). O relé do iFood é voz, não WhatsApp: vazio.
     """
     data = order.data or {}
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
-    if not str(customer.get("phone") or data.get("customer_phone") or _customer_handle(order) or "").strip():
-        return False
+    phone_raw = str(customer.get("phone") or data.get("customer_phone") or _customer_handle(order) or "").strip()
+    if not phone_raw:
+        return ""
     from shopman.shop.services.notification import customer_phone_is_platform_relay
 
-    return not customer_phone_is_platform_relay(order)
+    if customer_phone_is_platform_relay(order):
+        return ""
+    digits = (normalize_phone(phone_raw) or "").lstrip("+")
+    return f"https://wa.me/{digits}" if digits else ""
+
+
+#: A saída do cartão que chama o cliente no WhatsApp (a mesma ``ref`` do detalhe).
+ACTION_CONTACT_CUSTOMER = "contact-customer"
+CONTACT_CUSTOMER_LABEL = "Chamar no WhatsApp"
+
+
+def _contact_customer_action(whatsapp_url: str) -> tuple[Action, ...]:
+    """ "Chamar no WhatsApp" ao lado do "Resolver" no cartão da promessa em risco (#2434)."""
+    if not whatsapp_url:
+        return ()
+    return (
+        Action(
+            ref=ACTION_CONTACT_CUSTOMER, kind="link", label=CONTACT_CUSTOMER_LABEL,
+            href=whatsapp_url, idempotency="none",
+        ),
+    )
 
 
 def _customer_handle(order: Order) -> str:
