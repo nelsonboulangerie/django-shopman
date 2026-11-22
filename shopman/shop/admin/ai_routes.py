@@ -49,7 +49,7 @@ def model_field(key: str) -> str:
 def _protocol(key: str) -> str:
     from shopman.shop.models import AIProtocol
 
-    return AIProtocol.JEV if key == "decision" else AIProtocol.ANTHROPIC
+    return AIProtocol.JEV if key in ai.JEV_PURPOSES else AIProtocol.ANTHROPIC
 
 
 def form_fields() -> dict[str, forms.Field]:
@@ -89,7 +89,7 @@ def _connection_label(connection, key: str) -> str:
 def _empty_connection_label(key: str) -> str:
     if key == DEFAULT_ROUTE:
         return "Sem rota padrão: a única conexão ativa"
-    if key == "decision":
+    if key in ai.JEV_PURPOSES:
         return "Sem rota própria: a única conexão Jev ativa"
     return "Sem rota própria: a rota padrão"
 
@@ -110,11 +110,10 @@ def model_choices(key: str, current: str) -> list[tuple[str, str]]:
     """Os modelos com preço conhecido e os das conexões ativas do formato."""
     from shopman.shop.models import AIConnection
 
-    protocol = _protocol(key)
-    known = [] if key == "decision" else list(LLM_PRICES)
+    known = [] if key in ai.JEV_PURPOSES else list(LLM_PRICES)
     known += [
         model
-        for model in AIConnection.objects.filter(is_active=True, protocol=protocol)
+        for model in AIConnection.objects.filter(is_active=True, protocol=_protocol(key))
         .exclude(model="")
         .order_by("model")
         .values_list("model", flat=True)
@@ -155,7 +154,7 @@ def _route_ref(purpose: str) -> str:
     routes = _routes_of(_shop())
     for key in (purpose, DEFAULT_ROUTE):
         route = routes.get(key)
-        if key == DEFAULT_ROUTE and purpose == "decision":
+        if key == DEFAULT_ROUTE and purpose in ai.JEV_PURPOSES:
             continue
         if isinstance(route, dict) and route.get("connection"):
             return str(route["connection"])
@@ -360,7 +359,7 @@ def warnings() -> list[dict]:
     grouped: dict[tuple[str, str, str], list[str]] = {}
     for purpose in ai.PURPOSES:
         has_route = isinstance(routes.get(purpose), dict) or (
-            purpose != "decision" and isinstance(routes.get(DEFAULT_ROUTE), dict)
+            purpose not in ai.JEV_PURPOSES and isinstance(routes.get(DEFAULT_ROUTE), dict)
         )
         if not has_route:
             continue

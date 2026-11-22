@@ -431,6 +431,7 @@ for key in (
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer.self_cancel"` (o cliente, pelo site), `"concierge"` (a Concierge, a pedido do cliente, pela mesma régua do site) ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)`, `backstage/projections/order_promise.read_for` (Gestor, "Promessa em risco": a saúde de cada reserva, só leitura) | Holds do Stockman adotados no commit. Cada entry rastreada: `{sku, hold_id, qty}`. SKU sem ledger usa exclusivamente `{sku, hold_id: null, qty: 0, is_tracked: false}`. Um SKU pode ter várias entries: a reserva é uma por saldo. Na encomenda acima do plano da data (#2685), as primeiras entries são o que a fornada da data cobre (reserva presa ao saldo) e a última é o resto, como demanda sem fornada (`Hold.quant` nulo). |
+| `hold_gaps` | `list[dict]` | `StockService.hold(order)` (caminho brando: o que não coube em reserva nenhuma, o mesmo momento do aviso `stock_hold_gap`) e `StockService.reconcile_to_items` (a edição tenta de novo e reescreve) | `backstage/projections/order_promise.read_for` (Gestor, "Promessa em risco": o item que o pedido nunca conseguiu reservar, causa `never_held` para hoje, régua do lote da data para outro dia; só leitura) | O que o pedido pediu e o estoque não reservou, por COMPONENTE (o combo já expandido na reserva, então a leitura não abre catálogo). Cada entry: `{sku, qty, target_date}`, com `target_date` ISO ou `""` sem data (vale o dia combinado do pedido, e sem ele, hoje). Escrito no mesmo save que `hold_ids`; ausente quando nada falta. A baixa que falhou com a reserva existente (`fulfill_failed`) não entra: a reserva existe. #2721 |
 | `adjustment` | `dict` | `shop/services/order_composition.record()`, pelo caminho único `shop/services/order_edit.apply_final_items` — chamado pelo iFood (`ifood_events._apply_patch`, `ORDER_PATCHED`, `source: "ifood:ORDER_PATCHED"`) e pela edição da encomenda no balcão (`order_edit.edit`, API `POST orders/<ref>/edit/`, `source: "pos:edit"`, `event_id: "pos-edit:<ref>:<revision>"`) e pela Concierge acrescentando itens a pedido do cliente (`concierge/order_addition.apply` → `order_edit.edit(source="concierge:add")`, `event_id: "concierge-edit:<ref>:<revision>"`, só aumento de itens) | **TODO consumidor de item ou total de pedido**, via `shop/services/order_composition`: `kds._order_to_lines`, `stock.revert`/`reconcile_to_items`, `fiscal._build_fiscal_items`, `views/fiscal_danfe`, `handlers/returns`, `projections/order_tracking`, `backstage/projections/order_queue`, `backstage/projections/kds`, `backstage/services/receipt_escpos`, `backstage/services/closing`, `backstage/bi/sources/orderman` | **O pedido depois de o cliente alterá-lo.** `{source, event_id, revision, applied_at, items, total_q, sealed_total_q}`. Existe porque `Order.total_q` e `Order.snapshot` são `SEALED_FIELDS`: o estado novo não tem onde ser escrito por cima, então vive ao lado. ⚠️ **`items` é a lista FINAL, absoluta** (relida com `ifood_orders.fetch_order`), nunca um delta — um ajuste novo SUBSTITUI o anterior, e `revision` conta quantas vezes o pedido mudou. `total_q` é o total que a fonte paga (o `orderAmount` do iFood; na edição do balcão, o total vigente mais a diferença das linhas que mudaram — nenhuma regra promocional é reavaliada). Na edição, item novo ganha `line_id` `E<revision>-<n>` e `meta.added_by` = a origem (`"pos:edit"` ou `"concierge:add"`); a peça vendida por peso que entra na edição é uma linha por peça, com quantidade em kg e `meta.weighed` no mesmo formato da venda (`{entry, weight_g, price_per_kg_q, total_q, label_q?}`, `weighed_sale.WeighedLine.as_meta`), e a peça que já estava não muda de peso; a taxa de entrega é a linha `__DELIVERY_FEE__` (`meta.type = "delivery_fee"`, `line_id` `E<revision>-FEE` quando nasce na edição); `sealed_total_q` guarda o `Order.total_q` original, que é o que permite dizer "era X, virou Y". ⚠️ **Ninguém soma isto por conta própria**: quem lê item ou total de pedido chama `order_composition.effective_items()` / `effective_total_q()`, porque duas telas somando cada uma do seu jeito é divergência garantida entre o que a cozinha faz e o que o B.I. fatura |
 | `stock_ceded_holds` | `list[dict]` | `StockService.hold(order)` (caminho otimista, venda consumada fora: `payment.timing == "external"`, data de hoje) | operador/auditoria | Reservas de CARRINHO que cederam a esta venda quando o livre não bastava (`adapters/stock.reserve_ceding_cart_holds`). Cada entry: `{sku, hold_id, reference, qty, ceded_qty, remainder_hold_id}` — `reference` é a sessão que perdeu, `ceded_qty` o que esta venda levou, `remainder_hold_id` a reserva nova com o troco devolvido à sacola (ou `null`). O hold cedido carrega `metadata.ceded_to = "order:<ref>"`. Ausente quando nada cedeu. Reserva de pedido (`order:`) nunca aparece aqui |
 | `lifecycle` | `dict` | `lifecycle.dispatch()` via `_mark_phase_complete` | `sweep_stuck_orders`, `LifecyclePhaseHandler`, `phase_complete()` | Conclusão do handler de fase, `{on_commit: "done", on_accepted: "done", on_paid: "done", on_preparing: "done", on_ready: "done", on_dispatched: "done", on_delivered: "done", on_completed: "done", on_cancelled: "done", on_returned: "done"}`; apenas fases efetivamente retornadas com sucesso. Não prova conclusão remota dos filhos. Chaves históricas desconhecidas são preservadas. preparing/ready/dispatched/delivered/completed/returned ganham Directive no commit da transição; falha do marcador mantém a tarefa recuperável. Estado avançado não cria marcador por inferência. |
@@ -1511,6 +1512,19 @@ Uma viva por vez (`dedupe_key` fixo = o topic). Só existe com `IFOOD_MERCHANT_S
 |-------|------|-------------|----------|
 | `reason` | `string` | `shop/services/ifood_merchant.enqueue_sync` (`shop_saved`, `check`) | log (informativo) |
 
+#### `incident.act`
+
+O acionador de remédio de um alerta (`shopman/backstage/incidents/act.py`). Nasce quando
+um `OperatorAlert` de tipo com remédio é criado, e também pela repescagem do
+`act_on_incidents`. Planeja, aciona o gesto do domínio e se reagenda (sem gastar
+tentativa) para esperar o retry do domínio ou para conferir o resultado. Uma viva por
+alerta: `dedupe_key` = `incident.act:<alert_id>`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `alert_id` | `int` | `backstage/incidents/act.enqueue` | IncidentActHandler |
+| `action_id` | `int` | IncidentActHandler (depois de acionar) | IncidentActHandler (conferência) |
+
 #### `ifood.merchant_interruption`
 
 Cria ou retira no iFood a pausa pedida pelo gestor. O estado a aplicar é o da linha
@@ -1899,6 +1913,13 @@ o padrão; nenhuma desliga o freio de preço.
 | `delivery.ride_suggestion.saving_min_q` | `int` (centavos), `300` | `ride_plan._quote` | Economia mínima, em centavos, para a sugestão vir marcada. |
 | `delivery.ride_suggestion.saving_min_percent` | `int`, `15` | `ride_plan._quote` | Economia mínima em % das corridas separadas. Vale junto com `saving_min_q` (as duas). |
 | `delivery.ride_suggestion.extra_wait_minutes` | `int`, `10` | `ride_plan._fits` | O cliente que mais espera a mais espera no máximo isto. A espera a mais é estimada pelo desvio a 20 km/h mais 2 min por parada antes (fixos no código). |
+
+Além dos parâmetros, o plano lê o **fim da janela combinada** de cada pedido
+(`fulfillment_window.window_end`: o fim da meia hora de `delivery_time_slot` no dia de
+`delivery_date`, ou o `ifood.schedule.delivery_end_at` do agendado; o turno da encomenda
+não tem fim). O par cuja chegada estimada junta passaria desse fim, quando sozinho
+chegaria a tempo, não vira sugestão (`ride_plan.breaks_a_deadline`, #2875). A chegada
+usa o mesmo palpite da espera: agora, mais o percurso a 20 km/h e 2 min por parada antes.
 
 O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
 deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o

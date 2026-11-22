@@ -184,7 +184,6 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
           :building="[]"
           :live="[{ number: ride.number, stops: located, courier: ride.position }]"
           :active="ride.number"
-          :live-opacity="0.5"
           :maps-key="mapsKey"
           bare
         />

@@ -20,6 +20,7 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 | `j7-achar-o-pedido-de-ontem.spec.ts` | J7: achar o pedido de ontem pelo nome, ampliando o período; pede a pilha semeada na véspera, ou num dia em que a cliente ainda não tenha pedido concluído | Gerente com PIN (Gestor, 1366 px) |
 | `j8-quem-so-expede-abre-o-sino.spec.ts` | J8: quem só expede abre um aviso de pedido no sino e lê por que o detalhe não abre (#2879) | cliente novo (loja, 375 px) · Gerente e Cozinha (Gestor, 1366 px) |
 | `g07-avisar-o-cliente.spec.ts` | WP-G07: avisar o cliente com um toque (vai atrasar, faltou um item), lendo a mensagem antes de enviar; o recibo que falhou traz o WhatsApp com o mesmo texto | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 e 375 px) |
+| `f1-nota-recusada-reprocessar.spec.ts` | F1: a cliente pede a retirada de hoje com CPF na nota e paga; o Caixa aceita, a Cozinha dá Pronto, o Caixa entrega; a SEFAZ (nota simulada) recusa, e o detalhe do pedido diz "NFC-e não autorizada" com a resposta do emissor; "Reprocessar NFC-e" emite de novo e a nota sai autorizada. Pede a nota simulada (`OPERATOR_CONTROL_DIR`), e pula sem ela | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
 
 Os papéis vêm de `shopman/shop/management/commands/setup_operators.py` (o `seed` roda o
 comando): Gerente `joyce` (senha `admin`, PIN 1234), Caixa `fran` (PIN 1234), Cozinha
@@ -111,7 +112,8 @@ npm run test:operator
 ```
 
 Sem essas variáveis a suíte recusa rodar e diz o que falta. `OPERATOR_CONTROL_DIR` é a mesma
-pasta do `TEST_STACK_CONTROL_DIR` do Django: sem ela, as jornadas que viajam no tempo pulam. As capturas de cada passo vão
+pasta do `TEST_STACK_CONTROL_DIR` do Django: sem ela, as jornadas que viajam no tempo ou
+roteirizam a nota pulam. As capturas de cada passo vão
 para `test-results/operator/` (fora do git).
 
 A suíte roda de novo sem reseed: cada execução cria um cliente novo (telefone sorteado) e
