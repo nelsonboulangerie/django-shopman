@@ -550,6 +550,17 @@ const DELIVERIES = {
     service_options: [{ ref: "taon", name: "TaOn", kind: "machine", is_default: true }],
   },
 };
+/** As corridas que acabaram sem levar os pedidos (#2737), no topo de Aguardando. */
+const FAILED_RIDES = [
+  {
+    key: "776753390", message: "Ninguém aceitou a corrida C (14h20).",
+    refs: ["WEB-20261116-0A47", "WEB-20261116-0C03"], codes: ["A47", "C03"], places: "Gleba Palhano", number: 3,
+  },
+  {
+    key: "776753391", message: "A TaOn cancelou a corrida (14h05).",
+    refs: ["WEB-20261116-0D12"], codes: ["D12"], places: "Centro", number: null,
+  },
+];
 /** As corridas em grupo que a tela chamou (`POST /orders/courier-ride/`), na ordem. */
 const ridePosts = [];
 
@@ -962,6 +973,10 @@ const server = createServer((req, res) => {
   const callOrder = callScenario ? url.match(/\/orders\/([A-Z0-9-]+)\/?(\?|$)/) : null;
   if (callOrder && callDetail(callOrder[1])) return json(res, 200, { order: callDetail(callOrder[1]) });
   if (f10Scenario === "fiscal" && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, f10Deliveries());
+  // #2737 (cookie `e2e_failed=on`): a corrida C de A47 e C03 voltou porque ninguém
+  // aceitou, e a de D12 a TaOn cancelou (a letra dela já é de outra corrida).
+  if (/(?:^|;\s*)e2e_failed=on(?:;|$)/.test(req.headers.cookie || "") && /\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, { ...DELIVERIES, failed_rides: FAILED_RIDES });
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });

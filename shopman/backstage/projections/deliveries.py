@@ -79,6 +79,10 @@ class DeliveryStopProjection:
     #: entregador leu ficou para trás (``courier.charge_outdated``):
     #: ``{sent, current, collected}``, ou ``None``.
     charge_outdated: dict | None = None
+    #: Em Aguardando: a corrida que acabou sem levar este pedido (ninguém aceitou
+    #: ou foi cancelada, ``courier.last_failure``). As paradas com a mesma chave
+    #: formam um cartão de :class:`FailedRideProjection`. Vazio quando não há.
+    failure_key: str = ""
     #: A NFC-e do pedido, a MESMA chave da pílula do cartão (``order_queue._FISCAL_PILL``):
     #: ``failed`` pede o "Reprocessar NFC-e" no pedido. Só avisa: nunca segura a
     #: chamada nem a saída (dono, 17/09/2026).
@@ -217,6 +221,28 @@ class RidePlanProjection:
 
 
 @dataclass(frozen=True)
+class FailedRideProjection:
+    """A corrida que ninguém aceitou ou que foi cancelada, no topo de Aguardando.
+
+    "Ninguém aceitou a corrida B (14h20)." com os pedidos que iam nela e ainda
+    esperam: o "Chamar de novo" chama a corrida inteira, não um pedido por vez.
+    """
+
+    #: A corrida que falhou (o ``ride_ref`` dela).
+    key: str
+    #: A frase, a mesma do Painel do pedido (``courier.failure_message``).
+    message: str
+    #: Os pedidos que iam nela e ainda esperam, na ordem da corrida.
+    refs: tuple[str, ...]
+    codes: tuple[str, ...]
+    #: Os bairros, sem repetir.
+    places: str
+    #: O número (a letra e a cor) que ela tinha, quando ainda está livre: chamar
+    #: de novo devolve a mesma letra. ``None`` quando outra corrida já a usa.
+    number: int | None = None
+
+
+@dataclass(frozen=True)
 class DeliveriesProjection:
     origin: DeliveryPointProjection | None
     waiting: tuple[DeliveryStopProjection, ...]
@@ -245,6 +271,8 @@ class DeliveriesProjection:
     #: As corridas que a casa sugere juntar (``ride_plan``). ``None`` no selo do menu,
     #: que nunca pergunta à central.
     ride_plan: RidePlanProjection | None = None
+    #: As corridas que acabaram sem levar os pedidos (ninguém aceitou, cancelada).
+    failed_rides: tuple[FailedRideProjection, ...] = ()
 
 
 def _point(address: dict) -> tuple[float | None, float | None]:
@@ -327,9 +355,12 @@ def _stop(order: Order, *, reads: _Reads, with_asks: bool = False, user=None) ->
     # Sem a TaOn, a casa ainda chama pelos próprios entregadores (M3c, #2899).
     callable_here = with_asks and (courier.is_enabled_for(order) or _house_callable(order)) \
         and not courier.has_active_ride(order)
+    # O que espera lê a corrida da fonte única do Painel (``courier.ride_health``).
+    health = courier.ride_health(order, tasks=reads.tasks) if with_asks else None
     # A chamada sem resposta trava qualquer outra (não se sabe se a corrida abriu
     # lá): a mesma regra e a mesma frase do Painel (``order_queue._courier_block``).
-    unresolved = courier.unresolved_dispatch(order, tasks=reads.tasks) is not None if callable_here else False
+    unresolved = bool(health and health["unresolved"]) if callable_here else False
+    failure = health["last_failure"] if health else None
     fiscal_status = _fiscal_status(
         order,
         directive_status=reads.fiscal.directive_status.get(order.ref, ""),
@@ -361,6 +392,7 @@ def _stop(order: Order, *, reads: _Reads, with_asks: bool = False, user=None) ->
             confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
         ) if unresolved else None,
         charge_outdated=None if with_asks else courier.charge_outdated(order),
+        failure_key=(failure["key"] or f"ended:{order.ref}") if failure and not unresolved and not message else "",
         fiscal_status=fiscal_status,
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
@@ -415,7 +447,6 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         _trip_fields,
         courier_can_cancel,
         courier_cancel_confirmation,
-        courier_cancel_state,
     )
     from shopman.shop.services import courier, operator_orders
 
@@ -425,7 +456,9 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
     sequence = [ref for ref in courier.ride_orders(lead) if ref in by_ref]
     sequence += [order.ref for order in orders if order.ref not in sequence]
     stops = tuple(_stop(by_ref[ref], reads=reads) for ref in sequence)
-    progress = courier.progress_view(block)
+    # O estado da corrida sai da fonte única do Painel do pedido (``courier.ride_health``).
+    health = courier.ride_health(lead, tasks=reads.tasks)
+    progress = health["progress"]
     back_members = (operator_orders.courier_return_members(lead)
                     if delivery_services.ride_state(block) == RideState.DONE else [])
     back = bool(back_members)
@@ -453,9 +486,9 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
     )
     pending = [stop for stop in stops if not stop.done]
     trip = _trip_fields(lead) if back else {}
-    cancel = courier_cancel_state(lead)
+    cancel = health["cancel"]
     can_cancel = courier_can_cancel(lead, cancel)
-    reopened = courier.reopen_view(block) if state == "reopened" else {"at": "", "driver": "", "reason": ""}
+    reopened = health["reopened"] if state == "reopened" else {"at": "", "driver": "", "reason": ""}
     custody_line = (_custody_line([by_ref[ref] for ref in sequence])
                     if driver is not None and state in ("coming", "atStore") else "")
     return DeliveryRideProjection(
@@ -477,7 +510,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         delivery_eta_at=progress.get("delivery_eta_at", ""),
         # O link é de UMA parada. Com várias, "o link da corrida" seria o de um
         # cliente só, pronto para ser copiado para outro: não aparece.
-        tracking_url=courier.proven_tracking(block)["url"] if len(stops) == 1 else "",
+        tracking_url=health["tracking"]["url"] if len(stops) == 1 else "",
         cost_display=_money(cost_q) if cost_q else "",
         cost_label=cost_label if cost_q else "",
         bags=sum(stop.volumes for stop in pending),
@@ -632,6 +665,8 @@ def build_deliveries(*, user=None, with_plan: bool = True) -> DeliveriesProjecti
     stops = tuple(_stop(order, reads=reads, with_asks=True, user=user) for order in waiting)
     joinable = {stop.ref for stop in stops if not stop.group_refusal}
     free_numbers = tuple(courier.free_ride_numbers())
+    failed = _failed_rides(waiting, stops, live_numbers={ride.number for ride in ride_rows if ride.number},
+                           free_numbers=free_numbers)
     return DeliveriesProjection(
         origin=origin,
         waiting=stops,
@@ -645,7 +680,37 @@ def build_deliveries(*, user=None, with_plan: bool = True) -> DeliveriesProjecti
         free_numbers=free_numbers,
         next_number=free_numbers[0] if free_numbers else None,
         ride_plan=_ride_plan(waiting, stops, tasks=reads.tasks) if with_plan else None,
+        failed_rides=failed,
     )
+
+
+def _failed_rides(waiting: list[Order], stops: tuple[DeliveryStopProjection, ...], *,
+                  live_numbers: set[int], free_numbers: tuple[int, ...]) -> tuple[FailedRideProjection, ...]:
+    """Um cartão por corrida que falhou, com quem dela ainda espera (``failure_key``)."""
+    from shopman.shop.services import courier
+
+    by_ref = {order.ref: order for order in waiting}
+    groups: dict[str, list[DeliveryStopProjection]] = {}
+    for stop in stops:
+        if stop.failure_key:
+            groups.setdefault(stop.failure_key, []).append(stop)
+    cards = []
+    for key, members in groups.items():
+        failure = courier.last_failure(by_ref[members[0].ref])
+        if failure is None:
+            continue
+        order_of = {ref: index for index, ref in enumerate(failure["refs"])}
+        members.sort(key=lambda stop: order_of.get(stop.ref, len(order_of)))
+        number = failure["number"]
+        cards.append(FailedRideProjection(
+            key=key,
+            message=courier.failure_message(failure, live_numbers=live_numbers),
+            refs=tuple(stop.ref for stop in members),
+            codes=tuple(stop.code for stop in members),
+            places=", ".join(dict.fromkeys(stop.place for stop in members if stop.place)),
+            number=number if number in free_numbers else None,
+        ))
+    return tuple(cards)
 
 
 def _house_on() -> bool:
