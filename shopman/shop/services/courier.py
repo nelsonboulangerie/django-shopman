@@ -1498,6 +1498,8 @@ def _archive_current_ride(block: dict) -> None:
     attempts.append(
         {
             "ride_ref": block.get("ride_ref", ""),
+            # O serviço fica com a corrida: a próxima pode ir por outro (#2467).
+            **({"service": block["service"]} if block.get("service") else {}),
             "status": block.get("status", ""),
             "requested_at": block.get("requested_at", ""),
             "status_at": dict(block.get("status_at") or {}),

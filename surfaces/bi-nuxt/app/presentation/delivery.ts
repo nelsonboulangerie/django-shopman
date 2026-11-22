@@ -3,9 +3,15 @@
 // corrida uma vez; aqui só a frase da resposta, as linhas por serviço e a forma das
 // séries. Uma linha por serviço e o total embaixo: a casa entrega por mais de um
 // serviço e o B.I. existe para compará-los (#3144).
-import type { BIDeliveryCostReport, BIDeliveryCostService } from "~/types/bi";
+import type {
+  BIDeliveryCostReport,
+  BIDeliveryCostService,
+  BIDeliveryTimingReport,
+  BIRideTimingService,
+} from "~/types/bi";
 import type { ReadingCsv } from "../../../operator-kit/app/presentation/readingChart";
 import { csvMoney, formatInt, formatMoney } from "~/presentation/bi";
+import { minutesLabel } from "~/presentation/preorderKitchen";
 
 /** A resposta em uma frase: quanto a entrega custou e se o frete cobriu. */
 export function deliveryAnswer(
@@ -79,4 +85,54 @@ export function ridesHint(
   const deliveries = `${formatInt(report.deliveries)} ${report.deliveries === 1 ? "entrega" : "entregas"}`;
   const rides = `${formatInt(report.rides)} ${report.rides === 1 ? "corrida" : "corridas"}`;
   return `${deliveries} em ${rides}`;
+}
+
+// ── Tempo das corridas (#2467) ───────────────────────────────────────────────
+
+/** Uma linha da tabela de tempos: a de um serviço, ou a do total (`service = DELIVERY_TOTAL_KEY`). */
+export type RideTimingRow = BIRideTimingService;
+
+/** "4 min", "12,5 min"; "Sem medida" quando nenhuma corrida chegou àquele marco no período. */
+export const rideMinutes = minutesLabel;
+
+/**
+ * O "Até aceitar": zero não é espera curta, é aceite no instante da chamada (o entregador
+ * da casa aceita quando é chamado). A tela diz isso em palavras, nunca "0 min".
+ */
+export function rideAcceptLabel(value: number | null | undefined): string {
+  return value === 0 ? "Na chamada" : minutesLabel(value);
+}
+
+/**
+ * As linhas por serviço e o total embaixo. Com `order` (os serviços da tabela de custo,
+ * na ordem dela), cada serviço fica na mesma linha nas duas tabelas da página; o que a
+ * tabela de custo não tem vem depois, na ordem do servidor (a do nome).
+ */
+export function rideTimingRows(
+  report: Pick<BIDeliveryTimingReport, "services">,
+  order: readonly string[] = [],
+): RideTimingRow[] {
+  const total = report.services.filter((row) => row.service === DELIVERY_TOTAL_KEY);
+  const services = report.services.filter((row) => row.service !== DELIVERY_TOTAL_KEY);
+  const rank = (row: RideTimingRow) => {
+    const at = order.indexOf(row.service);
+    return at === -1 ? order.length : at;
+  };
+  return [...services].sort((a, b) => rank(a) - rank(b)).concat(total);
+}
+
+/** O CSV da tabela de tempos, em minutos, com o total na última linha. */
+export function rideTimingCsv(rows: readonly RideTimingRow[]): ReadingCsv {
+  const cell = (value: number | null) => (value === null ? "" : String(value).replace(".", ","));
+  return {
+    header: ["Serviço", "Corridas", "Até aceitar (min)", "Até a coleta (min)", "Na rua (min)", "Total (min)"],
+    rows: rows.map((row) => [
+      row.name,
+      row.rides,
+      cell(row.accept_minutes),
+      cell(row.pickup_minutes),
+      cell(row.street_minutes),
+      cell(row.total_minutes),
+    ]),
+  };
 }

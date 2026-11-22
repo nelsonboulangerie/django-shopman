@@ -68,7 +68,7 @@ export interface CourierRideView {
   /** A observação da loja para esta corrida (escrita no Gestor, ao enviar). */
   note?: string
   /** O mapa da tela "Dirigindo" (#2509): a chave pública do navegador e onde fica a loja. */
-  map?: { key: string, origin: { lat: number, lng: number } | null }
+  map?: { key: string, origin: { lat: number, lng: number } | null, guide?: RouteGuide }
   /** O tema gravado no cadastro do entregador (#2648): o celular novo já abre nele. */
   theme?: CourierTheme
 }
@@ -458,10 +458,11 @@ export function routeLine (stops: readonly MapStop[], from: MapPoint | null): Ma
 /**
  * O mapa próprio, sem o Google (sem chave, sem rede): uma projeção plana que enquadra os
  * pontos na caixa com folga, na mesma escala nos dois eixos (o leste encolhe com a
- * latitude), sem usar a faixa de baixo (`padBottom`) onde ficam os botões sobre o mapa.
+ * latitude), sem usar a faixa de baixo (`padBottom`, os botões sobre o mapa) nem a de cima
+ * (`padTop`, a manobra).
  * Devolve a função que leva a coordenada ao pixel.
  */
-export function frameProjection (points: readonly MapPoint[], width: number, height: number, pad = 48, padBottom = pad): (p: MapPoint) => { x: number, y: number } {
+export function frameProjection (points: readonly MapPoint[], width: number, height: number, pad = 48, padBottom = pad, padTop = pad): (p: MapPoint) => { x: number, y: number } {
   if (!points.length || width <= 0 || height <= 0) return () => ({ x: width / 2, y: height / 2 })
   const lat0 = points.reduce((sum, p) => sum + p.lat, 0) / points.length
   const k = Math.cos((lat0 * Math.PI) / 180)
@@ -469,11 +470,53 @@ export function frameProjection (points: readonly MapPoint[], width: number, hei
   const ys = points.map(p => p.lat)
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
   const spanX = Math.max(maxX - minX, 1e-4), spanY = Math.max(maxY - minY, 1e-4)
-  const scale = Math.min((width - 2 * pad) / spanX, (height - pad - padBottom) / spanY)
+  const scale = Math.min((width - 2 * pad) / spanX, (height - padTop - padBottom) / spanY)
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
   // A faixa de baixo (os botões sobre o mapa) fica fora do quadro dos pontos.
-  const midY = pad + (height - pad - padBottom) / 2
+  const midY = padTop + (height - padTop - padBottom) / 2
   return p => ({ x: width / 2 + (p.lng * k - cx) * scale, y: midY - (p.lat - cy) * scale })
+}
+
+// ── A manobra (#2509, Routes API) ────────────────────────────────────────────
+
+/** A rota por ruas e a próxima manobra, quando o Routes API respondeu. Sem ela, linha reta. */
+export interface RouteGuide {
+  path: [number, number][]
+  next: { instruction: string, maneuver: string, meters: number | null } | null
+}
+
+/** A linha por ruas em pontos do mapa. */
+export function guidePath (guide: RouteGuide | null | undefined): MapPoint[] {
+  return (guide?.path || []).map(([lat, lng]) => ({ lat, lng }))
+}
+
+/** "200 m", "1,2 km"; vazio sem distância (ele ainda não mandou posição). */
+export function maneuverDistance (meters: number | null | undefined): string {
+  if (typeof meters !== 'number' || !Number.isFinite(meters)) return ''
+  if (meters < 1000) return `${Math.max(10, Math.round(meters / 10) * 10)} m`
+  return `${(meters / 1000).toFixed(1).replace('.', ',')} km`
+}
+
+const MANEUVER_ICONS: Record<string, string> = {
+  TURN_RIGHT: 'lucide:corner-up-right',
+  TURN_SHARP_RIGHT: 'lucide:corner-up-right',
+  TURN_SLIGHT_RIGHT: 'lucide:arrow-up-right',
+  TURN_LEFT: 'lucide:corner-up-left',
+  TURN_SHARP_LEFT: 'lucide:corner-up-left',
+  TURN_SLIGHT_LEFT: 'lucide:arrow-up-left',
+  UTURN_RIGHT: 'lucide:redo-2',
+  UTURN_LEFT: 'lucide:undo-2',
+  ROUNDABOUT_RIGHT: 'lucide:rotate-cw',
+  ROUNDABOUT_LEFT: 'lucide:rotate-ccw',
+  RAMP_RIGHT: 'lucide:arrow-up-right',
+  FORK_RIGHT: 'lucide:arrow-up-right',
+  RAMP_LEFT: 'lucide:arrow-up-left',
+  FORK_LEFT: 'lucide:arrow-up-left'
+}
+
+/** O desenho da manobra; o que não tem seta própria (seguir, mudar de nome) é "em frente". */
+export function maneuverIcon (maneuver: string | null | undefined): string {
+  return MANEUVER_ICONS[(maneuver || '').toUpperCase()] || 'lucide:arrow-up'
 }
 
 // ── O Desfazer ───────────────────────────────────────────────────────────────

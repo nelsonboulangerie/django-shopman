@@ -71,6 +71,9 @@ class RenderedPart:
     move: str
     segments: tuple[Segment, ...]
     claims: tuple[RenderedClaim, ...]
+    # O molde que compôs a parte (``None`` no texto redigido fora de molde). Só registro: não
+    # muda texto, lastro nem verificação; diz ao adaptador qual frase da casa saiu.
+    template_id: str | None = None
 
     @property
     def text(self) -> str:
@@ -137,7 +140,7 @@ def verify(parts: Iterable[RenderedPart], evidence: Evidence, rules: Iterable[Ph
                 # O reparo mexe só no texto livre; o bloco travado fica como veio do lastro.
                 segments = tuple(seg if seg.slot is not None else
                                  Segment(re.sub(rule.pattern, rule.replacement or "", seg.text)) for seg in segments)
-        repaired.append(RenderedPart(part.move, segments, part.claims))
+        repaired.append(RenderedPart(part.move, segments, part.claims, part.template_id))
     if any(f.action == "hold" for f in findings):
         result = "hold"
     elif findings:

@@ -28,6 +28,7 @@ DJANGO_PORT="${JOURNEYS_DJANGO_PORT:-8090}"
 PROXY_PORT="${JOURNEYS_PROXY_PORT:-8091}"
 STRIPE_PORT="${JOURNEYS_STRIPE_PORT:-12190}"
 MANYCHAT_PORT="${JOURNEYS_MANYCHAT_PORT:-12191}"
+MAPS_PORT="${JOURNEYS_MAPS_PORT:-12192}"
 STORE_PORT="${JOURNEYS_STORE_PORT:-3190}"
 GESTOR_PORT="${JOURNEYS_GESTOR_PORT:-3194}"
 # Hosts próprios: o navegador divide os cookies de um host entre as portas.
@@ -59,6 +60,12 @@ export STRIPE_WEBHOOK_SECRET=whsec_e2e_fake_local_only
 MANYCHAT_URL="http://127.0.0.1:${MANYCHAT_PORT}"
 export MANYCHAT_API_BASE="${MANYCHAT_URL}/fb"
 unset MANYCHAT_API_TOKEN
+# O geocoding vai aos mapas FALSOS do harness (`shopman/shop/tests/e2e/fake_maps.py`,
+# #2569 item 4): endereços fixos com coordenadas que caem cada uma numa faixa de distância
+# do seed, para a taxa por distância ser medida sem chave de mapas. O mesmo fake responde
+# o ViaCEP, que a jornada desvia do navegador para ele.
+MAPS_URL="http://127.0.0.1:${MAPS_PORT}"
+export SHOPMAN_E2E_MAPS_API_BASE="${MAPS_URL}"
 export SHOPMAN_STOREFRONT_BASE_URL="${STORE_URL}"
 export SHOPMAN_ORDERS_BASE_URL="${GESTOR_URL}"
 export CSRF_TRUSTED_ORIGINS="${STORE_URL},${GESTOR_URL}"
@@ -88,7 +95,7 @@ wait_for () {
   exit 1
 }
 
-for port in "${DJANGO_PORT}" "${PROXY_PORT}" "${STORE_PORT}" "${GESTOR_PORT}" "${STRIPE_PORT}" "${MANYCHAT_PORT}"; do
+for port in "${DJANGO_PORT}" "${PROXY_PORT}" "${STORE_PORT}" "${GESTOR_PORT}" "${STRIPE_PORT}" "${MANYCHAT_PORT}" "${MAPS_PORT}"; do
   if lsof -nP -iTCP:"${port}" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Porta ${port} ocupada: outro servidor responderia no lugar desta pilha." >&2
     exit 1
@@ -125,6 +132,9 @@ PIDS+=("$!")
 # ManyChat falso: aceita o que a casa manda pelo WhatsApp e guarda, para a jornada ler.
 "${PYTHON_BIN}" -m shopman.shop.tests.e2e.fake_manychat --port "${MANYCHAT_PORT}" >"${LOGS}/manychat.log" 2>&1 &
 PIDS+=("$!")
+# Mapas falsos: geocoding do Google e ViaCEP, a partir de uma tabela fixa.
+"${PYTHON_BIN}" -m shopman.shop.tests.e2e.fake_maps --port "${MAPS_PORT}" >"${LOGS}/maps.log" 2>&1 &
+PIDS+=("$!")
 DJANGO_SETTINGS_MODULE=shopman.shop.tests.e2e.settings_e2e \
   "${PYTHON_BIN}" manage.py runserver "127.0.0.1:${DJANGO_PORT}" --noreload >"${LOGS}/django.log" 2>&1 &
 PIDS+=("$!")
@@ -134,6 +144,7 @@ PIDS+=("$!")
 wait_for "${DJANGO_URL}/health/live/" "127.0.0.1" "Django" "${LOGS}/django.log"
 wait_for "${SHOPMAN_E2E_STRIPE_API_BASE}/health" "127.0.0.1" "Stripe falso" "${LOGS}/stripe.log"
 wait_for "${MANYCHAT_URL}/health" "127.0.0.1" "ManyChat falso" "${LOGS}/manychat.log"
+wait_for "${MAPS_URL}/health" "127.0.0.1" "Mapas falsos" "${LOGS}/maps.log"
 
 # Proxy lento da J9: só da pilha de teste, entre a loja e o Django.
 SLOW_PROXY_PORT="${PROXY_PORT}" SLOW_PROXY_TARGET="${DJANGO_URL}" \
@@ -155,6 +166,7 @@ JOURNEY_STORE_URL="${STORE_URL}" \
 JOURNEY_GESTOR_URL="${GESTOR_URL}" \
 JOURNEY_DJANGO_URL="${DJANGO_URL}" \
 JOURNEY_MANYCHAT_URL="${MANYCHAT_URL}" \
+JOURNEY_MAPS_URL="${MAPS_URL}" \
 JOURNEY_OTP_FILE="${SHOPMAN_E2E_OTP_FILE}" \
 JOURNEY_PROXY_CONTROL="http://127.0.0.1:${PROXY_PORT}" \
   npx playwright test --config=playwright.journeys.config.ts "$@"
