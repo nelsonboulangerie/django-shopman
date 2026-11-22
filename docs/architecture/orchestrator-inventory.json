@@ -13139,6 +13139,7 @@
             "_preorder_not_due",
             "_sync_delivery_fulfillment",
             "_waiting_for_the_batch",
+            "_waitlist_wait_reason",
             "logger"
           ]
         }
