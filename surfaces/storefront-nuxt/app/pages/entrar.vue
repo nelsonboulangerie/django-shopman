@@ -209,7 +209,14 @@ const supportUrl = computed(() => withWhatsAppText(
 ))
 // A ajuda só aparece esperando algo: o código do SMS ou a volta do WhatsApp. Cada
 // espera tem a sua pergunta — no WhatsApp quem envia é a pessoa, não a loja.
-const supportHeading = computed(() => step.value === 'code' ? 'O código não chegou?' : 'Enviou e nada aconteceu?')
+// Com a mensagem já recebida (falta o toque em "Liberar", #3271), "Enviou e nada
+// aconteceu?" desmentiria o "Sua mensagem chegou" logo acima: o que pode faltar é a
+// resposta da loja no WhatsApp.
+const supportHeading = computed(() => {
+  if (step.value === 'code') return 'O código não chegou?'
+  if (waAwaitingRelease.value) return 'Não recebeu a resposta no WhatsApp?'
+  return 'Enviou e nada aconteceu?'
+})
 const phonePlaceholder = computed(() => phoneRegion.value === 'INTL' ? '+1 202 555 1234' : '(43) 98123-4567')
 const phoneAutocomplete = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'tel-national')
 const phoneInputMode = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'numeric')
