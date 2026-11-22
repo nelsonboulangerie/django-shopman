@@ -34,13 +34,13 @@ describe("PosPaymentWorkspace — a cozinha da encomenda", () => {
     });
     const notices = wrapper.find('[aria-label="Avisos"]').text();
     expect(notices).toContain("O item vai para a cozinha no dia da encomenda.");
-    expect(notices).not.toContain("Ao finalizar");
+    expect(notices).not.toContain("Ao validar");
   });
 
   it("para hoje: vai ao finalizar", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ deliveryDate: "", deliveryDateEffective: "2026-09-28" }),
     });
-    expect(wrapper.find('[aria-label="Avisos"]').text()).toContain("Ao finalizar, o item vai para a cozinha.");
+    expect(wrapper.find('[aria-label="Avisos"]').text()).toContain("Ao validar, o item vai para a cozinha.");
   });
 });

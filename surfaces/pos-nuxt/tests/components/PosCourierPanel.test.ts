@@ -14,7 +14,7 @@ enableAutoUnmount(afterEach);
 
 function courier(overrides: Partial<PreorderCourier> = {}): PreorderCourier {
   return {
-    provider: "machine", status: "P", status_label: "Procurando entregador", active: true, driver: null,
+    provider: "machine", status: "P", ride_state: "searching", status_label: "Procurando entregador", active: true, driver: null,
     tracking_url: "", confirmation_code: "", attempts_count: 0, error: null, can_dispatch: false,
     can_dispatch_again: false, can_cancel: false, ...overrides,
   };
@@ -47,7 +47,7 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
 
   it("depois da coleta (sem can_cancel) não há Cancelar a corrida", async () => {
     const wrapper = await mountSuspended(PosCourierPanel, {
-      props: { courier: courier({ status: "E", can_cancel: false }), card, busy: false,
+      props: { courier: courier({ status: "E", ride_state: "on_route", can_cancel: false }), card, busy: false,
         cancelAction: action("courier-cancel", "Cancelar corrida", false) },
     });
     expect(wrapper.find("[data-pos-courier-cancel]").exists()).toBe(false);
@@ -77,7 +77,7 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
   it("Entregador voltou mostra a lista do que deve estar na mão e fecha a saída no Conferido", async () => {
     const lines = ["A Maquininha Azul", "R$ 22,00 de troco"];
     const wrapper = await mountSuspended(PosCourierPanel, {
-      props: { courier: courier({ status: "E", status_label: "Saiu para entrega" }), card, busy: false,
+      props: { courier: courier({ status: "E", ride_state: "on_route", status_label: "Saiu para entrega" }), card, busy: false,
         backAction: action("courier-back", "Entregador voltou"), returnLines: lines },
     });
     const returned = wrapper.find("[data-pos-courier-returned]");
@@ -95,7 +95,7 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
 
   it("a frase que mandava cancelar e registrar a volta no Gestor saiu", async () => {
     const wrapper = await mountSuspended(PosCourierPanel, {
-      props: { courier: courier({ status: "A" }), card, busy: false },
+      props: { courier: courier({ status: "A", ride_state: "assigned" }), card, busy: false },
     });
     expect(wrapper.find("[data-pos-courier-gestor]").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("No Gestor de pedidos");
@@ -103,7 +103,7 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
 
   it("sem permissão (ação apagada), os botões vêm desligados", async () => {
     const wrapper = await mountSuspended(PosCourierPanel, {
-      props: { courier: courier({ status: "A", can_cancel: true }), card, busy: false,
+      props: { courier: courier({ status: "A", ride_state: "assigned", can_cancel: true }), card, busy: false,
         cancelAction: action("courier-cancel", "Cancelar corrida", false),
         backAction: action("courier-back", "Entregador voltou", false) },
     });

@@ -86,12 +86,15 @@ def test_operator_start_prep_moves_to_preparing():
 
 @pytest.mark.usefixtures("web_operator_channel")
 def test_future_preorder_cannot_be_started_early():
-    tomorrow = (timezone.localdate() + timedelta(days=3)).isoformat()
-    order = _paid_accepted_order(ref="WEB-OP-PRE", data_extra={"delivery_date": tomorrow})
+    day = timezone.localdate() + timedelta(days=3)
+    order = _paid_accepted_order(ref="WEB-OP-PRE", data_extra={"delivery_date": day.isoformat()})
 
     # Encomenda para daqui a 3 dias: o preparo não abre antes do dia.
     assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.PREORDER_NOT_DUE
-    with pytest.raises(ValueError):
+    # A recusa diz QUAL dia (#3164), não "o dia combinado".
+    expected = f"Encomenda para {day:%d/%m}. O preparo abre nesse dia."
+    assert operator_orders.advance_block_reason(order) == expected
+    with pytest.raises(ValueError, match=expected.replace(".", r"\.")):
         operator_orders.advance_order(order, actor="operator:test")
     order.refresh_from_db()
     assert order.status == Order.Status.ACCEPTED

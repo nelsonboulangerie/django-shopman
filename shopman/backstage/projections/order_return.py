@@ -66,8 +66,10 @@ def return_block_reason(order: Order) -> str:
     if order.status not in RETURNABLE_STATUSES:
         return "A devolução é para pedido entregue ou concluído."
     payment = (order.data or {}).get("payment") or {}
-    if payment_svc._pays_on_account(payment):
-        return "Venda na conta da casa: a devolução ainda não passa pelo Gestor."
+    if payment_svc._pays_on_account(payment) and payment_svc.account_debt_settled(order):
+        # A conta acertada é dinheiro já recebido: estornar é com o Dono (#3151).
+        # Só em conta (#2606) e venda mista (#3151) com a dívida em aberto passam.
+        return "A conta deste pedido já foi acertada: a devolução dele é com o Dono."
     return ""
 
 
@@ -82,8 +84,16 @@ def money_destination(order: Order) -> tuple[bool, str]:
 
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "")
+    if payment_svc._pays_on_account(payment) and not payment_svc.pays_only_on_account(payment):
+        # Venda mista: a conta sai primeiro (a tela diz quanto, com ``account_debt_q``);
+        # esta frase é a do dinheiro que passa da conta, pela forma em que entrou.
+        money = payment_svc.money_tender_methods(payment)
+        method = money[0] if len(money) == 1 else ""
+    if payment_svc.pays_only_on_account(payment):
+        # Nada foi pago: a devolução sai da conta do cliente, não do caixa.
+        return (payment_svc.open_account_debt_q(order) > 0, "saem da conta do cliente.")
     captured_q = payment_svc.captured_balance_q(order)
-    if captured_q == 0:
+    if captured_q == 0 and not payment_svc._pays_on_account(payment):
         return False, ""
     if method in _GATEWAY_REFUND_DESTINATION:
         return True, f"serão estornados {_GATEWAY_REFUND_DESTINATION[method]}."
@@ -92,6 +102,14 @@ def money_destination(order: Order) -> tuple[bool, str]:
     if method in CARD_MACHINE_METHODS:
         return True, "ficam a estornar na maquininha, pelo PDV."
     return True, "ficam a devolver ao cliente."
+
+
+def _account_first_q(order: Order) -> int:
+    """Na venda mista com conta da casa, quanto da dívida a devolução abate antes do dinheiro."""
+    payment = (order.data or {}).get("payment") or {}
+    if not payment_svc._pays_on_account(payment) or payment_svc.pays_only_on_account(payment):
+        return 0
+    return payment_svc.open_account_debt_q(order)
 
 
 def build_order_return(order: Order, *, user=None) -> dict:
@@ -142,6 +160,9 @@ def build_order_return(order: Order, *, user=None) -> dict:
         "lines": [asdict(line) for line in lines],
         "money_returns": money_returns,
         "money_destination": destination,
+        # Venda mista com conta da casa (#3151): a DÍVIDA sai primeiro, até
+        # ``account_debt_q``; só o que passa dela segue ``money_destination``.
+        "account_debt_q": _account_first_q(order) if not reason else 0,
         "managers": list(_manager_cards(user)),
         "action": asdict(action),
     }

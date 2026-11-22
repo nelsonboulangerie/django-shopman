@@ -94,6 +94,25 @@ class Command(BaseCommand):
         # Their worker owns recovery. Missing markers on historical orders are
         # not evidence of pending work and must never authorize retroactive effects.
 
+        # A "etapa travada" que o próprio domínio já superou (pedido de teste, preparo
+        # que chegou com o pedido fechado, etapa concluída depois) fecha sozinha, com o
+        # motivo. Retroativo: vale para o alerta antigo também (#3029).
+        if not self._dry_run:
+            from shopman.shop.handlers.alert_resolution import resolve_superseded_phase_alerts
+
+            closed = resolve_superseded_phase_alerts()
+            if closed:
+                self.stdout.write(f"sweep_stuck_orders: {closed} etapa(s) travada(s) já superada(s), fechada(s).")
+
+            # Aviso que um fato já encerrou (pedido de teste ou do seed, pedido entregue
+            # ou desfeito, lote do seed ou já encerrado, tipo aposentado) fecha, com o
+            # motivo (#3079, #3080).
+            from shopman.shop.handlers.alert_resolution import resolve_alerts_ended_by_fact
+
+            ended = resolve_alerts_ended_by_fact()
+            if ended:
+                self.stdout.write(f"sweep_stuck_orders: {ended} aviso(s) já encerrado(s) por fato, fechado(s).")
+
         if self._recovered:
             self.stdout.write(
                 self.style.WARNING(

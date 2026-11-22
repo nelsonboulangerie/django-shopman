@@ -99,4 +99,6 @@ def test_leitura_do_terminal_nao_cresce_com_catalogo_comandas_e_estacoes(balcao)
 #: Medido em 10/10/2026 depois da correção (o número impresso acima), com folga
 #: pequena. Subir só sabendo o que entrou no caminho. +1 em 03/11/2026: as vendas
 #: sem conexão "a conferir" do turno (``offline_review_sales``), uma consulta só.
-TETO_LEITURA_DO_TERMINAL = 46
+#: +1 em 21/11/2026: as promoções automáticas do canal, lidas uma vez para a grade
+#: inteira (o tile mostra o preço da promoção, P2-2 do WP-E8).
+TETO_LEITURA_DO_TERMINAL = 47
