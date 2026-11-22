@@ -214,7 +214,7 @@ class Engine:
     exposures: ExposureLedger = field(default_factory=ExposureLedger)
     # O texto de cada mensagem pronta, pelo ``body_ref`` que o canal recebe (``reply:<plano>``). O
     # ``ReplyPlan`` guarda as partes e o lastro, não o texto; o canal de verdade precisa do texto
-    # para enviar, e ele fica só aqui, em memória, nunca num registro.
+    # para enviar, e ele fica só aqui, em memória e só durante o envio, nunca num registro.
     bodies: dict[str, str] = field(default_factory=dict)
     _turns: int = 0
 
@@ -772,6 +772,8 @@ class Engine:
             # Nada se sabe enviado; o trabalho de envio segue na caixa de saída, com a mesma chave.
             return TurnResult("answered", **{**result, "fallbacks": (*result["fallbacks"],
                                                                      f"send_failed:{error.code.value}")})
+        finally:
+            self.bodies.pop(prepared.body_ref, None)  # o texto vive só durante o envio
         return TurnResult("answered", exposure=exposure, **result)
 
     def _snapshot(self, ctx: TrustedContext, episode: Episode, trace_id: str, cause_id: str, state: TurnState,
@@ -914,6 +916,8 @@ class Engine:
             exposure = self.exposures.record(self.ports.channel.send(ctx, prepared, f"send:{decision.decision_id}"))
         except PortError as error:
             return TurnResult("answered", fallbacks=(f"send_failed:{error.code.value}",), **result)
+        finally:
+            self.bodies.pop(prepared.body_ref, None)  # o texto vive só durante o envio
         return TurnResult("answered", exposure=exposure, **result)
 
     def _advance(self, ctx: TrustedContext, entry, cause_id: str, **changes) -> Commitment:

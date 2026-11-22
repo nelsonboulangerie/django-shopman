@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 
 from conversational_commerce.contracts import ReplyPlan
-from conversational_commerce.testing.fakes import FakeChannel
+from conversational_commerce.testing.fakes import FakeChannel, Fault
 
 from .helpers import CTX, engine, message
 
@@ -39,7 +39,23 @@ def test_the_channel_sends_exactly_the_text_the_turn_composed():
 
     assert result.outcome == "answered"
     assert channel.sent == [result.text] == ["We are open from 08:00 to 18:00."]
-    assert bodies == {f"reply:{result.reply.plan.id}": result.text}
+    assert bodies == {}  # o texto vive só durante o envio: o motor que vive muito não acumula
+
+
+def test_the_text_is_dropped_even_when_the_send_fails():
+    turn_engine, world = engine()
+    bodies: dict[str, str] = {}
+    channel = BodyChannel(world.clock, bodies)
+    turn_engine = dataclasses.replace(turn_engine, bodies=bodies)
+    turn_engine.ports.channel = channel
+    world.faults.arm("send", Fault.PROVIDER_DOWN)
+    channel.faults = world.faults
+
+    result = turn_engine.turn(CTX, message("m1", "what are your hours?"))
+
+    assert "send_failed:provider_unavailable" in result.fallbacks
+    assert channel.sent == [result.text]  # o canal leu o texto antes de cair
+    assert bodies == {}
 
 
 def test_the_text_never_goes_into_a_record():
