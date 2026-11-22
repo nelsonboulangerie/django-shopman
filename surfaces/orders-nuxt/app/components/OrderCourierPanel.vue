@@ -423,7 +423,7 @@ const vehicle = computed(() =>
         />
         <div v-if="toSeparate && separating" class="flex flex-col gap-3 rounded-lg border border-default p-3" data-courier-separate-form>
           <NuxtFormField v-if="toSeparate.change_out_suggested_q > 0" label="Troco a levar" name="change_out">
-            <NuxtInput v-model="separateChange" inputmode="decimal" class="w-40" :ui="{ base: 'min-h-11' }" data-courier-separate-change>
+            <NuxtInput v-model="separateChange" inputmode="decimal" class="w-40" size="xl" data-courier-separate-change>
               <template #leading><span class="text-muted">R$</span></template>
             </NuxtInput>
           </NuxtFormField>
@@ -433,7 +433,7 @@ const vehicle = computed(() =>
               v-model="separateMachine"
               :items="separateMachines.map((option) => ({ value: option.ref, label: option.label }))"
               class="w-60"
-              :ui="{ base: 'min-h-11' }"
+              size="xl"
               data-courier-separate-machine
             />
             <p v-else class="text-sm text-error" data-courier-separate-no-machine>
