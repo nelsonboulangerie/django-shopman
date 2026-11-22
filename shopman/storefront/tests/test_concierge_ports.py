@@ -13,13 +13,17 @@ O que estes testes seguram:
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
+from conversational_commerce.contracts import sha256_hash
 from conversational_commerce.engine.acts import ACTS
-from conversational_commerce.ports import InterpretRequest, ModelRequest, TrustedContext
+from conversational_commerce.ports import InterpretRequest, ModelRequest, PortError, TrustedContext
+from conversational_commerce.ports.channel import PreparedMessage
 from conversational_commerce.testing.conformance.harness import HarnessEnv, check_capabilities, run_checks
 from conversational_commerce.testing.fakes.clock import FakeClock
 
-from shopman.shop.models import Conversation, ConversationMessage
+from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage
 from shopman.storefront.concierge.contracts import TransportConnection
 from shopman.storefront.concierge.ports import (
     ConversationOwnership,
@@ -51,7 +55,7 @@ def test_channel_capabilities_reflect_the_connection():
     alpha = channel(stable_event_identity_verified=False).capabilities()
     assert alpha.guarantees["stable_event_identity_verified"] is False
     assert alpha.guarantees["response_window_seconds"] == 24 * 3600 and alpha.guarantees["read_receipts"] is False
-    assert set(alpha.unsupported) == {"send", "delivery_status", "request_handoff"}
+    assert set(alpha.unsupported) == {"request_handoff"}  # enviar e ler a entrega: o motor fala (22/11)
     assert channel(stable_event_identity_verified=True).capabilities().guarantees[
         "stable_event_identity_verified"] is True
     check_capabilities("channel", channel(), HarnessEnv(ctx=CTX, clock=FakeClock()))
@@ -168,3 +172,75 @@ def test_without_the_conversation_only_the_quantity_is_read(db, monkeypatch):
     _menu(monkeypatch, [CROISSANT])
     [act] = _read("quero 2 croissant")
     assert dict(act.fields) == {"quantity": "2"}
+
+
+# ── o canal envia pelo mesmo caminho da resposta (#3198, peça 2; decisão de 22/11: o motor fala) ──
+
+
+BODY_REF = "reply:plan-1"
+
+
+@pytest.fixture
+def live(db, monkeypatch):
+    conversation = Conversation.objects.create(pk=1, phone="+5543999990000")
+    binding = ConversationBinding.objects.create(
+        conversation=conversation, provider="manychat", account="acc-1", transport_channel="whatsapp",
+        subject="5543999990000", connection_key="manychat-whatsapp-primary",
+        status=ConversationBinding.Status.ACTIVE, identity_assurance="transport_subject")
+    ConversationMessage.objects.create(conversation=conversation, binding=binding, role=ConversationMessage.Role.USER,
+                                       kind=ConversationMessage.Kind.INBOUND, text="que horas abre?")
+    dispatched = []
+
+    def dispatch(conv, message):
+        dispatched.append(message.pk)
+        if message.transport_state == "prepared":
+            message.transport_state = "accepted"
+            message.save(update_fields=["transport_state"])
+        return message
+
+    monkeypatch.setattr("shopman.storefront.concierge.service._dispatch_reply", dispatch)
+    return conversation, dispatched
+
+
+def _prepared(text="Abrimos às 7h."):
+    return PreparedMessage(decision_id="dec-1", content_hash=sha256_hash({"text": text}), recipient="conversation:1",
+                           binding={"channel": "whatsapp", "conversation_ref": "5543999990000"}, body_ref=BODY_REF)
+
+
+def test_send_goes_through_the_reply_path_and_tells_what_happened(live):
+    conversation, dispatched = live
+    port = dataclasses.replace(channel(), bodies={BODY_REF: "Abrimos às 7h."})
+    exposure = port.send(CTX, _prepared(), "send:dec-1")
+    message = conversation.messages.get(kind=ConversationMessage.Kind.REPLY)
+    assert message.text == "Abrimos às 7h." and dispatched == [message.pk]
+    assert message.envelope["send_key"] == "send:dec-1"  # o mesmo caminho: regras da casa, janela, envio
+    assert (exposure.decision_id, exposure.state) == ("dec-1", "accepted")
+    assert exposure.content_hash == sha256_hash({"text": message.text})  # o hash do que SAIU
+
+
+def test_the_same_send_key_never_sends_twice(live):
+    conversation, dispatched = live
+    port = dataclasses.replace(channel(), bodies={BODY_REF: "Abrimos às 7h."})
+    first = port.send(CTX, _prepared(), "send:dec-1")
+    again = port.send(CTX, _prepared(), "send:dec-1")
+    assert conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).count() == 1
+    assert first.id == again.id
+
+
+def test_without_the_text_nothing_is_sent(live):
+    conversation, dispatched = live
+    with pytest.raises(PortError) as refused:
+        channel().send(CTX, _prepared(), "send:dec-1")
+    assert refused.value.code.value == "invalid_content"
+    assert not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists() and dispatched == []
+
+
+def test_delivery_status_reads_the_transport_state_of_the_same_message(live):
+    conversation, _ = live
+    port = dataclasses.replace(channel(), bodies={BODY_REF: "Abrimos às 7h."})
+    sent = port.send(CTX, _prepared(), "send:dec-1")
+    conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).update(transport_state="delivered")
+    status = port.delivery_status(CTX, sent.id)
+    assert (status.decision_id, status.state) == ("dec-1", "delivered")
+    with pytest.raises(PortError):
+        port.delivery_status(CTX, "exp-msg-999999-accepted")
