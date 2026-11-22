@@ -971,6 +971,8 @@ def test_product_detail_get_shape(client, operator, catalog):
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
         "allows_next_day_sale", "made_to_order", "ready_from",
+        # preparo da encomenda na Cozinha (#2304): o do SKU e o padrão da loja
+        "preorder_prep_minutes", "preorder_prep_default_minutes",
         "nutrition_facts", "social", "fiscal",
         # somente-leitura, menos `confirmed`: o GTIN que a SEFAZ recusou (None sem recusa)
         "gtin_rejected",

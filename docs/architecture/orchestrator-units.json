@@ -19722,6 +19722,7 @@
             "BLOCK",
             "DEFAULT_LEAD_MINUTES",
             "DEFAULT_PREP_MINUTES",
+            "MAX_MINUTES",
             "PreorderKitchenPolicy",
             "_minutes",
             "resolve_preorder_kitchen_policy"
