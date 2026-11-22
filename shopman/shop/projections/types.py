@@ -44,7 +44,7 @@ class CategoryProjection:
 
     ref: str
     name: str
-    icon: str  # Material Symbols ligature (fallback: "restaurant_menu")
+    icon: str  # nome Lucide do cadastro (metadata.icon), ou "" sem ícone
     url: str
 
 

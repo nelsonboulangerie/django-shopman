@@ -527,6 +527,20 @@ export function productSearchOptions (
     .slice(0, 12)
 }
 
+// O filtro de palavra-chave é uma AÇÃO de busca, e diz isso: "Buscar por “folhado”".
+// Com o nome solto, "folhado" ficava ao lado da coleção "Folhados", os dois com a mesma
+// contagem e levando a lugares diferentes (#3253). A coleção mantém o nome do cadastro.
+export function keywordSearchActionLabel (keyword: string): string {
+  return `Buscar por “${keyword}”`
+}
+
+// O ícone da coleção é o do cadastro (`metadata.icon`, nome Lucide sem prefixo, o mesmo
+// do card de produto sem foto); sem ícone no cadastro, o padrão da lista (#3253).
+export function collectionListIcon (section: Pick<CatalogSection, 'icon'>): string {
+  const icon = (section.icon || '').trim()
+  return icon ? `lucide:${icon}` : 'lucide:rows-3'
+}
+
 export function keywordSearchOptions (
   items: ReadonlyArray<CatalogItemProjection>,
   search: string,
@@ -546,7 +560,7 @@ export function keywordSearchOptions (
           key,
           kind: 'keyword',
           value: keyword,
-          label: keyword,
+          label: keywordSearchActionLabel(keyword),
           meta: '0 itens',
           icon: 'lucide:tag',
           section,
@@ -587,7 +601,7 @@ export function searchPanelView (input: {
           label,
           meta: formatCount(count, 'item', 'itens'),
           count,
-          icon: !!favoriteRef && [section.ref, section.category?.ref, section.dynamic_ref].includes(favoriteRef) ? 'lucide:heart' : 'lucide:rows-3',
+          icon: !!favoriteRef && [section.ref, section.category?.ref, section.dynamic_ref].includes(favoriteRef) ? 'lucide:heart' : collectionListIcon(section),
           section
         }
       }),
