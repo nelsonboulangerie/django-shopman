@@ -2,6 +2,7 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { expect, type Browser, type BrowserContext } from "@playwright/test";
 
 import { newDevice } from "../../../../operator-kit/tests/support/operatorGestures";
+import { syncBrowserClock } from "./clock";
 
 // A pilha que a suíte usa: URLs vindas do ambiente (playwright.operator.config.ts recusa
 // rodar sem elas) e os papéis do elenco de dev (shopman/shop/management/commands/
@@ -24,8 +25,11 @@ export { capture, cast, settled } from "../../../../operator-kit/tests/support/o
 /** Um contexto por papel: o balcão de 1366 px, ou o celular de 375 px da cliente. É o
  *  dispositivo novo do kit: cookies em 127.0.0.1 valem para todas as portas, e dois
  *  papéis no mesmo pote trocariam a sessão um do outro. */
-export async function roleContext(browser: Browser, baseURL: string, phone = false): Promise<BrowserContext> {
-  return newDevice(browser, phone ? "phone" : "counter", baseURL);
+export async function roleContext(browser: Browser, baseURL: string, phone = false, clockAt = ""): Promise<BrowserContext> {
+  const context = await newDevice(browser, phone ? "phone" : "counter", baseURL);
+  // Com `clockAt`, o navegador conta a mesma hora que o Django (relógio de teste).
+  if (clockAt) await syncBrowserClock(context, clockAt);
+  return context;
 }
 
 /** Onde o log do runserver está agora: o código pedido DEPOIS deste ponto é o nosso. */
