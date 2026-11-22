@@ -123,12 +123,12 @@ class BIPreorderKitchenView(_BIBase):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="B.I. delivery cost: what the house pays the courier partner per ride, against the delivery fee charged",
+        summary="B.I. delivery cost: what the house pays per ride, by delivery service, against the delivery fee charged",
         responses={200: OpenApiResponse(description="B.I. delivery cost report.")},
     ),
 )
 class BIDeliveryCostView(_BIBase):
-    """Quanto a casa paga à TaOn pelas entregas, e quanto o frete cobre."""
+    """Quanto a casa paga pelas entregas, por serviço, e quanto o frete cobre."""
 
     def get(self, request):
         report = build_bi_delivery_cost(

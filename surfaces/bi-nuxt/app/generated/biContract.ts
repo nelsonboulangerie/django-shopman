@@ -376,7 +376,19 @@ export interface BICustomersReport {
   average_ticket_q: number;
 }
 
-/** Um dia: corridas, entregas, custo da TaOn e frete cobrado. */
+/** Um serviço de entrega no período: corridas, entregas, custo e frete cobrado. */
+export interface BIDeliveryCostService {
+  service: string;
+  name: string;
+  rides: number;
+  deliveries: number;
+  cost_q: number;
+  fee_q: number;
+  balance_q: number;
+  cost_per_delivery_q: number;
+}
+
+/** Um dia: corridas, entregas, custo das corridas e frete cobrado. */
 export interface BIDeliveryCostDay {
   date: string;
   rides: number;
@@ -385,7 +397,7 @@ export interface BIDeliveryCostDay {
   fee_q: number;
 }
 
-/** BIDeliveryCostReport(date_from: 'str', date_to: 'str', rides: 'int', deliveries: 'int', cost_q: 'int', estimated_rides: 'int', fee_q: 'int', balance_q: 'int', cost_per_delivery_q: 'int', days: 'tuple[BIDeliveryCostDay, ...]') */
+/** BIDeliveryCostReport(date_from: 'str', date_to: 'str', rides: 'int', deliveries: 'int', cost_q: 'int', estimated_rides: 'int', fee_q: 'int', balance_q: 'int', cost_per_delivery_q: 'int', days: 'tuple[BIDeliveryCostDay, ...]', services: 'tuple[BIDeliveryCostService, ...]' = ()) */
 export interface BIDeliveryCostReport {
   date_from: string;
   date_to: string;
@@ -397,6 +409,7 @@ export interface BIDeliveryCostReport {
   balance_q: number;
   cost_per_delivery_q: number;
   days: BIDeliveryCostDay[];
+  services: BIDeliveryCostService[];
 }
 
 /** Uma encomenda: quando chegou à Cozinha, quando começou, quando ficou pronta. */

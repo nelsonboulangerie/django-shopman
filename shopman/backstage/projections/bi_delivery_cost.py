@@ -1,9 +1,14 @@
-"""B.I. — quanto a casa paga à TaOn pelas entregas, e quanto o frete cobre.
+"""B.I. — quanto a casa paga pelas entregas, por serviço, e quanto o frete cobre.
 
-A corrida da TaOn é custo da casa: o frete do cliente não muda com ela. Esta
-leitura soma o custo das corridas do período e põe ao lado o frete que os
-clientes pagaram nos mesmos pedidos. A diferença é o que a entrega deixa ou
-custa à casa.
+A corrida é custo da casa: o frete do cliente não muda com ela. Esta leitura
+soma o custo das corridas do período e põe ao lado o frete que os clientes
+pagaram nos mesmos pedidos. A diferença é o que a entrega deixa ou custa à casa.
+
+A casa entrega por mais de um serviço (a TaOn, os entregadores da casa: DEV-2026-030),
+e o multisserviço existe para comparar: o relatório traz uma linha por serviço, com o
+nome do cadastro, e o total (decisão da coordenação em 21/11/2026, #3144; o B.I. é só
+do Dono, então o agregado vale aqui). A corrida sem serviço gravado conta no padrão do
+Admin, que é por onde ela abriu.
 
 - **Custo** = ``final_value_q`` de cada corrida (o valor que a TaOn fecha no
   ``F``), contado UMA vez por corrida (``ride_ref``): numa corrida com várias
@@ -42,13 +47,31 @@ FEE_SKU = "__DELIVERY_FEE__"
 
 @dataclass(frozen=True)
 class BIDeliveryCostDay:
-    """Um dia: corridas, entregas, custo da TaOn e frete cobrado."""
+    """Um dia: corridas, entregas, custo das corridas e frete cobrado."""
 
     date: str
     rides: int
     deliveries: int
     cost_q: int
     fee_q: int
+
+
+@dataclass(frozen=True)
+class BIDeliveryCostService:
+    """Um serviço de entrega no período: corridas, entregas, custo e frete cobrado."""
+
+    #: O ``ref`` do cadastro (``DeliveryService.ref``); "" sem serviço cadastrado.
+    service: str
+    #: O nome como o cadastro diz ("TaOn", "Entregadores da casa").
+    name: str
+    rides: int
+    deliveries: int
+    cost_q: int
+    fee_q: int
+    #: Frete cobrado menos custo, deste serviço.
+    balance_q: int
+    #: Custo por pedido levado por este serviço (zero sem entregas).
+    cost_per_delivery_q: int
 
 
 @dataclass(frozen=True)
@@ -59,7 +82,7 @@ class BIDeliveryCostReport:
     rides: int
     #: Pedidos levados nessas corridas (uma corrida pode levar vários).
     deliveries: int
-    #: O que a casa paga à TaOn no período, uma vez por corrida.
+    #: O que a casa paga pelas corridas no período, uma vez por corrida.
     cost_q: int
     #: Corridas terminadas sem valor final, que entraram pela cotação.
     estimated_rides: int
@@ -70,6 +93,8 @@ class BIDeliveryCostReport:
     #: Custo por pedido levado (zero sem entregas).
     cost_per_delivery_q: int
     days: tuple[BIDeliveryCostDay, ...]
+    #: Uma linha por serviço, do que mais custou ao que menos; a soma é o total acima.
+    services: tuple[BIDeliveryCostService, ...] = ()
 
 
 def _window(date_from: date | None, date_to: date | None) -> tuple[date, date]:
@@ -152,8 +177,15 @@ def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | Non
     # Uma corrida chamada no período mexeu no pedido depois do começo dele; a
     # encomenda criada dias antes entra pelo ``updated_at``.
     candidates = Order.objects.filter(data__has_key="courier", updated_at__gte=since, created_at__lt=until)
+    from shopman.shop.models import DeliveryService
+
+    default = DeliveryService.default()
+    default_ref = default.ref if default else ""
     seen: set[str] = set()
     per_day: dict[date, dict] = defaultdict(lambda: {"rides": 0, "refs": [], "cost_q": 0})
+    per_service: dict[str, dict] = defaultdict(lambda: {"rides": 0, "refs": [], "cost_q": 0})
+    #: Quem levou cada pedido por último (a corrida mais recente dele): o que entregou.
+    last_ride: dict[str, tuple[datetime, str]] = {}
     estimated = 0
     for order in candidates:
         block = (order.data or {}).get("courier") or {}
@@ -177,6 +209,15 @@ def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | Non
             per_day[day]["rides"] += 1
             per_day[day]["refs"] += refs
             per_day[day]["cost_q"] += cost[0]
+            # A corrida sem serviço gravado abriu pelo padrão do Admin.
+            service_ref = str(ride.get("service") or default_ref)
+            service = per_service[service_ref]
+            for ref in refs:
+                if ref not in last_ride or requested >= last_ride[ref][0]:
+                    last_ride[ref] = (requested, service_ref)
+            service["rides"] += 1
+            service["refs"] += refs
+            service["cost_q"] += cost[0]
             estimated += int(cost[1])
 
     all_refs = {ref for row in per_day.values() for ref in row["refs"]}
@@ -198,6 +239,9 @@ def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | Non
     cost_q = sum(day.cost_q for day in days)
     fee_q = sum(day.fee_q for day in days)
     deliveries = sum(day.deliveries for day in days)
+    services = _service_rows(
+        per_service, cancelled=cancelled, fees=fees, owner={ref: ride[1] for ref, ride in last_ride.items()},
+    )
     return BIDeliveryCostReport(
         date_from=start_day.isoformat(),
         date_to=end_day.isoformat(),
@@ -209,7 +253,32 @@ def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | Non
         balance_q=fee_q - cost_q,
         cost_per_delivery_q=round(cost_q / deliveries) if deliveries else 0,
         days=tuple(days),
+        services=services,
     )
 
 
-__all__ = ["BIDeliveryCostDay", "BIDeliveryCostReport", "build_bi_delivery_cost", "fees_for", "ride_cost_q"]
+def _service_rows(
+    per_service: dict[str, dict], *, cancelled: set[str], fees: dict, owner: dict[str, str],
+) -> tuple[BIDeliveryCostService, ...]:
+    """As linhas por serviço, com o nome do cadastro. O pedido levado por dois serviços
+    (a TaOn não atendeu, a casa levou) conta a entrega e o frete no da corrida MAIS
+    RECENTE (``owner``), o que entregou; as corridas e o custo ficam onde aconteceram."""
+    from shopman.shop.models import DeliveryService
+    from shopman.shop.services import delivery_services
+
+    names = dict(DeliveryService.objects.filter(ref__in=list(per_service)).values_list("ref", "name"))
+    rows = []
+    for service, row in per_service.items():
+        refs = [ref for ref in dict.fromkeys(row["refs"]) if ref not in cancelled and owner.get(ref) == service]
+        fee_q = sum(int(fees.get(ref) or 0) for ref in refs)
+        rows.append(BIDeliveryCostService(
+            service=service,
+            name=names.get(service) or delivery_services.SERVICE_FALLBACK_NAME,
+            rides=row["rides"], deliveries=len(refs), cost_q=row["cost_q"], fee_q=fee_q,
+            balance_q=fee_q - row["cost_q"],
+            cost_per_delivery_q=round(row["cost_q"] / len(refs)) if refs else 0,
+        ))
+    return tuple(sorted(rows, key=lambda row: (-row.cost_q, row.name)))
+
+
+__all__ = ["BIDeliveryCostDay", "BIDeliveryCostReport", "BIDeliveryCostService", "build_bi_delivery_cost", "fees_for", "ride_cost_q"]
