@@ -192,6 +192,20 @@ describe("PosSaleResult — o palco pós-venda", () => {
     }
   });
 
+  it("P2-7: na encomenda registrada o gesto é 'Cancelar encomenda', e o Gestor abre o pedido (#3192, #2403)", async () => {
+    const order = await mountSuspended(PosSaleResult, { props: props({ result: result({ salesMode: "order" }) }) });
+    const labels = order.findAll("button, a").map((el) => el.text());
+    expect(labels.some((label) => label.includes("Cancelar encomenda"))).toBe(true);
+    expect(labels.some((label) => label.includes("Cancelar venda"))).toBe(false);
+    const gestor = order.findAll("a").find((el) => el.text().includes("Abrir o pedido no Gestor"));
+    expect(gestor?.attributes("href")).toBe("http://gestor.test/PDV-042");
+    order.unmount();
+
+    const sale = await mountSuspended(PosSaleResult, { props: props() });
+    expect(sale.findAll("button").some((el) => el.text().includes("Cancelar venda"))).toBe(true);
+    sale.unmount();
+  });
+
   it("o CTA emite newSale", async () => {
     const wrapper = await mountSuspended(PosSaleResult, { props: props() });
     const cta = wrapper.findAll("button").find((b) => b.text().includes("Nova venda"));
