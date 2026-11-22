@@ -7526,7 +7526,11 @@
           "symbols": [
             "validate_and_apply_coupon",
             "apply_coupon_code",
-            "remove_coupon_code"
+            "remove_coupon_code",
+            "CouponNotBetter",
+            "_coupon_potential_q",
+            "_line_discounts",
+            "_summarize"
           ]
         }
       ],
@@ -19821,6 +19825,7 @@
     {
       "entrypoint_kind": "symbol",
       "domains": [
+        "offerman",
         "orderman"
       ],
       "ports": [
@@ -19896,10 +19901,6 @@
       ],
       "touchpoints": [
         "service"
-      ],
-      "domains": [
-        "offerman",
-        "orderman"
       ],
       "tests": [
         "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",
