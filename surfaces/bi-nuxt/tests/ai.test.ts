@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { aiAnswer, csvBrl, csvRate, csvUsd, formatPerCall, formatSpend, quoteHint } from "~/presentation/ai";
 import type { BIAiReport } from "~/types/bi";
 
-const nbsp = (text: string) => text.replace(/ /g, " ");
+const nbsp = (text: string) => text.replace(/\u00a0/g, " ");
 
 const report: BIAiReport = {
   date_from: "2026-11-15",
