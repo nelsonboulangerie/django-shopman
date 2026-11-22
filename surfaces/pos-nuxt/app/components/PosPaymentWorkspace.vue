@@ -2530,7 +2530,7 @@ defineExpose({
           </ul>
         </section>
         <section v-if="pendingKitchen.length" class="grid gap-1.5" data-checkout-kitchen-pending>
-          <h3 class="font-semibold text-highlighted">Vai ao finalizar</h3>
+          <h3 class="font-semibold text-highlighted">Vai ao validar</h3>
           <ul class="grid gap-1 ps-6 text-muted">
             <li v-for="item in pendingKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
           </ul>
