@@ -2922,7 +2922,7 @@ def _build_card(
         fulfillment_label=fulfillment_label,
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
-        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config),
+        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config, waitlist_state=batch_state),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
         next_status=next_status if undo_block_allows_advance(order) else "",
         undo=_undo_projection(order),

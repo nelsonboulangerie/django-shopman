@@ -688,6 +688,16 @@ function nuxtIcon(icon: string): string {
     >
       <span class="whitespace-normal text-start">{{ wait.label }}</span>
     </NuxtBadge>
+    <!-- fila de espera (#3177): o mesmo selo do cartão do celular. Pedido que espera
+         o lote ou a vez do cliente não é pedido travado. -->
+    <NuxtBadge
+      v-if="card.waitlist_label && !handoff"
+      class="max-w-full self-start"
+      :color="card.waitlist_state === 'confirming' ? 'primary' : 'neutral'"
+      icon="i-lucide-hourglass"
+      :label="card.waitlist_label"
+      data-waitlist-badge
+    />
     <NuxtBadge
       v-if="payAlert && !handoff"
       class="max-w-full self-start"
