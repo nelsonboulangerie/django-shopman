@@ -12,11 +12,11 @@ import {
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
 import type {
+  CourierBlock,
   OperatorOrderProjection,
   OrderDetailResponse,
 } from "~/types/orders";
 import type { Action } from "~/generated/ordersContract";
-import type { CourierBlock } from "~/types/orders";
 import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 export function useOrderDetail(orderRef: string) {
