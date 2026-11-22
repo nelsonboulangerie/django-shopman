@@ -139,21 +139,23 @@ class FakeDrafter:
 
 
 def test_the_ladder_climbs_after_sending_and_records_what_it_would_send(conversation, outbox, menu, monkeypatch):
+    # O beco sem saída que a conferência reprova: item Indisponível, sem passo (a sacola já diz
+    # "pode fechar" desde o #3064 e passa na conferência, então não sobe a escada).
     _judge(monkeypatch, "answers")
     drafter = FakeDrafter(
-        "Sua sacola tem 2 croissants, total R$ 24,00. Quer mais alguma coisa? Quando terminar, é só escrever 'pode fechar'."
+        "O brioche está indisponível hoje. Quer escolher outro item? Quando terminar, é só escrever 'pode fechar'."
     )
     monkeypatch.setattr(conference, "drafters_for", lambda: [drafter])
 
-    reply = _turn(conversation, "quero 2 croissant", [_act("order", "quero 2 croissant", "croissant", 2)])
+    reply = _turn(conversation, "quero 2 brioche", [_act("order", "quero 2 brioche", "brioche", 2)])
 
-    assert reply.startswith("Pronto, sua sacola ficou assim:")  # sombra: o cliente recebe a da casa
+    assert "Brioche: Indisponível." in reply  # sombra: o cliente recebe a da casa
     first = Message.objects.filter(conversation=conversation, kind="reply").order_by("pk").first()
     ladder = first.envelope["ladder"]
     assert ladder["chosen"] == "concierge_rewrite" and ladder["cost_usd"] == 0.0003
     assert [a["source"] for a in ladder["attempts"]] == ["house", "concierge_rewrite"]
     assert drafter.seen[0]["rejection"] == ("useful:no_next_step",)
-    assert drafter.seen[0]["facts"].startswith("Pronto, sua sacola ficou assim:")
+    assert "Brioche: Indisponível." in drafter.seen[0]["facts"]
     assert any("pode fechar" in step for step in drafter.seen[0]["steps"])  # passo que a casa cumpre
 
 
@@ -161,7 +163,7 @@ def test_a_rewrite_with_a_number_outside_the_facts_is_never_chosen(conversation,
     _judge(monkeypatch, "answers")
     monkeypatch.setattr(conference, "drafters_for", lambda: [FakeDrafter("Seu total é R$ 99,00. Quer fechar?")])
 
-    _turn(conversation, "quero 2 croissant", [_act("order", "quero 2 croissant", "croissant", 2)])
+    _turn(conversation, "quero 2 brioche", [_act("order", "quero 2 brioche", "brioche", 2)])
 
     ladder = Message.objects.filter(conversation=conversation, kind="reply").order_by("pk").first().envelope["ladder"]
     assert ladder["chosen"] == "safe"
