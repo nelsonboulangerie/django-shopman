@@ -34,7 +34,7 @@ from shopman.backstage.admin.imports import (  # noqa: F401
     HistoricalSaleAdmin,
     ImportBatchAdmin,
 )
-from shopman.backstage.admin.incidents import IncidentReaderCredentialAdmin  # noqa: F401
+from shopman.backstage.admin.incidents import IncidentActionAdmin, IncidentReaderCredentialAdmin  # noqa: F401
 from shopman.backstage.admin.kds import KDSInstanceAdmin  # noqa: F401
 from shopman.backstage.admin.merges import MergeAuditAdmin  # noqa: F401
 from shopman.backstage.admin.operation import (  # noqa: F401

@@ -651,8 +651,11 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
 #: A corrida ainda não foi pedida e já pode ser: a frase da linha e do painel.
 COURIER_NOT_CALLED_LABEL = "Entregador não chamado"
 
-#: O tom de cada estado da corrida (a letra da TaOn), para o selo do balcão.
-_COURIER_TONES = {"N": "danger", "C": "danger", "F": "success", "A": "info", "S": "info", "E": "info"}
+#: O tom de cada estado da corrida (``RideState``), para o selo do balcão.
+_COURIER_TONES = {
+    "not_served": "danger", "cancelled": "danger", "done": "success",
+    "assigned": "info", "at_store": "info", "on_route": "info",
+}
 
 
 def courier_line(block: dict | None) -> tuple[str, str]:
@@ -665,9 +668,8 @@ def courier_line(block: dict | None) -> tuple[str, str]:
         return "", ""
     if block.get("can_dispatch_again"):
         return str(block.get("status_label") or ""), "warning"
-    status = str(block.get("status") or "")
-    if status:
-        return str(block.get("status_label") or ""), _COURIER_TONES.get(status, "neutral")
+    if block.get("status"):
+        return str(block.get("status_label") or ""), _COURIER_TONES.get(str(block.get("ride_state") or ""), "neutral")
     if block.get("can_dispatch"):
         return COURIER_NOT_CALLED_LABEL, "warning"
     return "", ""

@@ -12,10 +12,13 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(mirrors).toHaveCount(2);
     await expect(mirrors.nth(0).locator("span").first()).toHaveText("A");
     await expect(mirrors.nth(1).locator("span").first()).toHaveText("B");
-    // No mapa, a moto leva a letra e o nome acessível fala a letra (e a idade da posição, F7b).
-    await expect(page.getByRole("button", { name: "Entregador da corrida A. Posição agora", exact: true })).toHaveText("A");
-    await expect(page.getByRole("button", { name: /^Entregador da corrida B\. Última posição há 3 min/ })).toHaveText("B");
-    await expect(page.getByRole("button", { name: "Corrida B, parada 2, pedido F09", exact: true })).toBeVisible();
+    // No mapa, a moto é só a moto, na cor da rota (dono, 21/11: sem selo de letra); o nome
+    // acessível fala a letra (e a idade da posição, F7b). O pacote leva o código do pedido.
+    await expect(page.getByRole("button", { name: "Entregador da corrida A. Posição agora", exact: true })).toHaveText("");
+    await expect(page.getByRole("button", { name: /^Entregador da corrida B\. Última posição há 3 min/ })).toBeVisible();
+    const f09 = page.getByRole("button", { name: "Corrida B, parada 2, pedido F09", exact: true });
+    await expect(f09.locator("[data-map-stop-code]")).toHaveText("F09");
+    await expect(page.locator("[data-stop-letter]")).toHaveCount(0);
     await expect(page.getByText(/[Cc]orrida \d/)).toHaveCount(0);
     await expect(page.locator("[aria-label*='orrida 1'], [aria-label*='orrida 2']")).toHaveCount(0);
   });

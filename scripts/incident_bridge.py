@@ -62,6 +62,7 @@ class Incident:
     recurring: bool = False
     refs: list[str] = field(default_factory=list)
     link: str = ""
+    remedy: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -120,6 +121,7 @@ def incidents_from_shop(payload: dict) -> list[Incident]:
                 episodes=group.get("episodes", 0),
                 recurring=bool(group.get("recurring")),
                 refs=list(group.get("order_refs") or []),
+                remedy=dict(group.get("remedy") or {}),
             )
         )
     return out
@@ -249,7 +251,35 @@ def status_text(incident: Incident, *, now: datetime) -> str:
         lines.append(f"- Pedidos: {', '.join(incident.refs)}")
     if incident.link:
         lines.append(f"- Sentry: {incident.link}")
+    line = remedy_line(incident.remedy)
+    if line:
+        lines.append(line)
     return "\n".join(lines)
+
+
+REMEDY_WORDS = (
+    ("resolved", "resolveu"),
+    ("not_resolved", "não resolveu"),
+    ("ran", "conferindo"),
+    ("would_run", "acionaria (sombra)"),
+    ("refused", "o domínio recusou"),
+    ("skipped", "ficou com gente"),
+    ("ceiling", "teto"),
+)
+
+
+def remedy_line(remedy: dict) -> str:
+    """O placar do remédio do domínio em uma linha, na ordem do que importa."""
+
+    by_outcome = (remedy or {}).get("by_outcome") or {}
+    parts = [f"{by_outcome[key]} {word}" for key, word in REMEDY_WORDS if by_outcome.get(key)]
+    if not parts:
+        return ""
+    line = f"- Remédio do domínio ({remedy.get('label') or 'automático'}), 7 dias: {', '.join(parts)}"
+    if remedy.get("ai_readings"):
+        cost = f"{remedy.get('ai_cost_usd') or 0:.5f}".replace(".", ",")
+        line += f"; {remedy['ai_readings']} leitura(s) de IA, US$ {cost}"
+    return line
 
 
 def _strip_conferido(text: str) -> str:

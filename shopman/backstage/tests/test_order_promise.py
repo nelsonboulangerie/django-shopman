@@ -184,6 +184,12 @@ def _promise(order: Order):
     return order_promise.read_for([Order.objects.get(pk=order.pk)]).get(order.ref)
 
 
+def _exits(card):
+    """As saídas da promessa no cartão, sem o "Chamar no WhatsApp" (#2434), que só
+    depende de o pedido ter telefone e é provado à parte."""
+    return tuple(action for action in card.promise.actions if action.ref != "contact-customer")
+
+
 def _one(promise):
     assert promise is not None
     assert len(promise.items) == 1
@@ -259,20 +265,25 @@ def test_lote_cancelado_pela_producao_deixa_a_encomenda_em_risco(ficha, gerente,
     assert promise.next_step == item.next_step
     assert promise.recommended_action == "resolve"
 
-    # O cartão: o selo, UMA saída ("Resolver") e o lugar na Fila "Precisa de você".
+    # O cartão: o selo, "Resolver" e "Chamar no WhatsApp" (o pedido pede ação, #2434)
+    # e o lugar na Fila "Precisa de você".
     card = build_order_card(Order.objects.get(pk=order.pk), user=gerente)
     assert card.promise.state == "at_risk"
     assert card.attention == "promise"
     assert card.attention_since_iso == promise.since_iso
-    (resolve,) = card.promise.actions
+    resolve, contact = card.promise.actions
+    assert (contact.ref, contact.kind, contact.label, contact.href) == (
+        "contact-customer", "link", "Chamar no WhatsApp", "https://wa.me/5543999990000",
+    )
+    assert card.customer_whatsapp_url == contact.href
     # Abre o diálogo: não é link nem mutação, e não leva endereço nenhum.
     assert (resolve.ref, resolve.kind, resolve.label) == ("resolve", "dialog", "Resolver")
     assert (resolve.priority, resolve.enabled, resolve.reason, resolve.href) == ("primary", True, "", "")
     assert (resolve.method, resolve.idempotency) == ("", "none")
     assert card.promise.next_step == "Nenhum produto parecido livre para amanhã."
-    # Nenhum dado do cliente vai para o cartão do painel (#2434): nem telefone, nem nome.
-    assert "5543999990000" not in repr(card.promise)
+    # O número não é escrito no cartão: só o link da conversa vai (decisão do dono, #2434).
     assert "Cliente ENC-CANCELADA" not in repr(card.promise)
+    assert all("5543999990000" not in action.label for action in card.promise.actions)
 
 
 def test_a_linha_do_tempo_diz_o_item_e_o_lote_sem_codigo_cru(ficha, gerente):
@@ -302,7 +313,9 @@ def test_o_detalhe_abre_com_promessa_em_risco_e_a_mesma_saida_do_cartao(ficha, g
     detail = build_operator_order(order, user=gerente)
 
     assert detail.promise.state == "at_risk"
-    assert detail.promise.actions == build_order_card(order, user=gerente).promise.actions
+    card_actions = build_order_card(order, user=gerente).promise.actions
+    # O cartão leva também o WhatsApp; no detalhe ele mora na faixa do pedido.
+    assert detail.promise.actions == tuple(a for a in card_actions if a.ref != "contact-customer")
     assert [(action.ref, action.kind, action.priority) for action in detail.promise.actions] == [
         ("resolve", "dialog", "primary"),
     ]
@@ -328,7 +341,7 @@ def test_quem_nao_gerencia_pedidos_ve_o_risco_e_recebe_o_resolver_travado(ficha,
     card = build_order_card(order, user=visitante)
 
     assert card.promise.state == "at_risk"
-    (resolve,) = card.promise.actions
+    (resolve,) = _exits(card)
     assert (resolve.ref, resolve.enabled, resolve.href) == ("resolve", False, "")
     assert resolve.reason == "Identifique uma pessoa com permissão para gerenciar pedidos."
     # A faixa do detalhe trava igual, com o mesmo motivo.
@@ -861,7 +874,7 @@ def test_abrir_a_producao_e_a_saida_recomendada_quando_ela_ainda_resolve(baguete
 
     assert card.promise.next_step == "Peça à Produção para planejar."
     assert card.promise.recommended_action == "open-production"
-    actions = card.promise.actions
+    actions = _exits(card)
     # "Abrir a Produção" é a cheia; "Resolver" fica ao lado, em contorno.
     assert [(action.ref, action.priority) for action in actions] == [
         ("open-production", "primary"), ("resolve", "secondary"),
@@ -895,7 +908,7 @@ def test_quem_nao_opera_a_producao_recebe_o_resolver_cheio_e_a_frase_segue_valen
 
     assert card.promise.next_step == "Peça à Produção para planejar."
     assert card.promise.recommended_action == "open-production"
-    assert [(action.ref, action.priority, action.enabled) for action in card.promise.actions] == [
+    assert [(action.ref, action.priority, action.enabled) for action in _exits(card)] == [
         ("resolve", "primary", True),
     ]
 
@@ -908,7 +921,7 @@ def test_sem_o_endereco_da_producao_a_acao_nao_vem(baguete, padeiro, settings):
     settings.SHOPMAN_SURFACE_URLS = {"pos": "https://pdv.example.test/", "production": ""}
     card = build_order_card(_sem_lote_hoje("HOJE-SEM-ENDERECO"), user=padeiro)
 
-    assert [(action.ref, action.priority) for action in card.promise.actions] == [("resolve", "primary")]
+    assert [(action.ref, action.priority) for action in _exits(card)] == [("resolve", "primary")]
 
 
 def test_quem_opera_a_producao_e_nao_gerencia_pedidos_abre_o_plano_e_ve_o_resolver_travado(
@@ -923,7 +936,7 @@ def test_quem_opera_a_producao_e_nao_gerencia_pedidos_abre_o_plano_e_ve_o_resolv
 
     card = build_order_card(_sem_lote_hoje("HOJE-SO-PRODUCAO"), user=so_producao)
 
-    opening, resolve = card.promise.actions
+    opening, resolve = _exits(card)
     assert (opening.ref, opening.priority, opening.enabled) == ("open-production", "primary", True)
     assert (resolve.ref, resolve.priority, resolve.enabled) == ("resolve", "secondary", False)
     assert resolve.reason == "Identifique uma pessoa com permissão para gerenciar pedidos."
@@ -937,7 +950,7 @@ def test_a_producao_nao_e_saida_de_quem_precisa_avisar_o_cliente(ficha, padeiro,
 
     card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
 
-    assert [(action.ref, action.priority) for action in card.promise.actions] == [("resolve", "primary")]
+    assert [(action.ref, action.priority) for action in _exits(card)] == [("resolve", "primary")]
 
 
 # A casa oferece o que tem no lugar: o mecanismo de substitutos da loja.
@@ -1001,7 +1014,8 @@ def test_lote_cancelado_oferece_o_que_o_lote_da_data_tem_livre(ficha, vitrine, g
     detail = build_operator_order(order, user=gerente)
     for read in (card.promise, detail.promise):
         assert [option.sku for option in read.items[0].alternatives] == ["FENDU"]
-        assert [(action.ref, action.href) for action in read.actions] == [("resolve", "")]
+        exits = [action for action in read.actions if action.ref != "contact-customer"]
+        assert [(action.ref, action.href) for action in exits] == [("resolve", "")]
     assert detail.pending[0].next_step == ""
 
 
@@ -1167,7 +1181,7 @@ def test_pedido_com_passos_diferentes_diz_cada_um_com_o_produto_e_o_cliente_prim
     assert promise.recommended_action == "resolve"
 
     card = build_order_card(Order.objects.get(pk=order.pk), user=padeiro)
-    assert [(action.ref, action.priority) for action in card.promise.actions] == [
+    assert [(action.ref, action.priority) for action in _exits(card)] == [
         ("resolve", "primary"), ("open-production", "secondary"),
     ]
 
@@ -1217,3 +1231,90 @@ def test_a_busca_de_alternativas_custa_o_mesmo_para_um_ou_cinco_pedidos_do_mesmo
     assert len(five) == len(one)
     # Medido em 19/11/2026: 19 consultas, das quais 11 são a busca de substitutos.
     assert len(one) <= 24
+
+
+# ── O pedido que nunca reservou (#2721, item 2) ──────────────────────────────
+
+
+def _gap(order: Order, qty: str, *, day=None, sku: str = SKU) -> None:
+    """O que o pedido pediu e o estoque não reservou, como ``services/stock`` grava."""
+    order.data.setdefault("hold_gaps", []).append({
+        "sku": sku, "qty": float(qty), "target_date": day.isoformat() if day is not None else "",
+    })
+    order.save(update_fields=["data"])
+
+
+def test_pedido_de_hoje_que_nunca_reservou_esta_em_risco(baguete):
+    """Sem ``hold_ids`` não havia claim: o pedido aparecia sem pendência."""
+    order = _order("HOJE-SEM-RESERVA", days=0)
+    _gap(order, "4", day=_day())
+
+    promise = _promise(order)
+    item = _one(promise)
+    assert promise.state == "at_risk"
+    assert (item.reservation, item.cause) == ("lost", "never_held")
+    assert (item.qty, item.missing_qty) == ("4", "4")
+    assert item.label == "Faltam 4x Baguete de tradição"
+    assert item.detail == "Não havia estoque para reservar quando o pedido entrou."
+    assert item.batch_date == ""
+    assert item.next_step == "Nenhum produto parecido disponível hoje."
+    assert promise.recommended_action == "resolve"
+
+
+def test_o_que_coube_e_o_que_faltou_somam_no_mesmo_item(baguete):
+    """Reservou 1 da vitrine e faltaram 3: o item diz "Faltam 3 de 4"."""
+    loja = Position.objects.get(ref="loja")
+    stock.receive(quantity=Decimal("1"), sku=SKU, position=loja, reason="vitrine")
+    quant = Quant.objects.get(sku=SKU, position=loja, target_date__isnull=True)
+    order = _order("HOJE-EM-PARTE", days=None)
+    _reserve(order, "1", day=_day(), quant=quant)
+    _gap(order, "3")
+
+    item = _one(_promise(order))
+    assert (item.reservation, item.cause) == ("partial", "never_held")
+    assert (item.qty, item.missing_qty) == ("4", "3")
+
+
+def test_encomenda_que_nunca_reservou_sem_lote_pede_a_producao(baguete):
+    """Para outro dia a Produção ainda resolve, e nada a avisa: sem reserva, nem demanda há."""
+    order = _order("ENC-SEM-RESERVA", days=2)
+    _gap(order, "4", day=_day(2))
+
+    promise = _promise(order)
+    item = _one(promise)
+    assert (item.cause, item.missing_qty) == ("no_batch", "4")
+    assert item.next_step == "Peça à Produção para planejar."
+    assert promise.recommended_action == "open-production"
+
+
+def test_encomenda_que_nunca_reservou_com_lote_planejado_pede_mais_lote(ficha):
+    _lot(ficha, "10", days=2)
+    order = _order("ENC-SEM-RESERVA-COM-LOTE", days=2)
+    _gap(order, "4", day=_day(2))
+
+    item = _one(_promise(order))
+    assert (item.cause, item.missing_qty) == ("plan_short", "4")
+    assert item.next_step == "Peça à Produção para aumentar o lote."
+
+
+def test_falta_sem_data_vale_o_dia_combinado_do_pedido(baguete):
+    order = _order("ENC-SEM-DATA-NA-FALTA", days=3)
+    _gap(order, "2")
+
+    item = _one(_promise(order))
+    assert (item.cause, item.batch_date) == ("no_batch", _day(3).isoformat())
+
+
+def test_pedido_fechado_com_falta_registrada_nao_aparece(baguete):
+    order = _order("HOJE-ENTREGUE", days=0, status="completed")
+    _gap(order, "4", day=_day())
+
+    assert order_promise.read_for([order]) == {}
+
+
+def test_falta_ilegivel_fica_de_fora_sem_derrubar_o_painel(baguete):
+    order = _order("HOJE-TORTO", days=0)
+    order.data["hold_gaps"] = [{"sku": SKU, "qty": 2, "target_date": "ontem"}]
+    order.save(update_fields=["data"])
+
+    assert order_promise.read_for([order]) == {}

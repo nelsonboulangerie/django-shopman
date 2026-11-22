@@ -283,6 +283,7 @@ function rideOrder(ref) {
     actions: [{ ...cancelAction(fixture.number, codes, fixture.accepted), enabled: cancel.canCancel }],
     courier: {
       provider: "machine", status: fixture.accepted ? "A" : "D",
+      ride_state: fixture.accepted ? "assigned" : "searching", service_name: "TaOn",
       status_label: fixture.accepted ? "Entregador a caminho da loja" : "Procurando entregador",
       active: true,
       driver: fixture.accepted ? { name: "Diego", phone: "(43) 99999-0000", vehicle_plate: "ABC1D23", vehicle_model: "Honda CG" } : null,
@@ -843,7 +844,7 @@ function callDetail(ref) {
     ...card, ...DETAIL_EXTRA, pending: [], delivery_address: "Rua das Entregas, 100, Gleba Palhano",
     actions: [...card.actions, dispatch],
     courier: {
-      provider: "machine", status: "", status_label: "", active: false, driver: null, tracking_url: "", confirmation_code: "",
+      provider: "machine", status: "", ride_state: "", service_name: "TaOn", status_label: "", active: false, driver: null, tracking_url: "", confirmation_code: "",
       estimate_display: "", final_value_display: "", attempts_count: 0, position: null, error: null, can_quote: false,
       can_dispatch: true, not_today: "", can_dispatch_again: false, can_cancel: false, cancel_state: null, reminder: null,
       custody: { change_out_suggested_q: 0, needs_machine: false, recorded: false },

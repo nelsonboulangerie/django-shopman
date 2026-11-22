@@ -1,3 +1,0 @@
-Gate da meia-correção — escopo: caminhos explícitos
-  arquivos analisados: 8
-- [OK] silent_swallow: nenhum arquivo grita e se cala ao mesmo tempo.
