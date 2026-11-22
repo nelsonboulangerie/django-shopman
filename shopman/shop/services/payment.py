@@ -1319,12 +1319,16 @@ def refund_ceiling_q(order, *, payment_reads=None) -> int | None:
 def refund_reason(order) -> str:
     """Por que o dinheiro do pedido volta ao cliente.
 
-    ``cancelled`` · ``returned`` (devolução total) · ``partial_return``
-    (devolução de parte da venda) · ``reduced`` (encomenda que ficou mais barata).
+    ``cancelled`` · ``not_picked_up`` (pedido pronto que o cliente não veio
+    buscar, encerrado pelo Gestor: volta só o que não ficou com a loja) ·
+    ``returned`` (devolução total) · ``partial_return`` (devolução de parte da
+    venda) · ``reduced`` (encomenda que ficou mais barata).
     """
     status = str(order.status)
     if status in _REFUND_ALL_STATUSES:
-        return "returned" if status == "returned" else "cancelled"
+        if status == "returned":
+            return "returned"
+        return "not_picked_up" if isinstance((order.data or {}).get("no_show"), dict) else "cancelled"
     return "partial_return" if (order.data or {}).get("returns") else "reduced"
 
 
@@ -1868,6 +1872,7 @@ class PendingCardMachineRefund:
 #: Os motivos de :func:`refund_reason`, como rótulo de tela (PDV, gaveta e maquininha).
 REFUND_REASON_LABELS = {
     "cancelled": "Venda cancelada",
+    "not_picked_up": "Pedido não retirado",
     "returned": "Venda devolvida",
     "partial_return": "Devolução de parte da venda",
     "reduced": "Encomenda ficou mais barata",
@@ -2103,6 +2108,7 @@ def _lock_payment_intents(intent_refs) -> None:
 #: O motivo como o Payman o grava (``PaymentTransaction``), por :func:`refund_reason`.
 _PAYMAN_REFUND_REASONS = {
     "cancelled": "order_cancelled",
+    "not_picked_up": "order_cancelled",
     "returned": "order_returned",
     "partial_return": "order_returned",
     "reduced": "order_edited",
