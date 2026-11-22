@@ -258,6 +258,8 @@ const chargeKey = (charge: { code: string; description: string }) => `${charge.c
         <div v-if="ride.cost_display" class="rounded-xl bg-elevated/60 p-3">
           <p class="op-micro text-muted">{{ ride.cost_label }}</p>
           <p class="op-title font-semibold tabular-nums text-highlighted">{{ ride.cost_display }}</p>
+          <!-- O frete dos clientes ao lado do custo (#2747): a mesma conta do B.I., em tom neutro. -->
+          <p v-if="ride.balance_display" class="op-micro tabular-nums text-muted" data-ride-balance>{{ ride.fee_display }} · {{ ride.balance_display }}</p>
         </div>
         <div v-if="ride.back_lines.length" class="rounded-xl bg-elevated/60 p-3">
           <p class="op-micro text-muted">Volta com</p>
