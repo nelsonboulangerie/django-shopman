@@ -71,6 +71,9 @@ async function confirmar() {
     emit("done");
 }
 // A orientação vertical oficial preserva a frase e põe a ação abaixo em toda largura.
+// No celular as duas ações dividem uma linha (F-16, #3170): uma embaixo da outra, o
+// convite ocupava um quarto da tela. Do `sm` para cima, o arranjo de sempre.
+const STATION_SETUP_INLINE_UI = { actions: "grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" };
 </script>
 
 <template>
@@ -81,11 +84,17 @@ async function confirmar() {
       icon="i-lucide-map-pin"
       :title="copy.setup_title"
       class="shrink-0"
+      :ui="STATION_SETUP_INLINE_UI"
       data-station-setup
     >
-      <template #description>{{
-        options.length ? copy.setup_lead : copy.setup_empty
-      }}</template>
+      <!-- No celular o convite é o título e os dois botões (F-16 do laudo do Gestor,
+           #3170): com a explicação ele ocupava um quarto da tela. A explicação segue
+           no painel que "Vincular" abre (a `description` do Slideover abaixo). -->
+      <template #description>
+        <span class="hidden sm:inline" data-station-setup-lead>{{
+          options.length ? copy.setup_lead : copy.setup_empty
+        }}</span>
+      </template>
       <template #actions>
         <NuxtButton
           v-if="options.length"
