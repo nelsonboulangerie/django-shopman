@@ -30,7 +30,15 @@ const { onReconnect } = useConnectivity();
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
 // morta.
-const { expired: sessionExpired } = useOperatorSession();
+const { expired: sessionExpired, signedInHereBefore } = useOperatorSession();
+// A sessão que caiu logo depois de entrar (o login recarrega a página) voltava ao
+// login vazio, sem dizer por quê (P2-15, #3194). A marca é da aba e só existe no
+// cliente: lida ao montar, para o SSR e a hidratação desenharem o mesmo login.
+const signedInBefore = ref(false);
+onMounted(() => {
+  signedInBefore.value = signedInHereBefore();
+});
+const sessionEnded = computed(() => sessionExpired.value || signedInBefore.value);
 
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
@@ -185,9 +193,9 @@ const supportContext = computed(() =>
       mode="page"
       large-fields
       icon="lucide:lock-keyhole"
-      :title="sessionExpired ? 'Sua sessão expirou' : 'Entre para operar o caixa'"
+      :title="sessionEnded ? 'Sua sessão terminou' : 'Entre para operar o caixa'"
       :description="
-        sessionExpired
+        sessionEnded
           ? 'Entre de novo para continuar de onde parou.'
           : 'Acesse com sua conta autorizada a operar o caixa.'
       "

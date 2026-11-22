@@ -13,6 +13,24 @@ import { isUnauthenticatedError } from "../utils/httpError";
  * `expired` e sobe a tela de login. Estado compartilhado via `useState` (SSR-safe, um por
  * app) — o interceptor herdado pelos 4 apps de operador ([[project_operator_apps_crosssubdomain_auth_gap]]).
  */
+/**
+ * Marca, nesta ABA, que alguém entrou (`sessionStorage`: morre com a aba, não passa
+ * para outra). O `hadSession` acima vive só nesta carga do app, e o login recarrega a
+ * página: a sessão que caía logo depois de entrar voltava ao login vazio, "Entre para
+ * operar o caixa", como se ninguém tivesse entrado (P2-15 do plano de excelência do
+ * PDV, #3194). Com a marca, o login seguinte sabe que a sessão terminou e diz isso.
+ */
+export const SIGNED_IN_HERE_KEY = "shopman:operator-signed-in-here";
+
+function storage(): Storage | null {
+  if (!import.meta.client) return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function useOperatorSession() {
   const expired = useState("operator-session-expired", () => false);
   // "Terminou" só existe para o que COMEÇOU. Num dispositivo cru (primeira visita,
@@ -47,6 +65,37 @@ export function useOperatorSession() {
   /** A antessala viu alguém identificado: daqui em diante, 401 é sessão que terminou. */
   function markAuthenticated() {
     hadSession.value = true;
+    rememberSignedIn();
+  }
+
+  /** Entrou nesta aba: o login seguinte, se a sessão cair, diz que ela terminou. */
+  function rememberSignedIn() {
+    try {
+      storage()?.setItem(SIGNED_IN_HERE_KEY, "1");
+    } catch {
+      // Armazenamento recusado (modo privado, cota): o login só perde o motivo.
+    }
+  }
+
+  /** Saiu de propósito: o próximo login é um começo, não uma sessão que caiu. */
+  function forgetSignedIn() {
+    try {
+      storage()?.removeItem(SIGNED_IN_HERE_KEY);
+    } catch {
+      // Idem: sem armazenamento não há marca a apagar.
+    }
+  }
+
+  /**
+   * Alguém entrou nesta aba antes desta tela de login? Só no cliente (o servidor não
+   * vê a aba): quem desenha o login lê isto ao montar, não no SSR.
+   */
+  function signedInHereBefore(): boolean {
+    try {
+      return storage()?.getItem(SIGNED_IN_HERE_KEY) === "1";
+    } catch {
+      return false;
+    }
   }
 
   /** Limpa o sinal após re-autenticar (login/desbloqueio bem-sucedido). */
@@ -59,6 +108,9 @@ export function useOperatorSession() {
     hadSession: readonly(hadSession),
     flagIfUnauthenticated,
     markAuthenticated,
+    rememberSignedIn,
+    forgetSignedIn,
+    signedInHereBefore,
     reset,
   };
 }
