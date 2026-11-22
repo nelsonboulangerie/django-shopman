@@ -255,3 +255,14 @@ test.describe("Entregas: encerrar aqui", () => {
       .toEqual([expect.objectContaining({ ref: "WEB-20261116-0B12", outcome: "returned" })]);
   });
 });
+
+test("na corrida de várias paradas, o link de acompanhamento é o de cada parada (#2491)", async ({ page }) => {
+  await page.goto("/delivery?ride=776753358");
+  const detail = page.getByRole("dialog", { name: "Corrida B" });
+  // A parada entregue não oferece; a que falta oferece o próprio; a corrida não tem um "dela".
+  await expect(detail.locator("[data-ride-stop-link]")).toHaveCount(1);
+  await expect(detail.locator("[data-ride-stop-link]")).toHaveText("Copiar link de acompanhamento");
+  await expect(detail.getByText("Link de acompanhamento da corrida.")).toHaveCount(0);
+  const box = await detail.locator("[data-ride-stop-link]").boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+});
