@@ -2,7 +2,7 @@
 // decidido em presentation (auto-avanço, Enter) tem prova própria; aqui se
 // prova o que a TELA faz com ele: herói do troco, contagem visível/cancelável
 // e a saída explícita com Pix pendente.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import PosSaleResult from "~/components/PosSaleResult.vue";
@@ -174,7 +174,22 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(toTabs.text()).toContain("Voltar às comandas");
     expect(toTabs.text()).toContain("F2");
     await toTabs.trigger("click");
-    expect(wrapper.emitted("newSale")).toHaveLength(1);
+    expect(wrapper.emitted("toTabs")).toHaveLength(1);
+    expect(wrapper.emitted("newSale")).toBeUndefined();
+  });
+
+  it("o fim da contagem volta ao quadro (toTabs), não abre comanda: ninguém tocou", async () => {
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountSuspended(PosSaleResult, { props: props() });
+      expect(wrapper.text()).toContain("Nova venda em");
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(wrapper.emitted("toTabs")).toHaveLength(1);
+      expect(wrapper.emitted("newSale")).toBeUndefined();
+      wrapper.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("o CTA emite newSale", async () => {

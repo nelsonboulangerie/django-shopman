@@ -108,7 +108,8 @@ const {
   completeOrderSetup,
   setSalesMode,
   openNewOrder,
-  releaseAbandonedOrderTab,
+  releaseAbandonedTab,
+  openNextSale,
   itemCount,
   tabInput,
   busy,
@@ -459,8 +460,8 @@ watchEffect(() => {
 });
 onBeforeUnmount(() => {
   paymentHold.value = false;
-  // A encomenda nova que ficou sem item libera a comanda ao sair (PDV2-13).
-  void releaseAbandonedOrderTab();
+  // A comanda nova que ficou sem item libera ao sair (PDV2-13).
+  void releaseAbandonedTab();
 });
 
 // RECARREGAR SOZINHO para entrar na versão nova é uma pergunta mais larga do que
@@ -1054,9 +1055,23 @@ async function gotoTabInput() {
   tabBoardRef.value?.focus();
 }
 
-// Sai da tela de resultado para o quadro de comandas — o CTA "Nova venda", o
-// F2 e o Enter passam todos por aqui (PIX pendente vira chip no composable).
+// Sai da tela de resultado direto para a GRADE da próxima comanda livre, com o
+// foco na busca de produto (WP-E8, D5): o CTA "Nova venda", o F2 e o Enter da
+// venda passam todos por aqui (PIX pendente vira chip no composable). Sem comanda
+// livre, ou com a gaveta pedindo conferência, cai no quadro, como antes.
 async function startNextSale() {
+  if (await openNextSale()) {
+    await nextTick();
+    productGridRef.value?.focusSearch();
+    return;
+  }
+  await nextTick();
+  tabBoardRef.value?.focus();
+}
+
+// Sai da tela de resultado para o QUADRO: o "Voltar às comandas" da encomenda (e o
+// F2 dela) e o fim da contagem. Nenhum dos dois abre comanda.
+async function leaveResultToTabs() {
   dismissResult();
   await nextTick();
   tabBoardRef.value?.focus();
@@ -1102,7 +1117,9 @@ function onGlobalKeydown(event: KeyboardEvent) {
   if (result.value) {
     if (event.key === "F2") {
       event.preventDefault();
-      startNextSale();
+      // Na encomenda o F2 é o "Voltar às comandas" da tela; na venda, "Nova venda".
+      if (result.value.salesMode === "order") leaveResultToTabs();
+      else startNextSale();
       return;
     }
     if (
@@ -1547,6 +1564,7 @@ onBeforeUnmount(() => {
           :resending-link="resendingLink"
           :printing-ticket="Boolean(printingOrderRef)"
           @new-sale="startNextSale"
+          @to-tabs="leaveResultToTabs"
           @new-order="startNextOrder"
           @print-ticket="printOrderTicket(result.orderRef)"
           @print-receipt="printReceipt"
