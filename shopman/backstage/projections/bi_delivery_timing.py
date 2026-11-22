@@ -319,7 +319,7 @@ def _service_rows(rides: list[_Ride]) -> tuple[BIRideTimingService, ...]:
         (row(ref, names.get(ref) or delivery_services.SERVICE_FALLBACK_NAME, group) for ref, group in by_service.items()),
         key=lambda item: item.name.lower(),
     )
-    return (*rows, row(TOTAL_KEY, "Total", rides))
+    return (*rows, row(TOTAL_KEY, "Todos os serviços", rides))
 
 
 __all__ = ["TOTAL_KEY", "BIDeliveryTimingReport", "BIRideTimingService", "BITimingRow", "build_bi_delivery_timing", "prep_start"]

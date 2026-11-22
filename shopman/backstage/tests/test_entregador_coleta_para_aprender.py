@@ -183,7 +183,7 @@ def test_bi_counts_each_ride_once_and_splits_the_times_by_service(station):
     assert rows == [
         ("Entregadores da casa", 1, 0.0, 5.0, 12.0, 17.0),  # a casa aceita na hora da chamada: zero medido
         ("TaOn", 1, 4.0, 15.0, 16.0, 31.0),
-        ("Total", 2, 2.0, 10.0, 14.0, 24.0),
+        ("Todos os serviços", 2, 2.0, 10.0, 14.0, 24.0),
     ]
     assert report.services[-1].service == "__total__"
 
@@ -203,4 +203,4 @@ def test_bi_reads_the_service_of_an_archived_ride(station):
     report = build_bi_delivery_timing()
 
     assert [(r.name, r.rides) for r in report.services] == [
-        ("Entregadores da casa", 1), ("TaOn", 1), ("Total", 2)]
+        ("Entregadores da casa", 1), ("TaOn", 1), ("Todos os serviços", 2)]

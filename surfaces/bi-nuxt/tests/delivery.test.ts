@@ -5,6 +5,7 @@ import {
   deliveryServiceCsv,
   deliveryServiceRows,
   estimatedRidesHint,
+  rideAcceptLabel,
   rideMinutes,
   rideTimingCsv,
   rideTimingRows,
@@ -80,11 +81,11 @@ describe("entregas: tempo das corridas por serviço (#2467)", () => {
   const services = [
     { service: "casa", name: "Entregadores da casa", rides: 1, accept_minutes: 0, pickup_minutes: 5, street_minutes: 12, total_minutes: 17 },
     { service: "taon", name: "TaOn", rides: 3, accept_minutes: 4.5, pickup_minutes: 15, street_minutes: null, total_minutes: null },
-    { service: DELIVERY_TOTAL_KEY, name: "Total", rides: 4, accept_minutes: 3, pickup_minutes: 12.5, street_minutes: 12, total_minutes: 17 },
+    { service: DELIVERY_TOTAL_KEY, name: "Todos os serviços", rides: 4, accept_minutes: 3, pickup_minutes: 12.5, street_minutes: 12, total_minutes: 17 },
   ];
 
   it("as linhas vêm do servidor como estão: serviços pelo nome e o total embaixo", () => {
-    expect(rideTimingRows({ services }).map((row) => row.name)).toEqual(["Entregadores da casa", "TaOn", "Total"]);
+    expect(rideTimingRows({ services }).map((row) => row.name)).toEqual(["Entregadores da casa", "TaOn", "Todos os serviços"]);
     expect(rideTimingRows({ services: [] })).toEqual([]);
   });
 
@@ -94,16 +95,21 @@ describe("entregas: tempo das corridas por serviço (#2467)", () => {
     expect(rideTimingRows({ services }, ["taon"]).map((row) => row.service)).toEqual(["taon", "casa", DELIVERY_TOTAL_KEY]);
   });
 
-  it("minutos com vírgula; zero é medida; sem marco no período diz Sem medida", () => {
+  it("minutos com vírgula; sem marco no período diz Sem medida", () => {
     expect(rideMinutes(4.5)).toBe("4,5 min");
-    expect(rideMinutes(0)).toBe("0 min");
     expect(rideMinutes(null)).toBe("Sem medida");
+  });
+
+  it("aceite no instante da chamada diz Na chamada, nunca 0 min", () => {
+    expect(rideAcceptLabel(0)).toBe("Na chamada");
+    expect(rideAcceptLabel(3.5)).toBe("3,5 min");
+    expect(rideAcceptLabel(null)).toBe("Sem medida");
   });
 
   it("o CSV em minutos, com a célula vazia onde não houve medida", () => {
     const csv = rideTimingCsv(services);
     expect(csv.header).toEqual(["Serviço", "Corridas", "Até aceitar (min)", "Até a coleta (min)", "Na rua (min)", "Total (min)"]);
     expect(csv.rows[1]).toEqual(["TaOn", 3, "4,5", "15", "", ""]);
-    expect(csv.rows[2]?.[0]).toBe("Total");
+    expect(csv.rows[2]?.[0]).toBe("Todos os serviços");
   });
 });

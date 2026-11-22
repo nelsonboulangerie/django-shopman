@@ -96,6 +96,14 @@ export type RideTimingRow = BIRideTimingService;
 export const rideMinutes = minutesLabel;
 
 /**
+ * O "Até aceitar": zero não é espera curta, é aceite no instante da chamada (o entregador
+ * da casa aceita quando é chamado). A tela diz isso em palavras, nunca "0 min".
+ */
+export function rideAcceptLabel(value: number | null | undefined): string {
+  return value === 0 ? "Na chamada" : minutesLabel(value);
+}
+
+/**
  * As linhas por serviço e o total embaixo. Com `order` (os serviços da tabela de custo,
  * na ordem dela), cada serviço fica na mesma linha nas duas tabelas da página; o que a
  * tabela de custo não tem vem depois, na ordem do servidor (a do nome).

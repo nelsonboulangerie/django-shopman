@@ -17,6 +17,7 @@ import {
   deliveryServiceRows,
   estimatedRidesHint,
   ridesHint,
+  rideAcceptLabel,
   rideMinutes,
   rideTimingCsv,
   rideTimingRows,
@@ -217,7 +218,7 @@ const dailyPoints = computed<ReadingChartPoint[]>(() =>
 
         <OperatorReadingCard
           title="Tempo das corridas"
-          description="Mediana, em minutos, contada da chamada. Até aceitar e até a coleta: quanto o entregador leva para aceitar e para pegar as sacolas. Na rua: da coleta à última entrega. Total: da chamada à última entrega. Uma corrida com várias entregas conta uma vez."
+          description="Mediana, em minutos, contada da chamada. Até aceitar e até a coleta: quanto o entregador leva para aceitar e para pegar as sacolas. Na rua: da coleta à última entrega. Total: da chamada à última entrega. Na chamada: o entregador da casa aceita quando é chamado, sem espera. Uma corrida com várias entregas conta uma vez."
           :csv="timingRows.length ? rideTimingCsv(timingRows) : undefined"
         >
           <OperatorTable
@@ -237,7 +238,7 @@ const dailyPoints = computed<ReadingChartPoint[]>(() =>
               <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatInt(row.original.rides) }}</span>
             </template>
             <template #accept_minutes-cell="{ row }">
-              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ rideMinutes(row.original.accept_minutes) }}</span>
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ rideAcceptLabel(row.original.accept_minutes) }}</span>
             </template>
             <template #pickup_minutes-cell="{ row }">
               <span :class="{ 'font-semibold': isTotal(row.original) }">{{ rideMinutes(row.original.pickup_minutes) }}</span>
