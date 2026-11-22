@@ -223,7 +223,8 @@ class ModelDrafter:
 
         try:
             return ai_governor.estimate_usd(self.model, tokens_in=900, tokens_out=REWRITE_MAX_TOKENS)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — sem estimativa a escada para (cost_unknown); fica no log
+            logger.warning("concierge.ladder.estimate_failed purpose=%s model=%s", self.name, self.model, exc_info=True)
             return None
 
     def build_request(self, *, customer, facts, allowed_steps, rejection, previous="") -> dict:
