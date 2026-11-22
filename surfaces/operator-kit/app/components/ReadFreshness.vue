@@ -77,17 +77,19 @@ const sourceClock = computed(() =>
       {{ age }} s)<span v-if="failed"> · a última consulta falhou</span></span
     >
     <!-- Cada bloco é inteiro (#3143): no teto do `inline`, a frase quebra ENTRE a
-         hora, a idade e a falha, nunca dentro de um deles ("há 3 / s"). -->
+         hora, a idade e a falha, nunca dentro de um deles ("há 3 / s"). O espaço
+         entre blocos é explícito (`{{ " " }}`): o compilador apaga o espaço que é só
+         quebra de linha entre dois elementos, e sem ele não há onde quebrar. -->
     <span v-else-if="metadata?.generated_at" data-read-freshness-useful
       ><span class="whitespace-nowrap" data-read-freshness-block
         >Última leitura útil:
         <time :datetime="metadata.generated_at">{{ clock }}</time></span
-      >
-      <span class="whitespace-nowrap" data-read-freshness-block
+      >{{ " " }}<span class="whitespace-nowrap" data-read-freshness-block
         >· há {{ age }} s</span
-      >
-      <span v-if="failed" class="whitespace-nowrap" data-read-freshness-block
-        >· atualização falhou</span
+      ><template v-if="failed"
+        >{{ " " }}<span class="whitespace-nowrap" data-read-freshness-block
+          >· atualização falhou</span
+        ></template
       ></span
     >
     <span v-else>Horário da leitura indisponível</span>
