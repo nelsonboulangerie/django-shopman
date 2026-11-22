@@ -18,6 +18,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from shopman.backstage.contracts import render_contract_module, run_contract_export
+from shopman.backstage.projections.bi_ai import (
+    BIAiFallback,
+    BIAiGap,
+    BIAiReason,
+    BIAiReport,
+    BIAiSpendDay,
+    BIAiSpendRow,
+)
 from shopman.backstage.projections.bi_cash import (
     BICashAccountRow,
     BICashAccounts,
@@ -153,6 +161,12 @@ CONTRACT_DATACLASSES = (
     BIDeliveryCostService,
     BIDeliveryCostDay,
     BIDeliveryCostReport,
+    BIAiSpendRow,
+    BIAiSpendDay,
+    BIAiReason,
+    BIAiGap,
+    BIAiFallback,
+    BIAiReport,
     BIPreorderKitchenRow,
     BIPreorderKitchenReport,
     BIExploreRow,

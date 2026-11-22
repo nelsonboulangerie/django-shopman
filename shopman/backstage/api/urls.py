@@ -17,6 +17,7 @@ from .alerts import (
 )
 from .backup import BackupExportView
 from .bi import (
+    BIAiView,
     BICashView,
     BIChangeView,
     BIConsumptionProfilesView,
@@ -783,6 +784,7 @@ urlpatterns = [
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
+    path("bi/ai/", BIAiView.as_view(), name="api-backstage-bi-ai"),
     path("bi/delivery-cost/", BIDeliveryCostView.as_view(), name="api-backstage-bi-delivery-cost"),
     path("bi/delivery-timing/", BIDeliveryTimingView.as_view(), name="api-backstage-bi-delivery-timing"),
     path("bi/preorder-kitchen/", BIPreorderKitchenView.as_view(), name="api-backstage-bi-preorder-kitchen"),
