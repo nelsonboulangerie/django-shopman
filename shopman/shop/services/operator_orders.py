@@ -324,14 +324,38 @@ def gestor_advance_block(order: Order, *, waitlist_state: str | None = None, pay
     return AdvanceBlock.NONE if bloqueio == AdvanceBlock.DEVICE_UNAVAILABLE else bloqueio
 
 
-def advance_block_message(bloqueio: AdvanceBlock) -> str:
-    """A frase que o operador lê para um código de bloqueio."""
+def advance_block_message(bloqueio: AdvanceBlock, order: Order | None = None) -> str:
+    """A frase que o operador lê para um código de bloqueio.
+
+    Com o pedido, a encomenda de data futura diz QUAL dia (#3164): "O preparo
+    abre no dia combinado." sem o dia mandava o operador procurar a data.
+    """
+    if bloqueio == AdvanceBlock.PREORDER_NOT_DUE and order is not None:
+        day = _preorder_day(order)
+        if day:
+            return f"Encomenda para {day}. O preparo abre nesse dia."
     return _ADVANCE_BLOCK_MESSAGES.get(bloqueio, "")
+
+
+def _preorder_day(order: Order) -> str:
+    """"22/11", o dia em que o preparo da encomenda abre; "" se não há data."""
+    from django.utils import timezone
+
+    from shopman.shop.services import ifood_schedule
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    day = None
+    if ifood_schedule.is_scheduled(order):
+        starts = ifood_schedule.preparation_start(order)
+        day = timezone.localtime(starts).date() if starts is not None else None
+    if day is None:
+        day = get_commitment_date(order)
+    return day.strftime("%d/%m") if day is not None else ""
 
 
 def advance_block_reason(order: Order, *, waitlist_state: str | None = None, payment_reads=None) -> str:
     """A frase que o operador lê, ou '' se ``advance_order`` rodaria agora."""
-    return advance_block_message(advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
+    return advance_block_message(advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads), order)
 
 
 #: Depois destes estados a cozinha não responde mais pelo pedido.
@@ -511,7 +535,7 @@ def advance_order(
         # do gesto do operador; recusar o fato só deixaria o pedido "pronto"
         # com o entregador na rua.
         bloqueio = AdvanceBlock.NONE
-    blocked = advance_block_message(bloqueio)
+    blocked = advance_block_message(bloqueio, order)
     if blocked:
         raise ValueError(blocked)
     next_status = next_status_for(order)
@@ -1633,7 +1657,7 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
         return ""
     bloqueio = advance_block(order, payment_reads=payment_reads)
     if bloqueio not in {AdvanceBlock.NONE, AdvanceBlock.DEVICE_UNAVAILABLE}:
-        return advance_block_message(bloqueio)
+        return advance_block_message(bloqueio, order)
     return ""
 
 
@@ -2411,10 +2435,12 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             if needs_card_machine(order):
                 labels["dispatched"] = "Saiu com a maquininha"
         if authorized:
-            reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
+            reason = advance_block_message(
+                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads), order,
+            )
         elif expedite:
             reason = expedite_refusal(order, target_status=target) or advance_block_message(
-                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)
+                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads), order,
             )
         else:
             reason = permission_reason

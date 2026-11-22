@@ -153,6 +153,47 @@ export function operatorCookieHeaderForDjango(
   return passthrough.map(({ name, value }) => `${name}=${value}`).join("; ");
 }
 
+/** A rota que ENCERRA a sessão de propósito ("Sair", `OperatorLogoutView`). */
+export const OPERATOR_LOGOUT_PATH = "/api/v1/backstage/operator/logout/";
+
+/**
+ * O Django mandando o navegador APAGAR o cookie de sessão: valor vazio, `Max-Age=0`
+ * ou `Expires` no passado. É o que `logout()` emite, e também o que o
+ * `SessionMiddleware` emite sozinho quando a requisição chega com uma sessão que
+ * venceu.
+ *
+ * ⚠️ A segunda é a corrida da F-17 (#3170): a requisição que saiu com o cookie
+ * VELHO volta depois do login, e a ordem de apagar derruba a sessão NOVA ("Sua
+ * sessão terminou" logo depois de entrar). O protocolo não deixa apagar "só se o
+ * valor ainda for o velho", então quem decide é a rota: só o logout apaga.
+ */
+export function isSessionCookieDeletion(djangoHeader: string): boolean {
+  const [pair = "", ...attributes] = djangoHeader.split(";");
+  const separator = pair.indexOf("=");
+  if (separator < 0) return false;
+  if (pair.slice(0, separator).trim() !== DJANGO_SESSION_COOKIE_NAME) return false;
+  const value = pair.slice(separator + 1).trim().replace(/^"(.*)"$/, "$1");
+  if (!value) return true;
+  for (const attribute of attributes) {
+    const [rawKey = "", ...rest] = attribute.split("=");
+    const key = rawKey.trim().toLowerCase();
+    const attrValue = rest.join("=").trim();
+    if (key === "max-age" && Number(attrValue) <= 0) return true;
+    if (key === "expires") {
+      const when = Date.parse(attrValue);
+      if (!Number.isNaN(when) && when <= Date.now()) return true;
+    }
+  }
+  return false;
+}
+
+/** O Set-Cookie pode ir ao navegador? A apagada da sessão só pela rota do logout. */
+export function forwardsSessionCookie(djangoHeader: string, requestPath: string): boolean {
+  if (!isSessionCookieDeletion(djangoHeader)) return true;
+  const path = requestPath.endsWith("/") ? requestPath : `${requestPath}/`;
+  return path === OPERATOR_LOGOUT_PATH;
+}
+
 /**
  * Traduz Set-Cookie do Django para o pote exclusivo dos apps de operador.
  * Preserva Domain/Path/Secure/HttpOnly/SameSite e tambem a expiracao vazia que

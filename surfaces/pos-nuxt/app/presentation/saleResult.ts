@@ -126,6 +126,7 @@ export function fiscalStateLabel(state: PosFiscalState): string {
     case "awaiting_pickup": return "NFC-e sai na retirada";
     case "awaiting_delivery": return "NFC-e sai na entrega";
     case "failed": return "NFC-e não autorizada";
+    case "not_issued": return "Sem NFC-e: o pedido foi cancelado";
     default: return "NFC-e não solicitada";
   }
 }

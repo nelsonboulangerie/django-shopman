@@ -181,6 +181,7 @@
             "open_counts",
             "open_pk",
             "open_rows",
+            "open_rows_with_ref",
             "recent_exists",
             "resolve",
             "resolve_matching",
@@ -3637,6 +3638,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "stock.materialized-holds-receiver",
         "stock.production-void-receiver"
       ],
@@ -4330,6 +4332,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "production.batch-traceability-alert",
         "production.change-alert-receiver",
         "production.forgotten-planned-orders",
@@ -11665,6 +11668,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PREP_MIN_SAMPLES",
+            "PREP_PROMISE_FALLBACK_MINUTES",
             "PREP_SAMPLE_HOURS",
             "_parse"
           ]
@@ -11672,7 +11676,9 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "_configured_station_goal",
             "prep_expectation",
+            "prep_goal_minutes",
             "ready_eta",
             "stage_minutes"
           ]
@@ -13361,6 +13367,7 @@
             "OwnFleetRefused",
             "PAGE_THEMES",
             "PAYMENT_METHODS",
+            "POSITION_MAX_ACCURACY_M",
             "PROBLEMS",
             "REFUSED",
             "SOURCE",
@@ -13379,6 +13386,7 @@
             "logger",
             "page_theme",
             "remember_theme",
+            "report_position",
             "report_problem",
             "ride_view"
           ]

@@ -138,6 +138,22 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
         logger.warning("on_production_voided: failed to notify sessions", exc_info=True)
 
 
+@resilient_receiver
+def on_production_finished(sender, product_ref, date, action, work_order, **kwargs):
+    """Lote fechado com menos do que as reservas de pedido: vira fato do pedido (#2594).
+
+    Roda depois da ponte craftsman→stockman, que já levou à vitrine as reservas que
+    couberam no rendimento. O que sobrou preso ao saldo de produção é avisado
+    (``services.production_promise.announce_short_lot``), sem soltar a reserva.
+    """
+    if action != "finished" or not date:
+        return
+
+    from shopman.shop.services import production_promise
+
+    production_promise.announce_short_lot(product_ref, date, work_order=work_order)
+
+
 def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
     """React when planned holds are materialized (stock became physical).
 

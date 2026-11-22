@@ -16,6 +16,8 @@ export interface PickupOrder {
   window?: string;
   /** CPF ou CNPJ na nota (o "CPF na nota?" da retirada, no passo do pagamento). */
   taxId?: string;
+  /** `false`: a cliente envia o pedido e não paga o Pix (fica no acompanhamento). */
+  pays?: boolean;
 }
 
 /** Cliente novo pede retirada (hoje, ou amanhã: a encomenda) e paga com Pix (pagamento
@@ -55,7 +57,7 @@ export async function customerOrdersPickupToday(page: Page, testInfo: TestInfo, 
   await expect(page.getByText(new RegExp(`Retirada · ${day}`)).last()).toBeVisible();
   if (order.window) await expect(page.getByText(order.window).last()).toBeVisible();
   await capture(page, testInfo, "loja-revisar");
-  return customerSendsAndPaysPix(page, testInfo);
+  return customerSendsAndPaysPix(page, testInfo, order.pays ?? true);
 }
 
 /** Cardápio → sacola → entrar com o código → nome: a cliente nova chega ao Finalizar. */
@@ -110,12 +112,18 @@ async function customerReachesCheckout(
   await settled(page);
 }
 
-/** Revisado: envia e paga com o Pix simulado da pilha. Devolve o código do pedido. */
-async function customerSendsAndPaysPix(page: Page, testInfo: TestInfo): Promise<string> {
+/** Revisado: envia e paga com o Pix simulado da pilha (ou não paga, com `pays` falso).
+ *  Devolve o código do pedido. */
+async function customerSendsAndPaysPix(page: Page, testInfo: TestInfo, pays = true): Promise<string> {
   await page.getByRole("button", { name: "Enviar pedido" }).click();
   await expect(page).toHaveURL(/\/pedido\/[^/]+$/, { timeout: 60_000 });
   const ref = decodeURIComponent(new URL(page.url()).pathname.split("/").pop()!);
   await settled(page);
+  if (!pays) {
+    await expect(page.getByRole("button", { name: "Simular pagamento" })).toBeVisible({ timeout: 60_000 });
+    await capture(page, testInfo, "loja-pix-sem-pagar");
+    return ref;
+  }
   await page.getByRole("button", { name: "Simular pagamento" }).click();
   await expect(page.getByText("Pagamento recebido")).toBeVisible({ timeout: 60_000 });
   await capture(page, testInfo, "loja-pago");
