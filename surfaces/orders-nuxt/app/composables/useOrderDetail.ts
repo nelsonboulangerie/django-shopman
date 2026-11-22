@@ -18,6 +18,7 @@ import type {
 } from "~/types/orders";
 import type { Action } from "~/generated/ordersContract";
 import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
+import type { OrderRefundReceipt } from "~/presentation/orderRefund";
 
 export function useOrderDetail(orderRef: string) {
   const intentions = useOrderIntention();
@@ -133,6 +134,8 @@ export function useOrderDetail(orderRef: string) {
     /** O ato que pediu a assinatura: o diálogo do PIN nomeia o que o gerente assina. */
     action: string;
   } | null>(null);
+  /** O recibo da última ação que o servidor aplicou (o estorno lê dele o resultado). */
+  const lastReceipt = ref<Record<string, unknown> | null>(null);
   let lastAttempt: {
     action: string;
     body?: Record<string, unknown>;
@@ -154,6 +157,7 @@ export function useOrderDetail(orderRef: string) {
     }
     busy.value = true;
     mutationError.value = "";
+    lastReceipt.value = null;
     try {
       if (
         [
@@ -180,10 +184,11 @@ export function useOrderDetail(orderRef: string) {
           "return",
           "no-show",
           "refund-retry",
+          "refund",
           "customer-notice",
         ].includes(action)
       ) {
-        await intentions.execute(
+        lastReceipt.value = await intentions.executeReceipt(
           orderRef,
           action,
           contract ?? order.value?.actions?.find((item) => item.ref === action),
@@ -300,6 +305,15 @@ export function useOrderDetail(orderRef: string) {
   // se o dinheiro voltou, quem diz é o pedido relido (`cancelled_money`), e a recusa
   // do meio de pagamento chega escrita na linha da faixa.
   const retryRefund = () => act("refund-retry");
+  // Estornar UM pedido (#2727, item 5): a exceção financeira do Gerente. A ação é a
+  // da prévia (`refund/preview/`), com a base que o comando confere; o valor e a
+  // segunda confirmação vêm do diálogo. Devolve o recibo DESTA cobrança (o meio de
+  // pagamento confirmou, recusou ou não respondeu), ou `null` quando nada foi aplicado.
+  async function refundOrder(contract: Action, amountQ: number): Promise<OrderRefundReceipt | null> {
+    const ok = await act("refund", { amount_q: amountQ, confirm: true }, undefined, contract);
+    if (!ok) return null;
+    return (lastReceipt.value?.refund as OrderRefundReceipt | undefined) ?? null;
+  }
   const settleCash = (
     amount: string,
     changeBack?: string,
@@ -433,6 +447,7 @@ export function useOrderDetail(orderRef: string) {
     returnOrder,
     markNotPickedUp,
     retryRefund,
+    refundOrder,
     settleCash,
     equipmentBack,
     courierBack,

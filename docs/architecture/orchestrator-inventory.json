@@ -181,6 +181,7 @@
             "open_counts",
             "open_pk",
             "open_rows",
+            "open_rows_with_ref",
             "recent_exists",
             "resolve",
             "resolve_matching",
@@ -3637,6 +3638,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "stock.materialized-holds-receiver",
         "stock.production-void-receiver"
       ],
@@ -4330,6 +4332,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "production.batch-traceability-alert",
         "production.change-alert-receiver",
         "production.forgotten-planned-orders",
@@ -11176,6 +11179,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]
@@ -11666,6 +11670,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PREP_MIN_SAMPLES",
+            "PREP_PROMISE_FALLBACK_MINUTES",
             "PREP_SAMPLE_HOURS",
             "_parse"
           ]
@@ -11673,7 +11678,9 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "_configured_station_goal",
             "prep_expectation",
+            "prep_goal_minutes",
             "ready_eta",
             "stage_minutes"
           ]
@@ -13307,6 +13314,8 @@
             "get_fulfillment_type",
             "house_owns_the_delivery",
             "is_counter_takeaway",
+            "is_for_a_later_day",
+            "is_preorder",
             "is_test_order",
             "json_quantity",
             "logger",
@@ -13360,13 +13369,16 @@
             "ORDER_PROBLEM",
             "OTHER_PAYMENT",
             "OwnFleetRefused",
+            "PAGE_THEMES",
             "PAYMENT_METHODS",
+            "POSITION_MAX_ACCURACY_M",
             "PROBLEMS",
             "REFUSED",
             "SOURCE",
             "_RIDE_PREFIX",
             "_estimate",
             "_live",
+            "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",
@@ -13377,6 +13389,9 @@
             "deliver",
             "depart",
             "logger",
+            "page_theme",
+            "remember_theme",
+            "report_position",
             "report_problem",
             "ride_view"
           ]

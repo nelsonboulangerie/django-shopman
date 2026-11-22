@@ -80,7 +80,7 @@ describe("PosPaymentWorkspace: a cozinha acionável no Pagamento (dono, 03/11/20
       props: workspaceProps({ items: [fired, pending], canFireNow: true }),
     });
     const message = wrapper.find("[data-checkout-kitchen-message]");
-    expect(message.text()).toContain("ao finalizar");
+    expect(message.text()).toContain("ao validar");
     let el: Element | null = message.element;
     while (el && !el.hasAttribute("data-checkout-kitchen")) {
       expect(el.className).not.toMatch(/(^|\s)truncate(\s|$)/);

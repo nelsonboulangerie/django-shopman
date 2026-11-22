@@ -41,5 +41,7 @@ jobs:
           INCIDENTS_URL: ${{ vars.INCIDENTS_URL }}
           INCIDENTS_TOKEN: ${{ secrets.INCIDENTS_TOKEN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          DO_READ_TOKEN: ${{ secrets.DIGITALOCEAN_READ_TOKEN }}
+          DO_APP_NAME: ${{ vars.DO_APP_NAME }}
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/incident_bridge.py

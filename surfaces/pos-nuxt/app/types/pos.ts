@@ -140,7 +140,8 @@ export interface POSFulfillmentOptionProjection {
  * tela deriva de `fiscal_expected` (`queued` / `not_expected`).
  */
 /** O vocabulário de `fiscal_service.FISCAL_STATES`. `awaiting_pickup`/`awaiting_delivery`:
- *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026). */
+ *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026).
+ *  `not_issued`: venda cancelada sem nenhuma tentativa de emissão, a nota não sai (#3130). */
 export type PosFiscalState =
   | "not_expected"
   | "queued"
@@ -148,7 +149,8 @@ export type PosFiscalState =
   | "awaiting_pickup"
   | "awaiting_delivery"
   | "authorized"
-  | "failed";
+  | "failed"
+  | "not_issued";
 
 export interface POSPaymentCollectionProjection {
   ref: PosPaymentCollection;
@@ -294,10 +296,12 @@ export interface POSPendingCashRefundProjection {
   cancelled_at: string;
   /**
    * "cancelled" / "returned" (venda cancelada ou devolvida inteira: devolve tudo) ·
+   * "not_picked_up" (pedido pronto que o cliente não veio buscar: devolve só o que
+   * não ficou com a loja) ·
    * "partial_return" (devolução de parte da venda) · "reduced" (encomenda que ficou
    * mais barata): esses dois devolvem a diferença.
    */
-  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
+  reason?: "cancelled" | "not_picked_up" | "returned" | "partial_return" | "reduced";
   reason_label?: string;
 }
 
@@ -329,9 +333,9 @@ export interface POSPendingCardMachineRefundProjection {
   amount_display: string;
   customer_name: string;
   method_label: string;
-  /** "cancelled" · "returned" · "partial_return" · "reduced". */
-  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
-  /** "Venda cancelada" · "Venda devolvida" · "Devolução de parte da venda" · "Encomenda ficou mais barata". */
+  /** "cancelled" · "not_picked_up" · "returned" · "partial_return" · "reduced". */
+  reason?: "cancelled" | "not_picked_up" | "returned" | "partial_return" | "reduced";
+  /** "Venda cancelada" · "Pedido não retirado" · "Venda devolvida" · "Devolução de parte da venda" · "Encomenda ficou mais barata". */
   reason_label?: string;
   /** Como achar a transação na maquininha: "Aprovado em 13/10 às 14:32 · NSU 123456". */
   lookup_display?: string;

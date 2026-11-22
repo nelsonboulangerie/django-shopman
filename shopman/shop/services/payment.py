@@ -30,6 +30,7 @@ from datetime import timedelta
 from importlib import import_module
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.utils.formatting import format_local
@@ -1030,6 +1031,7 @@ def refund(
 
     if idempotency_key is None:
         idempotency_key = f"order-refund:{order.ref}"
+    requested_q = amount_q
 
     # Pedido não retirado: "devolve tudo" vira "devolve o que não ficou com a
     # loja" (:func:`retained_q`). Quem passa ``amount_q`` (devolução parcial,
@@ -1043,8 +1045,31 @@ def refund(
     # intent_ref cai no mesmo laço.
     # Venda em conta cancelada: a dívida morre com ela (authorized → cancelled).
     # Não é estorno (nada foi pago); é o intent deixando de contar no saldo.
+    #
+    # Venda SÓ em conta com valor decidido (devolução de parte, não retirado com
+    # perda): a dívida perde só aquela parte (#2606, #2697). O resto do pedido
+    # continua devido.
+    #
+    # Venda MISTA (conta + outra forma, #3151, decisão da coordenação de
+    # 21/11/2026): a DÍVIDA sai primeiro. O cliente deixa de dever antes de
+    # qualquer dinheiro sair do caixa; só o que passa da dívida volta pelo meio
+    # em que entrou.
     if _pays_on_account(payment_data):
-        _cancel_open_account_intents(order)
+        decided = requested_q is not None or retained_q(order) > 0
+        if not decided:
+            _cancel_open_account_intents(order)
+        elif pays_only_on_account(payment_data):
+            forgive_q = requested_q if requested_q is not None else max(0, open_account_debt_q(order) - retained_q(order))
+            reduce_account_debt(order, forgive_q, idempotency_key=idempotency_key)
+        elif requested_q is not None:
+            from_account_q = reduce_account_debt(order, requested_q, idempotency_key=idempotency_key)
+            amount_q = max(0, int(requested_q) - from_account_q)
+        else:
+            # Não retirado com perda: o devolvível (``refund_q`` do bloco) sai da
+            # conta primeiro; o dinheiro que volta é o teto de sempre (capturado
+            # menos retido), que já desconta a parte da conta.
+            block = (order.data or {}).get("no_show") or {}
+            reduce_account_debt(order, int(block.get("refund_q") or 0), idempotency_key=idempotency_key)
     intents = _gateway_refund_intents(order, payment_data=payment_data)
     try:
         _refund_gateway_intents(
@@ -1115,6 +1140,118 @@ def _pays_on_account(payment_data: dict) -> bool:
         for t in (payment_data.get("tenders") or [])
         if isinstance(t, dict)
     )
+
+
+def pays_only_on_account(payment_data: dict) -> bool:
+    """A venda foi INTEIRA para a conta da casa (sem outra forma de pagamento junto)?"""
+    tenders = [t for t in (payment_data.get("tenders") or []) if isinstance(t, dict) and int(t.get("amount_q") or 0)]
+    if tenders:
+        return all(str(t.get("method") or "").lower() == "account" for t in tenders)
+    return str(payment_data.get("method") or "").lower() == "account"
+
+
+def _open_account_intents(order):
+    from shopman.payman import PaymentIntent, PaymentService
+
+    return PaymentService.get_by_order(order.ref).filter(
+        method=PaymentIntent.Method.ACCOUNT, status=PaymentIntent.Status.AUTHORIZED,
+    )
+
+
+def open_account_debt_q(order) -> int:
+    """O que o cliente ainda deve deste pedido na conta da casa (intents ``account`` em aberto)."""
+    return sum(int(intent.amount_q) for intent in _open_account_intents(order))
+
+
+def account_debt_settled(order) -> bool:
+    """A conta deste pedido já foi acertada (algum intent ``account`` capturado)?"""
+    from shopman.payman import PaymentIntent, PaymentService
+
+    return PaymentService.get_by_order(order.ref).filter(
+        method=PaymentIntent.Method.ACCOUNT, status=PaymentIntent.Status.CAPTURED,
+    ).exists()
+
+
+def reduce_account_debt(order, amount_q: int, *, idempotency_key: str) -> int:
+    """Abate ``amount_q`` da dívida em conta DESTE pedido; devolve quanto abateu.
+
+    O Payman não encolhe um intent autorizado. O abatimento é o que a casa já faz
+    com a conta: o intent em aberto é cancelado e o que continua devido nasce de
+    novo, em conta, para o mesmo cliente (``charge_to_account``). A dívida segue
+    derivada dos intents, sem tabela de saldo, e o Payman fica intocado.
+
+    Do mais novo para o mais antigo: a parte mais recente da conta sai primeiro.
+
+    Idempotente pela chave: o abatimento grava o evento ``account_debt_reduced``
+    com a chave, na mesma transação. A mesma chave de novo (retry, directive)
+    acha o evento e devolve o MESMO valor, sem abater outra vez. Devolver o valor
+    (e não zero) importa na venda mista: quem chama desconta a parte da conta do
+    dinheiro que volta, e zero no retry devolveria o valor inteiro em dinheiro.
+    """
+    from shopman.payman import PaymentService
+
+    remaining_q = max(0, int(amount_q or 0))
+    if remaining_q <= 0:
+        return 0
+    done = account_debt_reduced_q(order, idempotency_key)
+    if done is not None:
+        return done
+    reduced_q = 0
+    with transaction.atomic():
+        for intent in _open_account_intents(order).select_for_update().order_by("-id"):
+            if remaining_q <= 0:
+                break
+            take_q = min(remaining_q, int(intent.amount_q))
+            rest_q = int(intent.amount_q) - take_q
+            PaymentService.cancel(intent.ref, reason="account_reduced")
+            if rest_q > 0:
+                PaymentService.charge_to_account(
+                    order.ref,
+                    rest_q,
+                    customer_ref=str((intent.gateway_data or {}).get("customer_ref") or ""),
+                    currency=intent.currency or "BRL",
+                    idempotency_key=f"{idempotency_key}:{intent.ref}",
+                    gateway_data={
+                        **{k: v for k, v in (intent.gateway_data or {}).items() if k != "customer_ref"},
+                        "reduced_from": intent.ref,
+                    },
+                )
+            remaining_q -= take_q
+            reduced_q += take_q
+        if reduced_q > 0:
+            # Na mesma transação do abatimento: é a marca de idempotência.
+            order.emit_event(
+                event_type="account_debt_reduced",
+                actor="system",
+                payload={"method": "account", "amount_q": reduced_q, "idempotency_key": idempotency_key},
+            )
+    logger.info("payment.reduce_account_debt order=%s reduced_q=%s key=%s", order.ref, reduced_q, idempotency_key)
+    return reduced_q
+
+
+def account_debt_reduced_q(order, idempotency_key: str) -> int | None:
+    """Quanto o abatimento com esta chave já tirou da conta, ou ``None`` se não houve."""
+    event = (
+        order.events.filter(type="account_debt_reduced", payload__idempotency_key=idempotency_key)
+        .order_by("pk")
+        .values_list("payload", flat=True)
+        .first()
+    )
+    if event is None:
+        return None
+    return max(0, int((event or {}).get("amount_q") or 0))
+
+
+def money_tender_methods(payment_data: dict) -> list[str]:
+    """As formas de dinheiro de uma venda (tudo que não é a conta da casa), na ordem dos tenders."""
+    methods = []
+    for tender in payment_data.get("tenders") or []:
+        if not isinstance(tender, dict) or not int(tender.get("amount_q") or 0):
+            continue
+        method = str(tender.get("method") or "").lower()
+        if method and method != "account" and method not in methods:
+            methods.append(method)
+    return methods
 
 
 def _cancel_open_account_intents(order) -> None:
@@ -1222,12 +1359,16 @@ def refund_ceiling_q(order, *, payment_reads=None) -> int | None:
 def refund_reason(order) -> str:
     """Por que o dinheiro do pedido volta ao cliente.
 
-    ``cancelled`` · ``returned`` (devolução total) · ``partial_return``
-    (devolução de parte da venda) · ``reduced`` (encomenda que ficou mais barata).
+    ``cancelled`` · ``not_picked_up`` (pedido pronto que o cliente não veio
+    buscar, encerrado pelo Gestor: volta só o que não ficou com a loja) ·
+    ``returned`` (devolução total) · ``partial_return`` (devolução de parte da
+    venda) · ``reduced`` (encomenda que ficou mais barata).
     """
     status = str(order.status)
     if status in _REFUND_ALL_STATUSES:
-        return "returned" if status == "returned" else "cancelled"
+        if status == "returned":
+            return "returned"
+        return "not_picked_up" if isinstance((order.data or {}).get("no_show"), dict) else "cancelled"
     return "partial_return" if (order.data or {}).get("returns") else "reduced"
 
 
@@ -1771,6 +1912,7 @@ class PendingCardMachineRefund:
 #: Os motivos de :func:`refund_reason`, como rótulo de tela (PDV, gaveta e maquininha).
 REFUND_REASON_LABELS = {
     "cancelled": "Venda cancelada",
+    "not_picked_up": "Pedido não retirado",
     "returned": "Venda devolvida",
     "partial_return": "Devolução de parte da venda",
     "reduced": "Encomenda ficou mais barata",
@@ -2006,6 +2148,7 @@ def _lock_payment_intents(intent_refs) -> None:
 #: O motivo como o Payman o grava (``PaymentTransaction``), por :func:`refund_reason`.
 _PAYMAN_REFUND_REASONS = {
     "cancelled": "order_cancelled",
+    "not_picked_up": "order_cancelled",
     "returned": "order_returned",
     "partial_return": "order_returned",
     "reduced": "order_edited",
@@ -2338,9 +2481,10 @@ def refund_intent_at_gateway(
 
         if origin == "Gestor":
             # O sino do balcão: o Gestor reapresenta a mesma chave na tentativa seguinte
-            # (``refund_retry``), então tentar de novo não devolve duas vezes.
+            # (``refund_retry`` e o "Estornar" de ``order_refund``), então tentar de novo
+            # não devolve duas vezes.
             ambiguous = (
-                f"O estorno do pedido {intent.order_ref or intent_ref}, tentado de novo no Gestor de pedidos, "
+                f"O estorno do pedido {intent.order_ref or intent_ref}, feito no Gestor de pedidos, "
                 "ficou sem resposta do meio de pagamento, e pode ter saído. Tente de novo no Gestor em "
                 "alguns minutos: a tentativa seguinte confere esta e não devolve duas vezes."
             )

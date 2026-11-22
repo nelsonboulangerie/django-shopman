@@ -29,6 +29,11 @@ export interface OrderReturnPreview {
   lines: ReturnLine[];
   money_returns: boolean;
   money_destination: string;
+  /**
+   * Venda mista com conta da casa (#3151): a dívida sai PRIMEIRO, até este valor;
+   * só o que passa dela segue `money_destination`. 0 (ou ausente) fora desse caso.
+   */
+  account_debt_q?: number;
   managers: { username: string; name: string }[];
   action: Action;
 }
@@ -80,6 +85,13 @@ export function returnSubmitItems(
  */
 export function returnMoneySentence(preview: OrderReturnPreview, totalQ: number): string {
   if (totalQ <= 0) return "Escolha o que volta para ver o valor.";
+  // Venda mista com conta da casa: a conta primeiro, o dinheiro só no que passa dela.
+  const fromAccount = Math.min(totalQ, Math.max(0, preview.account_debt_q ?? 0));
+  if (fromAccount > 0) {
+    const first = `${formatBRL(fromAccount)} saem da conta do cliente`;
+    const money = totalQ - fromAccount;
+    return money > 0 ? `${first}, e ${formatBRL(money)} ${preview.money_destination}` : `${first}.`;
+  }
   if (!preview.money_returns)
     return "Nada foi cobrado deste pedido: nenhum dinheiro volta. O produto volta ao estoque.";
   return `${formatBRL(totalQ)} ${preview.money_destination}`;

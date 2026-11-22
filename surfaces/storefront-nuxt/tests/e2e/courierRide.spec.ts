@@ -43,7 +43,7 @@ const VIEWS: Record<string, unknown> = {
   confirm: { moment: 'confirm', courier: 'Diego' },
   pickup: { ...base, moment: 'pickup', stops: [marina, paulo], settle },
   pickup_wait: { ...base, moment: 'pickup_wait', stops: [marina, { ...paulo, ready: false, ready_at: '12:48' }], settle },
-  route: { ...base, moment: 'route', stops: [marina, paulo], settle },
+  route: { ...base, moment: 'route', stops: [marina, { ...paulo, lat: -23.31, lng: -51.16 }], settle, map: { key: '', origin: { lat: -23.3405, lng: -51.158 } } },
   route_card: { ...base, moment: 'route', stops: [{ ...marina, state: 'done' }, paulo], settle },
   route_cancel: { ...base, moment: 'route', stops: [marina, { ...paulo, state: 'cancelled' }], settle },
   back: { ...base, moment: 'back', stops: [{ ...marina, state: 'done' }, { ...paulo, state: 'done' }], settle },
@@ -301,6 +301,75 @@ for (const theme of ['light', 'dark'] as const) {
     })
   })
 }
+
+// A posição para a loja (#2509): com a rota na rua e a localização permitida, a página
+// diz que a loja vê e manda a posição a cada 15 s, em pé e deitado.
+for (const [size, viewport] of [['em-pe', PORTRAIT], ['deitado', LANDSCAPE]] as const) {
+  test.describe(`rota do entregador · posição · ${size}`, () => {
+    test.use({
+      viewport, isMobile: true, hasTouch: true,
+      permissions: ['geolocation'], geolocation: { latitude: -23.32, longitude: -51.17, accuracy: 10 }
+    })
+
+    test('a loja vê onde ele está, e a posição sai a cada 15 s', async ({ page }) => {
+      test.setTimeout(45_000)
+      const sent: Record<string, unknown>[] = []
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().includes('/events/')) sent.push(request.postDataJSON())
+      })
+      await openRide(page, 'route', 'light')
+      await expect(page.getByText('A loja vê onde você está enquanto esta tela estiver aberta.')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Cheguei' })).toBeInViewport()
+      await check(page, `04b-posicao-light-${size}`)
+      await expect.poll(() => sent.filter(body => body.action === 'position').length, { timeout: 20_000 }).toBeGreaterThan(0)
+      expect(sent.find(body => body.action === 'position')).toMatchObject({ lat: -23.32, lng: -51.17, accuracy: 10 })
+    })
+  })
+}
+
+// O mapa da corrida (#2509 parte b): sem chave, o desenho próprio, com a linha, as paradas
+// e a moto; a parada e o "Cheguei" embaixo (em pé) ou à direita (deitado), sem rolar.
+for (const theme of ['light', 'dark'] as const) {
+  for (const [size, viewport] of [['em-pe', PORTRAIT], ['340', SMALL], ['deitado', LANDSCAPE], ['deitado-740', { width: 740, height: 360 }]] as const) {
+    test.describe(`rota do entregador · mapa · ${theme} · ${size}`, () => {
+      test.use({
+        viewport, isMobile: true, hasTouch: true,
+        permissions: ['geolocation'], geolocation: { latitude: -23.335, longitude: -51.17, accuracy: 10 }
+      })
+
+      test('o mapa da corrida com a parada e o Cheguei na tela', async ({ page }) => {
+        await openRide(page, 'route', theme)
+        const map = page.locator('[data-map="own"]')
+        await expect(map).toBeVisible()
+        await expect(map.locator('[data-map-stop="A47"]')).toBeVisible()
+        await expect(map.locator('[data-map-stop="C03"]')).toBeVisible()
+        await expect(map.locator('[data-map-me]')).toBeVisible()
+        await expect(page.getByRole('link', { name: 'Abrir no Waze' })).toBeInViewport()
+        await expect(page.getByRole('button', { name: 'Cheguei' })).toBeInViewport()
+        const box = await page.getByRole('button', { name: 'Cheguei' }).boundingBox()
+        expect(box!.height).toBeGreaterThanOrEqual(56)
+        // O contorno escolhido pelo dono (opção "a"): pontos na cor invertida, linha na cor do tema.
+        const paper = theme === 'light' ? '#ffffff' : '#000000'
+        const inverted = theme === 'light' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)'
+        await expect(map.locator('[data-route-outline]')).toHaveAttribute('stroke', paper)
+        await expect(map.locator('[data-map-stop="A47"]')).toHaveCSS('border-top-color', inverted)
+        await check(page, `04d-mapa-${theme}-${size}`)
+      })
+    })
+  }
+}
+
+test.describe('rota do entregador · posição bloqueada', () => {
+  test.use({ viewport: PORTRAIT, isMobile: true, hasTouch: true, permissions: [] })
+
+  test('sem permissão, a tela diz que a loja não vê e como liberar', async ({ page, context }) => {
+    await context.clearPermissions()
+    await openRide(page, 'route', 'light')
+    await expect(page.locator('[data-tracking="denied"]')).toHaveText(
+      'Localização bloqueada: a loja não vê onde você está. Libere nas configurações do navegador.')
+    await check(page, '04c-posicao-bloqueada-light')
+  })
+})
 
 test('o link manda o manifesto das rotas e não se indexa', async ({ page, request }) => {
   await openRide(page, 'confirm', 'light')

@@ -219,7 +219,16 @@ export interface BISalesDiscountKindRow {
   amount_q: number;
 }
 
-/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious', channel: 'str', channels: 'tuple[BISalesChannelOption, ...]', compare: 'str', closed_weekdays: 'tuple[int, ...]', discount_by_kind: 'tuple[BISalesDiscountKindRow, ...]', discount_kind_total_q: 'int') */
+/** Pedido de retirada que ficou pronto e o cliente não veio (#2698). */
+export interface BISalesNoShow {
+  orders: number;
+  paid_q: number;
+  refund_q: number;
+  retained_q: number;
+  loss_q: number;
+}
+
+/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', no_show: 'BISalesNoShow', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious', channel: 'str', channels: 'tuple[BISalesChannelOption, ...]', compare: 'str', closed_weekdays: 'tuple[int, ...]', discount_by_kind: 'tuple[BISalesDiscountKindRow, ...]', discount_kind_total_q: 'int') */
 export interface BISalesReport {
   date_from: string;
   date_to: string;
@@ -232,6 +241,7 @@ export interface BISalesReport {
   revenue_total_q: number;
   average_ticket_q: number;
   cancelled_total: number;
+  no_show: BISalesNoShow;
   historical_days: number;
   sources: string[];
   source_conflicts: BISourceConflict[];
