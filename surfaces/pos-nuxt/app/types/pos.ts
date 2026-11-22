@@ -140,7 +140,8 @@ export interface POSFulfillmentOptionProjection {
  * tela deriva de `fiscal_expected` (`queued` / `not_expected`).
  */
 /** O vocabulário de `fiscal_service.FISCAL_STATES`. `awaiting_pickup`/`awaiting_delivery`:
- *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026). */
+ *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026).
+ *  `not_issued`: venda cancelada sem nenhuma tentativa de emissão, a nota não sai (#3130). */
 export type PosFiscalState =
   | "not_expected"
   | "queued"
@@ -148,7 +149,8 @@ export type PosFiscalState =
   | "awaiting_pickup"
   | "awaiting_delivery"
   | "authorized"
-  | "failed";
+  | "failed"
+  | "not_issued";
 
 export interface POSPaymentCollectionProjection {
   ref: PosPaymentCollection;

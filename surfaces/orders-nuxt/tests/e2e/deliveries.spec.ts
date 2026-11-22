@@ -195,3 +195,37 @@ test.describe("Entregas: legenda do mapa no desktop", () => {
     await expect(map.getByRole("button", { name: "Legenda", exact: true })).toHaveCount(0);
   });
 });
+
+// #2737: a corrida que ninguém aceitou (ou que foi cancelada) volta a Aguardando
+// dizendo por quê, e "Chamar de novo" devolve a corrida INTEIRA, com a mesma letra.
+test.describe("Entregas: a corrida que falhou", () => {
+  test.use({ viewport: { width: 1360, height: 900 } });
+  test.beforeEach(async ({ context }) => {
+    await context.addCookies([{ name: "e2e_failed", value: "on", url: "http://127.0.0.1" }]);
+  });
+
+  test("o cartão diz o motivo e esconde a sugestão com os mesmos pedidos", async ({ page }) => {
+    await page.goto("/delivery");
+    const cards = page.locator("[data-failed-ride]");
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0).getByText("Ninguém aceitou a corrida C (14h20).", { exact: true })).toBeVisible();
+    await expect(cards.nth(0).getByText("A47 + C03 · Gleba Palhano", { exact: true })).toBeVisible();
+    await expect(cards.nth(1).getByText("A TaOn cancelou a corrida (14h05).", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-ride-suggestion]")).toHaveCount(0);
+  });
+
+  test("Chamar de novo abre o sheet com a corrida inteira e a mesma letra", async ({ page }) => {
+    await page.goto("/delivery");
+    await page.locator("[data-failed-ride]").nth(0).getByRole("button", { name: "Chamar de novo", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Chamar a corrida C" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("A47 → C03", { exact: true })).toBeVisible();
+  });
+});
+
+// #2747: o detalhe põe o frete dos clientes ao lado do custo, com o que sobra ou falta.
+test("o detalhe da corrida diz o frete cobrado e o que falta para o custo", async ({ page }) => {
+  await page.goto("/delivery?ride=776753358");
+  const detail = page.getByRole("dialog", { name: "Corrida B" });
+  await expect(detail.locator("[data-ride-balance]")).toHaveText("Frete cobrado R$ 12,00 · Falta R$ 2,50");
+});

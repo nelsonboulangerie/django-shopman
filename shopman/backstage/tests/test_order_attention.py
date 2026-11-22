@@ -486,4 +486,4 @@ def test_previsao_de_pronto_respeita_a_hora_combinada(operator):
     assert eta == promised_at(order)
 
     immediate = _order("ATT-ETA-NOW", status=Order.Status.ACCEPTED)
-    assert ready_eta(immediate, PrepExpectation(minutes=None, samples=0), now=now) == now + timedelta(minutes=15)
+    assert ready_eta(immediate, PrepExpectation(minutes=None, samples=0), now=now) == now + timedelta(minutes=30)  # a promessa, #3178

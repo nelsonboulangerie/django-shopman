@@ -21,6 +21,7 @@ import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
 import {
   isSafeDjangoSetCookieHeader,
   operatorCookieHeaderForDjango,
+  forwardsSessionCookie,
   operatorSetCookieHeaderForBrowser,
 } from "./operatorCookies";
 import { applyOperatorSecurityHeaders } from "./securityHeaders";
@@ -180,6 +181,9 @@ async function ensureDjangoCsrfCookie(
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
+      // O GET do CSRF nunca é logout: a apagada da sessão vencida não vai ao
+      // navegador (F-17, #3170).
+      if (!forwardsSessionCookie(cookieHeader, "/admin/login/")) continue;
       const requestUrl = getRequestURL(event);
       const browserCookieHeader = operatorSetCookieHeaderForBrowser(
         cookieHeader,
@@ -398,6 +402,9 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
+      // Só o "Sair" apaga a sessão no navegador: a resposta atrasada de uma
+      // requisição com o cookie velho não derruba quem acabou de entrar (#3170).
+      if (!forwardsSessionCookie(cookieHeader, normalizedPath)) continue;
       const requestUrl = getRequestURL(event);
       const browserCookieHeader = operatorSetCookieHeaderForBrowser(
         cookieHeader,

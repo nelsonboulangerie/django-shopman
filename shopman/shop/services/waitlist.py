@@ -469,8 +469,15 @@ def _order_holds(
 
 
 def is_preorder(order) -> bool:
-    """Encomenda, pelo carimbo do commit (e do reagendamento)."""
-    return bool((order.data or {}).get("is_preorder"))
+    """Encomenda: a régua única do shop (``order_helpers.is_preorder``, #3163).
+
+    No pedido é o carimbo do commit, que o reagendamento regravava como "data
+    depois de hoje": a encomenda não paga trazida para hoje voltava a ser fila
+    (fermata). Agora ele regrava "feito antes do novo dia" (F-9).
+    """
+    from shopman.shop.services.order_helpers import is_preorder as made_before_the_day
+
+    return made_before_the_day(order)
 
 
 def _is_paid(order) -> bool:

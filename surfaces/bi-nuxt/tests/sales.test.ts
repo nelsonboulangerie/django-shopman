@@ -5,6 +5,8 @@ import {
   discountKindLabel,
   discountRows,
   hourPoints,
+  noShowCsv,
+  noShowRows,
   revenueReading,
   revenueSeries,
   weekdayPoints,
@@ -134,5 +136,34 @@ describe("desconto por tipo de grupo", () => {
         ["Total", "350,50"],
       ],
     });
+  });
+});
+
+describe("noShowRows (#2698)", () => {
+  const noShow = (over = {}) => ({
+    no_show: { orders: 2, paid_q: 3000, refund_q: 1800, retained_q: 1200, loss_q: 2100, ...over },
+  });
+
+  it("diz quantos não foram retirados, o destino do dinheiro e a perda, em reais", () => {
+    const rows = noShowRows(noShow());
+    expect(rows.map((row) => [row.label, row.value.replace(/\u00a0/g, " ")])).toEqual([
+      ["Pedidos não retirados", "2"],
+      ["Voltou ao cliente", "R$ 18,00"],
+      ["Ficou com a loja, pelo que se perdeu", "R$ 12,00"],
+      ["Perda de estoque, a preço de venda", "R$ 21,00"],
+    ]);
+  });
+
+  it("sem não retirado no período, nenhuma linha: o quadro mostra o vazio", () => {
+    expect(noShowRows(noShow({ orders: 0, paid_q: 0, refund_q: 0, retained_q: 0, loss_q: 0 }))).toEqual([]);
+  });
+
+  it("o CSV leva os valores em reais", () => {
+    expect(noShowCsv(noShow()).rows).toEqual([
+      ["Pedidos não retirados", "2"],
+      ["Voltou ao cliente (R$)", "18,00"],
+      ["Ficou com a loja (R$)", "12,00"],
+      ["Perda de estoque a preço de venda (R$)", "21,00"],
+    ]);
   });
 });

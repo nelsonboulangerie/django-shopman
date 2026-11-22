@@ -1072,6 +1072,7 @@
             "_is_seed_order",
             "_is_seed_work_order",
             "_synthetic_reason",
+            "_IFOOD_UNHANDLED_MARKER",
             "resolve_alerts_ended_by_fact"
           ]
         }
@@ -8502,6 +8503,9 @@
             "_status_out_of_order",
             "record_reopen",
             "reopen_view",
+            "last_failure",
+            "failure_message",
+            "ride_health",
             "progress_since",
             "restore_archived_ride",
             "orders_with_archived_ride",
@@ -12454,6 +12458,7 @@
       "domains": [
         "doorman",
         "guestman",
+        "orderman",
         "payman"
       ],
       "ports": [
@@ -13440,6 +13445,7 @@
             "advance_block",
             "gestor_advance_block",
             "advance_block_message",
+            "_preorder_day",
             "advance_block_reason",
             "advance_order",
             "_handoff_hold_seconds",
@@ -14507,7 +14513,9 @@
             "_open_account_intents",
             "open_account_debt_q",
             "account_debt_settled",
-            "reduce_account_debt"
+            "reduce_account_debt",
+            "account_debt_reduced_q",
+            "money_tender_methods"
           ]
         }
       ],
@@ -19798,6 +19806,7 @@
             "BASE_TEXT",
             "customer_text",
             "_account_text",
+            "_mixed_text",
             "_amount"
           ]
         }
@@ -19866,6 +19875,10 @@
             "money_sentence",
             "_account_sentence",
             "_on_account",
+            "_mixed_account",
+            "_mixed_sentence",
+            "_money_destination",
+            "account_split",
             "is_candidate",
             "eligibility_reason",
             "_paid_q",
