@@ -68,9 +68,9 @@ export function kitchenHandoffNote(
   const aEnviar = unfiredCount(bound ? items.filter((item) => item.fired || bound(item)) : items);
   if (!naCozinha && !aEnviar) return "";
   if (!naCozinha) {
-    // Encomenda para outro dia não vai para a cozinha ao finalizar: o pedido
+    // Encomenda para outro dia não vai para a cozinha ao validar: o pedido
     // espera a data combinada (`lifecycle.awaits_kitchen_release`) e só então
-    // aparece no KDS. "Ao finalizar, vai para a cozinha" era promessa falsa.
+    // aparece no KDS. "Ao validar, vai para a cozinha" era promessa falsa.
     if (options.deferred) {
       return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha no dia da encomenda.`;
     }
@@ -79,10 +79,10 @@ export function kitchenHandoffNote(
     if (options.waitsPayment) {
       return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha quando o pagamento entrar.`;
     }
-    return `Ao finalizar, ${aEnviar === 1 ? "o item vai" : `os ${aEnviar} itens vão`} para a cozinha.`;
+    return `Ao validar, ${aEnviar === 1 ? "o item vai" : `os ${aEnviar} itens vão`} para a cozinha.`;
   }
   if (aEnviar) {
-    return `${unidades(naCozinha)} já ${naCozinha === 1 ? "está" : "estão"} na cozinha; mais ${aEnviar === 1 ? "1 vai" : `${aEnviar} vão`} ao finalizar.`;
+    return `${unidades(naCozinha)} já ${naCozinha === 1 ? "está" : "estão"} na cozinha; mais ${aEnviar === 1 ? "1 vai" : `${aEnviar} vão`} ao validar.`;
   }
   return naCozinha === 1 ? "O item já está na cozinha." : `Os ${naCozinha} itens já estão na cozinha.`;
 }

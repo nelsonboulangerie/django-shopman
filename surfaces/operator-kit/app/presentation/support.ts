@@ -142,6 +142,11 @@ export interface ContextRow {
   value: string;
 }
 
+/** O que está em foco no chamado (`context.focus.kind`), pelo nome que o operador lê. */
+const FOCUS_KIND_LABELS: Record<string, string> = {
+  order: "Pedido",
+};
+
 const CONTEXT_LABELS: Record<string, string> = {
   app: "Aplicativo",
   screen: "Tela",
@@ -183,7 +188,9 @@ export function contextRows(
   }
   const focus = context.focus;
   if (focus && typeof focus === "object") {
-    const kind = String((focus as Record<string, unknown>).kind ?? "").trim();
+    const rawKind = String((focus as Record<string, unknown>).kind ?? "").trim();
+    // O tipo sai pelo nome da casa ("Pedido"), nunca pelo id do contrato ("order").
+    const kind = FOCUS_KIND_LABELS[rawKind] ?? rawKind;
     const ref = String((focus as Record<string, unknown>).ref ?? "").trim();
     if (kind || ref) rows.push({ label: "Em foco", value: [kind, ref].filter(Boolean).join(" ") });
   }

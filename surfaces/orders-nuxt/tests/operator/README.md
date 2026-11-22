@@ -21,6 +21,9 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 | `j8-quem-so-expede-abre-o-sino.spec.ts` | J8: quem só expede abre um aviso de pedido no sino e lê por que o detalhe não abre (#2879) | cliente novo (loja, 375 px) · Gerente e Cozinha (Gestor, 1366 px) |
 | `g07-avisar-o-cliente.spec.ts` | WP-G07: avisar o cliente com um toque (vai atrasar, faltou um item), lendo a mensagem antes de enviar; o recibo que falhou traz o WhatsApp com o mesmo texto | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 e 375 px) |
 | `f1-nota-recusada-reprocessar.spec.ts` | F1: a cliente pede a retirada de hoje com CPF na nota e paga; o Caixa aceita, a Cozinha dá Pronto, o Caixa entrega; a SEFAZ (nota simulada) recusa, e o detalhe do pedido diz "NFC-e não autorizada" com a resposta do emissor; "Reprocessar NFC-e" emite de novo e a nota sai autorizada. Pede a nota simulada (`OPERATOR_CONTROL_DIR`), e pula sem ela | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
+| `f2-entrega-sem-cpf.spec.ts` | F2: a cliente pede entrega para hoje sem CPF na nota e paga; o Caixa aceita e inicia, a Cozinha dá Pronto, e a NFC-e nasce com a sacola pronta, autorizada, como venda presencial (sem destinatário nem frete). Pede a nota simulada e a política de emissão do alpha (`SHOPMAN_FISCAL_EMISSION_RESOLVER`), e pula sem a pasta de controle | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
+| `p1-pix-que-nao-confirma.spec.ts` | P1: a cliente envia o pedido com Pix e não paga; o Caixa vê o pedido esperando o pagamento; o relógio da pilha passa do prazo do Pix, o worker cancela sem cobrar, o pedido sai do painel sozinho, o detalhe diz "Nada foi cobrado · O Pix venceu" e a cliente lê "Pagamento expirado". Pede o relógio de teste (`OPERATOR_CONTROL_DIR`), e pula sem ele | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
+| `l1-loja-fechada.spec.ts` | L1: a casa fechou e a cliente encomenda para amanhã e paga; a loja diz que confere o pedido quando abrir; o detalhe do Caixa conta o prazo de aceite a partir da abertura, não de agora; o relógio passa da abertura, o pedido segue esperando com o prazo que sobrou, e o Caixa aceita. Pede o relógio de teste (`OPERATOR_CONTROL_DIR`) e a casa que fecha hoje (seed com `--closing-in-minutes`, abaixo); na pilha aberta 24 h, pula e diz por quê | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
 
 Os papéis vêm de `shopman/shop/management/commands/setup_operators.py` (o `seed` roda o
 comando): Gerente `joyce` (senha `admin`, PIN 1234), Caixa `fran` (PIN 1234), Cozinha
@@ -44,6 +47,9 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    # Relógio de teste e nota simulada (#2585): a suíte escreve nesta pasta.
    export TEST_STACK_CONTROL_DIR=/tmp/operador-controle
    export SHOPMAN_FISCAL_ADAPTER=shopman.shop.adapters.fiscal_simulated.SimulatedFiscalBackend
+   # A política de emissão do alpha (.do/app.alpha-subdomains.yaml): o pagamento eletrônico
+   # emite, com ou sem CPF. Sem ela, a nota só sai com CPF ou a pedido (e a F2 não tem nota).
+   export SHOPMAN_FISCAL_EMISSION_RESOLVER='shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt,shopman.shop.fiscal_resolvers.intermediated_sale'
    ```
 
    O relógio é o arquivo `clock` da pasta (um instante ISO 8601 com fuso; sem ele, a hora
@@ -75,6 +81,14 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    seed); o `runserver` e o worker sobem SEM essa variável, senão o piloto automático
    daria os passos que a jornada quer ver o Caixa dar. Sem isso, a suíte só passa no
    horário real da casa e falha dizendo que a loja está fechada.
+
+   **A casa que fecha (L1).** A L1 precisa de um fechamento hoje: acrescente
+   `--closing-in-minutes N` ao seed (a casa abre à 0h e fecha daqui a N minutos; os
+   outros dias seguem 24 h). Escolha N para fechar antes das 23h55 e bem depois de a
+   suíte terminar: as outras jornadas pedem retirada para hoje no relógio real, e a loja
+   encerra as retiradas de hoje antes do fechamento ("Hoje já encerramos as retiradas").
+   Rode a L1 sozinha nessa pilha, ou a suíte toda com mais de uma hora de folga. Sem a
+   opção, a L1 pula.
 
 3. **Loja e Cozinha compiladas** (`nuxt dev` recarrega sozinho e derruba jornada longa):
 

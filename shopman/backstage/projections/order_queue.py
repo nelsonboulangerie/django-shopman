@@ -1258,6 +1258,16 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         refund_retry_plan = refund_retry.plan(order)
         if refund_retry_plan.failed:
             extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
+    # "Estornar" (#2727, item 5): a exceção financeira do Gerente. Só aparece a quem
+    # tem ``backstage.refund_single_order`` e no pedido com cobrança online paga; a
+    # régua (qual cobrança, quanto, a base) é de ``services/order_refund``.
+    from shopman.backstage.services import order_refund
+
+    refund_action = order_refund.detail_action(
+        order, user, retry_failed=bool(refund_retry_plan is not None and refund_retry_plan.failed),
+    )
+    if refund_action is not None:
+        extra_actions.append(refund_action)
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -1813,23 +1823,35 @@ def _courier_block(order: Order) -> dict | None:
             point = courier_position_projection(block["ride_ref"], service=service)
             position = asdict(point) if point else None
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
+        from shopman.shop.services.courier import (
+            can_quote,
+            failure_message,
+            not_today_refusal,
+            ride_health,
+            unresolved_dispatch,
+        )
 
-        unresolved = unresolved_dispatch(order)
+        # Tudo o que a tela diz da corrida sai da fonte única, a mesma da página
+        # Entregas (``courier.ride_health``).
+        health = ride_health(order)
         # A encomenda de outro dia: chamar recusa com a frase (a régua do servidor).
         not_today = not_today_refusal(order) if order_can_ride and not active else ""
         # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
         # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
-        cancel = courier_cancel_state(order)
+        cancel = health["cancel"]
+        failure = health["last_failure"]
+        if error is None and failure is not None:
+            # A corrida que ninguém aceitou ou que foi cancelada: o pedido voltou a
+            # esperar, e a tela diz por quê (a mesma frase da página Entregas).
+            error = {"message": failure_message(failure), "at": failure["at"]}
 
+        unresolved = unresolved_dispatch(order) if health["unresolved"] else None
         if unresolved is not None:
             error = {"message": courier_no_answer_message(service), "at": unresolved.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view, proven_tracking, reopen_view
-
-        progress = progress_view(block)
-        tracking = proven_tracking(block)
-        reopened = reopen_view(block) if active else {"at": "", "driver": "", "reason": ""}
+        progress = health["progress"]
+        tracking = health["tracking"]
+        reopened = health["reopened"] if active else {"at": "", "driver": "", "reason": ""}
         status_label = courier_state_label(block)
         if state == RideState.ASSIGNED and progress["arrived_pickup_at"]:
             status_label = COURIER_STATE_LABELS[RideState.AT_STORE]
@@ -1852,7 +1874,7 @@ def _courier_block(order: Order) -> dict | None:
             # ``withdrew`` (o entregador desistiu) ou ``transfer`` (a TaOn trocou o entregador).
             "reopened_reason": reopened["reason"],
             "active": active,
-            "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
+            "driver": _courier_driver(block, active=active),
             # Só o link e o código casados com a parada DESTE pedido (``courier.proven_tracking``).
             "tracking_url": tracking["url"] if active else "",
             "confirmation_code": tracking["code"],
@@ -1883,11 +1905,28 @@ def _courier_block(order: Order) -> dict | None:
             "custody": operator_orders.partner_custody_asks(order),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
-            "charge_outdated": charge_outdated(order),
+            "charge_outdated": health["charge_outdated"],
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
         return None
+
+
+def _courier_driver(block: dict, *, active: bool) -> dict | None:
+    """O entregador da corrida, com a foto enquanto ela vive (#2736).
+
+    A foto é a MESMA da página Entregas: servida pelo servidor
+    (``DeliveryDriverPhotoView``), só em cache e só com a corrida viva
+    (decisão do dono, LGPD). Sem foto, ``photo_url`` vazio e a tela mostra o ícone.
+    """
+    from shopman.shop.services import courier
+
+    driver = block.get("driver")
+    if not isinstance(driver, dict):
+        return None
+    ride_id = str(block.get("ride_ref") or "")
+    has_photo = active and bool(ride_id) and courier.has_driver_photo(ride_id)
+    return {**driver, "photo_url": f"/api/v1/backstage/deliveries/{ride_id}/driver-photo/" if has_photo else ""}
 
 
 def _cancel_reasons(channel_ref: str = "") -> tuple[CancelReasonProjection, ...]:
@@ -2657,15 +2696,14 @@ def _parse_iso(value) -> datetime | None:
 
 
 def _is_future_preorder(order: Order, *, today: date | None = None) -> bool:
-    """Encomenda = data combinada no futuro (régua do lifecycle).
+    """Data combinada depois de hoje: a régua única do shop (#3163).
 
-    ``today`` é o dia da leitura de quem chama. Quem pergunta mais de uma vez na
-    mesma projeção passa o mesmo dia: lido de novo a cada pergunta, a leitura que
-    cruza a meia-noite respondia "é de amanhã" numa lista e "é de hoje" na outra,
-    e a encomenda saía das duas.
+    ``order_helpers.is_for_a_later_day``. ``today`` é o dia da leitura de quem
+    chama (ver lá por quê).
     """
-    commitment = get_commitment_date(order)
-    return commitment is not None and commitment > (today or timezone.localdate())
+    from shopman.shop.services.order_helpers import is_for_a_later_day
+
+    return is_for_a_later_day(order, today=today)
 
 
 def _commitment_date_display(commitment, *, today: date | None = None) -> str:
@@ -2850,7 +2888,9 @@ def _build_card(
         emit_failed_alert=(order.ref in fiscal_states.failed_alert_refs) if fiscal_states is not None else None,
     )
     commitment = get_commitment_date(order)
-    is_preorder = commitment is not None and commitment > today
+    # O cartão pergunta "é de outro dia?" (a Cozinha do Gestor não conta a de amanhã):
+    # a régua única do shop, a mesma da Central e das Entregas (#3163).
+    is_preorder = _is_future_preorder(order, today=today)
     schedule_label, schedule_state = _schedule(order, today=today)
     waitlist_state, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
@@ -2899,7 +2939,7 @@ def _build_card(
         fulfillment_label=fulfillment_label,
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
-        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config),
+        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config, waitlist_state=batch_state),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
         next_status=next_status if undo_block_allows_advance(order) else "",
         undo=_undo_projection(order),
@@ -2981,7 +3021,7 @@ def _build_card(
         today=today,
     )
     if expectation is not None:
-        eta = ready_eta(order, expectation, channel_config, now=now)
+        eta = ready_eta(order, expectation, now=now)
         if eta is not None:
             attention = {**attention, "ready_eta_iso": eta.isoformat()}
     return replace(card, **attention) if attention else card
@@ -3563,7 +3603,7 @@ def _advance_block_copy(order: Order, advance_block, method: str, *, payment_pen
                 f"{times}. Sem pagamento no prazo, o pedido cancela sozinho."
             )
         return _payment_wait_copy(order, method)
-    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block)
+    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block, order)
 
 
 def advance_block_label(advance_block: operator_orders.AdvanceBlock) -> str:
@@ -3779,12 +3819,21 @@ _FISCAL_PILL = {
     "not_expected": ("not_requested", "NFC-e não solicitada"),
 }
 
-#: O pedido cancelado que ainda ESPERAVA o pagamento: a nota não vai sair, e a pill
-#: diz o fato em vez de prometer (#3127: "NFC-e sai quando o pagamento confirmar"
-#: num pedido cujo Pix venceu era rótulo que mente).
-_CANCELLED_BEFORE_NOTE = {
-    "awaiting_payment": ("not_issued", "Sem NFC-e: o pedido foi cancelado antes do pagamento"),
-}
+#: O pedido cancelado sem nenhuma tentativa de emissão (``not_issued``): a nota não
+#: vai sair, e a pill diz o fato em vez de prometer. "NFC-e sai quando o pagamento
+#: confirmar" num Pix vencido (#3127) e "NFC-e em emissão" num cancelado sem nota
+#: (#3130) eram rótulos que mentiam. Quando a cobrança digital nunca confirmou, a
+#: frase diz por quê.
+_NOT_ISSUED_LABEL = "Sem NFC-e: o pedido foi cancelado"
+_NOT_ISSUED_BEFORE_PAYMENT_LABEL = "Sem NFC-e: o pedido foi cancelado antes do pagamento"
+
+
+def _not_issued_label(order: Order) -> str:
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return _NOT_ISSUED_BEFORE_PAYMENT_LABEL
+    return _NOT_ISSUED_LABEL
 
 
 class _FiscalEvidence(NamedTuple):
@@ -3811,8 +3860,8 @@ def _fiscal_status(
         # Nota cancelada é fato posterior à autorização: a chave continua lá, o
         # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
         status, label = "cancelled", "NFC-e cancelada"
-    elif order.status == Order.Status.CANCELLED and state in _CANCELLED_BEFORE_NOTE:
-        status, label = _CANCELLED_BEFORE_NOTE[state]
+    elif state == "not_issued":
+        status, label = "not_issued", _not_issued_label(order)
     else:
         status, label = _FISCAL_PILL[state]
 
@@ -4143,6 +4192,9 @@ _EVENT_LABELS = {
     "order_rescheduled": "Data combinada alterada",
     # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
     "production_hold_lost": "Lote cancelado: o item ficou em falta",
+    # O lote rendeu menos do que as reservas, ou passou da hora com o pedido esperando (#2594).
+    "production_hold_short": "Lote rendeu menos: o item ficou em falta",
+    "production_lot_late": "Lote atrasado: o item ainda não ficou pronto",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -4153,6 +4205,7 @@ _EVENT_LABELS = {
     "courier_ride_reopened": "O entregador desistiu e a {service} procura outro",
     "courier_ride_restored": "A {service} retomou a corrida que constava como encerrada",
     "courier_dispatch_released": "Chamada da {service} feita de novo",
+    "courier_closed_here": "Corrida encerrada aqui",
     "courier_cancel_requested": "Cancelamento da corrida pedido à {service}",
     "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
     # Entregador da casa (``services/own_fleet``): a casa escolheu a pessoa, e ela
@@ -4163,6 +4216,8 @@ _EVENT_LABELS = {
     "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
     "return_initiated": "Devolução iniciada",
     "refund_processed": "Estorno processado",
+    # Venda só em conta: a devolução ou o não retirado tira o valor da conta (#2606, #2697).
+    "account_debt_reduced": "Valor tirado da conta do cliente",
     "volume_checked": "Volume conferido",
     "volume_check_wrong_bag": "Sacola de outro pedido lida na conferência",
     # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
@@ -4195,6 +4250,8 @@ _EVENT_LABELS = {
     # WP-G13: quem tentou é o autor da linha; quem autorizou e o que o gateway
     # respondeu vão no detalhe (``_refund_retry_detail``).
     "payment.refund_retry": "Estorno tentado de novo",
+    # "Estornar" no detalhe do Gestor (#2727, item 5): a tentativa, saída ou não.
+    "payment.order_refund": "Estorno pedido no Gestor",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
     # #2897: o saldo da encomenda cobrado em Pix no balcão (novo, ou o Pix online
     # do cliente aproveitado); quem gerou é o autor da linha.
@@ -4208,7 +4265,7 @@ UNLABELLED_EVENT_LABEL = "Registro do sistema"
 _OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
 
 #: Os eventos de dinheiro levam o meio e o valor como detalhe.
-_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded"})
+_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded", "account_debt_reduced"})
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
 #: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
@@ -4365,9 +4422,9 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             logger.error("order_queue.event_without_label type=%s order=%s", event.type, order.ref)
             label = UNLABELLED_EVENT_LABEL
 
-        if event.type == _PRODUCTION_HOLD_LOST_EVENT:
+        if event.type in _PRODUCTION_PROMISE_EVENTS:
             detail = _production_hold_lost_detail(payload)
-        elif event.type == "payment.refund_retry":
+        elif event.type in {"payment.refund_retry", "payment.order_refund"}:
             detail = _refund_retry_detail(payload)
         elif event.type in _PAYMENT_EVENT_TYPES:
             detail = _payment_event_detail(payload)
@@ -4428,6 +4485,9 @@ def _payment_event_detail(payload: dict) -> str:
 #: O evento que ``shop/services/production_promise`` grava quando o lote cancelado
 #: leva a reserva do pedido.
 _PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
+#: Os três fatos da promessa de produção (cancelado, rendeu menos, atrasado) têm o
+#: mesmo detalhe: o item e o lote.
+_PRODUCTION_PROMISE_EVENTS = frozenset({_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late"})
 
 
 def _production_hold_lost_detail(payload: dict) -> str:

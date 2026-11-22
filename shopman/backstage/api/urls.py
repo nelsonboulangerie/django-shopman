@@ -214,6 +214,7 @@ from .operations import (
     OrderConfirmView,
     OrderCourierBackView,
     OrderCourierCancelView,
+    OrderCourierCloseHereView,
     OrderCourierDispatchAgainView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
@@ -238,7 +239,9 @@ from .operations import (
     OrderPromiseResolutionView,
     OrderQueueView,
     OrderRailCountsView,
+    OrderRefundPreviewView,
     OrderRefundRetryView,
+    OrderRefundView,
     OrderRejectView,
     OrderRequeueFiscalView,
     OrderRescheduleView,
@@ -1030,6 +1033,8 @@ urlpatterns = [
     path("orders/<str:ref>/no-show/", OrderNoShowView.as_view(), name="api-backstage-order-no-show"),
     path("orders/<str:ref>/no-show/preview/", OrderNoShowPreviewView.as_view(), name="api-backstage-order-no-show-preview"),
     path("orders/<str:ref>/refund-retry/", OrderRefundRetryView.as_view(), name="api-backstage-order-refund-retry"),
+    path("orders/<str:ref>/refund/", OrderRefundView.as_view(), name="api-backstage-order-refund"),
+    path("orders/<str:ref>/refund/preview/", OrderRefundPreviewView.as_view(), name="api-backstage-order-refund-preview"),
     path(
         "orders/<str:ref>/settle-delivery-cash/",
         OrderSettleDeliveryCashView.as_view(),
@@ -1040,6 +1045,7 @@ urlpatterns = [
         "orders/<str:ref>/equipment-back/", OrderEquipmentBackView.as_view(), name="api-backstage-order-equipment-back"
     ),
     path("orders/<str:ref>/courier-back/", OrderCourierBackView.as_view(), name="api-backstage-order-courier-back"),
+    path("orders/<str:ref>/courier-close-here/", OrderCourierCloseHereView.as_view(), name="api-backstage-order-courier-close-here"),
     path(
         "orders/<str:ref>/requeue-fiscal/", OrderRequeueFiscalView.as_view(), name="api-backstage-order-requeue-fiscal"
     ),

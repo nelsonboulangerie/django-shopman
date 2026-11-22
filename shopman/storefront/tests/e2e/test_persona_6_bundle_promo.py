@@ -119,6 +119,12 @@ def test_manual_coupon_does_not_stack_on_promoted_line(client):
 
     J.set_cart_qty(client, MUFFIN, 1)
     status, body = J.apply_coupon(client, "MENOS10")
-    assert status == 200, body
-    # Biggest discount wins per line: the 30% promo, not 30%+10%.
-    assert body["cart"]["discount_total_q"] == 300
+    # Biggest discount wins per line: the 30% promo, not 30%+10%. The coupon that does
+    # not beat it is refused and NOT spent, and the store says why (coordenação, 22/11).
+    assert status == 400, body
+    assert body["error_code"] == "coupon_not_better"
+    assert "R$ 3,00 (Semana Doce)" in body["detail"]
+    assert "guarde o cupom para outra compra" in body["detail"]
+    cart = client.get("/api/v1/storefront/cart/").json()["cart"]
+    assert cart["discount_total_q"] == 300
+    assert not cart.get("coupon_code")

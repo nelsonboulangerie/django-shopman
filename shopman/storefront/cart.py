@@ -382,10 +382,25 @@ class CartService:
                 code=code,
                 customer=get_authenticated_customer(request),
             )
+        except cart_service.CouponNotBetter as exc:
+            return {
+                "ok": False,
+                "error": exc.code,
+                "coupon_code": exc.coupon_code,
+                "standing_label": exc.standing_label,
+                "standing_q": exc.standing_q,
+                "coupon_q": exc.coupon_q,
+                "fixed": exc.fixed,
+            }
         except cart_service.CouponRejected as exc:
             return {"ok": False, "error": exc.code}
 
-        return {"ok": True, "code": (code or "").strip().upper(), "promotion": promotion_name}
+        return {
+            "ok": True,
+            "code": (code or "").strip().upper(),
+            "promotion": promotion_name,
+            "replaced": getattr(_session, "coupon_replaced", None),
+        }
 
     @staticmethod
     def remove_coupon(request: HttpRequest) -> dict:

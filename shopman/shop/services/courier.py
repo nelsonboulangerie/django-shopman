@@ -687,12 +687,15 @@ RIDE_LETTERS = 26
 _RIDE_NUMBER_LOCK = 0x52494445  # "RIDE"
 
 
-def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None) -> bool:
+def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None,
+                 trips: list | None = None) -> bool:
     """A corrida deste pedido ainda ocupa uma letra (e uma cor) na tela.
 
     Viva: chamada à espera da TaOn, corrida aberta ainda não terminada, ou
     terminada com o entregador ainda devendo voltar (troco, dinheiro, maquininha).
-    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`);
+    ``trips``: os pedidos das saídas já lidos em lote
+    (``operator_orders.trip_members_for``), para a corrida finalizada com volta.
     """
     block = get_block(order)
     if not block.get("ride_number"):
@@ -705,7 +708,7 @@ def ride_is_live(order, *, tasks: dict[str, list[Directive]] | None = None) -> b
             return False
         from shopman.shop.services import operator_orders
 
-        return bool(operator_orders.courier_return_members(order))
+        return bool(operator_orders.courier_return_members(order, among=trips))
     if tasks is not None:
         return any(task.status in _LIVE_TASK_STATUSES for task in tasks.get(order.ref, []))
     from shopman.shop.directives import COURIER_DISPATCH
@@ -1081,6 +1084,64 @@ def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | N
     return redispatch(order, actor=actor)
 
 
+#: As duas saídas do "Encerrar aqui" (#2736): só o operador sabe o que aconteceu.
+CLOSE_DELIVERED = "delivered"
+CLOSE_RETURNED = "returned"
+
+
+def close_here_outcomes(order) -> tuple[str, ...]:
+    """As saídas que o "Encerrar aqui" oferece a esta corrida. Vazio quando não cabe.
+
+    Só a corrida aberta além da idade em que uma corrida real dura
+    (:func:`ride_open_too_long`): a central já não a encerra. "Voltou para a
+    loja" só antes da coleta; depois dela o pedido saiu para entrega e não volta
+    a pronto (a sacola que volta é outro fluxo, o da devolução).
+    """
+    from shopman.shop.protocols import RideState
+
+    block = get_block(order)
+    if not ride_open_too_long(block):
+        return ()
+    collected = bool(block.get("dispatched_at")) or delivery_services.ride_state(block) == RideState.ON_ROUTE
+    return (CLOSE_DELIVERED,) if collected else (CLOSE_DELIVERED, CLOSE_RETURNED)
+
+
+def close_here(order, *, outcome: str, actor: str, expected_revision: str | None = None) -> list[str]:
+    """"Encerrar aqui": a casa encerra a corrida que a central nunca fechou.
+
+    ``delivered`` ("Foi entregue") termina a corrida como o ``F`` da central: os
+    pedidos ficam entregues, e o troco e a maquininha ficam pendentes no
+    "Entregador voltou", como num fim normal. ``returned`` ("Voltou para a
+    loja") termina como um cancelamento da casa: os pedidos voltam para
+    Aguardando, e o troco e a maquininha voltam para a gaveta. Nas duas a letra
+    fica livre. Nada vai à central: ela já não responde por esta corrida.
+
+    Devolve os pedidos encerrados. Recusa o que mudou desde a leitura da tela
+    (``expected_revision``) e a saída que esta corrida não oferece
+    (:func:`close_here_outcomes`).
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and dispatch_revision(locked) != expected_revision:
+            raise OrderStateConflict("O pedido ou a corrida mudou. Confira o contexto antes de encerrar.")
+        if outcome not in close_here_outcomes(locked):
+            raise ValueError("Esta corrida não se encerra assim agora. Atualize a tela.")
+        ride_id = get_block(locked).get("ride_ref")
+        members = [locked, *ride_companions(locked)]
+        locked.emit_event(event_type="courier_closed_here", actor=actor,
+                          payload={"ride_ref": ride_id, "outcome": outcome, "orders": [m.ref for m in members]})
+    status = "F" if outcome == CLOSE_DELIVERED else "C"
+    closed = []
+    for member in members:
+        if apply_status(member, status, source=f"operator:{actor}") in ("applied", "noop"):
+            closed.append(member.ref)
+    logger.info("courier.closed_here ride_ref=%s outcome=%s orders=%s actor=%s",
+                ride_id, outcome, ",".join(closed), actor)
+    return closed
+
+
 def latest_cancellation(order, *, pending_only=False):
     """The existing Directive owns queued and unresolved cancellation attempts.
 
@@ -1111,6 +1172,19 @@ CANCEL_NOT_SENT_MESSAGE = "O cancelamento não foi enviado à {service}. Tente d
 def service_name(order) -> str:
     """O nome do serviço da corrida deste pedido, como o cadastro diz ("TaOn")."""
     return delivery_services.service_name(get_block(order))
+
+
+#: Os avisos de cancelamento da corrida (``integration_failed``), pelo trecho da
+#: frase que cada um grava: a recusa da central (:func:`cancel_refused_message`),
+#: o envio sem resultado (:data:`CANCEL_UNKNOWN_MESSAGE`) e o pedido cancelado com
+#: a corrida aberta (:func:`on_order_cancelled`). Com a corrida encerrada (C, N ou
+#: F) nenhum deles é mais verdade, e saem sozinhos (#2496). Os outros avisos
+#: ``integration_failed`` do pedido ficam.
+CANCEL_ALERT_MARKERS = (
+    "não cancelou",
+    "Cancelamento sem resultado confirmado",
+    "a corrida segue aberta na central",
+)
 
 
 def ride_name(order) -> str:
@@ -1157,6 +1231,104 @@ def cancel_state(order) -> dict:
     if live or state in ("started", "accepted"):
         return {"state": "pending", "message": CANCEL_PENDING_MESSAGE.format(service=service_name(order)), "at": at}
     return empty
+
+
+def last_failure(order) -> dict | None:
+    """A corrida que acabou sem levar este pedido, enquanto ele espera de novo.
+
+    Ninguém aceitou (``NOT_SERVED``) ou foi cancelada (``CANCELLED``): a corrida
+    vai para o histórico (``attempts[-1]``) e o pedido volta para Aguardando. Sem
+    isto ele voltava calado, como se nunca tivesse sido chamado.
+
+    ``{"key", "state", "by_house", "at", "refs", "number", "service"}``: ``key`` é a corrida
+    (o ``ride_ref`` dela), ``refs`` os pedidos que iam nela (o "Chamar de novo"
+    chama a corrida inteira), ``by_house`` diz que o cancelamento saiu daqui e
+    ``number`` é o da letra que ela tinha; ``service`` é o nome do serviço no
+    cadastro, para a frase. ``None`` com corrida viva, sem
+    histórico, quando o fim não foi falha, ou quando uma chamada mais nova já
+    falhou por outro motivo (``block["error"]``, que a tela mostra no lugar).
+    """
+    from shopman.shop.protocols import RideState
+
+    block = get_block(order)
+    if block.get("ride_ref"):
+        return None
+    attempts = block.get("attempts") or []
+    last = attempts[-1] if attempts and isinstance(attempts[-1], dict) else None
+    if last is None:
+        return None
+    state = delivery_services.ride_state({**block, "status": last.get("status")})
+    if state not in (RideState.NOT_SERVED, RideState.CANCELLED):
+        return None
+    at = str(last.get("ended_at") or "")
+    error = block.get("error") if isinstance(block.get("error"), dict) else {}
+    if str(error.get("at") or "") > at:
+        return None
+    refs = [str(ref) for ref in last.get("ride_orders") or [] if ref] or [order.ref]
+    return {
+        "key": str(last.get("ride_ref") or ""),
+        "state": state.value,
+        "by_house": state == RideState.CANCELLED and str(block.get("last_source") or "").startswith("operator:"),
+        "at": at,
+        "refs": refs,
+        "number": block.get("ride_number"),
+        "service": delivery_services.service_name(block),
+    }
+
+
+def failure_message(failure: dict, *, live_numbers=None) -> str:
+    """A frase da corrida que falhou: "Ninguém aceitou a corrida B (14h20)."
+
+    A letra sai quando já é de outra corrida viva (``live_numbers``, os números
+    ocupados; lidos aqui quando a tela não os passa): a frase diz só "a
+    corrida", e a tela mostra os pedidos dela ao lado.
+    """
+    from django.utils.dateparse import parse_datetime
+    from shopman.utils.formatting import format_clock
+
+    from shopman.shop.protocols import RideState
+
+    number = failure.get("number")
+    live = set(_live_ride_numbers()) if live_numbers is None else set(live_numbers)
+    letter = "" if number in live else ride_letter(number)
+    ride = f"a corrida {letter}" if letter else "a corrida"
+    clock = format_clock(parse_datetime(failure.get("at") or ""))
+    when = f" ({clock})" if clock else ""
+    if failure.get("state") == RideState.NOT_SERVED.value:
+        return f"Ninguém aceitou {ride}{when}."
+    if failure.get("by_house"):
+        return f"A casa cancelou {ride}{when}."
+    service = failure.get("service") or delivery_services.SERVICE_FALLBACK_NAME
+    return f"A {service} cancelou {ride}{when}."
+
+
+def ride_health(order, *, tasks: dict[str, list[Directive]] | None = None) -> dict:
+    """Como vai a corrida deste pedido. Fonte ÚNICA do Painel do pedido e da página Entregas.
+
+    As duas telas leem daqui, e só daqui, o que mostram da corrida; um campo
+    novo entra aqui e chega às duas (o teste de contrato
+    ``test_ride_health_contract`` reprova a tela que deixar de ler).
+
+    - ``unresolved``: a chamada ficou sem resposta (:func:`unresolved_dispatch`);
+    - ``cancel``: o cancelamento pedido (:func:`cancel_state`);
+    - ``progress``: o andamento em instantes ISO (:func:`progress_view`);
+    - ``reopened``: a desistência que ainda vale (:func:`reopen_view`);
+    - ``tracking``: link e código da parada deste pedido (:func:`proven_tracking`);
+    - ``charge_outdated``: a cobrança que ficou para trás (:func:`charge_outdated`);
+    - ``last_failure``: a corrida que acabou sem levar o pedido (:func:`last_failure`).
+
+    ``tasks``: as tarefas de despacho já lidas em lote (:func:`dispatch_tasks_for`).
+    """
+    block = get_block(order)
+    return {
+        "unresolved": unresolved_dispatch(order, tasks=tasks) is not None,
+        "cancel": cancel_state(order),
+        "progress": progress_view(block),
+        "reopened": reopen_view(block),
+        "tracking": proven_tracking(block),
+        "charge_outdated": charge_outdated(order),
+        "last_failure": last_failure(order),
+    }
 
 
 def cancel_question(order) -> str:
@@ -1748,6 +1920,8 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
                 # A foto e a posição eram da corrida: com ela encerrada (ou sem o
                 # entregador que saiu), saem do cache.
                 _forget_driver_caches(ride_id)
+    if outcome == "applied" and status in ("C", "N", "F"):
+        _resolve_cancel_alerts(order, status)
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
     if failed_ride and not observed.get("dispatched_at"):
@@ -1767,6 +1941,23 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             # a tempo): o mesmo aviso de "já coletou", uma vez por pedido.
             on_order_cancelled(order)
     return outcome
+
+
+def _resolve_cancel_alerts(order, status: str) -> None:
+    """A corrida acabou: os avisos de cancelamento dela deixam de ser verdade (#2496)."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    ref = order.ref
+
+    def _resolve():
+        for marker in CANCEL_ALERT_MARKERS:
+            try:
+                alert_adapter.resolve_matching("integration_failed", message_contains=marker,
+                                               actor=f"courier:{status}", order_ref=ref)
+            except Exception:
+                logger.warning("courier.cancel_alert_resolve_failed order=%s", ref, exc_info=True)
+
+    transaction.on_commit(_resolve)
 
 
 def recover_local_status(order, *, ride_id: str) -> None:

@@ -141,9 +141,33 @@ def ride_cost_q(ride: dict) -> tuple[int, bool] | None:
     return None
 
 
-def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | None = None) -> BIDeliveryCostReport:
+def fees_for(refs) -> dict[str, int]:
+    """O frete que o cliente pagou em cada pedido destes, sem os cancelados.
+
+    A linha de frete (``__DELIVERY_FEE__``) do pedido: o que ele pagou, não o
+    que o modificador sugeriu; frete grátis ou com desconto já vem no total da
+    linha. Uma consulta. A MESMA conta do B.I. e do detalhe da corrida nas
+    Entregas (#2747), para os dois nunca divergirem.
+    """
     from django.db.models import Q, Sum
     from shopman.orderman.models import Order, OrderItem
+
+    refs = {str(ref) for ref in refs if ref}
+    if not refs:
+        return {}
+    rows = (
+        OrderItem.objects.filter(order__ref__in=refs)
+        .exclude(order__status=Order.Status.CANCELLED)
+        .filter(Q(sku=FEE_SKU) | Q(meta__type="delivery_fee"))
+        .values("order__ref")
+        .annotate(total=Sum("line_total_q"))
+        .values_list("order__ref", "total")
+    )
+    return {ref: int(total or 0) for ref, total in rows}
+
+
+def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | None = None) -> BIDeliveryCostReport:
+    from shopman.orderman.models import Order
 
     start_day, end_day = _window(date_from, date_to)
     tz = timezone.get_current_timezone()
@@ -200,13 +224,7 @@ def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | Non
     cancelled = set(
         Order.objects.filter(ref__in=all_refs, status=Order.Status.CANCELLED).values_list("ref", flat=True)
     )
-    fees = dict(
-        OrderItem.objects.filter(order__ref__in=all_refs - cancelled)
-        .filter(Q(sku=FEE_SKU) | Q(meta__type="delivery_fee"))
-        .values("order__ref")
-        .annotate(total=Sum("line_total_q"))
-        .values_list("order__ref", "total")
-    )
+    fees = fees_for(all_refs - cancelled)
 
     days = []
     counted: set[str] = set()
@@ -263,4 +281,4 @@ def _service_rows(
     return tuple(sorted(rows, key=lambda row: (-row.cost_q, row.name)))
 
 
-__all__ = ["BIDeliveryCostDay", "BIDeliveryCostReport", "BIDeliveryCostService", "build_bi_delivery_cost", "ride_cost_q"]
+__all__ = ["BIDeliveryCostDay", "BIDeliveryCostReport", "BIDeliveryCostService", "build_bi_delivery_cost", "fees_for", "ride_cost_q"]

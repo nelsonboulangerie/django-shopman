@@ -1315,6 +1315,7 @@ export interface DeliveryStopProjection {
   dispatch_action: Action | null;
   dispatch_again_action: Action | null;
   charge_outdated: Record<string, unknown> | null;
+  failure_key: string;
   fiscal_status: string;
   danfe_state: string;
   danfe_problem: string;
@@ -1380,6 +1381,8 @@ export interface DeliveryRideProjection {
   tracking_url: string;
   cost_display: string;
   cost_label: string;
+  fee_display: string;
+  balance_display: string;
   bags: number;
   undeclared: string[];
   lead_ref: string;
@@ -1391,6 +1394,7 @@ export interface DeliveryRideProjection {
   reopened_reason: string;
   custody_line: string;
   open_too_long: boolean;
+  close_here_action: Action | null;
   cancel_state: string;
   cancel_message: string;
   sync_since: string;
@@ -1431,7 +1435,17 @@ export interface RidePlanProjection {
   service_options: DeliveryServiceOptionProjection[];
 }
 
-/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, house_on: 'bool' = False, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None, ride_plan: 'RidePlanProjection | None' = None) */
+/** A corrida que ninguém aceitou ou que foi cancelada, no topo de Aguardando. */
+export interface FailedRideProjection {
+  key: string;
+  message: string;
+  refs: string[];
+  codes: string[];
+  places: string;
+  number: number | null;
+}
+
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, house_on: 'bool' = False, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None, ride_plan: 'RidePlanProjection | None' = None, failed_rides: 'tuple[FailedRideProjection, ...]' = ()) */
 export interface DeliveriesProjection {
   origin: DeliveryPointProjection | null;
   waiting: DeliveryStopProjection[];
@@ -1445,4 +1459,5 @@ export interface DeliveriesProjection {
   free_numbers: number[];
   next_number: number | null;
   ride_plan: RidePlanProjection | null;
+  failed_rides: FailedRideProjection[];
 }

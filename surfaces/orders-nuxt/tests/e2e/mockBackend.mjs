@@ -517,7 +517,8 @@ const DELIVERIES = {
       // Posição velha (F7b): sem aviso há 3 min, a moto esmaece e diz desde quando.
       position: { latitude: ORIGIN.latitude + 0.006, longitude: ORIGIN.longitude - 0.013, get at() { return minutesAgo(3); }, source_label: "pela TaOn" },
       called_at: minutesAgo(28), picked_up_at: minutesAgo(12), delivery_eta_at: minutesAhead(11),
-      cost_display: "R$ 14,50",
+      cost_display: "R$ 14,50", cost_label: "Valor pago à TaOn",
+      fee_display: "Frete cobrado R$ 12,00", balance_display: "Falta R$ 2,50",
       lead_ref: "WEB-20261116-0E02",
     },
   ],
@@ -550,6 +551,32 @@ const DELIVERIES = {
     service_options: [{ ref: "taon", name: "TaOn", kind: "machine", is_default: true }],
   },
 };
+/** #2736 (cookie `e2e_close=on`): a corrida A está aberta há muito tempo, antes da coleta. */
+const CLOSE_HERE_ACTION = {
+  ref: "courier-close-here", kind: "mutation", label: "Encerrar aqui", enabled: true, reason: "",
+  method: "POST", idempotency: "required",
+  confirmation: {
+    required: true,
+    description: "A TaOn não encerrou a corrida A. Encerre aqui só se souber o que aconteceu.",
+    outcomes: [
+      { key: "delivered", label: "Foi entregue", consequence: "O pedido fica entregue. O troco fica para o gesto “Entregador voltou”." },
+      { key: "returned", label: "Voltou para a loja", consequence: "O pedido volta para Aguardando. O troco volta para a gaveta." },
+    ],
+  },
+  payload_schema: { base_revision: "r-b12", expected_actor_id: 1 },
+};
+const closePosts = [];
+/** As corridas que acabaram sem levar os pedidos (#2737), no topo de Aguardando. */
+const FAILED_RIDES = [
+  {
+    key: "776753390", message: "Ninguém aceitou a corrida C (14h20).",
+    refs: ["WEB-20261116-0A47", "WEB-20261116-0C03"], codes: ["A47", "C03"], places: "Gleba Palhano", number: 3,
+  },
+  {
+    key: "776753391", message: "A TaOn cancelou a corrida (14h05).",
+    refs: ["WEB-20261116-0D12"], codes: ["D12"], places: "Centro", number: null,
+  },
+];
 /** As corridas em grupo que a tela chamou (`POST /orders/courier-ride/`), na ordem. */
 const ridePosts = [];
 
@@ -962,6 +989,24 @@ const server = createServer((req, res) => {
   const callOrder = callScenario ? url.match(/\/orders\/([A-Z0-9-]+)\/?(\?|$)/) : null;
   if (callOrder && callDetail(callOrder[1])) return json(res, 200, { order: callDetail(callOrder[1]) });
   if (f10Scenario === "fiscal" && /\/backstage\/deliveries\/?(\?|$)/.test(url)) return json(res, 200, f10Deliveries());
+  if (/(?:^|;\s*)e2e_close=on(?:;|$)/.test(req.headers.cookie || "") && /\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, { ...DELIVERIES, rides: DELIVERIES.rides.map((ride) => ride.letter === "A"
+      ? { ...ride, open_too_long: true, close_here_action: CLOSE_HERE_ACTION } : ride) });
+  if (/\/e2e\/close-here\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") closePosts.length = 0;
+    return json(res, 200, { posts: closePosts });
+  }
+  const closePost = url.match(/\/orders\/([A-Z0-9-]+)\/courier-close-here\/?(\?|$)/);
+  if (closePost && req.method === "POST") {
+    return void readBody(req).then((body) => {
+      closePosts.push({ ref: closePost[1], ...body });
+      json(res, 200, { outcome: "applied", closed: [closePost[1]], order: null });
+    });
+  }
+  // #2737 (cookie `e2e_failed=on`): a corrida C de A47 e C03 voltou porque ninguém
+  // aceitou, e a de D12 a TaOn cancelou (a letra dela já é de outra corrida).
+  if (/(?:^|;\s*)e2e_failed=on(?:;|$)/.test(req.headers.cookie || "") && /\/backstage\/deliveries\/?(\?|$)/.test(url))
+    return json(res, 200, { ...DELIVERIES, failed_rides: FAILED_RIDES });
   if (/\/backstage\/deliveries\/?(\?|$)/.test(url))
     return json(res, 200, process.env.MOCK_F4B ? f4bDeliveries() : process.env.MOCK_F4A ? f4aDeliveries() : DELIVERIES);
   if (/\/orders\/courier-ride\/quote\/?(\?|$)/.test(url)) return json(res, 200, rideQuote(url) ?? { estimate: null, detail: "Escolha de 1 a 4 pedidos." });

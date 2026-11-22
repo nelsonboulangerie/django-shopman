@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { managerAuthReason } from "../app/presentation/managerAuth";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de VOCABULÁRIO: a palavra da casa para o objeto que o operador segura é
@@ -351,6 +352,34 @@ describe("na tela, a navegação lateral se chama barra lateral", () => {
     expect(paths).toContain("operator-kit/app/components/OperatorMenuItems.vue");
     expect(APP_SOURCES.length).toBeGreaterThan(400);
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO: o gesto de dinheiro do caixa se chama **Saída de caixa**
+// e **Entrada de caixa**, o nome que o PDV dá aos botões desde 17/08/2026 (commit
+// 2264c6ad0: quem confere as filipetas dias depois não estava no balcão, e
+// Entrada/Saída diz a direção do dinheiro sem jargão). **Saída** sozinha é a estação
+// do KDS (suite-vocabulary, 26/09), e **Retirada** é a forma de receber o pedido. O
+// diálogo do gerente dizia "Retirada de R$ X" para a saída de caixa (#2690): a mesma
+// coisa com dois nomes, e um deles emprestado da forma de receber. Comentário é
+// descontado: a trava é sobre o texto que chega ao operador.
+const BANNED_CASH_WITHDRAWAL = /Retirada (?:de (?:\$\{|R\$)|d[ae] gaveta)/;
+
+describe("o gesto de dinheiro do caixa é Saída de caixa e Entrada de caixa", () => {
+  it("o diálogo do gerente chama a saída pelo nome do botão do PDV", () => {
+    const reason = managerAuthReason({ action: "cash_out", amountQ: 5000, detail: "Troco" });
+    expect(reason.startsWith("Saída de caixa de ")).toBe(true);
+  });
+
+  it("nenhum texto de operador chama a saída de dinheiro de 'Retirada'", () => {
+    const leaks = APP_SOURCES.flatMap((file) => offenders(file, BANNED_CASH_WITHDRAWAL, stripComments));
+    expect(
+      leaks,
+      "A saída de dinheiro do caixa é 'Saída de caixa' (suite-vocabulary, 22/11/2026, #2690).\n" +
+        "'Retirada' é a forma de receber o pedido, e 'Saída' sozinha é a estação do KDS.\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

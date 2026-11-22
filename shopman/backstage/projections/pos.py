@@ -104,7 +104,7 @@ class POSProductProjection:
     # cliente leva a mercadoria, só o de preparo vai à cozinha ao finalizar; o de
     # separação (pão de vitrine) já está na mão dele (beta 05/11, PDV-09).
     kitchen_prep: bool = False
-    # Janela de desconto por horário aberta (Hora da Xepa): ``price_q`` já é o
+    # Desconto no ar (promoção automática do canal ou Hora da Xepa): ``price_q`` é o
     # preço que o motor cobra AGORA, e a etiqueta cheia vem aqui para o tile
     # mostrá-la riscada. Zero/vazio = sem desconto, ``price_q`` é a etiqueta.
     list_price_q: int = 0
@@ -1382,6 +1382,7 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
     sold_out = _sold_out_skus(skus)
     without_box = _kits_without_box(skus)
     routes = _kitchen_routes(skus)
+    promotion_prices = _promotion_prices(entries)
     return [
         _product_projection(
             p, price_q,
@@ -1391,9 +1392,50 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
             kitchen_prep=bool((routes.get(p.sku) or {}).get("prep")),
             offer=offer,
+            promotion=promotion_prices.get(p.sku),
         )
         for p, price_q in entries
     ]
+
+
+def _promotion_prices(entries: list[tuple[Product, int]]) -> dict[str, tuple[int, str]]:
+    """``{sku: (preço com a promoção, nome da promoção)}`` para o balcão sem cliente.
+
+    A mesma régua do cartão da loja: ``catalog_context.contextual_price`` com as
+    promoções automáticas do canal lidas uma vez. Só entra o que a linha de uma
+    venda de balcão sem cliente ganharia: percentual, sem pedido mínimo, e sem
+    restrição de recebimento que exclua a retirada. Promoção de grupo, de
+    aniversário ou com mínimo aparece quando a venda a conquista, no total.
+    Falha fechada: sem leitura, preço cheio.
+    """
+    from shopman.shop.projections import catalog_context
+
+    try:
+        promotions = catalog_context.active_promotions(POS_CHANNEL_REF)
+        if not promotions:
+            return {}
+        collections = catalog_context.collection_refs_by_sku([p.sku for p, _ in entries])
+        found: dict[str, tuple[int, str]] = {}
+        for product, price_q in entries:
+            if price_q <= 0:
+                continue
+            quote = catalog_context.contextual_price(
+                product.sku,
+                listing_ref=POS_CHANNEL_REF,
+                context={
+                    "channel_ref": POS_CHANNEL_REF,
+                    "sku_collections": collections.get(product.sku, []),
+                    "active_promotions": promotions,
+                },
+                list_unit_price_q=price_q,
+            )
+            if 0 < quote.final_unit_price_q < price_q:
+                label = quote.adjustments[0].label if quote.adjustments else ""
+                found[product.sku] = (quote.final_unit_price_q, label)
+        return found
+    except Exception:
+        logger.warning("pos_promotion_prices_failed", exc_info=True)
+        return {}
 
 
 def _kitchen_routes(skus: list[str]) -> dict[str, dict]:
@@ -2648,6 +2690,7 @@ def _product_projection(
     kitchen_auto_fire: bool = False,
     kitchen_prep: bool = False,
     offer=None,
+    promotion: tuple[int, str] | None = None,
 ) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
@@ -2664,15 +2707,22 @@ def _product_projection(
 
     sold_by_weight = weighed_sale.is_sold_by_weight(product.unit)
     unit_suffix = "/kg" if sold_by_weight else ""
-    # A Hora da Xepa aberta: o tile mostra o preço que o fechamento vai cobrar
-    # (a mesma conta do ``TimeWindowDiscountModifier``), e a etiqueta riscada.
+    # O tile mostra o preço que o fechamento vai cobrar, e a etiqueta riscada: a
+    # promoção automática do canal (``DiscountModifier``) e a Hora da Xepa
+    # (``TimeWindowDiscountModifier``) competem em "maior desconto ganha", e no
+    # empate fica a promoção, que o motor aplica primeiro.
     list_price_q, list_price_display, discount_label = 0, "", ""
+    best_q, best_label = price_q, ""
+    if promotion is not None and 0 < promotion[0] < best_q:
+        best_q, best_label = promotion
     if offer is not None and offer.active and price_q > 0:
-        now_q = offer.price_q(price_q)
-        if now_q < price_q:
-            list_price_q, list_price_display = price_q, f"R$ {format_money(price_q)}{unit_suffix}"
-            discount_label = offer.label
-            price_q = now_q
+        window_q = offer.price_q(price_q)
+        if window_q < best_q:
+            best_q, best_label = window_q, offer.label
+    if best_q < price_q:
+        list_price_q, list_price_display = price_q, f"R$ {format_money(price_q)}{unit_suffix}"
+        discount_label = best_label
+        price_q = best_q
     # Sem preço não vende em canal nenhum: o tile diz isso, não "R$ 0,00".
     if price_q <= 0:
         price_display = "Sem preço"
@@ -2821,11 +2871,15 @@ def _tab_projection(
     # Uma peça pesada é UM item no contador (0,312 kg não é "0 itens"), e o
     # valor dela é peso × preço do quilo sem truncar o peso.
     item_count = sum(_qty_int(item.get("qty", 1)) or 1 for item in items)
+    # As linhas gravadas já são o preço do motor: o ``ManualDiscountModifier``
+    # rateou o desconto manual de pedido no ``unit_price_q`` de cada uma na
+    # gravação. Subtrair ``manual_discount.discount_q`` de novo tirava o
+    # desconto duas vezes, e o card prometia menos do que o fechamento cobra
+    # (#3245).
     total_q = sum(
         monetary_mult(Decimal(str(weighed_sale.qty_number(item.get("qty", 1)))), int(item.get("unit_price_q", 0)))
         for item in items
     )
-    discount_q = int((data.get("manual_discount") or {}).get("discount_q", 0))
 
     return POSTabProjection(
         ref=ref,
@@ -2838,7 +2892,7 @@ def _tab_projection(
         customer_phone=str(customer.get("phone") or ""),
         item_count=item_count,
         line_count=len(items),
-        total_display=f"R$ {format_money(max(0, total_q - discount_q))}",
+        total_display=f"R$ {format_money(max(0, total_q))}",
         last_touched_display=_format_time(last_touched),
         items_preview=_items_preview(items),
         fired=bool(data.get("fired_lines")),

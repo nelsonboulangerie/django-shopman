@@ -25,6 +25,7 @@ const ORDER_OPERATION_SUBJECT: Record<string, string> = {
   return: "a devolução foi gravada",
   "no-show": "o pedido foi encerrado como não retirado",
   "refund-retry": "o estorno foi pedido de novo",
+  refund: "o estorno foi pedido",
   reject: "a recusa foi gravada",
   confirm: "o aceite foi gravado",
   advance: "o avanço do pedido foi gravado",
@@ -37,6 +38,7 @@ const ORDER_OPERATION_SUBJECT: Record<string, string> = {
   "requeue-fiscal": "o reprocessamento da NFC-e foi gravado",
   "undo-handoff": "o desfazer da saída foi gravado",
   "undo-ready": "o desfazer do pronto foi gravado",
+  "courier-close-here": "a corrida foi encerrada aqui",
 };
 
 /**
@@ -248,14 +250,15 @@ export function useOrderIntention() {
       Reflect.deleteProperty(pending.value, resource);
     return result;
   }
-  async function execute(
+  /** A ação de UM pedido, devolvendo o recibo do servidor (o estorno lê dele o resultado). */
+  async function executeReceipt(
     ref_: string,
     operation: string,
     action: Action | undefined,
     inputs: Record<string, unknown>,
     approval?: Record<string, string>,
   ) {
-    await executePath(
+    return await executePath(
       `${ref_}:${operation}`,
       `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`,
       action,
@@ -266,6 +269,15 @@ export function useOrderIntention() {
         where: "o pedido",
       },
     );
+  }
+  async function execute(
+    ref_: string,
+    operation: string,
+    action: Action | undefined,
+    inputs: Record<string, unknown>,
+    approval?: Record<string, string>,
+  ) {
+    await executeReceipt(ref_, operation, action, inputs, approval);
     return true;
   }
   /**
@@ -292,6 +304,7 @@ export function useOrderIntention() {
   }
   return {
     execute,
+    executeReceipt,
     executePath,
     executeRide,
     checkPath,

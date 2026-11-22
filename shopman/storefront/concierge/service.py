@@ -1237,6 +1237,16 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
             _dispatch_reply(conversation, message)
         verification.notify_team(conversation, verifying)
         result.replies = texts
+        # A escada, em sombra e DEPOIS do envio (o cliente não espera): se a conferência
+        # reprovou, o que a reescrita teria mandado fica no envelope para o placar comparar.
+        conference_module.shadow_climb(
+            conversation=conversation,
+            message_pk=prepared[0].pk,
+            outcome=outcome,
+            customer_text=turn_text,
+            house_text="\n".join(text for text in reviewed.texts if text),
+            house_conference=conference,
+        )
     except TurnRevoked:
         result.fallback = "revoked"
     finally:

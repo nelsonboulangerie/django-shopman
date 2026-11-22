@@ -25,14 +25,17 @@ import {
   callAllLabel,
   nextFreeNumber,
   rideLetter,
+  rideFromFailed,
   ridesFromSuggestions,
   suggestionLate,
   suggestionMapLabel,
   suggestionQuoteLines,
   suggestionsHeadline,
   toggleStop,
+  visibleFailedRides,
   visibleSuggestions,
   type EditingRide,
+  type FailedRide,
   type RideSuggestion,
 } from "~/presentation/deliveries";
 import { deliveriesFiscalAlerts } from "~/presentation/deliveriesFiscal";
@@ -115,14 +118,36 @@ function openFromMap(number: number) {
   if (ride) open(ride);
 }
 const waiting = computed(() => waitingAll.value.filter((stop) => !rideOf(stop.ref)));
+// ── a corrida que falhou (#2737) ────────────────────────────────────────────
+// Ninguém aceitou ou foi cancelada: os pedidos voltaram a esperar, e o cartão diz
+// por quê. "Chamar de novo" devolve a corrida INTEIRA para a edição e abre o sheet.
+const dismissedFailed = ref<string[]>([]);
+const failedRides = computed(() =>
+  visibleFailedRides((data.value?.failed_rides ?? []) as FailedRide[], editing.value, dismissedFailed.value),
+);
 // ── sugestões da casa (ride_plan, F5) ───────────────────────────────────────
 // O MESMO plano do Painel e do "Vai junto nesta corrida?": a casa sugere quem vai
 // junto, com a cotação. Aceitar SOMA às corridas em edição, nunca apaga.
 const dismissed = ref<string[]>([]);
-const suggestions = computed(() =>
-  visibleSuggestions((data.value?.ride_plan?.suggestions ?? []) as RideSuggestion[], editing.value, dismissed.value),
-);
+const suggestions = computed(() => {
+  // O pedido de uma corrida que falhou já tem o cartão dela ("Chamar de novo"):
+  // a sugestão com ele seria o mesmo gesto duas vezes.
+  const failing = new Set(failedRides.value.flatMap((ride) => ride.refs));
+  return visibleSuggestions((data.value?.ride_plan?.suggestions ?? []) as RideSuggestion[], editing.value, dismissed.value)
+    .filter((suggestion) => suggestion.refs.every((ref) => !failing.has(ref)));
+});
 const headline = computed(() => suggestionsHeadline(suggestions.value));
+function callFailedAgain(failed: FailedRide) {
+  const kept = editing.value.filter((ride) => ride.refs.length);
+  const ride = rideFromFailed(failed, freeNumbers.value, kept);
+  if (!ride) {
+    useSonner.info("Não há letras livres agora. Chame ou desfaça uma corrida antes.");
+    return;
+  }
+  editing.value = [...kept, ride];
+  active.value = ride.number;
+  openSheet([ride.number]);
+}
 const callAll = computed(() => callAllLabel(suggestions.value));
 function acceptSuggestions(list: RideSuggestion[], { call: withSheet }: { call: boolean }) {
   // A corrida vazia ("Montar uma corrida" sem pedido ainda) não segura a letra.
@@ -201,22 +226,30 @@ const busyRide = ref("");
 // ── a corrida da casa: os gestos do balcão (M3b, #2898) ─────────────────────
 const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(() => refresh());
 
-async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
-  const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
+async function rideAction(
+  ride: DeliveryRideProjection,
+  operation: "courier-back" | "courier-cancel" | "courier-close-here",
+  reasonId?: number,
+  outcome?: string,
+) {
+  const action = operation === "courier-back" ? ride.back_action : operation === "courier-close-here" ? ride.close_here_action : ride.cancel_action;
   busyRide.value = ride.key;
   try {
     // Cancelar só chega aqui pela confirmação do detalhe (`CourierCancelConfirm`);
     // depois do aceite ela já traz o motivo, que vai à TaOn como `reason_id`.
-    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : {});
-    useSonner.success(operation === "courier-back"
-      ? `Corrida ${ride.letter} encerrada.`
-      : `Pedido de cancelamento enviado à ${deliveryServiceName(ride.service_name)}.`);
+    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : outcome ? { outcome } : {});
+    useSonner.success(operation === "courier-cancel"
+      ? `Pedido de cancelamento enviado à ${deliveryServiceName(ride.service_name)}.`
+      : `Corrida ${ride.letter} encerrada.`);
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível. Atualize e tente de novo."));
   } finally {
     busyRide.value = "";
     await refresh();
   }
+}
+function closeOpenRideHere(outcome: string) {
+  if (openRide.value) void rideAction(openRide.value, "courier-close-here", undefined, outcome);
 }
 function cancelOpenRide(reasonId?: number) {
   if (openRide.value) void rideAction(openRide.value, "courier-cancel", reasonId);
@@ -346,6 +379,25 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
               <OperatorCountChip :count="waiting.length" />
             </h2>
             <p v-if="!waitingAll.length" class="mt-2 op-body text-muted">Nenhuma entrega aguardando entregador.</p>
+            <!-- A corrida que ninguém aceitou ou que foi cancelada: o motivo e a corrida inteira de novo. -->
+            <div
+              v-for="f in failedRides"
+              :key="f.key"
+              class="mt-2 flex flex-col gap-2 rounded-xl bg-elevated/60 p-3"
+              data-failed-ride
+            >
+              <div class="flex min-w-0 flex-1 items-start gap-2">
+                <NuxtIcon name="i-lucide-circle-alert" class="mt-0.5 size-4 shrink-0 text-warning" />
+                <div class="min-w-0 flex-1">
+                  <p class="op-body font-medium text-highlighted" data-failed-ride-message>{{ f.message }}</p>
+                  <p class="op-micro text-muted">{{ f.codes.join(" + ") }}<template v-if="f.places"> · {{ f.places }}</template></p>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 pl-6">
+                <NuxtButton class="min-h-11" color="neutral" variant="outline" icon="i-lucide-rotate-cw" label="Chamar de novo" data-failed-ride-call @click="callFailedAgain(f)" />
+                <NuxtButton class="min-h-11" color="neutral" variant="ghost" label="Agora não" @click="dismissedFailed = [...dismissedFailed, f.key]" />
+              </div>
+            </div>
             <!-- As sugestões da casa (ride_plan): cotadas, já dizem quanto economiza e
                  quem chega depois; sem cotação, só a montagem à mão. -->
             <div v-if="suggestions.length" class="mt-2 rounded-xl bg-elevated/60 p-3" data-ride-suggestions>
@@ -610,6 +662,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
           @close="close"
           @back="backRide = openRide"
           @cancel="cancelOpenRide"
+          @close-here="closeOpenRideHere"
           @gesture="(item) => houseGesture(openRide!, item)"
         />
       </template>

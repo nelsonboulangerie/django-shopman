@@ -181,6 +181,7 @@
             "open_counts",
             "open_pk",
             "open_rows",
+            "open_rows_with_ref",
             "recent_exists",
             "resolve",
             "resolve_matching",
@@ -3515,6 +3516,7 @@
             "_register_courier_handlers",
             "_register_customer_strategies",
             "_register_delivery_auto_complete_handler",
+            "_register_demand_anchor",
             "_register_fiscal_handlers",
             "_register_fiscal_publication_gate",
             "_register_fulfillment_handler",
@@ -3637,6 +3639,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "stock.materialized-holds-receiver",
         "stock.production-void-receiver"
       ],
@@ -4330,6 +4333,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "production.batch-traceability-alert",
         "production.change-alert-receiver",
         "production.forgotten-planned-orders",
@@ -7514,6 +7518,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/pickup_window_in_use.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.pickup-window-in-use"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/promise_expiry_margin.py",
       "touchpoints": [
         "outro"
@@ -10389,6 +10407,28 @@
       ]
     },
     {
+      "path": "shopman/shop/services/demand_anchor.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-demand-anchor"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/derived_provenance.py",
       "touchpoints": [
         "service"
@@ -11176,6 +11216,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]
@@ -11666,6 +11707,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PREP_MIN_SAMPLES",
+            "PREP_PROMISE_FALLBACK_MINUTES",
             "PREP_SAMPLE_HOURS",
             "_parse"
           ]
@@ -11673,7 +11715,9 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "_configured_station_goal",
             "prep_expectation",
+            "prep_goal_minutes",
             "ready_eta",
             "stage_minutes"
           ]
@@ -13016,7 +13060,8 @@
             "record_integration_failure",
             "record_integration_success",
             "record_payment_reconciliation_failure",
-            "record_webhook_failure"
+            "record_webhook_failure",
+            "record_webhook_success"
           ]
         }
       ]
@@ -13138,6 +13183,7 @@
             "_preorder_not_due",
             "_sync_delivery_fulfillment",
             "_waiting_for_the_batch",
+            "_waitlist_wait_reason",
             "logger"
           ]
         }
@@ -13307,6 +13353,8 @@
             "get_fulfillment_type",
             "house_owns_the_delivery",
             "is_counter_takeaway",
+            "is_for_a_later_day",
+            "is_preorder",
             "is_test_order",
             "json_quantity",
             "logger",
@@ -13360,13 +13408,16 @@
             "ORDER_PROBLEM",
             "OTHER_PAYMENT",
             "OwnFleetRefused",
+            "PAGE_THEMES",
             "PAYMENT_METHODS",
+            "POSITION_MAX_ACCURACY_M",
             "PROBLEMS",
             "REFUSED",
             "SOURCE",
             "_RIDE_PREFIX",
             "_estimate",
             "_live",
+            "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",
@@ -13377,6 +13428,9 @@
             "deliver",
             "depart",
             "logger",
+            "page_theme",
+            "remember_theme",
+            "report_position",
             "report_problem",
             "ride_view"
           ]

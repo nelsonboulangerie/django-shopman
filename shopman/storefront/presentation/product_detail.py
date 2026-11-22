@@ -748,7 +748,7 @@ def _breadcrumb_category(product: Any) -> CategoryProjection | None:
     return CategoryProjection(
         ref=col.ref,
         name=col.name,
-        icon=collection_icon(col.ref),
+        icon=collection_icon(col),
         url=f"/menu#{col.ref}",
     )
 

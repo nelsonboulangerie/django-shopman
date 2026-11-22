@@ -2,7 +2,6 @@
 // desenham o que estas funções dizem. Desenho aprovado pelo dono em 14/11/2026
 // (PR #2462): Aguardando · Editando · Corridas, cada corrida com a sua letra e cor.
 import type {
-  Action,
   DeliveryRideProjection,
   DeliveryStopProjection,
 } from "~/generated/ordersContract";
@@ -387,61 +386,6 @@ export function rideLine(ride: DeliveryRideProjection, now: number): RideLine {
   }
 }
 
-/** Um motivo de cancelamento que a confirmação oferece: o botão já é o `reason_id`. */
-export interface CancelReason {
-  id: number;
-  label: string;
-  icon: string;
-}
-
-/** A confirmação de "Cancelar corrida", com as frases do servidor. */
-export interface CancelConfirmation {
-  /** "Cancelar a corrida B? A05 e C12 voltam para Aguardando." */
-  question: string;
-  /** "Cancelar a corrida B" */
-  confirmLabel: string;
-  /** Depois do aceite: "Por que cancelar a corrida B?" */
-  reasonQuestion: string;
-  /** "A05 e C12 voltam para Aguardando." */
-  consequence: string;
-  /** Vazio antes do aceite (a central só aceita um motivo, e ninguém escolhe). */
-  reasons: CancelReason[];
-}
-
-/** O ícone de cada motivo que a casa oferece (`order_queue.COURIER_CANCEL_REASONS`). */
-const CANCEL_REASON_ICONS: Record<number, string> = {
-  12: "i-lucide-user-x",
-  37: "i-lucide-timer-off",
-  40: "i-lucide-phone-off",
-};
-
-/**
- * Lê `Action.confirmation` do "Cancelar corrida". O servidor manda as frases
- * (`courier_cancel_confirmation`); aqui só se dá forma, sem inventar motivo:
- * entrada sem `id` inteiro ou sem rótulo não vira botão.
- */
-export function cancelConfirmation(
-  action: Pick<Action, "confirmation" | "label"> | null | undefined,
-): CancelConfirmation {
-  const raw = (action?.confirmation ?? {}) as Record<string, unknown>;
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
-  const reasons = (Array.isArray(raw.reasons) ? raw.reasons : [])
-    .map((item) => item as { id?: unknown; label?: unknown })
-    .filter((item) => Number.isInteger(item.id) && text(item.label))
-    .map((item) => ({
-      id: item.id as number,
-      label: text(item.label),
-      icon: CANCEL_REASON_ICONS[item.id as number] ?? "i-lucide-ban",
-    }));
-  return {
-    question: text(raw.description) || "Cancelar a corrida?",
-    confirmLabel: text(raw.confirm_label) || action?.label || "Cancelar corrida",
-    reasonQuestion: text(raw.reason_question) || "Por que cancelar a corrida?",
-    consequence: text(raw.consequence),
-    reasons,
-  };
-}
-
 /** As sacolas só importam até saírem da loja. */
 export function beforeHandoff(ride: Pick<DeliveryRideProjection, "state">): boolean {
   return ["searching", "late", "reopened", "grouped", "coming", "atStore"].includes(ride.state);
@@ -765,4 +709,41 @@ export function ridesFromSuggestions(
     rides.push({ number, refs: [...suggestion.refs] });
   }
   return rides;
+}
+
+// ── a corrida que falhou (ninguém aceitou, cancelada; #2737) ────────────────
+
+/** A corrida que acabou sem levar os pedidos, como a página a lê (`FailedRideProjection`). */
+export interface FailedRide {
+  key: string;
+  message: string;
+  refs: readonly string[];
+  codes: readonly string[];
+  places: string;
+  number: number | null;
+}
+
+/** Os cartões que a tela mostra: nenhum com pedido já em edição nem dispensado ("Agora não"). */
+export function visibleFailedRides(
+  failed: readonly FailedRide[],
+  editing: readonly EditingRide[],
+  dismissed: readonly string[],
+): FailedRide[] {
+  const taken = new Set(editing.flatMap((ride) => ride.refs));
+  return failed.filter((ride) => !dismissed.includes(ride.key) && ride.refs.every((ref) => !taken.has(ref)));
+}
+
+/**
+ * "Chamar de novo" a corrida que falhou: ela volta inteira como corrida em edição,
+ * com a MESMA letra quando ela segue livre (senão, a próxima livre). `null` sem letra livre.
+ */
+export function rideFromFailed(
+  failed: FailedRide,
+  free: readonly number[],
+  editing: readonly EditingRide[],
+): EditingRide | null {
+  const taken = editing.map((ride) => ride.number);
+  const same = failed.number !== null && free.includes(failed.number) && !taken.includes(failed.number);
+  const number = same ? failed.number : nextFreeNumber(free, taken);
+  return number === null ? null : { number, refs: [...failed.refs] };
 }
