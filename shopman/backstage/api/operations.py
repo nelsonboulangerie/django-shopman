@@ -585,10 +585,10 @@ def _open_cash_shift_for_request(request):
 def _cash_shift_required_response() -> Response:
     return Response(
         {
-            "detail": "Abra o caixa antes de revisar ou finalizar uma venda.",
+            "detail": "Abra o caixa antes de revisar ou validar uma venda.",
             "error": {
                 "code": "cash_shift_required",
-                "message": "Abra o caixa antes de revisar ou finalizar uma venda.",
+                "message": "Abra o caixa antes de revisar ou validar uma venda.",
                 "field": "cash_shift_id",
                 "focus": "cash",
                 "recovery": "Abra um turno de caixa neste terminal e tente novamente.",
@@ -5244,6 +5244,63 @@ class OrderCourierCancelView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Separate again the change and the card machine of a ride the courier central resumed",
+        responses={200: OpenApiResponse(description="Custody recorded.")},
+    ),
+)
+class OrderCourierCustodyView(_OrderActionBase):
+    intention_operation = "courier-custody"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        # O mesmo formato da custódia da chamada (``OrderCourierDispatchView``).
+        equipment = request.data.get("equipment") or []
+        if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
+            return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
+        equipment = sorted(set(equipment))
+        change_out = request.data.get("change_out")
+        if change_out is not None and not isinstance(change_out, str | int | float):
+            return Response({"detail": "Troco inválido."}, status=400)
+        change_out = None if change_out is None else str(change_out)
+
+        def execute(base):
+            return orders_service.courier_custody(
+                order, actor=_actor(request), expected_revision=base, operator=request.user,
+                change_out_raw=change_out, equipment=equipment,
+            )
+
+        return self._context_response(request, order, self.intention_operation,
+                                      {"change_out": change_out, "equipment": equipment}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Close here the ride the courier central never closed (delivered or back at the store)",
+        responses={200: OpenApiResponse(description="Ride closed here.")},
+    ),
+)
+class OrderCourierCloseHereView(_OrderActionBase):
+    intention_operation = "courier-close-here"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        outcome = str(request.data.get("outcome") or "")
+
+        def execute(base):
+            closed = orders_service.courier_close_here(order, outcome=outcome, actor=_actor(request), expected_revision=base)
+            return {"closed": closed, "outcome": outcome}
+
+        return self._context_response(request, order, self.intention_operation, {"outcome": outcome}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Quote the external courier ride without dispatching",
         responses={200: OpenApiResponse(description="Courier quote.")},
     ),
@@ -5520,8 +5577,12 @@ class OrderCourierRideQuoteView(APIView):
         else:
             estimate = courier.estimate_for_ride(orders)
         if estimate is None:
+            from shopman.shop.services import delivery_services
+
+            # A corrida que ainda vai abrir vai pelo serviço padrão do Admin.
             return Response({"estimate": None,
-                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+                             "detail": f"A {delivery_services.service_name()} não cotou esta corrida agora. "
+                                       "Dá para chamar mesmo assim."})
         order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
         compare = {}
         if len(orders) > 1:
@@ -8198,8 +8259,16 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
         return _resposta_no_dialeto(self._close(request))
 
     def _close(self, request):
+        # A chave da tentativa é o que faz o reenvio devolver a MESMA venda (resposta
+        # perdida, fila sem conexão, toque duplo). Sem ela, a retentativa fechava uma
+        # segunda venda. O PDV sempre manda (``cart.clientRequestId``); a regra é a
+        # mesma das rotas de caixa (F8, #2565).
+        if not str(request.data.get("client_request_id") or "").strip():
+            return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+                "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
+                "error": {"code": "client_request_id_required"}}, status=422)
         if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
-            return Response({"detail": "Atualize a comanda antes de finalizar.", "field": "expected_revision",
+            return Response({"detail": "Atualize a comanda antes de validar.", "field": "expected_revision",
                              "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
@@ -8225,7 +8294,7 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
             # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
             return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
+            return Response({"detail": str(exc) or "Não foi possível validar a venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)
         from shopman.orderman.models import Order
 

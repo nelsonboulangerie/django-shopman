@@ -241,11 +241,10 @@ export function shopThemeCss (
       `.shop-pillbar [data-menu-pill-ref][data-state="active"] { background-color: color-mix(in srgb, var(--shop-cta) 38%, #000); border-color: color-mix(in srgb, var(--shop-cta) 38%, #000); color: #fff; }`
     )
 
-    // Barra de busca: fundo Brass, campo branco (bg-card no input), ícone de voltar branco.
-    // Hover do botão de voltar (ghost) = mesmo wash branco sutil da pill bar (remap --accent).
+    // Barra de busca: fundo Brass, campo branco (bg-card no input), ícones brancos.
+    // Hover do botão de fechar (ghost) = mesmo wash branco sutil da pill bar (remap --accent).
     blocks.push(
-      `.shop-searchbar.shop-searchbar { background-color: var(--shop-cta); color: #fff; --accent: color-mix(in srgb, #fff 16%, transparent); --accent-foreground: #fff; }`,
-      `.shop-searchbar [aria-label="Voltar ao cardápio"] { color: #fff; }`
+      `.shop-searchbar.shop-searchbar { background-color: var(--shop-cta); color: #fff; --accent: color-mix(in srgb, #fff 16%, transparent); --accent-foreground: #fff; }`
     )
 
     // Breadcrumb sobre barra Brass: letras creme nos links, item ATUAL branco (o

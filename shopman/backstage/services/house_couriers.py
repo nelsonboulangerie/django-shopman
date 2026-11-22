@@ -119,6 +119,17 @@ def _money(value_q: int | None) -> str:
     return f"R$ {format_money(value_q)}" if isinstance(value_q, int) else ""
 
 
+def to_pay_today(name: str, total_q: int, rides: int) -> str:
+    """ "A pagar a Diego hoje: R$ 56,00 (4 corridas)"; vazio sem rota fechada no dia.
+
+    O acerto do dia (decisão 5 do dono): o sistema soma, o pagamento é por fora (Pix do dono).
+    """
+    if rides <= 0:
+        return ""
+    count = "1 corrida" if rides == 1 else f"{rides} corridas"
+    return f"A pagar a {name} hoje: {_money(total_q)} ({count})"
+
+
 def crew(refs: list[str] | None = None) -> dict:
     """Os entregadores da casa para o Gestor.
 
@@ -128,7 +139,8 @@ def crew(refs: list[str] | None = None) -> dict:
     (``free``/``busy``) e ``state_label`` ("Livre", "Volta 12h50" com a hora estimada da volta em
     ``back_at``, "Na rua" antes de sair); com ``refs`` (na ordem da
     rota), o valor da tabela de cada um na escala (``value_q``/``value``), ``None`` sem
-    coordenada ou sem linha na tabela.
+    coordenada ou sem linha na tabela; ``to_pay_today``, o acerto do dia ("A pagar a Diego
+    hoje: R$ 56,00 (4 corridas)", vazio sem rota fechada hoje).
     """
     from shopman.shop.services import own_fleet
 
@@ -156,11 +168,13 @@ def crew(refs: list[str] | None = None) -> dict:
         if on_shift and orders:
             estimate = own_fleet._estimate(orders, person)
             value_q = estimate.value_q if estimate is not None else None
+        today_q, today_rides = own_fleet.today_settlement(person)
         body["couriers"].append({
             "ref": person.ref, "name": person.name, "on_shift": on_shift, "state": state,
             "state_label": busy_label(back) if state == BUSY else STATE_LABELS[FREE],
             "back_at": back.isoformat() if back else None,
             "value_q": value_q, "value": _money(value_q),
+            "to_pay_today": to_pay_today(person.name, today_q, today_rides),
         })
     return body
 

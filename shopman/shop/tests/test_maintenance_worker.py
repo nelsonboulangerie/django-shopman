@@ -592,6 +592,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("cleanup_concierge_observations"),
         # A decisão em sombra: depois da limpeza, nunca decide sobre o que acabou de vencer.
         call("concierge_shadow_decisions"),
+        # A PTAX final dos dias com gasto de IA: o B.I. só lê a cotação.
+        call("record_usd_brl_quotes"),
         # Piloto de intenções: depois da limpeza, nunca sorteia o que acabou de vencer.
         call("run_intent_pilot"),
         call("check_directive_health"),

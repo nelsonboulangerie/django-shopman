@@ -1,18 +1,23 @@
 <script setup lang="ts">
-// Entregas — quanto a casa paga à TaOn e quanto o frete dos clientes cobre.
-// A corrida é custo da casa (o frete não muda com ela); a projection conta cada
-// corrida uma vez, mesmo quando ela leva vários pedidos.
+// Entregas — quanto a casa paga pelas entregas, por serviço, e quanto o frete dos
+// clientes cobre. A corrida é custo da casa (o frete não muda com ela); a projection
+// conta cada corrida uma vez, mesmo quando ela leva vários pedidos. Uma linha por
+// serviço (o nome do cadastro) e o total embaixo: comparar os serviços (#3144).
 import type { BIDeliveryCostReport } from "~/types/bi";
 import {
   readingChartCsv,
   type ReadingChartPoint,
   type ReadingChartSeries,
 } from "../../../operator-kit/app/presentation/readingChart";
-import { formatMoney, shortDate } from "~/presentation/bi";
+import { formatInt, formatMoney, shortDate } from "~/presentation/bi";
 import {
+  DELIVERY_TOTAL_KEY,
   deliveryAnswer,
+  deliveryServiceCsv,
+  deliveryServiceRows,
   estimatedRidesHint,
   ridesHint,
+  type DeliveryServiceRow,
 } from "~/presentation/delivery";
 
 const { report, freshness, pending, error, refresh } =
@@ -23,9 +28,25 @@ const { actions: readingActions, label: readingLabel } =
   useReadingPageActions(shareItems);
 
 const dailySeries: ReadingChartSeries[] = [
-  { key: "cost", label: "Custo da TaOn", tone: "primary" },
+  { key: "cost", label: "Custo das entregas", tone: "primary" },
   { key: "fee", label: "Frete cobrado", tone: "neutral" },
 ];
+// A tabela por serviço: a coluna numérica alinha à direita; o total fica embaixo,
+// então a tabela não reordena pelo cabeçalho (o total subiria).
+const NUM = { th: "text-right", td: "text-right tnum" } as const;
+const NAME = { td: "font-medium text-highlighted" } as const;
+const serviceColumns = [
+  { accessorKey: "name", header: "Serviço", meta: { class: NAME } },
+  { accessorKey: "rides", header: "Corridas", meta: { class: NUM } },
+  { accessorKey: "deliveries", header: "Entregas", meta: { class: NUM } },
+  { accessorKey: "cost_q", header: "Custo", meta: { class: NUM } },
+  { accessorKey: "fee_q", header: "Frete cobrado", meta: { class: NUM } },
+  { accessorKey: "balance_q", header: "Frete menos custo", meta: { class: NUM } },
+  { accessorKey: "cost_per_delivery_q", header: "Custo por entrega", meta: { class: NUM } },
+];
+const serviceRows = computed<DeliveryServiceRow[]>(() => (report.value ? deliveryServiceRows(report.value) : []));
+const isTotal = (row: DeliveryServiceRow) => row.service === DELIVERY_TOTAL_KEY;
+
 const dailyPoints = computed<ReadingChartPoint[]>(() =>
   (report.value?.days ?? []).map((row) => ({
     label: shortDate(row.date),
@@ -89,7 +110,7 @@ const dailyPoints = computed<ReadingChartPoint[]>(() =>
         loading
         variant="naked"
         title="Lendo as entregas"
-        description="Custo das corridas da TaOn e frete cobrado no período escolhido."
+        description="Custo das corridas e frete cobrado no período escolhido."
         data-bi-loading
       />
       <OperatorScreenState
@@ -113,7 +134,7 @@ const dailyPoints = computed<ReadingChartPoint[]>(() =>
             class="col-span-2 xl:col-span-1"
           />
           <OperatorMetric
-            title="Custo da TaOn"
+            title="Custo das entregas"
             :value="formatMoney(report.cost_q)"
             :hint="estimatedRidesHint(report.estimated_rides) || undefined"
           />
@@ -135,6 +156,45 @@ const dailyPoints = computed<ReadingChartPoint[]>(() =>
         </div>
 
         <OperatorReadingCard
+          title="Por serviço de entrega"
+          description="Um serviço por linha, com o nome do cadastro, e o total embaixo. O pedido levado por dois serviços conta a entrega e o frete no que entregou."
+          :csv="serviceRows.length ? deliveryServiceCsv(serviceRows) : undefined"
+        >
+          <OperatorTable
+            in-card
+            :data="serviceRows"
+            :columns="serviceColumns"
+            :row-key="(row) => row.service"
+            caption="Custo das entregas por serviço"
+            empty-icon="i-lucide-bike"
+            empty-title="Nenhuma corrida no período"
+            data-bi-delivery-services
+          >
+            <template #name-cell="{ row }">
+              <span :class="isTotal(row.original) ? 'font-semibold text-highlighted' : undefined">{{ row.original.name }}</span>
+            </template>
+            <template #rides-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatInt(row.original.rides) }}</span>
+            </template>
+            <template #deliveries-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatInt(row.original.deliveries) }}</span>
+            </template>
+            <template #cost_q-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatMoney(row.original.cost_q) }}</span>
+            </template>
+            <template #fee_q-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatMoney(row.original.fee_q) }}</span>
+            </template>
+            <template #balance_q-cell="{ row }">
+              <span :class="[row.original.balance_q < 0 ? 'text-warning' : undefined, { 'font-semibold': isTotal(row.original) }]">{{ formatMoney(row.original.balance_q) }}</span>
+            </template>
+            <template #cost_per_delivery_q-cell="{ row }">
+              <span :class="{ 'font-semibold': isTotal(row.original) }">{{ formatMoney(row.original.cost_per_delivery_q) }}</span>
+            </template>
+          </OperatorTable>
+        </OperatorReadingCard>
+
+        <OperatorReadingCard
           title="Custo e frete por dia"
           description="Dia da chamada do entregador. Uma corrida com várias entregas conta uma vez."
           :csv="
@@ -142,13 +202,13 @@ const dailyPoints = computed<ReadingChartPoint[]>(() =>
           "
         >
           <OperatorReadingChart
-            title="Custo da TaOn e frete cobrado por dia"
+            title="Custo das entregas e frete cobrado por dia"
             axis-label="Dia"
             :series="dailySeries"
             :points="dailyPoints"
             :format="formatMoney"
-            empty-title="Nenhuma corrida da TaOn no período"
-            empty-description="As corridas aparecem aqui quando a TaOn fecha o valor."
+            empty-title="Nenhuma corrida no período"
+            empty-description="As corridas aparecem aqui quando o serviço fecha o valor."
           />
         </OperatorReadingCard>
       </template>

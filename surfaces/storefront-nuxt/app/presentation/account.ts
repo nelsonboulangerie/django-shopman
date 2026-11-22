@@ -315,3 +315,10 @@ export function profileIssueFrom (
 export function profileActionIsExternal (action: Pick<Action, 'kind' | 'href'>): boolean {
   return action.kind === 'external' || /^https?:\/\//.test(action.href || '')
 }
+
+// A conta excluída (#3242): o fim do gesto mais grave da conta não é silêncio. Repete o que a
+// Política de Privacidade promete (seção "Por quanto tempo"), nada a mais: o que se apaga, e
+// que pedidos e notas ficam pelo prazo da lei fiscal sem apontar para a pessoa.
+export const ACCOUNT_DELETED_MESSAGE =
+  'Pronto, sua conta foi excluída. Apagamos seu nome, telefone, e-mail, endereços e preferências. ' +
+  'Os pedidos já feitos ficam guardados pelo prazo da lei fiscal, sem nenhum dado seu.'

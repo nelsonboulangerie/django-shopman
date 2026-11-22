@@ -429,7 +429,8 @@ def _delivery(ctx, said: Said, closing: dict, *, day: str, applied: bool, copy, 
     if said.minutes is not None or picked:
         listing = tools.execute("list_fulfillment_slots", {"delivery_date": day, "fulfillment_type": "delivery"}, ctx)
         events.append(_event("list_fulfillment_slots", listing))
-        windows = list(listing.get("delivery_slots") or [])
+        # Só a janela que a casa oferece: a riscada (preparo, prazo de aceite) não se escolhe.
+        windows = [w for w in listing.get("delivery_slots") or [] if w.get("available", True)]
         if said.minutes is not None:
             chosen = _match_slot(windows, said.minutes)
         else:
@@ -489,7 +490,7 @@ def confirm(ctx, quote: dict, *, copy) -> Step:
     if result.get("error") == "confirmation_required":
         # A pergunta leva o token: ela passa a ser o resumo oferecido, e o "confirmo" que
         # vier depois dela vale (o ``_code_confirmation`` lê só o que veio depois da oferta).
-        return Step(_fill(copy(CONFIRM_CODE_KEY), code=tools.quote_code(token)),
+        return Step(_fill(copy(CONFIRM_CODE_KEY), code=tools.offered_quote_code(ctx.conversation, token)),
                     pending={"kind": "confirm_order", "token": token}, closing={"asked": "confirm_order"},
                     quote_token=token, tool_events=events)
     return Step(tools.render_result("place_order", result), pending=None, closing={}, tool_events=events)

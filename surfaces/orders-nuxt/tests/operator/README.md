@@ -23,6 +23,9 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 | `f1-nota-recusada-reprocessar.spec.ts` | F1: a cliente pede a retirada de hoje com CPF na nota e paga; o Caixa aceita, a Cozinha dá Pronto, o Caixa entrega; a SEFAZ (nota simulada) recusa, e o detalhe do pedido diz "NFC-e não autorizada" com a resposta do emissor; "Reprocessar NFC-e" emite de novo e a nota sai autorizada. Pede a nota simulada (`OPERATOR_CONTROL_DIR`), e pula sem ela | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
 | `f2-entrega-sem-cpf.spec.ts` | F2: a cliente pede entrega para hoje sem CPF na nota e paga; o Caixa aceita e inicia, a Cozinha dá Pronto, e a NFC-e nasce com a sacola pronta, autorizada, como venda presencial (sem destinatário nem frete). Pede a nota simulada e a política de emissão do alpha (`SHOPMAN_FISCAL_EMISSION_RESOLVER`), e pula sem a pasta de controle | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
 | `p1-pix-que-nao-confirma.spec.ts` | P1: a cliente envia o pedido com Pix e não paga; o Caixa vê o pedido esperando o pagamento; o relógio da pilha passa do prazo do Pix, o worker cancela sem cobrar, o pedido sai do painel sozinho, o detalhe diz "Nada foi cobrado · O Pix venceu" e a cliente lê "Pagamento expirado". Pede o relógio de teste (`OPERATOR_CONTROL_DIR`), e pula sem ele | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
+| `l1-loja-fechada.spec.ts` | L1: a casa fechou e a cliente encomenda para amanhã e paga; a loja diz que confere o pedido quando abrir; o detalhe do Caixa conta o prazo de aceite a partir da abertura, não de agora; o relógio passa da abertura, o pedido segue esperando com o prazo que sobrou, e o Caixa aceita. Pede o relógio de teste (`OPERATOR_CONTROL_DIR`) e a casa que fecha hoje (seed com `--closing-in-minutes`, abaixo); na pilha aberta 24 h, pula e diz por quê | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
+| `w1-fila-de-espera-vaga-paga.spec.ts` | W1: às 10h (relógio de teste) a cliente pede 10 Kuro Pan para hoje, mais do que a vitrine tem; o resto espera o lote do dia e ela entra na fila, sem Pix ("Você está na fila … Nada foi cobrado ainda."); no Gestor o aceite espera; a Gerente finaliza o lote do Kuro Pan na Produção; a cliente lê "Chegou a sua vez!", confirma a vaga, e só então o Pix nasce; paga, e o Caixa aceita. Pede o relógio de teste e a Produção (`OPERATOR_PRODUCTION_URL`), e a pilha semeada HOJE; roda uma vez por seed, porque finaliza o lote do dia | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Gerente com PIN (Produção, 1366 px) |
+| `e1-encomendas-do-pdv.spec.ts` | E1: a cliente encomenda para amanhã, no turno das 9h, e paga; antes do aceite, a Caixa abre o dia de amanhã nas Encomendas do PDV e lê "Novo" ao lado de "Pago", o mesmo nome do Gestor; o Caixa aceita no Gestor, e no PDV o "Novo" sai, o dinheiro segue pago e o detalhe traz a cliente, "Amanhã · A partir das 9h" e o item. Pede o PDV na pilha (`OPERATOR_POS_URL`), e pula sem ele | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor e PDV, 1366 px) |
 
 Os papéis vêm de `shopman/shop/management/commands/setup_operators.py` (o `seed` roda o
 comando): Gerente `joyce` (senha `admin`, PIN 1234), Caixa `fran` (PIN 1234), Cozinha
@@ -81,6 +84,14 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    daria os passos que a jornada quer ver o Caixa dar. Sem isso, a suíte só passa no
    horário real da casa e falha dizendo que a loja está fechada.
 
+   **A casa que fecha (L1).** A L1 precisa de um fechamento hoje: acrescente
+   `--closing-in-minutes N` ao seed (a casa abre à 0h e fecha daqui a N minutos; os
+   outros dias seguem 24 h). Escolha N para fechar antes das 23h55 e bem depois de a
+   suíte terminar: as outras jornadas pedem retirada para hoje no relógio real, e a loja
+   encerra as retiradas de hoje antes do fechamento ("Hoje já encerramos as retiradas").
+   Rode a L1 sozinha nessa pilha, ou a suíte toda com mais de uma hora de folga. Sem a
+   opção, a L1 pula.
+
 3. **Loja e Cozinha compiladas** (`nuxt dev` recarrega sozinho e derruba jornada longa):
 
    ```bash
@@ -95,7 +106,10 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    (cd surfaces/production-nuxt && NUXT_DJANGO_BASE_URL=http://127.0.0.1:8062 NUXT_SHOPMAN_ENVIRONMENT=local npx nuxt build && NUXT_SHOPMAN_ENVIRONMENT=test SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM=1 NUXT_DJANGO_BASE_URL=http://127.0.0.1:8062 HOST=127.0.0.1 PORT=3185 node .output/server/index.mjs &)
    ```
 
-   e a suíte recebe `OPERATOR_PRODUCTION_URL=http://127.0.0.1:3185`.
+   e a suíte recebe `OPERATOR_PRODUCTION_URL=http://127.0.0.1:3185`. O PDV da E1 sobe do
+   mesmo jeito (`surfaces/pos-nuxt`, outra porta), e a suíte recebe `OPERATOR_POS_URL`; a
+   porta dele entra no `CSRF_TRUSTED_ORIGINS` do Django, como as outras. A Gerente vincula o
+   PDV ao posto "PDV principal", que o seed cria.
 
 4. **O Gestor** só se compila; quem o sobe é a suíte, na porta `OPERATOR_GESTOR_PORT`
    (padrão 3184):

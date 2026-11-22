@@ -2,7 +2,7 @@
 // decidido em presentation (auto-avanço, Enter) tem prova própria; aqui se
 // prova o que a TELA faz com ele: herói do troco, contagem visível/cancelável
 // e a saída explícita com Pix pendente.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import PosSaleResult from "~/components/PosSaleResult.vue";
@@ -174,7 +174,36 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(toTabs.text()).toContain("Voltar às comandas");
     expect(toTabs.text()).toContain("F2");
     await toTabs.trigger("click");
-    expect(wrapper.emitted("newSale")).toHaveLength(1);
+    expect(wrapper.emitted("toTabs")).toHaveLength(1);
+    expect(wrapper.emitted("newSale")).toBeUndefined();
+  });
+
+  it("o fim da contagem volta ao quadro (toTabs), não abre comanda: ninguém tocou", async () => {
+    vi.useFakeTimers();
+    try {
+      const wrapper = await mountSuspended(PosSaleResult, { props: props() });
+      expect(wrapper.text()).toContain("Nova venda em");
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(wrapper.emitted("toTabs")).toHaveLength(1);
+      expect(wrapper.emitted("newSale")).toBeUndefined();
+      wrapper.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("P2-7: na encomenda registrada o gesto é 'Cancelar encomenda', e o Gestor abre o pedido (#3192, #2403)", async () => {
+    const order = await mountSuspended(PosSaleResult, { props: props({ result: result({ salesMode: "order" }) }) });
+    const labels = order.findAll("button, a").map((el) => el.text());
+    expect(labels.some((label) => label.includes("Cancelar encomenda"))).toBe(true);
+    expect(labels.some((label) => label.includes("Cancelar venda"))).toBe(false);
+    const gestor = order.findAll("a").find((el) => el.text().includes("Abrir o pedido no Gestor"));
+    expect(gestor?.attributes("href")).toBe("http://gestor.test/PDV-042");
+    order.unmount();
+
+    const sale = await mountSuspended(PosSaleResult, { props: props() });
+    expect(sale.findAll("button").some((el) => el.text().includes("Cancelar venda"))).toBe(true);
+    sale.unmount();
   });
 
   it("o CTA emite newSale", async () => {

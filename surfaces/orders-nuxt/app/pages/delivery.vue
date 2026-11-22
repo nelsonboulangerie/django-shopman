@@ -39,8 +39,10 @@ import {
   type RideSuggestion,
 } from "~/presentation/deliveries";
 import { deliveriesFiscalAlerts } from "~/presentation/deliveriesFiscal";
-import { DEFAULT_CARRIER, busyNotice, chipValue, noteLabel } from "~/presentation/houseCouriers";
+import { DEFAULT_CARRIER, busyNotice, chipValue, noteLabel, toPayToday } from "~/presentation/houseCouriers";
 import { NOBODY_TAKES } from "~/composables/useCourierCall";
+import { planServiceName } from "~/presentation/courierCall";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 const route = useRoute();
 const adminBase = String(useRuntimeConfig().public.adminBaseUrl ?? "");
@@ -51,6 +53,8 @@ const { data, pending, error, refresh } = useFetch<DeliveriesProjection>(
   "/api/v1/backstage/deliveries/",
   { key: "orders:deliveries", server: false },
 );
+// O serviço que leva a corrida a chamar, como o cadastro diz: as frases o usam (#3139).
+const planService = computed(() => planServiceName(data.value?.ride_plan));
 // A posição do entregador também chega por push (F7b), em no máximo uma releitura a cada 10 s.
 useBackstageEvents("orders", () => void refresh(), { pollMs: 20_000, onCourierPosition: useCourierPositionPush(() => void refresh()) });
 const now = ref(Date.now());
@@ -71,6 +75,8 @@ const {
   callLabel, machineMissing, nobodyTakes, canCall, summary, call, callSeparately,
   openSheet, toggleCompanion, closeSheet, confirmSheet, confirmAlone, sheet,
 } = useCourierCall({ data, refresh, editing, active });
+// O acerto do dia de cada entregador da casa, sob a escala (M4, #2527).
+const payToday = computed(() => toPayToday(crew.value));
 const editingNumbers = computed(() => editing.value.map((ride) => ride.number));
 function ensureEditing() {
   if (editing.value.length) return;
@@ -198,7 +204,7 @@ async function dispatchAgain(stop: DeliveryStopProjection) {
   againBusy.value = stop.ref;
   try {
     await intentions.execute(stop.ref, "courier-dispatch-again", stop.dispatch_again_action ?? undefined, {});
-    useSonner.success(`${stop.code}: chamada de novo. A TaOn avisa quando alguém aceitar.`);
+    useSonner.success(`${stop.code}: chamada de novo. A ${planService.value} avisa quando alguém aceitar.`);
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível chamar de novo. Atualize e tente outra vez."));
   } finally {
@@ -222,20 +228,30 @@ const busyRide = ref("");
 // ── a corrida da casa: os gestos do balcão (M3b, #2898) ─────────────────────
 const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(() => refresh());
 
-async function rideAction(ride: DeliveryRideProjection, operation: "courier-back" | "courier-cancel", reasonId?: number) {
-  const action = operation === "courier-back" ? ride.back_action : ride.cancel_action;
+async function rideAction(
+  ride: DeliveryRideProjection,
+  operation: "courier-back" | "courier-cancel" | "courier-close-here",
+  reasonId?: number,
+  outcome?: string,
+) {
+  const action = operation === "courier-back" ? ride.back_action : operation === "courier-close-here" ? ride.close_here_action : ride.cancel_action;
   busyRide.value = ride.key;
   try {
     // Cancelar só chega aqui pela confirmação do detalhe (`CourierCancelConfirm`);
     // depois do aceite ela já traz o motivo, que vai à TaOn como `reason_id`.
-    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : {});
-    useSonner.success(operation === "courier-back" ? `Corrida ${ride.letter} encerrada.` : "Pedido de cancelamento enviado à TaOn.");
+    await intentions.execute(ride.lead_ref, operation, action ?? undefined, reasonId ? { reason_id: reasonId } : outcome ? { outcome } : {});
+    useSonner.success(operation === "courier-cancel"
+      ? `Pedido de cancelamento enviado à ${deliveryServiceName(ride.service_name)}.`
+      : `Corrida ${ride.letter} encerrada.`);
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível. Atualize e tente de novo."));
   } finally {
     busyRide.value = "";
     await refresh();
   }
+}
+function closeOpenRideHere(outcome: string) {
+  if (openRide.value) void rideAction(openRide.value, "courier-close-here", undefined, outcome);
 }
 function cancelOpenRide(reasonId?: number) {
   if (openRide.value) void rideAction(openRide.value, "courier-cancel", reasonId);
@@ -308,7 +324,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
       v-else-if="data && !data.courier_on && !data.house_on"
       icon="i-lucide-bike"
       title="Nenhum serviço de entrega está ligado."
-      description="Ligue a TaOn ou os entregadores da casa para chamar entregas daqui."
+      description="Ligue a central de entregas ou os entregadores da casa para chamar entregas daqui."
       :actions="[{ label: 'Abrir os serviços de entrega', icon: 'i-lucide-external-link', to: `${adminBase}/admin/shop/deliveryservice/`, target: '_blank', color: 'neutral', variant: 'outline', size: 'xl', class: 'min-h-11' }]"
       class="m-6"
       data-deliveries-off
@@ -356,6 +372,18 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
                 @click="toggleShift(person.ref, !person.on)"
               />
             </div>
+            <!-- O acerto do dia (M4, #2527): o sistema soma, o pagamento é por fora. -->
+            <ul v-if="payToday.length" class="flex flex-col gap-1" data-house-pay-today>
+              <li
+                v-for="line in payToday"
+                :key="line.ref"
+                class="flex items-center gap-2 op-body tabular-nums text-highlighted"
+                :data-house-pay-today-person="line.ref"
+              >
+                <NuxtIcon name="i-lucide-wallet" class="size-4 shrink-0 text-muted" />
+                {{ line.text }}
+              </li>
+            </ul>
           </section>
           <!-- 1. aguardando -->
           <section>
@@ -416,7 +444,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
                       </p>
                       <p v-if="suggestionLate(s)" class="op-micro text-muted">{{ suggestionLate(s) }}</p>
                     </template>
-                    <p v-else class="op-micro text-warning">A TaOn não cotou agora. Monte a corrida se quiser levar junto.</p>
+                    <p v-else class="op-micro text-warning">A {{ planService }} não cotou agora. Monte a corrida se quiser levar junto.</p>
                   </div>
                   <div class="flex shrink-0 flex-wrap gap-2">
                     <NuxtButton v-if="s.suggested" class="min-h-11" color="neutral" variant="outline" icon="i-lucide-bike" label="Chamar juntas" data-ride-suggestion-call @click="acceptSuggestions([s], { call: true })" />
@@ -550,7 +578,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
                     @other="(ref: string) => chooseCarrier(ride.number, ref)"
                     @update:note="(value: string) => setNote(ride.number, value)"
                   />
-                  <p v-if="quotes[ride.number]?.pending && !carrierOf(ride.number)" class="op-micro text-muted">Cotando na TaOn…</p>
+                  <p v-if="quotes[ride.number]?.pending && !carrierOf(ride.number)" class="op-micro text-muted">Cotando na {{ planService }}…</p>
                   <p
                     v-for="line in linesOf(ride)"
                     :key="line.text"
@@ -648,6 +676,7 @@ const fiscalAlerts = computed(() => deliveriesFiscalAlerts(data.value));
           @close="close"
           @back="backRide = openRide"
           @cancel="cancelOpenRide"
+          @close-here="closeOpenRideHere"
           @gesture="(item) => houseGesture(openRide!, item)"
         />
       </template>

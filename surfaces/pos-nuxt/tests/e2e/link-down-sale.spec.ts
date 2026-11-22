@@ -63,9 +63,13 @@ test.describe("PDV — link caído com o wi-fi de pé", () => {
     await expect(page.getByText("Resultado da cobrança não confirmado")).toHaveCount(0);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/t7-link-guardada-${page.viewportSize()?.width}.png` });
 
-    // 2ª venda, ainda sem link: nasce guardada, sem esperar prazo nenhum.
+    // 2ª venda, ainda sem link: nasce guardada, sem esperar prazo nenhum. O F2 da
+    // "Nova venda" já abre a grade da próxima comanda livre (WP-E8, D5): sem passar
+    // pelo quadro, o croissant entra direto.
     await page.keyboard.press("F2");
-    await openFreeTabWithCroissant(page, "18");
+    await expect(page.getByPlaceholder(/Buscar produto/).first()).toBeFocused();
+    await page.getByRole("button", { name: /Croissant R\$ 11,50/ }).first().click();
+    await expect(page.getByRole("button", { name: /Pagamento/ })).toBeEnabled();
     await payCashAndValidate(page);
     await expect(page.locator("[data-sale-result-offline]")).toBeVisible();
     await expect(page.getByText("2 vendas esperando envio.", { exact: true })).toBeVisible();

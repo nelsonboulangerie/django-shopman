@@ -1,7 +1,10 @@
 import type { AuthSessionResponse } from '~/types/shopman'
 
 export interface WhatsappClaimResponse extends Partial<AuthSessionResponse> {
-  status: 'pending' | 'done'
+  // `awaiting_release`: a mensagem chegou (login começado no computador) e falta o toque
+  // em "Liberar o Chrome" na resposta. Não é `pending`: a tela não pode dizer que a
+  // mensagem ainda não chegou (#3271).
+  status: 'pending' | 'awaiting_release' | 'done'
   redirect?: string
   device_trusted?: boolean
 }
@@ -57,6 +60,10 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
   // mensagem, a tela DIZ que ainda não chegou. Antes o botão só girava e voltava igual,
   // e quem tocou não sabia se a loja tinha conferido (beta 05/11).
   const notArrived = ref(false)
+  // A mensagem chegou e a liberação espera o toque no botão da resposta. Vale para
+  // qualquer conferência, automática ou tocada: é um fato novo, não uma resposta ao
+  // toque, e muda o que a pessoa tem de fazer (#3271).
+  const awaitingRelease = ref(false)
   // O toque pode cair com uma conferência automática no meio: a resposta dela vale
   // como resposta ao toque, em vez de o toque se perder.
   let tapPending = false
@@ -127,7 +134,8 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
         return
       }
       state.value = Date.now() - active.startedAt >= SLOW_AFTER_MS ? 'slow' : 'waiting'
-      if (tapPending) notArrived.value = true
+      awaitingRelease.value = response?.status === 'awaiting_release'
+      if (tapPending) notArrived.value = !awaitingRelease.value
     } catch {
       failures += 1
       state.value = 'offline-or-error'
@@ -170,6 +178,7 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     failures = 0
     checking.value = false
     notArrived.value = false
+    awaitingRelease.value = false
     tapPending = false
     state.value = 'idle'
     if (import.meta.client) {
@@ -187,6 +196,7 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     writeWait(active)
     failures = 0
     notArrived.value = false
+    awaitingRelease.value = false
     state.value = 'waiting'
     listen()
   }
@@ -214,6 +224,7 @@ export function useWhatsappReturn (onDone: (response: WhatsappClaimResponse) => 
     waiting,
     checking,
     notArrived,
+    awaitingRelease,
     arm,
     stop,
     checkNow: () => check(true, true)
