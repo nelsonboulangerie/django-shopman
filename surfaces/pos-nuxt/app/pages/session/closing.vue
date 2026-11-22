@@ -295,9 +295,12 @@ const pendingProductionLine = computed(() =>
 const releaseAuthDetail = computed(() => {
   const day = closing.value?.today_display || "";
   // Com pedido pronto não retirado também, a MESMA assinatura encerra os dois (#2684).
-  const ready = closing.value?.has_pending_ready_orders
-    ? ` ${(closing.value.pending_ready_orders ?? []).filter((row) => row.state === "resolve").length === 1 ? "Um pedido pronto não retirado é encerrado" : "Os pedidos prontos não retirados são encerrados"} como não retirado.`
-    : "";
+  const waiting = (closing.value?.pending_ready_orders ?? []).filter((row) => row.state === "resolve").length;
+  const ready = waiting === 1
+    ? " O pedido pronto que ninguém buscou também é encerrado, com o dinheiro como mostra a lista."
+    : waiting > 1
+      ? ` Os ${waiting} pedidos prontos que ninguém buscou também são encerrados, com o dinheiro como mostra a lista.`
+      : "";
   return `${pendingProductionLine.value}${ready} ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
 });
 const managers = computed(() => pos.value?.managers ?? []);
@@ -367,7 +370,8 @@ function readyRelease(approval: { username?: string; pin?: string; badge?: strin
 const readyAuthOpen = ref(false);
 const readyAuthDetail = computed(() => {
   const day = closing.value?.today_display || "";
-  return `${readyLine.value} Cada um é encerrado como não retirado, com o dinheiro como mostrado na lista. ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
+  const them = readyToResolve.value.length === 1 ? "Ele é encerrado" : "Eles são encerrados";
+  return `${readyLine.value} ${them} como não retirado, com o dinheiro como mostra a lista. ${day ? `O dia ${day} fecha` : "O dia fecha"} e não reabre.`;
 });
 // O servidor é quem sabe: se recusou porque a lista mudou, a tela já releu e a
 // assinatura sobe de novo, agora com a lista certa.
