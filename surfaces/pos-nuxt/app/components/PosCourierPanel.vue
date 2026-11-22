@@ -340,6 +340,7 @@ async function callAgain() {
             :icon="reason.icon"
             :label="reason.label"
             :disabled="cancelOff"
+            class="min-h-11"
             :data-pos-courier-cancel-reason="reason.id"
             @click="confirmCancel(reason.id)"
           />
@@ -349,6 +350,7 @@ async function callAgain() {
             color="neutral"
             variant="ghost"
             label="Manter a corrida"
+            class="min-h-11"
             data-pos-courier-cancel-keep
             @click="confirmingCancel = false"
           />
@@ -362,6 +364,7 @@ async function callAgain() {
               :label="cancelCopy.confirmLabel"
               :disabled="cancelOff"
               :loading="busy"
+              class="min-h-11"
               data-pos-courier-cancel-go
               @click="confirmCancel()"
             />
@@ -370,6 +373,7 @@ async function callAgain() {
               color="error"
               variant="outline"
               label="Manter a corrida"
+              class="min-h-11"
               data-pos-courier-cancel-keep
               @click="confirmingCancel = false"
             />
