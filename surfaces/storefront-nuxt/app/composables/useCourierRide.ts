@@ -234,6 +234,8 @@ export function useCourierRide (token: Ref<string>) {
   // apagada ou outro app na frente o navegador para de dar posição: a loja vê a idade.
 
   const tracking = ref<TrackingState>('off')
+  /** Onde o celular está agora, para o mapa da corrida seguir a moto (#2509). */
+  const here = ref<{ lat: number, lng: number } | null>(null)
   let watchId: number | null = null
   let sendTimer: ReturnType<typeof setInterval> | null = null
   let lastFix: { lat: number, lng: number, accuracy: number, at: string } | null = null
@@ -273,6 +275,7 @@ export function useCourierRide (token: Ref<string>) {
     watchId = navigator.geolocation.watchPosition(
       (where) => {
         tracking.value = 'on'
+        here.value = { lat: where.coords.latitude, lng: where.coords.longitude }
         lastFix = {
           lat: where.coords.latitude,
           lng: where.coords.longitude,
@@ -375,6 +378,7 @@ export function useCourierRide (token: Ref<string>) {
     busy,
     offline,
     tracking,
+    here,
     refresh,
     claim,
     depart,
