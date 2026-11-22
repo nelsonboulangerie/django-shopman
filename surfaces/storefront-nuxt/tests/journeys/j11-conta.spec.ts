@@ -274,11 +274,13 @@ test('J11: a cliente nova exclui a própria conta e sai da loja', async ({ page 
         await expect(stepUp).toContainText('Enviamos um código para o seu telefone')
         return outcome.code
       }
-      await expect(wait).toContainText(/^Um código foi enviado a este número há pouco\. Por segurança, o próximo pode ser pedido em \d+ segundos?\.$/)
+      await expect(wait).toContainText(/^O código enviado há pouco já não vale\. Peça um novo em \d+ segundos?\.$/)
       await expect(stepUp).not.toContainText('Enviamos um código')
       await expect(stepUp.getByText('Não foi possível confirmar')).toHaveCount(0)
       const send = stepUp.getByRole('button', { name: 'Enviar código', exact: true })
       await expect(send).toBeDisabled()
+      // Sem código que valha, não há o que digitar: os campos esperam o código novo.
+      await expect(stepUp.getByRole('textbox', { name: 'Dígito 1 de 6' })).toBeDisabled()
       await capture(page, testInfo, 'identidade-espera-do-reenvio')
       // A espera acaba: o botão liga, ela pede, e aí sim o código vai.
       await expect(send).toBeEnabled({ timeout: 70_000 })
@@ -295,7 +297,10 @@ test('J11: a cliente nova exclui a própria conta e sai da loja', async ({ page 
   await test.step('a conta sai e ela volta à loja sem estar conectada', async () => {
     await expect.poll(() => new URL(page.url()).pathname, { timeout: 60_000 }).toBe('/')
     // O fim do gesto não é silêncio: a loja diz que excluiu e o que isso significou (#3242).
-    await expect(page.getByText(/^Pronto, sua conta foi excluída\./).first()).toBeVisible()
+    const notice = page.locator('[data-page-notice]')
+    await expect(notice).toContainText('Pronto, sua conta foi excluída.')
+    await expect(notice).toContainText('sem nenhum dado seu')
+    await expect(notice.getByRole('button', { name: 'Fechar aviso' })).toBeVisible()
     await settled(page)
     await capture(page, testInfo, 'excluida-inicio')
     // A Conta pede para entrar de novo: a sessão dela acabou junto com a conta.

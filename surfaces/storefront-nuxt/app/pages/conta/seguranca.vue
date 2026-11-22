@@ -54,6 +54,8 @@ let stepUpResumed = false
 const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
 // A espera de reenvio sem código que valha (#3241): a tela conta o tempo, sem erro.
 const { waitSeconds: stepUpWaitSeconds, fromCooldown: stepUpFromCooldown, reset: resetStepUpWait } = useResendWait(stepUpOpen)
+// O fim da exclusão é lido na página seguinte, abaixo das barras do topo (#3242).
+const { show: showPageNotice } = usePageNotice()
 
 const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices } = await useFetch<AccountDeviceResponse>(apiPath('/api/v1/account/devices/'), {
   credentials: 'include',
@@ -376,7 +378,7 @@ async function deleteAccount () {
     deleteAccountOpen.value = false
     // O fim do gesto mais grave da conta não é silêncio (#3242). Só chega aqui o que o
     // servidor terminou, e a frase repete o que a Política de Privacidade promete, nada a mais.
-    if (import.meta.client) useSonner.success(ACCOUNT_DELETED_MESSAGE, { duration: 10_000 })
+    showPageNotice(ACCOUNT_DELETED_MESSAGE, '/')
     await navigateTo('/')
   } catch (e) {
     // A chave de idempotência NÃO é descartada aqui: é ela que faz a retomada continuar a
@@ -1212,6 +1214,7 @@ useSeoMeta({ title: 'Segurança e dados' })
               :input-count="6"
               type="number"
               otp
+              :disabled="!stepUpSent"
               :aria-invalid="!!stepUpIssue"
               class="justify-between sm:justify-start"
             />

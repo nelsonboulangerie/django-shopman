@@ -54,7 +54,7 @@ describe('useResendWait', () => {
 
   it('a frase diz o que houve e quanto falta, sem travessão', () => {
     expect(resendWaitMessage(42)).toBe(
-      'Um código foi enviado a este número há pouco. Por segurança, o próximo pode ser pedido em 42 segundos.'
+      'O código enviado há pouco já não vale. Peça um novo em 42 segundos.'
     )
     expect(resendWaitMessage(1)).toContain('em 1 segundo.')
     expect(resendWaitMessage(42)).not.toContain('—')

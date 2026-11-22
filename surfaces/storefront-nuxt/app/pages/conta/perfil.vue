@@ -414,6 +414,7 @@ useSeoMeta({ title: 'Perfil' })
               :input-count="6"
               type="number"
               otp
+              :disabled="!stepUpSent"
               :aria-invalid="!!stepUpIssue"
               class="justify-between sm:justify-start"
             />

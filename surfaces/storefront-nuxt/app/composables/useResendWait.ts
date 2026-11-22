@@ -5,8 +5,8 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
  *
  * Logo depois de entrar pelo código, o do login já foi usado, e a espera de 60 s do
  * Doorman ainda o conta: pedir outro código para confirmar a identidade volta
- * `cooldown` sem nada enviado. Não é erro de ninguém. A tela diz que um código foi
- * enviado há pouco e quanto falta para pedir outro, e libera o "Enviar código" quando a
+ * `cooldown` sem nada enviado. Não é erro de ninguém. A tela diz que o código de há
+ * pouco já não vale e quanto falta para pedir outro, e libera o "Enviar código" quando a
  * espera acaba, em vez de afirmar "Enviamos um código" com um erro vermelho embaixo.
  *
  * `open` liga o relógio só enquanto o diálogo está aberto.
@@ -43,5 +43,5 @@ export function useResendWait (open: Ref<boolean>) {
 /** A frase da espera, igual nos dois diálogos de confirmação de identidade. */
 export function resendWaitMessage (seconds: number): string {
   const unit = seconds === 1 ? 'segundo' : 'segundos'
-  return `Um código foi enviado a este número há pouco. Por segurança, o próximo pode ser pedido em ${seconds} ${unit}.`
+  return `O código enviado há pouco já não vale. Peça um novo em ${seconds} ${unit}.`
 }

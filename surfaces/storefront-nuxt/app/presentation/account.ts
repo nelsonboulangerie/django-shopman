@@ -321,4 +321,4 @@ export function profileActionIsExternal (action: Pick<Action, 'kind' | 'href'>):
 // que pedidos e notas ficam pelo prazo da lei fiscal sem apontar para a pessoa.
 export const ACCOUNT_DELETED_MESSAGE =
   'Pronto, sua conta foi excluída. Apagamos seu nome, telefone, e-mail, endereços e preferências. ' +
-  'Os pedidos já feitos ficam guardados pelo prazo da lei fiscal, sem apontar para você.'
+  'Os pedidos já feitos ficam guardados pelo prazo da lei fiscal, sem nenhum dado seu.'
