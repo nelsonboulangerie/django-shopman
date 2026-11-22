@@ -53,6 +53,41 @@ def _excluded_statuses():
     return (Order.Status.CANCELLED, Order.Status.RETURNED)
 
 
+def read_no_shows(window, *, channel: str = "") -> dict[str, int]:
+    """O não retirado na janela [início, fim), pelo bloco que o gesto grava (#2698).
+
+    O pedido não retirado termina cancelado, e o B.I. o conta entre os cancelados,
+    fora do faturamento. O que ele decidiu mora em ``Order.data["no_show"]``
+    (``shop/services/no_show.py``): o pago, o que voltou ao cliente, o que ficou
+    com a loja e as linhas que viraram perda, com o valor de venda delas. Mesmo
+    recorte das vendas: ``created_at`` na janela, sem pedido de teste.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import exclude_test_orders
+    from shopman.shop.services.payment_provenance import exclude_provider_simulated_orders
+
+    rows = Order.objects.filter(
+        created_at__range=window, status=Order.Status.CANCELLED, data__has_key="no_show",
+    )
+    if channel:
+        rows = rows.filter(channel_ref=channel)
+    totals = {"orders": 0, "paid_q": 0, "refund_q": 0, "retained_q": 0, "loss_q": 0}
+    for data in exclude_test_orders(exclude_provider_simulated_orders(rows)).values_list("data", flat=True):
+        block = (data or {}).get("no_show")
+        if not isinstance(block, dict):
+            continue
+        totals["orders"] += 1
+        for key in ("paid_q", "refund_q", "retained_q"):
+            totals[key] += int(block.get(key) or 0)
+        totals["loss_q"] += sum(
+            int(line.get("value_q") or 0)
+            for line in block.get("lines") or ()
+            if isinstance(line, dict) and line.get("destiny") == "loss"
+        )
+    return totals
+
+
 def read_sales(window) -> tuple[list[CanonicalSale], int]:
     """(vendas canônicas, pedidos cancelados/devolvidos) na janela [início, fim)."""
     from shopman.orderman.models import Order

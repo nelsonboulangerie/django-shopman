@@ -80,6 +80,7 @@ from shopman.backstage.projections.deliveries import (
     DeliveryRideProjection,
     DeliveryServiceOptionProjection,
     DeliveryStopProjection,
+    FailedRideProjection,
     RidePlanProjection,
     RideSuggestionProjection,
 )
@@ -273,6 +274,7 @@ CONTRACT_DATACLASSES = (
     RideSuggestionProjection,
     DeliveryServiceOptionProjection,
     RidePlanProjection,
+    FailedRideProjection,
     DeliveriesProjection,
 )
 

@@ -128,25 +128,20 @@ def test_answered_turn_records_triage_on_message_and_conversation(conversation, 
     assert inbound.envelope["triage"]["intent"] == "hours_delivery"
 
 
-def test_complaint_card_reaches_the_orders_bell_without_an_order(conversation, outbox):
+def test_complaint_card_reaches_the_orders_bell_and_the_conversation_stays_open(conversation, outbox):
+    """Reclamação sozinha vai ao sino pelo "vou verificar" e a Concierge segue (dono, 21/11/2026:
+    "garanta sempre a questão de atribuição da conversa"); quem assume é uma pessoa, pelo "Assumir"."""
     from shopman.backstage.services import alerts as alert_service
 
     _receive(conversation, "meu pedido veio queimado", "t2")
     result = service.run_turn(conversation.pk, _binding(conversation).pk)
 
-    assert result.handoff
+    assert not result.handoff
     conversation.refresh_from_db()
-    assert conversation.state == Conversation.State.HANDOFF
-    assert conversation.handoff_reason == "Reclamação · agora"
+    assert conversation.state == Conversation.State.ACTIVE
     bell = alert_service.list_active_alerts(scope="orders")
-    assert [alert.type for alert in bell] == ["concierge_handoff"]
-    # Só a fala dela, entre aspas (coordenação, 20/11/2026): quem e por quê vão no
-    # título, que a projeção escreve; onde responder, no botão.
-    card = bell[0].message
-    assert card == "“meu pedido veio queimado”"
-    from shopman.backstage.projections.alerts import handoff_cards
-
-    assert handoff_cards([bell[0].pk])[bell[0].pk]["subject"] == "Ana fez uma reclamação"
+    assert [alert.type for alert in bell] == ["concierge_verify"]
+    assert "meu pedido veio queimado" in bell[0].message
 
 
 def test_job_goes_to_the_other_desk_and_stays_out_of_the_bell(conversation, outbox):

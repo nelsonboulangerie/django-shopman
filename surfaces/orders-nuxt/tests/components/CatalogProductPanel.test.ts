@@ -211,6 +211,32 @@ describe("Vendido por peso", () => {
   });
 });
 
+// #2304: o preparo da encomenda na Cozinha, o MESMO valor do Admin.
+describe("Preparo da encomenda", () => {
+  it("em branco diz quanto vale o padrão da loja, e o tempo digitado vai no Salvar", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, preorder_prep_minutes: null, preorder_prep_default_minutes: 30 } });
+    const field = w.get('[data-testid="preorder-prep"]');
+    expect(field.text()).toContain("Preparo da encomenda (min)");
+    expect(field.text()).toContain("antes da hora combinada");
+    const input = field.get("input");
+    expect(input.attributes("placeholder")).toBe("Em branco = preparo padrão (30 min)");
+    await input.setValue(20);
+    await w.find("[data-panel-save]").trigger("click");
+    expect(w.emitted("save")).toEqual([[{ preorder_prep_minutes: 20 }]]);
+  });
+
+  it("apagar o tempo próprio devolve o produto ao padrão", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, preorder_prep_minutes: 45, preorder_prep_default_minutes: 30 } });
+    const input = w.get('[data-testid="preorder-prep"] input');
+    expect((input.element as HTMLInputElement).value).toBe("45");
+    await input.setValue("");
+    await w.find("[data-panel-save]").trigger("click");
+    expect(w.emitted("save")).toEqual([[{ preorder_prep_minutes: null }]]);
+  });
+});
+
 describe("Permitir compra", () => {
   it("é gesto na hora, com cara de botão, fora do rascunho (GES-20)", async () => {
     const w = panel();

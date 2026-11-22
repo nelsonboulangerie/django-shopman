@@ -37,6 +37,13 @@ function injectBootstrap (apiKey: string): Promise<boolean> {
   })
 }
 
+/** O Maps JS com uma chave dada (a página do entregador recebe a chave pelo link, #2509). */
+export async function loadGoogleMapsWithKey (apiKey: string): Promise<boolean> {
+  if (!import.meta.client || !apiKey) return false
+  if (!bootstrapPromise) bootstrapPromise = injectBootstrap(apiKey)
+  return bootstrapPromise
+}
+
 export function useGoogleMaps () {
   const session = useShopSession()
 

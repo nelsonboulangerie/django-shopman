@@ -14,8 +14,8 @@ consertam nada. Eles fazem três coisas:
    decisão de quem observa.
 2. **Rotear.** Cada tipo de alerta vira uma issue `alerta` com dono, sem duplicar, e a
    issue fecha sozinha depois de 24 h verdes.
-3. **Acionar** (fase W2) só remédios que o domínio já oferece, numa lista fechada, e
-   conferir que resolveu.
+3. **Acionar** só remédios que o domínio já oferece, numa lista fechada, e conferir
+   que resolveu.
 
 O alerta que volta sempre é defeito: três episódios em sete dias marcam a issue com
 `defeito-recorrente`, e a causa se corrige no código.
@@ -78,6 +78,13 @@ Credenciais da ponte). Ela não abre nenhuma outra rota.
 
 - Lê o resumo da loja e, quando o `SENTRY_AUTH_TOKEN` lê issues, as issues abertas do
   Sentry em produção. Issue do Sentry sem evento há 24 h conta como verde.
+- Lê da DigitalOcean (`DO_READ_TOKEN` = segredo `DIGITALOCEAN_READ_TOKEN`, app em
+  `DO_APP_NAME`) os reinícios e a memória de cada componente do app nas últimas 48 h,
+  pela API de métricas do App Platform (`/v2/monitoring/metrics/apps/restart_count` e
+  `memory_percentage`). Componente que reiniciou nas últimas 24 h, ou passou de 90% de
+  memória, abre `do:<componente>:restart` ou `do:<componente>:memoria`, com dono
+  Engenharia. O contador é por instância e recomeça no deploy: só a subida conta. Sem
+  o escopo `monitoring:read`, a rodada avisa no log e segue com as outras fontes.
 - Acha a issue da ponte pelo marcador `<!-- incident:<fingerprint> -->` no corpo, ou
   ADOTA uma issue aberta à mão cujo título cita o tipo como palavra inteira
   (ex.: "Alerta: lifecycle_phase_stuck").
@@ -95,3 +102,82 @@ Credenciais da ponte). Ela não abre nenhuma outra rota.
    `https://api.boulangerie.com.br/api/v1/backstage/incidents/`.
 3. Sem `INCIDENTS_URL` o job nem sobe. Com ela e sem o token, a rodada falha e diz o
    que falta.
+
+## O acionador (W2)
+
+`shopman/backstage/incidents/remedies.py` (a lista FECHADA) e `act.py` (a máquina).
+
+### A lista fechada
+
+Entra só o gesto que o domínio já oferece a uma pessoa e que ele, sozinho, deixou
+parado à espera dela. O que o domínio já repete sozinho não entra, porque acionar de
+novo não ganharia nada.
+
+| Remédio | Alerta | O gesto do domínio | Regra | Confere por fato | Teto |
+|---|---|---|---|---|---|
+| Reprocessar a NFC-e | `fiscal_emit_failed` | `requeue_fiscal_emission` (o "Reprocessar NFC-e" do Gestor) | emissão já solicitada, falhou sem resposta do emissor (a janela transitória de ~64 min acabou) | `nfce_access_key` no pedido; falhou de novo = não resolveu | 3 por pedido em 24 h; confere em 5 min, desiste em 90 |
+| Reenviar o aceite ao iFood | `ifood_accept_not_delivered` | `ifood_accept_sync.retry` (o "Tentar de novo") | o domínio parou de tentar, ou a próxima tentativa dele cai depois do prazo do iFood (8 min) | aceite `sent` ou `confirmed` | 3 por pedido; confere em 30 s, desiste em 10 min |
+
+Ficaram de fora, com motivo:
+
+- **rodar um sweep agora** (`sweep_stuck_orders`, `reconcile_ifood_orders`): já rodam a
+  cada ciclo do `maintenance_worker`;
+- **regravar a loja no iFood**: o `check_store` já pede a regravação quando a loja
+  diverge (4 min) e a cada 6 h, e o que sobra é 403/400/409, que repetir não resolve;
+- **NUNCA**: credencial, dinheiro (estorno, captura, corrida), apagar dado, reseed,
+  configuração de produção, reiniciar ou escalar infraestrutura.
+
+### A máquina
+
+O alerta de tipo com remédio ganha, depois do commit, a Directive `incident.act`. Ela
+roda no worker de diretivas (segundos, não o ciclo de 5 min) e, a cada passo:
+
+- **planeja:** o remédio diz `act`, `wait` (o domínio ainda está tentando), `no` (fica
+  com gente, com o motivo) ou `judge` (a regra não decide: a resposta do emissor, por
+  exemplo, pode ser cadastro ou SEFAZ fora);
+- **espera** reagendando-se, sem gastar tentativa;
+- **aciona** com o ator `watchman:incidentes`, que aparece no histórico do pedido;
+- **confere** por fato do domínio e grava "resolveu" ou "não resolveu".
+
+A repescagem `act_on_incidents` (no `maintenance_worker`) refaz a directive perdida e
+vence a conferência atrasada. Não aciona nada sozinha.
+
+### O placar
+
+Toda decisão vira linha de `IncidentAction` (Admin, Incidentes, Placar dos remédios),
+inclusive a de não agir: quem decidiu (regra ou modelo), confiança, custo, desfecho e
+motivo, sem dado de cliente. O resumo da ponte leva o placar por tipo, e a issue mostra
+"Remédio do domínio (Reprocessar a NFC-e), 7 dias: 2 resolveu, 1 ficou com gente".
+
+### Modo
+
+`Shop.incident_remedies_mode` (Admin, Loja, Remédios automáticos de incidente):
+`on` aciona e confere (padrão, aprovado pelo dono em 21/11), `shadow` só registra o que
+faria, `off` não faz nada.
+
+## O classificador em cascata (W3)
+
+`shopman/backstage/incidents/judge.py`. Entra só quando a regra do remédio diz `judge`:
+por exemplo, o emissor recusou a NFC-e, e a resposta pode ser cadastro (pede gente) ou
+a SEFAZ fora do ar dita como recusa (reprocessar resolve).
+
+- **A pergunta é fechada:** para ESTE remédio, `act` ou `people`. O modelo nunca
+  escreve comando nem escolhe outro remédio; uma resposta fora das opções é descartada.
+- **Dois papéis, que não se trocam** (dono, 21/11: "Jev e outros modelos LLM NÃO SÃO
+  DIRETAMENTE INTERCAMBIÁVEIS"). Cada um com o seu propósito e a sua conexão, em
+  Admin → Loja → rotas de IA:
+  1. **decisão** (`incident`): o Jev, motor de decisão tipada (`choice` com
+     probabilidade e confiança, cerca de US$ 0,00003). Só aceita conexão Jev.
+  2. **leitura** (`incident_review`): um LLM (deepseek-flash, por exemplo). Só aceita
+     conexão do formato Anthropic, e só é chamado quando estritamente necessário: o Jev
+     ficou abaixo de 0,8, falhou, ou não existe.
+  3. **Gente:** abaixo de 0,8 no fim, ou nenhum modelo. A leitura fica no placar e o
+     caso, com o dono da issue.
+
+  Arranjos válidos: Jev + LLM (o LLM só na dúvida) ou só LLM.
+- **Freio:** cada degrau passa pelo `ai_governor`, com teto próprio por dia
+  (`incident` US$ 0,10, `incident_review` US$ 0,50) e vira `AiInvocation`.
+- **Placar:** `decided_by` (`regra` ou `ia:<propósito>:<conexão>/<modelo>`), confiança e
+  custo de cada decisão. A issue mostra "2 leitura(s) de IA, US$ 0,00006".
+- **Privacidade:** vai ao provedor o tipo do alerta e a evidência com números longos e
+  e-mails mascarados. Nunca a mensagem do alerta.

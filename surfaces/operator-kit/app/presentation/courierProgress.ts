@@ -10,9 +10,15 @@
 
 import { STORE_TIME_ZONE } from "./dates";
 import { formatClock } from "./clock";
+import { deliveryServiceName } from "./deliveryService";
 
 export interface CourierProgressInput {
+  /** A letra crua do serviço: presente quando há corrida. Não se compara; o estado é `ride_state`. */
   status: string;
+  /** O estado da corrida no vocabulário da casa (`RideState` do servidor). */
+  ride_state?: string;
+  /** O nome do serviço da corrida como o cadastro diz ("TaOn"). */
+  service_name?: string;
   pickup_eta_at?: string;
   arrived_pickup_at?: string;
   delivery_eta_at?: string;
@@ -29,7 +35,7 @@ export interface CourierProgressView {
   pickup: string;
   /** "Entrega prevista ~16:05". */
   delivery: string;
-  /** "A TaOn não informa a corrida desde 15h42." (vazio com a leitura em dia). */
+  /** "A TaOn não informa a corrida desde 15h42." (vazio com a leitura em dia; o nome é o do serviço). */
   stale: string;
   /**
    * A corrida segue chamada, sem ninguém a caminho e sem nada a fazer:
@@ -41,15 +47,24 @@ export interface CourierProgressView {
 
 const EMPTY: CourierProgressView = { pickup: "", delivery: "", stale: "", waiting: "" };
 
-/** O que a TaOn faz depois da desistência: a mesma corrida, outro entregador. */
-export const REOPENED_HINT = "A TaOn já procura outro";
+/** Os estados em que a corrida já acabou (`RideState`). */
+const ENDED_STATES = ["done", "not_served", "cancelled"];
 
-/** A TaOn trocou o entregador (``T``): a mesma corrida, sem dono por um instante. */
-export const TRANSFER_TITLE = "A TaOn está trocando de entregador";
+/** O que o serviço faz depois da desistência: a mesma corrida, outro entregador. */
+export function reopenedHint(service?: string): string {
+  return `A ${deliveryServiceName(service)} já procura outro`;
+}
+
+/** O serviço trocou o entregador: a mesma corrida, sem dono por um instante. */
+export function transferTitle(service?: string): string {
+  return `A ${deliveryServiceName(service)} está trocando de entregador`;
+}
 export const TRANSFER_HINT = "A corrida continua a mesma";
 
-/** A TaOn juntou a corrida a outra, que já tem entregador (letra U). */
-export const GROUPED_TITLE = "A TaOn juntou com outra corrida";
+/** O serviço juntou a corrida a outra, que já tem entregador. */
+export function groupedTitle(service?: string): string {
+  return `A ${deliveryServiceName(service)} juntou com outra corrida`;
+}
 export const GROUPED_HINT = "Ela já tem entregador";
 
 /** "Diego desistiu às 14:32" (sem o nome: "O entregador desistiu às 14:32"). */
@@ -73,24 +88,25 @@ export function courierProgress(
   nowMs: number,
 ): CourierProgressView {
   if (!courier?.status) return EMPTY;
-  const ended = ["F", "N", "C"].includes(courier.status);
+  const state = courier.ride_state ?? "";
+  const ended = ENDED_STATES.includes(state);
   const view = { ...EMPTY };
 
   const sync = epoch(courier.sync_since);
   if (sync !== null && !ended)
-    view.stale = `A TaOn não informa a corrida desde ${clockHHMM(sync)}.`;
+    view.stale = `A ${deliveryServiceName(courier.service_name)} não informa a corrida desde ${clockHHMM(sync)}.`;
 
   const reopened = epoch(courier.reopened_at);
-  if (courier.status === "U") view.waiting = `${GROUPED_TITLE}. ${GROUPED_HINT}.`;
+  if (state === "grouped") view.waiting = `${groupedTitle(courier.service_name)}. ${GROUPED_HINT}.`;
   else if (reopened !== null && !ended)
     view.waiting =
       courier.reopened_reason === "transfer"
-        ? `${TRANSFER_TITLE}. ${TRANSFER_HINT}.`
-        : `${withdrawalTitle(courier.reopened_driver, reopened)}. ${REOPENED_HINT}.`;
+        ? `${transferTitle(courier.service_name)}. ${TRANSFER_HINT}.`
+        : `${withdrawalTitle(courier.reopened_driver, reopened)}. ${reopenedHint(courier.service_name)}.`;
 
   const arrived = epoch(courier.arrived_pickup_at);
   const pickupEta = epoch(courier.pickup_eta_at);
-  if (courier.status === "A" || courier.status === "S") {
+  if (state === "assigned") {
     if (arrived !== null) view.pickup = `Chegou à loja às ${clockHHMM(arrived)}`;
     else if (pickupEta !== null) {
       const minutes = Math.ceil((pickupEta - nowMs) / 60_000);

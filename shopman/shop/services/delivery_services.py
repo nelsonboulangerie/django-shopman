@@ -79,13 +79,48 @@ def ride_state(block: dict | None) -> RideState | None:
     return _translator(block)(block.get("status"))
 
 
+def _vocabulary(block: dict):
+    """O módulo que conhece as letras do bloco: o serviço da corrida ou, sem serviço ligado
+    (corrida antiga, loja sem central), o vocabulário da TaOn, que é também o das letras
+    internas da casa (``courier_own_fleet``). Ler a letra crua dava esse mesmo resultado."""
+    from shopman.shop.adapters import courier_machine
+
+    backend = courier_backend(block)
+    return backend if getattr(backend, "ride_state", None) else courier_machine
+
+
 def _translator(block: dict):
-    """Quem traduz a letra do bloco: o serviço da corrida ou, sem serviço ligado (corrida
-    antiga, loja sem central), o vocabulário da TaOn, que é também o das letras internas da
-    casa (``courier_own_fleet``). Ler a letra crua dava esse mesmo resultado."""
+    """Quem traduz a letra do bloco em :class:`RideState` (ver :func:`_vocabulary`)."""
     from shopman.shop.adapters import courier_machine
 
     return getattr(courier_backend(block), "ride_state", None) or courier_machine.ride_state
+
+
+def state_detail(block: dict | None) -> str:
+    """A nuance que o serviço dá a um estado, quando dá ("Aguardando aceite"), ou "".
+
+    O estado da casa diz o que a tela precisa; a letra de alguns serviços diz um pouco
+    mais, e só quem fala aquela língua sabe dizer o quê (M1b-b2, #3117).
+    """
+    if not block:
+        return ""
+    detail = getattr(_vocabulary(block), "status_detail", None)
+    return detail(block.get("status")) if detail else ""
+
+
+#: A palavra das frases quando não há serviço cadastrado: "a central", "da central".
+SERVICE_FALLBACK_NAME = "central"
+
+
+def service_name(block: dict | None = None) -> str:
+    """O nome do serviço da corrida como o cadastro diz ("TaOn"), para a frase do operador.
+
+    Sem serviço gravado na corrida vale o padrão do Admin; sem nenhum, "central". As
+    frases tratam o serviço no feminino ("a TaOn", "a central"), como a empresa.
+    """
+    ref = str((block or {}).get("service") or "")
+    service = DeliveryService.objects.filter(ref=ref).first() if ref else service_for_new_ride()
+    return (service.name.strip() if service else "") or SERVICE_FALLBACK_NAME
 
 
 def state_since(block: dict | None, state: RideState) -> str | None:
