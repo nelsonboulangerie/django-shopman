@@ -226,6 +226,38 @@ def test_an_unknown_theme_is_refused_and_unconfirmed_links_change_nothing(client
     assert diego.page_theme == ""
 
 
+def test_the_phone_position_feeds_the_map_only_while_on_route(client, shop, diego):
+    """#2509: a posição do celular vai para o mesmo mapa da TaOn, só com a rota na rua."""
+    from shopman.shop.services import courier_position
+
+    link = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link
+    _post(client, "courier-ride-link-claim", link.token)
+    here = {"action": "position", "lat": -23.32, "lng": -51.17, "accuracy": 12}
+    assert _post(client, "courier-ride-link-events", link.token, here).status_code == 200
+    assert courier_position.read(link.ride_ref) is None  # no balcão o celular não é a moto
+
+    _post(client, "courier-ride-link-events", link.token, {"action": "depart"})
+    _post(client, "courier-ride-link-events", link.token, here)
+    position = courier_position.read(link.ride_ref)
+    assert position is not None and position["source"] == courier_position.SOURCE_OWN_FLEET
+    assert (position["latitude"], position["longitude"]) == (-23.32, -51.17)
+
+
+def test_a_vague_or_foreign_position_is_not_drawn(client, shop, diego):
+    from shopman.shop.services import courier_position
+
+    link = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link
+    _post(client, "courier-ride-link-claim", link.token)
+    _post(client, "courier-ride-link-events", link.token, {"action": "depart"})
+    _post(client, "courier-ride-link-events", link.token,
+          {"action": "position", "lat": -23.32, "lng": -51.17, "accuracy": 900})
+    assert courier_position.read(link.ride_ref) is None  # palpite de 900 m não desenha a moto
+    # Outro celular não fala por esta rota.
+    refused = _post(client, "courier-ride-link-events", link.token,
+                    {"action": "position", "lat": -23.32, "lng": -51.17}, device=OTHER_PHONE)
+    assert refused.status_code == 403 and courier_position.read(link.ride_ref) is None
+
+
 def test_events_need_the_confirmation_first(client, shop, diego):
     token = own_fleet.assign([_order("WEB-A47")], diego, actor="operator:ana").link.token
     assert _post(client, "courier-ride-link-events", token, {"action": "depart"}).status_code == 409

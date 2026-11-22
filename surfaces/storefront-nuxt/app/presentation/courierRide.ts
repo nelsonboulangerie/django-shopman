@@ -410,6 +410,28 @@ export function themeToAdopt (server: string | null | undefined, lastServer: str
   return parseTheme(server)
 }
 
+// ── A posição para a loja (#2509) ────────────────────────────────────────────
+
+/** De quanto em quanto a página manda a posição com a rota na rua (plano §4.5.1). */
+export const POSITION_SECONDS = 15
+
+/** `off` antes de sair; `asking` esperando a permissão; `on` mandando; `denied` bloqueada. */
+export type TrackingState = 'off' | 'asking' | 'on' | 'denied' | 'unavailable'
+
+/** A linha da tela "Dirigindo" sobre a posição: o entregador sabe se a loja o vê. */
+export function trackingText (state: TrackingState): string {
+  switch (state) {
+    case 'asking':
+      return 'Permita a localização para a loja ver onde você está.'
+    case 'on':
+      return 'A loja vê onde você está enquanto esta tela estiver aberta.'
+    case 'denied':
+      return 'Localização bloqueada: a loja não vê onde você está. Libere nas configurações do navegador.'
+    default:
+      return ''
+  }
+}
+
 // ── O Desfazer ───────────────────────────────────────────────────────────────
 
 export const UNDO_SECONDS = 10

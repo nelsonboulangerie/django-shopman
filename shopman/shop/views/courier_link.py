@@ -7,7 +7,8 @@ entregador (cabeçalho ``X-Courier-Device``, a chave que a página gera e guarda
 - ``GET  rides/<token>/``          o momento da rota (ou a confirmação, se ninguém confirmou)
 - ``POST rides/<token>/claim/``    "Sou o Diego, abrir": prende o link a este celular
 - ``POST rides/<token>/events/``   os toques: ``depart``, ``deliver``, ``problem`` e ``theme``
-  (o tema escolhido na página vai para o cadastro do entregador, #2648)
+  (o tema escolhido na página vai para o cadastro do entregador, #2648) e ``position``
+  (a posição do celular com a rota na rua, a cada 15 s, #2509)
 """
 
 from __future__ import annotations
@@ -84,6 +85,9 @@ class CourierRideEventView(_LinkView):
             elif action == "problem":
                 own_fleet.report_problem(access.link, order_ref, str(data.get("kind") or ""),
                                          payment=str(data.get("payment") or ""))
+            elif action == "position":
+                own_fleet.report_position(access.link, data.get("lat"), data.get("lng"),
+                                          accuracy=data.get("accuracy"), at=data.get("at"))
             elif action == "theme":
                 own_fleet.remember_theme(access.link, str(data.get("theme") or ""))
             else:
