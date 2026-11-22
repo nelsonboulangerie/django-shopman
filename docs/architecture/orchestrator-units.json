@@ -3313,6 +3313,41 @@
       "out_of_extraction": false
     },
     {
+      "id": "stock.production-shrink-receiver",
+      "question": "Como o plano de produção que encolhe abaixo das sacolas solta só a reserva de sacola que perdeu lastro, e nunca a do pedido?",
+      "owner": "stock.production-shrink-receiver",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.handlers._stock_receivers:on_production_adjusted",
+      "authoritative_symbols": [
+        "shopman.shop.handlers._stock_receivers:on_production_adjusted"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/handlers/_stock_receivers.py",
+          "symbols": [
+            "on_production_adjusted"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "handler"
+      ],
+      "domains": [
+        "stockman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_sacola_fora_da_sugestao.py::test_o_receiver_do_plano_solta_a_sacola_antes_do_pedido"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "stock.production-void-receiver",
       "question": "Como a anulação de produção libera apenas reservas presas aos quants anulados?",
       "owner": "stock.production-void-receiver",
