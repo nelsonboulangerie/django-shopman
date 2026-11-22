@@ -1258,6 +1258,16 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         refund_retry_plan = refund_retry.plan(order)
         if refund_retry_plan.failed:
             extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
+    # "Estornar" (#2727, item 5): a exceção financeira do Gerente. Só aparece a quem
+    # tem ``backstage.refund_single_order`` e no pedido com cobrança online paga; a
+    # régua (qual cobrança, quanto, a base) é de ``services/order_refund``.
+    from shopman.backstage.services import order_refund
+
+    refund_action = order_refund.detail_action(
+        order, user, retry_failed=bool(refund_retry_plan is not None and refund_retry_plan.failed),
+    )
+    if refund_action is not None:
+        extra_actions.append(refund_action)
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -4196,6 +4206,8 @@ _EVENT_LABELS = {
     # WP-G13: quem tentou é o autor da linha; quem autorizou e o que o gateway
     # respondeu vão no detalhe (``_refund_retry_detail``).
     "payment.refund_retry": "Estorno tentado de novo",
+    # "Estornar" no detalhe do Gestor (#2727, item 5): a tentativa, saída ou não.
+    "payment.order_refund": "Estorno pedido no Gestor",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
     # #2897: o saldo da encomenda cobrado em Pix no balcão (novo, ou o Pix online
     # do cliente aproveitado); quem gerou é o autor da linha.
@@ -4366,7 +4378,7 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
 
         if event.type in _PRODUCTION_PROMISE_EVENTS:
             detail = _production_hold_lost_detail(payload)
-        elif event.type == "payment.refund_retry":
+        elif event.type in {"payment.refund_retry", "payment.order_refund"}:
             detail = _refund_retry_detail(payload)
         elif event.type in _PAYMENT_EVENT_TYPES:
             detail = _payment_event_detail(payload)

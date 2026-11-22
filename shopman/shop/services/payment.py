@@ -2441,9 +2441,10 @@ def refund_intent_at_gateway(
 
         if origin == "Gestor":
             # O sino do balcão: o Gestor reapresenta a mesma chave na tentativa seguinte
-            # (``refund_retry``), então tentar de novo não devolve duas vezes.
+            # (``refund_retry`` e o "Estornar" de ``order_refund``), então tentar de novo
+            # não devolve duas vezes.
             ambiguous = (
-                f"O estorno do pedido {intent.order_ref or intent_ref}, tentado de novo no Gestor de pedidos, "
+                f"O estorno do pedido {intent.order_ref or intent_ref}, feito no Gestor de pedidos, "
                 "ficou sem resposta do meio de pagamento, e pode ter saído. Tente de novo no Gestor em "
                 "alguns minutos: a tentativa seguinte confere esta e não devolve duas vezes."
             )
