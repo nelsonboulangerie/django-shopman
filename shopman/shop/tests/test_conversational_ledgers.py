@@ -15,11 +15,12 @@ from conversational_commerce.contracts import ExposureEvent
 from conversational_commerce.engine import Engine, Ports
 from conversational_commerce.profile.test_profile import build_test_profile
 from conversational_commerce.testing.fakes import FakeWorld
-from conversational_commerce.testing.journeys import j4, j6, run_journey
+from conversational_commerce.testing.journeys import j3, j4, j6, run_journey
 from conversational_commerce.testing.journeys.runner import ScriptedModel, script_of
 
 from shopman.shop.conversational.ledgers import (
     DurableExposureLedger,
+    commitment_ledger,
     exposure_ledger,
     memory_store,
     receipt_ledger,
@@ -99,3 +100,52 @@ def test_the_ledgers_never_cross_tenant_or_environment():
     other = dataclasses.replace(j4.CTX, environment="shadow")
     assert receipt_ledger(other).commands == {}
     assert exposure_ledger(other).history == []
+
+
+# ── compromissos (3b): cada motor é novo, o livro vem do banco ──────────────────────────────
+
+def _world_engines():
+    """Uma fábrica de motores NOVOS sobre o mesmo mundo e o mesmo banco, com os livros do banco."""
+    world = FakeWorld()
+    ports = Ports.from_world(world)
+    ports.store = ShopmanStore(clock=world.clock)
+    ports.model = ScriptedModel(world.clock, script_of((j3.ASK,)))
+    profile = build_test_profile(**WITH_MODEL)
+
+    def fresh():
+        return Engine(ports, profile, commitments=commitment_ledger(j3.CTX))
+
+    return world, fresh
+
+
+def test_an_open_promise_comes_back_in_a_new_engine():
+    world, fresh = _world_engines()
+    asked = fresh().turn(j3.CTX, j3.ASK.message)
+    (entry,) = fresh().commitments.open_entries(j3.CTX.tenant, j3.CTX.environment)
+    assert entry.commitment.state == "open" and entry.ticket_id
+    assert entry.binding == asked.event.channel_binding
+    assert fresh().commitments.open_episodes(j3.CTX.tenant) == {asked.episode.episode_id}
+
+
+def test_the_deadline_is_handled_once_across_engines():
+    """K22 com um motor por tique: avisa uma vez, escala uma vez, e o tique seguinte não repete."""
+    world, fresh = _world_engines()
+    fresh().turn(j3.CTX, j3.ASK.message)
+    world.clock.advance(31 * 60)
+    (notice,) = fresh().tick(j3.CTX)
+    assert notice.chosen_moves == ["wait"]
+    (entry,) = fresh().commitments.open_entries(j3.CTX.tenant, j3.CTX.environment)
+    assert entry.notified and entry.escalated and entry.commitment.owner == "supervisor"
+    assert fresh().commitments.events_of(entry.commitment_id) == [
+        "acknowledged", "deadline_passed", "escalated", "customer_notified"]
+    assert fresh().tick(j3.CTX) == ()  # outro motor, outro tique: nada se repete
+
+
+def test_the_team_answer_reaches_a_new_engine():
+    world, fresh = _world_engines()
+    fresh().turn(j3.CTX, j3.ASK.message)
+    (entry,) = fresh().commitments.open_entries(j3.CTX.tenant, j3.CTX.environment)
+    world.staff.answer(entry.ticket_id, j3.ANSWER)
+    answered = fresh().staff_answered(j3.CTX, entry.commitment_id)
+    assert answered.text == "Item Z costs XTS 8.00."
+    assert fresh().commitments.open_entries(j3.CTX.tenant, j3.CTX.environment) == []  # cumprido: sai dos abertos

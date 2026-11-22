@@ -19,23 +19,37 @@ duráveis, do lado do adaptador; o ``packages/`` não muda.
   É o que mede o que o cliente leu (decisão de 22/11/2026: o motor fala, e o registro nunca
   afirma o que não aconteceu).
 
-Os compromissos (``commitments``) são a peça 3b: o livro guarda campos que o contrato não
-leva (o ticket da equipe, se já avisou, se já subiu), e por isso precisam de um registro
-próprio.
+- **Compromissos** (``DurableCommitmentLedger``, ``commitment_ledger``): o livro guarda o que o
+  contrato ``cc.commitment`` não leva (o movimento e a necessidade de origem, o vínculo, quem
+  recebe, o ticket da equipe, se o cliente já foi avisado, se já subiu, os prazos tratados e
+  os eventos). Cada mudança do livro (``open``, ``advance``, ``note``, ``due``) grava a linha do
+  compromisso em ``ConversationalCommitment``. O motor marca ``notified`` e ``escalated`` direto
+  na entrada e chama ``note`` logo depois; é o ``note`` que grava. Só entra o que passou pelo
+  ``open``: o compromisso de reconciliação (``reconcile.<comando>``), que o motor grava como
+  registro mas nunca abre no livro, não aparece aqui.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from conversational_commerce.contracts import ActionCommand, ActionReceipt, ExposureEvent, MemoryItem
+from conversational_commerce.contracts import (
+    ActionCommand,
+    ActionReceipt,
+    ChannelBinding,
+    Commitment,
+    ExposureEvent,
+    MemoryItem,
+)
+from conversational_commerce.engine.state import NeedSpec
+from conversational_commerce.ledger.commitments import CommitmentEvent, CommitmentLedger, Entry
 from conversational_commerce.ledger.decisions import LedgerError
 from conversational_commerce.ledger.exposures import ExposureLedger
 from conversational_commerce.ledger.receipts import ReceiptLedger
 from conversational_commerce.memory.store import MemoryStore
 from conversational_commerce.ports import TrustedContext
 
-from shopman.shop.models import ConversationalRecord
+from shopman.shop.models import ConversationalCommitment, ConversationalRecord
 
 from .store import _scope
 
@@ -93,4 +107,91 @@ def exposure_ledger(ctx: TrustedContext, *, episode_id: str | None = None) -> Du
     return DurableExposureLedger(ctx=ctx, history=history)
 
 
-__all__ = ["DurableExposureLedger", "exposure_ledger", "memory_store", "receipt_ledger"]
+def _need_document(need: NeedSpec) -> dict:
+    return {"need_id": need.need_id, "act": need.act, "readings": [dict(r) for r in need.readings],
+            "answers_question": need.answers_question}
+
+
+def _need_of(document: dict) -> NeedSpec:
+    return NeedSpec(need_id=document["need_id"], act=document["act"],
+                    readings=tuple(document.get("readings") or ({},)),
+                    answers_question=document.get("answers_question"))
+
+
+@dataclass
+class DurableCommitmentLedger(CommitmentLedger):
+    """O livro dos compromissos que grava cada mudança da entrada (``ConversationalCommitment``)."""
+
+    ctx: TrustedContext | None = None
+
+    def open(self, commitment: Commitment, **entry) -> Entry:
+        opened = super().open(commitment, **entry)
+        self._save(opened)
+        return opened
+
+    def advance(self, commitment_id: str, **kwargs) -> Commitment:
+        updated = super().advance(commitment_id, **kwargs)
+        self._save(self.entries[commitment_id])
+        return updated
+
+    def note(self, kind, commitment_id: str, at: str, ref: str | None = None) -> None:
+        super().note(kind, commitment_id, at, ref)
+        if commitment_id in self.entries:
+            self._save(self.entries[commitment_id])
+
+    def due(self, now: str, tenant: str | None = None, environment: str | None = None) -> list[Entry]:
+        found = super().due(now, tenant, environment)
+        for entry in found:
+            self._save(entry)  # o prazo tratado vale para o próximo turno, que é outro motor
+        return found
+
+    def _save(self, entry: Entry) -> None:
+        if self.ctx is None:
+            return
+        cid = entry.commitment_id
+        ConversationalCommitment.objects.update_or_create(
+            **_scope(self.ctx), commitment_id=cid,
+            defaults={
+                "episode_id": entry.commitment.episode_id or "",
+                "is_open": entry.is_open,
+                "commitment": entry.commitment.to_document(),
+                "history": [record.to_document() for record in entry.history],
+                "entry": {"move": entry.move, "need": _need_document(entry.need),
+                          "binding": ({"channel": entry.binding.channel, "conversation_ref": entry.binding.conversation_ref}
+                                      if entry.binding is not None else None),
+                          "recipient": entry.recipient, "identity": entry.identity, "ticket_id": entry.ticket_id},
+                "notified": entry.notified,
+                "escalated": entry.escalated,
+                "handled": sorted([key[1] for key in self._handled if key[0] == cid]),
+                "events": [{"kind": e.kind, "at": e.at, "ref": e.ref} for e in self.events if e.commitment_id == cid],
+            },
+        )
+
+
+def commitment_ledger(ctx: TrustedContext) -> DurableCommitmentLedger:
+    """Os compromissos abertos do inquilino e ambiente, num livro que continua gravando."""
+    ledger = DurableCommitmentLedger(ctx=ctx)
+    rows = ConversationalCommitment.objects.filter(**_scope(ctx), is_open=True).order_by("pk")
+    for row in rows:
+        stored = row.entry or {}
+        binding = stored.get("binding")
+        entry = Entry(
+            Commitment.from_document(row.commitment), move=stored.get("move", ""),
+            need=_need_of(stored["need"]), binding=ChannelBinding(**binding) if binding else None,
+            recipient=stored.get("recipient", "unknown"), identity=stored.get("identity", "anonymous"),
+            ticket_id=stored.get("ticket_id"), history=[Commitment.from_document(d) for d in row.history],
+            notified=row.notified, escalated=row.escalated)
+        ledger.entries[row.commitment_id] = entry
+        ledger.events.extend(CommitmentEvent(e["kind"], row.commitment_id, e["at"], e.get("ref")) for e in row.events)
+        ledger._handled.update((row.commitment_id, at) for at in row.handled)
+    return ledger
+
+
+__all__ = [
+    "DurableCommitmentLedger",
+    "DurableExposureLedger",
+    "commitment_ledger",
+    "exposure_ledger",
+    "memory_store",
+    "receipt_ledger",
+]

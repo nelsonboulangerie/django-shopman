@@ -46,6 +46,7 @@ from .concierge import (
 )
 from .contact_release import ContactRelease, ReleasedContactKind
 from .conversational import (
+    ConversationalCommitment,
     ConversationalDecision,
     ConversationalEpisode,
     ConversationalOutcome,
@@ -118,6 +119,7 @@ __all__ = [
     "ConversationMessage",
     "OutboundAttempt",
     "ContactRelease",
+    "ConversationalCommitment",
     "ConversationalDecision",
     "ConversationalEpisode",
     "ConversationalOutcome",
