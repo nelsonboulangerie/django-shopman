@@ -462,3 +462,115 @@ def test_card_call_refs_skip_a_call_without_answer(shop):
         payload={"order_ref": order.ref, "actor": "lab", "dispatch_attempt": {"state": "unknown"}})
 
     assert deliveries_waiting_summary() == {"waiting": 2, "call_refs": ["EN-B"]}
+
+
+# ── A corrida que acabou sem levar os pedidos (#2737) ─────────────────
+
+
+def _ended(order, status, *, source="poll"):
+    from shopman.orderman.models import Directive
+
+    # O worker fecha a tarefa de despacho depois de abrir a corrida; aqui o
+    # handler rodou à mão, então fecha-se à mão: senão a chamada parece viva.
+    Directive.objects.filter(status=Directive.Status.QUEUED).update(status=Directive.Status.DONE)
+    courier.apply_status(order, status, source=source)
+    order.refresh_from_db()
+
+
+def _clock(order):
+    from django.utils.dateparse import parse_datetime
+    from shopman.utils.formatting import format_clock
+
+    return format_clock(parse_datetime(courier.get_block(order)["attempts"][-1]["ended_at"]))
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_nobody_accepted_brings_the_whole_ride_back_with_the_reason(shop):
+    """Ninguém aceitou: os pedidos voltam a Aguardando dizendo por quê, e o
+    "Chamar de novo" é da corrida inteira, com a mesma letra."""
+    from shopman.backstage.projections.order_queue import _courier_block
+
+    a, b = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.335, -51.158)
+    _call(a, b)
+    _ended(a, "N")
+    _ended(b, "N")
+
+    deliveries = build_deliveries()
+    assert deliveries.rides == ()
+    (card,) = deliveries.failed_rides
+    message = f"Ninguém aceitou a corrida A ({_clock(a)})."
+    assert card.message == message
+    assert sorted(card.refs) == ["EN-A", "EN-B"]
+    assert card.number == 1
+    # O Painel do pedido diz a mesma frase.
+    assert _courier_block(a)["error"]["message"] == message
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_cancelled_ride_says_who_cancelled(shop):
+    by_central, by_house = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.31, -51.17)
+    _call(by_central)
+    _call(by_house)
+    _ended(by_central, "C")
+    _ended(by_house, "C", source="operator:ana")
+
+    messages = {card.refs[0]: card.message for card in build_deliveries().failed_rides}
+    assert messages == {
+        "EN-A": f"A TaOn cancelou a corrida A ({_clock(by_central)}).",
+        "EN-B": f"A casa cancelou a corrida B ({_clock(by_house)}).",
+    }
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_letter_leaves_the_sentence_when_another_ride_took_it(shop):
+    failed, other = _at("EN-A", -23.30, -51.16), _at("EN-B", -23.31, -51.17)
+    _call(failed)
+    _ended(failed, "N")
+    _call(other)  # a letra A ficou livre e a corrida nova a pegou
+    assert courier.get_block(other)["ride_number"] == 1
+
+    (card,) = build_deliveries().failed_rides
+    assert card.message == f"Ninguém aceitou a corrida ({_clock(failed)})."
+    assert card.number is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_waiting_order_never_called_has_no_failure(shop):
+    _at("EN-A", -23.30, -51.16)
+
+    deliveries = build_deliveries()
+    assert deliveries.failed_rides == ()
+    assert deliveries.waiting[0].failure_key == ""
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_health_contract(shop, monkeypatch):
+    """O Painel do pedido e a página Entregas leem a corrida SÓ de ``courier.ride_health``.
+
+    Com a fonte trocada por valores marcados, as duas telas mostram os valores
+    marcados: um campo que uma delas voltar a ler por fora reprova aqui.
+    """
+    from shopman.backstage.projections.order_queue import _courier_block
+
+    order = _at("EN-A", -23.30, -51.16)
+    _call(order)
+    for status in ("A", "E"):
+        _ended(order, status)
+
+    marked = {
+        "unresolved": False,
+        "cancel": {"state": "failed", "message": "marca-cancel", "at": "2026-11-21T12:00:00+00:00"},
+        "progress": {**courier.progress_view(courier.get_block(order)), "delivery_eta_at": "marca-eta"},
+        "reopened": {"at": "", "driver": "", "reason": ""},
+        "tracking": {"url": "https://marca.example/track", "code": "9999"},
+        "charge_outdated": {"sent": "marca-sent", "current": "marca-now", "collected": True},
+        "last_failure": None,
+    }
+    monkeypatch.setattr(courier, "ride_health", lambda *args, **kwargs: marked)
+
+    panel = _courier_block(order)
+    (ride,) = build_deliveries().rides
+    assert panel["cancel_state"]["message"] == ride.cancel_message == "marca-cancel"
+    assert panel["delivery_eta_at"] == ride.delivery_eta_at == "marca-eta"
+    assert panel["tracking_url"] == ride.tracking_url == "https://marca.example/track"
+    assert panel["charge_outdated"] == marked["charge_outdated"]
