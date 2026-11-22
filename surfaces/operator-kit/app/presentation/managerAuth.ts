@@ -158,6 +158,9 @@ const REASON_COPY: Record<string, (input: ManagerAuthReasonInput) => string> = {
       : `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
   // Conta na casa com limite (decisão do dono, 14/10/2026): o gerente vê o saldo
   // de hoje, o limite e quanto esta venda passa ANTES de assinar.
+  // Encomenda acima do plano (WP-E2, #2676): a descrição diz o motivo pelo nome; os
+  // números (pedidas, planejadas, a data) vêm no contexto do próprio diálogo.
+  preorder_over_plan: () => "Encomenda acima do plano da data.",
   house_account_over_limit: (input) => {
     const limit = input.houseAccountLimit;
     if (!limit) return "Conta na casa acima do limite.";
