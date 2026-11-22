@@ -101,7 +101,7 @@ from conversational_commerce.ports import (
     WorkItem,
 )
 from conversational_commerce.profile import read_line
-from conversational_commerce.reply import Composed, Evidence, compose
+from conversational_commerce.reply import Composed, Evidence, Template, compose
 from conversational_commerce.workflow import (
     EpisodeEvent,
     answer_refers_to,
@@ -204,6 +204,10 @@ class Engine:
     profile: DeploymentProfile
     rules: LocalRules = TEST_RULES
     formatters: Mapping[str, Callable[[Any], str]] = field(default_factory=lambda: dict(DEFAULT_FORMATTERS))
+    # A voz e a língua da casa (spec 06, seção 2): os moldes do adaptador, pelo ``template_id``, no
+    # lugar dos genéricos do pacote. Cada um troca a frase e mantém o movimento e os espaços, que é
+    # o que a parte montada pelo movimento preenche; o que não trocar fica com o do pacote.
+    house_templates: Mapping[str, Template] = field(default_factory=dict)
     resolve_content: Callable[[str | None], str] = text_of
     # O adaptador diz quem fala e qual é o carrinho dele, do contexto confiável (nunca do texto).
     subject_of: Callable[[TrustedContext, InteractionEvent], Subject] = default_subject
@@ -213,6 +217,20 @@ class Engine:
     memory: MemoryStore = field(default_factory=MemoryStore)
     exposures: ExposureLedger = field(default_factory=ExposureLedger)
     _turns: int = 0
+
+    def __post_init__(self) -> None:
+        package = templates()
+        for template_id, template in self.house_templates.items():
+            base = package.get(template_id)
+            if base is None:
+                raise TypeError(f"molde da casa sem par no pacote: {template_id}")
+            if template.template_id != template_id or template.move != base.move:
+                raise TypeError(f"molde da casa {template_id}: o id e o movimento são os do pacote ({base.move})")
+            if dict(template.slots) != dict(base.slots):
+                raise TypeError(f"molde da casa {template_id}: os espaços (nome, lastro e faceta) são os do pacote")
+
+    def _templates(self) -> dict[str, Template]:
+        return {**templates(), **self.house_templates}
 
     # ── envelope ────────────────────────────────────────────────────────────
     def _envelope(self, ctx: TrustedContext, prefix: str, episode_id: str | None, trace_id: str,
@@ -692,7 +710,7 @@ class Engine:
         reply = None
         if specs:
             receipts = {receipt.command_id: receipt for receipt in state.receipts.values()}
-            reply = compose(specs=specs, templates=templates(), formatters=self.formatters,
+            reply = compose(specs=specs, templates=self._templates(), formatters=self.formatters,
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
                                               receipts=receipts, commitments=state.commitments),
                             decision_id=decision_id,
@@ -884,7 +902,7 @@ class Engine:
         reply = None
         if chosen:
             reply = compose(specs=[moves[c.move].reply(state, by_need[c.need_id]) for c in chosen],
-                            templates=templates(), formatters=self.formatters,
+                            templates=self._templates(), formatters=self.formatters,
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
                                               commitments=state.commitments),
                             decision_id=decision.decision_id,
