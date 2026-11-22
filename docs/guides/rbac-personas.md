@@ -30,6 +30,7 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 | `shop.manage_customers` | `Shop` | Criar/editar Customer, grupos, loyalty | Admin |
 | `shop.manage_rules` | `RuleConfig` | Criar/editar regras de pricing e validação | Admin |
 | `backstage.view_production_reports` | `DayClosing` | Relatórios de produção | Produção `/reports` via `api/v1/backstage/production/reports|management|weighing/blind-map/` |
+| `backstage.refund_single_order` | `DayClosing` | **Estornar UM pedido**: a exceção financeira do Gerente. Vê o valor pago naquela cobrança e o que volta dela, e mais nada | Gestor (orders-nuxt), no detalhe do pedido, via `api/v1/backstage/orders/<ref>/refund/` |
 
 ---
 
@@ -44,10 +45,10 @@ por default.
 |-------|-----------|----------------|
 | **Caixa** | `cashman.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
 | **Cozinha** | `backstage.operate_kds`, `shop.manage_production` | Cozinheiro / preparador |
-| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.void_production` | Gerente de turno |
+| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.void_production`, `backstage.refund_single_order` (a exceção, abaixo) | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
-| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent`, `backstage.view_bi` (o B.I. inteiro, com os de-paras e as regras de alerta), `backstage.void_production` | Quem vê dinheiro, lê o B.I. e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
+| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent`, `backstage.view_bi` (o B.I. inteiro, com os de-paras e as regras de alerta), `backstage.void_production`, `backstage.refund_single_order` (o mesmo gesto do Gestor) | Quem vê dinheiro, lê o B.I. e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
 
 ### Ação é uma permissão; ABRIR A TELA é outra
 
@@ -89,10 +90,31 @@ relatórios, etc. ... ver valores específicos de uma transação não é o prob
   respondem 403 ao Gerente, e a Central não oferece o tile a ele.
 - **O Gerente vê o valor de UMA transação, nunca agregados nem listas de cobranças**:
   nada de total esperado, quebra, soma por forma de pagamento, faturamento, ticket médio.
+- **As listas do balcão mostram o valor de cada registro, nunca a conta sobre vários**
+  (dono, 21/11/2026): *"Não tem problema ver o valor de um pedido no histórico. O
+  problema seria poder ver valores de vários registros agregados, sobretudo de clientes
+  diferentes, soma de um período, etc."* O pedido, a encomenda e a conta de UM cliente
+  (o que ele gastou, o ticket médio dele, o saldo dele) chegam com valor. Não chegam:
+  soma de período ou de lista, a lista de contas na casa ordenada pelo saldo (vai pela
+  dívida mais antiga), o filtro por faixa de valor no Admin de pedidos, número do
+  faturamento no aviso do B.I. e exportação de pedido, venda ou pagamento com valor.
 - **O fechamento do dia e a assinatura do gerente no caixa são operação, não exceção**:
   ele fecha às cegas e assina o valor do gesto que autoriza. O registro do fechamento no
   Admin chega a ele sem o resumo do caixa (o esperado, a quebra e o que entrou por forma de
   pagamento ficam para quem audita).
+- **A exceção, a primeira e por enquanto a única: estornar UM pedido**
+  (`backstage.refund_single_order`, #2727 item 5). Na palavra do dono: *"gerente pode
+  ver valores, mas NUNCA somados, relatórios, etc. ... ver valores específicos de uma
+  transação não é o problema."* O Gerente estorna partindo do pedido, no detalhe do
+  Gestor ("Estornar", no menu do pedido), e vê o valor pago naquela cobrança, o que já
+  voltou dela e o que ainda pode voltar. Escolhe o valor (parcial vale, até o
+  disponível; em branco, tudo) e confirma duas vezes, como no diálogo do Admin. O
+  dinheiro sai pelo mesmo caminho do estorno do Dono no Admin
+  (`payment.refund_intent_at_gateway`). Ele **não** ganha `payman.view_paymentintent`,
+  `payman.view_paymenttransaction` nem `payman.refund_paymentintent`: o Admin de
+  cobranças lista, busca e filtra, e isso continua 403 para ele. Pedido com mais de uma
+  cobrança online com dinheiro não é somado: o gesto recusa e o estorno fica com o Dono.
+  O Dono tem a mesma permissão e usa o mesmo gesto, além de tudo o que já tinha.
 - **A trava** é `shopman/shop/tests/test_gerente_sem_permissao_financeira.py`. Toda
   permissão financeira do grupo Gerente (payman, cashman, B.I., fechamento) tem de estar
   numa de duas listas fechadas: `EXCEPTIONS` (com a regra e a palavra do dono) ou

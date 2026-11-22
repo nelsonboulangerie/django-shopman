@@ -257,6 +257,12 @@ class TrackingPromiseData:
     courier_stage: str = ""
     courier_driver: str = ""
     courier_pickup_eta_at: str | None = None
+    # Na rua (#2509, opção 1 da coordenação): a posição do entregador vira TEXTO, nunca
+    # mapa. ``courier_near`` diz que a posição fresca está a até
+    # ``COURIER_NEAR_METERS`` do endereço DESTE pedido; ``courier_seen_at`` (ISO) é a
+    # hora da última posição, para a frase dizer a idade quando ela envelhece.
+    courier_near: bool = False
+    courier_seen_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -987,6 +993,8 @@ def _promise(
     courier_stage: str = "",
     courier_driver: str = "",
     courier_pickup_eta_at: str | None = None,
+    courier_near: bool = False,
+    courier_seen_at: str | None = None,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -1015,6 +1023,8 @@ def _promise(
         courier_stage=courier_stage,
         courier_driver=courier_driver,
         courier_pickup_eta_at=courier_pickup_eta_at,
+        courier_near=courier_near,
+        courier_seen_at=courier_seen_at,
     )
 
 
@@ -1444,10 +1454,13 @@ def _build_promise(
         from shopman.shop.services.courier import driver_first_name, get_block
 
         driver = get_block(order).get("driver") if is_delivery else None
+        near, seen_at = _courier_closeness(order) if is_delivery else (False, None)
         return promise(
             state="dispatched",
             tone="info",
             eta_at=eta_at,
+            courier_near=near,
+            courier_seen_at=seen_at,
             courier_driver=driver_first_name(driver.get("name") or "") if isinstance(driver, dict) else "",
             requires_active_notification=True,
             notification_topic="order_dispatched",
@@ -1458,9 +1471,50 @@ def _build_promise(
     return promise(state="received", tone="info")
 
 
-#: Letras da corrida (Machine) em que ela já acabou: finalizada, não atendida,
-#: cancelada. O link da parada deixa de mostrar o entregador.
-_COURIER_ENDED_STATUSES = frozenset({"F", "N", "C"})
+#: "Diego está chegando." a esta distância do endereço do pedido (tela aprovada, §4.5.2).
+COURIER_NEAR_METERS = 80
+#: Posição mais velha que isto não diz "chegando": a frase passa a dizer a idade.
+COURIER_FRESH_SECONDS = 60
+
+
+def _courier_closeness(order) -> tuple[bool, str | None]:
+    """Se o entregador está perto DESTE endereço, e desde quando é a posição (#2509).
+
+    Só a parada do cliente: a distância é até o endereço dele, e nada da rota sai daqui.
+    Sem corrida viva, sem posição ou sem coordenada do endereço, ``(False, None)``.
+    """
+    import math
+
+    from shopman.shop.services import courier_position
+    from shopman.shop.services.courier import get_block
+
+    block = get_block(order)
+    ride_ref = block.get("ride_ref")
+    if not ride_ref or _courier_ride_ended(block):
+        return False, None
+    position = courier_position.read(ride_ref)
+    if position is None:
+        return False, None
+    address = (order.data or {}).get("delivery_address_structured") or {}
+    try:
+        lat, lng = float(address.get("latitude")), float(address.get("longitude"))
+    except (TypeError, ValueError):
+        return False, position["at"].isoformat()
+    phi1, phi2 = math.radians(lat), math.radians(position["latitude"])
+    dphi, dlmb = phi2 - phi1, math.radians(position["longitude"] - lng)
+    h = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    meters = 2 * 6_371_000 * math.asin(math.sqrt(h))
+    fresh = courier_position.age_seconds(position) <= COURIER_FRESH_SECONDS
+    return fresh and meters <= COURIER_NEAR_METERS, position["at"].isoformat()
+
+
+def _courier_ride_ended(block: dict) -> bool:
+    """A corrida já acabou (entregue, não atendida, cancelada): a parada deixa de
+    mostrar o entregador. O estado vem do serviço da corrida (``RideState``)."""
+    from shopman.shop.protocols import RideState
+    from shopman.shop.services import delivery_services
+
+    return delivery_services.ride_state(block) in (RideState.DONE, RideState.NOT_SERVED, RideState.CANCELLED)
 
 
 def _pickup_from_phrase(order, *, business_state: BusinessCalendarState) -> str:
@@ -1501,7 +1555,7 @@ def _courier_tracking_url(order) -> str:
     courier = (order.data or {}).get("courier")
     if not isinstance(courier, dict):
         return ""
-    if str(courier.get("status") or "") in _COURIER_ENDED_STATUSES:
+    if _courier_ride_ended(courier):
         return ""
     url = proven_tracking(courier)["url"].strip()
     if not url.lower().startswith(("https://", "http://")):
@@ -2064,7 +2118,11 @@ def _confirmation_deadline(order, *, action: str | None = "confirm") -> datetime
 def _eta_at(order) -> str | None:
     """ETA ISO for the two windows the customer cares about:
 
-    - ``preparing`` → quando o pedido fica pronto (prep_time).
+    - ``preparing`` → quando o pedido fica pronto: a MESMA conta do Gestor e da
+      página do entregador (``kitchen_eta.ready_eta``: o início real do preparo
+      mais a mediana dos preparos de agora, ou a meta da estação). Antes era o
+      ``prep_time_minutes`` fixo da loja, e o cliente e o balcão liam horas
+      diferentes para o mesmo pedido (#3168).
     - ``dispatched`` + delivery → janela estimada de CHEGADA (saída + tempo médio
       de entrega). Couriers são terceirizados/sem rastreio, então é uma estimativa
       honesta por configuração, não um horário rastreado.
@@ -2076,12 +2134,21 @@ def _eta_at(order) -> str | None:
         shop = Shop.load()
         round_to_5 = False
         not_before: datetime | None = None
+        ready_at = None
         if order.status == "preparing":
-            minutes = getattr(shop, "prep_time_minutes", None) or 30
+            from shopman.shop.services import kitchen_eta
+
+            minutes = 0
             baseline = getattr(order, "preparing_at", None)
             if baseline is None:
                 event = _event_for_status(order, "preparing")
                 baseline = event.created_at if event else None
+            now = timezone.now()
+            ready_at = kitchen_eta.ready_eta(
+                order,
+                kitchen_eta.prep_expectation(now=now),
+                now=now,
+            )
             not_before = _eta_not_before(order)
         elif order.status == "dispatched":
             data = order.data or {}
@@ -2106,7 +2173,7 @@ def _eta_at(order) -> str | None:
         # mas não inventa um horário para o cliente nem para a notificação.
         if order.status == "preparing" and timezone.localdate(baseline) < timezone.localdate():
             return None
-        eta = baseline + timezone.timedelta(minutes=int(round(minutes)))
+        eta = ready_at if ready_at is not None else baseline + timezone.timedelta(minutes=int(round(minutes)))
         if not_before is not None and not_before > eta:
             eta = not_before
         if round_to_5:

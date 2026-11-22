@@ -14,7 +14,6 @@ import type {
   CustomerProfileProjection as CustomerProfileContract,
   OperatorOrderProjection as OperatorOrderContract,
   OrderCardProjection as OrderCardContract,
-  RideCandidateProjection,
   TwoZoneQueueProjection as TwoZoneQueueContract,
 } from "~/generated/ordersContract";
 
@@ -45,13 +44,18 @@ export interface OrderCardProjection extends OrderCardContract {
 }
 
 /** Courier ride block (Order.data["courier"] → projections._courier_block).
- * `status` is the raw Machine letter (D/G/P/A/S/E/F/N/C/U); labels come from
- * the server, steps/tone are derived client-side (presentation/courier.ts).
+ * `status` is the service's raw letter (only "is there a ride"); the screen reads
+ * `ride_state` (the server's `RideState`). Labels come from the server, steps/tone
+ * are derived client-side (presentation/courier.ts).
  * The backend projection builds this as an untyped dict, so the shape is
  * declared here (as a type alias, assignable to the generated Record). */
 export type CourierBlock = {
   provider: string;
   status: string;
+  /** `RideState`: searching · grouped · reassigning · assigned · at_store · on_route · done · not_served · cancelled. */
+  ride_state: string;
+  /** O nome do serviço da corrida como o cadastro diz. */
+  service_name: string;
   status_label: string;
   active: boolean;
   driver: {
@@ -101,20 +105,6 @@ export type CourierBlock = {
     needs_machine: boolean;
     recorded: boolean;
   };
-  /** Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais perto primeiro. */
-  ride_offer?: RideCandidateProjection[];
-  /** A sugestão da casa para a corrida deste pedido (`ride_plan`, o mesmo das Entregas). */
-  ride_suggestion?: {
-    refs: string[];
-    codes: string[];
-    quoted: boolean;
-    suggested: boolean;
-    together: { value_q: number; minutes: number; km: number; with_return: boolean } | null;
-    separate_q: number | null;
-    saving_q: number | null;
-    late_code: string;
-    late_minutes: number;
-  } | null;
   /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
   charge_outdated?: CourierChargeOutdated | null;
 };

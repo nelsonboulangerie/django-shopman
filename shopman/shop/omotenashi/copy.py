@@ -1288,6 +1288,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER": {
         WILDCARD: {WILDCARD: CopyEntry(message="{driver} está a caminho.")},
     },
+    # A posição do entregador vira texto (#2509): aos 80 m do endereço, a frase aprovada.
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_NEAR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{driver} está chegando.")},
+    },
+    # Só quando a posição envelhece (passou de 1 min): a frase diz de quando é.
+    "TRACKING_PROMISE_DISPATCHED_POSITION_AGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Última posição há {age}.")},
+    },
     "TRACKING_ACTION_CONFIRM_RECEIVED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebi meu pedido")},
     },
@@ -1563,6 +1571,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_CART_ASK_QTY": {
         WILDCARD: {WILDCARD: CopyEntry(message="Quantas unidades de {item} você quer?")},
+    },
+    "CONCIERGE_COMPLAINT_HEARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sinto muito por isso. Já levei à equipe e sigo com você por aqui.")},
+    },
+    "CONCIERGE_CART_NEXT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Quer mais alguma coisa? Quando terminar, é só escrever “pode fechar”.")},
+    },
+    "CONCIERGE_CART_NOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua sacola de agora:")},
     },
     "CONCIERGE_NOT_IN_MENU": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não encontrei “{part}” no cardápio de hoje. O que temos agora:")},

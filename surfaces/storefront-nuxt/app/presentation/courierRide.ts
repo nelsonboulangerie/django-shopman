@@ -67,6 +67,8 @@ export interface CourierRideView {
   detail?: string
   /** A observação da loja para esta corrida (escrita no Gestor, ao enviar). */
   note?: string
+  /** O tema gravado no cadastro do entregador (#2648): o celular novo já abre nele. */
+  theme?: CourierTheme
 }
 
 /** O recado da loja para a corrida, sem espaços sobrando; vazio quando não há. */
@@ -394,6 +396,40 @@ export const THEME_CHOICES: ReadonlyArray<{ value: CourierTheme, label: string }
 
 export function parseTheme (value: string | null | undefined): CourierTheme {
   return value === 'light' || value === 'dark' ? value : 'system'
+}
+
+/**
+ * O tema do cadastro que a página adota (#2648), ou `null` para manter o deste celular.
+ *
+ * O cadastro manda quando MUDA (a primeira leitura, ou a escolha feita em outro celular),
+ * não a cada releitura: uma escolha que não chegou ao servidor (sem sinal) não volta atrás
+ * na releitura seguinte.
+ */
+export function themeToAdopt (server: string | null | undefined, lastServer: string): CourierTheme | null {
+  if (!server || server === lastServer) return null
+  return parseTheme(server)
+}
+
+// ── A posição para a loja (#2509) ────────────────────────────────────────────
+
+/** De quanto em quanto a página manda a posição com a rota na rua (plano §4.5.1). */
+export const POSITION_SECONDS = 15
+
+/** `off` antes de sair; `asking` esperando a permissão; `on` mandando; `denied` bloqueada. */
+export type TrackingState = 'off' | 'asking' | 'on' | 'denied' | 'unavailable'
+
+/** A linha da tela "Dirigindo" sobre a posição: o entregador sabe se a loja o vê. */
+export function trackingText (state: TrackingState): string {
+  switch (state) {
+    case 'asking':
+      return 'Permita a localização para a loja ver onde você está.'
+    case 'on':
+      return 'A loja vê onde você está enquanto esta tela estiver aberta.'
+    case 'denied':
+      return 'Localização bloqueada: a loja não vê onde você está. Libere nas configurações do navegador.'
+    default:
+      return ''
+  }
 }
 
 // ── O Desfazer ───────────────────────────────────────────────────────────────

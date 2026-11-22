@@ -321,16 +321,21 @@ class AIUse:
 
 #: Ordem: do que menos sai para o que mais sai.
 AI_USES: tuple[AIUse, ...] = (
-    # `triage.jev_scores` (e a sombra, `intent_pilot.shadow_triage`): o texto, depois de
+    # `triage.jev_scores` (e a sombra, `intent_pilot.shadow_triage`) e o juiz da conferência
+    # (`conference.JevJudge`, a resposta a enviar pelo mesmo `house_line`): o texto, depois de
     # `redact_observation_text`, e a última fala da casa pelo mesmo redator, sem código de
     # pedido nem valores (`triage.house_line`; adendo à D-040, dono 21/11/2026).
     AIUse(
         purpose="decision",
         helps_to="entender a sua mensagem",
-        sends=("o texto da sua mensagem", "a última mensagem da loja na conversa"),
+        sends=(
+            "o texto da sua mensagem",
+            "a última mensagem da loja na conversa",
+            "a resposta que a loja vai enviar, para conferir antes do envio",
+        ),
         keeps_profile=True,
         redacts=True,
-        also="Da mensagem da loja, a loja também apaga o número do pedido e os valores",
+        also="Das mensagens da loja, a loja também apaga o número do pedido e os valores",
     ),
     # `intent_pilot` (pré-rótulo do gabarito): mensagens já recebidas, pelo
     # `MessageIntentSample.redacted_text`.
@@ -340,6 +345,26 @@ AI_USES: tuple[AIUse, ...] = (
         sends=("o texto da sua mensagem",),
         keeps_profile=True,
         redacts=True,
+    ),
+    # `conference.ModelDrafter` (a escada da conferência): só quando a conferência reprova a
+    # resposta da casa. A fala do cliente e a resposta reprovada, as duas por
+    # `redact_observation_text` (nomes conhecidos inclusive); a resposta leva produtos e
+    # valores do cardápio, que são o lastro da reescrita.
+    AIUse(
+        purpose="concierge_rewrite",
+        helps_to="reescrever uma resposta que a conferência da loja reprovou",
+        sends=("o texto da sua mensagem", "a resposta que a loja preparou, com produtos e valores do cardápio"),
+        keeps_profile=True,
+        redacts=True,
+        also="Isso só acontece quando a conferência da loja reprova a primeira resposta",
+    ),
+    AIUse(
+        purpose="concierge_escalation",
+        helps_to="reescrever uma resposta que a conferência da loja reprovou",
+        sends=("o texto da sua mensagem", "a resposta que a loja preparou, com produtos e valores do cardápio"),
+        keeps_profile=True,
+        redacts=True,
+        also="Isso só acontece quando a conferência da loja reprova a primeira resposta",
     ),
     # `intents.read_with_model` → `build_request`: a fala do turno, redigida, e a nota de
     # estado sem número de pedido nem nome (`intents.reading_note`, WP-03).

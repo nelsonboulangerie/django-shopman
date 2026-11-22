@@ -144,6 +144,11 @@ ANNOUNCEMENT_NOTIFY = "announcement.notify"
 CAMPAIGN_OCCUR = "campaign.occur"
 
 
+# Incidentes (DEV-2026-066): um alerta com remédio na lista fechada ganha uma
+# directive que planeja, aciona o gesto do domínio e se reagenda para conferir.
+# Uma viva por alerta (dedupe ``incident.act:<alert_id>``). Docs: incidents.md.
+INCIDENT_ACT = "incident.act"
+
 # ── Queue helper ──
 
 

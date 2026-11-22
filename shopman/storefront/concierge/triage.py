@@ -128,11 +128,11 @@ _PATTERNS = (
         r"\b(?:meu|o)\s+pedido\b.{0,40}\b(?:saiu|chega|chegou|pronto|andamento|onde esta|ja foi|demora|vai demorar)\b",
     )),
     ("hours_delivery", (
-        r"\b(?:horario|que horas|abre|abrem|fecha|fecham|aberto|aberta|funcionam|endereco|onde fica|"
+        r"\b(?:horario|que horas|abre|abrem|fecha|fecham|abert[oa]s?|funcionam|endereco|onde fica|estarao abert\w*|"
         r"localizacao|retirada|retirar|entrega|entregam|delivery|frete|taxa de entrega)\b",
     )),
     ("house_info", (
-        r"\b(?:pet|cachorro|estacionamento|wi-?fi|reserva de mesa|mesa|acessibilidade|cadeirante|"
+        r"\b(?:pets?|cachorros?|cachorrinho|gato|animal|animais|estacionamento|wi-?fi|reserva de mesa|mesa|acessibilidade|cadeirante|"
         r"formas? de pagamento|aceitam?\s+(?:cartao|pix|vale|vr|va|alelo|sodexo|ticket))\b",
     )),
     ("order", (

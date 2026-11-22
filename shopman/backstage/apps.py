@@ -66,6 +66,21 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # Incidentes (DEV-2026-066): alerta com remédio na lista fechada ganha o
+        # acionador (Directive ``incident.act``), que chama o gesto do domínio e confere.
+        from shopman.orderman import registry as directive_registry
+
+        from shopman.backstage.incidents.act import IncidentActHandler, on_alert_saved
+        from shopman.backstage.models import OperatorAlert
+
+        directive_registry.register_directive_handler(IncidentActHandler())
+        post_save.connect(
+            on_alert_saved,
+            sender=OperatorAlert,
+            dispatch_uid="backstage.incidents.on_alert_saved",
+            weak=False,
+        )
+
         # Esgotado/pausa abriu ou fechou: a Fila do Gestor relê "Agora no
         # cardápio" (o publish espera o commit, ADR-016).
         from shopman.backstage.models import ShelfOutage

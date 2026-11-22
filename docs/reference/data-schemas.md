@@ -237,6 +237,21 @@ partes vieram de `flags["dialogue"]["parts"]`), `reason=asked_again:<motivo do p
 `source` da leitura (a última fala do cliente que perguntava algo) ou `source=memory,
 reason=asked_again_nothing` (nada achado, a Concierge pediu para repetir).
 Registros anteriores a 03/10/2026 têm `usage = {}`.
+Conferência antes do envio (dono, 21/11/2026; `shopman/storefront/concierge/conference.py`, regra em
+`conversational_commerce/reply/conference.py`): o PRIMEIRO bloco de resposta do turno grava
+`ConversationMessage.envelope["conference"]` = `{decision: send|fallback, checks: {acceptable, correct,
+useful: {status: pass|fail|unavailable, reason?}}, judge?: {answer: answers|off_target|contradicts,
+confidence}}`. Em sombra: o veredito é gravado e o envio não muda. `judge` só existe quando o Jev
+respondeu; a chamada dele entra em `usage.calls` com `stage: conference` e em `latency_ms.conference`.
+Lida por `concierge_conversation_eval` (linha "conferência antes do envio").
+Escada em sombra (`conference.shadow_climb`, regra em `conversational_commerce/reply/ladder.py`): quando a
+conferência reprova, DEPOIS do envio, o mesmo primeiro bloco ganha `envelope["ladder"]` = `{chosen:
+house|concierge_rewrite|concierge_escalation|safe, stopped, cost_usd, attempts: [{source, text, cost_usd, ms,
+error?, conference?}], safe_text?}` (`safe_text` em sombra é o TIPO da alternativa: `house_literal` ou
+`verify`). Os degraus são os propósitos de IA `concierge_rewrite` e `concierge_escalation`, só com rota
+explícita em `Shop.ai_routes`. A política mora em `Shop.ai_limits["conference"]` = `{max_attempts (padrão 3,
+teto 5), turn_usd (padrão 0,01, teto 0,05)}`; o teto do dia de cada degrau é o do freio
+(`ai_limits["purposes"]`).
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
 `purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
@@ -373,7 +388,7 @@ for key in (
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `is_preorder` | `bool` | `True` se `delivery_date > hoje`. Calculado no commit |
+| `is_preorder` | `bool` | Encomenda: feita ANTES do dia combinado. Gravado no commit (`delivery_date > dia da venda`), na entrada do iFood agendado (`ifood_ingest`, a mesma conta) e no reagendamento (`reschedule`: feita antes do NOVO dia, então a encomenda de ontem trazida para hoje continua encomenda, #3163). Quem pergunta "é encomenda?" não lê a chave à mão: usa a régua única `shop.services.order_helpers.is_preorder` (no pedido, esta chave; na sessão, as datas). "A data é depois de hoje?" é outra pergunta: `order_helpers.is_for_a_later_day` |
 
 ### Chaves adicionadas por handlers pós-commit
 
@@ -399,6 +414,7 @@ for key in (
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
 | `no_show` | `dict` | `shop.services.no_show.mark_not_picked_up` (API `POST orders/<ref>/no-show/`), sob lock do pedido, ANTES da transição a `cancelled` | `stock.revert_fulfilled` (`no_show.stock_plan`), `payment.retained_q`/`refund_ceiling_q`, `policies/no_show_reason.customer_text` (por `cancel_reasons.customer_text`), conciliação (`financial_reconciliation`), prévia do Gestor | Pedido de retirada pronto que o cliente não veio buscar (WP-G11): o destino de cada linha e do dinheiro. Só existe em pedido cancelado com `cancellation_reason_key = "not_picked_up"` (ver detalhamento) |
 | _(estorno tentado de novo)_ | — | `backstage.services.refund_retry.retry` (API `POST orders/<ref>/refund-retry/`, WP-G13), sob lock do pedido e das cobranças, sempre após `validate_manager_override` | `order_pending` (a linha "Estorno não saiu" da faixa do detalhe), `order_queue._build_timeline`, o próprio `refund_retry` (a base e a chave da tentativa seguinte) | **Não cria chave em `Order.data`**: a tentativa é o evento `payment.refund_retry` no OrderEvent, um por cobrança pedida ao gateway: `{intent_ref, method, amount_q, approved_by, outcome, error_code, message, gateway_message, gateway_key}`. Quem tentou é o `actor` do evento, e a hora é a do evento; `approved_by` é o `username` verificado do Gerente que assinou. `outcome` ∈ `refunded` (o gateway confirmou; o mesmo gesto grava o `payment.refunded` de todo estorno), `refused` (o gateway disse não; a tentativa seguinte leva outra chave), `unconfirmed` (o gateway não respondeu: a tentativa seguinte da MESMA cobrança, com o mesmo valor, reapresenta `gateway_key`, para o gateway devolver a mesma devolução) e `unrecorded` (o dinheiro saiu e o livro não gravou: bloqueia novas tentativas até o suporte acertar). `message` é a frase do BALCÃO para a tentativa que não saiu (`refund_retry.counter_message`: "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte."; vazio quando saiu), e é ela que a faixa e a linha do tempo mostram; `gateway_message` é o que o gateway respondeu, na língua do Admin, guardado só para o suporte e o log; `gateway_key` é a chave de idempotência enviada ao gateway (`order-refund-retry:<ref>:<intent>:<resumo da chave da intenção>`, por `refund_retry.fresh_gateway_key`). Só existe para pedido em "Estorno não saiu": o cancelado (`payment.cancelled_money` em `refund_requested` com o aviso `payment_refund_failed` aberto) e, desde a #2727, o que falhou fora dele com o aviso aberto (a devolução registrada, a encomenda editada que ficou mais barata, o pagamento digital que chegou depois de o balcão receber). O valor é o de `payment.gateway_refund_owed_q`: no cancelado, o que falta voltar, limitado por `payment.refund_ceiling_q` no "não retirado"; fora dele, `payment.overpaid_q` mais o pagamento que chegou depois do balcão (`counter_takeover.late_payment_of_takeover`), descontado o que a gaveta e a maquininha devolvem. A primeira tentativa de uma cobrança reapresenta a chave do estorno automático que pode ter saído sem resposta (a directive `payment.refund` que esgotou, ou `counter_takeover.late_refund_key`). A transação do Payman leva o motivo `Estorno no Gestor por <ator>, autorizado por <gerente>` |
+| _(estorno de UM pedido no Gestor)_ | — | `backstage.services.order_refund.refund` (API `POST orders/<ref>/refund/`, #2727 item 5), sob lock do pedido e das cobranças, só com `backstage.refund_single_order` | `order_queue._build_timeline`, o próprio `order_refund` (a base e a chave da tentativa seguinte) | **Não cria chave em `Order.data`**: a tentativa é o evento `payment.order_refund` no OrderEvent: `{intent_ref, method, amount_q, outcome, error_code, message, gateway_message, gateway_key}`. Quem estornou é o `actor` do evento. `outcome` e `message` seguem a régua do `payment.refund_retry` (`refunded`, `refused`, `unconfirmed`, `unrecorded`; a frase do balcão por `refund_retry.counter_message`). `gateway_key` é `order-refund-gestor:<ref>:<intent>:<resumo da chave da intenção>` (`order_refund.fresh_gateway_key`); a tentativa seguinte à `unconfirmed`, com o mesmo valor, reapresenta a mesma chave. O que sai também grava o `payment.refunded` de todo estorno. Uma cobrança só: o pedido com duas cobranças online com dinheiro não tem o gesto. A transação do Payman leva o motivo `Estorno no Gestor por <ator>` |
 | `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
 | `nfce_access_key` | `string` | NFCeEmitHandler | NFCeEmitHandler (idempotência), ReturnService | Chave de acesso NFCe |
 | `nfce_authorized_at` | `string` | NFCeEmitHandler (`_record`, de `data_autorizacao` da Focus) | `services.fiscal.cancellation_path` | ISO datetime da **Autorização de Uso** na SEFAZ — não da emissão nem da gravação. É o instante de onde conta o prazo de cancelamento (RICMS/PR, Anexo III, Subanexo I, art. 35: 30 minutos). Vazio quando a Focus não devolveu a data: aí o prazo **não é chutado**, o operador é avisado de que não deu para medir |
@@ -424,6 +440,7 @@ for key in (
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer.self_cancel"` (o cliente, pelo site), `"concierge"` (a Concierge, a pedido do cliente, pela mesma régua do site) ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)`, `backstage/projections/order_promise.read_for` (Gestor, "Promessa em risco": a saúde de cada reserva, só leitura) | Holds do Stockman adotados no commit. Cada entry rastreada: `{sku, hold_id, qty}`. SKU sem ledger usa exclusivamente `{sku, hold_id: null, qty: 0, is_tracked: false}`. Um SKU pode ter várias entries: a reserva é uma por saldo. Na encomenda acima do plano da data (#2685), as primeiras entries são o que a fornada da data cobre (reserva presa ao saldo) e a última é o resto, como demanda sem fornada (`Hold.quant` nulo). |
+| `hold_gaps` | `list[dict]` | `StockService.hold(order)` (caminho brando: o que não coube em reserva nenhuma, o mesmo momento do aviso `stock_hold_gap`) e `StockService.reconcile_to_items` (a edição tenta de novo e reescreve) | `backstage/projections/order_promise.read_for` (Gestor, "Promessa em risco": o item que o pedido nunca conseguiu reservar, causa `never_held` para hoje, régua do lote da data para outro dia; só leitura) | O que o pedido pediu e o estoque não reservou, por COMPONENTE (o combo já expandido na reserva, então a leitura não abre catálogo). Cada entry: `{sku, qty, target_date}`, com `target_date` ISO ou `""` sem data (vale o dia combinado do pedido, e sem ele, hoje). Escrito no mesmo save que `hold_ids`; ausente quando nada falta. A baixa que falhou com a reserva existente (`fulfill_failed`) não entra: a reserva existe. #2721 |
 | `adjustment` | `dict` | `shop/services/order_composition.record()`, pelo caminho único `shop/services/order_edit.apply_final_items` — chamado pelo iFood (`ifood_events._apply_patch`, `ORDER_PATCHED`, `source: "ifood:ORDER_PATCHED"`) e pela edição da encomenda no balcão (`order_edit.edit`, API `POST orders/<ref>/edit/`, `source: "pos:edit"`, `event_id: "pos-edit:<ref>:<revision>"`) e pela Concierge acrescentando itens a pedido do cliente (`concierge/order_addition.apply` → `order_edit.edit(source="concierge:add")`, `event_id: "concierge-edit:<ref>:<revision>"`, só aumento de itens) | **TODO consumidor de item ou total de pedido**, via `shop/services/order_composition`: `kds._order_to_lines`, `stock.revert`/`reconcile_to_items`, `fiscal._build_fiscal_items`, `views/fiscal_danfe`, `handlers/returns`, `projections/order_tracking`, `backstage/projections/order_queue`, `backstage/projections/kds`, `backstage/services/receipt_escpos`, `backstage/services/closing`, `backstage/bi/sources/orderman` | **O pedido depois de o cliente alterá-lo.** `{source, event_id, revision, applied_at, items, total_q, sealed_total_q}`. Existe porque `Order.total_q` e `Order.snapshot` são `SEALED_FIELDS`: o estado novo não tem onde ser escrito por cima, então vive ao lado. ⚠️ **`items` é a lista FINAL, absoluta** (relida com `ifood_orders.fetch_order`), nunca um delta — um ajuste novo SUBSTITUI o anterior, e `revision` conta quantas vezes o pedido mudou. `total_q` é o total que a fonte paga (o `orderAmount` do iFood; na edição do balcão, o total vigente mais a diferença das linhas que mudaram — nenhuma regra promocional é reavaliada). Na edição, item novo ganha `line_id` `E<revision>-<n>` e `meta.added_by` = a origem (`"pos:edit"` ou `"concierge:add"`); a peça vendida por peso que entra na edição é uma linha por peça, com quantidade em kg e `meta.weighed` no mesmo formato da venda (`{entry, weight_g, price_per_kg_q, total_q, label_q?}`, `weighed_sale.WeighedLine.as_meta`), e a peça que já estava não muda de peso; a taxa de entrega é a linha `__DELIVERY_FEE__` (`meta.type = "delivery_fee"`, `line_id` `E<revision>-FEE` quando nasce na edição); `sealed_total_q` guarda o `Order.total_q` original, que é o que permite dizer "era X, virou Y". ⚠️ **Ninguém soma isto por conta própria**: quem lê item ou total de pedido chama `order_composition.effective_items()` / `effective_total_q()`, porque duas telas somando cada uma do seu jeito é divergência garantida entre o que a cozinha faz e o que o B.I. fatura |
 | `stock_ceded_holds` | `list[dict]` | `StockService.hold(order)` (caminho otimista, venda consumada fora: `payment.timing == "external"`, data de hoje) | operador/auditoria | Reservas de CARRINHO que cederam a esta venda quando o livre não bastava (`adapters/stock.reserve_ceding_cart_holds`). Cada entry: `{sku, hold_id, reference, qty, ceded_qty, remainder_hold_id}` — `reference` é a sessão que perdeu, `ceded_qty` o que esta venda levou, `remainder_hold_id` a reserva nova com o troco devolvido à sacola (ou `null`). O hold cedido carrega `metadata.ceded_to = "order:<ref>"`. Ausente quando nada cedeu. Reserva de pedido (`order:`) nunca aparece aqui |
 | `lifecycle` | `dict` | `lifecycle.dispatch()` via `_mark_phase_complete` | `sweep_stuck_orders`, `LifecyclePhaseHandler`, `phase_complete()` | Conclusão do handler de fase, `{on_commit: "done", on_accepted: "done", on_paid: "done", on_preparing: "done", on_ready: "done", on_dispatched: "done", on_delivered: "done", on_completed: "done", on_cancelled: "done", on_returned: "done"}`; apenas fases efetivamente retornadas com sucesso. Não prova conclusão remota dos filhos. Chaves históricas desconhecidas são preservadas. preparing/ready/dispatched/delivered/completed/returned ganham Directive no commit da transição; falha do marcador mantém a tarefa recuperável. Estado avançado não cria marcador por inferência. |
@@ -751,10 +768,13 @@ services que ele chama leem o bloco.
 | `lines[].destiny` | `"restock"` \| `"loss"` | `restock`: a linha volta à venda, no MESMO lote de onde saiu, e o cliente recebe `value_q`. `loss`: vira perda de estoque com motivo, e a loja fica com `value_q`. Decidido pelo servidor (`no_show.decide_destiny`) |
 | `lines[].reason` | `string` | Por que é perda: `made_to_order` (ficha vigente "Na hora"), `no_stock` (sem reserva de estoque baixada: não há o que devolver ao balcão), `lot_expired` (o lote venceu na hora do gesto). Vazio em `restock` |
 | `lines[].qty` | `string` (decimal) | A quantidade da linha |
+| `lines[].line_id`, `lines[].combo` | `string`, `dict` | O combo vira uma linha por componente (#2697): `line_id` é `"<linha>:<sku>"`, o destino é o de cada componente e `value_q` é a parte do valor do combo rateada pelo preço de tabela vezes a quantidade (o resíduo no último). `combo` = `{line_id, sku, name}` do combo de onde o componente veio; ausente na linha que não é combo |
 | `lines[].value_q` | `int` | O valor da linha: `unit_price_q × qty` sobre `order_composition.effective_items` (o mesmo cálculo da devolução) |
 | `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
 | `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
 | `retained_q` | `int` | `paid_q − refund_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
+| `from_account_q`, `money_q`, `debt_left_q`, `kept_q` | `int` | Venda MISTA, parte na conta da casa e parte em outra forma (#3151): a DÍVIDA sai primeiro (decisão da coordenação, 21/11/2026). Do devolvível, `from_account_q` sai da conta e só `money_q` volta em dinheiro; do retido, `debt_left_q` continua na conta e `kept_q` fica com a loja (`no_show.account_split`). Ausentes fora da venda mista |
+| `on_account` | `bool` | Venda SÓ na conta da casa (#2697): `paid_q` é a dívida em aberto do pedido (`payment.open_account_debt_q`), `refund_q` sai da conta (`payment.reduce_account_debt`, evento `account_debt_reduced`) e `retained_q` continua devido. A conta já acertada e a venda que mistura a conta com outra forma não passam pelo gesto |
 
 Pedido não pago: `paid_q = refund_q = retained_q = 0`. A validade do lote é lida de
 `Batch.expiry_date` (pelo `Quant.batch`); sem lote com validade, do `shelf_life_days` do
@@ -1504,6 +1524,19 @@ Uma viva por vez (`dedupe_key` fixo = o topic). Só existe com `IFOOD_MERCHANT_S
 |-------|------|-------------|----------|
 | `reason` | `string` | `shop/services/ifood_merchant.enqueue_sync` (`shop_saved`, `check`) | log (informativo) |
 
+#### `incident.act`
+
+O acionador de remédio de um alerta (`shopman/backstage/incidents/act.py`). Nasce quando
+um `OperatorAlert` de tipo com remédio é criado, e também pela repescagem do
+`act_on_incidents`. Planeja, aciona o gesto do domínio e se reagenda (sem gastar
+tentativa) para esperar o retry do domínio ou para conferir o resultado. Uma viva por
+alerta: `dedupe_key` = `incident.act:<alert_id>`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `alert_id` | `int` | `backstage/incidents/act.enqueue` | IncidentActHandler |
+| `action_id` | `int` | IncidentActHandler (depois de acionar) | IncidentActHandler (conferência) |
+
 #### `ifood.merchant_interruption`
 
 Cria ou retira no iFood a pausa pedida pelo gestor. O estado a aplicar é o da linha
@@ -1893,10 +1926,18 @@ o padrão; nenhuma desliga o freio de preço.
 | `delivery.ride_suggestion.saving_min_percent` | `int`, `15` | `ride_plan._quote` | Economia mínima em % das corridas separadas. Vale junto com `saving_min_q` (as duas). |
 | `delivery.ride_suggestion.extra_wait_minutes` | `int`, `10` | `ride_plan._fits` | O cliente que mais espera a mais espera no máximo isto. A espera a mais é estimada pelo desvio a 20 km/h mais 2 min por parada antes (fixos no código). |
 
+Além dos parâmetros, o plano lê o **fim da janela combinada** de cada pedido
+(`fulfillment_window.window_end`: o fim da meia hora de `delivery_time_slot` no dia de
+`delivery_date`, ou o `ifood.schedule.delivery_end_at` do agendado; o turno da encomenda
+não tem fim). O par cuja chegada estimada junta passaria desse fim, quando sozinho
+chegaria a tempo, não vira sugestão (`ride_plan.breaks_a_deadline`, #2875). A chegada
+usa o mesmo palpite da espera: agora, mais o percurso a 20 km/h e 2 min por parada antes.
+
 O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
 deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o
-"Vai junto nesta corrida?" do Painel do pedido (`courier.ride_offer[].suggested` e
-`courier.ride_suggestion`) e a contagem `ride_suggestions` do quadro.
+"Vai junto nesta corrida?" do sheet de chamar (o mesmo nas Entregas, no Painel e no detalhe
+do pedido, que lê `DeliveriesProjection.ride_plan`, #2876) e a contagem `ride_suggestions`
+do quadro.
 
 ### Marketing — `Shop.defaults["marketing"]`
 
