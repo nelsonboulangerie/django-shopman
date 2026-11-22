@@ -919,6 +919,10 @@ class DiscountModifier:
         modified = False
         total_coupon_discount_q = 0
         discounts_applied = []  # Persisted in session.pricing
+        # O registro por-linha que ESTA rodada gravou, por linha (``id`` do dict):
+        # se o cupom de valor fixo entrar no lugar do desconto da linha (troca do
+        # passo de valor fixo, abaixo), é este registro que sai da transparência.
+        line_records: dict[int, dict] = {}
 
         # ``pricing`` é o mesmo objeto de ``session.pricing`` para que
         # ``_reverse_prior_pricing`` (best-wins) reconcilie a transparência do
@@ -1056,6 +1060,7 @@ class DiscountModifier:
                 if source_group:
                     record["discount_group"] = source_group
                 discounts_applied.append(record)
+                line_records[id(item)] = record
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
 
@@ -1081,6 +1086,33 @@ class DiscountModifier:
             group_meta=_winning_group_meta,
             applicable_q=lambda promo: sum(int(i.get("line_total_q", 0)) for i in _fixed_eligible_lines(promo)),
         )
+        # "O maior desconto ganha" vale também para o CUPOM de valor fixo: ele pode
+        # entrar no lugar do desconto por-linha das linhas que alcança, quando a troca
+        # dá mais no total. Só o cupom: a promoção automática de valor fixo segue sem
+        # deslocar o desconto por-linha (o PDV mostra no botão o preço por-linha, e
+        # nunca o fixo de pedido; trocar ali faria a cobrança divergir do botão).
+        swapped = self._swap_in_fixed_coupon(
+            items,
+            pricing,
+            coupon_promo,
+            coupon_code,
+            session_total,
+            standing_fixed_q=fixed[0] if fixed is not None else 0,
+            reaches=lambda item: promotion_matches(
+                coupon_promo, promotion_context(ctx, sku=item.get("sku", ""))
+            ),
+        )
+        if swapped is not None:
+            modified = True
+            swap_value_q, displaced = swapped
+            for item in displaced:
+                record = line_records.pop(id(item), None)
+                if record is None:
+                    continue
+                discounts_applied.remove(record)
+                if record.get("type") == "coupon":
+                    total_coupon_discount_q -= _record_total_q(record)
+            fixed = (swap_value_q, ("coupon", coupon_code or "", None, ""), coupon_promo)
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
             eligible = _fixed_eligible_lines(fixed_promo)
@@ -1287,6 +1319,76 @@ class DiscountModifier:
                 if value > 0 and (best is None or value > best[0]):
                     best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
         return best
+
+    @staticmethod
+    def _swap_in_fixed_coupon(
+        items: list[dict],
+        pricing: dict,
+        coupon_promo: Any,
+        coupon_code: str | None,
+        session_total: int,
+        *,
+        standing_fixed_q: int,
+        reaches,
+    ) -> tuple[int, list[dict]] | None:
+        """O cupom de valor fixo entra no lugar do desconto por-linha que vale hoje?
+
+        Os descontos não se somam e o maior ganha, também para o cupom de valor fixo:
+        R$ 5,00 contra os 10% de aniversário de 3 Croissants (R$ 3,90) é o cupom.
+        Sem a troca, ``_fixed_eligible_lines`` deixa de fora toda linha que já tem
+        desconto, e o cupom valia zero por maior que fosse.
+
+        A troca alcança as linhas que o cupom alcança, COM ou sem desconto. Ela vale
+        ``min(valor do cupom, subtotal de LISTA dessas linhas)`` e desloca o desconto
+        por-linha que elas têm hoje (``meta._disc``). Entra só quando o desconto total
+        depois dela é ESTRITAMENTE maior do que sem ela: o deslocado mais o fixo que já
+        venceria nas linhas sem desconto (``standing_fixed_q``). No empate fica o que
+        já valia, e o cupom não é gasto à toa (a mesma régua do percentual).
+
+        Quando entra, cada linha deslocada volta ao preço de lista pelo mesmo caminho
+        do vencedor percentual (``_reverse_prior_pricing`` reconcilia a transparência
+        do desconto deslocado, como o lote) e perde o ``_disc``. Devolve
+        ``(valor da troca, linhas deslocadas)``; o rateio e o registro do cupom ficam
+        com o passo de valor fixo, igual a qualquer desconto de pedido. ``None`` quando
+        não há troca.
+        """
+        if coupon_promo is None or coupon_promo.type != "fixed":
+            return None
+        if not promotion_minimum_eligible(
+            min_order_q=coupon_promo.min_order_q,
+            merchandise_subtotal_q=session_total,
+        ):
+            return None
+        reached = [
+            item
+            for item in items
+            if not _is_non_merchandise_line(item)
+            and int(item.get("line_total_q", 0) or 0) > 0
+            and reaches(item)
+        ]
+        displaced = [item for item in reached if (item.get("meta") or {}).get("_disc")]
+        if not displaced:
+            return None  # nada a deslocar: o passo de valor fixo já cuida do cupom
+
+        def _displaced_q(item: dict) -> int:
+            disc = item["meta"]["_disc"]
+            if disc.get("scope") == "order":
+                return int(disc.get("line_amount_q") or 0)
+            return monetary_mult(_qty_decimal(item), int(disc.get("amount_q") or 0))
+
+        list_subtotal_q = sum(monetary_mult(_qty_decimal(item), _list_price_q(item)) for item in reached)
+        swap_value_q = min(max(0, int(coupon_promo.value or 0)), list_subtotal_q)
+        standing_q = sum(_displaced_q(item) for item in displaced) + max(0, int(standing_fixed_q))
+        if swap_value_q <= standing_q:
+            return None
+
+        for item in displaced:
+            _reverse_prior_pricing(pricing, item)
+            list_q = _list_price_q(item)
+            item["unit_price_q"] = list_q
+            item["line_total_q"] = monetary_mult(_qty_decimal(item), list_q)
+            item["meta"].pop("_disc", None)
+        return swap_value_q, displaced
 
     @staticmethod
     def _distribute_order_discount(

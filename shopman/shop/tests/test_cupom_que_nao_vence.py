@@ -124,42 +124,125 @@ def test_cupom_sem_desconto_concorrente_entra_sem_aviso(web):
     assert coupon_replaced_notice(getattr(session, "coupon_replaced", None)) == ""
 
 
-def test_cupom_fixo_maior_que_o_desconto_por_item_nao_diz_igual_ou_maior(web):
-    """O fixo de pedido não entra no lugar do desconto por item (``_fixed_eligible_lines``):
-    R$ 5,00 contra 10% de 3 Croissants (R$ 3,90) é recusado, e a frase não pode afirmar
-    que o desconto que fica é "igual ou maior"."""
-    from shopman.storefront.api.surface import coupon_not_better_message
-
-    _promotion("aniversario", "Desconto de aniversário", 10)
+def _fixed_coupon(code: str, value_q: int, *, min_order_q: int = 0) -> Coupon:
     now = timezone.now()
-    fixed = Promotion.objects.create(
-        ref="cupom-cinco", name="CINCO", type=Promotion.FIXED, value=500,
+    promo = Promotion.objects.create(
+        ref=f"cupom-{code.lower()}", name=code, type=Promotion.FIXED, value=value_q, min_order_q=min_order_q,
         valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1), is_active=True,
     )
-    Coupon.objects.create(code="CINCO", promotion=fixed, max_uses=1, is_active=True)
-    session = sessions.create_session(web)
-    sessions.modify_session(
-        session_key=session.session_key,
-        channel_ref=web,
-        ops=[
-            {"op": "add_line", "sku": "CRO", "name": "Croissant", "qty": 3, "unit_price_q": 1300},
-            {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
-        ],
+    return Coupon.objects.create(code=code, promotion=promo, max_uses=1, is_active=True)
+
+
+def _cart_with(channel_ref: str, lines: list[tuple[str, str, int, int]]) -> str:
+    session = sessions.create_session(channel_ref)
+    ops = [
+        {"op": "add_line", "sku": sku, "name": name, "qty": qty, "unit_price_q": price_q}
+        for sku, name, qty, price_q in lines
+    ]
+    ops.append({"op": "set_data", "path": "fulfillment_type", "value": "pickup"})
+    sessions.modify_session(session_key=session.session_key, channel_ref=channel_ref, ops=ops)
+    return session.session_key
+
+
+def test_cupom_fixo_maior_que_o_desconto_por_item_entra_no_lugar_dele(web):
+    """O maior desconto ganha também para o cupom de valor fixo: R$ 5,00 contra os 10%
+    de aniversário de 3 Croissants (R$ 3,90) é o cupom. O desconto por item sai das
+    linhas (preço e transparência), e os R$ 5,00 são rateados nelas."""
+    from shopman.storefront.api.surface import coupon_replaced_notice
+
+    _promotion("aniversario", "Desconto de aniversário", 10)
+    _fixed_coupon("PRIMEIRACOMPRA", 500, min_order_q=3000)
+    key = _cart_with(web, [("CRO", "Croissant", 3, 1300)])
+
+    session, _name = cart_service.validate_and_apply_coupon(session_key=key, channel_ref=web, code="PRIMEIRACOMPRA")
+
+    assert all(item["meta"]["_disc"]["type"] == "coupon" for item in session.items)
+    assert session.coupon_replaced == {"label": "Desconto de aniversário", "total_q": 390}
+    assert coupon_replaced_notice(session.coupon_replaced) == (
+        "Cupom aplicado no lugar do desconto que já valia (Desconto de aniversário, R$ 3,90), porque dá mais."
     )
+    session = Session.objects.get(session_key=key)
+    # 3 unidades não repartem R$ 5,00 em centavos inteiros por unidade (1,666…): o rateio
+    # de valor fixo entrega o mínimo acima do prometido (``_spread_order_discount`` com
+    # ``at_least=True``), R$ 1,67 por unidade, e registra o que de fato aplicou.
+    assert session.items[0]["unit_price_q"] == 1133
+    assert session.items[0]["line_total_q"] == 3399
+    assert session.pricing["coupon"] == {"code": "PRIMEIRACOMPRA", "discount_q": 501}
+    records = session.pricing["discount"]["items"]
+    assert [(r["type"], r["sku"], r["discount_q"]) for r in records] == [("coupon", "", 501)]
+    assert session.pricing["discount"]["total_discount_q"] == 501
+
+
+def test_cupom_fixo_que_empata_com_o_desconto_por_item_nao_entra(web):
+    """R$ 3,90 contra os 10% de 3 Croissants (R$ 3,90): no empate fica o que já valia."""
+    _promotion("aniversario", "Desconto de aniversário", 10)
+    coupon = _fixed_coupon("EMPATE", 390)
+    key = _cart_with(web, [("CRO", "Croissant", 3, 1300)])
 
     with pytest.raises(cart_service.CouponNotBetter) as refused:
-        cart_service.validate_and_apply_coupon(session_key=session.session_key, channel_ref=web, code="CINCO")
+        cart_service.validate_and_apply_coupon(session_key=key, channel_ref=web, code="EMPATE")
 
-    assert (refused.value.standing_q, refused.value.coupon_q, refused.value.fixed) == (390, 500, True)
-    message = coupon_not_better_message({
-        "coupon_code": "CINCO",
-        "standing_label": refused.value.standing_label,
-        "standing_q": refused.value.standing_q,
-        "coupon_q": refused.value.coupon_q,
-        "fixed": refused.value.fixed,
-    })
-    assert "igual ou maior" not in message
-    assert message == (
-        "O CINCO é um desconto de valor fixo e não entra no lugar do desconto que os itens já têm "
-        "(R$ 3,90, Desconto de aniversário). Os descontos não se somam: guarde o cupom para outra compra."
+    assert (refused.value.standing_label, refused.value.standing_q) == ("Desconto de aniversário", 390)
+    session = Session.objects.get(session_key=key)
+    assert "coupon_code" not in (session.data or {})
+    assert session.items[0]["meta"]["_disc"]["type"] == "promotion"
+    assert session.items[0]["line_total_q"] == 3510
+    coupon.refresh_from_db()
+    assert coupon.is_available
+
+
+def test_cupom_fixo_menor_que_o_desconto_por_item_nao_entra(web):
+    _promotion("aniversario", "Desconto de aniversário", 10)
+    _fixed_coupon("TRES", 300)
+    key = _cart_with(web, [("CRO", "Croissant", 3, 1300)])
+
+    with pytest.raises(cart_service.CouponNotBetter) as refused:
+        cart_service.validate_and_apply_coupon(session_key=key, channel_ref=web, code="TRES")
+
+    assert refused.value.standing_q == 390
+    session = Session.objects.get(session_key=key)
+    assert session.items[0]["meta"]["_disc"] == {"type": "promotion", "amount_q": 130, "label": "Desconto de aniversário"}
+    assert session.items[0]["line_total_q"] == 3510
+    assert [r["type"] for r in session.pricing["discount"]["items"]] == ["promotion"]
+
+
+def test_cupom_fixo_fica_nas_linhas_sem_desconto_quando_trocar_daria_menos(web):
+    """Croissants com 10% (R$ 3,90) e um pão sem desconto: o cupom de R$ 5,00 no pão
+    soma R$ 8,90; trocar os 10% pelo cupom daria R$ 5,00. Fica o que dá mais: os 10%
+    seguem nos Croissants e o cupom vai só para o pão."""
+    Product.objects.create(sku="PAO", name="Pão de campanha", base_price_q=2000, is_published=True, is_sellable=True)
+    aniversario = _promotion("aniversario", "Desconto de aniversário", 10)
+    aniversario.skus = ["CRO"]
+    aniversario.save(update_fields=["skus"])
+    _fixed_coupon("CINCO", 500)
+    key = _cart_with(web, [("CRO", "Croissant", 3, 1300), ("PAO", "Pão de campanha", 1, 2000)])
+
+    session, _name = cart_service.validate_and_apply_coupon(session_key=key, channel_ref=web, code="CINCO")
+
+    assert getattr(session, "coupon_replaced", None) is None
+    session = Session.objects.get(session_key=key)
+    by_sku = {item["sku"]: item for item in session.items}
+    assert by_sku["CRO"]["meta"]["_disc"]["type"] == "promotion"
+    assert by_sku["CRO"]["line_total_q"] == 3510
+    assert by_sku["PAO"]["meta"]["_disc"]["type"] == "coupon"
+    assert by_sku["PAO"]["line_total_q"] == 1500
+    assert session.pricing["coupon"] == {"code": "CINCO", "discount_q": 500}
+    assert session.pricing["discount"]["total_discount_q"] == 890
+
+
+def test_promocao_automatica_de_valor_fixo_nao_desloca_o_desconto_por_item(web):
+    """Só o CUPOM fixo troca de lugar com o desconto por item. A promoção automática de
+    valor fixo segue fora das linhas com desconto: o PDV mostra no botão o preço por
+    item e nunca o fixo de pedido, e a troca faria a cobrança divergir do botão."""
+    _promotion("aniversario", "Desconto de aniversário", 10)
+    now = timezone.now()
+    Promotion.objects.create(
+        ref="cinco-reais", name="Cinco reais", type=Promotion.FIXED, value=500,
+        valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1), is_active=True,
     )
+    key = _cart_with(web, [("CRO", "Croissant", 3, 1300)])
+
+    session = Session.objects.get(session_key=key)
+    assert session.items[0]["meta"]["_disc"]["type"] == "promotion"
+    assert session.items[0]["line_total_q"] == 3510
+    assert [(r["type"], r["sku"]) for r in session.pricing["discount"]["items"]] == [("promotion", "CRO")]
