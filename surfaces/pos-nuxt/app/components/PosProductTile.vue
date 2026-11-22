@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { toast } from "vue-sonner";
 import type { POSProductProjection } from "~/types/pos";
-import { productFallbackIcon, productFallbackStyle, productStrikePrice, UNPLANNED_TILE_LABEL } from "~/presentation/catalog";
+import { productFallbackIcon, productFallbackStyle, productStrikePrice, UNPLANNED_TILE_LABEL, unitsLeftLabel } from "~/presentation/catalog";
 import { productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups } from "~/presentation/productOptions";
 
@@ -30,6 +30,9 @@ const blockedPill = computed(() => (inert.value && blockedLabel.value !== "Sem p
 // frase inteira ("Ainda sem lote planejado para 30/11: vira pedido à Produção") vai
 // na dica e no nome acessível, e a linha da comanda repete.
 const unplannedPill = computed(() => (!inert.value && props.product.unplanned_note ? UNPLANNED_TILE_LABEL : ""));
+// O saldo em número (#2610): quantas a casa ainda promete hoje. Some no tile
+// bloqueado (o selo fala) e na encomenda para outro dia (o número é de hoje).
+const unitsLeftPill = computed(() => (inert.value ? "" : unitsLeftLabel(props.product)));
 // Tile bloqueado RESPONDE ao toque (beta test de 05/11/2026): mudo, o operador
 // tocava de novo achando que a tela travou. O toque diz o motivo e não lança.
 function onTap() {
@@ -83,10 +86,11 @@ const strikePrice = computed(() => productStrikePrice(props.product));
     </span>
     <span class="flex min-w-0 flex-1 flex-col gap-0.5">
       <span class="line-clamp-2 op-label leading-tight font-semibold" :class="inert ? 'text-muted-foreground' : ''" :title="product.name" data-pos-product-name>{{ product.name }}</span>
-      <span v-if="opensChoice || blockedPill || unplannedPill" class="flex flex-wrap items-center gap-1.5">
+      <span v-if="opensChoice || blockedPill || unplannedPill || unitsLeftPill" class="flex flex-wrap items-center gap-1.5">
         <span v-if="opensChoice" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold"><Icon name="lucide:layers" class="size-3" />Escolhas</span>
         <span v-if="blockedPill" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-muted-foreground" data-pos-product-blocked><span class="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />{{ blockedPill }}</span>
         <span v-if="unplannedPill" class="inline-flex min-h-5 items-center gap-1 rounded-full bg-muted px-1.5 op-micro font-semibold text-foreground" :title="product.unplanned_note" data-pos-product-unplanned><Icon name="lucide:calendar-plus" class="size-3 shrink-0" aria-hidden="true" /><span aria-hidden="true">{{ unplannedPill }}</span><span class="sr-only">{{ product.unplanned_note }}</span></span>
+        <span v-if="unitsLeftPill" class="inline-flex h-5 items-center rounded-full bg-muted px-1.5 op-micro font-semibold tabular-nums" data-pos-product-units-left>{{ unitsLeftPill }}</span>
       </span>
     </span>
     <span class="flex shrink-0 flex-col items-end gap-0.5" data-pos-product-price>
@@ -136,7 +140,8 @@ const strikePrice = computed(() => productStrikePrice(props.product));
         <Icon :name="fallbackIcon" class="size-9" />
         <span
           v-if="!touch"
-          class="absolute bottom-1.5 left-2 max-w-[calc(100%-1rem)] truncate font-mono op-eyebrow font-normal tracking-wide"
+          class="absolute bottom-1.5 left-2 truncate font-mono op-eyebrow font-normal tracking-wide"
+          :class="unitsLeftPill ? 'max-w-[calc(100%-6.5rem)]' : 'max-w-[calc(100%-1rem)]'"
           :title="product.sku"
           data-pos-tile-sku
         >{{ product.sku }}</span>
@@ -175,6 +180,13 @@ const strikePrice = computed(() => productStrikePrice(props.product));
         <Icon name="lucide:layers" class="size-3.5" />
         Escolhas
       </span>
+      <!-- O saldo em número (#2610) mora no canto de baixo da faixa: o de cima é da
+           quantidade lançada e dos selos, e o preço embaixo não divide a largura. -->
+      <span
+        v-if="unitsLeftPill"
+        class="absolute bottom-1.5 right-2 inline-flex h-6 items-center rounded-full bg-card/90 px-2 op-micro font-semibold tabular-nums text-foreground"
+        data-pos-product-units-left
+      >{{ unitsLeftPill }}</span>
       <span
         v-if="qty > 0"
         class="absolute right-2 top-2 grid h-7 min-w-7 place-items-center rounded-full bg-primary px-1.5 op-label font-bold tabular-nums text-primary-foreground shadow-sm"
