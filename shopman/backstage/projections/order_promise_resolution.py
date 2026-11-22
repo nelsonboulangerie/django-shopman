@@ -372,6 +372,23 @@ def _reschedule_choice(reading: _Reading) -> OrderPromiseChoiceProjection:
     )
 
 
+def _remove_label(reading: _Reading, *, refund_q: int | None = None) -> str:
+    """O rótulo do "tirar", dizendo o que acontece quando o item só atrasou (#2809 item 7).
+
+    O pão atrasado ainda vai sair: "Tirar só o item que falta" sugeria falta. No atraso,
+    o rótulo nomeia o item e o dinheiro ("Tirar o item atrasado (Croissant) e devolver
+    R$ 13,00"), e a cliente decide. A concordância é com "item", não com o produto: o
+    catálogo não sabe se é "o" ou "a". Decisão da coordenação em 22/11/2026, reversível.
+    """
+    if not reading.risky or any(item.cause != order_promise.CAUSE_BATCH_LATE for item in reading.risky):
+        return LABEL_REMOVE
+    if len(reading.risky) == 1:
+        label = f"Tirar o item atrasado ({reading.risky[0].name})"
+    else:
+        label = "Tirar os itens atrasados"
+    return f"{label} e devolver {_brl(refund_q)}" if refund_q else label
+
+
 def _remove_choice(reading: _Reading) -> OrderPromiseChoiceProjection:
     """ "Tirar só o item que falta e devolver a diferença": a edição que já existe, com a lista final.
 
@@ -386,7 +403,7 @@ def _remove_choice(reading: _Reading) -> OrderPromiseChoiceProjection:
     closed = OrderPromiseConcludeProjection(kind=CONCLUDE_EDIT, label="Tirar o item")
 
     def refused(reason: str) -> OrderPromiseChoiceProjection:
-        return reading.choice(key=KIND_REMOVE, kind=KIND_REMOVE, label=LABEL_REMOVE, reason=reason, conclude=closed)
+        return reading.choice(key=KIND_REMOVE, kind=KIND_REMOVE, label=_remove_label(reading), reason=reason, conclude=closed)
 
     _code, refusal = order_edit.state_refusal(order)
     if refusal or reading.permission_reason:
@@ -415,7 +432,7 @@ def _remove_choice(reading: _Reading) -> OrderPromiseChoiceProjection:
     return reading.choice(
         key=KIND_REMOVE,
         kind=KIND_REMOVE,
-        label=LABEL_REMOVE,
+        label=_remove_label(reading, refund_q=settlement.amount_q if refunds else None),
         detail=detail,
         conclude=OrderPromiseConcludeProjection(
             kind=CONCLUDE_EDIT,
