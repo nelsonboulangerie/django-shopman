@@ -1807,6 +1807,7 @@
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
+            "is_held_by_a_cart",
             "logger",
             "planned_on_date",
             "receive_return",
@@ -3640,6 +3641,7 @@
       "unit_ids": [
         "preorder.production-promise-lost",
         "stock.materialized-holds-receiver",
+        "stock.production-shrink-receiver",
         "stock.production-void-receiver"
       ],
       "responsibilities": [

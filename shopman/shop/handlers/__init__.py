@@ -390,8 +390,13 @@ def _register_stock_signals() -> None:
     try:
         from shopman.craftsman.signals import production_changed
 
-        from shopman.shop.handlers._stock_receivers import on_production_finished, on_production_voided
+        from shopman.shop.handlers._stock_receivers import (
+            on_production_adjusted,
+            on_production_finished,
+            on_production_voided,
+        )
         production_changed.connect(on_production_voided, weak=False)
+        production_changed.connect(on_production_adjusted, weak=False)
         production_changed.connect(on_production_finished, weak=False)
     except ImportError:
         pass

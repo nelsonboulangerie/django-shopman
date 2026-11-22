@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.utils import timezone
 from shopman.craftsman import OrderingDemandBackend
@@ -59,6 +60,36 @@ class LedgerAwareDemandBackend(OrderingDemandBackend):
             else row
             for row in rows
         ]
+
+    def committed(self, product_ref: str, target_date: date) -> Decimal:
+        """O prometido para a data: reserva de compromisso, nunca de sacola (#3265).
+
+        O backend do craftsman soma toda reserva ativa da data. A sacola que
+        guarda o pão de uma fornada futura não tem prazo (o relógio só começa
+        quando o lote sai) e a sessão abandonada só é varrida em 48 h: somada,
+        ela fazia a Produção assar para ninguém e impedia o plano de descer.
+        Aqui conta só o que é compromisso: o pedido (``order:``), que inclui a
+        encomenda e a fila da fornada, a reserva manual do operador e o insumo
+        da produção. A sacola entra quando vira pedido, no commit.
+        """
+        from shopman.stockman.models.hold import Hold
+
+        from shopman.shop.adapters.stock import is_held_by_a_cart
+
+        try:
+            holds = Hold.objects.filter(sku=product_ref, target_date=target_date).active()
+            return sum(
+                (hold.quantity for hold in holds if not is_held_by_a_cart(hold)),
+                Decimal("0"),
+            )
+        except Exception:
+            logger.warning(
+                "reservas de %s em %s indisponíveis; prometido segue zero",
+                product_ref,
+                target_date,
+                exc_info=True,
+            )
+            return Decimal("0")
 
 
 def _soldout_times(sku: str, *, days: int) -> dict[date, object]:
