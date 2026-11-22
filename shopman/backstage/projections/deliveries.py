@@ -118,6 +118,8 @@ class DeliveryRideProjection:
     status_label: str
     stops: tuple[DeliveryStopProjection, ...]
     driver: DeliveryDriverProjection | None = None
+    #: O nome do serviço da corrida como o cadastro diz ("TaOn"), para as frases da tela.
+    service_name: str = ""
     position: DeliveryCourierPositionProjection | None = None
     called_at: str = ""
     called_by: str = ""
@@ -164,6 +166,11 @@ class DeliveryRideProjection:
     #: A corrida passou da idade em que se acompanha de perto
     #: (``courier.ride_open_too_long``): a leitura segue lenta e a tela avisa.
     open_too_long: bool = False
+    #: "Encerrar aqui" (``courier-close-here``, #2736): só na corrida aberta há
+    #: muito tempo. ``confirmation.outcomes`` traz as saídas, cada uma com o
+    #: rótulo e o que acontece com os pedidos e o dinheiro (``{key, label,
+    #: consequence}``); "Voltou para a loja" só antes da coleta.
+    close_here_action: Action | None = None
     #: O cancelamento pedido desta corrida: "" · pending · unknown · failed
     #: (``courier.cancel_state``, a mesma fonte do Painel do pedido) e a frase.
     cancel_state: str = ""
@@ -320,14 +327,14 @@ class _Reads:
 def _ride_cost(block: dict, stop_refs: list[str]) -> tuple[int, str]:
     """O custo da corrida que a tela pode afirmar, e o nome dele (J13).
 
-    O valor final da TaOn vale sempre ("Valor pago à TaOn"). Sem ele, vale a cotação,
+    O valor final do serviço vale sempre ("Valor pago à TaOn"). Sem ele, vale a cotação,
     mas só a da MESMA rota: numa corrida com várias paradas, a cotação sozinha do
     principal (a de antes de juntar) mentia o custo. A cotação da rota grava as
     paradas (``estimate.stops``) e só vale quando elas são as da corrida.
     """
     final = block.get("final_value_q")
     if isinstance(final, int) and final > 0:
-        return final, "Valor pago à TaOn"
+        return final, f"Valor pago à {delivery_services.service_name(block)}"
     estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
     value = estimate.get("value_q")
     if not isinstance(value, int) or value <= 0:
@@ -340,11 +347,11 @@ def _ride_cost(block: dict, stop_refs: list[str]) -> tuple[int, str]:
 
 def _stop(order: Order, *, reads: _Reads, with_asks: bool = False, user=None) -> DeliveryStopProjection:
     from shopman.backstage.projections.order_queue import (
-        COURIER_DISPATCH_AGAIN_CONFIRMATION,
-        COURIER_NO_ANSWER_MESSAGE,
         _courier_change_fields,
         _declared_volumes,
         _fiscal_status,
+        courier_dispatch_again_confirmation,
+        courier_no_answer_message,
     )
     from shopman.backstage.services import order_danfe
     from shopman.shop.services import courier, operator_orders
@@ -376,7 +383,7 @@ def _stop(order: Order, *, reads: _Reads, with_asks: bool = False, user=None) ->
     )[0]
     danfe = order_danfe.card_state(order, reads=reads.danfe)
     if unresolved:
-        message = COURIER_NO_ANSWER_MESSAGE
+        message = courier_no_answer_message(delivery_services.service_name(block))
     return DeliveryStopProjection(
         ref=order.ref,
         code=operator_orders.short_ref(order.ref),
@@ -397,7 +404,8 @@ def _stop(order: Order, *, reads: _Reads, with_asks: bool = False, user=None) ->
         if callable_here and not unresolved else None,
         dispatch_again_action=_action(
             "courier-dispatch-again", "Chamar de novo", courier.dispatch_revision(order), user,
-            confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+            confirmation={"required": True, "description": courier_dispatch_again_confirmation(
+                delivery_services.service_name(block))},
         ) if unresolved else None,
         charge_outdated=None if with_asks else courier.charge_outdated(order),
         failure_key=(failure["key"] or f"ended:{order.ref}") if failure and not unresolved and not message else "",
@@ -484,7 +492,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         )
     position = None
     if block.get("ride_ref") and state in ("coming", "atStore", "route"):
-        position = courier_position_projection(block["ride_ref"])
+        position = courier_position_projection(block["ride_ref"], service=delivery_services.service_name(block))
     # A cotação da rota mora no pedido que abriu a corrida, que nem sempre é o
     # primeiro da fila: vale a primeira parada que tem um custo honesto.
     stop_refs = [stop.ref for stop in stops]
@@ -507,6 +515,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         status_label=_STATE_LABELS[state],
         stops=stops,
         driver=driver,
+        service_name=delivery_services.service_name(block),
         position=position,
         called_at=str(block.get("called_at") or ""),
         called_by=str(block.get("called_by") or ""),
@@ -536,6 +545,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         reopened_reason=reopened["reason"],
         custody_line=custody_line,
         open_too_long=courier.ride_open_too_long(block),
+        close_here_action=_close_here_action(lead, [by_ref[ref] for ref in sequence], user=user),
         sync_since=progress.get("sync_since", ""),
         house=house_ride(lead, user=user),
     )
@@ -551,6 +561,42 @@ def _balance(cost_q: int, fees: list[int]) -> dict:
     gap = fee_q - cost_q
     balance = f"Sobra {_money(gap)}" if gap > 0 else f"Falta {_money(-gap)}" if gap < 0 else "Empata"
     return {"fee_display": f"Frete cobrado {_money(fee_q)}", "balance_display": balance}
+
+
+def _close_here_action(lead: Order, orders: list[Order], *, user=None) -> Action | None:
+    """O "Encerrar aqui" da corrida que a central nunca fechou, com as saídas que cabem."""
+    from shopman.shop.services import courier, operator_orders
+
+    outcomes = courier.close_here_outcomes(lead)
+    if not outcomes:
+        return None
+    machine = any(operator_orders.equipment_custody(order).pending for order in orders)
+    change = any(operator_orders.courier_change(order).pending for order in orders)
+    many = len(orders) > 1
+    subject = "Os pedidos ficam entregues." if many else "O pedido fica entregue."
+    things = " e ".join(word for word, out in (("o troco", change), ("a maquininha", machine)) if out)
+    pending = f" {things[0].upper()}{things[1:]} {'ficam' if change and machine else 'fica'} para o gesto “Entregador voltou”." if things else ""
+    back = []
+    if change:
+        back.append("o troco volta para a gaveta")
+    if machine:
+        back.append("a maquininha fica livre")
+    returned = ("Os pedidos voltam para Aguardando." if many else "O pedido volta para Aguardando.") + (
+        f" {' e '.join(back)[0].upper()}{' e '.join(back)[1:]}." if back else "")
+    labels = {
+        courier.CLOSE_DELIVERED: ("Foi entregue", subject + pending),
+        courier.CLOSE_RETURNED: ("Voltou para a loja", returned),
+    }
+    letter = courier.ride_letter(courier.get_block(lead).get("ride_number"))
+    ride = f"a corrida {letter}" if letter else "esta corrida"
+    return _action(
+        "courier-close-here", "Encerrar aqui", courier.dispatch_revision(lead), user,
+        confirmation={
+            "required": True,
+            "description": f"A TaOn não encerrou {ride}. Encerre aqui só se souber o que aconteceu.",
+            "outcomes": [{"key": key, "label": labels[key][0], "consequence": labels[key][1]} for key in outcomes],
+        },
+    )
 
 
 def _custody_line(orders: list[Order]) -> str:

@@ -1368,6 +1368,7 @@ export interface DeliveryRideProjection {
   status_label: string;
   stops: DeliveryStopProjection[];
   driver: DeliveryDriverProjection | null;
+  service_name: string;
   position: DeliveryCourierPositionProjection | null;
   called_at: string;
   called_by: string;
@@ -1393,6 +1394,7 @@ export interface DeliveryRideProjection {
   reopened_reason: string;
   custody_line: string;
   open_too_long: boolean;
+  close_here_action: Action | null;
   cancel_state: string;
   cancel_message: string;
   sync_since: string;

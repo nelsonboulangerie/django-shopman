@@ -3517,6 +3517,7 @@
             "_register_courier_handlers",
             "_register_customer_strategies",
             "_register_delivery_auto_complete_handler",
+            "_register_demand_anchor",
             "_register_fiscal_handlers",
             "_register_fiscal_publication_gate",
             "_register_fulfillment_handler",
@@ -7538,6 +7539,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/pickup_window_in_use.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.pickup-window-in-use"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/promise_expiry_margin.py",
       "touchpoints": [
         "outro"
@@ -10390,6 +10405,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "SERVICE_FALLBACK_NAME",
             "_KIND_BY_REF",
             "_kind",
             "_translator",
@@ -10407,6 +10423,28 @@
             "service_name",
             "state_detail",
             "state_since"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/demand_anchor.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-demand-anchor"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
           ]
         }
       ]
@@ -13043,7 +13081,8 @@
             "record_integration_failure",
             "record_integration_success",
             "record_payment_reconciliation_failure",
-            "record_webhook_failure"
+            "record_webhook_failure",
+            "record_webhook_success"
           ]
         }
       ]
@@ -13165,6 +13204,7 @@
             "_preorder_not_due",
             "_sync_delivery_fulfillment",
             "_waiting_for_the_batch",
+            "_waitlist_wait_reason",
             "logger"
           ]
         }
@@ -15624,6 +15664,94 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/concierge_reading.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "_redactor",
+            "redact",
+            "register"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/usd_brl_quote.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "UsdBrlQuote"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/usd_brl.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "LOOKBACK_DAYS",
+            "PTAX_URL",
+            "Quote",
+            "TIMEOUT_S",
+            "_last_known",
+            "_resolve",
+            "brl_micros",
+            "fetch_ptax",
+            "logger",
+            "quotes_for",
+            "record_quotes"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/record_usd_brl_quotes.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command"
           ]
         }
       ]

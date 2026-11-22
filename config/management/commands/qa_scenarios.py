@@ -5,10 +5,10 @@ Usage::
     python manage.py qa_scenarios                     # relatório (não escreve)
     python manage.py qa_scenarios --arm               # arma todos os cenários
     python manage.py qa_scenarios --arm sold_out      # arma só um
-    python manage.py qa_scenarios --arm sold_out=BF   # ... num SKU escolhido
-    python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+    python manage.py qa_scenarios --arm sold_out=TRADI # ... num SKU escolhido
+    python manage.py qa_scenarios --restock TRADI     # repõe → dispara o "Avise-me"
     python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
-    python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+    python manage.py qa_scenarios --reset TRADI       # ... incluindo um SKU pausado à mão
 
 **Por que este comando existe.** O perfil ``qa`` do ``seed`` já nasce com um SKU
 em cada estado da vitrine (esgotado, últimas unidades, previsto, pausado), mas

@@ -634,14 +634,14 @@ export function usePosSale(deps: PosSaleDeps) {
         if (approval) {
           const shown = marker.approval || NO_APPROVAL_FIGURES;
           try {
-            const token = await requestSaleApprovalToken(approval, {
+            const signed = await requestSaleApprovalToken(approval, {
               tab_ref: typeof marker.body.tab_ref === "string" ? marker.body.tab_ref : "",
               reasons: shown.reasons,
               discount_q: shown.discount_q,
               account_over_q: shown.house_account_limit?.over_q || 0,
               over_plan: shown.over_plan,
             });
-            if (token) signature = { token };
+            if (signed.token) signature = { token: signed.token };
           } catch (error) {
             const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
             closeRecheckApproval.value = shown;
@@ -1222,9 +1222,9 @@ export function usePosSale(deps: PosSaleDeps) {
   const inSaleView = computed(() => !showTabs.value && (hasOpenTab.value || cart.localTab));
   function goToTabs() {
     showTabs.value = true;
-    // Voltar ao quadro também é sair: a encomenda nova que segue sem item volta a
-    // ser comanda livre, em vez de ficar "Em uso" vazia no quadro (PDV2-13).
-    void releaseAbandonedOrderTab({ resetAfter: true });
+    // Voltar ao quadro também é sair: a comanda nova que segue sem item volta a
+    // ser livre, em vez de ficar "Em uso" vazia no quadro (PDV2-13).
+    void releaseAbandonedTab({ resetAfter: true });
   }
   const hasDraftWithoutTab = computed(() => !hasOpenTab.value && cart.items.length > 0);
   const canUseCart = computed(() => !tabRequiredForCart.value || hasOpenTab.value);
@@ -1243,7 +1243,7 @@ export function usePosSale(deps: PosSaleDeps) {
   // quando o retrato muda, quando a venda acaba e depois de cada tentativa de
   // fechar (a retentativa pede a assinatura de novo). O servidor confere o mesmo
   // do lado dele: carimbo de outro valor ou de outra comanda é recusa.
-  const managerSignature = shallowRef<{ token: string; portrait: string } | null>(null);
+  const managerSignature = shallowRef<{ token: string; portrait: string; approvedBy: string } | null>(null);
   const currentApprovalPortrait = computed(() => approvalPortrait({
     tabRef: cart.localTab ? "" : cart.tabRef,
     tabSessionKey: cart.tabSessionKey,
@@ -1258,6 +1258,13 @@ export function usePosSale(deps: PosSaleDeps) {
   }));
   /** O gerente assinou ESTE retrato. É o que libera "Validar". */
   const managerApproved = computed(() => managerSignature.value?.portrait === currentApprovalPortrait.value);
+  /** Quem assinou o retrato da tela, pelo nome da lista de gerentes (#2666): a venda
+   *  autorizada diz quem autorizou. Some junto com a assinatura. */
+  const managerApprovedBy = computed(() => {
+    const username = managerApproved.value ? managerSignature.value?.approvedBy || "" : "";
+    if (!username) return "";
+    return pos.value?.managers?.find((manager) => manager.username === username)?.name || username;
+  });
   // A assinatura não espera o próximo fechamento para sumir: mudou o retrato, sai agora.
   watch(currentApprovalPortrait, (portrait) => {
     if (managerSignature.value && managerSignature.value.portrait !== portrait) managerSignature.value = null;
@@ -2301,6 +2308,26 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  /**
+   * "Nova venda" (o CTA da tela de resultado, F2 e Enter): sai do resultado direto
+   * para a GRADE da próxima comanda livre, sem passar pelo quadro (WP-E8, D5 do
+   * dono). Responde se a comanda abriu; senão, quem chama mostra o quadro, que é o
+   * caminho de sempre (comanda nenhuma livre, gaveta pedindo conferência, falha).
+   * A comanda aberta aqui é LEMBRADA: se o operador sair dela sem lançar nada, ela
+   * volta a ser livre (``releaseAbandonedTab``), e o quadro não enche de vazias.
+   */
+  let nextSaleSessionKey = "";
+  async function openNextSale(): Promise<boolean> {
+    dismissResult();
+    if (busy.value) return false;
+    const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
+    if (!tabRef) return false;
+    await openTab(tabRef);
+    if (cart.tabRef !== tabRef || !cart.tabSessionKey) return false;
+    nextSaleSessionKey = cart.tabSessionKey;
+    return true;
+  }
+
   async function openTabFromDialog(tab: POSTabProjection | string) {
     const reason = tabDialogReason.value;
     const preserveDraft = hasDraftWithoutTab.value;
@@ -2718,7 +2745,7 @@ export function usePosSale(deps: PosSaleDeps) {
   async function requestSaleApprovalToken(
     approval: ManagerApproval,
     shown: { tab_ref: string; reasons: string[]; discount_q: number; account_over_q: number; over_plan?: POSOverPlanLine[] },
-  ): Promise<string> {
+  ): Promise<{ token: string; approvedBy: string }> {
     const path = actionHref(actions.value, "manager_approval_check", "/api/v1/backstage/pos/manager-approval/check/");
     const scope = {
       tab_ref: shown.tab_ref,
@@ -2731,8 +2758,11 @@ export function usePosSale(deps: PosSaleDeps) {
     // PIN (`{username, pin}`) ou crachá (`{badge}`): o servidor aceita as duas portas
     // (`validate_manager_override`) e devolve o mesmo carimbo (#2691).
     const managerApproval = approval.badge ? { badge: approval.badge } : { username: approval.username, pin: approval.pin };
-    const answer = await action.call<{ token?: string }>(path, { body: { manager_approval: managerApproval, scope } });
-    return typeof answer?.token === "string" ? answer.token : "";
+    const answer = await action.call<{ token?: string; approved_by?: string }>(path, { body: { manager_approval: managerApproval, scope } });
+    return {
+      token: typeof answer?.token === "string" ? answer.token : "",
+      approvedBy: typeof answer?.approved_by === "string" ? answer.approved_by : "",
+    };
   }
 
   const managerCheckBusy = ref(false);
@@ -2748,15 +2778,15 @@ export function usePosSale(deps: PosSaleDeps) {
       // vale só para isso. O PIN fica no diálogo; o carimbo mora na memória da
       // aba, preso ao retrato (`managerSignature`).
       const current = review.value;
-      const token = await requestSaleApprovalToken(approval, {
+      const signed = await requestSaleApprovalToken(approval, {
         tab_ref: cart.localTab ? "" : cart.tabRef,
         reasons: current?.approval_reasons || [],
         discount_q: (current?.line_discount_q || 0) + (current?.order_discount_q || 0),
         account_over_q: current?.house_account_limit?.over_q || 0,
         over_plan: current?.preorder_over_plan || [],
       });
-      if (!token) return false;
-      managerSignature.value = { token, portrait };
+      if (!signed.token) return false;
+      managerSignature.value = { token: signed.token, portrait, approvedBy: signed.approvedBy };
       return currentApprovalPortrait.value === portrait;
     } catch (error) {
       const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
@@ -4099,15 +4129,22 @@ export function usePosSale(deps: PosSaleDeps) {
       && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
   }
 
+  /** A comanda que a "Nova venda" abriu sozinha e que segue sem item nem cliente. */
+  function isAbandonedNextSaleTab(): boolean {
+    return Boolean(nextSaleSessionKey) && cart.tabSessionKey === nextSaleSessionKey && !cart.localTab
+      && !cart.items.length && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
+  }
+
   /**
-   * Sair da venda com a encomenda ainda vazia LIBERA a comanda. Antes ela ficava
-   * "Em uso" com 0 itens, a próxima "Nova encomenda" pegava outra e o quadro
-   * enchia de comandas vazias (beta test de 05/11/2026, PDV2-13). Sem item não
-   * há nada a perder; se o servidor recusar, a comanda segue no quadro como
-   * estava.
+   * Sair da venda com a comanda ainda vazia LIBERA a comanda: a encomenda nova e a
+   * comanda que a "Nova venda" abriu sozinha. Antes ela ficava "Em uso" com 0
+   * itens, a próxima pegava outra e o quadro enchia de comandas vazias (beta test
+   * de 05/11/2026, PDV2-13). A comanda que o operador abriu pelo quadro é escolha
+   * dele e fica. Sem item não há nada a perder; se o servidor recusar, a comanda
+   * segue no quadro como estava.
    */
-  async function releaseAbandonedOrderTab(options: { resetAfter?: boolean } = {}) {
-    if (!isAbandonedOrderTab()) return;
+  async function releaseAbandonedTab(options: { resetAfter?: boolean } = {}) {
+    if (!isAbandonedOrderTab() && !isAbandonedNextSaleTab()) return;
     const sessionKey = cart.tabSessionKey;
     const path = concreteActionHref(
       actions.value,
@@ -4608,7 +4645,8 @@ export function usePosSale(deps: PosSaleDeps) {
     completeOrderSetup,
     setSalesMode,
     openNewOrder,
-    releaseAbandonedOrderTab,
+    releaseAbandonedTab,
+    openNextSale,
     // draft + flags
     cart,
     tabInput,
@@ -4630,6 +4668,7 @@ export function usePosSale(deps: PosSaleDeps) {
     serverError,
     managerApprovalError,
     managerApproved,
+    managerApprovedBy,
     managerCheckBusy,
     checkManagerApproval,
     gridProducts,

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { managerAuthReason } from "../app/presentation/managerAuth";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de VOCABULÁRIO: a palavra da casa para o objeto que o operador segura é
@@ -354,6 +355,34 @@ describe("na tela, a navegação lateral se chama barra lateral", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO: o gesto de dinheiro do caixa se chama **Saída de caixa**
+// e **Entrada de caixa**, o nome que o PDV dá aos botões desde 17/08/2026 (commit
+// 2264c6ad0: quem confere as filipetas dias depois não estava no balcão, e
+// Entrada/Saída diz a direção do dinheiro sem jargão). **Saída** sozinha é a estação
+// do KDS (suite-vocabulary, 26/09), e **Retirada** é a forma de receber o pedido. O
+// diálogo do gerente dizia "Retirada de R$ X" para a saída de caixa (#2690): a mesma
+// coisa com dois nomes, e um deles emprestado da forma de receber. Comentário é
+// descontado: a trava é sobre o texto que chega ao operador.
+const BANNED_CASH_WITHDRAWAL = /Retirada (?:de (?:\$\{|R\$)|d[ae] gaveta)/;
+
+describe("o gesto de dinheiro do caixa é Saída de caixa e Entrada de caixa", () => {
+  it("o diálogo do gerente chama a saída pelo nome do botão do PDV", () => {
+    const reason = managerAuthReason({ action: "cash_out", amountQ: 5000, detail: "Troco" });
+    expect(reason.startsWith("Saída de caixa de ")).toBe(true);
+  });
+
+  it("nenhum texto de operador chama a saída de dinheiro de 'Retirada'", () => {
+    const leaks = APP_SOURCES.flatMap((file) => offenders(file, BANNED_CASH_WITHDRAWAL, stripComments));
+    expect(
+      leaks,
+      "A saída de dinheiro do caixa é 'Saída de caixa' (suite-vocabulary, 22/11/2026, #2690).\n" +
+        "'Retirada' é a forma de receber o pedido, e 'Saída' sozinha é a estação do KDS.\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Guardrail de VOCABULÁRIO, quinta regra: quando a produção termina, o lote, o
 // produto e as unidades **ficam prontos**. Decisão do dono em 16/11/2026: a casa
 // diz "ficar pronto", nunca "sair do forno". Vale para todo tempo do verbo: "sai
@@ -490,5 +519,40 @@ describe("a casa diz ficar pronto, nunca sair do forno", () => {
     expect(paths).toContain("marketing-nuxt/app/components/AnnouncementTemplateForm.vue");
     expect(paths).toContain("marketing-nuxt/app/presentation/decisions.ts");
     expect(paths).toContain("production-nuxt/app/pages/close.vue");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO, a regra do serviço de entrega (M1b-b3, #3139): a tela
+// do operador diz o nome do serviço da corrida COMO O CADASTRO DIZ, nunca "TaOn"
+// escrito no código. A casa entrega por mais de um serviço (DEV-2026-030: a TaOn,
+// os entregadores da casa, outra central amanhã), e o nome chega pronto do servidor
+// (`service_name` no bloco do entregador e na corrida das Entregas; `ride_plan` no
+// sheet de chamar). A frase monta com `deliveryServiceName` (presentation/
+// deliveryService.ts), que diz "central" quando o servidor não disse.
+//
+// Só o código das telas (`app/`, `server/`): o teste e o mock usam "TaOn" como DADO
+// do cadastro, que é exatamente o que a tela recebe. Comentário é descontado: dizer
+// que a TaOn faz isto ou aquilo continua sendo verdade sobre a TaOn.
+
+const BANNED_SERVICE = /\bTaOn\b/;
+
+const SCREEN_SOURCES = SOURCES.filter((file) => /\/(app|server)\//.test(relative(surfacesDir, file)));
+
+describe("o nome do serviço de entrega vem do cadastro", () => {
+  it("nenhum texto de operador diz 'TaOn' fixo", () => {
+    const leaks = SCREEN_SOURCES.flatMap((file) => offenders(file, BANNED_SERVICE, stripComments));
+
+    expect(
+      leaks,
+      "O nome do serviço da corrida vem do cadastro (service_name), não do código.\n" +
+        "Use deliveryServiceName(<o service_name do bloco ou da corrida>) na frase.\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
+
+  it("a varredura enxerga as telas, não um recorte", () => {
+    const apps = new Set(SCREEN_SOURCES.map((file) => relative(surfacesDir, file).split("/")[0]));
+    expect([...apps]).toEqual(expect.arrayContaining(["orders-nuxt", "pos-nuxt", "bi-nuxt", "operator-kit"]));
   });
 });

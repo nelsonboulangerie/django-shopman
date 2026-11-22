@@ -3,6 +3,28 @@ import type { Action, OrderProgressStepProjection, TrackingCopyProjection, Track
 // Lógica pura da tela de acompanhamento. Contrato vem das projeções do backend
 // (SAGRADO): a UI deriva apresentação, nunca inventa estado.
 
+export type TrackingSidePrimary = 'cancellation_contact' | 'rate' | 'reorder' | 'support' | null
+
+/**
+ * Um (e só um) botão primary no card de Ações: o topo da pilha não-destrutiva.
+ * Prioridade: Quero falar com o responsável > Avaliar > Pedir de novo > Ajuda.
+ * Cancelar fica destructive à parte. Assim nunca sobra um card só com botões
+ * secundários (faubourg). Quem chega ao "Quer cancelar?" depois do preparo quer
+ * desistir, e o caminho é a ouvidoria: o "Ajuda" (WhatsApp) desce (#3257).
+ */
+export function trackingSideActionsPrimary (available: {
+  cancellationContact: boolean
+  rate: boolean
+  reorder: boolean
+  support: boolean
+}): TrackingSidePrimary {
+  if (available.cancellationContact) return 'cancellation_contact'
+  if (available.rate) return 'rate'
+  if (available.reorder) return 'reorder'
+  if (available.support) return 'support'
+  return null
+}
+
 // Painel de status: acento na borda esquerda por tom (legível, sem virar um
 // banner cheio de cor). Mantém as classes exatas do design aprovado.
 export function trackingPanelClass (tone: string | null | undefined): string {

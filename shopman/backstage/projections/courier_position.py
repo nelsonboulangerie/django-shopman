@@ -11,10 +11,11 @@ from dataclasses import dataclass
 
 from shopman.shop.services import courier_position
 
-#: Quem disse onde o entregador está, completando "Posição agora, …".
+#: Quem disse onde o entregador está, completando "Posição agora, …". ``{service}``
+#: é o nome do serviço da corrida, como o cadastro diz.
 _SOURCE_LABELS = {
-    courier_position.SOURCE_WEBHOOK: "pela TaOn",
-    courier_position.SOURCE_POLL: "pela TaOn",
+    courier_position.SOURCE_WEBHOOK: "pela {service}",
+    courier_position.SOURCE_POLL: "pela {service}",
     courier_position.SOURCE_OWN_FLEET: "pelo celular do entregador",
 }
 
@@ -31,7 +32,8 @@ class DeliveryCourierPositionProjection:
     source_label: str
 
 
-def courier_position_projection(ride_ref) -> DeliveryCourierPositionProjection | None:
+def courier_position_projection(ride_ref, *, service: str) -> DeliveryCourierPositionProjection | None:
+    """A última posição da corrida; ``service`` é o nome que a frase diz ("pela TaOn")."""
     position = courier_position.read(ride_ref)
     if position is None:
         return None
@@ -39,5 +41,5 @@ def courier_position_projection(ride_ref) -> DeliveryCourierPositionProjection |
         latitude=position["latitude"],
         longitude=position["longitude"],
         at=position["at"].isoformat(),
-        source_label=_SOURCE_LABELS[position["source"]],
+        source_label=_SOURCE_LABELS[position["source"]].replace("{service}", service),
     )

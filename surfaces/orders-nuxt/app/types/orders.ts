@@ -64,6 +64,8 @@ export type CourierBlock = {
     vehicle_plate: string;
     vehicle_model: string;
     vehicle_color?: string;
+    /** A foto da TaOn enquanto a corrida vive (servida pelo servidor); vazia sem foto. */
+    photo_url?: string;
   } | null;
   tracking_url: string;
   confirmation_code: string;

@@ -5244,6 +5244,29 @@ class OrderCourierCancelView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Close here the ride the courier central never closed (delivered or back at the store)",
+        responses={200: OpenApiResponse(description="Ride closed here.")},
+    ),
+)
+class OrderCourierCloseHereView(_OrderActionBase):
+    intention_operation = "courier-close-here"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        outcome = str(request.data.get("outcome") or "")
+
+        def execute(base):
+            closed = orders_service.courier_close_here(order, outcome=outcome, actor=_actor(request), expected_revision=base)
+            return {"closed": closed, "outcome": outcome}
+
+        return self._context_response(request, order, self.intention_operation, {"outcome": outcome}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Quote the external courier ride without dispatching",
         responses={200: OpenApiResponse(description="Courier quote.")},
     ),
@@ -5520,8 +5543,12 @@ class OrderCourierRideQuoteView(APIView):
         else:
             estimate = courier.estimate_for_ride(orders)
         if estimate is None:
+            from shopman.shop.services import delivery_services
+
+            # A corrida que ainda vai abrir vai pelo serviço padrão do Admin.
             return Response({"estimate": None,
-                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+                             "detail": f"A {delivery_services.service_name()} não cotou esta corrida agora. "
+                                       "Dá para chamar mesmo assim."})
         order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
         compare = {}
         if len(orders) > 1:
@@ -8198,6 +8225,14 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
         return _resposta_no_dialeto(self._close(request))
 
     def _close(self, request):
+        # A chave da tentativa é o que faz o reenvio devolver a MESMA venda (resposta
+        # perdida, fila sem conexão, toque duplo). Sem ela, a retentativa fechava uma
+        # segunda venda. O PDV sempre manda (``cart.clientRequestId``); a regra é a
+        # mesma das rotas de caixa (F8, #2565).
+        if not str(request.data.get("client_request_id") or "").strip():
+            return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+                "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
+                "error": {"code": "client_request_id_required"}}, status=422)
         if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
             return Response({"detail": "Atualize a comanda antes de finalizar.", "field": "expected_revision",
                              "error": {"code": "tab_revision_required"}}, status=422)
