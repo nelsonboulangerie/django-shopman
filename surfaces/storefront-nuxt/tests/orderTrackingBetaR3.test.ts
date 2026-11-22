@@ -95,6 +95,13 @@ describe('#3257: depois do preparo, falar com o responsável é a ação princip
     expect(trackingSideActionsPrimary(none)).toBeNull()
   })
 
+  it('o Ajuda não usa o balão do falar com o responsável: são gestos diferentes', () => {
+    const supportButtons = page.match(/<UiButton[^>]*:href="supportUrl"[^>]*>/g) || []
+    expect(supportButtons.length).toBeGreaterThan(0)
+    for (const button of supportButtons) expect(button).toContain('icon="lucide:circle-help"')
+    expect(page).toMatch(/icon="lucide:message-circle"\s+:loading="!!actionPending\[cancellationContactAction\.ref\]"/)
+  })
+
   it('o botão do bloco segue a regra, e o pedido já feito não o deixa principal', () => {
     expect(page).toMatch(/:variant="sideActionsPrimary === 'cancellation_contact' \? 'default' : 'secondary'"/)
     expect(page).toMatch(/cancellationContact: Boolean\(cancellationContactAction\.value && !cancellationContact\.value\?\.requested\)/)

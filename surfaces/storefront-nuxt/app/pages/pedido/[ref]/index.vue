@@ -816,7 +816,7 @@ useSeoMeta({
                         {{ action.label }}
                       </span>
                     </template>
-                    <UiButton v-if="showSupportInStatusPanel" class="min-h-11" :href="supportUrl" target="_blank" rel="noopener noreferrer" variant="secondary" icon="lucide:message-circle">
+                    <UiButton v-if="showSupportInStatusPanel" class="min-h-11" :href="supportUrl" target="_blank" rel="noopener noreferrer" variant="secondary" icon="lucide:circle-help">
                       {{ tracking.copy.support_label }}
                     </UiButton>
                   </div>
@@ -1061,7 +1061,7 @@ useSeoMeta({
             >
               {{ reorderAction!.label }}
             </UiButton>
-            <UiButton v-if="showSupportAction" :href="supportUrl" target="_blank" rel="noopener noreferrer" :variant="sideActionsPrimary === 'support' ? 'default' : 'secondary'" icon="lucide:message-circle" class="w-full">
+            <UiButton v-if="showSupportAction" :href="supportUrl" target="_blank" rel="noopener noreferrer" :variant="sideActionsPrimary === 'support' ? 'default' : 'secondary'" icon="lucide:circle-help" class="w-full">
               {{ tracking.copy.support_label }}
             </UiButton>
             <!-- "Como chegar" também aqui: na retirada é a ação mais útil, e
