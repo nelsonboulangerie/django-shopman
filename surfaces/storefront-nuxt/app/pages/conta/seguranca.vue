@@ -52,6 +52,8 @@ const pendingStepUpPurpose = ref<StepUpPurpose>('export')
 // código, o problema é outro e a tela tem de DIZER, em vez de pedir código para sempre.
 let stepUpResumed = false
 const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
+// A espera de reenvio sem código que valha (#3241): a tela conta o tempo, sem erro.
+const { waitSeconds: stepUpWaitSeconds, fromCooldown: stepUpFromCooldown, reset: resetStepUpWait } = useResendWait(stepUpOpen)
 
 const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices } = await useFetch<AccountDeviceResponse>(apiPath('/api/v1/account/devices/'), {
   credentials: 'include',
@@ -494,6 +496,7 @@ async function sendStepUpCode () {
   stepUpSendPending.value = true
   stepUpIssue.value = ''
   stepUpNotice.value = ''
+  resetStepUpWait()
   try {
     await $fetch(apiPath('/api/auth/request-code/'), {
       method: 'POST',
@@ -511,6 +514,8 @@ async function sendStepUpCode () {
       stepUpNotice.value = errorDetail(e, 'O código que enviamos há pouco ainda vale.')
       return
     }
+    // Espera de reenvio sem código que valha: não é erro de ninguém.
+    if (stepUpFromCooldown(data)) return
     stepUpIssue.value = errorDetail(e, 'Não foi possível enviar o código agora.')
   } finally {
     stepUpSendPending.value = false
@@ -1177,11 +1182,14 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiDialogTitle>Confirme sua identidade</UiDialogTitle>
             <UiDialogDescription>
               <template v-if="pendingStepUpPurpose === 'phone'">
-                Antes de mudar o número, confirme que a conta é sua: enviamos um código para o
-                número atual, {{ currentPhoneDisplay }}. Depois, você informa o número novo.
+                Antes de mudar o número, confirme que a conta é sua com um código no número
+                atual, {{ currentPhoneDisplay }}. Depois, você informa o número novo.
+              </template>
+              <template v-else-if="stepUpSent">
+                Enviamos um código para o seu telefone. Digite-o para continuar com esta ação.
               </template>
               <template v-else>
-                Enviamos um código para o seu telefone. Digite-o para continuar com esta ação.
+                Para continuar com esta ação, confirme que é você com um código no seu telefone.
               </template>
             </UiDialogDescription>
           </UiDialogHeader>
@@ -1191,6 +1199,9 @@ useSeoMeta({ title: 'Segurança e dados' })
           </UiAlert>
           <p v-else-if="stepUpNotice" class="shop-meta" role="status">
             {{ stepUpNotice }}
+          </p>
+          <p v-else-if="stepUpWaitSeconds > 0" class="shop-meta" role="status" data-step-up-wait>
+            {{ resendWaitMessage(stepUpWaitSeconds) }}
           </p>
           <div class="space-y-2">
             <UiPinInput
@@ -1206,7 +1217,7 @@ useSeoMeta({ title: 'Segurança e dados' })
               size="sm"
               class="px-0"
               :loading="stepUpSendPending"
-              :disabled="stepUpSendPending"
+              :disabled="stepUpSendPending || stepUpWaitSeconds > 0"
               @click="sendStepUpCode"
             >
               {{ stepUpSent ? 'Reenviar código' : 'Enviar código' }}
