@@ -21,7 +21,7 @@ test("Separar de novo: o aviso diz o que voltou e o gesto manda o troco e a maqu
   const form = page.locator("[data-courier-separate-form]");
   await expect(form).toBeVisible();
   const go = form.locator("[data-courier-separate-go]");
-  await expect(go).toHaveText("Separar com a maquininha Azul");
+  await expect(go).toHaveText("Separar R$ 26,00 e a maquininha Azul");
   expect((await go.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   await go.click();
   await expect(notice).toHaveCount(0);

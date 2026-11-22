@@ -57,7 +57,7 @@ describe("Separar de novo (corrida retomada)", () => {
       const field = w.get("[data-courier-separate-change]");
       const input = (field.element.tagName === "INPUT" ? field.element : field.get("input").element) as HTMLInputElement;
       expect(input.value).toBe("26,00");
-      expect(w.get("[data-courier-separate-go]").text()).toBe("Separar com a maquininha Azul");
+      expect(w.get("[data-courier-separate-go]").text()).toBe("Separar R$ 26,00 e a maquininha Azul");
       await w.get("[data-courier-separate-go]").trigger("click");
       expect(w.emitted("separate")).toEqual([[{ change_out: "26,00", equipment: ["card_machine:3"] }]]);
     } finally { w.unmount(); }
@@ -71,5 +71,16 @@ describe("Separar de novo (corrida retomada)", () => {
       expect(w.find("[data-courier-separate-form]").exists()).toBe(false);
       expect(w.emitted("separate")).toBeUndefined();
     } finally { w.unmount(); }
+  });
+
+  it("o rótulo diz o que sai: só o troco, ou só a maquininha", async () => {
+    const change = mountPanel({ change_out_suggested_q: 2600, needs_machine: false });
+    const machine = mountPanel({ change_out_suggested_q: 0, needs_machine: true });
+    try {
+      await change.get("[data-courier-separate]").trigger("click");
+      await machine.get("[data-courier-separate]").trigger("click");
+      expect(change.get("[data-courier-separate-go]").text()).toBe("Separar R$ 26,00");
+      expect(machine.get("[data-courier-separate-go]").text()).toBe("Separar a maquininha Azul");
+    } finally { change.unmount(); machine.unmount(); }
   });
 });

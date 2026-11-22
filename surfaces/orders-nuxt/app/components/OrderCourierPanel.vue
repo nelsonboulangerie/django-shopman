@@ -165,6 +165,16 @@ const separateActions = computed(() => [
     ...{ "data-courier-separate": "" },
   },
 ]);
+// Gesto de dinheiro: o rótulo diz tudo o que sai ("Separar R$ 26,00 e a maquininha Azul").
+const separateLabel = computed(() => {
+  const missing = toSeparate.value;
+  const money = missing && missing.change_out_suggested_q > 0 && separateChange.value.trim()
+    ? `R$ ${separateChange.value.trim()}` : "";
+  const label = separateMachines.value.find((option) => option.ref === separateMachine.value)?.label ?? "";
+  const machine = missing?.needs_machine && separateMachine.value ? `a ${machinePhrase(label)}` : "";
+  const parts = [money, machine].filter(Boolean);
+  return parts.length ? `Separar ${parts.join(" e ")}` : "Separar";
+});
 function confirmSeparate() {
   if (separateBlocked.value) return;
   const missing = toSeparate.value;
@@ -435,9 +445,7 @@ const vehicle = computed(() =>
               type="button"
               color="primary"
               icon="i-lucide-check"
-              :label="toSeparate.needs_machine && separateMachine
-                ? `Separar com a ${machinePhrase(separateMachines.find((option) => option.ref === separateMachine)?.label ?? '')}`
-                : 'Separar'"
+              :label="separateLabel"
               :disabled="busy || separateBlocked || !custodyAction?.enabled"
               :loading="busy"
               class="min-h-11"
