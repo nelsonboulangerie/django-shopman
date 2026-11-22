@@ -248,15 +248,18 @@ describe('checkout: a frase do dinheiro e a espera, sem dizer duas vezes', () =>
     expect(document.activeElement?.closest('[data-review-unclaimed-rule]')).toBeFalsy()
   })
 
-  it('no pedido para hoje o card fica só com o dinheiro, sem a regra do não retirado', async () => {
+  it('na retirada para hoje a regra do não retirado também aparece: toda retirada é paga (#2613)', async () => {
     draft('pix')
     const page = await mountCheckout()
     mounted = page
     await openReview(page)
 
     const card = document.body.querySelector('[data-review-before-sending]')
+    const rule = document.body.querySelector('[data-review-unclaimed-rule]')
     expect(card?.querySelector('[data-review-money-notice]')).toBeTruthy()
-    expect(document.body.querySelector('[data-review-unclaimed-rule]')).toBeNull()
+    expect(rule).toBeTruthy()
+    expect(card?.contains(rule)).toBe(false)
+    expect(rule!.textContent).toContain('Pedido não retirado até o fim do expediente do dia combinado')
   })
 
   function waitingCart (promise: unknown) {

@@ -48,9 +48,9 @@ describe('pedido não retirado: uma regra, o mesmo texto nos Termos e no checkou
     expect(texto('app/pages/finalizar.vue')).toContain(REGRA)
   })
 
-  it('a linha do checkout aparece na encomenda para retirar, e leva aos Termos', () => {
+  it('a linha do checkout aparece em toda retirada paga, hoje ou outro dia, e leva aos Termos', () => {
     const checkout = readFileSync(resolve(raiz, 'app/pages/finalizar.vue'), 'utf8')
-    expect(checkout).toContain('const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date) && !isTodaySelected.value)')
+    expect(checkout).toContain('const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date))')
     // A frase é a linha logo abaixo do card "Antes de enviar" da revisão, e só nasce com a regra.
     expect(checkout).toMatch(/<\/section>\s*(<!--[\s\S]*?-->\s*)?<p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>/)
     expect(checkout.match(/data-review-unclaimed-rule/g)).toHaveLength(1)
