@@ -55,8 +55,8 @@ na §8.
 |---|---|---|---|---|
 | `pdv` | `immediate` (a encomenda também: quem registrou é o operador) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
 | `web` (loja online) | `auto_cancel` (ADR-036): prazo de aceite de 5 min de loja aberta no pedido do dia e 60 min na encomenda (emenda de 09/11); aviso de pedido parado a 1/3 do prazo | Pix e cartão, `at_commit`, prazo 10 min | o ticket nasce no aceite e espera **o operador** dar "Iniciar preparo" na Cozinha (ou o atalho do Gestor, mesmo ato; `prep_start=operator`) | ManyChat → SMS → e-mail |
-| `whatsapp` | `manual`, alerta em 10 min | Pix e cartão, `at_commit`, prazo 10 min | sozinho | ManyChat → SMS → e-mail |
-| `ifood` | `manual`, alerta em 5 min, SLA do iFood 8 min | `external` | sozinho | nenhum (o telefone é a central do iFood) |
+| `whatsapp` | `manual`, alerta em 10 min | Pix e cartão, `at_commit`, prazo 10 min | o ticket nasce no aceite e espera o "Iniciar preparo" da Cozinha, como na loja online (`prep_start=operator`, #3165) | ManyChat → SMS → e-mail |
+| `ifood` | `manual`, alerta em 5 min, SLA do iFood 8 min | `external` | o ticket nasce no aceite e espera o "Iniciar preparo" da Cozinha, como na loja online (`prep_start=operator`, #3165) | nenhum (o telefone é a central do iFood) |
 
 Nenhum canal declara `fulfillment.courier="auto"` (padrão `"none"`, `shopman/shop/config.py:173`):
 a corrida da TaOn é sempre chamada por uma pessoa.
@@ -96,7 +96,7 @@ O que cada fase faz (`shopman/shop/lifecycle.py:324-737`):
 | Fase | Efeitos |
 |---|---|
 | `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit` (menos para o pedido na fila da fornada de hoje, que só é cobrado quando o cliente confirma a vaga), aviso `order_received` (fora do `immediate`) |
-| `on_accepted` | cobra se o pagamento digital ainda não entrou (Pix nasce **aqui** na loja online); encomenda futura agenda o despertador; KDS (se o preparo começa sozinho); baixa de estoque; aviso `order_accepted` (nunca no balcão já entregue) |
+| `on_accepted` | cobra se o pagamento digital ainda não entrou (Pix nasce **aqui** na loja online); encomenda futura agenda o despertador; KDS (o ticket nasce aqui; o pedido só vira "Em preparo" sozinho no balcão, `prep_start` padrão); baixa de estoque; aviso `order_accepted` (nunca no balcão já entregue) |
 | `on_paid` | pago depois de cancelado → estorno + alerta; NFC-e do PDV pela regra "na saída"; aviso `payment_confirmed` |
 | `on_preparing` | tickets do KDS; aviso `order_preparing` |
 | `on_ready` | NFC-e da entrega da casa (sacola pronta); aviso `order_ready_pickup` / `order_ready_delivery` |
