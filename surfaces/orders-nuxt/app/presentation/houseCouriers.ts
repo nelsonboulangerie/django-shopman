@@ -29,6 +29,8 @@ export interface HouseCourier {
   value_q: number | null;
   /** "R$ 15,00", ou vazio sem valor na tabela. */
   value: string;
+  /** O acerto do dia: "A pagar a Diego hoje: R$ 56,00 (4 corridas)"; vazio sem rota fechada hoje. */
+  to_pay_today?: string;
 }
 
 export interface HouseCrew {
@@ -300,6 +302,17 @@ export function shiftChips(crew: HouseCrew | null | undefined): {
     label: courier.on_shift && courier.state === "busy" ? `${courier.name} · Na rua` : courier.name,
     on: courier.on_shift,
   }));
+}
+
+/**
+ * O acerto do dia (M4, #2527): uma linha por entregador com rota fechada hoje, na ordem do
+ * nome. O servidor soma e escreve a frase; o pagamento é por fora (decisão 5 do dono).
+ */
+export function toPayToday(crew: HouseCrew | null | undefined): { ref: string; text: string }[] {
+  if (!crew?.active) return [];
+  return crew.couriers
+    .filter((courier) => courier.to_pay_today)
+    .map((courier) => ({ ref: courier.ref, text: courier.to_pay_today as string }));
 }
 
 // ── a corrida da casa na página Entregas (M3b, #2898) ───────────────────────

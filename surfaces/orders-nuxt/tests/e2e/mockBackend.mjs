@@ -736,7 +736,9 @@ function crewBody(url, mode = "on") {
   const row = (ref, name, base) => {
     const valueQ = refs.length && crewState[ref] ? base + 300 * (refs.length - 1) : null;
     return { ref, name, on_shift: crewState[ref], state: "free", state_label: "Livre", value_q: valueQ,
-      value: valueQ === null ? "" : value(valueQ) };
+      value: valueQ === null ? "" : value(valueQ),
+      // M4: o acerto do dia; Diego já fechou duas rotas hoje.
+      to_pay_today: ref === "diego" ? "A pagar a Diego hoje: R$ 27,00 (2 corridas)" : "" };
   };
   return {
     active: true, service: { ref: "casa", name: "Entregadores da casa" }, default: { ref: "taon", name: "TaOn" },
