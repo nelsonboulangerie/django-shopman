@@ -445,6 +445,11 @@ class CheckoutView(APIView):
             slot_error = (
                 delivery_window_error(_delivery_day, delivery_time_slot) if _delivery_day is not None else None
             )
+            if not slot_error and _delivery_day is not None:
+                # O prazo de aceite do canal, a mesma conta da grade que a tela riscou (#3266).
+                from shopman.storefront.services.pickup_slots import acceptance_slot_error
+
+                slot_error = acceptance_slot_error(_delivery_day, delivery_time_slot, CHANNEL_REF)
             if slot_error:
                 return Response(
                     {
@@ -462,6 +467,7 @@ class CheckoutView(APIView):
                 delivery_time_slot,
                 delivery_date=delivery_date,
                 cart_skus=[str(line.sku) for line in cart.lines if line.sku],
+                channel_ref=CHANNEL_REF,
             )
             if slot_error:
                 return Response(

@@ -389,8 +389,6 @@ class CartService:
                 "coupon_code": exc.coupon_code,
                 "standing_label": exc.standing_label,
                 "standing_q": exc.standing_q,
-                "coupon_q": exc.coupon_q,
-                "fixed": exc.fixed,
             }
         except cart_service.CouponRejected as exc:
             return {"ok": False, "error": exc.code}

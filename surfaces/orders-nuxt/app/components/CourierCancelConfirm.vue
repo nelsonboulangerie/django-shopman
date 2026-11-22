@@ -9,7 +9,7 @@
 //  - depois do aceite: o motivo é o próprio botão. Cada um já é o `reason_id`
 //    que a central recebe.
 import type { Action } from "~/generated/ordersContract";
-import { cancelConfirmation } from "~/presentation/deliveries";
+import { cancelConfirmation } from "../../../operator-kit/app/presentation/courierCancel";
 
 const props = defineProps<{ action: Action; busy?: boolean }>();
 const emit = defineEmits<{ confirm: [reasonId?: number]; keep: [] }>();

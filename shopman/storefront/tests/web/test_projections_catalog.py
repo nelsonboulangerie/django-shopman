@@ -107,13 +107,25 @@ class TestBuildCatalogShape:
             proj.items = ()  # type: ignore[misc]
 
     def test_categories_exposed_with_icons(self, collection):
+        # O ícone é o do cadastro (``metadata.icon``, nome Lucide), não um palpite
+        # pelo ``ref`` (#3253).
+        collection.metadata = {**(collection.metadata or {}), "icon": "wheat"}
+        collection.save(update_fields=["metadata"])
         proj = build_catalog(channel_ref="web")
         assert proj.categories
         pao_cat = next((c for c in proj.categories if c.ref == "paes"), None)
         assert pao_cat is not None
         assert pao_cat.name == "Pães"
-        assert pao_cat.icon  # Material Symbols ligature
+        assert pao_cat.icon == "wheat"
         assert pao_cat.url == "/menu#paes"
+
+    def test_category_without_icon_in_the_cadastro_has_none(self, collection):
+        collection.metadata = {k: v for k, v in (collection.metadata or {}).items() if k != "icon"}
+        collection.save(update_fields=["metadata"])
+        proj = build_catalog(channel_ref="web")
+        pao_cat = next(c for c in proj.categories if c.ref == "paes")
+        # Sem ícone no cadastro, vazio: a tela escolhe o padrão dela.
+        assert pao_cat.icon == ""
 
 
 # ──────────────────────────────────────────────────────────────────────

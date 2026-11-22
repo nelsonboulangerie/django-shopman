@@ -1222,9 +1222,9 @@ export function usePosSale(deps: PosSaleDeps) {
   const inSaleView = computed(() => !showTabs.value && (hasOpenTab.value || cart.localTab));
   function goToTabs() {
     showTabs.value = true;
-    // Voltar ao quadro também é sair: a encomenda nova que segue sem item volta a
-    // ser comanda livre, em vez de ficar "Em uso" vazia no quadro (PDV2-13).
-    void releaseAbandonedOrderTab({ resetAfter: true });
+    // Voltar ao quadro também é sair: a comanda nova que segue sem item volta a
+    // ser livre, em vez de ficar "Em uso" vazia no quadro (PDV2-13).
+    void releaseAbandonedTab({ resetAfter: true });
   }
   const hasDraftWithoutTab = computed(() => !hasOpenTab.value && cart.items.length > 0);
   const canUseCart = computed(() => !tabRequiredForCart.value || hasOpenTab.value);
@@ -2306,6 +2306,26 @@ export function usePosSale(deps: PosSaleDeps) {
     } finally {
       openingNewOrder = false;
     }
+  }
+
+  /**
+   * "Nova venda" (o CTA da tela de resultado, F2 e Enter): sai do resultado direto
+   * para a GRADE da próxima comanda livre, sem passar pelo quadro (WP-E8, D5 do
+   * dono). Responde se a comanda abriu; senão, quem chama mostra o quadro, que é o
+   * caminho de sempre (comanda nenhuma livre, gaveta pedindo conferência, falha).
+   * A comanda aberta aqui é LEMBRADA: se o operador sair dela sem lançar nada, ela
+   * volta a ser livre (``releaseAbandonedTab``), e o quadro não enche de vazias.
+   */
+  let nextSaleSessionKey = "";
+  async function openNextSale(): Promise<boolean> {
+    dismissResult();
+    if (busy.value) return false;
+    const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
+    if (!tabRef) return false;
+    await openTab(tabRef);
+    if (cart.tabRef !== tabRef || !cart.tabSessionKey) return false;
+    nextSaleSessionKey = cart.tabSessionKey;
+    return true;
   }
 
   async function openTabFromDialog(tab: POSTabProjection | string) {
@@ -4109,15 +4129,22 @@ export function usePosSale(deps: PosSaleDeps) {
       && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
   }
 
+  /** A comanda que a "Nova venda" abriu sozinha e que segue sem item nem cliente. */
+  function isAbandonedNextSaleTab(): boolean {
+    return Boolean(nextSaleSessionKey) && cart.tabSessionKey === nextSaleSessionKey && !cart.localTab
+      && !cart.items.length && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
+  }
+
   /**
-   * Sair da venda com a encomenda ainda vazia LIBERA a comanda. Antes ela ficava
-   * "Em uso" com 0 itens, a próxima "Nova encomenda" pegava outra e o quadro
-   * enchia de comandas vazias (beta test de 05/11/2026, PDV2-13). Sem item não
-   * há nada a perder; se o servidor recusar, a comanda segue no quadro como
-   * estava.
+   * Sair da venda com a comanda ainda vazia LIBERA a comanda: a encomenda nova e a
+   * comanda que a "Nova venda" abriu sozinha. Antes ela ficava "Em uso" com 0
+   * itens, a próxima pegava outra e o quadro enchia de comandas vazias (beta test
+   * de 05/11/2026, PDV2-13). A comanda que o operador abriu pelo quadro é escolha
+   * dele e fica. Sem item não há nada a perder; se o servidor recusar, a comanda
+   * segue no quadro como estava.
    */
-  async function releaseAbandonedOrderTab(options: { resetAfter?: boolean } = {}) {
-    if (!isAbandonedOrderTab()) return;
+  async function releaseAbandonedTab(options: { resetAfter?: boolean } = {}) {
+    if (!isAbandonedOrderTab() && !isAbandonedNextSaleTab()) return;
     const sessionKey = cart.tabSessionKey;
     const path = concreteActionHref(
       actions.value,
@@ -4618,7 +4645,8 @@ export function usePosSale(deps: PosSaleDeps) {
     completeOrderSetup,
     setSalesMode,
     openNewOrder,
-    releaseAbandonedOrderTab,
+    releaseAbandonedTab,
+    openNextSale,
     // draft + flags
     cart,
     tabInput,

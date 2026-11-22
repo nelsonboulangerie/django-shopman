@@ -23,6 +23,7 @@ describe("seções do B.I. no modelo de navegação", () => {
       ["explore", "Alt+7"],
       ["forecast", "Alt+8"],
       ["scenarios", "Alt+9"],
+      ["ai", ""],
     ]);
   });
 
@@ -31,6 +32,11 @@ describe("seções do B.I. no modelo de navegação", () => {
     expect(biSections("period=week", "reader").every((s) => s.to.endsWith("?period=week"))).toBe(true);
     expect(biSections("", "cash_auditor").map((s) => s.key)).toContain("cash");
     expect(biSections("", null).map((s) => s.key)).toContain("cash");
+  });
+
+  it("a IA é só do Dono: quem não audita o caixa não vê a seção (DEV-2026-067)", () => {
+    expect(biSections("", "reader").map((s) => s.key)).not.toContain("ai");
+    expect(biSections("", "cash_auditor").map((s) => s.key)).toContain("ai");
   });
 
   it("forma de cada seção: a olhada do dia é do chão, a leitura de tendência é do escritório", () => {
@@ -44,6 +50,7 @@ describe("seções do B.I. no modelo de navegação", () => {
       ["explore", "office", false],
       ["forecast", "floor", true],
       ["scenarios", "office", false],
+      ["ai", "office", false],
     ]);
   });
 

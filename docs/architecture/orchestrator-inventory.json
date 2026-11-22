@@ -10704,6 +10704,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/fixed_discount.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "pricing.fixed-coupon-competition"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/fomo.py",
       "touchpoints": [
         "service"
@@ -15599,6 +15613,94 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/concierge_reading.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "_redactor",
+            "redact",
+            "register"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/usd_brl_quote.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "UsdBrlQuote"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/usd_brl.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "LOOKBACK_DAYS",
+            "PTAX_URL",
+            "Quote",
+            "TIMEOUT_S",
+            "_last_known",
+            "_resolve",
+            "brl_micros",
+            "fetch_ptax",
+            "logger",
+            "quotes_for",
+            "record_quotes"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/record_usd_brl_quotes.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command"
           ]
         }
       ]

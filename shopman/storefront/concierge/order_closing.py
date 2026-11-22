@@ -429,7 +429,8 @@ def _delivery(ctx, said: Said, closing: dict, *, day: str, applied: bool, copy, 
     if said.minutes is not None or picked:
         listing = tools.execute("list_fulfillment_slots", {"delivery_date": day, "fulfillment_type": "delivery"}, ctx)
         events.append(_event("list_fulfillment_slots", listing))
-        windows = list(listing.get("delivery_slots") or [])
+        # Só a janela que a casa oferece: a riscada (preparo, prazo de aceite) não se escolhe.
+        windows = [w for w in listing.get("delivery_slots") or [] if w.get("available", True)]
         if said.minutes is not None:
             chosen = _match_slot(windows, said.minutes)
         else:

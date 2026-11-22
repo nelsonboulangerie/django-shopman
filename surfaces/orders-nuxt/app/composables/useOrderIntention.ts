@@ -38,6 +38,7 @@ const ORDER_OPERATION_SUBJECT: Record<string, string> = {
   "requeue-fiscal": "o reprocessamento da NFC-e foi gravado",
   "undo-handoff": "o desfazer da saída foi gravado",
   "undo-ready": "o desfazer do pronto foi gravado",
+  "courier-close-here": "a corrida foi encerrada aqui",
 };
 
 /**

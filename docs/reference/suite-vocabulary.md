@@ -357,6 +357,15 @@ na encomenda; 3) nos dois", respondeu "2". A encomenda que espera a loja continu
 prazo (#2770). O PR que levava o prazo ao pedido do dia (#2869) foi fechado como *not
 planned*, e o item 1 do #2749 registra a decisão.
 
+⛔ **Falar com o responsável tem um nome só: "Quero falar com o responsável"** (coordenação,
+22/11/2026, #3257). É o mesmo gesto nas duas portas da ouvidoria do acompanhamento: depois
+de avaliar com nota baixa (`TRACKING_RATING_CONTACT_CTA`) e quando o preparo já começou e
+a cliente queria cancelar (`TRACKING_CANCELLATION_CONTACT_CTA`). O nome antigo da segunda
+porta, *"Pedir contato sobre cancelamento"*, falava em cancelamento logo depois de a tela
+dizer que não há mais cancelamento. No bloco "Quer cancelar?" esse botão é a ação
+principal, e o **Ajuda** (WhatsApp da loja) fica secundário: quem chegou ali quer desistir,
+e o caminho é a ouvidoria, que abre o caso no Gestor.
+
 ---
 
 ## 6. O que a trava cobra, e o que só olho pega

@@ -166,6 +166,11 @@ class DeliveryRideProjection:
     #: A corrida passou da idade em que se acompanha de perto
     #: (``courier.ride_open_too_long``): a leitura segue lenta e a tela avisa.
     open_too_long: bool = False
+    #: "Encerrar aqui" (``courier-close-here``, #2736): só na corrida aberta há
+    #: muito tempo. ``confirmation.outcomes`` traz as saídas, cada uma com o
+    #: rótulo e o que acontece com os pedidos e o dinheiro (``{key, label,
+    #: consequence}``); "Voltou para a loja" só antes da coleta.
+    close_here_action: Action | None = None
     #: O cancelamento pedido desta corrida: "" · pending · unknown · failed
     #: (``courier.cancel_state``, a mesma fonte do Painel do pedido) e a frase.
     cancel_state: str = ""
@@ -540,6 +545,7 @@ def _ride(orders: list[Order], *, reads: _Reads, user=None) -> DeliveryRideProje
         reopened_reason=reopened["reason"],
         custody_line=custody_line,
         open_too_long=courier.ride_open_too_long(block),
+        close_here_action=_close_here_action(lead, [by_ref[ref] for ref in sequence], user=user),
         sync_since=progress.get("sync_since", ""),
         house=house_ride(lead, user=user),
     )
@@ -555,6 +561,42 @@ def _balance(cost_q: int, fees: list[int]) -> dict:
     gap = fee_q - cost_q
     balance = f"Sobra {_money(gap)}" if gap > 0 else f"Falta {_money(-gap)}" if gap < 0 else "Empata"
     return {"fee_display": f"Frete cobrado {_money(fee_q)}", "balance_display": balance}
+
+
+def _close_here_action(lead: Order, orders: list[Order], *, user=None) -> Action | None:
+    """O "Encerrar aqui" da corrida que a central nunca fechou, com as saídas que cabem."""
+    from shopman.shop.services import courier, operator_orders
+
+    outcomes = courier.close_here_outcomes(lead)
+    if not outcomes:
+        return None
+    machine = any(operator_orders.equipment_custody(order).pending for order in orders)
+    change = any(operator_orders.courier_change(order).pending for order in orders)
+    many = len(orders) > 1
+    subject = "Os pedidos ficam entregues." if many else "O pedido fica entregue."
+    things = " e ".join(word for word, out in (("o troco", change), ("a maquininha", machine)) if out)
+    pending = f" {things[0].upper()}{things[1:]} {'ficam' if change and machine else 'fica'} para o gesto “Entregador voltou”." if things else ""
+    back = []
+    if change:
+        back.append("o troco volta para a gaveta")
+    if machine:
+        back.append("a maquininha fica livre")
+    returned = ("Os pedidos voltam para Aguardando." if many else "O pedido volta para Aguardando.") + (
+        f" {' e '.join(back)[0].upper()}{' e '.join(back)[1:]}." if back else "")
+    labels = {
+        courier.CLOSE_DELIVERED: ("Foi entregue", subject + pending),
+        courier.CLOSE_RETURNED: ("Voltou para a loja", returned),
+    }
+    letter = courier.ride_letter(courier.get_block(lead).get("ride_number"))
+    ride = f"a corrida {letter}" if letter else "esta corrida"
+    return _action(
+        "courier-close-here", "Encerrar aqui", courier.dispatch_revision(lead), user,
+        confirmation={
+            "required": True,
+            "description": f"A TaOn não encerrou {ride}. Encerre aqui só se souber o que aconteceu.",
+            "outcomes": [{"key": key, "label": labels[key][0], "consequence": labels[key][1]} for key in outcomes],
+        },
+    )
 
 
 def _custody_line(orders: list[Order]) -> str:

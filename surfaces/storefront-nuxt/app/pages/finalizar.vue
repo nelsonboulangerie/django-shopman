@@ -724,9 +724,11 @@ const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, qu
 // "Hoje" fora das opções porque o dia já encerrou: a tela diz, em vez de sumir calado.
 const todayOverNotice = computed(() => (checkout.value?.today_over ? todayOverMessage(state.fulfillment_type) : ''))
 const isTodaySelected = computed(() => state.delivery_date === dateBounds.value.todayValue)
-// Encomenda para retirar (retirada em outro dia): a revisão diz a regra do pedido não
-// retirado antes de a cliente enviar (#2613).
-const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date) && !isTodaySelected.value)
+// Toda retirada paga (na loja online, toda retirada: o canal só aceita Pix e cartão,
+// pagos no envio): a revisão diz a regra do pedido não retirado antes de a cliente
+// enviar. Vale para hoje também, porque o corte do pedido pago é o fim do expediente
+// do dia combinado, seja ele qual for (#2613; coordenação, 22/11/2026).
+const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date))
 const contactState = computed<CheckoutSectionState>(() => {
   if (fieldErrors.value.name || fieldErrors.value.phone) return 'error'
   // `nameEditing` entra aqui junto com `contactEditing`, e esta é a METADE
@@ -2794,7 +2796,7 @@ useSeoMeta({
                   <p class="shop-body">{{ moneyNotice }}</p>
                 </div>
               </section>
-              <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
+              <!-- Retirada paga, de hoje ou de outro dia: a regra do pedido não retirado, dita antes de
                    enviar e de pagar (#2613, decisão do dono de 18/11/2026). Fica FORA do
                    card, numa linha logo abaixo dele: dentro, com as duas frases, o card
                    passava da dobra no celular (coordenação, 19/11/2026). A frase é a da
