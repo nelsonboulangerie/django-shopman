@@ -271,3 +271,37 @@ def test_atraso_que_vira_cancelamento_avisa_de_novo(recipe, croissant, position_
     craft.void(wo, reason="Cancelada")
 
     assert OperatorAlert.objects.filter(type="order_promise_lost", order_ref="ENC-ATRASO-E-FIM").count() == 2
+
+
+
+# ── #3229: a baixa que falha por reserva sem lastro diz a causa real ─────────
+
+
+def test_baixa_do_pedido_sem_lastro_diz_o_fato_do_lote_e_nao_manda_contar_a_prateleira(
+    recipe, croissant, position_loja, today,
+):
+    import shopman.craftsman.contrib.stockman.handlers  # noqa: F401
+
+    from shopman.shop.services import stock as stock_service
+
+    order = _encomenda("ENC-SEM-LASTRO", day=today)
+    wo = craft.plan(recipe, quantity=Decimal("10"), date=today)
+    hold = _reserva_no_lote(croissant, "8", reference="order:ENC-SEM-LASTRO", day=today)
+    order.data["hold_ids"] = [{"sku": croissant.sku, "hold_id": hold.hold_id, "qty": 8.0}]
+    order.save(update_fields=["data"])
+    craft.finish(wo, finished=Decimal("6"), actor="test")
+
+    stock_service.fulfill(order)
+
+    alert = OperatorAlert.objects.get(type="stock_fulfill_failed", order_ref="ENC-SEM-LASTRO")
+    assert "rendeu menos que o reservado" in alert.message
+    assert "faltam 8 un." in alert.message
+    assert "A prateleira está certa. Resolva no pedido: avise o cliente, remarque ou cancele." in alert.message
+    assert "Conte esses itens" not in alert.message
+
+
+def test_baixa_que_falha_sem_fato_de_lote_segue_mandando_conferir_a_prateleira(croissant, position_loja, today):
+    from shopman.shop.services import production_promise
+
+    order = _encomenda("ENC-SEM-FATO", day=today)
+    assert production_promise.fulfill_failure_fact(order, [croissant.sku]) == ""

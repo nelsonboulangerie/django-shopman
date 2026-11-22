@@ -2074,9 +2074,23 @@ Seleção de adapters por tipo. Sobreescreve `settings.py` sem exigir redeploy.
   "fiscal": "<módulo Python>",
   "manychat": {
     "live_chat_account": "<conta do ManyChat, ex.: fb486126>"
+  },
+  "google_routes": {
+    "enabled": true,
+    "calls_per_day": 100,
+    "reroute_meters": 80
   }
 }
 ```
+
+`google_routes` não é adapter: é o freio da manobra da tela "Dirigindo" do entregador da
+casa, pelo Routes API do Google (#2509, `shop/services/route_guide.py`). `enabled: false`
+desliga na hora; `calls_per_day` é o teto de chamadas por dia (padrão 100, nunca acima de
+1.000 sem mudança no código); `reroute_meters` é o desvio da linha que pede rota nova (padrão
+80, mínimo 30). Uma chamada na saída e outra só no desvio, nunca por tempo. Cada chamada,
+inclusive a recusada pelo teto, vira uma linha de `PaidApiCall` (DEV-2026-067). No teto, sem
+chave ou com erro, a página do entregador volta à linha reta e ao "Abrir no Waze" (ADR-042:
+nunca por env).
 
 `manychat.live_chat_account` não é adapter: é a conta (página) do ManyChat da loja, o trecho
 de `https://app.manychat.com/<conta>/chat/<subscriber_id>`. Editado no Admin em Integrações

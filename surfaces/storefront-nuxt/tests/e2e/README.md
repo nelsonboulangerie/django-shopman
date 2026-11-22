@@ -176,6 +176,16 @@ export MANYCHAT_API_BASE=http://127.0.0.1:12191/fb   # antes do runserver e do w
 
 O `scripts/run_storefront_journeys.sh` faz tudo isso sozinho (porta em `JOURNEYS_MANYCHAT_PORT`).
 
+**J15 (entrega fora da área, taxa por distância) precisa dos mapas falsos**
+(`shopman/shop/tests/e2e/fake_maps.py`, #2569 item 4). O endereço digitado chega sem
+coordenada e o servidor o geocodifica pelo texto; o fake responde o Geocoding do Google a
+partir de uma tabela fixa (um endereço a 2,5 km, um a 7,2 km, um a 14,8 km da loja do
+seed) e também o ViaCEP, que a jornada desvia do navegador para ele. A distância é
+haversine local: não há API de rotas a imitar. O Django e o worker sobem com
+`SHOPMAN_E2E_MAPS_API_BASE` apontando para ele (o `settings_e2e` troca o endereço do
+geocoding e põe a chave de servidor falsa), e a jornada recebe `JOURNEY_MAPS_URL`. O
+script sobe sozinho (porta em `JOURNEYS_MAPS_PORT`, padrão 12192).
+
 ### Desligar
 
 Derrube o que subiu (`kill` nos processos do `runserver`, do worker e dos dois
