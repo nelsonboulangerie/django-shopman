@@ -822,8 +822,10 @@ def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillmen
     """Dias e horários em que a casa consegue entregar/servir esta sacola."""
     from shopman.shop.services.business_calendar import available_dates
     from shopman.shop.services.channel_policy import resolve_channel_policy
-    from shopman.shop.services.fulfillment_window import delivery_windows_for
-    from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
+    from shopman.storefront.services.pickup_slots import (
+        annotate_delivery_windows_for_checkout,
+        annotate_slots_for_checkout,
+    )
 
     if fulfillment_type not in resolve_channel_policy(ctx.channel_ref).fulfillment_types:
         label = "entrega" if fulfillment_type == "delivery" else "retirada"
@@ -844,15 +846,28 @@ def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillmen
 
     payload: dict = {"ok": True, "date": when, "available_dates": dates}
     if fulfillment_type == "delivery":
+        # A mesma grade anotada do checkout: o horário que começa antes de o item
+        # ficar pronto ou antes do prazo de aceite da loja sai indisponível, com o
+        # motivo (#3266), em vez de oferecido e recusado depois.
         try:
-            slots = delivery_windows_for(day)
+            windows = annotate_delivery_windows_for_checkout(
+                skus, delivery_date=when, channel_ref=ctx.channel_ref,
+            ).get("windows") or []
         except Exception:
             logger.debug("concierge.delivery_slots degraded", exc_info=True)
-            slots = []
-        payload["delivery_slots"] = [{"ref": s.get("ref"), "label": s.get("label")} for s in slots]
+            windows = []
+        payload["delivery_slots"] = [
+            {
+                "ref": window.get("ref"),
+                "label": window.get("label"),
+                "available": bool(window.get("enabled")),
+                "reason": window.get("reason") or "",
+            }
+            for window in windows
+        ]
         return payload
 
-    annotated = annotate_slots_for_checkout(skus, delivery_date=when)
+    annotated = annotate_slots_for_checkout(skus, delivery_date=when, channel_ref=ctx.channel_ref)
     payload["pickup_slots"] = [
         {
             "ref": slot.get("ref"),
@@ -947,7 +962,9 @@ def set_fulfillment(
         values["fiscal"] = {}
         if slot_ref:
             skus = [str(item.get("sku")) for item in (session.items or [])]
-            error = validate_pickup_slot_selection(slot_ref, delivery_date=when, cart_skus=skus)
+            error = validate_pickup_slot_selection(
+                slot_ref, delivery_date=when, cart_skus=skus, channel_ref=ctx.channel_ref,
+            )
             if error:
                 errors["delivery_time_slot"] = error
             else:
@@ -1042,8 +1059,11 @@ def set_fulfillment(
             values["delivery_address"] = structured["formatted_address"]
         if slot_ref:
             from shopman.shop.services.fulfillment_window import delivery_window_error
+            from shopman.storefront.services.pickup_slots import acceptance_slot_error
 
-            slot_error = delivery_window_error(day, slot_ref)
+            slot_error = delivery_window_error(day, slot_ref) or acceptance_slot_error(
+                day, slot_ref, ctx.channel_ref,
+            )
             if slot_error:
                 errors["delivery_time_slot"] = slot_error
             else:
@@ -1461,13 +1481,20 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             if locked.data.get("fulfillment_type") == "pickup":
                 from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
                 slot_error = validate_pickup_slot_selection(locked.data.get("delivery_time_slot", ""),
-                    delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items])
+                    delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items],
+                    channel_ref=ctx.channel_ref)
                 if slot_error:
                     errors["delivery_time_slot"] = slot_error
             elif locked.data.get("fulfillment_type") == "delivery" and locked.data.get("delivery_time_slot"):
                 from shopman.shop.services.fulfillment_window import delivery_window_error
+                from shopman.storefront.services.pickup_slots import acceptance_slot_error
                 locked_day = _parse_date(locked.data.get("delivery_date", ""))
-                if locked_day is None or delivery_window_error(locked_day, locked.data["delivery_time_slot"]):
+                locked_slot = locked.data["delivery_time_slot"]
+                if (
+                    locked_day is None
+                    or delivery_window_error(locked_day, locked_slot)
+                    or acceptance_slot_error(locked_day, locked_slot, ctx.channel_ref)
+                ):
                     errors["delivery_time_slot"] = "O horário não está mais disponível para entrega."
             if errors:
                 return _error("revision_conflict", "A data mudou de disponibilidade. Escolha um horário válido.", errors=errors), 409

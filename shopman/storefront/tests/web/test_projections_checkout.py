@@ -320,9 +320,12 @@ class TestPickupSlots:
 
     def test_slots_use_delivery_date_from_projection_context(self, cart_session, monkeypatch):
         seen_dates = []
+        seen_channels = []
 
-        def fake_slots(cart_skus, *, delivery_date=""):
+        def fake_slots(cart_skus, *, delivery_date="", channel_ref=None):
             seen_dates.append(delivery_date)
+            # O canal chega à grade: é ele que diz o prazo de aceite (#3266).
+            seen_channels.append(channel_ref)
             return {
                 "pickup_slots": [
                     {
@@ -359,6 +362,7 @@ class TestPickupSlots:
         )
 
         assert seen_dates == ["2026-05-17"]
+        assert seen_channels == [STOREFRONT_CHANNEL_REF]
         assert proj.earliest_slot_ref == "slot-12"
         assert proj.pickup_slots[0].enabled is False
         assert proj.pickup_slots[0].reason == "SKU sai às 11:30."
