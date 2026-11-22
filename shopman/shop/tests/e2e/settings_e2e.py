@@ -20,6 +20,12 @@
    VAZIO de propósito: o resolvedor de assinantes do Guestman fala com
    ``api.manychat.com`` por endereço fixo e só chama com esse token. Sem ele, nada
    sai da máquina (o assinante do login vem do próprio ManyChat, por id).
+4. **Geocoding contra os mapas falsos locais** (``fake_maps.py``, #2569 item 4),
+   quando ``SHOPMAN_E2E_MAPS_API_BASE`` aponta para 127.0.0.1: o ``geocoding`` de
+   produção roda inteiro e só o endereço da API muda (``geocoding.GEOCODE_URL``,
+   como o ``stripe.api_base`` acima: o serviço não tem setting de endereço, e um só
+   para teste não entra no código de produção). Chave de servidor falsa; as de
+   navegador ficam vazias, para a loja nunca carregar o Maps JS do Google.
 
 Recusa subir fora do harness: sem DEBUG, sem chave ``sk_test_`` ou com a API
 apontada para fora de 127.0.0.1, a importação levanta, para que este módulo
@@ -62,3 +68,14 @@ if _FAKE_MANYCHAT_BASE:
         "base_url": _FAKE_MANYCHAT_BASE.rstrip("/"),
     }
     SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG = True
+
+_FAKE_MAPS_BASE = os.environ.get("SHOPMAN_E2E_MAPS_API_BASE", "").strip()
+if _FAKE_MAPS_BASE:
+    if urlparse(_FAKE_MAPS_BASE).hostname not in {"127.0.0.1", "localhost"}:
+        raise RuntimeError("SHOPMAN_E2E_MAPS_API_BASE precisa apontar para os mapas falsos locais.")
+    from shopman.shop.services import geocoding as _geocoding
+
+    _geocoding.GEOCODE_URL = f"{_FAKE_MAPS_BASE.rstrip('/')}/maps/api/geocode/json"
+    GOOGLE_MAPS_SERVER_API_KEY = "e2e-fake-maps-local-only"
+    GOOGLE_MAPS_BROWSER_API_KEY = ""
+    GOOGLE_MAPS_API_KEY = ""
