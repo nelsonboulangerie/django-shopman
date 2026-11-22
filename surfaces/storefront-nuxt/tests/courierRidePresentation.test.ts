@@ -4,6 +4,7 @@ import {
   type CourierRideView,
   type CourierStop,
   bagTip,
+  themeToAdopt,
   closedTitle,
   doorMoney,
   machineText,
@@ -251,3 +252,14 @@ describe('recado da loja (M3c, #2899)', () => {
     expect(storeNote(null)).toBe('')
   })
 })
+
+describe('o tema do cadastro (#2648)', () => {
+  it('adota quando o cadastro muda, e não a cada releitura', () => {
+    expect(themeToAdopt('dark', '')).toBe('dark')
+    expect(themeToAdopt('dark', 'dark')).toBeNull()
+    expect(themeToAdopt('system', 'dark')).toBe('system')
+    expect(themeToAdopt(undefined, 'dark')).toBeNull()
+    expect(themeToAdopt('roxo', '')).toBe('system')
+  })
+})
+

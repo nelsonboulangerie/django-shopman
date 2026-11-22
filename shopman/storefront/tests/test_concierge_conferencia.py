@@ -61,8 +61,10 @@ def test_the_turn_records_the_verdict_and_sends_the_same_reply(conversation, out
     record = first.envelope["conference"]
     assert record["judge"]["answer"] == "answers"
     assert record["checks"]["correct"] == {"status": "pass"}  # molde sobre o fato da sacola
-    # Achado da própria conferência: "sua sacola ficou assim ... Total" não diz o que vem depois.
-    assert record["checks"]["useful"] == {"status": "fail", "reason": "no_next_step"}
+    # A sacola diz o que vem depois ("pode fechar", #3057): a conferência aprova. O beco sem
+    # saída que ela reprova continua provado no teste seguinte (item Indisponível, sem passo).
+    assert record["checks"]["useful"] == {"status": "pass"}
+    assert record["decision"] == "send"
     assert sent and sent[0]["state"]["customer_message"] == "quero 2 croissant"
     calls = {c["stage"]: c for c in first.usage["calls"]}
     assert calls["conference"]["provider"] == "typesafe" and calls["conference"]["input_tokens"] == 120

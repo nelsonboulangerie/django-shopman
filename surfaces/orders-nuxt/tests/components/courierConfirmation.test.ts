@@ -14,7 +14,7 @@ describe("confirmação da corrida observada", () => {
   it("mudança de contexto exige conferir novamente antes de solicitar", async () => {
     const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: "courier-cancel", label: "Cancelar corrida" };
     const wrapper = mount(Panel, { props: {
-      courier: { status: "D", status_label: "Procurando entregador", can_cancel: true, attempts_count: 0 } as CourierBlock,
+      courier: { status: "D", ride_state: "searching", status_label: "Procurando entregador", can_cancel: true, attempts_count: 0 } as CourierBlock,
       busy: false, cancelAction: action,
     }, global: { stubs: { Icon: true } } });
     // O primeiro toque só arma a confirmação.
