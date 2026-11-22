@@ -585,10 +585,10 @@ def _open_cash_shift_for_request(request):
 def _cash_shift_required_response() -> Response:
     return Response(
         {
-            "detail": "Abra o caixa antes de revisar ou finalizar uma venda.",
+            "detail": "Abra o caixa antes de revisar ou validar uma venda.",
             "error": {
                 "code": "cash_shift_required",
-                "message": "Abra o caixa antes de revisar ou finalizar uma venda.",
+                "message": "Abra o caixa antes de revisar ou validar uma venda.",
                 "field": "cash_shift_id",
                 "focus": "cash",
                 "recovery": "Abra um turno de caixa neste terminal e tente novamente.",
@@ -8234,7 +8234,7 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
                 "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
                 "error": {"code": "client_request_id_required"}}, status=422)
         if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
-            return Response({"detail": "Atualize a comanda antes de finalizar.", "field": "expected_revision",
+            return Response({"detail": "Atualize a comanda antes de validar.", "field": "expected_revision",
                              "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
@@ -8260,7 +8260,7 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
             # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
             return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
+            return Response({"detail": str(exc) or "Não foi possível validar a venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)
         from shopman.orderman.models import Order
 
