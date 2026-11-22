@@ -3,8 +3,10 @@
 Uma leitura só para quem precisa da hora prevista de pronto: a Fila do Gestor
 ("Na Cozinha · próximo pronto em ~4 min", ``order_queue``) e a página do entregador
 da casa ("Fica pronto às 12h48", ``own_fleet._stop_view``). O tempo é a mediana dos
-preparos reais das últimas horas ou, sem amostra, a meta da estação do canal
-(``fulfillment.stage_goal_minutes``, com os padrões do dono em ``STAGE_GOAL_DEFAULTS``).
+preparos reais das últimas horas ou, sem amostra, a meta da estação que a loja
+CONFIGUROU (``fulfillment.stage_goal_minutes.station`` na loja ou no canal); sem ela,
+os 30 minutos que a loja já prometia ao cliente (#3178). O padrão de 15 da estação em
+``STAGE_GOAL_DEFAULTS`` é meta do cartão do Gestor, não promessa.
 """
 
 from __future__ import annotations
@@ -32,6 +34,41 @@ def stage_minutes(stage: str, channel_config=None) -> int:
     return value
 
 
+#: Sem mediana nem meta de estação configurada: os 30 minutos que a loja já prometia
+#: ao cliente (#3178). O padrão de 15 da estação é meta do cartão, não promessa:
+#: encurtar a promessa sem decisão quebra a confiança.
+PREP_PROMISE_FALLBACK_MINUTES = 30
+
+
+def _configured_station_goal(config: dict | None) -> int | None:
+    fulfillment = (config or {}).get("fulfillment") if isinstance(config, dict) else None
+    goals = fulfillment.get("stage_goal_minutes") if isinstance(fulfillment, dict) else None
+    value = goals.get("station") if isinstance(goals, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def prep_goal_minutes(channel_ref: str | None) -> int:
+    """O tempo de preparo quando não há mediana.
+
+    A meta da estação que a loja ESCREVEU (``Channel.config`` vence ``Shop.defaults``),
+    lida na configuração crua: a resolvida já vem com o padrão do código, e ali não dá
+    para distinguir "a loja decidiu 15" de "ninguém decidiu". Sem ela,
+    :data:`PREP_PROMISE_FALLBACK_MINUTES`.
+    """
+    from shopman.shop.models import Shop
+    from shopman.shop.request_memo import channel_by_ref
+
+    channel = channel_by_ref(channel_ref) if channel_ref else None
+    shop = Shop.load()
+    for config in (getattr(channel, "config", None), getattr(shop, "defaults", None)):
+        value = _configured_station_goal(config)
+        if value is not None:
+            return value
+    return PREP_PROMISE_FALLBACK_MINUTES
+
+
 @dataclass(frozen=True)
 class PrepExpectation:
     """Quanto um preparo está levando agora: a mediana real ou, sem amostra, a meta."""
@@ -43,7 +80,7 @@ class PrepExpectation:
     @property
     def basis(self) -> str:
         if self.minutes is None:
-            return "pela meta da estação (sem preparos suficientes nas últimas 3 horas)"
+            return "pela meta de preparo (sem preparos suficientes nas últimas 3 horas)"
         return f"pela mediana de {self.samples} preparos nas últimas {PREP_SAMPLE_HOURS} horas"
 
 
@@ -71,17 +108,17 @@ def _parse(value) -> datetime | None:
     return parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
 
 
-def ready_eta(order: Order, expectation: PrepExpectation, channel_config=None, *, now: datetime) -> datetime | None:
+def ready_eta(order: Order, expectation: PrepExpectation, *, now: datetime) -> datetime | None:
     """Quando o pedido na Cozinha deve ficar pronto: o início real mais o tempo de agora.
 
     O início é o primeiro "Iniciar" do KDS (``Order.data["kds_started"]``) ou o
-    ``preparing_at``; o tempo é a mediana real (``prep_expectation``) ou a meta da
-    estação do canal. Pedido que ainda não começou não fica pronto antes de começar:
+    ``preparing_at``; o tempo é a mediana real (``prep_expectation``) ou, sem ela,
+    :func:`prep_goal_minutes`. Pedido que ainda não começou não fica pronto antes de começar:
     conta a partir de agora.
     """
     if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING):
         return None
-    expected = expectation.minutes if expectation.minutes is not None else stage_minutes("station", channel_config)
+    expected = expectation.minutes if expectation.minutes is not None else prep_goal_minutes(order.channel_ref)
     starts = []
     for record in ((order.data or {}).get("kds_started") or {}).values():
         at = _parse(record.get("at")) if isinstance(record, dict) else None

@@ -1130,7 +1130,9 @@ def awaits_kitchen_release(order) -> bool:
     data = order.data or {}
     if data.get(KITCHEN_RELEASED_AT_KEY):
         return False
-    if not (data.get("is_preorder") or _has_live_preorder_alarm(order) or _promised_for_today(order, target)):
+    from shopman.shop.services.order_helpers import is_preorder
+
+    if not (is_preorder(order) or _has_live_preorder_alarm(order) or _promised_for_today(order, target)):
         return False
     available_at, _ = preorder_activation_at(order)
     return available_at is not None and available_at > timezone.now()
