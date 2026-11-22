@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('shop', '0132_courier_page_theme'),
+        ('shop', '0133_usd_brl_quote'),
     ]
 
     operations = [
