@@ -116,6 +116,12 @@ def test_ingest_persists_schedule_without_preventing_receipt_confirmation():
     assert order.data["ifood"]["schedule"] == _schedule()
     assert order.snapshot["data"]["ifood"]["schedule"] == _schedule()
     assert order.data["delivery_date"] == "2026-09-14"
+    # O mesmo carimbo do commit, que a régua única de "é encomenda?" lê (#3163).
+    from datetime import date
+
+    from django.utils import timezone
+
+    assert order.data["is_preorder"] is (date(2026, 9, 14) > timezone.localdate())
     assert order.status == Order.Status.NEW
     with patch.object(ifood_schedule.timezone, "now", return_value=START - timedelta(hours=1)):
         lifecycle.ensure_payment_captured(order)

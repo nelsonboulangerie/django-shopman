@@ -16,7 +16,7 @@ const { default: Panel } = await import("../../app/components/OrderCourierPanel.
 
 const ride = (extra: Partial<CourierBlock>) =>
   ({
-    status: "A", ride_state: "assigned",
+    status: "A", ride_state: "assigned", service_name: "TaOn",
     status_label: "Entregador a caminho da loja",
     active: true,
     can_quote: false,
@@ -42,7 +42,7 @@ describe("andamento da corrida", () => {
     );
     const progress = wrapper.get('[data-testid="courier-progress"]').text();
     expect(progress).toContain("Chega para coletar em ~7 min");
-    expect(progress).toContain("Entrega prevista ~15h58");
+    expect(progress).toContain("Entrega prevista para as 15h58");
     expect(wrapper.find('[data-testid="courier-stale"]').exists()).toBe(false);
     wrapper.unmount();
   });

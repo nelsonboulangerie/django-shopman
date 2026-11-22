@@ -93,12 +93,53 @@ def test_2_an_old_confirmation_after_a_new_summary_does_not_close(ctx):
     _offer(ctx, first)
     second = _ready(ctx, 3)
     _offer(ctx, second)
-    assert first["quote_code"] != second["quote_code"] or first["quote_token"] != second["quote_token"]
+    assert first["quote_token"] != second["quote_token"]
+    assert first["quote_code"] != second["quote_code"]  # nunca o mesmo código de um resumo para o outro (#3291)
 
     _claim(ctx, f"confirmo {first['quote_code']}")
 
     assert tools.place_order(ctx, second["quote_token"], "pix")["error"] in {"confirmation_required", "quote_stale"}
     assert not Order.objects.exists()
+
+
+def _colliding_tokens():
+    """Dois tokens distintos com os mesmos quatro dígitos: o caso de 1 em 10.000, forçado."""
+    seen: dict[str, str] = {}
+    n = 0
+    while True:
+        token = f"tok-{n}"
+        code = tools.quote_code(token)
+        if code in seen:
+            return seen[code], token
+        seen[code] = token
+        n += 1
+
+
+def test_2b_two_summaries_whose_tokens_share_digits_still_get_different_codes(ctx, monkeypatch):
+    """#3291: com os mesmos quatro dígitos, o "confirmo" do resumo antigo fechava o pedido novo."""
+    old_token, new_token = _colliding_tokens()
+    assert tools.quote_code(old_token) == tools.quote_code(new_token)
+    tokens = iter((old_token, new_token))
+    monkeypatch.setattr(tools, "_quote_token", lambda session: next(tokens))
+    _claim(ctx, "quero 2 pães")
+    first = _ready(ctx, 2)
+    _offer(ctx, first)
+    second = _ready(ctx, 3)
+    _offer(ctx, second)
+    assert (first["quote_token"], second["quote_token"]) == (old_token, new_token)
+    assert first["quote_code"] != second["quote_code"]
+
+    _claim(ctx, f"confirmo {first['quote_code']}")
+
+    assert tools.place_order(ctx, second["quote_token"], "pix")["error"] in {"confirmation_required", "quote_stale"}
+    assert not Order.objects.exists()
+
+
+def test_2c_the_same_summary_keeps_its_code():
+    assert tools.quote_code("tok-a", avoid="") == tools.quote_code("tok-a")
+    code = tools.quote_code("tok-a")
+    assert tools.quote_code("tok-a", avoid=code) != code  # deriva de novo, com sal
+    assert tools.quote_code("tok-a", avoid=code) == tools.quote_code("tok-a", avoid=code)  # determinística
 
 
 def test_3_a_repeated_confirmation_makes_one_order(ctx):

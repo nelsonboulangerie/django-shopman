@@ -179,11 +179,10 @@ def test_order_still_in_the_kitchen_says_when_it_gets_ready(client, shop, diego)
     token = own_fleet.assign([a47, c03], diego, actor="operator:ana").link.token
     stops = _post(client, "courier-ride-link-claim", token).json()["stops"]
     assert "ready_at" not in stops[0]  # o pronto não tem previsão
-    # Sem preparos medidos, vale a meta da estação do canal.
-    from shopman.shop.config import ChannelConfig
-    from shopman.shop.services.kitchen_eta import stage_minutes
+    # Sem preparos medidos, vale a meta de preparo do canal ou os 30 min da loja (#3178).
+    from shopman.shop.services.kitchen_eta import prep_goal_minutes
 
-    goal = stage_minutes("station", ChannelConfig.for_channel("web"))
+    goal = prep_goal_minutes("web")
     expected = timezone.localtime(started + timedelta(minutes=goal)).strftime("%H:%M")
     assert stops[1]["ready_at"] == expected
 
@@ -235,8 +234,12 @@ def test_the_phone_position_feeds_the_map_only_while_on_route(client, shop, dieg
     here = {"action": "position", "lat": -23.32, "lng": -51.17, "accuracy": 12}
     assert _post(client, "courier-ride-link-events", link.token, here).status_code == 200
     assert courier_position.read(link.ride_ref) is None  # no balcão o celular não é a moto
+    assert "map" not in _get(client, link.token).json()  # e o mapa é da tela "Dirigindo"
 
-    _post(client, "courier-ride-link-events", link.token, {"action": "depart"})
+    route = _post(client, "courier-ride-link-events", link.token, {"action": "depart"}).json()
+    # O mapa da corrida só na rua: a chave pública do navegador e onde fica a loja.
+    assert route["map"]["origin"] == {"lat": -23.3405, "lng": -51.158}
+    assert "key" in route["map"]
     _post(client, "courier-ride-link-events", link.token, here)
     position = courier_position.read(link.ride_ref)
     assert position is not None and position["source"] == courier_position.SOURCE_OWN_FLEET

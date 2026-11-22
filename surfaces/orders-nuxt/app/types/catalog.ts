@@ -242,6 +242,11 @@ export interface ProductDetailProjection {
   shelf_life_days: number | null;
   storage_tip: string;
   production_cycle_hours: number | null;
+  /** Preparo da encomenda na Cozinha, em minutos (#2304): o tempo PRÓPRIO do SKU na
+   *  loja (`Shop.defaults.preorder_kitchen`); `null` = usa o preparo padrão. */
+  preorder_prep_minutes?: number | null;
+  /** O preparo padrão da loja, para a tela dizer quanto vale o "em branco". */
+  readonly preorder_prep_default_minutes?: number;
   /** Cadastro operacional: muda só pelo gesto Arquivar/Desarquivar. */
   readonly is_active: boolean;
   is_published: boolean;
@@ -368,6 +373,7 @@ export type ProductDetailPatch = Partial<
     | "fiscal_origins"
     | "fiscal_warnings"
     | "roles"
+    | "preorder_prep_default_minutes"
     | "production"
     | "vocation_choices"
     | "gtin_rejected"

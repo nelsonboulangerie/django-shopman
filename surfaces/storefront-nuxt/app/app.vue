@@ -159,6 +159,7 @@ useSeoMeta({
       </a>
       <ShopHeader />
       <div id="main-content" tabindex="-1" class="flex-1 min-h-[calc(100svh-4rem)]">
+        <ClientOnly><PageNotice /></ClientOnly>
         <NuxtPage />
       </div>
       <ShopFooter v-if="!hideFooter" />

@@ -526,3 +526,78 @@ def test_plano_que_encolhe_manda_a_reserva_para_o_lote_aberto(ficha, settings, d
 
     assert _onde(de_cinco) == "em_producao"
     assert _saldos() == {"em_producao": (Decimal("10"), Decimal("9")), "planejado": (Decimal("2"), Decimal("0"))}
+
+
+
+# ── #2723: lote que fica pronto com desconto, que a loja não vende ──────────
+
+
+def test_lote_com_desconto_avisa_o_pedido_da_loja_com_a_frase_certa(ficha, django_capture_on_commit_callbacks):
+    """O lote rende o que devia, mas com desconto: a reserva da loja não acompanha (o
+    canal remoto não vende pão com desconto) e o pedido fica sabendo disso, não de
+    um "rendeu menos" que não aconteceu."""
+    from shopman.orderman.models import OrderEvent
+
+    from shopman.shop.models import QualityDefect
+
+    day = _hoje()
+    lote = _planejar(ficha, 10, day)
+    with django_capture_on_commit_callbacks(execute=True):
+        order = _pedido_da_loja(4)
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote, 10)
+
+    defect = QualityDefect.objects.filter(is_active=True, forces_discard=False).values_list("ref", flat=True).first()
+    lote.refresh_from_db()
+    with django_capture_on_commit_callbacks(execute=True):
+        production.apply_finish(
+            work_order_id=lote.pk, quantity="10", actor=ACTOR, expected_rev=lote.rev,
+            idempotency_key=f"finish-fair-{lote.pk}",
+            partition=[{"quantity": "10", "quality_grade_ref": "fair", "quality_defect_ref": defect}],
+            yield_deviation_confirmed=True, yield_deviation_reason="Contagem conferida.",
+        )
+
+    assert _reserva(order).status in (HoldStatus.PENDING, HoldStatus.CONFIRMED), "soltar é decisão de gente"
+    alert = OperatorAlert.objects.get(type="order_promise_lost", order_ref=order.ref)
+    assert "ficou pronto com desconto" in alert.message
+    assert "o canal deste pedido não vende com desconto: faltam 4 un." in alert.message
+    assert "rendeu menos" not in alert.message
+    event = OrderEvent.objects.get(order=order, type="production_hold_grade")
+    assert event.payload["reason"] == "production_grade"
+    assert event.payload["qty"] == "4"
+
+    # #3229: se o pedido segue para a baixa sem ninguém resolver, o aviso diz a causa.
+    order.refresh_from_db()
+    stock_service.fulfill(order)
+    baixa = OperatorAlert.objects.get(type="stock_fulfill_failed", order_ref=order.ref)
+    assert "ficou pronto com desconto" in baixa.message
+    assert "A prateleira está certa. Resolva no pedido" in baixa.message
+
+
+# ── #2716: iniciar em outra posição não dobra o saldo de produção ────────────
+
+
+def test_iniciar_em_outra_posicao_baixa_o_plano_e_leva_a_reserva(ficha, django_capture_on_commit_callbacks):
+    """Medido em 18/11: lote de 10 planejado em ``producao``, 4 reservadas, iniciado no forno.
+
+    Antes: o plano ficava com 10 (held 4) e nascia outro saldo de 10 em produção;
+    o balcão lia 16 livres, e a reserva não acompanhava o lote.
+    """
+    forno = Position.objects.create(ref="forno", name="Forno", kind=PositionKind.PHYSICAL, is_saleable=False)
+    day = _hoje()
+    lote = _planejar(ficha, 10, day)
+    with django_capture_on_commit_callbacks(execute=True):
+        order = _pedido_da_loja(4)
+    assert _onde(order) == "planejado"
+
+    lote.refresh_from_db()
+    with django_capture_on_commit_callbacks(execute=True):
+        production.apply_start(
+            work_order_id=lote.pk, quantity="10", position_id=str(forno.pk), actor=ACTOR,
+            expected_rev=lote.rev, idempotency_key=f"start-forno-{lote.pk}",
+        )
+
+    assert _saldos() == {"em_producao": (Decimal("10"), Decimal("4"))}
+    assert _onde(order) == "em_producao"
+    assert _reserva(order).quant.position.ref == "forno"
+    assert _livre("pdv", day) == Decimal("6")

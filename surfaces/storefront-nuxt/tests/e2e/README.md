@@ -162,6 +162,20 @@ BFF. A loja aponta para o proxy, e o proxy, para o Django:
 e a jornada recebe a porta de controle: `JOURNEY_PROXY_CONTROL=http://127.0.0.1:8091`. Sem
 essa variável, a J9 pula e diz por quê. As outras jornadas não notam o proxy.
 
+**J14 (entrar pelo WhatsApp) precisa do ManyChat falso** (`shopman/shop/tests/e2e/fake_manychat.py`,
+#3272). A resposta da loja ("Liberar o Chrome", "Encerrar acesso") sai pelo adapter de
+produção e cai nele, que a guarda; a jornada lê os botões em `GET /__sent?subscriber=<id>`.
+O Django e o worker sobem com `MANYCHAT_API_BASE` apontando para ele (o `settings_e2e` põe o
+token falso só no adapter), e a jornada recebe o endereço e o do Django:
+
+```bash
+.venv/bin/python -m shopman.shop.tests.e2e.fake_manychat --port 12191 > /tmp/shopman-jornadas/manychat.log 2>&1 &
+export MANYCHAT_API_BASE=http://127.0.0.1:12191/fb   # antes do runserver e do worker
+# na jornada: JOURNEY_MANYCHAT_URL=http://127.0.0.1:12191 JOURNEY_DJANGO_URL=http://127.0.0.1:8090
+```
+
+O `scripts/run_storefront_journeys.sh` faz tudo isso sozinho (porta em `JOURNEYS_MANYCHAT_PORT`).
+
 ### Desligar
 
 Derrube o que subiu (`kill` nos processos do `runserver`, do worker e dos dois

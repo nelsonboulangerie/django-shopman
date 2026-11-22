@@ -18,6 +18,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from shopman.backstage.contracts import render_contract_module, run_contract_export
+from shopman.backstage.projections.bi_ai import (
+    BIAiFallback,
+    BIAiGap,
+    BIAiReason,
+    BIAiReport,
+    BIAiSpendDay,
+    BIAiSpendRow,
+)
 from shopman.backstage.projections.bi_cash import (
     BICashAccountRow,
     BICashAccounts,
@@ -41,7 +49,11 @@ from shopman.backstage.projections.bi_customers import (
     BICustomersReport,
     BICustomersWeekRow,
 )
-from shopman.backstage.projections.bi_delivery_cost import BIDeliveryCostDay, BIDeliveryCostReport
+from shopman.backstage.projections.bi_delivery_cost import (
+    BIDeliveryCostDay,
+    BIDeliveryCostReport,
+    BIDeliveryCostService,
+)
 from shopman.backstage.projections.bi_explore import (
     BIExploreMetricOption,
     BIExploreReport,
@@ -93,6 +105,7 @@ from shopman.backstage.projections.bi_sales import (
     BISalesChannelRow,
     BISalesDay,
     BISalesDiscountKindRow,
+    BISalesNoShow,
     BISalesPrevious,
     BISalesReport,
     BISourceConflict,
@@ -130,6 +143,7 @@ CONTRACT_DATACLASSES = (
     BISalesPrevious,
     BISourceConflict,
     BISalesDiscountKindRow,
+    BISalesNoShow,
     BISalesReport,
     BICashDay,
     BICashOperatorRow,
@@ -144,8 +158,15 @@ CONTRACT_DATACLASSES = (
     BICustomerSegmentRow,
     BICustomersWeekRow,
     BICustomersReport,
+    BIDeliveryCostService,
     BIDeliveryCostDay,
     BIDeliveryCostReport,
+    BIAiSpendRow,
+    BIAiSpendDay,
+    BIAiReason,
+    BIAiGap,
+    BIAiFallback,
+    BIAiReport,
     BIPreorderKitchenRow,
     BIPreorderKitchenReport,
     BIExploreRow,

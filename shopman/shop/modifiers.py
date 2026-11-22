@@ -46,8 +46,8 @@ from shopman.shop.policies.promotion import (
     coupon_zero_reason,
     is_birthday_promotion,
     promotion_matches,
-    promotion_minimum_eligible,
 )
+from shopman.shop.services import fixed_discount
 from shopman.shop.services import promotions as promotion_service
 
 logger = logging.getLogger(__name__)
@@ -1003,7 +1003,7 @@ class DiscountModifier:
             if coupon_promo and coupon_promo.type == "percent":
                 if promotion_matches(coupon_promo, line_ctx):
                     coupon_discount_q = self._calc_discount(coupon_promo, price_q)
-                    if coupon_discount_q >= best_discount_q:
+                    if coupon_discount_q > best_discount_q:  # empate fica com o que valia; o cupom não é gasto
                         best_discount_q = coupon_discount_q
                         best_source = ("coupon", coupon_code, coupon_promo, None, "")
 
@@ -1069,7 +1069,7 @@ class DiscountModifier:
                 and int(item.get("line_total_q", 0)) > 0
                 and promotion_matches(promo, promotion_context(ctx, sku=item.get("sku", "")))
             ]
-        fixed = self._best_fixed_discount(
+        fixed = fixed_discount.best_fixed_discount(
             promotions,
             coupon_promo,
             coupon_code,
@@ -1078,6 +1078,18 @@ class DiscountModifier:
             group_meta=_winning_group_meta,
             applicable_q=lambda promo: sum(int(i.get("line_total_q", 0)) for i in _fixed_eligible_lines(promo)),
         )
+        # "O maior desconto ganha" vale também para o CUPOM de valor fixo: ele pode
+        # entrar no lugar do desconto por-linha das linhas que alcança, quando a troca
+        # dá mais no total. Só o cupom: a promoção automática de valor fixo segue sem
+        # deslocar o desconto por-linha (o PDV mostra no botão o preço por-linha, e
+        # nunca o fixo de pedido; trocar ali faria a cobrança divergir do botão).
+        fixed, coupon_back_q, swapped = fixed_discount.swap_fixed_coupon(
+            items, pricing, coupon_promo, coupon_code, session_total, fixed=fixed,
+            reaches=lambda item: promotion_matches(coupon_promo, promotion_context(ctx, sku=item.get("sku", ""))),
+            discounts_applied=discounts_applied,
+        )
+        total_coupon_discount_q -= coupon_back_q
+        modified = modified or swapped
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
             eligible = _fixed_eligible_lines(fixed_promo)
@@ -1238,51 +1250,6 @@ class DiscountModifier:
             value = min(max(int(promo.value or 0), 0), 100)
             return monetary_div(price_q * value, 100)
         return max(0, min(promo.value, price_q))
-
-    @staticmethod
-    def _best_fixed_discount(
-        promotions: list[Any],
-        coupon_promo: Any,
-        coupon_code: str | None,
-        session_total: int,
-        *,
-        group_refs: set[str] = frozenset(),
-        group_meta=None,
-        applicable_q=None,
-    ) -> tuple[int, tuple[str, str, str | None, str], Any] | None:
-        """Largest applicable FIXED discount, as a single order-level candidate.
-
-        Fixed promotions and the fixed coupon compete on value (best wins, no
-        stacking of two fixed discounts). min_order_q is gated against the gross
-        order subtotal. Compete o que aplica, ``min(valor, applicable_q(promo))`` (subtotal que o
-        escopo alcança): fixo sem linha não vence o cupom (beta SMS-04). A fixed discount of the
-        customer's own group carries its (discount_kind, group_ref) per the WINNING group, not the
-        primary one. Returns (value_q, source, promo), source = (type, name, discount_kind, group_ref), or None.
-        """
-        best: tuple[int, tuple[str, str, str | None, str], Any] | None = None
-        for promo in promotions:
-            if promo.type != "fixed":
-                continue
-            if not promotion_minimum_eligible(
-                min_order_q=promo.min_order_q,
-                merchandise_subtotal_q=session_total,
-            ):
-                continue
-            value = min(max(0, int(promo.value or 0)), applicable_q(promo) if applicable_q else 1 << 62)
-            if value > 0 and (best is None or value > best[0]):
-                kind, group_ref = None, ""
-                if getattr(promo, "ref", "") in group_refs and group_meta is not None:
-                    group_ref, kind, _step = group_meta(promo)
-                best = (value, ("promotion", promo.name, kind, group_ref), promo)
-        if coupon_promo is not None and coupon_promo.type == "fixed":
-            if promotion_minimum_eligible(
-                min_order_q=coupon_promo.min_order_q,
-                merchandise_subtotal_q=session_total,
-            ):
-                value = min(max(0, int(coupon_promo.value or 0)), applicable_q(coupon_promo) if applicable_q else 1 << 62)
-                if value > 0 and (best is None or value >= best[0]):
-                    best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
-        return best
 
     @staticmethod
     def _distribute_order_discount(

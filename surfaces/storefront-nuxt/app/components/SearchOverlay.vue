@@ -11,7 +11,7 @@ import {
 import type { CatalogResponse } from '~/types/shopman'
 
 // Overlay de busca na MESMA tela (sem navegar) — assim o foco/teclado funciona no iOS
-// (foco dentro do gesto). A página /busca segue existindo como fallback (link direto).
+// (foco dentro do gesto). É a única busca da loja: não há página de busca.
 const { open, returnFocusEl, registerInput, closeSearch } = useSearchOverlay()
 const apiPath = useShopmanApiPath()
 const route = useRoute()
@@ -101,7 +101,7 @@ function clearQuery () {
     <!-- Sempre no DOM; escondido por opacidade (não display:none) p/ o input continuar
          focável e o iOS abrir o teclado quando o gatilho foca dentro do gesto.
          Quando fechado, os labels/placeholder e a listagem saem do caminho para
-         não duplicar controles da página /busca. -->
+         não duplicar os controles da página de baixo. -->
     <div
       class="fixed inset-0 z-50 flex flex-col bg-background transition-opacity duration-200"
       :class="open ? 'opacity-100' : 'pointer-events-none opacity-0'"
@@ -221,8 +221,8 @@ function clearQuery () {
                 <UiEmptyTitle>{{ catalog?.search_empty_state?.title || 'Nada por aqui' }}</UiEmptyTitle>
                 <UiEmptyDescription>{{ catalog?.search_empty_state?.message || 'Não encontramos esse item. Tente outro termo ou veja o cardápio completo.' }}</UiEmptyDescription>
               </UiEmptyHeader>
-              <!-- A mesma saída da página /busca: a frase manda ver o cardápio, então o
-                   botão está aqui (beta 05/11, LOJA-12). Navegar fecha a busca. -->
+              <!-- A frase manda ver o cardápio, então o botão está aqui
+                   (beta 05/11, LOJA-12). Navegar fecha a busca. -->
               <UiEmptyContent>
                 <UiButton
                   :to="catalog?.search_empty_state?.cta_href || '/menu'"
