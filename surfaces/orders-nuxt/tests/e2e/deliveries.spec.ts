@@ -222,3 +222,10 @@ test.describe("Entregas: a corrida que falhou", () => {
     await expect(sheet.getByText("A47 → C03", { exact: true })).toBeVisible();
   });
 });
+
+// #2747: o detalhe põe o frete dos clientes ao lado do custo, com o que sobra ou falta.
+test("o detalhe da corrida diz o frete cobrado e o que falta para o custo", async ({ page }) => {
+  await page.goto("/delivery?ride=776753358");
+  const detail = page.getByRole("dialog", { name: "Corrida B" });
+  await expect(detail.locator("[data-ride-balance]")).toHaveText("Frete cobrado R$ 12,00 · Falta R$ 2,50");
+});

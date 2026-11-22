@@ -82,6 +82,7 @@ from shopman.shop.operator_capacity_policy import (
     SUSTAIN_MINUTES_CEILING,
     SUSTAIN_MINUTES_FLOOR,
 )
+from shopman.shop.policies import pickup_window_in_use
 from shopman.shop.policies.no_show_policy import (
     DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE,
     DEFAULT_TOLERANCE_MINUTES,
@@ -91,6 +92,9 @@ from shopman.shop.policies.preorder_kitchen_policy import (
     DEFAULT_LEAD_MINUTES,
     DEFAULT_PREP_MINUTES,
     PreorderKitchenPolicy,
+)
+from shopman.shop.policies.preorder_kitchen_policy import (
+    MAX_MINUTES as PREORDER_KITCHEN_MAX_MINUTES,
 )
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
@@ -555,8 +559,9 @@ def _parse_markup_by_collection(raw: str) -> dict[str, int]:
     return result
 
 
-#: Teto de cada tempo da encomenda na Cozinha (preparo, antecedência), em minutos.
-MAX_PREORDER_KITCHEN_MINUTES = 720
+#: Teto de cada tempo da encomenda na Cozinha: o da política, que o painel do
+#: produto do Gestor também usa.
+MAX_PREORDER_KITCHEN_MINUTES = PREORDER_KITCHEN_MAX_MINUTES
 MAX_NO_SHOW_MINUTES = 1440
 
 
@@ -1984,6 +1989,13 @@ class ShopForm(forms.ModelForm):
                     self.add_error(label_field, "Informe o rótulo do slot.")
                 if not starts_at:
                     self.add_error(starts_at_field, "Informe o horário inicial do slot.")
+            # Janela em uso não sai da grade (#2644): a decisão é da política.
+            refusal = pickup_window_in_use.removal_refusal(
+                previous=_shop_defaults(self.instance).get("pickup_slots"),
+                kept=slot_refs | {str(slot.get("ref") or "") for slot in self._existing_extra_pickup_slots()},
+            )
+            if refusal:
+                self.add_error(None, refusal)
 
         if self._has(_defaults_closed_date_field(1, "date")):
             for index in range(1, DEFAULTS_CLOSED_DATE_ROWS + 1):

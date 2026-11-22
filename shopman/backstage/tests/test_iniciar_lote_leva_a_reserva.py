@@ -526,3 +526,33 @@ def test_plano_que_encolhe_manda_a_reserva_para_o_lote_aberto(ficha, settings, d
 
     assert _onde(de_cinco) == "em_producao"
     assert _saldos() == {"em_producao": (Decimal("10"), Decimal("9")), "planejado": (Decimal("2"), Decimal("0"))}
+
+
+
+# ── #2716: iniciar em outra posição não dobra o saldo de produção ────────────
+
+
+def test_iniciar_em_outra_posicao_baixa_o_plano_e_leva_a_reserva(ficha, django_capture_on_commit_callbacks):
+    """Medido em 18/11: lote de 10 planejado em ``producao``, 4 reservadas, iniciado no forno.
+
+    Antes: o plano ficava com 10 (held 4) e nascia outro saldo de 10 em produção;
+    o balcão lia 16 livres, e a reserva não acompanhava o lote.
+    """
+    forno = Position.objects.create(ref="forno", name="Forno", kind=PositionKind.PHYSICAL, is_saleable=False)
+    day = _hoje()
+    lote = _planejar(ficha, 10, day)
+    with django_capture_on_commit_callbacks(execute=True):
+        order = _pedido_da_loja(4)
+    assert _onde(order) == "planejado"
+
+    lote.refresh_from_db()
+    with django_capture_on_commit_callbacks(execute=True):
+        production.apply_start(
+            work_order_id=lote.pk, quantity="10", position_id=str(forno.pk), actor=ACTOR,
+            expected_rev=lote.rev, idempotency_key=f"start-forno-{lote.pk}",
+        )
+
+    assert _saldos() == {"em_producao": (Decimal("10"), Decimal("4"))}
+    assert _onde(order) == "em_producao"
+    assert _reserva(order).quant.position.ref == "forno"
+    assert _livre("pdv", day) == Decimal("6")

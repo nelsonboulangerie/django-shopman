@@ -443,17 +443,25 @@ export function useCartState () {
     }
   }
 
+  function putSkuQty (meta: ProductMutationMeta, qty: number) {
+    return async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
+      method: 'PUT',
+      headers: await csrfHeaders(),
+      body: { qty },
+      credentials: 'include'
+    })
+  }
+
   async function setSkuQty (meta: ProductMutationMeta, qty: number): Promise<CartMutationResponse> {
-    return runQtyMutation(
-      { meta, qty },
-      current => applySkuQty(current, meta, qty),
-      async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
-        method: 'PUT',
-        headers: await csrfHeaders(),
-        body: { qty },
-        credentials: 'include'
-      })
-    )
+    return runQtyMutation({ meta, qty }, current => applySkuQty(current, meta, qty), putSkuQty(meta, qty))
+  }
+
+  // O Adicionar tocado antes de a página hidratar, numa página que a cliente já deixou
+  // (#3171, `utils/earlyTap.ts`). Sem preço nem foto para a linha otimista: a sacola
+  // espera a verdade do servidor, que chega pela mesma fila das outras mudanças.
+  async function replayEarlyAdd (sku: string, name: string, qty: number): Promise<CartMutationResponse> {
+    const meta: ProductMutationMeta = { sku, name, price_q: 0, price_display: '', image_url: null }
+    return runQtyMutation({ meta, qty }, current => current, putSkuQty(meta, qty))
   }
 
   function putLineQty (meta: ProductMutationMeta, lineId: string, qty: number): Promise<CartMutationResponse> {
@@ -648,6 +656,7 @@ export function useCartState () {
     qtyForSku,
     isPending,
     setSkuQty,
+    replayEarlyAdd,
     setLineQty,
     addLineWithOptions,
     applyCoupon,

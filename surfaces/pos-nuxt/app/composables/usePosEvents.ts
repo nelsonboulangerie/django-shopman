@@ -11,6 +11,9 @@ export interface PosEventChannel {
   path: string;
   /** O evento nomeado que o django-eventstream empurra naquele canal. */
   event: string;
+  /** Outros eventos do MESMO canal, que mudam o que a tela tem e pedem a releitura
+   *  inteira (`refreshScopeForChannel` decide pelo nome). */
+  alsoEvents?: readonly string[];
 }
 
 /** Os canais que o balcão assina, e o evento nomeado de cada um. Um stream por
@@ -21,8 +24,10 @@ export const POS_TERMINAL_CHANNELS: readonly PosEventChannel[] = [
   // vira "Pronto" ou "Cancelado" sem ninguém apertar "Atualizar".
   { path: "/sse/tabs", event: "backstage-tabs-update" },
   // O estoque do canal do PDV mexeu (outro balcão vendeu a última unidade, a
-  // lote entrou): o tile troca o selo "Esgotado" sem ninguém tocar.
-  { path: "/sse/stock", event: "stock-update" },
+  // lote entrou): o tile troca o selo "Esgotado" sem ninguém tocar. No mesmo canal,
+  // produto pausado e mutação do canal (`product-paused`, `listing-changed`) mudam
+  // QUEM está na grade, e a tela relê tudo (#2586).
+  { path: "/sse/stock", event: "stock-update", alsoEvents: ["product-paused", "listing-changed"] },
 ];
 
 /** O canal dos PEDIDOS (o mesmo do Gestor, `shop.manage_orders`): as Encomendas
@@ -55,8 +60,9 @@ export const POS_ORDER_CHANNELS: readonly PosEventChannel[] = [
  * o backoff.
  */
 export function usePosEvents(
-  /** `channel` diz qual stream avisou; sem ele (poll, volta à aba) é a releitura inteira. */
-  onPush: (channel?: PosEventChannel) => void,
+  /** `channel` diz qual stream avisou e `event`, qual aviso; sem eles (poll, volta à
+   *  aba, reconexão) é a releitura inteira. */
+  onPush: (channel?: PosEventChannel, event?: string) => void,
   opts?: { pollMs?: number; enabled?: () => boolean; channels?: readonly PosEventChannel[] },
 ) {
   /** O stream so conecta com a estacao identificada: no gate os canais sao
@@ -81,8 +87,8 @@ export function usePosEvents(
         openResilientEventSource({
           url: ssePath(channel.path, config.app.baseURL),
           // django-eventstream empurra eventos nomeados; qualquer um = refetch.
-          events: [channel.event],
-          onEvent: () => onPush(channel),
+          events: [channel.event, ...(channel.alsoEvents ?? [])],
+          onEvent: (event) => onPush(channel, event.type),
           onOpen: (reconnected) => {
             live.add(channel.path);
             realtime.value = "live";

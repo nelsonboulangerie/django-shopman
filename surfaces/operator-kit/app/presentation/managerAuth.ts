@@ -158,6 +158,9 @@ const REASON_COPY: Record<string, (input: ManagerAuthReasonInput) => string> = {
       : `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
   // Conta na casa com limite (decisão do dono, 14/10/2026): o gerente vê o saldo
   // de hoje, o limite e quanto esta venda passa ANTES de assinar.
+  // Encomenda acima do plano (WP-E2, #2676): a descrição diz o motivo pelo nome; os
+  // números (pedidas, planejadas, a data) vêm no contexto do próprio diálogo.
+  preorder_over_plan: () => "Encomenda acima do plano da data.",
   house_account_over_limit: (input) => {
     const limit = input.houseAccountLimit;
     if (!limit) return "Conta na casa acima do limite.";
@@ -210,7 +213,9 @@ export function managerAuthTitle(action?: ManagerAction): string {
  * Sem valor (a tela não sabe), cai na frase fixa do ato.
  */
 const AMOUNT_COPY: Partial<Record<ManagerAction, (amount: string, detail: string) => string>> = {
-  cash_out: (amount, detail) => `Retirada de ${amount}${detail ? ` (${detail})` : ""}.`,
+  // O gesto do caixa é "Saída de caixa", o nome que o PDV dá ao botão (suite-vocabulary,
+  // 22/11): "Saída" sozinha é a estação do KDS, e "Retirada" é a forma de receber (#2690).
+  cash_out: (amount, detail) => `Saída de caixa de ${amount}${detail ? ` (${detail})` : ""}.`,
   refund_cash: (amount) => `Devolução de ${amount} em dinheiro.`,
   serve_change: (amount) => `Troco de ${amount}. Atender abre a gaveta.`,
   card_machine_refund: (amount) => `Estorno de ${amount} no cartão do cliente.`,
