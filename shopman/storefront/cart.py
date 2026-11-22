@@ -143,6 +143,46 @@ class CartService:
             return False
 
     @staticmethod
+    def ensure_customer_pricing(request: HttpRequest) -> bool:
+        """A cliente que entra com a sacola cheia lê o preço DELA (#3235).
+
+        A identidade de preço (ref e grupo) só ia para a sessão nas escritas da
+        sacola (``_link_customer``). Quem montava a sacola anônima e entrava pelo
+        código chegava ao Finalizar com o total do anônimo: o desconto de
+        aniversário ou de grupo valia no servidor e não aparecia, até a próxima
+        mudança na sacola. Aqui, na leitura da sacola e do checkout, a sessão que
+        ainda não tem esta cliente ganha a identidade e é reprecificada.
+
+        Barato quando não há o que fazer: anônimo ou sessão que já tem a mesma
+        cliente saem antes de qualquer trava. Devolve ``True`` quando reprecificou.
+        """
+        session_key = CartService._get_session_key(request)
+        if not session_key:
+            return False
+        customer = CartService._customer_link(request)
+        if customer is None:
+            return False
+        try:
+            session = (
+                Session.objects.filter(session_key=session_key, channel_ref=CHANNEL_REF, state="open")
+                .only("data")
+                .first()
+            )
+            if session is None:
+                return False
+            if ((session.data or {}).get("customer") or {}).get("ref") == customer.ref:
+                return False
+            if not CartService._link_customer(request, session_key):
+                return False
+            cart_mutations.reprice(session_key=session_key, channel_ref=CHANNEL_REF)
+            return True
+        except Exception:
+            # Leitura nunca quebra por isto: o preço segue o anterior até a próxima
+            # escrita, que liga a identidade de qualquer jeito.
+            logger.warning("cart.ensure_customer_pricing_failed", exc_info=True)
+            return False
+
+    @staticmethod
     def _get_or_create_session(request: HttpRequest) -> tuple[Session, str]:
         """Return (cart_session, session_key). Creates if needed."""
         cart_session, session_key = cart_mutations.get_or_create_session(

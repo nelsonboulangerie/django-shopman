@@ -32,7 +32,7 @@ from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH, CartDateMismatchError
 from shopman.storefront.api import clean_name, clean_text
-from shopman.storefront.cart import CartItemRefused
+from shopman.storefront.cart import CartItemRefused, CartService
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
 from shopman.storefront.presentation import (
@@ -687,6 +687,8 @@ class StorefrontCartView(ServerTimingMixin, APIView):
             # ``create()`` grava a linha e marca a sessão como modificada, então o
             # SessionMiddleware devolve o ``sessionid`` nesta mesma resposta.
             request.session.create()
+        # Quem entrou com a sacola cheia: o preço passa a ser o dela (#3235).
+        CartService.ensure_customer_pricing(request)
         # ``server_now_iso``: o relógio do servidor, no envelope e não na projeção
         # (WP-L11). A sacola conta o prazo da reserva por ele: a tela mede a
         # diferença para o relógio do aparelho na chegada desta resposta.
@@ -707,6 +709,9 @@ class StorefrontCheckoutView(ServerTimingMixin, APIView):
     authentication_classes = []
 
     def get(self, request):
+        # O total do Finalizar é o que o servidor cobra: com o preço da cliente que
+        # entrou, não o do anônimo que montou a sacola (#3235).
+        CartService.ensure_customer_pricing(request)
         checkout = build_checkout(
             request=request,
             channel_ref=STOREFRONT_CHANNEL_REF,
