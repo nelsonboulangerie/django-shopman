@@ -115,6 +115,7 @@ const {
   courierReminderDismiss,
   resolveContactRequest,
   courierCancel,
+  courierCustody,
   courierQuote,
   managerChallenge,
   authorize,
@@ -1827,11 +1828,16 @@ const outside = useOutsideStore(
             "
             :quoting="quoting"
             :quote-error="quoteError"
+            :custody-action="
+              order.actions.find((action) => action.ref === 'courier-custody')
+            "
+            :equipment-options="order.equipment_options"
             @quote="onCourierQuote"
             @dismiss-quote-error="quoteError = ''"
             @call="courierCall.open(order.ref)"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
+            @separate="courierCustody"
             @dismiss-reminder="courierReminderDismiss"
           />
           <!-- comprovante de entrega dos avisos ao cliente (D3) -->

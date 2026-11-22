@@ -268,6 +268,42 @@ function deliveriesProjection() {
   };
 }
 
+/**
+ * #2500 (cookie `e2e_custody=on`): a TaOn retomou a corrida A do pedido R05, que
+ * constava como encerrada; o troco e a maquininha tinham voltado para a casa. O
+ * "Separar de novo" (`courier-custody`) grava o corpo e a corrida deixa de pedir.
+ */
+const CUSTODY_REF = "WEB-261116-R05";
+const custodyState = { body: null };
+function custodyOrder() {
+  const separated = custodyState.body !== null;
+  return {
+    ...CARD, ...DETAIL_EXTRA, ref: CUSTODY_REF, status: "ready", status_label: "Pronto", customer_name: "Rita Moraes",
+    fulfillment_type: "delivery", fulfillment_label: "Entrega",
+    payment_method: "cash", payment_method_label: "Dinheiro na entrega", payment_status: "pending", payment_pending: true,
+    can_advance: false, next_status: "",
+    equipment_options: [
+      { ref: "card_machine:3", label: "Azul", enabled: true, reason: "", order_ref: "" },
+      { ref: "card_machine:4", label: "Preta", enabled: false, reason: "Saiu com o pedido A12", order_ref: "WEB-261116-A12" },
+    ],
+    actions: [{
+      ref: "courier-custody", kind: "mutation", label: "Separar de novo", priority: "secondary", enabled: !separated,
+      reason: separated ? "Esta corrida não pede o troco nem a maquininha agora." : "", href: "", method: "POST",
+      idempotency: "required", payload_schema: { base_revision: "custody-1", expected_actor_id: 1 },
+    }],
+    courier: {
+      provider: "machine", status: "D", ride_state: "searching", service_name: "TaOn", status_label: "Procurando entregador",
+      active: true, driver: null, tracking_url: "", confirmation_code: "", estimate_display: "R$ 12,50 · 18 min · 4,2 km",
+      final_value_display: "", requested_at: new Date(Date.now() - 9 * 60_000).toISOString(), dispatched_at: "", finished_at: "",
+      attempts_count: 0, position: null, error: null, can_quote: false, can_dispatch: false, can_dispatch_again: false,
+      can_cancel: true, cancel_state: { state: "", message: "", at: "" }, reminder: null,
+      custody: { change_out_suggested_q: 0, needs_machine: false, recorded: separated },
+      charge_outdated: null,
+      custody_to_separate: separated ? null : { change_out_suggested_q: 2600, needs_machine: true },
+    },
+  };
+}
+
 /** O detalhe de um pedido que está numa corrida do cenário, com o bloco da corrida. */
 function rideOrder(ref) {
   const fixture = RIDE_FIXTURES.find((item) => item.stops.some(([stopRef]) => stopRef === ref));
@@ -1064,6 +1100,19 @@ const server = createServer((req, res) => {
   if (cancelScenario && /\/e2e\/deliveries\/sent\/?(\?|$)/.test(url)) {
     return json(res, 200, { sent: [...cancelState.entries()].map(([key, value]) => ({ key, reason_id: value.sent })) });
   }
+  const custodyScenario = /(?:^|;\s*)e2e_custody=on(?:;|$)/.test(req.headers.cookie || "");
+  if (custodyScenario && /\/e2e\/custody\/?(\?|$)/.test(url)) {
+    if (req.method === "DELETE") custodyState.body = null;
+    return json(res, 200, { body: custodyState.body });
+  }
+  if (custodyScenario && new RegExp(`/orders/${CUSTODY_REF}/courier-custody/?(\\?|$)`).test(url)) {
+    if (req.method !== "POST") return json(res, 200, { outcome: custodyState.body ? "applied" : "not_found" });
+    return void readBody(req).then((body) => {
+      custodyState.body = { change_out: body.change_out ?? null, equipment: body.equipment ?? [] };
+      json(res, 200, { outcome: "applied", order: custodyOrder() });
+    });
+  }
+  if (custodyScenario && new RegExp(`/orders/${CUSTODY_REF}/?(\\?|$)`).test(url)) return json(res, 200, { order: custodyOrder() });
   const rideCancelPost = url.match(/\/orders\/([A-Z0-9-]+)\/courier-cancel\/?(\?|$)/);
   if (cancelScenario && rideCancelPost) {
     const fixture = RIDE_FIXTURES.find((item) => item.stops.some(([ref]) => ref === rideCancelPost[1]));

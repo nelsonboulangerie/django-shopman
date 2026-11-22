@@ -8474,6 +8474,8 @@
             "CLOSE_RETURNED",
             "progress_since",
             "restore_archived_ride",
+            "custody_to_separate",
+            "custody_phrase",
             "orders_with_archived_ride",
             "archived_ride_ended_at"
           ]

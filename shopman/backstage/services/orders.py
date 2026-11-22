@@ -722,6 +722,54 @@ def courier_cancel(order, *, actor: str, reason_id=None, expected_revision=None)
         raise OrderError(str(exc) or "Não foi possível cancelar a corrida.") from exc
 
 
+def courier_custody(order, *, actor: str, expected_revision=None, operator=None, change_out_raw: str | None = None,
+                    equipment=None) -> dict:
+    """"Separar de novo": a custódia da corrida que a TaOn retomou (#2500).
+
+    As MESMAS peças da chamada (``operator_orders.record_partner_custody``): o troco
+    sai da gaveta no turno de quem separa e a maquininha é reservada. Só vale
+    enquanto a corrida viva pede a custódia que não está com ela
+    (``courier.custody_to_separate``).
+    """
+    from django.db import transaction
+
+    from shopman.backstage.services.exceptions import POSError
+    from shopman.backstage.services.pos import parse_money_to_q
+    from shopman.shop.services import courier
+
+    change_out_q = None
+    if change_out_raw is not None and str(change_out_raw).strip() != "":
+        try:
+            change_out_q = parse_money_to_q(str(change_out_raw))
+        except POSError as exc:
+            raise OrderError(str(exc) or "Valor de troco inválido.") from exc
+    shift = None
+    if operator is not None and change_out_q:
+        from shopman.backstage.services import pos as pos_service
+
+        shift = pos_service.current_shift()
+    try:
+        with transaction.atomic():
+            if shift is not None:
+                shift = type(shift).objects.select_for_update().get(pk=shift.pk)
+            locked = type(order).objects.select_for_update().get(pk=order.pk)
+            if expected_revision is not None and courier.dispatch_revision(locked) != expected_revision:
+                raise OrderConflict("O pedido ou a corrida mudou. Confira o contexto antes de separar.")
+            if courier.custody_to_separate(locked) is None:
+                raise OrderError("Esta corrida não pede o troco nem a maquininha agora. Atualize o pedido.")
+            recorded = operator_orders.record_partner_custody(
+                locked, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
+            )
+            locked.emit_event(event_type="courier_custody_separated", actor=actor,
+                              payload={"change_out_q": recorded.get("change_out_q", 0),
+                                       "device_ref": recorded.get("device_ref", "")})
+            return recorded
+    except operator_orders.ChangeOutRequired as exc:
+        raise OrderChangeOutRequired(str(exc), suggested_q=exc.suggested_q) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc) or "Não foi possível separar o troco e a maquininha.") from exc
+
+
 def courier_close_here(order, *, outcome: str, actor: str, expected_revision=None) -> list[str]:
     """"Encerrar aqui": a corrida que a central nunca fechou (#2736)."""
     from shopman.shop.services import courier
