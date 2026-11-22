@@ -109,6 +109,9 @@ export type CourierBlock = {
   };
   /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
   charge_outdated?: CourierChargeOutdated | null;
+  /** A TaOn retomou a corrida encerrada, e o troco e a maquininha tinham voltado para a
+   *  casa: o que separar de novo (`courier.custody_to_separate`, #2500), ou `null`. */
+  custody_to_separate?: { change_out_suggested_q: number; needs_machine: boolean } | null;
 };
 
 /** Quem é o cliente deste pedido (WP-360). O servidor já resolve rótulo e tom;

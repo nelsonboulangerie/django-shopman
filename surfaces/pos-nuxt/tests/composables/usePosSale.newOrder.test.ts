@@ -144,7 +144,7 @@ describe("Nova encomenda abandonada não prende a comanda", () => {
     const h = sale([tab("2", "empty")], opened);
     await h.sale.openNewOrder();
     await nextTick();
-    await h.sale.releaseAbandonedOrderTab();
+    await h.sale.releaseAbandonedTab();
     const clears = h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"));
     expect(clears).toHaveLength(1);
     expect(String(clears[0]![0])).toContain("/tabs/sess-2/clear/");
@@ -152,7 +152,7 @@ describe("Nova encomenda abandonada não prende a comanda", () => {
 
     h.handles.actionCall.mockClear();
     h.sale.cart.items.push({ line_id: "L-1", sku: "PAO", name: "Pão", qty: 1, price_q: 500, notes: "" } as never);
-    await h.sale.releaseAbandonedOrderTab();
+    await h.sale.releaseAbandonedTab();
     expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"))).toHaveLength(0);
   });
 
@@ -172,7 +172,7 @@ describe("Nova encomenda abandonada não prende a comanda", () => {
     await h.sale.openNewOrder();
     await nextTick();
     h.sale.cart.customerName = "Maria";
-    await h.sale.releaseAbandonedOrderTab();
+    await h.sale.releaseAbandonedTab();
     expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"))).toHaveLength(0);
   });
 

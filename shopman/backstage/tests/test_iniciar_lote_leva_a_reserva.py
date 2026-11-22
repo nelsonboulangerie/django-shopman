@@ -529,6 +529,44 @@ def test_plano_que_encolhe_manda_a_reserva_para_o_lote_aberto(ficha, settings, d
 
 
 
+# ── #2723: lote que fica pronto com desconto, que a loja não vende ──────────
+
+
+def test_lote_com_desconto_avisa_o_pedido_da_loja_com_a_frase_certa(ficha, django_capture_on_commit_callbacks):
+    """O lote rende o que devia, mas com desconto: a reserva da loja não acompanha (o
+    canal remoto não vende pão com desconto) e o pedido fica sabendo disso, não de
+    um "rendeu menos" que não aconteceu."""
+    from shopman.orderman.models import OrderEvent
+
+    from shopman.shop.models import QualityDefect
+
+    day = _hoje()
+    lote = _planejar(ficha, 10, day)
+    with django_capture_on_commit_callbacks(execute=True):
+        order = _pedido_da_loja(4)
+    with django_capture_on_commit_callbacks(execute=True):
+        _iniciar(lote, 10)
+
+    defect = QualityDefect.objects.filter(is_active=True, forces_discard=False).values_list("ref", flat=True).first()
+    lote.refresh_from_db()
+    with django_capture_on_commit_callbacks(execute=True):
+        production.apply_finish(
+            work_order_id=lote.pk, quantity="10", actor=ACTOR, expected_rev=lote.rev,
+            idempotency_key=f"finish-fair-{lote.pk}",
+            partition=[{"quantity": "10", "quality_grade_ref": "fair", "quality_defect_ref": defect}],
+            yield_deviation_confirmed=True, yield_deviation_reason="Contagem conferida.",
+        )
+
+    assert _reserva(order).status in (HoldStatus.PENDING, HoldStatus.CONFIRMED), "soltar é decisão de gente"
+    alert = OperatorAlert.objects.get(type="order_promise_lost", order_ref=order.ref)
+    assert "ficou pronto com desconto" in alert.message
+    assert "o canal deste pedido não vende com desconto: faltam 4 un." in alert.message
+    assert "rendeu menos" not in alert.message
+    event = OrderEvent.objects.get(order=order, type="production_hold_grade")
+    assert event.payload["reason"] == "production_grade"
+    assert event.payload["qty"] == "4"
+
+
 # ── #2716: iniciar em outra posição não dobra o saldo de produção ────────────
 
 

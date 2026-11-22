@@ -430,7 +430,8 @@ describe('conta/seguranca — dados e privacidade', () => {
     const page = await openSecurity([device()])
 
     await buttonBy(page, 'Exportar meus dados')!.trigger('click')
-    await flushPromises()
+    // Os campos só se abrem depois que o código sai (#3241): espera a tela assentar.
+    await settle()
 
     // O código sai na hora em que o diálogo abre; o pedido do arquivo ainda não partiu.
     expect(requestCodeCalls).toBe(1)

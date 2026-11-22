@@ -1017,14 +1017,6 @@ def coupon_not_better_message(result: dict) -> str:
     code = str(result.get("coupon_code") or "").strip().upper() or "cupom"
     label = str(result.get("standing_label") or "").strip()
     standing_q = int(result.get("standing_q") or 0)
-    coupon_q = int(result.get("coupon_q") or 0)
-    if result.get("fixed") and coupon_q > standing_q and label:
-        # O cupom de valor fixo daria mais, mas não entra no lugar do desconto por item
-        # que já vale: a frase não pode dizer "igual ou maior".
-        return (
-            f"O {code} é um desconto de valor fixo e não entra no lugar do desconto que os itens "
-            f"já têm ({_brl(standing_q)}, {label}). Os descontos não se somam: guarde o cupom para outra compra."
-        )
     if label and standing_q > 0:
         return (
             f"Os itens deste cupom já têm desconto de {_brl(standing_q)} ({label}), "

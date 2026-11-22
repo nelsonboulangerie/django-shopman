@@ -1785,6 +1785,36 @@ def restore_archived_ride(order, ride_id: str, *, source: str) -> str:
     return outcome
 
 
+def custody_to_separate(order) -> dict | None:
+    """A custódia que a corrida viva pede e que não está com ela (#2500).
+
+    A chamada registra o troco e a maquininha na mesma transação da corrida, e o
+    encerramento sem coleta (N ou C) os devolve à casa. Quando a TaOn retoma a
+    corrida encerrada (:func:`restore_archived_ride`), ela volta viva SEM a
+    custódia: o entregador chega e a casa precisa separar de novo. Devolve
+    ``{"change_out_suggested_q", "needs_machine"}`` nesse caso, e ``None`` em
+    qualquer outro (sem corrida viva, já coletada, nada a levar, ou registrada).
+    """
+    from shopman.shop.services.operator_orders import partner_custody_asks
+
+    block = get_block(order)
+    if not has_active_ride(order) or block.get("dispatched_at") or block.get("status") == "E":
+        return None
+    if order.status not in RIDE_ORDER_STATUSES:
+        return None
+    asks = partner_custody_asks(order)
+    if asks["recorded"] or not (asks["change_out_suggested_q"] > 0 or asks["needs_machine"]):
+        return None
+    return {"change_out_suggested_q": asks["change_out_suggested_q"], "needs_machine": asks["needs_machine"]}
+
+
+def custody_phrase(missing: dict) -> str:
+    """"o troco e a maquininha", "o troco" ou "a maquininha" (o que voltou para a casa)."""
+    parts = [part for part, on in (("o troco", missing.get("change_out_suggested_q", 0) > 0),
+                                   ("a maquininha", missing.get("needs_machine"))) if on]
+    return " e ".join(parts)
+
+
 def _alert_ride_restored(order, ride_id: str, outcome: str) -> None:
     from shopman.shop.adapters import alert as alert_adapter
     from shopman.shop.services.operator_orders import short_ref
@@ -1792,11 +1822,15 @@ def _alert_ride_restored(order, ride_id: str, outcome: str) -> None:
     letter = ride_letter(get_block(order).get("ride_number"))
     code = short_ref(order.ref)
     if outcome == "restored":
+        missing = custody_to_separate(order)
+        what = custody_phrase(missing) if missing else ""
+        verb = "voltaram" if " e " in what else "voltou"
         severity, message = "warning", (
             f"A {service_name(order)} retomou a corrida {letter + ' ' if letter else ''}do pedido {code}, "
             f"que {_RESTORED_ALERT_MARKER}. "
-            "Não chame outro entregador. Se o troco ou a maquininha voltaram para a casa, "
-            "separe de novo antes de entregar a sacola."
+            "Não chame outro entregador."
+            + (f" {what[0].upper()}{what[1:]} {verb} para a casa: separe de novo no pedido antes de entregar a sacola."
+               if what else "")
         )
     else:
         severity, message = "critical", (

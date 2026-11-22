@@ -39,6 +39,7 @@ const ORDER_OPERATION_SUBJECT: Record<string, string> = {
   "undo-handoff": "o desfazer da saída foi gravado",
   "undo-ready": "o desfazer do pronto foi gravado",
   "courier-close-here": "a corrida foi encerrada aqui",
+  "courier-custody": "o troco e a maquininha foram separados de novo",
 };
 
 /**

@@ -96,6 +96,7 @@ DigitalOcean ou do Sentry.
 | [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede, sombra do Jev); roda no `maintenance_worker` |
 | [`concierge_triage_shadow`](#concierge_triage_shadow) | storefront | Concierge | O Jev decidindo a intenção em sombra: onde ele e a regra local discordam |
 | [`concierge_verification_sweep`](#concierge_verification_sweep) | storefront | Concierge | Os prazos do "vou verificar": aviso ao cliente no primeiro, conversa para a equipe no segundo (no `maintenance_worker`) |
+| [`record_usd_brl_quotes`](#record_usd_brl_quotes) | shop | B.I. | Grava a PTAX de venda final dos dias com gasto de IA, para o B.I. dizer o gasto em reais (no `maintenance_worker`; só lê a API quando falta dia) |
 | [`concierge_shadow_decisions`](#concierge_shadow_decisions) | storefront | Concierge | A decisão em sombra: o que o framework conversacional faria com cada entrada, e os pedidos do cliente em 24 h e 7 dias; nunca envia nem escreve no comércio |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
@@ -1732,6 +1733,14 @@ do turno do framework sobre as portas de leitura do Shopman, com o leitor local 
 cliente. Depois junta, por decisão, os pedidos do cliente em 24 horas e em 7 dias em `ConversationalOutcome`:
 janela aberta é `censored` e a madura substitui a censurada. Nunca envia, nunca escreve no comércio, nunca chama
 modelo; o que deriva de uma entrada observada sai com ela no `purge_observations`. Imprime as contagens em JSON.
+
+### record_usd_brl_quotes
+
+**Propósito:** A cotação que diz em reais o gasto com IA no B.I. (seção IA, DEV-2026-067). O B.I. só lê
+(`services/usd_brl.quotes_for`); quem grava é este comando, no `maintenance_worker`. Pega os dias com gasto de
+IA dos últimos `--days` dias (40 por padrão) que ainda não têm cotação em `UsdBrlQuote`, pede a PTAX de venda ao
+Banco Central numa chamada só e grava a final de cada dia (dia passado, ou o próprio dia depois de publicada).
+Fim de semana e feriado usam a do último dia útil (`quoted_on`). Sem dia faltando, não chama a API.
 
 ### run_alias_benchmark
 

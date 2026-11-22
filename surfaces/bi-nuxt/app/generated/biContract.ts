@@ -431,7 +431,7 @@ export interface BIRideTimingService {
   total_minutes: number | null;
 }
 
-/** BIDeliveryTimingReport(date_from: 'str', date_to: 'str', prep_samples: 'int', prep_start_fallbacks: 'int', prep_by_sku: 'tuple[BITimingRow, ...]', prep_by_hour: 'tuple[BITimingRow, ...]', prep_by_weekday: 'tuple[BITimingRow, ...]', rides: 'int', courier_accept_by_hour: 'tuple[BITimingRow, ...]', courier_accept_by_weekday: 'tuple[BITimingRow, ...]', courier_pickup_by_hour: 'tuple[BITimingRow, ...]', courier_pickup_by_weekday: 'tuple[BITimingRow, ...]', services: "tuple['BIRideTimingService', ...]" = ()) */
+/** BIDeliveryTimingReport(date_from: 'str', date_to: 'str', prep_samples: 'int', prep_start_fallbacks: 'int', prep_by_sku: 'tuple[BITimingRow, ...]', prep_by_hour: 'tuple[BITimingRow, ...]', prep_by_weekday: 'tuple[BITimingRow, ...]', rides: 'int', courier_accept_by_hour: 'tuple[BITimingRow, ...]', courier_accept_by_weekday: 'tuple[BITimingRow, ...]', courier_pickup_by_hour: 'tuple[BITimingRow, ...]', courier_pickup_by_weekday: 'tuple[BITimingRow, ...]', services: 'tuple[BIRideTimingService, ...]' = ()) */
 export interface BIDeliveryTimingReport {
   date_from: string;
   date_to: string;
@@ -446,6 +446,75 @@ export interface BIDeliveryTimingReport {
   courier_pickup_by_hour: BITimingRow[];
   courier_pickup_by_weekday: BITimingRow[];
   services: BIRideTimingService[];
+}
+
+/** Um papel num modelo: chamadas e gasto no período. */
+export interface BIAiSpendRow {
+  purpose: string;
+  purpose_label: string;
+  model: string;
+  calls: number;
+  errors: number;
+  denied: number;
+  cost_usd_micros: number;
+  cost_brl_micros: number | null;
+  estimated: boolean;
+}
+
+/** Um dia: o gasto e a cotação usada para dizê-lo em reais. */
+export interface BIAiSpendDay {
+  date: string;
+  cost_usd_micros: number;
+  cost_brl_micros: number | null;
+  rate: string | null;
+  quoted_on: string | null;
+  provisional: boolean;
+}
+
+/** BIAiReason(reason: 'str', label: 'str', count: 'int') */
+export interface BIAiReason {
+  reason: string;
+  label: string;
+  count: number;
+}
+
+/** Uma pergunta que a Concierge passou à equipe, agrupada pelo texto. */
+export interface BIAiGap {
+  question: string;
+  count: number;
+  last_at: string;
+  admin_url: string;
+}
+
+/** Uma resposta reprovada pela conferência, com a fala do cliente redigida. */
+export interface BIAiFallback {
+  at: string;
+  conversation_id: number;
+  customer_text: string;
+  reply_text: string;
+  reasons: string[];
+  admin_url: string;
+}
+
+/** BIAiReport(date_from: 'str', date_to: 'str', conference_mode: 'str', cost_usd_micros: 'int', cost_brl_micros: 'int | None', calls: 'int', errors: 'int', denied: 'int', estimated_calls: 'int', provisional_quotes: 'bool', rows: 'tuple[BIAiSpendRow, ...]', days: 'tuple[BIAiSpendDay, ...]', conferred: 'int', would_fall: 'int', reasons: 'tuple[BIAiReason, ...]', gaps: 'tuple[BIAiGap, ...]', fallbacks: 'tuple[BIAiFallback, ...]') */
+export interface BIAiReport {
+  date_from: string;
+  date_to: string;
+  conference_mode: string;
+  cost_usd_micros: number;
+  cost_brl_micros: number | null;
+  calls: number;
+  errors: number;
+  denied: number;
+  estimated_calls: number;
+  provisional_quotes: boolean;
+  rows: BIAiSpendRow[];
+  days: BIAiSpendDay[];
+  conferred: number;
+  would_fall: number;
+  reasons: BIAiReason[];
+  gaps: BIAiGap[];
+  fallbacks: BIAiFallback[];
 }
 
 /** Uma encomenda: quando chegou à Cozinha, quando começou, quando ficou pronta. */

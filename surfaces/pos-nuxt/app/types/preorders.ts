@@ -197,6 +197,11 @@ export interface PreorderCourier {
   delivery_eta_at?: string;
   /** Desde quando a TaOn não informa a corrida (vazio com a leitura em dia). */
   sync_since?: string;
+  /** O entregador desistiu e a TaOn procura outro para a MESMA corrida (`courier.reopen_view`). */
+  reopened_at?: string;
+  reopened_driver?: string;
+  /** `withdrew` (desistiu) ou `transfer` (a TaOn está trocando o entregador). */
+  reopened_reason?: string;
   error: { message: string; at: string } | null;
   can_dispatch: boolean;
   /** A última chamada ficou sem resposta da TaOn: "Chamar de novo" libera e chama outra. */
