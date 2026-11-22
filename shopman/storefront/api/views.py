@@ -111,24 +111,28 @@ def _bag_gone_response() -> Response:
     )
 
 
+def _order_already_sent_response(request, order_ref: str) -> Response:
+    # A mesma passagem do envio que deu certo: o acompanhamento abre neste
+    # navegador e a sacola enviada não volta a aparecer.
+    order_service.grant_order_access(request, order_ref)
+    request.session.pop("cart_session_key", None)
+    order_url = f"/pedido/{order_ref}"
+    return Response(
+        {
+            "detail": ORDER_ALREADY_SENT,
+            "error_code": "order_already_sent",
+            "next_url": order_url,
+            "actions": [{"ref": "view_order", "kind": "link", "label": "Ver o pedido", "href": order_url}],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 def _refused_bag_response(request, *, session_key: str) -> Response | None:
     """A frase da loja para a sacola que saiu ou sumiu; ``None`` se ela segue viva."""
     bag = checkout_service.refused_cart(session_key, CHANNEL_REF)
     if bag.sent_order_ref:
-        # A mesma passagem do envio que deu certo: o acompanhamento abre neste
-        # navegador e a sacola enviada não volta a aparecer.
-        order_service.grant_order_access(request, bag.sent_order_ref)
-        request.session.pop("cart_session_key", None)
-        order_url = f"/pedido/{bag.sent_order_ref}"
-        return Response(
-            {
-                "detail": ORDER_ALREADY_SENT,
-                "error_code": "order_already_sent",
-                "next_url": order_url,
-                "actions": [{"ref": "view_order", "kind": "link", "label": "Ver o pedido", "href": order_url}],
-            },
-            status=status.HTTP_409_CONFLICT,
-        )
+        return _order_already_sent_response(request, bag.sent_order_ref)
     if bag.gone:
         return _bag_gone_response()
     return None
@@ -303,7 +307,15 @@ class CheckoutView(APIView):
         if cart.is_empty:
             # Vazia AGORA, com a tela mostrando itens: outra aba já a enviou, ou ela
             # foi encerrada/apagada. A recusa diz qual e leva à saída certa.
-            refused = _refused_bag_response(request, session_key=str(request.session.get("cart_session_key") or ""))
+            cart_session_key = str(request.session.get("cart_session_key") or "")
+            if not cart_session_key:
+                # Sem chave: o envio que deu certo a tira da sessão. A outra aba deste
+                # navegador, com a revisão ainda aberta, chega aqui; o pedido dela é o
+                # que este navegador acabou de enviar. Dizer "ficou vazia" mentiria.
+                sent_order_ref = checkout_service.recently_sent_order_ref(request, CHANNEL_REF)
+                if sent_order_ref:
+                    return _order_already_sent_response(request, sent_order_ref)
+            refused = _refused_bag_response(request, session_key=cart_session_key)
             return refused or _bag_gone_response()
 
         # Item de coleção exclusiva de grupo que o visitante não integra (pôs na sacola

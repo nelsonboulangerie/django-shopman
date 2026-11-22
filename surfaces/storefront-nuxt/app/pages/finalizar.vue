@@ -7,7 +7,7 @@ import { cartLinePromise, orderReadyLine } from '~/presentation/promise'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
-import { checkoutBagRefusal } from '~/utils/checkoutBagRefusal'
+import { checkoutBagRefusal, ORDER_ALREADY_SENT_MESSAGE } from '~/utils/checkoutBagRefusal'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -392,6 +392,12 @@ function acceptCartProjection (incoming: CartProjection) {
 }
 
 const checkout = computed(() => freshestCheckout.value)
+// A sacola sumiu no servidor (#3267): a barreira acima, que só deixa a revisão andar para
+// a frente, seguraria o item que saiu no resumo e no contador. Aqui a leitura nova é a
+// verdade, vazia.
+function acceptEmptiedCheckout () {
+  if (data.value?.checkout) freshestCheckout.value = data.value.checkout
+}
 
 // O relógio do checkout é o da LOJA (`checkout.today`, escrito pelo servidor no fuso
 // dela): "Hoje", "Amanhã", o piso da fornada e os limites do calendário saem daqui, e
@@ -1589,7 +1595,12 @@ async function submitCheckout () {
     }
     const data = failure.data || {}
     confirmationUnknown.value = data.error_code === 'mutation_in_progress'
-    if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) return
+    // A mesma tentativa já virou pedido (a outra aba deste navegador restaurou o mesmo
+    // rascunho e enviou primeiro): a tela abre o pedido e diz por quê (#3267).
+    if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) {
+      if (import.meta.client) useSonner.info(ORDER_ALREADY_SENT_MESSAGE)
+      return
+    }
     // O Django ainda está gravando esta mesma tentativa: conferir até terminar.
     if (data.error_code === 'mutation_in_progress') {
       startUncertainCheck()
@@ -1613,6 +1624,7 @@ async function submitCheckout () {
         return
       }
       await refresh()
+      acceptEmptiedCheckout()
       if (import.meta.client) {
         useSonner.error(bagRefusal.message, {
           action: { label: bagRefusal.actionLabel, onClick: () => { void navigateTo(bagRefusal.href) } }

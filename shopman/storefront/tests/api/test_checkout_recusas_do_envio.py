@@ -193,6 +193,55 @@ def test_a_outra_aba_enviou_primeiro_leva_ao_pedido_que_ja_saiu(bag, monkeypatch
     assert "cart_session_key" not in client.session
 
 
+def _tab_a_sends(client) -> tuple[dict, str]:
+    payload = with_baseline(client, _payload())
+    first = _send(client, payload)
+    assert first.status_code == 201, first.content
+    return payload, first.json()["order_ref"]
+
+
+def test_a_aba_b_envia_depois_que_a_aba_a_enviou_e_leva_ao_mesmo_pedido(bag):
+    """O caso comum: a aba A enviou; a aba B, com a revisão aberta, toca em enviar.
+
+    A sacola já não está na sessão (o envio da aba A a tirou). "Sua sacola ficou
+    vazia" mentiria: o pedido dela saiu. A resposta é o pedido que saiu.
+    """
+    client = bag
+    payload, order_ref = _tab_a_sends(client)
+    assert "cart_session_key" not in client.session
+
+    resp = _send(client, payload)
+
+    _assert_order_already_sent(resp, order_ref)
+
+
+def test_outro_navegador_da_mesma_pessoa_nao_recebe_esse_pedido(bag):
+    from django.test import Client
+
+    client = bag
+    payload, _order_ref = _tab_a_sends(client)
+    other_browser = Client()
+    authenticate_checkout(other_browser)
+
+    resp = _send(other_browser, payload)
+
+    _assert_bag_is_gone(resp)
+
+
+def test_pedido_fora_da_janela_nao_responde_por_este_envio(bag):
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.checkout import RECENTLY_SENT_WINDOW
+
+    client = bag
+    payload, order_ref = _tab_a_sends(client)
+    Order.objects.filter(ref=order_ref).update(
+        created_at=timezone.now() - RECENTLY_SENT_WINDOW - timedelta(minutes=1)
+    )
+
+    _assert_bag_is_gone(_send(client, payload))
+
+
 # ── A sacola deixou de existir no meio do envio ──────────────────────────────
 
 

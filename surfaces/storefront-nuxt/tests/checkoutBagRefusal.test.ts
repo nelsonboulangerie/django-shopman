@@ -65,4 +65,21 @@ describe('finalizar.vue trata a recusa da sacola antes do toast genérico', () =
     expect(source).toMatch(/action: \{ label: bagRefusal\.actionLabel/)
     expect(source).toMatch(/navigateTo\(bagRefusal\.href\)/)
   })
+
+  it('a tentativa que outra aba já enviou abre o pedido dizendo por quê', () => {
+    expect(source).toMatch(/idempotency_conflict' && await recoverCheckout\(attemptKey\.value\)\) \{\s*if \(import\.meta\.client\) useSonner\.info\(ORDER_ALREADY_SENT_MESSAGE\)/)
+  })
+
+  it('a sacola que sumiu aceita a leitura vazia, sem a barreira de revisão', () => {
+    const handled = source.indexOf('checkoutBagRefusal(data)')
+    const branch = source.slice(handled, source.indexOf('// Preço/cupom mudou', handled))
+    const reread = branch.lastIndexOf('await refresh()')
+    expect(reread).toBeGreaterThan(-1)
+    expect(branch.indexOf('acceptEmptiedCheckout()', reread)).toBeGreaterThan(reread)
+    // Fora do `catch`: lá dentro, `data` é o corpo do erro, não a leitura do checkout.
+    const helper = source.indexOf('function acceptEmptiedCheckout')
+    expect(helper).toBeGreaterThan(-1)
+    expect(helper).toBeLessThan(source.indexOf('async function submitCheckout'))
+    expect(source.slice(helper, helper + 200)).toMatch(/freshestCheckout\.value = data\.value\.checkout/)
+  })
 })

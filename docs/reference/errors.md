@@ -249,6 +249,13 @@ pedido já foi enviado" numa sacola que outra aba selou.
 | Encerrada, apagada ou sem item | `cart_empty` | "Sua sacola ficou vazia antes do envio." | "Ver o cardápio" → `/menu` |
 | Viva | segue a recusa original (`revision_changed` reprecifica e reabre) | | |
 
+Quando a chave da sacola já saiu da sessão (o envio que deu certo a tira), a outra
+aba do mesmo navegador não tem sacola para ler. Aí vale o pedido mais novo que ESTE
+navegador recebeu (`grant_order_access`), neste canal, da pessoa logada, criado há
+menos de `checkout.RECENTLY_SENT_WINDOW` (30 min, o prazo padrão da reserva da
+sacola): é `order_already_sent` com o link dele. Sem esse pedido, `cart_empty`.
+Outro navegador da mesma pessoa não tem a concessão e recebe `cart_empty`.
+
 O selo do Core ainda em andamento com a mesma chave (`in_progress`, quando o
 recibo de 30 s da loja expirou antes) sai como `mutation_in_progress`, "Seu pedido
 ainda está sendo enviado. Aguarde a confirmação nesta tela.", e a tela confere até

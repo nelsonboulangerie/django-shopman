@@ -8016,7 +8016,9 @@
             "map_checkout_error",
             "map_order_error",
             "RefusedCart",
-            "refused_cart"
+            "refused_cart",
+            "RECENTLY_SENT_WINDOW",
+            "recently_sent_order_ref"
           ]
         }
       ],
@@ -8024,6 +8026,7 @@
         "service"
       ],
       "domains": [
+        "guestman",
         "offerman",
         "orderman",
         "stockman"

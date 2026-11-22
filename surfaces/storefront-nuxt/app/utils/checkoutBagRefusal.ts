@@ -17,8 +17,11 @@ export interface CheckoutBagRefusal {
   actionLabel: string
 }
 
+/** A frase do pedido que já saiu, a mesma da API, para quando a tela o descobre sozinha. */
+export const ORDER_ALREADY_SENT_MESSAGE = 'Este pedido já foi enviado.'
+
 const FALLBACK: Record<CheckoutBagRefusalKind, { message: string, href: string, actionLabel: string }> = {
-  order_already_sent: { message: 'Este pedido já foi enviado.', href: '/conta/pedidos', actionLabel: 'Ver meus pedidos' },
+  order_already_sent: { message: ORDER_ALREADY_SENT_MESSAGE, href: '/conta/pedidos', actionLabel: 'Ver meus pedidos' },
   cart_empty: { message: 'Sua sacola ficou vazia antes do envio.', href: '/menu', actionLabel: 'Ver o cardápio' }
 }
 
