@@ -69,6 +69,9 @@ _CHANNEL_FALLBACK_LABELS = {
 #: :func:`_situation`: o que aconteceu com a MERCADORIA vence o que aconteceu
 #: com o dinheiro, porque o saldo tem campo próprio no card e a mercadoria não.
 SITUATION_LABELS = {
+    # O pedido que ninguém aceitou ainda (#3166): o mesmo nome do Gestor. Antes
+    # ele caía no estado do dinheiro e o balcão lia "Pago" num pedido "Novo".
+    "new": "Novo",
     "to_pay": "A pagar",
     "paid": "Pago",
     "on_account": "Na conta da casa",
@@ -729,6 +732,8 @@ def _situation(order, payment_state: str) -> str:
         return "out_for_delivery"
     if order.status == "ready":
         return "ready"
+    if order.status == "new":
+        return "new"
     return _SITUATION_BY_PAYMENT_STATE[payment_state]
 
 

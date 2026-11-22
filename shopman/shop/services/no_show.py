@@ -149,14 +149,16 @@ def _hold_entries(order) -> list[dict]:
     ]
 
 
-def _line_facts(order, items, *, now: datetime) -> dict[str, LineFacts]:
-    """``line_id`` → os fatos da linha, lidos do estoque e das fichas."""
+def _sku_facts(order, skus: list[str], *, now: datetime) -> dict[str, LineFacts]:
+    """SKU → os fatos dele no pedido, lidos do estoque e das fichas.
+
+    Um SKU por vez, para que o combo decida cada componente pelos fatos dele
+    (#2697): o croissant vencido do combo não leva o café junto para a perda.
+    """
     from shopman.shop.adapters import get_adapter
     from shopman.shop.services import made_to_order
 
-    components = {item.line_id: _components(item.sku, _decimal(item.qty)) for item in items}
-    skus = sorted({sku for comps in components.values() for sku, _qty in comps})
-    recipes = made_to_order.made_to_order_recipes(skus)
+    recipes = made_to_order.made_to_order_recipes(sorted(set(skus)))
     entries = _hold_entries(order)
     lots = get_adapter("stock").hold_lot_facts(
         [entry["hold_id"] for entry in entries], on=next_selling_day(now)
@@ -166,15 +168,47 @@ def _line_facts(order, items, *, now: datetime) -> dict[str, LineFacts]:
         by_sku.setdefault(str(entry.get("sku") or ""), []).append(lots.get(entry["hold_id"]) or {})
 
     facts: dict[str, LineFacts] = {}
-    for item in items:
-        comp_skus = [sku for sku, _qty in components[item.line_id]]
-        held = [by_sku.get(sku) or [] for sku in comp_skus]
-        facts[item.line_id] = LineFacts(
-            made_to_order=any(sku in recipes for sku in comp_skus),
-            stock_fulfilled=bool(held) and all(lot and all(fact.get("fulfilled") for fact in lot) for lot in held),
-            lot_expired=any(fact.get("expired") for lot in held for fact in lot),
+    for sku in skus:
+        held = by_sku.get(sku) or []
+        facts[sku] = LineFacts(
+            made_to_order=sku in recipes,
+            stock_fulfilled=bool(held) and all(fact.get("fulfilled") for fact in held),
+            lot_expired=any(fact.get("expired") for fact in held),
         )
     return facts
+
+
+def _component_values(components: list[tuple[str, Decimal]], total_q: int) -> list[int]:
+    """O valor da linha do combo rateado pelos componentes, pelo preço de cada um.
+
+    Proporcional ao preço de tabela vezes a quantidade (o mesmo rateio da NFC-e,
+    ``fiscal_focusnfe._apportion_over_items``); o resíduo do arredondamento vai no
+    último, para a soma bater com o valor pago pela linha. Sem preço nenhum, por
+    quantidade.
+    """
+    from shopman.offerman.models import Product
+
+    prices = dict(Product.objects.filter(sku__in=[sku for sku, _qty in components]).values_list("sku", "base_price_q"))
+    weights = [Decimal(int(prices.get(sku) or 0)) * qty for sku, qty in components]
+    if not any(weights):
+        weights = [qty for _sku, qty in components]
+    weight_sum = sum(weights) or Decimal(len(components))
+    values: list[int] = []
+    allocated = 0
+    for index, weight in enumerate(weights):
+        if index == len(weights) - 1:
+            share = total_q - allocated
+        else:
+            share = int(Decimal(total_q) * weight / weight_sum)
+        allocated += share
+        values.append(share)
+    return values
+
+
+def _product_names(skus: list[str]) -> dict[str, str]:
+    from shopman.offerman.models import Product
+
+    return dict(Product.objects.filter(sku__in=skus).values_list("sku", "name"))
 
 
 def next_selling_day(now: datetime):
@@ -207,24 +241,55 @@ def line_decisions(order, *, now: datetime | None = None) -> list[dict]:
 
     O valor é o mesmo cálculo da devolução (``handlers/returns``): o preço pago
     por unidade (já com o desconto rateado) vezes a quantidade.
+
+    O combo vira uma linha por componente (#2697): cada componente tem o destino
+    dele (o que volta à venda volta, o que se perdeu fica com a loja) e uma parte
+    do valor do combo, rateada pelo preço de cada componente. ``line_id`` do
+    componente é ``"<linha>:<sku>"``, e ``combo`` diz de qual combo ele veio.
     """
     now = now or timezone.now()
     items = _merchandise_items(order)
-    facts = _line_facts(order, items, now=now)
+    expanded = {item.line_id: _components(item.sku, _decimal(item.qty)) for item in items}
+    facts = _sku_facts(order, sorted({sku for comps in expanded.values() for sku, _qty in comps}), now=now)
+    combo_skus = sorted({sku for item in items for sku, _qty in expanded[item.line_id] if not _is_itself(item, expanded)})
+    names = _product_names(combo_skus) if combo_skus else {}
     lines = []
     for item in items:
         qty = _decimal(item.qty)
-        destiny, why = decide_destiny(facts[item.line_id])
-        lines.append({
-            "line_id": item.line_id,
-            "sku": item.sku,
-            "name": item.name or item.sku,
-            "qty": _decimal_text(qty),
-            "destiny": destiny,
-            "reason": why,
-            "value_q": int(item.unit_price_q * qty),
-        })
+        value_q = int(item.unit_price_q * qty)
+        components = expanded[item.line_id]
+        if _is_itself(item, expanded):
+            destiny, why = decide_destiny(facts[item.sku])
+            lines.append({
+                "line_id": item.line_id,
+                "sku": item.sku,
+                "name": item.name or item.sku,
+                "qty": _decimal_text(qty),
+                "destiny": destiny,
+                "reason": why,
+                "value_q": value_q,
+            })
+            continue
+        combo_name = item.name or item.sku
+        for (sku, comp_qty), comp_value in zip(components, _component_values(components, value_q), strict=True):
+            destiny, why = decide_destiny(facts[sku])
+            lines.append({
+                "line_id": f"{item.line_id}:{sku}",
+                "sku": sku,
+                "name": f"{names.get(sku) or sku} (combo {combo_name})",
+                "qty": _decimal_text(comp_qty),
+                "destiny": destiny,
+                "reason": why,
+                "value_q": comp_value,
+                "combo": {"line_id": item.line_id, "sku": item.sku, "name": combo_name},
+            })
     return lines
+
+
+def _is_itself(item, expanded) -> bool:
+    """A linha não é combo: ela tira do estoque ela mesma."""
+    components = expanded[item.line_id]
+    return len(components) == 1 and components[0][0] == item.sku
 
 
 # ── O dinheiro ───────────────────────────────────────────────────────────────
@@ -265,6 +330,8 @@ def _refund_destination(order) -> str:
 
 def money_sentence(order, *, paid_q: int, refund_q: int, retained_q: int) -> str:
     """O que o gesto faz com o dinheiro, por extenso, dito ao Gerente antes de confirmar."""
+    if _on_account(order):
+        return _account_sentence(refund_q=refund_q, retained_q=retained_q)
     if paid_q <= 0:
         return "O pedido não foi pago: não há dinheiro a devolver."
     if refund_q <= 0:
@@ -273,6 +340,18 @@ def money_sentence(order, *, paid_q: int, refund_q: int, retained_q: int) -> str
     if retained_q <= 0:
         return back
     return f"{back} R$ {format_money(retained_q)} ficam com a loja, pelo que se perdeu."
+
+
+def _account_sentence(*, refund_q: int, retained_q: int) -> str:
+    """A venda só em conta: o que sai da conta do cliente e o que continua nela."""
+    if refund_q <= 0 and retained_q <= 0:
+        return "Nada a mexer na conta do cliente: este pedido não deve nada."
+    if refund_q <= 0:
+        return f"Nada sai da conta do cliente: R$ {format_money(retained_q)} continuam nela, pelo que se perdeu."
+    out = f"R$ {format_money(refund_q)} saem da conta do cliente."
+    if retained_q <= 0:
+        return out
+    return f"{out} R$ {format_money(retained_q)} continuam nela, pelo que se perdeu."
 
 
 # ── Quem pode, e a partir de quando ──────────────────────────────────────────
@@ -310,16 +389,35 @@ def eligibility_reason(order) -> str:
         return "Este pedido é de entrega: não retirado é só para retirada."
     if pos_sales_mode.is_pos_counter_order(order):
         return "Venda de balcão não tem retirada a esperar."
-    if payment._pays_on_account((order.data or {}).get("payment") or {}):
-        return "Venda na conta da casa: o não retirado ainda não passa pelo Gestor."
+    payment_data = (order.data or {}).get("payment") or {}
+    if payment._pays_on_account(payment_data):
+        # Só em conta: a dívida fica com o valor do que se perdeu (#2697). A conta
+        # já acertada e a venda que mistura a conta com outra forma não passam.
+        if not payment.pays_only_on_account(payment_data):
+            return "Parte na conta da casa e parte em outra forma de pagamento: o não retirado deste pedido é com o Dono."
+        if payment.account_debt_settled(order):
+            return "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
     if not order.can_transition_to(Order.Status.CANCELLED):
         return "Este canal não permite encerrar um pedido pronto como não retirado."
     return ""
 
 
-def _paid_q(order) -> int | None:
+def _on_account(order) -> bool:
     from shopman.shop.services import payment
 
+    return payment.pays_only_on_account((order.data or {}).get("payment") or {})
+
+
+def _paid_q(order) -> int | None:
+    """O que o cliente pagou ou, na venda só em conta, o que ele deve dela.
+
+    Na conta da casa a régua é a mesma: o que se perdeu fica (como dívida), o
+    resto sai da conta.
+    """
+    from shopman.shop.services import payment
+
+    if _on_account(order):
+        return payment.open_account_debt_q(order)
     return payment.captured_balance_q(order)
 
 
@@ -425,6 +523,7 @@ def _plan(order, *, now: datetime) -> dict:
         "refund_q": refund_q,
         "retained_q": retained_q,
         "payment_known": known,
+        "on_account": _on_account(order),
     }
 
 
@@ -463,6 +562,7 @@ def preview(order, *, now: datetime | None = None) -> dict:
     if not reason and not plan["payment_known"]:
         reason = "Não deu para ler o pagamento deste pedido agora. Tente de novo em instantes."
     block = {"paid_q": plan["paid_q"], "refund_q": plan["refund_q"], "retained_q": plan["retained_q"]}
+    customer_block = {**block, "on_account": plan["on_account"]}
     return {
         "allowed": not reason,
         "block_reason": reason,
@@ -470,7 +570,7 @@ def preview(order, *, now: datetime | None = None) -> dict:
         "lines": plan["lines"],
         **block,
         "money_sentence": money_sentence(order, **block),
-        "customer_text": no_show_reason.customer_text(block),
+        "customer_text": no_show_reason.customer_text(customer_block),
         "revision": _revision(order, plan),
     }
 
@@ -525,6 +625,8 @@ def mark_not_picked_up(
             "paid_q": plan["paid_q"],
             "refund_q": plan["refund_q"],
             "retained_q": plan["retained_q"],
+            # Venda só em conta: ``paid_q`` é a dívida, e ``refund_q`` sai da conta.
+            "on_account": plan["on_account"],
         }
         cancelled = cancel(
             locked,

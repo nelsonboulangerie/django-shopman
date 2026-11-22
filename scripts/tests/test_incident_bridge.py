@@ -168,3 +168,68 @@ def test_status_shows_the_domain_remedy_score():
 def test_status_shows_ai_readings_and_cost():
     line = bridge.remedy_line({"label": "Reprocessar a NFC-e", "by_outcome": {"resolved": 1}, "ai_readings": 2, "ai_cost_usd": 0.00006})
     assert line.endswith("2 leitura(s) de IA, US$ 0,00006")
+
+
+# ── DigitalOcean (#3044) ─────────────────────────────────────────────────────
+
+
+def _metric(*series):
+    """``series``: listas de ``(horas_atrás, valor)``, uma por instância."""
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [
+                {"metric": {"app_component": "worker"},
+                 "values": [[int((NOW - timedelta(hours=h)).timestamp()), str(v)] for h, v in points]}
+                for points in series
+            ],
+        },
+    }
+
+
+def test_restart_counter_counts_only_rises_and_survives_instance_swap():
+    payload = _metric([(40, 0), (30, 1), (20, 1)], [(10, 0), (5, 2)])  # instância trocada no deploy
+    moments = bridge.restarts_in(payload)
+    assert len(moments) == 3
+    assert moments[0] == NOW - timedelta(hours=30)
+
+
+def test_component_that_restarted_today_is_open_with_engineering():
+    incidents = bridge.incidents_from_digitalocean(
+        {"worker": {"restart": _metric([(30, 0), (3, 1)]), "memory": _metric([(3, 55.0)])}}, now=NOW,
+    )
+    restart = next(i for i in incidents if i.fingerprint == "do:worker:restart")
+    memory = next(i for i in incidents if i.fingerprint == "do:worker:memoria")
+    assert restart.is_open and restart.owner == "Engenharia" and restart.open_count == 1
+    assert not memory.is_open
+
+
+def test_component_quiet_for_a_day_is_green_since_its_last_restart_and_closes():
+    incidents = bridge.incidents_from_digitalocean(
+        {"worker": {"restart": _metric([(40, 0), (30, 1), (1, 1)]), "memory": _metric([(1, 96.0)])}}, now=NOW,
+    )
+    restart = next(i for i in incidents if i.fingerprint == "do:worker:restart")
+    memory = next(i for i in incidents if i.fingerprint == "do:worker:memoria")
+    assert not restart.is_open and restart.green_since == NOW - timedelta(hours=30)
+    assert memory.is_open, "memória acima de 90% hoje é incidente"
+
+    own = _issue(10, "Alerta: worker (reinícios do componente, DigitalOcean)", body="<!-- incident:do:worker:restart -->")
+    gh = FakeGitHub([own])
+    actions = bridge.plan_and_apply([restart], gh, now=NOW)
+    assert "fechar" in [a.kind for a in actions]
+
+
+def test_digitalocean_failure_does_not_stop_the_round(monkeypatch, capsys):
+    monkeypatch.setenv("INCIDENTS_URL", "https://loja/incidents/")
+    monkeypatch.setenv("INCIDENTS_TOKEN", "x")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setenv("GITHUB_TOKEN", "g")
+    monkeypatch.setenv("DO_READ_TOKEN", "d")
+    monkeypatch.setenv("DO_APP_NAME", "shopman")
+    monkeypatch.delenv("SENTRY_AUTH_TOKEN", raising=False)
+    monkeypatch.setattr(bridge, "_get_json", lambda url, **_: ({"schema_version": 1, "groups": []}, ""))
+    monkeypatch.setattr(bridge, "_do_components", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sem app")))
+    monkeypatch.setattr(bridge.GitHub, "alert_issues", lambda self: [])
+    assert bridge.main(["--dry-run"]) == 0
+    assert "DigitalOcean não leu" in capsys.readouterr().out

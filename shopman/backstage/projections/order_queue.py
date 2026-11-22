@@ -1258,6 +1258,16 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         refund_retry_plan = refund_retry.plan(order)
         if refund_retry_plan.failed:
             extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
+    # "Estornar" (#2727, item 5): a exceção financeira do Gerente. Só aparece a quem
+    # tem ``backstage.refund_single_order`` e no pedido com cobrança online paga; a
+    # régua (qual cobrança, quanto, a base) é de ``services/order_refund``.
+    from shopman.backstage.services import order_refund
+
+    refund_action = order_refund.detail_action(
+        order, user, retry_failed=bool(refund_retry_plan is not None and refund_retry_plan.failed),
+    )
+    if refund_action is not None:
+        extra_actions.append(refund_action)
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -4141,6 +4151,9 @@ _EVENT_LABELS = {
     "order_rescheduled": "Data combinada alterada",
     # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
     "production_hold_lost": "Lote cancelado: o item ficou em falta",
+    # O lote rendeu menos do que as reservas, ou passou da hora com o pedido esperando (#2594).
+    "production_hold_short": "Lote rendeu menos: o item ficou em falta",
+    "production_lot_late": "Lote atrasado: o item ainda não ficou pronto",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -4160,6 +4173,8 @@ _EVENT_LABELS = {
     "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
     "return_initiated": "Devolução iniciada",
     "refund_processed": "Estorno processado",
+    # Venda só em conta: a devolução ou o não retirado tira o valor da conta (#2606, #2697).
+    "account_debt_reduced": "Valor tirado da conta do cliente",
     "volume_checked": "Volume conferido",
     "volume_check_wrong_bag": "Sacola de outro pedido lida na conferência",
     # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
@@ -4192,6 +4207,8 @@ _EVENT_LABELS = {
     # WP-G13: quem tentou é o autor da linha; quem autorizou e o que o gateway
     # respondeu vão no detalhe (``_refund_retry_detail``).
     "payment.refund_retry": "Estorno tentado de novo",
+    # "Estornar" no detalhe do Gestor (#2727, item 5): a tentativa, saída ou não.
+    "payment.order_refund": "Estorno pedido no Gestor",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
     # #2897: o saldo da encomenda cobrado em Pix no balcão (novo, ou o Pix online
     # do cliente aproveitado); quem gerou é o autor da linha.
@@ -4205,7 +4222,7 @@ UNLABELLED_EVENT_LABEL = "Registro do sistema"
 _OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
 
 #: Os eventos de dinheiro levam o meio e o valor como detalhe.
-_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded"})
+_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded", "account_debt_reduced"})
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
 #: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
@@ -4360,9 +4377,9 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             logger.error("order_queue.event_without_label type=%s order=%s", event.type, order.ref)
             label = UNLABELLED_EVENT_LABEL
 
-        if event.type == _PRODUCTION_HOLD_LOST_EVENT:
+        if event.type in _PRODUCTION_PROMISE_EVENTS:
             detail = _production_hold_lost_detail(payload)
-        elif event.type == "payment.refund_retry":
+        elif event.type in {"payment.refund_retry", "payment.order_refund"}:
             detail = _refund_retry_detail(payload)
         elif event.type in _PAYMENT_EVENT_TYPES:
             detail = _payment_event_detail(payload)
@@ -4423,6 +4440,9 @@ def _payment_event_detail(payload: dict) -> str:
 #: O evento que ``shop/services/production_promise`` grava quando o lote cancelado
 #: leva a reserva do pedido.
 _PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
+#: Os três fatos da promessa de produção (cancelado, rendeu menos, atrasado) têm o
+#: mesmo detalhe: o item e o lote.
+_PRODUCTION_PROMISE_EVENTS = frozenset({_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late"})
 
 
 def _production_hold_lost_detail(payload: dict) -> str:

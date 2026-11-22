@@ -67,7 +67,11 @@ def return_block_reason(order: Order) -> str:
         return "A devolução é para pedido entregue ou concluído."
     payment = (order.data or {}).get("payment") or {}
     if payment_svc._pays_on_account(payment):
-        return "Venda na conta da casa: a devolução ainda não passa pelo Gestor."
+        # Só em conta: a devolução abate da conta só o valor devolvido (#2606).
+        if not payment_svc.pays_only_on_account(payment):
+            return "Parte na conta da casa e parte em outra forma de pagamento: a devolução deste pedido é com o Dono."
+        if payment_svc.account_debt_settled(order):
+            return "A conta deste pedido já foi acertada: a devolução dele é com o Dono."
     return ""
 
 
@@ -82,6 +86,9 @@ def money_destination(order: Order) -> tuple[bool, str]:
 
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "")
+    if payment_svc.pays_only_on_account(payment):
+        # Nada foi pago: a devolução sai da conta do cliente, não do caixa.
+        return (payment_svc.open_account_debt_q(order) > 0, "saem da conta do cliente.")
     captured_q = payment_svc.captured_balance_q(order)
     if captured_q == 0:
         return False, ""

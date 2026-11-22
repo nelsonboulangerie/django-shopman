@@ -25,7 +25,7 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 from shopman.utils.formatting import format_clock, format_local
 
-from shopman.shop.services import operator_orders
+from shopman.shop.services import operator_orders, order_undo
 from shopman.shop.services.fulfillment_window import promised_at, window_label
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
@@ -855,13 +855,18 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
             continue
         if order.status == Order.Status.ACCEPTED and order.session_key not in in_kitchen_keys:
             continue
+        # O pronto com a janela de desfazer aberta (#3167, F-3 do laudo do Gestor)
+        # ainda não é "Pronto para retirar" para o cliente: o aviso de pronto
+        # espera a mesma janela (``order_undo.ready_hold``), e o desfazer devolve o
+        # pedido ao preparo. Antes o número subia na TV e sumia de novo.
+        shows_ready = order.status == Order.Status.READY and not order_undo.ready_hold(order)
         projection = KDSCustomerOrderProjection(
             ref=order.ref,
-            status=order.status,
-            status_label="Pronto para retirar" if order.status == Order.Status.READY else "Em preparo",
+            status=order.status if shows_ready or order.status != Order.Status.READY else Order.Status.PREPARING,
+            status_label="Pronto para retirar" if shows_ready else "Em preparo",
             updated_at_display=_format_time(order.ready_at or order.updated_at or order.created_at),
         )
-        if order.status == Order.Status.READY:
+        if shows_ready:
             ready.append(projection)
         else:
             preparing.append(projection)
