@@ -50,6 +50,28 @@ describe("ReadFreshness: leitura útil e transporte são estados distintos", () 
     wrapper.unmount();
   });
 
+  // #3143: a 1440 px a frase ocupava 207 px dos 208 do teto, e o segundo com dois
+  // dígitos derrubava o "s" sozinho para a linha de baixo. Cada bloco é inteiro: a
+  // quebra, quando vem, cai entre a hora, a idade e a falha.
+  it("inline quebra só entre blocos inteiros, nunca dentro da hora ou da idade", async () => {
+    const wrapper = mount(ReadFreshness, {
+      props: { inline: true, failed: true, realtimeLabel: "Ao vivo", metadata: { generated_at: "2026-09-11T12:00:00Z" } },
+    });
+    const blocks = wrapper.findAll("[data-read-freshness-block]");
+    expect(blocks.map((block) => block.text().replace(/\s+/g, " "))).toEqual([
+      expect.stringMatching(/^Última leitura útil: \S+$/),
+      expect.stringMatching(/^· há \d+ s$/),
+      "· atualização falhou",
+    ]);
+    for (const block of blocks) expect(block.classes()).toContain("whitespace-nowrap");
+    // A frase lida continua a mesma.
+    expect(wrapper.get("[data-read-freshness-useful]").text().replace(/\s+/g, " ")).toMatch(
+      /^Última leitura útil: \S+ · há \d+ s · atualização falhou$/,
+    );
+    expect(wrapper.text()).toContain("Conexão: Ao vivo");
+    wrapper.unmount();
+  });
+
   it("source diz de onde veio a leitura, hora de relógio e idade separadas, numa linha", async () => {
     vi.useFakeTimers({ toFake: ["Date", "performance", "setInterval", "clearInterval"] });
     const generated = "2026-11-17T16:55:30Z";
