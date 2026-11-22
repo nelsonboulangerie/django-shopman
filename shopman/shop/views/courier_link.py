@@ -6,7 +6,8 @@ entregador (cabeçalho ``X-Courier-Device``, a chave que a página gera e guarda
 
 - ``GET  rides/<token>/``          o momento da rota (ou a confirmação, se ninguém confirmou)
 - ``POST rides/<token>/claim/``    "Sou o Diego, abrir": prende o link a este celular
-- ``POST rides/<token>/events/``   os toques: ``depart``, ``deliver``, ``problem``
+- ``POST rides/<token>/events/``   os toques: ``depart``, ``deliver``, ``problem`` e ``theme``
+  (o tema escolhido na página vai para o cadastro do entregador, #2648)
 """
 
 from __future__ import annotations
@@ -49,7 +50,8 @@ class _LinkView(APIView):
             return _private(Response({"detail": detail, "moment": access.state}, status=code))
         if access.state == courier_links.UNCLAIMED:
             link = access.link
-            return _private(Response({"moment": "confirm", "courier": link.courier.name}))
+            return _private(Response({"moment": "confirm", "courier": link.courier.name,
+                                      "theme": own_fleet.page_theme(link.courier)}))
         return _private(Response(own_fleet.ride_view(access.link)))
 
 
@@ -82,6 +84,8 @@ class CourierRideEventView(_LinkView):
             elif action == "problem":
                 own_fleet.report_problem(access.link, order_ref, str(data.get("kind") or ""),
                                          payment=str(data.get("payment") or ""))
+            elif action == "theme":
+                own_fleet.remember_theme(access.link, str(data.get("theme") or ""))
             else:
                 return _private(Response({"detail": "Ação desconhecida.", "field": "action"},
                                          status=http.HTTP_400_BAD_REQUEST))

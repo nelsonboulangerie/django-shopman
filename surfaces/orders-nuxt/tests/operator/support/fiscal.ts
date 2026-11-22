@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { controlDir } from "./clock";
 
@@ -16,4 +16,11 @@ export function sefazRejectsNext(message: string, times = 1): void {
 /** Volta a autorizar tudo. Chamar no fim de toda jornada que roteirizou recusa. */
 export function sefazAuthorizesAll(): void {
   if (controlDir) rmSync(join(controlDir, "fiscal.json"), { force: true });
+}
+
+/** O que a SEFAZ simulada guardou da nota do pedido (ou `null`, sem nota): o documento
+ *  do destinatário e se foi entrega. É o que a nota declarou, e a tela não mostra. */
+export function simulatedNote(ref: string): { status: string; customer_tax_id: string; delivery: boolean } | null {
+  const path = join(controlDir, "fiscal-notes", `${ref.replace(/[^A-Za-z0-9_-]/g, "_")}.json`);
+  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
 }

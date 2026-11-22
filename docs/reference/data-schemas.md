@@ -244,6 +244,14 @@ useful: {status: pass|fail|unavailable, reason?}}, judge?: {answer: answers|off_
 confidence}}`. Em sombra: o veredito é gravado e o envio não muda. `judge` só existe quando o Jev
 respondeu; a chamada dele entra em `usage.calls` com `stage: conference` e em `latency_ms.conference`.
 Lida por `concierge_conversation_eval` (linha "conferência antes do envio").
+Escada em sombra (`conference.shadow_climb`, regra em `conversational_commerce/reply/ladder.py`): quando a
+conferência reprova, DEPOIS do envio, o mesmo primeiro bloco ganha `envelope["ladder"]` = `{chosen:
+house|concierge_rewrite|concierge_escalation|safe, stopped, cost_usd, attempts: [{source, text, cost_usd, ms,
+error?, conference?}], safe_text?}` (`safe_text` em sombra é o TIPO da alternativa: `house_literal` ou
+`verify`). Os degraus são os propósitos de IA `concierge_rewrite` e `concierge_escalation`, só com rota
+explícita em `Shop.ai_routes`. A política mora em `Shop.ai_limits["conference"]` = `{max_attempts (padrão 3,
+teto 5), turn_usd (padrão 0,01, teto 0,05)}`; o teto do dia de cada degrau é o do freio
+(`ai_limits["purposes"]`).
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
 `purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
@@ -1514,6 +1522,19 @@ Uma viva por vez (`dedupe_key` fixo = o topic). Só existe com `IFOOD_MERCHANT_S
 |-------|------|-------------|----------|
 | `reason` | `string` | `shop/services/ifood_merchant.enqueue_sync` (`shop_saved`, `check`) | log (informativo) |
 
+#### `incident.act`
+
+O acionador de remédio de um alerta (`shopman/backstage/incidents/act.py`). Nasce quando
+um `OperatorAlert` de tipo com remédio é criado, e também pela repescagem do
+`act_on_incidents`. Planeja, aciona o gesto do domínio e se reagenda (sem gastar
+tentativa) para esperar o retry do domínio ou para conferir o resultado. Uma viva por
+alerta: `dedupe_key` = `incident.act:<alert_id>`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `alert_id` | `int` | `backstage/incidents/act.enqueue` | IncidentActHandler |
+| `action_id` | `int` | IncidentActHandler (depois de acionar) | IncidentActHandler (conferência) |
+
 #### `ifood.merchant_interruption`
 
 Cria ou retira no iFood a pausa pedida pelo gestor. O estado a aplicar é o da linha
@@ -1902,6 +1923,13 @@ o padrão; nenhuma desliga o freio de preço.
 | `delivery.ride_suggestion.saving_min_q` | `int` (centavos), `300` | `ride_plan._quote` | Economia mínima, em centavos, para a sugestão vir marcada. |
 | `delivery.ride_suggestion.saving_min_percent` | `int`, `15` | `ride_plan._quote` | Economia mínima em % das corridas separadas. Vale junto com `saving_min_q` (as duas). |
 | `delivery.ride_suggestion.extra_wait_minutes` | `int`, `10` | `ride_plan._fits` | O cliente que mais espera a mais espera no máximo isto. A espera a mais é estimada pelo desvio a 20 km/h mais 2 min por parada antes (fixos no código). |
+
+Além dos parâmetros, o plano lê o **fim da janela combinada** de cada pedido
+(`fulfillment_window.window_end`: o fim da meia hora de `delivery_time_slot` no dia de
+`delivery_date`, ou o `ifood.schedule.delivery_end_at` do agendado; o turno da encomenda
+não tem fim). O par cuja chegada estimada junta passaria desse fim, quando sozinho
+chegaria a tempo, não vira sugestão (`ride_plan.breaks_a_deadline`, #2875). A chegada
+usa o mesmo palpite da espera: agora, mais o percurso a 20 km/h e 2 min por parada antes.
 
 O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
 deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o

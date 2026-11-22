@@ -95,6 +95,16 @@ class Command(BaseCommand):
                 orphans.append((hold, "sessão morta"))
 
         if not orphans:
+            if not dry_run:
+                # O aviso é informativo: as reservas já voltaram ao estoque quando ele
+                # nasceu. A varredura seguinte sem órfã prova que o vazamento parou (#3085).
+                from shopman.shop.adapters import alert as alert_adapter
+
+                alert_adapter.resolve_matching(
+                    "orphan_holds_released",
+                    message_contains="Dedupe: orphan_holds:",
+                    actor="sistema: reservas já devolvidas; nenhuma órfã na varredura seguinte",
+                )
             self.stdout.write("Nenhum hold órfão encontrado.")
             return
 

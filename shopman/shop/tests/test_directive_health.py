@@ -238,3 +238,47 @@ def test_failed_spike_segue_pela_fila(paging):
     _run()
     assert not Directive.objects.filter(payload__event="operator_critical").exists()
     assert paging.call_count == 0
+
+
+# ── quem acusa também encerra (#3102) ────────────────────────────────────────
+
+
+def test_spike_stays_open_while_its_failures_are_still_failed():
+    _failed(5)
+    _run()
+    alert = OperatorAlert.objects.get(type="directive_failed_spike")
+    Directive.objects.filter(status="failed").update(updated_at=timezone.now() - timedelta(minutes=30))
+    _run()  # abaixo do limite, mas as tarefas seguem falhadas: o aviso fica
+    alert.refresh_from_db()
+    assert alert.resolved_at is None
+
+
+def test_spike_closes_when_its_failures_were_reprocessed():
+    _failed(5)
+    _run()
+    alert = OperatorAlert.objects.get(type="directive_failed_spike")
+    Directive.objects.filter(status="failed").update(status="done")
+    _run()
+    alert.refresh_from_db()
+    assert alert.resolved_at is not None
+    assert alert.resolved_by == "sistema: as tarefas que falharam foram reprocessadas"
+
+
+def test_backlog_closes_when_the_queue_is_empty():
+    _overdue_queued(5)
+    _run()
+    alert = OperatorAlert.objects.get(type="directive_backlog")
+    Directive.objects.filter(status="queued").update(status="done")
+    _run()
+    alert.refresh_from_db()
+    assert alert.resolved_by == "sistema: a fila de tarefas de fundo esvaziou"
+
+
+def test_stale_worker_closes_when_it_beats_again():
+    _stale_heartbeat(30)
+    _run()
+    alert = OperatorAlert.objects.get(type="directive_worker_stale")
+    worker_heartbeat.beat(worker_heartbeat.PROCESS_DIRECTIVES_WORKER)
+    _run()
+    alert.refresh_from_db()
+    assert alert.resolved_by == "sistema: o processo de tarefas de fundo voltou a terminar rodadas"

@@ -681,6 +681,44 @@ def test_missing_source_has_no_promised_fulfillment_time():
     assert fulfillment_window.promised_at(None) is None
 
 
+def test_window_end_is_the_close_of_the_half_hour_on_the_agreed_day():
+    from datetime import datetime
+
+    from django.utils import timezone
+
+    from shopman.shop.services import fulfillment_window
+
+    order = SimpleNamespace(data={"delivery_time_slot": "14:00-14:30", "delivery_date": "2026-11-21"},
+                            channel_ref="web", created_at=None)
+    assert fulfillment_window.window_end(order) == timezone.make_aware(datetime(2026, 11, 21, 14, 30))
+
+
+def test_window_end_is_none_for_the_open_shift_and_for_no_agreement():
+    from shopman.shop.services import fulfillment_window
+
+    shift = SimpleNamespace(data={"delivery_time_slot": "slot-12", "delivery_date": "2026-11-21"},
+                            channel_ref="web", created_at=None)
+    assert fulfillment_window.window_end(shift) is None
+    assert fulfillment_window.window_end(SimpleNamespace(data={}, channel_ref="web", created_at=None)) is None
+    assert fulfillment_window.window_end(None) is None
+
+
+def test_window_end_of_a_scheduled_ifood_order_is_the_end_ifood_promised():
+    from datetime import UTC, datetime
+
+    from shopman.shop.services import fulfillment_window
+
+    order = SimpleNamespace(channel_ref="ifood", created_at=None, data={"ifood": {
+        "order_timing": "SCHEDULED",
+        "schedule": {
+            "preparation_start_at": "2026-11-21T16:00:00+00:00",
+            "delivery_start_at": "2026-11-21T17:00:00+00:00",
+            "delivery_end_at": "2026-11-21T17:30:00+00:00",
+        },
+    }})
+    assert fulfillment_window.window_end(order) == datetime(2026, 11, 21, 17, 30, tzinfo=UTC)
+
+
 def test_unknown_product_readiness_does_not_invent_a_time(monkeypatch):
     from shopman.shop.services import fulfillment_window, product_readiness
 
