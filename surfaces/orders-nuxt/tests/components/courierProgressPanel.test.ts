@@ -16,7 +16,7 @@ const { default: Panel } = await import("../../app/components/OrderCourierPanel.
 
 const ride = (extra: Partial<CourierBlock>) =>
   ({
-    status: "A", ride_state: "assigned",
+    status: "A", ride_state: "assigned", service_name: "TaOn",
     status_label: "Entregador a caminho da loja",
     active: true,
     can_quote: false,

@@ -5,7 +5,7 @@
  * A trava (`usePosSale`) grava um marcador no navegador ANTES de pedir o
  * fechamento ao servidor e o apaga quando a resposta prova que o pedido
  * nasceu. Enquanto ESTA aba espera essa resposta, o marcador existe e a venda
- * está correndo normalmente: isso não é aviso, é o botão "Finalizando…". Antes
+ * está correndo normalmente: isso não é aviso, é o botão ocupado do Validar. Antes
  * a faixa acendia em toda venda, durante o POST, com o título "Cobrança em
  * processamento ou interrompida" e um botão para liberar — alarme falso no
  * caminho feliz, e um convite a liberar a trava no meio da própria cobrança.
@@ -100,7 +100,7 @@ export function closeGuardNotice(input: CloseGuardInput): CloseGuardNotice | nul
     case "other_tab_charging":
       return {
         situation,
-        title: "Outra aba deste PDV está finalizando uma venda",
+        title: "Outra aba deste PDV está validando uma venda",
         body: "Aguarde o resultado naquela aba. Esta aba volta a cobrar sozinha quando aquela venda terminar.",
         canRelease: false,
         canRecheck: false,
@@ -110,8 +110,8 @@ export function closeGuardNotice(input: CloseGuardInput): CloseGuardNotice | nul
         situation,
         title: "A última venda foi interrompida antes da resposta",
         body: input.replayable
-          ? "A página fechou ou recarregou enquanto a venda era finalizada. Conferir agora pergunta por esta mesma venda, sem cobrar de novo."
-          : "A página fechou ou recarregou enquanto a venda era finalizada, e não sabemos se o pedido e o pagamento foram criados. Confira antes de cobrar de novo.",
+          ? "A página fechou ou recarregou enquanto a venda era validada. Conferir agora pergunta por esta mesma venda, sem cobrar de novo."
+          : "A página fechou ou recarregou enquanto a venda era validada, e não sabemos se o pedido e o pagamento foram criados. Confira antes de cobrar de novo.",
         canRelease: true,
         canRecheck: Boolean(input.replayable),
         link: ordersLink,

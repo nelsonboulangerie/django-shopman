@@ -117,3 +117,51 @@ def test_lista_do_canal_mudou_avisa_a_vitrine_inteira():
         _sse_emitters._publish_surface_changed("web")
 
     assert ("shelf-web", "shelf-update", {}) in [c.args for c in send_event.call_args_list]
+
+
+def _real_signature(basic, *, today_orderable: bool = True, next_batch=None):
+    """``public_signature`` de verdade, com o estoque e a promessa fixados na borda.
+
+    Os testes acima trocam a assinatura inteira por um valor; este lê o caminho do
+    cardápio até o fim, que é onde o campo errado se escondia.
+    """
+    from datetime import date, datetime
+
+    from shopman.shop.projections import catalog_context, ready_promise
+
+    facts = ready_promise.PromiseFacts(
+        now=datetime(2026, 11, 22, 10, 0),
+        today=date(2026, 11, 22),
+        next_batch={"CRO": next_batch} if next_batch else {},
+        today_orderable={"CRO": today_orderable},
+    )
+    with (
+        patch.object(catalog_context, "availability_for_sku", return_value={}),
+        patch.object(catalog_context, "basic_availability", return_value=basic),
+        patch.object(ready_promise, "read_promise_facts", return_value=facts),
+        patch("shopman.shop.config.ChannelConfig.for_channel") as for_channel,
+    ):
+        for_channel.return_value.stock.low_stock_threshold = 3
+        return public_shelf.public_signature("CRO", channel_ref="web")
+
+
+def test_assinatura_le_o_estado_do_cardapio_e_as_ultimas_unidades():
+    """A assinatura lia ``basic.state``, que não existe em ``BasicAvailability`` (o campo
+    é ``status``): toda leitura falhava, o aviso saía a cada venda e o log só dizia
+    ``public_shelf.signature_failed``."""
+    from shopman.shop.projections.catalog_context import BasicAvailability
+
+    assert _real_signature(BasicAvailability("low_stock", 2, True)) == ("low_stock", 2, "2026-11-22")
+    # Fora das últimas unidades, a quantidade não entra: vender um não muda o card.
+    assert _real_signature(BasicAvailability("available", 30, True)) == ("available", None, "2026-11-22")
+
+
+def test_assinatura_sem_venda_hoje_leva_o_dia_da_fornada():
+    from datetime import date
+
+    from shopman.shop.projections.catalog_context import BasicAvailability
+
+    signature = _real_signature(
+        BasicAvailability("planned_ok", 8, True), today_orderable=False, next_batch=date(2026, 11, 23)
+    )
+    assert signature == ("planned_ok", None, "2026-11-23")

@@ -73,7 +73,8 @@ def _ticket(order: Order, station: KDSInstance, *, created_at: datetime) -> KDST
 def _encomenda_das_15h(forno) -> Order:
     order = _order(
         "WEB-1-E15",
-        data={"delivery_date": timezone.localdate().isoformat(), "delivery_time_slot": "slot-15"},
+        # O carimbo que o commit grava na encomenda: é ele que diz "encomenda" (#3163).
+        data={"delivery_date": timezone.localdate().isoformat(), "delivery_time_slot": "slot-15", "is_preorder": True},
         created_at=_at(18, days=-2),
     )
     _ticket(order, forno, created_at=_at(0, 5))
@@ -160,7 +161,8 @@ def test_o_despertador_do_atraso_da_encomenda_toca_na_hora_combinada(
     relogio(0, 5)
     order = _order(
         "WEB-1-E16",
-        data={"delivery_date": timezone.localdate().isoformat(), "delivery_time_slot": "slot-15"},
+        # O carimbo que o commit grava na encomenda: é ele que diz "encomenda" (#3163).
+        data={"delivery_date": timezone.localdate().isoformat(), "delivery_time_slot": "slot-15", "is_preorder": True},
         created_at=_at(18, days=-2),
     )
     with django_capture_on_commit_callbacks(execute=True):
