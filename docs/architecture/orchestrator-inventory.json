@@ -13359,6 +13359,7 @@
             "ORDER_PROBLEM",
             "OTHER_PAYMENT",
             "OwnFleetRefused",
+            "PAGE_THEMES",
             "PAYMENT_METHODS",
             "PROBLEMS",
             "REFUSED",
@@ -13376,6 +13377,8 @@
             "deliver",
             "depart",
             "logger",
+            "page_theme",
+            "remember_theme",
             "report_problem",
             "ride_view"
           ]

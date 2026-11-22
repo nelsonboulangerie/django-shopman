@@ -50,6 +50,8 @@ export function useCourierTheme () {
     theme.value = value
     writeStorage(THEME_KEY, value)
   }
+  // O celular lembra (`localStorage`) e o cadastro também (#2648): quem chama `setTheme`
+  // com um link aberto manda a escolha ao servidor por `useCourierRide().rememberTheme`.
   return { theme, setTheme }
 }
 
@@ -171,6 +173,11 @@ export function useCourierRide (token: Ref<string>) {
     }
   }
 
+  /** Grava no cadastro do entregador o tema escolhido nesta página (#2648). */
+  async function rememberTheme (value: CourierTheme) {
+    if (token.value) await call('events/', { action: 'theme', theme: value })
+  }
+
   function arrive (ref: string) {
     patchLocal({ arrivedRef: ref })
   }
@@ -285,6 +292,7 @@ export function useCourierRide (token: Ref<string>) {
     refresh,
     claim,
     depart,
+    rememberTheme,
     arrive,
     leaveDoor,
     deliver,
