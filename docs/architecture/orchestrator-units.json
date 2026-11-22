@@ -1056,13 +1056,16 @@
             "resolve_on_commit",
             "on_order_changed",
             "on_nfce_authorized",
+            "_resolve_emit_integration_failure",
             "connect",
             "RESOLVED_BY_AUTHORIZATION",
             "RESOLVED_BY_LEAVING_NEW",
             "COURIER_TYPES",
             "RESOLVED_BY_DELIVERY",
             "RESOLVED_BY_REFUND",
-            "RESOLVED_BY_UNDO"
+            "RESOLVED_BY_UNDO",
+            "_PHASE_STUCK_MARKER",
+            "resolve_superseded_phase_alerts"
           ]
         }
       ],
@@ -13049,6 +13052,7 @@
           "symbols": [
             "trip_id",
             "trip_members",
+            "trip_members_for",
             "_locked_trip_members",
             "_open_trip",
             "trip_machine",
@@ -14461,7 +14465,12 @@
             "_REFUND_ALL_STATUSES",
             "_PAYMAN_REFUND_REASONS",
             "retained_q",
-            "refund_ceiling_q"
+            "refund_ceiling_q",
+            "pays_only_on_account",
+            "_open_account_intents",
+            "open_account_debt_q",
+            "account_debt_settled",
+            "reduce_account_debt"
           ]
         }
       ],
@@ -19751,6 +19760,7 @@
             "LABEL",
             "BASE_TEXT",
             "customer_text",
+            "_account_text",
             "_amount"
           ]
         }
@@ -19814,6 +19824,8 @@
             "money_split",
             "_refund_destination",
             "money_sentence",
+            "_account_sentence",
+            "_on_account",
             "is_candidate",
             "eligibility_reason",
             "_paid_q",
@@ -19934,6 +19946,7 @@
             "ride_plan",
             "params",
             "plan_groups",
+            "breaks_a_deadline",
             "measure",
             "route",
             "_fits",

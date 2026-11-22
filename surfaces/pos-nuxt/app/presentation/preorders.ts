@@ -257,7 +257,8 @@ export type SituationTone = "warning" | "success" | "info" | "neutral";
  * por escolha da casa é ruído.
  */
 export function situationTone(situation: PreorderSituation): SituationTone {
-  if (situation === "to_pay" || situation === "check_payment") return "warning";
+  // O pedido novo pede o aceite de alguém (#3166): é gesto, não espera.
+  if (situation === "new" || situation === "to_pay" || situation === "check_payment") return "warning";
   if (situation === "ready") return "success";
   if (situation === "out_for_delivery") return "info";
   return "neutral";
@@ -286,6 +287,7 @@ export const DELIVERED_GROUP_LABEL = "Entregues";
  */
 const NEXT_ACTION_RANK: Record<PreorderSituation, number> = {
   ready: 0,
+  new: 1,
   to_pay: 1,
   check_payment: 1,
   paid: 1,
@@ -908,11 +910,13 @@ export function rowDetailLine(
 /**
  * O selo de situação só quando diz o que o dinheiro não diz. "A pagar", "Pago",
  * "Na conta da casa" e "Conferir pagamento" já estão na linha do dinheiro;
- * "Pronto", "Saiu para entrega" e "Entregue" não estão. A régua é uma só: a linha
- * da lista e o painel do Balcão no detalhe da encomenda leem esta função.
+ * "Novo", "Pronto", "Saiu para entrega" e "Entregue" não estão. "Novo" é o pedido
+ * que ninguém aceitou (#3166): sem o selo, a linha só dizia "Pago" e o balcão lia
+ * uma encomenda confirmada onde o Gestor mostra um pedido esperando o aceite. A
+ * régua é uma só: a linha da lista e o painel do Balcão no detalhe leem esta função.
  */
 export function rowShowsSituation(situation: PreorderSituation): boolean {
-  return situation === "ready" || situation === "out_for_delivery" || situation === "delivered";
+  return situation === "new" || situation === "ready" || situation === "out_for_delivery" || situation === "delivered";
 }
 
 /**

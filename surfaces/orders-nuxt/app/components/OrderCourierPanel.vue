@@ -41,9 +41,9 @@ const emit = defineEmits<{
   dismissQuoteError: [];
 }>();
 
-const steps = computed(() => courierSteps(props.courier.status));
-const tone = computed(() => courierTone(props.courier.status));
-const failed = computed(() => courierFailed(props.courier.status));
+const steps = computed(() => courierSteps(props.courier.ride_state));
+const tone = computed(() => courierTone(props.courier.ride_state));
+const failed = computed(() => courierFailed(props.courier.ride_state));
 const hasRide = computed(() => Boolean(props.courier.status));
 const timelineItems = computed(() =>
   steps.value.map((step) => ({

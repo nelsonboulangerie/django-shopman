@@ -265,6 +265,8 @@ def _refund_destination(order) -> str:
 
 def money_sentence(order, *, paid_q: int, refund_q: int, retained_q: int) -> str:
     """O que o gesto faz com o dinheiro, por extenso, dito ao Gerente antes de confirmar."""
+    if _on_account(order):
+        return _account_sentence(refund_q=refund_q, retained_q=retained_q)
     if paid_q <= 0:
         return "O pedido não foi pago: não há dinheiro a devolver."
     if refund_q <= 0:
@@ -273,6 +275,18 @@ def money_sentence(order, *, paid_q: int, refund_q: int, retained_q: int) -> str
     if retained_q <= 0:
         return back
     return f"{back} R$ {format_money(retained_q)} ficam com a loja, pelo que se perdeu."
+
+
+def _account_sentence(*, refund_q: int, retained_q: int) -> str:
+    """A venda só em conta: o que sai da conta do cliente e o que continua nela."""
+    if refund_q <= 0 and retained_q <= 0:
+        return "Nada a mexer na conta do cliente: este pedido não deve nada."
+    if refund_q <= 0:
+        return f"Nada sai da conta do cliente: R$ {format_money(retained_q)} continuam nela, pelo que se perdeu."
+    out = f"R$ {format_money(refund_q)} saem da conta do cliente."
+    if retained_q <= 0:
+        return out
+    return f"{out} R$ {format_money(retained_q)} continuam nela, pelo que se perdeu."
 
 
 # ── Quem pode, e a partir de quando ──────────────────────────────────────────
@@ -310,16 +324,35 @@ def eligibility_reason(order) -> str:
         return "Este pedido é de entrega: não retirado é só para retirada."
     if pos_sales_mode.is_pos_counter_order(order):
         return "Venda de balcão não tem retirada a esperar."
-    if payment._pays_on_account((order.data or {}).get("payment") or {}):
-        return "Venda na conta da casa: o não retirado ainda não passa pelo Gestor."
+    payment_data = (order.data or {}).get("payment") or {}
+    if payment._pays_on_account(payment_data):
+        # Só em conta: a dívida fica com o valor do que se perdeu (#2697). A conta
+        # já acertada e a venda que mistura a conta com outra forma não passam.
+        if not payment.pays_only_on_account(payment_data):
+            return "Parte na conta da casa e parte em outra forma de pagamento: o não retirado deste pedido é com o Dono."
+        if payment.account_debt_settled(order):
+            return "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
     if not order.can_transition_to(Order.Status.CANCELLED):
         return "Este canal não permite encerrar um pedido pronto como não retirado."
     return ""
 
 
-def _paid_q(order) -> int | None:
+def _on_account(order) -> bool:
     from shopman.shop.services import payment
 
+    return payment.pays_only_on_account((order.data or {}).get("payment") or {})
+
+
+def _paid_q(order) -> int | None:
+    """O que o cliente pagou ou, na venda só em conta, o que ele deve dela.
+
+    Na conta da casa a régua é a mesma: o que se perdeu fica (como dívida), o
+    resto sai da conta.
+    """
+    from shopman.shop.services import payment
+
+    if _on_account(order):
+        return payment.open_account_debt_q(order)
     return payment.captured_balance_q(order)
 
 
@@ -425,6 +458,7 @@ def _plan(order, *, now: datetime) -> dict:
         "refund_q": refund_q,
         "retained_q": retained_q,
         "payment_known": known,
+        "on_account": _on_account(order),
     }
 
 
@@ -463,6 +497,7 @@ def preview(order, *, now: datetime | None = None) -> dict:
     if not reason and not plan["payment_known"]:
         reason = "Não deu para ler o pagamento deste pedido agora. Tente de novo em instantes."
     block = {"paid_q": plan["paid_q"], "refund_q": plan["refund_q"], "retained_q": plan["retained_q"]}
+    customer_block = {**block, "on_account": plan["on_account"]}
     return {
         "allowed": not reason,
         "block_reason": reason,
@@ -470,7 +505,7 @@ def preview(order, *, now: datetime | None = None) -> dict:
         "lines": plan["lines"],
         **block,
         "money_sentence": money_sentence(order, **block),
-        "customer_text": no_show_reason.customer_text(block),
+        "customer_text": no_show_reason.customer_text(customer_block),
         "revision": _revision(order, plan),
     }
 
@@ -525,6 +560,8 @@ def mark_not_picked_up(
             "paid_q": plan["paid_q"],
             "refund_q": plan["refund_q"],
             "retained_q": plan["retained_q"],
+            # Venda só em conta: ``paid_q`` é a dívida, e ``refund_q`` sai da conta.
+            "on_account": plan["on_account"],
         }
         cancelled = cancel(
             locked,

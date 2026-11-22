@@ -69,6 +69,9 @@ _CHANNEL_FALLBACK_LABELS = {
 #: :func:`_situation`: o que aconteceu com a MERCADORIA vence o que aconteceu
 #: com o dinheiro, porque o saldo tem campo próprio no card e a mercadoria não.
 SITUATION_LABELS = {
+    # O pedido que ninguém aceitou ainda (#3166): o mesmo nome do Gestor. Antes
+    # ele caía no estado do dinheiro e o balcão lia "Pago" num pedido "Novo".
+    "new": "Novo",
     "to_pay": "A pagar",
     "paid": "Pago",
     "on_account": "Na conta da casa",
@@ -651,8 +654,11 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
 #: A corrida ainda não foi pedida e já pode ser: a frase da linha e do painel.
 COURIER_NOT_CALLED_LABEL = "Entregador não chamado"
 
-#: O tom de cada estado da corrida (a letra da TaOn), para o selo do balcão.
-_COURIER_TONES = {"N": "danger", "C": "danger", "F": "success", "A": "info", "S": "info", "E": "info"}
+#: O tom de cada estado da corrida (``RideState``), para o selo do balcão.
+_COURIER_TONES = {
+    "not_served": "danger", "cancelled": "danger", "done": "success",
+    "assigned": "info", "at_store": "info", "on_route": "info",
+}
 
 
 def courier_line(block: dict | None) -> tuple[str, str]:
@@ -665,9 +671,8 @@ def courier_line(block: dict | None) -> tuple[str, str]:
         return "", ""
     if block.get("can_dispatch_again"):
         return str(block.get("status_label") or ""), "warning"
-    status = str(block.get("status") or "")
-    if status:
-        return str(block.get("status_label") or ""), _COURIER_TONES.get(status, "neutral")
+    if block.get("status"):
+        return str(block.get("status_label") or ""), _COURIER_TONES.get(str(block.get("ride_state") or ""), "neutral")
     if block.get("can_dispatch"):
         return COURIER_NOT_CALLED_LABEL, "warning"
     return "", ""
@@ -727,6 +732,8 @@ def _situation(order, payment_state: str) -> str:
         return "out_for_delivery"
     if order.status == "ready":
         return "ready"
+    if order.status == "new":
+        return "new"
     return _SITUATION_BY_PAYMENT_STATE[payment_state]
 
 
