@@ -54,25 +54,35 @@ describe('checkoutBagRefusal', () => {
   })
 })
 
-describe('finalizar.vue trata a recusa da sacola antes do toast genérico', () => {
+describe('finalizar.vue trata a recusa da sacola com o aviso de página, sem toast', () => {
   const source = readFileSync(join(fileURLToPath(new URL('..', import.meta.url)), 'app/pages/finalizar.vue'), 'utf8')
+  const handled = source.indexOf('checkoutBagRefusal(data)')
+  const branch = source.slice(handled, source.indexOf('// Preço/cupom mudou', handled))
 
-  it('lê a recusa e oferece a ação dela', () => {
-    const handled = source.indexOf('checkoutBagRefusal(data)')
-    const generic = source.lastIndexOf('useSonner.error(serverError.value)')
+  it('lê a recusa antes do toast genérico', () => {
     expect(handled).toBeGreaterThan(-1)
-    expect(handled).toBeLessThan(generic)
-    expect(source).toMatch(/action: \{ label: bagRefusal\.actionLabel/)
-    expect(source).toMatch(/navigateTo\(bagRefusal\.href\)/)
+    expect(handled).toBeLessThan(source.lastIndexOf('useSonner.error(serverError.value)'))
   })
 
-  it('a tentativa que outra aba já enviou abre o pedido dizendo por quê', () => {
-    expect(source).toMatch(/idempotency_conflict' && await recoverCheckout\(attemptKey\.value\)\) \{\s*if \(import\.meta\.client\) useSonner\.info\(ORDER_ALREADY_SENT_MESSAGE\)/)
+  it('nenhum toast nas recusas da sacola', () => {
+    expect(branch).not.toMatch(/useSonner/)
+    const conflict = source.slice(source.indexOf("data.error_code === 'idempotency_conflict'"), source.indexOf("data.error_code === 'mutation_in_progress'"))
+    expect(conflict).not.toMatch(/useSonner/)
+  })
+
+  it('o pedido que já saiu: aviso na página do pedido, sem ação, e a tela vai até lá', () => {
+    expect(branch).toMatch(/showPageNotice\(bagRefusal\.message, bagRefusal\.href\)\s*await navigateTo\(bagRefusal\.href\)/)
+  })
+
+  it('a tentativa que outra aba já enviou: o mesmo aviso, no pedido recuperado', () => {
+    expect(source).toMatch(/idempotency_conflict' && await recoverCheckout\(attemptKey\.value\)\) \{\s*if \(confirmedTrackingUrl\.value\) showPageNotice\(ORDER_ALREADY_SENT_MESSAGE, confirmedTrackingUrl\.value\)/)
+  })
+
+  it('a sacola que sumiu: aviso nesta página, de atenção, com a saída da recusa', () => {
+    expect(branch).toMatch(/showPageNotice\(bagRefusal\.message, route\.path, \{\s*tone: 'attention',\s*action: \{ label: bagRefusal\.actionLabel, to: bagRefusal\.href \}/)
   })
 
   it('a sacola que sumiu aceita a leitura vazia, sem a barreira de revisão', () => {
-    const handled = source.indexOf('checkoutBagRefusal(data)')
-    const branch = source.slice(handled, source.indexOf('// Preço/cupom mudou', handled))
     const reread = branch.lastIndexOf('await refresh()')
     expect(reread).toBeGreaterThan(-1)
     expect(branch.indexOf('acceptEmptiedCheckout()', reread)).toBeGreaterThan(reread)
@@ -81,5 +91,12 @@ describe('finalizar.vue trata a recusa da sacola antes do toast genérico', () =
     expect(helper).toBeGreaterThan(-1)
     expect(helper).toBeLessThan(source.indexOf('async function submitCheckout'))
     expect(source.slice(helper, helper + 200)).toMatch(/freshestCheckout\.value = data\.value\.checkout/)
+  })
+
+  it('com o aviso à vista, a etapa e a barra do total não repetem a frase nem a saída', () => {
+    expect(source).toMatch(/action: bagGoneNoticeShowing\.value \? null : action\.value/)
+    expect(source).toMatch(/<template v-if="!bagGoneNoticeShowing">\s*<UiButton\s+size="lg"\s+:icon="primaryAction\.icon"/)
+    // A sacola vazia sem recusa segue igual: o botão "Adicionar itens" e a frase.
+    expect(source).toMatch(/label: 'Adicionar itens', icon: 'lucide:utensils'.*reason: 'Sacola vazia\.'/)
   })
 })

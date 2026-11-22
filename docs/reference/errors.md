@@ -259,9 +259,12 @@ Outro navegador da mesma pessoa não tem a concessão e recebe `cart_empty`.
 O selo do Core ainda em andamento com a mesma chave (`in_progress`, quando o
 recibo de 30 s da loja expirou antes) sai como `mutation_in_progress`, "Seu pedido
 ainda está sendo enviado. Aguarde a confirmação nesta tela.", e a tela confere até
-o pedido aparecer. `finalizar.vue` abre o pedido que já saiu e, na sacola que
-sumiu, recarrega a tela vazia com o toast e a ação do cardápio
-(`utils/checkoutBagRefusal.ts`).
+o pedido aparecer. `finalizar.vue` abre o pedido que já saiu com o aviso de página
+"Este pedido já foi enviado." (o mesmo quando a tentativa cai em
+`idempotency_conflict` e a tela recupera o pedido) e, na sacola que sumiu, recarrega
+a tela vazia com o aviso de página e o botão "Ver o cardápio"; enquanto ele está à
+vista, a etapa e a barra do total não repetem a frase nem a saída. Nenhuma dessas
+recusas vira toast (`utils/checkoutBagRefusal.ts`, `components/PageNotice.vue`).
 
 ### Recusa nomeada: contato já usado por outro cadastro (409)
 
