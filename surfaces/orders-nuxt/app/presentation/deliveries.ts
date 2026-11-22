@@ -2,7 +2,6 @@
 // desenham o que estas funções dizem. Desenho aprovado pelo dono em 14/11/2026
 // (PR #2462): Aguardando · Editando · Corridas, cada corrida com a sua letra e cor.
 import type {
-  Action,
   DeliveryRideProjection,
   DeliveryStopProjection,
 } from "~/generated/ordersContract";
