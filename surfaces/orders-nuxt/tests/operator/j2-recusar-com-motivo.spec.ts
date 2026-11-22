@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { atCounterHour, backToRealTime, controlDir } from "./support/clock";
 import { customerOrdersPickupToday } from "./support/customer";
 import { cashierOpensReject, orderCard, shortCode } from "./support/gestor";
 import {
@@ -16,9 +17,13 @@ import { capture, cast, newCustomerPhone, roleContext, stack } from "./support/s
 // no cartão e lê no diálogo qual pedido é e o que acontece com o dinheiro ANTES de
 // confirmar (WP-G06); escolhe o motivo, confirma, e o cliente lê o cancelamento com a
 // frase do motivo na loja.
+test.skip(!controlDir, "pede o relógio de teste da pilha (OPERATOR_CONTROL_DIR; README)");
+test.afterAll(() => backToRealTime());
+
 test("J2: recusar um pedido pago, lendo o destino do dinheiro antes de confirmar", async ({ browser, baseURL }, testInfo) => {
+  const at = await atCounterHour();
   // Balcão pronto antes de o cliente pedir: pedido pago tem poucos minutos de aceite.
-  const gestorContext = await roleContext(browser, baseURL!);
+  const gestorContext = await roleContext(browser, baseURL!, false, at);
   const gestor = await gestorContext.newPage();
   await acknowledgeOtherOrdersAlarms(gestor);
   await managerSignsIn(gestor);
@@ -29,7 +34,7 @@ test("J2: recusar um pedido pago, lendo o destino do dinheiro antes de confirmar
   await operatorUnlocksWithPin(gestor, cast.cashier);
 
   // Cliente novo, no celular: pede e paga com Pix.
-  const storeContext = await roleContext(browser, stack.store, true);
+  const storeContext = await roleContext(browser, stack.store, true, at);
   const store = await storeContext.newPage();
   const ref = await customerOrdersPickupToday(store, testInfo, { product: "Croissant", phone: newCustomerPhone(), name: "Teresa" });
 
