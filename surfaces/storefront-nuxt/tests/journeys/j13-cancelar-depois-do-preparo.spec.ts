@@ -14,7 +14,9 @@ import { capture, gestorViewport, newCustomerPhone, settled, stack } from './sup
 // Na loja online o preparo NÃO começa sozinho no aceite (`prep_start="operator"`,
 // `_prep_starts_automatically` em shopman/shop/lifecycle.py): o Cappuccino, feito na hora,
 // ganha ticket na estação Cafés, e o pedido fica Aceito até o "Iniciar preparo". A
-// operadora dá o atalho do Gestor, que é o mesmo ato da Cozinha.
+// operadora dá o atalho do Gestor, que é o mesmo ato da Cozinha. Quando a retirada mais
+// cedo ainda está longe, o pedido só "vai para a Cozinha" mais tarde e o mesmo ato se
+// chama "Adiantar" (shopman/backstage/projections/order_queue.py): a jornada aceita os dois.
 const PRODUCT = 'Cappuccino'
 
 test('J13: depois do preparo, a cliente fala com o responsável no lugar de cancelar', async ({ page, browser }, testInfo) => {
@@ -39,8 +41,9 @@ test('J13: depois do preparo, a cliente fala com o responsável no lugar de canc
       await acceptsNewOrder(gestor, testInfo, ref)
       await gestor.goto(`/${encodeURIComponent(ref)}`)
       await settled(gestor)
-      await gestor.getByRole('button', { name: 'Iniciar preparo', exact: true }).first().click()
-      await expect(gestor.getByRole('button', { name: 'Iniciar preparo', exact: true })).toHaveCount(0, { timeout: 30_000 })
+      const startPrep = gestor.getByRole('button', { name: /^(Iniciar preparo|Adiantar)$/ })
+      await startPrep.first().click()
+      await expect(startPrep).toHaveCount(0, { timeout: 30_000 })
       await capture(gestor, testInfo, 'gestor-em-preparo')
     })
 
