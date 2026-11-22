@@ -17,7 +17,7 @@ vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: 
 const ZONA = { delivery_fee_q: 800, delivery_fee_source: "zone", delivery_distance_km: null, delivery_fee_waiver: null };
 
 type Harness = ReturnType<typeof makeSale>;
-let instances: Harness[] = [];
+const instances: Harness[] = [];
 
 function quoteCalls() {
   return dollarFetch.mock.calls.filter((call) => String(call[0]).includes("/pos/delivery-fee/"));
