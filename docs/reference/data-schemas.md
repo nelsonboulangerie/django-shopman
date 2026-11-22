@@ -166,7 +166,8 @@ consumo por posição. `transport_state` distingue legacy/prepared/executing/acc
 not_applied/unknown; `delivered` legado não comprova receipt do fornecedor.
 A retenção continua sob G04; hashes não promovem identidade/consentimento.
 
-`Conversation.quote` v2 contém token, session_key, customer_ref/phone vinculados,
+`Conversation.quote` v2 contém token, `code` (o código curto da confirmação sem identificador,
+ADR-050: nunca repete o do resumo anterior da conversa, #3291), session_key, customer_ref/phone vinculados,
 snapshot factual, revision de Session, payment_method selecionado, total_q completo,
 lines_total_q, issued_at e validity=`session_open_and_current_policy`. Sem TTL comercial inventado: Session aberta, holds, preço, data/slot são revalidados; G05 decide eventual validade adicional. Não concede autorização: Message de revisão aceita pelo
 provider + nova entrada verificada são a evidência; replay usa IdempotencyKey.

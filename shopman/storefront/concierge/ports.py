@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from conversational_commerce.contracts import InteractionEvent, Producer, Understanding
+from conversational_commerce.contracts import ExposureEvent, InteractionEvent, Producer, Understanding, sha256_hash
 from conversational_commerce.ports import Capabilities, Consumption, PortError, TrustedContext
 from conversational_commerce.ports.channel import OPERATIONS as CHANNEL_OPERATIONS
 from conversational_commerce.ports.model import OPERATIONS as MODEL_OPERATIONS
@@ -94,11 +94,26 @@ class ConversationOwnership:
         return Order.objects.filter(identity).filter(ref__iexact=order_ref).exists()
 
 
+#: O estado do envio da Concierge (``OutboundAttempt.State``) no vocabulário da exposição.
+EXPOSURE_STATE = {"prepared": "prepared", "executing": "submitted", "accepted": "accepted",
+                  "not_applied": "not_applied", "unknown": "unknown", "delivered": "delivered", "read": "read"}
+EXPOSURE_PREFIX = "exp-msg-"
+REALIZER = Producer(name="concierge-channel", version="1")
+
+
 @dataclass
 class NiceChannel:
-    """``ChannelPort`` sobre o adaptador da conexão da Concierge."""
+    """``ChannelPort`` sobre o adaptador da conexão da Concierge.
+
+    O envio (decisão de 22/11/2026, "o motor fala") passa pelo MESMO caminho da resposta de
+    hoje: ``service.send_out_of_turn`` prepara com as regras da casa e a prova de janela, e o
+    ``_dispatch_reply`` envia. O texto vem de ``bodies`` (o ``Engine.bodies`` do turno, pelo
+    ``body_ref``). A exposição diz o que de fato aconteceu: o hash é o do texto que saiu (as
+    regras da casa podem consertar a frase) e o estado é o do transporte.
+    """
 
     adapter: Any
+    bodies: Mapping[str, str] | None = None
     PORT = "channel"
 
     def capabilities(self) -> Capabilities:
@@ -106,7 +121,7 @@ class NiceChannel:
         window = caps.response_window
         return Capabilities(
             port="channel", operations=CHANNEL_OPERATIONS,
-            unsupported=("send", "delivery_status", "request_handoff"),
+            unsupported=("request_handoff",),
             guarantees={"stable_event_identity_verified": bool(caps.stable_event_identity_verified),
                         "read_receipts": False, "delivery_receipts": bool(caps.delivery_receipts),
                         "supports_handoff": bool(caps.supports_handoff),
@@ -136,10 +151,44 @@ class NiceChannel:
             if subject else [])
 
     def send(self, ctx, prepared, idempotency_key):
-        raise PortError("capability_missing", "o envio da Nice segue pelo caminho legado até o N9")
+        from .service import send_out_of_turn
+
+        conversation = _conversation(ctx)
+        if conversation is None:
+            raise PortError("object_forbidden", "o contexto não é uma conversa da Concierge")
+        text = (self.bodies or {}).get(prepared.body_ref)
+        if not text:
+            raise PortError("invalid_content", f"sem o texto de {prepared.body_ref}: nada foi enviado")
+        message = send_out_of_turn(conversation, text, send_key=idempotency_key)
+        if message is None:
+            raise PortError("provider_unavailable", "a conversa não tem entrada por vínculo ativo: nada foi enviado")
+        return self._exposure(ctx, message, decision_id=prepared.decision_id, recipient=prepared.recipient)
 
     def delivery_status(self, ctx, exposure_id):
-        raise PortError("capability_missing", "a entrega da Nice é lida pelo caminho legado até o N9")
+        from shopman.shop.models import ConversationMessage
+
+        conversation = _conversation(ctx)
+        ref = exposure_id[len(EXPOSURE_PREFIX):].split("-", 1)[0] if exposure_id.startswith(EXPOSURE_PREFIX) else ""
+        message = (ConversationMessage.objects.filter(pk=int(ref), conversation=conversation).first()
+                   if ref.isdigit() and conversation is not None else None)
+        if message is None:
+            raise PortError("object_forbidden", f"exposição que não é desta conversa: {exposure_id}")
+        envelope = message.envelope or {}
+        return self._exposure(ctx, message, decision_id=str(envelope.get("decision_id") or ""),
+                              recipient=str(envelope.get("recipient") or ""))
+
+    def _exposure(self, ctx, message, *, decision_id: str, recipient: str) -> ExposureEvent:
+        if decision_id and recipient and not (message.envelope or {}).get("decision_id"):
+            message.envelope = {**(message.envelope or {}), "decision_id": decision_id, "recipient": recipient}
+            message.save(update_fields=["envelope"])
+        state = EXPOSURE_STATE.get(str(message.transport_state or ""), "unknown")
+        attempts = max(1, message.outbound_attempts.count())
+        return ExposureEvent(
+            id=f"{EXPOSURE_PREFIX}{message.pk}-{state}", tenant=ctx.tenant, environment=ctx.environment,
+            trace_id=f"trace-{decision_id or message.pk}", occurred_at=instant(datetime.now(UTC)),
+            producer=REALIZER, decision_id=decision_id or f"message-{message.pk}",
+            content_hash=sha256_hash({"text": message.text}), realizer=REALIZER,
+            recipient=recipient or "unknown", attempt=attempts, state=state)
 
     def request_handoff(self, ctx, request):
         raise PortError("capability_missing", "a transferência da Nice segue pelo caminho legado até o N9")

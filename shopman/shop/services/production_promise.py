@@ -315,3 +315,43 @@ def announce_late_lots(*, now=None) -> int:
         if late:
             created += announce_lost_holds(late, sku=sku, date=day, work_order=lot, reason=REASON_LATE)
     return created
+
+
+def fulfill_failure_fact(order, skus) -> str:
+    """O fato de produção que explica a baixa que falhou deste pedido, ou ``""`` (#3229).
+
+    A reserva que o lote não cobriu (rendeu menos, ficou pronto num grau que o
+    pedido não aceita, foi cancelado) fica presa ao saldo de produção zerado, e a
+    baixa dela falha no banco. Quem lê o aviso da baixa precisa da causa real, que
+    já está no pedido (o evento que este módulo gravou), e não de "conte a
+    prateleira": a prateleira está certa.
+    """
+    wanted = {str(sku) for sku in skus if sku}
+    manager = getattr(order, "events", None)
+    if manager is None:
+        # Sem linha do tempo (pedido que não é do orderman): não há fato a ler.
+        return ""
+    events = manager.filter(type__in=set(_EVENT_BY_REASON.values())).order_by("-created_at", "-pk")
+    for event in events:
+        payload = event.payload or {}
+        if wanted and str(payload.get("sku") or "") not in wanted:
+            continue
+        reason = str(payload.get("reason") or "")
+        if reason == REASON_LATE:
+            # Atraso não tira o lastro: a baixa que falha não é por ele.
+            continue
+        try:
+            from datetime import date as date_type
+
+            day = date_type.fromisoformat(str(payload.get("date") or "")).strftime("%d/%m")
+        except ValueError:
+            day = str(payload.get("date") or "")
+        wo_ref = str(payload.get("work_order_ref") or "")
+        return _what_happened(
+            reason,
+            name=str(payload.get("product_name") or payload.get("sku") or ""),
+            day=day,
+            lot=f" (lote {wo_ref})" if wo_ref else "",
+            qty_text=str(payload.get("qty") or ""),
+        )
+    return ""

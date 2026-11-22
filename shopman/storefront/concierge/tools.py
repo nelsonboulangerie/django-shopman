@@ -1233,8 +1233,17 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         ctx.conversation.save(update_fields=["flags", "updated_at"])
     if not missing:
         token = _quote_token(session)
+        previous = ctx.conversation.quote or {}
+        if previous.get("token") == token:
+            code = offered_quote_code(ctx.conversation, token)  # o mesmo orçamento, o mesmo código
+        else:
+            # Resumo novo nunca repete o código do anterior desta conversa (#3291): com o mesmo
+            # código, o "confirmo" do resumo antigo confirmaria o novo.
+            code = quote_code(token, avoid=offered_quote_code(ctx.conversation, previous["token"])
+                              if previous.get("token") else "")
         ctx.conversation.quote = {
             "token": token,
+            "code": code,
             "session_key": session.session_key,
             "customer_ref": ctx.conversation.customer_ref,
             "phone": ctx.conversation.phone,
@@ -1251,7 +1260,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         if not getattr(ctx.conversation, "_commercial_authority", False):
             # Sem identificador de mensagem (ADR-050), o "sim" não prova que veio depois
             # deste resumo: a confirmação leva o código deste orçamento.
-            result["quote_code"] = quote_code(token)
+            result["quote_code"] = code
     return result
 
 
@@ -1331,13 +1340,30 @@ def _confirmation(ctx: ToolContext, token: str):
     return messages[-1]
 
 
-def quote_code(token: str) -> str:
+def quote_code(token: str, *, avoid: str = "") -> str:
     """O código curto deste orçamento (ADR-050): quatro dígitos tirados do ``quote_token``.
 
-    Muda quando a sacola, a entrega ou o pagamento mudam (o token muda), então um "sim"
-    a um resumo antigo nunca confirma o novo.
+    Muda quando a sacola, a entrega ou o pagamento mudam (o token muda). Quatro dígitos de
+    tokens diferentes podem coincidir (1 em 10.000), e aí um "sim" ao resumo antigo
+    confirmaria o novo (#3291): ``avoid`` é o código do resumo anterior da conversa, e a
+    derivação continua, com o número da tentativa como sal, até sair outro. Determinística:
+    o mesmo token e o mesmo anterior dão sempre o mesmo código.
     """
-    return f"{int(hashlib.sha256(str(token).encode()).hexdigest(), 16) % 10_000:04d}"
+    attempt = 0
+    while True:
+        seed = str(token) if attempt == 0 else f"{token}:{attempt}"
+        code = f"{int(hashlib.sha256(seed.encode()).hexdigest(), 16) % 10_000:04d}"
+        if code != avoid:
+            return code
+        attempt += 1
+
+
+def offered_quote_code(conversation, token: str) -> str:
+    """O código oferecido ao cliente para o orçamento ``token``: o gravado com ele na conversa."""
+    quote = getattr(conversation, "quote", None) or {}
+    if quote.get("token") == token and quote.get("code"):
+        return str(quote["code"])
+    return quote_code(token)
 
 
 def _code_confirmation(ctx: ToolContext, token: str):
@@ -1362,7 +1388,7 @@ def _code_confirmation(ctx: ToolContext, token: str):
     messages = list(inbound.order_by("pk"))
     if not messages:
         return None
-    code = quote_code(token)
+    code = offered_quote_code(ctx.conversation, token)
     accepted = {code, f"confirmo {code}", f"confirmar {code}", f"sim {code}", f"sim, {code}", f"sim, confirmo {code}"}
     for message in messages:
         if " ".join(_fold(message.text).rstrip(".! ").split()) not in accepted:
