@@ -85,6 +85,26 @@ describe("PosCourierPanel: cancelar a corrida e entregador voltou", () => {
     expect(wrapper.emitted("cancel")).toEqual([[37]]);
   });
 
+  it("o entregador desistiu: diz quem e quando, e que a TaOn procura outro (#2499)", async () => {
+    const wrapper = await mountSuspended(PosCourierPanel, {
+      props: { courier: courier({ status: "P", ride_state: "reopened", reopened_at: "2026-11-16T17:32:00Z",
+        reopened_driver: "Diego", reopened_reason: "withdrew" }), card, busy: false },
+    });
+    expect(wrapper.get("[data-pos-courier-waiting]").text()).toBe("Diego desistiu às 14h32. A TaOn já procura outro.");
+  });
+
+  it("a TaOn juntou com outra corrida: diz que ela já tem entregador (#2499)", async () => {
+    const wrapper = await mountSuspended(PosCourierPanel, {
+      props: { courier: courier({ status: "U", ride_state: "grouped" }), card, busy: false },
+    });
+    expect(wrapper.get("[data-pos-courier-waiting]").text()).toBe("A TaOn juntou com outra corrida. Ela já tem entregador.");
+  });
+
+  it("sem desistência nem junção, não há a linha", async () => {
+    const wrapper = await mountSuspended(PosCourierPanel, { props: { courier: courier(), card, busy: false } });
+    expect(wrapper.find("[data-pos-courier-waiting]").exists()).toBe(false);
+  });
+
   it("depois da coleta (sem can_cancel) não há Cancelar a corrida", async () => {
     const wrapper = await mountSuspended(PosCourierPanel, {
       props: { courier: courier({ status: "E", ride_state: "on_route", can_cancel: false }), card, busy: false,

@@ -7,6 +7,8 @@
 //   "Entregador não chamado", "Procurando entregador", "Entregador a caminho da
 //   loja", "Saiu para entrega", "Entregue", "Não atendida", "Sem resposta da TaOn";
 // - quem vem (nome, telefone, veículo), o rastreio e o código, quando a TaOn diz;
+// - quem desistiu e quando ("Diego desistiu às 14:32. A TaOn já procura outro."),
+//   ou que a TaOn juntou com outra corrida: a mesma linha do Gestor (#2499);
 // - **Chamar entregador** (ou **Chamar outro entregador**, depois de uma corrida
 //   que não terminou): confirmação inline com a pergunta do servidor e a custódia
 //   que sai com ele (troco da gaveta, maquininha), o mesmo corpo do Gestor;
@@ -156,7 +158,13 @@ async function callAgain() {
         />
       </div>
 
-      <div v-if="progress.pickup || progress.delivery" class="grid gap-0.5" data-pos-courier-progress>
+      <div v-if="progress.waiting || progress.pickup || progress.delivery" class="grid gap-0.5" data-pos-courier-progress>
+        <!-- O entregador desistiu (a TaOn procura outro para a MESMA corrida) ou a
+             TaOn juntou com outra: a corrida segue chamada, sem nada a fazer. A
+             mesma frase do Gestor (`courierProgress(...).waiting`, #2499). -->
+        <p v-if="progress.waiting" class="text-sm font-medium tabular-nums" role="status" data-pos-courier-waiting>
+          {{ progress.waiting }}
+        </p>
         <p v-if="progress.pickup" class="text-sm font-medium tabular-nums" role="status">{{ progress.pickup }}</p>
         <p
           v-if="progress.delivery"
