@@ -1307,7 +1307,9 @@ def _commitment_note(order) -> str:
         day = _date.fromisoformat(str(data.get("delivery_date") or "").strip())
     except ValueError:
         return ""
-    if not (data.get("is_preorder") or day > timezone.localdate()):
+    from shopman.shop.services.order_helpers import is_preorder
+
+    if not (is_preorder(order) or day > timezone.localdate()):
         return ""
     phrase = _commitment_phrase(order)
     if not phrase:

@@ -36,6 +36,8 @@ import {
   channelRows as toChannelRows,
   discountCsv as toDiscountCsv,
   discountRows as toDiscountRows,
+  noShowCsv as toNoShowCsv,
+  noShowRows as toNoShowRows,
   hourPoints as toHourPoints,
   revenueReading,
   revenueSeries as toRevenueSeries,
@@ -159,6 +161,15 @@ const discountCsv = computed(() =>
 const discountColumns = [
   { accessorKey: "label", header: "Tipo de grupo", enableSorting: true, meta: { class: { td: "font-medium text-highlighted" } } },
   { id: "amount", accessorFn: (row: DiscountKindRow) => row.amount_q, header: "Desconto", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
+];
+
+// Não retirados (#2698): o servidor soma o bloco que o gesto do Gestor grava; a tela
+// só escreve. Já contados em "Cancelados", fora do faturamento.
+const noShowRows = computed(() => (report.value ? toNoShowRows(report.value) : []));
+const noShowCsv = computed(() => (report.value ? toNoShowCsv(report.value) : undefined));
+const noShowColumns = [
+  { accessorKey: "label", header: "O que aconteceu", meta: { class: { td: "font-medium text-highlighted" } } },
+  { accessorKey: "value", header: "Quanto", meta: { class: { th: "text-right", td: "text-right tnum" } } },
 ];
 
 // "Maior canal" leva ao quadro Por canal pelo próximo foco da suíte (linha de foco sob
@@ -432,6 +443,28 @@ const activeFilters = computed(() => {
             </OperatorTable>
           </OperatorReadingCard>
         </div>
+
+        <!-- Não retirados (#2698): o pedido pronto que o cliente não buscou termina
+             cancelado; aqui o destino do dinheiro e o valor do que se perdeu. -->
+        <OperatorReadingCard
+          title="Não retirados"
+          description="Pedidos de retirada prontos que o cliente não buscou. Já estão em Cancelados, fora do faturamento"
+          :csv="noShowRows.length ? noShowCsv : undefined"
+          class="shrink-0"
+          data-bi-no-show
+        >
+          <OperatorTable
+            in-card
+            :data="noShowRows"
+            :columns="noShowColumns"
+            :row-key="(row) => row.key"
+            caption="Não retirados"
+            empty-icon="i-lucide-package-x"
+            empty-title="Nenhum pedido não retirado no período"
+            empty-description="Aparece aqui quando o Gerente encerra no Gestor um pedido pronto que o cliente não buscou."
+            data-bi-no-show-table
+          />
+        </OperatorReadingCard>
 
         <!-- Descontos por tipo de grupo: o tipo vem do cadastro de grupos ("Tipo para
              o B.I.") e só a venda nativa o registra; o histórico não tem a dimensão. -->

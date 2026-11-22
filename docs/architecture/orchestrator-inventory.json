@@ -7517,6 +7517,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/pickup_window_in_use.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.pickup-window-in-use"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/promise_expiry_margin.py",
       "touchpoints": [
         "outro"
@@ -10369,6 +10383,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "SERVICE_FALLBACK_NAME",
             "_KIND_BY_REF",
             "_kind",
             "_translator",
@@ -11178,6 +11193,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]
@@ -13312,6 +13328,8 @@
             "get_fulfillment_type",
             "house_owns_the_delivery",
             "is_counter_takeaway",
+            "is_for_a_later_day",
+            "is_preorder",
             "is_test_order",
             "json_quantity",
             "logger",
@@ -13374,6 +13392,7 @@
             "_RIDE_PREFIX",
             "_estimate",
             "_live",
+            "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",

@@ -34,7 +34,7 @@ function stop(ref: string, extra: Partial<DeliveryStopProjection> = {}): Deliver
 
 function ride(extra: Partial<DeliveryRideProjection> = {}): DeliveryRideProjection {
   return {
-    key: "1", number: 1, letter: "A", state: "searching", status_label: "", stops: [stop("NB-A01")], driver: null, position: null,
+    key: "1", number: 1, letter: "A", state: "searching", status_label: "", service_name: "TaOn", stops: [stop("NB-A01")], driver: null, position: null,
     called_at: "", called_by: "", pickup_eta_at: "", arrived_pickup_at: "", picked_up_at: "", delivery_eta_at: "",
     tracking_url: "", cost_display: "", cost_label: "", bags: 1, undeclared: [], lead_ref: "NB-A01", back_action: null,
     back_lines: [], cancel_action: null, cancel_state: "", cancel_message: "", reopened_at: "", reopened_driver: "",
