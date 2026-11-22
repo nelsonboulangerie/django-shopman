@@ -42,6 +42,11 @@ class DayClosing(models.Model):
             ("view_bi", "Pode ver o B.I. (leitura analítica cross-suite)"),
             ("export_backup", "Pode baixar o backup de dados curados"),
             ("view_operator_kitchen_sink", "Pode usar o Catálogo do operador no app dedicado"),
+            # A exceção financeira do Gerente (dono, 21/11/2026; #2727, item 5): estorna
+            # partindo de UM pedido, no Gestor, vendo só o valor daquela cobrança. Nunca
+            # lista cobranças (``payman.view_paymentintent`` segue só do Dono). A trava é
+            # ``shop/tests/test_gerente_sem_permissao_financeira.py``.
+            ("refund_single_order", "Pode estornar UM pedido no Gestor, vendo só o valor dele"),
         ]
 
     def __str__(self):

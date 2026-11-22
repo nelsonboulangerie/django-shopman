@@ -211,6 +211,19 @@ describe("antesala — turno aberto, organização da tela", () => {
     expect(html.indexOf("data-needs-you")).toBeLessThan(html.indexOf('data-session-tile="request_change"'));
   });
 
+  it("(b'') pedido não retirado pago em dinheiro: a devolução diz o motivo, não 'Venda cancelada' (#2696)", async () => {
+    cash.pendingCashRefunds.value = [
+      { order_ref: "o-14", amount_q: 1870, amount_display: "R$ 18,70", customer_name: "Caio", cancelled_at: "", reason: "not_picked_up", reason_label: "Pedido não retirado" },
+    ];
+    const wrapper = await openLobby();
+
+    await tile(wrapper, "attention:refunds").trigger("click");
+    await flushPromises();
+    const refunds = dialog("attention:refunds")!;
+    expect(refunds.textContent).toContain("Pedido não retirado");
+    expect(refunds.textContent).not.toContain("Venda cancelada");
+  });
+
   it("(c) o tile de saída abre o diálogo de movimento com 'sangria' já escolhido", async () => {
     const wrapper = await openLobby();
     await tile(wrapper, "movement:sangria").trigger("click");
