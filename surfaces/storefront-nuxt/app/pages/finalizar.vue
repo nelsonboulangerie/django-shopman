@@ -7,6 +7,7 @@ import { cartLinePromise, orderReadyLine } from '~/presentation/promise'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
+import { checkoutBagRefusal } from '~/utils/checkoutBagRefusal'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -1597,6 +1598,28 @@ async function submitCheckout () {
     if (failure.status < 500 && data.error_code !== 'mutation_in_progress') attemptKey.value = createCheckoutAttemptKey()
     const field = typeof data.field === 'string' ? data.field : ''
     serverError.value = errorDetail(e, 'Não foi possível confirmar o pedido.')
+    // A sacola já saiu (outra aba enviou primeiro) ou sumiu (encerrada, apagada,
+    // sem item): não é erro de campo, é outro estado da sacola (#3267). O pedido que
+    // já saiu abre direto; a sacola que sumiu volta vazia, com o caminho do cardápio.
+    const bagRefusal = checkoutBagRefusal(data)
+    if (bagRefusal) {
+      serverError.value = ''
+      confirmOpen.value = false
+      if (bagRefusal.kind === 'order_already_sent') {
+        clearCart()
+        clearCheckoutDraft()
+        if (import.meta.client) useSonner.info(bagRefusal.message)
+        await navigateTo(bagRefusal.href)
+        return
+      }
+      await refresh()
+      if (import.meta.client) {
+        useSonner.error(bagRefusal.message, {
+          action: { label: bagRefusal.actionLabel, onClick: () => { void navigateTo(bagRefusal.href) } }
+        })
+      }
+      return
+    }
     // Preço/cupom mudou entre a revisão e o confirm: o servidor já reprecificou a
     // sessão (o guardião barrou a cobrança surpresa). Reprecificamos a TELA para o
     // sheet mostrar o novo total em vez de deixar o valor velho ao lado do aviso —

@@ -8014,7 +8014,9 @@
             "process",
             "process_ops",
             "map_checkout_error",
-            "map_order_error"
+            "map_order_error",
+            "RefusedCart",
+            "refused_cart"
           ]
         }
       ],

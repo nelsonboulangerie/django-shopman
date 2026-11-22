@@ -271,6 +271,54 @@ def map_order_error(exc: Exception) -> CheckoutDomainError | None:
     )
 
 
+@dataclass(frozen=True)
+class RefusedCart:
+    """Onde está a sacola que o envio não conseguiu selar.
+
+    ``sent_order_ref``: a sacola já virou pedido (outra aba a enviou primeiro).
+    ``gone``: a sacola não existe mais como sacola: foi encerrada (outro aparelho
+    da mesma pessoa enviou um pedido), apagada pela limpeza ou ficou sem item.
+    Nenhum dos dois: a sacola segue viva, e a recusa é dela mesmo.
+    """
+
+    sent_order_ref: str = ""
+    gone: bool = False
+
+
+def refused_cart(session_key: str, channel_ref: str) -> RefusedCart:
+    """Lê o estado ATUAL da sacola depois de uma recusa do envio.
+
+    A recusa do Core diz o que ele viu no instante dele ("sessão abandonada",
+    "revisão mudou"); a loja precisa dizer ao cliente o que aconteceu com a
+    sacola dele, e isso só o estado de agora responde. A sacola enviada por outra
+    aba, por exemplo, chega aqui como ``revision_changed`` (a outra aba gravou as
+    escolhas dela antes de selar), e "confira os itens" seria pedir conferência de
+    uma sacola que já é pedido.
+    """
+    from shopman.orderman.models import Order, Session
+
+    from shopman.shop.projections.cart import build_cart
+
+    if not session_key:
+        return RefusedCart(gone=True)
+    state = (
+        Session.objects.filter(session_key=session_key, channel_ref=channel_ref)
+        .values_list("state", flat=True)
+        .first()
+    )
+    if state == "committed":
+        order_ref = (
+            Order.objects.filter(session_key=session_key, channel_ref=channel_ref)
+            .order_by("-pk")
+            .values_list("ref", flat=True)
+            .first()
+        )
+        return RefusedCart(sent_order_ref=order_ref) if order_ref else RefusedCart(gone=True)
+    if state == "open" and not build_cart(session_key, channel_ref).is_empty:
+        return RefusedCart()
+    return RefusedCart(gone=True)
+
+
 def _fill_missing_first_name(customer_obj, name: str) -> None:
     if name and not customer_obj.first_name:
         customer_obj.first_name = name
