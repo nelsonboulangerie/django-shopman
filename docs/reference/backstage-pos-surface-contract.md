@@ -269,8 +269,9 @@ capture. Gateway/webhook/Payman status remains authoritative.
 - `fiscal_expected` (bool, kept for compatibility): the emission rule says a
   NFC-e will exist for this sale.
 - `fiscal_state`: one of `not_expected` | `queued` | `awaiting_payment` |
-  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed`
-  (`shopman.shop.services.fiscal.fiscal_state`). A counter sale (takes the
+  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed` |
+  `not_issued` (`shopman.shop.services.fiscal.fiscal_state`). `not_issued` is a
+  cancelled order with no emission attempt: no note will ever exist. A counter sale (takes the
   goods now) emits at sale close, or at capture for `pix`/card; an order with a
   pickup/delivery ahead (encomenda) gets only the non-fiscal receipt at payment
   and the note is born when the goods leave — at pickup (`awaiting_pickup`) or

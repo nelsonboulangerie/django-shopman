@@ -52,6 +52,7 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
+from shopman.shop.protocols import RideState
 from shopman.shop.services import operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
@@ -609,10 +610,12 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
-    # A cobrança venceu e o pedido tem um telefone para chamar (``_has_order_phone``):
-    # o cartão leva "Ver o contato do cliente" ao lado do "Cancelar pedido", e o toque abre o
-    # pedido no contato. O número NÃO vem no cartão (#2434, decisão do dono pendente).
-    customer_callable: bool = False
+    # O WhatsApp do cliente, SÓ no pedido que pede ação (a cobrança venceu, ou a
+    # promessa está em risco) e só quando o pedido tem telefone que não é o relé do
+    # iFood (decisão do dono, #2434, "1:b"): o cartão e a Tabela levam "Chamar no
+    # WhatsApp" direto, sem escrever o número. Nos outros pedidos fica vazio: o
+    # contato do cliente não mora no cartão.
+    customer_whatsapp_url: str = ""
     # O bloqueio anda sozinho, sem ninguém da casa agir ("Aguardando Pix", "Aguardando
     # o dia da encomenda", "Esperando o lote"): a tela não o pinta de vermelho
     # (``WAITING_BLOCK_LABELS``; decisão da coordenação com o mandato do dono, 21/11).
@@ -1255,6 +1258,16 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         refund_retry_plan = refund_retry.plan(order)
         if refund_retry_plan.failed:
             extra_actions.append(refund_retry.detail_action(order, user, current=refund_retry_plan))
+    # "Estornar" (#2727, item 5): a exceção financeira do Gerente. Só aparece a quem
+    # tem ``backstage.refund_single_order`` e no pedido com cobrança online paga; a
+    # régua (qual cobrança, quanto, a base) é de ``services/order_refund``.
+    from shopman.backstage.services import order_refund
+
+    refund_action = order_refund.detail_action(
+        order, user, retry_failed=bool(refund_retry_plan is not None and refund_retry_plan.failed),
+    )
+    if refund_action is not None:
+        extra_actions.append(refund_action)
     courier_block = _courier_block(order)
     extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
@@ -1699,21 +1712,45 @@ def _schedule_label(order: Order, *, today: date | None = None) -> str:
     return _schedule(order, today=today)[0]
 
 
-#: Letra Machine → label pt-BR do operador (fonte única do gestor).
-COURIER_STATUS_LABELS = {
-    "D": "Procurando entregador",
-    "G": "Aguardando aceite",
-    "P": "Procurando entregador",
-    "A": "Entregador a caminho da loja",
-    # S é "em espera": o entregador aceitou e termina outra entrega antes.
-    # "Na loja" é a chegada (``progress.arrived_pickup_at``), não esta letra.
-    "S": "Entregador vem após outra entrega",
-    "E": "Saiu para entrega",
-    "F": "Entregue",
-    "N": "Não atendida",
-    "C": "Corrida cancelada",
-    "U": "Junto com outra corrida",
+#: Estado da corrida (``RideState``) → frase do operador (fonte única do gestor).
+#: A nuance que só a letra de um serviço sabe (``G``, ``S`` da TaOn) vem de
+#: :func:`delivery_services.state_detail`; ``REASSIGNING`` fala pela desistência
+#: (``COURIER_REOPENED_LABEL``).
+COURIER_STATE_LABELS = {
+    RideState.SEARCHING: "Procurando entregador",
+    RideState.GROUPED: "Junto com outra corrida",
+    RideState.ASSIGNED: "Entregador a caminho da loja",
+    RideState.AT_STORE: "Entregador na loja",
+    RideState.ON_ROUTE: "Saiu para entrega",
+    RideState.DONE: "Entregue",
+    RideState.NOT_SERVED: "Não atendida",
+    RideState.CANCELLED: "Corrida cancelada",
 }
+
+#: Onde a corrida já acabou: a tela não mostra mais entregador vivo.
+COURIER_ENDED_STATES = frozenset({RideState.DONE, RideState.NOT_SERVED, RideState.CANCELLED})
+
+
+def _courier_service_ref(order: Order) -> str:
+    block = (order.data or {}).get("courier")
+    return str(block.get("service") or "") if isinstance(block, dict) else ""
+
+
+def _courier_service_name(block: dict) -> str:
+    from shopman.shop.services import delivery_services
+
+    return delivery_services.service_name(block)
+
+
+def courier_state_label(block: dict | None) -> str:
+    """A frase do estado da corrida: a nuance do serviço, ou a do estado da casa."""
+    from shopman.shop.services import delivery_services
+
+    state = delivery_services.ride_state(block)
+    if state is None:
+        return ""
+    return delivery_services.state_detail(block) or COURIER_STATE_LABELS.get(state, "")
+
 
 #: A corrida voltou a procurar depois de um entregador desistir (``courier.reopen_view``).
 COURIER_REOPENED_LABEL = "Procurando outro entregador"
@@ -1752,7 +1789,6 @@ def _courier_block(order: Order) -> dict | None:
         if not _is_delivery(order):
             return None
 
-        from shopman.shop.adapters.courier_machine import TERMINAL_STATUSES
         from shopman.shop.services import delivery_services
 
         data = order.data or {}
@@ -1770,7 +1806,8 @@ def _courier_block(order: Order) -> dict | None:
             return None
 
         ride_status = str(block.get("status") or "")
-        active = bool(block.get("ride_ref")) and ride_status not in TERMINAL_STATUSES
+        state = delivery_services.ride_state(block)
+        active = bool(block.get("ride_ref")) and state not in COURIER_ENDED_STATES
         order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
@@ -1783,31 +1820,47 @@ def _courier_block(order: Order) -> dict | None:
             point = courier_position_projection(block["ride_ref"])
             position = asdict(point) if point else None
 
-        from shopman.shop.services.courier import can_quote, charge_outdated, not_today_refusal, unresolved_dispatch
+        from shopman.shop.services.courier import (
+            can_quote,
+            failure_message,
+            not_today_refusal,
+            ride_health,
+            unresolved_dispatch,
+        )
 
-        unresolved = unresolved_dispatch(order)
+        # Tudo o que a tela diz da corrida sai da fonte única, a mesma da página
+        # Entregas (``courier.ride_health``).
+        health = ride_health(order)
         # A encomenda de outro dia: chamar recusa com a frase (a régua do servidor).
         not_today = not_today_refusal(order) if order_can_ride and not active else ""
         # A falha de ABRIR a corrida mora em ``error``; o cancelamento tem o
         # estado dele (``cancel_state``), o mesmo da seção Entregas.
         error = block.get("error") if isinstance(block.get("error"), dict) else None
-        cancel = courier_cancel_state(order)
+        cancel = health["cancel"]
+        failure = health["last_failure"]
+        if error is None and failure is not None:
+            # A corrida que ninguém aceitou ou que foi cancelada: o pedido voltou a
+            # esperar, e a tela diz por quê (a mesma frase da página Entregas).
+            error = {"message": failure_message(failure), "at": failure["at"]}
 
+        unresolved = unresolved_dispatch(order) if health["unresolved"] else None
         if unresolved is not None:
             error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
-        from shopman.shop.services.courier import progress_view, proven_tracking, reopen_view
-
-        progress = progress_view(block)
-        tracking = proven_tracking(block)
-        reopened = reopen_view(block) if active else {"at": "", "driver": "", "reason": ""}
-        status_label = COURIER_STATUS_LABELS.get(ride_status, "")
-        if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
-            status_label = "Entregador na loja"
+        progress = health["progress"]
+        tracking = health["tracking"]
+        reopened = health["reopened"] if active else {"at": "", "driver": "", "reason": ""}
+        status_label = courier_state_label(block)
+        if state == RideState.ASSIGNED and progress["arrived_pickup_at"]:
+            status_label = COURIER_STATE_LABELS[RideState.AT_STORE]
         if reopened["at"]:
             status_label = COURIER_REOPENED_LABEL
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
+            # O estado no vocabulário da casa (``RideState``): é o que a tela lê.
+            "ride_state": state.value if state else "",
+            # O nome do serviço como o cadastro diz, para a frase do operador.
+            "service_name": delivery_services.service_name(block),
             "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
             # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
             **progress,
@@ -1849,7 +1902,7 @@ def _courier_block(order: Order) -> dict | None:
             "custody": operator_orders.partner_custody_asks(order),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
-            "charge_outdated": charge_outdated(order),
+            "charge_outdated": health["charge_outdated"],
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
@@ -2827,11 +2880,17 @@ def _build_card(
         actions = _early_start_actions(actions)
     if waits_batch:
         actions = _batch_wait_actions(actions, block_reason)
+    promise_at_risk = promise is not None and promise.state == order_promise.STATE_AT_RISK
+    whatsapp_url = (
+        _board_whatsapp_url(order) if block_label in LAPSED_PAYMENT_LABELS or promise_at_risk else ""
+    )
     if block_label in LAPSED_PAYMENT_LABELS:
-        actions = _lapsed_payment_actions(actions, block_label, can_call=_has_order_phone(order))
+        actions = _lapsed_payment_actions(actions, block_label, can_call=bool(whatsapp_url))
     actions = _exit_gesture_actions(order, actions, customer_name=customer_name)
-    if promise is not None and promise.state == order_promise.STATE_AT_RISK:
-        promise = order_promise.with_actions(promise, _promise_actions(user, promise))
+    if promise_at_risk:
+        promise = order_promise.with_actions(
+            promise, (*_promise_actions(user, promise), *_contact_customer_action(whatsapp_url)),
+        )
     from shopman.shop.services import ifood_accept_sync
 
     accept = ifood_accept_sync.state_for(order, batch=accept_batch)
@@ -2892,7 +2951,7 @@ def _build_card(
         advance_block_label=block_label,
         advance_block_reason=block_reason,
         payment_lapsed=block_label in LAPSED_PAYMENT_LABELS,
-        customer_callable=block_label in LAPSED_PAYMENT_LABELS and _has_order_phone(order),
+        customer_whatsapp_url=whatsapp_url,
         advance_block_waits=block_waits(block_label),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
@@ -2941,7 +3000,7 @@ def _build_card(
         today=today,
     )
     if expectation is not None:
-        eta = ready_eta(order, expectation, channel_config, now=now)
+        eta = ready_eta(order, expectation, now=now)
         if eta is not None:
             attention = {**attention, "ready_eta_iso": eta.isoformat()}
     return replace(card, **attention) if attention else card
@@ -3231,21 +3290,15 @@ def _change_label(change_for_q: int, suggested_q: int, out_q: int, back_q: int |
     return f"Cliente paga com R$ {format_money(change_for_q)}"
 
 
-def _card_courier_status(order: Order) -> str:
-    block = (order.data or {}).get("courier")
-    if not isinstance(block, dict):
-        return ""
-    return str(block.get("status") or "")
-
-
 def _card_courier_label(order: Order) -> str:
     """"Entregador a caminho" e, na corrida com várias paradas, com quem ela vai:
     "Entregador a caminho · corrida com B12, C03". O card diz a corrida inteira
     sem o operador abrir pedido por pedido."""
-    label = COURIER_STATUS_LABELS.get(_card_courier_status(order), "")
+    from shopman.shop.services import courier
+
+    label = courier_state_label(courier.get_block(order))
     if not label:
         return ""
-    from shopman.shop.services import courier
 
     if courier.reopen_view(courier.get_block(order))["at"]:
         # O entregador desistiu e a TaOn redistribui a mesma corrida.
@@ -3529,7 +3582,7 @@ def _advance_block_copy(order: Order, advance_block, method: str, *, payment_pen
                 f"{times}. Sem pagamento no prazo, o pedido cancela sozinho."
             )
         return _payment_wait_copy(order, method)
-    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block)
+    return advance_block_label(advance_block), operator_orders.advance_block_message(advance_block, order)
 
 
 def advance_block_label(advance_block: operator_orders.AdvanceBlock) -> str:
@@ -3745,6 +3798,22 @@ _FISCAL_PILL = {
     "not_expected": ("not_requested", "NFC-e não solicitada"),
 }
 
+#: O pedido cancelado sem nenhuma tentativa de emissão (``not_issued``): a nota não
+#: vai sair, e a pill diz o fato em vez de prometer. "NFC-e sai quando o pagamento
+#: confirmar" num Pix vencido (#3127) e "NFC-e em emissão" num cancelado sem nota
+#: (#3130) eram rótulos que mentiam. Quando a cobrança digital nunca confirmou, a
+#: frase diz por quê.
+_NOT_ISSUED_LABEL = "Sem NFC-e: o pedido foi cancelado"
+_NOT_ISSUED_BEFORE_PAYMENT_LABEL = "Sem NFC-e: o pedido foi cancelado antes do pagamento"
+
+
+def _not_issued_label(order: Order) -> str:
+    from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+    if requires_captured_payment(order) and not payment_is_captured(order):
+        return _NOT_ISSUED_BEFORE_PAYMENT_LABEL
+    return _NOT_ISSUED_LABEL
+
 
 class _FiscalEvidence(NamedTuple):
     """Evidência fiscal lida em LOTE para um quadro: uma query por fonte, não por card."""
@@ -3770,6 +3839,8 @@ def _fiscal_status(
         # Nota cancelada é fato posterior à autorização: a chave continua lá, o
         # estado canônico segue ``authorized``, e a pill diz o que aconteceu.
         status, label = "cancelled", "NFC-e cancelada"
+    elif state == "not_issued":
+        status, label = "not_issued", _not_issued_label(order)
     else:
         status, label = _FISCAL_PILL[state]
 
@@ -3922,19 +3993,41 @@ def _is_masked_name(label: str) -> bool:
     return bool(label) and set(label) <= _MASKED_NAME_CHARS and any(ch in "*·•…" for ch in label)
 
 
-def _has_order_phone(order: Order) -> bool:
-    """O pedido tem um telefone para chamar no WhatsApp, sem consultar o cadastro.
+def _board_whatsapp_url(order: Order) -> str:
+    """O WhatsApp do cliente para o cartão, sem consultar o cadastro.
 
     A leitura barata do quadro (o cadastro só entra no detalhe): o telefone do
-    pedido ou o handle que é o cliente. O relé do iFood é voz, não WhatsApp.
+    pedido ou o handle que é o cliente, o mesmo número que o detalhe usa
+    (``_customer_contact``). O relé do iFood é voz, não WhatsApp: vazio.
     """
     data = order.data or {}
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
-    if not str(customer.get("phone") or data.get("customer_phone") or _customer_handle(order) or "").strip():
-        return False
+    phone_raw = str(customer.get("phone") or data.get("customer_phone") or _customer_handle(order) or "").strip()
+    if not phone_raw:
+        return ""
     from shopman.shop.services.notification import customer_phone_is_platform_relay
 
-    return not customer_phone_is_platform_relay(order)
+    if customer_phone_is_platform_relay(order):
+        return ""
+    digits = (normalize_phone(phone_raw) or "").lstrip("+")
+    return f"https://wa.me/{digits}" if digits else ""
+
+
+#: A saída do cartão que chama o cliente no WhatsApp (a mesma ``ref`` do detalhe).
+ACTION_CONTACT_CUSTOMER = "contact-customer"
+CONTACT_CUSTOMER_LABEL = "Chamar no WhatsApp"
+
+
+def _contact_customer_action(whatsapp_url: str) -> tuple[Action, ...]:
+    """ "Chamar no WhatsApp" ao lado do "Resolver" no cartão da promessa em risco (#2434)."""
+    if not whatsapp_url:
+        return ()
+    return (
+        Action(
+            ref=ACTION_CONTACT_CUSTOMER, kind="link", label=CONTACT_CUSTOMER_LABEL,
+            href=whatsapp_url, idempotency="none",
+        ),
+    )
 
 
 def _customer_handle(order: Order) -> str:
@@ -4078,6 +4171,9 @@ _EVENT_LABELS = {
     "order_rescheduled": "Data combinada alterada",
     # O lote foi cancelado e a reserva deste pedido ficou sem lastro (#2547).
     "production_hold_lost": "Lote cancelado: o item ficou em falta",
+    # O lote rendeu menos do que as reservas, ou passou da hora com o pedido esperando (#2594).
+    "production_hold_short": "Lote rendeu menos: o item ficou em falta",
+    "production_lot_late": "Lote atrasado: o item ainda não ficou pronto",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -4097,6 +4193,8 @@ _EVENT_LABELS = {
     "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
     "return_initiated": "Devolução iniciada",
     "refund_processed": "Estorno processado",
+    # Venda só em conta: a devolução ou o não retirado tira o valor da conta (#2606, #2697).
+    "account_debt_reduced": "Valor tirado da conta do cliente",
     "volume_checked": "Volume conferido",
     "volume_check_wrong_bag": "Sacola de outro pedido lida na conferência",
     # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
@@ -4114,7 +4212,7 @@ _EVENT_LABELS = {
     "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
     "customer_cancellation_requested": "Cliente solicitou o cancelamento",
     "customer_contact_resolved": "Ouvidoria resolvida",
-    # A letra da corrida vira a frase do Gestor (``COURIER_STATUS_LABELS``) em
+    # A letra da corrida vira a frase do Gestor (``courier_state_label``) em
     # ``_build_timeline``; este é o rótulo da letra que ninguém nomeou.
     "courier_status": "Corrida da TaOn atualizada",
     # O dinheiro, nos três fatos que o Payman distingue. Autorizar NÃO é cobrar:
@@ -4129,6 +4227,8 @@ _EVENT_LABELS = {
     # WP-G13: quem tentou é o autor da linha; quem autorizou e o que o gateway
     # respondeu vão no detalhe (``_refund_retry_detail``).
     "payment.refund_retry": "Estorno tentado de novo",
+    # "Estornar" no detalhe do Gestor (#2727, item 5): a tentativa, saída ou não.
+    "payment.order_refund": "Estorno pedido no Gestor",
     "payment.counter_takeover": "Cobrança online cancelada: o cliente paga no balcão",
     # #2897: o saldo da encomenda cobrado em Pix no balcão (novo, ou o Pix online
     # do cliente aproveitado); quem gerou é o autor da linha.
@@ -4142,7 +4242,7 @@ UNLABELLED_EVENT_LABEL = "Registro do sistema"
 _OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
 
 #: Os eventos de dinheiro levam o meio e o valor como detalhe.
-_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded"})
+_PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded", "account_debt_reduced"})
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
 #: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
@@ -4283,8 +4383,10 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             label = _OUTSIDE_CHARGE_CAPTURE_LABEL
         elif event.type == "customer_contact_requested" and payload.get("origin") == "cancellation":
             label = "Cliente quis cancelar com o preparo começado e pediu para falar com o responsável"
-        elif event.type == "courier_status" and payload.get("status") in COURIER_STATUS_LABELS:
-            label = f"TaOn: {COURIER_STATUS_LABELS[payload['status']]}"
+        elif event.type == "courier_status" and (ride_label := courier_state_label(
+            ride_event := {"service": _courier_service_ref(order), "status": payload.get("status")}
+        )):
+            label = ": ".join(part for part in (_courier_service_name(ride_event), ride_label) if part)
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:
@@ -4295,9 +4397,9 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
             logger.error("order_queue.event_without_label type=%s order=%s", event.type, order.ref)
             label = UNLABELLED_EVENT_LABEL
 
-        if event.type == _PRODUCTION_HOLD_LOST_EVENT:
+        if event.type in _PRODUCTION_PROMISE_EVENTS:
             detail = _production_hold_lost_detail(payload)
-        elif event.type == "payment.refund_retry":
+        elif event.type in {"payment.refund_retry", "payment.order_refund"}:
             detail = _refund_retry_detail(payload)
         elif event.type in _PAYMENT_EVENT_TYPES:
             detail = _payment_event_detail(payload)
@@ -4358,6 +4460,9 @@ def _payment_event_detail(payload: dict) -> str:
 #: O evento que ``shop/services/production_promise`` grava quando o lote cancelado
 #: leva a reserva do pedido.
 _PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
+#: Os três fatos da promessa de produção (cancelado, rendeu menos, atrasado) têm o
+#: mesmo detalhe: o item e o lote.
+_PRODUCTION_PROMISE_EVENTS = frozenset({_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late"})
 
 
 def _production_hold_lost_detail(payload: dict) -> str:

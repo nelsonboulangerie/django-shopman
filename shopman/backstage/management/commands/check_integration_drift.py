@@ -213,6 +213,9 @@ class Command(BaseCommand):
 
         for readiness in degraded:
             self._alert(readiness, expected=expected)
+        for readiness in providers:
+            if readiness.ready:
+                self._resolve(readiness.provider)
         for certificate, (milestone, severity) in due:
             self._certificate_alert(certificate, milestone=milestone, severity=severity)
 
@@ -245,6 +248,19 @@ class Command(BaseCommand):
             provider=certificate.provider,
             milestone=milestone,
         )
+
+    def _resolve(self, provider: str) -> None:
+        """A integração voltou a ficar pronta: o aviso de configuração degradada dela fecha."""
+        from shopman.shop.adapters import alert as alert_adapter
+
+        try:
+            alert_adapter.resolve_matching(
+                ALERT_TYPE,
+                message_contains=f"Dedupe: {ALERT_TYPE}:{provider}:",
+                actor=f"sistema: integração {provider} pronta de novo",
+            )
+        except Exception:
+            logger.exception("integration_drift.resolve_failed provider=%s", provider)
 
     def _alert(self, readiness, *, expected: frozenset[str]) -> None:
         from shopman.shop.adapters import alert as alert_adapter

@@ -90,6 +90,28 @@ def test_the_oldest_ready_pulls_its_neighbours_up_to_the_stop_limit():
     assert all("E" not in group.refs for group in groups)
 
 
+def test_a_pair_that_would_land_after_the_window_is_not_suggested():
+    # A e B vizinhos (o par cabe no desvio e na espera). B fica por último na rota.
+    a = Candidate("A", -23.310, -51.160, ready_key=1)
+    b = Candidate("B", -23.305, -51.160, ready_key=2)
+    alone = ride_plan.km_between(STORE, (b.latitude, b.longitude)) / ride_plan.SPEED_KMH * 3600
+    # A janela de B fecha 30 s depois de ele chegar sozinho: junto, com o trecho a mais e
+    # a parada de A, passaria do fim. O par não vira sugestão.
+    tight = Candidate("B", b.latitude, b.longitude, ready_key=2, deadline=alone + 30)
+    assert plan_groups(STORE, [a, tight], SETTINGS, max_stops=4, now=0) == []
+    # Com folga para os dois minutos da parada e o desvio, junta.
+    roomy = Candidate("B", b.latitude, b.longitude, ready_key=2, deadline=alone + 20 * 60)
+    assert [group.refs for group in plan_groups(STORE, [a, roomy], SETTINGS, max_stops=4, now=0)] == [("A", "B")]
+    # Sem relógio (a régua pura), o prazo não é medido.
+    assert [group.refs for group in plan_groups(STORE, [a, tight], SETTINGS, max_stops=4)] == [("A", "B")]
+
+
+def test_who_is_late_even_alone_does_not_block_the_pair():
+    a = Candidate("A", -23.310, -51.160, ready_key=1)
+    late = Candidate("B", -23.305, -51.160, ready_key=2, deadline=-60)
+    assert [group.refs for group in plan_groups(STORE, [a, late], SETTINGS, max_stops=4, now=0)] == [("A", "B")]
+
+
 def test_params_come_from_the_admin_over_the_owner_guesses(shop):
     assert ride_plan.params(shop) == SETTINGS
     shop.defaults = {"delivery": {"ride_suggestion": {"detour_km": 1.5, "saving_min_q": 500, "extra_wait_minutes": "x"}}}
@@ -209,3 +231,38 @@ def test_admin_edits_the_four_params_and_saves_only_what_differs(shop):
     form = ShopForm(data=data, instance=saved)
     assert form.is_valid(), form.errors
     assert "ride_suggestion" not in (form.save().defaults.get("delivery") or {})
+
+
+# ── o prazo combinado no plano (#2875) ────────────────────────────────────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_half_hour_that_closes_now_keeps_the_order_out_of_the_pair(shop):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    now = timezone.localtime()
+    # A janela de B fecha um minuto e meio depois de ele chegar sozinho (a hora cheia
+    # arredonda para baixo: entre meio e um minuto e meio de folga). Junto, a parada de
+    # A custa dois minutos e passa do fim.
+    alone = ride_plan.km_between(STORE, (-23.305, -51.160)) / ride_plan.SPEED_KMH * 60
+    end = now + timedelta(minutes=alone + 1.5)
+    start = end - timedelta(minutes=30)
+    if start.date() != now.date() or end.date() != now.date():
+        pytest.skip("a meia hora atravessa a meia-noite")
+    slot = f"{start:%H:%M}-{end:%H:%M}"
+    a = _at("CR-A", -23.310, -51.160)
+    b = _at("CR-B", -23.305, -51.160, delivery_time_slot=slot, delivery_date=now.date().isoformat())
+    assert ride_plan.ride_plan([a, b], quote=False)["suggestions"] == []
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_order_shift_has_no_end_and_does_not_limit(shop):
+    from django.utils import timezone
+
+    a = _at("CR-A", -23.310, -51.160)
+    b = _at("CR-B", -23.305, -51.160, delivery_time_slot="slot-09",
+            delivery_date=timezone.localdate().isoformat())
+    [suggestion] = ride_plan.ride_plan([a, b], quote=False)["suggestions"]
+    assert suggestion["refs"] == ["CR-A", "CR-B"]

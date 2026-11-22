@@ -1056,13 +1056,23 @@
             "resolve_on_commit",
             "on_order_changed",
             "on_nfce_authorized",
+            "_resolve_emit_integration_failure",
             "connect",
             "RESOLVED_BY_AUTHORIZATION",
             "RESOLVED_BY_LEAVING_NEW",
             "COURIER_TYPES",
             "RESOLVED_BY_DELIVERY",
             "RESOLVED_BY_REFUND",
-            "RESOLVED_BY_UNDO"
+            "RESOLVED_BY_UNDO",
+            "_PHASE_STUCK_MARKER",
+            "resolve_superseded_phase_alerts",
+            "RETIRED_TYPES",
+            "_WORK_ORDER_ACTION_BY_STATUS",
+            "_WORK_ORDER_STATE_WORDS",
+            "_is_seed_order",
+            "_is_seed_work_order",
+            "_synthetic_reason",
+            "resolve_alerts_ended_by_fact"
           ]
         }
       ],
@@ -1070,6 +1080,7 @@
         "handler"
       ],
       "domains": [
+        "craftsman",
         "orderman"
       ],
       "ports": [],
@@ -3341,7 +3352,7 @@
     },
     {
       "id": "preorder.production-promise-lost",
-      "question": "Como o pedido aceito que perdeu a reserva no cancelamento de um lote vira evento do pedido e aviso no Gestor?",
+      "question": "Como o pedido aceito cujo lote foi cancelado, rendeu menos que a reserva ou passou da hora vira evento do pedido e aviso no Gestor?",
       "owner": "preorder.production-promise",
       "responsibility": "composição",
       "public_entrypoint": "shopman.shop.services.production_promise:announce_lost_holds",
@@ -3356,23 +3367,52 @@
             "order_ref_from_hold_reference",
             "_format_qty",
             "_product_name",
-            "announce_lost_holds"
+            "announce_lost_holds",
+            "EVENT_TYPE_SHORT",
+            "EVENT_TYPE_LATE",
+            "REASON_VOIDED",
+            "REASON_SHORT",
+            "REASON_LATE",
+            "_EVENT_BY_REASON",
+            "_emit_fact",
+            "_what_happened",
+            "_already_recorded",
+            "_order_hold_rows",
+            "_by_order",
+            "announce_short_lot",
+            "announce_late_lots"
+          ]
+        },
+        {
+          "path": "shopman/shop/handlers/_stock_receivers.py",
+          "symbols": [
+            "on_production_finished"
+          ]
+        },
+        {
+          "path": "shopman/shop/handlers/production_alerts.py",
+          "symbols": [
+            "_announce_late_lots_to_orders"
           ]
         }
       ],
       "touchpoints": [
+        "handler",
         "service"
       ],
       "domains": [
+        "craftsman",
         "offerman",
-        "orderman"
+        "orderman",
+        "stockman"
       ],
       "ports": [],
       "events": [],
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_o_mesmo_cancelamento_nao_avisa_duas_vezes"
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_o_mesmo_cancelamento_nao_avisa_duas_vezes",
+        "shopman/shop/tests/integration/test_production_void_announces_lost_order.py::test_lote_que_passou_da_hora_avisa_a_encomenda_uma_vez"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -8462,6 +8502,9 @@
             "_status_out_of_order",
             "record_reopen",
             "reopen_view",
+            "last_failure",
+            "failure_message",
+            "ride_health",
             "progress_since",
             "restore_archived_ride",
             "orders_with_archived_ride",
@@ -12414,6 +12457,7 @@
       "domains": [
         "doorman",
         "guestman",
+        "orderman",
         "payman"
       ],
       "ports": [
@@ -13049,6 +13093,7 @@
           "symbols": [
             "trip_id",
             "trip_members",
+            "trip_members_for",
             "_locked_trip_members",
             "_open_trip",
             "trip_machine",
@@ -13399,6 +13444,7 @@
             "advance_block",
             "gestor_advance_block",
             "advance_block_message",
+            "_preorder_day",
             "advance_block_reason",
             "advance_order",
             "_handoff_hold_seconds",
@@ -14461,7 +14507,12 @@
             "_REFUND_ALL_STATUSES",
             "_PAYMAN_REFUND_REASONS",
             "retained_q",
-            "refund_ceiling_q"
+            "refund_ceiling_q",
+            "pays_only_on_account",
+            "_open_account_intents",
+            "open_account_debt_q",
+            "account_debt_settled",
+            "reduce_account_debt"
           ]
         }
       ],
@@ -19751,6 +19802,7 @@
             "LABEL",
             "BASE_TEXT",
             "customer_text",
+            "_account_text",
             "_amount"
           ]
         }
@@ -19808,12 +19860,17 @@
             "_merchandise_items",
             "_components",
             "_hold_entries",
-            "_line_facts",
+            "_sku_facts",
+            "_component_values",
+            "_product_names",
+            "_is_itself",
             "next_selling_day",
             "line_decisions",
             "money_split",
             "_refund_destination",
             "money_sentence",
+            "_account_sentence",
+            "_on_account",
             "is_candidate",
             "eligibility_reason",
             "_paid_q",
@@ -19832,6 +19889,10 @@
       ],
       "touchpoints": [
         "service"
+      ],
+      "domains": [
+        "offerman",
+        "orderman"
       ],
       "tests": [
         "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",
@@ -19934,6 +19995,7 @@
             "ride_plan",
             "params",
             "plan_groups",
+            "breaks_a_deadline",
             "measure",
             "route",
             "_fits",

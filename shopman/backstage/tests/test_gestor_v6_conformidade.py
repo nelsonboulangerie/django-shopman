@@ -104,7 +104,7 @@ def test_ready_eta_uses_the_real_start_and_the_measured_time():
     goal = ready_eta(order, PrepExpectation(minutes=None, samples=0), now=now)
 
     assert measured == started + timedelta(minutes=10)
-    assert goal == started + timedelta(minutes=15)  # a meta padrão da estação (dono, 04/10)
+    assert goal == started + timedelta(minutes=30)  # sem mediana nem meta configurada: a promessa da loja (#3178)
     assert ready_eta(_order("V6-DONE", "ready"), PrepExpectation(minutes=10, samples=5), now=now) is None
 
 

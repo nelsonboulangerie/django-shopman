@@ -44,6 +44,8 @@ def customer_text(no_show: dict | None) -> str:
     retained_q = _amount(block.get("retained_q"))
     if paid_q <= 0:
         return BASE_TEXT
+    if block.get("on_account"):
+        return _account_text(refund_q=refund_q, retained_q=retained_q)
     if refund_q <= 0:
         return f"{BASE_TEXT} O valor ficou com a loja, como dizem os Termos."
     # "Vamos devolver", no futuro, de propósito: quando o aviso sai, o gateway
@@ -56,6 +58,25 @@ def customer_text(no_show: dict | None) -> str:
             f"R$ {format_money(retained_q)} ficaram com a loja, como dizem os Termos."
         )
     return f"{BASE_TEXT} {refund}."
+
+
+def _account_text(*, refund_q: int, retained_q: int) -> str:
+    """A compra na conta da loja: o que saiu da conta e o que continua nela (#2697).
+
+    "Tiramos", no passado, porque é verdade no instante do aviso: a conta muda
+    junto com o encerramento, sem gateway nem gaveta no caminho.
+    """
+    from shopman.utils.monetary import format_money
+
+    if refund_q <= 0:
+        return f"{BASE_TEXT} O valor continua na sua conta na loja, como dizem os Termos."
+    out = f"Tiramos R$ {format_money(refund_q)} da sua conta na loja"
+    if retained_q > 0:
+        return (
+            f"{BASE_TEXT} {out}, pelo que ainda pôde voltar à venda. "
+            f"R$ {format_money(retained_q)} continuam na conta, como dizem os Termos."
+        )
+    return f"{BASE_TEXT} {out}."
 
 
 def _amount(value) -> int:

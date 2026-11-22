@@ -244,6 +244,14 @@ useful: {status: pass|fail|unavailable, reason?}}, judge?: {answer: answers|off_
 confidence}}`. Em sombra: o veredito é gravado e o envio não muda. `judge` só existe quando o Jev
 respondeu; a chamada dele entra em `usage.calls` com `stage: conference` e em `latency_ms.conference`.
 Lida por `concierge_conversation_eval` (linha "conferência antes do envio").
+Escada em sombra (`conference.shadow_climb`, regra em `conversational_commerce/reply/ladder.py`): quando a
+conferência reprova, DEPOIS do envio, o mesmo primeiro bloco ganha `envelope["ladder"]` = `{chosen:
+house|concierge_rewrite|concierge_escalation|safe, stopped, cost_usd, attempts: [{source, text, cost_usd, ms,
+error?, conference?}], safe_text?}` (`safe_text` em sombra é o TIPO da alternativa: `house_literal` ou
+`verify`). Os degraus são os propósitos de IA `concierge_rewrite` e `concierge_escalation`, só com rota
+explícita em `Shop.ai_routes`. A política mora em `Shop.ai_limits["conference"]` = `{max_attempts (padrão 3,
+teto 5), turn_usd (padrão 0,01, teto 0,05)}`; o teto do dia de cada degrau é o do freio
+(`ai_limits["purposes"]`).
 Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
 `purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
@@ -406,6 +414,7 @@ for key in (
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
 | `no_show` | `dict` | `shop.services.no_show.mark_not_picked_up` (API `POST orders/<ref>/no-show/`), sob lock do pedido, ANTES da transição a `cancelled` | `stock.revert_fulfilled` (`no_show.stock_plan`), `payment.retained_q`/`refund_ceiling_q`, `policies/no_show_reason.customer_text` (por `cancel_reasons.customer_text`), conciliação (`financial_reconciliation`), prévia do Gestor | Pedido de retirada pronto que o cliente não veio buscar (WP-G11): o destino de cada linha e do dinheiro. Só existe em pedido cancelado com `cancellation_reason_key = "not_picked_up"` (ver detalhamento) |
 | _(estorno tentado de novo)_ | — | `backstage.services.refund_retry.retry` (API `POST orders/<ref>/refund-retry/`, WP-G13), sob lock do pedido e das cobranças, sempre após `validate_manager_override` | `order_pending` (a linha "Estorno não saiu" da faixa do detalhe), `order_queue._build_timeline`, o próprio `refund_retry` (a base e a chave da tentativa seguinte) | **Não cria chave em `Order.data`**: a tentativa é o evento `payment.refund_retry` no OrderEvent, um por cobrança pedida ao gateway: `{intent_ref, method, amount_q, approved_by, outcome, error_code, message, gateway_message, gateway_key}`. Quem tentou é o `actor` do evento, e a hora é a do evento; `approved_by` é o `username` verificado do Gerente que assinou. `outcome` ∈ `refunded` (o gateway confirmou; o mesmo gesto grava o `payment.refunded` de todo estorno), `refused` (o gateway disse não; a tentativa seguinte leva outra chave), `unconfirmed` (o gateway não respondeu: a tentativa seguinte da MESMA cobrança, com o mesmo valor, reapresenta `gateway_key`, para o gateway devolver a mesma devolução) e `unrecorded` (o dinheiro saiu e o livro não gravou: bloqueia novas tentativas até o suporte acertar). `message` é a frase do BALCÃO para a tentativa que não saiu (`refund_retry.counter_message`: "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte."; vazio quando saiu), e é ela que a faixa e a linha do tempo mostram; `gateway_message` é o que o gateway respondeu, na língua do Admin, guardado só para o suporte e o log; `gateway_key` é a chave de idempotência enviada ao gateway (`order-refund-retry:<ref>:<intent>:<resumo da chave da intenção>`, por `refund_retry.fresh_gateway_key`). Só existe para pedido em "Estorno não saiu": o cancelado (`payment.cancelled_money` em `refund_requested` com o aviso `payment_refund_failed` aberto) e, desde a #2727, o que falhou fora dele com o aviso aberto (a devolução registrada, a encomenda editada que ficou mais barata, o pagamento digital que chegou depois de o balcão receber). O valor é o de `payment.gateway_refund_owed_q`: no cancelado, o que falta voltar, limitado por `payment.refund_ceiling_q` no "não retirado"; fora dele, `payment.overpaid_q` mais o pagamento que chegou depois do balcão (`counter_takeover.late_payment_of_takeover`), descontado o que a gaveta e a maquininha devolvem. A primeira tentativa de uma cobrança reapresenta a chave do estorno automático que pode ter saído sem resposta (a directive `payment.refund` que esgotou, ou `counter_takeover.late_refund_key`). A transação do Payman leva o motivo `Estorno no Gestor por <ator>, autorizado por <gerente>` |
+| _(estorno de UM pedido no Gestor)_ | — | `backstage.services.order_refund.refund` (API `POST orders/<ref>/refund/`, #2727 item 5), sob lock do pedido e das cobranças, só com `backstage.refund_single_order` | `order_queue._build_timeline`, o próprio `order_refund` (a base e a chave da tentativa seguinte) | **Não cria chave em `Order.data`**: a tentativa é o evento `payment.order_refund` no OrderEvent: `{intent_ref, method, amount_q, outcome, error_code, message, gateway_message, gateway_key}`. Quem estornou é o `actor` do evento. `outcome` e `message` seguem a régua do `payment.refund_retry` (`refunded`, `refused`, `unconfirmed`, `unrecorded`; a frase do balcão por `refund_retry.counter_message`). `gateway_key` é `order-refund-gestor:<ref>:<intent>:<resumo da chave da intenção>` (`order_refund.fresh_gateway_key`); a tentativa seguinte à `unconfirmed`, com o mesmo valor, reapresenta a mesma chave. O que sai também grava o `payment.refunded` de todo estorno. Uma cobrança só: o pedido com duas cobranças online com dinheiro não tem o gesto. A transação do Payman leva o motivo `Estorno no Gestor por <ator>` |
 | `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
 | `nfce_access_key` | `string` | NFCeEmitHandler | NFCeEmitHandler (idempotência), ReturnService | Chave de acesso NFCe |
 | `nfce_authorized_at` | `string` | NFCeEmitHandler (`_record`, de `data_autorizacao` da Focus) | `services.fiscal.cancellation_path` | ISO datetime da **Autorização de Uso** na SEFAZ — não da emissão nem da gravação. É o instante de onde conta o prazo de cancelamento (RICMS/PR, Anexo III, Subanexo I, art. 35: 30 minutos). Vazio quando a Focus não devolveu a data: aí o prazo **não é chutado**, o operador é avisado de que não deu para medir |
@@ -759,10 +768,12 @@ services que ele chama leem o bloco.
 | `lines[].destiny` | `"restock"` \| `"loss"` | `restock`: a linha volta à venda, no MESMO lote de onde saiu, e o cliente recebe `value_q`. `loss`: vira perda de estoque com motivo, e a loja fica com `value_q`. Decidido pelo servidor (`no_show.decide_destiny`) |
 | `lines[].reason` | `string` | Por que é perda: `made_to_order` (ficha vigente "Na hora"), `no_stock` (sem reserva de estoque baixada: não há o que devolver ao balcão), `lot_expired` (o lote venceu na hora do gesto). Vazio em `restock` |
 | `lines[].qty` | `string` (decimal) | A quantidade da linha |
+| `lines[].line_id`, `lines[].combo` | `string`, `dict` | O combo vira uma linha por componente (#2697): `line_id` é `"<linha>:<sku>"`, o destino é o de cada componente e `value_q` é a parte do valor do combo rateada pelo preço de tabela vezes a quantidade (o resíduo no último). `combo` = `{line_id, sku, name}` do combo de onde o componente veio; ausente na linha que não é combo |
 | `lines[].value_q` | `int` | O valor da linha: `unit_price_q × qty` sobre `order_composition.effective_items` (o mesmo cálculo da devolução) |
 | `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
 | `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
 | `retained_q` | `int` | `paid_q − refund_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
+| `on_account` | `bool` | Venda SÓ na conta da casa (#2697): `paid_q` é a dívida em aberto do pedido (`payment.open_account_debt_q`), `refund_q` sai da conta (`payment.reduce_account_debt`, evento `account_debt_reduced`) e `retained_q` continua devido. A conta já acertada e a venda que mistura a conta com outra forma não passam pelo gesto |
 
 Pedido não pago: `paid_q = refund_q = retained_q = 0`. A validade do lote é lida de
 `Batch.expiry_date` (pelo `Quant.batch`); sem lote com validade, do `shelf_life_days` do
@@ -1512,6 +1523,19 @@ Uma viva por vez (`dedupe_key` fixo = o topic). Só existe com `IFOOD_MERCHANT_S
 |-------|------|-------------|----------|
 | `reason` | `string` | `shop/services/ifood_merchant.enqueue_sync` (`shop_saved`, `check`) | log (informativo) |
 
+#### `incident.act`
+
+O acionador de remédio de um alerta (`shopman/backstage/incidents/act.py`). Nasce quando
+um `OperatorAlert` de tipo com remédio é criado, e também pela repescagem do
+`act_on_incidents`. Planeja, aciona o gesto do domínio e se reagenda (sem gastar
+tentativa) para esperar o retry do domínio ou para conferir o resultado. Uma viva por
+alerta: `dedupe_key` = `incident.act:<alert_id>`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `alert_id` | `int` | `backstage/incidents/act.enqueue` | IncidentActHandler |
+| `action_id` | `int` | IncidentActHandler (depois de acionar) | IncidentActHandler (conferência) |
+
 #### `ifood.merchant_interruption`
 
 Cria ou retira no iFood a pausa pedida pelo gestor. O estado a aplicar é o da linha
@@ -1900,6 +1924,13 @@ o padrão; nenhuma desliga o freio de preço.
 | `delivery.ride_suggestion.saving_min_q` | `int` (centavos), `300` | `ride_plan._quote` | Economia mínima, em centavos, para a sugestão vir marcada. |
 | `delivery.ride_suggestion.saving_min_percent` | `int`, `15` | `ride_plan._quote` | Economia mínima em % das corridas separadas. Vale junto com `saving_min_q` (as duas). |
 | `delivery.ride_suggestion.extra_wait_minutes` | `int`, `10` | `ride_plan._fits` | O cliente que mais espera a mais espera no máximo isto. A espera a mais é estimada pelo desvio a 20 km/h mais 2 min por parada antes (fixos no código). |
+
+Além dos parâmetros, o plano lê o **fim da janela combinada** de cada pedido
+(`fulfillment_window.window_end`: o fim da meia hora de `delivery_time_slot` no dia de
+`delivery_date`, ou o `ifood.schedule.delivery_end_at` do agendado; o turno da encomenda
+não tem fim). O par cuja chegada estimada junta passaria desse fim, quando sozinho
+chegaria a tempo, não vira sugestão (`ride_plan.breaks_a_deadline`, #2875). A chegada
+usa o mesmo palpite da espera: agora, mais o percurso a 20 km/h e 2 min por parada antes.
 
 O plano em si não é gravado: é lido a cada tela (cache de 60 s pelos pedidos e as revisões
 deles) e alimenta o cartão de sugestões das Entregas (`DeliveriesProjection.ride_plan`), o

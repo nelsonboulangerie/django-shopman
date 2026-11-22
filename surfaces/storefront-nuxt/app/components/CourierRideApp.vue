@@ -43,6 +43,9 @@ import {
   unseenCancelledStop,
   waitText,
   wazeUrl,
+  themeToAdopt,
+  trackingText,
+  type CourierTheme,
   UNDO_SECONDS
 } from '~/presentation/courierRide'
 
@@ -54,6 +57,19 @@ const { theme, setTheme } = useCourierTheme()
 const { plan: installPlanRef, install, isStandalone } = usePwaInstall()
 
 const view = ride.view
+// O tema do cadastro (#2648): adotado quando muda, e a escolha daqui volta para ele.
+let lastServerTheme = ''
+watch(() => view.value?.theme, (next) => {
+  const adopt = themeToAdopt(next, lastServerTheme)
+  if (next) lastServerTheme = next
+  if (adopt) setTheme(adopt)
+})
+function chooseTheme (value: CourierTheme) {
+  setTheme(value)
+  lastServerTheme = value
+  void ride.rememberTheme(value)
+}
+const trackingLine = computed(() => trackingText(ride.tracking.value))
 const screen = computed(() => (props.token ? screenFor(view.value, ride.local.value) : 'home'))
 const tone = computed(() => rideTone(view.value?.letter))
 const stops = computed(() => view.value?.stops || [])
@@ -170,7 +186,7 @@ v-for="choice in THEME_CHOICES"
               class="cr-chip"
               :class="theme === choice.value ? 'is-on' : ''"
               :aria-pressed="theme === choice.value"
-              @click="setTheme(choice.value)"
+              @click="chooseTheme(choice.value)"
             >
               {{ choice.label }}
             </UiButton>
@@ -300,6 +316,7 @@ v-for="choice in THEME_CHOICES"
         </div>
       </div>
       <div class="cr-footer">
+        <p v-if="trackingLine" class="cr-small" :data-tracking="ride.tracking.value">{{ trackingLine }}</p>
         <div class="cr-row">
           <a class="cr-secondary" :href="wazeUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no Waze</a>
           <a class="cr-secondary" :href="mapsUrl(driving)" target="_blank" rel="noopener noreferrer">Abrir no mapa</a>

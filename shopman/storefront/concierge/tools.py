@@ -1963,6 +1963,14 @@ def _display_name(value) -> str:
     return f"“{text}”"
 
 
+def _sentence(text) -> str:
+    """A frase como sai ao cliente: sem espaço sobrando e com UM fecho ("Preparando…" não vira "Preparando….")."""
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ""
+    return text if text[-1] in ".!?…:" else text + "."
+
+
 def render_result(name: str, result: dict) -> str:
     """Somente fatos do servidor; texto livre nunca entra na resposta."""
     if not result.get("ok"):
@@ -2032,7 +2040,13 @@ def render_result(name: str, result: dict) -> str:
     if name == "order_status":
         rows = []
         for order in result.get("orders", []):
-            rows.append(f"Pedido {order['order_ref']}: {order['title']}. {order['message']} Total: {order['total']}.")
+            # A data diz de QUAL pedido se fala (o de 17/11 não é a sacola de hoje); frase vazia
+            # não vira "Total: ." e reticências não ganham ponto (ensaio do dono, 21/11/2026).
+            when = f", de {order['created_at']}" if order.get("created_at") else ""
+            parts = [_sentence(order.get("title")), _sentence(order.get("message"))]
+            if str(order.get("total") or "").strip():
+                parts.append(f"Total: {order['total']}.")
+            rows.append(f"Pedido {order['order_ref']}{when}: " + " ".join(p for p in parts if p))
             for action in order.get("actions", []):
                 if action.get("enabled"):
                     href = action.get("href") or order["tracking_url"]
