@@ -1007,10 +1007,7 @@ class DiscountModifier:
             if coupon_promo and coupon_promo.type == "percent":
                 if promotion_matches(coupon_promo, line_ctx):
                     coupon_discount_q = self._calc_discount(coupon_promo, price_q)
-                    # Estritamente maior: no empate, fica o desconto que já valia, e o
-                    # cupom não é gasto à toa ("o maior desconto ganha"; empate não é
-                    # ganho). O uso só conta com desconto (``lifecycle._record_coupon_use``).
-                    if coupon_discount_q > best_discount_q:
+                    if coupon_discount_q > best_discount_q:  # empate fica com o que valia; o cupom não é gasto
                         best_discount_q = coupon_discount_q
                         best_source = ("coupon", coupon_code, coupon_promo, None, "")
 
@@ -1315,8 +1312,7 @@ class DiscountModifier:
                 merchandise_subtotal_q=session_total,
             ):
                 value = min(max(0, int(coupon_promo.value or 0)), applicable_q(coupon_promo) if applicable_q else 1 << 62)
-                # Estritamente maior, como no percentual: empate não gasta o cupom.
-                if value > 0 and (best is None or value > best[0]):
+                if value > 0 and (best is None or value > best[0]):  # empate não gasta o cupom
                     best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
         return best
 
