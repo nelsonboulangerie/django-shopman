@@ -22,6 +22,9 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{ success: [] }>();
+
+const LOGIN_TIMEOUT_MESSAGE = "O sistema demorou para responder e você não entrou. Tente entrar de novo.";
+const LOGIN_NO_ANSWER_MESSAGE = "O sistema não respondeu e você não entrou. Tente entrar de novo.";
 // Alvo de toque do `main` (44 px; 48 em tablet touch) só nas páginas que vestem a
 // suíte (`suite-page:`, os sete apps não migrados): o Gestor fica no tamanho oficial.
 // Os campos ganham o mesmo envelope pelo `app.config` (input `lg`/`xl`); o botão, aqui.
@@ -36,7 +39,7 @@ const error = ref("");
 // o campo que ficou em branco é só dele.
 const invalid = ref<{ username: boolean; password: boolean }>({ username: false, password: false });
 const usernameInput = ref<{ inputRef?: HTMLInputElement } | null>(null);
-const { reset: resetSession } = useOperatorSession();
+const { reset: resetSession, rememberSignedIn } = useOperatorSession();
 
 onMounted(() => nextTick(() => usernameInput.value?.inputRef?.focus()));
 
@@ -63,6 +66,9 @@ async function submit() {
       credentials: "same-origin",
       body: { ...props.extraBody, username: username.value.trim(), password: password.value },
     });
+    // Antes do reload: se a sessão cair logo depois de entrar, o login que voltar
+    // diz que ela terminou, em vez de abrir vazio (#3194).
+    rememberSignedIn();
     await refreshNuxtData("operator-session");
     resetSession();
     emit("success");
@@ -72,11 +78,19 @@ async function submit() {
       pending.value = false;
     }
   } catch (cause) {
-    invalid.value = { username: true, password: true };
-    error.value = httpErrorMessage(
-      cause,
-      "Não foi possível entrar. Confira usuário e senha.",
-    );
+    // Falha de TRANSPORTE (sem resposta, o BFF sem o Django) não é culpa do que
+    // foi digitado: os campos não ficam vermelhos. E a demora tem frase de login:
+    // a do BFF ("Confira se a operação aconteceu antes de repetir") é de quem
+    // grava dinheiro; entrar de novo é sempre seguro (#3194, P2-15).
+    const transport = isTransientError(cause);
+    invalid.value = { username: !transport, password: !transport };
+    error.value =
+      httpErrorCode(cause) === "upstream_timeout"
+        ? LOGIN_TIMEOUT_MESSAGE
+        : httpErrorMessage(
+            cause,
+            transport ? LOGIN_NO_ANSWER_MESSAGE : "Não foi possível entrar. Confira usuário e senha.",
+          );
     pending.value = false;
   }
 }

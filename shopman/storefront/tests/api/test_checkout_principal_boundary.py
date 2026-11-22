@@ -69,9 +69,21 @@ def test_anonymous_cannot_mutate_another_phone_cart(client, checkout_case):
     assert cart_state(victim_cart) == before
 
 
+def baseline_after_login(client, payload):
+    """A baseline que a tela leria depois de entrar.
+
+    Entrar com a sacola cheia reprecifica a sacola (#3235), e a revisão muda. Na loja
+    o Finalizar só abre depois do /entrar, então a baseline já nasce com a cliente; a
+    fixture lê a dela ainda anônima, antes do login.
+    """
+    fresh = {k: v for k, v in payload.items() if k not in ("expected_total_q", "expected_revision")}
+    return with_baseline(client, fresh)
+
+
 def test_authenticated_phone_wins_and_replay_ignores_payload_phone(client, checkout_case):
     owner, victim_cart, payload = checkout_case
     login_as_customer(client, owner)
+    payload = baseline_after_login(client, payload)
     before = cart_state(victim_cart)
     response = client.post("/api/v1/checkout/", payload, content_type="application/json")
     assert response.status_code == 201, response.content
@@ -107,6 +119,7 @@ def test_invalid_payment_has_no_order_or_victim_effect(client, checkout_case, me
 def test_phone_can_be_omitted_by_authenticated_customer(client, checkout_case):
     owner, victim_cart, payload = checkout_case
     login_as_customer(client, owner)
+    payload = baseline_after_login(client, payload)
     payload.pop("phone")
     before = cart_state(victim_cart)
     response = client.post("/api/v1/checkout/", payload, content_type="application/json")

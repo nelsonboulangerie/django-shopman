@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { controlDir } from "./support/clock";
+import { atCounterHour, backToRealTime, controlDir } from "./support/clock";
 import { customerOrdersPickupToday } from "./support/customer";
 import { sefazAuthorizesAll, sefazRejectsNext } from "./support/fiscal";
 import { cashierAccepts, cashierDelivers, cashierStartsPreparing, orderCard } from "./support/gestor";
@@ -25,10 +25,12 @@ const TAX_ID = "52998224725";
 
 test.skip(!controlDir, "pede a nota simulada da pilha (OPERATOR_CONTROL_DIR; README)");
 test.afterAll(() => sefazAuthorizesAll());
+test.afterAll(() => backToRealTime());
 
 test("F1: a NFC-e recusada mostra o motivo e o reprocesso autoriza", async ({ browser, baseURL }, testInfo) => {
+  const at = await atCounterHour();
   sefazRejectsNext(REJECTION);
-  const gestorContext = await roleContext(browser, baseURL!);
+  const gestorContext = await roleContext(browser, baseURL!, false, at);
   const gestor = await gestorContext.newPage();
   await acknowledgeOtherOrdersAlarms(gestor);
   await managerSignsIn(gestor);
@@ -40,7 +42,7 @@ test("F1: a NFC-e recusada mostra o motivo e o reprocesso autoriza", async ({ br
 
   // Cozinha: a Gerente abre a estação de Separação (a do pão pronto) e bloqueia; Diofer
   // entra com PIN.
-  const kitchenContext = await roleContext(browser, stack.kitchen);
+  const kitchenContext = await roleContext(browser, stack.kitchen, false, at);
   const kitchen = await kitchenContext.newPage();
   await managerSignsIn(kitchen);
   await kitchen.getByRole("button", { name: "Usar sem vincular" }).click();
@@ -49,7 +51,7 @@ test("F1: a NFC-e recusada mostra o motivo e o reprocesso autoriza", async ({ br
   await lockDevice(kitchen);
   await operatorUnlocksWithPin(kitchen, cast.kitchen);
 
-  const storeContext = await roleContext(browser, stack.store, true);
+  const storeContext = await roleContext(browser, stack.store, true, at);
   const store = await storeContext.newPage();
   const ref = await customerOrdersPickupToday(store, testInfo, {
     product: "Croissant",

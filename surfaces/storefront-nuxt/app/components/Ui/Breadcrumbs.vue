@@ -53,6 +53,11 @@
         />
       </slot>
     </template>
+    <!-- O aviso de página mora logo DEPOIS da faixa do breadcrumb, que é uma barra do topo
+         (#3267). Só no cliente: o lugar nasce no `onMounted`, e no SSR não há aviso. -->
+    <Teleport v-if="noticeAnchor" :to="noticeAnchor">
+      <PageNotice placement="band" />
+    </Teleport>
   </nav>
 </template>
 
@@ -125,6 +130,29 @@
       collapsed.value = node.scrollWidth > node.clientWidth + 1;
     });
   }
+
+  // O aviso de página (#3267): o lugar dele é logo depois da faixa que envolve este
+  // breadcrumb (`.shop-breadcrumb-bar`, a barra dourada das páginas), não antes dela.
+  const noticeAnchor = shallowRef<HTMLElement | null>(null);
+  const { claim: claimNotice, release: releaseNotice } = usePageNoticeAnchor();
+
+  onMounted(() => {
+    const nav = navRef.value;
+    if (!nav) return;
+    const band = (nav.closest(".shop-breadcrumb-bar") as HTMLElement | null) ?? nav;
+    const anchor = document.createElement("div");
+    anchor.setAttribute("data-page-notice-anchor", "");
+    band.after(anchor);
+    noticeAnchor.value = anchor;
+    claimNotice();
+  });
+  onBeforeUnmount(() => {
+    if (noticeAnchor.value) releaseNotice();
+  });
+  onUnmounted(() => {
+    noticeAnchor.value?.remove();
+    noticeAnchor.value = null;
+  });
 
   onMounted(() => {
     measure();

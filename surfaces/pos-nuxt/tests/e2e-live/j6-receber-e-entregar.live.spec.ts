@@ -333,6 +333,15 @@ const PIX_ROUND = process.env.PDV_LIVE_J6_PIX || "";
 /** `antes`: só a captura da tela decisiva, no código de antes (#2916/#2917). */
 const SIDE = process.env.PDV_LIVE_J6_SIDE || "depois";
 
+/**
+ * O teste da rodada pedida roda; o das outras rodadas é declarado pulado, sem abrir o
+ * PDV. O pulo dentro do corpo vinha depois da fixture `cashierAtCounter`: cada teste
+ * que só ia pular entrava com a Gerente e destravava com o PIN da Fran, e no sexto em
+ * sequência o freio de 5 identificações por minuto (`OperatorUnlockView`) barrava o
+ * PIN ("Muitas tentativas de identificação") e a jornada seguinte caía (#3295).
+ */
+const inRound = (...rounds: string[]) => (rounds.includes(PIX_ROUND) ? test : test.skip);
+
 async function choosesPixAndReceives(page: Page) {
   const payment = page.locator("[data-preorder-balance-payment]");
   await payment.locator('[data-payment-method="pix"]').click();
@@ -349,11 +358,10 @@ for (const device of ["phone", "counter"] as const) {
   test.describe(`J6 Pix no saldo · ${device === "phone" ? "375 px" : "1366 px"}`, () => {
     test.use({ device });
 
-    test("o saldo em Pix: o QR da venda, na tela e na Tela do cliente, e a entrega quando o banco confirma", async (
+    inRound("pago")("o saldo em Pix: o QR da venda, na tela e na Tela do cliente, e a entrega quando o banco confirma", async (
       { cashierAtCounter: page },
       testInfo,
     ) => {
-      test.skip(PIX_ROUND !== "pago", "rodada do Pix confirmado (PDV_LIVE_J6_PIX=pago)");
       test.setTimeout(10 * 60_000);
 
       await opensOrder(page);
@@ -397,11 +405,10 @@ for (const device of ["phone", "counter"] as const) {
       await display.close();
     });
 
-    test("o Pix que não chega: o aviso traz Gerar outro Pix, e receber em dinheiro cancela o Pix antes", async (
+    inRound("nao-chega")("o Pix que não chega: o aviso traz Gerar outro Pix, e receber em dinheiro cancela o Pix antes", async (
       { cashierAtCounter: page },
       testInfo,
     ) => {
-      test.skip(PIX_ROUND !== "nao-chega", "rodada do Pix que não chega (PDV_LIVE_J6_PIX=nao-chega)");
       test.setTimeout(12 * 60_000);
 
       await opensOrder(page);
@@ -453,11 +460,10 @@ for (const device of ["phone", "counter"] as const) {
       await capture(page, testInfo, "entregue-em-dinheiro");
     });
 
-    test("Pix misto (#2916): parte em dinheiro, parte em Pix, o Recebi o Pix confere e a entrega sai", async (
+    inRound("pago", "misto")("Pix misto (#2916): parte em dinheiro, parte em Pix, o Recebi o Pix confere e a entrega sai", async (
       { cashierAtCounter: page },
       testInfo,
     ) => {
-      test.skip(PIX_ROUND !== "pago" && PIX_ROUND !== "misto", "rodada do Pix misto (PDV_LIVE_J6_PIX=pago ou misto)");
       test.setTimeout(10 * 60_000);
 
       await opensOrder(page);
@@ -508,11 +514,10 @@ for (const device of ["phone", "counter"] as const) {
       await capture(page, testInfo, "misto-entregue");
     });
 
-    test("saldo parcial (#2917): a encomenda paga e aumentada cobra em Pix só o que falta", async (
+    inRound("pago")("saldo parcial (#2917): a encomenda paga e aumentada cobra em Pix só o que falta", async (
       { cashierAtCounter: page },
       testInfo,
     ) => {
-      test.skip(PIX_ROUND !== "pago", "rodada do Pix confirmado (PDV_LIVE_J6_PIX=pago)");
       test.setTimeout(12 * 60_000);
 
       // A encomenda nasce paga em dinheiro, e a cliente pede mais um depois.

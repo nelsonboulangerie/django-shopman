@@ -7,6 +7,7 @@ import { cartLinePromise, orderReadyLine } from '~/presentation/promise'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
+import { checkoutBagRefusal, ORDER_ALREADY_SENT_MESSAGE } from '~/utils/checkoutBagRefusal'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -79,6 +80,8 @@ const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
 // `liveCart` é a sacola de toda a loja; `cart` (abaixo) é a que veio com o checkout.
 const { setFromServer, clearCart, applyCoupon, removeCoupon, cartIssue, raiseStockIssue, cart: liveCart } = useCartState()
+const route = useRoute()
+const { notice: pageNotice, show: showPageNotice } = usePageNotice()
 const session = useShopSession()
 const telemetry = useStorefrontTelemetry()
 const checkoutRoot = ref<HTMLElement | null>(null)
@@ -391,6 +394,12 @@ function acceptCartProjection (incoming: CartProjection) {
 }
 
 const checkout = computed(() => freshestCheckout.value)
+// A sacola sumiu no servidor (#3267): a barreira acima, que só deixa a revisão andar para
+// a frente, seguraria o item que saiu no resumo e no contador. Aqui a leitura nova é a
+// verdade, vazia.
+function acceptEmptiedCheckout () {
+  if (data.value?.checkout) freshestCheckout.value = data.value.checkout
+}
 
 // O relógio do checkout é o da LOJA (`checkout.today`, escrito pelo servidor no fuso
 // dela): "Hoje", "Amanhã", o piso da fornada e os limites do calendário saem daqui, e
@@ -485,6 +494,15 @@ const checkoutActionLabel = computed(() => action.value?.label || 'Confirmar ped
 // pede um caminho de volta. Neste estado o botão vira "Adicionar itens" (ativo,
 // leva ao cardápio) em vez de "Revisar pedido" morto + "Sacola vazia.".
 const bagIsEmpty = computed(() => !!cart.value?.is_empty)
+// A recusa "sua sacola ficou vazia" (#3267) diz a frase e dá a saída no aviso de página.
+// Enquanto ele está à vista, a etapa e a barra do total não repetem a frase nem oferecem
+// uma segunda saída igual; fechado o aviso, a sacola vazia volta ao de sempre.
+const bagGoneNoticeShowing = computed(() =>
+  bagIsEmpty.value
+  && pageNotice.value?.path === route.path
+  && pageNotice.value?.tone === 'attention'
+  && pageNotice.value?.action?.to === '/menu'
+)
 const authAction = computed(() => checkout.value?.auth_action || null)
 const authRoute = computed(() => authAction.value?.href || '/entrar?next=/finalizar')
 const availableFulfillment = computed(() => availableFulfillmentOptions(checkout.value))
@@ -1169,7 +1187,7 @@ function stepHeaderSummary (step: Step) {
     addressSummary: addressSummary.value,
     whenSummary: whenSummary.value,
     paymentMethodLabel: paymentMethodLabel.value,
-    action: action.value
+    action: bagGoneNoticeShowing.value ? null : action.value
   })
 }
 
@@ -1593,7 +1611,12 @@ async function submitCheckout () {
     }
     const data = failure.data || {}
     confirmationUnknown.value = data.error_code === 'mutation_in_progress'
-    if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) return
+    // A mesma tentativa já virou pedido (a outra aba deste navegador restaurou o mesmo
+    // rascunho e enviou primeiro): a tela abre o pedido e diz por quê (#3267).
+    if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) {
+      if (confirmedTrackingUrl.value) showPageNotice(ORDER_ALREADY_SENT_MESSAGE, confirmedTrackingUrl.value)
+      return
+    }
     // O Django ainda está gravando esta mesma tentativa: conferir até terminar.
     if (data.error_code === 'mutation_in_progress') {
       startUncertainCheck()
@@ -1602,6 +1625,30 @@ async function submitCheckout () {
     if (failure.status < 500 && data.error_code !== 'mutation_in_progress') attemptKey.value = createCheckoutAttemptKey()
     const field = typeof data.field === 'string' ? data.field : ''
     serverError.value = errorDetail(e, 'Não foi possível confirmar o pedido.')
+    // A sacola já saiu (outra aba enviou primeiro) ou sumiu (encerrada, apagada,
+    // sem item): não é erro de campo, é outro estado da sacola (#3267). O pedido que
+    // já saiu abre direto; a sacola que sumiu volta vazia, com o caminho do cardápio.
+    const bagRefusal = checkoutBagRefusal(data)
+    if (bagRefusal) {
+      serverError.value = ''
+      confirmOpen.value = false
+      // O aviso é o de página (abaixo das barras, primeiro conteúdo, com X), nunca
+      // toast: ele fala do que aconteceu com a sacola e fica enquanto a causa durar.
+      if (bagRefusal.kind === 'order_already_sent') {
+        clearCart()
+        clearCheckoutDraft()
+        showPageNotice(bagRefusal.message, bagRefusal.href)
+        await navigateTo(bagRefusal.href)
+        return
+      }
+      await refresh()
+      acceptEmptiedCheckout()
+      showPageNotice(bagRefusal.message, route.path, {
+        tone: 'attention',
+        action: { label: bagRefusal.actionLabel, to: bagRefusal.href }
+      })
+      return
+    }
     // Preço/cupom mudou entre a revisão e o confirm: o servidor já reprecificou a
     // sessão (o guardião barrou a cobrança surpresa). Reprecificamos a TELA para o
     // sheet mostrar o novo total em vez de deixar o valor velho ao lado do aviso —
@@ -2622,19 +2669,21 @@ useSeoMeta({
               <span class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</span>
               <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
             </p>
-            <UiButton
-              size="lg"
-              :icon="primaryAction.icon"
-              class="w-full shop-action-inverted"
-              :loading="primaryAction.loading"
-              :disabled="primaryAction.disabled"
-              @click="primaryAction.run"
-            >
-              {{ primaryAction.label }}
-            </UiButton>
-            <p v-if="primaryAction.reason" class="text-center text-xs text-ink-foreground/70">
-              {{ primaryAction.reason }}
-            </p>
+            <template v-if="!bagGoneNoticeShowing">
+              <UiButton
+                size="lg"
+                :icon="primaryAction.icon"
+                class="w-full shop-action-inverted"
+                :loading="primaryAction.loading"
+                :disabled="primaryAction.disabled"
+                @click="primaryAction.run"
+              >
+                {{ primaryAction.label }}
+              </UiButton>
+              <p v-if="primaryAction.reason" class="text-center text-xs text-ink-foreground/70">
+                {{ primaryAction.reason }}
+              </p>
+            </template>
           </div>
 
           <BottomSheet
