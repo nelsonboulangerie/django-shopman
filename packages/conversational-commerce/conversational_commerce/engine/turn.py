@@ -212,6 +212,10 @@ class Engine:
     commitments: CommitmentLedger = field(default_factory=CommitmentLedger)
     memory: MemoryStore = field(default_factory=MemoryStore)
     exposures: ExposureLedger = field(default_factory=ExposureLedger)
+    # O texto de cada mensagem pronta, pelo ``body_ref`` que o canal recebe (``reply:<plano>``). O
+    # ``ReplyPlan`` guarda as partes e o lastro, não o texto; o canal de verdade precisa do texto
+    # para enviar, e ele fica só aqui, em memória, nunca num registro.
+    bodies: dict[str, str] = field(default_factory=dict)
     _turns: int = 0
 
     # ── envelope ────────────────────────────────────────────────────────────
@@ -761,6 +765,7 @@ class Engine:
         prepared = PreparedMessage(decision_id=decision_id, content_hash=sha256_hash({"text": reply.text}),
                                    recipient=episode.subject or "unknown", binding=event.channel_binding,
                                    body_ref=f"reply:{reply.plan.id}")
+        self.bodies[prepared.body_ref] = reply.text
         try:
             exposure = self.exposures.record(self.ports.channel.send(ctx, prepared, f"send:{decision_id}"))
         except PortError as error:
@@ -904,6 +909,7 @@ class Engine:
             return TurnResult("held", **result)
         prepared = PreparedMessage(decision_id=decision.decision_id, content_hash=sha256_hash({"text": reply.text}),
                                    recipient=entry.recipient, binding=entry.binding, body_ref=f"reply:{reply.plan.id}")
+        self.bodies[prepared.body_ref] = reply.text
         try:
             exposure = self.exposures.record(self.ports.channel.send(ctx, prepared, f"send:{decision.decision_id}"))
         except PortError as error:
