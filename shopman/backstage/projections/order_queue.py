@@ -4174,6 +4174,8 @@ _EVENT_LABELS = {
     # O lote rendeu menos do que as reservas, ou passou da hora com o pedido esperando (#2594).
     "production_hold_short": "Lote rendeu menos: o item ficou em falta",
     "production_lot_late": "Lote atrasado: o item ainda não ficou pronto",
+    # O lote ficou pronto com desconto, que a reserva deste pedido não aceita (#2723).
+    "production_hold_grade": "Lote ficou pronto com desconto: o item ficou em falta",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
     "fiscal_requeued": "NFC-e enviada de novo",
@@ -4462,7 +4464,9 @@ def _payment_event_detail(payload: dict) -> str:
 _PRODUCTION_HOLD_LOST_EVENT = "production_hold_lost"
 #: Os três fatos da promessa de produção (cancelado, rendeu menos, atrasado) têm o
 #: mesmo detalhe: o item e o lote.
-_PRODUCTION_PROMISE_EVENTS = frozenset({_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late"})
+_PRODUCTION_PROMISE_EVENTS = frozenset(
+    {_PRODUCTION_HOLD_LOST_EVENT, "production_hold_short", "production_lot_late", "production_hold_grade"}
+)
 
 
 def _production_hold_lost_detail(payload: dict) -> str:

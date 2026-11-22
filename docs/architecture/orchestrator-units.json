@@ -3364,23 +3364,27 @@
         {
           "path": "shopman/shop/services/production_promise.py",
           "symbols": [
-            "order_ref_from_hold_reference",
-            "_format_qty",
-            "_product_name",
-            "announce_lost_holds",
-            "EVENT_TYPE_SHORT",
+            "EVENT_TYPE_GRADE",
             "EVENT_TYPE_LATE",
-            "REASON_VOIDED",
-            "REASON_SHORT",
+            "EVENT_TYPE_SHORT",
+            "REASON_GRADE",
             "REASON_LATE",
+            "REASON_SHORT",
+            "REASON_VOIDED",
             "_EVENT_BY_REASON",
-            "_emit_fact",
-            "_what_happened",
+            "_accepts_any",
             "_already_recorded",
-            "_order_hold_rows",
             "_by_order",
+            "_emit_fact",
+            "_format_qty",
+            "_order_hold_rows",
+            "_output_grades",
+            "_product_name",
+            "_what_happened",
+            "announce_late_lots",
+            "announce_lost_holds",
             "announce_short_lot",
-            "announce_late_lots"
+            "order_ref_from_hold_reference"
           ]
         },
         {
