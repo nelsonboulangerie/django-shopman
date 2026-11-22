@@ -8505,7 +8505,9 @@
             "progress_since",
             "restore_archived_ride",
             "orders_with_archived_ride",
-            "archived_ride_ended_at"
+            "archived_ride_ended_at",
+            "CANCEL_ALERT_MARKERS",
+            "_resolve_cancel_alerts"
           ]
         }
       ],

@@ -173,11 +173,11 @@ def oldest_open_created_at(type: str):
     )
 
 
-def resolve_matching(type: str, *, message_contains: str, actor: str) -> int:
-    """Resolve causas abertas sem pedido (ex.: um serviço), casando o marcador da mensagem."""
+def resolve_matching(type: str, *, message_contains: str, actor: str, order_ref: str = "") -> int:
+    """Resolve causas abertas casando o marcador da mensagem; com ``order_ref``, só as daquele pedido."""
     from shopman.backstage.services.alerts import resolve_alerts_matching
 
-    return resolve_alerts_matching(type, message_contains=message_contains, actor=actor)
+    return resolve_alerts_matching(type, message_contains=message_contains, actor=actor, order_ref=order_ref)
 
 
 def resolve_pk(pk: int, *, actor: str) -> int:

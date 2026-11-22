@@ -1109,6 +1109,19 @@ CANCEL_UNKNOWN_MESSAGE = "Cancelamento sem resultado confirmado. Confira esta co
 CANCEL_NOT_SENT_MESSAGE = "O cancelamento não foi enviado à TaOn. Tente de novo."
 
 
+#: Os avisos de cancelamento da corrida (``integration_failed``), pelo trecho da
+#: frase que cada um grava: a recusa da central (:func:`cancel_refused_message`),
+#: o envio sem resultado (:data:`CANCEL_UNKNOWN_MESSAGE`) e o pedido cancelado com
+#: a corrida aberta (:func:`on_order_cancelled`). Com a corrida encerrada (C, N ou
+#: F) nenhum deles é mais verdade, e saem sozinhos (#2496). Os outros avisos
+#: ``integration_failed`` do pedido ficam.
+CANCEL_ALERT_MARKERS = (
+    "não cancelou",
+    "Cancelamento sem resultado confirmado",
+    "a corrida segue aberta na central",
+)
+
+
 def ride_name(order) -> str:
     """Como a frase chama a corrida deste pedido: "a corrida B", ou "a corrida do pedido A47"."""
     from shopman.shop.services.operator_orders import short_ref
@@ -1740,6 +1753,8 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
                 # A foto e a posição eram da corrida: com ela encerrada (ou sem o
                 # entregador que saiu), saem do cache.
                 _forget_driver_caches(ride_id)
+    if outcome == "applied" and status in ("C", "N", "F"):
+        _resolve_cancel_alerts(order, status)
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
     if failed_ride and not observed.get("dispatched_at"):
@@ -1759,6 +1774,23 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             # a tempo): o mesmo aviso de "já coletou", uma vez por pedido.
             on_order_cancelled(order)
     return outcome
+
+
+def _resolve_cancel_alerts(order, status: str) -> None:
+    """A corrida acabou: os avisos de cancelamento dela deixam de ser verdade (#2496)."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    ref = order.ref
+
+    def _resolve():
+        for marker in CANCEL_ALERT_MARKERS:
+            try:
+                alert_adapter.resolve_matching("integration_failed", message_contains=marker,
+                                               actor=f"courier:{status}", order_ref=ref)
+            except Exception:
+                logger.warning("courier.cancel_alert_resolve_failed order=%s", ref, exc_info=True)
+
+    transaction.on_commit(_resolve)
 
 
 def recover_local_status(order, *, ride_id: str) -> None:
