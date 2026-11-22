@@ -558,7 +558,7 @@ const CLOSE_HERE_ACTION = {
     required: true,
     description: "A TaOn não encerrou a corrida A. Encerre aqui só se souber o que aconteceu.",
     outcomes: [
-      { key: "delivered", label: "Foi entregue", consequence: "O pedido fica entregue. O troco fica para o Entregador voltou." },
+      { key: "delivered", label: "Foi entregue", consequence: "O pedido fica entregue. O troco fica para o gesto “Entregador voltou”." },
       { key: "returned", label: "Voltou para a loja", consequence: "O pedido volta para Aguardando. O troco volta para a gaveta." },
     ],
   },

@@ -244,7 +244,7 @@ test.describe("Entregas: encerrar aqui", () => {
     await notice.getByRole("button", { name: "Encerrar aqui", exact: true }).click();
     const confirm = detail.locator("[data-ride-close-here]");
     await expect(confirm.getByText("A TaOn não encerrou a corrida A. Encerre aqui só se souber o que aconteceu.", { exact: true })).toBeVisible();
-    await expect(confirm.locator('[data-ride-close-outcome="delivered"]').getByText("O pedido fica entregue. O troco fica para o Entregador voltou.", { exact: true })).toBeVisible();
+    await expect(confirm.locator('[data-ride-close-outcome="delivered"]').getByText("O pedido fica entregue. O troco fica para o gesto “Entregador voltou”.", { exact: true })).toBeVisible();
     await expect(confirm.locator('[data-ride-close-outcome="returned"]').getByText("O pedido volta para Aguardando. O troco volta para a gaveta.", { exact: true })).toBeVisible();
     await confirm.getByRole("button", { name: "Voltou para a loja", exact: true }).click();
     await expect

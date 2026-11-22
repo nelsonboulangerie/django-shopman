@@ -742,7 +742,7 @@ def test_the_confirmation_says_where_the_change_and_the_machine_go(shop, monkeyp
 
     outcomes = _outcomes(build_deliveries().rides[0])
     assert outcomes["delivered"]["consequence"] == \
-        "O pedido fica entregue. O troco e a maquininha ficam para o Entregador voltou."
+        "O pedido fica entregue. O troco e a maquininha ficam para o gesto “Entregador voltou”."
     assert outcomes["returned"]["consequence"] == \
         "O pedido volta para Aguardando. O troco volta para a gaveta e a maquininha fica livre."
 

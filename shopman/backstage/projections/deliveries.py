@@ -571,7 +571,7 @@ def _close_here_action(lead: Order, orders: list[Order], *, user=None) -> Action
     many = len(orders) > 1
     subject = "Os pedidos ficam entregues." if many else "O pedido fica entregue."
     things = " e ".join(word for word, out in (("o troco", change), ("a maquininha", machine)) if out)
-    pending = f" {things[0].upper()}{things[1:]} {'ficam' if change and machine else 'fica'} para o Entregador voltou." if things else ""
+    pending = f" {things[0].upper()}{things[1:]} {'ficam' if change and machine else 'fica'} para o gesto “Entregador voltou”." if things else ""
     back = []
     if change:
         back.append("o troco volta para a gaveta")
