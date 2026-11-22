@@ -1,6 +1,6 @@
-import { devices, expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
+import { devices, expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page, type TestInfo } from '@playwright/test'
 import { addReadyProductFromMenu } from './support/customer'
-import { capture, newCustomerPhone, settled } from './support/stack'
+import { capture, newCustomerPhone, settled, stack } from './support/stack'
 
 // J14 · Entrar pelo WhatsApp (#2569, item 10).
 //
@@ -23,11 +23,20 @@ import { capture, newCustomerPhone, settled } from './support/stack'
 // - no COMPUTADOR (1366 px), a resposta traz "Liberar o Chrome", e só o toque nesse botão,
 //   no celular, solta a aba. A mensagem sozinha não deixa ninguém entrar.
 //
+// A resposta da casa sai de verdade, pelo adapter do ManyChat, e cai no ManyChat FALSO da
+// pilha (shopman/shop/tests/e2e/fake_manychat.py, #3272), que a guarda. É dali que o
+// celular da cliente (outro navegador, outro dispositivo) tira o link de cada botão:
+// "Liberar o Chrome" solta a aba do computador, e "Encerrar acesso" (o "Não foi você?")
+// desfaz a entrada que já aconteceu.
+//
 // Nenhum estado nasce por API, Admin ou banco além da mensagem que o ManyChat recebe.
 const PRODUCT = 'Croissant' // pronto agora no seed `--profile qa`
 const PHONE_USER_AGENT = devices['Pixel 7'].userAgent
 // O Django da pilha (scripts/run_storefront_journeys.sh): é ali que o ManyChat bate.
 const DJANGO = (process.env.JOURNEY_DJANGO_URL || `http://127.0.0.1:${process.env.JOURNEYS_DJANGO_PORT || '8090'}`).replace(/\/$/, '')
+// O ManyChat falso da pilha, onde a resposta da casa fica guardada para a jornada ler.
+const MANYCHAT = (process.env.JOURNEY_MANYCHAT_URL || `http://127.0.0.1:${process.env.JOURNEYS_MANYCHAT_PORT || '12191'}`).replace(/\/$/, '')
+const STORE = stack.store
 
 interface WhatsappContact {
   phone: string
@@ -176,6 +185,13 @@ async function landsOnCheckoutWithBag (page: Page, testInfo: TestInfo, contact: 
   await expect(page.getByText(`${contact.name} ${phoneShown}`)).toBeVisible()
   await capture(page, testInfo, name)
 
+  if (!isPhoneProject(testInfo)) {
+    // No computador o resumo já está ao lado, sempre aberto.
+    const summary = page.locator('aside').filter({ hasText: 'Seu pedido' })
+    await expect(summary).toBeVisible()
+    await expect(summary).toContainText(`1× ${PRODUCT}`)
+    return
+  }
   await page.getByRole('button', { name: 'Ver o resumo do pedido' }).click()
   const receipt = page.getByRole('dialog', { name: 'Seu pedido' })
   await expect(receipt).toBeVisible()
@@ -235,7 +251,66 @@ test.describe('no celular', () => {
   })
 })
 
-test('J14: no computador, a mensagem chega e a aba só entra com o toque em "Liberar"', async ({ page, request }, testInfo) => {
+interface WhatsappButton { caption: string, url: string }
+
+/** A resposta que a casa mandou pelo ManyChat, como chegou no WhatsApp da cliente: os
+ *  botões da última mensagem de texto que o ManyChat falso da pilha guardou para ela
+ *  (shopman/shop/tests/e2e/fake_manychat.py). */
+async function replyButtons (request: APIRequestContext, contact: WhatsappContact): Promise<WhatsappButton[]> {
+  let buttons: WhatsappButton[] = []
+  await expect.poll(async () => {
+    const response = await request.get(`${MANYCHAT}/__sent?subscriber=${contact.subscriberId}`)
+    expect(response.status()).toBe(200)
+    const { sent } = await response.json() as { sent: { endpoint: string, buttons?: WhatsappButton[] }[] }
+    const replies = sent.filter(item => item.endpoint === '/fb/sending/sendContent')
+    buttons = replies.at(-1)?.buttons ?? []
+    return buttons.length
+  }, { message: 'a resposta da casa chegou no WhatsApp da cliente' }).toBeGreaterThan(0)
+  return buttons
+}
+
+function buttonNamed (buttons: WhatsappButton[], caption: RegExp): WhatsappButton {
+  const button = buttons.find(b => caption.test(b.caption))
+  expect(button, `botão ${caption} na resposta (${buttons.map(b => b.caption).join(', ')})`).toBeTruthy()
+  return button!
+}
+
+/** Duas bolhas: a defesa ("Não reconhece este acesso?", com "Encerrar acesso") e, por
+ *  último, a que libera. Os dois links são da loja, com a referência no fragmento. */
+async function theReplyHasBothButtons (request: APIRequestContext, contact: WhatsappContact): Promise<WhatsappButton[]> {
+  const buttons = await replyButtons(request, contact)
+  expect(buttons.map(b => b.caption)).toEqual(['Encerrar acesso', expect.stringMatching(/^Liberar o Chrome/)])
+  expect(buttonNamed(buttons, /^Liberar o Chrome/).url).toMatch(new RegExp(`^${escapeRegExp(STORE)}/liberar-acesso#.+`))
+  expect(buttonNamed(buttons, /^Encerrar acesso$/).url).toMatch(new RegExp(`^${escapeRegExp(STORE)}/encerrar-acesso#.+`))
+  return buttons
+}
+
+function escapeRegExp (text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** O celular da cliente: outro dispositivo, outro navegador, onde o WhatsApp abre os botões. */
+async function phoneOf (browser: Browser): Promise<BrowserContext> {
+  return await browser.newContext({ ...devices['Pixel 7'], locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' })
+}
+
+/** No celular, toca em "Liberar o Chrome": abrir a página É o toque, e ela confirma. */
+async function releasesFromPhone (browser: Browser, testInfo: TestInfo, buttons: WhatsappButton[]) {
+  const phone = await phoneOf(browser)
+  try {
+    const tap = await phone.newPage()
+    await tap.goto(buttonNamed(buttons, /^Liberar o Chrome/).url)
+    await settled(tap)
+    await expect(tap.getByRole('heading', { name: 'Pronto, pode voltar ao computador', level: 1 })).toBeVisible()
+    // A referência sai da barra de endereço assim que é lida.
+    expect(new URL(tap.url()).hash).toBe('')
+    await capture(tap, testInfo, 'no-celular-liberou-o-chrome')
+  } finally {
+    await phone.close()
+  }
+}
+
+test('J14: no computador, a mensagem chega e a aba só entra com o toque em "Liberar"', async ({ page, request, browser }, testInfo) => {
   test.skip(isPhoneProject(testInfo), 'o caminho do computador roda na largura do computador')
   const contact = newContact()
 
@@ -285,12 +360,75 @@ test('J14: no computador, a mensagem chega e a aba só entra com o toque em "Lib
     await capture(page, testInfo, 'mensagem-chegou-sem-liberar')
   })
 
-  // O botão "Liberar o Chrome" mora só na resposta que a casa manda pelo ManyChat, e a
-  // pilha das jornadas não tem ManyChat (sem MANYCHAT_API_TOKEN, nada é enviado): o
-  // endereço dele não sai de lugar nenhum que a cliente veja. Até a pilha ter um ManyChat
-  // falso que guarde a resposta, a jornada no computador para aqui.
-  testInfo.annotations.push({
-    type: 'ficou-de-fora',
-    description: 'o toque em "Liberar o Chrome" e a aba entrando: a resposta da casa não é entregue na pilha'
+  const buttons = await test.step('a resposta chega no WhatsApp com "Liberar o Chrome" e "Encerrar acesso"', async () => {
+    return await theReplyHasBothButtons(request, contact)
+  })
+
+  await test.step('no celular, toca em "Liberar o Chrome"', async () => {
+    await releasesFromPhone(browser, testInfo, buttons)
+  })
+
+  await test.step('a aba que esperava entra sozinha e segue para finalizar com a sacola', async () => {
+    await page.bringToFront()
+    await landsOnCheckoutWithBag(page, testInfo, contact, 'o-chrome-entrou')
+  })
+})
+
+test('J14: no computador, "Não foi você?" desfaz a entrada que o toque liberou', async ({ page, request, browser }, testInfo) => {
+  test.skip(isPhoneProject(testInfo), 'o caminho do computador roda na largura do computador')
+  const contact = newContact()
+
+  await test.step('a cliente põe um item na sacola', async () => {
+    await addReadyProductFromMenu(page, testInfo, PRODUCT)
+  })
+
+  await test.step('vai finalizar, e a loja pede para entrar pelo WhatsApp', async () => {
+    await goesToSignInFromBag(page, testInfo, /Liberar o Chrome/)
+  })
+
+  const message = await test.step('toca em "Abrir o WhatsApp" e a tela espera a mensagem', async () => {
+    return await opensWhatsapp(page, testInfo)
+  })
+
+  await test.step('envia a mensagem, e o ManyChat a recebe', async () => {
+    const link = await manychatReceives(request, contact, message)
+    expect(link.released).toBe(true)
+  })
+
+  const buttons = await test.step('a resposta chega no WhatsApp com "Liberar o Chrome" e "Encerrar acesso"', async () => {
+    return await theReplyHasBothButtons(request, contact)
+  })
+
+  await test.step('o toque em "Liberar o Chrome" deixa a aba entrar', async () => {
+    await releasesFromPhone(browser, testInfo, buttons)
+    await page.bringToFront()
+    await expect(page).toHaveURL(/\/finalizar/, { timeout: 30_000 })
+    await settled(page)
+    await expect(page.getByRole('heading', { name: 'Finalize seu pedido', level: 1 })).toBeVisible()
+  })
+
+  await test.step('no celular, a dona do número toca em "Encerrar acesso" e confirma', async () => {
+    const phone = await phoneOf(browser)
+    try {
+      const tap = await phone.newPage()
+      await tap.goto(buttonNamed(buttons, /^Encerrar acesso$/).url)
+      await settled(tap)
+      // Abrir o link não derruba ninguém (a prévia do WhatsApp também o abre): é o toque.
+      await expect(tap.getByRole('heading', { name: 'Não foi você que entrou?', level: 1 })).toBeVisible()
+      await capture(tap, testInfo, 'no-celular-nao-foi-voce')
+      await tap.getByRole('button', { name: 'Encerrar esse acesso' }).click()
+      await expect(tap.getByRole('heading', { name: 'Acesso encerrado', level: 1 })).toBeVisible()
+      await capture(tap, testInfo, 'no-celular-acesso-encerrado')
+    } finally {
+      await phone.close()
+    }
+  })
+
+  await test.step('no computador, a aba que tinha entrado fica do lado de fora', async () => {
+    await page.reload()
+    await expect(page).toHaveURL(/\/entrar\?next=/)
+    await settled(page)
+    await expect(page.getByRole('heading', { name: 'Entre pelo WhatsApp', level: 1 })).toBeVisible()
+    await capture(page, testInfo, 'a-aba-saiu')
   })
 })
