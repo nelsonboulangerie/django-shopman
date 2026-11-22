@@ -565,3 +565,10 @@ def test_lote_com_desconto_avisa_o_pedido_da_loja_com_a_frase_certa(ficha, djang
     event = OrderEvent.objects.get(order=order, type="production_hold_grade")
     assert event.payload["reason"] == "production_grade"
     assert event.payload["qty"] == "4"
+
+    # #3229: se o pedido segue para a baixa sem ninguém resolver, o aviso diz a causa.
+    order.refresh_from_db()
+    stock_service.fulfill(order)
+    baixa = OperatorAlert.objects.get(type="stock_fulfill_failed", order_ref=order.ref)
+    assert "ficou pronto com desconto" in baixa.message
+    assert "A prateleira está certa. Resolva no pedido" in baixa.message
