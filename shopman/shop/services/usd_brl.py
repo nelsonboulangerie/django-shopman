@@ -1,10 +1,14 @@
 """PTAX de venda do Banco Central: a cotação que converte o gasto com IA em reais.
 
-``quotes_for(days)`` devolve, para cada dia, a cotação a usar. Primeiro o que já está
-gravado (``UsdBrlQuote``); o que falta vem da API pública do BCB (Olinda, sem chave),
-numa chamada só para o período, com prazo curto. Cai a API e não há gravado: vale a última
-cotação conhecida, marcada como provisória, para o número em reais nunca sair sem a
-cotação ao lado dizendo de onde veio. Sem nenhuma cotação na casa, o dia fica sem.
+``quotes_for(days)`` devolve, para cada dia, a cotação a usar, SÓ LENDO (é o lado de leitura
+do B.I.): primeiro o que já está gravado (``UsdBrlQuote``); o que falta vem da API pública
+do BCB (Olinda, sem chave), numa chamada só para o período, com prazo curto, e não é gravado
+ali. Cai a API e não há gravado: vale a última cotação conhecida, marcada como provisória.
+Sem nenhuma cotação na casa, o dia fica sem.
+
+``record_quotes(days)`` é quem grava: a cotação final de cada dia (dia passado, ou o próprio
+dia depois de publicada), pelo ``record_usd_brl_quotes`` no ``maintenance_worker``. Gravada,
+o real de um dia passado não muda mais.
 
 Dinheiro de IA segue em micro-dólar inteiro; a conversão é ``brl_micros``: micro-real
 inteiro, arredondado uma vez só, no fim.
@@ -73,36 +77,37 @@ def _last_known(rates: dict[date, Decimal], day: date) -> tuple[date, Decimal] |
     return quoted_on, rates[quoted_on]
 
 
+def _resolve(missing: list[date]) -> dict[date, tuple[Quote, bool]]:
+    """A cotação de cada dia que falta, pela API, e se ela já é a final (para gravar)."""
+    today = timezone.localdate()
+    try:
+        rates = fetch_ptax(missing[0] - timedelta(days=LOOKBACK_DAYS), min(missing[-1], today))
+    except Exception:  # noqa: BLE001 — API fora: quem chama decide o que vale
+        logger.warning("usd_brl.ptax_unavailable", exc_info=True)
+        return {}
+    found: dict[date, tuple[Quote, bool]] = {}
+    for day in missing:
+        known = _last_known(rates, day)
+        if known is None:
+            continue
+        quoted_on, rate = known
+        final = day < today or quoted_on == day
+        found[day] = (Quote(rate, quoted_on, provisional=not final), final)
+    return found
+
+
 def quotes_for(days: list[date] | set[date]) -> dict[date, Quote]:
-    """A cotação de cada dia pedido. Grava a final; devolve a provisória sem gravar."""
+    """A cotação de cada dia pedido. Só lê: o gravado, ou a API sem gravar, ou a última conhecida."""
     from shopman.shop.models import UsdBrlQuote
 
     wanted = sorted(set(days))
     if not wanted:
         return {}
-    stored = {q.date: q for q in UsdBrlQuote.objects.filter(date__in=wanted)}
-    quotes = {d: Quote(q.sell_rate, q.quoted_on) for d, q in stored.items()}
+    quotes = {q.date: Quote(q.sell_rate, q.quoted_on) for q in UsdBrlQuote.objects.filter(date__in=wanted)}
     missing = [d for d in wanted if d not in quotes]
     if not missing:
         return quotes
-
-    today = timezone.localdate()
-    try:
-        rates = fetch_ptax(missing[0] - timedelta(days=LOOKBACK_DAYS), min(missing[-1], today))
-    except Exception:  # noqa: BLE001 — API fora: vale a última conhecida, provisória
-        logger.warning("usd_brl.ptax_unavailable", exc_info=True)
-        rates = {}
-
-    for day in missing:
-        found = _last_known(rates, day)
-        if found is None:
-            continue
-        quoted_on, rate = found
-        final = day < today or quoted_on == day
-        if final:
-            UsdBrlQuote.objects.get_or_create(date=day, defaults={"quoted_on": quoted_on, "sell_rate": rate})
-        quotes[day] = Quote(rate, quoted_on, provisional=not final)
-
+    quotes.update({day: quote for day, (quote, _final) in _resolve(missing).items()})
     still = [d for d in missing if d not in quotes]
     if still:
         latest = UsdBrlQuote.objects.order_by("-date").first()
@@ -110,3 +115,21 @@ def quotes_for(days: list[date] | set[date]) -> dict[date, Quote]:
             for day in still:
                 quotes[day] = Quote(latest.sell_rate, latest.quoted_on, provisional=True)
     return quotes
+
+
+def record_quotes(days: list[date] | set[date]) -> int:
+    """Grava a cotação FINAL dos dias que ainda não têm. Devolve quantos gravou."""
+    from shopman.shop.models import UsdBrlQuote
+
+    wanted = sorted(set(days))
+    stored = set(UsdBrlQuote.objects.filter(date__in=wanted).values_list("date", flat=True))
+    missing = [d for d in wanted if d not in stored]
+    if not missing:
+        return 0
+    recorded = 0
+    for day, (quote, final) in _resolve(missing).items():
+        if final:
+            _, created = UsdBrlQuote.objects.get_or_create(
+                date=day, defaults={"quoted_on": quote.quoted_on, "sell_rate": quote.rate})
+            recorded += int(created)
+    return recorded

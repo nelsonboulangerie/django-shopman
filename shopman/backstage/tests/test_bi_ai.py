@@ -3,6 +3,7 @@ a pauta da conferência, o que falta à casa e a alternativa segura. Só do Dono
 
 from __future__ import annotations
 
+import io
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from unittest import mock
@@ -10,6 +11,7 @@ from unittest import mock
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
 
@@ -17,6 +19,7 @@ from shopman.backstage.models import DayClosing, OperatorAlert
 from shopman.backstage.projections import bi_ai
 from shopman.shop import concierge_reading
 from shopman.shop.models import AiInvocation, Conversation, ConversationBinding, ConversationMessage, UsdBrlQuote
+from shopman.shop.services import usd_brl
 
 pytestmark = pytest.mark.django_db
 
@@ -81,11 +84,31 @@ def test_spend_by_role_and_model_in_reais_with_the_quote_used():
     assert report.cost_brl_micros == 18_000_000
     assert not report.provisional_quotes
 
-    # A cotação usada fica gravada: dia passado não muda de valor depois.
+    # O B.I. só lê: quem grava a cotação é o ``record_usd_brl_quotes`` (no worker).
+    assert not UsdBrlQuote.objects.exists()
+    with mock.patch(FETCH, return_value=rates):
+        assert usd_brl.record_quotes({day1, day2, day3}) == 3
     assert UsdBrlQuote.objects.get(date=day2).quoted_on == day1
+    # Gravada, o dia passado não muda de valor e o B.I. nem pergunta à API.
     with mock.patch(FETCH, side_effect=AssertionError("não deveria buscar de novo")):
         again = bi_ai.build_bi_ai(date_from=day1, date_to=day3)
     assert again.cost_brl_micros == 18_000_000
+
+
+def test_the_reading_never_writes_and_only_final_quotes_are_recorded():
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+    _call(today, cost=1_000_000)
+    # Hoje ainda sem PTAX publicada: vale a de ontem, provisória, e NÃO se grava.
+    with mock.patch(FETCH, return_value={yesterday: Decimal("5.0000")}):
+        report = bi_ai.build_bi_ai(date_from=today, date_to=today)
+        assert report.provisional_quotes and report.cost_brl_micros == 5_000_000
+        assert usd_brl.record_quotes({today}) == 0
+    assert not UsdBrlQuote.objects.exists()
+    # Publicada a de hoje, ela é final e o comando grava.
+    with mock.patch(FETCH, return_value={yesterday: Decimal("5.0000"), today: Decimal("5.5000")}):
+        call_command("record_usd_brl_quotes", stdout=io.StringIO())
+    assert UsdBrlQuote.objects.get(date=today).sell_rate == Decimal("5.5000")
 
 
 def test_api_down_uses_the_last_known_quote_marked_provisional():

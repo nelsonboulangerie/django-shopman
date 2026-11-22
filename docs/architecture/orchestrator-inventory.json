@@ -15618,10 +15618,31 @@
             "Quote",
             "TIMEOUT_S",
             "_last_known",
+            "_resolve",
             "brl_micros",
             "fetch_ptax",
             "logger",
-            "quotes_for"
+            "quotes_for",
+            "record_quotes"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/record_usd_brl_quotes.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command"
           ]
         }
       ]
