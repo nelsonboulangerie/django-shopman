@@ -63,7 +63,10 @@ describe("ReadFreshness: leitura útil e transporte são estados distintos", () 
       expect.stringMatching(/^· há \d+ s$/),
       "· atualização falhou",
     ]);
-    for (const block of blocks) expect(block.classes()).toContain("whitespace-nowrap");
+    for (const block of blocks) expect(block.classes()).toContain("inline-block");
+    // `inline-block`, nunca `whitespace-nowrap`: no menu do Gestor o texto tem de poder
+    // quebrar, e o bloco que sozinho não cabe na linha quebra por dentro em vez de vazar.
+    expect(wrapper.html()).not.toContain("whitespace-nowrap");
     // A frase lida continua a mesma.
     expect(wrapper.get("[data-read-freshness-useful]").text().replace(/\s+/g, " ")).toMatch(
       /^Última leitura útil: \S+ · há \d+ s · atualização falhou$/,
