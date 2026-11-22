@@ -117,12 +117,11 @@ describe('surface UX guardrails', () => {
     expect(offenders).toEqual([])
   })
 
-  it('keeps search on its own full page, menu only links to it', () => {
+  it('keeps search in the overlay, menu only opens it', () => {
     const menu = read('app/pages/menu.vue')
-    const searchPage = read('app/pages/busca.vue')
 
     // O cardápio não tem campo de busca próprio: a lupa ABRE o overlay de busca
-    // (mesma tela → foco/teclado confiável no iOS). A página /busca segue como fallback.
+    // (mesma tela → foco/teclado confiável no iOS). Não há página de busca.
     expect(menu).not.toContain('<UiCommandInput')
     expect(menu).not.toContain('<UiCommand')
     expect(menu).not.toContain('<UiInput')
@@ -135,16 +134,7 @@ describe('surface UX guardrails', () => {
     expect(menu).toContain('uniqueItemsBySku')
     expect(menu).toContain('sectionsBySku')
     expect(menu).toContain("from '~/presentation/menu'")
-    // A página de busca é a dona da experiência (a la iFood).
-    expect(searchPage).toContain('placeholder="Buscar no cardápio"')
-    expect(searchPage).toContain('<UiInputGroup')
-    expect(searchPage).toContain('searchPanelView')
-    expect(searchPage).toContain('data-busca-collections')
-    expect(searchPage).toContain('data-busca-filter-chips')
-    expect(searchPage).toContain('data-busca-results')
-    expect(searchPage).toContain('<ProductListItem')
-    expect(searchPage).toContain(':aria-pressed="chip.kind === \'collection\' ? undefined : chipApplied(chip)"')
-    // Overlay de busca (mesma tela) reusa a mesma experiência/projeção da página.
+    // O overlay de busca (mesma tela) é a dona da experiência (a la iFood).
     const overlay = read('app/components/SearchOverlay.vue')
     expect(overlay).toContain('useSearchOverlay')
     expect(overlay).toContain('searchPanelView')
@@ -993,21 +983,13 @@ describe('surface UX guardrails', () => {
   })
 
   it('keeps alpha-test search discoveries canonized in the UI source', () => {
-    const search = read('app/pages/busca.vue')
     const overlay = read('app/components/SearchOverlay.vue')
     const menu = read('app/pages/menu.vue')
 
-    expect(search).toContain('collectionTargetForSearchOption')
     expect(menu).toContain('resolveSectionRefFromParam')
     expect(menu).toContain('dynamicCollectionPublicSlug')
     expect(menu).toContain('watch(() => route.query.secao, applyRouteSection)')
     expect(menu).toContain('class="min-h-11 min-w-11 shrink-0 rounded-full"')
-    expect(search).toContain("matchMedia('(pointer: fine)')")
-    expect(search).toContain('md:sticky md:top-16')
-    expect(search).toContain('class="h-11 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"')
-    expect(search).toContain('class="min-h-11 rounded-full px-3"')
-    expect(search).toContain('<ProductListItem')
-    expect(search).toContain('framed')
     expect(overlay).toContain(':placeholder="open ?')
     expect(overlay).toContain('v-if="open" class="min-h-0 flex-1 overflow-y-auto"')
     expect(overlay).toContain('data-search-filter-chips')

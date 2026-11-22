@@ -107,7 +107,7 @@ test("o andamento da TaOn: chega para coletar, entrega prevista e o aviso de sem
   await open(page, "/preorders/NB-1053", { width: 1366, height: 768 }, "light");
   const progress = page.locator("[data-pos-courier-progress]");
   await expect(progress).toContainText(/Chega para coletar em ~\d+ min/, { timeout: 90_000 });
-  await expect(progress).toContainText(/Entrega prevista ~\d{1,2}h(\d{2})?/);
+  await expect(progress).toContainText(/Entrega prevista para as? \d{1,2}h(\d{2})?/);
   await open(page, "/preorders/NB-1057", { width: 1366, height: 768 }, "light");
   await expect(page.locator("[data-pos-courier-stale]")).toContainText("A TaOn não informa a corrida desde", { timeout: 90_000 });
 });

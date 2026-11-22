@@ -51,10 +51,15 @@ describe("usePosEvents: tempo real que reconecta", () => {
     expect(onPush).not.toHaveBeenCalled();
 
     cash!.emit("backstage-cash-update");
-    expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[0]);
-    // O aviso de estoque diz qual canal avisou: a tela relê só os selos.
+    expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[0], "backstage-cash-update");
+    // O aviso de estoque diz qual canal e qual aviso: a tela relê só os selos.
     stock!.emit("stock-update");
-    expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[2]);
+    expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[2], "stock-update");
+    // Produto pausado e mutação do canal chegam pelo MESMO stream (#2586).
+    stock!.emit("product-paused");
+    expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[2], "product-paused");
+    stock!.emit("listing-changed");
+    expect(onPush).toHaveBeenLastCalledWith(POS_TERMINAL_CHANNELS[2], "listing-changed");
 
     // Um canal caído não devolve a tela ao poll enquanto outro está de pé.
     cash!.failForGood();

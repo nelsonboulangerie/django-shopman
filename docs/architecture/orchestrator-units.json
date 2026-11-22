@@ -7527,7 +7527,11 @@
           "symbols": [
             "validate_and_apply_coupon",
             "apply_coupon_code",
-            "remove_coupon_code"
+            "remove_coupon_code",
+            "CouponNotBetter",
+            "_coupon_potential_q",
+            "_line_discounts",
+            "_summarize"
           ]
         }
       ],
@@ -11167,6 +11171,51 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.services.kds:reconcile_to_lines"
+      ]
+    },
+    {
+      "id": "shop.services-demand-anchor",
+      "question": "Quando o plano de uma data cresce, a demanda sem fornada dela se prende às unidades novas?",
+      "owner": "stock.demand-anchor",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.demand_anchor:anchor_demand",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/demand_anchor.py",
+          "symbols": [
+            "_ORDER_REFERENCE_PREFIX",
+            "_resolve_over_plan_alert",
+            "anchor_demand",
+            "connect",
+            "on_production_changed"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "craftsman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:stock"
+      ],
+      "events": [
+        "production_changed"
+      ],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_plano_que_cresce_prende_a_demanda.py::test_o_plano_que_cresce_prende_a_demanda_da_encomenda_e_o_livre_fica_zero"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.demand_anchor:anchor_demand"
       ]
     },
     {
@@ -19707,6 +19756,43 @@
       "out_of_extraction": false
     },
     {
+      "id": "shop.pickup-window-in-use",
+      "question": "Uma janela da grade pode sair (ou trocar de ref) com pedido aberto nela?",
+      "owner": "fulfillment.pickup-window-in-use",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.pickup_window_in_use:removal_refusal",
+      "authoritative_symbols": [
+        "shopman.shop.policies.pickup_window_in_use:removal_refusal"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/pickup_window_in_use.py",
+          "symbols": [
+            "LISTED_ORDERS",
+            "_order_line",
+            "removal_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_admin_janela_em_uso.py::test_a_politica_lista_os_pedidos_e_resume_o_resto"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.preorder-kitchen-policy",
       "question": "Quando o card da encomenda chega à Cozinha (hora combinada menos preparo menos antecedência)?",
       "owner": "preorder.kitchen-policy",
@@ -19826,6 +19912,7 @@
     {
       "entrypoint_kind": "symbol",
       "domains": [
+        "offerman",
         "orderman"
       ],
       "ports": [
@@ -19901,10 +19988,6 @@
       ],
       "touchpoints": [
         "service"
-      ],
-      "domains": [
-        "offerman",
-        "orderman"
       ],
       "tests": [
         "shopman/shop/tests/test_no_show_service.py::test_command_writes_the_block_and_cancels_with_its_own_reason",

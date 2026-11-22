@@ -609,6 +609,11 @@ class NFCeCancelHandler:
             locked.data = data
             locked.save(update_fields=["data", "updated_at"])
         order.data = data
+        # A tentativa anterior pode ter falhado e aberto o aviso: a nota agora
+        # está cancelada, então ele deixou de ser verdade.
+        from shopman.shop.adapters import alert as alert_adapter
+
+        alert_adapter.resolve("fiscal_cancel_failed", order_ref=order.ref, actor="nfce-cancelled")
 
     @staticmethod
     def _alert_cancel_failed(order, result) -> None:

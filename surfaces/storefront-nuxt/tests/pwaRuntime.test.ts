@@ -44,7 +44,7 @@ describe('pwaUpdateRouteProtected', () => {
   })
 
   it('o resto da loja não é protegido, inclusive a sacola e a conta', () => {
-    for (const path of ['/', '/menu', '/sacola', '/produto/PAO', '/conta', '/conta/pedidos', '/busca']) {
+    for (const path of ['/', '/menu', '/sacola', '/produto/PAO', '/conta', '/conta/pedidos']) {
       expect(pwaUpdateRouteProtected(path)).toBe(false)
     }
   })
