@@ -988,6 +988,9 @@ async function confirmDraft () {
   // perfil é gravado pelo checkout APÓS o pedido confirmar (a etiqueta vem
   // nesse momento), para endereços fora de zona/abandonados nunca virarem
   // lixo no perfil do cliente.
+  // A linha de cima passa a ser o endereço confirmado: sem isto, quem reabria o
+  // endereço e confirmava outro via o anterior em cima do formulário (#3281).
+  acceptedLine.value = draftLine.value
   emit('update:selection', selectionFromDraft({ ...(draft as AddressDraft) }, null))
   emit('confirmed')
 }
