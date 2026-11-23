@@ -340,11 +340,17 @@ class NiceReader:
 
     PORT = "model"
 
-    def __init__(self, *, client=None, model: str = "", gate=jev_gate, today=None) -> None:
+    def __init__(self, *, client=None, model: str = "", gate=jev_gate, today=None, conversation=None,
+                 lines_of=None) -> None:
         self._client = client
         self._model = model
         self._gate = gate
         self._today = today
+        # A conversa e a sacola de fora: o ensaio (``concierge_eval``) lê sem gravar nada no banco.
+        self._conversation = conversation
+        self._lines_of = lines_of or _cart_lines
+        #: O consumo da última chamada à IA (tokens), para o relatório do ensaio.
+        self.last_usage = None
 
     def capabilities(self) -> Capabilities:
         return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score"),
@@ -366,8 +372,8 @@ class NiceReader:
         client, model = (self._client, self._model) if self._client is not None else build_client()
         if client is None or not text:
             return LocalReader().interpret(ctx, request)
-        conversation = _conversation(ctx)
-        lines = _cart_lines(conversation)
+        conversation = self._conversation if self._conversation is not None else _conversation(ctx)
+        lines = self._lines_of(conversation)
         redacted = redact_observation_text(text).text
         started = time.perf_counter()
         try:
@@ -378,6 +384,7 @@ class NiceReader:
             record_read(ok=False)
             return LocalReader().interpret(ctx, request)
         record_read(ok=True)
+        self.last_usage = getattr(response, "usage", None)
         raw = "".join(getattr(block, "text", "") for block in getattr(response, "content", []) or []
                       if getattr(block, "type", "") == "text")
         try:
