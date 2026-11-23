@@ -205,7 +205,7 @@ let routeGuard: RouteGuard | null = null;
 const confirmDiscardChanges = vi.fn(async (_action: "leave" | "switch") => true);
 const QcCloseScreenStub = {
   name: "QcCloseScreen",
-  props: ["title", "subtitle", "planned", "started", "grades", "defects", "submitting"],
+  props: ["title", "subtitle", "planned", "started", "unit", "grades", "defects", "submitting"],
   emits: ["back", "confirm"],
   setup(_props: unknown, { expose }: { expose: (exposed: Record<string, unknown>) => void }) {
     expose({ confirmDiscardChanges });
@@ -325,6 +325,22 @@ describe("Finalização — o lote mora na URL", () => {
     orders.value = [...orders.value, order(5, "Pão de forma")];
     await flushPromises();
     expect(remember).not.toHaveBeenCalled();
+  });
+
+  it("lote de massa chega à finalização na unidade dele e sem arredondar (P1-22)", async () => {
+    orders.value = [
+      order(7, "Massa de croissant", {
+        planned_qty: "2.5",
+        started_qty: "2.35",
+        output_unit: "kg",
+      }),
+    ];
+    route.query = { lot: "7" };
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const screen = wrapper.findComponent({ name: "QcCloseScreen" });
+    expect(screen.props()).toMatchObject({ planned: 2.5, started: 2.35, unit: "kg" });
   });
 
   it("o ‹ › para outro lote pergunta antes de descartar o que foi digitado", async () => {
