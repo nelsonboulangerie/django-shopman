@@ -342,12 +342,25 @@ async function authorizeRelease(approval: { username?: string; pin?: string; bad
 // aparecem com o caminho de cada um. Fechar o dia não depende de nenhum: o que
 // ficar aberto aparece de novo no Gestor no dia seguinte.
 const readyOrders = computed(() => closing.value?.pending_ready_orders ?? []);
+// Dois blocos, cada frase contando só o que está embaixo dela (coordenação, 23/11): o
+// atalho "Encerrar todos" fica com os que passaram do prazo, e os que ainda esperam a
+// retirada (no prazo, ou com o Dono) vão para um bloco próprio, sem atalho.
 const readyToResolve = computed(() => readyOrders.value.filter((row) => row.state === "resolve"));
+const readyWaiting = computed(() => readyOrders.value.filter((row) => row.state !== "resolve"));
 const readyLine = computed(() =>
   readyToResolve.value.length === 1
-    ? "Um pedido pronto não foi retirado."
-    : `${readyToResolve.value.length} pedidos prontos não foram retirados.`,
+    ? "Um pedido pronto passou do prazo e não foi retirado."
+    : `${readyToResolve.value.length} pedidos prontos passaram do prazo e não foram retirados.`,
 );
+const readyWaitingLine = computed(() =>
+  readyWaiting.value.length === 1
+    ? "Um pedido pronto ainda espera a retirada. Ele não impede fechar o dia."
+    : `${readyWaiting.value.length} pedidos prontos ainda esperam a retirada. Nenhum impede fechar o dia.`,
+);
+const readyGroups = computed(() => [
+  ...(readyToResolve.value.length ? [{ key: "resolve" as const, rows: readyToResolve.value }] : []),
+  ...(readyWaiting.value.length ? [{ key: "waiting" as const, rows: readyWaiting.value }] : []),
+]);
 const READY_STATE_LABEL = { resolve: "Vira não retirado", in_time: "Ainda no prazo", owner: "Fica com o Dono" } as const;
 function gestorOrderHref(ref: string): string {
   return ordersUrl.value ? orderUrl(ordersUrl.value, ref) : "";
@@ -945,25 +958,29 @@ const discrepancyColumns = [
             <!-- PEDIDOS ABERTOS, no topo do dia (#2684, #3169): avisos, nunca portão.
                  Cada linha com o valor DELA quando há dinheiro (nunca somado) e o
                  caminho no Gestor. Fechar o dia não depende de nenhum. -->
-            <NuxtCard v-if="readyOrders.length" data-closing-ready-orders>
+            <NuxtCard
+              v-for="group in readyGroups"
+              :key="group.key"
+              v-bind="group.key === 'resolve' ? { 'data-closing-ready-orders': '' } : { 'data-closing-ready-waiting': '' }"
+            >
               <div class="grid gap-3">
                 <!-- No celular o atalho desce para uma linha própria: ao lado do texto, ele
                      espremia a frase em uma palavra por linha (prévia de 22/11, 375 px). -->
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <div class="flex min-w-0 flex-1 items-center gap-3">
                     <Icon
-                      :name="readyToResolve.length ? 'lucide:triangle-alert' : 'lucide:info'"
+                      :name="group.key === 'resolve' ? 'lucide:triangle-alert' : 'lucide:info'"
                       class="size-5 shrink-0"
-                      :class="readyToResolve.length ? 'text-warning' : 'text-muted-foreground'"
+                      :class="group.key === 'resolve' ? 'text-warning' : 'text-muted-foreground'"
                     />
                     <p class="min-w-0 flex-1 op-body">
-                      {{ readyToResolve.length
+                      {{ group.key === "resolve"
                         ? `${readyLine} Encerre todos aqui, com um gerente, ou cada um no Gestor. Fechar o dia não depende disso.`
-                        : "Pedidos prontos esperando a retirada. Nenhum impede fechar o dia." }}
+                        : readyWaitingLine }}
                     </p>
                   </div>
                   <NuxtButton
-                    v-if="readyToResolve.length"
+                    v-if="group.key === 'resolve'"
                     class="self-start sm:self-auto"
                     color="neutral"
                     variant="outline"
@@ -974,9 +991,12 @@ const discrepancyColumns = [
                     @click="readyAuthOpen = true"
                   />
                 </div>
-                <ul class="grid gap-1.5" aria-label="Pedidos prontos não retirados">
+                <ul
+                  class="grid gap-1.5"
+                  :aria-label="group.key === 'resolve' ? 'Pedidos prontos que passaram do prazo' : 'Pedidos prontos ainda esperando a retirada'"
+                >
                   <li
-                    v-for="row in readyOrders"
+                    v-for="row in group.rows"
                     :key="row.ref"
                     class="grid gap-1 rounded-lg border border-border bg-card px-3 py-2"
                     :data-closing-ready-order="row.state"

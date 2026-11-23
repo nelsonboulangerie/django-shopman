@@ -266,13 +266,19 @@ describe("Fim do dia: pedido aberto avisa e não trava (#2684, #3169)", () => {
     expect(day.compareDocumentPosition(card.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(card.element.compareDocumentPosition(page.find("[data-closing-cash]").element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const text = card.text();
-    expect(text).toContain("Um pedido pronto não foi retirado.");
+    expect(text).toContain("Um pedido pronto passou do prazo e não foi retirado.");
     expect(text).toContain("Fechar o dia não depende disso.");
     expect(text).toContain("NB-261121-W77 · Ana");
     expect(text).toContain("R$ 13,00 serão estornados ao Pix do cliente.");
     expect(text).toContain("Vira não retirado");
-    expect(text).toContain("Ainda no prazo");
-    expect(page.find("[data-closing-ready-resolve-all]").text()).toContain("Encerrar todos como não retirado");
+    expect(card.find("[data-closing-ready-resolve-all]").text()).toContain("Encerrar todos como não retirado");
+    // A frase conta o que está embaixo dela: o que ainda espera vai para um bloco próprio, sem atalho.
+    expect(card.findAll("[data-closing-ready-order]").map((row) => row.attributes("data-closing-ready-order"))).toEqual(["resolve"]);
+    expect(text).not.toContain("Ainda no prazo");
+    const waiting = page.find("[data-closing-ready-waiting]");
+    expect(waiting.text()).toContain("Um pedido pronto ainda espera a retirada. Ele não impede fechar o dia.");
+    expect(waiting.text()).toContain("Ainda no prazo");
+    expect(waiting.find("[data-closing-ready-resolve-all]").exists()).toBe(false);
     page.unmount();
   });
 
@@ -295,7 +301,7 @@ describe("Fim do dia: pedido aberto avisa e não trava (#2684, #3169)", () => {
     await flushPromises();
     const auth = document.body.querySelector("[data-drawer-manager-auth]");
     expect(auth?.textContent).toContain("Encerrar como não retirado");
-    expect(auth?.textContent).toContain("Um pedido pronto não foi retirado.");
+    expect(auth?.textContent).toContain("Um pedido pronto passou do prazo e não foi retirado.");
     expect(auth?.textContent).toContain("O dia segue aberto.");
     expect(auth?.textContent).not.toContain("fecha e não reabre");
     expect(call).not.toHaveBeenCalled();
@@ -305,7 +311,8 @@ describe("Fim do dia: pedido aberto avisa e não trava (#2684, #3169)", () => {
   it("só pedido no prazo: o aviso diz que nenhum impede, e não há atalho", async () => {
     const page = await toTheDay({ pending_ready_orders: [READY[1]] as never });
 
-    expect(page.find("[data-closing-ready-orders]").text()).toContain("Nenhum impede fechar o dia.");
+    expect(page.find("[data-closing-ready-orders]").exists()).toBe(false);
+    expect(page.find("[data-closing-ready-waiting]").text()).toContain("Um pedido pronto ainda espera a retirada. Ele não impede fechar o dia.");
     expect(page.find("[data-closing-ready-resolve-all]").exists()).toBe(false);
     page.unmount();
   });
