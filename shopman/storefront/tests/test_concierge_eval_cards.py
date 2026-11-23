@@ -92,15 +92,28 @@ def _run(*args):
     return out.getvalue(), error
 
 
-def test_the_cards_run_through_the_engine_and_write_nothing(house):
+def test_the_five_cards_run_through_the_engine_and_write_nothing(house):
     before = _rows()
-    out, error = _run("--case", "cartao-3")
-    print(out)
-    assert _rows() == before and error == ""
-    assert "Cliente: quero 2 croissants" in out and "Nice: " in out and "movimentos: change_cart" in out
-    assert "[ok] cartao-3-mudar-no-meio" in out, out
+    out, error = _run()
+    assert _rows() == before and error == ""  # nenhuma tabela tocada por um turno ganhou linha
+    assert out.startswith("cartões: ") and out.count("\n[") == 5
+    assert "Cliente: quero 2 croissants\n  Nice: Pronto, sua sacola ficou assim:" in out
+    assert "Posso registrar?" in out and "movimentos: change_cart" in out
+    # O turno com frase que a Nice não aprovou (a limitação do pacote) é marcado: no ar, caminho de hoje.
+    assert "no ar: sairia pelo caminho de hoje (no_nice_template:inform_limitation.offer_team)" in out
 
 
-def test_a_card_the_engine_cannot_finish_says_what_is_missing(house):
-    out, _ = _run("--case", "cartao-4")
-    assert "o que falta no motor" in out or "[ok] cartao-4" in out
+def test_a_card_that_fails_says_what_the_engine_still_lacks(house):
+    out, _ = _run("--case", "cartao-3")
+    assert "[FALHOU] cartao-3-mudar-no-meio" in out
+    assert "o que falta no motor: depois de mudar a sacola com o resumo no ar" in out
+
+
+def test_the_ensaio_profile_never_changes_the_live_profile(house):
+    from shopman.storefront.concierge import eval_cards
+    from shopman.storefront.concierge.profile import build_profile
+
+    live = {line.id: line.state for line in build_profile(environment="live").lines}
+    ensaio = {line.id: line.state for line in eval_cards._profile().lines}
+    assert live[eval_cards.ORDER_LINE] != "approved" and ensaio[eval_cards.ORDER_LINE] == "approved"
+    assert eval_cards.GRANT_LINE not in live and ensaio[eval_cards.GRANT_LINE] == "approved"

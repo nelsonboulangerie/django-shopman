@@ -58,7 +58,8 @@ CARTOES = (
            falta="o motor não tem movimento para pedir o endereço e o complemento"),
     Cartao("cartao-3-mudar-no-meio", "muda a quantidade depois do resumo",
            ("quero 2 croissants", "pode fechar", "na verdade 3", "sim", "sim"),
-           pedido=True, itens={"croissant": 3}),
+           pedido=True, itens={"croissant": 3},
+           falta="depois de mudar a sacola com o resumo no ar, o motor não apresenta o resumo novo"),
     Cartao("cartao-4-desistir", "desiste no resumo",
            ("quero 2 croissants", "pode fechar", "deixa pra lá"),
            pedido=False, itens={"croissant": 2},
@@ -80,6 +81,7 @@ class Turno:
     ms: float
     erro: str = ""
     bloqueios: dict = field(default_factory=dict)  # movimento → por que não pôde (o perfil, a precondição)
+    caminho_de_hoje: str = ""  # no ar, este turno sairia pelo caminho de hoje (e por quê)
 
 
 @dataclass
@@ -218,6 +220,8 @@ def rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, 
 
     from shopman.shop import ai_governor
 
+    from .turn_framework import ACTION_CLASSES, judge, nice_templates
+
     totais = {"chamadas": 0, "tokens_in": 0, "tokens_out": 0, "usd": 0.0, "interrompido": "", "erros": []}
     placares: list[Placar] = []
     for cartao in CARTOES:
@@ -242,6 +246,9 @@ def rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, 
                 totais["interrompido"] = f"teto de US$ {max_usd:.2f}"
                 break
             leitor.last_usage, leitor.last_error = None, ""
+            # O relógio de memória anda entre as falas, como na conversa: a confirmação vem DEPOIS do resumo.
+            if numero > 1:
+                world.clock.advance(30)
             started = time.perf_counter()
             result = engine.turn(ctx, j4.message(f"{cartao.id}-{numero}", fala))
             ms = (time.perf_counter() - started) * 1000
@@ -266,9 +273,12 @@ def rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, 
                 resposta = "(sem resposta do motor)"
             bloqueios = {c.move: list(c.blocked_by) for c in (result.decision.candidates if result.decision else ())
                          if c.blocked_by and c.move not in result.chosen_moves}
+            # O mesmo juiz do turno vivo: com todas as classes ligadas, o turno sai pelo motor só se todo
+            # molde usado tem a frase da Nice. Senão, no ar, ele sairia pelo caminho de hoje.
+            veredito = judge(result, enabled=frozenset(ACTION_CLASSES), approved=frozenset(nice_templates()))
             turnos.append(Turno(fala, resposta, list(result.chosen_moves), atos,
                                 understanding.reader.name if understanding else "-", ms, leitor.last_error,
-                                bloqueios))
+                                bloqueios, "" if veredito.eligible else veredito.reason))
         erros = _conferir(cartao, world, today) if not totais["interrompido"] else ["não rodou inteiro"]
         placares.append(Placar(cartao, not erros, erros, turnos))
         if totais["interrompido"]:
@@ -293,6 +303,8 @@ def relatorio(placares: list[Placar], totais: dict) -> str:
             linhas.append("  Nice: " + turno.resposta.replace("\n", "\n        "))
             linhas.append(f"    leitura ({turno.leitor}, {turno.ms:.0f} ms): {atos or '-'}")
             linhas.append(f"    movimentos: {', '.join(turno.movimentos) or '-'}")
+            if turno.caminho_de_hoje:
+                linhas.append(f"    no ar: sairia pelo caminho de hoje ({turno.caminho_de_hoje})")
             for movimento, motivos in turno.bloqueios.items():
                 linhas.append(f"    bloqueado: {movimento} ({', '.join(motivos)})")
             if turno.erro:
