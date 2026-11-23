@@ -74,6 +74,11 @@ class HarnessEnv:
     currency: str = "XTS"
     # Devolve termos vigentes do carrinho (normalmente, ``commerce_read.quote``).
     fresh_terms: Callable[[], TermsDocument] | None = None
+    # Recebimento (``set_fulfillment``), opcional: um recebimento que o sistema aceita no ``cart_ref``
+    # (``date``, ``mode``, ``window`` e/ou ``time``) e uma referência de janela que ele não oferece.
+    # Sem ``fulfillment``, a checagem do recebimento não roda: a casa que não liga o movimento não o executa.
+    fulfillment: Mapping[str, str] | None = None
+    unknown_window: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,6 +240,52 @@ def check_commerce_execute(port: Any, env: HarnessEnv) -> None:
     refused = port.execute(env.ctx, _command(env, env.fresh_terms(), key="harness-exec-2", parameters={}),
                            RefuseGuard())
     _expect((refused.status, refused.effect) == ("failure", "not_applied"), "guarda recusou e houve efeito")
+    check_set_fulfillment(port, env)
+
+
+def _fulfillment_command(env: HarnessEnv, *, key: str, parameters: Mapping[str, Any]) -> ActionCommand:
+    targets = (env.cart_ref,)
+    return ActionCommand(
+        **_envelope(env, "cmd", episode_id="harness-episode"),
+        command_id=env.clock.new_id("command"),
+        decision_id="harness-decision",
+        grant_id="harness-grant",
+        action="set_fulfillment",
+        targets=targets,
+        parameters=parameters,
+        expected_versions={},
+        expected_ownership_epoch=0,
+        idempotency={"scope": "harness", "key": key},
+        content_hash=command_content_hash(action="set_fulfillment", targets=targets, parameters=parameters,
+                                          terms_hash=None),
+        deadline=_later(env),
+    )
+
+
+def check_set_fulfillment(port: Any, env: HarnessEnv) -> None:
+    """O comando ``set_fulfillment``: aplica o que foi dito, o recibo aponta o recebimento, a janela
+    desconhecida é recusada sem efeito com ``fulfillment_window_unknown``, e a forma inválida com
+    ``invalid_fulfillment``."""
+    if env.fulfillment is None:
+        return
+    guard = AllowGuard()
+    command = _fulfillment_command(env, key="harness-fulfillment-1", parameters=dict(env.fulfillment))
+    receipt = port.execute(env.ctx, command, guard)
+    _expect(guard.seen, "o executor não chamou a guarda no recebimento")
+    _expect((receipt.status, receipt.effect) == ("success", "applied"), "recebimento válido não foi aplicado")
+    for name, value in env.fulfillment.items():
+        _expect(receipt.domain_refs.get(name) == value, f"o recibo não aponta o {name} aplicado")
+    _expect(port.execute(env.ctx, command, guard).id == receipt.id,
+            "mesma chave e mesmo conteúdo não devolveram o mesmo recibo do recebimento")
+    if env.unknown_window:
+        unknown = port.execute(env.ctx, _fulfillment_command(env, key="harness-fulfillment-2",
+                                                             parameters={"window": env.unknown_window}), guard)
+        _expect((unknown.status, unknown.effect) == ("failure", "not_applied"), "janela desconhecida foi aplicada")
+        _expect(unknown.error.code == "fulfillment_window_unknown", "janela desconhecida sem o código estável")
+    malformed = port.execute(env.ctx, _fulfillment_command(env, key="harness-fulfillment-3",
+                                                           parameters={"date": "tomorrow"}), guard)
+    _expect((malformed.status, malformed.effect) == ("failure", "not_applied"), "data fora de ISO foi aplicada")
+    _expect(malformed.error.code == "invalid_fulfillment", "data fora de ISO sem o código estável")
 
 
 def check_staff(port: Any, env: HarnessEnv) -> None:

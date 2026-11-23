@@ -63,6 +63,22 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
              {"deadline": SlotSpec(("commitment:promise",), "at")}),
     Template("change_cart.done", "1", "change_cart", "Done: your cart is updated ({ref}).",
              {"ref": SlotSpec(("receipt:success",), "effect")}),
+    # Recebimento: o molde mais completo que o recibo sustenta (``engine/moves/set_fulfillment.py``).
+    # Os valores saem do recibo (o estado do alvo depois do efeito); a casa formata data, modo e janela.
+    Template("set_fulfillment.done", "1", "set_fulfillment", "Done: {mode} on {date}, {window}.",
+             {"mode": SlotSpec(("receipt:success",), "mode"), "date": SlotSpec(("receipt:success",), "date"),
+              "window": SlotSpec(("receipt:success",), "window")}),
+    Template("set_fulfillment.done_time", "1", "set_fulfillment", "Done: {mode} on {date} at {time}.",
+             {"mode": SlotSpec(("receipt:success",), "mode"), "date": SlotSpec(("receipt:success",), "date"),
+              "time": SlotSpec(("receipt:success",), "time")}),
+    Template("set_fulfillment.done_day", "1", "set_fulfillment", "Done: {mode} on {date}.",
+             {"mode": SlotSpec(("receipt:success",), "mode"), "date": SlotSpec(("receipt:success",), "date")}),
+    Template("set_fulfillment.done_date", "1", "set_fulfillment", "Done: noted for {date}.",
+             {"date": SlotSpec(("receipt:success",), "date")}),
+    Template("set_fulfillment.done_mode", "1", "set_fulfillment", "Done: noted as {mode}.",
+             {"mode": SlotSpec(("receipt:success",), "mode")}),
+    Template("set_fulfillment.updated", "1", "set_fulfillment", "Done: your order details are updated ({ref}).",
+             {"ref": SlotSpec(("receipt:success",), "effect")}),
     Template("commit_order.done", "1", "commit_order", "Your order {order} is placed.",
              {"order": SlotSpec(("receipt:success",), "effect")}),
     # Efeito pendente não é efeito: a parte é uma espera, não a confirmação do pedido.

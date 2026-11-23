@@ -63,6 +63,13 @@ central). Cada módulo define:
 
 O F8, o F9 e o F10 acrescentam módulos sem editar o laço.
 
+O ato `choose_fulfillment` (o cliente diz quando e como recebe) está na lista fechada, entre
+os de mudança. A leitura traz qualquer subconjunto de `date` (`AAAA-MM-DD`), `mode` (`pickup`
+ou `delivery`), `window` (referência opaca da casa) e `time` (`HH:MM`), com `relative: true`
+quando o que se disse não é absoluto. "Amanhã às 16h" chega resolvido pelo leitor contra o
+relógio confiável (`date` e `time`); dia ou hora relativos não se aplicam (`08-effect.md`,
+seção 6). Na regra local de teste, `pick up` e `deliver` somam o ato, sem campos.
+
 Movimentos do F7: `acknowledge`, `inform`, `cover_readings`, `inform_limitation` e
 `ask_clarification`. O F8 acrescentou os de efeito (`08-effect.md`, seção 6), e o F9 os de
 compromisso (`09-commitments.md`, seção 4), e o F10 a recomendação (`10-outcomes.md`, seção 1).

@@ -28,4 +28,6 @@ def env(world, ctx) -> HarnessEnv:
         other_subject="customer-2",
         policy_id="returns",
         fresh_terms=lambda: world.commerce_read.quote(ctx, "cart-1"),
+        fulfillment={"date": "2026-01-06", "mode": "pickup", "window": "window-afternoon"},
+        unknown_window="window-midnight",
     )

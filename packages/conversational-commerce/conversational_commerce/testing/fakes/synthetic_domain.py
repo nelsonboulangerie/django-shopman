@@ -54,6 +54,13 @@ KNOWLEDGE: dict[str, str] = {
     "payment_methods": "Card and cash.",
 }
 
+# Recebimento: os modos que o domínio sintético atende e as janelas que ele oferece (referência → início, fim).
+FULFILLMENT_MODES: tuple[str, ...] = ("pickup", "delivery")
+FULFILLMENT_WINDOWS: dict[str, tuple[str, str]] = {
+    "window-morning": ("08:00", "12:00"),
+    "window-afternoon": ("12:00", "18:00"),
+}
+
 
 @dataclass
 class SyntheticState:
@@ -68,3 +75,7 @@ class SyntheticState:
     versions: dict[str, int] = field(default_factory=lambda: {"cart-1": 1})
     # carrinho → hash dos termos vigentes (o último cotado, enquanto nada mudou)
     current_terms: dict[str, str] = field(default_factory=dict)
+    # carrinho → recebimento definido (``date``, ``mode``, ``window``, ``time``), só o que já foi dito
+    fulfillment: dict[str, dict[str, str]] = field(default_factory=dict)
+    fulfillment_modes: tuple[str, ...] = FULFILLMENT_MODES
+    fulfillment_windows: dict[str, tuple[str, str]] = field(default_factory=lambda: dict(FULFILLMENT_WINDOWS))

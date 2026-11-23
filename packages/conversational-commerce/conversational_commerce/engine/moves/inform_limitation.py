@@ -26,7 +26,8 @@ TEMPLATES = (
 )
 LIMITED_ACTS = CHANGE_ACTS | {"complain", "request_human", "ask_recommendation"}
 # O movimento que faz cada pedido de mudança.
-HANDLED_BY = {"change_quantity": ("change_cart",), "place_order": ("present_terms",),
+HANDLED_BY = {"change_quantity": ("change_cart",), "choose_fulfillment": ("set_fulfillment",),
+              "place_order": ("present_terms",),
               "cancel_order": ("cancel_order",), "complain": ("open_case",), "request_human": ("handoff",),
               "ask_recommendation": ("recommend",)}
 

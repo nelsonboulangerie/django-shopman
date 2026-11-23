@@ -9,6 +9,8 @@ efeito pendente; idempotência por (escopo, chave) com conferência do
 from __future__ import annotations
 
 import dataclasses
+import re
+from datetime import date as calendar_date
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from conversational_commerce.contracts import (
@@ -36,11 +38,50 @@ from conversational_commerce.ports import commerce_read as read_port
 
 from .base import FakeBase
 from .faults import Fault
-from .synthetic_domain import CUSTOMERS, KNOWLEDGE, POLICIES, SyntheticState
+from .synthetic_domain import CLOSING, CUSTOMERS, KNOWLEDGE, OPENING, POLICIES, SyntheticState
 
 FACT_VALIDITY_SECONDS = 300
 TERMS_VALIDITY_SECONDS = 1800
 RECONCILIATION_SECONDS = 900
+
+# O comando ``set_fulfillment``: os campos que ele aceita e a forma de cada um.
+FULFILLMENT_FIELDS = ("date", "mode", "window", "time")
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def fulfillment_problem(parameters, *, today: str, modes, windows) -> ErrorCode | None:
+    """Por que o recebimento pedido não se aplica; ``None`` quando se aplica.
+
+    ``invalid_fulfillment``: campo desconhecido, nenhum campo, data que não é ISO
+    real, hora fora de ``HH:MM``, modo fora de ``pickup``/``delivery``.
+    ``fulfillment_unavailable``: bem formado, mas a casa não atende (modo que ela
+    não oferece, dia que já passou, hora fora do expediente).
+    ``fulfillment_window_unknown``: janela que a casa não oferece.
+    """
+    fields = dict(parameters)
+    if not fields or set(fields) - set(FULFILLMENT_FIELDS) or not all(isinstance(v, str) for v in fields.values()):
+        return ErrorCode.INVALID_FULFILLMENT
+    if "date" in fields:
+        if not ISO_DATE.match(fields["date"]):
+            return ErrorCode.INVALID_FULFILLMENT
+        try:
+            calendar_date.fromisoformat(fields["date"])
+        except ValueError:
+            return ErrorCode.INVALID_FULFILLMENT
+    if "time" in fields and not CLOCK_TIME.match(fields["time"]):
+        return ErrorCode.INVALID_FULFILLMENT
+    if "mode" in fields and fields["mode"] not in ("pickup", "delivery"):
+        return ErrorCode.INVALID_FULFILLMENT
+    if "mode" in fields and fields["mode"] not in modes:
+        return ErrorCode.FULFILLMENT_UNAVAILABLE
+    if "date" in fields and fields["date"] < today:
+        return ErrorCode.FULFILLMENT_UNAVAILABLE
+    if "time" in fields and not OPENING <= fields["time"] < CLOSING:
+        return ErrorCode.FULFILLMENT_UNAVAILABLE
+    if "window" in fields and fields["window"] not in windows:
+        return ErrorCode.FULFILLMENT_WINDOW_UNKNOWN
+    return None
 
 
 class FakeCommerceRead(FakeBase):
@@ -126,7 +167,7 @@ class FakeCommerceRead(FakeBase):
             items=items,
             total={"amount_minor": total, "currency": items[0]["unit_price"].currency},
             recipient={"subject_ref": owner or "unknown-subject"},
-            fulfillment={"mode": "pickup"},
+            fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup")},
             valid_until=self.clock.at(TERMS_VALIDITY_SECONDS),
         ))
         self.quotes[terms.hash] = terms
@@ -178,6 +219,8 @@ class FakeCommerceExecute(FakeBase):
         self.by_key: dict[tuple[str, str], tuple[str, ActionReceipt]] = {}
         # comando → efeito aplicado (para reconciliar depois de queda ou resposta perdida)
         self.applied: dict[str, str] = {}
+        # comando → o que o recibo de sucesso aponta além do efeito (o recebimento depois do efeito)
+        self.applied_refs: dict[str, dict[str, str]] = {}
         # Época de posse vigente por episódio (o teste muda quando a pessoa assume).
         self.epochs = epochs if epochs is not None else {}
         self.effects = 0
@@ -209,6 +252,16 @@ class FakeCommerceExecute(FakeBase):
         if command.action == "change_cart":
             cart = self.state.carts.setdefault(command.targets[0], {})
             cart[command.parameters["item"]] = command.parameters["quantity"]
+        if command.action == "set_fulfillment":
+            current = self.state.fulfillment.setdefault(command.targets[0], {})
+            said = dict(command.parameters)
+            # Janela e hora dizem a mesma coisa (quando no dia): a dita substitui a outra.
+            if "window" in said:
+                current.pop("time", None)
+            if "time" in said:
+                current.pop("window", None)
+            current.update(said)
+            self.applied_refs[command.command_id] = dict(current)
         for target in command.targets:
             self.state.versions[target] = self.state.versions.get(target, 0) + 1
             self.state.current_terms.pop(target, None)  # mudou o alvo: termos velhos não valem
@@ -238,6 +291,12 @@ class FakeCommerceExecute(FakeBase):
                                     error={"code": refused.code.value, "retry": "never"})
             self.by_key[key] = (command.content_hash, receipt)
             return receipt
+        problem = self._refusal(command)
+        if problem is not None:
+            receipt = self._receipt(ctx, command, status="failure", effect="not_applied",
+                                    error={"code": problem.value, "retry": "never"})
+            self.by_key[key] = (command.content_hash, receipt)
+            return receipt
         if fault is Fault.EFFECT_PENDING:
             receipt = self._pending(ctx, command, "pending")
             self.by_key[key] = (command.content_hash, receipt)
@@ -245,7 +304,7 @@ class FakeCommerceExecute(FakeBase):
             return receipt
         ref = self._apply(command)
         self.applied[command.command_id] = ref
-        receipt = self._receipt(ctx, command, status="success", effect="applied", domain_refs={"effect": ref},
+        receipt = self._receipt(ctx, command, status="success", effect="applied", domain_refs=self._refs(command, ref),
                                 observed_versions={t: self.state.versions.get(t, 0) for t in command.targets})
         # Efeito, chave e recibo na mesma unidade atômica do provedor.
         self.by_key[key] = (command.content_hash, receipt)
@@ -253,6 +312,16 @@ class FakeCommerceExecute(FakeBase):
             # O efeito existe; a resposta se perdeu. A mesma chave acha o recibo.
             raise PortError(ErrorCode.EFFECT_UNKNOWN, "caiu depois do efeito; reconcilie com a mesma chave")
         return receipt
+
+    def _refusal(self, command: ActionCommand) -> ErrorCode | None:
+        """O conteúdo do comando que o sistema de registro recusa, antes de qualquer efeito."""
+        if command.action != "set_fulfillment":
+            return None
+        return fulfillment_problem(command.parameters, today=self.clock.now()[:10],
+                                   modes=self.state.fulfillment_modes, windows=self.state.fulfillment_windows)
+
+    def _refs(self, command: ActionCommand, ref: str) -> dict[str, str]:
+        return {"effect": ref, **self.applied_refs.get(command.command_id, {})}
 
     def complete_pending(self, command_id: str) -> str:
         """O provedor conclui um efeito que tinha aceitado (``EFFECT_PENDING``). A guarda já foi chamada."""
@@ -272,7 +341,8 @@ class FakeCommerceExecute(FakeBase):
         stored = self.by_key.get(key)
         if command.command_id in self.applied:
             ref = self.applied[command.command_id]
-            receipt = self._receipt(ctx, command, status="success", effect="applied", domain_refs={"effect": ref},
+            receipt = self._receipt(ctx, command, status="success", effect="applied",
+                                    domain_refs=self._refs(command, ref),
                                     supersedes=stored[1].id if stored else None)
         elif stored is not None and stored[1].status in ("pending", "unknown"):
             receipt = self._pending(ctx, command, "pending")

@@ -39,6 +39,32 @@ Derivado de: v2 5.4 e plano do framework, seção 3.3.
 | `clock` | `now`, `new_id`, `schedule`, `cancel`, `business_hours` | relógio não volta; ids únicos; prazo vencido vira trabalho reivindicável, não laço | `deterministic`, `monotonic` |
 | `outcomes` | `harvest` | fonte independente do agente; janela aberta é `censored`; correção chega com `supersedes`; desconhecido explícito | `independent_source`, `censoring`, `supersession` |
 
+### O comando `set_fulfillment` na porta `commerce_execute`
+
+O recebimento (quando e como o pedido é recebido) é um comando como o `change_cart`: alvo
+único, o carrinho do sujeito; sem termos; concessão pela linha do perfil; reversível.
+
+- **Parâmetros:** só os campos ditos, qualquer subconjunto não vazio de `date`
+  (`AAAA-MM-DD`), `mode` (`pickup` ou `delivery`), `window` (referência opaca que a casa
+  escolhe, sem espaço) e `time` (`HH:MM`). Campo ausente quer dizer **mantenha como está**,
+  nunca "apague": o executor aplica o que veio e guarda o resto. `window` e `time` dizem a
+  mesma coisa (quando, no dia): o que chega substitui o outro.
+- **Recusa, antes de qualquer efeito** (`failure` / `not_applied`, `retry: never`):
+  `invalid_fulfillment` (forma), `fulfillment_window_unknown` (janela que a casa não oferece),
+  `fulfillment_unavailable` (bem formado, mas a casa não atende). Seção 7 do
+  `02-catalog-profile.md`.
+- **Recibo de sucesso:** `domain_refs` traz `effect` (a referência do efeito) e o recebimento
+  do alvo **depois** do efeito: `date`, `mode`, `window`, `time`, os que estiverem definidos.
+  A resposta lê dali (`08-effect.md`, seção 6). O valor é `Identifier` (sem espaço): o rótulo
+  da janela na voz da casa é do formatador do espaço `window`, a partir da referência.
+- Muda a versão do alvo: os termos cotados antes deixam de valer.
+
+O arnês (`check_set_fulfillment`) roda quando o adaptador dá `HarnessEnv.fulfillment` (um
+recebimento que o sistema dele aceita) e, opcional, `unknown_window`: confere o efeito, o
+recibo com os campos aplicados, a mesma chave devolvendo o mesmo recibo, a janela
+desconhecida e a data fora de ISO recusadas sem efeito, com o código estável. Casa que não
+liga o movimento não passa `fulfillment` e a checagem não roda.
+
 Convenções de `store`: episódio novo é confirmado com `expected_version = 0` e `version = 1`;
 toda transição incrementa a versão em um. `latest_episode(subject)` devolve o episódio mais
 recente do sujeito (para a correlação), e `latest_record(episode_id, schema)` devolve o último
@@ -73,7 +99,8 @@ comuns (`FakeWorld`). Distribuídos no wheel, para que um adaptador novo os use 
 
 - **Domínio sintético** (`synthetic_domain.py`): três itens neutros (`ITEM-A`, `ITEM-B` sem
   nada em mãos, `ITEM-C` vendido por kg), dois clientes, duas políticas, moeda `XTS` (o
-  código ISO 4217 reservado para teste). Nenhuma loja real, nenhum nome de canal.
+  código ISO 4217 reservado para teste), os dois modos de recebimento e duas janelas
+  (`window-morning`, `window-afternoon`). Nenhuma loja real, nenhum nome de canal.
 - **Determinismo:** o relógio só anda quando o teste manda (`advance`); ids em sequência por
   prefixo (`evt-0001`).
 - **Falhas injetáveis** (`faults.py`): `FaultPlan.arm(operação, Fault, times)`. Cada falso

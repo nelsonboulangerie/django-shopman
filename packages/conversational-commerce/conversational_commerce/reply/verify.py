@@ -29,7 +29,8 @@ from typing import Literal
 from .evidence import Evidence
 
 # Movimentos cuja parte afirma um efeito no negócio: exigem recibo de sucesso.
-EFFECT_MOVES = frozenset({"change_cart", "commit_order", "cancel_order", "amend_order", "grant_discount"})
+EFFECT_MOVES = frozenset({"change_cart", "set_fulfillment", "commit_order", "cancel_order", "amend_order",
+                          "grant_discount"})
 DIGIT = re.compile(r"\d")
 
 
