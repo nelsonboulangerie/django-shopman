@@ -537,6 +537,10 @@ MIDDLEWARE = [
     # unless SHOPMAN_OPERATOR_COOKIE_DOMAIN). High in the stack so its response
     # phase runs AFTER Session/CSRF middleware set their cookies.
     "shopman.shop.middleware.OperatorSessionDomainMiddleware",
+    # No host do Admin o cookie de CSRF do navegador se chama shopman_admin_csrftoken:
+    # o `csrftoken` velho de Domain=.boulangerie.com.br derrubava todo POST (#3372).
+    # Acima do CsrfViewMiddleware: renomeia antes de ele ler e depois de ele gravar.
+    "shopman.shop.middleware.AdminCsrfCookieNameMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Memo por request da linha Channel (ChannelConfig.for_channel, is_channel_active,
     # política de superfície). Some no fim do request; ver shopman/shop/request_memo.py.
@@ -2535,7 +2539,11 @@ if SENTRY_DSN:
             acesso, chave de assinatura e telefone de cliente costumam viajar.
             """
             from shopman.shop.telemetry_redaction import scrub_sentry_event
+            from shopman.shop.telemetry_throttle import drop_repeated_provider_error
 
+            event = drop_repeated_provider_error(event)
+            if event is None:
+                return None
             return scrub_sentry_event(event)
 
         sentry_sdk.init(

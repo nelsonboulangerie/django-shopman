@@ -72,11 +72,11 @@ def _without(built: DeploymentProfile, line_id: str) -> DeploymentProfile:
     return dataclasses.replace(built, lines=lines)
 
 
-def test_the_profile_validates_with_the_twenty_one_lines(shop):
+def test_the_profile_validates_with_the_twenty_two_lines(shop):
     built = _profile()
     assert isinstance(built, DeploymentProfile) and built.environment == "shadow"
     assert built.tenant == "nelson-boulangerie"
-    assert [state.plan_id for state in profile_lines.LINES] == [f"P{n:02d}" for n in range(1, 22)]
+    assert [state.plan_id for state in profile_lines.LINES] == [f"P{n:02d}" for n in range(1, 23)]  # P22: #3380
     assert {line.id for line in built.lines} == {state.line_id for state in profile_lines.LINES}
     for state in profile_lines.LINES:
         line = next(line for line in built.lines if line.id == state.line_id)
@@ -158,3 +158,50 @@ def test_no_new_file_reads_settings_directly():
     for name in ("profile.py", "profile_lines.py"):
         text = (here / name).read_text(encoding="utf-8")
         assert not re.search(r"\bsettings\.|os\.environ", text), name
+
+
+# ── #3380: a validade da concessão (sem ela, nenhum efeito executa) ────────────────────
+
+
+def _with_order_line_approved(built):
+    """A P08 aprovada SÓ no teste: ligá-la no ar continua dependendo do Pablo."""
+    import dataclasses
+
+    lines = tuple(dataclasses.replace(line, state="approved", decided_at=line.decided_at or NOW)
+                  if line.id == "commerce.order_in_conversation" else line for line in built.lines)
+    return dataclasses.replace(built, lines=lines)
+
+
+def _line_grant(built):
+    from conversational_commerce.authority import issue_line_grant
+    from conversational_commerce.contracts import IdentityEvidence
+
+    record = {"id": "grant-1", "tenant": built.tenant, "environment": "live", "trace_id": "t-1", "cause_id": None,
+              "occurred_at": NOW, "producer": {"name": "test", "version": "1"}, "episode_id": "ep-1"}
+    return issue_line_grant(record=record, grant_id="g-1", subject="conversation:1", action="change_cart",
+                            targets=("sess-1",), identity_evidence=(IdentityEvidence(
+                                kind="transport_subject", ref="5543999990000", assurance="transported"),),
+                            profile=built, now=NOW)
+
+
+def test_the_grant_validity_line_is_engineering_600_seconds(shop):
+    line = read_line(_profile(), "grant.validity_seconds")
+    assert line.usable and line.value == 600
+    assert next(lin for lin in _profile().lines if lin.id == "grant.validity_seconds").owner == "engineering"
+
+
+def test_with_the_grant_validity_line_an_effect_gets_its_grant(shop):
+    grant = _line_grant(_with_order_line_approved(_profile()))
+    assert grant.action == "change_cart" and grant.valid_until > NOW
+
+
+def test_without_the_grant_validity_line_nothing_executes(shop):
+    import dataclasses
+
+    from conversational_commerce.authority import GrantRefused
+
+    built = _with_order_line_approved(_profile())
+    without = dataclasses.replace(built, lines=tuple(lin for lin in built.lines if lin.id != "grant.validity_seconds"))
+    with pytest.raises(GrantRefused) as refused:
+        _line_grant(without)
+    assert refused.value.code == "profile_line_absent"
