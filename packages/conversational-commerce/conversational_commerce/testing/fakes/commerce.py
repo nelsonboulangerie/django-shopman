@@ -252,7 +252,8 @@ class FakeCommerceExecute(FakeBase):
             return order_ref
         if command.action == "change_cart":
             cart = self.state.carts.setdefault(command.targets[0], {})
-            cart[command.parameters["item"]] = command.parameters["quantity"]
+            for line in command.parameters["lines"]:
+                cart[line["item"]] = line["quantity"]
         if command.action == "set_fulfillment":
             current = self.state.fulfillment.setdefault(command.targets[0], {})
             current.update(command.parameters)

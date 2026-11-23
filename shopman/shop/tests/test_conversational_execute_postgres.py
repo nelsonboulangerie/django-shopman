@@ -103,7 +103,7 @@ def world():
                                  action="change_cart", targets=(CART,), identity_evidence=EVIDENCE, profile=PROFILE,
                                  now=clock.now())
         cmd = build_command(record=record("cmd"), command_id=clock.new_id("command"), decision_id="dec-1",
-                            grant=grant, parameters=parameters or {"item": "ITEM-A", "quantity": "2"},
+                            grant=grant, parameters=parameters or {"lines": [{"item": "ITEM-A", "quantity": "2"}]},
                             expected_versions={}, ownership_epoch=epoch, scope=CTX.tenant, now=clock.now())
         return grant, cmd
 
@@ -139,7 +139,7 @@ def test_k09_same_key_other_content_is_conflict_and_the_receipt_stays(world):
     first = execute(executor, grant, cmd)
     import dataclasses
 
-    other_grant, other = command(parameters={"item": "ITEM-A", "quantity": "5"})
+    other_grant, other = command(parameters={"lines": [{"item": "ITEM-A", "quantity": "5"}]})
     assert other.content_hash != cmd.content_hash
     reused = dataclasses.replace(other, idempotency=cmd.idempotency)  # a mesma chave, outro conteúdo
     with pytest.raises(PortError) as conflict:
@@ -168,7 +168,7 @@ def test_k11_ownership_revoked_before_the_effect_point_refuses_without_effect(wo
     receipt = execute(executor, grant, cmd)
     assert (receipt.status, receipt.effect, receipt.error.code) == ("failure", "not_applied", "authority_revoked")
     assert applied() == 0
-    revoked_grant, revoked_cmd = command(parameters={"item": "ITEM-B", "quantity": "1"}, epoch=1)
+    revoked_grant, revoked_cmd = command(parameters={"lines": [{"item": "ITEM-B", "quantity": "1"}]}, epoch=1)
     revocations = Revocations()
     revocations.revoke(revoked_grant.grant_id, clock.now())
     assert execute(executor, revoked_grant, revoked_cmd, revocations).error.code == "authority_revoked"

@@ -3,6 +3,11 @@
 Concessão pela linha do perfil (sem termos: a mudança é reversível e não fecha
 nada). A quantidade relativa ("mais um") não é absoluta e fica inelegível: o
 que se pede tem de dizer o resultado, para que repetir não some duas vezes.
+
+Várias linhas num turno ("2 croissants e 1 baguete") são UMA mudança material do
+carrinho: um comando só, com todas as linhas, atômico e com um recibo (spec 08 §5,
+[DECIDIDO]). A primeira necessidade de mudança do turno leva o comando; as outras
+são levadas por ela (``carried_by``) e recebem o mesmo recibo.
 """
 
 from __future__ import annotations
@@ -18,23 +23,46 @@ EFFECT = True
 TEMPLATES = (TEMPLATES_BY_ID["change_cart.done"], TEMPLATES_BY_ID["change_cart.done_receipt"], *SHARED)
 
 
-def propose(state, need):
-    if need.act != "change_quantity" or len(need.readings) != 1 or state.subject.cart_ref is None \
-            or need.need_id in state.refused:
+def _line(need):
+    """Os campos da linha que a necessidade pede, ou ``None`` (não é mudança, é ambígua ou não diz o item)."""
+    if need.act != "change_quantity" or len(need.readings) != 1:
         return None
     fields = need.readings[0]
-    if not fields.get("item"):
+    return fields if fields.get("item") else None
+
+
+def _absolute(fields) -> bool:
+    return "quantity" in fields and not fields.get("relative", False)
+
+
+def lines(state) -> list:
+    """As necessidades de mudança do turno que viram linhas do mesmo comando, na ordem em que vieram."""
+    return [need for need in state.needs if _line(need) is not None and need.need_id not in state.refused]
+
+
+def propose(state, need):
+    fields = _line(need)
+    if fields is None or state.subject.cart_ref is None or need.need_id in state.refused:
         return None
-    absolute = "quantity" in fields and not fields.get("relative", False)
-    return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE,
-                    content={"item": fields["item"], "quantity": fields.get("quantity")},
+    group = lines(state)
+    lead = group[0]
+    if need.need_id != lead.need_id:
+        # Levada pela primeira: a mesma mudança, no mesmo comando (nunca um segundo efeito).
+        return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE,
+                        content={"carried_by": lead.need_id},
+                        situation=state.situation(need, quantity_is_absolute=_absolute(fields),
+                                                  change_reversible=True))
+    # O comando é tudo ou nada: uma linha relativa torna a mudança inteira inelegível.
+    absolute = all(_absolute(_line(other)) for other in group)
+    content = {"lines": [{"item": _line(other)["item"], "quantity": _line(other).get("quantity")} for other in group]}
+    return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE, content=content,
                     situation=state.situation(need, quantity_is_absolute=absolute, change_reversible=True))
 
 
 def effect(state, need) -> EffectPlan:
-    fields = need.readings[0]
     return EffectPlan(action=MOVE, target=state.subject.cart_ref,
-                      parameters={"item": fields["item"], "quantity": str(fields["quantity"])},
+                      parameters={"lines": [{"item": _line(other)["item"], "quantity": str(_line(other)["quantity"])}
+                                            for other in lines(state)]},
                       expected_versions={}, basis="line")
 
 

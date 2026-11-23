@@ -51,6 +51,9 @@ Para isso, cada porta devolve:
   sem ele, a linha mostra a referência.
 - **`quote(cart_ref)`**: o `TermsDocument` selado. Carrinho vazio ou cotação que falha vira
   `Unknown`, e a resposta da mudança cai no degrau de baixo (`change_cart.done_receipt`).
+- **Comando `change_cart`**: `parameters={"lines": [{"item", "quantity"}, ...]}`, as linhas do
+  turno numa mudança só. O executor aplica todas ou nenhuma (uma recusa desfaz as anteriores, na
+  mesma unidade atômica) e devolve um recibo.
 - **Recibo de sucesso do `change_cart` e do `commit_order`**: `domain_refs` traz **`effect`**, a
   referência do efeito no domínio (o carrinho, o pedido). É a faceta que os moldes citam
   (`{order}`, `{track}`); sem ela, a composição não tem o que mostrar.
