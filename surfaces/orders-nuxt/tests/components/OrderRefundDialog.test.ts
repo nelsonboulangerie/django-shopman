@@ -83,6 +83,23 @@ const button = defineComponent({
   },
 });
 const modal = { template: "<div><slot name='body' /><slot name='footer' /></div>" };
+// O grupo de rádio vira botões: o teste escolhe a cobrança de verdade.
+const radios = defineComponent({
+  name: "NuxtRadioGroup",
+  inheritAttrs: false,
+  props: { modelValue: { type: String, default: "" }, items: { type: Array, default: () => [] } },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h(
+        "div",
+        attrs,
+        (props.items as Array<{ value: string; label: string; description: string }>).map((item) =>
+          h("button", { "data-charge": item.value, onClick: () => emit("update:modelValue", item.value) }, `${item.label} ${item.description}`),
+        ),
+      );
+  },
+});
 const stubs = {
   Icon: true,
   OperatorScreenState: true,
@@ -91,6 +108,7 @@ const stubs = {
   NuxtInput: input,
   NuxtCheckbox: checkbox,
   NuxtButton: button,
+  NuxtRadioGroup: radios,
 };
 
 async function opened(read: OrderRefundPreview) {
@@ -134,5 +152,32 @@ describe("OrderRefundDialog", () => {
     expect(w.get("[data-refund-block]").text()).toBe(reason);
     expect(w.find("[data-refund-confirm]").exists()).toBe(false);
     expect(w.find("[data-refund-values]").exists()).toBe(false);
+  });
+
+  it("mais de uma cobrança: escolher relê a prévia dela e confirma com ela, sem total (#3134)", async () => {
+    const charges = [
+      { intent_ref: "INT-1", method_label: "Pix", paid_display: "R$ 30,00", available_q: 3000, available_display: "R$ 30,00" },
+      { intent_ref: "INT-2", method_label: "Pix", paid_display: "R$ 8,00", available_q: 800, available_display: "R$ 8,00" },
+    ];
+    const w = await opened(
+      preview({ choose: true, choose_reason: "Este pedido tem mais de uma cobrança. Escolha qual estornar.", charges, intent_ref: "" }),
+    );
+    expect(w.get("[data-refund-choose]").text()).toBe("Este pedido tem mais de uma cobrança. Escolha qual estornar.");
+    expect(w.find("[data-refund-values]").exists()).toBe(false);
+    expect(w.find("[data-refund-confirm]").attributes("disabled")).toBeDefined();
+    expect(w.text()).not.toContain("38,00");
+
+    env.fetchMock.mockResolvedValueOnce(
+      preview({ charges, intent_ref: "INT-2", paid_display: "R$ 8,00", available_q: 800, available_display: "R$ 8,00" }),
+    );
+    await w.get("[data-charge='INT-2']").trigger("click");
+    await flushPromises();
+
+    expect(env.fetchMock).toHaveBeenLastCalledWith("/api/v1/backstage/orders/WEB-1/refund/preview/", { query: { intent: "INT-2" } });
+    expect(w.get("[data-refund-paid]").text()).toBe("Pago nesta cobrança: R$ 8,00 (Pix)");
+    expect(w.text()).not.toContain("38,00");
+    await w.get("[data-refund-confirm-check]").setValue(true);
+    await w.get("[data-refund-confirm]").trigger("click");
+    expect(w.emitted("confirm")).toEqual([[{ contract: action, amountQ: 800, intentRef: "INT-2" }]]);
   });
 });

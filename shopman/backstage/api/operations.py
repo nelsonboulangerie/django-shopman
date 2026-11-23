@@ -3404,8 +3404,9 @@ _ORDER_REFUND_PERMISSIONS = ("shop.manage_orders", "backstage.refund_single_orde
 
 class OrderRefundPreviewView(OperationalObservationMixin, APIView):
     """O que o diálogo "Estornar" mostra: o valor pago naquela cobrança, o que já
-    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança, a
-    deste pedido; nenhuma soma, nenhuma lista (``order_refund.preview``)."""
+    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança;
+    com mais de uma no pedido, cada uma com o valor dela, para a escolha
+    (``?intent=<ref>`` lê a escolhida). Nenhuma soma (``order_refund.preview``)."""
 
     permission_classes = [HasBackstagePermission]
     required_permission = _ORDER_REFUND_PERMISSIONS
@@ -3416,7 +3417,8 @@ class OrderRefundPreviewView(OperationalObservationMixin, APIView):
         order = orders_service.find_order(ref)
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
-        return Response(order_refund.preview(order, user=request.user))
+        intent_ref = str(request.query_params.get("intent") or "").strip()
+        return Response(order_refund.preview(order, user=request.user, intent_ref=intent_ref))
 
 
 @extend_schema_view(
@@ -3429,7 +3431,8 @@ class OrderRefundPreviewView(OperationalObservationMixin, APIView):
 class OrderRefundView(_OrderActionBase):
     """Estornar UM pedido no Gestor (#2727, item 5; dono, 21/11/2026).
 
-    ``POST {base_revision, expected_actor_id, amount_q?, confirm: true}``. Só com
+    ``POST {base_revision, expected_actor_id, intent_ref?, amount_q?, confirm: true}``.
+    ``intent_ref`` é a cobrança escolhida, quando o pedido tem mais de uma (#3134). Só com
     ``backstage.refund_single_order``: o Gerente estorna partindo do pedido e vê só o
     valor daquela cobrança, sem ``payman.view_paymentintent`` (o Admin de cobranças
     lista, e listar é proibido a ele). ``amount_q`` em centavos, até o disponível; sem
@@ -3463,6 +3466,7 @@ class OrderRefundView(_OrderActionBase):
                  "errors": {"confirm": [order_refund.CONFIRM_REQUIRED]}},
                 status=400,
             )
+        intent_ref = str(request.data.get("intent_ref") or "").strip()
         try:
             amount_q = order_refund.parse_amount_q(request.data.get("amount_q"))
         except order_refund.OrderRefundRefused as exc:
@@ -3471,7 +3475,8 @@ class OrderRefundView(_OrderActionBase):
         def execute(base):
             try:
                 result = order_refund.refund(
-                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key, expected_revision=base,
+                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key,
+                    expected_revision=base, intent_ref=intent_ref,
                 )
             except order_refund.OrderRefundStale as exc:
                 raise OrderStateConflict(str(exc)) from exc

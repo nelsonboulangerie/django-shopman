@@ -708,7 +708,9 @@ def test_a_caixa_nao_estorna(client):
 def test_o_que_o_estorno_serve_ao_gerente_nunca_soma_dois_pedidos():
     """Toda chave de dinheiro do que o gesto serve é de UMA cobrança: o pago é o
     capturado dela, o disponível é o pago menos o que voltou dela. O pedido com duas
-    cobranças com dinheiro não é somado: o gesto recusa e manda ao Dono."""
+    cobranças com dinheiro não é somado: o Gerente escolhe a cobrança, vendo o valor
+    de cada uma separado, e o total do pedido NUNCA aparece (decisão da coordenação
+    em 22/11/2026, reversível, #3134)."""
     from shopman.payman import PaymentService
 
     from shopman.backstage.services import order_refund
@@ -730,9 +732,17 @@ def test_o_que_o_estorno_serve_ao_gerente_nunca_soma_dois_pedidos():
     PaymentService.capture("INT-EST-UMA-2")
     two = order_refund.preview(order, user=gerente)
 
-    assert two["blocked"] is True
-    assert two["block_reason"] == order_refund.MANY_CHARGES_REASON
-    assert two["paid_q"] == 0 and two["available_q"] == 0, "duas cobranças nunca viram um total"
+    assert two["choose"] is True and two["blocked"] is False
+    assert not {"paid_q", "available_q", "paid_display", "available_display"} & set(two), "sem escolha, nenhum valor"
+    assert [(row["intent_ref"], row["paid_q"], row["available_q"]) for row in two["charges"]] == [
+        (f"INT-{order.ref}", 3600, 3600), ("INT-EST-UMA-2", 500, 500),
+    ], "cada cobrança com o valor DELA"
+    assert "4100" not in str(two) and "41,00" not in str(two), "duas cobranças nunca viram um total"
+    assert not any(key.endswith(("_total", "_sum")) or key == "total_q" for key in _all_keys(two))
+
+    chosen = order_refund.preview(order, user=gerente, intent_ref="INT-EST-UMA-2")
+    assert (chosen["intent_ref"], chosen["paid_q"], chosen["available_q"]) == ("INT-EST-UMA-2", 500, 500)
+    assert "41,00" not in str(chosen)
 
 
 def test_o_dia_fraco_no_sino_e_por_papel():

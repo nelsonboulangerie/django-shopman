@@ -1,10 +1,12 @@
 // Estornar UM pedido (#2727, item 5): a exceção financeira do Gerente. A prévia que o
 // servidor monta (`GET orders/<ref>/refund/preview/`) e o que o diálogo mostra dela.
 //
-// Os valores são de UMA cobrança, a deste pedido: o que ela recebeu, o que já voltou
-// dela e o que ainda pode voltar. A tela não soma nada. O servidor decide se o gesto
-// vale agora; a tela só confere o valor digitado contra o disponível que ele mandou
-// (o servidor confere de novo, sob o lock).
+// Os valores são de UMA cobrança: o que ela recebeu, o que já voltou dela e o que
+// ainda pode voltar. A tela não soma nada. Pedido com mais de uma cobrança (#3134,
+// decisão da coordenação em 22/11/2026): o Gerente escolhe qual estornar, vendo o
+// valor de cada uma separado, e o total do pedido nunca aparece. O servidor decide se
+// o gesto vale agora; a tela só confere o valor digitado contra o disponível que ele
+// mandou (o servidor confere de novo, sob o lock).
 
 import type { Action } from "~/generated/ordersContract";
 import { formatBRL } from "../../../operator-kit/app/utils/money";
@@ -18,8 +20,28 @@ function brl(amountQ: number): string {
   return formatBRL(amountQ).replace(/\u00a0/g, " ");
 }
 
+/** Uma cobrança na escolha do estorno: os valores DELA, e de mais nenhuma. */
+export interface OrderRefundCharge {
+  intent_ref: string;
+  method_label?: string;
+  paid_q?: number;
+  paid_display: string;
+  /** Vazio quando nada voltou dela ainda. */
+  returned_display?: string;
+  available_q: number;
+  available_display: string;
+}
+
 export interface OrderRefundPreview {
   order_ref: string;
+  /** Mais de uma cobrança e nenhuma escolhida: só a escolha, sem valor a estornar. */
+  choose?: boolean;
+  /** "Este pedido tem mais de uma cobrança. Escolha qual estornar." */
+  choose_reason?: string;
+  /** As cobranças a escolher, cada uma com o valor dela (vazio com uma só). */
+  charges?: OrderRefundCharge[];
+  /** A cobrança destes valores (a escolhida, ou a única). */
+  intent_ref?: string;
   /** "Pix", "Cartão": por onde o dinheiro volta. */
   method_label?: string;
   paid_q?: number;
@@ -47,6 +69,9 @@ export interface OrderRefundReceipt {
 export interface OrderRefundDialogView {
   blocked: boolean;
   blockReason: string;
+  /** Mais de uma cobrança e nenhuma escolhida: a tela pede a escolha e não confirma. */
+  choosing: boolean;
+  chooseLine: string;
   /** "Pago neste pedido: R$ 30,00 (Pix)". */
   paidLine: string;
   /** "Já estornado: R$ 5,00", ou vazio. */
@@ -81,7 +106,25 @@ export function refundDialogView(
   options: { amount: string; confirmed: boolean; busy?: boolean },
 ): OrderRefundDialogView {
   const blocked = preview.blocked || !preview.action;
+  if (!blocked && preview.choose) {
+    return {
+      blocked: false,
+      blockReason: "",
+      choosing: true,
+      chooseLine: preview.choose_reason ?? "",
+      paidLine: "",
+      returnedLine: "",
+      availableLine: "",
+      partialAllowed: Boolean(preview.partial_allowed),
+      amountQ: null,
+      amountError: "",
+      confirmLabel: "Estornar",
+      canConfirm: false,
+    };
+  }
   const availableQ = preview.available_q ?? 0;
+  // Com mais de uma cobrança, o pago é o DESTA cobrança: "neste pedido" insinuaria o total.
+  const where = (preview.charges?.length ?? 0) > 1 ? "nesta cobrança" : "neste pedido";
   const parsed = moneyToQ(options.amount);
   const amountQ = parsed === null || parsed === 0 ? null : parsed;
   const error = blocked ? "" : amountError(amountQ, availableQ);
@@ -89,7 +132,9 @@ export function refundDialogView(
   return {
     blocked,
     blockReason: blocked ? preview.block_reason : "",
-    paidLine: blocked ? "" : `Pago neste pedido: ${preview.paid_display ?? ""}${method}`,
+    choosing: false,
+    chooseLine: "",
+    paidLine: blocked ? "" : `Pago ${where}: ${preview.paid_display ?? ""}${method}`,
     returnedLine: !blocked && preview.returned_display ? `Já estornado: ${preview.returned_display}` : "",
     availableLine: blocked ? "" : `Disponível para estorno: ${preview.available_display ?? ""}`,
     partialAllowed: Boolean(preview.partial_allowed),
@@ -99,6 +144,22 @@ export function refundDialogView(
     canConfirm:
       !blocked && Boolean(preview.action?.enabled) && !error && options.confirmed && !options.busy,
   };
+}
+
+/**
+ * As cobranças a escolher (#3134): cada uma com o valor DELA. Nunca um total, nem na
+ * soma dos itens: o Gerente vê valores de registros, não o agregado (dono, 21/11/2026).
+ */
+export function refundChargeOptions(
+  preview: OrderRefundPreview | null,
+): Array<{ value: string; label: string; description: string }> {
+  return (preview?.charges ?? []).map((charge) => ({
+    value: charge.intent_ref,
+    label: `${charge.method_label || "Cobrança"} · pago ${charge.paid_display}`,
+    description: charge.returned_display
+      ? `Já estornado: ${charge.returned_display}. Disponível: ${charge.available_display}`
+      : `Disponível: ${charge.available_display}`,
+  }));
 }
 
 /** O aviso depois da tentativa: o dinheiro voltou, ou a frase do balcão do servidor. */
