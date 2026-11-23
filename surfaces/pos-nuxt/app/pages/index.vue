@@ -646,10 +646,11 @@ watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
 // da tela de pagamento (mesmo componente, outro estado) — assim F8 e o chip
 // nunca abrem duas caixas diferentes.
-// NO BALCÃO os dois chips existem ("Agora F7", "Consumir aqui F8") e são a
-// porta para a encomenda: entregar ou agendar É encomenda, então o gesto troca o
-// modo e abre a mesma pergunta já no modo certo. Se a troca for recusada (edição
-// de encomenda), nada abre.
+// NO BALCÃO o "Agora F7" é a porta para a encomenda: agendar É encomenda, então o
+// gesto troca o modo e abre a mesma pergunta já no modo certo. Se a troca for
+// recusada (edição de encomenda), nada abre. O recebimento do balcão são dois chips,
+// "Consumir aqui" e "Para levar" (#3193, opção A do dono), e o F8 troca entre eles:
+// a encomenda fica no seletor de modo.
 // "vai à cozinha" na linha nova (v4): para onde o roteamento real mandaria cada
 // produto (`kitchen_station` do catálogo, `services/kds.kitchen_routes_for_skus`).
 // Na comanda, o "Enviar" manda TUDO que tem estação (`fire_lines` sem `prep_only`),
@@ -755,8 +756,11 @@ function leaveCounterThen(next: () => void) {
 // NA ENCOMENDA AINDA POR COMBINAR, o chip respeita o funil (cliente, para quando,
 // recebimento): quem pede o Recebimento sem cliente cai no cliente, e sem data
 // cai no "Quando", que vem antes (decisão do dono, 19/11/2026, #2754).
+function toggleCounterService() {
+  cart.counterService = cart.counterService === "to_go" ? "here" : "to_go";
+}
 function openFulfillmentHere() {
-  if (cart.salesMode === "counter") { leaveCounterThen(openFulfillmentHere); return; }
+  if (cart.salesMode === "counter") { toggleCounterService(); return; }
   if (orderSetupPending.value && orderSetupIssue.value === "customer") {
     tabHeaderRef.value?.openCustomer();
     return;
@@ -924,12 +928,20 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
         kbds: ["F7"],
         onSelect: () => openScheduleHere(),
       },
-      {
-        label: cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel.value}` : "Consumir aqui (entregar vira encomenda)",
-        icon: cart.salesMode === "order" ? "i-lucide-store" : "i-lucide-utensils",
-        kbds: ["F8"],
-        onSelect: () => openFulfillmentHere(),
-      },
+      cart.salesMode === "order"
+        ? {
+            label: `Recebimento: ${fulfillmentChipLabel.value}`,
+            icon: "i-lucide-store",
+            kbds: ["F8"],
+            onSelect: () => openFulfillmentHere(),
+          }
+        : {
+            // O balcão troca entre os dois (#3193): o item diz para onde vai.
+            label: cart.counterService === "to_go" ? "Cliente vai consumir aqui" : "Cliente vai levar",
+            icon: cart.counterService === "to_go" ? "i-lucide-utensils" : "i-lucide-shopping-bag",
+            kbds: ["F8"],
+            onSelect: () => toggleCounterService(),
+          },
     );
   }
   list.push({ label: "Últimas vendas", icon: "i-lucide-history", priority: 1, onSelect: () => { recentSalesOpen.value = true; } });
@@ -1495,6 +1507,7 @@ onBeforeUnmount(() => {
               :tab-max-length="tabMaxLength"
               :tab-disallowed-chars="tabDisallowedChars"
               :fulfillment-type="cart.fulfillmentType"
+              :counter-service="cart.counterService"
               :fulfillment-label="fulfillmentChipLabel"
               :schedule-label="scheduleChipLabel"
               :scheduled="scheduleChipActive"
@@ -1525,6 +1538,7 @@ onBeforeUnmount(() => {
               @apply-preference="applyCustomerPreference"
               @repeat-customer-last-order="repeatCustomerLastOrder"
               @open-fulfillment="openFulfillmentHere"
+              @counter-service-change="cart.counterService = $event"
               @open-schedule="openScheduleHere"
               @open-customer="paymentWorkspaceRef?.openCustomer()"
             />

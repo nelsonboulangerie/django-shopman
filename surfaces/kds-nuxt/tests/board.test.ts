@@ -162,6 +162,14 @@ describe("kds board presentation", () => {
     expect(ticketOverline(ticket({ is_preorder: true, customer_name: "(43) 99333-3333" }))).toBe("Encomenda");
   });
 
+  it("#3193: a venda de balcão diz o que o PDV marcou, no lugar de Retirada", () => {
+    expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "Para levar" }))).toBe("Para levar");
+    expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "Consumir aqui" }))).toBe("Consumir aqui");
+    // O balcão que não disse segue Retirada; a encomenda segue Encomenda.
+    expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "" }))).toBe("Retirada");
+    expect(ticketOverline(ticket({ is_preorder: true, service_label: "Para levar" }))).toBe("Encomenda");
+  });
+
   it("v4 nota 7: iniciado por e a hora combinada numa linha", () => {
     expect(ticketStartLine(ticket({ started_by: "Rafael", started_at_display: "21:56", due_time_display: "retira às 22:30" }))).toBe(
       "Iniciado por Rafael às 21:56 · retira às 22:30",

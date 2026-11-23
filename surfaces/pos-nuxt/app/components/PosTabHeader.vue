@@ -50,6 +50,8 @@ const props = defineProps<{
   readOnly?: boolean;
   /** Como o cliente recebe: decidido na abertura, revisto de relance aqui. */
   fulfillmentType: "pickup" | "delivery";
+  /** No balcão: comer aqui ou levar (#3193). Na encomenda, quem fala é o recebimento. */
+  counterService?: "here" | "to_go";
   /** O rótulo já resolvido ("Entrega · Centro"), que a página monta. */
   fulfillmentLabel: string;
   /** Quando o cliente quer o pedido: "Para hoje", "qui, 10/09, 10:00 às 10:30". */
@@ -110,6 +112,8 @@ const emit = defineEmits<{
   /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
   applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   openFulfillment: [];
+  /** No balcão, os dois chips "Consumir aqui" e "Para levar" (#3193). */
+  counterServiceChange: ["here" | "to_go"];
   openSchedule: [];
   /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
    *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
@@ -119,6 +123,13 @@ const emit = defineEmits<{
   /** Toque no chip com o cliente travado (`customerLockedReason`). */
   customerLocked: [reason: string];
 }>();
+
+// No balcão, o recebimento são DOIS chips (#3193, opção A do dono): comer aqui ou
+// levar. A encomenda não mora mais aqui: ela fica no seletor de modo.
+const COUNTER_SERVICES = [
+  { ref: "here", label: "Consumir aqui", icon: "lucide:utensils" },
+  { ref: "to_go", label: "Para levar", icon: "lucide:shopping-bag" },
+] as const;
 
 const SALES_MODES = [
   { ref: "counter", label: "Balcão", icon: "lucide:store" },
@@ -380,10 +391,9 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
          telefone e o balcão não tinha onde escrever isso. "Para hoje" é o
          padrão e é uma AFIRMAÇÃO, não um campo vazio; por isso a borda
          tracejada (v4) enquanto nada foi agendado. -->
-    <!-- NO BALCÃO os dois chips continuam (v4, `pos-sale4.html`): "Agora F7"
-         tracejado e "Consumir aqui F8". São a porta da encomenda: agendar ou
-         entregar troca o modo e abre a mesma pergunta (`pages/index.vue`,
-         `leaveCounterThen`). -->
+    <!-- NO BALCÃO o "Agora F7" tracejado continua sendo a porta da encomenda:
+         agendar troca o modo e abre a mesma pergunta (`pages/index.vue`,
+         `leaveCounterThen`). O recebimento do balcão são os dois chips abaixo. -->
     <NuxtButton
       v-if="hasOpenTab"
       :size="controlSize"
@@ -414,20 +424,55 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
          decidido na abertura do atendimento e revisto de relance daqui em
          diante. Na barra ele é LEITURA com porta de saída; o lugar onde se
          decide é o começo do fluxo, não esta barra. -->
+    <!-- BALCÃO: "Consumir aqui" e "Para levar" (#3193). Quem quer levar tinha só a
+         porta da encomenda; agora é um toque, e a Cozinha lê no ticket se monta no
+         prato ou embala. F8 troca entre os dois. -->
+    <div
+      v-if="hasOpenTab && isCounter"
+      class="inline-flex shrink-0 items-center gap-1 max-sm:hidden"
+      role="group"
+      aria-label="Consumir aqui ou levar (F8)"
+      data-context-entry="service"
+    >
+      <NuxtButton
+        v-for="service in COUNTER_SERVICES"
+        :key="service.ref"
+        :size="controlSize"
+        color="neutral"
+        variant="outline"
+        active-color="primary"
+        active-variant="soft"
+        class="min-w-0 gap-2"
+        :active="(counterService || 'here') === service.ref"
+        :aria-pressed="(counterService || 'here') === service.ref"
+        :data-pos-counter-service-active="(counterService || 'here') === service.ref ? '' : undefined"
+        :disabled="loading"
+        @click="$emit('counterServiceChange', service.ref)"
+      >
+        <Icon :name="service.icon" class="size-4 shrink-0" />
+        <span class="sr-only">{{ service.label }}</span>
+        <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ service.label }}</span>
+      </NuxtButton>
+      <OperatorKbd
+        v-if="!coarsePointer"
+        class="hidden @min-[50rem]:inline-flex"
+        aria-hidden="true"
+      >F8</OperatorKbd>
+    </div>
     <NuxtButton
-      v-if="hasOpenTab"
+      v-if="hasOpenTab && !isCounter"
       :size="controlSize"
-      :color="!isCounter && fulfillmentType === 'delivery' ? 'primary' : 'neutral'"
+      :color="fulfillmentType === 'delivery' ? 'primary' : 'neutral'"
       variant="outline"
       class="min-w-0 shrink-0 gap-2 max-sm:hidden"
       aria-haspopup="dialog"
-      :aria-label="`Recebimento: ${isCounter ? 'Consumir aqui' : fulfillmentLabel}`"
-      :title="isCounter ? 'Consumir aqui. Recebimento (F8): entregar vira encomenda' : `${fulfillmentLabel}. Recebimento (F8)`"
+      :aria-label="`Recebimento: ${fulfillmentLabel}`"
+      :title="`${fulfillmentLabel}. Recebimento (F8)`"
       data-context-entry="fulfillment"
       @click="$emit('openFulfillment')"
     >
-      <Icon :name="isCounter ? 'lucide:utensils' : (fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store')" class="size-4 shrink-0 text-muted-foreground" />
-      <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ isCounter ? 'Consumir aqui' : fulfillmentLabel }}</span>
+      <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
+      <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ fulfillmentLabel }}</span>
       <OperatorKbd
         v-if="!coarsePointer"
         class="hidden @min-[50rem]:inline-flex"
