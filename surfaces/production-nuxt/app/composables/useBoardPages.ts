@@ -1,31 +1,89 @@
-// Paginação de painel de aeroporto: o quadro tem N linhas FIXAS (medidas na
+// Paginação de painel de aeroporto: o quadro tem as linhas que CABEM (medidas na
 // tela — kiosk não rola) e o conteúdo excedente vira páginas em ciclo. A
 // virada re-monta as linhas → as palhetas cascateiam de novo: a "tempestade
 // de clacs" que os painéis mecânicos fazem ao virar a página.
+//
+// Linha de nome longo ocupa duas linhas de palhetas (WP-F04). Com `lines(item)`,
+// a página soma a altura real de cada linha até encher a área; sem ele, todas as
+// linhas têm a mesma altura e a página é um tamanho fixo.
 import type { Ref } from "vue";
 
 const ROTATE_MS = 12_000;
 const ROW_GAP_PX = 6; // gap-1.5 entre linhas
 
-export function useBoardPages<T>(items: Ref<T[]>) {
+/** A régua medida na tela: altura útil, linha de uma linha de nome, e o acréscimo
+ *  de cada linha de nome a mais. */
+export interface BoardPageFit {
+  capacity: number;
+  base: number;
+  extra: number;
+}
+
+/** Fatia os itens em páginas que cabem na régua, em ordem (nunca reordena). */
+export function boardPageStarts(lines: readonly number[], fit: BoardPageFit): number[] {
+  const starts = [0];
+  let used = 0;
+  lines.forEach((count, index) => {
+    const height = fit.base + Math.max(0, count - 1) * fit.extra;
+    const next = used === 0 ? height : used + ROW_GAP_PX + height;
+    if (used > 0 && next > fit.capacity) {
+      starts.push(index);
+      used = height;
+    } else {
+      used = next;
+    }
+  });
+  return starts;
+}
+
+export function useBoardPages<T>(items: Ref<T[]>, lines?: (item: T) => number) {
   const listEl = ref<HTMLElement | null>(null);
   const pageSize = ref(8);
+  const fit = ref<BoardPageFit | null>(null);
   const page = ref(0);
   let rotateTimer: ReturnType<typeof setInterval> | null = null;
   let observer: ResizeObserver | null = null;
 
-  const pageCount = computed(() => Math.max(1, Math.ceil(items.value.length / Math.max(1, pageSize.value))));
-  const visible = computed(() => {
+  const starts = computed<number[]>(() => {
+    const total = items.value.length;
+    if (lines && fit.value) return boardPageStarts(items.value.map(lines), fit.value);
     const size = Math.max(1, pageSize.value);
+    const fixed: number[] = [];
+    for (let index = 0; index < Math.max(1, total); index += size) fixed.push(index);
+    return fixed;
+  });
+  const pageCount = computed(() => Math.max(1, starts.value.length));
+  const visible = computed(() => {
     const current = Math.min(page.value, pageCount.value - 1);
-    return items.value.slice(current * size, (current + 1) * size);
+    const from = starts.value[current] ?? 0;
+    const to = starts.value[current + 1] ?? items.value.length;
+    return items.value.slice(from, to);
   });
 
   function measure() {
     const list = listEl.value;
-    const row = list?.querySelector<HTMLElement>("[data-board-row]");
-    if (!list || !row || !row.offsetHeight) return;
-    const fits = Math.floor((list.clientHeight + ROW_GAP_PX) / (row.offsetHeight + ROW_GAP_PX));
+    const rows = list ? [...list.querySelectorAll<HTMLElement>("[data-board-row]")] : [];
+    if (!list || !rows.length) return;
+    if (lines) {
+      // A régua sai de uma linha qualquer: altura, menos o acréscimo das linhas de
+      // nome que ela tem a mais. O acréscimo é uma palheta do nome mais o vão.
+      const row = rows[0]!;
+      const name = row.querySelector<HTMLElement>("[data-board-name]");
+      const flap = name?.firstElementChild as HTMLElement | null;
+      const count = Number(row.dataset.boardLines || "1") || 1;
+      if (!name || !flap || !row.offsetHeight) return;
+      const gap = Number.parseFloat(getComputedStyle(name).rowGap) || 0;
+      const extra = flap.offsetHeight + gap;
+      fit.value = {
+        capacity: list.clientHeight,
+        base: row.offsetHeight - (count - 1) * extra,
+        extra,
+      };
+      return;
+    }
+    const tallest = Math.max(0, ...rows.map((row) => row.offsetHeight));
+    if (!tallest) return;
+    const fits = Math.floor((list.clientHeight + ROW_GAP_PX) / (tallest + ROW_GAP_PX));
     pageSize.value = Math.max(3, fits);
   }
 
@@ -45,6 +103,15 @@ export function useBoardPages<T>(items: Ref<T[]>) {
   onUnmounted(() => {
     if (rotateTimer) clearInterval(rotateTimer);
     observer?.disconnect();
+  });
+
+  // A lista só nasce quando chega o primeiro lote: observa quando ela aparece.
+  watch(listEl, (el, previous) => {
+    if (previous) observer?.unobserve(previous);
+    if (el) {
+      observer?.observe(el);
+      void nextTick(measure);
+    }
   });
 
   watch(pageCount, (count) => {

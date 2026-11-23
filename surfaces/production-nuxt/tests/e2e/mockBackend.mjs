@@ -931,7 +931,7 @@ const FORECAST_POPULATED = {
       forecastRow("WO-0106", "Levain", "3250", "g", "8h30", "scheduled", "Planejado"),
       forecastRow("WO-0107", "Pão de fermentação natural com castanhas", "12", "un", "9h", "scheduled", "Planejado"),
       forecastRow("WO-0108", "Ciabatta", "40", "un", "10h30", "scheduled", "Planejado"),
-      forecastRow("WO-0109", "Focaccia de Alecrim", "16", "un", "11h", "scheduled", "Planejado"),
+      forecastRow("WO-0109", "Mini Focaccia Cebola, Bacon e Tomilho", "16", "un", "11h", "scheduled", "Planejado"),
     ],
   },
 };

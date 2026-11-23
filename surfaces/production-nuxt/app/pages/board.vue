@@ -24,6 +24,7 @@ import {
   BOARD_STATUS_CHARS,
   STORE_TIME_ZONE,
   boardNameChars,
+  boardNameLines,
   boardQtyChars,
   boardQtyLabel,
   boardRowSpoken,
@@ -67,7 +68,10 @@ const sound = useFlapClack();
 
 // Paginação de aeroporto: N linhas fixas (medidas na tela), excedente vira
 // páginas em ciclo de 12s — manhã cheia não rola, VIRA, com clac-storm.
-const pages = useBoardPages(rows);
+const pages = useBoardPages(
+  rows,
+  (row) => boardNameLines(row.recipe_name, NAME_CHARS.value).length,
+);
 function setBoardList(el: unknown) {
   pages.listEl.value = (el as HTMLElement | null) ?? null;
 }
@@ -143,8 +147,14 @@ const QTY_CHARS = computed(() => boardQtyChars(rows.value));
 const STATUS_CHARS = BOARD_STATUS_CHARS;
 const ETA_CHARS = BOARD_ETA_CHARS;
 // A escala divide a largura útil pelo total de palhetas da linha (TV: uma linha só;
-// celular: o nome em cima, os três mostradores embaixo).
-const boardScale = computed(() => ({
+// celular: o nome em cima, os três mostradores embaixo). Só depois de montar: a
+// hidratação do Vue não corrige `style` divergente do HTML do servidor, e a
+// escala medida lá (sem as linhas do dia) ficaria valendo na TV.
+const scaleReady = ref(false);
+onMounted(() => {
+  scaleReady.value = true;
+});
+const boardScale = computed(() => !scaleReady.value ? {} : ({
   "--row-chars": NAME_CHARS.value + QTY_CHARS.value + ETA_CHARS + STATUS_CHARS,
   "--row-chars-narrow": Math.max(
     NAME_CHARS.value,
@@ -154,7 +164,8 @@ const boardScale = computed(() => ({
 </script>
 
 <template>
-  <main class="board flex min-h-screen flex-col" :style="boardScale">
+  <main class="board flex h-dvh flex-col overflow-hidden" :style="boardScale">
+    <!-- Altura da tela, nunca mais: o kiosk não rola, o excedente vira página. -->
     <header class="flex flex-col gap-2 px-4 pb-2 pt-4 md:px-8">
       <div class="board-labels flex flex-wrap items-center gap-x-3 gap-y-2">
         <NuxtButton
@@ -257,14 +268,19 @@ const boardScale = computed(() => ({
               v-for="row in pages.visible.value"
               :key="row.ref"
               data-board-row
+              :data-board-lines="boardNameLines(row.recipe_name, NAME_CHARS).length"
               class="board-row"
               :aria-label="boardRowSpoken(row)"
             >
-              <SplitFlap
-                :value="row.recipe_name"
-                :chars="NAME_CHARS"
-                class="board-flap min-w-0"
-              />
+              <div data-board-name class="board-name flex min-w-0 flex-col">
+                <SplitFlap
+                  v-for="(line, index) in boardNameLines(row.recipe_name, NAME_CHARS)"
+                  :key="index"
+                  :value="line"
+                  :chars="NAME_CHARS"
+                  class="board-flap min-w-0"
+                />
+              </div>
               <SplitFlap
                 :value="boardQtyLabel(row.qty, row.unit)"
                 :chars="QTY_CHARS"
@@ -370,6 +386,10 @@ const boardScale = computed(() => ({
 .board-display {
   font-size: var(--scale-display);
   font-weight: 600;
+}
+.board-name {
+  gap: 0.12em;
+  font-size: var(--scale-row);
 }
 .board-flap {
   font-size: var(--scale-row);

@@ -498,18 +498,54 @@ export function boardQtyChars(
   return Math.max(6, ...rows.map((row) => boardQtyLabel(row.qty, row.unit).length));
 }
 
-/** Teto da coluna do nome: além disso a letra encolhe demais para dois metros. */
-export const BOARD_NAME_MAX_CHARS = 28;
+/** Largura máxima da coluna do nome, em palhetas por linha. Nome maior quebra em
+ *  duas linhas de palhetas em vez de encolher a letra de todo o Letreiro. */
+export const BOARD_NAME_MAX_CHARS = 22;
 const BOARD_NAME_MIN_CHARS = 12;
+const BOARD_NAME_MAX_LINES = 2;
 
 /**
- * Largura da coluna do nome, em palhetas: o maior nome do dia, inteiro (P2-15:
- * a coluna fixa em 22 cortava "Croissant de Amêndoas Tostad"). Dia de nomes
- * curtos ganha letra maior, porque a escala divide a largura por palhetas.
+ * Largura da coluna do nome, em palhetas: o maior nome do dia, inteiro, até o
+ * teto (P2-15: a coluna fixa em 22 cortava o nome). Dia de nomes curtos ganha
+ * letra maior, porque a escala divide a largura pelo total de palhetas.
  */
 export function boardNameChars(rows: readonly { recipe_name: string }[]): number {
   const longest = Math.max(0, ...rows.map((row) => row.recipe_name.trim().length));
   return Math.min(BOARD_NAME_MAX_CHARS, Math.max(BOARD_NAME_MIN_CHARS, longest));
+}
+
+/**
+ * O nome em linhas de palhetas: quebra entre palavras, até duas linhas. Só o que
+ * passa de duas linhas cheias termina em "…" ("Mini Focaccia Cebola," / "Bacon e
+ * Tomilho" cabe inteiro em 22).
+ */
+export function boardNameLines(name: string, width: number): string[] {
+  const size = Math.max(1, width);
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (let word of words) {
+    while (word.length > size) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      lines.push(word.slice(0, size));
+      word = word.slice(size);
+    }
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= size) current = next;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  if (lines.length <= BOARD_NAME_MAX_LINES) return lines.length ? lines : [""];
+  const kept = lines.slice(0, BOARD_NAME_MAX_LINES);
+  const last = kept[BOARD_NAME_MAX_LINES - 1]!;
+  kept[BOARD_NAME_MAX_LINES - 1] = `${last.slice(0, size - 1).trimEnd()}…`;
+  return kept;
 }
 
 /** "Planejado", o maior rótulo de situação do painel. */

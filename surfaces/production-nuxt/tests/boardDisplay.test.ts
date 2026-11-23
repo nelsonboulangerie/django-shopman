@@ -5,6 +5,7 @@ import {
   BOARD_NAME_MAX_CHARS,
   boardDisplay,
   boardNameChars,
+  boardNameLines,
   boardQtyChars,
   boardQtyLabel,
   boardRowSpoken,
@@ -63,13 +64,32 @@ describe("Letreiro — escala e nome", () => {
   it("a coluna do nome mede o maior nome do dia, com piso e teto", () => {
     expect(boardNameChars([])).toBe(12);
     expect(boardNameChars([{ recipe_name: "Baguete" }])).toBe(12);
-    // P2-15: 22 palhetas fixas cortavam o nome.
-    expect(
-      boardNameChars([{ recipe_name: "Croissant de Amêndoas Tostadas" }]),
-    ).toBe(BOARD_NAME_MAX_CHARS);
-    expect(boardNameChars([{ recipe_name: "Pão de Forma Artesanal Fatiado" }]))
-      .toBeLessThanOrEqual(BOARD_NAME_MAX_CHARS);
     expect(boardNameChars([{ recipe_name: "Croissant de Amêndoas" }])).toBe(21);
+    expect(
+      boardNameChars([{ recipe_name: "Mini Focaccia Cebola, Bacon e Tomilho" }]),
+    ).toBe(BOARD_NAME_MAX_CHARS);
+  });
+
+  // P2-15: 22 palhetas fixas cortavam o nome. Nome longo quebra em duas linhas.
+  it("o nome longo quebra entre palavras em vez de ser cortado", () => {
+    expect(boardNameLines("Baguete", 22)).toEqual(["Baguete"]);
+    expect(boardNameLines("Mini Focaccia Cebola, Bacon e Tomilho", 22)).toEqual([
+      "Mini Focaccia Cebola,",
+      "Bacon e Tomilho",
+    ]);
+    expect(
+      boardNameLines("Pão de fermentação natural com castanhas brasileiras", 22),
+    ).toEqual(["Pão de fermentação", "natural com castanhas…"]);
+    for (const line of boardNameLines(
+      "Pão de fermentação natural com castanhas brasileiras e mel",
+      22,
+    )) {
+      expect(line.length).toBeLessThanOrEqual(22);
+    }
+    expect(boardNameLines("Supercalifragilístico", 10)).toEqual([
+      "Supercalif",
+      "ragilísti…",
+    ]);
   });
 
   it("a escala cresce com a altura, sem o teto de tablet de 1,5rem", () => {
