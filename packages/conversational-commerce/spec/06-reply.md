@@ -107,7 +107,13 @@ Regras genéricas do pacote, estruturais e sem língua nenhuma:
 | `fact_unknown`, `fact_expired` | o fato não vale | segura (N02) |
 | `backing_kind_not_accepted` | o lastro existe, mas não é do tipo que o espaço aceita (o que se pode prometer não é unidade em mãos) | segura (K27) |
 | `number_without_fact` | dígito no texto livre, fora de um bloco travado | segura (N03, K23) |
+| `template_not_in_voice` | com `voice` (o `Engine` com `house_voice_only`), a parte é de molde que a casa não assina: o texto neutro do pacote | segura |
 | `action_without_receipt` | parte de movimento que muda o negócio (`change_cart`, `set_fulfillment`, `commit_order`, `cancel_order`, `amend_order`, `grant_discount`) sem afirmação lastreada em recibo de **sucesso** | segura (K24) |
+
+**A voz da casa.** A casa que fala com moldes próprios liga `house_voice_only`: o `compose` passa a
+conferir cada parte contra os moldes da casa, e a parte que cairia no molde do pacote segura
+(`template_not_in_voice`). Vale onde a sombra não vê: a resposta depois do efeito (os termos de novo,
+a recusa no ponto de efeito, o pendente). Uma casa com voz própria nunca fala com a voz do pacote.
 
 Efeito pendente não é efeito. A resposta a um recibo `pending` é uma parte `wait`, com o
 prazo do compromisso de reconciliação, nunca a confirmação do pedido.

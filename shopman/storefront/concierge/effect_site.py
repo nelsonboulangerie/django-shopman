@@ -104,15 +104,21 @@ class ConciergeEffectSite:
             current = lock_turn_authority(conversation, channel_ref=self.tool_context.channel_ref if cart else None)
         except TurnRevoked as revoked:
             raise PortError(ErrorCode.AUTHORITY_REVOKED, f"a posse da conversa mudou ({revoked})") from revoked
+        # A época de posse é a do episódio do motor (muda quando a equipe assume e devolve), não a cerca do
+        # turno da casa (``turn_fence``, que sobe a cada mensagem). O que a guarda pergunta, "a posse mudou
+        # depois da decisão?", a casa acabou de responder na trava acima: a mesma cerca, a conversa ativa, a
+        # reivindicação válida. Passada a trava, a leitura atesta a época que o comando espera; não passada,
+        # o efeito já foi recusado (#3410: com a cerca no lugar da época, todo efeito no ar saía revogado).
+        epoch = command.expected_ownership_epoch
         target = command.targets[0]
         if cart and command.action in NEW_CART_ACTIONS and target == new_cart_ref(conversation.pk):
             # A sacola nova desta conversa: nasce no efeito. Se outra parte do turno já a criou,
             # o efeito cai nela, a mesma sacola presa ao telefone.
-            return Reading(ownership_epoch=current.turn_fence, versions={target: 0})
+            return Reading(ownership_epoch=epoch, versions={target: 0})
         if not cart:
             if own_order(conversation, target) is None:
                 raise PortError(ErrorCode.OBJECT_FORBIDDEN, "pedido que não é do cliente da conversa")
-            return Reading(ownership_epoch=current.turn_fence)
+            return Reading(ownership_epoch=epoch)
         if not current.session_key or target != current.session_key:
             raise PortError(ErrorCode.OBJECT_FORBIDDEN, "sacola que não é a da conversa")
         session = (
@@ -123,7 +129,7 @@ class ConciergeEffectSite:
         if session is None:
             raise PortError(ErrorCode.OBJECT_FORBIDDEN, "sacola que não é a da conversa")
         terms_ref = str((current.quote or {}).get("token") or "") or None if command.action == "commit_order" else None
-        return Reading(ownership_epoch=current.turn_fence, versions={target: session.rev}, terms_ref=terms_ref)
+        return Reading(ownership_epoch=epoch, versions={target: session.rev}, terms_ref=terms_ref)
 
     def apply(self, ctx: TrustedContext, command: ActionCommand) -> Done:
         from .service import TurnRevoked

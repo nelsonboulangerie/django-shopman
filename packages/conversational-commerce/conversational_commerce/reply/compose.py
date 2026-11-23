@@ -97,8 +97,10 @@ def render_part(spec: PartSpec, template: Template, evidence: Evidence,
 
 def compose(*, specs: Iterable[PartSpec], templates: Mapping[str, Template], evidence: Evidence,
             rules: Iterable[PhraseRule] = (), formatters: Mapping[str, Formatter] | None = None,
-            decision_id: str, record: Mapping[str, Any]) -> Composed:
-    """Compõe e verifica. ``record``: o envelope do ``ReplyPlan`` (id, tenant, environment...)."""
+            decision_id: str, record: Mapping[str, Any], voice: frozenset[str] | None = None) -> Composed:
+    """Compõe e verifica. ``record``: o envelope do ``ReplyPlan`` (id, tenant, environment...).
+
+    ``voice``: os moldes que a casa assina (``verify``); fora deles, a mensagem segura."""
     specs = tuple(specs)
     if not specs:
         raise ValueError("resposta sem parte")
@@ -108,7 +110,7 @@ def compose(*, specs: Iterable[PartSpec], templates: Mapping[str, Template], evi
         rendered.append(render_part(spec, template, evidence, formatters or {}))
         for slot, slot_spec in template.slots.items():
             accepted[(index, slot)] = slot_spec.accepts
-    result = verify(rendered, evidence, rules, accepted)
+    result = verify(rendered, evidence, rules, accepted, voice)
     plan = ReplyPlan(
         **{"producer": Producer(name="conversational-commerce", version="reply-1"), **record},
         decision_id=decision_id,

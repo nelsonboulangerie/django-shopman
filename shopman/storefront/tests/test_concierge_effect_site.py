@@ -31,8 +31,13 @@ CTX = TrustedContext(tenant="t", environment="test", subject="conversation:1")
 CHANNEL = "whatsapp"
 
 
+#: A época do episódio do motor, de propósito diferente da cerca do turno da casa (``turn_fence=7``).
+EPISODE_EPOCH = 2
+
+
 def command(action, target, **parameters):
-    return SimpleNamespace(action=action, targets=(target,), parameters=parameters)
+    return SimpleNamespace(action=action, targets=(target,), parameters=parameters,
+                           expected_ownership_epoch=EPISODE_EPOCH)
 
 
 @pytest.fixture
@@ -89,7 +94,9 @@ def test_lock_reads_epoch_version_and_terms_of_the_conversation(site):
         reading = site.lock(CTX, command("commit_order", "sess-1"))
         discount = site.lock(CTX, command("grant_discount", "sess-1"))
     rev = Session.objects.get(session_key="sess-1").rev
-    assert (reading.ownership_epoch, reading.versions, reading.terms_ref) == (7, {"sess-1": rev}, "tok-1")
+    # A posse conferida pela casa (cerca, conversa ativa, reivindicação) atesta a época do episódio do comando;
+    # a cerca do turno (7) nunca é a época (#3410).
+    assert (reading.ownership_epoch, reading.versions, reading.terms_ref) == (EPISODE_EPOCH, {"sess-1": rev}, "tok-1")
     assert discount.terms_ref is None  # termos só no fechamento do pedido
 
 
@@ -118,7 +125,7 @@ def test_lock_refuses_an_order_of_someone_else(site, monkeypatch):
     assert refused.value.code == ErrorCode.OBJECT_FORBIDDEN
     monkeypatch.setattr("shopman.storefront.concierge.order_addition.own_order", lambda conv, ref: object())
     with transaction.atomic():
-        assert site.lock(CTX, command("amend_order", "ORD-1")).ownership_epoch == 7
+        assert site.lock(CTX, command("amend_order", "ORD-1")).ownership_epoch == EPISODE_EPOCH
 
 
 @pytest.mark.parametrize(("result", "applied", "code"), [

@@ -476,7 +476,8 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
             ToolContext(conversation=conversation, channel_ref=channel_ref))),
         staff=NiceStaff(), store=ShopmanStore(), clock=ShopmanClock(ctx), outcomes=ShopmanOutcomes())
     return Engine(ports, profile, rules=NiceRules(), resolve_content=resolve_text, subject_of=subject_for(conversation),
-                  house_templates=nice_templates(), bodies=bodies, formatters=nice_formatters(conversation),
+                  house_templates=nice_templates(), house_voice_only=True, bodies=bodies,
+                  formatters=nice_formatters(conversation),
                   ledger=receipt_ledger(ctx), commitments=commitment_ledger(ctx),
                   memory=memory_store(ctx, subject_of(conversation.pk)), exposures=exposure_ledger(ctx))
 
@@ -491,20 +492,66 @@ class Verdict:
     template_ids: tuple[str | None, ...] = ()
 
 
+#: O que a sombra não consegue preencher na parte de um efeito que ela não executa (``shadow:effect_not_executed``):
+#: o recibo que não existe, o "feito" sem recibo e o fato lido depois do efeito. Só isso se tolera, e só na
+#: parte do próprio efeito; o resto segura como sempre.
+SHADOW_EFFECT_GAPS = frozenset({"receipt_not_in_evidence", "action_without_receipt", "fact_not_in_evidence"})
+#: O desfecho "ainda em andamento" (``effect.pending``) não tem frase da Nice: as frases ``wait.*`` esperam
+#: o dono (#3328). Ele não entra no que a sombra exige; se acontecer no ar, o porteiro de voz segura.
+PENDING_TEMPLATE = "effect.pending"
+#: A recusa no ponto de efeito refaz a decisão, e quem responde é a limitação comum.
+REFUSAL_TEMPLATE = "inform_limitation.offer_team"
+
+
+def effect_outcomes(move: str) -> frozenset[str]:
+    """Os moldes de todos os desfechos do efeito: o sucesso, os degraus, a falha e as recusas próprias."""
+    from conversational_commerce.engine.moves import registry
+
+    module = registry().get(move)
+    if module is None or not getattr(module, "EFFECT", False):
+        return frozenset()
+    found = {template.template_id for template in module.TEMPLATES} | {REFUSAL_TEMPLATE}
+    return frozenset(found - {PENDING_TEMPLATE})
+
+
 def judge(result, *, enabled: frozenset[str], approved: frozenset[str]) -> Verdict:
-    """O turno em sombra pode ir ao vivo? Classe ligada para cada movimento, molde da Nice para cada parte."""
+    """O turno em sombra pode ir ao vivo? Classe ligada para cada movimento, molde da Nice para cada parte.
+
+    O turno com efeito se julga pelos MOLDES (#3410): a sombra não executa o efeito, e a parte dele sai
+    sem o recibo. Pode ir ao vivo se cada desfecho possível do efeito tem frase da Nice e se o que falta
+    na sombra é só o que ela não pode ter (``SHADOW_EFFECT_GAPS``, na parte do efeito). No ar, o porteiro
+    de voz (``house_voice_only``) segura o que sair fora disso.
+    """
     moves = tuple(result.chosen_moves)
     reply = getattr(result, "reply", None)
     template_ids = tuple(reply.template_ids) if reply is not None else ()
-    if not moves or reply is None or not reply.text:
+    if not moves or reply is None:
         return Verdict(False, "no_reply", moves, template_ids)
     off = sorted({move for move in moves if CLASS_OF_MOVE.get(move) not in enabled})
     if off:
         return Verdict(False, f"class_off:{','.join(off)}", moves, template_ids)
-    missing = sorted({str(t) for t in template_ids if t not in approved})
+    effects = sorted({move for move in moves if effect_outcomes(move)})
+    needed = set(template_ids).union(*(effect_outcomes(move) for move in effects))
+    missing = sorted({str(t) for t in needed if t not in approved})
     if missing:
         return Verdict(False, f"no_nice_template:{','.join(missing)}", moves, template_ids)
+    if reply.text:
+        return Verdict(True, "", moves, template_ids)
+    if not effects:
+        return Verdict(False, "no_reply", moves, template_ids)
+    parts = list(reply.verification.parts)
+    blocking = sorted({f.code for f in reply.verification.findings
+                       if f.code not in SHADOW_EFFECT_GAPS or f.part is None or f.part >= len(parts)
+                       or parts[f.part].move not in effects})
+    if blocking:
+        return Verdict(False, f"held:{','.join(blocking)}", moves, template_ids)
     return Verdict(True, "", moves, template_ids)
+
+
+
+def _findings(result) -> list[str]:
+    reply = getattr(result, "reply", None)
+    return [f.code for f in reply.verification.findings] if reply is not None else []
 
 
 def _raw(message) -> dict:
@@ -536,6 +583,12 @@ def run(conversation, message, *, channel=None, interrupted=None):
             return None
         result = live.turn(live.ports.clock.ctx, _raw(message), interrupted=interrupted)
         if result.outcome != "answered" or getattr(result, "exposure", None) is None:
+            if any(receipt.status == "success" for receipt in result.receipts):
+                # O efeito aconteceu e a mensagem segurou (o porteiro de voz, um fato que não se lê): o caminho
+                # de hoje NÃO responde, porque refaria o que já foi feito. Nada sai; fica o registro para a equipe.
+                logger.warning("concierge.turn_framework.held_after_effect conversation=%s outcome=%s findings=%s",
+                               conversation.pk, result.outcome, _findings(result))
+                return result
             logger.info("concierge.turn_framework.not_sent conversation=%s outcome=%s fallbacks=%s",
                         conversation.pk, result.outcome, list(result.fallbacks))
             return None

@@ -261,6 +261,9 @@ class Engine:
     # lugar dos genéricos do pacote. Cada um troca a frase e mantém o movimento e os espaços, que é
     # o que a parte montada pelo movimento preenche; o que não trocar fica com o do pacote.
     house_templates: Mapping[str, Template] = field(default_factory=dict)
+    # A casa fala SÓ com os próprios moldes: a parte por molde do pacote (o texto neutro, em inglês) segura a
+    # mensagem (``template_not_in_voice``), no ar e depois do efeito, onde a sombra não vê (spec 06).
+    house_voice_only: bool = False
     resolve_content: Callable[[str | None], str] = text_of
     # O adaptador diz quem fala e qual é o carrinho dele, do contexto confiável (nunca do texto).
     subject_of: Callable[[TrustedContext, InteractionEvent], Subject] = default_subject
@@ -288,6 +291,9 @@ class Engine:
 
     def _templates(self) -> dict[str, Template]:
         return {**templates(), **self.house_templates}
+
+    def _voice(self) -> frozenset[str] | None:
+        return frozenset(self.house_templates) if self.house_voice_only else None
 
     # ── envelope ────────────────────────────────────────────────────────────
     def _envelope(self, ctx: TrustedContext, prefix: str, episode_id: str | None, trace_id: str,
@@ -923,6 +929,7 @@ class Engine:
         if specs:
             receipts = {receipt.command_id: receipt for receipt in state.receipts.values()}
             reply = compose(specs=specs, templates=self._templates(), formatters=self.formatters,
+                            voice=self._voice(),
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
                                               receipts=receipts, commitments=state.commitments),
                             decision_id=decision_id,
@@ -1123,7 +1130,7 @@ class Engine:
         reply = None
         if chosen:
             reply = compose(specs=[moves[c.move].reply(state, by_need[c.need_id]) for c in chosen],
-                            templates=self._templates(), formatters=self.formatters,
+                            templates=self._templates(), formatters=self.formatters, voice=self._voice(),
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
                                               commitments=state.commitments),
                             decision_id=decision.decision_id,
