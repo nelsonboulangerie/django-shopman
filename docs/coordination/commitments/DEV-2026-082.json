@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-082",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Execute o WP-F04 (Letreiro a dois metros) do plano de excelência da Produção",
+  "dono": "Engenharia",
+  "criado": "2026-11-23",
+  "revisar_em": "2026-11-30",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

@@ -376,12 +376,13 @@ export interface ProductionKDSProjection {
   contract_version: number;
 }
 
-/** ForecastRowProjection(ref: 'str', output_sku: 'str', recipe_name: 'str', qty: 'str', eta_display: 'str', eta_is_actual: 'bool', status: 'str', status_label: 'str', history_days: 'int') */
+/** ForecastRowProjection(ref: 'str', output_sku: 'str', recipe_name: 'str', qty: 'str', unit: 'str', eta_display: 'str', eta_is_actual: 'bool', status: 'str', status_label: 'str', history_days: 'int') */
 export interface ForecastRowProjection {
   ref: string;
   output_sku: string;
   recipe_name: string;
   qty: string;
+  unit: string;
   eta_display: string;
   eta_is_actual: boolean;
   status: string;

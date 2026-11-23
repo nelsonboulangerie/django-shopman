@@ -472,15 +472,71 @@ export function outsizedQuantityWarning(
 
 // ── Letreiro (painel Solari) ─────────────────────────────────────────────────
 
-/** "12 UN": a quantidade com a unidade, como a palheta escreve. */
-export function boardQtyLabel(qty: string): string {
-  return `${qty} UN`;
+const MASS_TO_KG: Record<string, number> = { g: 1 / 1000, kg: 1 };
+
+/**
+ * A quantidade como a palheta escreve, com a unidade que a projeção traz:
+ * peça é "12 UN"; massa é sempre em quilo ("18,5 KG", "0,8 KG"), porque é
+ * assim que o padeiro lê a masseira; volume segue a régua da casa ("1,5 L").
+ */
+export function boardQtyLabel(qty: string, unit = ""): string {
+  const normalized = (unit ?? "").trim().toLowerCase();
+  const amount = Number.parseFloat(String(qty ?? "0").replace(",", ".")) || 0;
+  const toKg = MASS_TO_KG[normalized];
+  if (toKg !== undefined) return `${QTY_FORMAT.format(amount * toKg)} KG`;
+  if (COUNT_UNITS.has(normalized)) return `${QTY_FORMAT.format(amount)} UN`;
+  return formatQty(amount, normalized).toUpperCase();
 }
 
 /**
  * Largura da coluna de quantidade, em palhetas: a maior quantidade do dia
  * cabe inteira (beta 05/11: "4200 U" perdia o N). Nunca menos que "999 UN".
  */
-export function boardQtyChars(rows: readonly { qty: string }[]): number {
-  return Math.max(6, ...rows.map((row) => boardQtyLabel(row.qty).length));
+export function boardQtyChars(
+  rows: readonly { qty: string; unit?: string }[],
+): number {
+  return Math.max(6, ...rows.map((row) => boardQtyLabel(row.qty, row.unit).length));
+}
+
+/** Teto da coluna do nome: além disso a letra encolhe demais para dois metros. */
+export const BOARD_NAME_MAX_CHARS = 28;
+const BOARD_NAME_MIN_CHARS = 12;
+
+/**
+ * Largura da coluna do nome, em palhetas: o maior nome do dia, inteiro (P2-15:
+ * a coluna fixa em 22 cortava "Croissant de Amêndoas Tostad"). Dia de nomes
+ * curtos ganha letra maior, porque a escala divide a largura por palhetas.
+ */
+export function boardNameChars(rows: readonly { recipe_name: string }[]): number {
+  const longest = Math.max(0, ...rows.map((row) => row.recipe_name.trim().length));
+  return Math.min(BOARD_NAME_MAX_CHARS, Math.max(BOARD_NAME_MIN_CHARS, longest));
+}
+
+/** "Planejado", o maior rótulo de situação do painel. */
+export const BOARD_STATUS_CHARS = 9;
+/** "10h30", o maior horário da casa. */
+export const BOARD_ETA_CHARS = 5;
+
+/** O que a linha diz a quem não enxerga a palheta: "Croissant: 18,5 kg às 8h, Planejado". */
+export function boardRowSpoken(row: {
+  recipe_name: string;
+  qty: string;
+  unit?: string;
+  eta_display: string;
+  status_label: string;
+}): string {
+  const qty = boardQtyLabel(row.qty, row.unit)
+    .replace(/ UN$/, " unidades")
+    .replace(/ KG$/, " kg")
+    .replace(/ L$/, " l");
+  const eta = row.eta_display && row.eta_display !== "—" ? ` às ${row.eta_display}` : "";
+  return `${row.recipe_name}: ${qty}${eta}, ${row.status_label}`;
+}
+
+/**
+ * O aviso de conexão perdida, a maior coisa da tela: o quadro que fica é o da
+ * última leitura, e a pessoa precisa saber de quando ele é.
+ */
+export function boardStaleNotice(readAt: string): string {
+  return readAt ? `Sem conexão. Lido às ${readAt}` : "Sem conexão. Mostrando a última leitura";
 }

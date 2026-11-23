@@ -111,6 +111,7 @@ const FORECAST = {
         output_sku: "PAO-FRANCES",
         recipe_name: "Pão francês",
         qty: "40",
+        unit: "un",
         eta_display: "06:30",
         eta_is_actual: false,
         status: "delayed",
@@ -901,6 +902,40 @@ function sheetResponse(req, url, body) {
 }
 
 /** A resposta do cenário povoado para esta URL, ou `null` para seguir o mock de base. */
+// O Letreiro de uma manhã cheia (WP-F04): peça em UN, massa medida em grama (a TV
+// lê em quilo), um atrasado, um fechado, nomes do curto ao mais longo do catálogo.
+function forecastRow(ref, recipe_name, qty, unit, eta_display, status, status_label) {
+  return {
+    ref,
+    output_sku: ref,
+    recipe_name,
+    qty,
+    unit,
+    eta_display,
+    eta_is_actual: status === "arrived",
+    status,
+    status_label,
+    history_days: 30,
+  };
+}
+const FORECAST_POPULATED = {
+  forecast: {
+    ...FORECAST.forecast,
+    generated_at_display: "6h42",
+    rows: [
+      forecastRow("WO-0101", "Pão francês", "240", "un", "5h30", "arrived", "Fechado"),
+      forecastRow("WO-0102", "Massa de croissant", "18500", "g", "6h", "delayed", "Atrasado"),
+      forecastRow("WO-0103", "Croissant Manteiga", "120", "un", "7h", "in_progress", "Previsto"),
+      forecastRow("WO-0104", "Baguete", "60", "un", "7h30", "in_progress", "Previsto"),
+      forecastRow("WO-0105", "Pão de Forma Artesanal", "24", "un", "8h", "scheduled", "Planejado"),
+      forecastRow("WO-0106", "Levain", "3250", "g", "8h30", "scheduled", "Planejado"),
+      forecastRow("WO-0107", "Pão de fermentação natural com castanhas", "12", "un", "9h", "scheduled", "Planejado"),
+      forecastRow("WO-0108", "Ciabatta", "40", "un", "10h30", "scheduled", "Planejado"),
+      forecastRow("WO-0109", "Focaccia de Alecrim", "16", "un", "11h", "scheduled", "Planejado"),
+    ],
+  },
+};
+
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
   if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
@@ -913,6 +948,7 @@ function populatedResponse(url) {
   if (/\/recipes\/access\/?(\?|$)/.test(url)) return { access: RECIPE_ACCESS };
   if (/\/recipes\/?(\?|$)/.test(url)) return RECIPE_BOOK;
   if (/\/production\/?(\?|$)/.test(url)) return BOARD_POPULATED;
+  if (/\/production\/forecast\/?(\?|$)/.test(url)) return FORECAST_POPULATED;
   return null;
 }
 
@@ -986,6 +1022,10 @@ const server = createServer((req, res) => {
     if (!card) return json(res, 404, { detail: "Receita não encontrada." });
     RECIPE_DRAFTS.add(card.ref);
     return json(res, 200, { outcome: "applied", version: recipeVersion(3, "draft", "Rascunho") });
+  }
+  // A conexão do Letreiro cai (WP-F04): o quadro lido fica, o aviso diz de quando.
+  if (cookie.includes("e2e_forecast=down") && /\/production\/forecast\/?(\?|$)/.test(url)) {
+    return json(res, 503, { detail: "Sem conexão com o servidor." });
   }
   const populatedBody = populated ? populatedResponse(url) : null;
   if (populatedBody) return json(res, 200, populatedBody);

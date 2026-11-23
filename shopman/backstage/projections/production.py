@@ -4698,6 +4698,9 @@ class ForecastRowProjection:
     output_sku: str
     recipe_name: str
     qty: str  # a quantidade RELEVANTE do momento (planejada→prevista→realizada)
+    # Unidade do que o lote produz (``un``, ``g``, ``kg``...): massa no Letreiro
+    # se lê em quilo, nunca como peça.
+    unit: str
     eta_display: str  # "HH:MM" ou "—" (sem história e sem SLA)
     eta_is_actual: bool  # True = horário real da confirmação
     status: str  # scheduled | in_progress | delayed | arrived
@@ -4789,6 +4792,7 @@ def build_production_forecast(
     )
     orders = [order for order in orders if _can_view_work_order(order, access)]
     history = _forecast_history(sorted({wo.recipe_id for wo in orders}), target)
+    output_units = _recipe_output_units({wo.recipe for wo in orders})
 
     rows: list[tuple[tuple, ForecastRowProjection]] = []
     for wo in orders:
@@ -4839,6 +4843,7 @@ def build_production_forecast(
             output_sku=wo.output_sku,
             recipe_name=wo.recipe.name,
             qty=_qty(qty),
+            unit=output_units.get(wo.recipe_id, ""),
             eta_display=_forecast_eta_display(eta),
             eta_is_actual=eta_actual,
             status=status,

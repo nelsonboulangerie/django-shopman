@@ -3,17 +3,31 @@
 // · página à parte, sem o chrome do backstage (o link de entrada vive na
 //   aba "Painel" da UI normal); botão de tela cheia para a TV;
 // · tipografia Oswald (grotesca condensada de painel), DUAS escalas apenas:
-//   display (título · relógio) e linha (todas as palhetas);
-// · NOME do produto nas palhetas (SKU saiu); quantidade com UN embutido
-//   ("12 UN" — doze o quê? unidades); horário como estava;
+//   display (título · relógio · aviso) e linha (todas as palhetas). As duas
+//   crescem com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha
+//   se lê a dois metros (WP-F04). A largura só limita quando os nomes do dia
+//   não caberiam;
+// · NOME do produto nas palhetas (SKU saiu), na largura do maior nome do dia;
+//   quantidade com a unidade que a projeção traz ("12 UN", "18,5 KG");
+// · sem conexão, o último quadro fica no ar e o aviso, com a hora da leitura,
+//   é a maior coisa da tela;
 // · atrasado não pisca: as palhetas RE-GIRAM periodicamente até o mesmo
 //   valor, como os painéis mecânicos reais fazem;
 // · ordem de aeroporto: cronológica pelo horário — status muda cor, nunca
 //   posição; confirmados saem pelo TTL.
-import type { ForecastStatus } from "~/types/production";
+import type {
+  ForecastStatus,
+  ProductionForecastProjection,
+} from "~/types/production";
 import {
+  BOARD_ETA_CHARS,
+  BOARD_STATUS_CHARS,
+  STORE_TIME_ZONE,
+  boardNameChars,
   boardQtyChars,
   boardQtyLabel,
+  boardRowSpoken,
+  boardStaleNotice,
   forecastTimeTone,
   fullDateLabel,
   isStale,
@@ -25,12 +39,29 @@ import {
   periodOfDay,
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
-const { rows, selectedDate, pending, error } = useProductionForecast();
-// Kiosk aberto o dia todo: se o sinal cair, mantém o último quadro no ar (dado velho
-// visível > tela em branco) e acende um aviso discreto de "sem sinal".
+const { forecast, selectedDate, pending, error } = useProductionForecast();
+// Kiosk aberto o dia todo: se a conexão cair, mantém o último quadro no ar (dado
+// velho visível > tela em branco). O `useFetch` zera o dado quando a leitura falha,
+// então o Letreiro guarda a última leitura boa; trocar de data a descarta.
+const lastRead = shallowRef<ProductionForecastProjection | null>(null);
+watch(
+  forecast,
+  (next) => {
+    if (next) lastRead.value = next;
+  },
+  { immediate: true },
+);
+watch(selectedDate, () => {
+  lastRead.value = null;
+});
+const rows = computed(() => lastRead.value?.rows ?? []);
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: rows.value.length > 0 }),
+);
+const staleNotice = computed(() =>
+  boardStaleNotice(lastRead.value?.generated_at_display ?? ""),
 );
 const sound = useFlapClack();
 
@@ -70,9 +101,8 @@ let respinTimer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   sound.unlock();
   const tick = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    clock.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    // O relógio da padaria, não o do dispositivo (TV configurada em outro fuso).
+    clock.value = formatClock(new Date(), STORE_TIME_ZONE) || "--:--";
     rollDay(); // vira o dia à meia-noite (a TV não amanhece em ontem)
   };
   tick();
@@ -107,14 +137,24 @@ const TIME_TONE_CLASS: Record<ReturnType<typeof forecastTimeTone>, string> = {
 const statusToneClass = (status: ForecastStatus) =>
   TIME_TONE_CLASS[forecastTimeTone(status)];
 
-const NAME_CHARS = 22; // maior nome atual: "Pão de Forma Artesanal"
-// A maior quantidade do dia cabe inteira; o mínimo é "999 UN".
+// As colunas medem o dia: o maior nome e a maior quantidade cabem inteiros.
+const NAME_CHARS = computed(() => boardNameChars(rows.value));
 const QTY_CHARS = computed(() => boardQtyChars(rows.value));
-const STATUS_CHARS = 9; // PLANEJADO
+const STATUS_CHARS = BOARD_STATUS_CHARS;
+const ETA_CHARS = BOARD_ETA_CHARS;
+// A escala divide a largura útil pelo total de palhetas da linha (TV: uma linha só;
+// celular: o nome em cima, os três mostradores embaixo).
+const boardScale = computed(() => ({
+  "--row-chars": NAME_CHARS.value + QTY_CHARS.value + ETA_CHARS + STATUS_CHARS,
+  "--row-chars-narrow": Math.max(
+    NAME_CHARS.value,
+    QTY_CHARS.value + ETA_CHARS + STATUS_CHARS + 3,
+  ),
+}));
 </script>
 
 <template>
-  <main class="board flex min-h-screen flex-col">
+  <main class="board flex min-h-screen flex-col" :style="boardScale">
     <header class="flex flex-col gap-2 px-4 pb-2 pt-4 md:px-8">
       <div class="board-labels flex flex-wrap items-center gap-x-3 gap-y-2">
         <NuxtButton
@@ -127,16 +167,6 @@ const STATUS_CHARS = 9; // PLANEJADO
           class="board-key"
         />
         <span>{{ fullDateLabel(selectedDate) }}</span>
-        <span
-          v-if="stale"
-          role="status"
-          aria-live="polite"
-          class="inline-flex items-center gap-1.5 tone-amber"
-          title="Sem sinal: mostrando o último quadro"
-        >
-          <Icon name="lucide:wifi-off" class="size-4" />
-          <span>sem sinal</span>
-        </span>
         <span aria-hidden="true">·</span>
         <!-- O controle de período da casa, vestido com a paleta do painel. -->
         <OperatorPeriodPicker
@@ -178,7 +208,7 @@ const STATUS_CHARS = 9; // PLANEJADO
       </div>
 
       <div class="flex items-baseline justify-between gap-6">
-        <h1 class="board-title">Lotes</h1>
+        <h1 class="board-title">Letreiro</h1>
         <ClientOnly>
           <SplitFlap :value="clock" :chars="5" class="board-display" />
         </ClientOnly>
@@ -188,11 +218,24 @@ const STATUS_CHARS = 9; // PLANEJADO
     <section
       class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 md:px-8"
     >
+      <!-- Sem conexão: a maior coisa da tela, primeiro conteúdo abaixo do topo,
+           com a hora da leitura que continua no ar. Volta sozinho quando a
+           leitura seguinte dá certo. -->
+      <div
+        v-if="stale"
+        role="alert"
+        data-board-stale
+        class="board-stale mb-4 flex shrink-0 items-center gap-[0.5em]"
+      >
+        <Icon name="lucide:wifi-off" class="board-stale-icon shrink-0" />
+        <span>{{ staleNotice }}</span>
+      </div>
+
       <p v-if="pending && !rows.length" class="board-labels py-8">
         Carregando…
       </p>
       <p v-else-if="error && !rows.length" class="board-labels py-8">
-        Sinal perdido. Reconectando…
+        Sem conexão. Tentando ler de novo…
       </p>
 
       <div
@@ -215,7 +258,7 @@ const STATUS_CHARS = 9; // PLANEJADO
               :key="row.ref"
               data-board-row
               class="board-row"
-              :aria-label="`${row.recipe_name}: ${row.qty} unidades às ${row.eta_display}, ${row.status_label}`"
+              :aria-label="boardRowSpoken(row)"
             >
               <SplitFlap
                 :value="row.recipe_name"
@@ -223,14 +266,14 @@ const STATUS_CHARS = 9; // PLANEJADO
                 class="board-flap min-w-0"
               />
               <SplitFlap
-                :value="boardQtyLabel(row.qty)"
+                :value="boardQtyLabel(row.qty, row.unit)"
                 :chars="QTY_CHARS"
                 align="right"
                 class="board-flap"
               />
               <SplitFlap
                 :value="row.eta_display"
-                :chars="5"
+                :chars="ETA_CHARS"
                 align="right"
                 class="board-flap"
                 :class="
@@ -295,9 +338,19 @@ const STATUS_CHARS = 9; // PLANEJADO
   --board-amber: #f2c46b;
   --board-cyan: #6fa0c0;
 
-  /* DUAS escalas, e só: display (título · relógio) e linha (palhetas). */
-  --scale-display: clamp(1.9rem, 4vw, 2.6rem);
-  --scale-row: clamp(1.05rem, 2vw, 1.5rem);
+  /* DUAS escalas, e só: display (título · relógio · aviso) e linha (palhetas).
+     Crescem com a altura da tela (5vh: 54px numa TV de 1080, contra os 24px do teto
+     antigo). A largura entra só como limite: o total de palhetas da linha
+     (`--row-chars`, medido no dia) × 0,87em (célula + vão) mais a moldura fixa
+     (margens, bordas e vãos entre colunas, ~11rem) cabe em 100vw. */
+  --row-chars: 42;
+  --row-chars-narrow: 24;
+  --scale-display: clamp(1.9rem, 6.5vh, 5rem);
+  --scale-row: max(
+    1rem,
+    min(5vh, calc((100vw - 11rem) / (var(--row-chars) * 0.87)))
+  );
+  --scale-label: clamp(0.85rem, 1.9vh, 1.4rem);
 
   background:
     radial-gradient(120% 90% at 50% 0%, #2b1d16 0%, var(--board-bg) 60%),
@@ -324,7 +377,7 @@ const STATUS_CHARS = 9; // PLANEJADO
 }
 
 .board-labels {
-  font-size: 0.78rem;
+  font-size: var(--scale-label);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -345,6 +398,22 @@ const STATUS_CHARS = 9; // PLANEJADO
   --ring: var(--board-text);
   letter-spacing: normal;
   text-transform: none;
+}
+
+/* O aviso de conexão: alto contraste (âmbar cheio, letra escura), na escala do
+   título, maior que qualquer palheta. */
+.board-stale {
+  font-size: var(--scale-display);
+  font-weight: 600;
+  line-height: 1.1;
+  padding: 0.3em 0.5em;
+  border-radius: 0.75rem;
+  background: var(--board-amber);
+  color: var(--board-bg);
+}
+.board-stale-icon {
+  width: 1em;
+  height: 1em;
 }
 
 .board-key {
@@ -401,7 +470,7 @@ const STATUS_CHARS = 9; // PLANEJADO
   border: 1px solid var(--board-line);
   border-radius: 0.75rem;
   background: var(--board-panel);
-  padding: 0.7rem 1rem;
+  padding: 0.5rem 1rem;
 }
 
 .tone-green :deep(.flap-cell) {
@@ -462,7 +531,13 @@ const STATUS_CHARS = 9; // PLANEJADO
     grid-area: status;
   }
   .board {
-    --scale-row: 0.92rem;
+    /* Celular: o nome ocupa a linha de cima sozinho; a escala divide a largura
+       pela maior das duas linhas (nome, ou os três mostradores). */
+    --scale-row: max(
+      0.85rem,
+      min(1.6rem, calc((100vw - 6rem) / (var(--row-chars-narrow) * 0.87)))
+    );
+    --scale-display: clamp(1.6rem, 8vw, 2.4rem);
   }
 }
 </style>
