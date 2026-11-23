@@ -230,7 +230,7 @@ class ShopmanCommerceRead:
             terms_id=f"{cart_ref}-r{session.rev}", version=max(1, int(session.rev or 0)), items=items,
             adjustments=adjustments, total={"amount_minor": total, "currency": CURRENCY},
             recipient={"subject_ref": ctx.subject or "unknown-subject"},
-            fulfillment=_fulfillment(data), conditions=_fulfillment_conditions(data),
+            fulfillment=_fulfillment(data), conditions=_fulfillment_conditions(data, self.channel_ref),
             valid_until=instant(now + timedelta(minutes=self._hold_minutes())),
         ))
 
@@ -307,7 +307,7 @@ def _fulfillment(data: dict) -> dict:
     return found
 
 
-def _fulfillment_conditions(data: dict) -> list[dict]:
+def _fulfillment_conditions(data: dict, channel_ref: str = "") -> list[dict]:
     """O dia e a janela como a casa os guarda (a resposta mostra o rótulo da janela, não a hora crua)."""
     found = []
     day = _date_or_none(data.get("delivery_date"))
@@ -317,6 +317,13 @@ def _fulfillment_conditions(data: dict) -> list[dict]:
         if slot:
             found.append({"code": "fulfillment_window", "value": slot})
     method = str(((data.get("payment") or {}).get("method")) or "")
+    if not method and channel_ref:
+        # A MESMA regra da revisão que grava o pedido (``tools.review_order``): sem escolha, vale a
+        # única forma do canal. O cliente vê, antes do "sim", o pagamento que vai ser gravado.
+        from shopman.shop.config import ChannelConfig
+
+        methods = list(ChannelConfig.for_channel(channel_ref).payment.available_methods)
+        method = methods[0] if len(methods) == 1 else ""
     if method:
         # A forma de pagamento escolhida é condição dos termos: o cliente vê como paga antes do "sim".
         found.append({"code": "payment_method", "value": method})

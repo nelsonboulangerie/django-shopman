@@ -15,8 +15,12 @@ from conversational_commerce.reply import PartSpec, SlotSpec, Template
 
 MOVE = "present_terms"
 TEMPLATES = (
-    Template("present_terms.confirm", "1", MOVE, "Your total is {total}. Shall I place the order?",
-             {"total": SlotSpec(("fact",), "total")}),
+    # Os termos apresentados são o documento canônico inteiro (v2 4.7): as linhas, o recebimento e as
+    # condições, não só o total. O "sim" responde ao que o cliente viu.
+    Template("present_terms.confirm", "2", MOVE,
+             "{items}\nTotal: {total}\n{fulfillment}\n{conditions}\nShall I place the order?",
+             {"items": SlotSpec(("fact",), "items"), "total": SlotSpec(("fact",), "total"),
+              "fulfillment": SlotSpec(("fact",), "fulfillment"), "conditions": SlotSpec(("fact",), "conditions")}),
     Template("present_terms.changed", "1", MOVE,
              "The terms changed before I could place the order. The new total is {total}. Shall I place it?",
              {"total": SlotSpec(("fact",), "total")}),
@@ -33,5 +37,7 @@ def propose(state, need):
 
 def reply(state, need):
     # "Os termos mudaram" só quando o ponto de efeito recusou; termos vencidos ou "sim" fora de ordem: termos de novo.
-    template = "present_terms.changed" if need.need_id in state.refused else "present_terms.confirm"
-    return PartSpec(MOVE, template, {"total": ("fact", state.terms_key(state.subject.cart_ref))})
+    key = ("fact", state.terms_key(state.subject.cart_ref))
+    if need.need_id in state.refused:
+        return PartSpec(MOVE, "present_terms.changed", {"total": key})
+    return PartSpec(MOVE, "present_terms.confirm", dict.fromkeys(("items", "total", "fulfillment", "conditions"), key))

@@ -39,6 +39,24 @@ Derivado de: v2 5.4 e plano do framework, seção 3.3.
 | `clock` | `now`, `new_id`, `schedule`, `cancel`, `business_hours` | relógio não volta; ids únicos; prazo vencido vira trabalho reivindicável, não laço | `deterministic`, `monotonic` |
 | `outcomes` | `harvest` | fonte independente do agente; janela aberta é `censored`; correção chega com `supersedes`; desconhecido explícito | `independent_source`, `censoring`, `supersession` |
 
+### O que o motor exige da porta de comércio para dizer o estado depois do efeito
+
+O turno lê depois do recibo de sucesso (`08-effect.md`, "Depois do efeito") e cita o que leu.
+Para isso, cada porta devolve:
+
+- **`read_order(ref)`**: fato `Known` com `ref` e **`total` em `{price_minor, currency}`**. Sem
+  `total`, o pedido registrado cai no degrau de baixo (`commit_order.done_order`, sem total); a
+  porta nunca inventa um total.
+- **`read_item(ref)`**: fato com **`name` opcional**. É o nome que as linhas dos termos mostram;
+  sem ele, a linha mostra a referência.
+- **`quote(cart_ref)`**: o `TermsDocument` selado. Carrinho vazio ou cotação que falha vira
+  `Unknown`, e a resposta da mudança cai no degrau de baixo (`change_cart.done_receipt`).
+- **Recibo de sucesso do `change_cart` e do `commit_order`**: `domain_refs` traz **`effect`**, a
+  referência do efeito no domínio (o carrinho, o pedido). É a faceta que os moldes citam
+  (`{order}`, `{track}`); sem ela, a composição não tem o que mostrar.
+
+O arnês e a conformidade de escopo `adapter` conferem essas formas no adaptador (K23, K24).
+
 ### O comando `set_fulfillment` na porta `commerce_execute`
 
 O recebimento (quando e como o pedido é recebido) é um comando como o `change_cart`: alvo

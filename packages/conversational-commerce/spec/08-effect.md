@@ -24,6 +24,7 @@ necessidade → cotação (TermsDocument, com hash) → termos apresentados (Off
 | Elo | Quem | Onde |
 |---|---|---|
 | Cotação | a porta de comércio (`quote`), lida com passo do teto | `Engine._quote` |
+| Leitura depois do efeito | o turno, depois do recibo de sucesso: termos novos do carrinho mudado, o pedido fechado | `Engine._after_effects` |
 | Termos no ar | o turno, quando `present_terms` é escolhido e a mensagem não foi segurada | `authority.Offer`, em `dialogue_state["terms_offer"]` |
 | Concessão | o núcleo, nunca o modelo | `authority.issue_grant`, `authority.issue_line_grant` |
 | Comando | o núcleo | `authority.build_command` |
@@ -118,13 +119,43 @@ e a resposta que afirmaria o efeito é segurada pela verificação.
 
 O adaptador diz quem fala e qual é o carrinho dele por `Engine.subject_of(ctx, event) ->
 Subject`, a partir do contexto confiável, nunca do texto. Sem carrinho, nenhuma mudança nem
-cotação é proposta.
+cotação é proposta. Depois do recibo de sucesso de um `change_cart`, o sujeito é relido (o efeito
+pode ter criado o carrinho) antes da nova cotação.
+
+### O fato dos termos
+
+Os termos apresentados são o documento canônico inteiro (v2 4.7), e o "sim" responde ao que o
+cliente viu. O fato `terms.<carrinho>` (`engine/turn.py`, `terms_fact`) leva, do documento selado:
+`terms_id`, `total`, `items` (`ref`, `quantity`, `unit`, `unit_price`, `line_total` e, quando o
+fato do item o dá, `name`), `adjustments`, `fulfillment` (`mode`, `window_start`, `window_end`)
+e `conditions` (código → valor). **O destinatário fica de fora** (dado pessoal), e o
+`address_ref` do recebimento também. Dinheiro vai como `{price_minor, currency}`. O nome de cada
+item é lido como fato (`item.<ref>`, com passo do teto), nunca resolvido por quem formata; sem o
+fato, a linha mostra a referência.
+
+### Depois do efeito
+
+- **Carrinho mudado** (`change_cart` com sucesso): o carrinho é cotado de novo, mesmo que ninguém
+  peça termos (v2 4.7, propriedade 2: mudança material gera novos termos). A resposta do
+  `change_cart` mostra o carrinho por esses termos.
+- **Pedido fechado** (`commit_order` com sucesso): o pedido é lido pela porta (`read_order`), no
+  fato `order.<referência>`, e o total da resposta sai dele.
+
+**A leitura que falha nunca segura o efeito feito.** Como no `set_fulfillment`, a resposta é o
+molde mais completo que o lastro sustenta: sem os termos novos (carrinho vazio, cotação que falha),
+`change_cart.done_receipt` diz só o efeito; sem o total do pedido (leitura que falha, ou fato sem
+`total`), `commit_order.done_order` diz o pedido e onde acompanhar.
+
+**Termos apresentados no turno de uma mudança.** Se o mesmo turno muda o carrinho e apresenta os
+termos ("põe mais um e fecha"), a decisão é refeita sobre os termos cotados depois do efeito,
+ligada à anterior (`parent_decision_id`, N14), como depois de uma recusa. A decisão gravada e a
+pergunta no ar citam o MESMO documento.
 
 ## 6. Movimentos
 
 | Movimento | Nível | No D1 |
 |---|---|---|
-| `present_terms` | A1 | cota e mostra o total por espaço travado; episódio a `waiting_authorization` |
+| `present_terms` | A1 | cota e mostra os termos inteiros por espaço travado (itens, total, recebimento, condições); episódio a `waiting_authorization` |
 | `change_cart` | A2 | executa: quantidade absoluta, evento com identidade estável, reversível |
 | `set_fulfillment` | A2 | executa: o recebimento (dia, retirada ou entrega, hora) dito em forma absoluta, evento com identidade estável, reversível |
 | `commit_order` | A3 | executa: só o "sim" que responde à pergunta dos termos, na mesma época |

@@ -13,11 +13,11 @@ from conversational_commerce.policy import Proposal
 from conversational_commerce.reply import TEMPLATES_BY_ID
 
 from ..state import EffectPlan
-from ._effects import SHARED, receipt_part
+from ._effects import SHARED, known_with, receipt_part
 
 MOVE = "commit_order"
 EFFECT = True
-TEMPLATES = (TEMPLATES_BY_ID["commit_order.done"], *SHARED)
+TEMPLATES = (TEMPLATES_BY_ID["commit_order.done"], TEMPLATES_BY_ID["commit_order.done_order"], *SHARED)
 
 
 def propose(state, need):
@@ -46,4 +46,12 @@ def effect(state, need) -> EffectPlan:
 
 
 def reply(state, need):
-    return receipt_part(state, need, MOVE, "commit_order.done", "order")
+    # O total pelo pedido lido depois do efeito (``Engine._after_effects``); onde acompanhar, pelo mesmo recibo.
+    receipt = state.receipts.get(need.need_id)
+    ref = (receipt.domain_refs.get("effect") if receipt is not None else None) or f"none.{need.need_id}"
+    track = {"track": ("receipt", receipt.command_id if receipt is not None else f"none.{need.need_id}")}
+    if receipt is not None and receipt.status == "success" and not known_with(state, state.order_key(ref), "total"):
+        # O pedido existe (recibo), e a leitura dele falhou ou veio sem o total: o degrau de baixo.
+        return receipt_part(state, need, MOVE, "commit_order.done_order", "order", also=lambda _: track)
+    return receipt_part(state, need, MOVE, "commit_order.done", "order",
+                        also=lambda _: {"total": ("fact", state.order_key(ref)), **track})

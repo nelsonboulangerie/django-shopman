@@ -147,6 +147,30 @@ class Ports:
         return cls(**world.ports())
 
 
+def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
+    """O fato dos termos: o documento canônico selado, menos o destinatário (dado pessoal).
+
+    Os termos apresentados são o documento inteiro (v2 4.7): itens, ajustes, recebimento e condições,
+    não só o total. O nome de cada item vem do fato do item (``item.<ref>``), nunca de quem formata.
+    """
+    def money(value) -> dict[str, Any]:
+        return {"price_minor": value.amount_minor, "currency": value.currency}
+
+    fulfillment = terms.fulfillment
+    return {
+        "terms_id": terms.terms_id,
+        "total": money(terms.total),
+        "items": [{"ref": item.ref, "quantity": item.quantity.value, "unit": item.quantity.unit,
+                   "unit_price": money(item.unit_price), "line_total": money(item.line_total),
+                   **({"name": names[item.ref]} if item.ref in names else {})} for item in terms.items],
+        "adjustments": [{"code": adj.code, "amount": money(adj.amount)} for adj in terms.adjustments],
+        "fulfillment": {key: value for key, value in (("mode", fulfillment.mode),
+                                                      ("window_start", fulfillment.window_start),
+                                                      ("window_end", fulfillment.window_end)) if value},
+        "conditions": {condition.code: condition.value for condition in terms.conditions},
+    }
+
+
 def default_subject(ctx: TrustedContext, event: InteractionEvent) -> Subject:
     """Sem adaptador: o sujeito do contexto confiável, a identidade que o canal transporta, nenhum carrinho."""
     return Subject(subject_ref=ctx.subject, identity_evidence=tuple(event.identity_evidence))
@@ -343,10 +367,16 @@ class Engine:
                 except PortError:
                     state.facts[key] = Unknown(reason="source_failed")
 
-    def _quote(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget) -> None:
-        """Cota o carrinho quando alguma necessidade pede termos. Cotação é leitura, com passo do teto."""
+    def _quote(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget, *, refresh: bool = False) -> None:
+        """Cota o carrinho quando alguma necessidade pede termos. Cotação é leitura, com passo do teto.
+
+        ``refresh``: depois de uma mudança material no carrinho, os termos de antes não valem (v2 4.7,
+        propriedade 2); cota de novo, mesmo que ninguém peça termos, para a resposta mostrar o carrinho.
+        """
         target = state.subject.cart_ref
-        if target is None or target in state.terms or not any(state.wants_terms(n) for n in state.needs):
+        if target is None:
+            return
+        if not refresh and (target in state.terms or not any(state.wants_terms(n) for n in state.needs)):
             return
         key = state.terms_key(target)
         if not budget.take_step(f"read:{key}"):
@@ -358,11 +388,57 @@ class Engine:
             state.facts[key] = Unknown(reason="source_failed")
             return
         state.terms[target] = terms
-        state.facts[key] = Known(value={"total": {"price_minor": terms.total.amount_minor,
-                                                  "currency": terms.total.currency},
-                                        "terms_id": terms.terms_id},
-                                 source="commerce-quote", observed_at=state.now, valid_until=terms.valid_until,
-                                 source_version=terms.hash)
+        names = self._item_names(ctx, state, budget, terms)
+        state.facts[key] = Known(value=terms_fact(terms, names), source="commerce-quote", observed_at=state.now,
+                                 valid_until=terms.valid_until, source_version=terms.hash)
+
+    def _item_names(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget, terms) -> dict[str, str]:
+        """O nome de cada item dos termos, pelo fato do item (``item.<ref>``), lido com passo do teto."""
+        names: dict[str, str] = {}
+        for item in terms.items:
+            key = f"item.{item.ref}"
+            if key not in state.facts:
+                if not budget.take_step(f"read:{key}"):
+                    continue
+                try:
+                    state.facts[key] = self.ports.commerce_read.read_item(ctx, item.ref)
+                except PortError:
+                    state.facts[key] = Unknown(reason="source_failed")
+            fact = state.facts[key]
+            value = getattr(fact, "value", None)
+            if isinstance(value, Mapping) and value.get("name"):
+                names[item.ref] = str(value["name"])
+        return names
+
+    def _after_effects(self, ctx: TrustedContext, state: TurnState, event, budget: TurnBudget,
+                       effects: dict) -> bool:
+        """O que se lê depois do recibo de sucesso, para a resposta dizer o estado de agora.
+
+        - mudança no carrinho: o sujeito de novo (o efeito pode ter criado o carrinho) e termos novos;
+        - pedido fechado: o pedido lido pela porta, com o total dele.
+
+        Devolve se o carrinho foi cotado de novo (termos novos neste turno).
+        """
+        requoted = False
+        actions = {command.command_id: command.action for command in effects["commands"]}
+        for receipt in effects["receipts"]:
+            if receipt.status != "success":
+                continue
+            action = actions.get(receipt.command_id)
+            if action == "change_cart":
+                state.subject = self.subject_of(ctx, event)
+                self._quote(ctx, state, budget, refresh=True)
+                requoted = True
+            elif action == "commit_order" and receipt.domain_refs.get("effect"):
+                ref = receipt.domain_refs["effect"]
+                key = state.order_key(ref)
+                if key in state.facts or not budget.take_step(f"read:{key}"):
+                    continue
+                try:
+                    state.facts[key] = self.ports.commerce_read.read_order(ctx, ref)
+                except PortError:
+                    state.facts[key] = Unknown(reason="source_failed")
+        return requoted
 
     def _confirmation(self, ctx: TrustedContext, event: InteractionEvent, subject: Subject,
                       epoch: int) -> Confirmation:
@@ -698,7 +774,12 @@ class Engine:
                                 effects)
         promised = self._promise(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks)
         self._remember(ctx, state, decision, by_need, event, episode, trace_id, unwritten)
-        if state.refused:
+        requoted = self._after_effects(ctx, state, event, budget, effects)
+        # Termos apresentados no mesmo turno de uma mudança: a decisão que os apresenta é refeita sobre
+        # os termos novos, ligada à anterior (N14), para a decisão gravada e a pergunta no ar citarem o
+        # MESMO documento.
+        presents = any(decision.candidates[i].move == "present_terms" for i in decision.chosen)
+        if state.refused or (requoted and presents):
             self._quote(ctx, state, budget)
             snapshot = self._snapshot(ctx, episode, trace_id, decision.id, state, dialogue)
             decision = self._decide(state, needs, snapshot, trace_id, parent=decision.decision_id)

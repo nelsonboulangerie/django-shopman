@@ -36,14 +36,14 @@ CHANGE = JourneyStep(
     message=message("j4-m1", "make it three of item a"),
     understanding={"acts": [{"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "3"}}]},
     expect_moves=("change_cart",),
-    expect_text=("Done: your cart is updated",),
+    expect_text=("Done. Your cart now has:\n3 × Item A: XTS 13.50\nTotal: XTS 13.50.",),
     expect_state="active",
 )
 QUOTE = JourneyStep(
     message=message("j4-m2", "place the order"),
     understanding={"acts": [{"act": "place_order"}]},
     expect_moves=("present_terms",),
-    expect_text=("Your total is XTS 13.50. Shall I place the order?",),
+    expect_text=("3 × Item A: XTS 13.50\nTotal: XTS 13.50\npickup", "Shall I place the order?"),
     expect_state="waiting_authorization",
     advance_seconds=30,
 )
@@ -51,7 +51,7 @@ CONFIRM = JourneyStep(
     message=message("j4-m3", "yes"),
     understanding={"acts": [{"act": "affirm"}]},
     expect_moves=("commit_order",),
-    expect_text=("Your order order-0001 is placed.",),
+    expect_text=("Your order order-0001 is placed. Total: XTS 13.50. Track it: order-0001.",),
     expect_state="active",
     advance_seconds=30,
 )

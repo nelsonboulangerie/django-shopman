@@ -46,7 +46,9 @@ def _evidence(**overrides) -> Evidence:
         "facts": {"hours": HOURS, "promise.ITEM-A.promisable": Known(value="three units", source="commerce",
                                                                        observed_at=NOW, valid_until=LATER),
                   "promise.ITEM-A.factual": Known(value="no units", source="commerce", observed_at=NOW,
-                                                  valid_until=LATER)},
+                                                  valid_until=LATER),
+                  "order.order-77": Known(value={"ref": "order-77", "total": {"price_minor": 1350, "currency": "XTS"}},
+                                          source="commerce", observed_at=NOW, valid_until=LATER)},
         "fact_facets": {"promise.ITEM-A.promisable": "promisable", "promise.ITEM-A.factual": "factual"},
         "receipts": {"rcp-1": RECEIPT, "rcp-2": PENDING},
         "commitments": {"c-1": PROMISE},
@@ -91,13 +93,18 @@ def test_k23_price_or_state_without_fact_is_held():
 @conformance("K24", invariants=("N01",), scope="adapter")
 def test_k24_reply_asserting_an_action_without_receipt_is_held():
     # Parte de efeito com recibo que não é sucesso: segura.
-    pending = _compose(PartSpec("commit_order", "commit_order.done", {"order": ("receipt", "rcp-2")}))
+    pending = _compose(PartSpec("commit_order", "commit_order.done", {"order": ("receipt", "rcp-2"),
+                                                                      "total": ("fact", "order.order-77"),
+                                                                      "track": ("receipt", "rcp-2")}))
     assert pending.verification.result == "hold" and pending.text is None
     assert {f.code for f in pending.verification.findings} >= {"action_without_receipt",
                                                               "backing_kind_not_accepted"}
     # Com recibo de sucesso: sai, com a referência do domínio vinda do recibo.
-    done = _compose(PartSpec("commit_order", "commit_order.done", {"order": ("receipt", "rcp-1")}))
-    assert done.verification.result == "pass" and done.text == "Your order order-77 is placed."
+    done = _compose(PartSpec("commit_order", "commit_order.done", {"order": ("receipt", "rcp-1"),
+                                                                   "total": ("fact", "order.order-77"),
+                                                                   "track": ("receipt", "rcp-1")}))
+    assert done.verification.result == "pass"
+    assert done.text.startswith("Your order order-77 is placed. Total: ") and done.text.endswith("Track it: order-77.")
     # O pendente se diz como espera, com o prazo do compromisso.
     waiting = _compose(PartSpec("wait", "commit_order.pending", {"deadline": ("commitment", "c-1")}))
     assert waiting.verification.result == "pass" and LATER in waiting.text
