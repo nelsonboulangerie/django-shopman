@@ -124,11 +124,10 @@ def window_text(value) -> str:
 
 
 def time_text(value) -> str:
-    """ "16:00" → "16h", "16:30" → "16h30": a hora como a casa diz."""
-    from .order_closing import _clock
+    """ "16:00" → "16h", "16:30" → "16h30": a hora como a casa diz (``format_clock``)."""
+    from shopman.utils.formatting import format_clock
 
-    hours, minutes = str(value).split(":")
-    return _clock(int(hours) * 60 + int(minutes))
+    return format_clock(str(value))
 
 
 def nice_formatters() -> dict:
