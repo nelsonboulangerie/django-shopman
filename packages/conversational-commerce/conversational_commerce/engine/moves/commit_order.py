@@ -23,6 +23,12 @@ TEMPLATES = (TEMPLATES_BY_ID["commit_order.done"], TEMPLATES_BY_ID["commit_order
 def propose(state, need):
     if not state.answers_offer(need) or need.need_id in state.refused:
         return None
+    from .change_cart import lines
+
+    if lines(state):
+        # "Sim, e põe quatro": a sacola muda no mesmo turno, e os termos confirmados deixam de ser os da
+        # sacola (v2 4.7, propriedade 2). O "sim" não grava o pedido, seja qual for a ordem das palavras.
+        return None
     offer = state.offer
     problem = state.confirmation_problems.get(need.need_id)
     situation = state.situation(

@@ -48,6 +48,9 @@ def test_the_sequence_stops_at_the_first_failure():
     assert result.receipts[0].status == "failure"
     assert world.state.carts["cart-1"] == {"ITEM-A": "2"}  # a sacola não muda depois da recusa
     assert world.commerce_execute.effects == 0
+    # A sacola não foi impossível: só não foi tentada. O texto diz isso, nunca "I can't do that here".
+    assert "That part waits until the earlier step is settled" in result.text
+    assert "inform_limitation.not_attempted" in result.reply.template_ids
 
 
 def test_the_sequence_stops_at_a_pending_receipt_with_one_reconciliation():
@@ -59,6 +62,7 @@ def test_the_sequence_stops_at_a_pending_receipt_with_one_reconciliation():
     assert result.receipts[0].status == "pending"
     assert world.state.carts["cart-1"] == {"ITEM-A": "2"}
     assert result.episode.state == "waiting_effect"  # uma espera de efeito, a do primeiro
+    assert "That part waits until the earlier step is settled" in result.text
 
 
 def test_the_same_turn_twice_applies_each_effect_once():
@@ -69,18 +73,50 @@ def test_the_same_turn_twice_applies_each_effect_once():
     assert again.outcome == "duplicate" and world.commerce_execute.effects == 2
 
 
-def test_commit_order_never_joins_the_sequence():
-    """O "sim" aos termos (A3) com uma mudança junto: só um efeito sai, e a mudança fica recusada."""
+def _yes_with_a_change(*acts):
     from conversational_commerce.testing.journeys import run_journey
 
-    yes_and_more = JourneyStep(message=j4.message("seq-yes", "yes, and make it four"),
-                               understanding={"acts": [{"act": "affirm"},
-                                                       {"act": "change_quantity",
-                                                        "fields": {"item": "ITEM-A", "quantity": "4"}}]},
-                               expect_moves=(), expect_text=(), advance_seconds=30)
-    turn_engine, world = engine(steps=(j4.CHANGE, j4.QUOTE, yes_and_more))
-    *_, last = run_journey(turn_engine, CTX, [j4.CHANGE, j4.QUOTE, yes_and_more])
-    result = last.result
-    assert [c.action for c in result.commands] == ["commit_order"]  # o pedido, pelos termos confirmados
-    assert result.chosen_moves == ["commit_order", "inform_limitation"]  # a mudança fica dita como limitação
-    assert len(world.state.orders) == 1 and world.state.carts["cart-1"] == {"ITEM-A": "3"}
+    step = JourneyStep(message=j4.message("seq-yes", "yes and four"), understanding={"acts": list(acts)},
+                       expect_moves=(), expect_text=(), advance_seconds=30)
+    turn_engine, world = engine(steps=(j4.CHANGE, j4.QUOTE, step))
+    *_, last = run_journey(turn_engine, CTX, [j4.CHANGE, j4.QUOTE, step])
+    return last.result, world
+
+
+FOUR = {"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "4"}}
+
+
+def test_yes_with_a_change_of_the_same_cart_never_places_the_order():
+    """Revisão do #3384: "sim, e põe quatro" não grava o pedido de 3 (v2 4.7, propriedade 2)."""
+    result, world = _yes_with_a_change({"act": "affirm"}, FOUR)
+    assert "commit_order" not in [c.action for c in result.commands] and world.state.orders == {}
+    assert world.state.carts["cart-1"] == {"ITEM-A": "4"}  # a mudança, sim, vale
+
+
+def test_the_order_of_the_words_never_changes_the_outcome():
+    """ "Põe quatro, sim" dá o mesmo: o pedido não é gravado pelos termos de antes."""
+    result, world = _yes_with_a_change(FOUR, {"act": "affirm"})
+    assert "commit_order" not in [c.action for c in result.commands] and world.state.orders == {}
+    assert world.state.carts["cart-1"] == {"ITEM-A": "4"}
+
+
+
+def test_the_second_grant_refused_never_walks_the_first_receipt_twice(monkeypatch):
+    """Revisão do #3384: a concessão do SEGUNDO efeito recusada não derruba o turno depois do efeito feito."""
+    from conversational_commerce.authority import GrantRefused
+    from conversational_commerce.engine import turn as turn_module
+
+    original = turn_module.issue_line_grant
+
+    def refuse_the_cart(**kwargs):
+        if kwargs["action"] == "change_cart":
+            raise GrantRefused("profile_line_absent", "sem linha para a sacola (K39)")
+        return original(**kwargs)
+
+    monkeypatch.setattr(turn_module, "issue_line_grant", refuse_the_cart)
+    step = _step(A3, PICKUP)
+    turn_engine, world = engine(steps=(step,))
+    result = turn_engine.turn(CTX, step.message)  # antes: InvalidTransition depois do recebimento feito
+    assert [c.action for c in result.commands] == ["set_fulfillment"]
+    assert world.state.fulfillment["cart-1"] == {"date": TOMORROW, "mode": "pickup"}
+    assert result.episode.state == "active"

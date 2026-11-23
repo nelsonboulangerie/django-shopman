@@ -20,6 +20,10 @@ from ..acts import CHANGE_ACTS
 MOVE = "inform_limitation"
 TEMPLATES = (
     Template("inform_limitation.offer_team", "1", MOVE, "I can't do that here. I can hand you to the team."),
+    # A parte que a sequência de efeitos não tentou (o efeito anterior não teve sucesso): não foi impossível,
+    # só fica para depois de acertar o passo anterior (spec 08 §5).
+    Template("inform_limitation.not_attempted", "1", MOVE,
+             "That part waits until the earlier step is settled; tell me again once it is."),
     # A recusa do cliente segura a oferta até ele mudar de ideia (F10).
     Template("inform_limitation.offers_declined", "1", MOVE,
              "You asked me not to make suggestions. Tell me if you'd like them again."),
@@ -73,6 +77,8 @@ def propose(state, need):
 
 
 def reply(state, need):
+    if state.refused.get(need.need_id) == "sequence_stopped":
+        return PartSpec(MOVE, "inform_limitation.not_attempted")
     if need.act == "ask_recommendation" and state.declined_offers:
         return PartSpec(MOVE, "inform_limitation.offers_declined")
     return PartSpec(MOVE, "inform_limitation.offer_team")
