@@ -1735,7 +1735,19 @@ Nenhum efeito, nenhuma mensagem, nenhuma linha nova no banco: a conversa e a sac
 python manage.py concierge_eval --battery                 # os 56, tetos de 150 chamadas e US$ 0,50
 python manage.py concierge_eval --battery --case frase    # só os casos cujo id contém "frase"
 python manage.py concierge_eval --battery --max-calls 20  # teto menor
+python manage.py concierge_eval --cards                   # os 5 cartões do WP-14 pelo motor, em memória
 ```
+
+`--cards` roda os 5 cartões do WP-14 pelo motor da Nice, de ponta a ponta. Usa as regras, os moldes, os formatadores e o perfil dela, com o leitor de verdade. A sacola, a cotação, a execução, o pedido e os registros ficam em memória, com as portas falsas do pacote. O "sim" fecha um pedido de memória.
+
+Do Shopman vem só o que se lê: o cardápio, e o nome e o preço base de cada item. A linha P08 e a validade da concessão (`grant.validity_seconds`, 600 s, a do perfil de teste do pacote) são ligadas SÓ no perfil do ensaio.
+
+A transcrição, em texto puro, traz por turno:
+- a fala;
+- a resposta da Nice;
+- o que se leu;
+- os movimentos e os bloqueios;
+- quando o turno sairia, no ar, pelo caminho de hoje (molde sem frase da Nice).
 
 Sem conexão utilizável na rota `intents` (ou com o freio puxado), o comando falha antes de chamar. Sai com código diferente de zero, depois de imprimir o placar, quando um teto estoura (`--max-calls`, `--max-usd`) ou quando a IA recusa alguma fala, com o erro verdadeiro dela (aí o placar não mede o leitor).
 

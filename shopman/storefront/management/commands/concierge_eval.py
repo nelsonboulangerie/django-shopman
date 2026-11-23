@@ -17,6 +17,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--battery", action="store_true", help="roda a bateria de 56 pedidos")
+        parser.add_argument("--cards", action="store_true", help="roda os 5 cartões pelo motor, em memória")
         parser.add_argument("--max-calls", type=int, default=150, help="teto de chamadas à IA (padrão 150)")
         parser.add_argument("--max-usd", type=float, default=0.50,
                             help="teto de custo estimado, em dólares (padrão 0,50)")
@@ -27,8 +28,8 @@ class Command(BaseCommand):
         from shopman.storefront.concierge import eval_battery
         from shopman.storefront.concierge.model_reader import NiceReader, build_client
 
-        if not options["battery"]:
-            raise CommandError("diga o que rodar: --battery")
+        if not (options["battery"] or options["cards"]):
+            raise CommandError("diga o que rodar: --battery, --cards ou os dois")
         if options["max_calls"] < 1 or options["max_usd"] <= 0:
             raise CommandError("--max-calls precisa ser ao menos 1 e --max-usd maior que zero")
         client, model = build_client()
@@ -39,12 +40,34 @@ class Command(BaseCommand):
         def reader_for(conversation, lines_of):
             return NiceReader(client=client, model=model, conversation=conversation, lines_of=lines_of)
 
-        resultados, totais = eval_battery.rodar(reader_for, channel_ref=options["channel"],
-                                                today=timezone.localdate(), max_calls=options["max_calls"],
-                                                max_usd=options["max_usd"], model=model, only=options["case"])
-        self.stdout.write(eval_battery.relatorio(resultados, totais))
+        today = timezone.localdate()
+        problemas: list[str] = []
+        restam = {"calls": options["max_calls"], "usd": options["max_usd"]}
+        if options["battery"]:
+            resultados, totais = eval_battery.rodar(reader_for, channel_ref=options["channel"], today=today,
+                                                    max_calls=restam["calls"], max_usd=restam["usd"], model=model,
+                                                    only=options["case"])
+            self.stdout.write(eval_battery.relatorio(resultados, totais))
+            problemas += self._problemas(totais)
+            restam = {"calls": restam["calls"] - totais["chamadas"], "usd": restam["usd"] - totais["usd"]}
+        if options["cards"] and not problemas:
+            from shopman.storefront.concierge import eval_cards
+
+            if options["battery"]:
+                self.stdout.write("")
+            placares, totais = eval_cards.rodar(reader_for, today=today, max_calls=max(restam["calls"], 0),
+                                                max_usd=max(restam["usd"], 1e-9), model=model, only=options["case"])
+            self.stdout.write(eval_cards.relatorio(placares, totais))
+            problemas += self._problemas(totais)
         # Teto estourado ou IA que recusou: o placar não mede o leitor, e o comando sai com erro.
+        if problemas:
+            raise CommandError("; ".join(problemas))
+
+    @staticmethod
+    def _problemas(totais) -> list[str]:
+        found = []
         if totais["interrompido"]:
-            raise CommandError(f"ensaio interrompido: {totais['interrompido']}")
+            found.append(f"ensaio interrompido: {totais['interrompido']}")
         if totais["erros"]:
-            raise CommandError(f"a IA recusou {len(totais['erros'])} falas; a primeira: {totais['erros'][0]}")
+            found.append(f"a IA recusou {len(totais['erros'])} falas; a primeira: {totais['erros'][0]}")
+        return found
