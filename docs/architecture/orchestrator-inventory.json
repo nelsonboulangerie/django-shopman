@@ -14593,11 +14593,11 @@
             "_notify_customer",
             "_order_skus",
             "_parse_day",
-            "_physical_work_started",
             "_relink_production",
             "_replace_reminder",
             "_validate",
-            "logger"
+            "logger",
+            "physical_work_started"
           ]
         }
       ]

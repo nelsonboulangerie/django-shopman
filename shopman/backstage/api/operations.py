@@ -2353,6 +2353,36 @@ class DayClosingView(APIView):
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
 
 
+class DayClosingNotPickedUpView(APIView):
+    """O gesto em lote do fechamento: encerrar como não retirado os prontos da lista.
+
+    Opcional (decisão da coordenação em 22/11/2026, reversível): fechar o dia não
+    depende dele. Body: ``{"orders": [{"ref", "revision"}], "manager_approval":
+    {"username", "pin"} | {"badge"}}``.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.perform_closing"
+
+    def post(self, request):
+        body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+        try:
+            record = closing_service.resolve_not_picked_up(user=request.user, release=body)
+        except closing_service.NotPickedUpBatchRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente: o mesmo desafio da sangria e da produção aberta.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({"ok": True, "orders": record["orders"], "approved_by": record["approved_by"]})
+
+
 def _payment_check_due(order) -> bool:
     """A tela deve pedir a conferência do pagamento (``payment/check/``)? Só LÊ.
 
