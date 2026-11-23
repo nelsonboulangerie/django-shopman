@@ -6313,15 +6313,18 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "ADMIN_CSRF_COOKIE_NAME",
             "APIVersionHeaderMiddleware",
             "API_V1_PREFIX",
             "API_VERSION",
             "APP_PLATFORM_PROBE_NETWORK",
             "AccessLogMiddleware",
+            "AdminCsrfCookieNameMiddleware",
             "BackupSheetDomainMiddleware",
             "HEALTH_PROBE_PATHS",
             "OperatorSessionDomainMiddleware",
             "_ACCESS_LOG_METHODS",
+            "_is_admin_host",
             "_strip_port",
             "access_logger"
           ]
@@ -15257,6 +15260,29 @@
             "redact_text",
             "scrub_sentry_event",
             "strip_url_query"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/telemetry_throttle.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "EVERY_SECONDS",
+            "PROVIDER_MECHANISMS",
+            "_provider_exception",
+            "drop_repeated_provider_error",
+            "logger"
           ]
         }
       ]

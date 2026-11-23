@@ -207,3 +207,23 @@ def test_o_gestor_nao_maquia_pedido_sem_forma_grita_no_log():
 
     assert label == ""
     error.assert_called_once_with("order_queue.order_without_payment order=%s", "WEB-SEM-FORMA")
+
+
+def test_o_mesmo_pedido_sem_forma_grita_uma_vez_e_nao_a_cada_leitura():
+    """SHOPMAN-15: a fila é lida a cada poucos segundos; o grito é por pedido, não por leitura."""
+    from django.core.cache import cache
+
+    from shopman.backstage.projections import order_queue
+
+    cache.delete("order_queue:order_without_payment:WEB-SEM-FORMA-2")
+    cache.delete("order_queue:order_without_payment:WEB-SEM-FORMA-3")
+    order = Order(ref="WEB-SEM-FORMA-2", channel_ref="web", total_q=5000, data={})
+    other = Order(ref="WEB-SEM-FORMA-3", channel_ref="web", total_q=5000, data={})
+    with patch.object(order_queue.logger, "error") as error:
+        for _ in range(5):
+            order_queue._payment_method_label("", {}, order=order)
+        order_queue._payment_method_label("", {}, order=other)
+
+    assert error.call_count == 2
+    error.assert_any_call("order_queue.order_without_payment order=%s", "WEB-SEM-FORMA-2")
+    error.assert_any_call("order_queue.order_without_payment order=%s", "WEB-SEM-FORMA-3")
