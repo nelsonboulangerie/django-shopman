@@ -316,6 +316,10 @@ def _fulfillment_conditions(data: dict) -> list[dict]:
         slot = str(data.get("delivery_time_slot") or "")
         if slot:
             found.append({"code": "fulfillment_window", "value": slot})
+    method = str(((data.get("payment") or {}).get("method")) or "")
+    if method:
+        # A forma de pagamento escolhida é condição dos termos: o cliente vê como paga antes do "sim".
+        found.append({"code": "payment_method", "value": method})
     return found
 
 

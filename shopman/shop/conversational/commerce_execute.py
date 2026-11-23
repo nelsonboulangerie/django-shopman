@@ -231,7 +231,15 @@ class ShopmanCommerceExecute:
         terms_hash = None
         if command.terms_hash is not None:
             bound = command.parameters.get(TERMS_REF)
-            in_force = reading.terms_ref is not None and bound == reading.terms_ref
+            if bound is None:
+                # O comando do motor não leva a revisão da casa: os termos dele são selados com a revisão
+                # do alvo (``ShopmanCommerceRead.quote``: ``terms_id=<sacola>-r<rev>``, ``version=rev``).
+                # Vigoram enquanto o alvo é a mesma revisão; qualquer mudança na sacola sobe a revisão.
+                in_force = all(reading.versions.get(target) == expected
+                               for target, expected in command.expected_versions.items()) \
+                    and bool(command.expected_versions)
+            else:
+                in_force = reading.terms_ref is not None and bound == reading.terms_ref
             terms_hash = command.terms_hash if in_force else sha256_hash({TERMS_REF: reading.terms_ref})
         return EffectState(now=self.clock.now(), terms_hash=terms_hash, versions=dict(reading.versions),
                            ownership_epoch=reading.ownership_epoch)
