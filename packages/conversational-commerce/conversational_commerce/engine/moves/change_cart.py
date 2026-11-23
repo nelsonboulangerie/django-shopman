@@ -41,10 +41,17 @@ def lines(state) -> list:
 
 
 def eligible_change(state) -> bool:
-    """Há uma mudança do carrinho que pode virar comando neste turno: linhas absolutas, sem item repetido."""
+    """Há uma mudança material do carrinho que pode virar comando neste turno.
+
+    A sacola (linhas absolutas, sem item repetido), o recebimento ou a forma de pagamento, ditos com
+    uma leitura só. É ela que segura o "sim" aos termos de antes (v2 4.7, propriedade 2).
+    """
     group = lines(state)
     items = [_line(other)["item"] for other in group]
-    return bool(group) and len(set(items)) == len(items) and all(_absolute(_line(other)) for other in group)
+    cart = bool(group) and len(set(items)) == len(items) and all(_absolute(_line(other)) for other in group)
+    other_change = any(need.act in ("choose_fulfillment", "choose_payment") and len(need.readings) == 1
+                       and need.need_id not in state.refused for need in state.needs)
+    return cart or other_change
 
 
 def propose(state, need):

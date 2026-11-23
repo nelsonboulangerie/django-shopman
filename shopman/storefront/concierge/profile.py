@@ -39,7 +39,7 @@ MODEL_CALLS_PER_TURN = 1
 # P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge.
 ENABLED_MOVES = ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification", "handoff")
 # P08: o pedido na conversa, em validação até o WP-14 da Concierge.
-ORDER_MOVES = ("present_terms", "change_cart", "set_fulfillment", "commit_order")
+ORDER_MOVES = ("present_terms", "change_cart", "set_fulfillment", "set_payment", "commit_order")
 # Movimento → a linha de que depende (P08 a P13).
 LINE_OF_MOVE = {
     **dict.fromkeys(ORDER_MOVES, "commerce.order_in_conversation"),
@@ -50,7 +50,7 @@ LINE_OF_MOVE = {
 }
 LEVEL_OF_MOVE = {"acknowledge": "A0", "inform": "A0", "cover_readings": "A0", "inform_limitation": "A0",
                  "ask_clarification": "A0", "handoff": "A0", "present_terms": "A1", "change_cart": "A2",
-                 "set_fulfillment": "A2",
+                 "set_fulfillment": "A2", "set_payment": "A2",
                  "commit_order": "A3", "cancel_order": "A3", "amend_order": "A3", "grant_discount": "A4",
                  "recommend": "A0"}
 # P03: o telefone do WhatsApp é identidade transportada. É com ela que a Nice atende,

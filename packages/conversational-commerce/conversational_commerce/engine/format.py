@@ -43,6 +43,13 @@ def conditions_text(value: Any) -> str:
     return "; ".join(f"{code}: {item}" for code, item in value.items())
 
 
+def options_text(value: Any) -> str:
+    """Uma lista de opções (forma de pagamento, condição que falta), em texto neutro."""
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("opções sem lista")
+    return ", ".join(str(option) for option in value)
+
+
 DEFAULT_FORMATTERS = {"price": money_text, "price_a": money_text, "price_b": money_text, "total": money_text,
                       "done": done_text, "items": items_text, "fulfillment": fulfillment_text,
-                      "conditions": conditions_text}
+                      "conditions": conditions_text, "payment_method": options_text, "missing": options_text}

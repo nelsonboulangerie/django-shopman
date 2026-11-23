@@ -8,6 +8,7 @@ inventa efeito nenhum: chama os executores que já existem, com as conferências
 |---|---|---|
 | ``change_cart`` | ``tools.set_item`` (quantidade absoluta; zero tira) | a sacola (``session_key``) |
 | ``set_fulfillment`` | ``tools.set_fulfillment`` e a grade de horários (retirada); o dia pela régua do checkout | a sacola |
+| ``set_payment`` | a escrita da forma que a revisão da casa faz (``review_order``), só as formas do canal sem dinheiro | a sacola |
 | ``commit_order`` | ``tools.place_order`` (revisão ``quote_token``, confirmação posterior, ``run_idempotent_mutation``) | a sacola (``session_key``) |
 | ``grant_discount`` | ``discount.handle_request`` → ``discount._grant`` | a sacola |
 | ``cancel_order`` | ``cancellation._execute`` | o pedido do cliente |
@@ -41,10 +42,11 @@ from shopman.shop.conversational.commerce_execute import TERMS_REF, Done, Readin
 from .ports import new_cart_ref
 from .tools import ToolContext
 
-ACTIONS = ("change_cart", "set_fulfillment", "commit_order", "grant_discount", "cancel_order", "amend_order")
-CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "commit_order", "grant_discount"})
+ACTIONS = ("change_cart", "set_fulfillment", "set_payment", "commit_order", "grant_discount", "cancel_order",
+           "amend_order")
+CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "set_payment", "commit_order", "grant_discount"})
 #: As ações que podem cair na sacola nova da conversa (as outras pedem sacola com item).
-NEW_CART_ACTIONS = frozenset({"change_cart", "set_fulfillment"})
+NEW_CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "set_payment"})
 #: O que o comando ``set_fulfillment`` aceita: só o que o cliente disse.
 FULFILLMENT_FIELDS = frozenset({"date", "mode", "time"})
 _CLOCK = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
@@ -227,6 +229,29 @@ class ConciergeEffectSite:
         refs.update({key: value for key, value in (("date", day), ("mode", kind), ("window", slot),
                                                    ("time", said.get("time", ""))) if value})
         return Done(True, domain_refs=refs)
+
+    def _set_payment(self, command: ActionCommand) -> Done:
+        """A forma de pagamento na sacola, como a revisão da casa a grava (a mesma do fechamento de hoje).
+
+        Só as formas do canal, sem dinheiro (D-003): o motor só propõe a que o fato ``requirements``
+        oferece, e o sítio confere de novo. O recibo diz a forma gravada (``method``).
+        """
+        from . import tools
+        from .order_closing import _methods
+
+        said = dict(command.parameters)
+        method = said.get("method")
+        if set(said) != {"method"} or not isinstance(method, str) or not method:
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        if method not in _methods(self.tool_context.channel_ref):
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        # A MESMA escrita que a revisão da casa faz com a forma escolhida (``review_order``), pela
+        # operação canônica da sessão (sobe a revisão da sacola: o "sim" de antes cai, N07). Direto,
+        # e não pelo ``review_order``, porque ele não grava nada com a sacola vazia ("pago no pix" antes do item).
+        session = tools._ensure_session(self.tool_context)
+        session = tools._set_session_data(self.tool_context, session.session_key, {"payment": {"method": method}})
+        cart = str(session.session_key)
+        return Done(True, domain_refs={"effect": cart, "cart": cart, "method": method})
 
     def _commit_order(self, command: ActionCommand) -> Done:
         from . import tools

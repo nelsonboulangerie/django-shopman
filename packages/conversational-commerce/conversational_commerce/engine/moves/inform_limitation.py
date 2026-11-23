@@ -34,6 +34,7 @@ TEMPLATES = (
 LIMITED_ACTS = CHANGE_ACTS | {"complain", "request_human", "ask_recommendation"}
 # O movimento que faz cada pedido de mudança.
 HANDLED_BY = {"change_quantity": ("change_cart",), "choose_fulfillment": ("set_fulfillment",),
+              "choose_payment": ("set_payment",),
               "place_order": ("present_terms",),
               "cancel_order": ("cancel_order",), "complain": ("open_case",), "request_human": ("handoff",),
               "ask_recommendation": ("recommend",)}
@@ -73,6 +74,8 @@ def propose(state, need):
         return None
     if need.request_kind == "change" and len(need.readings) >= 2:
         return None  # pedido ambíguo: pergunta antes; não se sabe ainda o que foi pedido
+    if need.request_kind == "change" and state.situation(need).missing_required_field:
+        return None  # falta o campo sem o qual o pedido não se cumpre ("vou pagar"): pergunta antes
     if _handled(state, need):
         return None
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE, content={},
@@ -86,6 +89,12 @@ def reply(state, need):
 
     if state.answers_offer(need) and eligible_change(state):
         return PartSpec(MOVE, "inform_limitation.confirm_after_change")
+    if need.act == "choose_payment":
+        from .set_payment import limitation_part
+
+        part = limitation_part(state, need)
+        if part is not None:
+            return part  # a forma que o canal não oferece: diz que não, com as opções
     if need.act == "ask_recommendation" and state.declined_offers:
         return PartSpec(MOVE, "inform_limitation.offers_declined")
     return PartSpec(MOVE, "inform_limitation.offer_team")

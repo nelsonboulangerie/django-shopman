@@ -49,6 +49,12 @@ Para isso, cada porta devolve:
   porta nunca inventa um total.
 - **`read_item(ref)`**: fato com **`name` opcional**. É o nome que as linhas dos termos mostram;
   sem ele, a linha mostra a referência.
+- **`requirements(cart_ref)`**: `Known(value={"missing": [código, ...], <código>: [opção, ...]})`, as
+  condições obrigatórias dos termos ainda ausentes (`payment_method`; depois, `delivery_address`) e as
+  opções do canal para cada uma, nunca do texto. Com algo faltando, o `present_terms` não apresenta os
+  termos: pergunta pela condição (spec 06, `present_terms.needs_<código>`). O arnês confere a forma.
+- **Comando `set_payment`**: `parameters={"method"}`, uma das formas de `requirements`; o executor recusa
+  outra (`invalid_content`), e o efeito sobe a versão do carrinho (a guarda invalida o "sim" de antes).
 - **`quote(cart_ref)`**: o `TermsDocument` selado. Carrinho vazio ou cotação que falha vira
   `Unknown`, e a resposta da mudança cai no degrau de baixo (`change_cart.done_receipt`).
 - **Comando `change_cart`**: `parameters={"lines": [{"item", "quantity"}, ...]}`, as linhas do

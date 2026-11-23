@@ -13,10 +13,10 @@ from .situations import BREAKERS, happy
 PAIRS = [(move.name, precondition.code) for move in CATALOG for precondition in move.preconditions]
 
 
-def test_the_catalog_has_the_seventeen_moves_of_the_plan():
+def test_the_catalog_has_the_eighteen_moves_of_the_plan():
     assert [move.name for move in CATALOG] == [
         "acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification", "verify_with_staff",
-        "open_case", "handoff", "wait", "present_terms", "change_cart", "set_fulfillment",
+        "open_case", "handoff", "wait", "present_terms", "change_cart", "set_fulfillment", "set_payment",
         "commit_order", "cancel_order",
         "amend_order", "grant_discount", "recommend",
     ]

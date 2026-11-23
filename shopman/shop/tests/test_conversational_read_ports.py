@@ -44,6 +44,9 @@ class Owns:
     def cart(self, ctx):
         return self._cart if ctx.subject == CTX.subject else None
 
+    def new_cart(self, ctx):
+        return None
+
     def customer(self, ctx):
         return self._customer if ctx.subject == CTX.subject else None
 

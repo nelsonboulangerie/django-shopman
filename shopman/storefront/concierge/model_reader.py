@@ -49,6 +49,8 @@ NO_PRICE = {"status": "unavailable", "reason": "no_price"}
 
 #: O ato do motor que leva dia, recebimento e hora. Só sai quando o motor o aceita (``allowed_acts``).
 FULFILLMENT_ACT = "choose_fulfillment"
+#: O ato do motor que leva a forma de pagamento.
+PAYMENT_ACT = "choose_payment"
 
 #: Atos que o portão do Jev pode entregar sem a IA: nenhum pede campo.
 FIELDLESS = frozenset({"greet", "thank", "ask_hours", "request_human", "cancel_order", "affirm", "deny",
@@ -74,6 +76,7 @@ DESCRIPTIONS = {
     "deny": "não, recusa; também desistir do pedido no resumo (\"deixa pra lá\", \"desisti\", \"não quero mais\")",
     FULFILLMENT_ACT: "dizer o dia, se vai retirar ou receber em casa, ou a hora (\"amanhã às 16h\", "
                      "\"vou aí buscar\", \"entrega na sexta\")",
+    PAYMENT_ACT: "dizer como quer pagar (\"no pix\", \"pago no cartão\", \"pode ser pix\")",
     "unknown": "nada disso",
 }
 
@@ -81,6 +84,9 @@ WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", 
 DAY_WORDS = ("today", "tomorrow", "day_after_tomorrow", *WEEKDAYS)
 CHANGES = ("set", "add", "remove", "remove_all")
 MODES = ("pickup", "delivery")
+#: A forma como o cliente a diz, no vocabulário da casa. Dinheiro é lido (para o motor dizer que não
+#: dá), nunca gravado: o sítio e o fato do canal só aceitam as formas sem dinheiro (D-003).
+PAYMENTS = ("pix", "card", "cash")
 _DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})$")
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
@@ -103,8 +109,9 @@ def schema(allowed: tuple[str, ...]) -> dict:
                         "day": {"type": "string"},
                         "mode": {"type": "string", "enum": ["", *MODES]},
                         "time": {"type": "string"},
+                        "payment": {"type": "string", "enum": ["", *PAYMENTS]},
                     },
-                    "required": ["act", "span", "product", "qty", "change", "day", "mode", "time"],
+                    "required": ["act", "span", "product", "qty", "change", "day", "mode", "time", "payment"],
                     "additionalProperties": False,
                 },
             }
@@ -137,6 +144,10 @@ def system_prompt(allowed: tuple[str, ...]) -> str:
             "- time: HH:MM em 24 horas, quando diz a hora (\"às 4 da tarde\" = 16:00).\n"
             f"- Dia, recebimento e hora ditos junto com o pedido são uma parte {FULFILLMENT_ACT} à parte.\n"
             if fulfillment else "- day, mode, time: vazios.\n"
+        )
+        + (
+            f"- payment, só em {PAYMENT_ACT}: pix, card (cartão de crédito ou débito) ou cash (dinheiro).\n"
+            if PAYMENT_ACT in allowed else "- payment: vazio.\n"
         )
         + "Regras:\n"
         "- Uma parte por assunto e uma parte change_quantity por produto: \"2 croissants e 1 baguete\" são "
@@ -174,6 +185,7 @@ class Reading:
     day: str = ""
     mode: str = ""
     time: str = ""
+    payment: str = ""
     fields: dict = field(default_factory=dict)
 
 
@@ -205,10 +217,11 @@ def parse(raw: str, text: str, allowed: tuple[str, ...]) -> list[Reading]:
                 product = ""
         change = item.get("change") if item.get("change") in CHANGES else ""
         mode = item.get("mode") if item.get("mode") in MODES else ""
+        payment = item.get("payment") if item.get("payment") in PAYMENTS else ""
         time_text = _clean(item.get("time"), 5)
         found.append(Reading(act=name, span=_clean(item.get("span"), 300), product=product, qty=qty,
                              change=change, day=_clean(item.get("day"), 20).lower(), mode=mode,
-                             time=time_text if _TIME_RE.match(time_text) else ""))
+                             time=time_text if _TIME_RE.match(time_text) else "", payment=payment))
     return found
 
 
@@ -410,6 +423,8 @@ class NiceReader:
                     conversation, [], text).items() if key == "item"}
             elif reading.act == FULFILLMENT_ACT:
                 fields = fulfillment_fields(reading, today)
+            elif reading.act == PAYMENT_ACT:
+                fields = {"method": reading.payment} if reading.payment else {}
             else:
                 fields = {}
             acts.append({"act": reading.act, "fields": fields, "confidence": UNAVAILABLE})

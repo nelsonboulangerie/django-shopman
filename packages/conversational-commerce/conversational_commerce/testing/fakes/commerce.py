@@ -169,6 +169,8 @@ class FakeCommerceRead(FakeBase):
             total={"amount_minor": total, "currency": items[0]["unit_price"].currency},
             recipient={"subject_ref": owner or "unknown-subject"},
             fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup")},
+            conditions=([{"code": "payment_method", "value": self.state.payment[cart_ref]}]
+                        if cart_ref in self.state.payment else []),
             valid_until=self.clock.at(TERMS_VALIDITY_SECONDS),
         ))
         self.quotes[terms.hash] = terms
@@ -196,6 +198,15 @@ class FakeCommerceRead(FakeBase):
         if ctx.subject is not None and ref != ctx.subject:
             raise PortError("object_forbidden", "cliente lê só o próprio cadastro")
         return self._fact("read_customer", CUSTOMERS.get(ref), "fake-customers")
+
+    def requirements(self, ctx: TrustedContext, cart_ref: str) -> Fact:
+        """O que os termos ainda exigem: a forma de pagamento, quando há mais de uma e nenhuma escolhida."""
+        owner = self.state.cart_owner.get(cart_ref)
+        if cart_ref not in self.state.carts or (ctx.subject is not None and owner != ctx.subject):
+            raise PortError("object_forbidden", "carrinho inexistente ou de outro sujeito")
+        methods = list(self.state.payment_methods)
+        missing = [] if self.state.payment.get(cart_ref) or len(methods) <= 1 else ["payment_method"]
+        return self._fact("requirements", {"missing": missing, "payment_method": methods}, "fake-channel")
 
     def read_policy(self, ctx: TrustedContext, policy_id: str) -> Fact:
         return self._fact("read_policy", POLICIES.get(policy_id), "fake-policies")
@@ -258,6 +269,9 @@ class FakeCommerceExecute(FakeBase):
             cart = self.state.carts.setdefault(command.targets[0], {})
             for line in command.parameters["lines"]:
                 cart[line["item"]] = line["quantity"]
+        if command.action == "set_payment":
+            self.state.payment[command.targets[0]] = command.parameters["method"]
+            self.applied_refs[command.command_id] = {"method": command.parameters["method"]}
         if command.action == "set_fulfillment":
             current = self.state.fulfillment.setdefault(command.targets[0], {})
             current.update(command.parameters)
@@ -318,6 +332,9 @@ class FakeCommerceExecute(FakeBase):
 
     def _refusal(self, command: ActionCommand) -> ErrorCode | None:
         """O conteúdo do comando que o sistema de registro recusa, antes de qualquer efeito."""
+        if command.action == "set_payment":
+            method = command.parameters.get("method")
+            return None if method in self.state.payment_methods else ErrorCode.INVALID_CONTENT
         if command.action == "change_cart":
             lines = command.parameters.get("lines")
             good = isinstance(lines, (list, tuple)) and lines and all(
