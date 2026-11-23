@@ -49,6 +49,16 @@ describe("PosTabHeader: comer aqui ou levar, no balcão", () => {
     w.unmount();
   });
 
+  it("tocar no chip ligado troca para o outro (na barra estreita ele é o único à vista)", async () => {
+    const w = await header({ counterService: "here" });
+    await chip(w, "Consumir aqui").trigger("click");
+    expect(w.emitted("counterServiceChange")).toEqual([["to_go"]]);
+    // O desligado só aparece com a barra folgada; o ligado, sempre.
+    expect(chip(w, "Para levar").classes()).toContain("hidden");
+    expect(chip(w, "Consumir aqui").classes()).not.toContain("hidden");
+    w.unmount();
+  });
+
   it("na encomenda os dois chips saem e volta o recebimento", async () => {
     const w = await header({ salesMode: "order" });
     expect(w.find('[data-context-entry="service"]').exists()).toBe(false);

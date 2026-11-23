@@ -131,6 +131,10 @@ const COUNTER_SERVICES = [
   { ref: "to_go", label: "Para levar", icon: "lucide:shopping-bag" },
 ] as const;
 
+const currentService = computed(() => props.counterService || "here");
+// Tocar no chip ligado troca para o outro: na barra estreita ele é o único à vista.
+const otherService = computed(() => (currentService.value === "here" ? "to_go" : "here"));
+
 const SALES_MODES = [
   { ref: "counter", label: "Balcão", icon: "lucide:store" },
   { ref: "order", label: "Encomendas", icon: "lucide:calendar-clock" },
@@ -444,19 +448,33 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         active-color="primary"
         active-variant="solid"
         class="min-w-0 gap-2"
-        :active="(counterService || 'here') === service.ref"
-        :aria-pressed="(counterService || 'here') === service.ref"
-        :data-pos-counter-service-active="(counterService || 'here') === service.ref ? '' : undefined"
+        :class="currentService === service.ref ? '' : 'hidden @min-[50rem]:inline-flex'"
+        :active="currentService === service.ref"
+        :aria-pressed="currentService === service.ref"
+        :data-pos-counter-service-active="currentService === service.ref ? '' : undefined"
+        :title="currentService === service.ref ? `${service.label}. Toque para trocar (F8)` : service.label"
         :disabled="loading"
-        @click="$emit('counterServiceChange', service.ref)"
+        @click="$emit('counterServiceChange', currentService === service.ref ? otherService : service.ref)"
       >
         <Icon :name="service.icon" class="size-4 shrink-0" />
         <span class="sr-only">{{ service.label }}</span>
-        <span class="hidden whitespace-nowrap @min-[36rem]:inline" aria-hidden="true">{{ service.label }}</span>
+        <!-- A barra estreita (abaixo de 50rem, onde as teclas somem dos outros chips)
+             tem UM chip, o do estado atual, só com o ícone, e tocar nele troca, como o
+             F8: o mesmo lugar do chip antigo. A partir de 50rem os dois aparecem, e o
+             ligado diz o nome; a partir de 72rem, os dois dizem. Com os dois e os nomes
+             à vista, o cliente do lado cortava em 1280 e 1366 px (trava de geometria). -->
+        <span
+          class="hidden whitespace-nowrap"
+          :class="currentService === service.ref ? '@min-[50rem]:inline' : '@min-[72rem]:inline'"
+          aria-hidden="true"
+        >{{ service.label }}</span>
       </NuxtButton>
+      <!-- A tecla só aparece com a barra folgada (o mesmo corte dos dois nomes): em
+           1280 px ela empurrava o cliente para as reticências. O F8 segue no nome do
+           grupo e no dicionário de teclas. -->
       <OperatorKbd
         v-if="!coarsePointer"
-        class="hidden @min-[50rem]:inline-flex"
+        class="hidden @min-[72rem]:inline-flex"
         aria-hidden="true"
       >F8</OperatorKbd>
     </div>
