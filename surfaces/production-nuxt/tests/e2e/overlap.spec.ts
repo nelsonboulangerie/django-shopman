@@ -20,7 +20,7 @@ const ROUTES: ReadonlyArray<{ path: string; scenario: string }> = [
   { path: "/mise-en-place", scenario: "populated" },
   { path: "/timers", scenario: "populated" },
   { path: "/close", scenario: "populated" },
-  { path: "/close?lot=WO-0104", scenario: "populated" },
+  { path: "/close?lot=104", scenario: "populated" },
   { path: "/quality", scenario: "populated" },
   { path: "/board", scenario: "populated" },
   { path: "/reports", scenario: "reports-populated" },
