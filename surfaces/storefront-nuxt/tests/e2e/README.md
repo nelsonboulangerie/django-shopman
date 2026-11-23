@@ -166,7 +166,10 @@ essa variável, a J9 pula e diz por quê. As outras jornadas não notam o proxy.
 #3272). A resposta da loja ("Liberar o Chrome", "Encerrar acesso") sai pelo adapter de
 produção e cai nele, que a guarda; a jornada lê os botões em `GET /__sent?subscriber=<id>`.
 O Django e o worker sobem com `MANYCHAT_API_BASE` apontando para ele (o `settings_e2e` põe o
-token falso só no adapter), e a jornada recebe o endereço e o do Django:
+token falso e troca o endereço do resolvedor de assinantes do Guestman, que acha ou cria o
+contato do telefone: o aviso do pedido de quem entrou por código também chega nele, e a
+jornada o lê em `GET /__sent?phone=<dígitos>`, #3282), e a jornada recebe o endereço e o do
+Django:
 
 ```bash
 .venv/bin/python -m shopman.shop.tests.e2e.fake_manychat --port 12191 > /tmp/shopman-jornadas/manychat.log 2>&1 &

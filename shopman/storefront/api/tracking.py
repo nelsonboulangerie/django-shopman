@@ -60,12 +60,14 @@ def _alert_low_rating(order, rating: int, comment: str) -> None:
     de observabilidade já loga e engole exceções, mas o try aqui blinda o import.
     """
     try:
+        from shopman.shop.adapters.alert import LOW_RATING_COMMENT_MARK
         from shopman.shop.services.observability import create_operator_alert
 
         trimmed = (comment or "").strip()
         message = f"Pedido {order.ref} recebeu nota {rating}/5."
         if trimmed:
-            message += f" Comentário: {trimmed[:200]}"
+            # A marca é a mesma que a exclusão do titular corta (#2359).
+            message += f"{LOW_RATING_COMMENT_MARK}{trimmed[:200]}"
         create_operator_alert(
             type="low_rating",
             severity="warning",
