@@ -98,7 +98,7 @@ from shopman.backstage.api.throttles import POSCustomerSearchThrottle
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
-from shopman.backstage.permissions import can_audit_cash
+from shopman.backstage.permissions import ORDER_BOARD_PERMISSIONS, can_audit_cash
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.hub import purchase_surface_url
@@ -171,6 +171,7 @@ from shopman.shop.services.pos_intent import PosIntentError
 from shopman.shop.services.quality import EffectiveQualityPartitionError
 
 from .permissions import (
+    HasAnyBackstagePermission,
     HasBackstagePermission,
     HasOrderBoardAccess,
     HasProductionCapability,
@@ -2507,9 +2508,14 @@ class DeliveryDriverPhotoView(APIView):
     cache e só enquanto a corrida vive (decisão do dono, LGPD): corrida
     encerrada responde 404. ``Cache-Control: no-store`` para o navegador também
     não guardar.
+
+    Quem vê: quem gerencia pedidos ou expede (o Gestor) e quem opera o caixa
+    (o painel da corrida do PDV): decisão do dono, 22/11 (#3150). A foto segue
+    viva só enquanto a corrida vive; nada muda no quanto ela dura.
     """
 
-    permission_classes = [HasOrderBoardAccess]
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = (*ORDER_BOARD_PERMISSIONS, "cashman.operate_pos")
 
     def get(self, request, ride: str):
         from django.http import HttpResponse
