@@ -231,3 +231,27 @@ class SplitLineMergeModifier:
             target["qty"] = qty_json(qty)
             target["line_total_q"] = monetary_mult(qty, int(target.get("unit_price_q", 0) or 0))
         session.update_items(kept)
+
+
+def merged_for_display(items: list[dict]) -> list[dict]:
+    """As linhas como a cliente as comprou: cada parte partida volta à de origem.
+
+    A partição é do preço gravado (pedido, NFC-e, Gestor), não da compra. Na tela da
+    loja o desconto de pedido aparece como linha própria e a linha a preço de lista,
+    então as duas partes seriam o mesmo produto duas vezes, sem razão à vista. Não
+    muda nada: devolve cópias.
+    """
+    if not any((i.get("meta") or {}).get(SPLIT_OF) for i in items):
+        return items
+    merged = [dict(i) for i in items]
+    by_id = {i.get("line_id"): i for i in merged}
+    out: list[dict] = []
+    for item in merged:
+        origin = (item.get("meta") or {}).get(SPLIT_OF)
+        target = by_id.get(origin) if origin else None
+        if target is None or target is item:
+            out.append(item)
+            continue
+        target["qty"] = qty_json(line_qty(target) + line_qty(item))
+        target["line_total_q"] = int(target.get("line_total_q", 0) or 0) + int(item.get("line_total_q", 0) or 0)
+    return out

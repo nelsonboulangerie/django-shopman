@@ -12,6 +12,7 @@ from django.http import HttpRequest
 from shopman.utils.monetary import format_money
 
 from shopman.shop import product_options
+from shopman.shop.discount_spread import merged_for_display
 from shopman.shop.product_options import OptionSelectionError
 from shopman.shop.projections import cart_context
 from shopman.shop.projections.cart import build_minimum_order_progress
@@ -205,7 +206,9 @@ def set_line_qty(request: HttpRequest, *, line_id: str, qty: int) -> CartMutatio
     """Quantidade absoluta de UMA linha (0 remove), pela ``line_id``.
 
     É o caminho da sacola: com escolha no produto o mesmo SKU pode ter duas
-    linhas, e o ajuste por SKU acertaria a linha errada.
+    linhas, e o ajuste por SKU acertaria a linha errada. A linha que o rateio do
+    desconto partiu (#3240) aparece inteira na sacola, então a quantidade é a da
+    linha com a parte (``whole_product``).
     """
     key = request.session.get("cart_session_key")
     if not key:
@@ -225,9 +228,9 @@ def set_line_qty(request: HttpRequest, *, line_id: str, qty: int) -> CartMutatio
     )
     try:
         if qty == 0:
-            session = CartService.remove_item(request, line_id=line_id, sku=sku)
+            session = CartService.remove_item(request, line_id=line_id, sku=sku, whole_product=True)
         else:
-            session = CartService.update_qty(request, line_id=line_id, qty=qty, sku=sku)
+            session = CartService.update_qty(request, line_id=line_id, qty=qty, sku=sku, whole_product=True)
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=product, stock_error=exc) from exc
     cart = CartService.summary_from_session(session, include_items=True)
@@ -264,7 +267,7 @@ def cart_line_payload(intent: SetQtyIntent, cart: dict[str, Any]) -> dict[str, A
     Pela ``line_id`` quando a mutação a conhece (o mesmo SKU pode ter duas
     linhas, com escolhas diferentes); senão, a linha do SKU sem escolha.
     """
-    items = cart.get("items") or []
+    items = merged_for_display(cart.get("items") or [])
     line = None
     if intent.line_id:
         line = next((item for item in items if item.get("line_id") == intent.line_id), None)

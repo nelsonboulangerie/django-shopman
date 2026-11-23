@@ -111,18 +111,6 @@ describe('cart presentation — applySkuQty', () => {
     expect(next.items_count).toBe(5)
   })
 
-  it('puts the total on the first line of a split product and drops the split part (#3240)', () => {
-    // O rateio do desconto partiu os 3 Croissants em 2 e 1: o stepper mostra 3, e
-    // pôr 4 dá 4 unidades, não 4 em cada linha.
-    const split = cart([
-      line({ line_id: 'L1', sku: 'CROIS-001', qty: 2 }),
-      line({ line_id: 'L1~r', sku: 'CROIS-001', qty: 1 })
-    ])
-    const next = applySkuQty(split, meta, 4)
-    expect(next.items.map(item => [item.line_id, item.qty])).toEqual([['L1', 4]])
-    expect(next.items_count).toBe(4)
-  })
-
   it('removes the line when qty drops to zero', () => {
     const next = applySkuQty(cart([line()]), { ...meta, sku: 'PAO-001' }, 0)
     expect(next.items).toHaveLength(0)

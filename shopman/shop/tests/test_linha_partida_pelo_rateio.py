@@ -221,6 +221,35 @@ def test_tirar_so_a_linha_de_origem_deixa_a_parte_como_linha_comum(web):
     assert SPLIT_OF not in session.items[0]["meta"]
 
 
+def test_a_sacola_mostra_a_linha_inteira(web):
+    """A partição é do preço gravado; a cliente comprou 3 Croissants e vê uma linha."""
+    from shopman.shop.projections.cart import build_cart
+
+    _fixed_coupon("PRIMEIRACOMPRA", 500)
+    key = _cart(web, 3)
+    cart_service.validate_and_apply_coupon(session_key=key, channel_ref=web, code="PRIMEIRACOMPRA")
+
+    cart = build_cart(key, web)
+
+    assert [(line.sku, line.qty, line.line_total_q) for line in cart.lines] == [("CRO", 3, 3400)]
+    assert cart.subtotal_q == 3400
+
+
+def test_o_acompanhamento_mostra_a_linha_inteira(web):
+    from shopman.shop.projections.order_tracking import _build_items
+
+    order = Order.objects.create(ref="ORD-3240-T", channel_ref=web, status=Order.Status.NEW, total_q=3400)
+    order.items.create(line_id="L1", sku="CRO", name="Croissant", qty=2, unit_price_q=1133, line_total_q=2266)
+    order.items.create(
+        line_id="L1~r", sku="CRO", name="Croissant", qty=1, unit_price_q=1134, line_total_q=1134,
+        meta={SPLIT_OF: "L1"},
+    )
+
+    items = _build_items(order)
+
+    assert [(i.sku, i.qty, i.line_total_q) for i in items] == [("CRO", 3, 3400)]
+
+
 def test_o_pdv_nao_parte_linha(web):
     """A revisão da comanda e o disparo da cozinha casam a linha pela ``line_id`` do
     payload: no PDV o rateio segue com o centavo a mais para a cliente."""

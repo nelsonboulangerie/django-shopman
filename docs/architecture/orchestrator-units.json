@@ -3953,7 +3953,8 @@
             "SplitLineMergeModifier",
             "SPLIT_OF",
             "split_line_id",
-            "split_siblings"
+            "split_siblings",
+            "merged_for_display"
           ]
         }
       ],
