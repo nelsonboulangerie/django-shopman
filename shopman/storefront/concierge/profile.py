@@ -32,6 +32,9 @@ PROFILE_VERSION = "1"
 CATALOG_VERSION = "1"
 POLICY_VERSION = "1"
 CHANNEL = "whatsapp"
+#: Uma leitura pela IA do perfil por turno (P04, D-040): o portão do Jev e a cortesia não contam,
+#: e o gasto passa pelo freio da casa (``ai_governor``). Estouro cai para a regra local.
+MODEL_CALLS_PER_TURN = 1
 
 # P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge.
 ENABLED_MOVES = ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification", "handoff")
@@ -189,7 +192,7 @@ def build_profile(*, environment: str = "shadow", config: Mapping[str, Any] | No
                      "accept_within_seconds": profile_lines.STAFF_ACCEPT_WITHIN_SECONDS,
                      "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS,
                      "after_hours_contingency": "inform_when_team_returns"},
-        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": 0,
+        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": MODEL_CALLS_PER_TURN,
                 "max_spend": {"amount_minor": 0, "currency": "BRL"}},
         privacy={"purposes": ("service",), "retention_days": _retention(measured), "fields_by_recipient": {}},
     )
