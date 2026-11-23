@@ -155,7 +155,7 @@ def test_server_filters_stock(monkeypatch, catalog):
             "PAO": {"is_tracked": True, "total_promisable": 0},
             "BOLO": {"is_tracked": True, "total_promisable": 2},
         },
-        5,
+        {"BOLO"},  # acabando pela % do SKU (DEV-2026-077)
         {},
     ))
 
@@ -245,7 +245,7 @@ def test_matrix_api_filters_new_facets(client, operator, catalog, monkeypatch):
             "PAO": {"is_tracked": True, "total_promisable": 3},
             "BOLO": {"is_tracked": True, "total_promisable": 0},
         },
-        0,
+        set(),
         {},
     ))
     monkeypatch.setattr("shopman.offerman.conf.get_projection_backend", lambda _ref: object())

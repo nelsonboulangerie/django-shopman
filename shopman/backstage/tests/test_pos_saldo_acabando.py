@@ -178,6 +178,8 @@ def test_a_fornada_de_hoje_ainda_nao_finalizada_conta_dos_dois_lados(balcao, vit
     assert tile["running_low"] is False
     gone = running_low.left_today(["POUCO"])["POUCO"]
     assert tile["units_left"] + gone == 24
+    # A régua, chamada direto sobre o número do tile, dá o mesmo veredito.
+    assert running_low.running_low_skus({"POUCO": tile["units_left"]}) == set()
 
 
 def test_a_porcentagem_propria_do_produto_vence_o_padrao_da_loja(balcao, vitrine):
@@ -260,3 +262,34 @@ def test_porcentagem_fora_da_faixa_e_recusada_e_nao_guardada(pao, raw):
         catalog.update_product_detail("PAO", {"running_low_percent": raw})
     assert "0 a 100%" in str(exc.value)
     assert "running_low_percent" not in Product.objects.get(sku="PAO").metadata
+
+
+# ── a faceta "Estoque baixo" do Catálogo do Gestor lê a mesma régua ─────────
+
+
+def test_a_faceta_do_catalogo_marca_acabando_pela_porcentagem_do_sku(vitrine, monkeypatch):
+    """O operador vê UMA régua: o pão de 6 com 2 está acabando; o de 30 com 15, não.
+
+    Antes, a faceta comparava com o número fixo do canal (5): o pão de 30 com 5
+    ficaria "baixo" junto com o de 6 com 5, que é quase cheio.
+    """
+    from shopman.backstage.projections import catalog as projection
+
+    Shop.objects.create(name="Nelson")
+    Channel.objects.create(
+        ref="balcao", name="Balcão", is_active=True, commerce_policy=Channel.CommercePolicy.ORDER,
+    )
+    for sku in ("POUCO", "MUITO"):
+        Product.objects.create(sku=sku, name=sku.title(), base_price_q=1000)
+    _sell(_receive("POUCO", 6, vitrine), 4)
+    _sell(_receive("MUITO", 30, vitrine), 15)
+    shown = {"POUCO": 2, "MUITO": 15}
+    monkeypatch.setattr(
+        "shopman.shop.projections.catalog_context.availability_for_skus",
+        lambda skus, *, channel_ref: {sku: {"is_tracked": True, "total_promisable": shown[sku]} for sku in skus},
+    )
+
+    _, low, _ = projection._stock_for(["POUCO", "MUITO"])
+    assert low == {"POUCO"}
+    assert projection._stock_bucket({"is_tracked": True, "total_promisable": 2}, "POUCO" in low) == "low"
+    assert projection._stock_bucket({"is_tracked": True, "total_promisable": 15}, "MUITO" in low) == "ok"

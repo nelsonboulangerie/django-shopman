@@ -20674,6 +20674,53 @@
       "test_gap_reason": null,
       "policy": false,
       "out_of_extraction": false
+    },
+    {
+      "id": "shop.services-running-low",
+      "question": "O item está acabando, pela % do SKU sobre o que o dia teve (a régua única do PDV, da Cozinha e do Catálogo)?",
+      "owner": "pos.running-low",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.running_low:running_low_skus",
+      "authoritative_symbols": [
+        "shopman.shop.services.running_low:running_low_skus"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/running_low.py",
+          "symbols": [
+            "coerce_percent",
+            "shop_default_percent",
+            "product_percent",
+            "threshold_units",
+            "is_running_low",
+            "percents_for",
+            "left_today",
+            "running_low_skus",
+            "BLOCK",
+            "METADATA_KEY",
+            "DEFAULT_PERCENT",
+            "logger"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "offerman",
+        "stockman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_pos_saldo_acabando.py::test_a_fornada_de_hoje_ainda_nao_finalizada_conta_dos_dois_lados"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
     }
   ]
 }
