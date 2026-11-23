@@ -32,6 +32,7 @@ export type ManagerAction =
   | "settle_account"
   | "close_shift_review"
   | "day_closing_production"
+  | "day_closing_not_picked_up"
   | "sale_approval"
   | "emit_fiscal"
   | "channel_off"
@@ -123,6 +124,13 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   day_closing_production: {
     title: "Autorizar fechar o dia",
     reason: "Há produção aberta.",
+  },
+  // O gesto em lote do fechamento (#2684): encerra como não retirado os prontos que
+  // ninguém veio buscar. Opcional: fechar o dia não depende dele (decisão da
+  // coordenação em 22/11/2026). Quais e com que dinheiro vem em `detail`.
+  day_closing_not_picked_up: {
+    title: "Encerrar como não retirado",
+    reason: "Pedido pronto que ninguém veio buscar.",
   },
   sale_approval: {
     title: "Autorizar a venda",
@@ -237,6 +245,7 @@ export function managerAuthReason(input: ManagerAuthReasonInput): string {
     detail
     && (
       input.action === "day_closing_production"
+      || input.action === "day_closing_not_picked_up"
       || input.action === "cancel_order"
       || input.action === "order_return"
       || input.action === "order_no_show"

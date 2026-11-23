@@ -1109,6 +1109,8 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryFeeOverrideInput: "",
     deliveryFeeOverride: false,
     orderNotes: "",
+    // No balcão, comer aqui ou levar (#3193). "Consumir aqui" é o que o chip já dizia.
+    counterService: "here" as "here" | "to_go",
     paymentMethod: "",
     paymentCollection: "terminal" as PaymentCollection,
     paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; pix_confirmed?: boolean; _virgin?: boolean }>,
@@ -2128,6 +2130,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryFeeOverrideInput = "";
     cart.deliveryFeeOverride = false;
     cart.orderNotes = "";
+    cart.counterService = "here";
     cart.paymentCollection = "terminal";
     cart.paymentTenders = [];
     selectedTenderIndex.value = -1;
@@ -2200,6 +2203,7 @@ export function usePosSale(deps: PosSaleDeps) {
       ? (Number(payload.delivery_fee_override_q) / 100).toFixed(2).replace(".", ",")
       : "";
     cart.orderNotes = payload.order_notes || "";
+    cart.counterService = payload.counter_service === "to_go" ? "to_go" : "here";
     // preserveCheckout: o operador pode JÁ estar lançando o pagamento (método,
     // tenders, valor recebido) enquanto a comanda recarrega por baixo do shell —
     // sobrescrever aqui apagava a entrada dele no meio do gesto. Os campos de
@@ -2529,6 +2533,7 @@ export function usePosSale(deps: PosSaleDeps) {
       deliveryTimeSlot: cart.deliveryTimeSlot,
       deliveryFeeOverrideQ: deliveryFeeOverrideQ.value,
       orderNotes: cart.orderNotes,
+      counterService: cart.counterService,
       paymentMethod: resolvedPayment.paymentMethod,
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
@@ -3624,6 +3629,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryFeeOverrideInput,
     cart.deliveryFeeOverride,
     cart.orderNotes,
+    cart.counterService,
   ], () => {
     recordTabDraft();
     scheduleAutosave();

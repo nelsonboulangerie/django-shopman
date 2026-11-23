@@ -206,3 +206,133 @@ describe("Fim do dia: produção aberta impede selar (decisão do dono, 05/11)",
     page.unmount();
   });
 });
+
+const READY = [
+  {
+    ref: "NB-261121-W77",
+    customer_name: "Ana",
+    promised_display: "Combinado para 15h",
+    state: "resolve",
+    reason: "",
+    money_sentence: "R$ 13,00 serão estornados ao Pix do cliente.",
+    revision: "rev-w77",
+  },
+  {
+    ref: "NB-261121-K10",
+    customer_name: "Caio",
+    promised_display: "Combinado para 17h30",
+    state: "in_time",
+    reason: "A retirada foi combinada para as 17h30: o não retirado libera às 18h30.",
+    money_sentence: "",
+    revision: "",
+  },
+];
+
+const OPEN = [
+  {
+    ref: "NB-261121-P05",
+    customer_name: "Rita",
+    status_label: "Em preparo",
+    promised_display: "Combinado para 16h",
+    path: "conclude_or_cancel",
+    path_sentence: "Já está na Cozinha: conclua ou cancele no Gestor.",
+  },
+  {
+    ref: "NB-261121-N02",
+    customer_name: "",
+    status_label: "Novo",
+    promised_display: "",
+    path: "cancel_or_reschedule",
+    path_sentence: "Cancele ou remarque no Gestor.",
+  },
+];
+
+// Decisão da coordenação em 22/11/2026, reversível: o fechamento AVISA e oferece o
+// gesto em lote, não trava (substitui o padrão da resposta 5 de 17/11).
+describe("Fim do dia: pedido aberto avisa e não trava (#2684, #3169)", () => {
+  async function toTheDay(overrides: Partial<DayClosingProjection>) {
+    const page = await openScreen(projection({ pending_episodes: [], has_pending_episodes: false, ...overrides }));
+    for (const input of page.findAll("input[data-count-input]")) await input.setValue("0");
+    await page.find("[data-closing-review]").trigger("click");
+    return page;
+  }
+
+  it("os prontos não retirados ficam no topo do dia, cada um com o valor dele, e o atalho em lote", async () => {
+    const page = await toTheDay({ pending_ready_orders: READY as never });
+
+    const day = page.find("[data-closing-day]").element;
+    const card = page.find("[data-closing-ready-orders]");
+    // No topo: antes do caixa e da vitrine.
+    expect(day.compareDocumentPosition(card.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.element.compareDocumentPosition(page.find("[data-closing-cash]").element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const text = card.text();
+    expect(text).toContain("Um pedido pronto passou do prazo e não foi retirado.");
+    expect(text).toContain("Fechar o dia não depende disso.");
+    expect(text).toContain("NB-261121-W77 · Ana");
+    expect(text).toContain("R$ 13,00 serão estornados ao Pix do cliente.");
+    expect(text).toContain("Vira não retirado");
+    expect(card.find("[data-closing-ready-resolve-all]").text()).toContain("Encerrar todos como não retirado");
+    // A frase conta o que está embaixo dela: o que ainda espera vai para um bloco próprio, sem atalho.
+    expect(card.findAll("[data-closing-ready-order]").map((row) => row.attributes("data-closing-ready-order"))).toEqual(["resolve"]);
+    expect(text).not.toContain("Ainda no prazo");
+    const waiting = page.find("[data-closing-ready-waiting]");
+    expect(waiting.text()).toContain("Um pedido pronto ainda espera a retirada. Ele não impede fechar o dia.");
+    expect(waiting.text()).toContain("Ainda no prazo");
+    expect(waiting.find("[data-closing-ready-resolve-all]").exists()).toBe(false);
+    page.unmount();
+  });
+
+  it("fechar o dia não pede o gerente por causa deles", async () => {
+    call.mockClear();
+    const page = await toTheDay({ pending_ready_orders: READY as never, pending_open_orders: OPEN as never });
+
+    await page.find("[data-closing-seal]").trigger("click");
+    await flushPromises();
+    expect(document.body.textContent).not.toContain("Encerrar como não retirado");
+    expect(call).not.toHaveBeenCalledWith("/api/v1/backstage/closing/not-picked-up/", expect.anything());
+    page.unmount();
+  });
+
+  it("o atalho em lote abre o gerente, que diz o que a assinatura faz e que o dia segue aberto", async () => {
+    call.mockClear();
+    const page = await toTheDay({ pending_ready_orders: READY as never });
+
+    await page.find("[data-closing-ready-resolve-all]").trigger("click");
+    await flushPromises();
+    const auth = document.body.querySelector("[data-drawer-manager-auth]");
+    expect(auth?.textContent).toContain("Encerrar como não retirado");
+    expect(auth?.textContent).toContain("Um pedido pronto passou do prazo e não foi retirado.");
+    expect(auth?.textContent).toContain("O dia segue aberto.");
+    expect(auth?.textContent).not.toContain("fecha e não reabre");
+    expect(call).not.toHaveBeenCalled();
+    page.unmount();
+  });
+
+  it("só pedido no prazo: o aviso diz que nenhum impede, e não há atalho", async () => {
+    const page = await toTheDay({ pending_ready_orders: [READY[1]] as never });
+
+    expect(page.find("[data-closing-ready-orders]").exists()).toBe(false);
+    expect(page.find("[data-closing-ready-waiting]").text()).toContain("Um pedido pronto ainda espera a retirada. Ele não impede fechar o dia.");
+    expect(page.find("[data-closing-ready-resolve-all]").exists()).toBe(false);
+    page.unmount();
+  });
+
+  it("os que não ficaram prontos aparecem com o caminho de cada um", async () => {
+    const page = await toTheDay({ pending_open_orders: OPEN as never });
+
+    const card = page.find("[data-closing-open-orders]").text();
+    expect(card).toContain("2 pedidos abertos não ficaram prontos.");
+    expect(card).toContain("aparecem de novo no Gestor amanhã");
+    expect(card).toContain("Fechar o dia não depende deles.");
+    expect(card).toContain("NB-261121-P05 · Rita");
+    expect(card).toContain("Em preparo");
+    expect(card).toContain("Já está na Cozinha: conclua ou cancele no Gestor.");
+    expect(card).toContain("Cancele ou remarque no Gestor.");
+    expect(page.findAll("[data-closing-open-order]").map((row) => row.attributes("data-closing-open-order"))).toEqual([
+      "conclude_or_cancel",
+      "cancel_or_reschedule",
+    ]);
+    expect(card).not.toContain("R$");
+    page.unmount();
+  });
+});

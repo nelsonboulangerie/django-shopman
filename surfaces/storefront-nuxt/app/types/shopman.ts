@@ -72,6 +72,15 @@ export interface PickupStoreProjection {
   address: string
 }
 
+/** Um selo de urgência como o servidor o deriva (`presentation/fomo.py`). */
+export interface FomoBadgeProjection {
+  type: 'fresh' | 'low_stock' | 'promo_countdown' | 'demand' | 'sold_today' | string
+  label: string
+  priority: number
+  expires_at: string | null
+  meta: Record<string, unknown>
+}
+
 export interface CatalogItemProjection {
   sku: string
   slug: string
@@ -119,6 +128,8 @@ export interface CatalogItemProjection {
   option_groups?: ProductOptionGroup[]
   // Quando fica pronto (ver ReadyPromise). null = nada a prometer.
   promise?: ReadyPromise | null
+  // Selos de urgência (#2807): até dois, do mais urgente; a tela escreve o tempo.
+  fomo_badges?: FomoBadgeProjection[]
 }
 
 // O que a API manda: a seção diz QUAIS cards mostra (`skus`, na ordem dela) e o
@@ -252,6 +263,8 @@ export interface ProductDetailProjection {
   option_groups?: ProductOptionGroup[]
   // Quando fica pronto: a mesma promessa do card (ver ReadyPromise).
   promise?: ReadyPromise | null
+  // Selos de urgência (#2807): até dois, do mais urgente; a tela escreve o tempo.
+  fomo_badges?: FomoBadgeProjection[]
   // Onde retirar; null quando a casa não tem endereço cadastrado.
   pickup_store?: PickupStoreProjection | null
 }

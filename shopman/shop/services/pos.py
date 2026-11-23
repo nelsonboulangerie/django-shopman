@@ -3222,6 +3222,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     from shopman.shop.services.pos_sales_mode import sales_mode
 
     ops.append({"op": "set_data", "path": "pos.sales_mode", "value": sales_mode(payload)})
+    # Comer aqui ou levar (#3193): vai com o bloco ``pos`` para o pedido, e a
+    # Cozinha lê daí o "Para levar" no ticket. Vazio na encomenda.
+    ops.append({"op": "set_data", "path": "pos.counter_service", "value": str(payload.get("counter_service") or "")})
     fulfillment_type = _payload_fulfillment_type(payload)
     ops.append({"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type})
     # Observações do pedido valem para QUALQUER recebimento (retirada incluída):
