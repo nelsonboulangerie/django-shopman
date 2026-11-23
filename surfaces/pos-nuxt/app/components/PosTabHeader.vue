@@ -459,13 +459,15 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         <Icon :name="service.icon" class="size-4 shrink-0" />
         <span class="sr-only">{{ service.label }}</span>
         <!-- A barra estreita (abaixo de 50rem, onde as teclas somem dos outros chips)
-             tem UM chip, o do estado atual, só com o ícone, e tocar nele troca, como o
-             F8: o mesmo lugar do chip antigo. A partir de 50rem os dois aparecem, e o
-             ligado diz o nome; a partir de 72rem, os dois dizem. Com os dois e os nomes
-             à vista, o cliente do lado cortava em 1280 e 1366 px (trava de geometria). -->
+             tem UM chip, o do estado atual, e tocar nele troca, como o F8: o mesmo
+             lugar e o mesmo corte do chip antigo, que dizia o nome a partir de 36rem
+             (no PDV de balcão, 1366 px, o operador lê "Para levar", não só o ícone).
+             A partir de 50rem os dois aparecem; o desligado diz o nome a partir de
+             72rem. Com os dois e os nomes à vista, o cliente do lado cortava em 1280
+             e 1366 px (trava de geometria). -->
         <span
           class="hidden whitespace-nowrap"
-          :class="currentService === service.ref ? '@min-[50rem]:inline' : '@min-[72rem]:inline'"
+          :class="currentService === service.ref ? '@min-[36rem]:inline' : '@min-[72rem]:inline'"
           aria-hidden="true"
         >{{ service.label }}</span>
       </NuxtButton>
