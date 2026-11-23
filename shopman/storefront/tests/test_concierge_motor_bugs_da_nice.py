@@ -126,3 +126,27 @@ def test_an_incomplete_order_never_places(site, monkeypatch):
     monkeypatch.setattr(tools, "place_order", lambda *a: pytest.fail("pedido incompleto não grava"))
     done = site.apply(CTX, command("commit_order"))
     assert (done.applied, done.refusal) == (False, ErrorCode.INVALID_CONTENT.value)
+
+
+# ── 4 e 5. o "total mudou" e o pedido registrado (frases aprovadas pelo dono em 23/11) ──
+
+
+def _say(template_id: str, **values) -> str:
+    from shopman.storefront.concierge import turn_framework
+
+    text = turn_framework.nice_templates()[template_id].text
+    formatters = turn_framework.nice_formatters()
+    for slot, value in values.items():
+        text = text.replace("{" + slot + "}", formatters[slot](value))
+    return text
+
+
+def test_the_total_changed_says_the_new_total_in_reais(db):
+    assert _say("present_terms.changed", total={"price_minor": 2400, "currency": "BRL"}) == \
+        "O total mudou; agora é R$ 24,00. Confira antes de confirmar."
+
+
+def test_the_order_placed_says_where_to_follow(db, settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.exemplo/"
+    assert _say("commit_order.done", order="WHATSAPP-261122-S50") == \
+        "Pedido registrado: WHATSAPP-261122-S50. Acompanhar: https://loja.exemplo/pedido/WHATSAPP-261122-S50/"

@@ -1528,6 +1528,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_ASK_MORE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi bem. Pode me dizer o que você gostaria?")},
     },
+    "CONCIERGE_ENGINE_TOTAL_CHANGED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O total mudou; agora é {total}. Confira antes de confirmar.")},
+    },
+    "CONCIERGE_ENGINE_ORDER_PLACED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido registrado: {order}")},
+    },
     "CONCIERGE_ENGINE_EFFECT_FAILED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
     },
