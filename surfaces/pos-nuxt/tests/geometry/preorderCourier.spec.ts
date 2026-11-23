@@ -114,7 +114,9 @@ test("o andamento da TaOn: chega para coletar, entrega prevista e o aviso de sem
 
 test("o entregador desistiu: o painel diz quem e quando (#2499)", async ({ page }) => {
   await open(page, "/preorders/NB-1057", { width: 1366, height: 768 }, "light");
-  await expect(page.locator("[data-pos-courier-waiting]")).toHaveText(/^Diego desistiu às \d{1,2}h\d{2}\. A TaOn já procura outro\.$/, { timeout: 90_000 });
+  // "à 0h36" e "à 1h05" (hora no singular), "às 14h05" no resto: a frase da tela
+  // está certa, e o teste reprovava entre meia-noite e 1h59 (medido em 23/11 à 0h36).
+  await expect(page.locator("[data-pos-courier-waiting]")).toHaveText(/^Diego desistiu às? \d{1,2}h\d{2}\. A TaOn já procura outro\.$/, { timeout: 90_000 });
 });
 
 test("cancelar a corrida antes do aceite: a pergunta e um botão, sem motivo (mock: nunca a TaOn)", async ({ page }) => {
