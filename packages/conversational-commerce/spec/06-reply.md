@@ -48,7 +48,10 @@ o estado do recibo de sucesso) e mostra o carrinho pelos termos novos (`{items}`
 `commit_order.done` diz o pedido pelo recibo (`{order}` e `{track}`, que a casa formata como o
 caminho dela para acompanhar) e o total pelo pedido lido depois do efeito (`{total}`);
 `present_terms.confirm` mostra `{items}`, `{total}`, `{fulfillment}` e `{conditions}` do mesmo
-fato dos termos. O molde da casa mantém esses espaços, como todos.
+fato dos termos. Com uma condição obrigatória ausente (`requirements.<carrinho>`, spec 03), a parte do
+`present_terms` pergunta por ela: `present_terms.needs_<código>` (hoje, `needs_payment_method`, com as
+opções do canal num espaço de LISTA lastreado no fato) ou o genérico `present_terms.needs`
+(`{missing}`); os termos não se apresentam, e nenhuma pergunta de confirmação nasce. O molde da casa mantém esses espaços, como todos.
 
 O adaptador entrega os moldes dele ao `Engine` em `house_templates`, pelo `template_id`. Cada molde
 da casa troca a frase de um molde do pacote e mantém o movimento e os espaços (nome, lastro aceito

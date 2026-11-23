@@ -124,7 +124,9 @@ comando. Daí as três regras:
   recebem o mesmo recibo, e a resposta sai uma vez. A levada nunca executa sem a líder
   (`carried_without_lead`), e o mesmo item em duas linhas não vira comando.
 - **Efeitos A2 reversíveis diferentes saem em SEQUÊNCIA declarada** (`EFFECT_SEQUENCE`: o
-  `set_fulfillment` antes do `change_cart`, para a sacola medir a data combinada). Cada efeito tem a
+  `set_fulfillment`, o `change_cart` e o `set_payment`, nessa ordem: a sacola mede a data combinada, e
+  a forma vem por último). Toda mudança dessas é material (`MATERIAL_CHANGES`): depois dela, os termos
+  de antes não valem. Cada efeito tem a
   própria concessão, o próprio comando (chave própria), a intenção gravada antes e o próprio recibo;
   o recibo terminal de um devolve o episódio a `active` antes do próximo, e a sequência **para no
   primeiro recibo que não é sucesso** (`sequence_stopped`). Assim há no máximo uma espera de efeito
@@ -204,6 +206,7 @@ pergunta no ar citam o MESMO documento.
 |---|---|---|
 | `present_terms` | A1 | cota e mostra os termos inteiros por espaço travado (itens, total, recebimento, condições); episódio a `waiting_authorization` |
 | `change_cart` | A2 | executa: as linhas do turno num comando só (`lines`), quantidade absoluta, evento com identidade estável, reversível |
+| `set_payment` | A2 | executa: a forma de pagamento, uma das do canal (`payment_method_offered`); sobe a versão do carrinho |
 | `set_fulfillment` | A2 | executa: o recebimento (dia, retirada ou entrega, hora) dito em forma absoluta, evento com identidade estável, reversível |
 | `commit_order` | A3 | executa: só o "sim" que responde à pergunta dos termos, na mesma época |
 | `cancel_order`, `amend_order` | A3 | só precondição; com a linha do perfil; nenhuma jornada os executa |

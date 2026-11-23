@@ -21,6 +21,13 @@ TEMPLATES = (
              "{items}\nTotal: {total}\n{fulfillment}\n{conditions}\nShall I place the order?",
              {"items": SlotSpec(("fact",), "items"), "total": SlotSpec(("fact",), "total"),
               "fulfillment": SlotSpec(("fact",), "fulfillment"), "conditions": SlotSpec(("fact",), "conditions")}),
+    # Condição obrigatória dos termos ausente: os termos não se apresentam (nenhuma pergunta de confirmação
+    # nasce), e a parte pergunta pela condição, com as opções do canal num espaço de lista lastreado no fato
+    # ``requirements.<carrinho>``. Um molde por condição; o genérico diz só o que falta.
+    Template("present_terms.needs_payment_method", "1", MOVE, "How would you like to pay? {payment_method}",
+             {"payment_method": SlotSpec(("fact",), "payment_method")}),
+    Template("present_terms.needs", "1", MOVE, "Before I can place the order I still need: {missing}.",
+             {"missing": SlotSpec(("fact",), "missing")}),
     Template("present_terms.changed", "1", MOVE,
              "The terms changed before I could place the order. The new total is {total}. Shall I place it?",
              {"total": SlotSpec(("fact",), "total")}),
@@ -37,6 +44,12 @@ def propose(state, need):
 
 def reply(state, need):
     # "Os termos mudaram" só quando o ponto de efeito recusou; termos vencidos ou "sim" fora de ordem: termos de novo.
+    missing = state.missing_conditions()
+    if missing:
+        needs = ("fact", state.requirements_key(state.subject.cart_ref))
+        if f"present_terms.needs_{missing[0]}" in {t.template_id for t in TEMPLATES}:
+            return PartSpec(MOVE, f"present_terms.needs_{missing[0]}", {missing[0]: needs})
+        return PartSpec(MOVE, "present_terms.needs", {"missing": needs})
     key = ("fact", state.terms_key(state.subject.cart_ref))
     if need.need_id in state.refused:
         return PartSpec(MOVE, "present_terms.changed", {"total": key})

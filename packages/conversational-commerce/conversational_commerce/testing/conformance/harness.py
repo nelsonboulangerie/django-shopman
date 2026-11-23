@@ -225,6 +225,14 @@ def check_commerce_read(port: Any, env: HarnessEnv) -> None:
     # O que o motor lê depois do efeito (spec 03, "O que o motor exige da porta de comércio").
     if isinstance(fact, Known) and isinstance(fact.value, Mapping) and "name" in fact.value:
         _expect(isinstance(fact.value["name"], str) and fact.value["name"], "read_item com name que não é texto")
+    # As condições obrigatórias dos termos (o motor pergunta por elas antes de apresentar os termos).
+    needs = port.requirements(env.ctx, env.cart_ref)
+    _expect(isinstance(needs, Known | Unknown), "requirements não devolve Fact")
+    if isinstance(needs, Known):
+        missing = needs.value.get("missing") if isinstance(needs.value, Mapping) else None
+        _expect(isinstance(missing, (list, tuple)), "requirements sem a lista missing")
+        for code in missing or ():
+            _expect(isinstance(needs.value.get(code), (list, tuple)), f"requirements sem as opções de {code}")
     if env.order_ref:
         order = port.read_order(env.ctx, env.order_ref)
         if isinstance(order, Known):

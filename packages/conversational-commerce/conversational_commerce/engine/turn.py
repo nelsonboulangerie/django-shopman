@@ -173,7 +173,9 @@ def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
 
 #: A sequência declarada de efeitos A2 reversíveis num turno (spec 08 §5, [DECIDIDO]): o recebimento antes
 #: da sacola, para a sacola medir a data combinada. ``commit_order`` (A3) nunca entra nela.
-EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "change_cart")
+EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "change_cart", "set_payment")
+#: As mudanças materiais do carrinho (v2 4.7, propriedade 2): depois de uma delas, os termos de antes não valem.
+MATERIAL_CHANGES = frozenset(EFFECT_SEQUENCE)
 
 
 def _distinct(specs):
@@ -409,9 +411,25 @@ class Engine:
             state.facts[key] = Unknown(reason="source_failed")
             return
         state.terms[target] = terms
+        self._requirements(ctx, state, budget)
         names = self._item_names(ctx, state, budget, terms)
         state.facts[key] = Known(value=terms_fact(terms, names), source="commerce-quote", observed_at=state.now,
                                  valid_until=terms.valid_until, source_version=terms.hash)
+
+    def _requirements(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget) -> None:
+        """O que os termos do carrinho ainda exigem (``commerce_read.requirements``), lido com passo do teto."""
+        target = state.subject.cart_ref
+        if target is None:
+            return
+        key = state.requirements_key(target)
+        state.facts.pop(key, None)
+        if not budget.take_step(f"read:{key}"):
+            state.facts[key] = Unknown(reason="source_failed")
+            return
+        try:
+            state.facts[key] = self.ports.commerce_read.requirements(ctx, target)
+        except PortError:
+            state.facts[key] = Unknown(reason="source_failed")
 
     def _item_names(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget, terms) -> dict[str, str]:
         """O nome de cada item dos termos, pelo fato do item (``item.<ref>``), lido com passo do teto."""
@@ -449,6 +467,9 @@ class Engine:
             if action == "change_cart":
                 state.subject = self.subject_of(ctx, event)
                 self._quote(ctx, state, budget, refresh=True)
+                requoted = True
+            elif action == "set_payment":
+                self._quote(ctx, state, budget, refresh=True)  # a condição mudou: termos novos
                 requoted = True
             elif action == "commit_order" and receipt.domain_refs.get("effect"):
                 ref = receipt.domain_refs["effect"]
@@ -834,6 +855,9 @@ class Engine:
         self._read_facts(ctx, state, budget)
         self._commercial_context(ctx, state, episode, understanding, budget)
         self._quote(ctx, state, budget)
+        if any(need.act == "choose_payment" for need in needs) and state.requirements_key(
+                state.subject.cart_ref or "") not in state.facts:
+            self._requirements(ctx, state, budget)  # a forma pedida confere com as opções do canal
         dialogue = answered(previous_dialogue) if answered_question else previous_dialogue
         answered_offer = offer is not None and answered_question == offer.question_id
         if answered_offer:
@@ -854,7 +878,7 @@ class Engine:
         requoted = self._after_effects(ctx, state, event, budget, effects)
         if offer is not None and any(r.status == "success" for r in effects["receipts"]
                                      if r.command_id in {c.command_id for c in effects["commands"]
-                                                         if c.action == "change_cart"}):
+                                                         if c.action in MATERIAL_CHANGES}):
             # O carrinho mudou: a pergunta dos termos de antes sai do ar (o "sim" seguinte nunca a confirma).
             # Se os termos novos forem apresentados neste turno, a pergunta nova a substitui.
             dialogue = dict(dialogue)
@@ -895,8 +919,9 @@ class Engine:
         terms_wait = None
         if asked is not None:
             dialogue = ask(dialogue, question_id=clock.new_id("q"), need_id=asked.need_id, epoch=epoch)
-        if presented is not None and not held:
-            # Termos que o cliente não viu (mensagem segurada) não esperam confirmação.
+        if presented is not None and not held and not state.missing_conditions():
+            # Termos que o cliente não viu (mensagem segurada) não esperam confirmação; nem os que ainda pedem
+            # uma condição obrigatória (a parte perguntou por ela, e os termos não foram apresentados).
             terms = state.terms[subject.cart_ref]
             question_id = clock.new_id("q")
             dialogue = ask(dialogue, question_id=question_id, need_id=presented.need_id, epoch=epoch)

@@ -36,7 +36,7 @@ movimento passa por quatro precondições comuns antes das suas.
 nível de uma ação, nunca o desce. [DECIDIDO] Um perfil que marca `commit_order` como A1 sem
 confirmação não afrouxa nada: a ação fica inelegível com `confirmation_weaker_than_level`.
 
-## 3. Os 17 movimentos
+## 3. Os 18 movimentos
 
 Famílias, da que vence para a que cede (v2 4.1): `protect_and_fulfill` > `resolve` >
 `clarify` > `commerce` > `follow_up`. Dentro da família, a ordem desta tabela é o desempate
@@ -56,6 +56,7 @@ estável. `wait` serve a qualquer família e fica por último na ordem.
 | `present_terms` | resolve | A1 | `commerce_can_quote` | termos | J4 |
 | `change_cart` | resolve | A2 | `stable_event_identity`, `absolute_quantity`, `change_is_reversible` | | J4 |
 | `set_fulfillment` | resolve | A2 | `stable_event_identity`, `absolute_fulfillment`, `change_is_reversible` | | J4 (o recebimento antes dos termos) |
+| `set_payment` | resolve | A2 | `stable_event_identity`, `payment_method_offered`, `change_is_reversible` | | J4 (a forma antes dos termos) |
 | `commit_order` | resolve | A3 | `grant_bound_to_current_terms`, `confirmation_after_terms`, `ownership_epoch_current` | | J4 |
 | `cancel_order` | resolve | A3 | `within_self_service_window`, `confirmation_bound_to_target`; exige linha | | só precondição |
 | `amend_order` | resolve | A3 | `addition_only`, `confirmation_bound_to_target`; exige linha | | só precondição |
@@ -125,7 +126,7 @@ escolhe degrau; canal sem regra é `identity_rule_absent`.
 - **Códigos de inelegibilidade:** `IneligibilityCode` em `profile/codes.py` (os da seção 2,
   mais `capability_missing` e `fact_unavailable`). Precondição própria que falha usa um
   código dela (`terms_changed`, `open_problem`...).
-- **Perfil de teste** (`profile/test_profile.py`, `build_test_profile()`): liga os 17
+- **Perfil de teste** (`profile/test_profile.py`, `build_test_profile()`): liga os 18
   movimentos e `inform.personal`, canal `test-channel`, A0 anônimo e A1 a A4
   `weak_verified`, confirmação em A3 e A4, fila da equipe declarada, nunca gasta (zero
   chamada de modelo, teto de gasto zero). Linhas, todas `approved`, com dono `framework`:
@@ -172,6 +173,7 @@ ocorrido, a categoria é reconciliação (`effect_unknown`), por mais recuperáv
 | `effect_unknown` | não se sabe se aconteceu: reconciliar com a mesma chave |
 | `budget_exhausted` | estourou um teto do turno (passos, tempo, consultas, modelo, gasto) |
 | `provider_unavailable` | o provedor (modelo, canal, comércio) não respondeu, e nada pode ter ocorrido |
+| `payment_method_not_offered` | (inelegibilidade) a forma de pagamento pedida não é uma das que o canal oferece (`commerce_read.requirements`) |
 | `fulfillment_unavailable` | o recebimento é bem formado, mas a casa não o atende (modo que ela não oferece, dia que já passou, hora fora do expediente). Forma inválida do `set_fulfillment` é `invalid_content` |
 
 ## 8. Prova

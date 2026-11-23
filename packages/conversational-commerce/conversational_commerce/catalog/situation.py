@@ -68,6 +68,8 @@ class Situation(Value):
     change_reversible: bool | None = None
     # Recebimento: dia, modo, janela e hora ditos em forma absoluta (ISO, modo da lista), não relativa.
     fulfillment_is_absolute: bool | None = None
+    # Pagamento: a forma pedida está entre as que o canal oferece (``commerce_read.requirements``).
+    payment_method_offered: bool | None = None
 
     # Compromisso vinculante.
     current_terms_hash: Hash | None = None

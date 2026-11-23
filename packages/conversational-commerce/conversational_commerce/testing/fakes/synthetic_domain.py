@@ -57,6 +57,9 @@ KNOWLEDGE: dict[str, str] = {
 # Recebimento: os modos que o domínio sintético atende e a janela que ele dá ao dia sem hora.
 FULFILLMENT_MODES: tuple[str, ...] = ("pickup", "delivery")
 DAY_WINDOW = "window-afternoon"
+# Pagamento: as formas que o canal sintético oferece. Uma só por padrão (a escolha não é obrigatória); o
+# teste que exercita a pergunta liga as duas (``state.payment_methods = ("pix", "card")``).
+PAYMENT_METHODS: tuple[str, ...] = ("card",)
 
 
 @dataclass
@@ -75,3 +78,6 @@ class SyntheticState:
     # carrinho → recebimento definido (``date``, ``mode``, ``time``), só o que já foi dito
     fulfillment: dict[str, dict[str, str]] = field(default_factory=dict)
     fulfillment_modes: tuple[str, ...] = FULFILLMENT_MODES
+    # carrinho → forma de pagamento escolhida; e as formas que o canal oferece
+    payment: dict[str, str] = field(default_factory=dict)
+    payment_methods: tuple[str, ...] = PAYMENT_METHODS

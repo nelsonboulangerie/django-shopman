@@ -88,6 +88,9 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
              {"ref": SlotSpec(("receipt:success",), "effect")}),
     # O pedido pelo recibo, o total pelo pedido lido depois do efeito, e onde acompanhar (o mesmo recibo,
     # que a casa formata como o caminho dela para o pedido).
+    # A forma de pagamento escolhida (``engine/moves/set_payment.py``), dita pelo recibo.
+    Template("set_payment.done", "1", "set_payment", "Done: payment by {method}.",
+             {"method": SlotSpec(("receipt:success",), "method")}),
     Template("commit_order.done", "2", "commit_order", "Your order {order} is placed. Total: {total}. Track it: {track}.",
              {"order": SlotSpec(("receipt:success",), "effect"), "total": SlotSpec(("fact",), "total"),
               "track": SlotSpec(("receipt:success",), "effect")}),

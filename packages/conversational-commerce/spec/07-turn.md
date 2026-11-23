@@ -70,6 +70,10 @@ quando o que se disse não é absoluto. "Amanhã às 16h" chega resolvido pelo l
 relógio confiável (`date` e `time`); dia ou hora relativos não se aplicam (`08-effect.md`,
 seção 6). Na regra local de teste, `pick up` e `deliver` somam o ato, sem campos.
 
+O ato `choose_payment` (o cliente diz como paga, `{method}`) também é de mudança; o valor tem de
+ser uma das opções do canal (`commerce_read.requirements`). Na regra local de teste, `pay by`/`pay with`
+soma o ato, sem campos.
+
 Movimentos do F7: `acknowledge`, `inform`, `cover_readings`, `inform_limitation` e
 `ask_clarification`. O F8 acrescentou os de efeito (`08-effect.md`, seção 6), e o F9 os de
 compromisso (`09-commitments.md`, seção 4), e o F10 a recomendação (`10-outcomes.md`, seção 1).

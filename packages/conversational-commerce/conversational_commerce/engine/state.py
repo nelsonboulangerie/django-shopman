@@ -18,6 +18,10 @@ RETERM = frozenset({"terms_changed", "terms_expired", "grant_expired", "confirma
                     "revision_conflict"})
 
 
+#: Os atos que mudam o carrinho de forma material (a sacola, o recebimento, o pagamento): v2 4.7, propriedade 2.
+MATERIAL_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_payment"})
+
+
 @dataclass(frozen=True, slots=True)
 class NeedSpec:
     need_id: str
@@ -148,12 +152,12 @@ class TurnState:
         """
         if self.offer is None or not self.has_fresh_terms():
             return False
-        if need.act == "change_quantity":
+        if need.act in MATERIAL_ACTS:
             receipt = self.receipts.get(need.need_id)
             return receipt is not None and receipt.status == "success"
         # "Sim, e põe quatro": o "sim" do mesmo turno também pede os termos novos (as duas portas juntas).
         return self.answers_offer(need) and any(
-            other.act == "change_quantity" and getattr(self.receipts.get(other.need_id), "status", "") == "success"
+            other.act in MATERIAL_ACTS and getattr(self.receipts.get(other.need_id), "status", "") == "success"
             for other in self.needs)
 
     def wants_terms(self, need: NeedSpec) -> bool:
@@ -172,6 +176,25 @@ class TurnState:
     @staticmethod
     def order_key(ref: str) -> str:
         return f"order.{ref}"
+
+    @staticmethod
+    def requirements_key(target: str) -> str:
+        return f"requirements.{target}"
+
+    def _requirements(self) -> dict:
+        from conversational_commerce.contracts import Known
+
+        fact = self.facts.get(self.requirements_key(self.subject.cart_ref or ""))
+        value = fact.value if isinstance(fact, Known) else None
+        return dict(value) if hasattr(value, "get") else {}
+
+    def offered(self, target: str | None, code: str) -> tuple[str, ...]:
+        """As opções que o canal oferece para a condição (``commerce_read.requirements``); vazio sem o fato."""
+        return tuple(self._requirements().get(code) or ())
+
+    def missing_conditions(self) -> tuple[str, ...]:
+        """As condições obrigatórias dos termos ainda ausentes (forma de pagamento, endereço…)."""
+        return tuple(self._requirements().get("missing") or ())
 
     def situation(self, need: NeedSpec, **fields: Any) -> Situation:
         """A situação comum a toda proposta da necessidade, mais o que o movimento acrescenta."""
