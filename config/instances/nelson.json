@@ -91,6 +91,7 @@
               "customer_phone": "relay"
             },
             "fulfillment": {
+              "prep_start": "operator",
               "courier_ticket": "anonymous"
             }
           }
@@ -371,6 +372,9 @@
             },
             "pricing": {
               "listing_from": "web"
+            },
+            "fulfillment": {
+              "prep_start": "operator"
             },
             "lifecycle": {
               "transitions": {
