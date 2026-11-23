@@ -219,3 +219,76 @@ def test_a_pending_effect_says_so_with_the_deadline(order_on_air, outbox, monkey
     _pix_turn(order_on_air, "pix-pending-1")
     assert len(outbox.sent) == 1
     assert outbox.sent[0].startswith("Ainda estou concluindo isso. Te confirmo por aqui até ")
+
+
+# ── (b2): a entrega de quem tem endereço salvo é do caminho de hoje ─────────────────────────────
+
+DELIVERY = {"act": "choose_fulfillment", "span": "entrega", "product": "", "qty": 0, "change": "", "day": "",
+            "mode": "delivery", "time": "", "payment": ""}
+
+
+def _delivery_turn(conversation, monkeypatch, event_id):
+    import json
+
+    from shopman.storefront.concierge import model_reader
+    from shopman.storefront.tests.test_concierge_model_reader import FakeAI
+
+    real = type(model_reader.NiceReader())  # a classe, por baixo da leitura "pix" da fixture
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=FakeAI(raw=json.dumps({"acts": [DELIVERY]})), model="m",
+                                     gate=lambda t: ""))
+    seen, run = [], turn_framework.run
+    monkeypatch.setattr(turn_framework, "run", lambda *a, **k: seen.append(run(*a, **k)) or seen[-1])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _receive(conversation, "quero entrega", event_id)
+        service.run_turn(conversation.pk, _binding(conversation).pk)
+    return seen
+
+
+@pytest.mark.django_db(transaction=True)
+def test_delivery_for_a_customer_with_a_saved_address_goes_to_today_path(order_on_air, outbox, monkeypatch):
+    """O fechamento de hoje oferece primeiro o endereço do cadastro (dono, 25/09) e entende o "sim"; o motor ainda
+    não. O turno que escolhe entrega, com endereço salvo e nenhum na sacola, é do caminho de hoje."""
+    from shopman.storefront.concierge import address
+
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [object()])
+    why, today = [], turn_framework.today_closing_does_better
+    monkeypatch.setattr(turn_framework, "today_closing_does_better",
+                        lambda conv, rehearsal: why.append(today(conv, rehearsal)) or why[-1])
+    seen = _delivery_turn(order_on_air, monkeypatch, "entrega-salvo-1")
+    assert why == ["saved_address_offer"] and seen == [None]  # a sombra aprovou, e o motor deu a vez ao de hoje
+    assert outbox.sent and all("send_key" not in (reply.envelope or {}) for reply in _replies(order_on_air))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_delivery_without_a_saved_address_stays_with_the_engine(order_on_air, outbox, monkeypatch):
+    from shopman.storefront.concierge import address
+
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [])
+    seen = _delivery_turn(order_on_air, monkeypatch, "entrega-sem-salvo-1")
+    assert seen and seen[0] is not None and "set_fulfillment" in seen[0].chosen_moves
+
+
+def test_after_the_effect_only_the_part_without_a_nice_phrase_drops(monkeypatch):
+    """Rede de segurança: com o efeito feito e só o achado de voz, a parte sem frase da Nice cai e o resto sai."""
+    from types import SimpleNamespace
+
+    from conversational_commerce.reply.verify import Finding, RenderedPart, Segment
+
+    said = []
+    monkeypatch.setattr(service, "send_out_of_turn", lambda conv, text, **kw: said.append(text) or object())
+    parts = (RenderedPart("set_fulfillment", (Segment("Combinado: entrega."),), (), "set_fulfillment.done_mode"),
+             RenderedPart("present_terms", (Segment("Before I can place the order"),), (),
+                          "present_terms.needs_delivery_address_saved"))
+    result = SimpleNamespace(
+        reply=SimpleNamespace(verification=SimpleNamespace(findings=(Finding("template_not_in_voice", 1),),
+                                                           parts=parts)),
+        commands=(SimpleNamespace(action="set_fulfillment"),), decision=SimpleNamespace(decision_id="dec-1"))
+    voice = frozenset({"set_fulfillment.done_mode"})
+    assert turn_framework.send_voiced_parts(SimpleNamespace(pk=1), result, voice)
+    assert said == ["Combinado: entrega."]  # nunca a voz do pacote
+    # Outro achado junto (referência que não resolve): nada sai por aqui; quem responde é o recuo.
+    other = SimpleNamespace(**{**result.__dict__, "reply": SimpleNamespace(verification=SimpleNamespace(
+        findings=(Finding("template_not_in_voice", 1), Finding("reference_unresolved", 0, "mode")), parts=parts))})
+    assert not turn_framework.send_voiced_parts(SimpleNamespace(pk=1), other, voice)
+    assert said == ["Combinado: entrega."]
