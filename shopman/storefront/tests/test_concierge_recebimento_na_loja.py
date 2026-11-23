@@ -67,7 +67,7 @@ def house(monkeypatch):
 
 def test_pickup_tomorrow_at_four_takes_the_window_that_covers_the_hour(house):
     done = house.site.apply(CTX, command(date=DAY, mode="pickup", time="16:00"))
-    assert done.applied and dict(done.domain_refs) == {"cart": "sess-1", "date": DAY, "mode": "pickup",
+    assert done.applied and dict(done.domain_refs) == {"effect": "sess-1", "cart": "sess-1", "date": DAY, "mode": "pickup",
                                                        "window": "slot-15", "time": "16:00"}
     assert house.calls[-1] == ("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": DAY,
                                                    "slot_ref": "slot-15"})
@@ -86,7 +86,7 @@ def test_an_hour_without_mode_is_pickup(house):
 
 def test_the_day_alone_with_two_modes_keeps_only_the_day(house):
     done = house.site.apply(CTX, command(date=DAY))
-    assert done.applied and dict(done.domain_refs) == {"cart": "sess-1", "date": DAY}  # o modo não se inventa
+    assert done.applied and dict(done.domain_refs) == {"effect": "sess-1", "cart": "sess-1", "date": DAY}  # o modo não se inventa
     assert house.calls == [("modify_session", [{"op": "set_data", "path": "delivery_date", "value": DAY},
                                                {"op": "set_data", "path": "delivery_time_slot", "value": ""}])]
 
@@ -103,12 +103,12 @@ def test_what_was_set_before_stays(house):
     Session.objects.filter(session_key="sess-1").update(
         data={"fulfillment_type": "pickup", "delivery_date": DAY, "delivery_time_slot": "slot-15"})
     done = house.site.apply(CTX, command(mode="pickup"))
-    assert dict(done.domain_refs) == {"cart": "sess-1", "date": DAY, "mode": "pickup", "window": "slot-15"}
+    assert dict(done.domain_refs) == {"effect": "sess-1", "cart": "sess-1", "date": DAY, "mode": "pickup", "window": "slot-15"}
 
 
 def test_delivery_sets_the_mode_and_the_day_and_leaves_the_address_to_the_closing(house):
     done = house.site.apply(CTX, command(date=DAY, mode="delivery"))
-    assert dict(done.domain_refs) == {"cart": "sess-1", "date": DAY, "mode": "delivery"}
+    assert dict(done.domain_refs) == {"effect": "sess-1", "cart": "sess-1", "date": DAY, "mode": "delivery"}
     assert ("set_delivery_draft", "delivery") in house.calls
 
 

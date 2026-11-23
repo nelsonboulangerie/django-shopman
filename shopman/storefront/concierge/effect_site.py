@@ -139,7 +139,11 @@ class ConciergeEffectSite:
             return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
         result = tools.set_item(self.tool_context, sku, int(quantity))
         if result.get("ok"):
-            return Done(True, domain_refs={"cart": command.targets[0], "item": sku})
+            # ``effect``: o que o molde do pacote cita (``change_cart.done``, faceta ``effect``).
+            # A sacola nova nasce no ``set_item``: o recibo aponta a de verdade, nunca o alvo provisório.
+            session = tools._open_session(self.tool_context)
+            cart = str(session.session_key) if session is not None else command.targets[0]
+            return Done(True, domain_refs={"effect": cart, "cart": cart, "item": sku})
         code = CART_REFUSALS.get(str(result.get("code") or ""), ErrorCode.FACT_UNAVAILABLE)
         return Done(False, refusal=code.value)
 
@@ -213,7 +217,7 @@ class ConciergeEffectSite:
                     session_key=session.session_key, channel_ref=ctx.channel_ref,
                     ops=[{"op": "set_data", "path": "delivery_date", "value": day},
                          {"op": "set_data", "path": "delivery_time_slot", "value": slot}])
-        refs = {"cart": session.session_key}
+        refs = {"effect": session.session_key, "cart": session.session_key}
         refs.update({key: value for key, value in (("date", day), ("mode", kind), ("window", slot),
                                                    ("time", said.get("time", ""))) if value})
         return Done(True, domain_refs=refs)
@@ -224,11 +228,21 @@ class ConciergeEffectSite:
         parameters = command.parameters
         token, method = parameters.get(TERMS_REF), parameters.get("payment_method")
         notes = parameters.get("order_notes") or ""
+        if not parameters:
+            # O "sim" do motor: a confirmação é presa aos termos pelo hash e pela revisão da sacola
+            # (o ``lock`` e a guarda já conferiram que é a mesma). A casa revisa a sacola de novo, com
+            # a forma de pagamento que já está nela (ou a única do canal), e grava por essa revisão.
+            review = tools.execute("review_order", {}, self.tool_context)
+            if not (review.get("ok") and review.get("ready") and review.get("quote_token")):
+                # O pedido não está completo (sem pagamento escolhido, sem recebimento): nada nasce.
+                return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+            token, method = str(review["quote_token"]), str(review.get("payment_method") or "")
         if not isinstance(token, str) or not token or not isinstance(method, str) or not isinstance(notes, str):
             return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
         result = tools.place_order(self.tool_context, token, method, notes)
         if result.get("ok") and result.get("order_ref"):
-            return Done(True, domain_refs={"order": str(result["order_ref"])})
+            order = str(result["order_ref"])
+            return Done(True, domain_refs={"effect": order, "order": order})
         code = ORDER_REFUSALS.get(str(result.get("code") or ""), ErrorCode.PROVIDER_UNAVAILABLE)
         return Done(False, refusal=code.value)
 

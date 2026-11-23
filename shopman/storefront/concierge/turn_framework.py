@@ -58,6 +58,10 @@ NICE_TEMPLATE_COPY = {
     "handoff.routed": "CONCIERGE_ENGINE_HANDOFF_ROUTED",
     "handoff.routed_no_deadline": "CONCIERGE_ENGINE_HANDOFF_ROUTED_NO_DEADLINE",
     "handoff.not_accepted": "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED",
+    # Aprovadas pelo dono em 23/11 (cartão do motor): o "total mudou" diz o total novo (substitui o
+    # "Não" de 22/11, porque a frase de antes pedia o código), e o pedido registrado traz o link.
+    "present_terms.changed": "CONCIERGE_ENGINE_TOTAL_CHANGED",
+    "commit_order.done": "CONCIERGE_ENGINE_ORDER_PLACED",
 }
 
 #: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).
@@ -130,10 +134,35 @@ def time_text(value) -> str:
     return format_clock(str(value))
 
 
+def money_text(value) -> str:
+    """ "R$ 24,00": o dinheiro como a casa escreve (o neutro do pacote é "BRL 24.00")."""
+    from collections.abc import Mapping
+
+    from shopman.utils.monetary import format_money
+
+    # O valor do fato chega como ``FrozenMap`` (um ``Mapping``, não um ``dict``).
+    if not isinstance(value, Mapping) or "price_minor" not in value:
+        raise ValueError("valor sem price_minor")
+    return f"R$ {format_money(int(value['price_minor']))}"
+
+
+def order_text(value) -> str:
+    """O número do pedido e onde acompanhar ("WHATSAPP-261122-S50. Acompanhar: <link>").
+
+    O link é a página do pedido no site, determinística a partir do número: nenhum fato novo.
+    """
+    from .tools import _storefront_base_url
+
+    ref = str(value)
+    return f"{ref}. Acompanhar: {_storefront_base_url()}/pedido/{ref}/"
+
+
 def nice_formatters() -> dict:
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
 
-    return {**DEFAULT_FORMATTERS, "owner": owner_text, "deadline": deadline_text, "date": date_text,
+    money = dict.fromkeys(DEFAULT_FORMATTERS, money_text)  # os espaços de dinheiro do pacote, em reais
+    return {**DEFAULT_FORMATTERS, **money, "order": order_text, "owner": owner_text, "deadline": deadline_text,
+            "date": date_text,
             "mode": mode_text, "window": window_text, "time": time_text}
 
 ENVIRONMENT = "live"

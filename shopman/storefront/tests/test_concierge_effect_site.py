@@ -71,7 +71,7 @@ def test_change_cart_is_the_existing_set_item(site, monkeypatch, result, applied
     assert calls == [("CROISSANT", 3)]  # quantidade absoluta, a do pedido
     assert done.applied is applied
     if applied:
-        assert done.domain_refs == {"cart": "sess-1", "item": "CROISSANT"}
+        assert done.domain_refs == {"effect": "sess-1", "cart": "sess-1", "item": "CROISSANT"}
     else:
         assert done.refusal == code
 
@@ -133,7 +133,7 @@ def test_commit_order_maps_the_place_order_result(site, monkeypatch, result, app
     monkeypatch.setattr(tools, "place_order", lambda ctx, token, method, notes: result)
     done = site.apply(CTX, command("commit_order", "sess-1", terms_ref="tok-1", payment_method="pix"))
     assert done.applied is applied
-    assert (done.domain_refs == {"order": "ORD-1"}) if applied else (done.refusal == code.value)
+    assert (done.domain_refs == {"effect": "ORD-1", "order": "ORD-1"}) if applied else (done.refusal == code.value)
 
 
 def test_commit_order_without_terms_is_invalid_content(site):
