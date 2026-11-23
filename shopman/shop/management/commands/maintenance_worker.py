@@ -39,6 +39,7 @@ manutenção num loop (default: a cada 5 minutos):
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
   concierge_shadow_decisions — decisão em sombra do framework conversacional (desligada pela Shop)
+  concierge_engine_tick     — prazos vencidos do motor da Concierge (atrás das chaves da Shop)
   run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
@@ -207,6 +208,9 @@ MAINTENANCE_COMMANDS = (
     # pelo campo da Shop, não toca em nada; ligada, só grava (nem envia, nem escreve no
     # comércio, nem chama modelo).
     "concierge_shadow_decisions",
+    # Os prazos do motor do framework (#3298): só com classe ligada na Shop e frase da Nice
+    # para o aviso; senão, não faz nada. Depois da sombra, com o mesmo estado da limpeza.
+    "concierge_engine_tick",
     # A PTAX final dos dias com gasto de IA (o B.I. diz em reais e só lê a cotação). Sem dia
     # faltando, não chama a API do BCB.
     "record_usd_brl_quotes",

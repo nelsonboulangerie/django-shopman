@@ -1525,6 +1525,21 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_SMALL_TALK_HOW_ARE_YOU": {
         WILDCARD: {WILDCARD: CopyEntry(message="Tudo ótimo por aqui, obrigada.")},
     },
+    "CONCIERGE_ENGINE_ASK_MORE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi bem. Pode me dizer o que você gostaria?")},
+    },
+    "CONCIERGE_ENGINE_EFFECT_FAILED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento a {owner} e preservei suas escolhas. Se ninguém assumir até {deadline}, te aviso por aqui.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento a {owner} e preservei suas escolhas. A equipe continuará por aqui conforme a disponibilidade.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento humano e preservei suas escolhas. Enquanto ninguém assume, sigo com você por aqui e te dou notícia até {deadline}.")},
+    },
     "CONCIERGE_SMALL_TALK_THANKS": {
         WILDCARD: {WILDCARD: CopyEntry(message="Nós que agradecemos! Qualquer coisa, é só chamar. 💛")},
     },

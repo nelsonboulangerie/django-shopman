@@ -98,6 +98,7 @@ DigitalOcean ou do Sentry.
 | [`concierge_verification_sweep`](#concierge_verification_sweep) | storefront | Concierge | Os prazos do "vou verificar": aviso ao cliente no primeiro, conversa para a equipe no segundo (no `maintenance_worker`) |
 | [`record_usd_brl_quotes`](#record_usd_brl_quotes) | shop | B.I. | Grava a PTAX de venda final dos dias com gasto de IA, para o B.I. dizer o gasto em reais (no `maintenance_worker`; só lê a API quando falta dia) |
 | [`concierge_shadow_decisions`](#concierge_shadow_decisions) | storefront | Concierge | A decisão em sombra: o que o framework conversacional faria com cada entrada, e os pedidos do cliente em 24 h e 7 dias; nunca envia nem escreve no comércio |
+| [`concierge_engine_tick`](#concierge_engine_tick) | storefront | Concierge | Os prazos vencidos do motor do framework: avisa o cliente uma vez, só com classe ligada na Shop e frase da Nice para o aviso (no `maintenance_worker`) |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -1722,6 +1723,16 @@ cliente recebe UM aviso ("Ainda estou confirmando com a equipe..."); no segundo
 handoff, e o cliente recebe "Alguém da equipe continua com você por aqui.". Os prazos contam só tempo de loja
 aberta, e com a casa fechada nada corre. Cada passo é reivindicado sob trava antes do envio: sai uma vez só.
 Custo zero, nenhuma chamada de modelo. Imprime as contagens do ciclo em JSON.
+
+### concierge_engine_tick
+
+**Propósito:** Os prazos do motor do framework conversacional (#3298). Roda no `maintenance_worker`, depois do
+`concierge_shadow_decisions`. Não faz nada com as classes da Shop desligadas (`Shop.conversational_live_*`) nem
+enquanto algum molde do aviso de prazo (`wait.*`) não tem frase da Nice aprovada em
+`turn_framework.NICE_TEMPLATE_COPY`: aviso em frase genérica do pacote nunca sai. Ligado, cada conversa com
+compromisso do motor aberto e vencido ganha o próprio motor (contexto e envio dela) e `Engine.tick` avisa o
+cliente UMA vez (K22). A falha numa conversa não derruba as outras. Nenhuma chamada de modelo. Imprime as
+contagens em JSON (`conversations`, `notices`, `failed`, `skipped` com o motivo).
 
 ### concierge_shadow_decisions
 
