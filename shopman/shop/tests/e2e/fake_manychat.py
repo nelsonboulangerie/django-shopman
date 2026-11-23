@@ -17,6 +17,19 @@ aceita o pedaço do contrato do ManyChat que a casa usa e GUARDA cada corpo:
 As três exigem ``Authorization: Bearer …`` e ``subscriber_id``, como o ManyChat;
 sem eles a resposta é a recusa dele (``status: error``), não um sucesso calado.
 
+E o pedaço que o resolvedor de assinantes do Guestman usa para achar (ou criar) o
+contato de um telefone antes do aviso do pedido (#3282), com o endereço dele trocado
+pelo ``settings_e2e`` (``resolver._API_BASE``):
+
+* ``GET  /fb/subscriber/findBySystemField?phone=…``: o assinante desse telefone, ou a
+  lista vazia (ausência conclusiva, como o ManyChat responde).
+* ``GET  /fb/subscriber/findByCustomField?field_id=…&field_value=…``: idem, pelo
+  WhatsApp ID espelhado num campo.
+* ``POST /fb/subscriber/createSubscriber``: cria o contato do ``whatsapp_phone`` e
+  devolve o id (o mesmo, se o telefone já existe).
+* ``GET  /fb/subscriber/getInfo?subscriber_id=…``: o contato, com ``whatsapp_phone``;
+  assinante desconhecido é recusado como no ManyChat.
+
 E uma rota que o ManyChat não tem, só para a jornada ler o que "chegou" no
 WhatsApp da cliente (o celular dela, na pilha):
 
@@ -24,6 +37,8 @@ WhatsApp da cliente (o celular dela, na pilha):
   mais velho ao mais novo. Cada item traz ``endpoint``, o corpo cru (``body``) e,
   no ``sendContent``, as bolhas (``messages``) e os botões achatados
   (``buttons``: ``[{caption, url}]``). Sem ``subscriber``, tudo.
+* ``GET /__sent?phone=<dígitos>``: o mesmo, pelo telefone do contato criado aqui
+  (a jornada sabe o telefone da cliente, não o id que o resolvedor achou).
 
 Qualquer outra rota responde 404 e fica no log, para que uma chamada nova do
 adapter apareça na jornada em vez de passar calada.
@@ -51,12 +66,41 @@ ACCEPTED = frozenset({
 })
 
 
+def _digits(value: object) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
 class FakeManychat:
-    """O que foi aceito, por assinante, na ordem de chegada."""
+    """O que foi aceito, por assinante, na ordem de chegada, e os contatos criados."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._sent: list[dict] = []
+        self._subscribers: dict[str, dict] = {}
+
+    def create_subscriber(self, whatsapp_phone: str) -> dict:
+        """O contato do telefone: um id fixo por número, criado uma vez."""
+        digits = _digits(whatsapp_phone)
+        subscriber_id = f"7{digits}"
+        with self._lock:
+            return self._subscribers.setdefault(
+                subscriber_id,
+                {"id": subscriber_id, "whatsapp_phone": f"+{digits}", "phone": None, "first_name": ""},
+            )
+
+    def subscriber_by_phone(self, phone: str) -> dict | None:
+        digits = _digits(phone)
+        if not digits:
+            return None
+        with self._lock:
+            return next(
+                (sub for sub in self._subscribers.values() if _digits(sub["whatsapp_phone"]).endswith(digits)),
+                None,
+            )
+
+    def subscriber(self, subscriber_id: str) -> dict | None:
+        with self._lock:
+            return self._subscribers.get(str(subscriber_id))
 
     def accept(self, endpoint: str, body: dict) -> dict:
         item = {
@@ -78,7 +122,12 @@ class FakeManychat:
             self._sent.append(item)
         return item
 
-    def sent(self, subscriber: str = "") -> list[dict]:
+    def sent(self, subscriber: str = "", phone: str = "") -> list[dict]:
+        if phone:
+            found = self.subscriber_by_phone(phone)
+            if found is None:
+                return []
+            subscriber = found["id"]
         with self._lock:
             return [item for item in self._sent if not subscriber or item["subscriber_id"] == subscriber]
 
@@ -109,8 +158,9 @@ def _handler(fake: FakeManychat):
     class Handler(BaseHTTPRequestHandler):
         server_version = "FakeManychat/1"
 
-        def log_message(self, fmt, *args):  # noqa: A003 — assinatura da stdlib
-            sys.stderr.write(f"[fake-manychat] {self.command} {urlparse(self.path).path} :: {fmt % args}\n")
+        def log_request(self, code="-", size="-"):  # assinatura da stdlib
+            # Sem a query: ela traz o telefone da cliente.
+            sys.stderr.write(f"[fake-manychat] {self.command} {urlparse(self.path).path} {code}\n")
 
         def _json(self, status: int, body: dict | list) -> None:
             raw = json.dumps(body).encode()
@@ -129,14 +179,29 @@ def _handler(fake: FakeManychat):
             path = url.path.rstrip("/")
             if path == "/health":
                 return self._json(200, {"ok": True})
+            query = {key: values[0].strip() for key, values in parse_qs(url.query).items()}
             if path == "/__sent":
-                subscriber = (parse_qs(url.query).get("subscriber") or [""])[0].strip()
-                return self._json(200, {"sent": fake.sent(subscriber)})
+                return self._json(200, {"sent": fake.sent(query.get("subscriber", ""), query.get("phone", ""))})
+            if path.startswith("/fb/") and not self._authorized():
+                return self._json(401, {"status": "error", "message": "Authorization header is missing or invalid"})
+            if path in {"/fb/subscriber/findBySystemField", "/fb/subscriber/findByCustomField"}:
+                phone = query.get("phone") or query.get("field_value") or ""
+                found = fake.subscriber_by_phone(phone)
+                return self._json(200, {"status": "success", "data": [found] if found else []})
+            if path == "/fb/subscriber/getInfo":
+                found = fake.subscriber(query.get("subscriber_id", ""))
+                if found is None:
+                    return self._json(400, {"status": "error", "message": "Subscriber does not exist"})
+                return self._json(200, {"status": "success", "data": found})
             return self._not_found()
+
+        def _authorized(self) -> bool:
+            authorization = self.headers.get("Authorization") or ""
+            return authorization.startswith("Bearer ") and bool(authorization[7:].strip())
 
         def do_POST(self):  # noqa: N802 — assinatura da stdlib
             path = urlparse(self.path).path.rstrip("/")
-            if path not in ACCEPTED:
+            if path not in ACCEPTED and path != "/fb/subscriber/createSubscriber":
                 return self._not_found()
             length = int(self.headers.get("Content-Length") or 0)
             try:
@@ -145,6 +210,12 @@ def _handler(fake: FakeManychat):
                 return self._json(400, {"status": "error", "message": "invalid JSON"})
             if not isinstance(body, dict):
                 return self._json(400, {"status": "error", "message": "invalid JSON"})
+            if path == "/fb/subscriber/createSubscriber":
+                if not self._authorized():
+                    return self._json(401, {"status": "error", "message": "Authorization header is missing or invalid"})
+                if not _digits(body.get("whatsapp_phone")):
+                    return self._json(400, {"status": "error", "message": "whatsapp_phone is required"})
+                return self._json(200, {"status": "success", "data": fake.create_subscriber(body["whatsapp_phone"])})
             refusal = _refusal(body, path, self.headers.get("Authorization") or "")
             if refusal:
                 sys.stderr.write(f"[fake-manychat] recusado {path}: {refusal}\n")
