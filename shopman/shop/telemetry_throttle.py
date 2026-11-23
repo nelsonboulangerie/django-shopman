@@ -14,7 +14,10 @@ viva no Sentry, com o "visto por último" em dia, sem gastar a cota.
 from __future__ import annotations
 
 import hashlib
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 #: A marca que a integração do Sentry põe na exceção que ela mesma capturou.
 PROVIDER_MECHANISMS = frozenset({"anthropic"})
@@ -50,5 +53,6 @@ def drop_repeated_provider_error(event: Any) -> Any:
         first_today = cache.add(key, 1, timeout=EVERY_SECONDS)
     except Exception:
         # Sem cache, na dúvida o erro aparece.
+        logger.debug("telemetry_throttle.cache_unavailable", exc_info=True)
         return event
     return event if first_today else None

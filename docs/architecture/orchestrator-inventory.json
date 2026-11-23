@@ -15276,7 +15276,8 @@
             "EVERY_SECONDS",
             "PROVIDER_MECHANISMS",
             "_provider_exception",
-            "drop_repeated_provider_error"
+            "drop_repeated_provider_error",
+            "logger"
           ]
         }
       ]
