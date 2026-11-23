@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { addReadyProductFromMenu, checkoutSigningInByCode } from './support/customer'
+import { viaCepFromFakeMaps } from './support/maps'
 import { capture, newCustomerPhone, settled } from './support/stack'
 
 // J15 · Endereço fora da área, taxa por distância e a troca por retirada (#2569, item 4).
@@ -22,22 +23,12 @@ import { capture, newCustomerPhone, settled } from './support/stack'
 // Nenhum estado nasce por API, Admin ou banco: a cliente põe na sacola, entra pelo código
 // que chegou e digita o endereço.
 const PRODUCT = 'Croissant' // pronto agora no seed `--profile qa`
-const MAPS = (process.env.JOURNEY_MAPS_URL || `http://127.0.0.1:${process.env.JOURNEYS_MAPS_PORT || '12192'}`).replace(/\/$/, '')
 
 interface TableAddress { cep: string, route: string, number: string, neighborhood: string }
 // A tabela do fake_maps.py (as distâncias são as da loja do seed).
 const NEAR: TableAddress = { cep: '86020-120', route: 'Rua Pernambuco', number: '1000', neighborhood: 'Centro' } // 2,5 km
 const FAR: TableAddress = { cep: '86082-000', route: 'Avenida Saul Elkind', number: '2000', neighborhood: 'Lago Parque' } // 7,2 km
 const OUTSIDE: TableAddress = { cep: '86118-000', route: 'Estrada do Limoeiro', number: '10', neighborhood: 'Irerê' } // 14,8 km
-
-/** O ViaCEP que o navegador consulta ao digitar o CEP, desviado para os mapas falsos. */
-async function viaCepFromFakeMaps (page: Page) {
-  await page.context().route(/^https:\/\/viacep\.com\.br\/ws\/\d{8}\/json\/?$/, async (route) => {
-    const cep = new URL(route.request().url()).pathname.split('/')[2]
-    const response = await route.fetch({ url: `${MAPS}/ws/${cep}/json/` })
-    await route.fulfill({ response })
-  })
-}
 
 /** Da sacola com um Croissant, põe o segundo (o mínimo da entrega) e entra pelo código. */
 async function twoCroissantsAndSignsIn (page: Page, testInfo: TestInfo) {

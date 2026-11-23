@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-070",
+  "tipo": "solicitacao",
+  "origem": "coordenacao",
+  "compromisso": "#3240: opção 2. A linha se parte só quando sobra centavo (ex.: 2 Croissants a R$ 11,33 e 1 a R$ 11,34); total fecha exato (R$ 34,00)",
+  "dono": "Engenharia",
+  "criado": "2026-11-22",
+  "revisar_em": "2026-11-29",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

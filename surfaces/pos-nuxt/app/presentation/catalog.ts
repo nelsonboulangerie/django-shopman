@@ -128,6 +128,17 @@ export function unplannedOrderNote(dateIso: string): string {
 export const UNPLANNED_TILE_LABEL = "Vira pedido à Produção";
 
 /**
+ * O saldo em número no tile (#2610, WP-E8): "Restam 3", "Resta 1". Vazio quando a
+ * projeção não dá o número (sem rastreio, só fornada futura, vendido por peso) ou
+ * quando o tile já está bloqueado: aí o selo de bloqueio é quem fala.
+ */
+export function unitsLeftLabel(product: Pick<POSProductProjection, "units_left" | "sold_out">): string {
+  const left = product.units_left;
+  if (product.sold_out || left == null || !Number.isFinite(left) || left <= 0) return "";
+  return left === 1 ? "Resta 1" : `Restam ${left}`;
+}
+
+/**
  * A grade da ENCOMENDA PARA OUTRO DIA: o esgotado é o daquele dia, não o de hoje.
  *
  * Beta test de 05/11/2026 (PDV2-04). O selo do catálogo é o saldo de AGORA: o
@@ -152,6 +163,9 @@ export function productsForOrderDate(
   deliveryDate: string,
 ): POSProductProjection[] {
   if (!schedule || !deliveryDate || schedule.is_today || schedule.date !== deliveryDate) return products;
+  // O "Restam 3" é o saldo de HOJE: na encomenda para outro dia ele não diz nada
+  // sobre a data, e sai do tile (#2610).
+  products = products.map((product) => (product.units_left == null ? product : { ...product, units_left: null }));
   if (!Array.isArray(schedule.sold_out_skus)) return products;
   const soldOut = new Set(schedule.sold_out_skus);
   const unplanned = new Set(schedule.unplanned_skus ?? []);

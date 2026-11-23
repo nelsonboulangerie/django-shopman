@@ -187,7 +187,15 @@ export interface PreorderCourier {
   service_name: string;
   status_label: string;
   active: boolean;
-  driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string; vehicle_color?: string } | null;
+  driver: {
+    name: string;
+    phone: string;
+    vehicle_plate: string;
+    vehicle_model: string;
+    vehicle_color?: string;
+    /** A foto servida pelo servidor, só com a corrida viva (#3150); vazio = sem foto. */
+    photo_url?: string;
+  } | null;
   tracking_url: string;
   confirmation_code: string;
   attempts_count: number;

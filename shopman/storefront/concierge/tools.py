@@ -407,6 +407,69 @@ def _today_iso() -> str:
     return timezone.localdate().isoformat()
 
 
+def _summary_when(value: str, slot: str) -> str:
+    """O dia do resumo como o acompanhamento diz ("segunda-feira, 23/11, a partir das 15h"), nunca a data ISO.
+
+    O nome do dia e a data, não "amanhã": o resumo fica na conversa e é relido depois.
+    """
+    from django.utils import formats
+
+    day = _parse_date(str(value or ""))
+    text = f"{formats.date_format(day, 'l').lower()}, {formats.date_format(day, 'd/m')}" if day else str(value or "")
+    slot = str(slot or "").strip()
+    if slot:
+        text = ", ".join(p for p in (text, f"{slot[:1].lower()}{slot[1:]}") if p)
+    return text
+
+
+def cart_day(ctx: ToolContext) -> date_type | None:
+    """O dia para o qual a sacola está marcada, quando não é hoje; ``None`` se é hoje ou sem dia."""
+    session = _open_session(ctx) if ctx.conversation is not None else None
+    day = _parse_date(str(((session.data or {}) if session is not None else {}).get("delivery_date") or ""))
+    return None if day is None or day <= timezone.localdate() else day
+
+
+#: Quantos dias depois do pedido se procura a próxima fornada. Mais longe que isso, a casa não promete.
+NEXT_BATCH_HORIZON_DAYS = 7
+
+
+def next_batch_day(ctx: ToolContext, sku: str, qty, after: date_type) -> date_type | None:
+    """O primeiro dia depois de ``after`` com fornada que cobre o pedido, pela mesma decisão da reserva."""
+    from datetime import timedelta
+
+    from shopman.shop.services import availability
+
+    for offset in range(1, NEXT_BATCH_HORIZON_DAYS + 1):
+        day = after + timedelta(days=offset)
+        try:
+            if availability.decide(sku, Decimal(str(qty or 1)), channel_ref=ctx.channel_ref, target_date=day)["approved"]:
+                return day
+        except Exception:  # noqa: BLE001 — sem decisão, não se promete dia nenhum
+            logger.warning("concierge.tools.next_batch_day_failed sku=%s day=%s", sku, day, exc_info=True)
+            return None
+    return None
+
+
+def orderable_on_cart_date(ctx: ToolContext, item, qty) -> bool:
+    """O item entra na sacola na data dela? O cartão do catálogo mede AGORA.
+
+    Com a sacola marcada para outro dia ("amanhã às 16h"), quem decide é a fornada dessa data
+    (a mesma decisão da reserva, ``availability.decide``), não a vitrine de hoje: o croissant
+    esgotado hoje pode estar no forno de amanhã (WP-14, cartão 1).
+    """
+    day = cart_day(ctx)
+    if day is None:
+        return bool(getattr(item, "can_add_to_cart", False) if not isinstance(item, dict) else item.get("can_order"))
+    from shopman.shop.services import availability
+
+    sku = item.get("sku", "") if isinstance(item, dict) else item.sku
+    try:
+        return bool(availability.decide(sku, Decimal(str(qty or 1)), channel_ref=ctx.channel_ref, target_date=day)["approved"])
+    except Exception:  # noqa: BLE001 — sem a decisão da data, vale o cartão de agora
+        logger.warning("concierge.tools.orderable_on_cart_date_failed sku=%s", sku, exc_info=True)
+        return False
+
+
 def _parse_date(value: str) -> date_type | None:
     try:
         return date_type.fromisoformat(str(value).strip())
@@ -757,7 +820,7 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
         session = _open_session(ctx)
         return {"ok": True, "removed": sku, **(_cart_payload(ctx, session) if session else {"empty": True})}
 
-    if not item.can_add_to_cart:
+    if not orderable_on_cart_date(ctx, item, qty):
         return _error(
             "unavailable",
             f"{item.name}: {item.availability_label}.",
@@ -2071,7 +2134,8 @@ def render_result(name: str, result: dict) -> str:
         rows.append(f"Total: {result.get('total', '')}")
         fulfillment = result.get("fulfillment") or {}
         if fulfillment.get("type"):
-            rows.append(f"{'Retirada' if fulfillment['type'] == 'pickup' else 'Entrega'}: {fulfillment.get('date', '')} {_display_text(fulfillment.get('slot_label', ''))}")
+            when = _summary_when(fulfillment.get("date", ""), _display_text(fulfillment.get("slot_label", "")))
+            rows.append(f"{'Retirada' if fulfillment['type'] == 'pickup' else 'Entrega'}: {when}")
         if fulfillment.get("address"):
             rows.append(_display_text(fulfillment['address']))
         if result.get("order_notes"):

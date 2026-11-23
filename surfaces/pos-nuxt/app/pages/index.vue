@@ -110,6 +110,7 @@ const {
   openNewOrder,
   releaseAbandonedTab,
   openNextSale,
+  openNextFreeTab,
   itemCount,
   tabInput,
   busy,
@@ -1751,6 +1752,7 @@ onBeforeUnmount(() => {
           :disallowed-chars="tabDisallowedChars"
           :zero-pad-to="tabZeroPadTo"
           @open="openTab"
+          @open-next-free="openNextFreeTab"
           @request-association="requestTabAssociation('start')"
         />
         <!-- Leitura ainda sem resposta: um aviso calmo, nunca um quadro vazio que

@@ -4,7 +4,9 @@ Três roteiros neste arquivo:
 
 1. **[Rodada de homologação da revisão das Entregas](#rodada-de-homologação-da-revisão-das-entregas-16112026)**
    (16/11/2026): todas as sondas que a revisão adversarial das Entregas deixou atrás de "homologar",
-   com o que cada resposta destrava. É o roteiro da vez.
+   com o que cada resposta destrava. É o roteiro da vez, e o
+   [roteiro da corrida real de 23/11](#roteiro-da-corrida-real-de-23112026-15h-no-balcão-produção)
+   diz quem faz o quê na tarde de produção.
 2. **[Corrida de prova em produção](#corrida-de-prova-em-produção)** (decisão do dono E2=1,
    13/10/2026): uma corrida curta de verdade, acompanhada de A a F, e outra cancelada antes da
    coleta, na janela que o dono combinar. A casa não tem chave de homologação da TaOn
@@ -227,6 +229,101 @@ feche a que a rodada responder.
 | C5 | | | | |
 | C6 | | | | |
 | C7 | | | | |
+
+## Roteiro da corrida real de 23/11/2026, 15h, no balcão (produção)
+
+A rodada C da seção acima, em produção, com o dono presente. Não há credencial de homologação,
+então C7 se responde em produção pelo "Chamar de novo" da C5 e da C6 (abaixo). As sondas L1 a L8
+já rodaram em 17/11 (laudo na #2489), e o webhook foi cadastrado no mesmo dia. **Desde então
+nenhum aviso chegou**, porque nenhuma corrida foi aberta: o primeiro `machine.webhook
+kind=status` desta tarde é, ele mesmo, a prova de que o cadastro vingou.
+
+**Sem console.** O console da DigitalOcean não recebe as variáveis `SECRET`, e o token de deploy
+não tem `exec`. A sonda roda pelo Admin, em **Diagnóstico → Central de entregas**
+(`https://api.boulangerie.com.br/admin/diagnostics/`, só superusuário). É o mesmo
+`courier_machine_probe`, com as mesmas travas, dentro do processo que tem a credencial. Quem
+opera é a coordenação, no Chrome do dono, com os valores que a sessão das Entregas dita. O laudo
+aparece na tela, e se cola no PR do resultado. O log do aviso a sessão das Entregas lê da própria
+máquina (`doctl apps logs`, só leitura).
+
+A leitura chega pelo #3326, e as escritas (prévia, confirmação na página e registro no
+histórico da Loja) pelo #3329. Se o #3329 não estiver no ar às 14h, a C6 e os dois testes
+negativos (o motivo 1 da C4 e o motivo 10 da C5) ficam de fora, presos à F9, e a rodada
+segue C1 a C5 pelo caminho do produto: o "Cancelar corrida" do Gestor.
+
+### A pilha
+
+| O quê | Onde | Quem |
+|---|---|---|
+| Versão no ar | `main` com a sonda no Admin | conferido antes das 14h30 |
+| Conta TaOn | produção (`api.taximachine.com.br`), usuário de integração que o app já usa (`MACHINE_*` como `SECRET`) | já no app |
+| Serviço padrão | `https://api.boulangerie.com.br/admin/shop/deliveryservice/`: a TaOn ("Central de entregas por API (TaOn)") Padrão e Ativa. Com "Entregadores da casa" como padrão, a corrida vai para eles | coordenação, 14h30 |
+| Webhook | `status` e `posicao` para `https://api.boulangerie.com.br/api/webhooks/machine/` (17/11) | coordenação, 14h30 |
+| Sonda | Admin, Diagnóstico, cartão "Central de entregas" | coordenação, no Chrome do dono |
+| Log do aviso | `doctl apps logs 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f web-operator --context shopman-do-app-admin --follow \| grep machine.webhook` | sessão das Entregas |
+| Gestor | `orders-nuxt`, seção Entregas (`/delivery`) e o pedido | dono, no balcão |
+| Loja | o pedido de entrega nasce pela loja, como o de um cliente | dono |
+| Painel TaOn | `cloud.taximachine.com.br`, logado como gestor da central | dono |
+
+### 14h30: conferência, só leitura
+
+No Diagnóstico, cartão "Central de entregas":
+
+1. "Ler a conta e as corridas (só leitura)", sem corrida. Espera: `ambiente: PRODUÇÃO`, a linha
+   `v2: a api-key VALE na v2` e as categorias. `Credenciais da TaOn ausentes` ou recusa na
+   conta: a rodada não começa.
+2. "Ler os avisos cadastrados (só leitura)". Espera: um `cadastrado: tipo=status` e um
+   `tipo=posicao`. Faltando um: "ESCREVE: cadastrar os avisos que faltam", com `CADASTRAR` na
+   confirmação. Isso escreve na TaOn e pede a palavra do dono.
+3. O serviço padrão (tabela acima).
+4. O modo de chamada: `https://api.boulangerie.com.br/admin/shop/channel/`, o canal que recebe
+   entrega, aba "Config resolvida", `fulfillment.courier`. Em `auto`, cada pedido Pronto chama a
+   própria corrida e a C2 não junta os dois pedidos. Para manual, às 14h50: aba "Preparo e
+   entrega", copie o texto que está no campo, acrescente `"courier": "none"` (vazio:
+   `{"courier": "none"}`), salve e confira a "Config resolvida". No fim, cole de volta o texto
+   original. Mudança no ambiente vivo: pede a palavra do dono.
+
+### Os passos
+
+Toda escrita na TaOn sai do cartão com a corrida, o valor e a confirmação (o número da corrida
+repetido), e só com o "sim" do dono. Os pedidos levam letra; `<A>` é o número da corrida que o
+Gestor mostra. "Ler `<A>`" quer dizer: "Ler a conta e as corridas", Corridas `<A>`.
+
+| # | Quando | O dono faz | No Diagnóstico (coordenação) e no log (sessão das Entregas) | Fica registrado |
+|---|---|---|---|---|
+| **C1** | 15h00 | Pedido **A** pela loja, destino 1, pagamento na porta em dinheiro com troco. No Gestor: Pronto, depois "Chamar entregador". Entrega a sacola ao entregador. **Anota a hora em que ele volta à loja** e toca "Entregador voltou" | Log: a hora de cada linha (`code=` e `stop=`). Logo depois da abertura: Ler com "Corridas abertas nos últimos minutos" 30 (é a L8). Depois do fim: Ler `<A>` | Horas do `ER`, do `F` e da volta física. O `ER` traz `stop=`? A observação no painel da TaOn diz cobrança e troco? |
+| **C2** | 15h05, junto com C1 | Pedidos **B1** e **B2** pela loja, destinos 2 e 3, os dois Prontos. No Gestor, em Entregas: "Juntar entregas" e "Chamar juntas" (ou "Chamar as corridas"). No aceite, abre no celular os dois links de acompanhamento ("Copiar link de acompanhamento" em cada parada): cada um mostra só a entrega do próprio cliente? Anota a hora da volta | No primeiro `ER` do log: Ler `<B>`. Depois do fim, de novo | Um `ER` por parada, cada um com o seu `stop=`, e a ordem. `links` (lista ou objeto único), `stops` e `status vistos`. O botão de link aparece nas duas paradas (o casamento foi provado) |
+| **C4** | 15h15 | Pedido **X** pela loja (qualquer um dos três destinos; ele não sai da loja), Pronto, "Chamar entregador" | **Antes do aceite** (letra D, G ou P): "ESCREVE: Cancelar a corrida", Corridas `<D>`, valor `1`, confirmação `<D>`. Logo depois o dono toca "Cancelar corrida" no Gestor (o app manda o motivo 10) | Motivo 1 recusou com `102`? O 10 cancelou, e a letra seguinte é `C`? O Gestor devolve a corrida ao histórico sem aviso de falha, e X continua Pronto? |
+| **C5** | 15h25, **o dono decide na hora** (tira um entregador da rua e pode gerar taxa; avisar a central antes) | X: "Chamar de novo". No aceite, "Cancelar corrida" com "O entregador não está vindo" | Antes do toque: "Cancelar a corrida", Corridas `<E>`, valor `10`, confirmação `<E>` | O 10 depois do aceite recusou com `102`? O 12 do Gestor cancelou? Em 24/11: Ler `<E>`, `taxas_cancelamento` preenchida? |
+| **C6** | 15h35 | Pedido **Y** pela loja, como o X. X e Y Prontos, "Chamar entregador" em cada um (duas corridas, **F** e **G**) | Antes de qualquer aceite, nesta ordem: "Agrupar corridas nesta", Corridas `<F>`, valor `<G>`; Ler `<G>`; Ler `<F>`; "Tirar uma parada", Corridas `<F>`, valor: a parada de G lida no laudo de F; "Impulsionar", Corridas `<F>`, valor `2,00` (gasta R$ 2,00); "Cancelar a corrida", Corridas `<F>`, valor `10`. A cada escrita, o print do Gestor | Agrupar: 200, ou o código. G vira `U` e a leitura dela traz `97` com a agrupadora? O que o Gestor mostra de G depois do agrupamento (a F9 ainda não segue a agrupadora). Tirar a parada: 200 e a nova estimativa. Impulsionar: 200 com `origem: 'empresa'`, ou `254`. O `PUT` fica de fora (#3325) |
+| **C3** | a tarde toda | Se a central oferecer, pede que um entregador aceite e desista de uma das corridas | Log: uma linha `code=C` com `will_reopen=` | `will_reopen=true`? O aceite seguinte vem com outro `event` e o mesmo id? |
+| **C7** | C5 e C6 | nada a mais | O "Chamar de novo" do X abre uma corrida nova com o mesmo `id_externo` de uma corrida encerrada | Abriu: a TaOn aceita o `id_externo` repetido depois de uma corrida encerrada. Recusou: anotar o código (esperado `8`) |
+| **Fim** | cerca de 16h30 | Cancela X e Y no Gestor. Devolve o modo de chamada do canal, se mudou | Para o log | O custo de cada corrida no painel da TaOn |
+
+Corridas abertas: **A**, **B**, **D**, **F** e **G**, mais **E** se o dono quiser. A e B vão até
+o fim e se pagam como corrida curta (a cotação de 01/10 deu R$ 8,00 para 3,4 km; estimado, não
+medido para estes destinos). D, F e G se cancelam antes do aceite; se a central cobra taxa
+nesse caso, isso também não foi medido. O impulsionar custa R$ 2,00 se for aceito.
+
+### O que o dono precisa ter em mãos
+
+- Três destinos curtos de verdade, com alguém em cada um para receber. No destino 1, a pessoa
+  paga em dinheiro e precisa de troco.
+- O login de gestor do painel da TaOn, e o Admin aberto como superusuário. Se quiser medir o
+  impulsionar, ligue antes, no painel ou pela central, **impulsionamento de entregas liberado
+  para a empresa**. Sem a chave, a recusa (`254`) também é resultado, e fica anotada.
+- A palavra para: a troca do modo de chamada (se ele estiver em `auto`), o cadastro dos avisos
+  (só se faltar um), e cada escrita, na hora.
+
+### Depois
+
+- No mesmo dia, um PR `docs(taon): resultado da rodada de homologação` preenche a tabela "Onde
+  anotar" com os laudos. A sessão comenta na #2428 e na #2427 e fecha a que a rodada
+  responder. A #2489 fecha com esse PR.
+- Com o primeiro aviso real visto no log, o dono decide se o polling cai para 0
+  (`Shop.defaults.delivery.courier_poll_seconds`).
+- C2 com um `ER` por parada e `stop=` destrava a F2b (decisão 6C). As horas do `F` em C1 e C2
+  decidem o estado "voltando" da página do cliente (tabela "O F chega na porta ou na loja?").
 
 ## 13/10/2026: a primeira corrida real ficou parada em "Procurando entregador"
 

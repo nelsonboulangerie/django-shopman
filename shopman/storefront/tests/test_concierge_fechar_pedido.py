@@ -94,7 +94,7 @@ def _pickup_until_summary(conversation):  # noqa: F811
 def test_pickup_with_the_chosen_time(conversation, outbox, shop):
     summary = _pickup_until_summary(conversation)
 
-    assert "Retirada:" in summary and "A partir das 12h" in summary, summary
+    assert "Retirada:" in summary and "a partir das 12h" in summary, summary
     assert _session(conversation).data["payment"] == {"method": "pix"}
 
 

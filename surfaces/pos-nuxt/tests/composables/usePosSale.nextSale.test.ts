@@ -10,7 +10,9 @@ vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: 
 // "Nova venda" (WP-E8, P2-3; D5 do dono): da tela de resultado direto para a GRADE
 // da próxima comanda livre, sem passar pelo quadro. A comanda que ela abriu sozinha,
 // se o operador sair sem lançar nada, volta a ser livre: o quadro não enche de
-// comandas vazias (PDV2-13).
+// comandas vazias (PDV2-13). Quem escolhe e reserva a comanda é o servidor
+// (`tabs/next-free/`, #2443): duas estações nunca abrem a mesma. E toda comanda que
+// ESTA estação pôs em uso (o abrir respondeu `created`), vazia, volta a ser livre.
 
 function tab(ref: string, state: string): POSTabProjection {
   return {
@@ -34,7 +36,7 @@ function sale(tabs: POSTabProjection[], payload: Record<string, unknown>) {
   return h;
 }
 
-const opened = { tab_ref: "2", tab_display: "2", session_key: "sess-2", tab_session_key: "sess-2" };
+const opened = { tab_ref: "2", tab_display: "2", session_key: "sess-2", tab_session_key: "sess-2", created: true };
 const clears = (h: ReturnType<typeof makeSale>) =>
   h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/clear/"));
 
@@ -44,10 +46,20 @@ describe("usePosSale.openNextSale", () => {
 
     expect(await h.sale.openNextSale()).toBe(true);
 
-    expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/2/open/");
+    expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/next-free/");
+    // A reserva leva a chave da tentativa: repetida, devolve a mesma comanda.
+    expect(h.handles.actionCall.mock.calls[0]![1]).toMatchObject({ body: { client_request_id: expect.any(String) } });
     expect(h.sale.cart.tabRef).toBe("2");
     expect(h.sale.cart.salesMode).toBe("counter");
     expect(h.sale.inSaleView.value).toBe(true);
+  });
+
+  it("o servidor reservou outra que a do quadro (outra estação levou a 2): abre a dele", async () => {
+    const h = sale([tab("2", "empty")], { ...opened, tab_ref: "3", tab_display: "3", session_key: "sess-3", tab_session_key: "sess-3" });
+
+    expect(await h.sale.openNextSale()).toBe(true);
+
+    expect(h.sale.cart.tabRef).toBe("3");
   });
 
   it("se a comanda não abre, responde não, e quem chama mostra o quadro", async () => {
@@ -85,13 +97,32 @@ describe("usePosSale.openNextSale", () => {
     expect(clears(h)).toHaveLength(0);
   });
 
-  it("a comanda que o operador abriu pelo quadro é escolha dele: vazia, ela fica", async () => {
+  it("a comanda livre que o operador abriu pelo quadro, vazia, também volta a ser livre", async () => {
     const h = sale([tab("2", "empty")], opened);
     await h.sale.openTab("2");
     await nextTick();
 
     await h.sale.releaseAbandonedTab();
 
+    expect(clears(h)).toHaveLength(1);
+  });
+
+  it("a comanda que já estava em uso quando ele a abriu é de quem a abriu: vazia, ela fica", async () => {
+    const h = sale([tab("2", "in_use")], { ...opened, created: false });
+    await h.sale.openTab("2");
+    await nextTick();
+
+    await h.sale.releaseAbandonedTab();
+
     expect(clears(h)).toHaveLength(0);
+  });
+
+  it("a Próxima livre do quadro pede a reserva ao servidor", async () => {
+    const h = sale([tab("1", "in_use"), tab("2", "empty")], opened);
+
+    await h.sale.openNextFreeTab();
+
+    expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/next-free/");
+    expect(h.sale.cart.tabRef).toBe("2");
   });
 });

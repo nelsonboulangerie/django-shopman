@@ -18,7 +18,7 @@ module.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any
 
@@ -1853,7 +1853,13 @@ def _build_items(order) -> tuple[TrackingItemData, ...]:
     pricing = (order.snapshot or {}).get("pricing") or {}
     discount_records = [d for d in (pricing.get("discount") or {}).get("items") or [] if isinstance(d, dict)]
 
+    from shopman.shop.discount_spread import SPLIT_OF
+
     items = []
+    # A linha que o rateio do desconto partiu (#3240) aparece inteira: a cliente
+    # comprou 3 Croissants. A conta devolve o cupom à linha (``_bill_line_of``),
+    # então as duas partes têm o mesmo preço na tela e somam sem perder nada.
+    row_of: dict[str, int] = {}
     for item in order_composition.effective_items(order):
         if item.sku == "__DELIVERY_FEE__":
             continue
@@ -1861,18 +1867,29 @@ def _build_items(order) -> tuple[TrackingItemData, ...]:
             bill_unit_q, bill_total_q, full_total_q = _bill_line_of(item, discount_records)
         else:
             bill_unit_q, bill_total_q, full_total_q = int(item.unit_price_q), int(item.line_total_q), 0
-        items.append(
-            TrackingItemData(
-                sku=item.sku,
-                name=item.name or item.sku,
-                qty=int(item.qty),
-                unit_price_q=int(item.unit_price_q),
-                line_total_q=int(item.line_total_q),
-                bill_unit_price_q=bill_unit_q,
-                bill_line_total_q=bill_total_q,
-                full_line_total_q=full_total_q,
-            )
+        data = TrackingItemData(
+            sku=item.sku,
+            name=item.name or item.sku,
+            qty=int(item.qty),
+            unit_price_q=int(item.unit_price_q),
+            line_total_q=int(item.line_total_q),
+            bill_unit_price_q=bill_unit_q,
+            bill_line_total_q=bill_total_q,
+            full_line_total_q=full_total_q,
         )
+        origin = row_of.get(str((item.meta or {}).get(SPLIT_OF) or ""))
+        if origin is not None:
+            first = items[origin]
+            items[origin] = replace(
+                first,
+                qty=first.qty + data.qty,
+                line_total_q=first.line_total_q + data.line_total_q,
+                bill_line_total_q=first.bill_line_total_q + data.bill_line_total_q,
+                full_line_total_q=first.full_line_total_q + data.full_line_total_q,
+            )
+            continue
+        row_of[str(item.line_id or "")] = len(items)
+        items.append(data)
     return tuple(items)
 
 

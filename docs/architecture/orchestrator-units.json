@@ -3934,6 +3934,46 @@
       "out_of_extraction": false
     },
     {
+      "id": "pricing.split-line",
+      "question": "Como o desconto de pedido é rateado entre as linhas, quando uma linha se parte e como ela volta inteira?",
+      "owner": "pricing.split-line",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.discount_spread:spread_order_discount",
+      "authoritative_symbols": [
+        "shopman.shop.discount_spread:spread_order_discount"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/discount_spread.py",
+          "symbols": [
+            "qty_json",
+            "line_qty",
+            "spread_order_discount",
+            "SplitLineMergeModifier",
+            "SPLIT_OF",
+            "split_line_id",
+            "split_siblings",
+            "merged_for_display"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_linha_partida_pelo_rateio.py::test_o_rateio_parte_a_linha_e_fecha_exato"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "pricing.temporal-offer",
       "question": "Qual oferta temporal está ativa no instante canônico de preço?",
       "owner": "pricing.temporal-offer",
@@ -7413,6 +7453,7 @@
             "_cart_date",
             "_date_that_serves",
             "_catalog_product",
+            "_split_parts",
             "_other_lines_qty",
             "update_qty",
             "remove_item",
@@ -15547,6 +15588,12 @@
             "PosFireResult",
             "PosUnfireResult",
             "open_pos_tab",
+            "PosTabOpening",
+            "_new_pos_tab_session_data",
+            "open_pos_tab_reporting",
+            "_NEXT_FREE_ATTEMPTS",
+            "_next_free_numeric_tab_ref",
+            "reserve_next_free_pos_tab",
             "save_pos_tab",
             "clear_pos_tab",
             "rename_pos_tab",
