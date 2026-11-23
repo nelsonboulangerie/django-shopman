@@ -169,6 +169,7 @@ def test_day_pickup_and_time_said_with_the_order(conversation, menu, cart):
 
 def test_without_the_fulfillment_act_in_the_engine_the_reader_never_returns_it(conversation, menu, cart):
     ai = FakeAI([{"act": "choose_fulfillment", "span": "amanhã", "day": "tomorrow"}])
+    # O motor que não conhece o ato (lista sem ``choose_fulfillment``): o leitor nunca o devolve.
     without = tuple(act for act in ACTS if act != model_reader.FULFILLMENT_ACT)
     understanding, _ = _read("pra amanhã", ai, allowed=without)
     assert [a.act for a in understanding.acts] == ["unknown"]

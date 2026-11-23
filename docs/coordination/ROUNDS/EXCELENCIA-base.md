@@ -74,7 +74,8 @@ da pessoa. O plano lista quais jornadas canonizar e em que WP cada uma nasce.
 1. **Laudo**: os achados P0, P1 e P2, cada um com a lente, a prova e a causa no código.
 2. **O salto**: até cinco ideias que tiram o app do "correto" para o "uau", cada uma com o
    ganho para o usuário e o custo.
-3. **WPs**, cada um cabendo numa sessão Opus 5.5, um branch e um PR, com:
+3. **WPs**, cada um cabendo numa sessão Opus 5.5 com esforço médio (decisão do dono, 23/11: o
+   Fable revisa e planeja, o Opus médio implementa), um branch e um PR, com:
    - objetivo em uma frase;
    - achados que fecha;
    - dependências;
@@ -86,7 +87,7 @@ da pessoa. O plano lista quais jornadas canonizar e em que WP cada uma nasce.
        dono dela;
    - se muda tela (se sim, o WP inclui prévia local ao dono antes de enfileirar);
    - tamanho;
-   - um brief para a sessão Opus, que aponta o que ler e não copia o CLAUDE.md. O brief manda
+   - um brief para a sessão Opus 5.5 (esforço médio), que aponta o que ler e não copia o CLAUDE.md. O brief manda
      seguir a seção "Teste como um operador de verdade" deste arquivo.
 4. **Jornadas a canonizar**: a lista, cada uma com o papel, os passos e o WP que a escreve.
 5. **Ondas**: o que corre em paralelo. Dois WPs da mesma onda nunca tocam o mesmo arquivo.
