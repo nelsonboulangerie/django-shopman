@@ -81,8 +81,9 @@ def deadline_text(value) -> str:
     local = timezone.localtime(moment)
     today = timezone.localdate()
     day = {today: "hoje", today + timedelta(days=1): "amanhã"}.get(local.date()) or local.strftime("%d/%m")
-    clock = f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
-    return f"{day} às {clock}"
+    from shopman.utils.formatting import format_clock
+
+    return f"{day} às {format_clock(local)}"
 
 
 def nice_formatters() -> dict:
