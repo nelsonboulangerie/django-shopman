@@ -9,6 +9,9 @@ import {
   mapStops,
   routeLine,
   frameProjection,
+  maneuverDistance,
+  maneuverIcon,
+  guidePath,
   closedTitle,
   doorMoney,
   machineText,
@@ -313,5 +316,33 @@ describe('o mapa da corrida (#2509)', () => {
     // Com a faixa dos botões embaixo, nenhum ponto desce até ela.
     const banded = frameProjection([{ lat: -23.33, lng: -51.18 }, { lat: -23.31, lng: -51.16 }], 740, 360, 48, 96)
     expect(banded({ lat: -23.33, lng: -51.18 }).y).toBeLessThanOrEqual(360 - 96 + 0.01)
+  })
+})
+
+describe('a manobra (#2509, Routes API)', () => {
+  it('a distância como se lê na rua', () => {
+    expect(maneuverDistance(203)).toBe('200 m')
+    expect(maneuverDistance(4)).toBe('10 m')
+    expect(maneuverDistance(1240)).toBe('1,2 km')
+    expect(maneuverDistance(null)).toBe('')
+  })
+
+  it('cada manobra com a sua seta; o resto é em frente', () => {
+    expect(maneuverIcon('TURN_RIGHT')).toBe('lucide:corner-up-right')
+    expect(maneuverIcon('TURN_SLIGHT_LEFT')).toBe('lucide:arrow-up-left')
+    expect(maneuverIcon('ROUNDABOUT_LEFT')).toBe('lucide:rotate-ccw')
+    expect(maneuverIcon('NAME_CHANGE')).toBe('lucide:arrow-up')
+    expect(maneuverIcon('')).toBe('lucide:arrow-up')
+  })
+
+  it('a linha por ruas em pontos; sem guia, nada (a página usa a reta)', () => {
+    expect(guidePath({ path: [[-23.3, -51.1], [-23.31, -51.12]], next: null })).toEqual([
+      { lat: -23.3, lng: -51.1 }, { lat: -23.31, lng: -51.12 }])
+    expect(guidePath(null)).toEqual([])
+  })
+
+  it('a faixa da manobra em cima também fica fora do quadro dos pontos', () => {
+    const project = frameProjection([{ lat: -23.33, lng: -51.18 }, { lat: -23.31, lng: -51.16 }], 375, 600, 48, 96, 120)
+    expect(project({ lat: -23.31, lng: -51.16 }).y).toBeGreaterThanOrEqual(120 - 0.01)
   })
 })

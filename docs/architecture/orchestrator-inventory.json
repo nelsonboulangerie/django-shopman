@@ -174,6 +174,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "LOW_RATING_COMMENT_MARK",
             "connect_saved",
             "create",
             "exists",
@@ -186,7 +187,8 @@
             "resolve",
             "resolve_matching",
             "resolve_pk",
-            "revise"
+            "revise",
+            "scrub_customer_comments"
           ]
         }
       ]
@@ -842,10 +844,13 @@
             "SERIES",
             "SimulatedFiscalBackend",
             "UF_PR",
+            "_NO_STREET",
+            "_TPAG",
             "_digits",
             "_mod11",
             "_shop_document",
-            "access_key"
+            "access_key",
+            "authorized_nfce_xml"
           ]
         }
       ]
@@ -1904,6 +1909,7 @@
             "AIConnectionForm",
             "AiInvocationAdmin",
             "AiSpendDayAdmin",
+            "PaidApiCallAdmin",
             "_ReadOnlyAdmin"
           ]
         }
@@ -6800,6 +6806,26 @@
       ]
     },
     {
+      "path": "shopman/shop/models/paid_api_call.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "PaidApiCall",
+            "PaidApiOutcome"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/models/privacy.py",
       "touchpoints": [
         "model"
@@ -10243,6 +10269,8 @@
             "DanfeSourceError",
             "MAX_XML_BYTES",
             "NS",
+            "backend_authorized_xml",
+            "logger",
             "parse_authorized_xml",
             "read_authorized_xml",
             "value"
@@ -13433,11 +13461,13 @@
             "SOURCE",
             "_RIDE_PREFIX",
             "_estimate",
+            "_guide_route",
             "_live",
             "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",
+            "_shop_point",
             "_stop_view",
             "assign",
             "close_if_settled",
@@ -14594,6 +14624,48 @@
           "symbols": [
             "_service",
             "waiting_pool"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/route_guide.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "COST_USD_MICROS",
+            "DEFAULTS",
+            "FIELD_MASK",
+            "KEEP_SECONDS",
+            "MAX_CALLS_PER_DAY",
+            "PROVIDER",
+            "PURPOSE",
+            "REQUEST_TIMEOUT_SECONDS",
+            "ROUTES_URL",
+            "_guide",
+            "_key",
+            "_meters",
+            "_nearest",
+            "_record",
+            "_request",
+            "_spend_today",
+            "compute",
+            "decode_polyline",
+            "forget",
+            "logger",
+            "off_route",
+            "read",
+            "settings_for_shop",
+            "view"
           ]
         }
       ]

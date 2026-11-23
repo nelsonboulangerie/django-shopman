@@ -27,6 +27,22 @@ export function shopInstant(date: string, hour: number, minute = 0): string {
   return `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00${SHOP_OFFSET}`;
 }
 
+/**
+ * A hora do balcão das jornadas que pedem para HOJE e esperam o card no painel (#3295):
+ * hoje, 10h16 da casa. A conta que ela fecha: o primeiro horário da grade é o começo de
+ * meia hora depois de agora + 30 min (`DELIVERY_SLOT_LEAD_MINUTES`), e o Croissant vai
+ * para a Cozinha 45 min antes dele. Pedido entre 10h15 e 10h30 pega 11h às 11h30, que
+ * vai para a Cozinha às 10h15: já passou, e o card fica no painel. Na hora real, o
+ * pedido feito pouco depois da hora cheia (13h05 → 14h, Cozinha às 13h15) ia para
+ * "Encomendas · Hoje", e a jornada caía ou passava conforme o minuto em que rodava. As
+ * jornadas chegam ao pedido em um ou dois minutos: a folga é de 14.
+ */
+export async function atCounterHour(): Promise<string> {
+  const at = shopInstant(shopDate(), 10, 16);
+  await travelTo(at);
+  return at;
+}
+
 /** Viaja: o Django passa a valer `iso` agora, e os navegadores dados também. */
 export async function travelTo(iso: string, contexts: BrowserContext[] = []): Promise<void> {
   if (!controlDir) throw new Error("OPERATOR_CONTROL_DIR não declarada: a pilha não tem relógio de teste.");

@@ -14,10 +14,11 @@ import { capture, cast, roleContext, settled } from "./support/stack";
 // nome, lê que hoje não há nada dela, amplia o período com um toque e abre o pedido de
 // ontem (WP-G04).
 //
-// A cliente é a Ana Ferreira do seed (`config/management/commands/seed.py`, CLI-005), que
-// tem pedido concluído no dia anterior ao seed. Por isso a jornada pede a pilha semeada
-// na véspera, ou num dia em que a Ana não tenha pedido concluído ainda: com pedido dela
-// hoje, a lista já mostra o de hoje e não oferece ampliar.
+// A cliente é a Ana Ferreira do seed (`config/management/commands/seed.py`, CLI-005). O
+// seed garante a ela um pedido concluído ontem, no fuso da casa (#3295): o histórico
+// sorteia o cliente de cada pedido, e antes havia seed com pedido dela ontem e seed sem.
+// Se o sorteio também lhe der pedido hoje, a lista já mostra o de hoje e o período se
+// amplia pelos Filtros; senão, pela oferta "Buscar nos últimos 28 dias".
 const CUSTOMER = "Ana Ferreira";
 
 test("J7: achar o pedido de ontem pelo nome, ampliando o período", async ({ browser, baseURL }, testInfo) => {

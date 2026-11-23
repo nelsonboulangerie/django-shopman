@@ -17,6 +17,14 @@ const SHOTS = process.env.PDV_LIVE_SHOTS || "";
 // O roteiro do plano: "em até 5 s, sem toque".
 const LIVE_BUDGET_MS = 5_000;
 
+// Roteiro manual (README, "Jornada J4"): o login vem de PDV_LIVE_USER/PDV_LIVE_PASSWORD e a
+// última unidade do pão é preparada à mão. O `run_pos_e2e_live.sh` a pega pelo nome jN-*;
+// sem o preparo, ela entrava com usuário vazio e virava vermelho falso (#3295).
+test.skip(
+  !process.env.PDV_LIVE_USER || !process.env.PDV_LIVE_PASSWORD,
+  "a J4 pede o login e a última unidade preparados à mão (README, Jornada J4)",
+);
+
 async function login(page: Page) {
   await page.goto("/");
   await page.waitForLoadState("networkidle");

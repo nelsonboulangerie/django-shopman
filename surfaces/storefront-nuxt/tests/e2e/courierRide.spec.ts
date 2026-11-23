@@ -44,6 +44,16 @@ const VIEWS: Record<string, unknown> = {
   pickup: { ...base, moment: 'pickup', stops: [marina, paulo], settle },
   pickup_wait: { ...base, moment: 'pickup_wait', stops: [marina, { ...paulo, ready: false, ready_at: '12:48' }], settle },
   route: { ...base, moment: 'route', stops: [marina, { ...paulo, lat: -23.31, lng: -51.16 }], settle, map: { key: '', origin: { lat: -23.3405, lng: -51.158 } } },
+  route_guide: {
+    ...base, moment: 'route', stops: [marina, { ...paulo, lat: -23.31, lng: -51.16 }], settle,
+    map: {
+      key: '', origin: { lat: -23.3405, lng: -51.158 },
+      guide: {
+        path: [[-23.3405, -51.158], [-23.338, -51.163], [-23.334, -51.172], [-23.33, -51.18], [-23.322, -51.172], [-23.31, -51.16]],
+        next: { instruction: 'Vire à direita na R. Caracas', maneuver: 'TURN_RIGHT', meters: 200 }
+      }
+    }
+  },
   route_card: { ...base, moment: 'route', stops: [{ ...marina, state: 'done' }, paulo], settle },
   route_cancel: { ...base, moment: 'route', stops: [marina, { ...paulo, state: 'cancelled' }], settle },
   back: { ...base, moment: 'back', stops: [{ ...marina, state: 'done' }, { ...paulo, state: 'done' }], settle },
@@ -354,6 +364,35 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(map.locator('[data-route-outline]')).toHaveAttribute('stroke', paper)
         await expect(map.locator('[data-map-stop="A47"]')).toHaveCSS('border-top-color', inverted)
         await check(page, `04d-mapa-${theme}-${size}`)
+      })
+    })
+  }
+}
+
+// A manobra no topo (#2509, Routes API): a distância grande e a instrução, a linha por ruas,
+// e as paradas e o "Cheguei" ainda na tela, em pé e deitado.
+for (const theme of ['light', 'dark'] as const) {
+  for (const [size, viewport] of [['em-pe', PORTRAIT], ['340', SMALL], ['deitado', LANDSCAPE], ['deitado-740', { width: 740, height: 360 }]] as const) {
+    test.describe(`rota do entregador · manobra · ${theme} · ${size}`, () => {
+      test.use({
+        viewport, isMobile: true, hasTouch: true,
+        permissions: ['geolocation'], geolocation: { latitude: -23.338, longitude: -51.163, accuracy: 10 }
+      })
+
+      test('a próxima manobra no topo do mapa', async ({ page }) => {
+        await openRide(page, 'route_guide', theme)
+        const turn = page.locator('[data-map-turn]')
+        await expect(turn).toContainText('200 m')
+        await expect(turn).toContainText('Vire à direita na R. Caracas')
+        await expect(page.locator('[data-map-stop="A47"]')).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Cheguei' })).toBeInViewport()
+        // Nenhuma parada escondida atrás da manobra.
+        const band = (await turn.boundingBox())!
+        for (const code of ['A47', 'C03']) {
+          const pin = (await page.locator(`[data-map-stop="${code}"]`).boundingBox())!
+          expect(pin.y, code).toBeGreaterThanOrEqual(band.y + band.height - 1)
+        }
+        await check(page, `04e-manobra-${theme}-${size}`)
       })
     })
   }

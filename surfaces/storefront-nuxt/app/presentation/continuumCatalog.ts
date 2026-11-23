@@ -117,7 +117,6 @@ export function catalogFromStructureSnapshot (
       category: section.category,
       skus: [...section.skus]
     })),
-    featured: [],
     active_category_ref: null,
     favorite_category_ref: null,
     has_items: state.has_items && items.length > 0,

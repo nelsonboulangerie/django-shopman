@@ -10,7 +10,7 @@ O que se trava aqui:
 - a fila inteira vira só ``total_count`` no JSON (os itens vão na linha de cada app);
 - uma fonte que quebra não derruba a Central;
 - a linha de estado de cada bloco concorda com a fila;
-- cada app carrega a sua pendência mais urgente (``next_item``), tirada da fila inteira.
+- nenhum item viaja no JSON da Central: a linha do app é um número só (#2134, #2362).
 """
 
 from __future__ import annotations
@@ -372,7 +372,7 @@ def test_aviso_de_pedido_nao_chega_a_quem_so_opera_a_producao(client):
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_a_fila_inteira_vira_so_a_contagem_no_json(client):
     """A Central não lista a fila (dono, 09/10/2026: "Precisa de você" saiu): o JSON leva
-    só quantas pendências há, e o item de cada app vai em ``next_item``."""
+    só quantas pendências há, e a linha de cada app não leva item (#2362)."""
     for index in range(8):
         _order_to_accept(f"WEB-20261003-P{index:02d}")
     admin = User.objects.create_superuser("hub-q-mais", "a@b.c", "pw")
@@ -383,25 +383,6 @@ def test_a_fila_inteira_vira_so_a_contagem_no_json(client):
     assert queue["total_count"] == 8 == len(_queue_items(admin))
 
 
-@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
-def test_cada_app_carrega_a_sua_pendencia_mais_urgente_mesmo_fora_do_foco(client):
-    """A linha do app na Central traz a pendência mais urgente DELE (dono, 09/10/2026:
-    "Precisa de você" saiu). Ela vem da fila inteira: a Cozinha com o único item atrás de
-    seis pedidos mais urgentes ainda mostra o seu."""
-    for index in range(6):
-        _order_to_accept(f"WEB-20261003-U{index:02d}", minutes_ago=30 + index)
-    _late_ticket(minutes_ago=11)  # 1 min além da meta: atrás dos pedidos de 30+ min
-    admin = User.objects.create_superuser("hub-q-next", "a@b.c", "pw")
-
-    hub = _hub(client, admin)
-    tiles = {tile["ref"]: tile for tile in hub["tiles"]}
-
-    assert [item["app"] for item in _queue_items(admin)][:6] == ["gestor"] * 6
-    assert tiles["kds"]["next_item"]["kind"] == "ticket_late"
-    assert tiles["kds"]["next_item"]["url"] == "https://kds.example.test/forno"
-    # A mais urgente do Gestor é o pedido que espera há mais tempo.
-    assert tiles["gestor"]["next_item"]["url"].endswith("WEB-20261003-U05")
-    assert tiles["bi"]["next_item"] is None
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)

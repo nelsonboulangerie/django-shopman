@@ -204,6 +204,8 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "catalog_hidden_by_inactive_collection": ("orders", "/catalog", "Abrir o Catálogo"),
     # Compras: a NF-e que diverge do cadastro fiscal.
     "purchase_invoice_fiscal_divergence": ("purchase", "/", "Abrir o Compras"),
+    # Compras: o insumo sem custo que deixou a fornada sem custo (#2360).
+    "production_cost_gap": ("purchase", "/", "Abrir o Compras"),
     # PDV: a gaveta e o caixa.
     "pos_drawer_sensor_blind": ("pos", "/", "Abrir o PDV"),
     "pos_drawer_left_open": ("pos", "/", "Abrir o PDV"),
