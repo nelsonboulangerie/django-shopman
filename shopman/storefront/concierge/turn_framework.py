@@ -136,9 +136,9 @@ def time_text(value) -> str:
 
 def money_text(value) -> str:
     """ "R$ 24,00": o dinheiro como a casa escreve (o neutro do pacote é "BRL 24.00")."""
-    from shopman.utils.monetary import format_money
-
     from collections.abc import Mapping
+
+    from shopman.utils.monetary import format_money
 
     # O valor do fato chega como ``FrozenMap`` (um ``Mapping``, não um ``dict``).
     if not isinstance(value, Mapping) or "price_minor" not in value:
