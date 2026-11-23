@@ -176,7 +176,9 @@ pergunta dos termos está no ar ("pode fechar" → resumo → "na verdade 4"), o
 de valer (v2 4.7, propriedade 2). A decisão é refeita, ligada à anterior (N14): a necessidade da
 mudança passa a ser atendida pelo `present_terms`, com os termos cotados depois do efeito, e o
 `change_cart` não é proposto de novo. O "sim" seguinte responde ao documento novo
-(`TurnState.changed_under_offer`).
+(`TurnState.changed_under_offer`). O mesmo vale para o "sim" dito junto com a mudança ("sim, e põe
+quatro", em qualquer ordem): a mudança executa, o pedido NÃO é gravado pelos termos de antes, e o
+turno apresenta os termos novos uma vez só (as duas necessidades, a mesma parte).
 
 **Termos apresentados no turno de uma mudança.** Se o mesmo turno muda o carrinho e apresenta os
 termos ("põe mais um e fecha"), a decisão é refeita sobre os termos cotados depois do efeito,

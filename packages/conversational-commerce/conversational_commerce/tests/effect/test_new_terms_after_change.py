@@ -38,3 +38,20 @@ def test_without_an_offer_a_change_still_answers_with_the_cart():
     turn_engine, _ = engine()
     [changed] = run_journey(turn_engine, CTX, [j4.CHANGE])
     assert changed.result.chosen_moves == ["change_cart"]
+
+
+
+def test_yes_and_a_change_in_one_turn_present_the_new_terms_once_in_any_order():
+    """As duas portas juntas: "sim, e põe quatro" e "põe quatro, sim" mudam a sacola e apresentam os termos
+    novos UMA vez; nenhum pedido é gravado pelos termos de antes, e nenhuma limitação é dita."""
+    four = {"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "4"}}
+    for acts in ([{"act": "affirm"}, four], [four, {"act": "affirm"}]):
+        step = JourneyStep(message=j4.message("j4-both", "yes and four"), understanding={"acts": acts},
+                           expect_moves=(), expect_text=(), advance_seconds=30)
+        turn_engine, world = engine(steps=(j4.CHANGE, j4.QUOTE, step, YES))
+        results = run_journey(turn_engine, CTX, [j4.CHANGE, j4.QUOTE, step, YES])
+        both = results[2].result
+        assert [c.action for c in both.commands] == ["change_cart"] and world.state.carts["cart-1"] == {"ITEM-A": "4"}
+        assert both.reply.template_ids == ("present_terms.confirm",), acts  # o resumo novo, uma vez
+        assert "can't" not in both.text and "4 × Item A" in both.text
+        assert len(world.state.orders) == 1  # só o "sim" seguinte grava, pelos termos novos

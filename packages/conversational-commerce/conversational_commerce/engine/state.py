@@ -132,9 +132,15 @@ class TurnState:
         v2 4.7, propriedade 2: mudança material gera novos termos e nova confirmação. O "sim" seguinte
         responde ao documento novo, nunca ao de antes.
         """
-        receipt = self.receipts.get(need.need_id)
-        return (self.offer is not None and need.act == "change_quantity" and receipt is not None
-                and receipt.status == "success")
+        if self.offer is None:
+            return False
+        if need.act == "change_quantity":
+            receipt = self.receipts.get(need.need_id)
+            return receipt is not None and receipt.status == "success"
+        # "Sim, e põe quatro": o "sim" do mesmo turno também pede os termos novos (as duas portas juntas).
+        return self.answers_offer(need) and any(
+            other.act == "change_quantity" and getattr(self.receipts.get(other.need_id), "status", "") == "success"
+            for other in self.needs)
 
     def wants_terms(self, need: NeedSpec) -> bool:
         """Esta necessidade pede termos (novos): fechar o pedido, ou confirmação que não valeu mais."""
