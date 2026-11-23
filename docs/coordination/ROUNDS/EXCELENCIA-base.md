@@ -3,7 +3,7 @@
 Este arquivo não se executa sozinho. Cada app tem o seu brief (`EXCELENCIA-<app>.md`), que
 aponta para cá e diz o perímetro, as fronteiras e o foco daquele app.
 
-Compromisso: DEV-2026-028. Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
+Compromisso: o que o brief do app dá (DEV-2026-028 para PDV, Gestor e Storefront). Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
 
 ## O objetivo
 
@@ -99,8 +99,8 @@ da pessoa. O plano lista quais jornadas canonizar e em que WP cada uma nasce.
 O trabalho é **só do app do brief**. O que pertence a outro app, ao `operator-kit`, aos
 services do `shop` ou ao Core (`packages/`) não vira WP deste plano. Vira uma seção
 **Fronteiras**: o que é, por que afeta este app, de quem é e quais outros apps sente a mudança.
-Três revisões irmãs rodam em paralelo (PDV, Gestor de pedidos, Storefront), cada uma no seu
-perímetro.
+Revisões irmãs de outros apps podem estar rodando ao mesmo tempo, cada uma no seu perímetro e
+nas portas do seu brief (`docs/coordination/ROUNDS/EXCELENCIA-*.md`).
 
 ## Limites
 
