@@ -53,6 +53,10 @@ class Ownership(Protocol):
 
     def cart(self, ctx: TrustedContext) -> str | None: ...
 
+    def new_cart(self, ctx: TrustedContext) -> str | None:
+        """A sacola que o sujeito ainda vai ter (sem nenhuma aberta), ou ``None``. Ela nasce no efeito."""
+        ...
+
     def customer(self, ctx: TrustedContext) -> str | None: ...
 
     def owns_order(self, ctx: TrustedContext, order_ref: str) -> bool: ...
@@ -62,6 +66,9 @@ class DenyAll:
     """Sem superfície que resolva o sujeito: nada pessoal se lê (o padrão seguro)."""
 
     def cart(self, ctx: TrustedContext) -> str | None:
+        return None
+
+    def new_cart(self, ctx: TrustedContext) -> str | None:
         return None
 
     def customer(self, ctx: TrustedContext) -> str | None:
@@ -233,6 +240,30 @@ class ShopmanCommerceRead:
             fulfillment=_fulfillment(data), conditions=_fulfillment_conditions(data, self.channel_ref),
             valid_until=instant(now + timedelta(minutes=self._hold_minutes())),
         ))
+
+    def requirements(self, ctx: TrustedContext, cart_ref: str):
+        """O que os termos da sacola ainda exigem do cliente, e as opções do canal para cada condição.
+
+        Hoje, a forma de pagamento: falta quando o canal oferece mais de uma e a sacola não tem
+        nenhuma escolhida (a MESMA regra do ``review_order`` da casa, que grava o pedido). As opções
+        são as do canal sem dinheiro (D-003, a mesma lista do fechamento de hoje). Vale também para
+        a sacola que o sujeito ainda vai ter: "2 croissants, pago no pix" no primeiro pedido.
+        """
+        from shopman.orderman.models import Session
+
+        if not cart_ref or cart_ref not in {self.ownership.cart(ctx), self.ownership.new_cart(ctx)}:
+            raise PortError("object_forbidden", "sacola inexistente ou de outro sujeito")
+        try:
+            from shopman.shop.config import ChannelConfig
+
+            methods = [m for m in ChannelConfig.for_channel(self.channel_ref).payment.available_methods if m != "cash"]
+            session = Session.objects.filter(session_key=cart_ref, channel_ref=self.channel_ref).first()
+        except Exception:  # noqa: BLE001 - K04: a fonte que falha vira Unknown, nunca o valor velho
+            logger.warning("conversational.requirements: fonte falhou", exc_info=True)
+            return Unknown(reason="source_failed")
+        chosen = str((((session.data if session is not None else None) or {}).get("payment") or {}).get("method") or "")
+        missing = [] if chosen in methods or len(methods) <= 1 else ["payment_method"]
+        return self._known({"missing": missing, "payment_method": methods}, "shop:channel_config")
 
     def _hold_minutes(self) -> int:
         """Os termos valem enquanto valem as reservas da sacola (``stock.hold_ttl_minutes`` do canal).

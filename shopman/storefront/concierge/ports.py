@@ -82,6 +82,13 @@ class ConversationOwnership:
         conversation = _conversation(ctx)
         return (conversation.session_key or None) if conversation is not None else None
 
+    def new_cart(self, ctx: TrustedContext) -> str | None:
+        """A sacola nova da conversa, enquanto ela não tem nenhuma (nasce no efeito, nunca na leitura)."""
+        conversation = _conversation(ctx)
+        if conversation is None or conversation.session_key:
+            return None
+        return new_cart_ref(conversation.pk)
+
     def customer(self, ctx: TrustedContext) -> str | None:
         conversation = _conversation(ctx)
         return (conversation.customer_ref or None) if conversation is not None else None

@@ -31,6 +31,9 @@ class Owns:
     def cart(self, ctx):
         return "sess-1"
 
+    def new_cart(self, ctx):
+        return None
+
     def customer(self, ctx):
         return "cust-1"
 

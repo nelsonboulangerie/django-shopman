@@ -145,6 +145,9 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "present_terms.confirm": "{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?",
     "acknowledge.terms_declined": ("Tudo bem, fica sem pedido por agora. Os itens continuam na sacola, "
                                    "se mudar de ideia."),
+    # Cartão 5 (pagamento), aprovadas pelo dono em 23/11: a pergunta de hoje e o "Combinado".
+    "set_payment.done": "Combinado: {method}.",
+    "present_terms.needs_payment_method": "Como você prefere pagar? {payment_method}",
 }
 REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team")
 

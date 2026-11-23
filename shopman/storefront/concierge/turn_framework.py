@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 ACTION_CLASSES = {
     "inform": ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification"),
     "handoff": ("handoff",),
-    "order": ("present_terms", "change_cart", "set_fulfillment", "commit_order"),
+    "order": ("present_terms", "change_cart", "set_fulfillment", "set_payment", "commit_order"),
 }
 SWITCH_FIELD = {"inform": "conversational_live_inform", "handoff": "conversational_live_handoff",
                 "order": "conversational_live_order"}
@@ -68,7 +68,13 @@ NICE_TEMPLATE_COPY = {
     "present_terms.confirm": "CONCIERGE_ENGINE_TERMS_CONFIRM",
     # "Deixa pra lá" no resumo, sem efeito no turno: a MESMA frase do fechamento de hoje (#3388, "Igual").
     "acknowledge.terms_declined": "CONCIERGE_CLOSE_GAVE_UP",
+    # A forma de pagamento escolhida pelo motor (cartão 5): "Combinado: Pix.", no molde do "Combinado".
+    "set_payment.done": "CONCIERGE_ENGINE_PAYMENT_SET",
 }
+
+#: A pergunta da forma de pagamento: a MESMA de hoje (``CONCIERGE_CLOSE_ASK_PAYMENT``), com o espaço
+#: do motor (``{payment_method}``, as opções do canal) no lugar de ``{options}``.
+PAYMENT_QUESTION = ("present_terms.needs_payment_method", "CONCIERGE_CLOSE_ASK_PAYMENT", "{options}", "{payment_method}")
 
 #: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).
 #: O recebimento é o MESMO "Combinado" do caminho de hoje (``CONCIERGE_CART_FULFILLMENT_NOTED``,
@@ -159,6 +165,28 @@ def track_text(value) -> str:
     return f"{_storefront_base_url()}/pedido/{value}/"
 
 
+def method_text(value) -> str:
+    """A forma escolhida como a casa a escreve: "Pix", "Cartão (link seguro)"."""
+    from .tools import PAYMENT_LABELS
+
+    if str(value) not in PAYMENT_LABELS:
+        raise ValueError("forma de pagamento que a casa não conhece")
+    return PAYMENT_LABELS[str(value)]
+
+
+def payment_options_text(value) -> str:
+    """As formas do canal para a pergunta: "Pix ou Cartão (link seguro)".
+
+    Sem os números do fechamento de hoje ("1) Pix; 2) …"): pelo motor, o "1" não é lido como a
+    primeira opção (o leitor não vê a pergunta), e lista numerada que não se responde por número
+    seria promessa falsa.
+    """
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError("opções sem lista")
+    labels = [method_text(option) for option in value]
+    return labels[0] if len(labels) == 1 else f"{', '.join(labels[:-1])} ou {labels[-1]}"
+
+
 def done_text(value) -> str:
     """O recibo de sucesso dito como a casa diz: "Pronto"."""
     return "Pronto" if str(value) == "success" else str(value)
@@ -216,7 +244,8 @@ def nice_formatters() -> dict:
             "fulfillment": fulfillment_text, "conditions": conditions_text, "owner": owner_text,
             "deadline": deadline_text,
             "date": date_text,
-            "mode": mode_text, "window": window_text, "time": time_text}
+            "mode": mode_text, "window": window_text, "time": time_text,
+            "method": method_text, "payment_method": payment_options_text}
 
 ENVIRONMENT = "live"
 
@@ -245,6 +274,15 @@ def nice_templates() -> dict[str, Template]:
         except ValueError:
             logger.warning("concierge.turn_framework.template_refused template=%s key=%s", template_id, key)
     found.update(_order_templates(package, copy_message))
+    template_id, key, today_slot, slot = PAYMENT_QUESTION
+    text = (copy_message(key) or "").strip()
+    if today_slot in text:
+        try:
+            base = package[template_id]
+            found[template_id] = Template(template_id, f"nice:{key}", base.move, text.replace(today_slot, slot),
+                                          dict(base.slots))
+        except (KeyError, ValueError):
+            logger.warning("concierge.turn_framework.template_refused template=%s key=%s", template_id, key)
     return found
 
 

@@ -1540,6 +1540,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_TERMS_CONFIRM": {
         WILDCARD: {WILDCARD: CopyEntry(message="{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?")},
     },
+    "CONCIERGE_ENGINE_PAYMENT_SET": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: {method}.")},
+    },
     "CONCIERGE_ENGINE_EFFECT_FAILED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
     },
