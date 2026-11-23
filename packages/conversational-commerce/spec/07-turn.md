@@ -65,7 +65,7 @@ O F8, o F9 e o F10 acrescentam módulos sem editar o laço.
 
 O ato `choose_fulfillment` (o cliente diz quando e como recebe) está na lista fechada, entre
 os de mudança. A leitura traz qualquer subconjunto de `date` (`AAAA-MM-DD`), `mode` (`pickup`
-ou `delivery`), `window` (referência opaca da casa) e `time` (`HH:MM`), com `relative: true`
+ou `delivery`) e `time` (`HH:MM`), com `relative: true`
 quando o que se disse não é absoluto. "Amanhã às 16h" chega resolvido pelo leitor contra o
 relógio confiável (`date` e `time`); dia ou hora relativos não se aplicam (`08-effect.md`,
 seção 6). Na regra local de teste, `pick up` e `deliver` somam o ato, sem campos.

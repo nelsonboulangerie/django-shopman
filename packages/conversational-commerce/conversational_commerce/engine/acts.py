@@ -37,8 +37,9 @@ ANSWER_ACTS = frozenset({"affirm", "deny"})
 DECLARATION_ACTS = frozenset({"decline_offers", "accept_offers"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
 CHANGE_ACTS = frozenset({"change_quantity", "choose_fulfillment", "place_order", "cancel_order"})
-# Os campos de leitura de ``choose_fulfillment``: quando (dia, janela ou hora) e como (retirada ou entrega).
-FULFILLMENT_FIELDS: tuple[str, ...] = ("date", "mode", "window", "time")
+# Os campos de leitura de ``choose_fulfillment``: quando (dia, hora) e como (retirada ou entrega).
+# A janela do dia não é dita: é a casa que a dá, no recibo.
+FULFILLMENT_FIELDS: tuple[str, ...] = ("date", "mode", "time")
 FULFILLMENT_MODES: tuple[str, ...] = ("pickup", "delivery")
 
 

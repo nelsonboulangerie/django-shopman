@@ -75,10 +75,9 @@ class HarnessEnv:
     # Devolve termos vigentes do carrinho (normalmente, ``commerce_read.quote``).
     fresh_terms: Callable[[], TermsDocument] | None = None
     # Recebimento (``set_fulfillment``), opcional: um recebimento que o sistema aceita no ``cart_ref``
-    # (``date``, ``mode``, ``window`` e/ou ``time``) e uma referência de janela que ele não oferece.
+    # (``date``, ``mode`` e/ou ``time``).
     # Sem ``fulfillment``, a checagem do recebimento não roda: a casa que não liga o movimento não o executa.
     fulfillment: Mapping[str, str] | None = None
-    unknown_window: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,9 +262,8 @@ def _fulfillment_command(env: HarnessEnv, *, key: str, parameters: Mapping[str, 
 
 
 def check_set_fulfillment(port: Any, env: HarnessEnv) -> None:
-    """O comando ``set_fulfillment``: aplica o que foi dito, o recibo aponta o recebimento, a janela
-    desconhecida é recusada sem efeito com ``fulfillment_window_unknown``, e a forma inválida com
-    ``invalid_fulfillment``."""
+    """O comando ``set_fulfillment``: aplica o que foi dito, o recibo aponta o recebimento, e a forma
+    inválida é recusada sem efeito com ``invalid_content``."""
     if env.fulfillment is None:
         return
     guard = AllowGuard()
@@ -277,15 +275,10 @@ def check_set_fulfillment(port: Any, env: HarnessEnv) -> None:
         _expect(receipt.domain_refs.get(name) == value, f"o recibo não aponta o {name} aplicado")
     _expect(port.execute(env.ctx, command, guard).id == receipt.id,
             "mesma chave e mesmo conteúdo não devolveram o mesmo recibo do recebimento")
-    if env.unknown_window:
-        unknown = port.execute(env.ctx, _fulfillment_command(env, key="harness-fulfillment-2",
-                                                             parameters={"window": env.unknown_window}), guard)
-        _expect((unknown.status, unknown.effect) == ("failure", "not_applied"), "janela desconhecida foi aplicada")
-        _expect(unknown.error.code == "fulfillment_window_unknown", "janela desconhecida sem o código estável")
     malformed = port.execute(env.ctx, _fulfillment_command(env, key="harness-fulfillment-3",
                                                            parameters={"date": "tomorrow"}), guard)
     _expect((malformed.status, malformed.effect) == ("failure", "not_applied"), "data fora de ISO foi aplicada")
-    _expect(malformed.error.code == "invalid_fulfillment", "data fora de ISO sem o código estável")
+    _expect(malformed.error.code == "invalid_content", "data fora de ISO sem o código estável")
 
 
 def check_staff(port: Any, env: HarnessEnv) -> None:

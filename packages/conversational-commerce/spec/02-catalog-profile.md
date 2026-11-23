@@ -172,9 +172,7 @@ ocorrido, a categoria é reconciliação (`effect_unknown`), por mais recuperáv
 | `effect_unknown` | não se sabe se aconteceu: reconciliar com a mesma chave |
 | `budget_exhausted` | estourou um teto do turno (passos, tempo, consultas, modelo, gasto) |
 | `provider_unavailable` | o provedor (modelo, canal, comércio) não respondeu, e nada pode ter ocorrido |
-| `invalid_fulfillment` | o comando `set_fulfillment` não cumpre a forma: campo fora de `date`/`mode`/`window`/`time`, nenhum campo, data que não é `AAAA-MM-DD` real, hora fora de `HH:MM`, modo fora de `pickup`/`delivery` |
-| `fulfillment_window_unknown` | a janela pedida (`window`) não é uma que a casa oferece |
-| `fulfillment_unavailable` | o recebimento é bem formado, mas a casa não o atende (modo que ela não oferece, dia que já passou, hora fora do expediente) |
+| `fulfillment_unavailable` | o recebimento é bem formado, mas a casa não o atende (modo que ela não oferece, dia que já passou, hora fora do expediente). Forma inválida do `set_fulfillment` é `invalid_content` |
 
 ## 8. Prova
 

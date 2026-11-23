@@ -38,49 +38,46 @@ from conversational_commerce.ports import commerce_read as read_port
 
 from .base import FakeBase
 from .faults import Fault
-from .synthetic_domain import CLOSING, CUSTOMERS, KNOWLEDGE, OPENING, POLICIES, SyntheticState
+from .synthetic_domain import CLOSING, CUSTOMERS, DAY_WINDOW, KNOWLEDGE, OPENING, POLICIES, SyntheticState
 
 FACT_VALIDITY_SECONDS = 300
 TERMS_VALIDITY_SECONDS = 1800
 RECONCILIATION_SECONDS = 900
 
 # O comando ``set_fulfillment``: os campos que ele aceita e a forma de cada um.
-FULFILLMENT_FIELDS = ("date", "mode", "window", "time")
+FULFILLMENT_FIELDS = ("date", "mode", "time")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
-def fulfillment_problem(parameters, *, today: str, modes, windows) -> ErrorCode | None:
+def fulfillment_problem(parameters, *, today: str, modes) -> ErrorCode | None:
     """Por que o recebimento pedido não se aplica; ``None`` quando se aplica.
 
-    ``invalid_fulfillment``: campo desconhecido, nenhum campo, data que não é ISO
+    ``invalid_content``: campo desconhecido, nenhum campo, data que não é ISO
     real, hora fora de ``HH:MM``, modo fora de ``pickup``/``delivery``.
     ``fulfillment_unavailable``: bem formado, mas a casa não atende (modo que ela
     não oferece, dia que já passou, hora fora do expediente).
-    ``fulfillment_window_unknown``: janela que a casa não oferece.
     """
     fields = dict(parameters)
     if not fields or set(fields) - set(FULFILLMENT_FIELDS) or not all(isinstance(v, str) for v in fields.values()):
-        return ErrorCode.INVALID_FULFILLMENT
+        return ErrorCode.INVALID_CONTENT
     if "date" in fields:
         if not ISO_DATE.match(fields["date"]):
-            return ErrorCode.INVALID_FULFILLMENT
+            return ErrorCode.INVALID_CONTENT
         try:
             calendar_date.fromisoformat(fields["date"])
         except ValueError:
-            return ErrorCode.INVALID_FULFILLMENT
+            return ErrorCode.INVALID_CONTENT
     if "time" in fields and not CLOCK_TIME.match(fields["time"]):
-        return ErrorCode.INVALID_FULFILLMENT
+        return ErrorCode.INVALID_CONTENT
     if "mode" in fields and fields["mode"] not in ("pickup", "delivery"):
-        return ErrorCode.INVALID_FULFILLMENT
+        return ErrorCode.INVALID_CONTENT
     if "mode" in fields and fields["mode"] not in modes:
         return ErrorCode.FULFILLMENT_UNAVAILABLE
     if "date" in fields and fields["date"] < today:
         return ErrorCode.FULFILLMENT_UNAVAILABLE
     if "time" in fields and not OPENING <= fields["time"] < CLOSING:
         return ErrorCode.FULFILLMENT_UNAVAILABLE
-    if "window" in fields and fields["window"] not in windows:
-        return ErrorCode.FULFILLMENT_WINDOW_UNKNOWN
     return None
 
 
@@ -254,14 +251,11 @@ class FakeCommerceExecute(FakeBase):
             cart[command.parameters["item"]] = command.parameters["quantity"]
         if command.action == "set_fulfillment":
             current = self.state.fulfillment.setdefault(command.targets[0], {})
-            said = dict(command.parameters)
-            # Janela e hora dizem a mesma coisa (quando no dia): a dita substitui a outra.
-            if "window" in said:
-                current.pop("time", None)
-            if "time" in said:
-                current.pop("window", None)
-            current.update(said)
-            self.applied_refs[command.command_id] = dict(current)
+            current.update(command.parameters)
+            refs = dict(current)
+            if "date" in refs and "time" not in refs:
+                refs["window"] = DAY_WINDOW  # o dia sem hora: a casa diz a janela dela
+            self.applied_refs[command.command_id] = refs
         for target in command.targets:
             self.state.versions[target] = self.state.versions.get(target, 0) + 1
             self.state.current_terms.pop(target, None)  # mudou o alvo: termos velhos não valem
@@ -318,7 +312,7 @@ class FakeCommerceExecute(FakeBase):
         if command.action != "set_fulfillment":
             return None
         return fulfillment_problem(command.parameters, today=self.clock.now()[:10],
-                                   modes=self.state.fulfillment_modes, windows=self.state.fulfillment_windows)
+                                   modes=self.state.fulfillment_modes)
 
     def _refs(self, command: ActionCommand, ref: str) -> dict[str, str]:
         return {"effect": ref, **self.applied_refs.get(command.command_id, {})}

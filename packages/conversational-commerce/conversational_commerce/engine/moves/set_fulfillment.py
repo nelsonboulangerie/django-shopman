@@ -1,4 +1,4 @@
-"""Definir o recebimento: dia, retirada ou entrega, e a janela ou a hora (A2, reversível).
+"""Definir o recebimento: dia, retirada ou entrega, e a hora (A2, reversível).
 
 Espelha ``change_cart``. Proposto para o ato ``choose_fulfillment`` com uma
 leitura só e o carrinho do sujeito; a concessão vem da linha do perfil (sem
@@ -6,17 +6,16 @@ termos: a mudança é reversível e não fecha nada, mas invalida os termos já
 cotados, porque o alvo muda de versão).
 
 A leitura traz qualquer subconjunto de ``date`` (``AAAA-MM-DD``), ``mode``
-(``pickup`` ou ``delivery``), ``window`` (referência opaca escolhida pela casa)
-e ``time`` (``HH:MM``). O que foi dito se aplica; o que não foi dito não se
+(``pickup`` ou ``delivery``) e ``time`` (``HH:MM``). O que foi dito se aplica; o que não foi dito não se
 inventa: o comando leva só os campos presentes, e o executor guarda o resto como
 estava. Dia ou hora relativos ("amanhã", "mais tarde") não são absolutos: quem
 lê (modelo ou adaptador) resolve contra o relógio confiável antes, ou a ação fica
 inelegível (``relative_fulfillment``), como a quantidade relativa no carrinho.
 
 A resposta sai do recibo: o executor devolve em ``domain_refs`` o recebimento
-do alvo DEPOIS do efeito (``date``, ``mode``, ``window``, ``time``, os que
-estiverem definidos), e o molde escolhido é o mais completo que o recibo
-sustenta. A casa formata os valores pelos formatadores dos espaços (a data na
+do alvo DEPOIS do efeito (``date``, ``mode``, ``time``, os que estiverem
+definidos, e a ``window`` que a casa dá ao dia quando não há hora), e o molde
+escolhido é o mais completo que o recibo sustenta. A casa formata os valores pelos formatadores dos espaços (a data na
 língua dela, o rótulo da janela a partir da referência).
 """
 
@@ -57,7 +56,7 @@ def said(fields) -> dict[str, str]:
 
 
 def is_absolute(fields) -> bool:
-    """Tudo o que foi dito está em forma absoluta: data ISO real, hora HH:MM, modo da lista, janela opaca."""
+    """Tudo o que foi dito está em forma absoluta: data ISO real, hora HH:MM, modo da lista."""
     if fields.get("relative", False):
         return False
     values = said(fields)
@@ -73,8 +72,6 @@ def is_absolute(fields) -> bool:
     if "time" in values and not CLOCK_TIME.match(values["time"]):
         return False
     if "mode" in values and values["mode"] not in FULFILLMENT_MODES:
-        return False
-    if "window" in values and (values["window"] != values["window"].strip() or " " in values["window"]):
         return False
     return True
 

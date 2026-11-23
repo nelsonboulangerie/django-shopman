@@ -41,8 +41,6 @@
             "effect_unknown",
             "budget_exhausted",
             "provider_unavailable",
-            "invalid_fulfillment",
-            "fulfillment_window_unknown",
             "fulfillment_unavailable"
           ],
           "type": "string"

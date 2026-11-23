@@ -1,4 +1,4 @@
-"""Recebimento: dia, retirada ou entrega, janela ou hora, como efeito reversível no carrinho (A2).
+"""Recebimento: dia, retirada ou entrega, e hora, como efeito reversível no carrinho (A2).
 
 O ato ``choose_fulfillment`` vira o movimento ``set_fulfillment``: concessão pela
 linha do perfil, comando ``set_fulfillment`` no carrinho do sujeito, recibo com o
@@ -50,13 +50,14 @@ def test_date_mode_and_time_are_applied_with_a_line_grant():
     assert result.reply.plan.parts[0].claims[0].backing == "receipt"  # o efeito afirmado tem recibo
 
 
-def test_window_reaches_the_reply_through_the_house_formatter():
-    steps = (step("f1", {"date": TOMORROW, "mode": "delivery", "window": "window-afternoon"}),)
+def test_the_day_without_an_hour_gets_the_house_window_through_the_formatter():
+    steps = (step("f1", {"date": TOMORROW, "mode": "delivery"}),)
     turn_engine, world = engine(steps=steps)
     labels = {"window-afternoon": "between noon and six"}
     turn_engine.formatters = {**turn_engine.formatters, "window": labels.__getitem__}
     result = turn_engine.turn(CTX, steps[0].message)
     assert result.text == f"Done: delivery on {TOMORROW}, between noon and six."
+    assert dict(result.commands[0].parameters) == {"date": TOMORROW, "mode": "delivery"}  # a janela não é dita
     # Entrega definida: a cotação seguinte já sai com o modo do carrinho.
     assert world.commerce_read.quote(j4.CTX, "cart-1").fulfillment.mode == "delivery"
 
@@ -76,24 +77,19 @@ def test_mode_only_is_applied_without_inventing_the_rest():
 def test_what_was_said_before_stays_and_the_reply_says_the_whole():
     (_, second, third), world = run(
         step("f1", {"mode": "pickup"}),
-        step("f2", {"date": TOMORROW}, text=(f"Done: pickup on {TOMORROW}.",)),
-        step("f3", {"window": "window-morning"}, text=(f"Done: pickup on {TOMORROW}, window-morning.",)),
+        step("f2", {"date": TOMORROW}, text=(f"Done: pickup on {TOMORROW}, window-afternoon.",)),
+        step("f3", {"time": "15:30"}, text=(f"Done: pickup on {TOMORROW} at 15:30.",)),
     )
     assert dict(second.commands[0].parameters) == {"date": TOMORROW}
-    assert world.state.fulfillment["cart-1"] == {"mode": "pickup", "date": TOMORROW, "window": "window-morning"}
+    assert world.state.fulfillment["cart-1"] == {"mode": "pickup", "date": TOMORROW, "time": "15:30"}
 
 
-def test_window_and_time_replace_each_other():
-    _, world = run(step("f1", {"window": "window-morning"}), step("f2", {"time": "15:30"}))
-    assert world.state.fulfillment["cart-1"] == {"time": "15:30"}
-
-
-def test_unknown_window_is_refused_with_a_stable_code_and_nothing_changes():
-    [result], world = run(step("f1", {"date": TOMORROW, "window": "window-midnight"},
-                               moves=("inform_limitation",), text=("I can't do that here",)))
+def test_a_day_already_gone_is_refused_with_a_stable_code_and_nothing_changes():
+    [result], world = run(step("f1", {"date": "2026-01-04"}, moves=("inform_limitation",),
+                               text=("I can't do that here",)))
     receipt = result.receipts[0]
     assert (receipt.status, receipt.effect) == ("failure", "not_applied")
-    assert receipt.error.code == "fulfillment_window_unknown"
+    assert receipt.error.code == "fulfillment_unavailable"
     assert "cart-1" not in world.state.fulfillment and world.commerce_execute.effects == 0
 
 
@@ -151,23 +147,23 @@ def test_shadow_decides_but_never_sets_the_fulfillment():
 
 
 def test_the_reading_rule_and_the_executor_agree_on_the_form():
-    windows, modes = {"window-morning": ("08:00", "12:00")}, ("pickup", "delivery")
+    modes = ("pickup", "delivery")
     cases = {
-        (("date", TOMORROW), ("mode", "pickup"), ("window", "window-morning")): None,
+        (("date", TOMORROW), ("mode", "pickup"), ("time", "16:00")): None,
         (("time", "17:59"),): None,
-        (("date", "06/01/2026"),): "invalid_fulfillment",
-        (("time", "25:00"),): "invalid_fulfillment",
-        (("mode", "teleport"),): "invalid_fulfillment",
-        (("note", "x"),): "invalid_fulfillment",
-        (): "invalid_fulfillment",
+        (("date", "06/01/2026"),): "invalid_content",
+        (("time", "25:00"),): "invalid_content",
+        (("mode", "teleport"),): "invalid_content",
+        (("note", "x"),): "invalid_content",
+        (("window", "window-morning"),): "invalid_content",  # a janela não se dita: é da casa
+        (): "invalid_content",
         (("date", "2026-01-04"),): "fulfillment_unavailable",
         (("time", "19:00"),): "fulfillment_unavailable",
-        (("window", "window-midnight"),): "fulfillment_window_unknown",
     }
     for fields, expected in cases.items():
-        problem = fulfillment_problem(dict(fields), today="2026-01-05", modes=modes, windows=windows)
+        problem = fulfillment_problem(dict(fields), today="2026-01-05", modes=modes)
         assert (problem.value if problem else None) == expected, fields
-        if expected in (None, "invalid_fulfillment") and fields and fields[0][0] != "note":
+        if expected in (None, "invalid_content") and fields and fields[0][0] not in ("note", "window"):
             assert is_absolute(dict(fields)) is (expected is None), fields
 
 
@@ -178,19 +174,19 @@ def test_delivery_not_offered_is_unavailable():
     assert result.receipts[0].error.code == "fulfillment_unavailable"
 
 
-class _AcceptsAnyWindow(FakeCommerceExecute):
+class _AcceptsAnyForm(FakeCommerceExecute):
     def _refusal(self, command):
-        return None  # aceita tudo: a janela desconhecida passaria
+        return None  # aceita tudo: a data fora de ISO passaria
 
 
-def test_the_harness_fails_an_executor_that_accepts_any_window():
+def test_the_harness_fails_an_executor_that_accepts_any_form():
     world = FakeWorld()
-    executor = _AcceptsAnyWindow(world.clock, world.faults, world.state)
+    executor = _AcceptsAnyForm(world.clock, world.faults, world.state)
     env = HarnessEnv(ctx=j4.CTX, clock=world.clock, cart_ref="cart-1",
                      fresh_terms=lambda: world.commerce_read.quote(j4.CTX, "cart-1"),
-                     fulfillment={"date": TOMORROW, "mode": "pickup"}, unknown_window="window-midnight")
+                     fulfillment={"date": TOMORROW, "mode": "pickup"})
     failures = run_checks("commerce_execute", executor, env)
-    assert failures and "janela desconhecida" in failures[0].message
+    assert failures and "fora de ISO" in failures[0].message
 
 
 class _Allow:

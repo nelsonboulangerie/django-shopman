@@ -35,9 +35,7 @@ class ErrorCode(StrEnum):
     EFFECT_UNKNOWN = "effect_unknown"
     BUDGET_EXHAUSTED = "budget_exhausted"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
-    # Recebimento (``set_fulfillment``): forma inválida, janela que a casa não oferece, o que a casa não atende.
-    INVALID_FULFILLMENT = "invalid_fulfillment"
-    FULFILLMENT_WINDOW_UNKNOWN = "fulfillment_window_unknown"
+    # Recebimento (``set_fulfillment``) bem formado que a casa não atende. Forma inválida é ``invalid_content``.
     FULFILLMENT_UNAVAILABLE = "fulfillment_unavailable"
 
 
