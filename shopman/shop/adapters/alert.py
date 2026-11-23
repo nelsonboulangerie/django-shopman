@@ -7,6 +7,32 @@ from __future__ import annotations
 
 from typing import Any
 
+#: Onde começa o comentário da cliente no aviso de nota baixa (``storefront.api.tracking``).
+#: É texto livre da titular: a exclusão dela o corta daqui (``scrub_customer_comments``).
+LOW_RATING_COMMENT_MARK = " Comentário: "
+
+
+def scrub_customer_comments(order_refs) -> int:
+    """Tira o comentário da cliente dos avisos de nota baixa destes pedidos (#2359).
+
+    A exclusão do titular apaga o comentário do pedido (``customer_rating.comment``);
+    o aviso ``low_rating`` levava uma cópia dele, que sobrevivia. A nota fica (é
+    métrica da loja), o comentário sai. Devolve quantos avisos mudaram.
+    """
+    from shopman.backstage.models import OperatorAlert
+
+    refs = [str(ref) for ref in order_refs if ref]
+    if not refs:
+        return 0
+    changed = 0
+    rows = OperatorAlert.objects.filter(
+        type="low_rating", order_ref__in=refs, message__contains=LOW_RATING_COMMENT_MARK,
+    ).values_list("pk", "message")
+    for pk, message in rows:
+        OperatorAlert.objects.filter(pk=pk).update(message=message.split(LOW_RATING_COMMENT_MARK, 1)[0])
+        changed += 1
+    return changed
+
 
 def create(
     type: str,

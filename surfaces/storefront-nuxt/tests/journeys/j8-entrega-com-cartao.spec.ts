@@ -1,6 +1,7 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import { addReadyProductFromMenu, checkoutSigningInByCode } from './support/customer'
 import { acceptsNewOrder, acknowledgeOtherOrdersAlarms, managerSignsIn } from './support/operator'
+import { viaCepFromFakeMaps } from './support/maps'
 import { capture, gestorViewport, newCustomerPhone, settled, stack } from './support/stack'
 
 // J8 · Entrega com cartão (docs/plans/EXCELENCIA-STOREFRONT-PLANO.md, seção 8; #2987).
@@ -12,29 +13,51 @@ import { capture, gestorViewport, newCustomerPhone, settled, stack } from './sup
 //
 // O seed `--profile qa` cobra R$ 25,00 de mínimo só na entrega; um Croissant (R$ 13,00)
 // fica abaixo, dois passam. O cartão vai ao Stripe falso da pilha (F-7, #2568), e o
-// endereço entra pelo caminho manual do AddressPicker (a pilha não tem Google).
+// endereço entra pelo caminho manual do AddressPicker (a pilha não tem Google). O ViaCEP que
+// o navegador consulta ao digitar o CEP vai aos mapas falsos da pilha, e nenhuma consulta
+// sai da máquina (#3282). O aviso do pedido chega no WhatsApp dela: o ManyChat falso da
+// pilha o guarda, e a jornada o lê pelo telefone.
 const PRODUCT = 'Croissant'
 const ADDRESS = { route: 'Rua Jorge Velho', number: '140', neighborhood: 'Bela Suíça', cep: '86050-480' }
 
-/** O passo "Endereço" pelo caminho manual, como a cliente que digita o endereço. */
+// O ManyChat falso da pilha (shopman/shop/tests/e2e/fake_manychat.py).
+const MANYCHAT = (process.env.JOURNEY_MANYCHAT_URL || `http://127.0.0.1:${process.env.JOURNEYS_MANYCHAT_PORT || '12191'}`).replace(/\/$/, '')
+
+/** As mensagens que a loja mandou ao WhatsApp deste telefone, como o ManyChat falso guardou. */
+async function whatsappMessages (request: APIRequestContext, phone: string): Promise<{ endpoint: string }[]> {
+  const response = await request.get(`${MANYCHAT}/__sent?phone=55${phone}`)
+  expect(response.status()).toBe(200)
+  const { sent } = await response.json() as { sent: { endpoint: string }[] }
+  return sent.filter(item => item.endpoint.startsWith('/fb/sending/'))
+}
+
+/** O passo "Endereço" pelo caminho manual, como a cliente que digita o endereço: o CEP
+ *  primeiro (o formulário abre nele), que preenche rua, bairro, cidade e UF pelo ViaCEP (aqui,
+ *  os mapas falsos); ela completa o número e confirma. */
 async function typesDeliveryAddress (page: Page) {
   const step = page.locator("[data-checkout-step='address']")
   await expect(step.locator('[data-address-picker]')).toBeVisible()
   const fresh = step.locator('[data-address-new]')
-  if (await fresh.first().isVisible().catch(() => false)) await fresh.first().click()
-  await step.locator('[data-address-manual]').click()
-  await step.locator('#address-route').fill(ADDRESS.route)
+  if (await fresh.first().isVisible().catch(() => false)) await tapsWithKeyboardClosed(page, fresh.first())
+  await tapsWithKeyboardClosed(page, step.locator('[data-address-manual]'))
+  await step.locator('#address-cep').pressSequentially(ADDRESS.cep.replace('-', ''))
+  // A consulta do CEP preencheu o resto: a rua, o bairro e a cidade dele.
+  await expect(step.locator('#address-route')).toHaveValue(ADDRESS.route)
+  await expect(step.locator('#address-neighborhood')).toHaveValue(ADDRESS.neighborhood)
+  await expect(step.locator('#address-city')).toHaveValue('Londrina')
   await step.locator('#address-number').fill(ADDRESS.number)
-  await step.locator('#address-neighborhood').fill(ADDRESS.neighborhood)
-  await step.locator('#address-cep').fill(ADDRESS.cep)
-  const city = step.locator('#address-city')
-  if (!(await city.inputValue()).trim()) await city.fill('Londrina')
-  const state = step.locator('#address-state')
-  if (!(await state.innerText()).trim()) {
-    await state.click()
-    await page.getByRole('option', { name: 'PR', exact: true }).click()
-  }
-  await step.locator('[data-address-confirm]').click()
+  await tapsWithKeyboardClosed(page, step.locator('[data-address-confirm]'))
+}
+
+/** Fecha o teclado e toca no botão. Na emulação de celular não há teclado de verdade
+ *  ocupando a base da tela: com um campo em foco a loja recolhe a barra de baixo e o card de
+ *  ação, o botão pode ficar na borda inferior, e o clique (o mousedown tira o foco, a barra
+ *  volta por cima do botão, o mouseup cai nela) se perde. Medido na J8 a 375 px: depois do
+ *  clique, o ponto do botão era o link "Sacola" da barra. No aparelho, o teclado ocupa esse
+ *  lugar e a barra volta onde ele estava. */
+async function tapsWithKeyboardClosed (page: Page, button: Locator) {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await button.click()
 }
 
 /** "Quando" da entrega: a primeira janela habilitada da data marcada. */
@@ -46,9 +69,10 @@ async function picksFirstDeliveryWindow (page: Page) {
   await expect(window).toHaveAttribute('aria-checked', 'true')
 }
 
-test('J8: entrega com cartão, passando pelo mínimo da entrega, até a loja aceitar', async ({ page, browser }, testInfo) => {
+test('J8: entrega com cartão, passando pelo mínimo da entrega, até a loja aceitar', async ({ page, browser, request }, testInfo) => {
   test.setTimeout(300_000)
   const customer = { phone: newCustomerPhone(), name: 'Rosa' }
+  const viaCep = await viaCepFromFakeMaps(page)
 
   const gestorContext = await browser.newContext({ baseURL: stack.gestor, viewport: gestorViewport, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' })
   const gestor = await gestorContext.newPage()
@@ -129,5 +153,18 @@ test('J8: entrega com cartão, passando pelo mínimo da entrega, até a loja ace
     // O dinheiro, na mesma aba: o cartão pago, com o valor, depois da captura no aceite.
     await expect(page.getByRole('tabpanel', { name: 'Resumo' })).toContainText(/Cartão de R\$\s*\d+,\d{2}, pago às \d{1,2}h\d{2}/)
     await capture(page, testInfo, 'entrega')
+  })
+
+  await test.step('o CEP foi consultado nos mapas falsos, e nada saiu para o ViaCEP de verdade', async () => {
+    expect(viaCep.served).toContain(ADDRESS.cep.replace('-', ''))
+    expect(viaCep.refused).toEqual([])
+  })
+
+  await test.step('o aviso do pedido chega no WhatsApp dela', async () => {
+    // Ela entrou por código: o contato do ManyChat nasce do telefone, pelo resolvedor.
+    await expect.poll(async () => (await whatsappMessages(request, customer.phone)).length, {
+      message: 'o ManyChat falso recebeu o aviso do pedido para o telefone dela',
+      timeout: 60_000
+    }).toBeGreaterThan(0)
   })
 })
