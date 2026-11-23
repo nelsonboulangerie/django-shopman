@@ -253,6 +253,7 @@ class CartService:
         qty: int,
         *,
         sku: str | None = None,
+        whole_product: bool = False,
     ) -> Session:
         """Update quantity of a cart item.
 
@@ -271,6 +272,7 @@ class CartService:
             line_id=line_id,
             qty=qty,
             sku=sku,
+            whole_product=whole_product,
         )
 
     @staticmethod
@@ -279,6 +281,7 @@ class CartService:
         line_id: str,
         *,
         sku: str | None = None,
+        whole_product: bool = False,
     ) -> Session:
         """Remove item from cart.
 
@@ -295,6 +298,7 @@ class CartService:
             channel_ref=CHANNEL_REF,
             line_id=line_id,
             sku=sku,
+            whole_product=whole_product,
         )
 
     @staticmethod

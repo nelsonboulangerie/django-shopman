@@ -7,6 +7,7 @@ Modifiers follow the Orderman Modifier protocol:
 - apply(*, channel, session, ctx) -> None — mutates session in-place
 
 Execution order:
+   8  pricing.unsplit       — a linha partida pelo rateio volta inteira (#3240)
   10  pricing.item          — base price from backend (qty-aware)
   20  shop.discount         — promotions + coupons (maior desconto ganha)
   50  pricing.session_total — recalculate total
@@ -39,6 +40,7 @@ from typing import Any
 from django.utils import timezone
 from shopman.utils.monetary import monetary_div, monetary_mult
 
+from shopman.shop.discount_spread import SPLIT_OF, qty_json, spread_order_discount
 from shopman.shop.policies.group_advantage import free_shipping_minimum_q, group_free_shipping_for_order
 from shopman.shop.policies.promotion import (
     PromotionContext,
@@ -220,11 +222,6 @@ def _qty_decimal(item: dict) -> Decimal:
     return qty if qty > 0 else Decimal("1")
 
 
-def _qty_json(qty: Decimal) -> int | float:
-    """Quantidade para o registro de transparência (JSON): inteira ou fração de kg."""
-    return int(qty) if qty == qty.to_integral_value() else float(qty)
-
-
 def _record_total_q(record: dict) -> int:
     """Quanto um registro de desconto tira no total: por unidade × quantidade.
 
@@ -287,133 +284,6 @@ def _savings_message(template: str, *, amount_q: int, group: str) -> str:
         .replace("{group}", group)
         .strip()
     )
-
-
-# ── Rateio de desconto de PEDIDO entre as linhas ──────────────────────────
-# Invariante que o rateio precisa preservar: ``line_total_q == qty × unit_price_q``.
-# É o ``ItemPricingModifier`` (ordem 10) quem a estabelece, e os três rateios de
-# pedido (cupom/promo de valor fixo, resgate de pontos, desconto manual do PDV) a
-# quebravam do mesmo jeito: piso no unitário (``share // qty``) e valor EXATO no
-# total (``line_total - share``). Com ``share % qty != 0`` os dois campos discordam,
-# a sacola imprime "3 × R$ 6,34" com total "R$ 19,00" (quem multiplica acha 19,02),
-# e é a única conta que o cliente confere sozinho. Os dois campos também descem para
-# o payload fiscal, onde a incoerência hoje precisa de tratamento especial
-# (``fiscal_focusnfe`` deriva ``vUnCom`` de ``vProd/qCom`` com 10 casas para não ser
-# rejeitado pela SEFAZ).
-#
-# Como o preço unitário é INTEIRO em centavos, o desconto de uma linha só pode ser
-# um múltiplo inteiro de ``qty``. Um valor que não é múltiplo de nenhuma combinação
-# de ``qty`` das linhas elegíveis é aritmeticamente irrepresentável sem quebrar a
-# linha em duas. Em vez de mentir num dos campos, o rateio coloca o resíduo na linha
-# que o comporta e, quando nenhuma comporta, arredonda para o lado de quem é dono do
-# dinheiro — e o chamador registra o valor REALMENTE aplicado, nunca o nominal.
-
-
-def _line_qty(item: dict) -> Decimal:
-    """Quantidade da linha como ``Decimal`` (o campo é decimal: venda por peso)."""
-    try:
-        qty = Decimal(str(item.get("qty", 1)))
-    except (InvalidOperation, TypeError, ValueError):
-        return Decimal("1")
-    return qty if qty > 0 else Decimal("1")
-
-
-def _spread_order_discount(
-    lines: list[dict], amount_q: int, *, at_least: bool = False
-) -> list[tuple[dict, int, int]]:
-    """Rateia ``amount_q`` entre ``lines`` reduzindo o PREÇO UNITÁRIO e recalculando
-    o total da linha a partir dele — nunca o contrário.
-
-    ``at_least=True`` permite estourar o alvo no mínimo possível quando ele não é
-    representável (promoção/cupom de valor fixo: a casa PROMETEU "R$ 5 de desconto",
-    então entrega pelo menos isso). ``at_least=False`` fica abaixo (resgate de pontos
-    e desconto manual: nunca debitar mais pontos do que o cliente pediu, nem dar mais
-    do que o operador autorizou).
-
-    Devolve ``[(linha, desconto_por_unidade_q, desconto_da_linha_q)]`` só das linhas
-    tocadas; o chamador soma ``desconto_da_linha_q`` para registrar o desconto de
-    verdade em ``session.pricing``.
-    """
-    eligible = [i for i in lines if int(i.get("line_total_q", 0) or 0) > 0]
-    subtotal = sum(int(i.get("line_total_q", 0) or 0) for i in eligible)
-    if not eligible or subtotal <= 0 or amount_q <= 0:
-        return []
-    amount_q = min(int(amount_q), subtotal)
-
-    # [linha, qty, unit_q, line_total_q, per_unit]
-    plan: list[list[Any]] = []
-
-    def _cost(entry: list[Any], per_unit: int) -> int:
-        """Quanto a linha cai com este desconto por unidade, medido no total."""
-        _, qty, unit_q, line_total_q, _ = entry
-        return line_total_q - monetary_mult(qty, unit_q - per_unit)
-
-    # Passo 1 — cota proporcional de cada linha, com o resto na última (a soma das
-    # cotas é exatamente ``amount_q``), convertida no maior desconto por unidade que
-    # cabe na cota.
-    remaining_share = amount_q
-    last = len(eligible) - 1
-    for idx, item in enumerate(eligible):
-        line_total_q = int(item.get("line_total_q", 0) or 0)
-        qty = _line_qty(item)
-        unit_q = int(item.get("unit_price_q", 0) or 0)
-        share = remaining_share if idx == last else monetary_div(amount_q * line_total_q, subtotal)
-        share = max(0, min(share, line_total_q, remaining_share))
-        remaining_share -= share
-
-        entry: list[Any] = [item, qty, unit_q, line_total_q, 0]
-        per_unit = max(0, min(unit_q, int(Decimal(share) / qty)))
-        while per_unit > 0 and _cost(entry, per_unit) > share:
-            per_unit -= 1
-        while per_unit < unit_q and _cost(entry, per_unit + 1) <= share:
-            per_unit += 1
-        entry[4] = per_unit
-        plan.append(entry)
-
-    applied = sum(_cost(e, e[4]) for e in plan)
-    remaining = amount_q - applied
-
-    def _step(entry: list[Any]) -> int:
-        """Custo de dar mais um centavo de desconto por unidade nesta linha."""
-        return _cost(entry, entry[4] + 1) - _cost(entry, entry[4])
-
-    # Passo 2 — o resíduo (< soma dos ``qty``) vai para as linhas que o comportam,
-    # do menor passo para o maior, para caber no maior número de casos. Um carrinho
-    # com qualquer linha de 1 unidade absorve qualquer resíduo.
-    progress = True
-    while remaining > 0 and progress:
-        progress = False
-        for entry in sorted((e for e in plan if e[4] < e[2]), key=_step):
-            step = _step(entry)
-            if 0 < step <= remaining:
-                entry[4] += 1
-                remaining -= step
-                applied += step
-                progress = True
-                break
-
-    # Passo 3 — sobrou e ninguém comporta (linha única de 6 unidades × cupom de
-    # R$ 5,00). Quem prometeu paga o centavo a mais; quem debita fica abaixo.
-    if remaining > 0 and at_least:
-        candidates = [e for e in plan if e[4] < e[2] and _step(e) > 0]
-        if candidates:
-            entry = min(candidates, key=_step)
-            applied += _step(entry)
-            entry[4] += 1
-
-    touched: list[tuple[dict, int, int]] = []
-    for entry in plan:
-        item, qty, unit_q, line_total_q, per_unit = entry
-        if per_unit <= 0:
-            continue
-        new_unit_q = unit_q - per_unit
-        # O total sai do unitário (mesma conta do ``ItemPricingModifier`` e do
-        # ``Session._normalize_items``), então a linha NÃO PODE ficar incoerente.
-        new_line_total_q = monetary_mult(qty, new_unit_q)
-        item["unit_price_q"] = new_unit_q
-        item["line_total_q"] = new_line_total_q
-        touched.append((item, per_unit, line_total_q - new_line_total_q))
-    return touched
 
 
 def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
@@ -1044,7 +914,7 @@ class DiscountModifier:
                     "name": source_name,
                     "original_price_q": price_q,
                     "discount_q": best_discount_q,
-                    "qty": _qty_json(qty),
+                    "qty": qty_json(qty),
                     "fulfillment_types": list(getattr(source_promo, "fulfillment_types", None) or []),
                 }
                 record.update({"birthday": True} if is_birthday_promotion(source_promo) else {})
@@ -1103,7 +973,14 @@ class DiscountModifier:
             # nominal era a origem do desconto fantasma no recibo.
             applied_q = (
                 self._distribute_order_discount(
-                    eligible, target_q, disc_type=src_type, label=src_name or src_type
+                    eligible,
+                    target_q,
+                    disc_type=src_type,
+                    label=src_name or src_type,
+                    items=items,
+                    # O PDV não parte linha: a revisão da comanda e o disparo da
+                    # cozinha casam a linha pela ``line_id`` do payload (#3240).
+                    split=(session.data or {}).get("origin_channel") != "pos",
                 )
                 if target_q > 0
                 else 0
@@ -1253,7 +1130,13 @@ class DiscountModifier:
 
     @staticmethod
     def _distribute_order_discount(
-        eligible: list[dict], amount_q: int, *, disc_type: str, label: str
+        eligible: list[dict],
+        amount_q: int,
+        *,
+        disc_type: str,
+        label: str,
+        items: list[dict] | None = None,
+        split: bool = False,
     ) -> int:
         """Rateia um desconto de PEDIDO entre as linhas elegíveis e devolve o valor
         efetivamente aplicado.
@@ -1271,13 +1154,19 @@ class DiscountModifier:
            (``pricing["coupon"]["discount_q"] > 0`` faz o lifecycle consumir o
            cupom), e o snapshot levava o desconto fantasma para recibo e B.I.
         2. **Preservava ``qty × unit_price_q == line_total_q``** — não preservava
-           (ver ``_spread_order_discount``).
+           (ver ``spread_order_discount``).
         """
-        touched = _spread_order_discount(eligible, amount_q, at_least=True)
+        touched = spread_order_discount(eligible, amount_q, at_least=True, split=split and items is not None)
         applied_q = 0
         for item, per_unit_q, line_amount_q in touched:
             applied_q += line_amount_q
             _stamp_disc(item, disc_type, per_unit_q, label, order_amount_q=line_amount_q)
+            origin = (item.get("meta") or {}).get(SPLIT_OF)
+            if origin and items is not None and not any(i is item for i in items):
+                # A parte partida entra logo depois da linha de origem: o PUT por SKU
+                # acha a de origem primeiro (``interpret_set_qty``).
+                at = next((n for n, i in enumerate(items) if i.get("line_id") == origin), len(items) - 1)
+                items.insert(at + 1, item)
         return applied_q
 
     @staticmethod
@@ -1733,7 +1622,7 @@ class LoyaltyRedeemModifier:
             return
 
         # O rateio preserva ``qty × unit_price_q == line_total_q`` em cada linha
-        # (ver ``_spread_order_discount``); antes o unitário levava o piso e o total
+        # (ver ``spread_order_discount``); antes o unitário levava o piso e o total
         # o valor exato, e os dois campos discordavam. ``at_least=False``: resgate
         # nunca pode debitar mais pontos do que o cliente pediu, então o que não é
         # representável em centavos por unidade fica de fora.
@@ -1746,7 +1635,7 @@ class LoyaltyRedeemModifier:
             if not _is_non_merchandise_line(item)
             and item.get("line_total_q", 0) > 0
         ]
-        touched = _spread_order_discount(eligible, redeem_q, at_least=False)
+        touched = spread_order_discount(eligible, redeem_q, at_least=False)
         modified = bool(touched)
 
         if modified:
@@ -1823,14 +1712,14 @@ class ManualDiscountModifier:
 
         # Mesmo rateio do LoyaltyRedeemModifier: preserva
         # ``qty × unit_price_q == line_total_q`` em cada linha (ver
-        # ``_spread_order_discount``). ``at_least=False``: o operador autorizou um
+        # ``spread_order_discount``). ``at_least=False``: o operador autorizou um
         # TETO, então o rateio nunca passa dele.
         eligible = [
             item for item in items
             if not _is_non_merchandise_line(item)
             and item.get("line_total_q", 0) > 0
         ]
-        touched = _spread_order_discount(eligible, discount_q, at_least=False)
+        touched = spread_order_discount(eligible, discount_q, at_least=False)
         modified = bool(touched)
 
         if modified:

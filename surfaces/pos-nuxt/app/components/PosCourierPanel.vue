@@ -249,7 +249,13 @@ async function callAgain() {
 
       <!-- Quem vem buscar, e o código que ele confere. -->
       <div v-if="driver || courier.confirmation_code" class="grid gap-1" data-pos-courier-driver>
-        <p v-if="driver" class="flex items-center gap-1.5 text-sm font-medium">
+        <!-- A foto do entregador (#3150, decisão do dono em 22/11): a mesma do Gestor,
+             servida pelo servidor e só enquanto a corrida vive. Sem foto, o ícone. -->
+        <p v-if="driver?.photo_url" class="flex items-center gap-2 text-sm font-medium" data-pos-courier-driver-photo>
+          <NuxtAvatar :src="driver.photo_url" :alt="driver.name" :text="driver.name.slice(0, 1)" size="lg" />
+          <span class="min-w-0 break-words">{{ driver.name }}</span>
+        </p>
+        <p v-else-if="driver" class="flex items-center gap-1.5 text-sm font-medium">
           <Icon name="lucide:user" class="size-4 shrink-0 text-muted" aria-hidden="true" />
           <span class="min-w-0 break-words">{{ driver.name }}</span>
         </p>

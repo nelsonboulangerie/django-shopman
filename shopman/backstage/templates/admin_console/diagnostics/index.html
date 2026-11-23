@@ -127,8 +127,10 @@
         {% endcomponent %}
         {% component "unfold/components/text.html" with class="text-base-500" %}
           A mesma sonda do comando courier_machine_probe, rodando aqui, onde está a
-          credencial. Só lê: nada muda na central. O laudo não mostra nome,
-          telefone, placa, endereço nem token.
+          credencial. Ler não muda nada na central. Escrever mostra antes o que
+          vai sair e quanto custa, pede a confirmação nesta página e fica no
+          histórico da Loja. O laudo não mostra nome, telefone, placa, endereço
+          nem token.
         {% endcomponent %}
 
         <form method="post" class="flex flex-col gap-4">
@@ -138,17 +140,50 @@
           {% include "unfold/helpers/field.html" with field=courier_form.rides %}
           {% include "unfold/helpers/field.html" with field=courier_form.window %}
           {% include "unfold/helpers/field.html" with field=courier_form.recent %}
+          {% include "unfold/helpers/field.html" with field=courier_form.value %}
           <div class="flex">
             {% component "unfold/components/button.html" with submit=1 variant="primary" size="sm" icon="local_shipping" %}
-              Ler na central
+              Ler, ou ver a prévia da escrita
             {% endcomponent %}
           </div>
         </form>
 
+        {% if courier_confirm_form %}
+          <div class="flex flex-col gap-2" data-courier-probe-preview>
+            <div class="flex flex-wrap items-center gap-2">
+              {% include "unfold/helpers/label.html" with text="Prévia: nada foi enviado ainda" type="warning" %}
+              {% component "unfold/components/text.html" with class="font-semibold" %}
+                {{ courier_preview.label }}{% if courier_preview.ride %}, corrida {{ courier_preview.ride }}{% endif %}
+              {% endcomponent %}
+            </div>
+            {% component "unfold/components/text.html" with class="font-mono text-sm whitespace-pre-wrap break-words" %}Vai mandar: {{ courier_preview.request }}{% endcomponent %}
+            {% component "unfold/components/text.html" %}
+              Custo: {{ courier_preview.cost }}
+            {% endcomponent %}
+            <form method="post" class="flex flex-col gap-2">
+              {% csrf_token %}
+              <input type="hidden" name="probe" value="courier">
+              <input type="hidden" name="step" value="send">
+              {% for hidden in courier_confirm_form.hidden_fields %}{{ hidden }}{% endfor %}
+              {% include "unfold/helpers/field.html" with field=courier_confirm_form.confirm %}
+              {% component "unfold/components/text.html" with class="text-base-500" %}
+                {{ courier_preview.confirmation_hint }}
+              {% endcomponent %}
+              <div class="flex">
+                {% component "unfold/components/button.html" with submit=1 variant="danger" size="sm" icon="send" %}
+                  Mandar à central
+                {% endcomponent %}
+              </div>
+            </form>
+          </div>
+        {% endif %}
+
         {% if courier_result %}
           <div class="flex flex-col gap-2" data-courier-probe-result>
             <div class="flex flex-wrap items-center gap-2">
-              {% if courier_result.ok %}
+              {% if courier_result.ok and courier_wrote %}
+                {% include "unfold/helpers/label.html" with text="Escreveu na central" type="warning" %}
+              {% elif courier_result.ok %}
                 {% include "unfold/helpers/label.html" with text="Respondeu" type="success" %}
               {% else %}
                 {% include "unfold/helpers/label.html" with text="Recusou ou falhou" type="danger" %}

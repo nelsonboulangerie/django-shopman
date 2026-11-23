@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
+from shopman.shop.discount_spread import SPLIT_OF
 from shopman.shop.observability import catalog_stage
 from shopman.shop.policies.exclusive_collections import CollectionAccess
 from shopman.shop.projections import catalog_context
@@ -1138,9 +1139,11 @@ def _cart_qty_by_sku(request: HttpRequest | None) -> dict[str, int]:
         if not sku:
             continue
         try:
-            result[sku] = int(Decimal(str(item.get("qty", 0) or 0)))
+            qty = int(Decimal(str(item.get("qty", 0) or 0)))
         except (ValueError, ArithmeticError):
             continue
+        # A parte que o rateio do desconto partiu da linha (#3240) soma na dela.
+        result[sku] = result.get(sku, 0) + qty if (item.get("meta") or {}).get(SPLIT_OF) else qty
     return result
 
 
