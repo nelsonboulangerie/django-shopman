@@ -1900,6 +1900,7 @@ def run(conversation, *, binding, decision, client=None):
         client=reader,
         use_model=reader is not None or has_key,
     )
+    talk = _order_talk(found, text, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if getattr(decision, "escalates", False):
         # A triagem (regra, modelo ou Jev) mandou para a equipe: essa parte fica, nunca sai.
         # O cancelamento a triagem grava como pedido (``escalated_by=cancel_order``, R4).
@@ -1910,10 +1911,17 @@ def run(conversation, *, binding, decision, client=None):
     # antes da sacola, que passa a medir a fornada da data. A parte que só dizia o
     # recebimento ("eu vou aí buscar às 16h") fica atendida, nunca vira "vou verificar".
     prefilled = {}
-    if any(act.act == ORDER for act in found.acts) and _cart_authorized(conversation):
-        prefilled = order_closing.prefill(conversation, text, binding=binding, channel_ref=channel_ref)
+    # Com parte que vai à equipe (queixa, alergia, pessoa), o pedido fica suspenso: nada se aplica.
+    if (any(act.act == ORDER for act in found.acts) and not any(act.is_team for act in found.acts)
+            and _cart_authorized(conversation)):
+        prefilled = order_closing.prefill(conversation, text, binding=binding, channel_ref=channel_ref,
+                                          follow_up=talk is not None and talk.fulfillment_only)
         if prefilled:
             found.acts = [act for act in found.acts if not (act.act == HOURS and _only_fulfillment(act.span))]
+        if prefilled.get("kind") == "delivery" and conversation.session_key:
+            # Entrega pedida junto com o item: o fechamento começa já, para perguntar o que
+            # falta (o dia, o endereço) sem esperar o "pode fechar" (WP-14, cartão 2).
+            conversation._closing_after_parts = text
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)
@@ -1925,6 +1933,36 @@ def run(conversation, *, binding, decision, client=None):
         outcome.reply_text = "\n".join((note, outcome.reply_text))
     # Troca de assunto no meio do fechamento: a pergunta que estava no ar volta no fim.
     return order_closing.resume(conversation, outcome, binding=binding, channel_ref=channel_ref, memory=memory)
+
+
+def _order_talk(found: Plan, text: str, *, conversation, channel_ref: str, binding):
+    """O pedido como a cliente escreve, lido pela casa quando o leitor de IA não leu (DEV-2026-076).
+
+    Só com a leitura do porteiro ou a divisão local (``found.source`` "gate"/"local"): a do
+    modelo vale como veio. Reconhecida a forma de pedido (itens, correção do que está na sacola,
+    ou só o dia/hora/recebimento), as partes de pedido tomam o lugar das partes lidas, menos a
+    cortesia (o "oi" continua respondido).
+    """
+    from . import order_talk
+    from . import tools as tools_module
+
+    if found.source not in ("gate", "local") or conversation is None or not _cart_authorized(conversation):
+        return None
+    ctx = tools_module.ToolContext(conversation=conversation, channel_ref=channel_ref,
+                                   provider=str(getattr(binding, "provider", "") or ""),
+                                   account=str(getattr(binding, "account", "") or ""),
+                                   transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+                                   connection_key=str(getattr(binding, "connection_key", "") or ""), customer_text=text)
+    session = tools_module._open_session(ctx)
+    lines = []
+    if session is not None and session.items:
+        lines = list(tools_module.execute("view_cart", {}, ctx).get("lines") or [])
+    talk = order_talk.read(text, channel_ref=channel_ref, cart_lines=lines)
+    if talk is None or not talk.acts:
+        return None
+    found.acts = [act for act in found.acts if act.act in COURTESY] + list(talk.acts)
+    found.reason = f"order_talk:{found.reason}"
+    return talk
 
 
 def _only_fulfillment(span: str) -> bool:

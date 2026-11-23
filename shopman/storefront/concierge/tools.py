@@ -2133,7 +2133,7 @@ def render_result(name: str, result: dict) -> str:
             return "Sua sacola está vazia. Escolha um produto para começar."
         rows.append(f"Total: {result.get('total', '')}")
         fulfillment = result.get("fulfillment") or {}
-        if fulfillment.get("type"):
+        if fulfillment.get("type") and (fulfillment.get("date") or fulfillment.get("slot_label")):
             when = _summary_when(fulfillment.get("date", ""), _display_text(fulfillment.get("slot_label", "")))
             rows.append(f"{'Retirada' if fulfillment['type'] == 'pickup' else 'Entrega'}: {when}")
         if fulfillment.get("address"):

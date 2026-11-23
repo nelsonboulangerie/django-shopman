@@ -1584,6 +1584,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_CART_NEXT_BATCH": {
         WILDCARD: {WILDCARD: CopyEntry(message="A próxima sai {day}.")},
     },
+    "CONCIERGE_CART_KIND_NOTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: {how}.")},
+    },
+    "CONCIERGE_CART_DAY_NOTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: para {when}.")},
+    },
     "CONCIERGE_CART_FULFILLMENT_NOTED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Combinado: {how} {when}.")},
     },

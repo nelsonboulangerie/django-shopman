@@ -55,7 +55,7 @@ GAVE_UP_KEY = "CONCIERGE_CLOSE_GAVE_UP"
 COPY_KEYS = (
     ASK_DATE_KEY, ASK_FULFILLMENT_KEY, ASK_SLOT_KEY, NO_SLOTS_KEY, SLOT_REFUSED_KEY, NO_PICKUP_AT_KEY,
     NO_DELIVERY_AT_KEY, ASK_ADDRESS_KEY, ASK_PAYMENT_KEY, NO_CASH_KEY, CONFIRM_CODE_KEY, GAVE_UP_KEY,
-    "CONCIERGE_CART_FULFILLMENT_NOTED",
+    "CONCIERGE_CART_FULFILLMENT_NOTED", "CONCIERGE_CART_DAY_NOTED", "CONCIERGE_CART_KIND_NOTED",
 )
 
 #: O que dá início ao fechamento quando há sacola: "pode fechar", "é só isso", "finalizar".
@@ -95,6 +95,7 @@ class Said:
     payment: str = ""
     cash: bool = False
     address: str = ""
+    complement: str = ""
     accept_saved: bool = False
     answer: str = ""
     start: bool = False
@@ -104,7 +105,7 @@ class Said:
     def anything(self) -> bool:
         return bool(
             self.day or self.kind or self.minutes is not None or self.pick or self.payment or self.cash
-            or self.address or self.accept_saved or self.start
+            or self.address or self.complement or self.accept_saved or self.start
         )
 
 
@@ -171,6 +172,23 @@ def _parse_day(folded: str, today: date) -> str:
         return (today + timedelta(days=1)).isoformat()
     if re.search(r"\bhoje\b", folded):
         return today.isoformat()
+    weekday = re.search(r"\b(segunda|terca|quarta|quinta|sexta|sabado|domingo)(?:[- ]feira)?\b", folded)
+    if weekday:
+        target = ("segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo").index(weekday.group(1))
+        return (today + timedelta(days=(target - today.weekday()) % 7 or 7)).isoformat()
+    numbered = re.search(r"(?<!bom )\bdia (\d{1,2})\b(?!\s*/)", folded)
+    if numbered:
+        wanted = int(numbered.group(1))
+        year, month = today.year, today.month
+        for _ in range(2):
+            try:
+                when = date(year, month, wanted)
+            except ValueError:
+                when = None
+            if when is not None and when >= today:
+                return when.isoformat()
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        return ""
     found = _DATE_RE.search(folded)
     if found:
         day, month = int(found.group(1)), int(found.group(2))
@@ -219,8 +237,14 @@ def read(text: str, pending: dict) -> Said:
         if not said.pick and said.answer in {"yes", "weak_yes"} and len(options) == 1:
             said.pick = 1
     if kind == "ask_address":
+        from .address import _NO_COMPLEMENT
+
+        bare = " ".join(re.sub(r"[^\w\s/-]", " ", folded).split())
         if pending.get("offer") and said.answer in {"yes", "weak_yes"}:
             said.accept_saved = True
+        elif bare in _NO_COMPLEMENT and not pending.get("offer"):
+            # "sem complemento": a resposta que a própria pergunta pediu (WP-14, cartão 2).
+            said.complement = "sem complemento"
         elif not said.answer and _ADDRESS_HINT_RE.search(folded) and not said.day:
             said.address = " ".join(str(text or "").split())
     return said
@@ -243,7 +267,7 @@ def fulfillment_cue(text: str) -> bool:
                 or (said.kind == "pickup" and not re.search(r"\b(?:tira|tirar|tire|retira) (?:o|a|os|as)\b", folded)))
 
 
-def prefill(conversation, text: str, *, binding, channel_ref: str) -> dict:
+def prefill(conversation, text: str, *, binding, channel_ref: str, follow_up: bool = False) -> dict:
     """O dia, o recebimento e o horário ditos JUNTO com o pedido, aplicados antes da sacola.
 
     A casa dita a ordem da encomenda (quando, recebimento, produtos), mas o cliente pode
@@ -256,27 +280,58 @@ def prefill(conversation, text: str, *, binding, channel_ref: str) -> dict:
     from . import tools
 
     said = read(text, {})
-    if not said.day:
-        return {}
+    ctx = _context(conversation, binding=binding, channel_ref=channel_ref, text=text)
+    # Depois do pedido ("pra amanhã", "vou buscar às 16h", "melhor às 10h"), o que falta na
+    # fala vem do que a sacola já tem: o dia, ou retirada/entrega, ditos antes.
+    data = {}
+    if follow_up:
+        session = tools._open_session(ctx)
+        data = (session.data or {}) if session is not None else {}
+    day = said.day or str(data.get("delivery_date") or "")
     types = _fulfillment_types(channel_ref)
+    if not day:
+        # Só o como ("com entrega", "vou buscar"), sem o dia: fica na sacola, e o fechamento
+        # não pergunta de novo como recebe.
+        if said.kind in types and not data.get("fulfillment_type"):
+            tools._ensure_session(ctx)
+            tools._set_session_data(ctx, conversation.session_key, {"fulfillment_type": said.kind})
+            return {"day": "", "kind": said.kind, "slot": ""}
+        return {}
     kind = said.kind if said.kind in types else ("pickup" if said.minutes is not None and "pickup" in types else "")
+    if not kind and data.get("fulfillment_type") in types:
+        kind = str(data["fulfillment_type"])
     if not kind and len(types) == 1:
         kind = types[0]
-    if not kind:
+    if not kind and not said.day:
         return {}
-    ctx = _context(conversation, binding=binding, channel_ref=channel_ref, text=text)
     # Na primeira fala ainda não há sacola: ela nasce aqui, como nasceria no item, para a
     # data valer já na medida do item (a mesma sacola, presa ao telefone).
     tools._ensure_session(ctx)
-    result = tools.execute("set_fulfillment", {"fulfillment_type": kind, "delivery_date": said.day}, ctx)
-    if not result.get("ok"):
+    if not kind:
+        # O dia sem retirada nem entrega: fica na sacola (a fornada da data passa a valer) e o
+        # fechamento pergunta só como recebe.
+        tools._set_session_data(ctx, conversation.session_key, {"delivery_date": said.day})
+        return {"day": said.day, "kind": "", "slot": ""}
+    if follow_up and not said.day and not said.kind and said.minutes is None:
         return {}
-    applied = {"day": said.day, "kind": kind, "slot": ""}
+    keeps_slot = (follow_up and said.minutes is None and kind == data.get("fulfillment_type")
+                  and day == str(data.get("delivery_date") or ""))
+    if keeps_slot:
+        return {}
+    result = tools.execute("set_fulfillment", {"fulfillment_type": kind, "delivery_date": day}, ctx)
+    if not result.get("ok"):
+        if kind == "delivery" and set(result.get("errors") or {}) <= {"delivery_address"}:
+            # Entrega sem endereço ainda: o dia e a entrega ficam na sacola, e o fechamento
+            # pede o endereço (nada é dado por aplicado sem ele).
+            tools._set_session_data(ctx, conversation.session_key, {"delivery_date": day, "fulfillment_type": "delivery"})
+            return {"day": day, "kind": kind, "slot": ""}
+        return {}
+    applied = {"day": day, "kind": kind, "slot": ""}
     if kind == "pickup" and said.minutes is not None:
-        listing = tools.execute("list_fulfillment_slots", {"delivery_date": said.day, "fulfillment_type": "pickup"}, ctx)
+        listing = tools.execute("list_fulfillment_slots", {"delivery_date": day, "fulfillment_type": "pickup"}, ctx)
         chosen = _match_slot(list(listing.get("pickup_slots") or []), said.minutes)
         if chosen is not None and chosen.get("available", True):
-            done = tools.execute("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": said.day,
+            done = tools.execute("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": day,
                                                      "slot_ref": chosen["ref"]}, ctx)
             if done.get("ok"):
                 applied["slot"] = str(chosen.get("label") or "")
@@ -284,18 +339,24 @@ def prefill(conversation, text: str, *, binding, channel_ref: str) -> dict:
 
 
 NOTED_KEY = "CONCIERGE_CART_FULFILLMENT_NOTED"
+NOTED_DAY_KEY = "CONCIERGE_CART_DAY_NOTED"
+NOTED_KIND_KEY = "CONCIERGE_CART_KIND_NOTED"
 
 
 def noted(applied: dict, *, copy) -> str:
     """ "Combinado: retirada amanhã, a partir das 15h." O que ``prefill`` aplicou, dito de volta."""
     if not applied:
         return ""
+    if not applied.get("day"):
+        return _fill(copy(NOTED_KIND_KEY) or "", how="retirada" if applied.get("kind") == "pickup" else "entrega")
     today = timezone.localdate()
     day = date.fromisoformat(applied["day"])
     when = {today: "hoje", today + timedelta(days=1): "amanhã"}.get(day) or day.strftime("%d/%m")
     slot = str(applied.get("slot") or "").strip()
     if slot:
         when = f"{when}, {slot[:1].lower()}{slot[1:]}"
+    if not applied.get("kind"):
+        return _fill(copy(NOTED_DAY_KEY) or "", when=when)
     how = "retirada" if applied.get("kind") == "pickup" else "entrega"
     return _fill(copy(NOTED_KEY) or "", how=how, when=when)
 
@@ -316,7 +377,7 @@ def answers(said: Said, pending: dict) -> bool:
     if kind == "ask_slot":
         return bool(said.pick or said.minutes is not None or said.day or said.kind)
     if kind == "ask_address":
-        return bool(said.address or said.accept_saved or said.kind)
+        return bool(said.address or said.complement or said.accept_saved or said.kind)
     if kind == ASK_PAYMENT:
         return bool(said.payment or said.cash or said.pick)
     if kind == "confirm_order":
@@ -367,10 +428,14 @@ def advance(ctx, said: Said, closing: dict, *, copy) -> Step | None:
     data = session.data or {}
     # O que o cliente já disse junto com o pedido (``prefill``) está na sessão: o
     # fechamento parte dali e não pergunta de novo o dia nem o recebimento.
-    if not closing.get("day") and data.get("delivery_date") and data.get("fulfillment_type"):
+    if not closing.get("day") and data.get("delivery_date"):
         closing["day"] = str(data["delivery_date"])
+        if data.get("fulfillment_type"):
+            closing["kind"] = str(data["fulfillment_type"])
+            if closing["kind"] == "pickup" or data.get("delivery_address"):
+                closing["applied"] = f"{closing['kind']}:{closing['day']}"
+    if not closing.get("kind") and data.get("fulfillment_type"):
         closing["kind"] = str(data["fulfillment_type"])
-        closing["applied"] = f"{closing['kind']}:{closing['day']}"
     events: list[dict] = []
     channel_ref = ctx.channel_ref
 
@@ -526,6 +591,8 @@ def _delivery(ctx, said: Said, closing: dict, *, day: str, applied: bool, copy, 
         closing["asked"] = ""
     if said.address:
         arguments["address"] = said.address
+    if said.complement:
+        arguments["complement"] = said.complement
     if said.accept_saved:
         arguments["use_saved_address"] = True
     if applied and len(arguments) == 2:
@@ -702,7 +769,16 @@ def resume(conversation, outcome, *, binding, channel_ref: str, memory, copy=Non
     if step is None:
         outcome.memory_memos = [*outcome.memory_memos, {"tool": "order_closing", "closing": None}]
         return outcome
-    outcome.reply_text = f"{outcome.reply_text}\n\n{step.text}" if step.text else outcome.reply_text
+    text = outcome.reply_text
+    # Com o fechamento em curso, o "quando terminar, é só escrever pode fechar" não vale mais,
+    # e o resumo novo já mostra a sacola: a lista não se repete (WP-14, cartões 2 e 3).
+    hint = (copy("CONCIERGE_CART_NEXT") or "").strip()
+    if hint:
+        text = text.replace(hint, "").rstrip()
+    updated = (copy("CONCIERGE_CART_UPDATED") or "").strip()
+    if step.quote_token and updated and updated in text:
+        text = text[:text.index(updated)].rstrip()
+    outcome.reply_text = "\n\n".join(part for part in (text, step.text) if part) or outcome.reply_text
     outcome.quote_token = step.quote_token or outcome.quote_token
     outcome.tool_events = [*outcome.tool_events, *step.tool_events]
     outcome.memory_memos = [*outcome.memory_memos, _memo(step)]

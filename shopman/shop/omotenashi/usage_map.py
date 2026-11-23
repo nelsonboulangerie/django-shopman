@@ -148,13 +148,22 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
     ),
+    "CONCIERGE_CART_DAY_NOTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
     "CONCIERGE_CART_FULFILLMENT_NOTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CART_KIND_NOTED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
     ),
     "CONCIERGE_CART_NEXT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
     ),
     "CONCIERGE_CART_NEXT_BATCH": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -179,6 +188,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_CART_UPDATED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
     ),
     "CONCIERGE_CLOSE_ASK_ADDRESS": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
