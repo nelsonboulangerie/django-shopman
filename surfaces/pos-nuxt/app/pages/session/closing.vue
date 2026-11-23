@@ -978,7 +978,7 @@ const discrepancyColumns = [
                   <li
                     v-for="row in readyOrders"
                     :key="row.ref"
-                    class="grid gap-1 rounded-lg bg-secondary px-3 py-2"
+                    class="grid gap-1 rounded-lg border border-border bg-card px-3 py-2"
                     :data-closing-ready-order="row.state"
                   >
                     <span class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -1017,7 +1017,7 @@ const discrepancyColumns = [
                   <li
                     v-for="row in openOrders"
                     :key="row.ref"
-                    class="grid gap-1 rounded-lg bg-secondary px-3 py-2"
+                    class="grid gap-1 rounded-lg border border-border bg-card px-3 py-2"
                     :data-closing-open-order="row.path"
                   >
                     <span class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
