@@ -164,7 +164,8 @@ describe("OrderRefundDialog", () => {
     );
     expect(w.get("[data-refund-choose]").text()).toBe("Este pedido tem mais de uma cobrança. Escolha qual estornar.");
     expect(w.find("[data-refund-values]").exists()).toBe(false);
-    expect(w.find("[data-refund-confirm]").attributes("disabled")).toBeDefined();
+    // Sem cobrança escolhida, não há botão de estornar: o vermelho cheio parecia acionável.
+    expect(w.find("[data-refund-confirm]").exists()).toBe(false);
     expect(w.text()).not.toContain("38,00");
 
     env.fetchMock.mockResolvedValueOnce(

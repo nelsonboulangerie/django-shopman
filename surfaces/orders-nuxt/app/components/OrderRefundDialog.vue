@@ -190,7 +190,7 @@ function confirm() {
           @click="emit('update:open', false)"
         />
         <NuxtButton
-          v-if="view && !view.blocked"
+          v-if="view && !view.blocked && !view.choosing"
           :label="view.confirmLabel"
           color="error"
           :disabled="!view.canConfirm"
