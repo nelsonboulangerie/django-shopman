@@ -80,15 +80,23 @@ NICE_TEMPLATE_COPY = {
     # pergunta do endereço, como o fechamento junta) e endereço que não se localiza.
     "set_delivery_address.not_delivered": "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED",
     "set_delivery_address.not_located": "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED",
+    # O endereço sem a entrega combinada: a pergunta de hoje do fechamento, "retirada ou entrega?".
+    "set_delivery_address.ask_mode": "CONCIERGE_CLOSE_ASK_FULFILLMENT",
     # A limitação: recusada em 22/11, com frase nova aprovada pelo dono em 23/11 (#3408). No ar, o efeito
     # recusado (sacola, recebimento, pagamento) refaz a decisão, e quem responde é este molde; a sombra
     # não executa efeito e não o vê, por isso ele precisa de frase da Nice (sem ela, sairia o inglês do pacote).
     "inform_limitation.offer_team": "CONCIERGE_ENGINE_OFFER_TEAM",
 }
 
-#: A pergunta da forma de pagamento: a MESMA de hoje (``CONCIERGE_CLOSE_ASK_PAYMENT``), com o espaço
-#: do motor (``{payment_method}``, as opções do canal) no lugar de ``{options}``.
-PAYMENT_QUESTION = ("present_terms.needs_payment_method", "CONCIERGE_CLOSE_ASK_PAYMENT", "{options}", "{payment_method}")
+#: As frases da forma de pagamento: as MESMAS de hoje, com o espaço do motor (``{payment_method}``, as
+#: opções do canal) no lugar de ``{options}``. A pergunta (``CONCIERGE_CLOSE_ASK_PAYMENT``) e a forma que
+#: o canal não oferece (``CONCIERGE_CLOSE_NO_CASH``): a conversa oferece as formas do canal sem dinheiro
+#: (``conversation_payment_methods``, D-003), e o leitor só lê pix, cartão e dinheiro (``model_reader.PAYMENTS``),
+#: por isso a forma não oferecida que chega ao motor é o dinheiro.
+PAYMENT_TEMPLATES = (
+    ("present_terms.needs_payment_method", "CONCIERGE_CLOSE_ASK_PAYMENT", "{options}", "{payment_method}"),
+    ("set_payment.not_offered", "CONCIERGE_CLOSE_NO_CASH", "{options}", "{payment_method}"),
+)
 
 #: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).
 #: O recebimento é o MESMO "Combinado" do caminho de hoje (``CONCIERGE_CART_FULFILLMENT_NOTED``,
@@ -250,13 +258,15 @@ def address_resolver(conversation):
         from shopman.shop.conversational.commerce_read import address_ref
 
         key = getattr(conversation, "session_key", "") or ""
-        if not key or str(ref) != address_ref(key):
+        if not key or not str(ref).startswith(f"address:{key}:"):
             raise UnresolvedReference(str(ref))
         try:
             session = Session.objects.filter(session_key=key).first()
         except Exception as exc:  # noqa: BLE001 - a fonte que falha segura a mensagem
             raise UnresolvedReference(str(ref)) from exc
         data = (session.data if session is not None else None) or {}
+        if str(ref) != address_ref(key, data):
+            raise UnresolvedReference(str(ref))  # o endereço mudou desde a referência: nunca diz o novo no lugar
         structured = data.get("delivery_address_structured")
         if not isinstance(structured, dict) or not data.get("delivery_address"):
             raise UnresolvedReference(str(ref))
@@ -362,9 +372,10 @@ def nice_templates() -> dict[str, Template]:
         except ValueError:
             logger.warning("concierge.turn_framework.template_refused template=%s key=%s", template_id, key)
     found.update(_order_templates(package, copy_message))
-    template_id, key, today_slot, slot = PAYMENT_QUESTION
-    text = (copy_message(key) or "").strip()
-    if today_slot in text:
+    for template_id, key, today_slot, slot in PAYMENT_TEMPLATES:
+        text = (copy_message(key) or "").strip()
+        if today_slot not in text:
+            continue
         try:
             base = package[template_id]
             found[template_id] = Template(template_id, f"nice:{key}", base.move, text.replace(today_slot, slot),

@@ -47,7 +47,8 @@ def propose(state, need):
     if target is None or target not in state.terms or not state.wants_terms(need):
         return None
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE,
-                    content={"terms": state.terms[target].hash}, situation=state.situation(need))
+                    content={"terms": state.terms[target].hash},
+                    situation=state.situation(need, conditions_known=state.conditions_known()))
 
 
 def reply(state, need):

@@ -61,11 +61,12 @@ Para isso, cada porta devolve:
 - **Comando `set_delivery_address`**: `parameters={"source"}`, a `content_ref` da fala (spec 01), nunca o
   texto. O executor lê o texto original pela referência, monta e grava o endereço, e recusa com
   `fulfillment_unavailable` (a casa não entrega ali), `invalid_content` (o endereço não se localiza) ou
-  `fact_unavailable` (sem entrega combinada, ou outra recusa); as duas primeiras têm frase própria
-  (`set_delivery_address.not_delivered` e `.not_located`, do `inform_limitation`), a terceira é a do
-  efeito que falhou. O recibo traz só
-  `address_ref`, opaca; o `TermsDocument` leva a mesma em `fulfillment.address_ref`. O efeito sobe a
-  versão do carrinho.
+  `fact_unavailable` (sem entrega combinada); as três têm frase própria, do `inform_limitation`:
+  `set_delivery_address.not_delivered`, `.not_located` e `.ask_mode` (a pergunta "retirada ou
+  entrega?"). Outra falha do efeito recusa com outro código, e a resposta é a limitação comum. O
+  recibo traz só `address_ref`, opaca e presa ao endereço gravado (muda quando o endereço muda: o
+  resumo reenviado nunca diz um endereço que o cliente não confirmou); o `TermsDocument` leva a
+  mesma em `fulfillment.address_ref`. O efeito sobe a versão do carrinho.
 - **`quote(cart_ref)`**: o `TermsDocument` selado. Carrinho vazio ou cotação que falha vira
   `Unknown`, e a resposta da mudança cai no degrau de baixo (`change_cart.done_receipt`).
 - **Comando `change_cart`**: `parameters={"lines": [{"item", "quantity"}, ...]}`, as linhas do

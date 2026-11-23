@@ -42,6 +42,9 @@ CHANGE_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_paymen
                          "cancel_order"})
 # ``give_address`` não tem campo: quem lê marca só que a fala traz o endereço. O endereço se lê do texto
 # original, pela referência protegida do evento, dentro do efeito (P17: o texto pessoal nunca vai a contrato).
+#: O campo sem o qual o ato não se cumpre: lido sem ele, o motor pergunta (``ask_clarification``), nunca
+#: diz a limitação ("vou pagar" sem a forma é pergunta, não pedido impossível).
+REQUIRED_FIELDS = {"choose_payment": "method"}
 # Os campos de leitura de ``choose_fulfillment``: quando (dia, hora) e como (retirada ou entrega).
 # A janela do dia não é dita: é a casa que a dá, no recibo.
 FULFILLMENT_FIELDS: tuple[str, ...] = ("date", "mode", "time")

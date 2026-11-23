@@ -160,6 +160,8 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
                                          "rua, o número e o bairro, ou envie sua localização pelo WhatsApp."),
     "present_terms.needs_delivery_complement": ("Tem complemento (apartamento, bloco, fundos)? Se não tiver, "
                                                 "é só dizer \"sem complemento\"."),
+    "set_payment.not_offered": "Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {payment_method}",
+    "set_delivery_address.ask_mode": "Você vai retirar aqui na loja ou prefere entrega?",
     # Aprovada pelo dono em 23/11 (#3408): a limitação que o efeito recusado no ar faz dizer.
     "inform_limitation.offer_team": "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?",
 }
