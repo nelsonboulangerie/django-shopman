@@ -4,6 +4,7 @@ from io import StringIO
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.contrib.admin import site
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -245,3 +246,29 @@ def test_privileged_direct_device_posts_cannot_skip_enrollment(client, staff, op
     pending.refresh_from_db()
     assert pending.user_id == staff.pk and pending.key == original_key and not pending.confirmed
     assert TOTPDevice.objects.count() == 1
+
+
+def test_2fa_pages_keep_the_origin_so_the_form_post_passes_csrf(client, staff):
+    """Com ``Referrer-Policy: no-referrer`` o navegador manda o POST do formulário
+    com ``Origin: null`` e o CSRF recusa todo envio (Chrome do dono, 23/11/2026).
+    A página precisa dizer a origem ao próprio site: "same-origin"."""
+    authorize_enrollment(staff)
+    client.force_login(staff)
+    for name in ("admin_2fa_enroll", "admin_2fa_verify"):
+        response = client.get(reverse(name))
+        assert response["Referrer-Policy"] == "same-origin", name
+
+
+def test_a_null_origin_is_what_csrf_refuses_and_the_real_origin_passes(staff):
+    """A prova do mecanismo: o mesmo POST com ``Origin: null`` cai no CSRF; com a
+    origem do próprio site, passa (chega à validação da senha)."""
+    authorize_enrollment(staff)
+    url = reverse('admin_2fa_enroll')
+    for origin, expected_ok in (("null", False), ("https://testserver", True)):
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(staff)
+        client.get(url, secure=True)
+        token = client.cookies[settings.CSRF_COOKIE_NAME].value
+        response = client.post(url, {"csrfmiddlewaretoken": token, "password": "wrong"}, secure=True,
+                               HTTP_ORIGIN=origin, HTTP_REFERER="https://testserver" + url)
+        assert (response.status_code != 403) is expected_ok, (origin, response.status_code)

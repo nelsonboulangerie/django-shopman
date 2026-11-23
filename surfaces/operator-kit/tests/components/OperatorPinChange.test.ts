@@ -132,7 +132,51 @@ describe("OperatorPinChange — o PIN novo tem 4 dígitos (#3223)", () => {
       props: { forced: true },
       global: { stubs: { Icon: true } },
     });
-    expect(mounted.text()).toContain("Seu PIN precisa ser trocado antes de operar.");
+    expect(mounted.text()).toContain("Bia Forno, seu PIN precisa ser trocado antes de operar.");
     expect(mounted.text()).not.toContain("O gerente redefiniu");
   });
 });
+
+
+// P0 de 23/11 (depois do #3337): a troca forçada não dizia de quem era o PIN e
+// não tinha saída. Agora diz o nome, deixa outra pessoa entrar e explica o
+// "esqueci".
+describe("OperatorPinChange — troca forçada tem nome e saída", () => {
+  async function mountForced(attrs: Record<string, unknown> = {}) {
+    mounted = await mountSuspended(OperatorPinChange, {
+      attachTo: document.body,
+      props: { operatorName: "Joyce", forced: true, resetHref: "https://admin.exemplo/admin/doorman/pincredential/", ...attrs },
+      global: { stubs: { Icon: true } },
+    });
+    return mounted;
+  }
+
+  it("diz de quem é o PIN", async () => {
+    const wrapper = await mountForced();
+    expect(wrapper.text()).toContain("Joyce, seu PIN precisa ser trocado antes de operar.");
+  });
+
+  it("'Não é Joyce?' pede a troca de usuário", async () => {
+    const wrapper = await mountForced();
+    const button = wrapper.find("[data-pin-change-switch-user]");
+    expect(button.text()).toBe("Não é Joyce? Trocar de usuário");
+    await button.trigger("click");
+    expect(wrapper.emitted("switchUser")).toHaveLength(1);
+  });
+
+  it("'Esqueci meu PIN' explica que o gerente redefine no Admin, com o link", async () => {
+    const wrapper = await mountForced();
+    expect(wrapper.find("[data-pin-change-forgot-help]").exists()).toBe(false);
+    await wrapper.find("[data-pin-change-forgot]").trigger("click");
+    const help = wrapper.find("[data-pin-change-forgot-help]");
+    expect(help.text()).toContain("Peça a um gerente para redefinir o seu PIN");
+    expect(help.text()).toContain("Resetar PIN");
+    expect(help.find('a[href="https://admin.exemplo/admin/doorman/pincredential/"]').exists()).toBe(true);
+  });
+
+  it("a troca voluntária não mostra essas saídas (ela já tem Cancelar)", async () => {
+    const wrapper = await mountForced({ forced: false });
+    expect(wrapper.find("[data-pin-change-exits]").exists()).toBe(false);
+  });
+});
+

@@ -150,6 +150,9 @@ class FakeCommerceRead(FakeBase):
         owner = self.state.cart_owner.get(cart_ref)
         if ctx.subject is not None and owner != ctx.subject:
             raise PortError("object_forbidden", "carrinho de outro sujeito")
+        if not cart:
+            # Carrinho vazio não tem termos: fato indisponível, como no sistema de registro (nunca um erro cru).
+            raise PortError("fact_unavailable", "carrinho vazio: não há termos a cotar")
         items, total = [], 0
         for ref, qty in sorted(cart.items()):
             item = self.state.items[ref]

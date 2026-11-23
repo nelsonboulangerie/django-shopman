@@ -1,7 +1,7 @@
 """O perfil de implantação da Nice no framework de comércio conversacional (N3).
 
 Monta o ``DeploymentProfile`` do ``conversational_commerce`` com as 21 linhas do plano do
-adaptador (seção 2), a partir dos valores que já existem:
+adaptador (seção 2) e a P22 (a validade da concessão, #3380), a partir dos valores que já existem:
 
 - o teto do desconto (P09) do ``ChannelConfig`` do canal da Concierge, pelo mesmo
   acessor que o desconto usa (``discount.max_percent``), nunca de constante;
@@ -133,6 +133,7 @@ def values(config: Mapping[str, Any] | None = None, *, environment: str = "shado
                         "accept_within_seconds": profile_lines.STAFF_ACCEPT_WITHIN_SECONDS,
                         "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS},
         "turn.limits": {"max_loops": MAX_LOOPS, "claim_seconds": 120},
+        "grant.validity_seconds": profile_lines.GRANT_VALIDITY_SECONDS,
         "privacy": {"text": "redacted", "sensitive_leaves": False,
                     "observation_retention_days": str(observation.get("retention_days") or "")},
         "live.mode": {"operation_mode": str(config.get("operation_mode") or "assist"),

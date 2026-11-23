@@ -74,7 +74,11 @@ def _page(request, **context):
         **site_context, "site_title": site_context.get("site_header", admin.site.site_header),
         "title": "Verificação em duas etapas", **context,
     })
-    response["Referrer-Policy"] = "no-referrer"
+    # "same-origin", não "no-referrer": com "no-referrer" o navegador manda o POST
+    # do formulário com ``Origin: null`` e o CSRF do Django recusa todo envio
+    # (medido no Chrome do dono em 23/11/2026). "same-origin" continua sem
+    # vazar a URL para fora do Admin.
+    response["Referrer-Policy"] = "same-origin"
     response["X-Frame-Options"] = "DENY"
     return response
 
