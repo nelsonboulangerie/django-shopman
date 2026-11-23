@@ -694,6 +694,8 @@ export interface POSTabProjection {
   fired?: boolean;
   /** Hora em que a comanda abriu ("21:48"). */
   opened_at_display?: string;
+  /** Quem abriu a comanda (primeiro nome); não muda quando outra estação a abre. */
+  opened_by_display?: string;
   /** A mesa do Salão vinculada (opcional). */
   seating_spot_ref?: string;
   /** A cozinha terminou tudo o que foi disparado: o balcão chama o cliente. */
@@ -831,6 +833,8 @@ export interface POSSeatingSpotOption {
 }
 
 export interface POSTabPayload {
+  /** Esta abertura pôs a comanda em uso (ela estava livre). Só na resposta do abrir. */
+  created?: boolean;
   revision?: string;
   sales_mode?: "counter" | "order";
   session_key: string;
