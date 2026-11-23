@@ -27,11 +27,13 @@ O gate executa Chromium nas viewports 1024×768, 768×1024, 1440×900,
 geometria e engines reais de browser; screenshots não são baselines aprovadas e
 não substituem revisão humana, zoom real, tablet, TV, leitor de tela ou toque físicos.
 
-## O que fica para o reviewer local (Django real)
+## O que fica para a suíte de operador (Django real)
 
-Login efetivo, desbloqueio/troca de operador, planejar/iniciar/concluir contra
-persistência real e o rollover de meia-noite exigem a stack completa + gateway.
-D4 também exige refs/credenciais reais das TVs e a janela de corte.
+Login efetivo, desbloqueio com PIN e os gestos contra persistência real (confirmar o
+previsto, finalizar, a Qualidade) moram em `tests/operator/` (`npm run test:operator`,
+WP-F00): a Produção compilada contra o Django de uma pilha de pé, com os papéis de
+verdade. Como subir a pilha: `tests/operator/README.md`. O rollover de meia-noite e as
+TVs do Letreiro (refs reais, janela de corte) ainda não têm jornada lá.
 
 ## Como funciona a sessão (mock ramificado por cookie)
 
