@@ -174,16 +174,21 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "LOW_RATING_COMMENT_MARK",
             "connect_saved",
             "create",
             "exists",
+            "oldest_open_created_at",
             "open_counts",
             "open_pk",
+            "open_rows",
+            "open_rows_with_ref",
             "recent_exists",
             "resolve",
             "resolve_matching",
             "resolve_pk",
-            "revise"
+            "revise",
+            "scrub_customer_comments"
           ]
         }
       ]
@@ -501,6 +506,7 @@
             "READ_VIAS",
             "RIDE_STATES",
             "RIDE_STATUSES",
+            "STATUS_DETAILS",
             "TERMINAL_STATUSES",
             "USER_AGENT_PRODUCT",
             "_ESTIMATE_ADDRESS_FIELDS",
@@ -538,6 +544,7 @@
             "ride_state",
             "snapshot_from_details",
             "snapshot_from_listing",
+            "status_detail",
             "tracking_links",
             "user_agent"
           ]
@@ -837,10 +844,13 @@
             "SERIES",
             "SimulatedFiscalBackend",
             "UF_PR",
+            "_NO_STREET",
+            "_TPAG",
             "_digits",
             "_mod11",
             "_shop_document",
-            "access_key"
+            "access_key",
+            "authorized_nfce_xml"
           ]
         }
       ]
@@ -1327,6 +1337,7 @@
             "_get_config",
             "_masked",
             "_record_failure",
+            "_record_success",
             "logger"
           ]
         }
@@ -1801,6 +1812,7 @@
             "hold_state",
             "hold_target_date",
             "is_cart_hold",
+            "is_held_by_a_cart",
             "logger",
             "planned_on_date",
             "receive_return",
@@ -1897,6 +1909,7 @@
             "AIConnectionForm",
             "AiInvocationAdmin",
             "AiSpendDayAdmin",
+            "PaidApiCallAdmin",
             "_ReadOnlyAdmin"
           ]
         }
@@ -3510,6 +3523,7 @@
             "_register_courier_handlers",
             "_register_customer_strategies",
             "_register_delivery_auto_complete_handler",
+            "_register_demand_anchor",
             "_register_fiscal_handlers",
             "_register_fiscal_publication_gate",
             "_register_fulfillment_handler",
@@ -3632,7 +3646,9 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "stock.materialized-holds-receiver",
+        "stock.production-shrink-receiver",
         "stock.production-void-receiver"
       ],
       "responsibilities": [
@@ -4325,6 +4341,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "preorder.production-promise-lost",
         "production.batch-traceability-alert",
         "production.change-alert-receiver",
         "production.forgotten-planned-orders",
@@ -4834,6 +4851,7 @@
           "symbols": [
             "Command",
             "QUEUE_HEALTH_ALERT_TYPES",
+            "_resolve",
             "_tasks",
             "logger"
           ]
@@ -6617,6 +6635,7 @@
         {
           "responsibility": "configuração",
           "symbols": [
+            "ConversationalCommitment",
             "ConversationalDecision",
             "ConversationalEpisode",
             "ConversationalOutcome",
@@ -6782,6 +6801,26 @@
           "responsibility": "configuração",
           "symbols": [
             "OperatorPasskey"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/paid_api_call.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "PaidApiCall",
+            "PaidApiOutcome"
           ]
         }
       ]
@@ -7508,6 +7547,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/pickup_window_in_use.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.pickup-window-in-use"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/promise_expiry_margin.py",
       "touchpoints": [
         "outro"
@@ -8211,7 +8264,6 @@
             "TrackingRatingFollowupData",
             "TrackingStatusData",
             "TrackingTimelineEventData",
-            "_COURIER_ENDED_STATUSES",
             "_DIGITAL_PAYMENT_METHODS",
             "_STORE_DECISION_STATES",
             "_WAITLIST_NONE",
@@ -8235,6 +8287,7 @@
             "_copy_message",
             "_copy_title",
             "_courier_closeness",
+            "_courier_ride_ended",
             "_courier_tracking_url",
             "_eta_at",
             "_eta_not_before",
@@ -10216,6 +10269,8 @@
             "DanfeSourceError",
             "MAX_XML_BYTES",
             "NS",
+            "backend_authorized_xml",
+            "logger",
             "parse_authorized_xml",
             "read_authorized_xml",
             "value"
@@ -10360,9 +10415,11 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "SERVICE_FALLBACK_NAME",
             "_KIND_BY_REF",
             "_kind",
             "_translator",
+            "_vocabulary",
             "courier_backend"
           ]
         },
@@ -10373,7 +10430,31 @@
             "new_ride_service_ref",
             "ride_state",
             "service_for_new_ride",
+            "service_name",
+            "state_detail",
             "state_since"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/demand_anchor.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-demand-anchor"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "logger"
           ]
         }
       ]
@@ -10654,6 +10735,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/fixed_discount.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "pricing.fixed-coupon-competition"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/fomo.py",
       "touchpoints": [
         "service"
@@ -10729,7 +10824,8 @@
             "_hour_pair",
             "_local_today",
             "_window_start",
-            "logger"
+            "logger",
+            "window_end"
           ]
         }
       ]
@@ -10761,6 +10857,7 @@
             "_component_short",
             "_parse_result",
             "_record_failure",
+            "_record_success",
             "_reverse_daily_limit",
             "_spend_reverse_daily_budget",
             "forward_geocode",
@@ -11164,6 +11261,7 @@
             "_record_poll_success",
             "_record_remote",
             "_refresh_financials",
+            "is_known_code",
             "logger",
             "polling_configured"
           ]
@@ -11482,6 +11580,7 @@
             "block_reason",
             "defer_stock_hold",
             "delivery_date_from_payload",
+            "delivery_end",
             "delivery_start",
             "dispatch_before_window",
             "is_due",
@@ -11653,6 +11752,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PREP_MIN_SAMPLES",
+            "PREP_PROMISE_FALLBACK_MINUTES",
             "PREP_SAMPLE_HOURS",
             "_parse"
           ]
@@ -11660,7 +11760,9 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "_configured_station_goal",
             "prep_expectation",
+            "prep_goal_minutes",
             "ready_eta",
             "stage_minutes"
           ]
@@ -13001,8 +13103,10 @@
             "operational_event",
             "operational_event_on_commit",
             "record_integration_failure",
+            "record_integration_success",
             "record_payment_reconciliation_failure",
-            "record_webhook_failure"
+            "record_webhook_failure",
+            "record_webhook_success"
           ]
         }
       ]
@@ -13124,6 +13228,7 @@
             "_preorder_not_due",
             "_sync_delivery_fulfillment",
             "_waiting_for_the_batch",
+            "_waitlist_wait_reason",
             "logger"
           ]
         }
@@ -13293,6 +13398,8 @@
             "get_fulfillment_type",
             "house_owns_the_delivery",
             "is_counter_takeaway",
+            "is_for_a_later_day",
+            "is_preorder",
             "is_test_order",
             "json_quantity",
             "logger",
@@ -13346,25 +13453,33 @@
             "ORDER_PROBLEM",
             "OTHER_PAYMENT",
             "OwnFleetRefused",
+            "PAGE_THEMES",
             "PAYMENT_METHODS",
+            "POSITION_MAX_ACCURACY_M",
             "PROBLEMS",
             "REFUSED",
             "SOURCE",
             "_RIDE_PREFIX",
             "_estimate",
+            "_guide_route",
             "_live",
+            "_map_view",
             "_order_label",
             "_ready_at",
             "_ride_orders",
+            "_shop_point",
             "_stop_view",
-            "_today_q",
             "assign",
             "close_if_settled",
             "deliver",
             "depart",
             "logger",
+            "page_theme",
+            "remember_theme",
+            "report_position",
             "report_problem",
-            "ride_view"
+            "ride_view",
+            "today_settlement"
           ]
         }
       ]
@@ -14497,6 +14612,7 @@
             "Candidate",
             "Group",
             "_cache_key",
+            "_deadline",
             "_point",
             "_ready_key",
             "km_between",
@@ -14508,6 +14624,48 @@
           "symbols": [
             "_service",
             "waiting_pool"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/route_guide.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "COST_USD_MICROS",
+            "DEFAULTS",
+            "FIELD_MASK",
+            "KEEP_SECONDS",
+            "MAX_CALLS_PER_DAY",
+            "PROVIDER",
+            "PURPOSE",
+            "REQUEST_TIMEOUT_SECONDS",
+            "ROUTES_URL",
+            "_guide",
+            "_key",
+            "_meters",
+            "_nearest",
+            "_record",
+            "_request",
+            "_spend_today",
+            "compute",
+            "decode_polyline",
+            "forget",
+            "logger",
+            "off_route",
+            "read",
+            "settings_for_shop",
+            "view"
           ]
         }
       ]
@@ -15530,6 +15688,120 @@
           "symbols": [
             "app_name",
             "urlpatterns"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/concierge_reading.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "contrato"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "contrato",
+          "symbols": [
+            "_redactor",
+            "redact",
+            "register"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/usd_brl_quote.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "UsdBrlQuote"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/usd_brl.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "LOOKBACK_DAYS",
+            "PTAX_URL",
+            "Quote",
+            "TIMEOUT_S",
+            "_last_known",
+            "_resolve",
+            "brl_micros",
+            "fetch_ptax",
+            "logger",
+            "quotes_for",
+            "record_quotes"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/record_usd_brl_quotes.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/conversational/ledgers.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DurableCommitmentLedger",
+            "DurableExposureLedger",
+            "_need_document",
+            "_need_of",
+            "commitment_ledger",
+            "exposure_ledger",
+            "memory_store",
+            "receipt_ledger"
           ]
         }
       ]

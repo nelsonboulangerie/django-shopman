@@ -585,10 +585,10 @@ def _open_cash_shift_for_request(request):
 def _cash_shift_required_response() -> Response:
     return Response(
         {
-            "detail": "Abra o caixa antes de revisar ou finalizar uma venda.",
+            "detail": "Abra o caixa antes de revisar ou validar uma venda.",
             "error": {
                 "code": "cash_shift_required",
-                "message": "Abra o caixa antes de revisar ou finalizar uma venda.",
+                "message": "Abra o caixa antes de revisar ou validar uma venda.",
                 "field": "cash_shift_id",
                 "focus": "cash",
                 "recovery": "Abra um turno de caixa neste terminal e tente novamente.",
@@ -962,6 +962,13 @@ def _login_rate_limited_response(usage: dict | None) -> Response:
     )
 
 
+def _password_opens_station(user) -> bool:
+    """Num posto vinculado, a senha entra só para quem vincula postos e para o Dono."""
+    from shopman.backstage.permissions import can_audit_cash
+
+    return user.has_perm(station_trust.PROVISION_PERM) or can_audit_cash(user)
+
+
 @method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
 class OperatorLoginView(APIView):
     """Login de operador NO PRÓPRIO app (sem bounce pro Django admin).
@@ -1019,6 +1026,25 @@ class OperatorLoginView(APIView):
                 {"detail": "Usuário ou senha inválidos.", "error": {"code": "operator_login_invalid"}},
                 status=403,
             )
+        # Num posto vinculado a senha não é a porta de quem opera (#2334): ali se
+        # entra pelo PIN ou pelo crachá, que têm bloqueio progressivo e aviso ao
+        # gerente. Até aqui qualquer staff com senha abria sessão num posto pela API,
+        # pulando a régua que a trava já cobra (``OperatorUnlockPasswordView``).
+        # Ficam com a senha: quem vincula postos (o reparo do posto é com a senha
+        # dela) e o Dono, que não tem PIN (a mesma exceção da trava, 06/11/2026).
+        # A senha está certa daqui para baixo: a recusa é da porta e não conta como
+        # senha errada; fica na trilha, como toda recusa.
+        if station_trust.is_trusted_station(request) and not _password_opens_station(user):
+            codigo = "operator_password_station_pin_only"
+            sign_in_audit.record(
+                user=user,
+                method=SignInMethod.PASSWORD,
+                outcome=SignInOutcome.FAILED,
+                request=request,
+                reason=codigo,
+            )
+            frase = "Neste posto, entre pelo PIN ou pelo crachá. Sem PIN, peça um ao gerente."
+            return Response({"detail": frase, "error": {"code": codigo}}, status=403)
         # Quem sabe por qual porta a pessoa entrou é quem abre a porta: o
         # backend de autenticação não distingue senha de PIN nem de crachá. A
         # linha da trilha quem grava é o receiver do `user_logged_in`.
@@ -3372,6 +3398,95 @@ class OrderRefundRetryView(_OrderActionBase):
         return self._context_response(request, order, "refund-retry", {}, execute, prepare=prepare)
 
 
+#: Estornar UM pedido: a exceção financeira do Gerente (#2727, item 5). Pede quem
+#: opera o Gestor E a permissão dedicada; ``payman.*`` nunca entra aqui.
+_ORDER_REFUND_PERMISSIONS = ("shop.manage_orders", "backstage.refund_single_order")
+
+
+class OrderRefundPreviewView(OperationalObservationMixin, APIView):
+    """O que o diálogo "Estornar" mostra: o valor pago naquela cobrança, o que já
+    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança, a
+    deste pedido; nenhuma soma, nenhuma lista (``order_refund.preview``)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = _ORDER_REFUND_PERMISSIONS
+
+    def get(self, request, ref: str):
+        from shopman.backstage.services import order_refund
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(order_refund.preview(order, user=request.user))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Refund one order's online charge (full or partial), from the order detail",
+        responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
+    ),
+)
+class OrderRefundView(_OrderActionBase):
+    """Estornar UM pedido no Gestor (#2727, item 5; dono, 21/11/2026).
+
+    ``POST {base_revision, expected_actor_id, amount_q?, confirm: true}``. Só com
+    ``backstage.refund_single_order``: o Gerente estorna partindo do pedido e vê só o
+    valor daquela cobrança, sem ``payman.view_paymentintent`` (o Admin de cobranças
+    lista, e listar é proibido a ele). ``amount_q`` em centavos, até o disponível; sem
+    ele, o disponível inteiro. ``confirm`` é a segunda confirmação, a mesma marca do
+    diálogo do Admin: sem ela, nada é estornado.
+
+    O dinheiro sai por ``payment.refund_intent_at_gateway``, o mesmo caminho do
+    estorno do Admin (``order_refund.refund``). A chave da intenção
+    (``Idempotency-Key``) é a chave da tentativa: repetir a mesma devolve o mesmo
+    recibo sem falar com o gateway de novo.
+
+    A resposta é 200 também quando o gateway recusa: a tentativa FOI gravada (o
+    evento ``payment.order_refund``), e ``refund`` diz o que houve:
+    ``{outcome, amount_q, refunded_q, available_q, message}``, só desta cobrança.
+    """
+
+    required_permission = _ORDER_REFUND_PERMISSIONS
+    intention_operation = "refund"
+
+    def post(self, request, ref: str):
+        from shopman.backstage.services import order_refund
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        attempt_key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        if request.data.get("confirm") is not True:
+            return Response(
+                {"detail": order_refund.CONFIRM_REQUIRED, "field": "confirm",
+                 "errors": {"confirm": [order_refund.CONFIRM_REQUIRED]}},
+                status=400,
+            )
+        try:
+            amount_q = order_refund.parse_amount_q(request.data.get("amount_q"))
+        except order_refund.OrderRefundRefused as exc:
+            return Response({"detail": str(exc), "field": "amount_q", "errors": {"amount_q": [str(exc)]}}, status=400)
+
+        def execute(base):
+            try:
+                result = order_refund.refund(
+                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key, expected_revision=base,
+                )
+            except order_refund.OrderRefundStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except order_refund.OrderRefundRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund": result}
+
+        # Sem a leitura do pedido na resposta (``_context_response``): o que volta é só o
+        # recibo desta cobrança, e a tela relê o pedido pelo caminho de sempre.
+        return _intention_response(
+            request, operation="refund", resource=order.ref, inputs={"amount_q": amount_q}, execute=execute,
+        )
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -3951,6 +4066,60 @@ class OrderResendPaymentLinkView(_OrderActionBase):
         responses={200: OpenApiResponse(description="Available dates and readiness-annotated windows.")},
     ),
 )
+class POSDeliveryFeeView(APIView):
+    """A taxa de entrega na tela de venda, antes do pagamento (#2402).
+
+    ``POST {delivery_address_structured, delivery_address, merchandise_q,
+    customer_ref}``. Responde os mesmos campos de taxa da review, para o
+    Recebimento mostrar o número que a loja calcula, em vez de "calculada no
+    pagamento". A geocodificação de quem chega sem coordenada é por endereço e
+    fica em cache, então perguntar de novo quando a venda muda não sai caro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        body = request.data or {}
+        address = body.get("delivery_address_structured")
+        try:
+            merchandise_q = max(0, int(body.get("merchandise_q") or 0))
+        except (TypeError, ValueError):
+            frase = "O valor dos produtos chegou ilegível."
+            return Response(
+                {"detail": frase, "field": "merchandise_q", "errors": {"merchandise_q": [frase]}},
+                status=400,
+            )
+        delivery = pos_tabs_service.resolve_delivery_fee(
+            address_structured=address if isinstance(address, dict) else {},
+            address_text=str(body.get("delivery_address") or ""),
+            merchandise_q=merchandise_q,
+            channel_ref=POS_CHANNEL_REF,
+            customer_ref=str(body.get("customer_ref") or "").strip(),
+        )
+        return Response({"ok": True, **_delivery_fee_quote_payload(delivery)})
+
+
+def _delivery_fee_quote_payload(delivery) -> dict:
+    """Os campos de taxa da review (``_pos_sale_review_payload``), para a mesma tela ler."""
+    waiver = delivery.waiver
+    waiver_review = None
+    if waiver is not None and delivery.source not in ("manual", "blocked"):
+        waiver_review = {
+            "reason": waiver.reason,
+            "promotion_name": waiver.promotion_name,
+            "threshold_q": waiver.threshold_q,
+            "base_fee_q": waiver.base_fee_q,
+            "group_name": waiver.group_name,
+        }
+    return {
+        "delivery_fee_q": delivery.fee_q,
+        "delivery_fee_source": delivery.source,
+        "delivery_distance_km": delivery.distance_km,
+        "delivery_fee_waiver": _delivery_fee_waiver_payload(waiver_review),
+    }
+
+
 class POSScheduleView(APIView):
     """As datas e janelas combináveis — perguntado na ABERTURA, não no pagamento.
 
@@ -5162,6 +5331,63 @@ class OrderCourierCancelView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Separate again the change and the card machine of a ride the courier central resumed",
+        responses={200: OpenApiResponse(description="Custody recorded.")},
+    ),
+)
+class OrderCourierCustodyView(_OrderActionBase):
+    intention_operation = "courier-custody"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        # O mesmo formato da custódia da chamada (``OrderCourierDispatchView``).
+        equipment = request.data.get("equipment") or []
+        if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
+            return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
+        equipment = sorted(set(equipment))
+        change_out = request.data.get("change_out")
+        if change_out is not None and not isinstance(change_out, str | int | float):
+            return Response({"detail": "Troco inválido."}, status=400)
+        change_out = None if change_out is None else str(change_out)
+
+        def execute(base):
+            return orders_service.courier_custody(
+                order, actor=_actor(request), expected_revision=base, operator=request.user,
+                change_out_raw=change_out, equipment=equipment,
+            )
+
+        return self._context_response(request, order, self.intention_operation,
+                                      {"change_out": change_out, "equipment": equipment}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Close here the ride the courier central never closed (delivered or back at the store)",
+        responses={200: OpenApiResponse(description="Ride closed here.")},
+    ),
+)
+class OrderCourierCloseHereView(_OrderActionBase):
+    intention_operation = "courier-close-here"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        outcome = str(request.data.get("outcome") or "")
+
+        def execute(base):
+            closed = orders_service.courier_close_here(order, outcome=outcome, actor=_actor(request), expected_revision=base)
+            return {"closed": closed, "outcome": outcome}
+
+        return self._context_response(request, order, self.intention_operation, {"outcome": outcome}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Quote the external courier ride without dispatching",
         responses={200: OpenApiResponse(description="Courier quote.")},
     ),
@@ -5438,8 +5664,12 @@ class OrderCourierRideQuoteView(APIView):
         else:
             estimate = courier.estimate_for_ride(orders)
         if estimate is None:
+            from shopman.shop.services import delivery_services
+
+            # A corrida que ainda vai abrir vai pelo serviço padrão do Admin.
             return Response({"estimate": None,
-                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+                             "detail": f"A {delivery_services.service_name()} não cotou esta corrida agora. "
+                                       "Dá para chamar mesmo assim."})
         order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
         compare = {}
         if len(orders) > 1:
@@ -8116,8 +8346,16 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
         return _resposta_no_dialeto(self._close(request))
 
     def _close(self, request):
+        # A chave da tentativa é o que faz o reenvio devolver a MESMA venda (resposta
+        # perdida, fila sem conexão, toque duplo). Sem ela, a retentativa fechava uma
+        # segunda venda. O PDV sempre manda (``cart.clientRequestId``); a regra é a
+        # mesma das rotas de caixa (F8, #2565).
+        if not str(request.data.get("client_request_id") or "").strip():
+            return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+                "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
+                "error": {"code": "client_request_id_required"}}, status=422)
         if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
-            return Response({"detail": "Atualize a comanda antes de finalizar.", "field": "expected_revision",
+            return Response({"detail": "Atualize a comanda antes de validar.", "field": "expected_revision",
                              "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
@@ -8143,7 +8381,7 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
             # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
             return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
+            return Response({"detail": str(exc) or "Não foi possível validar a venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)
         from shopman.orderman.models import Order
 

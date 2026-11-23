@@ -75,9 +75,9 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 | SKU | Estado na loja | Como | Âncora do QA |
 |-----|----------------|------|--------------|
 | `FENDU` | **esgotado + "me avise"** | sem estoque pronto, sem plano hoje | `availability=unavailable`, `is_notifiable=true`, não adiciona |
-| `MELON-PAN` | **últimas unidades** | pronto = 2 (≤ limiar 5) | `availability=low_stock`, adiciona |
-| `PURIN` | **lista de espera / previsto** | sem pronto hoje, produção planejada amanhã | indisponível no menu de hoje, mas com suprimento planejado → orderável ao escolher data futura (encomenda) |
-| `TEA-JELLY` | **pausado pelo operador** | `is_sellable=False` | publicado (aparece), `is_paused=true`, não adiciona, não notificável |
+| `MELON` | **últimas unidades** | pronto = 2 (≤ limiar 5) | `availability=low_stock`, adiciona |
+| `TABAT` | **lista de espera / previsto** | sem pronto hoje, produção planejada amanhã | indisponível no menu de hoje, mas com suprimento planejado → orderável ao escolher data futura (encomenda) |
+| `MDLN` | **pausado pelo operador** | `is_sellable=False` | publicado (aparece), `is_paused=true`, não adiciona, não notificável |
 
 Âncora do teste: `test_nelson_seed_qa_profile_builds_named_scenarios`
 (`shopman/backstage/tests/test_nelson_seed_operational.py`) afirma cada estado via
@@ -94,10 +94,10 @@ oposto do reseed: arma o cenário **no banco que já está lá**, um SKU de cada
 ```bash
 python manage.py qa_scenarios                     # relatório (não escreve)
 python manage.py qa_scenarios --arm               # arma todos os cenários
-python manage.py qa_scenarios --arm sold_out=BF   # esgota a baguete, e só ela
-python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+python manage.py qa_scenarios --arm sold_out=TRADI # esgota a baguete, e só ela
+python manage.py qa_scenarios --restock TRADI     # repõe → dispara o "Avise-me"
 python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
-python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+python manage.py qa_scenarios --reset TRADI       # ... incluindo um SKU pausado à mão
 ```
 
 O comando e o perfil `qa` armam os estados pela **mesma função**

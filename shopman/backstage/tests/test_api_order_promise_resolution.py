@@ -178,8 +178,9 @@ def _choices(client, order: Order) -> dict[str, dict]:
     return {choice["key"]: choice for choice in response.json()["choices"]}
 
 
-def _happened(what: str, code: str) -> str:
-    return f"O item {NAME} do seu pedido {code} {what}{SORRY}"
+def _happened(clause: str, code: str) -> str:
+    """O que houve, no molde sem gênero (#2809 item 6): a oração já traz o nome."""
+    return f"No seu pedido {code}, {clause}{SORRY}"
 
 
 def _baguete_e_cafe(ref: str = "WEB-2611-G8G-N75", **kwargs) -> Order:
@@ -200,7 +201,7 @@ def test_o_dialogo_traz_o_fato_as_quatro_familias_na_ordem_e_a_mensagem_de_cada_
     response = _get(client, order.ref)
 
     assert response.status_code == 200, response.json()
-    happened = _happened("não vai ficar pronto amanhã", "N75")
+    happened = _happened(f"não vamos ter {NAME} amanhã", "N75")
     swap_message = f"{OPENING} {happened} Posso trocar por Fendu? Me avisa e eu ajusto por aqui ✨"
     reschedule_message = (
         f"{OPENING} {happened} Posso remarcar o seu pedido para outro dia? Me diz qual fica melhor para você ✨"
@@ -382,7 +383,7 @@ def test_com_mais_de_um_item_em_falta_o_rotulo_diz_qual_e_o_endereco_leva_os_doi
     # A mensagem conta os dois itens numa oração só (mesma situação, #2809 item 5) e
     # propõe a troca desta escolha.
     assert choices["swap:BRIOCHE:FENDU"]["message"] == (
-        f"{OPENING} No seu pedido DOIS, os itens Baguete de tradição e Brioche não vão ficar prontos amanhã{SORRY} "
+        f"{OPENING} No seu pedido DOIS, não vamos ter Baguete de tradição e Brioche amanhã{SORRY} "
         "Posso trocar Brioche por Fendu? Me avisa e eu ajusto por aqui ✨"
     )
     # Tirar os dois deixa o café: a lista final é só ele, e a mensagem fala "esses itens".
@@ -445,7 +446,7 @@ def test_tirar_o_item_quando_falta_parte_baixa_a_quantidade(client, gerente, vit
     assert choice["detail"] == "O novo total é R$ 22,00, a pagar na retirada."
     assert choice["requires_manager_approval"] is False
     assert choice["message"] == (
-        f"{OPENING} {_happened('está em falta em parte (falta 1 de 3)', 'PARTE')} "
+        f"{OPENING} {_happened(f'temos menos {NAME} do que você pediu (falta 1 de 3)', 'PARTE')} "
         "Posso tirar o que falta do pedido? O total fica em R$ 22,00. Me avisa e eu ajusto por aqui ✨"
     )
 
@@ -524,7 +525,7 @@ def test_previa_recusada_fecha_tirar_o_item_com_a_frase_da_edicao(client, gerent
 
 def test_item_atrasado_sai_inteiro_e_a_mensagem_nao_diz_que_ele_nao_vem(client, gerente, vitrine, monkeypatch):
     """Lote de hoje depois da hora: nada "falta" contado; tirar o item tira o item inteiro,
-    e a mensagem diz só o que a casa sabe (está atrasado)."""
+    e a mensagem diz só o que a casa sabe (o preparo atrasou)."""
     Product.objects.filter(sku=SKU).update(metadata={"ready_from": "12:00"})
     today = timezone.localdate()
     monkeypatch.setattr(timezone, "now", lambda: timezone.make_aware(datetime.combine(today, time(9))))
@@ -541,12 +542,34 @@ def test_item_atrasado_sai_inteiro_e_a_mensagem_nao_diz_que_ele_nao_vem(client, 
     ]
     assert list(choices) == ["reschedule", "remove", "cancel"]
     assert choices["remove"]["conclude"]["items"] == [{"line_id": "L2", "sku": "CAFE", "qty": "2"}]
-    assert choices["reschedule"]["message"].startswith(f"{OPENING} {_happened('está atrasado', 'ATRASADO')}")
-    assert "não vai ficar pronto" not in choices["reschedule"]["message"]
+    # #2809 item 7 (coordenação, 22/11/2026): no atraso o rótulo diz o que acontece, e
+    # concorda com "item", não com o produto. Não "Tirar só o item que falta".
+    assert choices["remove"]["label"].startswith(f"Tirar o item atrasado ({NAME})")
+    assert "que falta" not in choices["remove"]["label"]
+    assert choices["reschedule"]["message"].startswith(f"{OPENING} {_happened(f'o preparo de {NAME} atrasou', 'ATRASADO')}")
+    assert "não vamos ter" not in choices["reschedule"]["message"]
+
+
+def test_item_atrasado_de_pedido_pago_diz_quanto_volta_no_rotulo(client, gerente, vitrine, monkeypatch):
+    """#2809 item 7: "Tirar o item atrasado (Baguete de tradição) e devolver R$ …"."""
+    import re
+
+    Product.objects.filter(sku=SKU).update(metadata={"ready_from": "12:00"})
+    today = timezone.localdate()
+    monkeypatch.setattr(timezone, "now", lambda: timezone.make_aware(datetime.combine(today, time(9))))
+    order = _baguete_e_cafe("WEB-ATRASO-PAGO", days=0)
+    _pay_pix(order)
+    craft.plan(Recipe.objects.get(output_sku=SKU), quantity=Decimal("10"), date=_day())
+    _reserve(order, SKU, "4", day=_day(), quant=Quant.objects.get(sku=SKU, target_date=_day(), batch=""))
+    monkeypatch.setattr(timezone, "now", lambda: timezone.make_aware(datetime.combine(today, time(13))))
+
+    choices = {choice["key"]: choice for choice in _get(client, order.ref).json()["choices"]}
+
+    assert re.fullmatch(rf"Tirar o item atrasado \({NAME}\) e devolver R\$ \d+,\d{{2}}", choices["remove"]["label"])
 
 
 def test_o_que_a_producao_ainda_pode_fazer_a_mensagem_nao_da_como_perdido(client, gerente, vitrine):
-    """Sem lote planejado para hoje: a Produção ainda resolve. A proposta diz "pode não ficar pronto"."""
+    """Sem lote planejado para hoje: a Produção ainda resolve. A proposta diz "pode ser que não tenhamos"."""
     order = _baguete_e_cafe("WEB-SEM-LOTE", days=0)
     _reserve(order, SKU, "4", day=_day())
 
@@ -554,7 +577,7 @@ def test_o_que_a_producao_ainda_pode_fazer_a_mensagem_nao_da_como_perdido(client
 
     assert list(choices) == ["reschedule", "remove", "cancel"]
     assert choices["reschedule"]["message"].startswith(
-        f"{OPENING} {_happened('pode não ficar pronto hoje', 'LOTE')}"
+        f"{OPENING} {_happened(f'pode ser que não tenhamos {NAME} hoje', 'LOTE')}"
     )
 
 
@@ -571,7 +594,7 @@ def test_cancelar_sem_nada_cobrado_diz_isso_e_nao_promete_devolucao(client, gere
     assert choice["requires_manager_approval"] is False
     assert choice["conclude"] == {"kind": "cancel", "label": "Cancelar pedido", "href": "", "items": [], "payload_schema": {}}
     assert choice["message"] == (
-        f"{OPENING} {_happened('não vai ficar pronto amanhã', 'COBRAR')} "
+        f"{OPENING} {_happened(f'não vamos ter {NAME} amanhã', 'COBRAR')} "
         "Se preferir, cancelo o pedido. Me avisa como fica melhor para você ✨"
     )
 
@@ -612,7 +635,7 @@ def test_toda_mensagem_e_proposta_na_voz_da_casa_e_nas_palavras_do_cliente(clien
         assert message.startswith("Oi, Nelson! Aqui é da Nelson Boulangerie 💛")
         assert "Nelson Dias" not in message
         # O pedido pelo final do ref, como o balcão fala.
-        assert "do seu pedido N75" in message
+        assert "No seu pedido N75, " in message
         # Sem travessão, sem palavra de bastidor, sem quebra de linha.
         assert "—" not in message and "–" not in message and "\n" not in message
         lowered = message.lower()
@@ -664,7 +687,7 @@ def test_sem_nome_de_gente_a_mensagem_cumprimenta_sem_nome(client, gerente, vitr
 
     message = _choices(client, order)["reschedule"]["message"]
 
-    assert message.startswith("Oi! Aqui é da Nelson Boulangerie 💛 O item Baguete de tradição do seu pedido NOME ")
+    assert message.startswith("Oi! Aqui é da Nelson Boulangerie 💛 No seu pedido NOME, não vamos ter Baguete de tradição ")
 
 
 def test_encomenda_de_outro_dia_diz_o_dia_por_extenso(client, gerente, vitrine):
@@ -675,7 +698,7 @@ def test_encomenda_de_outro_dia_diz_o_dia_por_extenso(client, gerente, vitrine):
 
     day = _day(4)
     spoken = f"para {formats.date_format(day, 'l').lower()}, {formats.date_format(day, 'd/m')}"
-    assert _happened(f"não vai ficar pronto {spoken}", "SABADO") in message
+    assert _happened(f"não vamos ter {NAME} {spoken}", "SABADO") in message
 
 
 def test_dinheiro_volta_em_dinheiro_na_retirada_e_a_frase_do_operador_e_a_do_caixa(client, gerente, vitrine):

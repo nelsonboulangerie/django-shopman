@@ -203,6 +203,37 @@ def test_frozen_cost_registers_the_gap_and_no_total(supplier):
     assert by_sku["MANTEIGA-F3"]["gap"] == "MANTEIGA-F3 não tem custo preferencial no Compras."
 
 
+def test_batch_frozen_without_cost_alerts_the_owner_with_the_reason(supplier):
+    """#2360: a lacuna ficava só no snapshot e no log. Agora vira aviso, um por fornada,
+    no público financeiro (só o dono), sem valor na frase, com o botão do Compras."""
+    from shopman.backstage.models import OperatorAlert
+    from shopman.backstage.projections.alerts import alert_home
+    from shopman.shop.handlers.production_cost import COST_GAP_ALERT_TYPE, freeze_work_order_cost
+
+    recipe = _croissant(supplier)
+    SupplierMaterialCost.objects.filter(material__sku="MANTEIGA-F3").delete()
+
+    wo = _bake(recipe)
+    freeze_work_order_cost(wo)  # o replay do finish não repete o aviso
+
+    alert = OperatorAlert.objects.get(type=COST_GAP_ALERT_TYPE)
+    assert alert.audience == "finance"
+    assert alert.message == (
+        f"A fornada {wo.ref} de {recipe.name} fechou sem custo. MANTEIGA-F3 não tem custo preferencial no Compras."
+    )
+    assert "R$" not in alert.message and "—" not in alert.message
+    assert alert_home(COST_GAP_ALERT_TYPE) == ("purchase", "/", "Abrir o Compras")
+
+
+def test_batch_with_full_cost_raises_no_alert(supplier):
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.handlers.production_cost import COST_GAP_ALERT_TYPE
+
+    _bake(_croissant(supplier))
+
+    assert not OperatorAlert.objects.filter(type=COST_GAP_ALERT_TYPE).exists()
+
+
 def test_unit_cost_divides_by_what_came_out_of_the_oven(supplier):
     wo = _bake(_croissant(supplier), planned="10", finished="8")
 

@@ -615,7 +615,7 @@ async function locateMe () {
       reason: code === 1 ? 'denied' : code === 3 ? 'timeout' : 'unavailable'
     })
     geoIssue.value = code === 1
-      ? 'Você não liberou a localização para a loja. Dá para liberar nas configurações do navegador — ou buscar pela rua ou pelo CEP aqui em cima.'
+      ? 'Você não liberou a localização para a loja. Dá para liberar nas configurações do navegador, ou buscar pela rua ou pelo CEP aqui em cima.'
       : code === 3
         ? 'Demorou demais para achar você. Tente de novo, ou busque pela rua ou pelo CEP aqui em cima.'
         : errorDetail(e, 'Não conseguimos achar onde você está. Busque pela rua ou pelo CEP aqui em cima.')
@@ -988,6 +988,9 @@ async function confirmDraft () {
   // perfil é gravado pelo checkout APÓS o pedido confirmar (a etiqueta vem
   // nesse momento), para endereços fora de zona/abandonados nunca virarem
   // lixo no perfil do cliente.
+  // A linha de cima passa a ser o endereço confirmado: sem isto, quem reabria o
+  // endereço e confirmava outro via o anterior em cima do formulário (#3281).
+  acceptedLine.value = draftLine.value
   emit('update:selection', selectionFromDraft({ ...(draft as AddressDraft) }, null))
   emit('confirmed')
 }

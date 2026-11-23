@@ -369,7 +369,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **`cpf`, `cnpj`, `cep` ficam em português.** São nome próprio de documento brasileiro, como `IBAN` ou `ZIP`. `is_valid_cpf` é o nome certo; "traduzir" produziria um nome que não existe.
   - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
   - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
-  - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
+  - O gesto de dinheiro do caixa é **Saída de caixa / Entrada de caixa** (`cashman.Entry.Kind` `cash_out`/`cash_in`), e é esse o rótulo do comprovante impresso; *sangria*/*suprimento* ficam só como `kind` da API do backstage (suite-vocabulary, 22/11/2026).
 - **Só existem duas palavras: "dispositivo" e "maquininha". "Aparelho" não é nenhuma
   delas.** O objeto que o operador segura — tablet, celular, PC, terminal, o que recebe
   aviso e guarda confiança — se chama **dispositivo**; o que o entregador leva para

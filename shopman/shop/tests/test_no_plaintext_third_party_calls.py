@@ -59,12 +59,16 @@ EXEMPT: dict[str, tuple[str, str]] = {
         "techno.boulangerie.free.fr",
         "referência bibliográfica em docstring, não é chamada",
     ),
-    # A URL de consulta da NFC-e impressa no QR do cupom. Quem abre é o CONSUMIDOR, no
-    # celular dele; o servidor nunca busca este endereço. O esquema vem da especificação
-    # da SEFAZ-PR e trocá-lo por conta própria quebraria a leitura do cupom.
-    "config/management/commands/seed.py": (
+    # As URLs do QR e da consulta da NFC-e (`qrCode` e `urlChave`) no XML da nota
+    # simulada da pilha de teste. Quem abre é o CONSUMIDOR, no celular dele, a partir do
+    # cupom; o servidor nunca busca estes endereços. O esquema é o da tabela de URLs da
+    # SEFAZ-PR (o XML autorizado de referência, `tests/fixtures/danfe-authorized.xml`,
+    # traz o mesmo), e a nota simulada tem de ser igual à real. A entrada era do
+    # `seed.py`, que deixou de escrever a URL em 07/11/2026 (`6b4e7e09b`); veio para
+    # cá no #3304 sem a lista crescer.
+    "shopman/shop/adapters/fiscal_simulated.py": (
         "www.fazenda.pr.gov.br",
-        "URL do QR da NFC-e, definida pela SEFAZ-PR e lida pelo consumidor",
+        "URLs do QR e da consulta da NFC-e, definidas pela SEFAZ-PR e lidas pelo consumidor",
     ),
 }
 

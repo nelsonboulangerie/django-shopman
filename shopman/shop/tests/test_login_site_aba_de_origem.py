@@ -143,8 +143,9 @@ class TestAAbaDeOrigemEntraSozinha:
 
         created = _mensagem_chega(started["code"])
         assert created["released"] is True
-        # A mensagem sozinha não solta a aba: falta o toque no botão que a nomeia.
-        assert browser.post(CLAIM).json() == {"status": "pending"}
+        # A mensagem sozinha não solta a aba: falta o toque no botão que a nomeia. E a
+        # aba sabe que a mensagem chegou: não é mais "pending" (#3271).
+        assert browser.post(CLAIM).json() == {"status": "awaiting_release"}
         assert not _logado(browser)
 
         assert _toca_liberar(notify) == 200
@@ -152,6 +153,23 @@ class TestAAbaDeOrigemEntraSozinha:
         assert claimed["status"] == "done"
         assert claimed["is_authenticated"] is True
         assert claimed["redirect"] == "/menu"
+        assert _logado(browser)
+
+    def test_mensagem_recebida_sem_o_toque_nao_e_mensagem_que_nao_chegou(self, joyce, notify):
+        """#3271: a tela dizia "sua mensagem ainda não chegou" quando ela já tinha chegado
+        e faltava só o toque em "Liberar o Chrome". O claim distingue os dois estados, e
+        perguntar de novo não consome a liberação que espera o toque."""
+        browser = _navegador()
+        started = _aperta_o_botao(browser)
+
+        assert browser.post(CLAIM).json() == {"status": "pending"}
+        _mensagem_chega(started["code"])
+        assert browser.post(CLAIM).json() == {"status": "awaiting_release"}
+        assert browser.post(CLAIM).json() == {"status": "awaiting_release"}
+        assert not _logado(browser)
+
+        assert _toca_liberar(notify) == 200
+        assert browser.post(CLAIM).json()["status"] == "done"
         assert _logado(browser)
 
     def test_a_liberacao_vale_uma_vez(self, joyce, notify):

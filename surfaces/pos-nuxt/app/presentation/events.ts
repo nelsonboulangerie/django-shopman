@@ -8,16 +8,21 @@ export type PosRealtimeState = "connecting" | "live" | "polling";
 
 export type PosRefreshScope = "tabs" | "availability" | "all";
 
+/** No canal de estoque, os avisos que mudam QUEM está na grade, não o selo: produto
+ *  pausado ou despausado, e mutação do canal (#2586). Pedem a releitura inteira. */
+const STOCK_WHOLE_READ_EVENTS = new Set(["product-paused", "listing-changed"]);
+
 /**
  * O que reler quando um stream avisa. O aviso de COMANDA (`/sse/tabs`) muda só o
  * quadro de comandas, e chega a todas as estações a cada salvar de qualquer
  * balcão: reler a projeção inteira nele enchia o servidor. O aviso de ESTOQUE
  * (`/sse/stock`) muda só os selos da grade ("Esgotado", "Sem caixa"), e chega a
- * cada venda, reserva e lote. O resto (caixa, poll, volta à aba) relê tudo.
+ * cada venda, reserva e lote; produto pausado e mutação do canal, no mesmo stream,
+ * mudam quem está na grade e relêem tudo. O resto (caixa, poll, volta à aba) relê tudo.
  */
-export function refreshScopeForChannel(path: string | undefined): PosRefreshScope {
+export function refreshScopeForChannel(path: string | undefined, event?: string): PosRefreshScope {
   if (path === "/sse/tabs") return "tabs";
-  if (path === "/sse/stock") return "availability";
+  if (path === "/sse/stock") return event && STOCK_WHOLE_READ_EVENTS.has(event) ? "all" : "availability";
   return "all";
 }
 

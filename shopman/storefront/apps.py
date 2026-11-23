@@ -37,6 +37,11 @@ class StorefrontConfig(AppConfig):
         concierge_verification.register(
             answer=verification.answer, take_over=verification.take_over, promote_faq=faq_promotion.promote
         )
+        # O B.I. mostra fala de cliente (a seção IA): só pelo redator da Concierge.
+        from shopman.shop import concierge_reading
+        from shopman.storefront.concierge.observation_privacy import redact_observation_text
+
+        concierge_reading.register(redact=lambda text: redact_observation_text(text).text)
         # Loja viva (#2784): o canal da loja tem vitrine pública. O shop só calcula o
         # estado público do SKU (e publica ``shelf-<canal>``) para canal registrado aqui.
         from shopman.shop.services import public_shelf
@@ -57,6 +62,18 @@ class StorefrontConfig(AppConfig):
             on_move_for_stock_alerts,
             sender=Move,
             dispatch_uid="storefront.stock_alerts.on_move",
+            weak=False,
+        )
+
+        # Entrar com a sacola cheia reprecifica a sacola (#3235): no login, que é
+        # comando, e nunca no GET da sacola ou do checkout.
+        from django.contrib.auth.signals import user_logged_in
+
+        from shopman.storefront.cart import reprice_cart_on_login
+
+        user_logged_in.connect(
+            reprice_cart_on_login,
+            dispatch_uid="storefront.cart.reprice_on_login",
             weak=False,
         )
 

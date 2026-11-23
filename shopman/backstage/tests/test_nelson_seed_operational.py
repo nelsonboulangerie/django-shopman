@@ -848,6 +848,35 @@ def test_seed_oven_history_never_touches_real_measurement():
 @pytest.mark.parametrize(
     "instant",
     [
+        datetime(2026, 10, 10, 18, 0, tzinfo=UTC),  # sábado, 15h da loja
+        # 22h30 da loja: em UTC já é domingo, e "ontem" pela data UTC seria o sábado.
+        datetime(2026, 10, 11, 1, 30, tzinfo=UTC),
+    ],
+    ids=["tarde", "noite-com-utc-virado"],
+)
+def test_o_seed_padrao_da_a_ana_um_pedido_concluido_ontem(monkeypatch, instant):
+    """A J7 do Gestor acha a Ana Ferreira pelo nome e amplia o período até o pedido
+    concluído de ontem. O histórico sorteia o cliente de cada pedido, e a sequência
+    mudava com a hora do seed: havia seed com pedido dela ontem e seed sem, e a
+    jornada caía ao acaso (#3295). Ontem é ontem no fuso da loja."""
+    monkeypatch.setattr("django.utils.timezone.now", lambda: instant)
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+    call_command("seed", "--flush", stdout=StringIO())
+
+    yesterday = timezone.localdate() - timedelta(days=1)
+    dela = [
+        order
+        for order in Order.objects.filter(data__customer_ref="CLI-005", status=Order.Status.COMPLETED)
+        if timezone.localtime(order.created_at).date() == yesterday
+    ]
+    assert dela, f"o seed não deu à Ana pedido concluído em {yesterday:%d/%m}"
+    assert dela[0].data["customer"]["name"] == "Ana Ferreira"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "instant",
+    [
         # Os dois lados da meia-noite de Brasília (UTC-3). O seed leva dezenas de
         # segundos: com relógio solto ele rodava às 23:59 e o teste calculava
         # "amanhã" já às 00:00, e a CI reprovou assim em 10/10/2026.

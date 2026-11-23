@@ -100,6 +100,7 @@ _USER_CASCADE = "do operador; some só junto da conta de cliente, se houver"
 _YOOGA = "histórico real (Yooga) e sua curadoria"
 _FRAMEWORK = "infraestrutura do Django"
 _AI_METER = "medidor da IA: gasto real em dólar, sem texto nem cliente; apagar zeraria o teto do dia"
+_PAID_API_METER = "medidor das APIs pagas: custo estimado em dólar, sem coordenada nem cliente; apagar zeraria o teto do dia"
 
 POLICY: dict[str, Rule] = {
     # Django e bibliotecas
@@ -240,6 +241,10 @@ POLICY: dict[str, Rule] = {
     "shop.AIConnection": _keep("conexões de IA da loja (chave cifrada)"),
     "shop.AiInvocation": _keep(_AI_METER),
     "shop.AiSpendDay": _keep(_AI_METER),
+    "shop.PaidApiCall": _keep(_PAID_API_METER),
+    # A PTAX do Banco Central que diz em reais o gasto com IA: dado público, sem cliente;
+    # apagar mudaria o real dos dias passados no B.I.
+    "shop.UsdBrlQuote": _keep("cotação PTAX do BCB usada no B.I.: dado público, sem cliente"),
     "shop.PushSubscription": _keep("aviso no dispositivo do operador"),
     "shop.AnnouncementTemplate": _keep(_CONFIG),
     "shop.Campaign": _keep(_CONFIG),
@@ -259,6 +264,7 @@ POLICY: dict[str, Rule] = {
     "shop.ConversationalEpisode": _purge("episódios do framework conversacional das conversas do ensaio"),
     "shop.ConversationalRecord": _purge("registros do framework conversacional das conversas do ensaio"),
     "shop.ConversationalWork": _purge("caixa de saída do framework conversacional das conversas do ensaio"),
+    "shop.ConversationalCommitment": _purge("compromissos do motor do framework das conversas do ensaio"),
     "shop.OutboundAttempt": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ContactRelease": _purge("conversas do ensaio (WhatsApp)"),
     "shop.PrivacyRequestReceipt": _purge(_CUSTOMER),

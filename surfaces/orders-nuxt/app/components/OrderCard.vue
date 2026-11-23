@@ -49,7 +49,6 @@ import {
   type PromiseExit,
 } from "~/presentation/orderPromise";
 import { orderFocusKey } from "~/presentation/promiseAlert";
-import { CALL_CUSTOMER_HASH } from "~/presentation/orderPending";
 import OrderCardActions from "./OrderCardActions.vue";
 import OrderCardNotices from "./OrderCardNotices.vue";
 
@@ -392,8 +391,8 @@ const notices = computed<CardNotice[]>(() => {
       description: card.advance_block_reason,
       // Pix ou link vencido nunca destrava sozinho: o próximo passo vem pronto.
       // O detalhe abre o cancelar com "Pagamento não confirmado" já marcado. Com
-      // telefone, "Ver o contato do cliente" abre o pedido no contato: o número não vem no
-      // cartão (#2434), e o "Chamar no WhatsApp" de verdade mora no detalhe.
+      // telefone, "Chamar no WhatsApp" abre a conversa direto, sem escrever o número no
+      // cartão (decisão do dono, #2434: só no pedido que pede ação).
       actions: card.payment_lapsed
         ? [
             action(
@@ -404,15 +403,17 @@ const notices = computed<CardNotice[]>(() => {
               },
               { "data-cancel-unpaid": "" },
             ),
-            ...(card.customer_callable
+            ...(card.customer_whatsapp_url
               ? [
                   action(
                     {
-                      label: "Ver o contato do cliente",
-                      icon: "i-lucide-arrow-up-right",
-                      to: `/${card.ref}${CALL_CUSTOMER_HASH}`,
+                      label: "Chamar no WhatsApp",
+                      icon: "i-lucide-message-circle",
+                      to: card.customer_whatsapp_url,
+                      external: true,
+                      target: "_blank",
                     },
-                    { "data-call-customer": "" },
+                    { "data-call-customer": "", rel: "noopener noreferrer" },
                   ),
                 ]
               : []),
@@ -687,6 +688,16 @@ function nuxtIcon(icon: string): string {
     >
       <span class="whitespace-normal text-start">{{ wait.label }}</span>
     </NuxtBadge>
+    <!-- fila de espera (#3177): o mesmo selo do cartão do celular. Pedido que espera
+         o lote ou a vez do cliente não é pedido travado. -->
+    <NuxtBadge
+      v-if="card.waitlist_label && !handoff"
+      class="max-w-full self-start"
+      :color="card.waitlist_state === 'confirming' ? 'primary' : 'neutral'"
+      icon="i-lucide-hourglass"
+      :label="card.waitlist_label"
+      data-waitlist-badge
+    />
     <NuxtBadge
       v-if="payAlert && !handoff"
       class="max-w-full self-start"

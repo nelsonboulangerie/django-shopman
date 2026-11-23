@@ -70,6 +70,24 @@ export function galleryQueue(base) {
       payment_method_label: "Pago no iFood", payment_tone: "success",
       actions: [action("confirm", "Aceitar"), action("reject", "Recusar", { priority: "danger" })],
     }),
+    // #3177: a reserva da fila no Painel de mesa, com o selo e o aceite que diz o
+    // que espera (nada foi cobrado), antes e depois de o lote ficar pronto.
+    make("W07", { attention: "",
+      status: "new", status_label: "Novo", can_confirm: false, customer_name: "Lívia",
+      payment_status: "pending", payment_tone: "neutral", payment_status_label: "",
+      items_summary: "10x Kuro Pan", items_count: 10,
+      waitlist_label: "Na fila de espera", waitlist_state: "fermata",
+      actions: [action("confirm", "Aceitar", { enabled: false,
+        reason: "Na fila de espera: o pedido espera o lote ficar pronto. Nada foi cobrado do cliente." })],
+    }),
+    make("W08", { attention: "",
+      status: "new", status_label: "Novo", can_confirm: false, customer_name: "Marta",
+      payment_status: "pending", payment_tone: "neutral", payment_status_label: "",
+      items_summary: "6x Kuro Pan", items_count: 6,
+      waitlist_label: "Aguardando o cliente confirmar", waitlist_state: "confirming",
+      actions: [action("confirm", "Aceitar", { enabled: false,
+        reason: "O lote ficou pronto e a vez é do cliente: ele tem até 12h15 para confirmar a vaga. Nada foi cobrado ainda." })],
+    }),
   ];
 
   const prep = [
@@ -102,7 +120,7 @@ export function galleryQueue(base) {
     }),
     make("W06", { attention: "start",
       status: "accepted", status_label: "Aceito", customer_name: "Elisa",
-      waitlist_label: "Esperando o lote das 16:00", waitlist_state: "confirming",
+      waitlist_label: "Confirmado pelo cliente", waitlist_state: "confirmed",
       awaiting_work_orders: [
         { ref: "WO-101", status: "started", status_label: "Iniciada", output_sku: "BAGUETE", recipe_name: "Baguete",
           planned_qty: "20", finished_qty: "", progress_pct: 60 },

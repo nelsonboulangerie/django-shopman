@@ -117,14 +117,16 @@ class CartService:
         return customer
 
     @staticmethod
-    def _link_customer(request: HttpRequest, session_key: str) -> bool:
+    def _link_customer(request: HttpRequest, session_key: str, customer=None) -> bool:
         """Idempotently persist the authenticated customer (ref + group) onto the
         cart session. Returns ``True`` when the session was actually updated.
 
         No-op for an anonymous viewer or when the session already carries the same
-        identity, so it's cheap to call on every cart write.
+        identity, so it's cheap to call on every cart write. ``customer`` vem pronto
+        no login, quando o ``request.customer`` do middleware ainda é o anônimo.
         """
-        customer = CartService._customer_link(request)
+        if customer is None:
+            customer = CartService._customer_link(request)
         if customer is None:
             return False
         from shopman.shop.services import account as account_service
@@ -140,6 +142,44 @@ class CartService:
             # Best effort: deletion won the canonical Customer fence while the
             # request was waiting.  Pricing continues anonymously and no stale
             # identity is restored to the cart.
+            return False
+
+    @staticmethod
+    def ensure_customer_pricing(request: HttpRequest, customer) -> bool:
+        """A cliente que entra com a sacola cheia lê o preço DELA (#3235).
+
+        A identidade de preço (ref e grupo) só ia para a sessão nas escritas da
+        sacola (``_link_customer``). Quem montava a sacola anônima e entrava pelo
+        código chegava ao Finalizar com o total do anônimo: o desconto de
+        aniversário ou de grupo valia no servidor e não aparecia, até a próxima
+        mudança na sacola. Roda no login (``reprice_cart_on_login``), que é
+        comando: a sessão que ainda não tem esta cliente ganha a identidade e é
+        reprecificada. Nunca numa leitura: GET não grava.
+
+        Barato quando não há o que fazer: sem sacola, ou sessão que já tem a mesma
+        cliente, sai antes de qualquer trava. Devolve ``True`` quando reprecificou.
+        """
+        session_key = CartService._get_session_key(request)
+        if not session_key or customer is None:
+            return False
+        try:
+            session = (
+                Session.objects.filter(session_key=session_key, channel_ref=CHANNEL_REF, state="open")
+                .only("data")
+                .first()
+            )
+            if session is None:
+                return False
+            if ((session.data or {}).get("customer") or {}).get("ref") == customer.ref:
+                return False
+            if not CartService._link_customer(request, session_key, customer=customer):
+                return False
+            cart_mutations.reprice(session_key=session_key, channel_ref=CHANNEL_REF)
+            return True
+        except Exception:
+            # Leitura nunca quebra por isto: o preço segue o anterior até a próxima
+            # escrita, que liga a identidade de qualquer jeito.
+            logger.warning("cart.ensure_customer_pricing_failed", exc_info=True)
             return False
 
     @staticmethod
@@ -382,10 +422,23 @@ class CartService:
                 code=code,
                 customer=get_authenticated_customer(request),
             )
+        except cart_service.CouponNotBetter as exc:
+            return {
+                "ok": False,
+                "error": exc.code,
+                "coupon_code": exc.coupon_code,
+                "standing_label": exc.standing_label,
+                "standing_q": exc.standing_q,
+            }
         except cart_service.CouponRejected as exc:
             return {"ok": False, "error": exc.code}
 
-        return {"ok": True, "code": (code or "").strip().upper(), "promotion": promotion_name}
+        return {
+            "ok": True,
+            "code": (code or "").strip().upper(),
+            "promotion": promotion_name,
+            "replaced": getattr(_session, "coupon_replaced", None),
+        }
 
     @staticmethod
     def remove_coupon(request: HttpRequest) -> dict:
@@ -412,3 +465,28 @@ class CartService:
 
         cart_mutations.clear_session(session_key=session_key, channel_ref=CHANNEL_REF)
         request.session.pop("cart_session_key", None)
+
+
+def reprice_cart_on_login(sender, request=None, user=None, **kwargs) -> None:
+    """``user_logged_in``: quem entra com a sacola cheia passa a ver o preço dela (#3235).
+
+    Toda porta de cliente (código, link, WhatsApp, chave de acesso, dispositivo
+    reconhecido) termina no ``login()``, que é comando. O ``request.customer`` do
+    middleware ainda é o do anônimo neste ponto: a cliente vem do ``user`` que acabou
+    de entrar. Equipe, ou sessão sem sacola, sai sem consulta nenhuma.
+    """
+    if request is None or user is None or getattr(user, "is_staff", False):
+        return
+    session = getattr(request, "session", None)
+    if session is None or not session.get("cart_session_key"):
+        return
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from shopman.shop.services import auth as auth_service
+
+    try:
+        customer_id = user.doorman_customer_user.customer_id
+    except ObjectDoesNotExist:
+        return
+    customer = auth_service.customer_by_uuid(customer_id)
+    CartService.ensure_customer_pricing(request, customer)

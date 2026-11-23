@@ -8,7 +8,7 @@ import type { Ref } from "vue";
 import type { BIReading } from "~/types/bi";
 
 export function useBiReport<T>(
-  kind: "production" | "sales" | "cash" | "customers" | "delivery-cost" | "preorder-kitchen",
+  kind: "production" | "sales" | "cash" | "customers" | "delivery-cost" | "delivery-timing" | "preorder-kitchen" | "ai",
   extra?: Ref<Record<string, string>>,
 ) {
   const { range } = useBiWindow();

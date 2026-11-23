@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from urllib.parse import parse_qs, urlsplit
 
 import requests
@@ -10,12 +11,38 @@ from defusedxml import ElementTree
 from django.conf import settings
 from django.core.cache import cache
 
+logger = logging.getLogger(__name__)
+
 MAX_XML_BYTES = 2_000_000
 NS = {"n": "http://www.portalfiscal.inf.br/nfe"}
 
 
 class DanfeSourceError(ValueError):
     """A fonte fiscal não pôde ser lida com segurança."""
+
+
+def backend_authorized_xml(key: str):
+    """O XML autorizado que o backend fiscal configurado guarda, quando ele guarda (#3124).
+
+    Só o simulador da pilha de teste implementa ``authorized_xml`` (ele não sobe fora
+    de DEBUG, ``SHOPMAN_E029``), e só backend que se declara homologação é ouvido:
+    nota de produção vem sempre do provedor, pela URL (``read_authorized_xml``).
+    ``None`` quando não há o que ler aqui. O XML passa pela mesma validação da Focus.
+    """
+    from shopman.shop.fiscal import fiscal_pool
+
+    try:
+        backend = fiscal_pool.get_backend()
+    except Exception:  # silêncio-deliberado: sem backend, a DANFE segue pelo caminho do provedor, que diz o problema
+        logger.debug("danfe_xml.backend_unavailable", exc_info=True)
+        return None
+    reader = getattr(backend, "authorized_xml", None)
+    if getattr(backend, "is_homologation", False) is not True or not callable(reader):
+        return None
+    content = reader(key)
+    if not isinstance(content, bytes | bytearray) or not content:
+        return None
+    return parse_authorized_xml(bytes(content), key)
 
 
 def read_authorized_xml(url: str, key: str):

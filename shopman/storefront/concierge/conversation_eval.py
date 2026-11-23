@@ -129,6 +129,11 @@ class Turn:
     conversation_id: int
     #: O veredito da conferência antes do envio (``envelope["conference"]``), quando houve.
     conference: dict | None = None
+    #: A escada em sombra (``envelope["ladder"]``): o que a reescrita teria mandado.
+    ladder: dict | None = None
+    #: Dia do turno e o gasto dele (régua do turno + escada), em US$; ``None`` = desconhecido.
+    day: str = ""
+    cost_usd: float | None = 0.0
     #: As falas do cliente deste turno (para o replay refazê-las no código de hoje).
     inbound_ids: tuple[int, ...] = ()
 
@@ -159,6 +164,20 @@ def _evidence(turn_id: str, inbound: list, replies: list, *, with_team: bool) ->
     )
 
 
+def _turn_cost(replies) -> float | None:
+    """O gasto do turno: a régua (``usage.cost_usd``) mais a escada em sombra. Desconhecido não é zero."""
+    total = 0.0
+    for reply in replies:
+        # Só conta o que foi gravado: chave ausente é "nada gasto aqui"; ``None`` gravado é desconhecido.
+        for source in (reply.usage or {}, (reply.envelope or {}).get("ladder") or {}):
+            if "cost_usd" not in source:
+                continue
+            if source["cost_usd"] is None:
+                return None
+            total += float(source["cost_usd"])
+    return round(total, 6)
+
+
 def _conversation_turns(conversation, messages) -> list[Turn]:
     """Os turnos de uma conversa, com a posse (casa ou equipe) acompanhada pelas notas."""
     from shopman.shop.models import Conversation, ConversationMessage
@@ -184,6 +203,9 @@ def _conversation_turns(conversation, messages) -> list[Turn]:
             conversation_id=conversation.pk,
             conference=next(((r.envelope or {}).get("conference") for r in replies
                              if (r.envelope or {}).get("conference")), None),
+            ladder=next(((r.envelope or {}).get("ladder") for r in replies if (r.envelope or {}).get("ladder")), None),
+            day=inbound[0].created_at.date().isoformat(),
+            cost_usd=_turn_cost(replies),
             inbound_ids=tuple(m.pk for m in inbound),
         ))
         inbound.clear()
@@ -288,6 +310,29 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             f"concorda com o placar em {agree}/{len(conferred)}"
             + (": " + ", ".join(f"{k} {v}" for k, v in reasons.most_common()) if reasons else "")
         )
+    climbed = [t for t in turns if t.ladder]
+    if climbed:
+        chosen = Counter(t.ladder.get("chosen", "?") for t in climbed)
+        pauta = Counter(
+            reason for t in climbed for a in t.ladder.get("attempts", [])
+            for check, row in ((a.get("conference") or {}).get("checks") or {}).items()
+            if (row or {}).get("status") != "pass"
+            for reason in [f"{check}:{(row or {}).get('reason') or (row or {}).get('status')}"]
+        )
+        lines.append(
+            f"  escada (sombra): {len(climbed)} subidas; escolheria "
+            + ", ".join(f"{k} {v}" for k, v in chosen.most_common())
+            + ("; pauta (motivos): " + ", ".join(f"{k} {v}" for k, v in pauta.most_common(6)) if pauta else "")
+        )
+    by_day: dict[str, float | None] = {}
+    for t in turns:
+        if t.day:
+            current = by_day.get(t.day, 0.0)
+            by_day[t.day] = None if current is None or t.cost_usd is None else round(current + t.cost_usd, 6)
+    if by_day:
+        lines.append("  gasto por dia (régua do turno + escada): " + ", ".join(
+            f"{day} {'desconhecido' if v is None else f'US$ {v:.4f}'}" for day, v in sorted(by_day.items())
+        ))
     bad = [t for t in turns if outcome_of(t.evidence) not in (None, "useful") or t.evidence.repeated]
     if bad and show:
         lines.append("")
@@ -302,6 +347,10 @@ def render(turns: list[Turn], *, show: int = 40) -> str:
             lines.append(f"      ManyChat AI no WhatsApp ({ESTIMATED}): {REACH_LABELS[reach]}")
             if t.conference:
                 lines.append(f"      conferência (sombra): {t.conference.get('decision')}")
+            if t.ladder:
+                chosen = t.ladder.get("chosen")
+                text = next((a.get("text") for a in t.ladder.get("attempts", []) if a.get("source") == chosen), "")
+                lines.append(f"      escada escolheria: {chosen}" + (f" · {_redacted(text)[:200]}" if text else ""))
     return "\n".join(lines)
 
 
@@ -313,7 +362,7 @@ class _Rollback(Exception):
 
 
 def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_id: int | None = None,
-                 paid: bool = False) -> tuple[list[Turn], dict]:
+                 paid: bool = False, framework: tuple[str, ...] = ()) -> tuple[list[Turn], dict]:
     """Refaz as falas reais dos últimos ``days`` dias no código de HOJE e devolve os turnos novos.
 
     O placar de 7 dias mede o histórico, inclusive turnos de antes das correções; o replay
@@ -327,6 +376,9 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
       cliente nem muda a posse no provedor);
     - sem ``paid``, a IA paga fica desligada dentro da transação (leitura local, FAQ direta,
       sem juiz): é o replay grátis. Com ``paid``, as chamadas passam pelo freio de sempre.
+    - ``framework``: as classes de ação do motor do framework ligadas DENTRO da transação
+      (``turn_framework.ACTION_CLASSES``), para comparar o mesmo replay com a chave desligada e
+      ligada (N9b). Fora da transação, a chave da loja não muda.
 
     Conversa cujo vínculo a Concierge não atende (fora da coorte) fica de fora e é contada.
     """
@@ -346,7 +398,8 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
     for turn in originals:
         by_conversation.setdefault(turn.conversation_id, []).append(turn)
     replayed: list[Turn] = []
-    info = {"conversations": len(by_conversation), "skipped": 0, "turns": 0, "paid": paid}
+    info = {"conversations": len(by_conversation), "skipped": 0, "turns": 0, "paid": paid,
+            "framework": tuple(framework)}
 
     def _no_handoff(binding, on):
         from types import SimpleNamespace
@@ -355,13 +408,23 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
 
     try:
         with transaction.atomic(), ExitStack() as stack:
-            stack.enter_context(mock.patch.object(service, "_dispatch_reply", lambda conversation, message: None))
+            # O envio é cortado, e a mensagem volta como estava (preparada): o motor do framework
+            # lê dela o que aconteceu, como no envio de verdade.
+            stack.enter_context(mock.patch.object(service, "_dispatch_reply", lambda conversation, message: message))
             stack.enter_context(mock.patch.object(transport, "handoff_for", _no_handoff))
             if not paid:
                 shop = Shop.load()
                 if shop is not None:
                     shop.ai_limits = {**(shop.ai_limits or {}), "enabled": False}
                     shop.save(update_fields=["ai_limits"])
+            if framework:
+                from .turn_framework import SWITCH_FIELD
+
+                shop = Shop.load()
+                if shop is not None:
+                    for name in framework:
+                        setattr(shop, SWITCH_FIELD[name], True)
+                    shop.save(update_fields=[SWITCH_FIELD[name] for name in framework])
             for conv_pk, turns in by_conversation.items():
                 conversation = Conversation.objects.get(pk=conv_pk)
                 binding = conversation.transport_bindings.filter(status=ConversationBinding.Status.ACTIVE).first()
@@ -406,6 +469,10 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
                         conversation_id=conv_pk,
                         conference=next(((r.envelope or {}).get("conference") for r in replies
                                          if (r.envelope or {}).get("conference")), None),
+                        ladder=next(((r.envelope or {}).get("ladder") for r in replies
+                                     if (r.envelope or {}).get("ladder")), None),
+                        day=(new_inbound[0].created_at.date().isoformat() if new_inbound else turn.day),
+                        cost_usd=_turn_cost(replies),
                         inbound_ids=turn.inbound_ids,
                     ))
                     conversation.refresh_from_db(fields=["state"])
@@ -413,4 +480,19 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
             raise _Rollback
     except _Rollback:
         pass
+    finally:
+        # A transação desfaz o banco, não o cache: a loja que o replay mudou (a IA paga
+        # desligada, a chave do motor ligada) ficaria no cache compartilhado, e os
+        # trabalhadores de verdade leriam a loja do replay até o cache vencer.
+        _forget_shop()
     return replayed, info
+
+
+def _forget_shop() -> None:
+    from django.core.cache import cache
+
+    from shopman.shop.models.shop import SHOP_CACHE_KEY, SHOP_MEMO_KEY
+    from shopman.shop.request_memo import forget
+
+    cache.delete(SHOP_CACHE_KEY)
+    forget(SHOP_MEMO_KEY)

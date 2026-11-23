@@ -12,10 +12,13 @@ test.describe("Entregas: corrida por letra", () => {
     await expect(mirrors).toHaveCount(2);
     await expect(mirrors.nth(0).locator("span").first()).toHaveText("A");
     await expect(mirrors.nth(1).locator("span").first()).toHaveText("B");
-    // No mapa, a moto leva a letra e o nome acessível fala a letra (e a idade da posição, F7b).
-    await expect(page.getByRole("button", { name: "Entregador da corrida A. Posição agora", exact: true })).toHaveText("A");
-    await expect(page.getByRole("button", { name: /^Entregador da corrida B\. Última posição há 3 min/ })).toHaveText("B");
-    await expect(page.getByRole("button", { name: "Corrida B, parada 2, pedido F09", exact: true })).toBeVisible();
+    // No mapa, a moto é só a moto, na cor da rota (dono, 21/11: sem selo de letra); o nome
+    // acessível fala a letra (e a idade da posição, F7b). O pacote leva o código do pedido.
+    await expect(page.getByRole("button", { name: "Entregador da corrida A. Posição agora", exact: true })).toHaveText("");
+    await expect(page.getByRole("button", { name: /^Entregador da corrida B\. Última posição há 3 min/ })).toBeVisible();
+    const f09 = page.getByRole("button", { name: "Corrida B, parada 2, pedido F09", exact: true });
+    await expect(f09.locator("[data-map-stop-code]")).toHaveText("F09");
+    await expect(page.locator("[data-stop-letter]")).toHaveCount(0);
     await expect(page.getByText(/[Cc]orrida \d/)).toHaveCount(0);
     await expect(page.locator("[aria-label*='orrida 1'], [aria-label*='orrida 2']")).toHaveCount(0);
   });
@@ -191,4 +194,75 @@ test.describe("Entregas: legenda do mapa no desktop", () => {
     await expect(map.locator("[data-map-legend]")).toBeVisible();
     await expect(map.getByRole("button", { name: "Legenda", exact: true })).toHaveCount(0);
   });
+});
+
+// #2737: a corrida que ninguém aceitou (ou que foi cancelada) volta a Aguardando
+// dizendo por quê, e "Chamar de novo" devolve a corrida INTEIRA, com a mesma letra.
+test.describe("Entregas: a corrida que falhou", () => {
+  test.use({ viewport: { width: 1360, height: 900 } });
+  test.beforeEach(async ({ context }) => {
+    await context.addCookies([{ name: "e2e_failed", value: "on", url: "http://127.0.0.1" }]);
+  });
+
+  test("o cartão diz o motivo e esconde a sugestão com os mesmos pedidos", async ({ page }) => {
+    await page.goto("/delivery");
+    const cards = page.locator("[data-failed-ride]");
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0).getByText("Ninguém aceitou a corrida C (14h20).", { exact: true })).toBeVisible();
+    await expect(cards.nth(0).getByText("A47 + C03 · Gleba Palhano", { exact: true })).toBeVisible();
+    await expect(cards.nth(1).getByText("A TaOn cancelou a corrida (14h05).", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-ride-suggestion]")).toHaveCount(0);
+  });
+
+  test("Chamar de novo abre o sheet com a corrida inteira e a mesma letra", async ({ page }) => {
+    await page.goto("/delivery");
+    await page.locator("[data-failed-ride]").nth(0).getByRole("button", { name: "Chamar de novo", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Chamar a corrida C" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("A47 → C03", { exact: true })).toBeVisible();
+  });
+});
+
+// #2747: o detalhe põe o frete dos clientes ao lado do custo, com o que sobra ou falta.
+test("o detalhe da corrida diz o frete cobrado e o que falta para o custo", async ({ page }) => {
+  await page.goto("/delivery?ride=776753358");
+  const detail = page.getByRole("dialog", { name: "Corrida B" });
+  await expect(detail.locator("[data-ride-balance]")).toHaveText("Frete cobrado R$ 12,00 · Falta R$ 2,50");
+});
+
+// #2736: a corrida que a TaOn nunca fechou se encerra aqui, pelo botão do próprio aviso,
+// com as duas saídas e o que cada uma faz com o dinheiro.
+test.describe("Entregas: encerrar aqui", () => {
+  test.use({ viewport: { width: 1360, height: 900 } });
+  test.beforeEach(async ({ context }) => {
+    await context.addCookies([{ name: "e2e_close", value: "on", url: "http://127.0.0.1" }]);
+  });
+
+  test("o aviso traz o Encerrar aqui; a confirmação diz o efeito de cada saída e manda a escolhida", async ({ page }) => {
+    await page.request.delete(`${MOCK}/api/v1/backstage/e2e/close-here/`);
+    await page.goto("/delivery?ride=776753357");
+    const detail = page.getByRole("dialog", { name: "Corrida A" });
+    const notice = detail.locator("[data-ride-notice]");
+    await expect(notice.getByText("Corrida aberta há muito tempo.", { exact: true })).toBeVisible();
+    await notice.getByRole("button", { name: "Encerrar aqui", exact: true }).click();
+    const confirm = detail.locator("[data-ride-close-here]");
+    await expect(confirm.getByText("A TaOn não encerrou a corrida A. Encerre aqui só se souber o que aconteceu.", { exact: true })).toBeVisible();
+    await expect(confirm.locator('[data-ride-close-outcome="delivered"]').getByText("O pedido fica entregue. O troco fica para o gesto “Entregador voltou”.", { exact: true })).toBeVisible();
+    await expect(confirm.locator('[data-ride-close-outcome="returned"]').getByText("O pedido volta para Aguardando. O troco volta para a gaveta.", { exact: true })).toBeVisible();
+    await confirm.getByRole("button", { name: "Voltou para a loja", exact: true }).click();
+    await expect
+      .poll(async () => (await (await page.request.get(`${MOCK}/api/v1/backstage/e2e/close-here/`)).json()).posts)
+      .toEqual([expect.objectContaining({ ref: "WEB-20261116-0B12", outcome: "returned" })]);
+  });
+});
+
+test("na corrida de várias paradas, o link de acompanhamento é o de cada parada (#2491)", async ({ page }) => {
+  await page.goto("/delivery?ride=776753358");
+  const detail = page.getByRole("dialog", { name: "Corrida B" });
+  // A parada entregue não oferece; a que falta oferece o próprio; a corrida não tem um "dela".
+  await expect(detail.locator("[data-ride-stop-link]")).toHaveCount(1);
+  await expect(detail.locator("[data-ride-stop-link]")).toHaveText("Copiar link de acompanhamento");
+  await expect(detail.getByText("Link de acompanhamento da corrida.")).toHaveCount(0);
+  const box = await detail.locator("[data-ride-stop-link]").boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 });

@@ -234,6 +234,38 @@ quantidade resolve): `available_qty` é nulo, sem substituto e sem "me avise".
 Reserva de demanda (café, croque: `quant` nulo) e SKU não rastreado não fixam a
 data da sacola. O concierge devolve o mesmo `code` com a mesma frase.
 
+### O envio recusa porque a sacola saiu ou sumiu (409 `order_already_sent` / `cart_empty`)
+
+`POST /api/v1/checkout/` não repassa a frase do Core quando a recusa é da SACOLA
+(#3267). Os códigos `revision_changed`, `already_committed`, `already_abandoned`,
+`abandoned`, `not_found` e `empty_session` (e a sacola que já chega vazia) fazem a
+API ler o estado ATUAL da sacola (`checkout.refused_cart`), e é ele que decide a
+frase: o mesmo `revision_changed` é "sua sacola mudou" numa sacola viva e "este
+pedido já foi enviado" numa sacola que outra aba selou.
+
+| Estado da sacola | `error_code` | `detail` | `actions[0]` |
+|------------------|--------------|----------|--------------|
+| Virou pedido (outra aba enviou primeiro) | `order_already_sent` | "Este pedido já foi enviado." | "Ver o pedido" → `/pedido/<ref>` (também em `next_url`; o acesso ao pedido é dado a este navegador) |
+| Encerrada, apagada ou sem item | `cart_empty` | "Sua sacola ficou vazia antes do envio." | "Ver o cardápio" → `/menu` |
+| Viva | segue a recusa original (`revision_changed` reprecifica e reabre) | | |
+
+Quando a chave da sacola já saiu da sessão (o envio que deu certo a tira), a outra
+aba do mesmo navegador não tem sacola para ler. Aí vale o pedido mais novo que ESTE
+navegador recebeu (`grant_order_access`), neste canal, da pessoa logada, criado há
+menos de `checkout.RECENTLY_SENT_WINDOW` (30 min, o prazo padrão da reserva da
+sacola): é `order_already_sent` com o link dele. Sem esse pedido, `cart_empty`.
+Outro navegador da mesma pessoa não tem a concessão e recebe `cart_empty`.
+
+O selo do Core ainda em andamento com a mesma chave (`in_progress`, quando o
+recibo de 30 s da loja expirou antes) sai como `mutation_in_progress`, "Seu pedido
+ainda está sendo enviado. Aguarde a confirmação nesta tela.", e a tela confere até
+o pedido aparecer. `finalizar.vue` abre o pedido que já saiu com o aviso de página
+"Este pedido já foi enviado." (o mesmo quando a tentativa cai em
+`idempotency_conflict` e a tela recupera o pedido) e, na sacola que sumiu, recarrega
+a tela vazia com o aviso de página e o botão "Ver o cardápio"; enquanto ele está à
+vista, a etapa e a barra do total não repetem a frase nem a saída. Nenhuma dessas
+recusas vira toast (`utils/checkoutBagRefusal.ts`, `components/PageNotice.vue`).
+
 ### Recusa nomeada: contato já usado por outro cadastro (409)
 
 `PATCH /api/v1/account/profile/` recusa a troca de e-mail quando o valor já

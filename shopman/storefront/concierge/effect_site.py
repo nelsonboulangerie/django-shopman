@@ -1,4 +1,4 @@
-"""Os quatro efeitos da Concierge como sítio do executor do framework (N6).
+"""Os efeitos da Concierge como sítio do executor do framework (N6; a sacola, #3198).
 
 O executor (``shopman/shop/conversational/commerce_execute.py``) abre a transação, chama
 ``lock``, entrega o estado à ``EffectGuard`` e só então chama ``apply``. Este sítio não
@@ -6,6 +6,7 @@ inventa efeito nenhum: chama os executores que já existem, com as conferências
 
 | Ação do framework | Efeito que já existe | Alvo |
 |---|---|---|
+| ``change_cart`` | ``tools.set_item`` (quantidade absoluta; zero tira) | a sacola (``session_key``) |
 | ``commit_order`` | ``tools.place_order`` (revisão ``quote_token``, confirmação posterior, ``run_idempotent_mutation``) | a sacola (``session_key``) |
 | ``grant_discount`` | ``discount.handle_request`` → ``discount._grant`` | a sacola |
 | ``cancel_order`` | ``cancellation._execute`` | o pedido do cliente |
@@ -33,8 +34,8 @@ from shopman.shop.conversational.commerce_execute import TERMS_REF, Done, Readin
 
 from .tools import ToolContext
 
-ACTIONS = ("commit_order", "grant_discount", "cancel_order", "amend_order")
-CART_ACTIONS = frozenset({"commit_order", "grant_discount"})
+ACTIONS = ("change_cart", "commit_order", "grant_discount", "cancel_order", "amend_order")
+CART_ACTIONS = frozenset({"change_cart", "commit_order", "grant_discount"})
 
 #: O código de recusa do ``place_order`` no vocabulário do framework.
 ORDER_REFUSALS = {
@@ -50,6 +51,13 @@ ORDER_REFUSALS = {
     "authority_unavailable": ErrorCode.AUTHORITY_REVOKED,
 }
 DISCOUNT_REFUSALS = {"no_cart": ErrorCode.FACT_UNAVAILABLE}
+#: O código de recusa do ``set_item``. O resto (estoque, escolha que se faz pela loja) é o
+#: produto indisponível agora: fato, não erro de quem pediu.
+CART_REFUSALS = {
+    "missing_sku": ErrorCode.INVALID_CONTENT,
+    "unknown_sku": ErrorCode.INVALID_CONTENT,
+    "invalid_qty": ErrorCode.INVALID_CONTENT,
+}
 
 
 @dataclass
@@ -98,7 +106,19 @@ class ConciergeEffectSite:
             # A conferência do próprio efeito (o N2) recusou: nada nasceu.
             return Done(False, refusal=ErrorCode.AUTHORITY_REVOKED.value)
 
-    # ── os quatro efeitos ────────────────────────────────────────────────────
+    # ── os efeitos ───────────────────────────────────────────────────────────
+    def _change_cart(self, command: ActionCommand) -> Done:
+        from . import tools
+
+        sku, quantity = command.parameters.get("item"), command.parameters.get("quantity")
+        if not isinstance(sku, str) or not sku or not isinstance(quantity, str) or not quantity.isdigit():
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        result = tools.set_item(self.tool_context, sku, int(quantity))
+        if result.get("ok"):
+            return Done(True, domain_refs={"cart": command.targets[0], "item": sku})
+        code = CART_REFUSALS.get(str(result.get("code") or ""), ErrorCode.FACT_UNAVAILABLE)
+        return Done(False, refusal=code.value)
+
     def _commit_order(self, command: ActionCommand) -> Done:
         from . import tools
 

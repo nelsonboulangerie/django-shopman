@@ -7,6 +7,7 @@ import { cartLinePromise, orderReadyLine } from '~/presentation/promise'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
+import { checkoutBagRefusal, ORDER_ALREADY_SENT_MESSAGE } from '~/utils/checkoutBagRefusal'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -60,7 +61,7 @@ import {
   checkoutNotesCopy,
   couponCardState,
   deliveryZoneRefused,
-  DELIVERY_ZONE_REFUSAL_SELECTOR,
+  DELIVERY_ZONE_REFUSAL_FOCUS,
   rememberChoicesDescription,
   whenSummary as buildWhenSummary,
   checkoutNow,
@@ -79,6 +80,8 @@ const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
 // `liveCart` é a sacola de toda a loja; `cart` (abaixo) é a que veio com o checkout.
 const { setFromServer, clearCart, applyCoupon, removeCoupon, cartIssue, raiseStockIssue, cart: liveCart } = useCartState()
+const route = useRoute()
+const { notice: pageNotice, show: showPageNotice } = usePageNotice()
 const session = useShopSession()
 const telemetry = useStorefrontTelemetry()
 const checkoutRoot = ref<HTMLElement | null>(null)
@@ -391,6 +394,12 @@ function acceptCartProjection (incoming: CartProjection) {
 }
 
 const checkout = computed(() => freshestCheckout.value)
+// A sacola sumiu no servidor (#3267): a barreira acima, que só deixa a revisão andar para
+// a frente, seguraria o item que saiu no resumo e no contador. Aqui a leitura nova é a
+// verdade, vazia.
+function acceptEmptiedCheckout () {
+  if (data.value?.checkout) freshestCheckout.value = data.value.checkout
+}
 
 // O relógio do checkout é o da LOJA (`checkout.today`, escrito pelo servidor no fuso
 // dela): "Hoje", "Amanhã", o piso da fornada e os limites do calendário saem daqui, e
@@ -485,6 +494,15 @@ const checkoutActionLabel = computed(() => action.value?.label || 'Confirmar ped
 // pede um caminho de volta. Neste estado o botão vira "Adicionar itens" (ativo,
 // leva ao cardápio) em vez de "Revisar pedido" morto + "Sacola vazia.".
 const bagIsEmpty = computed(() => !!cart.value?.is_empty)
+// A recusa "sua sacola ficou vazia" (#3267) diz a frase e dá a saída no aviso de página.
+// Enquanto ele está à vista, a etapa e a barra do total não repetem a frase nem oferecem
+// uma segunda saída igual; fechado o aviso, a sacola vazia volta ao de sempre.
+const bagGoneNoticeShowing = computed(() =>
+  bagIsEmpty.value
+  && pageNotice.value?.path === route.path
+  && pageNotice.value?.tone === 'attention'
+  && pageNotice.value?.action?.to === '/menu'
+)
 const authAction = computed(() => checkout.value?.auth_action || null)
 const authRoute = computed(() => authAction.value?.href || '/entrar?next=/finalizar')
 const availableFulfillment = computed(() => availableFulfillmentOptions(checkout.value))
@@ -706,9 +724,11 @@ const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, qu
 // "Hoje" fora das opções porque o dia já encerrou: a tela diz, em vez de sumir calado.
 const todayOverNotice = computed(() => (checkout.value?.today_over ? todayOverMessage(state.fulfillment_type) : ''))
 const isTodaySelected = computed(() => state.delivery_date === dateBounds.value.todayValue)
-// Encomenda para retirar (retirada em outro dia): a revisão diz a regra do pedido não
-// retirado antes de a cliente enviar (#2613).
-const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date) && !isTodaySelected.value)
+// Toda retirada paga (na loja online, toda retirada: o canal só aceita Pix e cartão,
+// pagos no envio): a revisão diz a regra do pedido não retirado antes de a cliente
+// enviar. Vale para hoje também, porque o corte do pedido pago é o fim do expediente
+// do dia combinado, seja ele qual for (#2613; coordenação, 22/11/2026).
+const showUnclaimedOrderRule = computed(() => isPickup.value && Boolean(state.delivery_date))
 const contactState = computed<CheckoutSectionState>(() => {
   if (fieldErrors.value.name || fieldErrors.value.phone) return 'error'
   // `nameEditing` entra aqui junto com `contactEditing`, e esta é a METADE
@@ -1167,7 +1187,7 @@ function stepHeaderSummary (step: Step) {
     addressSummary: addressSummary.value,
     whenSummary: whenSummary.value,
     paymentMethodLabel: paymentMethodLabel.value,
-    action: action.value
+    action: bagGoneNoticeShowing.value ? null : action.value
   })
 }
 
@@ -1364,7 +1384,7 @@ async function continueFromAddress () {
 // gesto que resolve ("Mudar para retirada"), em vez de deixar o cliente olhando
 // para a seção onde estava (beta SMS-05).
 function revealZoneRefusal () {
-  reveal(() => document.querySelector(DELIVERY_ZONE_REFUSAL_SELECTOR), { align: 'start', focus: true })
+  reveal(DELIVERY_ZONE_REFUSAL_FOCUS, { align: 'start', focus: true })
 }
 
 function continueFromWhen () {
@@ -1399,6 +1419,9 @@ function openConfirmSheet () {
 }
 
 function openReceiptSheet () {
+  // No computador o resumo é o lateral, e a folha não tem conteúdo ali: abrir
+  // seria um véu vazio (#3281). A linha do total nem é toque em `lg`.
+  if (import.meta.client && window.matchMedia?.('(min-width: 64rem)').matches) return
   receiptOpen.value = true
 }
 
@@ -1588,7 +1611,12 @@ async function submitCheckout () {
     }
     const data = failure.data || {}
     confirmationUnknown.value = data.error_code === 'mutation_in_progress'
-    if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) return
+    // A mesma tentativa já virou pedido (a outra aba deste navegador restaurou o mesmo
+    // rascunho e enviou primeiro): a tela abre o pedido e diz por quê (#3267).
+    if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) {
+      if (confirmedTrackingUrl.value) showPageNotice(ORDER_ALREADY_SENT_MESSAGE, confirmedTrackingUrl.value)
+      return
+    }
     // O Django ainda está gravando esta mesma tentativa: conferir até terminar.
     if (data.error_code === 'mutation_in_progress') {
       startUncertainCheck()
@@ -1597,6 +1625,30 @@ async function submitCheckout () {
     if (failure.status < 500 && data.error_code !== 'mutation_in_progress') attemptKey.value = createCheckoutAttemptKey()
     const field = typeof data.field === 'string' ? data.field : ''
     serverError.value = errorDetail(e, 'Não foi possível confirmar o pedido.')
+    // A sacola já saiu (outra aba enviou primeiro) ou sumiu (encerrada, apagada,
+    // sem item): não é erro de campo, é outro estado da sacola (#3267). O pedido que
+    // já saiu abre direto; a sacola que sumiu volta vazia, com o caminho do cardápio.
+    const bagRefusal = checkoutBagRefusal(data)
+    if (bagRefusal) {
+      serverError.value = ''
+      confirmOpen.value = false
+      // O aviso é o de página (abaixo das barras, primeiro conteúdo, com X), nunca
+      // toast: ele fala do que aconteceu com a sacola e fica enquanto a causa durar.
+      if (bagRefusal.kind === 'order_already_sent') {
+        clearCart()
+        clearCheckoutDraft()
+        showPageNotice(bagRefusal.message, bagRefusal.href)
+        await navigateTo(bagRefusal.href)
+        return
+      }
+      await refresh()
+      acceptEmptiedCheckout()
+      showPageNotice(bagRefusal.message, route.path, {
+        tone: 'attention',
+        action: { label: bagRefusal.actionLabel, to: bagRefusal.href }
+      })
+      return
+    }
     // Preço/cupom mudou entre a revisão e o confirm: o servidor já reprecificou a
     // sessão (o guardião barrou a cobrança surpresa). Reprecificamos a TELA para o
     // sheet mostrar o novo total em vez de deixar o valor velho ao lado do aviso —
@@ -1789,7 +1841,7 @@ useSeoMeta({
             </UiAlert>
           </div>
 
-          <UiAlert v-if="pickupSwapOffer" variant="warning" data-checkout-pickup-swap>
+          <UiAlert v-if="pickupSwapOffer" variant="warning" data-checkout-pickup-swap data-focus-target="zone-refusal">
             <UiAlertTitle>{{ serverError || 'Ainda não entregamos nesse endereço' }}</UiAlertTitle>
             <UiAlertDescription>
               <p>Mas você pode retirar na loja quando quiser.</p>
@@ -1801,7 +1853,7 @@ useSeoMeta({
 
           <!-- Mesma recusa, loja sem retirada: não há "Mudar para retirada" a oferecer,
                então a saída é outro endereço ou a gente. -->
-          <UiAlert v-else-if="deliveryUncovered" variant="warning" data-checkout-zone-uncovered>
+          <UiAlert v-else-if="deliveryUncovered" variant="warning" data-checkout-zone-uncovered data-focus-target="zone-refusal">
             <UiAlertTitle>Ainda não entregamos nesse endereço</UiAlertTitle>
             <UiAlertDescription>
               <p>Escolha outro endereço aqui em cima, ou fale com a gente no WhatsApp.</p>
@@ -2594,10 +2646,13 @@ useSeoMeta({
             data-focus-obstruction
           >
             <!-- A linha do total abre o resumo. Era um botão "Resumo" próprio na
-                 barra invisível; aqui ela é o toque, e o ícone de nota diz isso. -->
+                 barra invisível; aqui ela é o toque, e o ícone de nota diz isso.
+                 A partir de `lg` o resumo lateral já está aberto ao lado e a folha
+                 não existe (`lg:hidden` no conteúdo): a linha vira só o total, sem
+                 toque, em vez de abrir um véu vazio (#3281). -->
             <UiButton
               variant="ghost"
-              class="h-auto w-full p-0 text-left hover:bg-transparent"
+              class="h-auto w-full p-0 text-left hover:bg-transparent lg:hidden"
               aria-label="Ver o resumo do pedido"
               data-checkout-open-receipt
               @click="openReceiptSheet"
@@ -2610,19 +2665,25 @@ useSeoMeta({
                 <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
               </span>
             </UiButton>
-            <UiButton
-              size="lg"
-              :icon="primaryAction.icon"
-              class="w-full shop-action-inverted"
-              :loading="primaryAction.loading"
-              :disabled="primaryAction.disabled"
-              @click="primaryAction.run"
-            >
-              {{ primaryAction.label }}
-            </UiButton>
-            <p v-if="primaryAction.reason" class="text-center text-xs text-ink-foreground/70">
-              {{ primaryAction.reason }}
+            <p class="hidden w-full items-baseline justify-between gap-2 lg:flex" data-checkout-total-line>
+              <span class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</span>
+              <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
             </p>
+            <template v-if="!bagGoneNoticeShowing">
+              <UiButton
+                size="lg"
+                :icon="primaryAction.icon"
+                class="w-full shop-action-inverted"
+                :loading="primaryAction.loading"
+                :disabled="primaryAction.disabled"
+                @click="primaryAction.run"
+              >
+                {{ primaryAction.label }}
+              </UiButton>
+              <p v-if="primaryAction.reason" class="text-center text-xs text-ink-foreground/70">
+                {{ primaryAction.reason }}
+              </p>
+            </template>
           </div>
 
           <BottomSheet
@@ -2745,7 +2806,7 @@ useSeoMeta({
                   <p class="shop-body">{{ moneyNotice }}</p>
                 </div>
               </section>
-              <!-- Encomenda para retirar: a regra do pedido não retirado, dita antes de
+              <!-- Retirada paga, de hoje ou de outro dia: a regra do pedido não retirado, dita antes de
                    enviar e de pagar (#2613, decisão do dono de 18/11/2026). Fica FORA do
                    card, numa linha logo abaixo dele: dentro, com as duas frases, o card
                    passava da dobra no celular (coordenação, 19/11/2026). A frase é a da

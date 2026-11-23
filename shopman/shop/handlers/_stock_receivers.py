@@ -138,6 +138,54 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
         logger.warning("on_production_voided: failed to notify sessions", exc_info=True)
 
 
+@resilient_receiver
+def on_production_adjusted(sender, product_ref, date, action, work_order, **kwargs):
+    """Plano que encolhe abaixo das sacolas: a sacola solta o que perdeu lastro (#3265).
+
+    A sacola não segura o plano (``adapters.demand.LedgerAwareDemandBackend.committed``
+    não a conta): o forneiro pode planejar menos do que as sacolas abertas
+    reservaram. Roda depois da ponte craftsman→stockman, que já baixou o saldo
+    planejado. O excesso sai da sacola, da mais nova para a mais antiga, como no
+    cancelamento. A reserva de pedido não sai daqui: plano abaixo do pedido só
+    passa com a falta aprovada pelo operador, e é decisão dele.
+
+    Sem isso a sacola ficava com mais do que o lote vai render, e o pedido que a
+    adotasse no checkout nasceria com reserva sem lastro (baixa que falha).
+    """
+    if action != "adjusted" or not date:
+        return
+
+    from shopman.stockman.service import Stock as stock
+
+    from shopman.shop.adapters.stock import is_held_by_a_cart
+
+    for hold in _overbooked_holds_on_production_quants(product_ref, date):
+        if not is_held_by_a_cart(hold):
+            continue
+        try:
+            stock.release(hold.hold_id, reason="Plano de produção reduzido")
+        except Exception:
+            logger.warning(
+                "on_production_adjusted: could not release hold %s", hold.hold_id, exc_info=True,
+            )
+
+
+@resilient_receiver
+def on_production_finished(sender, product_ref, date, action, work_order, **kwargs):
+    """Lote fechado com menos do que as reservas de pedido: vira fato do pedido (#2594).
+
+    Roda depois da ponte craftsman→stockman, que já levou à vitrine as reservas que
+    couberam no rendimento. O que sobrou preso ao saldo de produção é avisado
+    (``services.production_promise.announce_short_lot``), sem soltar a reserva.
+    """
+    if action != "finished" or not date:
+        return
+
+    from shopman.shop.services import production_promise
+
+    production_promise.announce_short_lot(product_ref, date, work_order=work_order)
+
+
 def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
     """React when planned holds are materialized (stock became physical).
 

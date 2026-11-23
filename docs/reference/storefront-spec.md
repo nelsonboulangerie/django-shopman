@@ -38,7 +38,7 @@ projeções do Django via BFF).
 |---|---|---|
 | `/` (index) | Home: hero, vitrine (6 itens), "como funciona", CTA WhatsApp, banner de pedido ativo, gancho de recompra do último pedido | `GET /api/v1/storefront/home/` |
 | `/menu` | Catálogo: seções com pills sticky (scroll-spy), badge happy hour, contagem por seção | `GET /api/v1/storefront/menu/` (+ `/menu/<collection>/`) |
-| `/busca` | Busca + filtros (chips dietéticos/categóricos), deep-link `?q=&filtro=` | reusa `/storefront/menu/` (filtra client-side) |
+| busca (overlay `SearchOverlay`, sem rota própria) | Busca + filtros (chips dietéticos/categóricos), abre por cima do início, do cardápio e da coleção; filtro leva a `/menu?filtro=` | reusa `/storefront/menu/` (filtra client-side) |
 | `/product/[sku]` | PDP: galeria, preço (com riscado), disponibilidade, badges, acordeões (combo/ingredientes/nutricional/conservação), "veja também", add-to-cart sticky no mobile, JSON-LD | `GET /api/v1/storefront/products/<sku>/` |
 | `/cart` | Carrinho: linhas, descontos, progresso de mínimo, upsell, **estados de hold** (aguardando confirmação → pronto p/ confirmar, countdown), alerta de estoque com substitutos | `GET /api/v1/storefront/cart/`; `PUT /api/v1/cart/skus/<sku>/`; cupom `POST/DELETE /api/v1/cart/coupon/` |
 | `/checkout` | Checkout multi-step: contato → retirada/entrega → endereço (Google Places + taxa por distância, "a X km") → data/hora (slots) → pagamento (método, cupom, loyalty, presente, observações) → revisão | `GET /api/v1/storefront/checkout/`; `PATCH /api/v1/checkout/draft/` (zona); `PATCH /api/v1/checkout/loyalty/`; `POST /api/v1/checkout/` (commit) |

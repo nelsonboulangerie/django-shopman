@@ -1,6 +1,12 @@
 // Contrato gerado pelo Django (fonte única: projections bi_*). Regenerar com
 // `python manage.py export_bi_schema`; o teste de drift falha se divergir.
 export type {
+  BIAiFallback,
+  BIAiGap,
+  BIAiReason,
+  BIAiReport,
+  BIAiSpendDay,
+  BIAiSpendRow,
   BICashDay,
   BICashHourRow,
   BICashMethodRow,
@@ -13,6 +19,9 @@ export type {
   BICustomersWeekRow,
   BIDeliveryCostDay,
   BIDeliveryCostReport,
+  BIDeliveryCostService,
+  BIDeliveryTimingReport,
+  BIRideTimingService,
   BIForecastReport,
   BIOvenTimeRow,
   BIPreorderKitchenReport,

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { atCounterHour, backToRealTime, controlDir } from "./support/clock";
 import { customerOrdersPickupToday } from "./support/customer";
 import { cashierAccepts, cashierDelivers, cashierStartsPreparing, orderCard } from "./support/gestor";
 import { kitchenMarksReady } from "./support/kitchen";
@@ -19,9 +20,13 @@ import { capture, cast, newCustomerPhone, roleContext, stack } from "./support/s
 // A ordem importa: o dispositivo do balcão fica pronto ANTES de o cliente pedir. Pedido
 // pago tem poucos minutos para ser aceito antes de cancelar sozinho, e ninguém monta o
 // balcão com o relógio correndo.
+test.skip(!controlDir, "pede o relógio de teste da pilha (OPERATOR_CONTROL_DIR; README)");
+test.afterAll(() => backToRealTime());
+
 test("J1: pedido de retirada para hoje, da loja à entrega", async ({ browser, baseURL }, testInfo) => {
+  const at = await atCounterHour();
   // Balcão: a Gerente entra, vincula o dispositivo ao posto e o bloqueia; Fran entra com PIN.
-  const gestorContext = await roleContext(browser, baseURL!);
+  const gestorContext = await roleContext(browser, baseURL!, false, at);
   const gestor = await gestorContext.newPage();
   await acknowledgeOtherOrdersAlarms(gestor);
   await managerSignsIn(gestor);
@@ -35,7 +40,7 @@ test("J1: pedido de retirada para hoje, da loja à entrega", async ({ browser, b
 
   // Cozinha: a Gerente abre a estação de Separação (a do pão pronto) e bloqueia; Diofer
   // entra com PIN.
-  const kitchenContext = await roleContext(browser, stack.kitchen);
+  const kitchenContext = await roleContext(browser, stack.kitchen, false, at);
   const kitchen = await kitchenContext.newPage();
   await managerSignsIn(kitchen);
   await kitchen.getByRole("button", { name: "Usar sem vincular" }).click();
@@ -46,7 +51,7 @@ test("J1: pedido de retirada para hoje, da loja à entrega", async ({ browser, b
   await capture(kitchen, testInfo, "cozinha-diofer");
 
   // Cliente novo, no celular: pede e paga.
-  const storeContext = await roleContext(browser, stack.store, true);
+  const storeContext = await roleContext(browser, stack.store, true, at);
   const store = await storeContext.newPage();
   const ref = await customerOrdersPickupToday(store, testInfo, { product: "Croissant", phone: newCustomerPhone(), name: "Teresa" });
 

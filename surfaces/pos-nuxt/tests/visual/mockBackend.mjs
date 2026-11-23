@@ -771,12 +771,12 @@ const DRIVER = { name: "Carlos Mendes", phone: "(43) 99876-1234", vehicle_model:
 const RIDES = {
   "NB-1051": { name: "Bruno Lima", start: "14:00", window: "14h às 15h", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 2000, needs_machine: false, recorded: false }, call: true, balance: 4400 },
   "NB-1052": { name: "Fernanda Okumura de Albuquerque", start: "14:30", window: "14h30 às 15h30", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 0, needs_machine: true, recorded: false }, call: true, balance: 9800 },
-  "NB-1053": { name: "Gustavo Reis", start: "13:00", window: "13h às 14h", status: "ready", situation: "ready", courier: { status: "A", ride_ref: "R-53", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-53", confirmation_code: "4821" } },
+  "NB-1053": { name: "Gustavo Reis", start: "13:00", window: "13h às 14h", status: "ready", situation: "ready", courier: { status: "A", ride_state: "assigned", ride_ref: "R-53", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-53", confirmation_code: "4821" } },
   // Na rua com a maquininha e o troco: "Entregador voltou" confere a lista e fecha a saída.
-  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", ride_ref: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" }, returnLines: ["A Maquininha Azul", "R$ 120,00 em dinheiro: R$ 98,00 do pedido + R$ 22,00 de troco"] },
-  "NB-1055": { name: "Igor Tavares", start: "15:00", window: "15h às 16h", status: "ready", situation: "ready", courier: { status: "N", ride_ref: "R-55" }, call: true, attempts: 1 },
+  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", ride_state: "on_route", ride_ref: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" }, returnLines: ["A Maquininha Azul", "R$ 120,00 em dinheiro: R$ 98,00 do pedido + R$ 22,00 de troco"] },
+  "NB-1055": { name: "Igor Tavares", start: "15:00", window: "15h às 16h", status: "ready", situation: "ready", courier: { status: "N", ride_state: "not_served", ride_ref: "R-55" }, call: true, attempts: 1 },
   "NB-1056": { name: "Joana Ribeiro", start: "15:30", window: "15h30 às 16h30", status: "ready", situation: "ready", courier: {}, noAnswer: true },
-  "NB-1057": { name: "Lucas Ferraz", start: "16:00", window: "16h às 17h", status: "ready", situation: "ready", courier: { status: "P", ride_ref: "R-57" } },
+  "NB-1057": { name: "Lucas Ferraz", start: "16:00", window: "16h às 17h", status: "ready", situation: "ready", courier: { status: "P", ride_state: "reopened", ride_ref: "R-57", reopened_driver: "Diego" } },
 };
 const COURIER_LABELS = { D: "Procurando entregador", G: "Aguardando aceite", P: "Procurando entregador", A: "Entregador a caminho da loja", S: "Entregador na loja", E: "Saiu para entrega", F: "Entregue", N: "Não atendida", C: "Corrida cancelada" };
 const COURIER_TONES = { N: "danger", C: "danger", F: "success", A: "info", S: "info", E: "info" };
@@ -789,7 +789,7 @@ function rideBlock(ref) {
   const status = c.status || "";
   const active = Boolean(c.ride_ref) && !["F", "N", "C"].includes(status);
   return {
-    provider: "machine", status, status_label: ride.noAnswer ? "Sem resposta da TaOn" : COURIER_LABELS[status] || "",
+    provider: "machine", status, ride_state: c.ride_state || "", service_name: "TaOn", status_label: ride.noAnswer ? "Sem resposta da TaOn" : COURIER_LABELS[status] || "",
     active, driver: c.driver || null, tracking_url: c.tracking_url || "", confirmation_code: c.confirmation_code || "",
     estimate_display: "", final_value_display: "", requested_at: "", dispatched_at: "", finished_at: "",
     attempts_count: ride.attempts || 0, position: null,
@@ -801,6 +801,10 @@ function rideBlock(ref) {
     custody: ride.custody || { change_out_suggested_q: 0, needs_machine: false, recorded: false },
     // O andamento lido da TaOn (instantes ISO; a tela conta os minutos).
     ...rideProgress(status, ref),
+    // NB-1057: o entregador desistiu há 3 min e a TaOn procura outro (#2499).
+    reopened_at: c.reopened_driver ? minutesFromNow(-3) : "",
+    reopened_driver: c.reopened_driver || "",
+    reopened_reason: c.reopened_driver ? "withdrew" : "",
   };
 }
 
@@ -831,6 +835,25 @@ function rideCard(ref) {
   });
 }
 
+function cancelConfirmation(ref, block) {
+  const code = ref.replace("NB-", "");
+  const confirmation = {
+    required: true,
+    description: `Cancelar a corrida A? O pedido ${code} volta para Aguardando.`,
+    confirm_label: "Cancelar a corrida A",
+  };
+  if (!["A", "S"].includes(block.status)) return confirmation;
+  return {
+    ...confirmation,
+    reason_question: "Por que cancelar a corrida A?",
+    consequence: `O pedido ${code} volta para Aguardando.`,
+    reasons: [
+      { id: 12, label: "O entregador não está vindo" },
+      { id: 37, label: "Está demorando demais" },
+      { id: 40, label: "Não consegui falar com o entregador" },
+    ],
+  };
+}
 function rideDetail(ref) {
   const block = rideBlock(ref);
   const theCard = rideCard(ref);
@@ -848,7 +871,9 @@ function rideDetail(ref) {
       ...preorderDetail.actions,
       action("courier-dispatch", "Chamar entregador", block.can_dispatch, `Chamar um entregador da TaOn para o pedido ${ref.replace("NB-", "")}? A corrida é cobrada da casa.`),
       action("courier-dispatch-again", "Chamar de novo", block.can_dispatch_again, "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."),
-      { ...action("courier-cancel", "Cancelar corrida", block.can_cancel), confirmation: { required: true } },
+      // A confirmação do servidor (``courier_cancel_confirmation``): antes do aceite,
+      // a pergunta e um botão; depois, os três motivos (#2494).
+      { ...action("courier-cancel", "Cancelar corrida", block.can_cancel), confirmation: cancelConfirmation(ref, block) },
       ...(RIDES[ref].returnLines && !RIDES[ref].returned
         ? [{ ...action("courier-back", "Entregador voltou", true), priority: "primary", confirmation: { required: true } }]
         : []),
@@ -1128,7 +1153,7 @@ createServer((req, res) => {
     const rideGesture = path.match(/^\/api\/v1\/backstage\/orders\/(NB-105\d)\/(courier-cancel|courier-back)\/$/);
     if (rideGesture && RIDES[rideGesture[1]]) {
       const ride = RIDES[rideGesture[1]];
-      if (rideGesture[2] === "courier-cancel") ride.courier = { status: "C", ride_ref: ride.courier.ride_ref };
+      if (rideGesture[2] === "courier-cancel") ride.courier = { status: "C", ride_state: "cancelled", ride_ref: ride.courier.ride_ref };
       else ride.returned = true;
       const index = orders.findIndex((order) => order.ref === rideGesture[1]);
       if (index >= 0) orders[index] = rideCard(rideGesture[1]);
@@ -1140,7 +1165,7 @@ createServer((req, res) => {
       const ride = RIDES[call[1]];
       if (call[2] === "courier-dispatch") ride.attempts = (ride.attempts || 0) + (ride.courier.status ? 1 : 0);
       ride.noAnswer = false;
-      ride.courier = { status: "P", ride_ref: `R-${call[1]}` };
+      ride.courier = { status: "P", ride_state: "searching", ride_ref: `R-${call[1]}` };
       const index = orders.findIndex((order) => order.ref === call[1]);
       if (index >= 0) orders[index] = rideCard(call[1]);
       send(res, 200, { ok: true, ref: call[1], outcome: "applied", directive_id: 1, status: "queued" });

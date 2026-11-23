@@ -476,7 +476,7 @@ def close_sale(
             shift = _require_open_shift(payload)
             if session is None:
                 if _payload_has_tab_identity(payload):
-                    raise ValueError("Abra um POS tab antes de finalizar.")
+                    raise ValueError("Abra a comanda antes de validar.")
                 session = _create_direct_checkout_session(
                     channel_ref=channel.ref,
                     payload=payload,
@@ -492,7 +492,7 @@ def close_sale(
                 if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
                     if offline_at is None or session.state != "open":
                         raise PosIntentError(code="tab_revision_conflict", status=409,
-                            message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                            message="Esta comanda mudou. Confira a versão atual antes de validar.")
                     # Venda sem conexão: fecha o que foi cobrado; o resto da
                     # comanda segue aberto (``reopen_tab_with_leftovers``).
                     tab_plan = pos_offline_sale.plan_open_tab(session, payload)
@@ -591,7 +591,7 @@ def _ensure_expected_total(payload: dict, *, channel_ref: str) -> None:
     if expected is None:
         raise PosIntentError(
             code="expected_total_required",
-            message="A venda chegou sem o total que a tela mostrou. Atualize o PDV e finalize de novo.",
+            message="A venda chegou sem o total que a tela mostrou. Atualize o PDV e valide de novo.",
             field="expected_total_q",
             focus="payment",
             recovery="Atualize o PDV antes de reenviar a venda.",
@@ -617,7 +617,7 @@ def _total_changed(*, old_total_q: int, new_total_q: int) -> PosIntentError:
         ),
         field="expected_total_q",
         focus="payment",
-        recovery="Confira o total novo com o cliente e finalize de novo.",
+        recovery="Confira o total novo com o cliente e valide de novo.",
         context={"old_total_q": old_total_q, "new_total_q": new_total_q},
     )
 
@@ -935,7 +935,7 @@ def review_sale(
     _refuse_priceless_items(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
-        raise ValueError("Abra um POS tab antes de finalizar.")
+        raise ValueError("Abra a comanda antes de validar.")
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
     _stamp_list_prices_from_session(payload, session)
     priced: dict[int, dict] = {}
@@ -1072,7 +1072,7 @@ def review_sale(
         warnings.append({
             "code": "payment_tenders_required",
             "field": "payment_tenders",
-            "message": "Adicione as linhas do pagamento misto antes de finalizar.",
+            "message": "Adicione as linhas do pagamento misto antes de validar.",
         })
     elif payment_method == "mixed" and total_q > 0 and tender_total_q < total_q:
         warnings.append({
@@ -3560,7 +3560,7 @@ def validate_manager_approval(payload: dict, *, operator_username: str, channel_
             ),
             field="manager_approval",
             focus="approval",
-            recovery="Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de finalizar.",
+            recovery="Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de validar.",
         )
     approver = _redeem_sale_approval(
         token,
@@ -3778,6 +3778,14 @@ def _over_plan_recovery(signed, current) -> str:
     )
 
 
+#: A assinatura do gerente que não conferiu: o fato e o próximo passo (#2667).
+MANAGER_PIN_REFUSED = "O PIN não confere com o gerente escolhido. Digite de novo."
+MANAGER_BADGE_REFUSED = "Este crachá não é de um gerente. Passe o crachá de um gerente ou digite o PIN."
+#: O passo seguinte pela porta usada (as frases aprovadas na #2691).
+MANAGER_PIN_RECOVERY = "Confira o gerente e digite o PIN de novo."
+MANAGER_BADGE_RECOVERY = "Passe o crachá de novo, ou escolha o gerente e digite o PIN."
+
+
 def validate_manager_override(
     approval: dict | None,
     *,
@@ -3785,7 +3793,7 @@ def validate_manager_override(
     action: str,
     message: str = "Esta operação exige aprovação gerencial.",
     recovery_required: str = "Peça a um gerente autorizado para aprovar com o crachá ou o PIN.",
-    recovery_invalid: str = "Revise o gerente e o PIN.",
+    recovery_invalid: str | None = None,
 ):
     """Gate an exceptional POS operation behind the manager PIN challenge.
 
@@ -3818,12 +3826,14 @@ def validate_manager_override(
     # 28/10/2026; ver `_verify_manager_pin`).
     approver = _verify_manager_badge(badge) if badge else _verify_manager_pin(username, pin)
     if approver is None:
+        # O fato e o próximo passo, pela porta que o gerente usou (#2667): "Aprovação
+        # gerencial inválida." era jargão sem saída, e o Gestor mostra só esta frase.
         raise PosIntentError(
             code="manager_approval_invalid",
-            message="Aprovação gerencial inválida.",
+            message=MANAGER_BADGE_REFUSED if badge else MANAGER_PIN_REFUSED,
             field="manager_approval",
             focus="approval",
-            recovery=recovery_invalid,
+            recovery=recovery_invalid or (MANAGER_BADGE_RECOVERY if badge else MANAGER_PIN_RECOVERY),
         )
     # Quem assina é o APROVADOR resolvido, não o que veio no corpo: com crachá o
     # `username` chega vazio, e a linha de auditoria saía `approved_by=` em
@@ -4098,10 +4108,10 @@ def _ensure_resolved_prices(payload: dict) -> None:
     if payload.get("items") and _payload_subtotal_q(payload) <= 0:
         raise PosIntentError(
             code="price_not_resolved",
-            message="Nao foi possivel resolver o preco dos itens do carrinho.",
+            message="Não foi possível calcular o preço dos itens da venda.",
             field="items",
             focus="search",
-            recovery="Reabra a comanda para o servidor reaplicar os precos de tabela.",
+            recovery="Reabra a comanda para o sistema reaplicar os preços de tabela.",
         )
 
 
@@ -4253,7 +4263,8 @@ def _stamp_tab_prices_from_engine_lines(payload: dict, session) -> bool:
 
     A última gravação passou pelo motor com estas linhas e estes descontos. Onde o
     desconto manual não venceu a linha, o preço antes dele é a etiqueta menos o
-    desconto automático vencedor (``meta._disc`` de linha), ou a própria etiqueta.
+    desconto automático vencedor (``meta._disc``, de linha ou a fatia do fixo de
+    pedido), ou a própria etiqueta.
     Onde o manual venceu, o automático que perdeu não fica gravado em lugar
     nenhum: devolve ``False`` e quem responde é a sonda do motor.
     """
@@ -4272,8 +4283,12 @@ def _stamp_tab_prices_from_engine_lines(payload: dict, session) -> bool:
         disc = meta.get("_disc") if isinstance(meta.get("_disc"), dict) else {}
         if disc.get("type") == "manual":
             return False
-        line_disc_q = 0 if disc.get("scope") == "order" else _int_q(disc.get("amount_q"))
-        prices[index] = max(0, list_q - line_disc_q)
+        # A fatia do fixo de pedido (promoção ou cupom de valor fixo, ``scope``
+        # "order") também é preço do motor: o rateio já a tirou do unitário da
+        # linha, e a revisão só subtrai à parte o desconto MANUAL de pedido.
+        # Devolver a etiqueta aqui prometia o preço cheio e o selo do fechamento
+        # recusava com "O total mudou" (#3244). ``amount_q`` é por unidade nos dois.
+        prices[index] = max(0, list_q - _int_q(disc.get("amount_q")))
     items = payload.get("items") or []
     for index, price_q in prices.items():
         items[index]["unit_price_q"] = price_q
@@ -4722,8 +4737,17 @@ def _compute_engine_delivery_fee(payload: dict) -> DeliveryFeeResolution:
             fee_q=0, source="blocked", distance_km=distance_km, blocked=True, out_of_area=True,
         )
 
-    source = "zone" if postal_code or neighborhood else "distance"
-    if distance_km is None and not (postal_code or neighborhood):
+    # A origem é a que DECIDIU a taxa, não a que o endereço tem (#3311). Antes, CEP
+    # ou bairro preenchidos davam "zone" sempre, e a tela dizia "Tabela do
+    # bairro/CEP" para a taxa que a faixa de distância calculou. Zona é a que
+    # casou; sem ela, a faixa (com distância) ou a taxa padrão da loja (sem).
+    from shopman.shop.services import promotions as promotion_service
+
+    if promotion_service.match_delivery_zone(postal_code, neighborhood) is not None:
+        source = "zone"
+    elif distance_km is not None:
+        source = "distance"
+    else:
         source = "default"
     waiver = _delivery_fee_waiver(base_fee_q, payload)
     return DeliveryFeeResolution(
@@ -5297,10 +5321,10 @@ def _settle_after_shift_closed(order: Order, *, shift, operator, resettle: bool 
             "note",
             shift=shift,
             operator=operator,
-            reason="Venda finalizada depois do fechamento do turno",
+            reason="Venda validada depois do fechamento do turno",
             payload={
                 "text": (
-                    f"Venda {order.ref} finalizada depois do fechamento do turno, "
+                    f"Venda {order.ref} validada depois do fechamento do turno, "
                     f"com R$ {format_money(int(cash_q))} em dinheiro sem linha no livro."
                 ),
                 "order_ref": order.ref,
@@ -5425,7 +5449,7 @@ def _require_open_shift(payload: dict):
     if shift is None or not shift.is_open:
         raise PosIntentError(
             code="cash_shift_required",
-            message="Abra o caixa antes de finalizar uma venda.",
+            message="Abra o caixa antes de validar uma venda.",
             field="cash_shift_id",
             focus="cash",
             status=409,

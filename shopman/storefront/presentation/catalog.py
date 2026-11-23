@@ -198,7 +198,6 @@ class CatalogProjection:
     items: tuple[CatalogItemProjection, ...]
     categories: tuple[CategoryProjection, ...]
     sections: tuple[CatalogSectionProjection, ...]
-    featured: tuple[CatalogItemProjection, ...]
     active_category_ref: str | None
     favorite_category_ref: str | None = None
     # Copy configurável para os dois vazios da tela: catálogo sem itens no canal
@@ -301,7 +300,6 @@ def build_catalog(
             items=(),
             categories=categories,
             sections=(),
-            featured=(),
             active_category_ref=collection_ref if active_collection else None,
             favorite_category_ref=favorite_category_ref,
             empty_state=_catalog_empty_state(),
@@ -331,13 +329,11 @@ def build_catalog(
         sections = dynamic_sections + static_sections
     else:
         sections = static_sections
-    featured = tuple(item for item in items_flat if item.is_featured)
 
     return CatalogProjection(
         items=tuple(items_flat),
         categories=categories,
         sections=sections,
-        featured=featured,
         active_category_ref=collection_ref if active_collection else None,
         favorite_category_ref=favorite_category_ref,
         # Copy do "nada encontrado" da busca client-side viaja sempre; o vazio do
@@ -360,7 +356,7 @@ def _build_categories() -> tuple[CategoryProjection, ...]:
             CategoryProjection(
                 ref=col.ref,
                 name=col.name,
-                icon=collection_icon(col.ref),
+                icon=collection_icon(col),
                 url=_menu_anchor_url(col.ref),
             ),
         )
@@ -885,7 +881,7 @@ def _build_sections(
                 skus=slice_skus,
                 ref=category.ref if category else "outros",
                 label=category.name if category else "Outros",
-                icon=category.icon if category else "restaurant_menu",
+                icon=category.icon if category else "",
             )
         )
     return tuple(sections)

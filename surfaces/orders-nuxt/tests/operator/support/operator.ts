@@ -1,34 +1,18 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { cast, settled } from "./stack";
 
-// Os gestos do operador que valem para qualquer app de operador (Gestor, Cozinha):
-// a Gerente entra com senha e abre o dispositivo; quem vai operar se identifica na
-// tela de bloqueio e digita o PIN no teclado da tela.
+import {
+  operatorUnlocksWithPin as unlocksWithPin,
+  type Person,
+} from "../../../../operator-kit/tests/support/operatorGestures";
+import { settled } from "./stack";
 
-/** A Gerente entra com usuário e senha. Se a tela devolve erro (o BFF desiste em ~30 s
- *  quando o Django demora) ou "Sua sessão terminou" (cookie velho, medido em 16/11), ela
- *  tenta de novo, como faria no balcão. */
-export async function managerSignsIn(page: Page): Promise<void> {
-  await page.goto("/");
-  const signedOut = page.getByRole("textbox", { name: "Usuário" });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await settled(page);
-    await expect(signedOut).toBeVisible();
-    await expect(signedOut).toBeEnabled({ timeout: 120_000 });
-    await signedOut.fill("");
-    await signedOut.pressSequentially(cast.manager.username);
-    const password = page.getByRole("textbox", { name: "Senha" });
-    await password.fill("");
-    await password.pressSequentially(cast.manager.password);
-    await page.getByRole("button", { name: "Entrar", exact: true }).click();
-    // Entrou quando o campo de usuário some; senão a tela voltou com erro e ela tenta de novo.
-    const done = await expect(signedOut).toBeHidden({ timeout: 120_000 }).then(() => true, () => false);
-    if (!done) continue;
-    await settled(page);
-    if (!(await signedOut.isVisible().catch(() => false))) return;
-  }
-  throw new Error("A Gerente não conseguiu entrar com a senha de dev em três tentativas.");
-}
+// Os gestos comuns aos apps de operador (a Gerente entra com senha e vincula o posto,
+// alguém trava, quem vai operar se identifica e digita o PIN) moram no operator-kit
+// (operator-kit/tests/support/operatorGestures.ts, #2580), os mesmos do PDV ao vivo.
+// Aqui fica só o que é do Gestor: a tela de Postos, o alarme de outro pedido e o nome de
+// quem opera no menu lateral.
+
+export { lockDevice, managerBindsStation, managerSignsIn } from "../../../../operator-kit/tests/support/operatorGestures";
 
 const alarms = new WeakMap<Page, Locator>();
 
@@ -63,7 +47,8 @@ export async function managerBindsDevice(page: Page, posto: { name: string; kind
   }
 }
 
-/** Escolhe o posto no aviso "Vincular este dispositivo a um posto de trabalho?". */
+/** Escolhe o posto pelo aviso "Vincular a este posto" do Gestor, que abre o diálogo
+ *  "Vincular este dispositivo a um posto de trabalho?" com o campo "Posto:". */
 export async function managerChoosesPosto(page: Page, postoName: string): Promise<void> {
   await settled(page);
   await page.getByRole("button", { name: "Vincular a este posto" }).first().click();
@@ -77,23 +62,9 @@ export async function managerChoosesPosto(page: Page, postoName: string): Promis
   await settled(page);
 }
 
-/** Bloqueia o dispositivo para o próximo operador. */
-export async function lockDevice(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Bloquear ou trocar de operador" }).click();
-  await expect(page.getByRole("heading", { name: "Identifique-se para operar" })).toBeVisible();
-}
-
-/** Na tela de bloqueio: toca no próprio nome e digita o PIN no teclado da tela. */
-export async function operatorUnlocksWithPin(page: Page, who: { name: string; pin: string }): Promise<void> {
-  await expect(page.getByRole("heading", { name: "Identifique-se para operar" })).toBeVisible();
-  await page.getByRole("group", { name: "Quem está operando?" }).getByRole("button", { name: who.name, exact: true }).click();
-  await expect(page.getByText(who.name, { exact: true }).first()).toBeVisible();
-  for (const digit of who.pin) {
-    await page.getByRole("button", { name: digit, exact: true }).click();
-  }
-  await expect(page.getByText(`${who.pin.length} de no mínimo`)).toBeVisible();
-  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Identifique-se para operar" })).toBeHidden({ timeout: 30_000 });
-  // Quem está operando aparece no pé do menu lateral (Gestor e Cozinha).
+/** O gesto do kit, e a confirmação do Gestor e da Cozinha: quem está operando aparece no
+ *  pé do menu lateral. */
+export async function operatorUnlocksWithPin(page: Page, who: Person): Promise<void> {
+  await unlocksWithPin(page, who);
   await expect(page.getByRole("complementary").getByText(who.name, { exact: true }).first()).toBeVisible();
 }

@@ -129,6 +129,9 @@ const props = defineProps<{
    * o gerente de novo, com o valor novo (P0-1). O PIN não passa por aqui.
    */
   managerApproved: boolean;
+  /** Quem assinou (nome da lista de gerentes): a venda autorizada diz quem a
+   *  autorizou (#2666). Vazio enquanto ninguém assinou este retrato. */
+  managerApprovedBy?: string;
   managerApprovalError: string;
   /** A autorização do gerente (PIN ou crachá) está sendo conferida no servidor (`checkManager`). */
   managerCheckBusy?: boolean;
@@ -326,8 +329,9 @@ const overPlanLines = computed(() =>
   props.review?.approval_reasons?.includes("preorder_over_plan") ? (props.review.preorder_over_plan ?? []) : [],
 );
 const overPlanText = computed(() => overPlanSummary(overPlanLines.value));
-// Os outros motivos seguem a copy do diálogo (`managerAuthReason`); o do plano
-// fala pelos números, no próprio aviso e no contexto do diálogo.
+// No AVISO, os outros motivos seguem a copy do diálogo (`managerAuthReason`) e o do
+// plano fala pelos números, com a frase própria. O diálogo recebe todos: lá o do
+// plano tem nome na descrição e os números no contexto (#2676).
 const otherApprovalReasons = computed(() =>
   (props.review?.approval_reasons ?? []).filter((reason) => reason !== "preorder_over_plan"),
 );
@@ -1152,6 +1156,16 @@ const ctaBlock = computed<{
 // do valor — e rouba a largura das três colunas para isso.
 //
 // Nada é dito duas vezes na mesma tela.
+/** O que o gerente assina, fora a encomenda acima do plano (que tem a própria frase). */
+const approvalReasonText = computed(() => (otherApprovalReasons.value.length
+  ? managerAuthReason({
+    reasons: otherApprovalReasons.value,
+    thresholdQ: managerThresholdQ.value,
+    discountQ: manualDiscountQ.value,
+    houseAccountLimit: props.review?.house_account_limit,
+  })
+  : ""));
+
 type CheckoutNotice = {
   key: string;
   icon: string;
@@ -1190,14 +1204,7 @@ const notices = computed<CheckoutNotice[]>(() => {
     // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
     // o diálogo já os traduz; o aviso os ignorava, e o operador tinha de
     // chamar o gerente para só então descobrir o motivo.
-    const others = otherApprovalReasons.value.length
-      ? managerAuthReason({
-        reasons: otherApprovalReasons.value,
-        thresholdQ: managerThresholdQ.value,
-        discountQ: manualDiscountQ.value,
-        houseAccountLimit: props.review?.house_account_limit,
-      })
-      : "";
+    const others = approvalReasonText.value;
     notes.push({
       key: "auth",
       tone: "block",
@@ -1208,6 +1215,16 @@ const notices = computed<CheckoutNotice[]>(() => {
         ? "A encomenda passa do plano. Só o gerente libera."
         : "Esta venda precisa de um gerente.",
       hint: [overPlanText.value, others].filter(Boolean).join(" "),
+    });
+  }
+  // Autorizada: a faixa do gerente não some calada (#2666). Diz quem assinou e o
+  // quê, e some junto com a assinatura quando a venda muda (o retrato).
+  else if (props.review?.requires_manager_approval && props.managerApproved && props.managerApprovedBy) {
+    notes.push({
+      key: "auth-ok",
+      icon: "lucide:shield-check",
+      message: `Autorizada por ${props.managerApprovedBy}.`,
+      hint: [overPlanText.value, approvalReasonText.value].filter(Boolean).join(" "),
     });
   }
   // Nada trava: entra quanto pedir à pessoa da vez. É a frase que o operador
@@ -2513,7 +2530,7 @@ defineExpose({
           </ul>
         </section>
         <section v-if="pendingKitchen.length" class="grid gap-1.5" data-checkout-kitchen-pending>
-          <h3 class="font-semibold text-highlighted">Vai ao finalizar</h3>
+          <h3 class="font-semibold text-highlighted">Vai ao validar</h3>
           <ul class="grid gap-1 ps-6 text-muted">
             <li v-for="item in pendingKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
           </ul>
@@ -2664,7 +2681,7 @@ defineExpose({
   <NuxtModal
     v-model:open="discountSheetOpen"
     title="Desconto"
-    description="Tipo, valor e motivo. A loja confere e aplica."
+    description="Escolha o tipo, o valor e o motivo."
     :ui="{ content: 'sm:max-w-md' }"
     data-pos-discount-modal
   >
@@ -2715,7 +2732,7 @@ defineExpose({
     action="sale_approval"
     :threshold-q="managerThresholdQ"
     :discount-q="manualDiscountQ"
-    :reasons="otherApprovalReasons"
+    :reasons="review?.approval_reasons || []"
     :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"
     :managers="managers"

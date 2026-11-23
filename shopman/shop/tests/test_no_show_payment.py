@@ -201,6 +201,9 @@ def test_cash_pending_refund_is_only_what_goes_back(fim_do_expediente, django_ca
     assert world.refunded_q(order.ref) == 0
     (pending,) = payment_service.pending_cash_refunds()
     assert (pending.order_ref, pending.amount_q) == (order.ref, CROIS_Q)
+    # O PDV diz por que o dinheiro volta (#2696): não é uma venda cancelada.
+    assert pending.reason == "not_picked_up"
+    assert payment_service.REFUND_REASON_LABELS[pending.reason] == "Pedido não retirado"
 
     from django.contrib.auth import get_user_model
 
@@ -236,6 +239,7 @@ def test_card_machine_refund_due_is_only_what_goes_back(fim_do_expediente, djang
     assert payment_service.card_machine_refund_due(order) == (CROIS_Q, [intent])
     (pending,) = payment_service.pending_card_machine_refunds()
     assert (pending.order_ref, pending.amount_q) == (order.ref, CROIS_Q)
+    assert pending.reason == "not_picked_up"
     # O aviso do Gestor manda estornar o valor certo.
     alert = OperatorAlert.objects.get(type=payment_service.CARD_MACHINE_REFUND_ALERT, order_ref=order.ref)
     assert "R$ 18,70" in alert.message
@@ -303,6 +307,7 @@ def test_common_cancel_still_leaves_all_the_cash_pending(django_capture_on_commi
 
     (pending,) = payment_service.pending_cash_refunds()
     assert pending.amount_q == CROIS_Q + BOLO_Q
+    assert pending.reason == "cancelled"
 
 
 def test_common_cancel_still_sends_everything_back_to_the_card_machine(django_capture_on_commit_callbacks):

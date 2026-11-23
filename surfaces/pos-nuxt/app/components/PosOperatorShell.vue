@@ -30,7 +30,15 @@ const { onReconnect } = useConnectivity();
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
 // morta.
-const { expired: sessionExpired } = useOperatorSession();
+const { expired: sessionExpired, signedInHereBefore } = useOperatorSession();
+// A sessão que caiu logo depois de entrar (o login recarrega a página) voltava ao
+// login vazio, sem dizer por quê (P2-15, #3194). A marca é da aba e só existe no
+// cliente: lida ao montar, para o SSR e a hidratação desenharem o mesmo login.
+const signedInBefore = ref(false);
+onMounted(() => {
+  signedInBefore.value = signedInHereBefore();
+});
+const sessionEnded = computed(() => sessionExpired.value || signedInBefore.value);
 
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
@@ -80,13 +88,13 @@ const forbidden = computed(() => surface.value.showForbidden);
 // (login/lock) os canais são negados e o EventSource entraria no ciclo de
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
 // O aviso de comanda relê só o quadro (`refreshTabs`); o de estoque, só os selos
-// da grade (`refreshAvailability`); o do caixa, o poll e a volta à aba relêem a
-// projeção inteira.
+// da grade (`refreshAvailability`); produto pausado e mutação do canal, o do caixa,
+// o poll e a volta à aba relêem a projeção inteira.
 // Recusado não relê: a resposta seria o mesmo 403.
 const { realtime } = usePosEvents(
-  (channel) => {
+  (channel, event) => {
     if (forbidden.value) return;
-    const scope = refreshScopeForChannel(channel?.path);
+    const scope = refreshScopeForChannel(channel?.path, event);
     if (scope === "tabs") return refreshTabs();
     if (scope === "availability") return refreshAvailability();
     return refresh();
@@ -185,10 +193,10 @@ const supportContext = computed(() =>
       mode="page"
       large-fields
       icon="lucide:lock-keyhole"
-      :title="sessionExpired ? 'Sua sessão expirou' : 'Entre para operar o caixa'"
+      :title="sessionEnded ? 'Sua sessão terminou' : 'Entre para operar o caixa'"
       :description="
-        sessionExpired
-          ? 'Entre de novo para continuar de onde parou.'
+        sessionEnded
+          ? 'Entre de novo para continuar.'
           : 'Acesse com sua conta autorizada a operar o caixa.'
       "
     />

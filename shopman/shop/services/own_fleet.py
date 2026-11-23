@@ -192,7 +192,47 @@ def depart(link: CourierLink, *, source: str = SOURCE) -> list[str]:
     for order in orders:
         if courier.apply_status(order, "E", source=source) == "applied":
             applied.append(order.ref)
+    if applied:
+        _guide_route(link, _shop_point())
     return applied
+
+
+def _shop_point() -> tuple[float, float] | None:
+    from shopman.shop.models import Shop
+
+    shop = Shop.objects.first()
+    if not (shop and shop.latitude and shop.longitude):
+        return None
+    return float(shop.latitude), float(shop.longitude)
+
+
+def _guide_route(link: CourierLink, origin: tuple[float, float] | None) -> bool:
+    """A rota por ruas da manobra (#2509, ``route_guide``), de ``origin`` pelas paradas abertas.
+
+    Uma chamada na saída e outra só quando ele sai da rota. Nunca levanta: sem rota, a
+    página desenha a linha reta.
+    """
+    from shopman.shop.services import route_guide
+    from shopman.shop.services.dispatch_handoff import build_dispatch_payload
+
+    if origin is None:
+        return False
+    stops = []
+    for order in _ride_orders(link):
+        if not _live(order, link) or courier.get_block(order).get("status") != "E":
+            continue
+        handoff = build_dispatch_payload(order)
+        try:
+            stops.append((float(handoff["latitude"]), float(handoff["longitude"])))
+        except (TypeError, ValueError, KeyError):
+            continue
+    if not stops:
+        return False
+    try:
+        return route_guide.compute(link.ride_ref, origin, stops)
+    except Exception:  # noqa: BLE001 — a manobra é luxo: a corrida segue sem ela
+        logger.warning("own_fleet.route_guide_failed ride_ref=%s", link.ride_ref, exc_info=True)
+        return False
 
 
 def deliver(link: CourierLink, order_ref: str, *, source: str = SOURCE) -> bool:
@@ -207,6 +247,59 @@ def deliver(link: CourierLink, order_ref: str, *, source: str = SOURCE) -> bool:
     value = (courier.get_block(order).get("estimate") or {}).get("value_q")
     details = {"final_value_q": value} if value is not None else None
     return courier.apply_status(order, "F", source=source, details=details) == "applied"
+
+
+#: O tema da página como a página o chama ("system" é o "Do celular", gravado vazio).
+PAGE_THEMES = {"light": Courier.THEME_LIGHT, "dark": Courier.THEME_DARK, "system": Courier.THEME_DEVICE}
+
+
+def page_theme(courier_: Courier) -> str:
+    """O tema da página no cadastro do entregador, no vocabulário da página (#2648)."""
+    return next((key for key, value in PAGE_THEMES.items() if value == courier_.page_theme), "system")
+
+
+def remember_theme(link: CourierLink, theme: str) -> None:
+    """Grava no cadastro o tema que o entregador escolheu na página (#2648)."""
+    if theme not in PAGE_THEMES:
+        raise OwnFleetRefused("Tema desconhecido.")
+    who = link.courier
+    if who.page_theme != PAGE_THEMES[theme]:
+        who.page_theme = PAGE_THEMES[theme]
+        who.save(update_fields=["page_theme"])
+
+
+#: Posição com incerteza maior que isto (metros) não desenha a moto: é palpite do celular.
+POSITION_MAX_ACCURACY_M = 150
+
+
+def report_position(link: CourierLink, latitude, longitude, *, accuracy=None, at=None) -> bool:
+    """A posição do celular do entregador da casa, enquanto a rota está na rua (#2509).
+
+    Vai para o mesmo cache e o mesmo mapa da posição da TaOn (``courier_position``, via
+    ``own_fleet``). Só com a rota na rua: antes de "Saí da loja" e depois da última
+    entrega, o celular não é a moto. Devolve se gravou.
+    """
+    from shopman.shop.services import courier_position
+
+    try:
+        if accuracy is not None and float(accuracy) > POSITION_MAX_ACCURACY_M:
+            return False
+    except (TypeError, ValueError):
+        return False
+    on_route = any(courier.get_block(order).get("status") == "E"
+                   for order in _ride_orders(link) if _live(order, link))
+    if not on_route:
+        return False
+    stored = courier_position.store_position(link.ride_ref, latitude, longitude,
+                                             source=courier_position.SOURCE_OWN_FLEET, at=at)
+    if stored:
+        # Saiu da rota guardada: uma chamada nova, a partir de onde ele está (#2509).
+        from shopman.shop.services import route_guide
+
+        here = (float(latitude), float(longitude))
+        if route_guide.off_route(link.ride_ref, here):
+            _guide_route(link, here)
+    return stored
 
 
 def report_problem(link: CourierLink, order_ref: str, kind: str, *, payment: str = "") -> None:
@@ -270,10 +363,9 @@ def _ready_at(order: Order, expectation, *, now) -> str:
     A mesma previsão da Fila do Gestor (``kitchen_eta.ready_eta``). Hora que já passou
     não é previsão: o entregador lê "Ainda não ficou pronto", nunca uma hora vencida.
     """
-    from shopman.shop.config import ChannelConfig
     from shopman.shop.services.kitchen_eta import ready_eta
 
-    eta = ready_eta(order, expectation, ChannelConfig.for_channel(order.channel_ref), now=now)
+    eta = ready_eta(order, expectation, now=now)
     if eta is None or eta <= now:
         return ""
     return timezone.localtime(eta).strftime("%H:%M")  # hora-ok: contrato HH:MM, a página formata (clock.ts)
@@ -332,7 +424,7 @@ def ride_view(link: CourierLink) -> dict:
 
     close_if_settled(link)
     link.refresh_from_db()
-    base = {"courier": link.courier.name, "ride_ref": link.ride_ref}
+    base = {"courier": link.courier.name, "ride_ref": link.ride_ref, "theme": page_theme(link.courier)}
     if link.revoked_at is not None:
         return {**base, "moment": "cancelled" if link.revoked_reason == courier_links.CANCELLED else "reassigned"}
     orders = _ride_orders(link)
@@ -347,7 +439,7 @@ def ride_view(link: CourierLink) -> dict:
     if first.get("note"):
         base["note"] = str(first["note"])
     if link.expires_at is not None:
-        return {**base, "moment": "closed", "today_q": _today_q(link.courier)}
+        return {**base, "moment": "closed", "today_q": today_settlement(link.courier)[0]}
     live = [(o, b) for o, b in zip(orders, blocks, strict=False) if _live(o, link)]
     statuses = {b.get("status") for _, b in live}
     on_route = "E" in statuses
@@ -377,11 +469,42 @@ def ride_view(link: CourierLink) -> dict:
         "machine": machine,
         "settle": {"cash_q": cash_back_q, "cash": f"R$ {format_money(cash_back_q)}", "machine": machine,
                    "bags_back": [s["code"] for s in stops if s["state"] == "cancelled"]},
+
+        **({"map": _map_view(link)} if moment == "route" else {}),
     }
 
 
-def _today_q(courier_person: Courier) -> int:
-    """O que a casa deve ao entregador hoje: o valor das rotas fechadas dele no dia."""
+def _map_view(link: CourierLink) -> dict:
+    """O mapa da corrida na tela "Dirigindo" (#2509): a chave pública do navegador e a loja.
+
+    A mesma chave que a loja já entrega ao cliente (restrita por domínio). Sem chave, a
+    página desenha o mapa próprio, só com as linhas e os pontos.
+    """
+    from shopman.shop.google_maps_credentials import browser_api_key
+    from shopman.shop.models import Shop
+
+    shop = Shop.objects.first()
+    origin = ({"lat": float(shop.latitude), "lng": float(shop.longitude)}
+              if shop and shop.latitude and shop.longitude else None)
+    view = {"key": browser_api_key(), "origin": origin}
+    # A rota por ruas e a próxima manobra, quando o Routes API respondeu (#2509).
+    from shopman.shop.services import courier_position, route_guide
+
+    position = courier_position.read(link.ride_ref)
+    here = (position["latitude"], position["longitude"]) if position else None
+    guide = route_guide.view(link.ride_ref, here)
+    if guide is not None:
+        view["guide"] = guide
+    return view
+
+
+def today_settlement(courier_person: Courier) -> tuple[int, int]:
+    """O que a casa deve ao entregador hoje: o valor das rotas fechadas dele no dia e quantas são.
+
+    Fonte única do acerto do dia (decisão 5 do dono, 16/11: o sistema soma, o pagamento é
+    por fora): a página da rota mostra ao entregador, o Gestor mostra à casa. Uma rota conta
+    uma vez (``ride_ref``), com o valor final quando houve ajuste e o da tabela sem ele.
+    """
     today = timezone.localdate()
     total = 0
     seen: set[str] = set()
@@ -393,4 +516,4 @@ def _today_q(courier_person: Courier) -> int:
         order = Order.objects.filter(ref=link.order_refs[0]).first()
         block = courier.get_block(order) if order else {}
         total += int(block.get("final_value_q") or (block.get("estimate") or {}).get("value_q") or 0)
-    return total
+    return total, len(seen)

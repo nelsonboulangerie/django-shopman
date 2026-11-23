@@ -324,14 +324,38 @@ def gestor_advance_block(order: Order, *, waitlist_state: str | None = None, pay
     return AdvanceBlock.NONE if bloqueio == AdvanceBlock.DEVICE_UNAVAILABLE else bloqueio
 
 
-def advance_block_message(bloqueio: AdvanceBlock) -> str:
-    """A frase que o operador lê para um código de bloqueio."""
+def advance_block_message(bloqueio: AdvanceBlock, order: Order | None = None) -> str:
+    """A frase que o operador lê para um código de bloqueio.
+
+    Com o pedido, a encomenda de data futura diz QUAL dia (#3164): "O preparo
+    abre no dia combinado." sem o dia mandava o operador procurar a data.
+    """
+    if bloqueio == AdvanceBlock.PREORDER_NOT_DUE and order is not None:
+        day = _preorder_day(order)
+        if day:
+            return f"Encomenda para {day}. O preparo abre nesse dia."
     return _ADVANCE_BLOCK_MESSAGES.get(bloqueio, "")
+
+
+def _preorder_day(order: Order) -> str:
+    """"22/11", o dia em que o preparo da encomenda abre; "" se não há data."""
+    from django.utils import timezone
+
+    from shopman.shop.services import ifood_schedule
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    day = None
+    if ifood_schedule.is_scheduled(order):
+        starts = ifood_schedule.preparation_start(order)
+        day = timezone.localtime(starts).date() if starts is not None else None
+    if day is None:
+        day = get_commitment_date(order)
+    return day.strftime("%d/%m") if day is not None else ""
 
 
 def advance_block_reason(order: Order, *, waitlist_state: str | None = None, payment_reads=None) -> str:
     """A frase que o operador lê, ou '' se ``advance_order`` rodaria agora."""
-    return advance_block_message(advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
+    return advance_block_message(advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads), order)
 
 
 #: Depois destes estados a cozinha não responde mais pelo pedido.
@@ -511,7 +535,7 @@ def advance_order(
         # do gesto do operador; recusar o fato só deixaria o pedido "pronto"
         # com o entregador na rua.
         bloqueio = AdvanceBlock.NONE
-    blocked = advance_block_message(bloqueio)
+    blocked = advance_block_message(bloqueio, order)
     if blocked:
         raise ValueError(blocked)
     next_status = next_status_for(order)
@@ -849,13 +873,33 @@ def trip_id(order: Order) -> str:
     return str(((order.data or {}).get("dispatch") or {}).get("trip_ref") or order.ref)
 
 
-def trip_members(order: Order) -> list[Order]:
-    """Os pedidos que saíram juntos com este (inclui ele), na ordem de criação."""
+def trip_members(order: Order, *, among: list[Order] | None = None) -> list[Order]:
+    """Os pedidos que saíram juntos com este (inclui ele), na ordem de criação.
+
+    ``among``: os pedidos já lidos em lote (:func:`trip_members_for`); com ele a
+    leitura não vai ao banco, para a tela não pagar uma consulta por pedido.
+    """
     from django.db.models import Q
 
     tid = trip_id(order)
-    members = list(Order.objects.filter(Q(ref=tid) | Q(data__dispatch__trip_ref=tid)).order_by("pk"))
+    if among is None:
+        members = list(Order.objects.filter(Q(ref=tid) | Q(data__dispatch__trip_ref=tid)).order_by("pk"))
+    else:
+        members = sorted(
+            (m for m in among if m.ref == tid or ((m.data or {}).get("dispatch") or {}).get("trip_ref") == tid),
+            key=lambda m: m.pk,
+        )
     return members if any(m.pk == order.pk for m in members) else [order, *members]
+
+
+def trip_members_for(orders) -> list[Order]:
+    """Todos os pedidos das saídas destes, numa consulta só (o ``among`` de :func:`trip_members`)."""
+    from django.db.models import Q
+
+    tids = sorted({trip_id(order) for order in orders})
+    if not tids:
+        return []
+    return list(Order.objects.filter(Q(ref__in=tids) | Q(data__dispatch__trip_ref__in=tids)).order_by("pk"))
 
 
 def _locked_trip_members(order: Order) -> list[Order]:
@@ -912,8 +956,11 @@ def _trip_open(order: Order) -> bool:
     )
 
 
-def courier_return_members(order: Order) -> list[Order]:
-    """Os pedidos que "Entregador voltou" fecha a partir deste; vazio se não há o que voltar."""
+def courier_return_members(order: Order, *, among: list[Order] | None = None) -> list[Order]:
+    """Os pedidos que "Entregador voltou" fecha a partir deste; vazio se não há o que voltar.
+
+    ``among``: os pedidos das saídas já lidos em lote (:func:`trip_members_for`).
+    """
     def return_open(member: Order) -> bool:
         # O cancelamento posterior à coleta não transforma a venda em
         # recebimento. O troco e a maquininha que já saíram, porém, continuam
@@ -926,7 +973,7 @@ def courier_return_members(order: Order) -> list[Order]:
 
     if not return_open(order):
         return []
-    members = [m for m in trip_members(order) if return_open(m)]
+    members = [m for m in trip_members(order, among=among) if return_open(m)]
     return members if any(
         must_come_back(m) if m.status != Order.Status.CANCELLED else return_open(m)
         for m in members
@@ -1610,7 +1657,7 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
         return ""
     bloqueio = advance_block(order, payment_reads=payment_reads)
     if bloqueio not in {AdvanceBlock.NONE, AdvanceBlock.DEVICE_UNAVAILABLE}:
-        return advance_block_message(bloqueio)
+        return advance_block_message(bloqueio, order)
     return ""
 
 
@@ -2254,8 +2301,14 @@ def _advance_fulfillment_to(fulfillment, target_status: str, fulfillment_service
             fulfillment_service.update(fulfillment, Fulfillment.Status.DELIVERED)
 
 
-def confirmation_block_reason(order: Order, *, payment_reads=None, channel_config=None) -> str:
-    """Consulta os mesmos guards do aceite, sem captura, reserva ou escrita."""
+def confirmation_block_reason(order: Order, *, payment_reads=None, channel_config=None, waitlist_state: str | None = None) -> str:
+    """Consulta os mesmos guards do aceite, sem captura, reserva ou escrita.
+
+    Na fila de espera, o dinheiro que falta não é atraso de pagamento: nada se
+    cobra de propósito até o cliente confirmar a vaga (``charge_at="confirmation"``).
+    Ali a frase diz o que o pedido espera (#3177); falar em "dinheiro que não
+    entrou" faz alguém ligar para cobrar quem não tem o que pagar.
+    """
     from shopman.orderman.exceptions import InvalidTransition
 
     from shopman.shop.lifecycle import ensure_confirmable, ensure_payment_captured
@@ -2268,7 +2321,36 @@ def confirmation_block_reason(order: Order, *, payment_reads=None, channel_confi
         ensure_payment_captured(order, payment_reads=payment_reads, channel_config=channel_config)
         ensure_confirmable(order, channel_config=channel_config)
     except InvalidTransition as exc:
+        if exc.code == "payment_not_captured":
+            return _waitlist_wait_reason(order, state=waitlist_state) or exc.message
         return exc.message
+    return ""
+
+
+def _waitlist_wait_reason(order: Order, *, state: str | None = None) -> str:
+    """O que a reserva da fila espera, quando ela ainda não deve dinheiro nenhum.
+
+    Só os dois estados em que nada foi cobrado: esperando o lote (``fermata``) e
+    esperando o cliente confirmar a vaga (``confirming``). Depois de confirmar, o
+    pagamento foi pedido e a frase de pagamento volta a ser a verdade.
+    """
+    try:
+        from shopman.shop.services import waitlist
+
+        current = waitlist.state_for(order) if state is None else state
+        if current == waitlist.FERMATA:
+            return "Na fila de espera: o pedido espera o lote ficar pronto. Nada foi cobrado do cliente."
+        if current == waitlist.CONFIRMING:
+            from django.utils.dateparse import parse_datetime
+            from shopman.utils.formatting import format_clock
+
+            block = (order.data or {}).get(waitlist.WAITLIST_KEY) or {}
+            deadline = parse_datetime(str(block.get("deadline") or ""))
+            until = format_clock(deadline) if deadline else ""
+            turn = f"ele tem até {until} para confirmar a vaga" if until else "falta ele confirmar a vaga"
+            return f"O lote ficou pronto e a vez é do cliente: {turn}. Nada foi cobrado ainda."
+    except Exception:  # silêncio-deliberado: a frase da fila só refina o motivo; sem ela vale a de pagamento, e a regra do aceite não muda
+        logger.debug("operator_orders._waitlist_wait_reason degraded ref=%s", order.ref, exc_info=True)
     return ""
 
 
@@ -2356,7 +2438,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     actions = []
     actor_id = getattr(user, "pk", None)
     if order.status == Order.Status.NEW:
-        reason = confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config) if authorized else permission_reason
+        reason = confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config, waitlist_state=waitlist_state) if authorized else permission_reason
         actions.append(Action(
             ref="confirm", kind="mutation", label="Aceitar", priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",
@@ -2388,10 +2470,12 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             if needs_card_machine(order):
                 labels["dispatched"] = "Saiu com a maquininha"
         if authorized:
-            reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
+            reason = advance_block_message(
+                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads), order,
+            )
         elif expedite:
             reason = expedite_refusal(order, target_status=target) or advance_block_message(
-                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)
+                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads), order,
             )
         else:
             reason = permission_reason

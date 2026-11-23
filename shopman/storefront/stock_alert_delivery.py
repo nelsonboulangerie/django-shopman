@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from django.db import transaction
 from django.utils import timezone
@@ -291,6 +292,36 @@ def _alert_indeterminate(delivery_id: int) -> None:
         delivery=delivery,
         product_name=stock_alerts.product_name(delivery.subscription.sku),
     )
+
+
+_DELIVERY_REF = re.compile(r"delivery_ref=(?P<ref>[0-9a-fA-F-]{36})")
+
+
+def resolve_settled_dispatch_alerts() -> int:
+    """Fecha o aviso de envio incerto cuja entrega já tem resultado.
+
+    O aviso nasce quando o ManyChat não confirma o envio e a entrega fica em
+    ``resultado incerto``. Quando a conciliação define o resultado (aceita,
+    suprimida, de volta à fila) ou a entrega some, o aviso deixa de ser
+    verdade. O alerta pessoal do Gestor já fechava assim
+    (``reconcile_user_notifications``); este é o mesmo fato para o sino.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+    from shopman.storefront.models import StockAlertDelivery
+
+    closed = 0
+    for pk, _order_ref, message in alert_adapter.open_rows("stock_alert_dispatch_unknown"):
+        found = _DELIVERY_REF.search(message or "")
+        if not found:
+            continue
+        status = (
+            StockAlertDelivery.objects.filter(ref=found.group("ref")).values_list("status", flat=True).first()
+        )
+        if status == StockAlertDelivery.Status.INDETERMINATE:
+            continue
+        why = "entrega do aviso não existe mais" if status is None else "entrega do aviso já tem resultado"
+        closed += alert_adapter.resolve_pk(pk, actor=f"sistema: {why}")
+    return closed
 
 
 def _notify_stock_alert_managers(*, delivery, product_name: str) -> None:

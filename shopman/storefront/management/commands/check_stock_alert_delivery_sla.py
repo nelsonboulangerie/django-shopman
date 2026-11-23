@@ -15,7 +15,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from shopman.shop.services.observability import create_operator_alert
         from shopman.storefront.models import StockAlertDelivery
-        from shopman.storefront.stock_alert_delivery import _alert_indeterminate
+        from shopman.storefront.stock_alert_delivery import _alert_indeterminate, resolve_settled_dispatch_alerts
 
         minutes = max(1, int(options["minutes"]))
         cutoff = timezone.now() - timedelta(minutes=minutes)
@@ -37,6 +37,8 @@ class Command(BaseCommand):
             status=StockAlertDelivery.Status.INDETERMINATE,
         ).values_list("pk", flat=True):
             _alert_indeterminate(delivery_id)
+        # O aviso de envio incerto fecha quando a entrega já tem resultado.
+        resolve_settled_dispatch_alerts()
         if total:
             create_operator_alert(
                 type="stock_alert_delivery_stuck",
@@ -46,5 +48,14 @@ class Command(BaseCommand):
                     "runbook=docs/runbooks/stock-alert-delivery.md"
                 ),
                 dedupe_key="stock-alert-delivery-sla",
+            )
+        else:
+            # Nenhuma entrega passou do prazo: o aviso de atraso deixa de ser verdade.
+            from shopman.shop.adapters import alert as alert_adapter
+
+            alert_adapter.resolve_matching(
+                "stock_alert_delivery_stuck",
+                message_contains="Dedupe: stock-alert-delivery-sla",
+                actor="sistema: nenhuma entrega de aviso de estoque atrasada",
             )
         self.stdout.write(f"stuck={total} counts={counts}")

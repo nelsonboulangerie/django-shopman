@@ -34,17 +34,50 @@ from __future__ import annotations
 import logging
 import time
 
+from django import forms
 from django.contrib import admin, messages
 from django.core.mail import EmailMessage
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import TemplateView
 from unfold.views import UnfoldModelAdminViewMixin
+from unfold.widgets import UnfoldAdminIntegerFieldWidget, UnfoldAdminSelectWidget, UnfoldAdminTextInputWidget
 
 from shopman.backstage.projections.diagnostics import build_diagnostics
+from shopman.backstage.services import courier_probe
 from shopman.shop.mailers import DIAGNOSTICS_ALIAS
 
 logger = logging.getLogger(__name__)
+
+
+class CourierProbeForm(forms.Form):
+    """O que a sonda da central de entregas pergunta: as opções de leitura do comando, com nome de gente."""
+
+    action = forms.ChoiceField(
+        label="O que ler",
+        required=False,
+        choices=(
+            ("read", "A conta e as corridas"),
+            ("webhooks", "Os avisos cadastrados"),
+        ),
+        widget=UnfoldAdminSelectWidget,
+    )
+    rides = forms.CharField(
+        label="Corridas",
+        required=False,
+        help_text=f"O número da corrida na TaOn, até {courier_probe.MAX_RIDES}, separados por vírgula.",
+        widget=UnfoldAdminTextInputWidget,
+    )
+    window = forms.IntegerField(
+        label="Corridas abertas nos últimos minutos",
+        required=False, min_value=0, max_value=240,
+        widget=UnfoldAdminIntegerFieldWidget,
+    )
+    recent = forms.IntegerField(
+        label="Últimas corridas gravadas nos pedidos",
+        required=False, min_value=0, max_value=5,
+        widget=UnfoldAdminIntegerFieldWidget,
+    )
 
 
 class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
@@ -55,9 +88,39 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["diagnostics"] = build_diagnostics()
+        user = getattr(self.request, "user", None)
+        context["courier_probe_allowed"] = bool(getattr(user, "is_superuser", False))
+        context.setdefault("courier_form", CourierProbeForm(initial={"action": "read"}))
         return context
 
     def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        if request.POST.get("probe") == "courier":
+            return self._courier_probe(request)
+        return self._email_probe(request)
+
+    def _courier_probe(self, request: HttpRequest) -> HttpResponse:
+        """A sonda da central de entregas, só leitura. Só superusuário: o laudo descreve a conta da casa."""
+        if not request.user.is_superuser:
+            messages.error(request, "A sonda da central de entregas é só para superusuário.")
+            return self._redirect()
+        form = CourierProbeForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(courier_form=form))
+        data = form.cleaned_data
+        action = data.get("action") or "read"
+        rides = courier_probe.rides_from(data.get("rides", ""))
+        if action == "webhooks":
+            result = courier_probe.webhooks(f"https://{request.get_host()}")
+        else:
+            result = courier_probe.read(rides=rides, window=data.get("window") or 0, recent=data.get("recent") or 0)
+        logger.info(
+            "diagnostics.courier_probe user=%s action=%s rides=%s ok=%s",
+            request.user.pk, action, ",".join(rides), result.ok,
+        )
+        refilled = CourierProbeForm(initial={k: v for k, v in data.items() if v not in (None, "")})
+        return self.render_to_response(self.get_context_data(courier_form=refilled, courier_result=result))
+
+    def _email_probe(self, request: HttpRequest) -> HttpResponse:
         destino = str(getattr(request.user, "email", "") or "").strip()
         if not destino:
             messages.error(

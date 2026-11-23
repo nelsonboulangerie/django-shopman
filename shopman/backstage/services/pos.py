@@ -454,6 +454,7 @@ def unlock_drawer(
 #: O motivo da linha ``refund`` no livro do turno, por ``payment.refund_reason``.
 _CASH_REFUND_LEDGER_REASONS = {
     "cancelled": "devolução de venda cancelada",
+    "not_picked_up": "devolução de pedido não retirado",
     "returned": "devolução de venda devolvida",
     "partial_return": "devolução de parte da venda",
     "reduced": "devolução da diferença da encomenda editada",

@@ -115,10 +115,11 @@ def test_jev_triage_tokens_are_recorded_with_the_handoff_ack(conversation, outbo
         model = "jev-1"
 
         def scores(self, sample, categories):
-            return Prediction(intents={c.ref: (0.95 if c.ref == "complaint" else 0.01) for c in categories},
+            return Prediction(intents={c.ref: (0.95 if c.ref == "human" else 0.01) for c in categories},
                               input_tokens=300)
 
     settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "triage_with_model": True}
+    # O Jev lê "pessoa": a equipe assume (reclamação sozinha não cala mais a conversa, 21/11/2026).
     _receive(conversation, "olha, sobre a conta de ontem", "m4")
     result = service.run_turn(conversation.pk, _binding(conversation).pk, triage_client=Jev())
     assert result.handoff

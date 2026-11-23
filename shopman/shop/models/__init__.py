@@ -46,6 +46,7 @@ from .concierge import (
 )
 from .contact_release import ContactRelease, ReleasedContactKind
 from .conversational import (
+    ConversationalCommitment,
     ConversationalDecision,
     ConversationalEpisode,
     ConversationalOutcome,
@@ -65,6 +66,7 @@ from .instance_apply import InstanceApplyRecord
 from .kitchen_note import KitchenNoteTag
 from .omotenashi_copy import OmotenashiCopy
 from .operator_passkey import OperatorPasskey
+from .paid_api_call import PaidApiCall, PaidApiOutcome
 from .privacy import (
     PrivacyRequestOperation,
     PrivacyRequestReceipt,
@@ -92,6 +94,7 @@ from .settings_proxies import (
     ShopSearch,
 )
 from .shop import NotificationTemplate, Shop
+from .usd_brl_quote import UsdBrlQuote
 from .user_notification import (
     NotificationCategory,
     NotificationEventType,
@@ -106,8 +109,11 @@ __all__ = [
     "AIConnection",
     "AIProtocol",
     "AiInvocation",
+    "UsdBrlQuote",
     "AiOutcome",
     "AiSpendDay",
+    "PaidApiCall",
+    "PaidApiOutcome",
     "AttributeDefinition",
     "AttributePurpose",
     "AttributeSource",
@@ -118,6 +124,7 @@ __all__ = [
     "ConversationMessage",
     "OutboundAttempt",
     "ContactRelease",
+    "ConversationalCommitment",
     "ConversationalDecision",
     "ConversationalEpisode",
     "ConversationalOutcome",

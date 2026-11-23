@@ -19,6 +19,9 @@ const props = defineProps<{
    */
   totalDisplay: string;
   reason: string;
+  /** O que foi registrado: a venda de balcão ou a encomenda. O nome do ato segue o
+   *  objeto, e o gerente lê "Cancelar a encomenda" quando é encomenda (P2-7, #3192). */
+  noun?: "venda" | "encomenda";
   maxAgeMinutes?: number;
   managers?: POSManagerProjection[];
   /** Quem CONTINUA operando depois da assinatura. Ver OperatorManagerAuth. */
@@ -49,12 +52,12 @@ const emit = defineEmits<{
   >
     <template #context>
       <p class="text-base font-semibold text-highlighted" data-cancel-sale-total>
-        Cancelar a venda de <span class="tabular-nums">{{ props.totalDisplay }}</span>
+        Cancelar a {{ props.noun ?? "venda" }} de <span class="tabular-nums">{{ props.totalDisplay }}</span>
       </p>
       <p class="text-sm text-muted-foreground">
         Pedido {{ props.orderRef }}.
         <template v-if="props.maxAgeMinutes">
-          Disponível por até {{ props.maxAgeMinutes }} minutos após a venda; depois, cancele pelo gestor.
+          Disponível por até {{ props.maxAgeMinutes }} minutos após a {{ props.noun ?? "venda" }}; depois, cancele pelo Gestor.
         </template>
       </p>
       <NuxtInput

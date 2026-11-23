@@ -530,7 +530,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     # Depois que o preparo começou, no lugar do cancelar: falar com o responsável.
     "TRACKING_CANCELLATION_CONTACT_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pedir contato sobre cancelamento")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Quero falar com o responsável")},
     },
     "TRACKING_CANCELLATION_CONTACT_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Quer cancelar?")},
@@ -1571,6 +1571,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_CART_ASK_QTY": {
         WILDCARD: {WILDCARD: CopyEntry(message="Quantas unidades de {item} você quer?")},
+    },
+    "CONCIERGE_COMPLAINT_HEARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sinto muito por isso. Já levei à equipe e sigo com você por aqui.")},
+    },
+    "CONCIERGE_CART_NEXT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Quer mais alguma coisa? Quando terminar, é só escrever “pode fechar”.")},
+    },
+    "CONCIERGE_CART_NOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua sacola de agora:")},
     },
     "CONCIERGE_NOT_IN_MENU": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não encontrei “{part}” no cardápio de hoje. O que temos agora:")},

@@ -6820,6 +6820,14 @@ class Command(BaseCommand):
         else:                                           # mild
             season_multiplier = 1.0
 
+        # O primeiro pedido de ONTEM (no fuso da loja) é da Ana Ferreira (CLI-005): a
+        # jornada J7 do Gestor a acha pelo nome e amplia o período até ele. O sorteio
+        # de cliente segue consumido igual; só esse pedido troca de dona. Sem isto,
+        # havia seed com pedido dela ontem e seed sem, conforme a hora em que rodava,
+        # e a J7 caía ao acaso (#3295).
+        yesterday_anchor = customers.get("CLI-005")
+        local_yesterday = timezone.localdate() - timedelta(days=1)
+
         for days_ago in range(35):  # 5 weeks of history
             day = now - timedelta(days=days_ago)
             weekday = day.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
@@ -6867,6 +6875,8 @@ class Command(BaseCommand):
                     status = "completed"
 
                 order_time = day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if yesterday_anchor is not None and timezone.localtime(order_time).date() == local_yesterday:
+                    customer, yesterday_anchor = yesterday_anchor, None
 
                 # Random items
                 num_items = random.randint(1, 4)

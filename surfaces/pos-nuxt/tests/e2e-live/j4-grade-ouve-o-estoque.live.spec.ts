@@ -17,6 +17,14 @@ const SHOTS = process.env.PDV_LIVE_SHOTS || "";
 // O roteiro do plano: "em até 5 s, sem toque".
 const LIVE_BUDGET_MS = 5_000;
 
+// Roteiro manual (README, "Jornada J4"): o login vem de PDV_LIVE_USER/PDV_LIVE_PASSWORD e a
+// última unidade do pão é preparada à mão. O `run_pos_e2e_live.sh` a pega pelo nome jN-*;
+// sem o preparo, ela entrava com usuário vazio e virava vermelho falso (#3295).
+test.skip(
+  !process.env.PDV_LIVE_USER || !process.env.PDV_LIVE_PASSWORD,
+  "a J4 pede o login e a última unidade preparados à mão (README, Jornada J4)",
+);
+
 async function login(page: Page) {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
@@ -31,7 +39,7 @@ async function login(page: Page) {
     }).toPass({ timeout: 20_000 });
     await enter.click();
   }
-  const station = page.getByRole("button", { name: /^É este balcão|^Vincular a este posto/ });
+  const station = page.getByRole("button", { name: /^É este balcão|^Vincular a este posto|^Vincular também a este posto/ });
   const board = page.getByRole("button", { name: /Próxima livre/ });
   await station.or(board).first().waitFor({ timeout: 30_000 });
   await expect(async () => {
@@ -80,7 +88,8 @@ test("J4: a última unidade vendida num dispositivo vira Esgotado no outro, sem 
   const b = await device(browser, "B");
 
   // O cabeçalho só diz "Ao vivo" com o push de pé: é a promessa que este WP cumpre.
-  await expect(b.getByText("Ao vivo").first()).toBeVisible({ timeout: 30_000 });
+  // O selo mostra só a hora da leitura; "Ao vivo" é o nome acessível dele.
+  await expect(b.getByRole("status", { name: /^Ao vivo/ }).first()).toBeVisible({ timeout: 30_000 });
 
   await openFreshTab(b);
   const tileB = await tileOf(b, LAST_UNIT);

@@ -211,6 +211,10 @@ ADAPTERS_SEM_DADO_DE_CLIENTE: dict[str, str] = {
     # mas ele já é reivindicado pelo operador de entrega, para o dia em que a casa
     # trocar o adapter sem lembrar da política.
     "payment_mock": "simulador local; a URL no arquivo é exemplo, não destino",
+    # A nota simulada da pilha de teste (#3124): o XML dela leva o `qrCode` e o
+    # `urlChave` da SEFAZ-PR, como a nota real, para a DANFE se compor dele. O
+    # simulador só ESCREVE a URL no arquivo; não chama a SEFAZ nem manda dado nenhum.
+    "fiscal_simulated": "simulador local; a URL da SEFAZ-PR vai escrita no XML, não é destino",
 }
 
 
@@ -345,6 +349,26 @@ AI_USES: tuple[AIUse, ...] = (
         sends=("o texto da sua mensagem",),
         keeps_profile=True,
         redacts=True,
+    ),
+    # `conference.ModelDrafter` (a escada da conferência): só quando a conferência reprova a
+    # resposta da casa. A fala do cliente e a resposta reprovada, as duas por
+    # `redact_observation_text` (nomes conhecidos inclusive); a resposta leva produtos e
+    # valores do cardápio, que são o lastro da reescrita.
+    AIUse(
+        purpose="concierge_rewrite",
+        helps_to="reescrever uma resposta que a conferência da loja reprovou",
+        sends=("o texto da sua mensagem", "a resposta que a loja preparou, com produtos e valores do cardápio"),
+        keeps_profile=True,
+        redacts=True,
+        also="Isso só acontece quando a conferência da loja reprova a primeira resposta",
+    ),
+    AIUse(
+        purpose="concierge_escalation",
+        helps_to="reescrever uma resposta que a conferência da loja reprovou",
+        sends=("o texto da sua mensagem", "a resposta que a loja preparou, com produtos e valores do cardápio"),
+        keeps_profile=True,
+        redacts=True,
+        also="Isso só acontece quando a conferência da loja reprova a primeira resposta",
     ),
     # `intents.read_with_model` → `build_request`: a fala do turno, redigida, e a nota de
     # estado sem número de pedido nem nome (`intents.reading_note`, WP-03).
