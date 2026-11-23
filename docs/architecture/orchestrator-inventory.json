@@ -14032,6 +14032,7 @@
         {
           "responsibility": "contrato",
           "symbols": [
+            "COUNTER_SERVICES",
             "MAX_LINE_QTY",
             "ORDER_NOTES_LIMIT",
             "POS_AUTHORSHIP_META_KEY",

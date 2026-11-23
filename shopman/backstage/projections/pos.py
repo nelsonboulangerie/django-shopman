@@ -3444,6 +3444,8 @@ def build_open_tab(session: Session) -> dict:
         # endereço — e ela pode ter mudado desde que o rascunho foi salvo.
         "delivery_fee_override_q": data.get("delivery_fee_override_q"),
         "order_notes": data.get("order_notes", ""),
+        # Comer aqui ou levar, no balcão (#3193). Vazio = a comanda ainda não disse.
+        "counter_service": str((data.get("pos") or {}).get("counter_service") or ""),
         "payment_method": payment.get("method", "cash"),
         "payment_collection": payment.get("collection", "terminal"),
         "payment_tenders": _tab_payload_payment_tenders(payment),

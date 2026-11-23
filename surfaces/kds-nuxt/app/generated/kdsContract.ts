@@ -38,6 +38,7 @@ export interface KDSTicketProjection {
   completed_at_display: string;
   kitchen_note: string;
   customer_note: string;
+  service_label: string;
   test_order_label: string;
   finish_block_label: string;
   finish_block_reason: string;
