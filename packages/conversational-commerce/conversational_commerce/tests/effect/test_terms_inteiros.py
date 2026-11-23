@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from conversational_commerce.engine.state import Subject
 from conversational_commerce.engine.turn import terms_fact
 from conversational_commerce.testing.journeys import j4, run_journey
@@ -72,3 +74,63 @@ def test_the_order_reply_says_the_total_of_the_order_read_after_the_effect():
     assert placed.text == "Your order order-0001 is placed. Total: XTS 13.50. Track it: order-0001."
     claims = {(claim.slot, claim.backing, claim.ref) for claim in placed.reply.plan.parts[0].claims}
     assert ("total", "fact", "order.order-0001") in claims
+
+
+# ── a escada depois do efeito: a leitura que falha nunca segura o efeito feito ─────────
+
+
+def test_when_the_new_quote_fails_the_cart_reply_says_only_the_effect():
+    from conversational_commerce.testing.fakes import Fault
+
+    turn_engine, world = engine()
+    world.faults.arm("quote", Fault.PROVIDER_DOWN)
+    [changed] = run_journey(turn_engine, CTX, [dataclasses.replace(j4.CHANGE, expect_text=())])
+    assert changed.result.reply.verification.result == "pass"
+    assert changed.result.text == "Done. Your cart is updated."
+    assert changed.result.reply.template_ids == ("change_cart.done_receipt",)
+
+
+def _placed_with(order_fact):
+    turn_engine, world = engine()
+    original = world.commerce_read.read_order
+    world.commerce_read.read_order = lambda ctx, ref: order_fact(original(ctx, ref))
+    confirm = dataclasses.replace(j4.CONFIRM, expect_text=())
+    results = run_journey(turn_engine, CTX, [*j4.STEPS[:2], confirm])
+    return results[-1].result
+
+
+def test_when_the_order_read_fails_the_order_reply_has_no_total():
+    from conversational_commerce.contracts import Unknown
+
+    placed = _placed_with(lambda fact: Unknown(reason="source_failed"))
+    assert placed.reply.verification.result == "pass"
+    assert placed.text == "Your order order-0001 is placed. Track it: order-0001."
+
+
+def test_an_order_read_without_total_falls_to_the_step_below():
+    placed = _placed_with(lambda fact: dataclasses.replace(fact, value={"ref": fact.value["ref"]}))
+    assert placed.reply.verification.result == "pass"  # sem KeyError depois do efeito
+    assert placed.reply.template_ids == ("commit_order.done_order",)
+
+
+# ── mudança e "fecha" no mesmo turno: a decisão gravada cita os termos que o cliente vê ──
+
+
+def test_change_and_close_in_one_turn_decide_again_on_the_new_terms():
+    from conversational_commerce.authority import Offer
+    from conversational_commerce.testing.journeys.runner import JourneyStep
+
+    both = JourneyStep(message=j4.message("j4-both", "make it three and place the order"),
+                       understanding={"acts": [{"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "3"}},
+                                               {"act": "place_order"}]},
+                       expect_moves=(), expect_text=())
+    turn_engine, world = engine(steps=(both,))
+    result = turn_engine.turn(CTX, both.message)
+    assert len(result.decisions) == 2 and result.decisions[1].parent_decision_id == result.decisions[0].decision_id
+    presented = [c for i, c in enumerate(result.decision.candidates)
+                 if i in result.decision.chosen and c.move == "present_terms"]
+    snapshots = [record for _, record in world.store.records if type(record).__name__ == "ContextSnapshot"]
+    offer = next(Offer.from_dialogue(snap.dialogue_state) for snap in reversed(snapshots)
+                 if Offer.from_dialogue(snap.dialogue_state) is not None)
+    assert presented and presented[0].content["terms"] == offer.terms_hash  # decisão e pergunta: o mesmo documento
+    assert world.state.carts["cart-1"]["ITEM-A"] == "3"

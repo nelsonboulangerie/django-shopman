@@ -22,6 +22,15 @@ FAILED = Template("effect.failed", "1", "inform_limitation",
 SHARED = (PENDING, FAILED)
 
 
+def known_with(state, key: str, *fields: str) -> bool:
+    """O fato lido depois do efeito vale e traz os campos que o molde cita (senão, o degrau de baixo)."""
+    from conversational_commerce.contracts import Known
+
+    fact = state.facts.get(key)
+    value = getattr(fact, "value", None)
+    return isinstance(fact, Known) and hasattr(value, "get") and all(value.get(name) is not None for name in fields)
+
+
 def commitment_id(command_id: str) -> str:
     return f"reconcile.{command_id}"
 

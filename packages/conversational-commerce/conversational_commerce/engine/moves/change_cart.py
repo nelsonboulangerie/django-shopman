@@ -11,11 +11,11 @@ from conversational_commerce.policy import Proposal
 from conversational_commerce.reply import TEMPLATES_BY_ID
 
 from ..state import EffectPlan
-from ._effects import SHARED, receipt_part
+from ._effects import SHARED, known_with, receipt_part
 
 MOVE = "change_cart"
 EFFECT = True
-TEMPLATES = (TEMPLATES_BY_ID["change_cart.done"], *SHARED)
+TEMPLATES = (TEMPLATES_BY_ID["change_cart.done"], TEMPLATES_BY_ID["change_cart.done_receipt"], *SHARED)
 
 
 def propose(state, need):
@@ -40,8 +40,10 @@ def effect(state, need) -> EffectPlan:
 
 def reply(state, need):
     # A sacola depois da mudança: os termos cotados de novo depois do recibo de sucesso (``Engine._after_effects``).
-    def cart(receipt):
-        key = ("fact", state.terms_key(state.subject.cart_ref)) if state.subject.cart_ref else ("fact", "terms.none")
-        return {"items": key, "total": key}
-
-    return receipt_part(state, need, MOVE, "change_cart.done", "done", also=cart)
+    key = state.terms_key(state.subject.cart_ref) if state.subject.cart_ref else "terms.none"
+    receipt = state.receipts.get(need.need_id)
+    if receipt is not None and receipt.status == "success" and not known_with(state, key, "items", "total"):
+        # O efeito aconteceu e os termos novos não vieram: o degrau de baixo diz só o efeito.
+        return receipt_part(state, need, MOVE, "change_cart.done_receipt", "done")
+    return receipt_part(state, need, MOVE, "change_cart.done", "done",
+                        also=lambda receipt: {"items": ("fact", key), "total": ("fact", key)})

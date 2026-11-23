@@ -141,6 +141,16 @@ fato, a linha mostra a referência.
 - **Pedido fechado** (`commit_order` com sucesso): o pedido é lido pela porta (`read_order`), no
   fato `order.<referência>`, e o total da resposta sai dele.
 
+**A leitura que falha nunca segura o efeito feito.** Como no `set_fulfillment`, a resposta é o
+molde mais completo que o lastro sustenta: sem os termos novos (carrinho vazio, cotação que falha),
+`change_cart.done_receipt` diz só o efeito; sem o total do pedido (leitura que falha, ou fato sem
+`total`), `commit_order.done_order` diz o pedido e onde acompanhar.
+
+**Termos apresentados no turno de uma mudança.** Se o mesmo turno muda o carrinho e apresenta os
+termos ("põe mais um e fecha"), a decisão é refeita sobre os termos cotados depois do efeito,
+ligada à anterior (`parent_decision_id`, N14), como depois de uma recusa. A decisão gravada e a
+pergunta no ar citam o MESMO documento.
+
 ## 6. Movimentos
 
 | Movimento | Nível | No D1 |

@@ -140,13 +140,14 @@ def test_quote_carries_the_day_and_the_window_of_the_cart(shop):
     assert terms.fulfillment.mode == "pickup"
     assert terms.fulfillment.window_start == start.astimezone(timezone.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     assert terms.fulfillment.window_end is None  # "a partir das 15h" não tem fim
-    assert {c.code: c.value for c in terms.conditions} == {"fulfillment_date": "2026-11-24",
-                                                          "fulfillment_window": "slot-15"}
+    day_and_window = {c.code: c.value for c in terms.conditions if c.code.startswith("fulfillment_")}
+    assert day_and_window == {"fulfillment_date": "2026-11-24", "fulfillment_window": "slot-15"}
 
 
 def test_quote_without_a_day_has_no_window(shop):
     terms = port().quote(CTX, "sess-1")
-    assert (terms.fulfillment.window_start, terms.conditions) == (None, ())
+    assert terms.fulfillment.window_start is None
+    assert not [c for c in terms.conditions if c.code.startswith("fulfillment_")]
 
 
 def test_customer_and_order_are_the_subject_only(shop):

@@ -66,6 +66,10 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
     Template("change_cart.done", "2", "change_cart", "{done} Your cart now has:\n{items}\nTotal: {total}.",
              {"done": SlotSpec(("receipt:success",)), "items": SlotSpec(("fact",), "items"),
               "total": SlotSpec(("fact",), "total")}),
+    # Degrau de baixo: o efeito aconteceu, mas os termos novos não vieram (a leitura falhou ou o carrinho
+    # ficou vazio). Diz-se o efeito pelo recibo, e nada da sacola que não se leu.
+    Template("change_cart.done_receipt", "1", "change_cart", "{done} Your cart is updated.",
+             {"done": SlotSpec(("receipt:success",))}),
     # Recebimento: o molde mais completo que o recibo sustenta (``engine/moves/set_fulfillment.py``).
     # Os valores saem do recibo (o estado do alvo depois do efeito); a casa formata data, modo e janela.
     Template("set_fulfillment.done", "1", "set_fulfillment", "Done: {mode} on {date}, {window}.",
@@ -87,6 +91,9 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
     Template("commit_order.done", "2", "commit_order", "Your order {order} is placed. Total: {total}. Track it: {track}.",
              {"order": SlotSpec(("receipt:success",), "effect"), "total": SlotSpec(("fact",), "total"),
               "track": SlotSpec(("receipt:success",), "effect")}),
+    # Degrau de baixo: o pedido existe (recibo), mas a leitura dele não deu o total.
+    Template("commit_order.done_order", "1", "commit_order", "Your order {order} is placed. Track it: {track}.",
+             {"order": SlotSpec(("receipt:success",), "effect"), "track": SlotSpec(("receipt:success",), "effect")}),
     # Efeito pendente não é efeito: a parte é uma espera, não a confirmação do pedido.
     Template("commit_order.pending", "1", "wait",
              "Your order is being processed; I'll confirm by {deadline}.",

@@ -411,12 +411,15 @@ class Engine:
         return names
 
     def _after_effects(self, ctx: TrustedContext, state: TurnState, event, budget: TurnBudget,
-                       effects: dict) -> None:
+                       effects: dict) -> bool:
         """O que se lê depois do recibo de sucesso, para a resposta dizer o estado de agora.
 
         - mudança no carrinho: o sujeito de novo (o efeito pode ter criado o carrinho) e termos novos;
         - pedido fechado: o pedido lido pela porta, com o total dele.
+
+        Devolve se o carrinho foi cotado de novo (termos novos neste turno).
         """
+        requoted = False
         actions = {command.command_id: command.action for command in effects["commands"]}
         for receipt in effects["receipts"]:
             if receipt.status != "success":
@@ -425,6 +428,7 @@ class Engine:
             if action == "change_cart":
                 state.subject = self.subject_of(ctx, event)
                 self._quote(ctx, state, budget, refresh=True)
+                requoted = True
             elif action == "commit_order" and receipt.domain_refs.get("effect"):
                 ref = receipt.domain_refs["effect"]
                 key = state.order_key(ref)
@@ -434,6 +438,7 @@ class Engine:
                     state.facts[key] = self.ports.commerce_read.read_order(ctx, ref)
                 except PortError:
                     state.facts[key] = Unknown(reason="source_failed")
+        return requoted
 
     def _confirmation(self, ctx: TrustedContext, event: InteractionEvent, subject: Subject,
                       epoch: int) -> Confirmation:
@@ -769,8 +774,12 @@ class Engine:
                                 effects)
         promised = self._promise(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks)
         self._remember(ctx, state, decision, by_need, event, episode, trace_id, unwritten)
-        self._after_effects(ctx, state, event, budget, effects)
-        if state.refused:
+        requoted = self._after_effects(ctx, state, event, budget, effects)
+        # Termos apresentados no mesmo turno de uma mudança: a decisão que os apresenta é refeita sobre
+        # os termos novos, ligada à anterior (N14), para a decisão gravada e a pergunta no ar citarem o
+        # MESMO documento.
+        presents = any(decision.candidates[i].move == "present_terms" for i in decision.chosen)
+        if state.refused or (requoted and presents):
             self._quote(ctx, state, budget)
             snapshot = self._snapshot(ctx, episode, trace_id, decision.id, state, dialogue)
             decision = self._decide(state, needs, snapshot, trace_id, parent=decision.decision_id)
