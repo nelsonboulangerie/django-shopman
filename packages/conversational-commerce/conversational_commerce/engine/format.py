@@ -51,6 +51,6 @@ def options_text(value: Any) -> str:
 
 
 DEFAULT_FORMATTERS = {"price": money_text, "price_a": money_text, "price_b": money_text, "total": money_text,
-                      "done": done_text, "items": items_text, "fulfillment": fulfillment_text,
+                      "done": done_text, "noted": done_text, "items": items_text, "fulfillment": fulfillment_text,
                       "conditions": conditions_text, "payment_method": options_text, "missing": options_text,
                       "delivery_address_details": options_text}

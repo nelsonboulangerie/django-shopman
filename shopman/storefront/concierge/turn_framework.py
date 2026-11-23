@@ -86,6 +86,12 @@ NICE_TEMPLATE_COPY = {
     # recusado (sacola, recebimento, pagamento) refaz a decisão, e quem responde é este molde; a sombra
     # não executa efeito e não o vê, por isso ele precisa de frase da Nice (sem ela, sairia o inglês do pacote).
     "inform_limitation.offer_team": "CONCIERGE_ENGINE_OFFER_TEAM",
+    # Os degraus de baixo dos efeitos (#3412): o efeito aconteceu, mas o que se diria depois dele não se leu.
+    # Aprovadas pelo dono em 23/11 ("Pronto, a sacola foi atualizada." e "Pedido {order} registrado.
+    # Acompanhar: {track}"); a do recebimento derivada das aprovadas, acatada por ele.
+    "change_cart.done_receipt": "CONCIERGE_ENGINE_CART_UPDATED_SHORT",
+    "set_fulfillment.updated": "CONCIERGE_ENGINE_FULFILLMENT_UPDATED",
+    "commit_order.done_order": "CONCIERGE_ENGINE_ORDER_PLACED_SHORT",
 }
 
 #: As frases da forma de pagamento: as MESMAS de hoje, com o espaço do motor (``{payment_method}``, as
@@ -214,6 +220,11 @@ def done_text(value) -> str:
     return "Pronto" if str(value) == "success" else str(value)
 
 
+def noted_text(value) -> str:
+    """O recebimento anotado, dito como a casa diz o "Combinado" do recebimento."""
+    return "Combinado" if str(value) == "success" else str(value)
+
+
 def items_text(value) -> str:
     """As linhas da sacola como hoje (``tools.render_result``): "2 × “Croissant”: R$ 24,00"."""
     from decimal import Decimal
@@ -323,7 +334,8 @@ def nice_formatters(conversation=None) -> dict:
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
 
     money = dict.fromkeys(("price", "price_a", "price_b", "total"), money_text)  # o dinheiro do pacote, em reais
-    return {**DEFAULT_FORMATTERS, **money, "track": track_text, "done": done_text, "items": items_text,
+    return {**DEFAULT_FORMATTERS, **money, "track": track_text, "done": done_text, "noted": noted_text,
+            "items": items_text,
             "fulfillment": fulfillment_text, "conditions": conditions_text, "owner": owner_text,
             "deadline": deadline_text,
             "date": date_text,

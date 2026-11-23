@@ -162,6 +162,10 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
                                                 "é só dizer \"sem complemento\"."),
     "set_payment.not_offered": "Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {payment_method}",
     "set_delivery_address.ask_mode": "Você vai retirar aqui na loja ou prefere entrega?",
+    # Os degraus de baixo dos efeitos (#3412), aprovados em 23/11.
+    "change_cart.done_receipt": "{done}, a sacola foi atualizada.",
+    "set_fulfillment.updated": "{noted}, atualizei o recebimento.",
+    "commit_order.done_order": "Pedido {order} registrado. Acompanhar: {track}",
     # Aprovada pelo dono em 23/11 (#3408): a limitação que o efeito recusado no ar faz dizer.
     "inform_limitation.offer_team": "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?",
 }
@@ -251,10 +255,13 @@ def test_the_order_templates_are_today_phrases(shop):
     assert say("set_fulfillment.done_time", mode="pickup", date=tomorrow, time="16:00") == \
         "Combinado: retirada amanhã às 16h."
     assert turn_framework.time_text("16:30") == "16h30"
-    # O que não tem frase de hoje fica fora: o turno segue o caminho de hoje (a hora sem janela, o resumo,
-    # o "total mudou" com o total, a sacola e o pedido registrado esperam a palavra do dono).
-    for missing in ("set_fulfillment.updated",):
-        assert missing not in found, missing
+    # Os degraus de baixo (#3412): o efeito aconteceu, sem o que dizer depois dele. Frases aprovadas em 23/11.
+    formatters = turn_framework.nice_formatters()
+    assert found["set_fulfillment.updated"].text.replace("{noted}", formatters["noted"]("success")) == \
+        "Combinado, atualizei o recebimento."
+    assert found["change_cart.done_receipt"].text.replace("{done}", formatters["done"]("success")) == \
+        "Pronto, a sacola foi atualizada."
+    assert found["commit_order.done_order"].text == "Pedido {order} registrado. Acompanhar: {track}"
 
 
 def test_a_window_the_house_grid_does_not_know_never_leaks(shop):

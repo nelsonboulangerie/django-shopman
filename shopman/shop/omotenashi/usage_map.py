@@ -290,7 +290,15 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
+    "CONCIERGE_ENGINE_CART_UPDATED_SHORT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
     "CONCIERGE_ENGINE_EFFECT_FAILED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_FULFILLMENT_UPDATED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
@@ -311,6 +319,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_ENGINE_ORDER_PLACED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ORDER_PLACED_SHORT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
