@@ -6,7 +6,8 @@ desconto no ``ChannelConfig``, o modo do app no ``service.config()``, as regras
 em ``house_rules.RULES``), e a montagem fica em ``profile.py``. Aqui só se diz quem
 decidiu, quando e se a linha vale para o framework.
 
-Fonte: ``docs/plans/COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md``, seção 2 (P01 a P21).
+Fonte: ``docs/plans/COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md``, seção 2 (P01 a P21); P22 (#3380) e P23 a P28
+(a auditoria das linhas que o motor lê, 23/11) vieram depois.
 
 Estados do framework: ``approved`` vale; ``validating`` e ``proposed`` não valem; linha
 ``absent`` não tem valor, e a ação que depende dela fica inelegível com o código da linha
@@ -35,6 +36,18 @@ GRANT_DECIDED = "2026-11-23T00:00:00.000000Z"  # #3380: validade da concessão, 
 #: Mecânica de autorização, não negócio: a coordenação decidiu 600 s, o valor do perfil de teste do pacote
 #: ("curta de propósito", K15). Sem a linha, nenhuma concessão nasce e o motor não executa efeito.
 GRANT_VALIDITY_SECONDS = 600
+
+LINES_AUDITED = "2026-11-23T00:00:00.000000Z"  # auditoria das linhas que o motor lê, coordenação em 23/11
+
+#: A janela de inatividade do episódio (``engine.turn.INACTIVITY_LINE``): depois dela, a próxima mensagem abre
+#: episódio novo. Sem a linha, a janela é zero e CADA mensagem abria um episódio, perdendo a pergunta no ar, o
+#: fechamento e a oferta dos termos ("sim" que não confirmava nada). 86400 s: o padrão da spec 02 e a janela de
+#: 24 horas do WhatsApp (coordenação, 23/11).
+EPISODE_INACTIVITY_SECONDS = 86400
+#: O prazo para confirmar um efeito pendente ou desconhecido (``ledger.receipts.DEADLINE_LINE``), o que o
+#: "Te confirmo por aqui até {deadline}" promete. Sem a linha, o prazo era de 1 segundo. 900 s: o perfil de teste
+#: do pacote ("pendente ou desconhecido não espera para sempre").
+RECONCILIATION_DEADLINE_SECONDS = 900
 
 State = Literal["proposed", "validating", "approved", "absent"]
 
@@ -92,6 +105,20 @@ LINES: tuple[LineState, ...] = (
               plan_state="vigente"),
     LineState("P22", "grant.validity_seconds", ENGINEERING, "approved", GRANT_DECIDED,
               "#3380, coordenação em 23/11: 600 s, como o perfil de teste do pacote (K15)"),
+    # A auditoria das linhas que o motor lê (coordenação, 23/11): toda linha lida tem estado aqui, com valor
+    # ou ausente de propósito (``test_concierge_profile.py::test_every_line_the_engine_reads_is_declared``).
+    LineState("P23", "episode.inactivity_window_seconds", ENGINEERING, "approved", LINES_AUDITED,
+              "coordenação em 23/11: 86400 s, a spec 02 e a janela de 24 h do WhatsApp"),
+    LineState("P24", "effect.reconciliation_deadline_seconds", ENGINEERING, "approved", LINES_AUDITED,
+              "auditoria de 23/11: 900 s, o perfil de teste do pacote"),
+    LineState("P25", "effect.idempotency_retention_seconds", ENGINEERING, "absent", None, "auditoria de 23/11",
+              absent_reason="vale a retenção que o executor da casa declara (remote_mutations)"),
+    LineState("P26", "commitment.escalation", OWNER, "absent", None, "auditoria de 23/11, #3419",
+              absent_reason="o motor não escala prazo vencido até a porta de equipe da Nice existir (#3419)"),
+    LineState("P27", "commerce.unsolicited_initiatives_per_episode", OWNER, "absent", None, "auditoria de 23/11",
+              absent_reason="a recomendação não existe na Nice (P13): nenhuma iniciativa comercial"),
+    LineState("P28", "commerce.discount_cap_minor", OWNER, "absent", None, "auditoria de 23/11",
+              absent_reason="o teto da casa é percentual (P09), conferido no desconto da casa"),
 )
 
 BY_PLAN_ID: dict[str, LineState] = {line.plan_id: line for line in LINES}

@@ -134,6 +134,8 @@ def values(config: Mapping[str, Any] | None = None, *, environment: str = "shado
                         "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS},
         "turn.limits": {"max_loops": MAX_LOOPS, "claim_seconds": 120},
         "grant.validity_seconds": profile_lines.GRANT_VALIDITY_SECONDS,
+        "episode.inactivity_window_seconds": profile_lines.EPISODE_INACTIVITY_SECONDS,
+        "effect.reconciliation_deadline_seconds": profile_lines.RECONCILIATION_DEADLINE_SECONDS,
         "privacy": {"text": "redacted", "sensitive_leaves": False,
                     "observation_retention_days": str(observation.get("retention_days") or "")},
         "live.mode": {"operation_mode": str(config.get("operation_mode") or "assist"),
