@@ -71,9 +71,6 @@ async function confirmar() {
     emit("done");
 }
 // A orientação vertical oficial preserva a frase e põe a ação abaixo em toda largura.
-// No celular as duas ações dividem uma linha (F-16, #3170): uma embaixo da outra, o
-// convite ocupava um quarto da tela. Do `sm` para cima, o arranjo de sempre.
-const STATION_SETUP_INLINE_UI = { actions: "grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" };
 </script>
 
 <template>
@@ -84,7 +81,6 @@ const STATION_SETUP_INLINE_UI = { actions: "grid grid-cols-2 gap-2 sm:flex sm:fl
       icon="i-lucide-map-pin"
       :title="copy.setup_title"
       class="shrink-0"
-      :ui="STATION_SETUP_INLINE_UI"
       data-station-setup
     >
       <!-- No celular o convite é o título e os dois botões (F-16 do laudo do Gestor,
@@ -96,33 +92,44 @@ const STATION_SETUP_INLINE_UI = { actions: "grid grid-cols-2 gap-2 sm:flex sm:fl
         }}</span>
       </template>
       <template #actions>
-        <NuxtButton
-          v-if="options.length"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          :label="copy.setup_confirm"
-          data-station-setup-open
-          @click="open = true"
-        />
-        <NuxtButton
-          v-else-if="emptyTo"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-map-pin-plus"
-          :label="copy.manage_title"
-          :to="emptyTo"
-          data-station-setup-empty-link
-        />
-        <NuxtButton
-          size="xs"
-          color="neutral"
-          variant="outline"
-          label="Agora não"
-          data-station-setup-dismiss
-          @click="emit('dismiss')"
-        />
+        <!-- No celular as duas ações dividem uma linha (F-16, #3170): uma embaixo da
+             outra, o convite ocupava um quarto da tela. O bloco é a grade de duas
+             colunas no celular e some do `sm` para cima (`sm:contents`), devolvendo os
+             botões ao arranjo de sempre do alerta. O alerta fica sem ajuste por fora:
+             a trava do Gestor (`canonicalPilot.guardrails`) só o admite nas peças que
+             nomeia. -->
+        <div
+          class="grid w-full grid-cols-2 gap-2 sm:contents"
+          data-station-setup-actions
+        >
+          <NuxtButton
+            v-if="options.length"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            :label="copy.setup_confirm"
+            data-station-setup-open
+            @click="open = true"
+          />
+          <NuxtButton
+            v-else-if="emptyTo"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-map-pin-plus"
+            :label="copy.manage_title"
+            :to="emptyTo"
+            data-station-setup-empty-link
+          />
+          <NuxtButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            label="Agora não"
+            data-station-setup-dismiss
+            @click="emit('dismiss')"
+          />
+        </div>
       </template>
     </NuxtAlert>
 
