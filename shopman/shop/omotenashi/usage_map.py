@@ -184,6 +184,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_CLOSE_ASK_ADDRESS": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_CLOSE_ASK_DATE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -258,6 +259,26 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_DISCOUNT_NO_CART": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_DETAILS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_SET": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_ENGINE_ASK_MORE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),

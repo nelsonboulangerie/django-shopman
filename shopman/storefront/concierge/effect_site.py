@@ -8,6 +8,7 @@ inventa efeito nenhum: chama os executores que já existem, com as conferências
 |---|---|---|
 | ``change_cart`` | ``tools.set_item`` (quantidade absoluta; zero tira) | a sacola (``session_key``) |
 | ``set_fulfillment`` | ``tools.set_fulfillment`` e a grade de horários (retirada); o dia pela régua do checkout | a sacola |
+| ``set_delivery_address`` | ``tools.set_fulfillment`` (entrega), com o texto ORIGINAL lido pela referência da fala | a sacola |
 | ``set_payment`` | a escrita da forma que a revisão da casa faz (``review_order``), só as formas do canal sem dinheiro | a sacola |
 | ``commit_order`` | ``tools.place_order`` (revisão ``quote_token``, confirmação posterior, ``run_idempotent_mutation``) | a sacola (``session_key``) |
 | ``grant_discount`` | ``discount.handle_request`` → ``discount._grant`` | a sacola |
@@ -42,9 +43,10 @@ from shopman.shop.conversational.commerce_execute import TERMS_REF, Done, Readin
 from .ports import new_cart_ref
 from .tools import ToolContext
 
-ACTIONS = ("change_cart", "set_fulfillment", "set_payment", "commit_order", "grant_discount", "cancel_order",
-           "amend_order")
-CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "set_payment", "commit_order", "grant_discount"})
+ACTIONS = ("change_cart", "set_fulfillment", "set_delivery_address", "set_payment", "commit_order",
+           "grant_discount", "cancel_order", "amend_order")
+CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "set_delivery_address", "set_payment", "commit_order",
+                          "grant_discount"})
 #: As ações que podem cair na sacola nova da conversa (as outras pedem sacola com item).
 NEW_CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "set_payment"})
 #: O que o comando ``set_fulfillment`` aceita: só o que o cliente disse.
@@ -230,6 +232,46 @@ class ConciergeEffectSite:
                                                    ("time", said.get("time", ""))) if value})
         return Done(True, domain_refs=refs)
 
+    def _set_delivery_address(self, command: ActionCommand) -> Done:
+        """O endereço da entrega, lido AQUI, no texto original da fala (P17: nunca pela IA, nunca em contrato).
+
+        O comando traz só a referência protegida da fala (``source``). A leitura é a da casa
+        (``address_parts``): o endereço inteiro, ou a parte que faltava (número, CEP, bairro, complemento).
+        Grava pelo ``tools.set_fulfillment`` de hoje (a geocodificação, a área de entrega, a régua da nota),
+        mantendo o dia e a janela já combinados. O recibo traz só ``address_ref``, opaca.
+        """
+        from shopman.shop.conversational.commerce_read import address_ref
+
+        from . import tools
+        from .ports import resolve_text, shared_location_of
+
+        source = command.parameters.get("source")
+        if set(command.parameters) != {"source"} or not isinstance(source, str) or not source:
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        ctx = self.tool_context
+        session = tools._open_session(ctx)
+        data = dict((session.data if session is not None else None) or {})
+        if session is None or data.get("fulfillment_type") != "delivery":
+            return Done(False, refusal=ErrorCode.FACT_UNAVAILABLE.value)  # o endereço vem com a entrega
+        said = (
+            {"use_shared_location": True} if shared_location_of(source)
+            else address_parts(resolve_text(source), data.get("delivery_address_structured"))
+        )
+        if not said:
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        result = tools.set_fulfillment(
+            ctx, fulfillment_type="delivery", delivery_date=str(data.get("delivery_date") or ""),
+            slot_ref=str(data.get("delivery_time_slot") or ""), **said)
+        if not result.get("ok") or result.get("code") in {"saved_address_offer", "saved_addresses"}:
+            # Só "não localizei" tem frase própria (``set_delivery_address.not_located``); o resto é o
+            # efeito que falhou (dia ou janela que deixou de valer, sem localização enviada).
+            located = str(result.get("error") or "") != "address_not_located"
+            return Done(False, refusal=(ErrorCode.FACT_UNAVAILABLE if located else ErrorCode.INVALID_CONTENT).value)
+        if result.get("delivery_out_of_zone"):
+            return Done(False, refusal=ErrorCode.FULFILLMENT_UNAVAILABLE.value)  # fora da área: nada fica gravado
+        cart = str(session.session_key)
+        return Done(True, domain_refs={"effect": cart, "cart": cart, "address_ref": address_ref(cart)})
+
     def _set_payment(self, command: ActionCommand) -> Done:
         """A forma de pagamento na sacola, como a revisão da casa a grava (a mesma do fechamento de hoje).
 
@@ -310,3 +352,37 @@ class ConciergeEffectSite:
         # ``asked`` é a cotação de agora, diferente da confirmada: os termos mudaram.
         code = ErrorCode.TERMS_CHANGED if outcome.code == "asked" else ErrorCode.REVISION_CONFLICT
         return Done(False, refusal=code.value)
+
+
+_CEP = re.compile(r"^\d{5}-?\d{3}$")
+_NUMBER = re.compile(r"^(?:n[º°o.]?\s*)?(\d{1,6}[a-z]?|s/?n|sem n[uú]mero)$")
+
+
+def address_parts(text: str, structured) -> dict:
+    """A leitura da casa do que o cliente escreveu para o endereço (``tools.set_fulfillment``).
+
+    Sem endereço na sacola, o texto é o endereço inteiro. Com endereço, a resposta ao que faltava:
+    o CEP, o número (ou "sem número"), o bairro (quando só ele falta) ou o complemento (quando só ele
+    falta; "sem complemento" responde). Qualquer outra fala é um endereço novo, inteiro.
+    """
+    from shopman.shop.conversational.commerce_read import _address_requirements
+
+    from .address import _fold
+
+    text = " ".join(str(text or "").split())
+    if not text:
+        return {}
+    if not isinstance(structured, dict) or not structured.get("formatted_address"):
+        return {"address": text}
+    pending = _address_requirements({"delivery_address_structured": structured})
+    folded = _fold(text)
+    if "delivery_complement" in pending:
+        return {"complement": text}
+    words = pending.get("delivery_address_details") or []
+    if words and _CEP.match(folded.replace(" ", "")):
+        return {"postal_code": text}
+    if words and _NUMBER.match(folded):
+        return {"street_number": text}
+    if words == ["o bairro"] and not any(ch.isdigit() for ch in text):
+        return {"neighborhood": text}
+    return {"address": text}

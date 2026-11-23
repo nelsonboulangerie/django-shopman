@@ -295,6 +295,19 @@ def resolve_text(content_ref: str | None) -> str:
     return ""
 
 
+def shared_location_of(content_ref: str | None) -> bool:
+    """A fala é a localização enviada pelo WhatsApp (o pin): o endereço sai dela, nunca de texto digitado."""
+    from shopman.shop.models import ConversationMessage
+
+    if not content_ref or not content_ref.startswith(MESSAGE_PREFIX):
+        return False
+    try:
+        message = ConversationMessage.objects.filter(pk=int(content_ref[len(MESSAGE_PREFIX):])).first()
+    except ValueError:
+        return False
+    return message is not None and (message.envelope or {}).get("message_type") == "location"
+
+
 def _iso_instant(value: Any) -> str | None:
     if not value:
         return None

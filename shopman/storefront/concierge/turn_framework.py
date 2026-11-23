@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 ACTION_CLASSES = {
     "inform": ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification"),
     "handoff": ("handoff",),
-    "order": ("present_terms", "change_cart", "set_fulfillment", "set_payment", "commit_order"),
+    "order": ("present_terms", "change_cart", "set_fulfillment", "set_delivery_address", "set_payment",
+              "commit_order"),
 }
 SWITCH_FIELD = {"inform": "conversational_live_inform", "handoff": "conversational_live_handoff",
                 "order": "conversational_live_order"}
@@ -70,6 +71,16 @@ NICE_TEMPLATE_COPY = {
     "acknowledge.terms_declined": "CONCIERGE_CLOSE_GAVE_UP",
     # A forma de pagamento escolhida pelo motor (cartão 5): "Combinado: Pix.", no molde do "Combinado".
     "set_payment.done": "CONCIERGE_ENGINE_PAYMENT_SET",
+    # A entrega (cartão 2): as perguntas de hoje (o endereço, o que falta nele, o complemento) e o
+    # "Combinado: entrega na Rua das Flores, 120." aprovado pelo dono em 23/11.
+    "set_delivery_address.done": "CONCIERGE_ENGINE_ADDRESS_SET",
+    "present_terms.needs_delivery_address": "CONCIERGE_CLOSE_ASK_ADDRESS",
+    "present_terms.needs_delivery_address_details": "CONCIERGE_ENGINE_ADDRESS_DETAILS",
+    "present_terms.needs_delivery_complement": "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT",
+    # As recusas do endereço com as frases de hoje: fora da área (a frase do ``set_fulfillment`` e a
+    # pergunta do endereço, como o fechamento junta) e endereço que não se localiza.
+    "set_delivery_address.not_delivered": "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED",
+    "set_delivery_address.not_located": "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED",
 }
 
 #: A pergunta da forma de pagamento: a MESMA de hoje (``CONCIERGE_CLOSE_ASK_PAYMENT``), com o espaço
@@ -214,11 +225,61 @@ def fulfillment_text(value) -> str:
     return {"pickup": "Retirada", "delivery": "Entrega"}.get(str(mode), "")
 
 
-def conditions_text(value) -> str:
+def _no_address(ref) -> dict:
+    """Sem conversa, nenhuma referência de endereço se resolve (o motor segura a mensagem)."""
+    from conversational_commerce.reply import UnresolvedReference
+
+    raise UnresolvedReference(str(ref))
+
+
+def address_resolver(conversation):
+    """O endereço da entrega pela referência, SÓ o da sacola desta conversa (spec 06, formatador de referência).
+
+    Devolve o endereço estruturado gravado na sacola; outra referência, sacola sem endereço ou leitura
+    que falha levantam ``UnresolvedReference``, e a verificação segura a mensagem. O texto existe só aqui,
+    no envio.
+    """
+    from conversational_commerce.reply import UnresolvedReference
+
+    def resolve(ref) -> dict:
+        from shopman.orderman.models import Session
+
+        from shopman.shop.conversational.commerce_read import address_ref
+
+        key = getattr(conversation, "session_key", "") or ""
+        if not key or str(ref) != address_ref(key):
+            raise UnresolvedReference(str(ref))
+        try:
+            session = Session.objects.filter(session_key=key).first()
+        except Exception as exc:  # noqa: BLE001 - a fonte que falha segura a mensagem
+            raise UnresolvedReference(str(ref)) from exc
+        data = (session.data if session is not None else None) or {}
+        structured = data.get("delivery_address_structured")
+        if not isinstance(structured, dict) or not data.get("delivery_address"):
+            raise UnresolvedReference(str(ref))
+        return {**structured, "formatted_address": str(data["delivery_address"])}
+
+    return resolve
+
+
+def address_text(resolve):
+    """ "Rua das Flores, 120": a rua e o número, como o cliente reconhece o endereço que deu."""
+    def text(value) -> str:
+        from .tools import _display_text
+
+        found = resolve(value)
+        street = ", ".join(part for part in (str(found.get("route") or ""), str(found.get("street_number") or ""))
+                           if part)
+        return _display_text(street or found["formatted_address"])
+
+    return text
+
+
+def conditions_text(value, resolve=_no_address) -> str:
     """O resto do recebimento e o pagamento, como no resumo de hoje.
 
-    ": segunda-feira, 23/11, a partir das 15h" (o dia e a janela da grade da casa) e, em linha
-    própria, "Pagamento: Pix.". Sem dia, só o pagamento.
+    ": segunda-feira, 23/11, a partir das 15h" (o dia e a janela da grade da casa); na entrega, o
+    endereço e a taxa em linhas próprias; e "Pagamento: Pix.". Sem dia, sem o dia.
     """
     from shopman.shop.services.fulfillment_window import window_label
 
@@ -230,13 +291,22 @@ def conditions_text(value) -> str:
         slot = found.get("fulfillment_window")
         label = window_label(str(slot), for_customer=True) if slot else ""
         text = f": {_summary_when(str(found['fulfillment_date']), label)}"
+    if found.get("delivery_address"):
+        from .tools import _display_text
+
+        text += f"\n{_display_text(resolve(found['delivery_address'])['formatted_address'])}"
+    if found.get("delivery_fee"):
+        text += f"\nEntrega: {money_text({'price_minor': int(found['delivery_fee'])})}"
     method = PAYMENT_LABELS.get(str(found.get("payment_method") or ""), "")
     if method:
         text += f"\nPagamento: {method}."
     return text
 
 
-def nice_formatters() -> dict:
+def nice_formatters(conversation=None) -> dict:
+    """Os formatadores da Nice. Com a conversa, os de referência resolvem o endereço DELA (e só dela)."""
+    from functools import partial
+
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
 
     money = dict.fromkeys(("price", "price_a", "price_b", "total"), money_text)  # o dinheiro do pacote, em reais
@@ -245,7 +315,22 @@ def nice_formatters() -> dict:
             "deadline": deadline_text,
             "date": date_text,
             "mode": mode_text, "window": window_text, "time": time_text,
-            "method": method_text, "payment_method": payment_options_text}
+            "method": method_text, "payment_method": payment_options_text,
+            "delivery_address_details": address_words_text, **_address_formatters(conversation, partial)}
+
+
+def address_words_text(value) -> str:
+    """ "o número (ou S/N) e o CEP": o que falta no endereço, como a pergunta de hoje (``address.question``)."""
+    from shopman.shop.services.delivery_fiscal_identity import join_words
+
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError("lacunas sem lista")
+    return join_words([str(word) for word in value])
+
+
+def _address_formatters(conversation, partial) -> dict:
+    resolve = address_resolver(conversation) if conversation is not None else _no_address
+    return {"address": address_text(resolve), "conditions": partial(conditions_text, resolve=resolve)}
 
 ENVIRONMENT = "live"
 
@@ -377,7 +462,7 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
             ToolContext(conversation=conversation, channel_ref=channel_ref))),
         staff=NiceStaff(), store=ShopmanStore(), clock=ShopmanClock(ctx), outcomes=ShopmanOutcomes())
     return Engine(ports, profile, rules=NiceRules(), resolve_content=resolve_text, subject_of=subject_for(conversation),
-                  house_templates=nice_templates(), bodies=bodies, formatters=nice_formatters(),
+                  house_templates=nice_templates(), bodies=bodies, formatters=nice_formatters(conversation),
                   ledger=receipt_ledger(ctx), commitments=commitment_ledger(ctx),
                   memory=memory_store(ctx, subject_of(conversation.pk)), exposures=exposure_ledger(ctx))
 

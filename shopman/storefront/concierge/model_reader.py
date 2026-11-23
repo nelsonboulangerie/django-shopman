@@ -51,6 +51,9 @@ NO_PRICE = {"status": "unavailable", "reason": "no_price"}
 FULFILLMENT_ACT = "choose_fulfillment"
 #: O ato do motor que leva a forma de pagamento.
 PAYMENT_ACT = "choose_payment"
+#: O ato do motor que diz "esta fala traz o endereço". Sem campo: o endereço se lê na casa, no texto
+#: original, dentro do efeito (P17). A IA vê só o texto redigido ("[endereço omitido]").
+ADDRESS_ACT = "give_address"
 
 #: Atos que o portão do Jev pode entregar sem a IA: nenhum pede campo.
 FIELDLESS = frozenset({"greet", "thank", "ask_hours", "request_human", "cancel_order", "affirm", "deny",
@@ -77,6 +80,8 @@ DESCRIPTIONS = {
     FULFILLMENT_ACT: "dizer o dia, se vai retirar ou receber em casa, ou a hora (\"amanhã às 16h\", "
                      "\"vou aí buscar\", \"entrega na sexta\")",
     PAYMENT_ACT: "dizer como quer pagar (\"no pix\", \"pago no cartão\", \"pode ser pix\")",
+    ADDRESS_ACT: "dar o endereço da entrega ou uma parte dele (rua, número, bairro, CEP, complemento, "
+                 "\"sem complemento\"; no texto aparece como [endereço omitido])",
     "unknown": "nada disso",
 }
 
@@ -372,6 +377,12 @@ class NiceReader:
             raise PortError("object_forbidden", "dado pessoal não vai ao leitor")
         text = resolve_text(request.content_ref)
         allowed = tuple(act for act in (request.allowed_acts or ()) if act in DESCRIPTIONS) or ("unknown",)
+        from .ports import shared_location_of
+
+        if ADDRESS_ACT in allowed and shared_location_of(request.content_ref):
+            # A localização do WhatsApp é o endereço da entrega: sem texto, sem IA.
+            return self._understanding(ctx, request, [{"act": ADDRESS_ACT, "fields": {}, "confidence": UNAVAILABLE}],
+                                       GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         gated = self._gate(text) if text else ""
         if gated and gated in allowed:
             return self._understanding(ctx, request, [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],

@@ -148,6 +148,18 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     # Cartão 5 (pagamento), aprovadas pelo dono em 23/11: a pergunta de hoje e o "Combinado".
     "set_payment.done": "Combinado: {method}.",
     "present_terms.needs_payment_method": "Como você prefere pagar? {payment_method}",
+    # Cartão 2 (entrega): as perguntas de hoje e o "Combinado" aprovado em 23/11.
+    "set_delivery_address.done": "Combinado: entrega na {address}.",
+    "present_terms.needs_delivery_address": ("Qual é o endereço da entrega? Pode enviar a localização pelo "
+                                             "WhatsApp ou escrever rua, número, bairro e CEP."),
+    "present_terms.needs_delivery_address_details": "Para a entrega, me diga {delivery_address_details}.",
+    "set_delivery_address.not_delivered": ("Esse endereço está fora da nossa área de entrega. Qual é o endereço da "
+                                           "entrega? Pode enviar a localização pelo WhatsApp ou escrever rua, "
+                                           "número, bairro e CEP."),
+    "set_delivery_address.not_located": ("Não consegui localizar esse endereço para calcular a entrega. Confira a "
+                                         "rua, o número e o bairro, ou envie sua localização pelo WhatsApp."),
+    "present_terms.needs_delivery_complement": ("Tem complemento (apartamento, bloco, fundos)? Se não tiver, "
+                                                "é só dizer \"sem complemento\"."),
 }
 REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team")
 
