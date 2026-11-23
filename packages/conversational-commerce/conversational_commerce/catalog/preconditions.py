@@ -104,6 +104,14 @@ def _is(field: str, expected: object, reason: str) -> Check:
     return check
 
 
+def _payment_method_offered(situation: Situation, profile: DeploymentProfile, move: Move) -> str | None:
+    """Só se confere a forma contra as opções quando as opções são conhecidas; sem elas, quem bloqueia
+    é ``conditions_known`` (``fact_unavailable``), nunca "forma não oferecida"."""
+    if situation.conditions_known is not True:
+        return None
+    return None if situation.payment_method_offered is True else "payment_method_not_offered"
+
+
 def _facts_known_and_valid(situation: Situation, profile: DeploymentProfile, move: Move) -> str | None:
     if not situation.facts_needed:
         return "no_fact_to_state"
@@ -253,9 +261,11 @@ SPECIFIC: dict[str, Precondition] = {
                      "Dia, modo, janela e hora do recebimento são absolutos (data ISO, hora HH:MM, modo da lista)",
                      ("fulfillment_is_absolute",),
                      _is("fulfillment_is_absolute", True, "relative_fulfillment")),
+        Precondition("conditions_known", "O que os termos ainda exigem é conhecido (o fato requirements)",
+                     ("conditions_known",),
+                     _is("conditions_known", True, IneligibilityCode.FACT_UNAVAILABLE)),
         Precondition("payment_method_offered", "A forma de pagamento pedida é uma das que o canal oferece",
-                     ("payment_method_offered",),
-                     _is("payment_method_offered", True, "payment_method_not_offered")),
+                     ("conditions_known",), _payment_method_offered),
         Precondition("change_is_reversible", "A mudança é reversível", ("change_reversible",),
                      _is("change_reversible", True, "change_not_reversible")),
         Precondition("grant_bound_to_current_terms", "A concessão está presa ao hash dos termos vigentes",

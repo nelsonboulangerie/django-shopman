@@ -186,3 +186,36 @@ def test_the_profile_turns_set_payment_on_with_the_order(db):
     assert "set_payment" in profile.ORDER_MOVES
     assert profile.LEVEL_OF_MOVE["set_payment"] == "A2"
     assert turn_framework.CLASS_OF_MOVE["set_payment"] == "order"
+
+
+def test_cash_is_said_with_today_no_cash_phrase_and_the_options(db):
+    """ "Pago em dinheiro": a frase de hoje do fechamento (``CONCIERGE_CLOSE_NO_CASH``), nunca a limitação genérica."""
+    from shopman.storefront.concierge.service import copy_message
+
+    today = copy_message("CONCIERGE_CLOSE_NO_CASH").strip()
+    said = _say("set_payment.not_offered", payment_method=["pix", "card"])
+    assert said == today.replace("{options}", "Pix ou Cartão (link seguro)")
+
+
+# ── a régua única ─────────────────────────────────────────────────────────────────────────
+
+
+def test_what_is_missing_and_the_single_method_shown_follow_one_ruler(db):
+    """Canal com pix e dinheiro: a conversa oferece só pix. Nada falta, e os termos mostram pix (antes, as condições
+    contavam o dinheiro, viam duas formas e não mostravam nenhuma, enquanto o requirements dizia que nada faltava)."""
+    from shopman.shop.conversational.commerce_read import _fulfillment_conditions
+
+    Channel.objects.create(ref=CHANNEL, name="WhatsApp", config={"payment": {"method": ["pix", "cash"]}})
+    Conversation.objects.create(pk=1, session_key="sess-1", channel_ref=CHANNEL)
+    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL)
+    assert list(_read_port().requirements(_ctx(), "sess-1").value["missing"]) == []
+    assert {"code": "payment_method", "value": "pix"} in _fulfillment_conditions({}, CHANNEL)
+
+
+def test_a_source_that_fails_is_unknown_never_an_empty_list(conversation, monkeypatch):
+    from conversational_commerce.contracts import Unknown
+
+    from shopman.shop.conversational import commerce_read
+
+    monkeypatch.setattr(commerce_read, "conversation_payment_methods", lambda ref: 1 / 0)
+    assert isinstance(_read_port().requirements(_ctx(), "sess-1"), Unknown)

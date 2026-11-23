@@ -53,10 +53,10 @@ estável. `wait` serve a qualquer família e fica por último na ordem.
 | `open_case` | protect_and_fulfill | A0 | `complaint_present`, `staff_owner_possible` | caso | J5 |
 | `handoff` | protect_and_fulfill | A0 | `handoff_reason`, `staff_rule_declared` (fora do perfil) | | J3, J5 |
 | `wait` | qualquer | A0 | `wait_is_defined` | | J3 |
-| `present_terms` | resolve | A1 | `commerce_can_quote` | termos | J4 |
+| `present_terms` | resolve | A1 | `commerce_can_quote`, `conditions_known` | termos | J4 |
 | `change_cart` | resolve | A2 | `stable_event_identity`, `absolute_quantity`, `change_is_reversible` | | J4 |
 | `set_fulfillment` | resolve | A2 | `stable_event_identity`, `absolute_fulfillment`, `change_is_reversible` | | J4 (o recebimento antes dos termos) |
-| `set_payment` | resolve | A2 | `stable_event_identity`, `payment_method_offered`, `change_is_reversible` | | J4 (a forma antes dos termos) |
+| `set_payment` | resolve | A2 | `stable_event_identity`, `conditions_known`, `payment_method_offered`, `change_is_reversible` | | J4 (a forma antes dos termos) |
 | `commit_order` | resolve | A3 | `grant_bound_to_current_terms`, `confirmation_after_terms`, `ownership_epoch_current` | | J4 |
 | `cancel_order` | resolve | A3 | `within_self_service_window`, `confirmation_bound_to_target`; exige linha | | só precondição |
 | `amend_order` | resolve | A3 | `addition_only`, `confirmation_bound_to_target`; exige linha | | só precondição |
@@ -68,6 +68,13 @@ O que cada precondição lê e o código de cada falha está em `catalog/precond
 
 - `facts_known_and_valid`: fato `Unknown`, ou `Known` com `valid_until` no passado, é
   `fact_unavailable`. Vencido nunca vale como o valor velho (N02).
+- `conditions_known`: o que os termos ainda exigem (`commerce_read.requirements`) é `Known`.
+  `Unknown`, ou não lido, é `fact_unavailable`: sem saber o que falta, os termos não se
+  apresentam e nenhuma condição se escolhe (falhar fechado, K04). Com ele desconhecido,
+  `payment_method_offered` não se avalia: a recusa é "não sei", nunca "não oferecemos".
+- `clarification_needed` também vale para mudança lida sem o campo de que ela depende
+  (`acts.REQUIRED_FIELDS`, hoje `choose_payment` → `method`): "vou pagar" é pergunta, e a
+  limitação cede.
 - `personal_fact_identity`: fato do cliente (A1) usa a regra `inform.personal` do perfil,
   com o degrau por canal. [DECIDIDO] A v2 diz "A0, ou A1 se o fato é pessoal"; uma ação só
   com dois níveis precisaria de duas regras, e `inform.personal` é a segunda. Sem ela, a

@@ -38,6 +38,9 @@ ANSWER_ACTS = frozenset({"affirm", "deny"})
 DECLARATION_ACTS = frozenset({"decline_offers", "accept_offers"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
 CHANGE_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_payment", "place_order", "cancel_order"})
+#: O campo sem o qual o ato não se cumpre: lido sem ele, o motor pergunta (``ask_clarification``), nunca
+#: diz a limitação ("vou pagar" sem a forma é pergunta, não pedido impossível).
+REQUIRED_FIELDS = {"choose_payment": "method"}
 # Os campos de leitura de ``choose_fulfillment``: quando (dia, hora) e como (retirada ou entrega).
 # A janela do dia não é dita: é a casa que a dá, no recibo.
 FULFILLMENT_FIELDS: tuple[str, ...] = ("date", "mode", "time")

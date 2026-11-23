@@ -84,6 +84,14 @@ class CommitmentPlan:
     handoff: bool = False
 
 
+def _without_required(need: NeedSpec) -> bool:
+    """O ato tem campo obrigatório (``acts.REQUIRED_FIELDS``) e nenhuma leitura o traz."""
+    from .acts import REQUIRED_FIELDS
+
+    field = REQUIRED_FIELDS.get(need.act)
+    return field is not None and not any(dict(reading).get(field) for reading in need.readings)
+
+
 @dataclass
 class TurnState:
     now: str
@@ -188,6 +196,13 @@ class TurnState:
         value = fact.value if isinstance(fact, Known) else None
         return dict(value) if hasattr(value, "get") else {}
 
+    def conditions_known(self) -> bool:
+        """O fato ``requirements`` do carrinho foi lido e é conhecido. ``Unknown`` (a fonte falhou, o teto
+        acabou) ou ausente: não se sabe o que falta, e o fechamento segura (K04)."""
+        from conversational_commerce.contracts import Known
+
+        return isinstance(self.facts.get(self.requirements_key(self.subject.cart_ref or "")), Known)
+
     def offered(self, target: str | None, code: str) -> tuple[str, ...]:
         """As opções que o canal oferece para a condição (``commerce_read.requirements``); vazio sem o fato."""
         return tuple(self._requirements().get(code) or ())
@@ -207,7 +222,7 @@ class TurnState:
             "reading_count": len(need.readings),
             "request_kind": need.request_kind,
             "missing_required_field": need.act == "unknown" or (need.is_query and need.act != "ask_hours"
-                                                                and not keys),
+                                                                and not keys) or _without_required(need),
             "answer_changes_decision": True,
             "question_open_for_need": need.need_id in self.open_question_needs,
             "requested_move_ineligible": False,

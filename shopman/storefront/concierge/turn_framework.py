@@ -72,9 +72,15 @@ NICE_TEMPLATE_COPY = {
     "set_payment.done": "CONCIERGE_ENGINE_PAYMENT_SET",
 }
 
-#: A pergunta da forma de pagamento: a MESMA de hoje (``CONCIERGE_CLOSE_ASK_PAYMENT``), com o espaço
-#: do motor (``{payment_method}``, as opções do canal) no lugar de ``{options}``.
-PAYMENT_QUESTION = ("present_terms.needs_payment_method", "CONCIERGE_CLOSE_ASK_PAYMENT", "{options}", "{payment_method}")
+#: As frases da forma de pagamento: as MESMAS de hoje, com o espaço do motor (``{payment_method}``, as
+#: opções do canal) no lugar de ``{options}``. A pergunta (``CONCIERGE_CLOSE_ASK_PAYMENT``) e a forma que
+#: o canal não oferece (``CONCIERGE_CLOSE_NO_CASH``): a conversa oferece as formas do canal sem dinheiro
+#: (``conversation_payment_methods``, D-003), e o leitor só lê pix, cartão e dinheiro (``model_reader.PAYMENTS``),
+#: por isso a forma não oferecida que chega ao motor é o dinheiro.
+PAYMENT_TEMPLATES = (
+    ("present_terms.needs_payment_method", "CONCIERGE_CLOSE_ASK_PAYMENT", "{options}", "{payment_method}"),
+    ("set_payment.not_offered", "CONCIERGE_CLOSE_NO_CASH", "{options}", "{payment_method}"),
+)
 
 #: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).
 #: O recebimento é o MESMO "Combinado" do caminho de hoje (``CONCIERGE_CART_FULFILLMENT_NOTED``,
@@ -274,9 +280,10 @@ def nice_templates() -> dict[str, Template]:
         except ValueError:
             logger.warning("concierge.turn_framework.template_refused template=%s key=%s", template_id, key)
     found.update(_order_templates(package, copy_message))
-    template_id, key, today_slot, slot = PAYMENT_QUESTION
-    text = (copy_message(key) or "").strip()
-    if today_slot in text:
+    for template_id, key, today_slot, slot in PAYMENT_TEMPLATES:
+        text = (copy_message(key) or "").strip()
+        if today_slot not in text:
+            continue
         try:
             base = package[template_id]
             found[template_id] = Template(template_id, f"nice:{key}", base.move, text.replace(today_slot, slot),

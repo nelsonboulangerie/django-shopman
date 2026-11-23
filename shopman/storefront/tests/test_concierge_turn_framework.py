@@ -148,6 +148,7 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     # Cartão 5 (pagamento), aprovadas pelo dono em 23/11: a pergunta de hoje e o "Combinado".
     "set_payment.done": "Combinado: {method}.",
     "present_terms.needs_payment_method": "Como você prefere pagar? {payment_method}",
+    "set_payment.not_offered": "Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {payment_method}",
 }
 REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team")
 
