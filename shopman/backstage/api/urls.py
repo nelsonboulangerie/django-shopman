@@ -192,6 +192,7 @@ from .operation_checklists import (
 )
 from .operations import (
     CourierTicketEscposView,
+    DayClosingNotPickedUpView,
     DayClosingView,
     DeliveriesCountView,
     DeliveriesView,
@@ -809,6 +810,7 @@ urlpatterns = [
     path("saved-views/<int:pk>/", SavedViewDetailView.as_view(), name="api-backstage-saved-view"),
     path("bi/scenarios/", BIScenariosView.as_view(), name="api-backstage-bi-scenarios"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
+    path("closing/not-picked-up/", DayClosingNotPickedUpView.as_view(), name="api-backstage-closing-not-picked-up"),
     path(
         "closing/episodes/<int:episode_id>/",
         OperationEpisodeAnswerView.as_view(),

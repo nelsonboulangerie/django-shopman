@@ -20034,6 +20034,7 @@
             "eligibility_reason",
             "_paid_q",
             "_commitment_day",
+            "commitment_day",
             "release_gate",
             "_when",
             "block_reason",

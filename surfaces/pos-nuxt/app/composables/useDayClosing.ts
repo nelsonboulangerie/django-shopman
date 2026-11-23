@@ -9,8 +9,9 @@ export interface ProductionRelease {
 }
 
 /**
- * A assinatura que encerra como não retirado os pedidos prontos do dia (#2684): a
- * base que a tela leu de cada um e o gerente. Uma assinatura só para todos.
+ * O gesto em lote do fechamento (#2684): encerra como não retirado os pedidos prontos
+ * da lista. A base que a tela leu de cada um e o gerente; uma assinatura para todos.
+ * Opcional: fechar o dia não depende dele.
  */
 export interface ReadyOrdersRelease {
   orders: Array<{ ref: string; revision: string }>;
@@ -50,37 +51,57 @@ export async function useDayClosing({ action }: DayClosingDeps) {
   // ao diálogo do gerente, não a um toast: a saída É assinar de novo.
   const productionBlock = ref("");
   const releaseChallenge = ref<{ code: string; message: string } | null>(null);
-  // Pedido pronto não retirado também segura o dia (#2684): 409 `pending_ready_orders`
-  // quando falta a assinatura, ou quando a lista mudou depois que a tela leu.
-  const readyBlock = ref("");
+
+  // "Encerrar todos como não retirado" (#2684): opcional, fora do fechamento. A lista
+  // que mudou (409 `not_picked_up_refused`) relê a tela e avisa; a assinatura
+  // recusada (`manager_approval_*`) volta ao diálogo do gerente.
+  const resolvingNotPickedUp = ref(false);
+  const readyChallenge = ref<{ code: string; message: string } | null>(null);
+  async function resolveNotPickedUp(release: ReadyOrdersRelease): Promise<boolean> {
+    if (resolvingNotPickedUp.value) return false;
+    resolvingNotPickedUp.value = true;
+    try {
+      const result = (await action.call("/api/v1/backstage/closing/not-picked-up/", {
+        body: release as unknown as Record<string, unknown>,
+      })) as { orders?: string[] } | null;
+      readyChallenge.value = null;
+      await refresh();
+      const many = (result?.orders?.length ?? release.orders.length) > 1;
+      toast.success(many ? "Pedidos encerrados como não retirado." : "Pedido encerrado como não retirado.");
+      return true;
+    } catch (err) {
+      const code = httpErrorCode(err);
+      if (code === "manager_approval_required" || code === "manager_approval_invalid") {
+        readyChallenge.value = { code, message: httpErrorMessage(err, "Revise o gerente e o PIN.") };
+        return false;
+      }
+      await refresh();
+      toast.warning(httpErrorMessage(err, "Nenhum pedido foi encerrado. Confira a lista e tente de novo."));
+      return false;
+    } finally {
+      resolvingNotPickedUp.value = false;
+    }
+  }
 
   async function submit(
     quantities: Record<string, string>,
     release: ProductionRelease | null = null,
-    readyRelease: ReadyOrdersRelease | null = null,
   ): Promise<boolean> {
     if (submitting.value) return false;
     submitting.value = true;
     const body: Record<string, unknown> = { quantities };
     if (release) body.production_release = release;
-    if (readyRelease) body.ready_orders_release = readyRelease;
     try {
       await action.call("/api/v1/backstage/closing/", { body });
       productionBlock.value = "";
-      readyBlock.value = "";
       releaseChallenge.value = null;
       await refresh();
-      toast.success(release || readyRelease ? "Fechamento do dia registrado, com a autorização do gerente." : "Fechamento do dia registrado.");
+      toast.success(release ? "Fechamento do dia registrado, com a liberação do gerente." : "Fechamento do dia registrado.");
       return true;
     } catch (err) {
       const code = httpErrorCode(err);
       if (code === "pending_production") {
         productionBlock.value = httpErrorMessage(err, "Há produção aberta.");
-        await refresh();
-        return false;
-      }
-      if (code === "pending_ready_orders") {
-        readyBlock.value = httpErrorMessage(err, "Há pedido pronto que ninguém veio buscar.");
         await refresh();
         return false;
       }
@@ -126,7 +147,9 @@ export async function useDayClosing({ action }: DayClosingDeps) {
     submitting,
     submit,
     productionBlock,
-    readyBlock,
+    resolvingNotPickedUp,
+    resolveNotPickedUp,
+    readyChallenge,
     releaseChallenge,
     answering,
     answerEpisode,

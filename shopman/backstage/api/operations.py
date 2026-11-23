@@ -2322,21 +2322,14 @@ class DayClosingView(APIView):
                 {"detail": "Envie a liberação como um objeto (motivo e autorização).", "field": "production_release"},
                 status=400,
             )
-        ready_release = request.data.get("ready_orders_release") if hasattr(request, "data") else None
-        if ready_release is not None and not isinstance(ready_release, dict):
-            return Response(
-                {"detail": "Envie a assinatura dos pedidos não retirados como um objeto.", "field": "ready_orders_release"},
-                status=400,
-            )
         try:
             closing_date = closing_service.perform_day_closing(
                 user=request.user,
                 items=list(closing.items),
                 quantities_by_sku={str(k): str(v) for k, v in quantities.items()},
                 production_release=release,
-                ready_orders_release=ready_release,
             )
-        except (closing_service.PendingProductionBlocksClosing, closing_service.PendingReadyOrdersBlockClosing) as exc:
+        except closing_service.PendingProductionBlocksClosing as exc:
             # Produção aberta impede selar (decisão do dono, 05/11/2026). 409: o
             # pedido está certo, o estado do dia é que não deixa.
             return Response(
@@ -2357,6 +2350,36 @@ class DayClosingView(APIView):
             return Response({"detail": public_error_detail(exc, "Falha no fechamento.")}, status=400)
 
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
+
+
+class DayClosingNotPickedUpView(APIView):
+    """O gesto em lote do fechamento: encerrar como não retirado os prontos da lista.
+
+    Opcional (decisão da coordenação em 22/11/2026, reversível): fechar o dia não
+    depende dele. Body: ``{"orders": [{"ref", "revision"}], "manager_approval":
+    {"username", "pin"} | {"badge"}}``.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.perform_closing"
+
+    def post(self, request):
+        body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+        try:
+            record = closing_service.resolve_not_picked_up(user=request.user, release=body)
+        except closing_service.NotPickedUpBatchRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente: o mesmo desafio da sangria e da produção aberta.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({"ok": True, "orders": record["orders"], "approved_by": record["approved_by"]})
 
 
 def _payment_check_due(order) -> bool:

@@ -125,11 +125,12 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
     title: "Autorizar fechar o dia",
     reason: "Há produção aberta.",
   },
-  // Fechar o dia com pedido pronto que ninguém veio buscar (#2684): a assinatura
-  // encerra cada um como não retirado. Quais e com que dinheiro vem em `detail`.
+  // O gesto em lote do fechamento (#2684): encerra como não retirado os prontos que
+  // ninguém veio buscar. Opcional: fechar o dia não depende dele (decisão da
+  // coordenação em 22/11/2026). Quais e com que dinheiro vem em `detail`.
   day_closing_not_picked_up: {
-    title: "Autorizar fechar o dia",
-    reason: "Há pedido pronto não retirado.",
+    title: "Encerrar como não retirado",
+    reason: "Pedido pronto que ninguém veio buscar.",
   },
   sale_approval: {
     title: "Autorizar a venda",
