@@ -96,7 +96,13 @@ def _run(*args):
     return out.getvalue(), error
 
 
-def test_the_five_cards_run_through_the_engine_and_write_nothing(house):
+def test_the_five_cards_run_through_the_engine_and_write_nothing(house, monkeypatch):
+    from shopman.storefront.concierge import turn_framework
+
+    # Um molde sem frase aprovada, de propósito: a limitação ganhou frase (#3408), e o placar continua tendo de
+    # marcar o turno que, no ar, sairia pelo caminho de hoje.
+    without = {k: v for k, v in turn_framework.NICE_TEMPLATE_COPY.items() if k != "inform_limitation.offer_team"}
+    monkeypatch.setattr(turn_framework, "NICE_TEMPLATE_COPY", without)
     before = _rows()
     out, error = _run()
     after = _rows()

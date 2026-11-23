@@ -48,9 +48,8 @@ CLASS_OF_MOVE = {move: name for name, moves in ACTION_CLASSES.items() for move i
 #: Molde do motor → a chave de copy com a frase da Nice. As duas primeiras são a MESMA frase do
 #: caminho de hoje (prévia de 22/11: "Igual"); as cinco seguintes são as frases novas que o dono
 #: aprovou na prévia frase a frase (22/11, #3298). As que ele recusou (``ask_clarification.which``,
-#: ``inform.price``, ``cover_readings.prices``, ``inform_limitation.offer_team``,
-#: ``present_terms.changed``) ficam de fora de propósito: o turno que precisaria delas segue o
-#: caminho de hoje, com a frase de hoje.
+#: ``inform.price``, ``cover_readings.prices``) ficam de fora de propósito: o turno que precisaria
+#: delas segue o caminho de hoje, com a frase de hoje.
 NICE_TEMPLATE_COPY = {
     "acknowledge.got_it": "CONCIERGE_MEMORY_DECLINED",
     "acknowledge.thanks": "CONCIERGE_SMALL_TALK_THANKS",
@@ -83,6 +82,10 @@ NICE_TEMPLATE_COPY = {
     "set_delivery_address.not_located": "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED",
     # O endereço sem a entrega combinada: a pergunta de hoje do fechamento, "retirada ou entrega?".
     "set_delivery_address.ask_mode": "CONCIERGE_CLOSE_ASK_FULFILLMENT",
+    # A limitação: recusada em 22/11, com frase nova aprovada pelo dono em 23/11 (#3408). No ar, o efeito
+    # recusado (sacola, recebimento, pagamento) refaz a decisão, e quem responde é este molde; a sombra
+    # não executa efeito e não o vê, por isso ele precisa de frase da Nice (sem ela, sairia o inglês do pacote).
+    "inform_limitation.offer_team": "CONCIERGE_ENGINE_OFFER_TEAM",
 }
 
 #: As frases da forma de pagamento: as MESMAS de hoje, com o espaço do motor (``{payment_method}``, as
