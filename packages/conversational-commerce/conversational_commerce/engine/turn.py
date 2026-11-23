@@ -490,6 +490,13 @@ class Engine:
         if ctx.environment == "shadow":
             fallbacks.extend(f"shadow:effect_not_executed:{c.move}" for c in chosen)
             return episode
+        # A levada sem a líder escolhida nunca executa sozinha: o comando é o da líder.
+        leads = {c.need_id for c in chosen if not dict(c.content).get("carried_by")}
+        for orphan in [c for c in chosen if dict(c.content).get("carried_by") not in (None, *leads)]:
+            state.refused[orphan.need_id] = "carried_without_lead"
+        chosen = [c for c in chosen if c.need_id not in state.refused]
+        if not chosen:
+            return episode
         candidate = chosen[0]
         carried = [c for c in chosen[1:] if c.move == candidate.move
                    and dict(c.content).get("carried_by") == candidate.need_id]

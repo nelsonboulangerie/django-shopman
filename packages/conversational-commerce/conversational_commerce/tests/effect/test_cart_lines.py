@@ -58,3 +58,45 @@ def test_a_different_effect_in_the_same_turn_is_still_refused():
     result = turn_engine.turn(CTX, step.message)
     assert len(result.commands) == 1 and result.commands[0].action == "change_cart"
     assert "cart-1" not in world.state.fulfillment
+
+
+def test_a_relative_line_first_never_lets_the_carried_line_run_alone():
+    """Revisão do #3375: com a relativa em PRIMEIRO, a levada herda a inelegibilidade e nada se aplica."""
+    relative_first = {"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "1", "relative": True}}
+    step = _step(relative_first, B1)
+    turn_engine, world = engine(steps=(step,))
+    result = turn_engine.turn(CTX, step.message)
+    assert result.commands == () and world.commerce_execute.effects == 0
+    assert world.state.carts["cart-1"] == {"ITEM-A": "2"}  # o carrinho como estava
+
+
+def test_the_same_item_in_two_lines_is_not_a_command():
+    """ "2 itens A… e 1 item A": qual vale não se sabe; a última não vence em silêncio."""
+    step = _step(A3, {"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "1"}})
+    turn_engine, world = engine(steps=(step,))
+    result = turn_engine.turn(CTX, step.message)
+    assert result.commands == () and world.commerce_execute.effects == 0
+    assert "change_cart" not in result.chosen_moves
+
+
+def test_the_harness_fails_an_executor_that_applies_malformed_lines():
+    """A conformidade mora no arnês do pacote: outro adaptador herda a checagem."""
+    from conversational_commerce.testing.conformance.harness import HarnessEnv, run_checks
+    from conversational_commerce.testing.fakes import FakeWorld
+    from conversational_commerce.testing.fakes.commerce import FakeCommerceExecute
+
+    class AcceptsAnything(FakeCommerceExecute):
+        def _refusal(self, command):
+            return None
+
+        def _apply(self, command):
+            self.effects += 1
+            return f"effect-{self.effects:04d}"
+
+    world = FakeWorld()
+    executor = AcceptsAnything(world.clock, world.faults, world.state)
+    env = HarnessEnv(ctx=j4.CTX, clock=world.clock, cart_ref="cart-1",
+                     fresh_terms=lambda: world.commerce_read.quote(j4.CTX, "cart-1"),
+                     cart_lines=({"item": "ITEM-A", "quantity": "2"},))
+    failures = run_checks("commerce_execute", executor, env)
+    assert failures and "malformada" in failures[0].message

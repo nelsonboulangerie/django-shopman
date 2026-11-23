@@ -45,15 +45,20 @@ def propose(state, need):
     if fields is None or state.subject.cart_ref is None or need.need_id in state.refused:
         return None
     group = lines(state)
+    items = [_line(other)["item"] for other in group]
+    if len(set(items)) != len(items):
+        # O mesmo item em duas linhas ("2 croissants… e 1 croissant"): qual vale não se sabe. Nenhuma
+        # linha vira comando (a última venceria em silêncio); a casa diz a limitação.
+        return None
     lead = group[0]
+    # O comando é tudo ou nada: uma linha relativa torna a mudança inteira inelegível, para a líder e
+    # para as levadas (a levada herda a elegibilidade do grupo e nunca é escolhida sozinha).
+    absolute = all(_absolute(_line(other)) for other in group)
     if need.need_id != lead.need_id:
         # Levada pela primeira: a mesma mudança, no mesmo comando (nunca um segundo efeito).
         return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE,
                         content={"carried_by": lead.need_id},
-                        situation=state.situation(need, quantity_is_absolute=_absolute(fields),
-                                                  change_reversible=True))
-    # O comando é tudo ou nada: uma linha relativa torna a mudança inteira inelegível.
-    absolute = all(_absolute(_line(other)) for other in group)
+                        situation=state.situation(need, quantity_is_absolute=absolute, change_reversible=True))
     content = {"lines": [{"item": _line(other)["item"], "quantity": _line(other).get("quantity")} for other in group]}
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE, content=content,
                     situation=state.situation(need, quantity_is_absolute=absolute, change_reversible=True))

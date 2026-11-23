@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Mapping
 from datetime import date as calendar_date
 from decimal import ROUND_HALF_EVEN, Decimal
 
@@ -314,6 +315,12 @@ class FakeCommerceExecute(FakeBase):
 
     def _refusal(self, command: ActionCommand) -> ErrorCode | None:
         """O conteúdo do comando que o sistema de registro recusa, antes de qualquer efeito."""
+        if command.action == "change_cart":
+            lines = command.parameters.get("lines")
+            good = isinstance(lines, (list, tuple)) and lines and all(
+                isinstance(line, Mapping) and line.get("item") and str(line.get("quantity", "")).isdigit()
+                for line in lines)
+            return None if good else ErrorCode.INVALID_CONTENT
         if command.action != "set_fulfillment":
             return None
         return fulfillment_problem(command.parameters, today=self.clock.now()[:10],
