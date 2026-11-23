@@ -166,6 +166,11 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "change_cart.done_receipt": "{done}, a sacola foi atualizada.",
     "set_fulfillment.updated": "{noted}, atualizei o recebimento.",
     "commit_order.done_order": "Pedido {order} registrado. Acompanhar: {track}",
+    # As esperas (#3328), aprovadas em 23/11.
+    "effect.pending": "Ainda estou concluindo isso. Te confirmo por aqui até {deadline}.",
+    "wait.overdue": "Desculpe a demora. Até {deadline}, {owner} te responde por aqui.",
+    "wait.overdue_no_deadline": ("Desculpe a demora. Ainda estou esperando {owner} e te aviso por aqui "
+                                 "assim que tiver a resposta."),
     # Aprovada pelo dono em 23/11 (#3408): a limitação que o efeito recusado no ar faz dizer.
     "inform_limitation.offer_team": "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?",
 }
@@ -204,13 +209,24 @@ def test_the_tick_does_nothing_with_the_classes_off(shop, sent):
     assert sent == []
 
 
-def test_the_tick_stays_silent_while_the_deadline_notice_has_no_nice_phrase(shop, sent):
+def test_the_tick_stays_silent_while_a_deadline_notice_has_no_nice_phrase(shop, sent, monkeypatch):
     _switch(shop, inform=True, handoff=True)
+    without = {k: v for k, v in turn_framework.NICE_TEMPLATE_COPY.items() if k != "wait.overdue"}
+    monkeypatch.setattr(turn_framework, "NICE_TEMPLATE_COPY", without)
     counts = turn_framework.tick(channel=_channel())
-    # Todo molde de espera (``effect.pending`` também é ``wait``) precisa da frase da Nice antes.
-    assert counts["skipped"].startswith("no_nice_template:") and "wait.overdue" in counts["skipped"]
-    assert counts["notices"] == 0
+    assert counts["skipped"] == "no_nice_template:wait.overdue" and counts["notices"] == 0
     assert sent == []  # aviso em frase genérica do pacote nunca sai
+
+
+def test_every_wait_phrase_is_the_approved_one_and_the_tick_may_speak(shop):
+    """#3328: as frases de espera aprovadas em 23/11, letra por letra, iguais à copy; o tick já pode falar."""
+    from shopman.storefront.concierge.service import copy_message
+
+    found = turn_framework.nice_templates()
+    for template_id in ("effect.pending", "wait.overdue", "wait.overdue_no_deadline"):
+        key = turn_framework.NICE_TEMPLATE_COPY[template_id]
+        assert found[template_id].text == APPROVED[template_id] == copy_message(key).strip(), template_id
+    assert turn_framework.tick_templates_missing() == ()
 
 
 def test_the_engine_tick_command_runs_in_the_worker(shop):
@@ -278,7 +294,7 @@ def test_the_judge_reads_an_effect_turn_by_its_templates():
             text=None, template_ids=(template,), verification=verification))
 
     outcomes = turn_framework.effect_outcomes("set_payment")
-    assert "effect.pending" not in outcomes and {"set_payment.done", "effect.failed"} <= outcomes
+    assert {"set_payment.done", "effect.failed", "effect.pending"} <= outcomes  # o pendente tem frase (#3328)
     approved = frozenset(outcomes)
     gap = [Finding("receipt_not_in_evidence", 0, "method")]
     assert turn_framework.judge(shadow(gap), enabled=frozenset({"order"}), approved=approved).eligible

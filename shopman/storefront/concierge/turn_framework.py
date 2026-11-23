@@ -92,6 +92,12 @@ NICE_TEMPLATE_COPY = {
     "change_cart.done_receipt": "CONCIERGE_ENGINE_CART_UPDATED_SHORT",
     "set_fulfillment.updated": "CONCIERGE_ENGINE_FULFILLMENT_UPDATED",
     "commit_order.done_order": "CONCIERGE_ENGINE_ORDER_PLACED_SHORT",
+    # As esperas (#3328), aprovadas em 23/11 ("decidido, pode reverter"): o efeito ainda em andamento (o pedido
+    # também: o ``commit_order`` pendente responde pelo ``effect.pending``) e o aviso de prazo vencido
+    # (``Engine.tick``), com prazo novo ou sem ele.
+    "effect.pending": "CONCIERGE_ENGINE_EFFECT_PENDING",
+    "wait.overdue": "CONCIERGE_ENGINE_WAIT_OVERDUE",
+    "wait.overdue_no_deadline": "CONCIERGE_ENGINE_WAIT_OVERDUE_NO_DEADLINE",
 }
 
 #: As frases da forma de pagamento: as MESMAS de hoje, com o espaço do motor (``{payment_method}``, as
@@ -508,9 +514,6 @@ class Verdict:
 #: o recibo que não existe, o "feito" sem recibo e o fato lido depois do efeito. Só isso se tolera, e só na
 #: parte do próprio efeito; o resto segura como sempre.
 SHADOW_EFFECT_GAPS = frozenset({"receipt_not_in_evidence", "action_without_receipt", "fact_not_in_evidence"})
-#: O desfecho "ainda em andamento" (``effect.pending``) não tem frase da Nice: as frases ``wait.*`` esperam
-#: o dono (#3328). Ele não entra no que a sombra exige; se acontecer no ar, o porteiro de voz segura.
-PENDING_TEMPLATE = "effect.pending"
 #: A recusa no ponto de efeito refaz a decisão, e quem responde é a limitação comum.
 REFUSAL_TEMPLATE = "inform_limitation.offer_team"
 
@@ -522,8 +525,7 @@ def effect_outcomes(move: str) -> frozenset[str]:
     module = registry().get(move)
     if module is None or not getattr(module, "EFFECT", False):
         return frozenset()
-    found = {template.template_id for template in module.TEMPLATES} | {REFUSAL_TEMPLATE}
-    return frozenset(found - {PENDING_TEMPLATE})
+    return frozenset({template.template_id for template in module.TEMPLATES} | {REFUSAL_TEMPLATE})
 
 
 def judge(result, *, enabled: frozenset[str], approved: frozenset[str]) -> Verdict:
@@ -634,7 +636,7 @@ def run(conversation, message, *, channel=None, interrupted=None):
         if result.outcome != "answered" or getattr(result, "exposure", None) is None:
             if any(receipt.status == "success" for receipt in result.receipts):
                 # O efeito aconteceu e a mensagem segurou (o porteiro de voz, uma referência que não resolve, o
-                # pendente sem frase). O caminho de hoje NÃO responde, porque refaria o que já foi feito; e nunca
+                # verificador que segura). O caminho de hoje NÃO responde, porque refaria o que já foi feito; e nunca
                 # termina em silêncio: o recuo da casa, lastreado só no recibo, e um cartão para a equipe cumprir.
                 logger.warning("concierge.turn_framework.held_after_effect conversation=%s outcome=%s findings=%s",
                                conversation.pk, result.outcome, _findings(result))
