@@ -40,10 +40,19 @@ def lines(state) -> list:
     return [need for need in state.needs if _line(need) is not None and need.need_id not in state.refused]
 
 
+def eligible_change(state) -> bool:
+    """Há uma mudança do carrinho que pode virar comando neste turno: linhas absolutas, sem item repetido."""
+    group = lines(state)
+    items = [_line(other)["item"] for other in group]
+    return bool(group) and len(set(items)) == len(items) and all(_absolute(_line(other)) for other in group)
+
+
 def propose(state, need):
     fields = _line(need)
     if fields is None or state.subject.cart_ref is None or need.need_id in state.refused:
         return None
+    if state.changed_under_offer(need):
+        return None  # já mudou neste turno, com termos no ar: a decisão refeita apresenta os termos novos
     group = lines(state)
     items = [_line(other)["item"] for other in group]
     if len(set(items)) != len(items):

@@ -109,10 +109,18 @@ def test_the_five_cards_run_through_the_engine_and_write_nothing(house):
     assert "no ar: sairia pelo caminho de hoje (no_nice_template:inform_limitation.offer_team)" in out
 
 
-def test_a_card_that_fails_says_what_the_engine_still_lacks(house):
-    out, _ = _run("--case", "cartao-3")
-    assert "[FALHOU] cartao-3-mudar-no-meio" in out
-    assert "o que falta no motor: depois de mudar a sacola com o resumo no ar" in out
+def test_a_card_that_fails_says_what_the_engine_still_lacks(house, monkeypatch):
+    """O placar diz o que o motor ainda não tem. Um cartão falso força a falha: os cartões de verdade passam
+    um a um conforme o motor cresce (o 3 passou com o #3389), e o teste não pode depender de um deles falhar."""
+    from shopman.storefront.concierge import eval_cards
+
+    impossivel = eval_cards.Cartao("cartao-teste-falta", "pede o que o motor não faz", ("quero 2 croissants",),
+                                   pedido=True, itens={"croissant": 2},
+                                   falta="o motor não fecha pedido sem o cliente pedir o resumo")
+    monkeypatch.setattr(eval_cards, "CARTOES", (impossivel,))
+    out, _ = _run("--case", "cartao-teste-falta")
+    assert "[FALHOU] cartao-teste-falta" in out and "✗ nenhum pedido fechado" in out
+    assert "o que falta no motor: o motor não fecha pedido sem o cliente pedir o resumo" in out
 
 
 def test_the_ensaio_profile_never_changes_the_live_profile(house):
