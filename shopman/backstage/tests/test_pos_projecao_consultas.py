@@ -101,4 +101,6 @@ def test_leitura_do_terminal_nao_cresce_com_catalogo_comandas_e_estacoes(balcao)
 #: sem conexão "a conferir" do turno (``offline_review_sales``), uma consulta só.
 #: +1 em 21/11/2026: as promoções automáticas do canal, lidas uma vez para a grade
 #: inteira (o tile mostra o preço da promoção, P2-2 do WP-E8).
-TETO_LEITURA_DO_TERMINAL = 47
+#: +1 em 22/11/2026: o primeiro nome de quem abriu cada comanda, uma consulta só
+#: para o quadro inteiro (``_operator_first_names``; "Aberta às 14:05 por Fran", #2443).
+TETO_LEITURA_DO_TERMINAL = 48

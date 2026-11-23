@@ -28,6 +28,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [string];
   open: [POSTabProjection | string];
+  openNextFree: [];
   requestAssociation: [];
 }>();
 
@@ -56,12 +57,12 @@ const nextFit = computed(() => ({
   icon: "i-lucide-arrow-right-circle",
 }));
 const barActions = computed(() => [openFit, nextFit.value]);
+// O número do botão é a leitura deste quadro; quem escolhe e reserva a comanda é o
+// servidor, para duas estações nunca abrirem a mesma (#2443).
 function openNextFree() {
   if (!nextFreeRef.value) return;
-  const existing = props.tabs.find((tab) => tab.ref === nextFreeRef.value);
-  if (existing) activateTab(existing);
-  else if (props.hasDraft) emit("requestAssociation");
-  else emit("open", nextFreeRef.value);
+  if (props.hasDraft) emit("requestAssociation");
+  else emit("openNextFree");
 }
 
 // Board color = a traffic-light semantic (Pablo, 2026-06-10): cor só onde tem

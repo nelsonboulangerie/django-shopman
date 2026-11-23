@@ -55,6 +55,7 @@ GAVE_UP_KEY = "CONCIERGE_CLOSE_GAVE_UP"
 COPY_KEYS = (
     ASK_DATE_KEY, ASK_FULFILLMENT_KEY, ASK_SLOT_KEY, NO_SLOTS_KEY, SLOT_REFUSED_KEY, NO_PICKUP_AT_KEY,
     NO_DELIVERY_AT_KEY, ASK_ADDRESS_KEY, ASK_PAYMENT_KEY, NO_CASH_KEY, CONFIRM_CODE_KEY, GAVE_UP_KEY,
+    "CONCIERGE_CART_FULFILLMENT_NOTED",
 )
 
 #: O que dá início ao fechamento quando há sacola: "pode fechar", "é só isso", "finalizar".
@@ -225,6 +226,80 @@ def read(text: str, pending: dict) -> Said:
     return said
 
 
+#: "retirar" que é RECEBIMENTO, não tirar da sacola: "para/pra/vou/de retirar", "retirada".
+_PICKUP_INTENT_RE = re.compile(r"\b(?:(?:para|pra|vou|de|pode|posso|quero) retir\w*|retirada)\b")
+
+
+def fulfillment_cue(text: str) -> bool:
+    """A fala diz QUANDO ou COMO recebe (dia, hora, retirada): "retirar" aí é recebimento.
+
+    WP-14, cartão 1 (dono, 22/11/2026): "quero 2 croissants para retirar amanhã às 16h"
+    virou "tira o croissant da sacola". Sem dia, hora nem "para retirar", "retira o
+    croissant" continua sendo tirar da sacola.
+    """
+    folded = _fold(text)
+    said = read(text, {})
+    return bool(_PICKUP_INTENT_RE.search(folded) or said.day or said.minutes is not None
+                or (said.kind == "pickup" and not re.search(r"\b(?:tira|tirar|tire|retira) (?:o|a|os|as)\b", folded)))
+
+
+def prefill(conversation, text: str, *, binding, channel_ref: str) -> dict:
+    """O dia, o recebimento e o horário ditos JUNTO com o pedido, aplicados antes da sacola.
+
+    A casa dita a ordem da encomenda (quando, recebimento, produtos), mas o cliente pode
+    dizer tudo de uma vez. Aqui se aplica o que ele disse, pelos executores de sempre
+    (``set_fulfillment``, os horários da loja): a sacola passa a medir a fornada DA DATA
+    (nunca a sobra de hoje), e o fechamento não pergunta de novo o que já foi dito. Nada
+    que falte é inventado: sem dia, não se aplica nada; horário que a loja não tem fica
+    para o fechamento perguntar. Devolve o que ficou aplicado (``day``, ``kind``, ``slot``).
+    """
+    from . import tools
+
+    said = read(text, {})
+    if not said.day:
+        return {}
+    types = _fulfillment_types(channel_ref)
+    kind = said.kind if said.kind in types else ("pickup" if said.minutes is not None and "pickup" in types else "")
+    if not kind and len(types) == 1:
+        kind = types[0]
+    if not kind:
+        return {}
+    ctx = _context(conversation, binding=binding, channel_ref=channel_ref, text=text)
+    # Na primeira fala ainda não há sacola: ela nasce aqui, como nasceria no item, para a
+    # data valer já na medida do item (a mesma sacola, presa ao telefone).
+    tools._ensure_session(ctx)
+    result = tools.execute("set_fulfillment", {"fulfillment_type": kind, "delivery_date": said.day}, ctx)
+    if not result.get("ok"):
+        return {}
+    applied = {"day": said.day, "kind": kind, "slot": ""}
+    if kind == "pickup" and said.minutes is not None:
+        listing = tools.execute("list_fulfillment_slots", {"delivery_date": said.day, "fulfillment_type": "pickup"}, ctx)
+        chosen = _match_slot(list(listing.get("pickup_slots") or []), said.minutes)
+        if chosen is not None and chosen.get("available", True):
+            done = tools.execute("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": said.day,
+                                                     "slot_ref": chosen["ref"]}, ctx)
+            if done.get("ok"):
+                applied["slot"] = str(chosen.get("label") or "")
+    return applied
+
+
+NOTED_KEY = "CONCIERGE_CART_FULFILLMENT_NOTED"
+
+
+def noted(applied: dict, *, copy) -> str:
+    """ "Combinado: retirada amanhã, a partir das 15h." O que ``prefill`` aplicou, dito de volta."""
+    if not applied:
+        return ""
+    today = timezone.localdate()
+    day = date.fromisoformat(applied["day"])
+    when = {today: "hoje", today + timedelta(days=1): "amanhã"}.get(day) or day.strftime("%d/%m")
+    slot = str(applied.get("slot") or "").strip()
+    if slot:
+        when = f"{when}, {slot[:1].lower()}{slot[1:]}"
+    how = "retirada" if applied.get("kind") == "pickup" else "entrega"
+    return _fill(copy(NOTED_KEY) or "", how=how, when=when)
+
+
 def answers(said: Said, pending: dict) -> bool:
     """A fala responde à pergunta do fechamento que está no ar?"""
     kind = pending.get("kind", "")
@@ -290,6 +365,12 @@ def advance(ctx, said: Said, closing: dict, *, copy) -> Step | None:
     # ``open`` marca o fechamento em curso: a memória descarta dicionário vazio.
     closing = {**(closing or {}), "open": True}
     data = session.data or {}
+    # O que o cliente já disse junto com o pedido (``prefill``) está na sessão: o
+    # fechamento parte dali e não pergunta de novo o dia nem o recebimento.
+    if not closing.get("day") and data.get("delivery_date") and data.get("fulfillment_type"):
+        closing["day"] = str(data["delivery_date"])
+        closing["kind"] = str(data["fulfillment_type"])
+        closing["applied"] = f"{closing['kind']}:{closing['day']}"
     events: list[dict] = []
     channel_ref = ctx.channel_ref
 

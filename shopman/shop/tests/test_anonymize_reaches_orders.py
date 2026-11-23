@@ -493,6 +493,33 @@ def test_a_loja_apaga_o_que_e_dela():
     assert not StockAlertSubscription.objects.filter(contact_phone=PHONE).exists()
 
 
+def test_o_comentario_da_nota_baixa_sai_tambem_do_aviso_do_operador():
+    """#2359: o aviso ``low_rating`` copiava o comentário da cliente, e a exclusão não o tocava.
+
+    O pedido perdia o comentário (``customer_rating.comment``), mas o texto livre da
+    titular seguia no ``OperatorAlert``, que ela nunca vê e o Admin lista. A nota fica
+    (é métrica da loja); o comentário sai, como sai do pedido.
+    """
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.services.customer_orders import save_customer_rating
+    from shopman.storefront.api.tracking import _alert_low_rating
+
+    comment = "Demorou demais, falei com o Joaquim na porta"
+    customer = _customer()
+    order = _order_for(customer)
+    save_customer_rating(order, rating=2, comment=comment)
+    _alert_low_rating(order, 2, comment)
+
+    alert = OperatorAlert.objects.get(type="low_rating", order_ref=order.ref)
+    assert comment in alert.message, "controle positivo: o aviso tem de levar o comentário antes da exclusão"
+
+    anonymize_customer(customer)
+
+    assert _sweep((comment,)) == [], "o comentário da titular sobreviveu à exclusão"
+    alert.refresh_from_db()
+    assert alert.message == f"Pedido {order.ref} recebeu nota 2/5."
+
+
 def test_rodar_duas_vezes_nao_estoura():
     customer = _customer()
     _order_for(customer)

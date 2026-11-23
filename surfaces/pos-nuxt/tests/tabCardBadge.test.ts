@@ -58,6 +58,15 @@ describe("presentation/tabBoard — o cartão diz o que é (beta test de 05/11/2
     const withCustomer = tabCardView(tab({ ref: "1008", state: "in_use", customer_name: "Ana", opened_at_display: "14:32" }));
     expect(withCustomer.identity).toBe("Ana");
   });
+
+  it("#2443: a comanda Em uso sem item diz quem a abriu", () => {
+    const view = tabCardView(tab({
+      ref: "1008", state: "in_use", status_label: "Em uso", opened_at_display: "14:32", opened_by_display: "Fran",
+    }));
+    expect(view.identity).toBe("Aberta às 14:32 por Fran");
+    const noTime = tabCardView(tab({ ref: "1008", state: "in_use", opened_by_display: "Fran" }));
+    expect(noTime.identity).toBe("Aberta por Fran");
+  });
 });
 
 describe("presentation/tabBoard — renameRefusal (PDV2-21)", () => {

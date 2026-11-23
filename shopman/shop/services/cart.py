@@ -281,7 +281,14 @@ def _catalog_product(sku: str):
     return Product.objects.filter(sku=sku).first()
 
 
-def _other_lines_qty(session: Session, *, sku: str, line_id: str) -> Decimal:
+def _split_parts(session: Session, line_id: str) -> list[str]:
+    """As ``line_id`` das partes em que o rateio partiu ``line_id`` (#3240)."""
+    from shopman.shop.discount_spread import split_siblings
+
+    return [str(i.get("line_id")) for i in split_siblings(list(session.items or []), line_id)]
+
+
+def _other_lines_qty(session: Session, *, sku: str, line_id: str, exclude: tuple[str, ...] = ()) -> Decimal:
     """Quanto as OUTRAS linhas do mesmo SKU seguram na sacola.
 
     A reserva é por (sacola, SKU), não por linha: com escolhas no produto o
@@ -292,7 +299,7 @@ def _other_lines_qty(session: Session, *, sku: str, line_id: str) -> Decimal:
         (
             Decimal(str(item.get("qty") or 0))
             for item in session.items
-            if item.get("sku") == sku and item.get("line_id") != line_id
+            if item.get("sku") == sku and item.get("line_id") != line_id and item.get("line_id") not in exclude
         ),
         Decimal("0"),
     )
@@ -306,15 +313,22 @@ def update_qty(
     line_id: str,
     qty: int,
     sku: str | None = None,
+    whole_product: bool = False,
 ) -> Session:
-    """Reconcile holds and update a cart line quantity in one local commit."""
+    """Reconcile holds and update a cart line quantity in one local commit.
+
+    ``whole_product``: ``qty`` é o total da linha do produto, contando a parte que
+    o rateio do desconto partiu dela (#3240); a parte sai na mesma escrita e o
+    preço a refaz se ainda couber. É a conta do stepper por SKU, que mostra a soma.
+    """
     session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    parts = tuple(_split_parts(session, line_id)) if whole_product else ()
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
         line_sku = line["sku"] if line is not None else None
     if line_sku is not None:
-        others = _other_lines_qty(session, sku=line_sku, line_id=line_id)
+        others = _other_lines_qty(session, sku=line_sku, line_id=line_id, exclude=parts)
         result = availability.reconcile(
             sku=line_sku,
             new_qty=Decimal(str(qty)) + others,
@@ -351,7 +365,10 @@ def update_qty(
     return session_service.modify_session(
         session_key=session_key,
         channel_ref=channel_ref,
-        ops=[{"op": "set_qty", "line_id": line_id, "qty": qty}],
+        ops=[
+            {"op": "set_qty", "line_id": line_id, "qty": qty},
+            *({"op": "remove_line", "line_id": part} for part in parts),
+        ],
     )
 
 
@@ -362,9 +379,14 @@ def remove_item(
     channel_ref: str,
     line_id: str,
     sku: str | None = None,
+    whole_product: bool = False,
 ) -> Session:
-    """Reconcile holds and remove a cart line in one local commit."""
+    """Reconcile holds and remove a cart line in one local commit.
+
+    ``whole_product``: a parte que o rateio partiu da linha sai junto (#3240).
+    """
     session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    parts = tuple(_split_parts(session, line_id)) if whole_product else ()
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -372,7 +394,7 @@ def remove_item(
     if line_sku is not None:
         availability.reconcile(
             sku=line_sku,
-            new_qty=_other_lines_qty(session, sku=line_sku, line_id=line_id),
+            new_qty=_other_lines_qty(session, sku=line_sku, line_id=line_id, exclude=parts),
             session_key=session_key,
             channel_ref=channel_ref,
         )
@@ -381,7 +403,7 @@ def remove_item(
     return session_service.modify_session(
         session_key=session_key,
         channel_ref=channel_ref,
-        ops=[{"op": "remove_line", "line_id": line_id}],
+        ops=[{"op": "remove_line", "line_id": part} for part in (line_id, *parts)],
     )
 
 

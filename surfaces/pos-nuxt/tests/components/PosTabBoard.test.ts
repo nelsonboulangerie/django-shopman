@@ -117,10 +117,12 @@ it("Enter no campo vazio é a Próxima livre (P2-3); com referência, segue abri
   const w = await board([tab({ ref: "1", session_key: "sk-1", state: "in_use", item_count: 1 })]);
   const input = w.find("input");
   await input.trigger("keydown", { key: "Enter" });
-  expect(w.emitted("open")).toEqual([["2"]]);
+  // A Próxima livre pede a reserva (o servidor escolhe, #2443): não abre pelo número.
+  expect(w.emitted("openNextFree")).toHaveLength(1);
+  expect(w.emitted("open")).toBeUndefined();
 
   await w.setProps({ modelValue: "7" });
   await w.find("form").trigger("submit");
-  expect(w.emitted("open")).toEqual([["2"], ["7"]]);
+  expect(w.emitted("open")).toEqual([["7"]]);
   w.unmount();
 });

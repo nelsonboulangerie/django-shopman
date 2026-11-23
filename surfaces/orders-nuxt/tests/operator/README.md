@@ -23,6 +23,7 @@ operador de verdade". As jornadas a canonizar estão na seção 8 de
 | `g07-avisar-o-cliente.spec.ts` | WP-G07: avisar o cliente com um toque (vai atrasar, faltou um item), lendo a mensagem antes de enviar; o recibo que falhou traz o WhatsApp com o mesmo texto. Roda na hora do balcão (hoje, 10h16, pelo relógio de teste), e pula sem `OPERATOR_CONTROL_DIR` | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 e 375 px) |
 | `f1-nota-recusada-reprocessar.spec.ts` | F1: a cliente pede a retirada de hoje com CPF na nota e paga; o Caixa aceita, a Cozinha dá Pronto, o Caixa entrega; a SEFAZ (nota simulada) recusa, e o detalhe do pedido diz "NFC-e não autorizada" com a resposta do emissor; "Reprocessar NFC-e" emite de novo e a nota sai autorizada. Pede a nota simulada e roda na hora do balcão (`OPERATOR_CONTROL_DIR`), e pula sem ela | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
 | `f2-entrega-sem-cpf.spec.ts` | F2: a cliente pede entrega para hoje sem CPF na nota e paga; o Caixa aceita e inicia, a Cozinha dá Pronto, e a NFC-e nasce com a sacola pronta, autorizada, como venda presencial (sem destinatário nem frete). Pede a nota simulada e a política de emissão do alpha (`SHOPMAN_FISCAL_EMISSION_RESOLVER`), e roda na hora do balcão; pula sem a pasta de controle | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
+| `f3-danfe-imprimir-e-reimprimir.spec.ts` | F3 (#3124): a cliente pede retirada para hoje com CPF na nota e paga; o balcão aceita e inicia, a Cozinha dá Pronto, o balcão entrega, e a NFC-e autoriza com o XML da nota simulada. No detalhe, "Imprimir DANFE" manda a bobina pelo relay à impressora do balcão, que a pega e confirma, e o detalhe diz "DANFE impressa"; "Reimprimir DANFE" sai marcada REIMPRESSÃO. Pede a nota simulada e a impressora simulada (`OPERATOR_PRINT_AGENT_BEARER`, passo 5), e roda na hora do balcão; pula sem elas | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Cozinha (estação, 1366 px) |
 | `p1-pix-que-nao-confirma.spec.ts` | P1: a cliente envia o pedido com Pix e não paga; o Caixa vê o pedido esperando o pagamento; o relógio da pilha passa do prazo do Pix, o worker cancela sem cobrar, o pedido sai do painel sozinho, o detalhe diz "Nada foi cobrado · O Pix venceu" e a cliente lê "Pagamento expirado". Pede o relógio de teste (`OPERATOR_CONTROL_DIR`), e pula sem ele | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
 | `l1-loja-fechada.spec.ts` | L1: a casa fechou e a cliente encomenda para amanhã e paga; a loja diz que confere o pedido quando abrir; o detalhe do Caixa conta o prazo de aceite a partir da abertura, não de agora; o relógio passa da abertura, o pedido segue esperando com o prazo que sobrou, e o Caixa aceita. Pede o relógio de teste (`OPERATOR_CONTROL_DIR`) e a casa que fecha hoje (seed com `--closing-in-minutes`, abaixo); na pilha aberta 24 h, pula e diz por quê | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) |
 | `w1-fila-de-espera-vaga-paga.spec.ts` | W1: às 10h (relógio de teste) a cliente pede 10 Kuro Pan para hoje, mais do que a vitrine tem; o resto espera o lote do dia e ela entra na fila, sem Pix ("Você está na fila … Nada foi cobrado ainda."); no Gestor o aceite espera; a Gerente finaliza o lote do Kuro Pan na Produção; a cliente lê "Chegou a sua vez!", confirma a vaga, e só então o Pix nasce; paga, e o Caixa aceita. Pede o relógio de teste e a Produção (`OPERATOR_PRODUCTION_URL`), e a pilha semeada HOJE; roda uma vez por seed, porque finaliza o lote do dia | cliente novo (loja, 375 px) · Gerente e Caixa (Gestor, 1366 px) · Gerente com PIN (Produção, 1366 px) |
@@ -118,6 +119,20 @@ Exemplo com as portas do WP-G00 (Django `:8062`, loja `:3180`, Cozinha `:3183`, 
    ```bash
    cd surfaces/orders-nuxt && npx nuxt build
    ```
+
+5. **A impressora simulada do balcão** (só a F3 a pede). Depois do seed, emita a credencial
+   do relay de impressão do "PDV principal" pelo mesmo comando do pareamento real, e passe
+   o segredo à suíte (o servidor guarda só o digest; o `seed --flush` a apaga, então emita
+   de novo a cada seed):
+
+   ```bash
+   .venv/bin/python manage.py issue_print_agent_credential --terminal pdv-main --label "Impressora simulada da pilha"
+   # bearer=<segredo>  →  OPERATOR_PRINT_AGENT_BEARER=<segredo>
+   ```
+
+   Com ela, a DANFE da entrega também sai sozinha no despacho, para a mesma impressora: o
+   trabalho espera na fila do relay até alguém buscá-lo. Quem busca é `support/printer.ts`,
+   que faz o que o agente faz (pega o trabalho, confere o hash e confirma); ninguém mais.
 
 **A hora do balcão (#3295).** As jornadas que pedem para HOJE e esperam o card no painel
 (J1, J2, J8, G07, F1, F2) fixam o relógio da pilha em hoje, 10h16 (`atCounterHour`, em

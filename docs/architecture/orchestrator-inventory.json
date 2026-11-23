@@ -174,6 +174,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "LOW_RATING_COMMENT_MARK",
             "connect_saved",
             "create",
             "exists",
@@ -186,7 +187,8 @@
             "resolve",
             "resolve_matching",
             "resolve_pk",
-            "revise"
+            "revise",
+            "scrub_customer_comments"
           ]
         }
       ]
@@ -842,10 +844,13 @@
             "SERIES",
             "SimulatedFiscalBackend",
             "UF_PR",
+            "_NO_STREET",
+            "_TPAG",
             "_digits",
             "_mod11",
             "_shop_document",
-            "access_key"
+            "access_key",
+            "authorized_nfce_xml"
           ]
         }
       ]
@@ -1567,6 +1572,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "active_tab_refs",
             "ensure_tab",
             "upsert_tab"
           ]
@@ -3260,6 +3266,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/discount_spread.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "pricing.split-line"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
     },
     {
       "path": "shopman/shop/dynamic_collections.py",
@@ -7048,15 +7068,12 @@
             "_current_disc_q",
             "_discount_label",
             "_is_non_merchandise_line",
-            "_line_qty",
             "_list_price_q",
             "_qty_decimal",
-            "_qty_json",
             "_record_total_q",
             "_reverse_order_level_share",
             "_reverse_prior_pricing",
             "_round_to_step_q",
-            "_spread_order_discount",
             "_stamp_disc",
             "logger"
           ]
@@ -10264,6 +10281,8 @@
             "DanfeSourceError",
             "MAX_XML_BYTES",
             "NS",
+            "backend_authorized_xml",
+            "logger",
             "parse_authorized_xml",
             "read_authorized_xml",
             "value"

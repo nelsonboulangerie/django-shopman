@@ -362,7 +362,7 @@ class _Rollback(Exception):
 
 
 def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_id: int | None = None,
-                 paid: bool = False) -> tuple[list[Turn], dict]:
+                 paid: bool = False, framework: tuple[str, ...] = ()) -> tuple[list[Turn], dict]:
     """Refaz as falas reais dos últimos ``days`` dias no código de HOJE e devolve os turnos novos.
 
     O placar de 7 dias mede o histórico, inclusive turnos de antes das correções; o replay
@@ -376,6 +376,9 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
       cliente nem muda a posse no provedor);
     - sem ``paid``, a IA paga fica desligada dentro da transação (leitura local, FAQ direta,
       sem juiz): é o replay grátis. Com ``paid``, as chamadas passam pelo freio de sempre.
+    - ``framework``: as classes de ação do motor do framework ligadas DENTRO da transação
+      (``turn_framework.ACTION_CLASSES``), para comparar o mesmo replay com a chave desligada e
+      ligada (N9b). Fora da transação, a chave da loja não muda.
 
     Conversa cujo vínculo a Concierge não atende (fora da coorte) fica de fora e é contada.
     """
@@ -395,7 +398,8 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
     for turn in originals:
         by_conversation.setdefault(turn.conversation_id, []).append(turn)
     replayed: list[Turn] = []
-    info = {"conversations": len(by_conversation), "skipped": 0, "turns": 0, "paid": paid}
+    info = {"conversations": len(by_conversation), "skipped": 0, "turns": 0, "paid": paid,
+            "framework": tuple(framework)}
 
     def _no_handoff(binding, on):
         from types import SimpleNamespace
@@ -404,13 +408,23 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
 
     try:
         with transaction.atomic(), ExitStack() as stack:
-            stack.enter_context(mock.patch.object(service, "_dispatch_reply", lambda conversation, message: None))
+            # O envio é cortado, e a mensagem volta como estava (preparada): o motor do framework
+            # lê dela o que aconteceu, como no envio de verdade.
+            stack.enter_context(mock.patch.object(service, "_dispatch_reply", lambda conversation, message: message))
             stack.enter_context(mock.patch.object(transport, "handoff_for", _no_handoff))
             if not paid:
                 shop = Shop.load()
                 if shop is not None:
                     shop.ai_limits = {**(shop.ai_limits or {}), "enabled": False}
                     shop.save(update_fields=["ai_limits"])
+            if framework:
+                from .turn_framework import SWITCH_FIELD
+
+                shop = Shop.load()
+                if shop is not None:
+                    for name in framework:
+                        setattr(shop, SWITCH_FIELD[name], True)
+                    shop.save(update_fields=[SWITCH_FIELD[name] for name in framework])
             for conv_pk, turns in by_conversation.items():
                 conversation = Conversation.objects.get(pk=conv_pk)
                 binding = conversation.transport_bindings.filter(status=ConversationBinding.Status.ACTIVE).first()
@@ -466,4 +480,19 @@ def replay_turns(*, days: int = 7, channel_ref: str = "whatsapp", conversation_i
             raise _Rollback
     except _Rollback:
         pass
+    finally:
+        # A transação desfaz o banco, não o cache: a loja que o replay mudou (a IA paga
+        # desligada, a chave do motor ligada) ficaria no cache compartilhado, e os
+        # trabalhadores de verdade leriam a loja do replay até o cache vencer.
+        _forget_shop()
     return replayed, info
+
+
+def _forget_shop() -> None:
+    from django.core.cache import cache
+
+    from shopman.shop.models.shop import SHOP_CACHE_KEY, SHOP_MEMO_KEY
+    from shopman.shop.request_memo import forget
+
+    cache.delete(SHOP_CACHE_KEY)
+    forget(SHOP_MEMO_KEY)
