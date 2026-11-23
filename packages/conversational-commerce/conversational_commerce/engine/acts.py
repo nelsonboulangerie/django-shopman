@@ -19,6 +19,7 @@ ACTS: tuple[str, ...] = (
     "ask_price",
     "ask_item",
     "change_quantity",
+    "choose_fulfillment",
     "place_order",
     "cancel_order",
     "complain",
@@ -35,7 +36,11 @@ ANSWER_ACTS = frozenset({"affirm", "deny"})
 # O cliente declara o que quer da casa: vira memória declarada (F10), e a resposta é cortesia.
 DECLARATION_ACTS = frozenset({"decline_offers", "accept_offers"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
-CHANGE_ACTS = frozenset({"change_quantity", "place_order", "cancel_order"})
+CHANGE_ACTS = frozenset({"change_quantity", "choose_fulfillment", "place_order", "cancel_order"})
+# Os campos de leitura de ``choose_fulfillment``: quando (dia, hora) e como (retirada ou entrega).
+# A janela do dia não é dita: é a casa que a dá, no recibo.
+FULFILLMENT_FIELDS: tuple[str, ...] = ("date", "mode", "time")
+FULFILLMENT_MODES: tuple[str, ...] = ("pickup", "delivery")
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +76,7 @@ TEST_RULES = LocalRules(
         "ask_hours": (r"\bhours?\b", r"\bopen\b"),
         "ask_price": (r"\bprice\b", r"\bhow much\b", r"\bcost\b"),
         "change_quantity": (r"\bmake it\b", r"\bchange\b"),
+        "choose_fulfillment": (r"\bpick ?up\b", r"\bdeliver(y)?\b"),
         "place_order": (r"\bplace (the |my )?order\b", r"\bcheck ?out\b"),
         "cancel_order": (r"\bcancel\b",),
         "affirm": (r"^\s*(yes|yeah|ok)\b",),

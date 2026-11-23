@@ -66,6 +66,8 @@ class Situation(Value):
     # Mudança de sacola.
     quantity_is_absolute: bool | None = None
     change_reversible: bool | None = None
+    # Recebimento: dia, modo, janela e hora ditos em forma absoluta (ISO, modo da lista), não relativa.
+    fulfillment_is_absolute: bool | None = None
 
     # Compromisso vinculante.
     current_terms_hash: Hash | None = None

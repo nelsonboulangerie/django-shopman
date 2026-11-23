@@ -40,7 +40,8 @@
             "effect_pending",
             "effect_unknown",
             "budget_exhausted",
-            "provider_unavailable"
+            "provider_unavailable",
+            "fulfillment_unavailable"
           ],
           "type": "string"
         },

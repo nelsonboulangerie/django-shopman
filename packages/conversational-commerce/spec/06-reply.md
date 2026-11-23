@@ -84,7 +84,7 @@ Regras genéricas do pacote, estruturais e sem língua nenhuma:
 | `fact_unknown`, `fact_expired` | o fato não vale | segura (N02) |
 | `backing_kind_not_accepted` | o lastro existe, mas não é do tipo que o espaço aceita (o que se pode prometer não é unidade em mãos) | segura (K27) |
 | `number_without_fact` | dígito no texto livre, fora de um bloco travado | segura (N03, K23) |
-| `action_without_receipt` | parte de movimento que muda o negócio (`change_cart`, `commit_order`, `cancel_order`, `amend_order`, `grant_discount`) sem afirmação lastreada em recibo de **sucesso** | segura (K24) |
+| `action_without_receipt` | parte de movimento que muda o negócio (`change_cart`, `set_fulfillment`, `commit_order`, `cancel_order`, `amend_order`, `grant_discount`) sem afirmação lastreada em recibo de **sucesso** | segura (K24) |
 
 Efeito pendente não é efeito. A resposta a um recibo `pending` é uma parte `wait`, com o
 prazo do compromisso de reconciliação, nunca a confirmação do pedido.

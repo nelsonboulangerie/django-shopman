@@ -98,8 +98,8 @@ e leva o episódio a `active` (recibo terminal) ou a `awaiting_handoff` (prazo v
 
 Para o movimento de efeito escolhido (módulo com `EFFECT = True` e `effect(state, need)`):
 
-1. a concessão: por confirmação (`commit_order`) ou pela linha do perfil (`change_cart`, A2,
-   reversível);
+1. a concessão: por confirmação (`commit_order`) ou pela linha do perfil (`change_cart` e
+   `set_fulfillment`, A2, reversíveis);
 2. o comando, registrado no livro;
 3. **uma gravação** com a concessão, o comando e a intenção de execução na caixa de saída,
    com o episódio em `waiting_effect` (N13). Só depois o executor é chamado;
@@ -126,9 +126,33 @@ cotação é proposta.
 |---|---|---|
 | `present_terms` | A1 | cota e mostra o total por espaço travado; episódio a `waiting_authorization` |
 | `change_cart` | A2 | executa: quantidade absoluta, evento com identidade estável, reversível |
+| `set_fulfillment` | A2 | executa: o recebimento (dia, retirada ou entrega, hora) dito em forma absoluta, evento com identidade estável, reversível |
 | `commit_order` | A3 | executa: só o "sim" que responde à pergunta dos termos, na mesma época |
 | `cancel_order`, `amend_order` | A3 | só precondição; com a linha do perfil; nenhuma jornada os executa |
 | `grant_discount` | A4 | só precondição; teto da linha `commerce.discount_cap_minor` (`within_cap`) |
+
+`set_fulfillment` (`engine/moves/set_fulfillment.py`) responde ao ato `choose_fulfillment`
+com uma leitura só e o carrinho do sujeito. Aplica o que foi dito e nada além: só data, só
+modo, ou tudo, e o comando leva só os campos ditos (`EffectPlan(action="set_fulfillment",
+target=<carrinho>, parameters={date?, mode?, time?})`, concessão pela linha). Nenhum
+campo dito, nenhuma proposta. Data que não é ISO real, hora fora de `HH:MM`, modo fora de
+`pickup`/`delivery` ou `relative: true` deixam a ação inelegível
+(`absolute_fulfillment` → `relative_fulfillment`), e a resposta é a limitação; duas leituras
+perguntam antes. O executor confere de novo e recusa com os códigos da seção 7 do
+`02-catalog-profile.md` (porta: `03-ports.md`, seção 2). A resposta é o molde mais completo
+que o recibo sustenta, todos com lastro em recibo de sucesso:
+
+| Molde | Espaços (campo do recibo) | Quando |
+|---|---|---|
+| `set_fulfillment.done` | `mode`, `date`, `window` | dia sem hora: a casa dá a janela no recibo |
+| `set_fulfillment.done_time` | `mode`, `date`, `time` | hora no lugar da janela |
+| `set_fulfillment.done_day` | `mode`, `date` | sem janela nem hora |
+| `set_fulfillment.done_date` | `date` | só o dia |
+| `set_fulfillment.done_mode` | `mode` | só o modo |
+| `set_fulfillment.updated` | `ref` (`effect`) | nenhum dos de cima (recibo só com o efeito) |
+
+A casa troca a frase (`house_templates`) e formata os valores pelos formatadores dos espaços
+(`date`, `mode`, `window`, `time`): a data na língua dela, o rótulo da janela pela referência.
 
 O ato `place_order` entrou na lista fechada (`engine/acts.py`). `inform_limitation` só é
 proposto quando nenhum movimento elegível faz o pedido, e `acknowledge` não responde ao "sim"
@@ -153,6 +177,7 @@ aos termos: é confirmação, não cortesia.
 | K15 concessão vence entre a decisão e a execução | `adapter` |
 | K16 chave vencida com efeito desconhecido: nunca executa de novo; vai a pessoa | `adapter` |
 | Sem a linha da concessão, nada se executa; sombra decide e não executa | núcleo |
+| Recebimento (`test_set_fulfillment.py`): data, modo e hora; só data; só modo; o dito antes fica; dia que já passou recusado com código estável; relativo e ambíguo não se aplicam; o mesmo evento não aplica duas vezes; o arnês reprova executor que aceita qualquer forma | núcleo e `adapter` |
 
 K11, K12 e K14 são `real_mechanism`: aqui é simulação sobre os falsos; só valem rodados no
 mecanismo do adaptador (transação e fila de verdade).
