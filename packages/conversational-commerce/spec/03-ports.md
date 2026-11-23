@@ -53,13 +53,17 @@ Para isso, cada porta devolve:
   condições obrigatórias dos termos ainda ausentes, NA ORDEM do fechamento (o endereço da entrega antes
   do pagamento), e as opções do canal para cada uma, nunca do texto. Códigos: `delivery_address` (sem
   opções: lista vazia), `delivery_address_details` (o que falta no endereço, em palavras da casa),
-  `delivery_complement` (lista vazia) e `payment_method`. Com algo faltando, o `present_terms` não apresenta os
+  `delivery_complement` (lista vazia) e `payment_method`. Código que o pacote não conhece pergunta pelo
+  molde genérico (`present_terms.needs`, `{missing}`). Com algo faltando, o `present_terms` não apresenta os
   termos: pergunta pela condição (spec 06, `present_terms.needs_<código>`). O arnês confere a forma.
 - **Comando `set_payment`**: `parameters={"method"}`, uma das formas de `requirements`; o executor recusa
   outra (`invalid_content`), e o efeito sobe a versão do carrinho (a guarda invalida o "sim" de antes).
 - **Comando `set_delivery_address`**: `parameters={"source"}`, a `content_ref` da fala (spec 01), nunca o
-  texto. O executor lê o texto original pela referência, monta e grava o endereço, e recusa sem entrega
-  combinada (`fulfillment_unavailable`) ou sem conteúdo (`invalid_content`). O recibo traz só
+  texto. O executor lê o texto original pela referência, monta e grava o endereço, e recusa com
+  `fulfillment_unavailable` (a casa não entrega ali), `invalid_content` (o endereço não se localiza) ou
+  `fact_unavailable` (sem entrega combinada, ou outra recusa); as duas primeiras têm frase própria
+  (`set_delivery_address.not_delivered` e `.not_located`, do `inform_limitation`), a terceira é a do
+  efeito que falhou. O recibo traz só
   `address_ref`, opaca; o `TermsDocument` leva a mesma em `fulfillment.address_ref`. O efeito sobe a
   versão do carrinho.
 - **`quote(cart_ref)`**: o `TermsDocument` selado. Carrinho vazio ou cotação que falha vira

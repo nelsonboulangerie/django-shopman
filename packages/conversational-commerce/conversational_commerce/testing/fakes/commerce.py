@@ -359,7 +359,12 @@ class FakeCommerceExecute(FakeBase):
             if set(command.parameters) != {"source"} or not _content(command.parameters.get("source")):
                 return ErrorCode.INVALID_CONTENT
             mode = self.state.fulfillment.get(command.targets[0], {}).get("mode")
-            return None if mode == "delivery" else ErrorCode.FULFILLMENT_UNAVAILABLE
+            if mode != "delivery":
+                return ErrorCode.FACT_UNAVAILABLE  # sem entrega combinada, o endereço não tem onde cair
+            text = _content(command.parameters["source"])
+            if "nowhere" in text:
+                return ErrorCode.INVALID_CONTENT  # não se localiza (sintético)
+            return ErrorCode.FULFILLMENT_UNAVAILABLE if "far away" in text else None  # fora da área (sintético)
         if command.action == "change_cart":
             lines = command.parameters.get("lines")
             good = isinstance(lines, (list, tuple)) and lines and all(

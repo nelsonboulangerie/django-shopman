@@ -16,8 +16,9 @@ o motor confere; o endereço diz onde, e só a casa sabe ler.
 
 from __future__ import annotations
 
+from conversational_commerce.contracts.errors import ErrorCode
 from conversational_commerce.policy import Proposal
-from conversational_commerce.reply import TEMPLATES_BY_ID
+from conversational_commerce.reply import TEMPLATES_BY_ID, PartSpec, Template
 
 from ..state import EffectPlan
 from ._effects import SHARED, receipt_part
@@ -25,7 +26,14 @@ from ._effects import SHARED, receipt_part
 MOVE = "set_delivery_address"
 ACT = "give_address"
 EFFECT = True
-TEMPLATES = (TEMPLATES_BY_ID["set_delivery_address.done"], *SHARED)
+#: A recusa do endereço tem frase própria: o cliente precisa saber o que fazer (outro endereço, a localização).
+#: É limitação (nada mudou), por isso do movimento ``inform_limitation``.
+NOT_DELIVERED = Template("set_delivery_address.not_delivered", "1", "inform_limitation",
+                         "We don't deliver to that address. What is the delivery address?")
+NOT_LOCATED = Template("set_delivery_address.not_located", "1", "inform_limitation",
+                       "I couldn't locate that address. Check the street, number and district, or send your location.")
+REFUSALS = {ErrorCode.FULFILLMENT_UNAVAILABLE.value: NOT_DELIVERED, ErrorCode.INVALID_CONTENT.value: NOT_LOCATED}
+TEMPLATES = (TEMPLATES_BY_ID["set_delivery_address.done"], NOT_DELIVERED, NOT_LOCATED, *SHARED)
 
 
 def _by_reference(state, need) -> bool:
@@ -46,6 +54,12 @@ def propose(state, need):
 def effect(state, need) -> EffectPlan:
     return EffectPlan(action=MOVE, target=state.subject.cart_ref, parameters={"source": state.content_ref or ""},
                       expected_versions={}, basis="line")
+
+
+def refusal_part(state, need) -> PartSpec | None:
+    """A recusa do endereço com frase própria (dita pelo ``inform_limitation``, que responde à recusa)."""
+    template = REFUSALS.get(str(state.refused.get(need.need_id) or ""))
+    return PartSpec("inform_limitation", template.template_id) if template is not None else None
 
 
 def reply(state, need):

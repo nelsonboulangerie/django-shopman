@@ -87,6 +87,12 @@ def reply(state, need):
 
     if state.answers_offer(need) and eligible_change(state):
         return PartSpec(MOVE, "inform_limitation.confirm_after_change")
+    if need.act == "give_address":
+        from .set_delivery_address import refusal_part
+
+        refused = refusal_part(state, need)
+        if refused is not None:
+            return refused  # fora da área, ou não se localiza: o cliente sabe o que fazer
     if need.act == "ask_recommendation" and state.declined_offers:
         return PartSpec(MOVE, "inform_limitation.offers_declined")
     return PartSpec(MOVE, "inform_limitation.offer_team")

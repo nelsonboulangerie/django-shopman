@@ -243,7 +243,7 @@ ao modelo, não entra em contrato, e só o sistema de registro sabe lê-lo (rua,
 o que falta para a nota). Juntar os dois obrigaria o comando do recebimento a carregar texto pessoal, ou o
 motor a julgar o que não pode ver. Separados, cada um tem a concessão, o recibo e a recusa dele; a
 sequência os aplica na ordem (o modo antes do endereço), e o endereço dado sem entrega combinada é
-recusado (`fulfillment_unavailable`). A resposta do endereço é `set_delivery_address.done`
+recusado (`fact_unavailable`). A resposta do endereço é `set_delivery_address.done`
 (`{address}`, campo `address_ref` do recibo), e o texto sai do formatador de referência da casa (spec 06).
 
 O ato `place_order` entrou na lista fechada (`engine/acts.py`). `inform_limitation` só é

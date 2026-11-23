@@ -127,3 +127,25 @@ def test_a_reference_formatter_that_cannot_resolve_holds_the_message():
     assert result.reply.verification.result == "hold"
     assert any(f.code == "reference_unresolved" for f in result.reply.verification.findings)
     assert result.text is None  # nada sai sem o valor
+
+
+def test_an_address_outside_the_area_says_so_and_asks_again():
+    far = _step("far", {"act": "give_address"}, text="far away road 9")
+    turn_engine, world = engine(steps=(far,), world=_delivery_world())
+    result = turn_engine.turn(CTX, far.message)
+    assert result.reply.template_ids == ("set_delivery_address.not_delivered",)
+    assert "cart-1" not in world.state.address
+
+
+def test_an_address_that_cannot_be_located_says_so():
+    nowhere = _step("nowhere", {"act": "give_address"}, text="nowhere street")
+    turn_engine, world = engine(steps=(nowhere,), world=_delivery_world())
+    result = turn_engine.turn(CTX, nowhere.message)
+    assert result.reply.template_ids == ("set_delivery_address.not_located",)
+
+
+def test_an_address_without_delivery_is_the_common_limitation():
+    world = FakeWorld()  # retirada: o endereço não tem onde cair
+    turn_engine, world = engine(steps=(ADDRESS,), world=world)
+    result = turn_engine.turn(CTX, ADDRESS.message)
+    assert result.reply.template_ids == ("inform_limitation.offer_team",) and "cart-1" not in world.state.address
