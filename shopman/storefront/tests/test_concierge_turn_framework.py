@@ -143,7 +143,7 @@ REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "
 
 def test_the_nice_templates_are_the_approved_phrases_and_a_broken_copy_drops_out(shop, monkeypatch):
     found = turn_framework.nice_templates()
-    assert set(found) == {"acknowledge.got_it", "acknowledge.thanks", *APPROVED}
+    assert set(found) == {"acknowledge.got_it", "acknowledge.thanks", *APPROVED, *turn_framework.FULFILLMENT_TEMPLATES}
     assert found["acknowledge.thanks"].text == copy_message("CONCIERGE_SMALL_TALK_THANKS").strip()
     for template_id, text in APPROVED.items():
         assert found[template_id].text == text, template_id  # a frase aprovada, letra por letra
@@ -190,3 +190,43 @@ def test_the_engine_tick_command_runs_in_the_worker(shop):
     out = StringIO()
     call_command("concierge_engine_tick", stdout=out)
     assert '"skipped": "classes_off"' in out.getvalue()
+
+
+# ── os moldes do pedido com a frase de hoje (passo 4 do pedido pelo motor) ────────────────
+
+
+def test_the_order_templates_are_today_phrases(shop):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.storefront.concierge import order_closing
+    found = turn_framework.nice_templates()
+    tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+    formatters = turn_framework.nice_formatters()
+
+    def say(template_id, **values):
+        text = found[template_id].text
+        for slot, value in values.items():
+            text = text.replace("{" + slot + "}", formatters[slot](value))
+        return text
+
+    today_with_window = order_closing.noted({"day": tomorrow, "kind": "pickup", "slot": "A partir das 15h"},
+                                            copy=copy_message)
+    today_without = order_closing.noted({"day": tomorrow, "kind": "delivery", "slot": ""}, copy=copy_message)
+    assert say("set_fulfillment.done", mode="pickup", date=tomorrow, window="slot-15") == today_with_window \
+        == "Combinado: retirada amanhã, a partir das 15h."
+    assert say("set_fulfillment.done_day", mode="delivery", date=tomorrow) == today_without \
+        == "Combinado: entrega amanhã."
+    assert say("set_fulfillment.done_date", date=tomorrow) == "Combinado: para amanhã."
+    assert say("set_fulfillment.done_mode", mode="delivery") == "Combinado: entrega."
+    # O que não tem frase de hoje fica fora: o turno segue o caminho de hoje (a hora sem janela, o resumo,
+    # o "total mudou" com o total, a sacola e o pedido registrado esperam a palavra do dono).
+    for missing in ("set_fulfillment.done_time", "set_fulfillment.updated", "present_terms.confirm",
+                    "present_terms.changed",
+                    "change_cart.done", "commit_order.done"):
+        assert missing not in found, missing
+
+
+def test_a_window_the_house_grid_does_not_know_never_leaks(shop):
+    assert turn_framework.window_text("manha") == "horário a confirmar"
