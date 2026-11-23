@@ -64,6 +64,23 @@ const stale = computed(() =>
 const staleNotice = computed(() =>
   boardStaleNotice(lastRead.value?.generated_at_display ?? ""),
 );
+// O aviso fecha no X e VOLTA enquanto a causa durar (regra da casa, #2095): na
+// próxima leitura que falhar, ou depois de um minuto, se a conexão seguir caída.
+const STALE_RETURN_MS = 60_000;
+const staleDismissed = ref(false);
+let staleReturnTimer: ReturnType<typeof setTimeout> | null = null;
+function dismissStale(): void {
+  staleDismissed.value = true;
+  if (staleReturnTimer) clearTimeout(staleReturnTimer);
+  staleReturnTimer = setTimeout(() => {
+    staleDismissed.value = false;
+  }, STALE_RETURN_MS);
+}
+// Cada leitura que falha traz um erro novo: o aviso fechado volta.
+watch(error, (next) => {
+  if (next) staleDismissed.value = false;
+});
+const showStale = computed(() => stale.value && !staleDismissed.value);
 const sound = useFlapClack();
 
 // Paginação de aeroporto: N linhas fixas (medidas na tela), excedente vira
@@ -118,6 +135,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer);
   if (respinTimer) clearInterval(respinTimer);
+  if (staleReturnTimer) clearTimeout(staleReturnTimer);
 });
 
 // ── Tela cheia (kiosk de verdade na TV) ─────────────────────────────────────
@@ -230,16 +248,26 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
       class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 md:px-8"
     >
       <!-- Sem conexão: a maior coisa da tela, primeiro conteúdo abaixo do topo,
-           com a hora da leitura que continua no ar. Volta sozinho quando a
-           leitura seguinte dá certo. -->
+           com a hora da leitura que continua no ar. Some quando a leitura
+           seguinte dá certo; o X fecha, e ele volta enquanto a causa durar. -->
       <div
-        v-if="stale"
+        v-if="showStale"
         role="alert"
         data-board-stale
         class="board-stale mb-4 flex shrink-0 items-center gap-[0.5em]"
       >
         <Icon name="lucide:wifi-off" class="board-stale-icon shrink-0" />
-        <span>{{ staleNotice }}</span>
+        <span data-board-stale-text class="min-w-0 flex-1">{{ staleNotice }}</span>
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          square
+          icon="i-lucide-x"
+          aria-label="Fechar aviso"
+          title="Fechar aviso"
+          class="board-stale-close shrink-0"
+          @click="dismissStale()"
+        />
       </div>
 
       <p v-if="pending && !rows.length" class="board-labels py-8">
@@ -434,6 +462,28 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
 .board-stale-icon {
   width: 1em;
   height: 1em;
+}
+/* O X na pele do aviso: letra escura sobre o âmbar, alvo do tamanho da letra (≥ 44px). */
+.board-stale-close {
+  /* Na escala do aviso (o botão traz fonte pequena de controle). */
+  font-size: inherit;
+  display: grid;
+  place-items: center;
+  width: max(2.75rem, 1.1em);
+  height: max(2.75rem, 1.1em);
+  padding: 0;
+  border-radius: 0.5rem;
+  color: var(--board-bg);
+  background: transparent;
+}
+.board-stale-close:hover {
+  color: var(--board-bg);
+  background: rgb(0 0 0 / 10%);
+}
+.board-stale-close :deep(.iconify),
+.board-stale-close :deep(svg) {
+  width: 0.75em;
+  height: 0.75em;
 }
 
 .board-key {

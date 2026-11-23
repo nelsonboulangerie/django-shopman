@@ -83,7 +83,9 @@ test("sem conexão, o quadro fica e o aviso diz de quando é", async ({
   await page.clock.runFor(40_000);
 
   const notice = page.locator("[data-board-stale]");
-  await expect(notice).toHaveText("Sem conexão. Lido às 6h42");
+  await expect(notice.locator("[data-board-stale-text]")).toHaveText(
+    "Sem conexão. Lido às 6h42",
+  );
   await expect(page.locator("[data-board-row]").first()).toBeVisible();
 
   const noticePx = await notice.evaluate((el) =>
@@ -95,4 +97,35 @@ test("sem conexão, o quadro fica e o aviso diz de quando é", async ({
     body: await page.screenshot(),
     contentType: "image/png",
   });
+});
+
+test("o aviso de conexão fecha no X e volta enquanto a conexão seguir caída", async ({
+  context,
+  page,
+}) => {
+  await context.addCookies([
+    cookie("e2e_session", "authed"),
+    cookie("e2e_scenario", "populated"),
+  ]);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.install({ time: new Date("2026-11-23T06:45:00-03:00") });
+  await page.goto("/board");
+  await expect(page.locator("[data-board-row]").first()).toBeVisible();
+
+  await context.addCookies([cookie("e2e_forecast", "down")]);
+  await page.clock.runFor(40_000);
+  const notice = page.locator("[data-board-stale]");
+  await expect(notice).toBeVisible();
+
+  await notice.getByRole("button", { name: "Fechar aviso" }).click();
+  await expect(notice).toHaveCount(0);
+  // O quadro lido continua; o aviso volta na próxima leitura que falha (ou em 1 min).
+  await expect(page.locator("[data-board-row]").first()).toBeVisible();
+  await page.clock.runFor(75_000);
+  await expect(notice).toBeVisible();
+
+  // A conexão voltou: o aviso some sozinho.
+  await context.clearCookies({ name: "e2e_forecast" });
+  await page.clock.runFor(150_000);
+  await expect(notice).toHaveCount(0);
 });
