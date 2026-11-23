@@ -22,6 +22,9 @@ TEMPLATES = (
     Template("inform_limitation.offer_team", "1", MOVE, "I can't do that here. I can hand you to the team."),
     # A parte que a sequência de efeitos não tentou (o efeito anterior não teve sucesso): não foi impossível,
     # só fica para depois de acertar o passo anterior (spec 08 §5).
+    # O "sim" com uma mudança junto que não se concluiu: o pedido espera a sacola, não foi impossível.
+    Template("inform_limitation.confirm_after_change", "1", MOVE,
+             "I'll register it once your cart change is settled; then I'll show you the summary again."),
     Template("inform_limitation.not_attempted", "1", MOVE,
              "That part waits until the earlier step is settled; tell me again once it is."),
     # A recusa do cliente segura a oferta até ele mudar de ideia (F10).
@@ -79,6 +82,10 @@ def propose(state, need):
 def reply(state, need):
     if state.refused.get(need.need_id) == "sequence_stopped":
         return PartSpec(MOVE, "inform_limitation.not_attempted")
+    from .change_cart import eligible_change
+
+    if state.answers_offer(need) and eligible_change(state):
+        return PartSpec(MOVE, "inform_limitation.confirm_after_change")
     if need.act == "ask_recommendation" and state.declined_offers:
         return PartSpec(MOVE, "inform_limitation.offers_declined")
     return PartSpec(MOVE, "inform_limitation.offer_team")

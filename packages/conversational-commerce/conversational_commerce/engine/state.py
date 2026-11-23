@@ -126,13 +126,20 @@ class TurnState:
         return (self.offer is not None and need.act == "affirm"
                 and need.answers_question == self.offer.question_id)
 
+    def has_fresh_terms(self) -> bool:
+        """Os termos do carrinho cotados neste turno valem (a leitura não falhou)."""
+        from conversational_commerce.contracts import Known
+
+        target = self.subject.cart_ref
+        return target in self.terms and isinstance(self.facts.get(self.terms_key(target or "")), Known)
+
     def changed_under_offer(self, need: NeedSpec) -> bool:
         """A mudança desta necessidade já aconteceu (recibo de sucesso) com termos no ar: pede termos novos.
 
         v2 4.7, propriedade 2: mudança material gera novos termos e nova confirmação. O "sim" seguinte
         responde ao documento novo, nunca ao de antes.
         """
-        if self.offer is None:
+        if self.offer is None or not self.has_fresh_terms():
             return False
         if need.act == "change_quantity":
             receipt = self.receipts.get(need.need_id)
