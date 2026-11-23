@@ -6308,15 +6308,18 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "ADMIN_CSRF_COOKIE_NAME",
             "APIVersionHeaderMiddleware",
             "API_V1_PREFIX",
             "API_VERSION",
             "APP_PLATFORM_PROBE_NETWORK",
             "AccessLogMiddleware",
+            "AdminCsrfCookieNameMiddleware",
             "BackupSheetDomainMiddleware",
             "HEALTH_PROBE_PATHS",
             "OperatorSessionDomainMiddleware",
             "_ACCESS_LOG_METHODS",
+            "_is_admin_host",
             "_strip_port",
             "access_logger"
           ]

@@ -60,6 +60,19 @@ NICE_TEMPLATE_COPY = {
     "handoff.not_accepted": "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED",
 }
 
+#: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).
+#: O recebimento é o MESMO "Combinado" do caminho de hoje (``CONCIERGE_CART_FULFILLMENT_NOTED``,
+#: ``order_closing.noted``), com os espaços do motor no lugar de ``{how}`` e ``{when}``.
+FULFILLMENT_TEMPLATES = {
+    "set_fulfillment.done": ("{mode}", "{date}, {window}"),
+    "set_fulfillment.done_day": ("{mode}", "{date}"),
+    # Derivada das aprovadas (coordenação, 23/11): a hora sem janela da grade.
+    "set_fulfillment.done_time": ("{mode}", "{date} às {time}"),
+    "set_fulfillment.done_date": ("para", "{date}"),
+    "set_fulfillment.done_mode": ("{mode}", ""),
+}
+FULFILLMENT_COPY = "CONCIERGE_CART_FULFILLMENT_NOTED"
+
 #: Quem atende, dito ao cliente. O dono do compromisso é um papel interno ("operator_on_duty",
 #: a fila): o cliente lê só que pediu a alguém da equipe, nunca o nome do papel.
 OWNER_TEXT = "alguém da equipe"
@@ -86,10 +99,42 @@ def deadline_text(value) -> str:
     return f"{day} às {format_clock(local)}"
 
 
+def date_text(value) -> str:
+    """O dia do recebimento como no "Combinado" de hoje: "hoje", "amanhã", "24/11"."""
+    from datetime import date
+
+    from .order_closing import day_word
+
+    return day_word(date.fromisoformat(str(value)))
+
+
+def mode_text(value) -> str:
+    from .order_closing import mode_word
+
+    return mode_word(str(value))
+
+
+def window_text(value) -> str:
+    """A janela pela grade da casa ("slot-15" → "a partir das 15h"); ref que a grade não conhece não vaza."""
+    from shopman.shop.services.fulfillment_window import window_label
+
+    from .order_closing import window_phrase
+
+    return window_phrase(window_label(str(value), for_customer=True))
+
+
+def time_text(value) -> str:
+    """ "16:00" → "16h", "16:30" → "16h30": a hora como a casa diz (``format_clock``)."""
+    from shopman.utils.formatting import format_clock
+
+    return format_clock(str(value))
+
+
 def nice_formatters() -> dict:
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
 
-    return {**DEFAULT_FORMATTERS, "owner": owner_text, "deadline": deadline_text}
+    return {**DEFAULT_FORMATTERS, "owner": owner_text, "deadline": deadline_text, "date": date_text,
+            "mode": mode_text, "window": window_text, "time": time_text}
 
 ENVIRONMENT = "live"
 
@@ -117,6 +162,29 @@ def nice_templates() -> dict[str, Template]:
             found[template_id] = Template(template_id, f"nice:{key}", base.move, text, dict(base.slots))
         except ValueError:
             logger.warning("concierge.turn_framework.template_refused template=%s key=%s", template_id, key)
+    found.update(_order_templates(package, copy_message))
+    return found
+
+
+def _order_templates(package, copy_message) -> dict[str, Template]:
+    """Os moldes do pedido com a frase de hoje. Copy que não vira molde válido fica fora (e o turno, no caminho de hoje).
+
+    O molde da casa tem os MESMOS espaços do pacote (``Engine.__post_init__``). Por isso o "total
+    mudou" de hoje, que não diz o total, não vira molde: o do pacote mostra ``{total}``.
+    """
+    import re
+
+    found: dict[str, Template] = {}
+    noted = (copy_message(FULFILLMENT_COPY) or "").strip()
+    for template_id, (how, when) in FULFILLMENT_TEMPLATES.items():
+        base = package.get(template_id)
+        text = re.sub(r"\s+([.,])", r"\1", noted.replace("{how}", how).replace("{when}", when)).strip()
+        if base is None or "{how}" not in noted or "{when}" not in noted:
+            continue
+        try:
+            found[template_id] = Template(template_id, f"nice:{FULFILLMENT_COPY}", base.move, text, dict(base.slots))
+        except ValueError:
+            logger.warning("concierge.turn_framework.template_refused template=%s key=%s", template_id, FULFILLMENT_COPY)
     return found
 
 

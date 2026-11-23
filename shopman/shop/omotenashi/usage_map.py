@@ -151,6 +151,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_CART_FULFILLMENT_NOTED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_CART_NEXT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),

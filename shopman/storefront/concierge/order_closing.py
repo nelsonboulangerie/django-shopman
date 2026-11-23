@@ -290,14 +290,28 @@ def noted(applied: dict, *, copy) -> str:
     """ "Combinado: retirada amanhã, a partir das 15h." O que ``prefill`` aplicou, dito de volta."""
     if not applied:
         return ""
-    today = timezone.localdate()
-    day = date.fromisoformat(applied["day"])
-    when = {today: "hoje", today + timedelta(days=1): "amanhã"}.get(day) or day.strftime("%d/%m")
+    when = day_word(date.fromisoformat(applied["day"]))
     slot = str(applied.get("slot") or "").strip()
     if slot:
-        when = f"{when}, {slot[:1].lower()}{slot[1:]}"
-    how = "retirada" if applied.get("kind") == "pickup" else "entrega"
+        when = f"{when}, {window_phrase(slot)}"
+    how = mode_word(applied.get("kind"))
     return _fill(copy(NOTED_KEY) or "", how=how, when=when)
+
+
+def day_word(day: date) -> str:
+    """ "hoje", "amanhã" ou "24/11": o dia como a casa diz no "Combinado"."""
+    today = timezone.localdate()
+    return {today: "hoje", today + timedelta(days=1): "amanhã"}.get(day) or day.strftime("%d/%m")
+
+
+def window_phrase(label: str) -> str:
+    """ "A partir das 15h" → "a partir das 15h": a janela no meio da frase."""
+    label = str(label or "").strip()
+    return f"{label[:1].lower()}{label[1:]}"
+
+
+def mode_word(kind) -> str:
+    return "retirada" if kind == "pickup" else "entrega"
 
 
 def answers(said: Said, pending: dict) -> bool:
