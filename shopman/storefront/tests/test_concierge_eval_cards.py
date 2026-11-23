@@ -122,4 +122,5 @@ def test_the_ensaio_profile_never_changes_the_live_profile(house):
     live = {line.id: line.state for line in build_profile(environment="live").lines}
     ensaio = {line.id: line.state for line in eval_cards._profile().lines}
     assert live[eval_cards.ORDER_LINE] != "approved" and ensaio[eval_cards.ORDER_LINE] == "approved"
-    assert eval_cards.GRANT_LINE not in live and ensaio[eval_cards.GRANT_LINE] == "approved"
+    assert {k: v for k, v in live.items() if k != eval_cards.ORDER_LINE} == \
+        {k: v for k, v in ensaio.items() if k != eval_cards.ORDER_LINE}  # só a P08 muda, e só no ensaio

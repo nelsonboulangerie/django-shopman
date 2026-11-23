@@ -141,25 +141,16 @@ def _world():
     return world
 
 
-#: A linha que a concessão lê (``authority.grants.GRANT_VALIDITY_LINE``). O perfil da Nice NÃO a tem:
-#: sem ela, nenhuma concessão nasce e o motor não executa efeito nenhum. No ensaio, ela entra só em
-#: memória, com o valor do perfil de teste do pacote (600 s, ``spec/02-catalog-profile.md``).
-GRANT_LINE, GRANT_SECONDS = "grant.validity_seconds", 600
 DECIDED_AT = "2026-11-23T00:00:00.000000Z"
 
 
 def _profile():
-    """O perfil da Nice, com a P08 aprovada e a validade da concessão SÓ aqui (o do ar não muda)."""
-    from conversational_commerce.contracts.deployment_profile import LineSet
-
+    """O perfil da Nice, com a P08 aprovada SÓ aqui (o do ar não muda)."""
     from .profile import build_profile
 
     profile = build_profile(environment="live")
     lines = [dataclasses.replace(line, state="approved", decided_at=line.decided_at or DECIDED_AT)
              if line.id == ORDER_LINE else line for line in profile.lines]
-    if not any(line.id == GRANT_LINE for line in lines):
-        lines.append(dataclasses.replace(lines[0], id=GRANT_LINE, setting=LineSet(value=GRANT_SECONDS),
-                                         state="approved", decided_at=DECIDED_AT))
     return dataclasses.replace(profile, lines=tuple(lines))
 
 
