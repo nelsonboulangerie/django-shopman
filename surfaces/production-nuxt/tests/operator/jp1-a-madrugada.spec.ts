@@ -87,8 +87,13 @@ test("J-P1: a madrugada, do previsto à loja", async ({
   await expect(
     reason.getByText(`Qual o motivo principal da perda de ${LOSS}?`),
   ).toBeVisible();
+  // A folha sobe da base: a captura espera o motivo estar na tela.
+  const reasonChoice = reason.getByRole("button", {
+    name: new RegExp(`^${REASON}`),
+  });
+  await expect(reasonChoice).toBeInViewport();
   await capture(tablet, testInfo, "finalizacao-motivo-da-perda");
-  await reason.getByRole("button", { name: new RegExp(`^${REASON}`) }).click();
+  await reasonChoice.click();
   await expect(
     tablet.getByRole("button", { name: `Finalizar o lote de ${PRODUCT}` }),
   ).toHaveCount(0);
@@ -107,6 +112,8 @@ test("J-P1: a madrugada, do previsto à loja", async ({
     name: `Confirmar a qualidade do lote de ${PRODUCT} assim`,
   });
   await expect(confirm.first()).toBeVisible();
+  // O lote com perda vem depois dos sem exceção: ela rola até ele.
+  await confirm.first().scrollIntoViewIfNeeded();
   await capture(phone, testInfo, "qualidade-excecao");
   await confirm.first().click();
   await expect(confirm).toHaveCount(0);

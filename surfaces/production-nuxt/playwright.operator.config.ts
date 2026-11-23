@@ -19,7 +19,7 @@ if (missing.length) {
 }
 if (!existsSync(new URL("./.output/server/index.mjs", import.meta.url))) {
   throw new Error(
-    "Compile a Produção antes (tests/operator/README.md, seção "Subir a pilha", item 3): a suíte sobe .output/server/index.mjs.",
+    "Compile a Produção antes (tests/operator/README.md, seção Subir a pilha, item 3): a suíte sobe .output/server/index.mjs.",
   );
 }
 

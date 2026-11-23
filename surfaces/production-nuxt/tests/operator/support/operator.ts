@@ -43,15 +43,16 @@ export async function operatorUnlocksWithPin(
 }
 
 /** A Gerente libera um dispositivo novo: entra com usuário e senha e, quando o app oferece
- *  vincular o dispositivo a um posto, segue sem vincular (a Produção não pede posto). */
+ *  vincular o dispositivo a um posto, segue sem vincular (a Produção não pede posto):
+ *  "Usar sem vincular" no diálogo do tablet, "Agora não" na faixa do celular. */
 export async function managerReleasesDevice(page: Page): Promise<void> {
   await managerSignsIn(page);
-  const unbound = page
-    .getByRole("button", { name: "Usar sem vincular" })
-    .first();
-  if (await unbound.isVisible().catch(() => false)) {
-    await unbound.click();
-    await unbound.waitFor({ state: "hidden", timeout: 30_000 });
+  for (const name of ["Usar sem vincular", "Agora não"]) {
+    const skip = page.getByRole("button", { name, exact: true }).first();
+    if (await skip.isVisible().catch(() => false)) {
+      await skip.click();
+      await skip.waitFor({ state: "hidden", timeout: 30_000 });
+    }
   }
   await settled(page);
 }
