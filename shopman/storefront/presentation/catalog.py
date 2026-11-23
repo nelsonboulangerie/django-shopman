@@ -41,7 +41,7 @@ from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
 from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
 from shopman.storefront.presentation.icons import collection_icon
-from shopman.storefront.presentation.promise import PromiseProjection, promise_for
+from shopman.storefront.presentation.promise import KIND_READY, PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label
 
 if TYPE_CHECKING:
@@ -658,6 +658,12 @@ def _build_items(
         dietary = list(rotulo.get("dietary_info") or ())
         allergens = tuple(rotulo.get("allergens") or ())
         tags = _product_tags(p)
+        promise = promise_for(
+            p.sku,
+            promise_facts,
+            orderable=can_add,
+            made_to_order=bool(meta.get("made_to_order")),
+        )
 
         result.append(
             CatalogItemProjection(
@@ -697,12 +703,7 @@ def _build_items(
                 choice_group=catalog_context.choice_group(p) or None,
                 choice_group_label=catalog_context.choice_group_label(p) or None,
                 option_groups=tuple(catalog_context.option_groups(p)),
-                promise=promise_for(
-                    p.sku,
-                    promise_facts,
-                    orderable=can_add,
-                    made_to_order=bool(meta.get("made_to_order")),
-                ),
+                promise=promise,
                 fomo_badges=showcase_badges(
                     p.sku,
                     available_qty=available_qty,
@@ -710,10 +711,24 @@ def _build_items(
                     promotions=active_promotions,
                     sku_collections=cols,
                     low_stock_threshold=low_stock_threshold,
+                    ready_now=ready_now(availability, promise),
                 ),
             ),
         )
     return result
+
+
+def ready_now(availability, promise: PromiseProjection | None) -> bool:
+    """O produto está pronto agora: disponível (ou acabando) e com a promessa "Pronto agora".
+
+    É a régua dos selos de fornada pronta e de últimas unidades (#2807). "Fornada
+    pronta há 12 min" ao lado de "Encomendar para amanhã" (a fornada que acabou, o
+    corte do dia que passou) ou de "Fica pronto hoje às 15h" é promessa que a loja
+    não cumpre agora.
+    """
+    if availability not in (Availability.AVAILABLE, Availability.LOW_STOCK):
+        return False
+    return promise is not None and promise.kind == KIND_READY
 
 
 @dataclass(frozen=True)

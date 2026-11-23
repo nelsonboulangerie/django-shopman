@@ -41,7 +41,17 @@ def _item(sku: str):
     return next(item for item in build_catalog(channel_ref="web").items if item.sku == sku)
 
 
-def test_fornada_pronta_ha_pouco_vira_selo_no_card(listing, collection_item, product):
+@pytest.fixture
+def _vende_hoje(monkeypatch):
+    """O produto está pronto agora (estoque e horário de hoje), seja qual for a hora
+    em que a suíte roda: a régua em si tem testes próprios, abaixo."""
+    from shopman.storefront.presentation import catalog, product_detail
+
+    monkeypatch.setattr(catalog, "ready_now", lambda *args: True)
+    monkeypatch.setattr(product_detail, "ready_now", lambda *args: True)
+
+
+def test_fornada_pronta_ha_pouco_vira_selo_no_card(listing, collection_item, product, _vende_hoje):
     _publish(listing, product)
     _finished(product.sku, minutes_ago=12)
 
@@ -99,7 +109,7 @@ def test_sem_estoque_conhecido_nao_ha_ultimas_unidades():
     ) == ()
 
 
-def test_a_pagina_do_produto_leva_os_mesmos_selos(listing, collection_item, product):
+def test_a_pagina_do_produto_leva_os_mesmos_selos(listing, collection_item, product, _vende_hoje):
     from shopman.storefront.presentation.product_detail import build_product_detail
 
     _publish(listing, product)
@@ -108,3 +118,38 @@ def test_a_pagina_do_produto_leva_os_mesmos_selos(listing, collection_item, prod
     detail = build_product_detail(sku=product.sku, channel_ref="web")
 
     assert [(b.type, b.label) for b in detail.fomo_badges] == [("fresh", "Fornada pronta há 12 min")]
+
+
+def test_fornada_pronta_so_vale_para_o_que_se_compra_agora():
+    """A fornada que já acabou (só encomenda para amanhã) não diz "Fornada pronta"."""
+    now = timezone.now()
+    badges = showcase_badges(
+        "COE",
+        available_qty=4,
+        finished_at=now - timedelta(minutes=12),
+        promotions=[],
+        sku_collections=(),
+        low_stock_threshold=Decimal("5"),
+        ready_now=False,
+        now=now,
+    )
+
+    assert badges == ()
+
+
+def test_pronto_agora_e_disponivel_com_a_promessa_pronto_agora():
+    from types import SimpleNamespace
+
+    from shopman.shop.projections.types import Availability
+    from shopman.storefront.presentation.catalog import ready_now
+
+    pronto = SimpleNamespace(kind="ready")
+    as_15h = SimpleNamespace(kind="batch")  # "Fica pronto hoje às 15h"
+    amanha = SimpleNamespace(kind="preorder")  # "Encomendar para amanhã"
+
+    assert ready_now(Availability.AVAILABLE, pronto)
+    assert ready_now(Availability.LOW_STOCK, pronto)
+    assert not ready_now(Availability.AVAILABLE, as_15h)
+    assert not ready_now(Availability.AVAILABLE, amanha)
+    assert not ready_now(Availability.PLANNED_OK, pronto)
+    assert not ready_now(Availability.AVAILABLE, None)

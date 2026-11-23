@@ -31,7 +31,7 @@ from shopman.shop.projections.types import (
     CategoryProjection,
 )
 from shopman.storefront.identity import customer_pricing_hints
-from shopman.storefront.presentation.catalog import unit_weight_label, viewer_collection_access
+from shopman.storefront.presentation.catalog import ready_now, unit_weight_label, viewer_collection_access
 from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
 from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
@@ -381,9 +381,10 @@ def build_product_detail(
     )
 
     is_made_to_order = _is_made_to_order(product)
+    promise_facts = read_promise_facts([product.sku], channel_ref=channel_ref, own_holds={product.sku: own_hold})
     promise = promise_for(
         product.sku,
-        read_promise_facts([product.sku], channel_ref=channel_ref, own_holds={product.sku: own_hold}),
+        promise_facts,
         orderable=can_add_to_cart,
         made_to_order=is_made_to_order,
     )
@@ -438,6 +439,7 @@ def build_product_detail(
             promotions=catalog_context.active_promotions(channel_ref),
             sku_collections=sku_collections,
             low_stock_threshold=low_stock_threshold,
+            ready_now=ready_now(availability, promise),
         ),
     )
 
