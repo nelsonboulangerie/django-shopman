@@ -947,19 +947,24 @@ const discrepancyColumns = [
                  caminho no Gestor. Fechar o dia não depende de nenhum. -->
             <NuxtCard v-if="readyOrders.length" data-closing-ready-orders>
               <div class="grid gap-3">
-                <div class="flex flex-wrap items-center gap-3">
-                  <Icon
-                    :name="readyToResolve.length ? 'lucide:triangle-alert' : 'lucide:info'"
-                    class="size-5 shrink-0"
-                    :class="readyToResolve.length ? 'text-warning' : 'text-muted-foreground'"
-                  />
-                  <p class="min-w-0 flex-1 op-body">
-                    {{ readyToResolve.length
-                      ? `${readyLine} Encerre todos aqui, com um gerente, ou cada um no Gestor. Fechar o dia não depende disso.`
-                      : "Pedidos prontos esperando a retirada. Nenhum impede fechar o dia." }}
-                  </p>
+                <!-- No celular o atalho desce para uma linha própria: ao lado do texto, ele
+                     espremia a frase em uma palavra por linha (prévia de 22/11, 375 px). -->
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div class="flex min-w-0 flex-1 items-center gap-3">
+                    <Icon
+                      :name="readyToResolve.length ? 'lucide:triangle-alert' : 'lucide:info'"
+                      class="size-5 shrink-0"
+                      :class="readyToResolve.length ? 'text-warning' : 'text-muted-foreground'"
+                    />
+                    <p class="min-w-0 flex-1 op-body">
+                      {{ readyToResolve.length
+                        ? `${readyLine} Encerre todos aqui, com um gerente, ou cada um no Gestor. Fechar o dia não depende disso.`
+                        : "Pedidos prontos esperando a retirada. Nenhum impede fechar o dia." }}
+                    </p>
+                  </div>
                   <NuxtButton
                     v-if="readyToResolve.length"
+                    class="self-start sm:self-auto"
                     color="neutral"
                     variant="outline"
                     icon="i-lucide-package-x"
