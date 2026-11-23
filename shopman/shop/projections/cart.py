@@ -25,6 +25,7 @@ from typing import Any
 from django.utils import timezone
 
 from shopman.shop import product_options
+from shopman.shop.discount_spread import merged_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -331,12 +332,14 @@ def build_cart(
 
     # A linha __DELIVERY_FEE__ é cobrança (entra em Order.total_q), não item do
     # carrinho: fica fora de lines/subtotal — a taxa aparece via delivery_fee_q.
-    raw_items = [
+    # A linha que o rateio do desconto partiu (#3240) aparece inteira: a cliente
+    # comprou 3 Croissants, e o cupom de pedido já tem linha própria na sacola.
+    raw_items = merged_for_display([
         dict(item)
         for item in (session.items or [])
         if item.get("sku") != "__DELIVERY_FEE__"
         and (item.get("meta") or {}).get("type") != "delivery_fee"
-    ]
+    ])
     if not raw_items:
         return _empty_cart(session_key)
 

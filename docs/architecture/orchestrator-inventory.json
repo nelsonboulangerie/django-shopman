@@ -3267,6 +3267,20 @@
       ]
     },
     {
+      "path": "shopman/shop/discount_spread.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "pricing.split-line"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/dynamic_collections.py",
       "touchpoints": [
         "outro"
@@ -7053,15 +7067,12 @@
             "_current_disc_q",
             "_discount_label",
             "_is_non_merchandise_line",
-            "_line_qty",
             "_list_price_q",
             "_qty_decimal",
-            "_qty_json",
             "_record_total_q",
             "_reverse_order_level_share",
             "_reverse_prior_pricing",
             "_round_to_step_q",
-            "_spread_order_discount",
             "_stamp_disc",
             "logger"
           ]
