@@ -2333,3 +2333,194 @@ def test_non_overridable_order_shortage_never_offers_force(
 
     assert response.status_code == 409
     assert [possibility["kind"] for possibility in response.json()["error"]["possibilities"]] == ["retry"]
+
+
+# ── Zerar não cancela (P0-1, WP-F01) ─────────────────────────────────────────
+#
+# Medido pela tela em 23/11/2026: a Cozinha, sem a permissão de cancelar lote,
+# corrigia o Croissant de amanhã para 0 e o lote saía do plano, cancelado com o
+# motivo "Planejamento zerado na matriz" (texto do código), soltando a reserva
+# de uma encomenda paga. Zerar um lote que existe é cancelar o lote: pede
+# ``can_void``, passa pela guarda do pão entregue (#3232) e grava o motivo de
+# quem zerou.
+
+
+@pytest.fixture
+def kitchen_operator(db):
+    """A Cozinha: edita o Planejamento, não cancela lote."""
+    from shopman.backstage.tests.production_grants import grant_production_operator
+
+    user = User.objects.create_user("cozinha-prod", password="pw", is_staff=True)
+    user = grant_production_operator(user)
+    assert resolve_production_access(user).can_edit_planned
+    assert not resolve_production_access(user).can_void
+    return user
+
+
+def _zero_the_lot(client, recipe, work_order, *, reason="", key="zero-lot"):
+    work_order.refresh_from_db()
+    return production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        data={
+            "recipe_id": recipe.pk,
+            "work_order_id": work_order.pk,
+            "quantity": "0",
+            "target_date": work_order.target_date.isoformat(),
+            "position_ref": "forno",
+            "reason": reason,
+            "expected_rev": work_order.rev,
+            "idempotency_key": key,
+        },
+        content_type="application/json",
+    )
+
+
+@pytest.mark.django_db
+def test_kitchen_zeroing_a_lot_is_refused_and_the_lot_stays(client, recipe, kitchen_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(kitchen_operator)
+
+    response = _zero_the_lot(client, recipe, work_order, reason="Sobrou ontem")
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["detail"] == "Cancelar lote é com o gerente."
+    assert body["error"]["capability"] == "can_void"
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+    assert work_order.quantity == Decimal("10")
+    assert not WorkOrderEvent.objects.filter(work_order=work_order, kind=WorkOrderEvent.Kind.VOIDED).exists()
+
+
+@pytest.mark.django_db
+def test_kitchen_still_adjusts_the_plan_above_zero(client, recipe, kitchen_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(kitchen_operator)
+    work_order.refresh_from_db()
+
+    response = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        data={
+            "recipe_id": recipe.pk,
+            "work_order_id": work_order.pk,
+            "quantity": "6",
+            "target_date": work_order.target_date.isoformat(),
+            "position_ref": "forno",
+            "expected_rev": work_order.rev,
+            "idempotency_key": "kitchen-adjust",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    work_order.refresh_from_db()
+    assert work_order.quantity == Decimal("6")
+
+
+@pytest.mark.django_db
+def test_manager_zeroing_a_lot_voids_it_with_the_reason_given(client, recipe, production_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(production_operator)
+
+    work_order.refresh_from_db()
+    board = client.get(reverse("api-backstage-production")).json()["board"]
+    action = next(item for item in board["actions"] if item["ref"] == f"plan:{work_order.pk}")
+    body = _projected_body(
+        board,
+        action,
+        recipe_id=recipe.pk,
+        work_order_id=work_order.pk,
+        quantity="0",
+        target_date=board["selected_date"],
+        position_ref="forno",
+        reason="  Massa não fermentou  ",
+        expected_rev=action["expected_rev"],
+        idempotency_key="manager-zero",
+    )
+    url = reverse("api-backstage-wo-plan")
+
+    response = client.post(url, body, content_type="application/json")
+    replay = client.post(url, body, content_type="application/json")
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["result"] == "cleared"
+    assert replay.status_code == 200, replay.json()
+    assert replay.json()["result"] == "cleared"
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.VOID
+    [voided] = WorkOrderEvent.objects.filter(work_order=work_order, kind=WorkOrderEvent.Kind.VOIDED)
+    assert voided.payload["reason"] == "Massa não fermentou"
+    assert voided.actor == _production_actor(SimpleNamespace(user=production_operator))
+
+    # A mesma chave, outra tentativa: conflito, como a releitura do plano responde.
+    from shopman.backstage.services.exceptions import ProductionConflict
+
+    with pytest.raises(ProductionConflict):
+        production_service.apply_planned(
+            recipe_id=recipe.pk,
+            quantity="7",
+            target_date_value=board["selected_date"],
+            position_ref="forno",
+            actor=voided.actor,
+            expected_rev=None,
+            idempotency_key="manager-zero",
+        )
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 1
+
+
+@pytest.mark.django_db
+def test_zeroing_a_lot_without_a_reason_is_refused(client, recipe, production_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(production_operator)
+
+    response = _zero_the_lot(client, recipe, work_order, reason="   ")
+
+    assert response.status_code != 200
+    assert response.json()["detail"] == "Diga o motivo de tirar o lote do plano."
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+
+
+@pytest.mark.django_db
+def test_zeroing_a_lot_that_already_delivered_bread_hits_the_void_guard(
+    client,
+    recipe,
+    production_operator,
+    monkeypatch,
+):
+    """A guarda do #3232 roda no zero como roda no "Cancelar lote…"."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    monkeypatch.setattr(production_service, "_delivered_beyond_other_lots", lambda wo: Decimal("4"))
+    client.force_login(production_operator)
+
+    response = _zero_the_lot(client, recipe, work_order, reason="Erro de planejamento")
+
+    assert response.status_code != 200
+    assert "4 un. dele já foram entregues" in response.json()["detail"]
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+
+
+@pytest.mark.django_db
+def test_zeroing_an_empty_cell_still_clears_without_voiding(client, recipe, production_operator):
+    client.force_login(production_operator)
+
+    response = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        data={
+            "recipe_id": recipe.pk,
+            "quantity": "0",
+            "target_date": date.today().isoformat(),
+            "position_ref": "forno",
+            "expected_rev": None,
+            "idempotency_key": "zero-empty-cell",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["result"] == "cleared"
+    assert not WorkOrder.objects.filter(recipe=recipe).exists()
