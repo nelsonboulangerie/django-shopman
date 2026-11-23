@@ -26,7 +26,7 @@ from django.db import transaction
 from shopman.utils.formatting import format_clock, format_local
 
 from shopman.backstage.services.exceptions import CatalogError
-from shopman.shop.services import attributes
+from shopman.shop.services import attributes, running_low
 
 logger = logging.getLogger(__name__)
 
@@ -739,6 +739,7 @@ _DETAIL_EDITABLE_FIELDS = frozenset({
     "allows_next_day_sale",
     "made_to_order",
     "ready_from",
+    "running_low_percent",
     "vocation",
     "collections",
 })
@@ -866,6 +867,12 @@ def _detail_payload(product) -> dict:
         # fonte do Admin; ``None`` = usa o preparo padrão da loja, que vai ao lado
         # (somente leitura) para a tela dizer quanto é.
         **_preorder_prep_payload(product.sku),
+        # Quando o item está ACABANDO (DEV-2026-077): a porcentagem PRÓPRIA do SKU
+        # (``None`` = usa o padrão da loja, que vai ao lado, somente leitura). A
+        # régua é a de ``shop/services/running_low.py``: o PDV mostra o saldo à
+        # vista e a Cozinha diz "Últimas N un." a partir daí.
+        "running_low_percent": running_low.product_percent(metadata),
+        "running_low_default_percent": running_low.shop_default_percent(),
         "nutrition_facts": _nutrition_payload(product),
         "social": _social_attrs_payload(product),
         "fiscal": _fiscal_payload(product),
@@ -1479,6 +1486,20 @@ def _apply_labelling(product, data: dict) -> None:
         metadata["allows_next_day_sale"] = _as_flag(data.get("allows_next_day_sale"), "allows_next_day_sale")
     if "made_to_order" in data:
         metadata["made_to_order"] = _as_flag(data.get("made_to_order"), "made_to_order")
+    if "running_low_percent" in data:
+        # Vazio devolve o SKU ao padrão da loja; fora de 0 a 100 é recusado, nunca
+        # guardado (um 150% diria "sempre", um -5 diria "nunca", calados).
+        raw = data.get("running_low_percent")
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            metadata.pop(running_low.METADATA_KEY, None)
+        else:
+            percent = running_low.coerce_percent(raw)
+            if percent is None:
+                raise _field_error(
+                    "Avisar que está acabando: use de 0 a 100%, ou deixe em branco para o padrão da loja.",
+                    "running_low_percent",
+                )
+            metadata[running_low.METADATA_KEY] = percent
     if "ready_from" in data:
         # Vazio APAGA a declaração; hora ilegível é recusada em vez de virar
         # ausência silenciosa (o cadastro diria que a casa respondeu, e o sistema

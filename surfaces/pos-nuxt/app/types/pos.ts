@@ -47,6 +47,9 @@ export interface POSProductProjection {
   sold_out_reason?: string;
   /** Unidades que a casa ainda promete hoje (só com pronto na prateleira); `null` = não diz. */
   units_left?: number | null;
+  /** O item está ACABANDO (DEV-2026-077): o saldo chegou à porcentagem do SKU.
+   *  Só então o tile mostra o saldo à vista; fora disso, no hover e no foco. */
+  running_low?: boolean;
   /** Encomenda para outro dia sem lote planejado do item na data (WP-E3): o item
    *  entra, como pedido à Produção, e esta é a frase que a tela diz. Vazio fora disso. */
   unplanned_note?: string;
