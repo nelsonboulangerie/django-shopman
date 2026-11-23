@@ -261,6 +261,7 @@ def test_a_window_the_house_grid_does_not_know_never_leaks(shop):
     assert turn_framework.window_text("manha") == "horário a confirmar"
 
 
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
 def test_an_effect_refused_on_air_says_the_nice_limitation_never_the_package_english(shop, sent, monkeypatch):
     """#3408: a sombra não executa efeito; no ar, o efeito recusado refaz a decisão, e quem responde é a limitação."""
     import dataclasses
