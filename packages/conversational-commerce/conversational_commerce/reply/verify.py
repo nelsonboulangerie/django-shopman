@@ -57,6 +57,8 @@ class RenderedClaim:
     slot: str
     backing: str
     ref: str | None
+    # O formatador de referência da casa não resolveu o valor (``UnresolvedReference``): o espaço ficou vazio.
+    unresolved: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +119,9 @@ def verify(parts: Iterable[RenderedPart], evidence: Evidence, rules: Iterable[Ph
     repaired: list[RenderedPart] = []
     for index, part in enumerate(parts):
         for claim in part.claims:
+            if claim.unresolved:
+                findings.append(Finding("reference_unresolved", index, claim.slot))
+                continue
             problem = evidence.problem(claim.backing, claim.ref)
             if problem is not None:
                 findings.append(Finding(problem, index, claim.slot))

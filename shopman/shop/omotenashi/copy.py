@@ -1543,6 +1543,21 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_PAYMENT_SET": {
         WILDCARD: {WILDCARD: CopyEntry(message="Combinado: {method}.")},
     },
+    "CONCIERGE_ENGINE_ADDRESS_SET": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: entrega na {address}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_DETAILS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para a entrega, me diga {delivery_address_details}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Esse endereço está fora da nossa área de entrega. Qual é o endereço da entrega? Pode enviar a localização pelo WhatsApp ou escrever rua, número, bairro e CEP.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não consegui localizar esse endereço para calcular a entrega. Confira a rua, o número e o bairro, ou envie sua localização pelo WhatsApp.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT": {
+        WILDCARD: {WILDCARD: CopyEntry(message='Tem complemento (apartamento, bloco, fundos)? Se não tiver, é só dizer "sem complemento".')},
+    },
     "CONCIERGE_ENGINE_EFFECT_FAILED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
     },

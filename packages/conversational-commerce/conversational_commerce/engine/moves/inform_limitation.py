@@ -34,7 +34,7 @@ TEMPLATES = (
 LIMITED_ACTS = CHANGE_ACTS | {"complain", "request_human", "ask_recommendation"}
 # O movimento que faz cada pedido de mudança.
 HANDLED_BY = {"change_quantity": ("change_cart",), "choose_fulfillment": ("set_fulfillment",),
-              "choose_payment": ("set_payment",),
+              "choose_payment": ("set_payment",), "give_address": ("set_delivery_address",),
               "place_order": ("present_terms",),
               "cancel_order": ("cancel_order",), "complain": ("open_case",), "request_human": ("handoff",),
               "ask_recommendation": ("recommend",)}
@@ -95,6 +95,12 @@ def reply(state, need):
         part = limitation_part(state, need)
         if part is not None:
             return part  # a forma que o canal não oferece: diz que não, com as opções
+    if need.act == "give_address":
+        from .set_delivery_address import refusal_part
+
+        refused = refusal_part(state, need)
+        if refused is not None:
+            return refused  # fora da área, ou não se localiza: o cliente sabe o que fazer
     if need.act == "ask_recommendation" and state.declined_offers:
         return PartSpec(MOVE, "inform_limitation.offers_declined")
     return PartSpec(MOVE, "inform_limitation.offer_team")

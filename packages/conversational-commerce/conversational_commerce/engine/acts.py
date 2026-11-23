@@ -21,6 +21,7 @@ ACTS: tuple[str, ...] = (
     "change_quantity",
     "choose_fulfillment",
     "choose_payment",
+    "give_address",
     "place_order",
     "cancel_order",
     "complain",
@@ -37,7 +38,10 @@ ANSWER_ACTS = frozenset({"affirm", "deny"})
 # O cliente declara o que quer da casa: vira memória declarada (F10), e a resposta é cortesia.
 DECLARATION_ACTS = frozenset({"decline_offers", "accept_offers"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
-CHANGE_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_payment", "place_order", "cancel_order"})
+CHANGE_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_payment", "give_address", "place_order",
+                         "cancel_order"})
+# ``give_address`` não tem campo: quem lê marca só que a fala traz o endereço. O endereço se lê do texto
+# original, pela referência protegida do evento, dentro do efeito (P17: o texto pessoal nunca vai a contrato).
 #: O campo sem o qual o ato não se cumpre: lido sem ele, o motor pergunta (``ask_clarification``), nunca
 #: diz a limitação ("vou pagar" sem a forma é pergunta, não pedido impossível).
 REQUIRED_FIELDS = {"choose_payment": "method"}
@@ -82,6 +86,7 @@ TEST_RULES = LocalRules(
         "change_quantity": (r"\bmake it\b", r"\bchange\b"),
         "choose_fulfillment": (r"\bpick ?up\b", r"\bdeliver(y)?\b"),
         "choose_payment": (r"\bpay (by|with)\b",),
+        "give_address": (r"\b(deliver to|my address is)\b",),
         "place_order": (r"\bplace (the |my )?order\b", r"\bcheck ?out\b"),
         "cancel_order": (r"\bcancel\b",),
         "affirm": (r"^\s*(yes|yeah|ok)\b",),

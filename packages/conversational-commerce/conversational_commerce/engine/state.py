@@ -19,7 +19,7 @@ RETERM = frozenset({"terms_changed", "terms_expired", "grant_expired", "confirma
 
 
 #: Os atos que mudam o carrinho de forma material (a sacola, o recebimento, o pagamento): v2 4.7, propriedade 2.
-MATERIAL_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_payment"})
+MATERIAL_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_payment", "give_address"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +107,11 @@ class TurnState:
     subject: Subject = field(default_factory=Subject)
     # Os termos apresentados, se a pergunta que pede a confirmação deles está no ar nesta época.
     offer: Offer | None = None
+    # O fechamento pediu uma condição obrigatória no turno anterior (``present_terms.needs_*``): a resposta
+    # que muda o carrinho volta aos termos, sem o cliente repetir "pode fechar".
+    closing: bool = False
+    # A referência protegida do conteúdo do evento (spec 01): o endereço se lê por ela, nunca pelo texto.
+    content_ref: str | None = None
     # Algum movimento de efeito foi escolhido neste turno (executado ou não, inclusive em sombra).
     effect_chosen: bool = False
     # Necessidade que responde à oferta → por que a confirmação não autoriza (``None``: autoriza).
@@ -145,6 +150,10 @@ class TurnState:
         return (self.offer is not None and need.act == "deny"
                 and need.answers_question == self.offer.question_id)
 
+    def declines_terms(self, need: NeedSpec) -> bool:
+        """O "não" aos termos no ar, ou ao fechamento que pergunta por uma condição ("deixa pra lá")."""
+        return self.declines_offer(need) or (self.offer is None and self.closing and need.act == "deny")
+
     def has_fresh_terms(self) -> bool:
         """Os termos do carrinho cotados neste turno valem (a leitura não falhou)."""
         from conversational_commerce.contracts import Known
@@ -155,10 +164,13 @@ class TurnState:
     def changed_under_offer(self, need: NeedSpec) -> bool:
         """A mudança desta necessidade já aconteceu (recibo de sucesso) com termos no ar: pede termos novos.
 
+        Vale também com o fechamento esperando uma condição obrigatória (``closing``): a forma de pagamento
+        ou o endereço respondidos voltam aos termos, que perguntam a próxima condição ou se apresentam.
+
         v2 4.7, propriedade 2: mudança material gera novos termos e nova confirmação. O "sim" seguinte
         responde ao documento novo, nunca ao de antes.
         """
-        if self.offer is None or not self.has_fresh_terms():
+        if (self.offer is None and not self.closing) or not self.has_fresh_terms():
             return False
         if need.act in MATERIAL_ACTS:
             receipt = self.receipts.get(need.need_id)

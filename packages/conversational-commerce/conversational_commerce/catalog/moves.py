@@ -1,4 +1,4 @@
-"""O catálogo v1: os 18 movimentos, com família, nível e precondições.
+"""O catálogo v1: os 19 movimentos, com família, nível e precondições.
 
 Ordem das famílias (v2 4.1), da que vence para a que cede:
 ``protect_and_fulfill`` > ``resolve`` > ``clarify`` > ``commerce`` > ``follow_up``.
@@ -68,6 +68,8 @@ CATALOG: tuple[Move, ...] = (
          ("stable_event_identity", "absolute_fulfillment", "change_is_reversible"), ("J4",)),
     Move("set_payment", "resolve", "A2",
          ("stable_event_identity", "conditions_known", "payment_method_offered", "change_is_reversible"), ("J4",)),
+    Move("set_delivery_address", "resolve", "A2",
+         ("stable_event_identity", "address_by_reference", "change_is_reversible"), ("J4",)),
     Move("commit_order", "resolve", "A3",
          ("grant_bound_to_current_terms", "confirmation_after_terms", "ownership_epoch_current"), ("J4",)),
     Move("cancel_order", "resolve", "A3", ("within_self_service_window", "confirmation_bound_to_target"), (),

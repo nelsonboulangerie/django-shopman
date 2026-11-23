@@ -49,7 +49,7 @@ def eligible_change(state) -> bool:
     group = lines(state)
     items = [_line(other)["item"] for other in group]
     cart = bool(group) and len(set(items)) == len(items) and all(_absolute(_line(other)) for other in group)
-    other_change = any(need.act in ("choose_fulfillment", "choose_payment") and len(need.readings) == 1
+    other_change = any(need.act in ("choose_fulfillment", "choose_payment", "give_address") and len(need.readings) == 1
                        and need.need_id not in state.refused for need in state.needs)
     return cart or other_change
 

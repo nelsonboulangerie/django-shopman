@@ -3,7 +3,7 @@
 Especificação: ``spec/06-reply.md``.
 """
 
-from .compose import Composed, PartSpec, compose, plain, render_part
+from .compose import Composed, PartSpec, UnresolvedReference, compose, plain, render_part
 from .conference import CheckResult, Conference, JudgeVerdict, ReplyJudge, confer, conferred
 from .evidence import Evidence
 from .ladder import Attempt, Draft, Drafter, LadderPolicy, LadderResult, climb, numbers_outside
@@ -28,6 +28,7 @@ __all__ = [
     "GENERIC_TEMPLATES",
     "TEMPLATES_BY_ID",
     "Composed",
+    "UnresolvedReference",
     "Evidence",
     "Finding",
     "PartSpec",
