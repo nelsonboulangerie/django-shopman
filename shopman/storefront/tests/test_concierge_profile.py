@@ -146,8 +146,19 @@ def test_compensation_has_no_mandate_and_verify_waits_for_the_concierge(shop):
 
 
 def test_the_profile_never_spends_and_never_calls_a_model_in_shadow(shop):
+    """Gasto zero, e nenhuma chamada a modelo.
+
+    O teto de uma chamada ao leitor do turno existe para a leitura da casa (``LocalReader``)
+    entregar ao motor os campos do pedido (DEV-2026-076). Essa porta não chama modelo: ela diz
+    isso na capacidade e conta zero chamadas no consumo. Trocar o leitor por um que chama modelo
+    tem de reprovar aqui.
+    """
+    from shopman.storefront.concierge.ports import LocalReader
+
     built = _profile()
-    assert built.limits.max_model_calls == 0 and built.limits.max_spend.amount_minor == 0
+    assert built.limits.max_spend.amount_minor == 0
+    assert built.limits.max_model_calls <= 1
+    assert LocalReader().capabilities().guarantees["calls_model"] is False
 
 
 def test_no_new_file_reads_settings_directly():

@@ -55,6 +55,15 @@ def subject_of(conversation_id: int | str) -> str:
     return f"{SUBJECT_PREFIX}{conversation_id}"
 
 
+#: A sacola que a conversa ainda não tem. O primeiro pedido pelo motor precisa de um alvo; a
+#: sacola de verdade nasce no efeito (``ConciergeEffectSite``), nunca na leitura nem na sombra.
+NEW_CART_PREFIX = "new-cart:"
+
+
+def new_cart_ref(conversation_id: int | str) -> str:
+    return f"{NEW_CART_PREFIX}{subject_of(conversation_id)}"
+
+
 def _conversation(ctx: TrustedContext):
     from shopman.shop.models import Conversation
 
@@ -223,6 +232,50 @@ def _cart_fields(act, conversation, text: str) -> dict:
     return fields
 
 
+def _house_order_acts(conversation, text: str, allowed: set[str]) -> list[dict]:
+    """O pedido lido pela casa (``order_talk``), no vocabulário do framework, ou ``[]``.
+
+    Só quando a casa entendeu a fala inteira (``Talk.certain``). Cada item vira ``change_quantity``
+    com o SKU e a quantidade ABSOLUTA: o framework não aplica quantidade relativa, então "mais 2"
+    sai como o que está na sacola mais 2, e "tira" sai como 0. Produto sem SKU certo não sai: a
+    fala volta para a divisão local, e o framework pergunta.
+    """
+    from . import order_talk
+    from .tools import ToolContext, _open_session
+
+    # Ler não é agir: a autoridade de compra é conferida no efeito (``ConciergeEffectSite``).
+    if conversation is None or (allowed and "change_quantity" not in allowed):
+        return []
+    channel_ref = conversation.channel_ref or "whatsapp"
+    ctx = ToolContext(conversation=conversation, channel_ref=channel_ref, customer_text=text)
+    session = _open_session(ctx) if conversation.session_key else None
+    # A sacola como está (sem a conferência de autoridade do ``view_cart``: ler não é agir).
+    lines = [{"sku": str(item.get("sku") or ""), "name": str(item.get("name") or ""), "qty": item.get("qty")}
+             for item in ((session.items or []) if session is not None else [])]
+    talk = order_talk.read(text, channel_ref=channel_ref, cart_lines=lines)
+    if talk is None or not talk.certain or talk.fulfillment_only:
+        return []
+    skus = {_fold(name): sku for sku, name in order_talk.menu(channel_ref)}
+    in_cart = {str(line.get("sku")): int(float(line.get("qty") or 0)) for line in lines}
+    acts = []
+    for act in talk.acts:
+        sku = skus.get(_fold(act.product))
+        if not sku:
+            return []
+        quantity = int(act.qty or 0)
+        if "mais" in act.span.split():
+            quantity += in_cart.get(sku, 0)
+        acts.append({"act": "change_quantity", "fields": {"item": sku, "quantity": str(quantity)},
+                     "confidence": UNAVAILABLE})
+    return acts
+
+
+def _fold(text: str) -> str:
+    from .dialogue import _fold as fold
+
+    return fold(text)
+
+
 class LocalReader:
     """``ModelPort`` pelo leitor local por regra da Concierge: sem modelo, sem custo inventado."""
 
@@ -241,13 +294,17 @@ class LocalReader:
         allowed = set(request.allowed_acts)
         acts = []
         conversation = _conversation(ctx)
-        for act in local_acts(text):
+        # A casa primeiro (DEV-2026-076): o pedido que a leitura da casa entende por inteiro sai
+        # com os campos que o framework pede; o resto segue pela divisão local, como antes.
+        house = _house_order_acts(conversation, text, allowed)
+        for act in ([] if house else local_acts(text)):
             name = ACT_MAP.get(act.act, "unknown")
             if allowed and name not in allowed:
                 name = "unknown"
             fields = _cart_fields(act, conversation, text) if name == "change_quantity" else {}
             acts.append({"act": name, "fields": fields, "confidence": UNAVAILABLE})
         now = instant(datetime.now(UTC))
+        acts = house or acts
         understanding = Understanding(
             id=f"und-{request.event_id}", tenant=ctx.tenant, environment=ctx.environment,
             trace_id=f"trace-{request.event_id}", occurred_at=now, producer=READER, event_id=request.event_id,

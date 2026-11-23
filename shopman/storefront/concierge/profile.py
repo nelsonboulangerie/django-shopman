@@ -189,7 +189,10 @@ def build_profile(*, environment: str = "shadow", config: Mapping[str, Any] | No
                      "accept_within_seconds": profile_lines.STAFF_ACCEPT_WITHIN_SECONDS,
                      "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS,
                      "after_hours_contingency": "inform_when_team_returns"},
-        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": 0,
+        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10,
+                # Uma chamada ao leitor do turno: o da Nice é a leitura da casa (``LocalReader``,
+                # sem modelo e sem custo), que dá ao pedido os campos que o framework pede.
+                "max_model_calls": 1,
                 "max_spend": {"amount_minor": 0, "currency": "BRL"}},
         privacy={"purposes": ("service",), "retention_days": _retention(measured), "fields_by_recipient": {}},
     )

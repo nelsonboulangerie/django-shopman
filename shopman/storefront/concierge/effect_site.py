@@ -85,6 +85,12 @@ class ConciergeEffectSite:
             if own_order(conversation, target) is None:
                 raise PortError(ErrorCode.OBJECT_FORBIDDEN, "pedido que não é do cliente da conversa")
             return Reading(ownership_epoch=current.turn_fence)
+        from .ports import new_cart_ref
+
+        if target == new_cart_ref(conversation.pk) and command.action == "change_cart":
+            # A sacola nova desta conversa: nasce no ``set_item``. Se outra fala já a criou, o
+            # item cai nela, a mesma sacola presa ao telefone.
+            return Reading(ownership_epoch=current.turn_fence, versions={target: 0})
         if not current.session_key or target != current.session_key:
             raise PortError(ErrorCode.OBJECT_FORBIDDEN, "sacola que não é a da conversa")
         session = (
