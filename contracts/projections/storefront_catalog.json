@@ -30,6 +30,7 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,
@@ -73,6 +74,19 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [
+        {
+          "expires_at": null,
+          "label": "Últimas 2 unidades",
+          "meta": {
+            "available": 2,
+            "sku": "CROISSANT-CONTRATO",
+            "threshold": 5
+          },
+          "priority": 1,
+          "type": "low_stock"
+        }
+      ],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,
@@ -122,6 +136,7 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,
@@ -171,6 +186,7 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,

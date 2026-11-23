@@ -32,6 +32,7 @@ from shopman.shop.projections.types import (
 )
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.catalog import unit_weight_label, viewer_collection_access
+from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
 from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
 from shopman.storefront.presentation.types import ComponentProjection
@@ -233,6 +234,11 @@ class ProductDetailProjection:
     # casa não tem endereço cadastrado: sem endereço, a página não nomeia loja.
     pickup_store: PickupStoreProjection | None = None
 
+    # Os selos de urgência do card do cardápio (#2807), a mesma derivação
+    # (``presentation/fomo.showcase_badges``): fornada pronta há pouco, últimas
+    # unidades, promoção acabando.
+    fomo_badges: tuple[FomoBadge, ...] = ()
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Builder
@@ -425,6 +431,14 @@ def build_product_detail(
         option_groups=tuple(catalog_context.option_groups(product)),
         promise=promise,
         pickup_store=_pickup_store(),
+        fomo_badges=showcase_badges(
+            product.sku,
+            available_qty=available_qty,
+            finished_at=catalog_context.last_finished_by_sku([product.sku]).get(product.sku),
+            promotions=catalog_context.active_promotions(channel_ref),
+            sku_collections=sku_collections,
+            low_stock_threshold=low_stock_threshold,
+        ),
     )
 
 

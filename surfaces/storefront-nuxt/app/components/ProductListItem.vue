@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fomoBadgeViews, fomoCoversLowStock } from '~/presentation/fomo'
 import { tileBadge } from '~/presentation/menu'
 import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
@@ -30,7 +31,14 @@ const currentQty = computed(() => qtyForSku(props.item.sku))
 // Com escolhas, o "+" abre a folha e nunca vira pílula de quantidade; a contagem
 // da sacola (somando as linhas do SKU) aparece ao lado do preço.
 const withOptions = computed(() => hasOptionGroups(props.item.option_groups))
-const badge = computed(() => tileBadge(props.item))
+// Selos de urgência (#2807): fornada pronta há pouco, últimas N unidades, promoção
+// acabando. O de estoque com o número substitui o "Últimas unidades" genérico.
+const now = useMinuteClock()
+const fomo = computed(() => fomoBadgeViews(props.item.fomo_badges, now.value))
+const badge = computed(() => {
+  const base = tileBadge(props.item)
+  return base && props.item.availability === 'low_stock' && fomoCoversLowStock(props.item.fomo_badges) ? null : base
+})
 </script>
 
 <template>
@@ -46,7 +54,10 @@ const badge = computed(() => tileBadge(props.item))
       <p v-if="item.short_description" class="mt-2 line-clamp-2 shop-meta">
         {{ item.short_description }}
       </p>
-      <UiBadge v-if="!pending && badge && item.availability !== 'unavailable'" :variant="badge.variant" class="mt-2 font-normal">{{ badge.label }}</UiBadge>
+      <div v-if="!pending && item.availability !== 'unavailable' && (badge || fomo.length)" class="mt-2 flex flex-wrap gap-2" data-product-badges>
+        <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type">{{ selo.label }}</UiBadge>
+        <UiBadge v-if="badge" :variant="badge.variant" class="font-normal">{{ badge.label }}</UiBadge>
+      </div>
       <DietaryWarningBadges v-if="!pending" :warnings="item.dietary_warnings" class="mt-2" />
       <p v-if="!pending && item.is_notifiable" class="mt-2 shop-meta text-muted-foreground" data-stock-notify-recurrence>
         Avisos recorrentes pelo WhatsApp

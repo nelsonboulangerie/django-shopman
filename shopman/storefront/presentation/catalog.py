@@ -38,6 +38,7 @@ from shopman.shop.projections.types import (
 )
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
+from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
 from shopman.storefront.presentation.icons import collection_icon
 from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label
@@ -149,6 +150,13 @@ class CatalogItemProjection:
     # pronto, fornada ou encomenda, o dia, a hora e a frase. ``None`` quando não
     # há promessa (indisponível, pausado, ou sem dado para afirmar um dia).
     promise: PromiseProjection | None = None
+
+    # Selos de urgência real (#2807, ``presentation/fomo``): fornada pronta há
+    # pouco, últimas unidades, promoção acabando; até dois, do mais urgente. O
+    # rótulo de tempo ("há 12 min", "acaba em 2h") a tela refaz pelo relógio dela
+    # a partir de ``meta.finished_at`` e ``expires_at``: o cardápio passa por cache
+    # de borda, e o selo some sozinho quando o prazo passa.
+    fomo_badges: tuple[FomoBadge, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -604,6 +612,10 @@ def _build_items(
     with catalog_stage("availability"):
         promise_facts = read_promise_facts(skus, channel_ref=channel_ref, own_holds=own_holds)
 
+    # Selos de urgência (#2807): a fornada de cada SKU numa query só; estoque e
+    # promoções já estão em mão.
+    fresh_by_sku = catalog_context.last_finished_by_sku(skus)
+
     result: list[CatalogItemProjection] = []
     for p in products:
         base_q = price_map[p.sku] if p.sku in price_map else p.base_price_q
@@ -689,6 +701,14 @@ def _build_items(
                     promise_facts,
                     orderable=can_add,
                     made_to_order=bool(meta.get("made_to_order")),
+                ),
+                fomo_badges=showcase_badges(
+                    p.sku,
+                    available_qty=available_qty,
+                    finished_at=fresh_by_sku.get(p.sku),
+                    promotions=active_promotions,
+                    sku_collections=cols,
+                    low_stock_threshold=low_stock_threshold,
                 ),
             ),
         )
