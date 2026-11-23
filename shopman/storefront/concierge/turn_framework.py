@@ -66,6 +66,8 @@ NICE_TEMPLATE_COPY = {
 FULFILLMENT_TEMPLATES = {
     "set_fulfillment.done": ("{mode}", "{date}, {window}"),
     "set_fulfillment.done_day": ("{mode}", "{date}"),
+    # Derivada das aprovadas (coordenação, 23/11): a hora sem janela da grade.
+    "set_fulfillment.done_time": ("{mode}", "{date} às {time}"),
     "set_fulfillment.done_date": ("para", "{date}"),
     "set_fulfillment.done_mode": ("{mode}", ""),
 }
@@ -120,11 +122,19 @@ def window_text(value) -> str:
     return window_phrase(window_label(str(value), for_customer=True))
 
 
+def time_text(value) -> str:
+    """ "16:00" → "16h", "16:30" → "16h30": a hora como a casa diz."""
+    from .order_closing import _clock
+
+    hours, minutes = str(value).split(":")
+    return _clock(int(hours) * 60 + int(minutes))
+
+
 def nice_formatters() -> dict:
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
 
     return {**DEFAULT_FORMATTERS, "owner": owner_text, "deadline": deadline_text, "date": date_text,
-            "mode": mode_text, "window": window_text}
+            "mode": mode_text, "window": window_text, "time": time_text}
 
 ENVIRONMENT = "live"
 

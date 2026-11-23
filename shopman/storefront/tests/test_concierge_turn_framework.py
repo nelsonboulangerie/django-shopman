@@ -220,9 +220,13 @@ def test_the_order_templates_are_today_phrases(shop):
         == "Combinado: entrega amanhã."
     assert say("set_fulfillment.done_date", date=tomorrow) == "Combinado: para amanhã."
     assert say("set_fulfillment.done_mode", mode="delivery") == "Combinado: entrega."
+    # A hora sem janela da grade: derivada das aprovadas (coordenação, 23/11).
+    assert say("set_fulfillment.done_time", mode="pickup", date=tomorrow, time="16:00") == \
+        "Combinado: retirada amanhã às 16h."
+    assert turn_framework.time_text("16:30") == "16h30"
     # O que não tem frase de hoje fica fora: o turno segue o caminho de hoje (a hora sem janela, o resumo,
     # o "total mudou" com o total, a sacola e o pedido registrado esperam a palavra do dono).
-    for missing in ("set_fulfillment.done_time", "set_fulfillment.updated", "present_terms.confirm",
+    for missing in ("set_fulfillment.updated", "present_terms.confirm",
                     "present_terms.changed",
                     "change_cart.done", "commit_order.done"):
         assert missing not in found, missing
