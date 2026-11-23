@@ -111,6 +111,10 @@ def order_on_air(conversation, monkeypatch):
         if not any(line.id == "grant.validity_seconds" for line in lines):
             lines.append(dataclasses.replace(lines[0], id="grant.validity_seconds", setting=LineSet(value=600),
                                              state="approved", decided_at=DECIDED))
+        if not any(line.id == "episode.inactivity_window_seconds" for line in lines):
+            # Sem ela o motor abre um episódio por mensagem, e a pergunta no ar morre (decisão pendente).
+            lines.append(dataclasses.replace(lines[0], id="episode.inactivity_window_seconds",
+                                             setting=LineSet(value=86400), state="approved", decided_at=DECIDED))
         return dataclasses.replace(built, lines=tuple(lines))
 
     monkeypatch.setattr(profile, "build_profile", approved)
@@ -292,3 +296,77 @@ def test_after_the_effect_only_the_part_without_a_nice_phrase_drops(monkeypatch)
         findings=(Finding("template_not_in_voice", 1), Finding("reference_unresolved", 0, "mode")), parts=parts))})
     assert not turn_framework.send_voiced_parts(SimpleNamespace(pk=1), other, voice)
     assert said == ["Combinado: entrega."]
+
+
+# ── o Pix do pedido pelo motor ──────────────────────────────────────────────────────────────────
+
+PIX_CODE = "00020126580014br.gov.bcb.pix0136teste-copia-e-cola5204000053039865802BR6304ABCD"
+
+
+class _ScriptedAI:
+    """A rota de leitura: devolve os atos de cada fala do roteiro (a fala vai entre ``<<<`` e ``>>>``)."""
+
+    def __init__(self, script):
+        self.script, self.messages = script, self
+
+    def create(self, **request):
+        import json
+        from types import SimpleNamespace
+
+        said = request["messages"][0]["content"].split("<<<\n", 1)[1].split("\n>>>", 1)[0]
+        acts = self.script.get(said, [{"act": "unknown"}])
+        full = [{"span": said, "product": "", "qty": 0, "change": "", "day": "", "mode": "", "time": "",
+                 "payment": "", **act} for act in acts]
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text",
+                                                                                text=json.dumps({"acts": full}))])
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_order_through_the_engine_sends_the_pix_apart_like_today(order_on_air, outbox, monkeypatch):
+    """O pedido pelo motor entrega o copia-e-cola do Pix numa mensagem SEPARADA, depois da confirmação, como o
+    caminho de hoje (``tools._placed_result`` → ``extra_replies``). Antes, ele ficava no contexto do sítio."""
+    from shopman.storefront.concierge import model_reader, tools
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    script = {
+        "pode fechar": [{"act": "place_order"}],
+        "pix": [{"act": "choose_payment", "payment": "pix"}],
+        "sim": [{"act": "affirm"}],
+    }
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    execute = tools.execute
+
+    def house(name, args, ctx):
+        if name == "review_order":
+            return {"ok": True, "ready": True, "quote_token": "tok-pix", "payment_method": "pix"}
+        return execute(name, args, ctx)
+
+    def place(ctx, token, method, notes=""):
+        ctx.extra_replies.append(PIX_CODE)  # como o _placed_result: o Pix numa mensagem separada
+        return {"ok": True, "order_ref": "ORD-PIX-1", "payment": {"method": method,
+                                                                 "pix_code_prepared_separately": True}}
+
+    monkeypatch.setattr(tools, "execute", house)
+    monkeypatch.setattr(tools, "place_order", place)
+    shop = Shop.load()
+    shop.conversational_live_inform = True  # "pronto", "obrigada": a cortesia do fechamento também é do motor
+    shop.save()
+    from shopman.orderman.models import Session
+
+    # A sacola já com o pão (como depois do "quero 1 pão francês"): o teste é do fechamento e do Pix.
+    Session.objects.create(session_key="sess-pix", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}])
+    order_on_air.session_key = "sess-pix"
+    order_on_air.save(update_fields=["session_key"])
+    seen, run = [], turn_framework.run
+    monkeypatch.setattr(turn_framework, "run", lambda *a, **k: seen.append(run(*a, **k)) or seen[-1])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(order_on_air, said, f"pix-order-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    last = seen[-1]
+    assert last is not None and last.chosen_moves == ["commit_order"], [(r and r.chosen_moves) for r in seen]
+    assert outbox.sent[-2].startswith("Pedido ORD-PIX-1 registrado.")  # a confirmação do motor
+    assert outbox.sent[-1] == PIX_CODE  # e o Pix, separado, logo depois
