@@ -29,6 +29,12 @@ D039 = "2026-11-12T00:00:00.000000Z"  # D-039: freio e teto de gasto
 D040 = "2026-11-16T00:00:00.000000Z"  # D-040: leitura por Jev e DeepSeek, só texto redigido
 OBS0310 = "2026-10-03T00:00:00.000000Z"  # OBS0310-M, O e P: regras da casa e as três alçadas
 DECISION_1_AND_2 = "2026-11-18T00:00:00.000000Z"  # as três alçadas no framework; aceite pelo sino
+GRANT_DECIDED = "2026-11-23T00:00:00.000000Z"  # #3380: validade da concessão, decisão da coordenação
+
+#: Quanto tempo uma concessão vale entre a decisão e o efeito (``authority.grants.GRANT_VALIDITY_LINE``).
+#: Mecânica de autorização, não negócio: a coordenação decidiu 600 s, o valor do perfil de teste do pacote
+#: ("curta de propósito", K15). Sem a linha, nenhuma concessão nasce e o motor não executa efeito.
+GRANT_VALIDITY_SECONDS = 600
 
 State = Literal["proposed", "validating", "approved", "absent"]
 
@@ -84,6 +90,8 @@ LINES: tuple[LineState, ...] = (
               absent_reason="nenhum sorteio de oferta"),
     LineState("P21", "live.mode", OWNER, "approved", RECHECKED, "service.config(): modo do app vivo",
               plan_state="vigente"),
+    LineState("P22", "grant.validity_seconds", ENGINEERING, "approved", GRANT_DECIDED,
+              "#3380, coordenação em 23/11: 600 s, como o perfil de teste do pacote (K15)"),
 )
 
 BY_PLAN_ID: dict[str, LineState] = {line.plan_id: line for line in LINES}
