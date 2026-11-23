@@ -571,6 +571,54 @@ EFFECT_HELD_ALERT = "concierge_effect_unconfirmed"
 EFFECT_HELD_MINUTES = 10
 
 
+def today_closing_does_better(conversation, rehearsal) -> str:
+    """O turno que o fechamento de hoje faz e o motor ainda não: a entrega escolhida por quem tem endereço salvo.
+
+    O fechamento de hoje oferece primeiro o endereço do cadastro (decisão do dono, 25/09/2026) e entende o "sim"
+    a essa oferta; o motor ainda não tem esse fluxo (``present_terms.needs_delivery_address_saved`` sem frase, e
+    o "sim" que responde à condição pendente vem no PR seguinte). Até lá, esse turno é do caminho de hoje.
+    """
+    from shopman.orderman.models import Session
+
+    from .address import saved_addresses
+
+    decision = getattr(rehearsal, "decision", None)
+    chosen = [decision.candidates[i] for i in decision.chosen] if decision is not None else []
+    if not any(c.move == "set_fulfillment" and dict(c.content).get("mode") == "delivery" for c in chosen):
+        return ""
+    session = Session.objects.filter(session_key=conversation.session_key).first() if conversation.session_key \
+        else None
+    structured = ((session.data if session is not None else None) or {}).get("delivery_address_structured")
+    if isinstance(structured, dict) and structured.get("formatted_address"):
+        return ""  # o endereço já está na sacola: nada a oferecer
+    return "saved_address_offer" if saved_addresses(conversation.customer_ref or "") else ""
+
+
+def send_voiced_parts(conversation, result, voice: frozenset[str]) -> bool:
+    """Rede de segurança: depois do efeito, a parte cujo molde não tem frase da Nice CAI, e o resto sai.
+
+    Só quando o único achado é esse (``template_not_in_voice``) e há parte com voz. Qualquer outro achado
+    (referência que não resolve, número sem lastro) segura a mensagem inteira, e quem responde é o recuo.
+    """
+    from . import house_rules, service
+
+    reply = getattr(result, "reply", None)
+    findings = list(reply.verification.findings) if reply is not None else []
+    if not findings or any(f.code != "template_not_in_voice" for f in findings):
+        return False
+    voiced = [part for part in reply.verification.parts if part.template_id in voice]
+    if not voiced:
+        return False
+    actions = {command.action for command in result.commands}
+    receipts = frozenset({house_rules.ORDER} if "commit_order" in actions else {house_rules.CART})
+    decision = getattr(result.decision, "decision_id", "") or ""
+    logger.warning("concierge.turn_framework.voiced_parts conversation=%s dropped=%s", conversation.pk,
+                   [part.template_id for part in reply.verification.parts if part.template_id not in voice])
+    sent = service.send_out_of_turn(conversation, "\n\n".join(part.text for part in voiced), receipts=receipts,
+                                    send_key=f"voiced:{decision}")
+    return sent is not None
+
+
 def answer_after_effect(conversation, result) -> None:
     """Efeito feito e resposta segurada: o cliente ouve o recuo, e a equipe recebe o cartão com prazo."""
     from datetime import timedelta
@@ -629,6 +677,10 @@ def run(conversation, message, *, channel=None, interrupted=None):
         if not verdict.eligible:
             logger.info("concierge.turn_framework.legacy conversation=%s reason=%s", conversation.pk, verdict.reason)
             return None
+        today = today_closing_does_better(conversation, rehearsal)
+        if today:
+            logger.info("concierge.turn_framework.legacy conversation=%s reason=%s", conversation.pk, today)
+            return None
         live = build_engine(conversation, environment=ENVIRONMENT, channel=channel)
         if live is None:
             return None
@@ -640,7 +692,8 @@ def run(conversation, message, *, channel=None, interrupted=None):
                 # termina em silêncio: o recuo da casa, lastreado só no recibo, e um cartão para a equipe cumprir.
                 logger.warning("concierge.turn_framework.held_after_effect conversation=%s outcome=%s findings=%s",
                                conversation.pk, result.outcome, _findings(result))
-                answer_after_effect(conversation, result)
+                if not send_voiced_parts(conversation, result, frozenset(live.house_templates)):
+                    answer_after_effect(conversation, result)
                 return result
             logger.info("concierge.turn_framework.not_sent conversation=%s outcome=%s fallbacks=%s",
                         conversation.pk, result.outcome, list(result.fallbacks))
