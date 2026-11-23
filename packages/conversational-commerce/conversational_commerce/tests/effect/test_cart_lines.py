@@ -50,15 +50,6 @@ def test_the_same_turn_twice_applies_once():
     assert again.outcome == "duplicate" and world.commerce_execute.effects == 1
 
 
-def test_a_different_effect_in_the_same_turn_is_still_refused():
-    """A regra continua para efeitos diferentes: um comando por turno (a intenção é gravada antes, N13)."""
-    fulfillment = {"act": "choose_fulfillment", "fields": {"mode": "delivery"}}
-    step = _step(A3, fulfillment)
-    turn_engine, world = engine(steps=(step,))
-    result = turn_engine.turn(CTX, step.message)
-    assert len(result.commands) == 1 and result.commands[0].action == "change_cart"
-    assert "cart-1" not in world.state.fulfillment
-
 
 def test_a_relative_line_first_never_lets_the_carried_line_run_alone():
     """Revisão do #3375: com a relativa em PRIMEIRO, a levada herda a inelegibilidade e nada se aplica."""

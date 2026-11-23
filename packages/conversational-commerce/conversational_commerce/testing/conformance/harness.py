@@ -258,6 +258,25 @@ def check_commerce_execute(port: Any, env: HarnessEnv) -> None:
         _expect(bool(receipt.domain_refs.get("effect")), "recibo de sucesso do commit_order sem effect")
     check_change_cart(port, env)
     check_set_fulfillment(port, env)
+    check_effect_sequence(port, env)
+
+
+def check_effect_sequence(port: Any, env: HarnessEnv) -> None:
+    """A sequência de efeitos A2 num turno (spec 08 §5): o recebimento e depois a sacola, no mesmo alvo,
+    cada um com o próprio comando e o próprio recibo de sucesso, e o segundo não desfaz o primeiro."""
+    if env.fulfillment is None or not env.cart_lines:
+        return
+    guard = AllowGuard()
+    first = port.execute(env.ctx, _fulfillment_command(env, key="harness-seq-1", parameters=dict(env.fulfillment)),
+                         guard)
+    second = port.execute(env.ctx, _cart_command(env, key="harness-seq-2",
+                                                 parameters={"lines": [dict(line) for line in env.cart_lines]}), guard)
+    _expect((first.status, second.status) == ("success", "success"), "a sequência recebimento → sacola não aplicou")
+    _expect(first.id != second.id and first.command_id != second.command_id,
+            "dois efeitos da sequência com o mesmo recibo")
+    again = port.execute(env.ctx, _fulfillment_command(env, key="harness-seq-1", parameters=dict(env.fulfillment)),
+                         guard)
+    _expect(again.id == first.id, "o primeiro efeito da sequência, repetido, não devolveu o mesmo recibo")
 
 
 def _cart_command(env: HarnessEnv, *, key: str, parameters: Mapping[str, Any]) -> ActionCommand:

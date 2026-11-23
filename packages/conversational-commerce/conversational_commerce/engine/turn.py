@@ -171,6 +171,11 @@ def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
+#: A sequência declarada de efeitos A2 reversíveis num turno (spec 08 §5, [DECIDIDO]): o recebimento antes
+#: da sacola, para a sacola medir a data combinada. ``commit_order`` (A3) nunca entra nela.
+EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "change_cart")
+
+
 def _distinct(specs):
     """A mesma parte (movimento, molde e lastros iguais) sai uma vez: as linhas do mesmo comando têm uma resposta só."""
     seen, found = set(), []
@@ -475,14 +480,18 @@ class Engine:
     # ── passo 6 ─────────────────────────────────────────────────────────────
     def _execute(self, ctx: TrustedContext, state: TurnState, decision: DecisionRecord, by_need, event,
                  episode: Episode, trace_id: str, unwritten: list, fallbacks: list[str], effects: dict) -> Episode:
-        """Autoriza e executa o movimento de efeito escolhido. Devolve o episódio como ficou gravado.
+        """Autoriza e executa os movimentos de efeito escolhidos. Devolve o episódio como ficou gravado.
 
-        Um efeito por turno: o segundo movimento de efeito escolhido fica recusado
-        (``one_effect_per_turn``) e a decisão refeita diz a limitação. A exceção é a mesma mudança
-        levada pelo primeiro (``carried_by``, as várias linhas do carrinho): é o mesmo comando, e o
-        recibo dele é o dela.
+        Um efeito por turno, com uma exceção declarada (spec 08 §5, [DECIDIDO]): a SEQUÊNCIA de efeitos
+        A2 reversíveis na ordem de ``EFFECT_SEQUENCE`` (o recebimento antes da sacola). Cada efeito da
+        sequência tem a própria concessão, o próprio comando, a intenção gravada antes (N13) e o
+        próprio recibo; o recibo terminal de um devolve o episódio a ``active`` antes do próximo, e a
+        sequência para no primeiro recibo que não é sucesso (``sequence_stopped``). Fora disso, o segundo
+        efeito escolhido fica recusado (``one_effect_per_turn``) e a decisão refeita diz a limitação. A
+        mesma mudança levada pelo primeiro (``carried_by``, as várias linhas do carrinho) é o mesmo comando,
+        e o recibo dele é o dela.
         """
-        clock, store, moves = self.ports.clock, self.ports.store, registry()
+        moves = registry()
         chosen = [decision.candidates[i] for i in decision.chosen if getattr(moves[decision.candidates[i].move],
                                                                              "EFFECT", False)]
         if not chosen:
@@ -491,18 +500,46 @@ class Engine:
             fallbacks.extend(f"shadow:effect_not_executed:{c.move}" for c in chosen)
             return episode
         # A levada sem a líder escolhida nunca executa sozinha: o comando é o da líder.
-        leads = {c.need_id for c in chosen if not dict(c.content).get("carried_by")}
-        for orphan in [c for c in chosen if dict(c.content).get("carried_by") not in (None, *leads)]:
+        leads = [c for c in chosen if not dict(c.content).get("carried_by")]
+        lead_ids = {c.need_id for c in leads}
+        for orphan in [c for c in chosen if dict(c.content).get("carried_by") not in (None, *lead_ids)]:
             state.refused[orphan.need_id] = "carried_without_lead"
         chosen = [c for c in chosen if c.need_id not in state.refused]
-        if not chosen:
+        leads = [c for c in leads if c.need_id not in state.refused]
+        if not leads:
             return episode
-        candidate = chosen[0]
-        carried = [c for c in chosen[1:] if c.move == candidate.move
-                   and dict(c.content).get("carried_by") == candidate.need_id]
-        for extra in chosen[1:]:
-            if extra not in carried:
-                state.refused[extra.need_id] = "one_effect_per_turn"
+
+        def carried_by(lead):
+            return [c for c in chosen if dict(c.content).get("carried_by") == lead.need_id]
+
+        moves_of_leads = [c.move for c in leads]
+        if len(leads) > 1 and all(m in EFFECT_SEQUENCE for m in moves_of_leads) \
+                and len(set(moves_of_leads)) == len(moves_of_leads):
+            ordered = sorted(leads, key=lambda c: EFFECT_SEQUENCE.index(c.move))
+        else:
+            ordered = leads[:1]
+            for extra in leads[1:]:
+                for refused in (extra, *carried_by(extra)):
+                    state.refused[refused.need_id] = "one_effect_per_turn"
+        for index, lead in enumerate(ordered):
+            # O recibo terminal do efeito anterior devolve o episódio a ``active``: uma espera por vez.
+            prefix = [("receipt_terminal", None)] if index else []
+            episode, receipt = self._effect(ctx, state, decision, lead, carried_by(lead), by_need, event, episode,
+                                            trace_id, unwritten, fallbacks, effects, prefix)
+            if index:
+                effects["walked"] = effects.get("walked", 0) + 1
+            if receipt is None or receipt.status != "success":
+                for rest in ordered[index + 1:]:
+                    for refused in (rest, *carried_by(rest)):
+                        state.refused[refused.need_id] = "sequence_stopped"
+                break
+        return episode
+
+    def _effect(self, ctx: TrustedContext, state: TurnState, decision: DecisionRecord, candidate, carried, by_need,
+                event, episode: Episode, trace_id: str, unwritten: list, fallbacks: list[str], effects: dict,
+                prefix: list) -> tuple[Episode, ActionReceipt | None]:
+        """Um efeito: concessão, comando, a intenção gravada antes (N13), a execução e o recibo."""
+        clock, store, moves = self.ports.clock, self.ports.store, registry()
         need, module = by_need[candidate.need_id], moves[candidate.move]
         plan = module.effect(state, need)
         now, epoch = clock.now(), episode.ownership.epoch
@@ -521,14 +558,21 @@ class Engine:
         except GrantRefused as refused:
             state.refused[need.need_id] = refused.code
             fallbacks.append(f"grant_refused:{refused.code}")
-            return episode
+            if prefix:
+                # O efeito anterior terminou: o episódio volta a ``active`` mesmo sem o próximo.
+                episode = store.commit_transition(
+                    ctx, Transition(episode=self._walk(episode, event.id, prefix), expected_version=episode.version),
+                    (*unwritten,), ())
+                unwritten.clear()
+                # O recibo anterior andou aqui; o ``_execute`` conta a volta (``walked``) uma vez só.
+            return episode, None
         command = build_command(record=self._envelope(ctx, "cmd", episode.episode_id, trace_id, grant.id),
                                 command_id=clock.new_id("command"), decision_id=decision.decision_id, grant=grant,
                                 parameters=plan.parameters, expected_versions=plan.expected_versions,
                                 ownership_epoch=epoch, scope=ctx.tenant, now=now)
         self.ledger.register(command)
         # N13: concessão, comando e intenção de execução gravados juntos, com o episódio esperando o efeito.
-        steps = self._to_active(episode, offer_confirmed=plan.basis == "confirmation")
+        steps = [*prefix, *self._to_active(episode, offer_confirmed=plan.basis == "confirmation")]
         steps.append(("command_handed_off", Wait(condition="the executor returns a receipt", owner="core",
                                                  deadline=command.deadline)))
         work = WorkItem(work_id=f"execute:{command.command_id}", kind="execute",
@@ -545,7 +589,7 @@ class Engine:
         receipt = settled.receipt
         if receipt is None:
             state.refused[need.need_id] = settled.conflict or "effect_unknown"
-            return episode
+            return episode, None
         effects["receipts"].append(receipt)
         state.receipts[need.need_id] = receipt
         for other in carried:
@@ -560,7 +604,7 @@ class Engine:
             commitment = self._reconciliation_commitment(ctx, receipt, trace_id)
             state.commitments[commitment.commitment_id] = commitment
             unwritten.append(commitment)
-        return episode
+        return episode, receipt
 
     def _reconciliation_commitment(self, ctx: TrustedContext, receipt: ActionReceipt, trace_id: str) -> Commitment:
         from .moves._effects import commitment_id
@@ -853,7 +897,8 @@ class Engine:
             after = seal(dataclasses.replace(snapshot, dialogue_state=dialogue, hash=None, id=clock.new_id("snap"),
                                              cause_id=decision.id))
         post = []
-        for receipt in effects["receipts"]:
+        # Os recibos que a sequência já levou à máquina (o terminal de um, antes do próximo) não andam de novo.
+        for receipt in effects["receipts"][effects.get("walked", 0):]:
             if receipt.status in ("success", "failure"):
                 post.append(("receipt_terminal", None))
             else:
