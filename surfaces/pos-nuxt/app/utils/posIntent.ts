@@ -216,6 +216,8 @@ export function buildPosSaleIntent(
   }
 
   if (state.orderNotes.trim()) payload.order_notes = state.orderNotes.trim();
+  // Comer aqui ou levar (#3193): fato do balcão; a encomenda diz o recebimento.
+  if (state.salesMode !== "order") payload.counter_service = state.counterService;
   if (state.paymentMethod === "mixed" && state.paymentTenders.length) payload.payment_tenders = state.paymentTenders;
   if (
     state.paymentMethod === "cash"

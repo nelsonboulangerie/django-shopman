@@ -79,6 +79,43 @@ class ReconciliationError:
 
 
 @dataclass(frozen=True)
+class PendingReadyOrderProjection:
+    """Um pedido de retirada pronto que ninguém veio buscar, no fechamento do dia (#2684).
+
+    Nenhum segura o dia (decisão da coordenação em 22/11/2026, reversível).
+    ``state``: ``resolve`` (o "Não retirado" já pode ser feito: sozinho, no Gestor,
+    ou no gesto em lote do fechamento), ``in_time`` (ainda no prazo combinado) ou
+    ``owner`` (o gesto não serve a este pedido: fica com o Dono). O valor é o DESTE
+    pedido, nunca uma soma (regra do dono, 21/11/2026).
+    """
+
+    ref: str
+    customer_name: str
+    promised_display: str  # "Combinado para 15h" ou "Combinado para 20/11 às 15h"; "" sem hora
+    state: str
+    reason: str  # in_time e owner: o porquê, por extenso
+    money_sentence: str  # resolve: o que o gesto faz com o dinheiro
+    revision: str  # resolve: a base que a tela leu, devolvida na assinatura
+
+
+@dataclass(frozen=True)
+class PendingOpenOrderProjection:
+    """Um pedido aberto que não ficou pronto, no fechamento do dia (#3169).
+
+    Novo, aceito, em preparo ou a entrega. Aparece como aviso, com o caminho que o
+    Gestor oferece a ele, e não segura o dia: o pedido segue aberto e aparece de
+    novo no Gestor no dia seguinte.
+    """
+
+    ref: str
+    customer_name: str
+    status_label: str  # "Novo", "Aceito", "Em preparo", "Pronto", "Despachado"
+    promised_display: str  # "Combinado para 15h"; "" sem hora
+    path: str  # cancel_or_reschedule | cancel | conclude_or_cancel | conclude
+    path_sentence: str  # "Cancele ou remarque no Gestor."
+
+
+@dataclass(frozen=True)
 class PendingProductionProjection:
     """An open WorkOrder surfaced at day closing (planned or started)."""
 
@@ -157,6 +194,10 @@ class DayClosingProjection:
     hourly_shape: dict | None = None
     # Quem está fechando ("Admin · gerência"), para o chip do cabeçalho do corredor.
     operator_display: str = ""
+    # Pedidos prontos que ninguém veio buscar (#2684) e os abertos que não ficaram
+    # prontos (#3169). Avisos: nenhum segura o dia.
+    pending_ready_orders: tuple[PendingReadyOrderProjection, ...] = ()
+    pending_open_orders: tuple[PendingOpenOrderProjection, ...] = ()
 
 
 # ── Builder ────────────────────────────────────────────────────────────
@@ -188,6 +229,8 @@ def build_day_closing() -> DayClosingProjection:
 
     pending_production = _pending_production(today)
     upcoming_preorders = _upcoming_preorders(today)
+    pending_ready = () if existing else _pending_ready_orders(today)
+    pending_open = () if existing else _pending_open_orders(today)
 
     pending_episodes = _pending_episodes(today)
 
@@ -209,6 +252,8 @@ def build_day_closing() -> DayClosingProjection:
         episode_options=_episode_options() if pending_episodes else (),
         has_pending_episodes=bool(pending_episodes),
         hourly_shape=_hourly_shape(today),
+        pending_ready_orders=pending_ready,
+        pending_open_orders=pending_open,
     )
 
 
@@ -442,6 +487,68 @@ def _pending_production(today: date) -> tuple[PendingProductionProjection, ...]:
     except Exception:
         logger.debug("closing.pending_production_failed", exc_info=True)
         return ()
+
+
+def _promised_display(iso: str, today: date) -> str:
+    if not iso:
+        return ""
+    from datetime import datetime
+
+    from shopman.utils.formatting import format_local
+
+    moment = timezone.localtime(datetime.fromisoformat(iso))
+    clock = format_clock(moment)
+    if moment.date() == today:
+        return f"Combinado para {clock}"
+    return f"Combinado para {format_local(moment, '%d/%m')} às {clock}"
+
+
+def _pending_ready_orders(today: date) -> tuple[PendingReadyOrderProjection, ...]:
+    """Os prontos não retirados do dia, com o que o fechamento faz com cada um (#2684)."""
+    from shopman.backstage.services.closing import pending_ready_orders
+
+    try:
+        rows = pending_ready_orders(today)
+    except Exception:
+        # A lista some e o fechamento segue: é aviso, não portão. O gesto em lote
+        # confere de novo no servidor antes de encerrar qualquer pedido.
+        logger.warning("closing.pending_ready_orders_failed", exc_info=True)
+        return ()
+    return tuple(
+        PendingReadyOrderProjection(
+            ref=row["ref"],
+            customer_name=row["customer_name"],
+            promised_display=_promised_display(row["promised_at"], today),
+            state=row["state"],
+            reason=row["reason"],
+            money_sentence=row["money_sentence"],
+            revision=row["revision"],
+        )
+        for row in rows
+    )
+
+
+def _pending_open_orders(today: date) -> tuple[PendingOpenOrderProjection, ...]:
+    """Os pedidos abertos que não ficaram prontos, com o caminho de cada um (#3169)."""
+    from shopman.backstage.services.closing import pending_open_orders
+
+    try:
+        rows = pending_open_orders(today)
+    except Exception:
+        # Aviso que falha some: o fechamento não depende dele.
+        logger.warning("closing.pending_open_orders_failed", exc_info=True)
+        return ()
+    return tuple(
+        PendingOpenOrderProjection(
+            ref=row["ref"],
+            customer_name=row["customer_name"],
+            status_label=row["status_label"],
+            promised_display=_promised_display(row["promised_at"], today),
+            path=row["path"],
+            path_sentence=row["path_sentence"],
+        )
+        for row in rows
+    )
 
 
 def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...]:

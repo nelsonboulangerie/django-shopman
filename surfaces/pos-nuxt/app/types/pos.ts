@@ -869,6 +869,8 @@ export interface POSTabPayload {
   delivery_time_slot: string;
   delivery_fee_override_q: number | null;
   order_notes: string;
+  /** Comer aqui ou levar, no balcão (#3193). Vazio = a comanda ainda não disse. */
+  counter_service?: string;
   payment_method: string;
   payment_collection: PosPaymentCollection;
   payment_tenders: POSIntentCartState["paymentTenders"];
@@ -959,6 +961,8 @@ export interface POSIntentCartState {
    * Nunca 0 por omissão: ausente significa "resolva", não "cobre zero". */
   deliveryFeeOverrideQ: number | null;
   orderNotes: string;
+  /** No balcão: comer aqui ou levar (#3193). Só viaja no modo balcão. */
+  counterService: "here" | "to_go";
   paymentMethod: string;
   paymentCollection: PosPaymentCollection;
   paymentTenders: POSPaymentTenderDraft[];

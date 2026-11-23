@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-072",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "#3193: opção A. Dois chips no balcão, Consumir aqui e Para levar. A encomenda fica no seletor de modo.",
+  "dono": "Engenharia",
+  "criado": "2026-11-22",
+  "revisar_em": "2026-11-29",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

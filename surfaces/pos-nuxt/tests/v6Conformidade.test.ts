@@ -32,15 +32,19 @@ describe("P04: 'Mesa 6' grande e '#1007' pequeno", () => {
   });
 });
 
-describe("P03: 'Agora F7' e 'Consumir aqui F8' também no Balcão", () => {
+describe("P03: 'Agora F7' também no Balcão; o recebimento do Balcão são dois chips (#3193)", () => {
   it("os chips não somem no modo Balcão", () => {
     const header = read("../app/components/PosTabHeader.vue");
     expect(header).not.toMatch(/v-if="hasOpenTab && salesMode !== 'counter'"/);
-    expect(header).toContain("'Consumir aqui'");
+    expect(header).toContain('label: "Consumir aqui"');
+    expect(header).toContain('label: "Para levar"');
     expect(header).toContain("'Agora'");
     const page = read("../app/pages/index.vue");
     expect(page).not.toContain('if (cart.salesMode === "counter") return;');
-    expect(page).toContain("leaveCounterThen(openFulfillmentHere)");
+    // Opção A do dono: o F8 do balcão troca entre os dois; a encomenda fica no
+    // seletor de modo, e o "Agora" segue sendo a porta do agendamento.
+    expect(page).not.toContain("leaveCounterThen(openFulfillmentHere)");
+    expect(page).toContain('if (cart.salesMode === "counter") { toggleCounterService(); return; }');
     expect(page).toContain("leaveCounterThen(openScheduleHere)");
   });
 
@@ -50,7 +54,9 @@ describe("P03: 'Agora F7' e 'Consumir aqui F8' também no Balcão", () => {
   it("a barra vem na ordem cliente, quando, recebimento, e a tecla acompanha a posição", () => {
     const header = read("../app/components/PosTabHeader.vue");
     const chips = [...header.matchAll(/data-context-entry="(\w+)"|>(F\d)<\/OperatorKbd>/g)].map((m) => m[1] || m[2]);
-    expect(chips).toEqual(["customer", "F6", "schedule", "F7", "fulfillment", "F8"]);
+    // No balcão o lugar do recebimento são os dois chips (`service`); na encomenda,
+    // o recebimento. Os dois nunca aparecem juntos, e os dois respondem ao F8.
+    expect(chips).toEqual(["customer", "F6", "schedule", "F7", "service", "F8", "fulfillment", "F8"]);
     expect(header).toContain("Quando (F7)");
     expect(header).toContain("Recebimento (F8)");
     const page = read("../app/pages/index.vue");

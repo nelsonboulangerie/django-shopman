@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-078",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Foto nova da DELI (mínimo 500 px): verifique na fonte original, github, certeza que era a única menor? Não consegue simplesmente ampliar o tamanho pra mim?",
+  "dono": "Engenharia",
+  "criado": "2026-11-23",
+  "revisar_em": "2026-11-30",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

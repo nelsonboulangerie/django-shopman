@@ -240,7 +240,7 @@ kind=status` desta tarde é, ele mesmo, a prova de que o cadastro vingou.
 
 **Sem console.** O console da DigitalOcean não recebe as variáveis `SECRET`, e o token de deploy
 não tem `exec`. A sonda roda pelo Admin, em **Diagnóstico → Central de entregas**
-(`https://api.boulangerie.com.br/admin/diagnostics/`, só superusuário). É o mesmo
+(`https://admin.boulangerie.com.br/admin/diagnostics/`, só superusuário). É o mesmo
 `courier_machine_probe`, com as mesmas travas, dentro do processo que tem a credencial. Quem
 opera é a coordenação, no Chrome do dono, com os valores que a sessão das Entregas dita. O laudo
 aparece na tela, e se cola no PR do resultado. O log do aviso a sessão das Entregas lê da própria
@@ -257,7 +257,7 @@ segue C1 a C5 pelo caminho do produto: o "Cancelar corrida" do Gestor.
 |---|---|---|
 | Versão no ar | `main` com a sonda no Admin | conferido antes das 14h30 |
 | Conta TaOn | produção (`api.taximachine.com.br`), usuário de integração que o app já usa (`MACHINE_*` como `SECRET`) | já no app |
-| Serviço padrão | `https://api.boulangerie.com.br/admin/shop/deliveryservice/`: a TaOn ("Central de entregas por API (TaOn)") Padrão e Ativa. Com "Entregadores da casa" como padrão, a corrida vai para eles | coordenação, 14h30 |
+| Serviço padrão | `https://admin.boulangerie.com.br/admin/shop/deliveryservice/`: a TaOn ("Central de entregas por API (TaOn)") Padrão e Ativa. Com "Entregadores da casa" como padrão, a corrida vai para eles | coordenação, 14h30 |
 | Webhook | `status` e `posicao` para `https://api.boulangerie.com.br/api/webhooks/machine/` (17/11) | coordenação, 14h30 |
 | Sonda | Admin, Diagnóstico, cartão "Central de entregas" | coordenação, no Chrome do dono |
 | Log do aviso | `doctl apps logs 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f web-operator --context shopman-do-app-admin --follow \| grep machine.webhook` | sessão das Entregas |
@@ -276,12 +276,11 @@ No Diagnóstico, cartão "Central de entregas":
    `tipo=posicao`. Faltando um: "ESCREVE: cadastrar os avisos que faltam", com `CADASTRAR` na
    confirmação. Isso escreve na TaOn e pede a palavra do dono.
 3. O serviço padrão (tabela acima).
-4. O modo de chamada: `https://api.boulangerie.com.br/admin/shop/channel/`, o canal que recebe
-   entrega, aba "Config resolvida", `fulfillment.courier`. Em `auto`, cada pedido Pronto chama a
-   própria corrida e a C2 não junta os dois pedidos. Para manual, às 14h50: aba "Preparo e
-   entrega", copie o texto que está no campo, acrescente `"courier": "none"` (vazio:
-   `{"courier": "none"}`), salve e confira a "Config resolvida". No fim, cole de volta o texto
-   original. Mudança no ambiente vivo: pede a palavra do dono.
+4. O modo de chamada: `https://admin.boulangerie.com.br/admin/shop/channel/`, o canal que
+   recebe entrega, aba "Config resolvida", `fulfillment.courier`. Espera: `none` (manual), que
+   é o padrão da loja (vem da Configuração da Loja; conferido em 23/11 às 6h10 em todos os
+   canais). Nada a trocar antes nem a devolver no fim. Se aparecer `auto`, cada pedido Pronto
+   chama a própria corrida e a C2 não junta os dois pedidos: pare e chame o dono.
 
 ### Os passos
 
@@ -298,7 +297,7 @@ Gestor mostra. "Ler `<A>`" quer dizer: "Ler a conta e as corridas", Corridas `<A
 | **C6** | 15h35 | Pedido **Y** pela loja, como o X. X e Y Prontos, "Chamar entregador" em cada um (duas corridas, **F** e **G**) | Antes de qualquer aceite, nesta ordem: "Agrupar corridas nesta", Corridas `<F>`, valor `<G>`; Ler `<G>`; Ler `<F>`; "Tirar uma parada", Corridas `<F>`, valor: a parada de G lida no laudo de F; "Impulsionar", Corridas `<F>`, valor `2,00` (gasta R$ 2,00); "Cancelar a corrida", Corridas `<F>`, valor `10`. A cada escrita, o print do Gestor | Agrupar: 200, ou o código. G vira `U` e a leitura dela traz `97` com a agrupadora? O que o Gestor mostra de G depois do agrupamento (a F9 ainda não segue a agrupadora). Tirar a parada: 200 e a nova estimativa. Impulsionar: 200 com `origem: 'empresa'`, ou `254`. O `PUT` fica de fora (#3325) |
 | **C3** | a tarde toda | Se a central oferecer, pede que um entregador aceite e desista de uma das corridas | Log: uma linha `code=C` com `will_reopen=` | `will_reopen=true`? O aceite seguinte vem com outro `event` e o mesmo id? |
 | **C7** | C5 e C6 | nada a mais | O "Chamar de novo" do X abre uma corrida nova com o mesmo `id_externo` de uma corrida encerrada | Abriu: a TaOn aceita o `id_externo` repetido depois de uma corrida encerrada. Recusou: anotar o código (esperado `8`) |
-| **Fim** | cerca de 16h30 | Cancela X e Y no Gestor. Devolve o modo de chamada do canal, se mudou | Para o log | O custo de cada corrida no painel da TaOn |
+| **Fim** | cerca de 16h30 | Cancela X e Y no Gestor | Para o log | O custo de cada corrida no painel da TaOn |
 
 Corridas abertas: **A**, **B**, **D**, **F** e **G**, mais **E** se o dono quiser. A e B vão até
 o fim e se pagam como corrida curta (a cotação de 01/10 deu R$ 8,00 para 3,4 km; estimado, não
@@ -312,8 +311,7 @@ nesse caso, isso também não foi medido. O impulsionar custa R$ 2,00 se for ace
 - O login de gestor do painel da TaOn, e o Admin aberto como superusuário. Se quiser medir o
   impulsionar, ligue antes, no painel ou pela central, **impulsionamento de entregas liberado
   para a empresa**. Sem a chave, a recusa (`254`) também é resultado, e fica anotada.
-- A palavra para: a troca do modo de chamada (se ele estiver em `auto`), o cadastro dos avisos
-  (só se faltar um), e cada escrita, na hora.
+- A palavra para: o cadastro dos avisos (só se faltar um) e cada escrita, na hora.
 
 ### Depois
 

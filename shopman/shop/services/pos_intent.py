@@ -35,6 +35,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "delivery_time_slot",
     "delivery_fee_override_q",
     "order_notes",
+    "counter_service",
     "payment_method",
     "payment_collection",
     "payment_tenders",
@@ -93,6 +94,10 @@ POS_SALE_INTENT_RECEIPT_CHANNELS = tuple(sorted(_ALLOWED_RECEIPT_CHANNELS))
 
 # O limite da observação do pedido. A tela do PDV usa o mesmo número.
 ORDER_NOTES_LIMIT = 500
+
+#: Como a venda de balcão sai (#3193): comer aqui ("here") ou levar ("to_go").
+#: A tela tem os dois chips; ausente = o balcão não disse (venda anterior a isto).
+COUNTER_SERVICES: tuple[str, ...] = ("here", "to_go")
 
 
 @dataclass(eq=False)
@@ -235,6 +240,17 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
             recovery="Encurte a observação e tente de novo.",
         )
     payload["order_notes"] = order_notes
+    # Balcão: comer aqui ou levar (#3193, opção A do dono). Só existe no modo
+    # balcão; na encomenda quem diz como o pedido sai é o recebimento.
+    counter_service = str(payload.get("counter_service") or "").strip()
+    if counter_service and counter_service not in COUNTER_SERVICES:
+        raise PosIntentError(
+            code="invalid_counter_service",
+            message="Escolha Consumir aqui ou Para levar.",
+            field="counter_service",
+            focus="fulfillment",
+        )
+    payload["counter_service"] = counter_service if payload.get("sales_mode") != "order" else ""
     # A taxa NÃO vem daqui: quem a resolve é o motor de entrega (zona/faixa),
     # em `pos._resolve_delivery_fee`. O que atravessa o intent é só a EXCEÇÃO
     # que o operador assume — e ela é opcional de verdade: ausente significa

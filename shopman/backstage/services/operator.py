@@ -31,6 +31,42 @@ User = get_user_model()
 OPERATE_POS = "cashman.operate_pos"
 ADJUST_SHIFT = "cashman.adjust_shift"
 
+#: O PIN da casa tem EXATAMENTE 4 dígitos (dono, 22/11/2026, #3223: "já estava
+#: decidido"). A regra mora aqui e não no doorman: o doorman sabe só o mínimo
+#: (``DOORMAN.PIN_MIN_LENGTH``), e todo PIN que esta casa grava passa por esta
+#: camada (troca, reset, PIN provisório, ``set_operator_pin``). O PIN antigo, de
+#: até 8, continua abrindo até a troca, que é obrigatória (``backstage.0101``).
+OPERATOR_PIN_DIGITS = 4
+
+
+def validate_operator_pin(raw_pin: str) -> str:
+    """O PIN novo, se tem exatamente :data:`OPERATOR_PIN_DIGITS` dígitos; senão recusa."""
+    from shopman.doorman.models import PinCredentialError
+
+    pin = str(raw_pin or "").strip()
+    if len(pin) != OPERATOR_PIN_DIGITS or not pin.isdigit():
+        raise PinCredentialError(f"O PIN tem {OPERATOR_PIN_DIGITS} dígitos.")
+    return pin
+
+
+def pin_digits(user) -> int | None:
+    """O PIN desta pessoa é de 4 fixos? :data:`OPERATOR_PIN_DIGITS`, ou ``None``.
+
+    É a marca que deixa o teclado enviar sozinho no último dígito. Toda credencial
+    que existia antes da regra nasceu com troca obrigatória (``backstage.0101``), e
+    todo PIN gravado depois passa por :func:`validate_operator_pin` ou é o
+    provisório (que também pede troca). Então a credencial SEM troca pendente é,
+    por construção, de 4 fixos. Sem credencial, ou com troca pendente, ``None``:
+    o teclado segue com o Confirmar, e o PIN antigo de 6 continua entrando.
+    """
+    try:
+        credential = user.pin_credential
+    except (PinCredential.DoesNotExist, AttributeError):
+        return None
+    if not credential.pin_hash or credential.must_change:
+        return None
+    return OPERATOR_PIN_DIGITS
+
 
 def operator_card(user) -> dict:
     """Projeção pública de um operador — o que a tela pode mostrar dele.
@@ -44,6 +80,8 @@ def operator_card(user) -> dict:
         "id": user.pk,
         "username": user.get_username(),
         "name": user.get_full_name().strip() or user.get_username(),
+        # O teclado envia sozinho no último dígito de quem tem PIN de 4 fixos (#3223).
+        "pin_digits": pin_digits(user),
     }
 
 
@@ -244,18 +282,15 @@ def change_own_pin(user, current_pin: str, new_pin: str) -> None:
     # virar um oráculo do PIN de ninguém.
     if new_pin.strip() == current_pin.strip():
         raise PinChangeError("same_pin", "Escolha um PIN diferente do atual.")
-    # validate_raw (via set_pin) raises PinCredentialError before mutating on policy failure.
-    cred.set_pin(new_pin)
+    # O novo tem 4 dígitos (#3223); o doorman confere o resto (só dígitos) no set_pin.
+    cred.set_pin(validate_operator_pin(new_pin))
 
 
 def _generate_temp_pin() -> str:
-    """A random numeric temp PIN that satisfies the configured minimum length."""
+    """A random numeric temp PIN with the house length (:data:`OPERATOR_PIN_DIGITS`)."""
     import secrets
 
-    from shopman.doorman.conf import doorman_settings
-
-    length = max(4, doorman_settings.PIN_MIN_LENGTH)
-    return "".join(secrets.choice("0123456789") for _ in range(length))
+    return "".join(secrets.choice("0123456789") for _ in range(OPERATOR_PIN_DIGITS))
 
 
 def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
@@ -285,7 +320,7 @@ def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
             "Esta conta administra o sistema: o PIN dela só pode ser criado ou "
             "trocado pela própria pessoa, em \"Criar ou trocar meu PIN\".",
         )
-    temp = (temp_pin or "").strip() or _generate_temp_pin()
+    temp = validate_operator_pin(temp_pin) if (temp_pin or "").strip() else _generate_temp_pin()
     PinCredential.validate_raw(temp)  # policy check before writing (raises PinCredentialError)
     PinCredential.set_for(target_user, temp, must_change=True)
     return temp
