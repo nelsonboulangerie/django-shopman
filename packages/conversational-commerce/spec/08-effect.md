@@ -171,6 +171,11 @@ molde mais completo que o lastro sustenta: sem os termos novos (carrinho vazio, 
 `change_cart.done_receipt` diz só o efeito; sem o total do pedido (leitura que falha, ou fato sem
 `total`), `commit_order.done_order` diz o pedido e onde acompanhar.
 
+**"Não" aos termos.** O `deny` que responde à pergunta dos termos ("deixa pra lá") invalida a
+autorização e não grava nada, sem ato próprio. A resposta `acknowledge.terms_declined` ("nada foi
+registrado, o carrinho ficou como estava") só sai quando NENHUM efeito foi escolhido no turno
+(`TurnState.effect_chosen`); com uma mudança junto, ela seria falsa, e vale o molde comum.
+
 **Mudança com termos no ar.** Se o carrinho muda (recibo de sucesso do `change_cart`) enquanto a
 pergunta dos termos está no ar ("pode fechar" → resumo → "na verdade 4"), os termos de antes deixam
 de valer (v2 4.7, propriedade 2). A decisão é refeita, ligada à anterior (N14): a necessidade da
