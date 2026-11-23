@@ -57,11 +57,24 @@ class EmailChannelProjection:
 
 
 @dataclass(frozen=True)
+class CourierCentralProjection:
+    """A central de entregas por API (TaOn), sem chamar a rede: só o que o processo tem."""
+
+    #: `True` quando o adaptador da central é o que despacha as corridas.
+    adapter_on: bool
+    #: `True` quando usuário, senha e API Key estão no processo (os VALORES nunca saem daqui).
+    configured: bool
+    #: "produção" ou "homologação", pela base da API.
+    environment: str
+
+
+@dataclass(frozen=True)
 class DiagnosticsProjection:
     environment: str
     is_production: bool
     providers: tuple[dict, ...]
     email: EmailChannelProjection
+    courier: CourierCentralProjection
 
 
 def _email_projection() -> EmailChannelProjection:
@@ -115,6 +128,17 @@ def _email_projection() -> EmailChannelProjection:
     )
 
 
+def _courier_projection() -> CourierCentralProjection:
+    from shopman.shop.adapters import courier_machine
+    from shopman.shop.services import delivery_services
+
+    return CourierCentralProjection(
+        adapter_on=delivery_services.courier_backend() is courier_machine,
+        configured=courier_machine.is_configured(),
+        environment="homologação" if "api-vendas" in courier_machine._base_url() else "produção",
+    )
+
+
 def build_diagnostics() -> DiagnosticsProjection:
     """Prontidão das integrações + o estado do canal de e-mail."""
     return DiagnosticsProjection(
@@ -122,7 +146,8 @@ def build_diagnostics() -> DiagnosticsProjection:
         is_production=is_production(),
         providers=tuple(item.as_projection() for item in build_monitored_readiness(mode="runtime")),
         email=_email_projection(),
+        courier=_courier_projection(),
     )
 
 
-__all__ = ["EmailChannelProjection", "DiagnosticsProjection", "build_diagnostics"]
+__all__ = ["CourierCentralProjection", "EmailChannelProjection", "DiagnosticsProjection", "build_diagnostics"]
