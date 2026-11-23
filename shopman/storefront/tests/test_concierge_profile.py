@@ -145,9 +145,10 @@ def test_compensation_has_no_mandate_and_verify_waits_for_the_concierge(shop):
         IneligibilityCode.PROFILE_ACTION_ABSENT
 
 
-def test_the_profile_never_spends_and_never_calls_a_model_in_shadow(shop):
+def test_the_profile_reads_once_by_model_and_spends_only_through_the_house_brake(shop):
+    """P04 (D-040): uma leitura pela IA por turno; o gasto é do freio da casa, nunca do teto do motor."""
     built = _profile()
-    assert built.limits.max_model_calls == 0 and built.limits.max_spend.amount_minor == 0
+    assert built.limits.max_model_calls == 1 and built.limits.max_spend.amount_minor == 0
 
 
 def test_no_new_file_reads_settings_directly():

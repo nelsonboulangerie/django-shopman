@@ -84,11 +84,10 @@ def nice_templates() -> dict[str, Template]:
 class NiceRules:
     """As regras locais da Nice no lugar das de teste do pacote (que são em inglês).
 
-    O motor lê a mensagem pelas regras locais quando o perfil não deixa chamar o leitor de
-    modelo (o da Nice: nenhuma chamada). É a MESMA leitura por regra do caminho de hoje
+    O motor lê a mensagem por estas regras só no portão (cortesia sozinha não chama o leitor) e
+    na queda (teto de chamadas, leitor fora). É a MESMA leitura por regra do caminho de hoje
     (``intents.local_acts``), no vocabulário fechado do framework (``ports.ACT_MAP``). Só dá
-    o nome do ato: o pedido com produto e quantidade precisa do leitor com campos, e por isso a
-    classe "pedido" não sai pelo motor enquanto o perfil não liberar o leitor.
+    o nome do ato: produto, quantidade e dia vêm do leitor da Nice (``model_reader.NiceReader``).
     """
 
     def read(self, text: str) -> tuple[str, ...]:
@@ -128,7 +127,8 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
     from shopman.shop.conversational.store import ShopmanStore
 
     from .effect_site import ConciergeEffectSite
-    from .ports import ConversationOwnership, LocalReader, nice_channel, resolve_text, subject_of
+    from .model_reader import NiceReader
+    from .ports import ConversationOwnership, nice_channel, resolve_text, subject_of
     from .profile import build_profile
     from .staff_port import NiceStaff
     from .tools import ToolContext
@@ -142,7 +142,7 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
     channel = replace(channel, bodies=bodies)
     channel_ref = conversation.channel_ref or "whatsapp"
     ports = Ports(
-        channel=channel, model=LocalReader(),
+        channel=channel, model=NiceReader(),
         commerce_read=ShopmanCommerceRead(channel_ref=channel_ref, ownership=ConversationOwnership()),
         commerce_execute=ShopmanCommerceExecute(site=ConciergeEffectSite(
             ToolContext(conversation=conversation, channel_ref=channel_ref))),
