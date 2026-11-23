@@ -5823,6 +5823,12 @@ class WorkOrderPlanView(_ProductionActionBase):
                 request,
                 "can_edit_suggested" if body["source"] == "suggested" else "can_edit_planned",
             )
+            if Decimal(str(body["quantity"])) == 0:
+                # Zerar tira o lote do plano: é cancelar, e cancelar é com quem
+                # pode cancelar (P0-1 do plano de excelência da Produção).
+                access = getattr(request, "production_access", None) or _resolved_production_access(request)
+                if not access.can_void:
+                    deny_production_capability("can_void", detail="Cancelar lote é com o gerente.")
             if force:
                 _shortage_override_reason(
                     request,

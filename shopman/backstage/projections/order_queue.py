@@ -3385,16 +3385,31 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     return payment_status not in _PAYMENT_COMPLETE
 
 
+#: De quanto em quanto tempo o mesmo pedido sem forma de pagamento volta a gritar.
+_SCREAM_EVERY_SECONDS = 24 * 60 * 60
+
+
 def _report_order_without_payment(order: Order | None) -> None:
     """Pedido sem forma de pagamento não existe (decisão do dono, 06/11/2026, GES-03).
 
     Toda porta que cria pedido recusa sem ela (``policies.order_payment.PaymentMethodRule``
     no commit; o seed se confere no fim). Se um aparecer mesmo assim, é defeito de
     porta, e a tela não o maquia com um estado próprio: grita no Sentry com a ref.
+
+    Grita UMA vez por pedido a cada dia, não a cada leitura: o pedido sem forma é
+    estado, e a fila é lida a cada poucos segundos. Até 23/11/2026 um só pedido de
+    24/09 gerou 1,9 mil eventos e ajudou a esgotar a cota mensal do Sentry
+    (SHOPMAN-15); com a cota no fim, o erro novo de verdade deixa de ser registrado.
     """
-    logger.error(
-        "order_queue.order_without_payment order=%s", getattr(order, "ref", "?"),
-    )
+    from django.core.cache import cache
+
+    ref = getattr(order, "ref", "?")
+    try:
+        first_today = cache.add(f"order_queue:order_without_payment:{ref}", 1, timeout=_SCREAM_EVERY_SECONDS)
+    except Exception:
+        first_today = True
+    if first_today:
+        logger.error("order_queue.order_without_payment order=%s", ref)
 
 
 def _offline_payment_settled(payment_data: dict) -> bool:
