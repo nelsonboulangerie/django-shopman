@@ -206,9 +206,8 @@ def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int
     from conversational_commerce.engine.acts import ACTS
     from conversational_commerce.ports import InterpretRequest, ModelRequest, TrustedContext
 
-    from shopman.shop.models import Conversation
-
     from shopman.shop import ai_governor
+    from shopman.shop.models import Conversation
 
     totais = {"chamadas": 0, "tokens_in": 0, "tokens_out": 0, "usd": 0.0, "interrompido": "", "erros": []}
     resultados: list[Resultado] = []
