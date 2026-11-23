@@ -10,7 +10,7 @@ import { expectNoOperatorOverlap } from "../../../operator-kit/visual/playwright
 // O spec define as próprias larguras, então roda num project só (chromium-desktop); os
 // demais projects da matriz o pulam. As telas abrem no cenário povoado do mock (board,
 // QC, pesagem, receitas); os relatórios, no cenário próprio deles.
-const WIDTHS = [1440, 1360, 1280, 1024, 768, 390] as const;
+const WIDTHS = [1440, 1360, 1280, 1024, 768, 375] as const;
 
 const OVERLAP_PROJECT = "chromium-desktop";
 
@@ -20,6 +20,7 @@ const ROUTES: ReadonlyArray<{ path: string; scenario: string }> = [
   { path: "/mise-en-place", scenario: "populated" },
   { path: "/timers", scenario: "populated" },
   { path: "/close", scenario: "populated" },
+  { path: "/close?lot=WO-0104", scenario: "populated" },
   { path: "/quality", scenario: "populated" },
   { path: "/board", scenario: "populated" },
   { path: "/reports", scenario: "reports-populated" },

@@ -202,17 +202,24 @@ describe("QcCloseScreen — classificação por grau", () => {
     expect(wrapper.text()).not.toContain("O que houve");
   });
 
-  it("dois toques no grau atribuem todo o lote quando nada mais foi distribuído", async () => {
+  it("Usar o saldo leva ao grau o que falta, com o nome do gesto à vista", async () => {
+    // P2-09: dois toques num grau levavam o lote inteiro para ele sem querer.
     const wrapper = mountQc();
     const fair = buttonByText(wrapper, "Razoável")!;
 
     await fair.trigger("click");
     await fair.trigger("click");
+    expect(fair.attributes("aria-label")).toContain("0 unidades");
+
+    const useBalance = wrapper.find("[data-qc-use-balance]");
+    expect(useBalance.text()).toBe("Usar o saldo: 40");
+    await useBalance.trigger("click");
 
     expect(fair.attributes("aria-label")).toContain("40 unidades");
     expect(
       wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
     ).toContain("0 unidades");
+    expect(wrapper.find("[data-qc-use-balance]").exists()).toBe(false);
 
     await buttonByText(wrapper, "Finalizar")!.trigger("click");
     await buttonByText(wrapper, "Formato")!.trigger("click");
@@ -229,7 +236,7 @@ describe("QcCloseScreen — classificação por grau", () => {
     });
   });
 
-  it("dois toques preservam outros graus e Perda e tomam somente o saldo", async () => {
+  it("Usar o saldo preserva outros graus e Perda e toma somente o que resta", async () => {
     const wrapper = mountQc();
 
     await buttonByText(wrapper, "Ótimo")!.trigger("click");
@@ -239,7 +246,7 @@ describe("QcCloseScreen — classificação por grau", () => {
 
     const fair = buttonByText(wrapper, "Razoável")!;
     await fair.trigger("click");
-    await fair.trigger("click");
+    await wrapper.find("[data-qc-use-balance]").trigger("click");
 
     expect(fair.attributes("aria-label")).toContain("30 unidades");
     expect(
@@ -294,40 +301,77 @@ describe("QcCloseScreen — classificação por grau", () => {
     });
   });
 
-  it("rendeu menos: o Normal aceita número, pede motivo e a diferença não vira perda", async () => {
+  it("rendeu menos: o Normal aceita número, o motivo vem em um toque e a diferença não vira perda", async () => {
     // Beta 05/11: Normal era só saldo, e fechar abaixo do previsto exigia lançar
-    // a diferença como Perda com motivo de defeito.
+    // a diferença como Perda com motivo de defeito. P1-07: o motivo não pede teclado.
     const wrapper = mountQc();
 
     await wrapper.find('[data-grade-ref="standard"]').trigger("click");
     expect(wrapper.find('[data-digit="1"]').attributes("disabled")).toBeUndefined();
-    await enter(wrapper, "32");
+    await enter(wrapper, "38");
     expect(wrapper.text()).not.toContain("Saldo automático");
     await buttonByText(wrapper, "Finalizar")!.trigger("click");
 
-    expect(wrapper.text()).toContain("Rendeu 32 de 40 previstos?");
+    expect(wrapper.text()).toContain("Rendeu 38 de 40 previstos?");
+    expect(wrapper.find("[data-shortfall] textarea").exists()).toBe(false);
     expect(wrapper.emitted("confirm")).toBeUndefined();
-    await wrapper
-      .find('textarea[aria-label="Motivo de ter rendido menos que o previsto"]')
-      .setValue("A massa rendeu menos peças");
-    await buttonByText(wrapper, "Confirmar 32 unidades")!.trigger("click");
+    await buttonByText(wrapper, "A massa rendeu menos peças")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toEqual({
-      quantity: "32",
-      partition: [{ quantity: "32", quality_grade_ref: "standard" }],
+      quantity: "38",
+      partition: [{ quantity: "38", quality_grade_ref: "standard" }],
       yield_deviation_confirmed: true,
       yield_deviation_reason: "A massa rendeu menos peças",
       reason: "",
     });
   });
 
-  it("dois toques no Normal devolvem o saldo automático", async () => {
+  it("rendeu menos por outro motivo: Outro abre o texto e envia a palavra do operador", async () => {
+    const wrapper = mountQc();
+
+    await wrapper.find('[data-grade-ref="standard"]').trigger("click");
+    await enter(wrapper, "32");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
+    await wrapper.find("[data-yield-other]").trigger("click");
+
+    const confirm = buttonByText(wrapper, "Confirmar 32 un.")!;
+    expect(confirm.attributes("disabled")).toBeDefined();
+    await wrapper
+      .find('textarea[aria-label="Motivo de ter rendido menos que o previsto"]')
+      .setValue("Forno 2 desligou no meio");
+    await buttonByText(wrapper, "Confirmar 32 un.")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      quantity: "32",
+      yield_deviation_reason: "Forno 2 desligou no meio",
+    });
+  });
+
+  it("rendeu mais: o motivo também vem em um toque", async () => {
+    const wrapper = mountQc();
+
+    await wrapper.find('[data-grade-ref="standard"]').trigger("click");
+    await enter(wrapper, "42");
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
+
+    expect(wrapper.text()).toContain("Saíram 42, mais que os 40 previstos?");
+    await buttonByText(wrapper, "Contagem conferida")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      quantity: "42",
+      yield_deviation_confirmed: true,
+      yield_deviation_reason: "Contagem conferida",
+    });
+  });
+
+  it("Voltar ao saldo automático devolve o Normal ao saldo", async () => {
     const wrapper = mountQc();
     const normal = wrapper.find('[data-grade-ref="standard"]');
     await normal.trigger("click");
     await enter(wrapper, "5");
-    await normal.trigger("click");
-    await normal.trigger("click");
+    const restore = wrapper.find("[data-qc-use-balance]");
+    expect(restore.text()).toBe("Voltar ao saldo automático");
+    await restore.trigger("click");
     expect(normal.attributes("aria-label")).toContain("40 unidades, saldo");
   });
 
@@ -772,5 +816,80 @@ describe("QcCloseScreen — a ação do momento no celular", () => {
     await enter(wrapper, "2");
     expect(bar().find("[data-bar-action]").attributes("disabled")).toBeUndefined();
     expect(bar().find("[data-bar-reason]").exists()).toBe(false);
+  });
+});
+
+describe("QcCloseScreen — sem teclado e em qualquer tela (WP-F03)", () => {
+  it("digitar só no Normal conta como alteração (P2-08)", async () => {
+    const wrapper = mountQc();
+    const screen = wrapper.vm as unknown as { isDirty: boolean };
+
+    await wrapper.find('[data-grade-ref="standard"]').trigger("click");
+    await enter(wrapper, "18");
+
+    expect(screen.isDirty).toBe(true);
+  });
+
+  it("Realizado conta só o que se vende, nunca a perda (P2-10)", async () => {
+    const wrapper = mountQc({ planned: 26, started: 26 });
+    await wrapper.find('[data-grade-ref="standard"]').trigger("click");
+    await enter(wrapper, "24");
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "2");
+
+    expect(
+      wrapper.find('footer[aria-label="Ação do lote"] [data-bar-context]').text(),
+    ).toBe("Realizado 24 de 26");
+  });
+
+  it("lote de massa em quilos: escreve a unidade e fecha com vírgula (P1-22)", async () => {
+    const wrapper = mountQc({ planned: 2.5, started: 2.5, unit: "kg" });
+
+    expect(wrapper.find("[data-qc-anchor]").text()).toBe("Previsto: 2,5 kg");
+    await wrapper.find('[data-grade-ref="standard"]').trigger("click");
+    await enter(wrapper, "2");
+    await wrapper.find("[data-qc-comma]").trigger("click");
+    await enter(wrapper, "35");
+    expect(wrapper.find("[data-qc-active-qty]").text()).toBe("2,35kg");
+    expect(
+      wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
+    ).toContain("2,35 kg");
+
+    await buttonByText(wrapper, "Finalizar")!.trigger("click");
+    expect(wrapper.text()).toContain("Rendeu 2,35 de 2,5 kg previstos?");
+    await buttonByText(wrapper, "A massa rendeu menos peças")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      quantity: "2.35",
+      partition: [{ quantity: "2.35", quality_grade_ref: "standard" }],
+    });
+  });
+
+  it("lote de peça não tem vírgula", () => {
+    const wrapper = mountQc();
+    expect(wrapper.find("[data-qc-comma]").exists()).toBe(false);
+    expect(wrapper.find("[data-qc-anchor]").text()).toBe("Previsto: 40 un.");
+  });
+
+  it("abaixo de 640 px a tela é uma coluna, com os graus antes do teclado (P1-08)", () => {
+    const wrapper = mountQc();
+    const layout = wrapper.find("[data-qc-layout]");
+
+    expect(layout.classes()).toContain("grid-cols-1");
+    expect(layout.classes()).toContain("sm:grid-cols-[minmax(0,1fr)_12rem]");
+    expect(layout.classes()).not.toContain("grid-cols-[minmax(0,1fr)_12rem]");
+  });
+
+  it("o teto do teclado avisa em vez de cortar calado", async () => {
+    const warning = vi.fn();
+    vi.stubGlobal("useSonner", { warning });
+    const wrapper = mountQc();
+    await buttonByText(wrapper, "Razoável")!.trigger("click");
+    await enter(wrapper, "99999");
+
+    expect(
+      wrapper.find('[data-grade-ref="fair"]').attributes("aria-label"),
+    ).toContain("9.999 unidades");
+    expect(warning).toHaveBeenCalledWith("O teclado vai até 9.999.");
   });
 });
