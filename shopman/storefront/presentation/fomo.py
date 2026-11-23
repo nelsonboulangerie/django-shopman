@@ -99,6 +99,46 @@ def badges_for_product(
     return tuple(ordered[:MAX_BADGES])
 
 
+def showcase_badges(
+    sku: str,
+    *,
+    available_qty,
+    finished_at,
+    promotions,
+    sku_collections,
+    low_stock_threshold,
+    ready_now: bool = True,
+    now: datetime | None = None,
+) -> tuple[FomoBadge, ...]:
+    """Os selos do card do cardápio e da página do produto (#2807), de fatos em lote.
+
+    A mesma derivação de ``badges_for_product``, sem prova social (que custa duas
+    queries por SKU e só fala de produto esgotado). As promoções chegam já
+    carregadas para o cardápio inteiro e são filtradas aqui, em memória, pela régua
+    da vitrine: só a que vale para qualquer visitante vira contagem regressiva.
+
+    ``ready_now``: o produto se compra agora (disponível ou acabando). Fornada pronta
+    e últimas unidades só valem assim: "Fornada pronta há 12 min" ao lado de
+    "Encomendar para amanhã" (a fornada que já acabou) é promessa que a loja não
+    cumpre hoje.
+    """
+    from shopman.shop.policies.promotion import PromotionContext, promotion_matches
+
+    showcase = PromotionContext(sku=sku, sku_collections=tuple(sku_collections or ()), promise_to_any_visitor=True)
+    return badges_for_product(
+        sku,
+        availability={"available_qty": (available_qty or 0) if ready_now else 0},
+        production={"finished_at": finished_at} if finished_at and ready_now else None,
+        promotions=[
+            {"name": promo.name, "valid_until": promo.valid_until}
+            for promo in promotions or ()
+            if promotion_matches(promo, showcase)
+        ],
+        channel_config={"low_stock_threshold": low_stock_threshold},
+        now=now,
+    )
+
+
 # ── Mecânicas ────────────────────────────────────────────────────────
 
 

@@ -393,11 +393,13 @@ export function fulfillmentLabel(fulfillmentIcon: string): string {
 /** A linha de baixo do código (prévia v4, nota 6): "Card sem canal, telefone nem
  *  cliente". A venda do dia diz só "Retirada"/"Entrega"; a encomenda diz "Encomenda"
  *  e o cliente, porque é com ele que a hora foi combinada ("Encomenda · Café
- *  Parisiense"). O nome do cliente nunca é telefone. */
+ *  Parisiense"). O nome do cliente nunca é telefone. A venda de balcão diz o que
+ *  o PDV marcou, "Consumir aqui" ou "Para levar" (#3193): no prato ou embalado. */
 export function ticketOverline(
-  ticket: Pick<KDSTicketProjection, "fulfillment_icon" | "is_preorder" | "customer_name" | "previous_tab_ref">,
+  ticket: Pick<KDSTicketProjection, "fulfillment_icon" | "is_preorder" | "customer_name" | "previous_tab_ref">
+    & Partial<Pick<KDSTicketProjection, "service_label">>,
 ): string {
-  if (!ticket.is_preorder) return fulfillmentLabel(ticket.fulfillment_icon);
+  if (!ticket.is_preorder) return ticket.service_label || fulfillmentLabel(ticket.fulfillment_icon);
   const name = (ticket.customer_name || "").trim();
   const showName = name && name !== ticket.previous_tab_ref && !looksLikePhone(name);
   return showName ? `Encomenda · ${name}` : "Encomenda";

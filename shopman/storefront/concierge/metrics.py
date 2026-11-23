@@ -42,6 +42,7 @@ LAYER_TEAM = "team"  # C7: a triagem mandou para a equipe ou outra mesa
 LAYER_HANDOFF = "handoff"  # um caminho da casa chamou a equipe (memória, cancelamento, acréscimo)
 LAYER_HOUSE_RULE = "house_rule"  # regra da casa: frase fixa (R7, R8) ou resposta segurada (equipe)
 LAYER_INTENTS = "intents"  # intenções no plural: cada parte pelo executor da casa, uma resposta
+LAYER_FRAMEWORK = "framework"  # N9: o turno saiu pelo motor do framework, com molde da Nice
 
 
 def _int(value) -> int:

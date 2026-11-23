@@ -18,7 +18,7 @@ export const POS_SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["F4"], label: "Abrir o pagamento / atualizar a revisão" },
       { keys: ["F6"], label: "Cliente (buscar, criar, associar)" },
       { keys: ["F7"], label: "Quando (hoje ou outra data)" },
-      { keys: ["F8"], label: "Recebimento (retirada ou entrega)" },
+      { keys: ["F8"], label: "Recebimento (no balcão: consumir aqui ou levar; na encomenda: retirada ou entrega)" },
       { keys: ["Esc"], label: "Sair do campo; depois, voltar (sai do pagamento; fecha diálogos)" },
       { keys: ["?"], label: "Esta ajuda" },
     ],

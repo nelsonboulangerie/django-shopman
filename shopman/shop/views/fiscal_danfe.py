@@ -251,12 +251,15 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
 
     from dataclasses import replace
 
-    from shopman.shop.services.danfe_xml import DanfeSourceError, read_authorized_xml
+    from shopman.shop.services.danfe_xml import DanfeSourceError, backend_authorized_xml, read_authorized_xml
 
     if data.get("nfce_cancelled") or str(data.get("nfce_status") or "").lower() in {"cancelado", "cancelada"}:
         return replace(document, source_problem="NFC-e cancelada. Impressão fiscal indisponível.", status="cancelada")
     try:
-        root = read_authorized_xml(str(data.get("nfce_xml_url") or ""), key)
+        # A nota simulada da pilha guarda o XML no backend (#3124); a de verdade vem do provedor.
+        root = backend_authorized_xml(key)
+        if root is None:
+            root = read_authorized_xml(str(data.get("nfce_xml_url") or ""), key)
         return document_from_xml(document, root)
     except (DanfeSourceError, ValueError, ArithmeticError) as exc:
         logger.warning("danfe_source_unavailable order=%s reason=%s", order.ref, type(exc).__name__)

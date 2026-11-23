@@ -18,10 +18,15 @@ do Payman chama (``PAYMAN["REFUND_BACKEND"]`` →
 novo" (``refund_retry``) usa. O disponível é a mesma conta do Admin: o capturado
 menos o que já voltou (estorno e chargeback). Parcial vale, como no Admin.
 
+Pedido com mais de uma cobrança com dinheiro (um Pix e outro Pix, ou cartão, para
+completar): o Gerente estorna **cobrança por cobrança**, vendo o valor de cada uma
+separado, nunca o total do pedido (decisão da coordenação em 22/11/2026, reversível,
+#3134). A prévia lista as cobranças; o estorno parte da escolhida (``intent_ref``).
+
 Este módulo responde três perguntas e registra a tentativa:
 
-- **pode?** O pedido tem UMA cobrança online com dinheiro guardado, e nada está
-  em curso nela: nem o estorno automático (a directive ``payment.refund``), nem o
+- **pode?** A cobrança escolhida (ou a única) tem dinheiro guardado, e nada está
+  em curso no pedido: nem o estorno automático (a directive ``payment.refund``), nem o
   estorno que falhou (esse tem o gesto próprio, ``refund_retry``), nem o dinheiro
   que saiu sem registro;
 - **quanto?** O que a tela pediu, até o disponível; em branco, o disponível inteiro;
@@ -58,9 +63,8 @@ EVENT_TYPE = "payment.order_refund"
 
 PERMISSION_REASON = "Só quem tem a permissão de estornar um pedido estorna daqui."
 NOTHING_LEFT_REASON = "O valor desta cobrança já voltou inteiro ao cliente."
-MANY_CHARGES_REASON = (
-    "Este pedido tem mais de uma cobrança pelo meio de pagamento. O estorno dele é com o Dono."
-)
+CHOOSE_CHARGE = "Este pedido tem mais de uma cobrança. Escolha qual estornar."
+UNKNOWN_CHARGE_REASON = "Esta cobrança não é deste pedido. Abra o estorno de novo."
 RETRY_REASON = "Este pedido tem um estorno que não saiu. Use Tentar o estorno de novo, na faixa do pedido."
 WAITING_REASON = "O estorno deste pedido foi pedido e não falhou: é só esperar a confirmação."
 STALE_MESSAGE = "O valor desta cobrança mudou depois que você abriu a tela. Confira e tente de novo."
@@ -93,6 +97,9 @@ class RefundPlan:
     available_q: int = 0
     #: Quantas tentativas o pedido já teve: entra na base, e a tela velha é recusada.
     attempts: int = 0
+    #: Mais de uma cobrança com dinheiro e nenhuma escolhida: as cobranças a escolher
+    #: (``intent_ref``). Os valores acima ficam vazios: nada se soma.
+    choices: tuple[str, ...] = ()
 
 
 def _gateway_charges(order: Order) -> list:
@@ -123,10 +130,12 @@ def _attempts(order: Order) -> list[dict]:
     ]
 
 
-def plan(order: Order, *, retry_failed: bool | None = None) -> RefundPlan | None:
+def plan(order: Order, *, intent_ref: str = "", retry_failed: bool | None = None) -> RefundPlan | None:
     """O que "Estornar" faria agora, sem gravar nem falar com o gateway.
 
     ``None``: o pedido não tem cobrança online paga, e o gesto não existe nele.
+    ``intent_ref``: a cobrança escolhida. Sem ela, com mais de uma cobrança com
+    dinheiro, o plano é "escolha a cobrança" (``choices``), sem valor nenhum.
     ``retry_failed`` evita ler de novo o que o detalhe já leu (``refund_retry.plan``).
     """
     charges = _gateway_charges(order)
@@ -135,9 +144,19 @@ def plan(order: Order, *, retry_failed: bool | None = None) -> RefundPlan | None
     attempts = _attempts(order)
     held = [(intent, *_totals(intent)) for intent in charges]
     with_money = [(intent, paid_q, returned_q) for intent, paid_q, returned_q in held if paid_q - returned_q > 0]
-    if len(with_money) > 1:
-        return RefundPlan(block_reason=MANY_CHARGES_REASON, attempts=len(attempts))
-    intent, paid_q, returned_q = with_money[0] if with_money else held[-1]
+    if intent_ref:
+        chosen = next((row for row in held if row[0].ref == intent_ref), None)
+        if chosen is None:
+            return RefundPlan(block_reason=UNKNOWN_CHARGE_REASON, attempts=len(attempts))
+        intent, paid_q, returned_q = chosen
+    elif len(with_money) > 1:
+        order_block = _order_block(order, attempts, retry_failed)
+        return RefundPlan(
+            block_reason=order_block, attempts=len(attempts),
+            choices=tuple(intent.ref for intent, _paid, _returned in with_money),
+        )
+    else:
+        intent, paid_q, returned_q = with_money[0] if with_money else held[-1]
     base = {
         "intent_ref": intent.ref,
         "method": str(intent.method or ""),
@@ -146,24 +165,29 @@ def plan(order: Order, *, retry_failed: bool | None = None) -> RefundPlan | None
         "available_q": max(paid_q - returned_q, 0),
         "attempts": len(attempts),
     }
-    if not with_money:
+    if base["available_q"] <= 0:
         return RefundPlan(block_reason=NOTHING_LEFT_REASON, **base)
+    return RefundPlan(block_reason=_order_block(order, attempts, retry_failed), **base)
+
+
+def _order_block(order: Order, attempts: list[dict], retry_failed: bool | None) -> str:
+    """O que trava o estorno do PEDIDO, qualquer que seja a cobrança, ou ``""``."""
     if attempts and attempts[-1].get("outcome") == refund_retry.OUTCOME_UNRECORDED:
-        return RefundPlan(block_reason=refund_retry.UNRECORDED_REASON, **base)
+        return refund_retry.UNRECORDED_REASON
     if retry_failed is None:
         retry_failed = refund_retry.plan(order).failed
     if retry_failed:
-        return RefundPlan(block_reason=RETRY_REASON, **base)
+        return RETRY_REASON
     in_flight = Directive.objects.filter(
         topic=PAYMENT_REFUND, payload__order_ref=order.ref, status__in=("queued", "running"),
     ).exists()
     if in_flight:
-        return RefundPlan(block_reason=refund_retry.IN_FLIGHT_REASON, **base)
+        return refund_retry.IN_FLIGHT_REASON
     money = payment_svc.cancelled_money(order)
     if money is not None and money.outcome == "refund_requested":
         # O cancelado digital já pediu a devolução sozinho: a resposta chega por ele.
-        return RefundPlan(block_reason=WAITING_REASON, **base)
-    return RefundPlan(**base)
+        return WAITING_REASON
+    return ""
 
 
 def revision(order: Order, current: RefundPlan | None) -> str:
@@ -174,6 +198,7 @@ def revision(order: Order, current: RefundPlan | None) -> str:
         "available_q": getattr(current, "available_q", 0),
         "attempts": getattr(current, "attempts", 0),
         "blocked": getattr(current, "block_reason", ""),
+        "choices": list(getattr(current, "choices", ())),
     }
     return mutation_fingerprint({"version": 1, "order": order.ref, "field": ACTION_REF, "state": state})
 
@@ -189,16 +214,18 @@ def _money(value_q: int) -> str:
     return f"R$ {format_money(int(value_q or 0))}"
 
 
-def detail_action(order: Order, user=None, *, retry_failed: bool | None = None):
+def detail_action(order: Order, user=None, *, intent_ref: str = "", retry_failed: bool | None = None):
     """A ação "Estornar" do detalhe, ou ``None`` (sem a permissão, ou sem cobrança online paga).
 
     Quem não tem a permissão nem vê a porta: o gesto é exceção, não menu de todos.
+    Com mais de uma cobrança, a porta abre para a escolha; a base que o estorno
+    confere é a da cobrança escolhida (``intent_ref``).
     """
     from shopman.shop.projections.types import Action
 
     if not can_refund(user):
         return None
-    current = plan(order, retry_failed=retry_failed)
+    current = plan(order, intent_ref=intent_ref, retry_failed=retry_failed)
     if current is None:
         return None
     return Action(
@@ -209,15 +236,34 @@ def detail_action(order: Order, user=None, *, retry_failed: bool | None = None):
     )
 
 
-def preview(order: Order, user=None) -> dict:
-    """O que o diálogo mostra: o pago e o disponível DESTA cobrança, e a ação com a base.
+def _charge_row(intent, paid_q: int, returned_q: int) -> dict:
+    """Uma cobrança na escolha do estorno: os valores DELA, e de mais nenhuma."""
+    from shopman.backstage.presentation.status import payment_method_label
 
-    Nenhuma soma sobre outro pedido ou outra cobrança: os valores são de uma só.
+    available_q = max(paid_q - returned_q, 0)
+    return {
+        "intent_ref": intent.ref,
+        "method_label": payment_method_label(str(intent.method)) if intent.method else "",
+        "paid_q": paid_q,
+        "paid_display": _money(paid_q),
+        "returned_display": _money(returned_q) if returned_q else "",
+        "available_q": available_q,
+        "available_display": _money(available_q),
+    }
+
+
+def preview(order: Order, user=None, *, intent_ref: str = "") -> dict:
+    """O que o diálogo mostra: o pago e o disponível DA cobrança escolhida, e a ação com a base.
+
+    Pedido com mais de uma cobrança com dinheiro: ``charges`` lista cada uma com o
+    valor DELA, e o diálogo pede a escolha (``choose``) antes de mostrar qualquer
+    valor a estornar. Nenhuma soma, nem entre cobranças nem com outro pedido: o
+    total do pedido nunca vai na prévia (#3134).
     """
     from shopman.backstage.presentation.status import payment_method_label
 
-    current = plan(order)
-    action = detail_action(order, user)
+    current = plan(order, intent_ref=intent_ref)
+    action = detail_action(order, user, intent_ref=intent_ref)
     if current is None:
         return {
             "order_ref": order.ref,
@@ -225,8 +271,26 @@ def preview(order: Order, user=None) -> dict:
             "block_reason": "Este pedido não tem cobrança pelo meio de pagamento para estornar daqui.",
             "action": None,
         }
+    held = [(intent, *_totals(intent)) for intent in _gateway_charges(order)]
+    many = [_charge_row(intent, paid_q, returned_q) for intent, paid_q, returned_q in held if paid_q > returned_q]
+    charges = many if len(many) > 1 else []
+    if current.choices:
+        return {
+            "order_ref": order.ref,
+            "choose": True,
+            "choose_reason": CHOOSE_CHARGE,
+            "charges": charges,
+            "intent_ref": "",
+            "partial_allowed": True,
+            "blocked": bool(current.block_reason),
+            "block_reason": current.block_reason,
+            "action": _action_data(action),
+        }
     return {
         "order_ref": order.ref,
+        "choose": False,
+        "charges": charges,
+        "intent_ref": current.intent_ref,
         "method_label": payment_method_label(current.method) if current.method else "",
         "paid_q": current.paid_q,
         "paid_display": _money(current.paid_q),
@@ -286,8 +350,12 @@ def parse_amount_q(raw) -> int | None:
     return value
 
 
-def refund(order: Order, *, actor: str, amount_q: int | None, attempt_key: str, expected_revision: str) -> dict:
-    """Pede ao gateway o estorno de ``amount_q`` (ou do disponível) da cobrança do pedido.
+def refund(
+    order: Order, *, actor: str, amount_q: int | None, attempt_key: str, expected_revision: str, intent_ref: str = "",
+) -> dict:
+    """Pede ao gateway o estorno de ``amount_q`` (ou do disponível) da cobrança escolhida.
+
+    ``intent_ref``: a cobrança, quando o pedido tem mais de uma; sem ela, a única.
 
     Devolve ``{outcome, amount_q, refunded_q, available_q, message}``, todos da
     cobrança deste pedido. ``outcome`` é ``refunded`` quando o gateway confirmou;
@@ -299,13 +367,15 @@ def refund(order: Order, *, actor: str, amount_q: int | None, attempt_key: str, 
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
         payment_svc.lock_order_payment(locked)
-        current = plan(locked)
+        current = plan(locked, intent_ref=intent_ref)
         if revision(locked, current) != expected_revision:
             raise OrderRefundStale(STALE_MESSAGE)
         if current is None:
             raise OrderRefundRefused("Este pedido não tem cobrança pelo meio de pagamento para estornar daqui.")
         if current.block_reason:
             raise OrderRefundRefused(current.block_reason)
+        if current.choices:
+            raise OrderRefundRefused(CHOOSE_CHARGE)
         asked_q = current.available_q if amount_q is None else amount_q
         if asked_q > current.available_q:
             raise OrderRefundRefused(f"Valor acima do disponível ({_money(current.available_q)}).")

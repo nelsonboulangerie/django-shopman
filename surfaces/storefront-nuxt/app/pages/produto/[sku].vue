@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fomoBadgeViews, fomoCoversLowStock } from '~/presentation/fomo'
 import { tileBadge } from '~/presentation/menu'
 import { detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
 import { inCartWhenLine, pickupStoreLines, promiseAddLabel } from '~/presentation/promise'
@@ -67,7 +68,16 @@ const meta = computed<ProductMutationMeta | null>(() => product.value
     }
   : null)
 const currentQty = computed(() => product.value ? qtyForSku(product.value.sku) : 0)
-const badge = computed(() => product.value ? tileBadge(product.value) : null)
+// Selos de urgência (#2807), os mesmos do card: o de estoque com o número
+// substitui o "Últimas unidades" genérico.
+const now = useMinuteClock()
+const fomo = computed(() => product.value && product.value.availability !== 'unavailable'
+  ? fomoBadgeViews(product.value.fomo_badges, now.value)
+  : [])
+const badge = computed(() => {
+  const base = product.value ? tileBadge(product.value) : null
+  return base && product.value?.availability === 'low_stock' && fomoCoversLowStock(product.value.fomo_badges) ? null : base
+})
 // Quando fica pronto e onde retirar (WP-L02, #2652): a promessa do servidor
 // como veio, e a loja da `Shop`. Tudo vem na resposta do produto, então sai no
 // HTML do servidor (o robô do Google lê sem JavaScript). Sem promessa, nada é
@@ -305,7 +315,8 @@ useHead({
 
           <div class="min-w-0 p-4 sm:p-6">
 
-            <div v-if="(badge && product.availability !== 'unavailable') || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2">
+            <div v-if="(badge && product.availability !== 'unavailable') || fomo.length || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2" data-product-badges>
+              <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type">{{ selo.label }}</UiBadge>
               <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal">{{ badge.label }}</UiBadge>
               <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="max-w-full truncate font-normal" :title="adjustmentLabel(adjustment)">{{ adjustmentLabel(adjustment) }}</UiBadge>
             </div>

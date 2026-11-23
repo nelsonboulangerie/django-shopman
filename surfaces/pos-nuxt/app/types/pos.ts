@@ -45,6 +45,8 @@ export interface POSProductProjection {
   sold_out?: boolean;
   /** Motivo do bloqueio quando não é o genérico "Esgotado" (ex.: "Sem caixa"). */
   sold_out_reason?: string;
+  /** Unidades que a casa ainda promete hoje (só com pronto na prateleira); `null` = não diz. */
+  units_left?: number | null;
   /** Encomenda para outro dia sem lote planejado do item na data (WP-E3): o item
    *  entra, como pedido à Produção, e esta é a frase que a tela diz. Vazio fora disso. */
   unplanned_note?: string;
@@ -694,6 +696,8 @@ export interface POSTabProjection {
   fired?: boolean;
   /** Hora em que a comanda abriu ("21:48"). */
   opened_at_display?: string;
+  /** Quem abriu a comanda (primeiro nome); não muda quando outra estação a abre. */
+  opened_by_display?: string;
   /** A mesa do Salão vinculada (opcional). */
   seating_spot_ref?: string;
   /** A cozinha terminou tudo o que foi disparado: o balcão chama o cliente. */
@@ -831,6 +835,8 @@ export interface POSSeatingSpotOption {
 }
 
 export interface POSTabPayload {
+  /** Esta abertura pôs a comanda em uso (ela estava livre). Só na resposta do abrir. */
+  created?: boolean;
   revision?: string;
   sales_mode?: "counter" | "order";
   session_key: string;
@@ -863,6 +869,8 @@ export interface POSTabPayload {
   delivery_time_slot: string;
   delivery_fee_override_q: number | null;
   order_notes: string;
+  /** Comer aqui ou levar, no balcão (#3193). Vazio = a comanda ainda não disse. */
+  counter_service?: string;
   payment_method: string;
   payment_collection: PosPaymentCollection;
   payment_tenders: POSIntentCartState["paymentTenders"];
@@ -953,6 +961,8 @@ export interface POSIntentCartState {
    * Nunca 0 por omissão: ausente significa "resolva", não "cobre zero". */
   deliveryFeeOverrideQ: number | null;
   orderNotes: string;
+  /** No balcão: comer aqui ou levar (#3193). Só viaja no modo balcão. */
+  counterService: "here" | "to_go";
   paymentMethod: string;
   paymentCollection: PosPaymentCollection;
   paymentTenders: POSPaymentTenderDraft[];
@@ -1031,6 +1041,14 @@ export interface POSOverPlanLine {
 /** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção
  *  `promotion_name`; `threshold`: compras a partir de `threshold_q`.
  *  `base_fee_q` é a taxa sem a renúncia. */
+/** Resposta de `/pos/delivery-fee/`: a taxa na tela de venda, os campos da review (#2402). */
+export interface POSDeliveryFeeQuote {
+  delivery_fee_q: number;
+  delivery_fee_source: string;
+  delivery_distance_km: number | null;
+  delivery_fee_waiver: POSDeliveryFeeWaiverProjection | null;
+}
+
 export interface POSDeliveryFeeWaiverProjection {
   reason: "promotion" | "threshold" | "group";
   promotion_name: string;

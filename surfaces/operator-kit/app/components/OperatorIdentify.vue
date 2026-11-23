@@ -21,6 +21,9 @@ import { useIdentityCapture } from "../composables/useIdentityCapture";
 export interface IdentifiablePerson {
   username: string;
   name: string;
+  /** O PIN desta pessoa tem tamanho fixo (4, #3223): o teclado envia sozinho
+   *  no último dígito. Ausente ou `null` = PIN antigo, com o Confirmar. */
+  pin_digits?: number | null;
 }
 
 const props = withDefaults(
@@ -102,6 +105,7 @@ const { pin, pressDigit, backspace, clear } = useIdentityCapture({
   onBadge: (token) => emit("badge", token),
   onSubmit: () => submit(),
   onDigitPick: (digit) => pickByNumber(digit),
+  autoSubmitAt: () => picked.value?.pin_digits ?? null,
 });
 
 // A lista é numerada: "2" escolhe o segundo. Antes só o dedo escolhia, e num
@@ -284,6 +288,7 @@ defineExpose({ reset });
         :error="error"
         :can-submit="canSubmit"
         :busy="busy"
+        :fixed-digits="picked?.pin_digits ?? null"
         @digit="pressDigit"
         @backspace="backspace"
         @submit="submit"

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
+from shopman.shop.discount_spread import SPLIT_OF
 from shopman.shop.observability import catalog_stage
 from shopman.shop.policies.exclusive_collections import CollectionAccess
 from shopman.shop.projections import catalog_context
@@ -38,8 +39,9 @@ from shopman.shop.projections.types import (
 )
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
+from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
 from shopman.storefront.presentation.icons import collection_icon
-from shopman.storefront.presentation.promise import PromiseProjection, promise_for
+from shopman.storefront.presentation.promise import KIND_READY, PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label
 
 if TYPE_CHECKING:
@@ -149,6 +151,13 @@ class CatalogItemProjection:
     # pronto, fornada ou encomenda, o dia, a hora e a frase. ``None`` quando não
     # há promessa (indisponível, pausado, ou sem dado para afirmar um dia).
     promise: PromiseProjection | None = None
+
+    # Selos de urgência real (#2807, ``presentation/fomo``): fornada pronta há
+    # pouco, últimas unidades, promoção acabando; até dois, do mais urgente. O
+    # rótulo de tempo ("há 12 min", "acaba em 2h") a tela refaz pelo relógio dela
+    # a partir de ``meta.finished_at`` e ``expires_at``: o cardápio passa por cache
+    # de borda, e o selo some sozinho quando o prazo passa.
+    fomo_badges: tuple[FomoBadge, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -604,6 +613,10 @@ def _build_items(
     with catalog_stage("availability"):
         promise_facts = read_promise_facts(skus, channel_ref=channel_ref, own_holds=own_holds)
 
+    # Selos de urgência (#2807): a fornada de cada SKU numa query só; estoque e
+    # promoções já estão em mão.
+    fresh_by_sku = catalog_context.last_finished_by_sku(skus)
+
     result: list[CatalogItemProjection] = []
     for p in products:
         base_q = price_map[p.sku] if p.sku in price_map else p.base_price_q
@@ -645,6 +658,12 @@ def _build_items(
         dietary = list(rotulo.get("dietary_info") or ())
         allergens = tuple(rotulo.get("allergens") or ())
         tags = _product_tags(p)
+        promise = promise_for(
+            p.sku,
+            promise_facts,
+            orderable=can_add,
+            made_to_order=bool(meta.get("made_to_order")),
+        )
 
         result.append(
             CatalogItemProjection(
@@ -684,15 +703,32 @@ def _build_items(
                 choice_group=catalog_context.choice_group(p) or None,
                 choice_group_label=catalog_context.choice_group_label(p) or None,
                 option_groups=tuple(catalog_context.option_groups(p)),
-                promise=promise_for(
+                promise=promise,
+                fomo_badges=showcase_badges(
                     p.sku,
-                    promise_facts,
-                    orderable=can_add,
-                    made_to_order=bool(meta.get("made_to_order")),
+                    available_qty=available_qty,
+                    finished_at=fresh_by_sku.get(p.sku),
+                    promotions=active_promotions,
+                    sku_collections=cols,
+                    low_stock_threshold=low_stock_threshold,
+                    ready_now=ready_now(availability, promise),
                 ),
             ),
         )
     return result
+
+
+def ready_now(availability, promise: PromiseProjection | None) -> bool:
+    """O produto está pronto agora: disponível (ou acabando) e com a promessa "Pronto agora".
+
+    É a régua dos selos de fornada pronta e de últimas unidades (#2807). "Fornada
+    pronta há 12 min" ao lado de "Encomendar para amanhã" (a fornada que acabou, o
+    corte do dia que passou) ou de "Fica pronto hoje às 15h" é promessa que a loja
+    não cumpre agora.
+    """
+    if availability not in (Availability.AVAILABLE, Availability.LOW_STOCK):
+        return False
+    return promise is not None and promise.kind == KIND_READY
 
 
 @dataclass(frozen=True)
@@ -1118,9 +1154,11 @@ def _cart_qty_by_sku(request: HttpRequest | None) -> dict[str, int]:
         if not sku:
             continue
         try:
-            result[sku] = int(Decimal(str(item.get("qty", 0) or 0)))
+            qty = int(Decimal(str(item.get("qty", 0) or 0)))
         except (ValueError, ArithmeticError):
             continue
+        # A parte que o rateio do desconto partiu da linha (#3240) soma na dela.
+        result[sku] = result.get(sku, 0) + qty if (item.get("meta") or {}).get(SPLIT_OF) else qty
     return result
 
 

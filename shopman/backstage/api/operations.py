@@ -98,7 +98,7 @@ from shopman.backstage.api.throttles import POSCustomerSearchThrottle
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
-from shopman.backstage.permissions import can_audit_cash
+from shopman.backstage.permissions import ORDER_BOARD_PERMISSIONS, can_audit_cash
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.hub import purchase_surface_url
@@ -171,6 +171,7 @@ from shopman.shop.services.pos_intent import PosIntentError
 from shopman.shop.services.quality import EffectiveQualityPartitionError
 
 from .permissions import (
+    HasAnyBackstagePermission,
     HasBackstagePermission,
     HasOrderBoardAccess,
     HasProductionCapability,
@@ -2352,6 +2353,36 @@ class DayClosingView(APIView):
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
 
 
+class DayClosingNotPickedUpView(APIView):
+    """O gesto em lote do fechamento: encerrar como não retirado os prontos da lista.
+
+    Opcional (decisão da coordenação em 22/11/2026, reversível): fechar o dia não
+    depende dele. Body: ``{"orders": [{"ref", "revision"}], "manager_approval":
+    {"username", "pin"} | {"badge"}}``.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.perform_closing"
+
+    def post(self, request):
+        body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+        try:
+            record = closing_service.resolve_not_picked_up(user=request.user, release=body)
+        except closing_service.NotPickedUpBatchRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente: o mesmo desafio da sangria e da produção aberta.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({"ok": True, "orders": record["orders"], "approved_by": record["approved_by"]})
+
+
 def _payment_check_due(order) -> bool:
     """A tela deve pedir a conferência do pagamento (``payment/check/``)? Só LÊ.
 
@@ -2507,9 +2538,14 @@ class DeliveryDriverPhotoView(APIView):
     cache e só enquanto a corrida vive (decisão do dono, LGPD): corrida
     encerrada responde 404. ``Cache-Control: no-store`` para o navegador também
     não guardar.
+
+    Quem vê: quem gerencia pedidos ou expede (o Gestor) e quem opera o caixa
+    (o painel da corrida do PDV): decisão do dono, 22/11 (#3150). A foto segue
+    viva só enquanto a corrida vive; nada muda no quanto ela dura.
     """
 
-    permission_classes = [HasOrderBoardAccess]
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = (*ORDER_BOARD_PERMISSIONS, "cashman.operate_pos")
 
     def get(self, request, ride: str):
         from django.http import HttpResponse
@@ -3398,8 +3434,9 @@ _ORDER_REFUND_PERMISSIONS = ("shop.manage_orders", "backstage.refund_single_orde
 
 class OrderRefundPreviewView(OperationalObservationMixin, APIView):
     """O que o diálogo "Estornar" mostra: o valor pago naquela cobrança, o que já
-    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança, a
-    deste pedido; nenhuma soma, nenhuma lista (``order_refund.preview``)."""
+    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança;
+    com mais de uma no pedido, cada uma com o valor dela, para a escolha
+    (``?intent=<ref>`` lê a escolhida). Nenhuma soma (``order_refund.preview``)."""
 
     permission_classes = [HasBackstagePermission]
     required_permission = _ORDER_REFUND_PERMISSIONS
@@ -3410,7 +3447,8 @@ class OrderRefundPreviewView(OperationalObservationMixin, APIView):
         order = orders_service.find_order(ref)
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
-        return Response(order_refund.preview(order, user=request.user))
+        intent_ref = str(request.query_params.get("intent") or "").strip()
+        return Response(order_refund.preview(order, user=request.user, intent_ref=intent_ref))
 
 
 @extend_schema_view(
@@ -3423,7 +3461,8 @@ class OrderRefundPreviewView(OperationalObservationMixin, APIView):
 class OrderRefundView(_OrderActionBase):
     """Estornar UM pedido no Gestor (#2727, item 5; dono, 21/11/2026).
 
-    ``POST {base_revision, expected_actor_id, amount_q?, confirm: true}``. Só com
+    ``POST {base_revision, expected_actor_id, intent_ref?, amount_q?, confirm: true}``.
+    ``intent_ref`` é a cobrança escolhida, quando o pedido tem mais de uma (#3134). Só com
     ``backstage.refund_single_order``: o Gerente estorna partindo do pedido e vê só o
     valor daquela cobrança, sem ``payman.view_paymentintent`` (o Admin de cobranças
     lista, e listar é proibido a ele). ``amount_q`` em centavos, até o disponível; sem
@@ -3457,6 +3496,7 @@ class OrderRefundView(_OrderActionBase):
                  "errors": {"confirm": [order_refund.CONFIRM_REQUIRED]}},
                 status=400,
             )
+        intent_ref = str(request.data.get("intent_ref") or "").strip()
         try:
             amount_q = order_refund.parse_amount_q(request.data.get("amount_q"))
         except order_refund.OrderRefundRefused as exc:
@@ -3465,7 +3505,8 @@ class OrderRefundView(_OrderActionBase):
         def execute(base):
             try:
                 result = order_refund.refund(
-                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key, expected_revision=base,
+                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key,
+                    expected_revision=base, intent_ref=intent_ref,
                 )
             except order_refund.OrderRefundStale as exc:
                 raise OrderStateConflict(str(exc)) from exc
@@ -4059,6 +4100,60 @@ class OrderResendPaymentLinkView(_OrderActionBase):
         responses={200: OpenApiResponse(description="Available dates and readiness-annotated windows.")},
     ),
 )
+class POSDeliveryFeeView(APIView):
+    """A taxa de entrega na tela de venda, antes do pagamento (#2402).
+
+    ``POST {delivery_address_structured, delivery_address, merchandise_q,
+    customer_ref}``. Responde os mesmos campos de taxa da review, para o
+    Recebimento mostrar o número que a loja calcula, em vez de "calculada no
+    pagamento". A geocodificação de quem chega sem coordenada é por endereço e
+    fica em cache, então perguntar de novo quando a venda muda não sai caro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        body = request.data or {}
+        address = body.get("delivery_address_structured")
+        try:
+            merchandise_q = max(0, int(body.get("merchandise_q") or 0))
+        except (TypeError, ValueError):
+            frase = "O valor dos produtos chegou ilegível."
+            return Response(
+                {"detail": frase, "field": "merchandise_q", "errors": {"merchandise_q": [frase]}},
+                status=400,
+            )
+        delivery = pos_tabs_service.resolve_delivery_fee(
+            address_structured=address if isinstance(address, dict) else {},
+            address_text=str(body.get("delivery_address") or ""),
+            merchandise_q=merchandise_q,
+            channel_ref=POS_CHANNEL_REF,
+            customer_ref=str(body.get("customer_ref") or "").strip(),
+        )
+        return Response({"ok": True, **_delivery_fee_quote_payload(delivery)})
+
+
+def _delivery_fee_quote_payload(delivery) -> dict:
+    """Os campos de taxa da review (``_pos_sale_review_payload``), para a mesma tela ler."""
+    waiver = delivery.waiver
+    waiver_review = None
+    if waiver is not None and delivery.source not in ("manual", "blocked"):
+        waiver_review = {
+            "reason": waiver.reason,
+            "promotion_name": waiver.promotion_name,
+            "threshold_q": waiver.threshold_q,
+            "base_fee_q": waiver.base_fee_q,
+            "group_name": waiver.group_name,
+        }
+    return {
+        "delivery_fee_q": delivery.fee_q,
+        "delivery_fee_source": delivery.source,
+        "delivery_distance_km": delivery.distance_km,
+        "delivery_fee_waiver": _delivery_fee_waiver_payload(waiver_review),
+    }
+
+
 class POSScheduleView(APIView):
     """As datas e janelas combináveis — perguntado na ABERTURA, não no pagamento.
 
@@ -7601,7 +7696,7 @@ class POSTabOpenView(ServerTimingMixin, APIView):
 
     def post(self, request, tab_ref: str):
         try:
-            session = pos_tabs_service.open_pos_tab(
+            opening = pos_tabs_service.open_pos_tab_reporting(
                 channel_ref=POS_CHANNEL_REF,
                 tab_ref=tab_ref,
                 actor=_actor_pos(request),
@@ -7610,7 +7705,40 @@ class POSTabOpenView(ServerTimingMixin, APIView):
         except Exception as exc:
             logger.debug("pos_tab_open_failed tab_ref=%s", tab_ref, exc_info=True)
             return Response({"detail": public_error_detail(exc, "Falha ao abrir comanda.")}, status=400)
-        return Response(build_open_tab(session))
+        # ``created``: foi esta abertura que pôs a comanda em uso. É a deixa do PDV
+        # para devolvê-la ao quadro se ele sair dela vazia (#2443).
+        return Response({**build_open_tab(opening.session), "created": opening.created})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Reserve and open the next free numeric POS tab",
+        responses={200: OpenApiResponse(description="Tab payload of the reserved tab.")},
+    ),
+)
+class POSTabReserveNextFreeView(ServerTimingMixin, APIView):
+    """A "Próxima livre" escolhida e reservada pelo servidor, numa ida só (#2443).
+
+    Duas estações que tocam juntas recebem comandas diferentes: a reserva é a
+    criação da conta, travada pelo banco.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+    server_timing_methods = ("POST",)
+
+    def post(self, request):
+        try:
+            body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+            session = pos_tabs_service.reserve_next_free_pos_tab(
+                channel_ref=POS_CHANNEL_REF,
+                operator_username=_username(request),
+                client_request_id=str(body.get("client_request_id") or ""),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({**build_open_tab(session), "created": True})
 
 
 @extend_schema_view(

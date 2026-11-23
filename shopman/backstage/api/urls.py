@@ -192,6 +192,7 @@ from .operation_checklists import (
 )
 from .operations import (
     CourierTicketEscposView,
+    DayClosingNotPickedUpView,
     DayClosingView,
     DeliveriesCountView,
     DeliveriesView,
@@ -286,6 +287,7 @@ from .operations import (
     POSCustomerResolveView,
     POSCustomerSearchView,
     POSDanfeEscposView,
+    POSDeliveryFeeView,
     POSEmitFiscalView,
     POSManagerApprovalCheckView,
     POSMovementView,
@@ -312,6 +314,7 @@ from .operations import (
     POSTabMoveLinesView,
     POSTabOpenView,
     POSTabRenameView,
+    POSTabReserveNextFreeView,
     POSTabSaveView,
     POSTabUnfireView,
     POSView,
@@ -808,6 +811,7 @@ urlpatterns = [
     path("saved-views/<int:pk>/", SavedViewDetailView.as_view(), name="api-backstage-saved-view"),
     path("bi/scenarios/", BIScenariosView.as_view(), name="api-backstage-bi-scenarios"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
+    path("closing/not-picked-up/", DayClosingNotPickedUpView.as_view(), name="api-backstage-closing-not-picked-up"),
     path(
         "closing/episodes/<int:episode_id>/",
         OperationEpisodeAnswerView.as_view(),
@@ -1428,6 +1432,7 @@ urlpatterns = [
     ),
     # POS — tab (comanda) lifecycle
     path("pos/tabs/", POSTabCreateView.as_view(), name="api-backstage-pos-tab-create"),
+    path("pos/tabs/next-free/", POSTabReserveNextFreeView.as_view(), name="api-backstage-pos-tab-next-free"),
     path("pos/tabs/<str:tab_ref>/open/", POSTabOpenView.as_view(), name="api-backstage-pos-tab-open"),
     path("pos/tabs/save/", POSTabSaveView.as_view(), name="api-backstage-pos-tab-save"),
     path("pos/tabs/rename/", POSTabRenameView.as_view(), name="api-backstage-pos-tab-rename"),
@@ -1438,6 +1443,7 @@ urlpatterns = [
     path("pos/sale/review/", POSReviewSaleView.as_view(), name="api-backstage-pos-review-sale"),
     path("pos/sale/close/", POSCloseSaleView.as_view(), name="api-backstage-pos-close-sale"),
     path("pos/schedule/", POSScheduleView.as_view(), name="api-backstage-pos-schedule"),
+    path("pos/delivery-fee/", POSDeliveryFeeView.as_view(), name="api-backstage-pos-delivery-fee"),
     path("pos/recent-sales/", POSRecentSalesView.as_view(), name="api-backstage-pos-recent-sales"),
     path("pos/preorders/", POSPreorderListView.as_view(), name="api-backstage-pos-preorders"),
     # ⚠️ ANTES de `pos/preorders/<str:ref>/`: `search` casaria com o ref.

@@ -104,3 +104,36 @@ def test_rota_que_o_fake_nao_conhece_responde_404(fake):
     with pytest.raises(HTTPError) as missing:
         urlopen(request, timeout=5)
     assert missing.value.code == 404
+
+
+@pytest.mark.django_db(transaction=True)
+def test_aviso_do_pedido_acha_o_contato_pelo_telefone_e_chega_no_fake(fake, settings, monkeypatch):
+    """#3282: quem entrou por código não tem id do ManyChat. O resolvedor do Guestman,
+    o de produção, procura o telefone no fake, cria o contato e o guarda; o aviso chega."""
+    from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
+    from shopman.guestman.contrib.manychat import resolver
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.adapters import notification_manychat
+
+    _, base = fake
+    monkeypatch.setattr(resolver, "_API_BASE", f"{base}/fb")
+    settings.MANYCHAT_API_TOKEN = "e2e-fake-manychat-local-only"
+    customer = Customer.objects.create(ref="CUS-AVISO-01", first_name="Rosa", phone="+5543991112233")
+
+    ok = notification_manychat.send(
+        "+5543991112233",
+        "order_cancelled",
+        {"order_ref": "ORD-3282", "customer_name": "Rosa"},
+    )
+
+    assert ok is True
+    [message] = _sent_by_phone(base, "5543991112233")
+    assert message["endpoint"] in {"/fb/sending/sendContent", "/fb/sending/sendFlow"}
+    ident = CustomerIdentifier.objects.get(customer=customer, identifier_type=IdentifierType.MANYCHAT)
+    assert ident.identifier_value == message["subscriber_id"]
+
+
+def _sent_by_phone(base: str, phone: str) -> list[dict]:
+    with urlopen(f"{base}/__sent?phone={phone}", timeout=5) as response:
+        return [item for item in json.loads(response.read())["sent"] if item["endpoint"].startswith("/fb/sending/")]

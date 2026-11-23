@@ -221,8 +221,13 @@ def _raw(message) -> dict:
     return {**(message.envelope or {}), "message_ref": message.pk}
 
 
-def run(conversation, message, *, channel=None):
-    """O turno pelo motor, ou ``None`` (o caminho de hoje segue). Nunca levanta."""
+def run(conversation, message, *, channel=None, interrupted=None):
+    """O turno pelo motor, ou ``None`` (o caminho de hoje segue). Nunca levanta.
+
+    Só conta como feito o turno que o motor respondeu E enviou (``answered`` com exposição).
+    Segurado, revogado (``interrupted``: a conversa mudou de dono no meio) ou com o envio
+    falhado, nada chegou ao cliente pelo motor, e o caminho de hoje responde.
+    """
     try:
         enabled = live_classes()
         if not enabled:
@@ -239,7 +244,12 @@ def run(conversation, message, *, channel=None):
         live = build_engine(conversation, environment=ENVIRONMENT, channel=channel)
         if live is None:
             return None
-        return live.turn(live.ports.clock.ctx, _raw(message))
+        result = live.turn(live.ports.clock.ctx, _raw(message), interrupted=interrupted)
+        if result.outcome != "answered" or getattr(result, "exposure", None) is None:
+            logger.info("concierge.turn_framework.not_sent conversation=%s outcome=%s fallbacks=%s",
+                        conversation.pk, result.outcome, list(result.fallbacks))
+            return None
+        return result
     except Exception:  # noqa: BLE001 — o motor que cai nunca derruba o turno: segue o caminho de hoje
         logger.warning("concierge.turn_framework.failed conversation=%s", getattr(conversation, "pk", None),
                        exc_info=True)

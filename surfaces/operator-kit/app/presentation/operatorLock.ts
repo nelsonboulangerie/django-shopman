@@ -64,6 +64,15 @@ export function isLikelyBadge(value: string): boolean {
  */
 export const PIN_MIN_DIGITS = 4;
 
+/**
+ * O PIN da casa tem EXATAMENTE 4 dígitos (dono, 22/11/2026, #3223: "já estava
+ * decidido"). Todo PIN novo ou trocado nasce assim, e a credencial que já é de 4
+ * fixos vem marcada no cartão de quem destrava (`pin_digits`): para ela o teclado
+ * envia sozinho no 4º dígito. O PIN antigo, de até 8, segue entrando com o
+ * Confirmar até a troca, que é obrigatória no próximo uso.
+ */
+export const PIN_DIGITS = 4;
+
 /** O PIN visível para no oitavo dígito (o teclado não cresce sem limite). */
 export const PIN_MAX_DIGITS = 8;
 

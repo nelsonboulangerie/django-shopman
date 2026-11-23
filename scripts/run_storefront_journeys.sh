@@ -55,8 +55,8 @@ export STRIPE_WEBHOOK_SECRET=whsec_e2e_fake_local_only
 # O WhatsApp vai ao ManyChat FALSO do harness (`shopman/shop/tests/e2e/fake_manychat.py`,
 # #3272): o `notification_manychat` de produção manda a resposta do login de verdade, e a
 # jornada lê os botões dela ("Liberar o Chrome", "Encerrar acesso") no que o fake guardou.
-# O token falso é posto pelo `settings_e2e`, e só no adapter: o MANYCHAT_API_TOKEN de topo
-# fica vazio, e o resolvedor do Guestman (endereço fixo do ManyChat real) não chama nada.
+# O token falso e o endereço do resolvedor do Guestman (fixo no módulo) são postos pelo
+# `settings_e2e`: o aviso do pedido acha o contato da cliente no fake e chega nele (#3282).
 MANYCHAT_URL="http://127.0.0.1:${MANYCHAT_PORT}"
 export MANYCHAT_API_BASE="${MANYCHAT_URL}/fb"
 unset MANYCHAT_API_TOKEN

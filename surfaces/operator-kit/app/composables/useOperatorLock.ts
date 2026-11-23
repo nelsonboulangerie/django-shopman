@@ -115,8 +115,10 @@ export function useOperatorLock(perm: string) {
     `operator-eligible-status:${perm}`,
     () => "idle",
   );
-  async function loadEligible(): Promise<void> {
-    eligibleStatus.value = "pending";
+  /** `quiet`: relê sem passar pelo "lendo" (a lista já está na tela e só muda um
+   *  detalhe dela, como a marca do PIN de 4 fixos depois de uma troca). */
+  async function loadEligible(options: { quiet?: boolean } = {}): Promise<void> {
+    if (!options.quiet) eligibleStatus.value = "pending";
     try {
       const res = await $fetch<OperatorEligibleResponse>(
         "/api/v1/backstage/operator/eligible/",
@@ -128,7 +130,9 @@ export function useOperatorLock(perm: string) {
       eligible.value = res.operators ?? [];
       eligibleStatus.value = "ready";
     } catch {
-      eligibleStatus.value = "error";
+      // Relida em silêncio, a lista de antes continua valendo: o teclado só fica
+      // com o Confirmar até a próxima leitura.
+      if (!options.quiet) eligibleStatus.value = "error";
     }
   }
 
@@ -202,6 +206,10 @@ export function useOperatorLock(perm: string) {
         },
       });
       await refresh();
+      // O PIN trocado é de 4 fixos (#3223): a lista de quem destrava passa a dizer
+      // isso, e o próximo destrave já entra sozinho no quarto dígito. Sem reler, a
+      // lista era a de antes da troca e pedia o Confirmar (achado na prévia).
+      void loadEligible({ quiet: true });
       return true;
     } catch (err) {
       changeError.value = httpErrorMessage(err, "Não foi possível trocar o PIN.");

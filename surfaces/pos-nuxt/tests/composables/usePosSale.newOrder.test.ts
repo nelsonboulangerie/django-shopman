@@ -74,7 +74,7 @@ describe("usePosSale.openNewOrder", () => {
     expect(h.sale.showTabs.value).toBe(true);
     // Desistir não trava uma nova tentativa. Só a confirmação abre a comanda.
     await h.sale.openNewOrder();
-    expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/open/"))).toHaveLength(1);
+    expect(h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/next-free/"))).toHaveLength(1);
   });
 
   it("abre a próxima comanda livre, não a que tem venda em andamento, já no modo Encomendas", async () => {
@@ -85,7 +85,8 @@ describe("usePosSale.openNewOrder", () => {
     await h.sale.openNewOrder();
     await nextTick();
 
-    expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/2/open/");
+    // Quem escolhe e reserva a comanda é o servidor (#2443).
+    expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/next-free/");
     expect(h.sale.cart.tabRef).toBe("2");
     expect(h.sale.cart.salesMode).toBe("order");
     // O assistente começa pela primeira etapa que falta: o cliente.
@@ -94,12 +95,13 @@ describe("usePosSale.openNewOrder", () => {
     expect(h.sale.inSaleView.value).toBe(true);
   });
 
-  it("todas ocupadas: a próxima numeração depois da última", async () => {
+  it("todas ocupadas: abre a que o servidor reservou (a seguinte à última)", async () => {
     const h = sale([tab("1", "in_use"), tab("2", "in_use")], {
       tab_ref: "3", tab_display: "3", session_key: "sess-3", tab_session_key: "sess-3",
     });
-    await h.sale.openNewOrder();
-    expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/3/open/");
+    expect(await h.sale.openNewOrder()).toBe(true);
+    expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/next-free/");
+    expect(h.sale.cart.tabRef).toBe("3");
     expect(h.sale.cart.salesMode).toBe("order");
   });
 
@@ -133,7 +135,7 @@ describe("Nova encomenda abandonada não prende a comanda", () => {
     const h = sale([tab("1", "in_use"), tab("2", "empty")], opened);
     await h.sale.openNewOrder();
     await nextTick();
-    const opens = () => h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/open/")).length;
+    const opens = () => h.handles.actionCall.mock.calls.filter((call) => String(call[0]).includes("/next-free/")).length;
     expect(opens()).toBe(1);
     await h.sale.openNewOrder();
     expect(opens()).toBe(1);

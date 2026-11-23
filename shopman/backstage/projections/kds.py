@@ -108,6 +108,10 @@ class KDSTicketProjection:
     # gestor) and the customer's checkout note (order_notes). Empty when absent.
     kitchen_note: str = ""
     customer_note: str = ""
+    # Venda de balcão: "Consumir aqui" ou "Para levar" (#3193), o que o PDV marcou
+    # na comanda. É a linha de cima do card no lugar de "Retirada": a cozinha sabe
+    # se monta no prato ou embala. Vazio fora do balcão, ou se o balcão não disse.
+    service_label: str = ""
     # Pedido de teste da homologação do iFood NÃO vira ticket (``kds.dispatch``
     # o suprime). O crachá existe para o que já está no painel: ticket criado
     # antes desta trava, ou disparado por outro caminho. Vazio no pedido de
@@ -711,6 +715,18 @@ class KitchenPaperProjection:
     fired_at_display: str
 
 
+#: O que o balcão marcou na comanda (``Session.data.pos.counter_service``, #3193).
+_COUNTER_SERVICE_LABELS = {"here": "Consumir aqui", "to_go": "Para levar"}
+
+
+def counter_service_label(source_data: dict) -> str:
+    """"Consumir aqui" / "Para levar" da venda de balcão; vazio fora dela."""
+    pos_data = source_data.get("pos") or {}
+    if (pos_data.get("sales_mode") or "counter") != "counter":
+        return ""
+    return _COUNTER_SERVICE_LABELS.get(str(pos_data.get("counter_service") or ""), "")
+
+
 def build_kitchen_paper(ticket) -> KitchenPaperProjection:
     """O que a Via Cozinha deste ticket imprime (``receipt_escpos.kitchen_ticket``)."""
     from shopman.shop.models import Channel
@@ -728,6 +744,9 @@ def build_kitchen_paper(ticket) -> KitchenPaperProjection:
     fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
     if fulfillment_type == "delivery":
         fulfillment_label = "ENTREGA"
+    elif card.service_label:
+        # O papel diz o mesmo que o card: no balcão, comer aqui ou levar (#3193).
+        fulfillment_label = card.service_label.upper()
     elif fulfillment_type == "pickup":
         fulfillment_label = "RETIRADA"
     else:
@@ -1295,6 +1314,7 @@ def _build_ticket(
         completed_at_display=_format_time(ticket.completed_at),
         kitchen_note=str(source_data.get("kitchen_note", "") or ""),
         customer_note=str(source_data.get("order_notes", "") or ""),
+        service_label=counter_service_label(source_data),
         test_order_label=_test_order_label(source) if source is not None else "",
         is_preorder=_is_preorder(source),
         due_time_display=_due_time_display(source, promised, is_delivery=is_delivery),

@@ -4,6 +4,7 @@ import { useOnline } from "@vueuse/core";
 import type {
   Action,
   POSAddressAutocompleteProjection,
+  POSDeliveryFeeQuote,
   POSCartItem,
   POSLineAuthorship,
   POSCheckoutCapabilities,
@@ -95,6 +96,15 @@ import { crossAppLinkAttrs } from "../../../operator-kit/app/presentation/appLau
 import { isInstalledDisplay } from "../../../operator-kit/app/utils/displayMode";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+
+import {
+  clearTabDraft,
+  draftMatchesServer,
+  pickTabDraftFields,
+  readTabDraft,
+  tabItemsKey,
+  writeTabDraft,
+} from "~/utils/tabDraft";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { pendingPixDeadlineMs, pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
 import { sourceReleasedMessage } from "~/presentation/moveLines";
@@ -379,6 +389,12 @@ export function usePosSale(deps: PosSaleDeps) {
   // Auto-persist the comanda (Odoo-style): no manual "Salvar". tabLoading guards
   // against re-saving right after a programmatic load (setFromTabPayload).
   const tabLoading = ref(false);
+  // A conta da comanda que ESTA estação pôs em uso (a abertura voltou `created`).
+  // É a única que sair vazia devolve ao quadro (#2443).
+  let createdHereSessionKey = "";
+  // Os itens que o servidor tem desta comanda, pela última leitura ou gravação aceita:
+  // é a base do rascunho do dispositivo (#3315, `utils/tabDraft`).
+  let serverItemsKey = "";
   const firing = ref(false);
   const renamingTab = ref(false);
   const cancellingSale = ref(false);
@@ -1093,6 +1109,8 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryFeeOverrideInput: "",
     deliveryFeeOverride: false,
     orderNotes: "",
+    // No balcão, comer aqui ou levar (#3193). "Consumir aqui" é o que o chip já dizia.
+    counterService: "here" as "here" | "to_go",
     paymentMethod: "",
     paymentCollection: "terminal" as PaymentCollection,
     paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; pix_confirmed?: boolean; _virgin?: boolean }>,
@@ -1290,17 +1308,86 @@ export function usePosSale(deps: PosSaleDeps) {
       over_plan: [...(shown.preorder_over_plan || [])],
     };
   }
-  const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
-  const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
-  const deliveryFeeWaiver = computed(() => review.value?.delivery_fee_waiver ?? null);
-  // A review (que resolve a taxa) só roda no pagamento. Fora dele, a tela de
-  // Recebimento diz isso, em vez de mostrar R$ 0,00 como se fosse a taxa.
+  // A TAXA NA TELA DE VENDA (#2402). A review, que resolve a taxa, só roda no
+  // pagamento; o Recebimento dizia "calculada no pagamento" com o cliente no
+  // telefone perguntando quanto fica. Fora do pagamento, a tela pergunta a taxa à
+  // porta `pos/delivery-fee/` (o mesmo motor da review) assim que há endereço de
+  // entrega, e de novo quando o endereço, o cliente ou o valor da venda mudam
+  // (frete grátis depende dos dois últimos). No pagamento, a review manda.
+  const deliveryQuote = ref<(POSDeliveryFeeQuote & { key: string }) | null>(null);
+  const deliveryQuoteBusy = ref(false);
+  const deliveryQuoteFailed = ref(false);
+  let deliveryQuoteTimer: ReturnType<typeof setTimeout> | null = null;
+  let deliveryQuoteSeq = 0;
+  const deliveryQuoteKey = computed(() => {
+    if (cart.fulfillmentType !== "delivery") return "";
+    if (!cart.deliveryAddress.trim() && !cart.deliveryNeighborhood.trim()) return "";
+    return JSON.stringify([
+      cart.deliveryAddress, cart.deliveryNeighborhood, cart.deliveryStreetNumber,
+      cart.deliveryAddressStructured, cart.customerRef, cartNetTotalQ(cart.items),
+    ]);
+  });
+  /** A resposta da porta vale para o endereço e a venda de AGORA, e só fora do pagamento. */
+  const freshDeliveryQuote = computed(() => {
+    const quote = deliveryQuote.value;
+    return !review.value && quote && quote.key === deliveryQuoteKey.value ? quote : null;
+  });
+  async function fetchDeliveryQuote(key: string) {
+    const seq = ++deliveryQuoteSeq;
+    deliveryQuoteBusy.value = true;
+    deliveryQuoteFailed.value = false;
+    try {
+      const intent = buildCurrentIntent();
+      const response = await $fetch<POSDeliveryFeeQuote>(apiPath("/api/v1/backstage/pos/delivery-fee/"), {
+        method: "POST",
+        credentials: "include",
+        headers: requestHeaders,
+        signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
+        body: {
+          delivery_address_structured: intent.delivery_address_structured || {},
+          delivery_address: intent.delivery_address || "",
+          customer_ref: cart.customerRef,
+          merchandise_q: cartNetTotalQ(cart.items),
+        },
+      });
+      // Resposta velha chegando depois da nova trocaria a taxa pela do endereço anterior.
+      if (seq !== deliveryQuoteSeq) return;
+      deliveryQuote.value = { ...response, key };
+    } catch {
+      if (seq === deliveryQuoteSeq) deliveryQuoteFailed.value = true;
+    } finally {
+      if (seq === deliveryQuoteSeq) deliveryQuoteBusy.value = false;
+    }
+  }
+  watch([deliveryQuoteKey, checkoutMode], ([key, inCheckout]) => {
+    if (deliveryQuoteTimer) clearTimeout(deliveryQuoteTimer);
+    deliveryQuoteTimer = null;
+    if (!key || inCheckout) return;
+    if (deliveryQuote.value?.key === key) return;
+    deliveryQuoteTimer = setTimeout(() => {
+      deliveryQuoteTimer = null;
+      void fetchDeliveryQuote(key);
+    }, 300);
+  });
+  const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? freshDeliveryQuote.value?.delivery_fee_q ?? 0);
+  const deliveryFeeSource = computed(
+    () => review.value?.delivery_fee_source ?? freshDeliveryQuote.value?.delivery_fee_source ?? "",
+  );
+  const deliveryFeeWaiver = computed(
+    () => review.value?.delivery_fee_waiver ?? freshDeliveryQuote.value?.delivery_fee_waiver ?? null,
+  );
+  // No pagamento a taxa é a da review. Fora dele, a da porta da taxa; enquanto ela
+  // não respondeu para o endereço de agora, "Calculando".
   const deliveryFeeStatus = computed<"resolved" | "calculating" | "failed" | "at_payment">(() => {
     if (review.value) return "resolved";
-    if (!checkoutMode.value) return "at_payment";
-    return reviewFailed.value ? "failed" : "calculating";
+    if (checkoutMode.value) return reviewFailed.value ? "failed" : "calculating";
+    if (freshDeliveryQuote.value) return "resolved";
+    if (!deliveryQuoteKey.value) return "at_payment";
+    return deliveryQuoteFailed.value && !deliveryQuoteBusy.value ? "failed" : "calculating";
   });
-  const deliveryDistanceKm = computed(() => review.value?.delivery_distance_km ?? null);
+  const deliveryDistanceKm = computed(
+    () => review.value?.delivery_distance_km ?? freshDeliveryQuote.value?.delivery_distance_km ?? null,
+  );
   // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
   // último termo é o que faz o formulário abrir já respondendo — a review só
   // existe depois que há endereço, e até lá o campo ficava vazio, que é
@@ -2004,6 +2091,10 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function resetCart() {
+    // Só se chega aqui depois de algo que o servidor confirmou (venda validada,
+    // comanda liberada, itens transferidos) ou no caminho sem conexão, que tem fila
+    // própria: o rascunho desta comanda não tem mais o que devolver.
+    clearTabDraft();
     tabConflict.value = false;
     receiptIdentityChoices.value = [];
     pendingCustomerPrefs.value = {};
@@ -2039,6 +2130,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryFeeOverrideInput = "";
     cart.deliveryFeeOverride = false;
     cart.orderNotes = "";
+    cart.counterService = "here";
     cart.paymentCollection = "terminal";
     cart.paymentTenders = [];
     selectedTenderIndex.value = -1;
@@ -2088,6 +2180,7 @@ export function usePosSale(deps: PosSaleDeps) {
     const fulfillmentWasConfirmed = sameTab && cart.fulfillmentConfirmed && cart.fulfillmentType === payload.fulfillment_type;
     assignTabIdentityFromPayload(payload);
     cart.items = (payload.items || []).map((item) => ({ ...item }));
+    serverItemsKey = tabItemsKey(payload.items);
     cart.customerName = payload.customer_name || "";
     cart.customerRef = payload.customer_ref || "";
     cart.customerPhone = payload.customer_phone || "";
@@ -2110,6 +2203,7 @@ export function usePosSale(deps: PosSaleDeps) {
       ? (Number(payload.delivery_fee_override_q) / 100).toFixed(2).replace(".", ",")
       : "";
     cart.orderNotes = payload.order_notes || "";
+    cart.counterService = payload.counter_service === "to_go" ? "to_go" : "here";
     // preserveCheckout: o operador pode JÁ estar lançando o pagamento (método,
     // tenders, valor recebido) enquanto a comanda recarrega por baixo do shell —
     // sobrescrever aqui apagava a entrada dele no meio do gesto. Os campos de
@@ -2194,7 +2288,14 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function openTab(
     tab: POSTabProjection | string,
-    options: { preserveDraft?: boolean; drawerChecked?: boolean; salesMode?: "counter" | "order" } = {},
+    options: {
+      preserveDraft?: boolean;
+      drawerChecked?: boolean;
+      salesMode?: "counter" | "order";
+      // A "Próxima livre": o servidor escolhe e RESERVA a comanda (#2443). O
+      // `tab` é só a leitura do quadro, que vale sem conexão.
+      nextFree?: boolean;
+    } = {},
   ) {
     if (busy.value) return; // guarda de reentrância
     const tabRef = sanitizeTabRef(typeof tab === "string" ? tab : tab.ref);
@@ -2235,13 +2336,22 @@ export function usePosSale(deps: PosSaleDeps) {
     }
     busy.value = true;
     try {
-      const path = concreteActionHref(
-        actions.value,
-        "open_tab",
-        "/api/v1/backstage/pos/tabs/{tab_ref}/open/",
-        { tab_ref: tabRef },
-      );
-      const payload = await action.call<POSTabPayload>(path);
+      // Duas estações que tocavam juntas na "Próxima livre" abriam a MESMA comanda:
+      // a escolha era deste quadro, e o servidor só carregava a conta da outra.
+      // Agora o servidor escolhe e reserva; o número pode ser outro que o do botão.
+      const path = options.nextFree
+        ? concreteActionHref(actions.value, "open_next_free_tab", "/api/v1/backstage/pos/tabs/next-free/", {})
+        : concreteActionHref(
+          actions.value,
+          "open_tab",
+          "/api/v1/backstage/pos/tabs/{tab_ref}/open/",
+          { tab_ref: tabRef },
+        );
+      // A reserva leva a chave da tentativa: repetida (a resposta se perdeu), ela
+      // devolve a mesma comanda em vez de pôr outra em uso.
+      const payload = options.nextFree
+        ? await action.call<POSTabPayload>(path, { body: { client_request_id: newClientRequestId() } })
+        : await action.call<POSTabPayload>(path);
       if (options.preserveDraft && cart.items.length) {
         if ((payload.items || []).length) {
           throw new Error("Esta comanda já possui pedido. Abra a comanda separadamente ou escolha uma comanda livre.");
@@ -2251,6 +2361,10 @@ export function usePosSale(deps: PosSaleDeps) {
         invalidateReview();
       } else {
         await setFromTabPayload(payload);
+        // A comanda que ESTA abertura pôs em uso é desta estação: sair dela vazia
+        // a devolve ao quadro (`releaseAbandonedTab`). A que já estava em uso não.
+        createdHereSessionKey = payload.created ? cart.tabSessionKey : "";
+        await applyTabDraft(payload);
         // `salesMode`: a comanda abre já no modo pedido (a "Nova encomenda" da
         // seção Encomendas). Só numa comanda VAZIA: se outra estação a ocupou no
         // meio do caminho, ela abre como está, e a venda de quem a ocupou não
@@ -2298,11 +2412,13 @@ export function usePosSale(deps: PosSaleDeps) {
         // encomenda o leva), e não de volta à busca do quadro, que sai da tela.
         returnFocusOnConfirm: false,
       }))) return false;
-      // A fila pode mudar enquanto o operador decide. Escolhe pela leitura atual.
+      // Quem escolhe a comanda é o servidor, na hora (#2443); a leitura do quadro
+      // só vale sem conexão.
       const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
       if (!tabRef) return false;
-      await openTab(tabRef, { salesMode: "order" });
-      return cart.tabRef === tabRef;
+      const before = cart.tabSessionKey;
+      await openTab(tabRef, { salesMode: "order", nextFree: true });
+      return cart.localTab ? cart.tabRef === tabRef : Boolean(cart.tabSessionKey) && cart.tabSessionKey !== before;
     } finally {
       openingNewOrder = false;
     }
@@ -2313,19 +2429,25 @@ export function usePosSale(deps: PosSaleDeps) {
    * para a GRADE da próxima comanda livre, sem passar pelo quadro (WP-E8, D5 do
    * dono). Responde se a comanda abriu; senão, quem chama mostra o quadro, que é o
    * caminho de sempre (comanda nenhuma livre, gaveta pedindo conferência, falha).
-   * A comanda aberta aqui é LEMBRADA: se o operador sair dela sem lançar nada, ela
-   * volta a ser livre (``releaseAbandonedTab``), e o quadro não enche de vazias.
+   * A comanda é reservada pelo servidor (#2443) e, como toda comanda que esta
+   * estação põe em uso, volta a ser livre se o operador sair dela sem lançar nada
+   * (``releaseAbandonedTab``): o quadro não enche de vazias.
    */
-  let nextSaleSessionKey = "";
   async function openNextSale(): Promise<boolean> {
     dismissResult();
     if (busy.value) return false;
     const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
     if (!tabRef) return false;
-    await openTab(tabRef);
-    if (cart.tabRef !== tabRef || !cart.tabSessionKey) return false;
-    nextSaleSessionKey = cart.tabSessionKey;
-    return true;
+    const before = cart.tabSessionKey;
+    await openTab(tabRef, { nextFree: true });
+    return Boolean(cart.tabSessionKey) && cart.tabSessionKey !== before;
+  }
+
+  /** O "Próxima livre" do quadro: a comanda que o servidor reservar (#2443). */
+  async function openNextFreeTab(): Promise<void> {
+    const tabRef = nextFreeNumericTabRef(tabs.value, tabZeroPadTo.value);
+    if (!tabRef) return;
+    await openTab(tabRef, { nextFree: true });
   }
 
   async function openTabFromDialog(tab: POSTabProjection | string) {
@@ -2411,6 +2533,7 @@ export function usePosSale(deps: PosSaleDeps) {
       deliveryTimeSlot: cart.deliveryTimeSlot,
       deliveryFeeOverrideQ: deliveryFeeOverrideQ.value,
       orderNotes: cart.orderNotes,
+      counterService: cart.counterService,
       paymentMethod: resolvedPayment.paymentMethod,
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
@@ -3426,9 +3549,12 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       cart.expectedRevision = saved?.revision || cart.expectedRevision;
       lastPersistedContent = savedContent;
+      serverItemsKey = tabItemsKey(body.items as POSCartItem[]);
       // O autosave fica na comanda: a autoria que o servidor carimbou volta aqui.
       applyLineAuthors(cart.items, saved?.line_authors);
       unsaved.value = savedContent !== intentContent();
+      // O servidor tem tudo o que está na tela: o rascunho do dispositivo sai (#3315).
+      if (!unsaved.value) clearTabDraft();
       // E o preço que cada linha cobra, decidido pelo servidor (desconto manual
       // contra o automático). Só quando a tela ainda é a que foi gravada: um toque
       // feito durante a ida já tem o próprio preço, e o próximo salvar o confirma.
@@ -3503,7 +3629,85 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryFeeOverrideInput,
     cart.deliveryFeeOverride,
     cart.orderNotes,
-  ], () => scheduleAutosave(), { deep: true });
+    cart.counterService,
+  ], () => {
+    recordTabDraft();
+    scheduleAutosave();
+  }, { deep: true });
+
+  // O QUE NÃO CHEGOU AO SERVIDOR (#3315). Com a sessão caída, o salvamento volta
+  // 401, a casca troca a venda pelo login e o login recarrega a página: o que foi
+  // lançado depois do último salvamento sumia. Cada mudança ainda não salva fica no
+  // dispositivo (`utils/tabDraft`); depois de entrar de novo, a comanda reabre e o
+  // rascunho volta por cima dela, se ela não mudou no servidor nesse meio tempo.
+  const { data: operatorSessionData } = useNuxtData<{ operator?: { id?: number | string } | null }>("operator-session");
+  function currentOperatorId(): string {
+    const id = operatorSessionData.value?.operator?.id;
+    return id == null ? "" : String(id);
+  }
+  function recordTabDraft() {
+    if (!import.meta.client) return;
+    if (tabLoading.value || !hasOpenTab.value || cart.localTab || !cart.tabSessionKey) return;
+    if (lastPersistedContent && intentContent() === lastPersistedContent) {
+      clearTabDraft();
+      return;
+    }
+    const previous = readTabDraft();
+    const sameTab = previous?.tabSessionKey === cart.tabSessionKey;
+    writeTabDraft({
+      tabRef: cart.tabRef,
+      tabSessionKey: cart.tabSessionKey,
+      // Os itens que o servidor tinha quando o rascunho COMEÇOU: é contra eles que a
+      // volta confere se outra estação mexeu na comanda.
+      baseItemsKey: sameTab ? previous!.baseItemsKey : serverItemsKey,
+      operatorId: currentOperatorId(),
+      savedAt: new Date().toISOString(),
+      fields: pickTabDraftFields(cart),
+    });
+  }
+  /** A comanda acabou de abrir: o rascunho dela, se houver, volta por cima. */
+  async function applyTabDraft(payload: POSTabPayload) {
+    if (!import.meta.client) return;
+    const draft = readTabDraft();
+    if (!draft || draft.tabSessionKey !== (payload.tab_session_key || payload.session_key)) return;
+    if (draft.operatorId !== currentOperatorId()) return; // é de outra pessoa: espera por ela
+    if (draftMatchesServer(draft, payload.items || [])) {
+      // A gravação chegou e só a resposta se perdeu: nada a devolver.
+      clearTabDraft();
+      return;
+    }
+    if (tabItemsKey(payload.items) !== draft.baseItemsKey) {
+      // Outra estação mexeu na comanda: reaplicar por cima apagaria o que ela fez.
+      clearTabDraft();
+      const lost = draft.fields.items.length;
+      toast.warning(
+        `A comanda ${cart.tabDisplay || cart.tabRef} mudou em outro dispositivo enquanto a sessão estava fora. `
+          + `O que foi lançado aqui antes (${lost === 1 ? "1 item" : `${lost} itens`} na tela) não foi reaplicado: confira a comanda.`,
+      );
+      return;
+    }
+    Object.assign(cart, draft.fields);
+    await nextTick();
+    tabLoading.value = false;
+    unsaved.value = true;
+    scheduleAutosave();
+    toast.success("O que foi lançado antes de a sessão cair voltou para a comanda.");
+  }
+  // Depois de entrar de novo (o login recarrega a página), a venda reabre sozinha na
+  // comanda do rascunho, uma vez, quando o terminal já respondeu. Retomar não é
+  // começar venda nova: a trava da gaveta não morde aqui.
+  let draftResumeTried = false;
+  watch(() => pos.value, (projection) => {
+    if (!import.meta.client || draftResumeTried || !projection) return;
+    draftResumeTried = true;
+    const draft = readTabDraft();
+    if (!draft || draft.operatorId !== currentOperatorId()) return;
+    // Depois do setup: a venda inteira já existe quando a comanda abre.
+    void nextTick(() => {
+      if (hasOpenTab.value || cart.items.length) return;
+      void openTab(draft.tabRef, { drawerChecked: true });
+    });
+  }, { immediate: true });
 
   async function saveTab() {
     if (tabRequiredForSave.value && !hasOpenTab.value) {
@@ -4129,22 +4333,24 @@ export function usePosSale(deps: PosSaleDeps) {
       && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
   }
 
-  /** A comanda que a "Nova venda" abriu sozinha e que segue sem item nem cliente. */
-  function isAbandonedNextSaleTab(): boolean {
-    return Boolean(nextSaleSessionKey) && cart.tabSessionKey === nextSaleSessionKey && !cart.localTab
+  /** A comanda que esta estação pôs em uso e que segue sem item nem cliente. */
+  function isAbandonedCreatedTab(): boolean {
+    return Boolean(createdHereSessionKey) && cart.tabSessionKey === createdHereSessionKey && !cart.localTab
       && !cart.items.length && !cart.customerRef && !cart.customerName.trim() && !cart.customerPhone.trim();
   }
 
   /**
-   * Sair da venda com a comanda ainda vazia LIBERA a comanda: a encomenda nova e a
-   * comanda que a "Nova venda" abriu sozinha. Antes ela ficava "Em uso" com 0
-   * itens, a próxima pegava outra e o quadro enchia de comandas vazias (beta test
-   * de 05/11/2026, PDV2-13). A comanda que o operador abriu pelo quadro é escolha
-   * dele e fica. Sem item não há nada a perder; se o servidor recusar, a comanda
-   * segue no quadro como estava.
+   * Sair da venda com a comanda ainda vazia LIBERA a comanda: a encomenda nova e
+   * toda comanda que ESTA estação pôs em uso (Próxima livre, Nova venda, número
+   * digitado ou cartão livre do quadro). Antes ela ficava "Em uso" com 0 itens, a
+   * próxima pegava outra e o quadro enchia de comandas vazias (beta test de
+   * 05/11/2026, PDV2-13; a de balcão no #2443). A comanda que já estava em uso
+   * quando o operador a abriu é de quem a abriu e fica. Sem item não há nada a
+   * perder; se o servidor recusar (outra estação mexeu nela), a comanda segue no
+   * quadro como estava.
    */
   async function releaseAbandonedTab(options: { resetAfter?: boolean } = {}) {
-    if (!isAbandonedOrderTab() && !isAbandonedNextSaleTab()) return;
+    if (!isAbandonedOrderTab() && !isAbandonedCreatedTab()) return;
     const sessionKey = cart.tabSessionKey;
     const path = concreteActionHref(
       actions.value,
@@ -4647,6 +4853,7 @@ export function usePosSale(deps: PosSaleDeps) {
     openNewOrder,
     releaseAbandonedTab,
     openNextSale,
+    openNextFreeTab,
     // draft + flags
     cart,
     tabInput,
