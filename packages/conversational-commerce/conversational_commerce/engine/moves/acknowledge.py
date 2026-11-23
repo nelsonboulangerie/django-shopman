@@ -30,7 +30,7 @@ def reply(state, need):
     if need.act in DECLARATION_ACTS:
         return PartSpec(MOVE, {"decline_offers": "acknowledge.declined_offers",
                                "accept_offers": "acknowledge.accepted_offers"}[need.act])
-    if state.declines_offer(need) and not state.effect_chosen:
+    if state.declines_terms(need) and not state.effect_chosen:
         return PartSpec(MOVE, "acknowledge.terms_declined")
     template = "acknowledge.got_it" if need.answers_question else "acknowledge.thanks"
     return PartSpec(MOVE, template)

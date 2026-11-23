@@ -144,8 +144,32 @@ def test_an_address_that_cannot_be_located_says_so():
     assert result.reply.template_ids == ("set_delivery_address.not_located",)
 
 
-def test_an_address_without_delivery_is_the_common_limitation():
-    world = FakeWorld()  # retirada: o endereço não tem onde cair
+def test_an_address_without_delivery_asks_pickup_or_delivery():
+    world = FakeWorld()  # retirada: o endereço não tem onde cair, e a pergunta é o modo
     turn_engine, world = engine(steps=(ADDRESS,), world=world)
     result = turn_engine.turn(CTX, ADDRESS.message)
-    assert result.reply.template_ids == ("inform_limitation.offer_team",) and "cart-1" not in world.state.address
+    assert result.reply.template_ids == ("set_delivery_address.ask_mode",) and "cart-1" not in world.state.address
+
+
+def test_a_no_to_the_pending_close_ends_it_and_a_later_change_does_not_present_the_terms():
+    """O "não" encerra o fechamento que pergunta: o "pix" de depois é só a forma, não volta aos termos."""
+    no = _step("no", {"act": "deny"})
+    pix = _step("pix", {"act": "choose_payment", "fields": {"method": "pix"}})
+    world = FakeWorld()
+    world.state.payment_methods = ("pix", "card")
+    steps = (CLOSE, no, pix)
+    turn_engine, world = engine(steps=steps, world=world)
+    close, declined, chose = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert close.reply.template_ids == ("present_terms.needs_payment_method",)
+    assert declined.reply.template_ids == ("acknowledge.terms_declined",)
+    assert chose.reply.template_ids == ("set_payment.done",)  # sem termos: o fechamento acabou
+
+
+def test_the_pending_close_is_bound_to_the_cart_and_the_epoch():
+    from conversational_commerce.engine.turn import CLOSING_KEY, closing_in
+
+    dialogue = {CLOSING_KEY: {"cart": "cart-1", "epoch": 2}}
+    assert closing_in(dialogue, "cart-1", 2)
+    assert not closing_in(dialogue, "cart-1", 3)  # a conversa mudou de dono: o fechamento não passa
+    assert not closing_in(dialogue, "cart-2", 2)
+    assert not closing_in({CLOSING_KEY: "cart-1"}, "cart-1", 2)  # forma antiga não vale

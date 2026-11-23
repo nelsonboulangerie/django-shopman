@@ -47,6 +47,12 @@ def _session(**data):
     return Session.objects.create(session_key="sess-1", channel_ref=CHANNEL, data=data)
 
 
+def _ref(cart="sess-1"):
+    """A referência do endereço como está gravado agora na sacola."""
+    session = Session.objects.filter(session_key=cart).first()
+    return address_ref(cart, (session.data if session is not None else None) or {})
+
+
 def _ctx():
     from conversational_commerce.ports import TrustedContext
 
@@ -79,6 +85,19 @@ def test_who_has_a_saved_address_hears_it_first_by_today_closing(conversation, m
     missing, _ = _missing(fulfillment_type="delivery", payment={"method": "pix"})
     assert missing == ["delivery_address_saved"]
     assert "present_terms.needs_delivery_address_saved" not in turn_framework.nice_templates()
+
+
+def test_a_customer_book_that_cannot_be_read_holds_the_close(conversation, monkeypatch):
+    """K04: se o cadastro do cliente não se lê, não se sabe se há endereço salvo; o fato é Unknown, nunca "falta"."""
+    from conversational_commerce.contracts import Unknown
+    from shopman.guestman.services import address as address_service
+
+    conversation.customer_ref = "cust-1"
+    conversation.save(update_fields=["customer_ref"])
+    monkeypatch.setattr(address_service, "addresses", lambda ref: 1 / 0)
+    _session(fulfillment_type="delivery")
+    fact = ShopmanCommerceRead(channel_ref=CHANNEL, ownership=ConversationOwnership()).requirements(_ctx(), "sess-1")
+    assert isinstance(fact, Unknown)
 
 
 def test_an_incomplete_address_asks_what_is_missing_in_house_words(conversation):
@@ -119,9 +138,9 @@ def test_the_terms_carry_the_address_only_by_reference_and_the_fee(conversation)
                                  "delivery_address_structured": FULL, "delivery_fee_q": 800,
                                  "payment": {"method": "pix"}})
     terms = ShopmanCommerceRead(channel_ref=CHANNEL, ownership=ConversationOwnership()).quote(_ctx(), "sess-1")
-    assert terms.fulfillment.address_ref == address_ref("sess-1")
+    assert terms.fulfillment.address_ref == _ref()
     conditions = {c.code: c.value for c in terms.conditions}
-    assert conditions["delivery_address"] == address_ref("sess-1") and conditions["delivery_fee"] == 800
+    assert conditions["delivery_address"] == _ref() and conditions["delivery_fee"] == 800
     assert "Flores" not in json.dumps(terms.to_json() if hasattr(terms, "to_json") else str(terms))
 
 
@@ -132,6 +151,12 @@ def test_the_terms_carry_the_address_only_by_reference_and_the_fee(conversation)
     ("Rua das Flores 120, Centro", None, {"address": "Rua das Flores 120, Centro"}),
     ("apto 12", FULL, {"complement": "apto 12"}),
     ("sem complemento", FULL, {"complement": "sem complemento"}),
+    # Complemento pendente, mas a fala é outro endereço: endereço novo, nunca complemento.
+    ("na verdade é Rua Y, 50", FULL, {"address": "na verdade é Rua Y, 50"}),
+    ("Av. Brasil 1200", FULL, {"address": "Av. Brasil 1200"}),
+    ("é outro: 86020-120", FULL, {"address": "é outro: 86020-120"}),
+    ("casa 2, fundos", FULL, {"complement": "casa 2, fundos"}),
+    ("bloco B apto 12", FULL, {"complement": "bloco B apto 12"}),
     ("120", {k: v for k, v in FULL.items() if k != "street_number"}, {"street_number": "120"}),
     ("sem número", {k: v for k, v in FULL.items() if k != "street_number"}, {"street_number": "sem número"}),
     ("86010-000", {k: v for k, v in FULL.items() if k != "postal_code"}, {"postal_code": "86010-000"}),
@@ -179,7 +204,35 @@ def test_the_site_reads_the_original_text_keeps_the_day_and_returns_only_the_ref
     assert calls == [{"fulfillment_type": "delivery", "delivery_date": "2026-11-24", "slot_ref": "slot-15",
                       "address": "Rua das Flores 120, Centro"}]
     assert done.applied and dict(done.domain_refs) == {"effect": "sess-1", "cart": "sess-1",
-                                                       "address_ref": address_ref("sess-1")}
+                                                       "address_ref": _ref()}
+
+
+def test_the_first_delivery_on_a_new_cart_resolves_the_address_said_in_the_same_turn(conversation, monkeypatch):
+    """A sacola nasce no turno (a conversa sem ``session_key``): o formatador, montado ANTES dela, resolve o
+    endereço gravado pela referência do recibo, porque lê a mesma conversa que o sítio atualizou."""
+    from shopman.storefront.concierge import tools
+
+    conversation.session_key = ""
+    conversation.save(update_fields=["session_key"])
+    conversation._binding = _message(conversation, "oi").binding  # o turno vivo chega com o transporte (service)
+    formatters = turn_framework.nice_formatters(conversation)  # como o motor do turno: antes da sacola existir
+    site = _site(conversation)
+    session = tools._ensure_session(site.tool_context)  # o recebimento do mesmo turno abre a sacola nova
+    key = conversation.session_key
+    assert key and key != "sess-1"
+    tools._set_session_data(site.tool_context, key, {"fulfillment_type": "delivery"})
+
+    def house_writes(ctx, **said):
+        tools._set_session_data(ctx, key, {"delivery_address": FULL["formatted_address"],
+                                           "delivery_address_structured": FULL})
+        return {"ok": True}
+
+    monkeypatch.setattr(tools, "set_fulfillment", house_writes)
+    done = site.apply(CTX, SimpleNamespace(action="set_delivery_address", targets=(key,),
+                                           parameters={"source": "text:Rua das Flores 120"}))
+    assert done.applied and done.domain_refs["address_ref"] == _ref(key) and session.session_key == key
+    assert _say("set_delivery_address.done", formatters, address=done.domain_refs["address_ref"]) == \
+        "Combinado: entrega na Rua das Flores, 120."
 
 
 def test_the_location_pin_is_the_address(conversation, monkeypatch):
@@ -206,8 +259,8 @@ def test_without_delivery_nothing_is_written(conversation, monkeypatch):
 @pytest.mark.parametrize(("result", "code"), [
     ({"ok": True, "delivery_out_of_zone": True}, ErrorCode.FULFILLMENT_UNAVAILABLE),
     ({"ok": False, "error": "address_not_located"}, ErrorCode.INVALID_CONTENT),
-    ({"ok": True, "code": "saved_address_offer", "message": "..."}, ErrorCode.FACT_UNAVAILABLE),
-    ({"ok": False, "error": "validation", "errors": {"delivery_time_slot": "..."}}, ErrorCode.FACT_UNAVAILABLE),
+    ({"ok": True, "code": "saved_address_offer", "message": "..."}, ErrorCode.PROVIDER_UNAVAILABLE),
+    ({"ok": False, "error": "validation", "errors": {"delivery_time_slot": "..."}}, ErrorCode.PROVIDER_UNAVAILABLE),
 ])
 def test_an_address_the_house_cannot_deliver_to_is_refused(conversation, monkeypatch, result, code):
     from shopman.storefront.concierge import tools
@@ -240,6 +293,44 @@ def test_the_reader_marks_the_address_without_fields(conversation):
     assert _fields(understanding) == [("give_address", {})]
 
 
+@pytest.mark.parametrize(("pending", "text"), [
+    ({k: v for k, v in FULL.items() if k != "neighborhood"}, "Jardim Botânico"),
+    (FULL, "apto 12"),
+    (FULL, "bloco B apto 12"),
+    (FULL, "casa 2, fundos"),
+    ({k: v for k, v in FULL.items() if k != "street_number"}, "120"),
+])
+def test_a_partial_address_answer_never_reaches_the_ai(conversation, pending, text):
+    """P17 ao vivo: o redator não mascara o pedaço de endereço; com ele pendente, a fala nem vai à IA."""
+    from conversational_commerce.engine.acts import ACTS
+
+    from shopman.storefront.concierge.observation_privacy import redact_observation_text
+    from shopman.storefront.tests.test_concierge_model_reader import FakeAI, _fields, _read
+
+    assert redact_observation_text(text).text == text  # o redator sozinho deixaria passar
+    _session(fulfillment_type="delivery", delivery_address=pending["formatted_address"],
+             delivery_address_structured=pending)
+    ai = FakeAI(error=AssertionError("o pedaço de endereço não vai à IA"))
+    understanding, consumption = _read(text, ai, allowed=ACTS)
+    assert _fields(understanding) == [("give_address", {})] and consumption.calls == 0 and ai.requests == []
+
+
+@pytest.mark.parametrize("text", ["obrigada", "não, deixa pra lá", "pode fechar", "vou pagar no pix",
+                                  "quero mais 1 pão", "prefiro retirar"])
+def test_with_an_address_detail_pending_other_talk_is_not_an_address(conversation, text):
+    from shopman.storefront.concierge.model_reader import address_answer
+
+    _session(fulfillment_type="delivery", delivery_address=FULL["formatted_address"], delivery_address_structured=FULL)
+    assert not address_answer(conversation, text)
+
+
+def test_without_a_pending_detail_nothing_is_taken_as_address(conversation):
+    from shopman.storefront.concierge.model_reader import address_answer
+
+    _session(fulfillment_type="pickup")
+    assert not address_answer(conversation, "Jardim Botânico")
+
+
 def test_the_reader_takes_the_location_pin_without_the_ai(conversation):
     from conversational_commerce.engine.acts import ACTS
 
@@ -269,19 +360,35 @@ def test_the_address_resolves_only_for_the_conversation_cart(conversation):
     _session(fulfillment_type="delivery", delivery_address=FULL["formatted_address"],
              delivery_address_structured=FULL)
     formatters = turn_framework.nice_formatters(conversation)
-    assert _say("set_delivery_address.done", formatters, address=address_ref("sess-1")) == \
+    assert _say("set_delivery_address.done", formatters, address=_ref()) == \
         "Combinado: entrega na Rua das Flores, 120."
     with pytest.raises(UnresolvedReference):
-        formatters["address"](address_ref("sess-2"))  # a sacola de outra conversa nunca se resolve
+        formatters["address"](_ref("sess-2"))  # a sacola de outra conversa nunca se resolve
     with pytest.raises(UnresolvedReference):
-        turn_framework.nice_formatters()["address"](address_ref("sess-1"))  # sem conversa, nada
+        turn_framework.nice_formatters()["address"](_ref())  # sem conversa, nada
+
+
+def test_a_reference_to_an_address_that_changed_never_says_the_new_one(conversation):
+    """O recibo e o resumo dizem o endereço CONFIRMADO: mudado o endereço, a referência velha segura."""
+    _session(fulfillment_type="delivery", delivery_address=FULL["formatted_address"],
+             delivery_address_structured=FULL)
+    confirmed = _ref()
+    other = {**FULL, "route": "Rua Y", "street_number": "50", "formatted_address": "Rua Y, 50 - Centro"}
+    Session.objects.filter(session_key="sess-1").update(data={
+        "fulfillment_type": "delivery", "delivery_address": other["formatted_address"],
+        "delivery_address_structured": other})
+    assert _ref() != confirmed
+    formatters = turn_framework.nice_formatters(conversation)
+    with pytest.raises(UnresolvedReference):
+        formatters["address"](confirmed)
+    assert _say("set_delivery_address.done", formatters, address=_ref()) == "Combinado: entrega na Rua Y, 50."
 
 
 def test_the_summary_has_the_address_and_the_fee_lines_as_today(conversation):
     _session(fulfillment_type="delivery", delivery_address=FULL["formatted_address"],
              delivery_address_structured=FULL)
     conditions = turn_framework.nice_formatters(conversation)["conditions"]
-    text = conditions({"fulfillment_date": "2026-11-24", "delivery_address": address_ref("sess-1"),
+    text = conditions({"fulfillment_date": "2026-11-24", "delivery_address": _ref(),
                        "delivery_fee": 800, "payment_method": "pix"})
     lines = text.split("\n")
     assert lines[1:] == [FULL["formatted_address"], "Entrega: R$ 8,00", "Pagamento: Pix."]
@@ -324,3 +431,5 @@ def test_the_refusals_are_today_phrases(conversation):
         "Não consegui localizar esse endereço para calcular a entrega. Confira a rua, o número e o bairro, "
         "ou envie sua localização pelo WhatsApp.")})
     assert templates["set_delivery_address.not_located"].text in not_located
+    # Endereço sem entrega combinada: a pergunta de hoje do fechamento, "retirada ou entrega?".
+    assert templates["set_delivery_address.ask_mode"].text == copy_message("CONCIERGE_CLOSE_ASK_FULFILLMENT").strip()

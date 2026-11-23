@@ -174,8 +174,17 @@ def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
 #: A sequência declarada de efeitos A2 reversíveis num turno (spec 08 §5, [DECIDIDO]): o recebimento antes
 #: da sacola, para a sacola medir a data combinada. ``commit_order`` (A3) nunca entra nela.
 EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "set_delivery_address", "change_cart", "set_payment")
-#: O fechamento que perguntou por uma condição obrigatória (``present_terms.needs_*``), no estado de diálogo.
+#: O fechamento que perguntou por uma condição obrigatória (``present_terms.needs_*``), no estado de diálogo:
+#: ``{"cart": <carrinho>, "epoch": <época do episódio>}``. Vale só para o mesmo carrinho e a mesma época
+#: (a conversa que mudou de dono não herda o fechamento), e cai com o "não" do cliente.
 CLOSING_KEY = "terms_closing"
+
+
+def closing_in(dialogue: dict, cart_ref: str | None, epoch: int) -> bool:
+    """O fechamento no ar é deste carrinho e desta época."""
+    value = dialogue.get(CLOSING_KEY)
+    return (cart_ref is not None and isinstance(value, Mapping) and value.get("cart") == cart_ref
+            and value.get("epoch") == epoch)
 #: As mudanças materiais do carrinho (v2 4.7, propriedade 2): depois de uma delas, os termos de antes não valem.
 MATERIAL_CHANGES = frozenset(EFFECT_SEQUENCE)
 
@@ -850,7 +859,7 @@ class Engine:
         state = TurnState(now=clock.now(), channel=event.channel_binding.channel,
                           identity=strongest_identity(subject.identity_evidence), profile=self.profile,
                           needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer,
-                          closing=subject.cart_ref is not None and previous_dialogue.get(CLOSING_KEY) == subject.cart_ref,
+                          closing=closing_in(previous_dialogue, subject.cart_ref, epoch),
                           content_ref=event.content_ref)
         for need in needs:
             if state.answers_offer(need):
@@ -866,6 +875,9 @@ class Engine:
         answered_offer = offer is not None and answered_question == offer.question_id
         if answered_offer:
             dialogue.pop(OFFER_KEY, None)
+        if CLOSING_KEY in dialogue and (not state.closing or any(state.declines_terms(n) for n in needs)):
+            # O fechamento de outro carrinho ou de outra época não vale; o "não" do cliente o encerra.
+            dialogue = {key: value for key, value in dialogue.items() if key != CLOSING_KEY}
 
         snapshot = self._snapshot(ctx, episode, trace_id, event.id, state, dialogue)
         decision = self._decide(state, needs, snapshot, trace_id)
@@ -925,7 +937,7 @@ class Engine:
             dialogue = ask(dialogue, question_id=clock.new_id("q"), need_id=asked.need_id, epoch=epoch)
         if presented is not None and not held and state.missing_conditions():
             # O fechamento perguntou por uma condição: a resposta que mudar o carrinho volta aos termos.
-            dialogue = {**dialogue, CLOSING_KEY: subject.cart_ref}
+            dialogue = {**dialogue, CLOSING_KEY: {"cart": subject.cart_ref, "epoch": epoch}}
         if presented is not None and not held and not state.missing_conditions():
             dialogue = {key: value for key, value in dialogue.items() if key != CLOSING_KEY}
             # Termos que o cliente não viu (mensagem segurada) não esperam confirmação; nem os que ainda pedem

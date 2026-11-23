@@ -32,8 +32,13 @@ NOT_DELIVERED = Template("set_delivery_address.not_delivered", "1", "inform_limi
                          "We don't deliver to that address. What is the delivery address?")
 NOT_LOCATED = Template("set_delivery_address.not_located", "1", "inform_limitation",
                        "I couldn't locate that address. Check the street, number and district, or send your location.")
-REFUSALS = {ErrorCode.FULFILLMENT_UNAVAILABLE.value: NOT_DELIVERED, ErrorCode.INVALID_CONTENT.value: NOT_LOCATED}
-TEMPLATES = (TEMPLATES_BY_ID["set_delivery_address.done"], NOT_DELIVERED, NOT_LOCATED, *SHARED)
+#: O endereço sem entrega combinada (a sacola é de retirada, ou o modo não foi escolhido): o sistema de
+#: registro diz ``fact_unavailable``, e a pergunta é o modo, não a limitação.
+ASK_MODE = Template("set_delivery_address.ask_mode", "1", "inform_limitation",
+                    "Will you pick it up at the store, or should we deliver?")
+REFUSALS = {ErrorCode.FULFILLMENT_UNAVAILABLE.value: NOT_DELIVERED, ErrorCode.INVALID_CONTENT.value: NOT_LOCATED,
+            ErrorCode.FACT_UNAVAILABLE.value: ASK_MODE}
+TEMPLATES = (TEMPLATES_BY_ID["set_delivery_address.done"], NOT_DELIVERED, NOT_LOCATED, ASK_MODE, *SHARED)
 
 
 def _by_reference(state, need) -> bool:

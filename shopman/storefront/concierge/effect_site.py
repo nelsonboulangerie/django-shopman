@@ -252,7 +252,8 @@ class ConciergeEffectSite:
         session = tools._open_session(ctx)
         data = dict((session.data if session is not None else None) or {})
         if session is None or data.get("fulfillment_type") != "delivery":
-            return Done(False, refusal=ErrorCode.FACT_UNAVAILABLE.value)  # o endereço vem com a entrega
+            # O endereço vem com a entrega: sem ela, o motor pergunta "retirada ou entrega?" (``ask_mode``).
+            return Done(False, refusal=ErrorCode.FACT_UNAVAILABLE.value)
         said = (
             {"use_shared_location": True} if shared_location_of(source)
             else address_parts(resolve_text(source), data.get("delivery_address_structured"))
@@ -264,13 +265,16 @@ class ConciergeEffectSite:
             slot_ref=str(data.get("delivery_time_slot") or ""), **said)
         if not result.get("ok") or result.get("code") in {"saved_address_offer", "saved_addresses"}:
             # Só "não localizei" tem frase própria (``set_delivery_address.not_located``); o resto é o
-            # efeito que falhou (dia ou janela que deixou de valer, sem localização enviada).
+            # efeito que falhou (dia ou janela que deixou de valer, sem localização enviada), e quem responde
+            # é a limitação comum. Nunca ``fact_unavailable``, que é a falta da entrega (``ask_mode``).
             located = str(result.get("error") or "") != "address_not_located"
-            return Done(False, refusal=(ErrorCode.FACT_UNAVAILABLE if located else ErrorCode.INVALID_CONTENT).value)
+            return Done(False, refusal=(ErrorCode.PROVIDER_UNAVAILABLE if located else ErrorCode.INVALID_CONTENT).value)
         if result.get("delivery_out_of_zone"):
             return Done(False, refusal=ErrorCode.FULFILLMENT_UNAVAILABLE.value)  # fora da área: nada fica gravado
         cart = str(session.session_key)
-        return Done(True, domain_refs={"effect": cart, "cart": cart, "address_ref": address_ref(cart)})
+        written = tools._open_session(ctx)  # o endereço como ficou gravado: a referência é dele
+        recorded = dict((written.data if written is not None else None) or {})
+        return Done(True, domain_refs={"effect": cart, "cart": cart, "address_ref": address_ref(cart, recorded)})
 
     def _set_payment(self, command: ActionCommand) -> Done:
         """A forma de pagamento na sacola, como a revisão da casa a grava (a mesma do fechamento de hoje).
@@ -356,6 +360,10 @@ class ConciergeEffectSite:
 
 _CEP = re.compile(r"^\d{5}-?\d{3}$")
 _NUMBER = re.compile(r"^(?:n[º°o.]?\s*)?(\d{1,6}[a-z]?|s/?n|sem n[uú]mero)$")
+#: Fala que traz um logradouro (o tipo e o nome) ou um CEP: é endereço novo, nunca complemento.
+#: Sobre o texto dobrado (sem acento, minúsculo): "na verdade e rua y, 50", "av. brasil 1200", "86010-000".
+_NEW_ADDRESS = re.compile(
+    r"\b(?:rua|avenida|av|alameda|travessa|rodovia|estrada|praca|largo)\.?\s+\w|\b\d{5}-?\d{3}\b")
 
 
 def address_parts(text: str, structured) -> dict:
@@ -363,7 +371,8 @@ def address_parts(text: str, structured) -> dict:
 
     Sem endereço na sacola, o texto é o endereço inteiro. Com endereço, a resposta ao que faltava:
     o CEP, o número (ou "sem número"), o bairro (quando só ele falta) ou o complemento (quando só ele
-    falta; "sem complemento" responde). Qualquer outra fala é um endereço novo, inteiro.
+    falta; "sem complemento" responde, e uma fala com logradouro ou CEP é endereço novo). Qualquer outra
+    fala é um endereço novo, inteiro.
     """
     from shopman.shop.conversational.commerce_read import _address_requirements
 
@@ -377,7 +386,8 @@ def address_parts(text: str, structured) -> dict:
     pending = _address_requirements({"delivery_address_structured": structured})
     folded = _fold(text)
     if "delivery_complement" in pending:
-        return {"complement": text}
+        # "na verdade é Rua Y, 50": a pergunta era o complemento, mas a fala é outro endereço.
+        return {"address": text} if _NEW_ADDRESS.search(folded) else {"complement": text}
     words = pending.get("delivery_address_details") or []
     if words and _CEP.match(folded.replace(" ", "")):
         return {"postal_code": text}

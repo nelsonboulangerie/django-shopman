@@ -80,7 +80,8 @@ guarda a `content_ref` do evento no estado). Leitura com campo é inelegível
 (`address_not_by_reference`). Na regra local de teste, `deliver to`/`my address is` soma o ato.
 
 **O fechamento que pergunta volta aos termos.** Quando o `present_terms` pergunta por uma condição
-obrigatória ausente, o estado de diálogo guarda o fechamento pendente (`terms_closing`, o carrinho). No
+obrigatória ausente, o estado de diálogo guarda o fechamento pendente (`terms_closing`: o carrinho e a
+época do episódio; outro carrinho ou outra época não o herdam, e o "não" do cliente o encerra). No
 turno seguinte, a mudança material que dá certo (a forma escolhida, o endereço dado) pede os termos de
 novo, como a mudança com termos no ar (`changed_under_offer`): o `present_terms` pergunta a próxima
 condição ou apresenta os termos, sem o cliente repetir "pode fechar". Termos apresentados com a

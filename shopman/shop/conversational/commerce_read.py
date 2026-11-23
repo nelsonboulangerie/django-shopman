@@ -256,14 +256,17 @@ class ShopmanCommerceRead:
         try:
             methods = conversation_payment_methods(self.channel_ref)
             session = Session.objects.filter(session_key=cart_ref, channel_ref=self.channel_ref).first()
+            data = (session.data if session is not None else None) or {}
+            delivery = data.get("fulfillment_type") == "delivery"
+            # O cadastro do cliente também é fonte: se não se lê, não se sabe se ele tem endereço salvo.
+            has_saved = delivery and self._has_saved_address(ctx)
         except Exception:  # noqa: BLE001 - K04: a fonte que falha vira Unknown, nunca o valor velho
             logger.warning("conversational.requirements: fonte falhou", exc_info=True)
             return Unknown(reason="source_failed")
-        data = (session.data if session is not None else None) or {}
         value: dict = {"missing": []}
-        if data.get("fulfillment_type") == "delivery":
+        if delivery:
             # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
-            value.update(_address_requirements(data, has_saved=self._has_saved_address(ctx)))
+            value.update(_address_requirements(data, has_saved=has_saved))
             value["missing"] = [code for code in ADDRESS_CODES if code in value]
         chosen = str((data.get("payment") or {}).get("method") or "")
         if chosen not in methods and len(methods) > 1:
@@ -339,9 +342,23 @@ class ShopmanCommerceRead:
 ADDRESS_CODES = ("delivery_address_saved", "delivery_address", "delivery_address_details", "delivery_complement")
 
 
-def address_ref(cart_ref: str) -> str:
-    """A referência opaca do endereço da sacola (P17: o texto nunca vai a contrato)."""
-    return f"address:{cart_ref}"
+#: As chaves da sacola que dizem QUAL é o endereço da entrega: mudou uma, a referência é outra.
+_ADDRESS_KEYS = ("delivery_address", "delivery_address_structured", "delivery_complement")
+
+
+def address_ref(cart_ref: str, data: dict) -> str:
+    """A referência opaca do endereço da sacola: o carrinho e um resumo do endereço gravado.
+
+    P17: o texto nunca vai a contrato; vai um resumo de mão única, salgado pelo carrinho. A referência
+    muda quando o endereço muda, por isso o recibo e o resumo reenviados dizem o endereço CONFIRMADO, e
+    não o que estiver na sacola no momento do envio (o resolvedor recusa a referência velha e segura).
+    """
+    import hashlib
+    import json
+
+    said = {key: data.get(key) for key in _ADDRESS_KEYS}
+    digest = hashlib.sha256(f"{cart_ref}|{json.dumps(said, sort_keys=True, default=str)}".encode()).hexdigest()
+    return f"address:{cart_ref}:{digest[:16]}"
 
 
 def _address_requirements(data: dict, *, has_saved: bool = False) -> dict:
@@ -376,7 +393,7 @@ def _fulfillment(data: dict, cart_ref: str = "") -> dict:
 
     found: dict = {"mode": str(data.get("fulfillment_type") or "pickup")}
     if found["mode"] == "delivery" and cart_ref and data.get("delivery_address"):
-        found["address_ref"] = address_ref(cart_ref)
+        found["address_ref"] = address_ref(cart_ref, data)
     day, slot = _date_or_none(data.get("delivery_date")), str(data.get("delivery_time_slot") or "")
     start = _window_start({"ref": slot}) if day and slot else None
     if start is not None:
@@ -413,7 +430,7 @@ def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "
             found.append({"code": "fulfillment_window", "value": slot})
     if data.get("fulfillment_type") == "delivery":
         if cart_ref and data.get("delivery_address"):
-            found.append({"code": "delivery_address", "value": address_ref(cart_ref)})
+            found.append({"code": "delivery_address", "value": address_ref(cart_ref, data)})
         fee = int(data.get("delivery_fee_q") or 0)
         if fee:
             found.append({"code": "delivery_fee", "value": fee})

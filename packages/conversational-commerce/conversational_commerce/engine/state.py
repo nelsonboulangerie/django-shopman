@@ -150,6 +150,10 @@ class TurnState:
         return (self.offer is not None and need.act == "deny"
                 and need.answers_question == self.offer.question_id)
 
+    def declines_terms(self, need: NeedSpec) -> bool:
+        """O "não" aos termos no ar, ou ao fechamento que pergunta por uma condição ("deixa pra lá")."""
+        return self.declines_offer(need) or (self.offer is None and self.closing and need.act == "deny")
+
     def has_fresh_terms(self) -> bool:
         """Os termos do carrinho cotados neste turno valem (a leitura não falhou)."""
         from conversational_commerce.contracts import Known

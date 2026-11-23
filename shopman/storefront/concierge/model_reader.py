@@ -267,6 +267,36 @@ def _cart_lines(conversation) -> list[dict]:
     return list(session.items or []) if session is not None else []
 
 
+#: O que falta no endereço já gravado: a resposta a isto é um pedaço de endereço ("apto 12", "Jardim Botânico").
+_ADDRESS_DETAIL_CODES = frozenset({"delivery_address_details", "delivery_complement"})
+
+
+def address_answer(conversation, text: str) -> bool:
+    """A fala responde ao que falta no endereço da entrega e vai ao motor SEM a IA (P17).
+
+    O redator mascara endereço inteiro ("Rua das Flores 120"), mas não o pedaço que o fechamento pede:
+    o bairro, o número, o complemento. Com um deles pendente, a fala que não é outra coisa conhecida
+    (desistir, fechar, pagar, trocar o modo, ou um ato da regra local) é a resposta, e o texto não sai daqui.
+    """
+    from shopman.orderman.models import Session
+
+    from shopman.shop.conversational.commerce_read import _address_requirements
+
+    from .address import _fold
+    from .order_closing import _CARD_RE, _CASH_RE, _DELIVERY_RE, _GIVE_UP_RE, _PICKUP_RE, _PIX_RE, _START_RE
+    from .turn_framework import NiceRules
+
+    if conversation is None or not conversation.session_key or not str(text or "").strip():
+        return False
+    session = Session.objects.filter(session_key=conversation.session_key).first()
+    data = (session.data if session is not None else None) or {}
+    if data.get("fulfillment_type") != "delivery" or not _ADDRESS_DETAIL_CODES & set(_address_requirements(data)):
+        return False
+    folded = _fold(text)
+    other = (_GIVE_UP_RE, _START_RE, _PIX_RE, _CARD_RE, _CASH_RE, _PICKUP_RE, _DELIVERY_RE)
+    return not NiceRules().read(text) and not any(rule.search(folded) for rule in other)
+
+
 def cart_note(lines: list[dict]) -> str:
     return "\n".join(f"- {line.get('qty')} × {line.get('name') or line.get('sku')}" for line in lines
                      if line.get("qty"))
@@ -387,10 +417,14 @@ class NiceReader:
         if gated and gated in allowed:
             return self._understanding(ctx, request, [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],
                                        GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
+        conversation = _conversation(ctx)
+        if ADDRESS_ACT in allowed and address_answer(conversation, text):
+            # O pedaço de endereço que o fechamento pediu: sem IA, o texto fica na casa (P17).
+            return self._understanding(ctx, request, [{"act": ADDRESS_ACT, "fields": {}, "confidence": UNAVAILABLE}],
+                                       GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         client, model = (self._client, self._model) if self._client is not None else build_client()
         if client is None or not text:
             return LocalReader().interpret(ctx, request)
-        conversation = _conversation(ctx)
         lines = _cart_lines(conversation)
         redacted = redact_observation_text(text).text
         started = time.perf_counter()

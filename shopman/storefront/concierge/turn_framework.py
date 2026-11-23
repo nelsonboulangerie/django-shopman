@@ -81,6 +81,8 @@ NICE_TEMPLATE_COPY = {
     # pergunta do endereço, como o fechamento junta) e endereço que não se localiza.
     "set_delivery_address.not_delivered": "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED",
     "set_delivery_address.not_located": "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED",
+    # O endereço sem a entrega combinada: a pergunta de hoje do fechamento, "retirada ou entrega?".
+    "set_delivery_address.ask_mode": "CONCIERGE_CLOSE_ASK_FULFILLMENT",
 }
 
 #: As frases da forma de pagamento: as MESMAS de hoje, com o espaço do motor (``{payment_method}``, as
@@ -253,13 +255,15 @@ def address_resolver(conversation):
         from shopman.shop.conversational.commerce_read import address_ref
 
         key = getattr(conversation, "session_key", "") or ""
-        if not key or str(ref) != address_ref(key):
+        if not key or not str(ref).startswith(f"address:{key}:"):
             raise UnresolvedReference(str(ref))
         try:
             session = Session.objects.filter(session_key=key).first()
         except Exception as exc:  # noqa: BLE001 - a fonte que falha segura a mensagem
             raise UnresolvedReference(str(ref)) from exc
         data = (session.data if session is not None else None) or {}
+        if str(ref) != address_ref(key, data):
+            raise UnresolvedReference(str(ref))  # o endereço mudou desde a referência: nunca diz o novo no lugar
         structured = data.get("delivery_address_structured")
         if not isinstance(structured, dict) or not data.get("delivery_address"):
             raise UnresolvedReference(str(ref))
