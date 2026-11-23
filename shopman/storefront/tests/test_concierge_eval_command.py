@@ -45,10 +45,13 @@ class FakeAI:
 
 @pytest.fixture
 def house(monkeypatch):
+    from shopman.shop.ai import FittedClient
     from shopman.storefront.concierge import tools, triage
 
     ai = FakeAI()
-    monkeypatch.setattr(model_reader, "build_client", lambda: (ai, "deepseek-flash"))
+    # O cliente medido da casa, como no ar: cada chamada paga passa pelo freio e grava uma AiInvocation.
+    metered = FittedClient(ai, frozenset(), purpose="intents", connection_ref="eval-test", default_model="deepseek-flash")
+    monkeypatch.setattr(model_reader, "build_client", lambda: (metered, "deepseek-flash"))
     monkeypatch.setattr(triage, "jev_enabled", lambda: False)
     monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": [CROISSANT]})
     return ai
@@ -61,7 +64,7 @@ def _run(*args) -> str:
 
 
 def _rows():
-    """As tabelas que um turno da Concierge toca: nenhuma pode ganhar linha no ensaio."""
+    """As tabelas que um turno da Concierge toca. No ensaio, só o medidor de gasto (a última) cresce."""
     from shopman.orderman.models import Order
 
     from shopman.shop.models import AiInvocation, ConversationalCommitment, ConversationalEpisode
@@ -71,10 +74,12 @@ def _rows():
                                                      AiInvocation))
 
 
-def test_the_battery_scores_the_reader_and_writes_nothing(house):
+def test_the_battery_scores_the_reader_and_writes_only_the_house_meter(house):
     before = _rows()
     out = _run("--case", "frase-cartao-1", "--max-calls", "10")
-    assert _rows() == before  # conversa e sacola de memória: nenhuma linha nova
+    after = _rows()
+    assert after[:-1] == before[:-1]  # conversa, sacola, mensagem, pedido, episódio, compromisso: nenhuma linha
+    assert after[-1] - before[-1] == house.calls == 2  # o medidor da casa: uma AiInvocation por chamada paga
     assert out.startswith("bateria: 2 / 2 passaram")  # o caso e a variante sem acento
     assert "chamadas à IA: 2 | tokens: 200 in, 40 out" in out
     assert "concierge-model-reader" in out and "choose_fulfillment" in out
