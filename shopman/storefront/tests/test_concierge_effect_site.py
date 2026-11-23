@@ -52,7 +52,7 @@ def test_the_site_declares_the_existing_effects(site):
 
 def test_change_cart_locks_the_cart_without_terms(site):
     with transaction.atomic():
-        reading = site.lock(CTX, command("change_cart", "sess-1", item="CROISSANT", quantity="2"))
+        reading = site.lock(CTX, command("change_cart", "sess-1", lines=[{"item": "CROISSANT", "quantity": "2"}]))
     assert reading.versions == {"sess-1": Session.objects.get(session_key="sess-1").rev}
     assert reading.terms_ref is None  # mudar a sacola é reversível e não fecha nada
 
@@ -67,11 +67,11 @@ def test_change_cart_is_the_existing_set_item(site, monkeypatch, result, applied
     calls = []
     monkeypatch.setattr("shopman.storefront.concierge.tools.set_item",
                         lambda ctx, sku, qty: calls.append((sku, qty)) or result)
-    done = site.apply(CTX, command("change_cart", "sess-1", item="CROISSANT", quantity="3"))
+    done = site.apply(CTX, command("change_cart", "sess-1", lines=[{"item": "CROISSANT", "quantity": "3"}]))
     assert calls == [("CROISSANT", 3)]  # quantidade absoluta, a do pedido
     assert done.applied is applied
     if applied:
-        assert done.domain_refs == {"effect": "sess-1", "cart": "sess-1", "item": "CROISSANT"}
+        assert done.domain_refs == {"effect": "sess-1", "cart": "sess-1", "items": "CROISSANT"}
     else:
         assert done.refusal == code
 
@@ -80,7 +80,7 @@ def test_change_cart_is_the_existing_set_item(site, monkeypatch, result, applied
                                         {"item": "X", "quantity": "1.5"}])
 def test_change_cart_without_item_or_whole_quantity_is_invalid_content(site, monkeypatch, parameters):
     monkeypatch.setattr("shopman.storefront.concierge.tools.set_item", lambda *a: pytest.fail("não deveria chamar"))
-    done = site.apply(CTX, command("change_cart", "sess-1", **parameters))
+    done = site.apply(CTX, command("change_cart", "sess-1", lines=[parameters]))
     assert (done.applied, done.refusal) == (False, ErrorCode.INVALID_CONTENT.value)
 
 
@@ -164,3 +164,20 @@ def test_a_turn_revoked_inside_the_effect_is_a_refusal(site, monkeypatch):
     done = site.apply(CTX, command("commit_order", "sess-1", terms_ref="tok-1", payment_method="pix"))
     assert (done.applied, done.refusal) == (False, ErrorCode.AUTHORITY_REVOKED.value)
     assert effect_site.ORDER_REFUSALS["revision_conflict"] == ErrorCode.REVISION_CONFLICT
+
+
+def test_change_cart_applies_every_line_or_none(site, monkeypatch):
+    """Várias linhas são um comando só: a recusa de uma desfaz as anteriores (o executor reverte a transação)."""
+    calls = []
+
+    def set_item(ctx, sku, qty):
+        calls.append(sku)
+        return {"ok": sku != "BAGUETE", "code": "insufficient_supply"}
+
+    monkeypatch.setattr("shopman.storefront.concierge.tools.set_item", set_item)
+    lines = [{"item": "CROISSANT", "quantity": "2"}, {"item": "BAGUETE", "quantity": "1"}]
+    done = site.apply(CTX, command("change_cart", "sess-1", lines=lines))
+    assert calls == ["CROISSANT", "BAGUETE"] and (done.applied, done.refusal) == (False, ErrorCode.FACT_UNAVAILABLE.value)
+    monkeypatch.setattr("shopman.storefront.concierge.tools.set_item", lambda ctx, sku, qty: {"ok": True})
+    both = site.apply(CTX, command("change_cart", "sess-1", lines=lines))
+    assert both.applied and both.domain_refs["items"] == "CROISSANT,BAGUETE"

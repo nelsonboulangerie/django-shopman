@@ -171,6 +171,17 @@ def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
+def _distinct(specs):
+    """A mesma parte (movimento, molde e lastros iguais) sai uma vez: as linhas do mesmo comando têm uma resposta só."""
+    seen, found = set(), []
+    for spec in specs:
+        key = (spec.move, spec.template_id, tuple(sorted(spec.bindings.items())))
+        if key not in seen:
+            seen.add(key)
+            found.append(spec)
+    return found
+
+
 def default_subject(ctx: TrustedContext, event: InteractionEvent) -> Subject:
     """Sem adaptador: o sujeito do contexto confiável, a identidade que o canal transporta, nenhum carrinho."""
     return Subject(subject_ref=ctx.subject, identity_evidence=tuple(event.identity_evidence))
@@ -467,7 +478,9 @@ class Engine:
         """Autoriza e executa o movimento de efeito escolhido. Devolve o episódio como ficou gravado.
 
         Um efeito por turno: o segundo movimento de efeito escolhido fica recusado
-        (``one_effect_per_turn``) e a decisão refeita diz a limitação.
+        (``one_effect_per_turn``) e a decisão refeita diz a limitação. A exceção é a mesma mudança
+        levada pelo primeiro (``carried_by``, as várias linhas do carrinho): é o mesmo comando, e o
+        recibo dele é o dela.
         """
         clock, store, moves = self.ports.clock, self.ports.store, registry()
         chosen = [decision.candidates[i] for i in decision.chosen if getattr(moves[decision.candidates[i].move],
@@ -477,9 +490,19 @@ class Engine:
         if ctx.environment == "shadow":
             fallbacks.extend(f"shadow:effect_not_executed:{c.move}" for c in chosen)
             return episode
-        for extra in chosen[1:]:
-            state.refused[extra.need_id] = "one_effect_per_turn"
+        # A levada sem a líder escolhida nunca executa sozinha: o comando é o da líder.
+        leads = {c.need_id for c in chosen if not dict(c.content).get("carried_by")}
+        for orphan in [c for c in chosen if dict(c.content).get("carried_by") not in (None, *leads)]:
+            state.refused[orphan.need_id] = "carried_without_lead"
+        chosen = [c for c in chosen if c.need_id not in state.refused]
+        if not chosen:
+            return episode
         candidate = chosen[0]
+        carried = [c for c in chosen[1:] if c.move == candidate.move
+                   and dict(c.content).get("carried_by") == candidate.need_id]
+        for extra in chosen[1:]:
+            if extra not in carried:
+                state.refused[extra.need_id] = "one_effect_per_turn"
         need, module = by_need[candidate.need_id], moves[candidate.move]
         plan = module.effect(state, need)
         now, epoch = clock.now(), episode.ownership.epoch
@@ -525,10 +548,14 @@ class Engine:
             return episode
         effects["receipts"].append(receipt)
         state.receipts[need.need_id] = receipt
+        for other in carried:
+            state.receipts[other.need_id] = receipt  # a mesma mudança: o mesmo recibo
         if receipt.status in ("success", "failure"):
             store.complete_work(ctx, work.work_id)
         if receipt.status == "failure":
             state.refused[need.need_id] = receipt.error.code
+            for other in carried:
+                state.refused[other.need_id] = receipt.error.code
         elif receipt.status in ("pending", "unknown"):
             commitment = self._reconciliation_commitment(ctx, receipt, trace_id)
             state.commitments[commitment.commitment_id] = commitment
@@ -791,7 +818,7 @@ class Engine:
         moves = registry()
 
         # Passo 7: dizer e verificar.
-        specs = [moves[c.move].reply(state, by_need[c.need_id]) for c in chosen]
+        specs = _distinct([moves[c.move].reply(state, by_need[c.need_id]) for c in chosen])
         reply = None
         if specs:
             receipts = {receipt.command_id: receipt for receipt in state.receipts.values()}

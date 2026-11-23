@@ -83,7 +83,7 @@ def test_the_cart_and_order_receipts_point_the_effect(shop, monkeypatch):
     monkeypatch.setattr(tools, "place_order", lambda ctx, token, method, notes: {"ok": True, "order_ref": "ORD-1"})
     command = lambda action, **parameters: SimpleNamespace(action=action, targets=("sess-1",),  # noqa: E731
                                                           parameters=parameters)
-    cart = site.apply(CTX, command("change_cart", item="PAO", quantity="2"))
+    cart = site.apply(CTX, command("change_cart", lines=[{"item": "PAO", "quantity": "2"}]))
     order = site.apply(CTX, command("commit_order", terms_ref="tok", payment_method="pix"))
     assert cart.domain_refs["effect"] == "sess-1" and order.domain_refs["effect"] == "ORD-1"
 

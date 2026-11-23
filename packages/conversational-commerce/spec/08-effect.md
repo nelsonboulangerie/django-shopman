@@ -114,7 +114,16 @@ concessão vencida e confirmação anterior aos termos pedem termos novos (`pres
 uma confirmação nova (K07). Outras recusas dizem a limitação.
 
 Um efeito por turno: o segundo movimento de efeito escolhido fica recusado
-(`one_effect_per_turn`). Em `shadow` nada se executa (`shadow:effect_not_executed:<movimento>`),
+(`one_effect_per_turn`). [DECIDIDO] É restrição do mecanismo, não limitação: a máquina do episódio tem UMA espera de
+efeito (`waiting_effect`) e UMA reconciliação aberta por vez; a concessão, o comando e a intenção
+de execução são gravados juntos antes do efeito (N13), e um recibo pendente ou desconhecido abre a
+reconciliação daquele comando. Por isso, **várias linhas do carrinho num turno são uma mudança
+só**: a primeira necessidade de mudança leva um `change_cart` com todas as linhas
+(`parameters={"lines": [{item, quantity}, ...]}`), atômico e com um recibo; as outras são levadas
+por ela (`carried_by`), herdam a elegibilidade do grupo e recebem o mesmo recibo, e a resposta sai
+uma vez. A levada nunca executa sem a líder (`carried_without_lead`), e o mesmo item em duas
+linhas não vira comando (qual vale não se sabe). Uma linha que não é absoluta torna a mudança inteira inelegível (tudo ou nada). Efeitos
+diferentes no mesmo turno (mudar o carrinho e o recebimento) continuam um por turno. Em `shadow` nada se executa (`shadow:effect_not_executed:<movimento>`),
 e a resposta que afirmaria o efeito é segurada pela verificação.
 
 O adaptador diz quem fala e qual é o carrinho dele por `Engine.subject_of(ctx, event) ->
@@ -156,7 +165,7 @@ pergunta no ar citam o MESMO documento.
 | Movimento | Nível | No D1 |
 |---|---|---|
 | `present_terms` | A1 | cota e mostra os termos inteiros por espaço travado (itens, total, recebimento, condições); episódio a `waiting_authorization` |
-| `change_cart` | A2 | executa: quantidade absoluta, evento com identidade estável, reversível |
+| `change_cart` | A2 | executa: as linhas do turno num comando só (`lines`), quantidade absoluta, evento com identidade estável, reversível |
 | `set_fulfillment` | A2 | executa: o recebimento (dia, retirada ou entrega, hora) dito em forma absoluta, evento com identidade estável, reversível |
 | `commit_order` | A3 | executa: só o "sim" que responde à pergunta dos termos, na mesma época |
 | `cancel_order`, `amend_order` | A3 | só precondição; com a linha do perfil; nenhuma jornada os executa |

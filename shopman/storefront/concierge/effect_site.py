@@ -134,18 +134,24 @@ class ConciergeEffectSite:
     def _change_cart(self, command: ActionCommand) -> Done:
         from . import tools
 
-        sku, quantity = command.parameters.get("item"), command.parameters.get("quantity")
-        if not isinstance(sku, str) or not sku or not isinstance(quantity, str) or not quantity.isdigit():
+        lines = command.parameters.get("lines")
+        if not isinstance(lines, (list, tuple)) or not lines:
             return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
-        result = tools.set_item(self.tool_context, sku, int(quantity))
-        if result.get("ok"):
-            # ``effect``: o que o molde do pacote cita (``change_cart.done``, faceta ``effect``).
-            # A sacola nova nasce no ``set_item``: o recibo aponta a de verdade, nunca o alvo provisório.
-            session = tools._open_session(self.tool_context)
-            cart = str(session.session_key) if session is not None else command.targets[0]
-            return Done(True, domain_refs={"effect": cart, "cart": cart, "item": sku})
-        code = CART_REFUSALS.get(str(result.get("code") or ""), ErrorCode.FACT_UNAVAILABLE)
-        return Done(False, refusal=code.value)
+        for line in lines:
+            sku, quantity = line.get("item"), line.get("quantity")
+            if not isinstance(sku, str) or not sku or not isinstance(quantity, str) or not quantity.isdigit():
+                return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        # Todas as linhas na mesma transação do executor: uma recusa desfaz as anteriores (tudo ou nada).
+        for line in lines:
+            result = tools.set_item(self.tool_context, line["item"], int(line["quantity"]))
+            if not result.get("ok"):
+                code = CART_REFUSALS.get(str(result.get("code") or ""), ErrorCode.FACT_UNAVAILABLE)
+                return Done(False, refusal=code.value)
+        # ``effect``: o que o molde do pacote cita (``change_cart.done``, faceta ``effect``).
+        # A sacola nova nasce no ``set_item``: o recibo aponta a de verdade, nunca o alvo provisório.
+        session = tools._open_session(self.tool_context)
+        cart = str(session.session_key) if session is not None else command.targets[0]
+        return Done(True, domain_refs={"effect": cart, "cart": cart, "items": ",".join(line["item"] for line in lines)})
 
     def _set_fulfillment(self, command: ActionCommand) -> Done:
         """O dia, retirada ou entrega, e a hora: aplica o que veio e guarda o resto.

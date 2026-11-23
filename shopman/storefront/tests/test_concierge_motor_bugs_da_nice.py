@@ -55,7 +55,7 @@ def command(action, target="sess-1", **parameters):
 
 def test_the_cart_receipt_fills_the_package_template(site, monkeypatch):
     monkeypatch.setattr("shopman.storefront.concierge.tools.set_item", lambda ctx, sku, qty: {"ok": True})
-    done = site.apply(CTX, command("change_cart", item="CROISSANT", quantity="2"))
+    done = site.apply(CTX, command("change_cart", lines=[{"item": "CROISSANT", "quantity": "2"}]))
     # O efeito é afirmado pelo estado do recibo; o que ele aponta é a sacola de verdade.
     assert _fills("change_cart.done", done.domain_refs, "done") == "success"
     assert done.domain_refs["effect"] == "sess-1"
