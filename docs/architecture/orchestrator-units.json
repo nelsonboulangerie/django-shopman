@@ -20162,6 +20162,7 @@
         "outro"
       ],
       "domains": [
+        "guestman",
         "offerman",
         "orderman",
         "stockman"

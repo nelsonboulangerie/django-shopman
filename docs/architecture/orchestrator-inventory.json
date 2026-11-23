@@ -3091,6 +3091,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "ADDRESS_CODES",
             "CURRENCY",
             "DenyAll",
             "FACT_VALIDITY_SECONDS",
@@ -3099,11 +3100,14 @@
             "PORT",
             "PRODUCER_NAME",
             "UNSUPPORTED",
+            "_ADDRESS_KEYS",
+            "_address_requirements",
             "_date_of",
             "_date_or_none",
             "_fulfillment",
             "_fulfillment_conditions",
             "_text",
+            "address_ref",
             "conversation_payment_methods",
             "instant",
             "logger"
