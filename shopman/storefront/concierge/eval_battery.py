@@ -157,6 +157,7 @@ class Fala:
     ms: float
     tokens_in: int = 0
     tokens_out: int = 0
+    erro: str = ""  # o erro verdadeiro da IA, quando a fala caiu para a regra local
 
 
 @dataclass
@@ -199,15 +200,17 @@ def conferir(caso: Caso, sacola: dict[str, int], recebimento: dict[str, str], to
     return erros
 
 
-def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int,
-          only: str = "") -> tuple[list[Resultado], dict]:
+def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int, max_usd: float = 0.0,
+          model: str = "", only: str = "") -> tuple[list[Resultado], dict]:
     """A bateria pelo leitor. ``reader_for(conversa, linhas)`` monta o leitor com a sacola em memória."""
     from conversational_commerce.engine.acts import ACTS
     from conversational_commerce.ports import InterpretRequest, ModelRequest, TrustedContext
 
     from shopman.shop.models import Conversation
 
-    totais = {"chamadas": 0, "tokens_in": 0, "tokens_out": 0, "interrompido": ""}
+    from shopman.shop import ai_governor
+
+    totais = {"chamadas": 0, "tokens_in": 0, "tokens_out": 0, "usd": 0.0, "interrompido": "", "erros": []}
     resultados: list[Resultado] = []
     for caso in CASOS:
         if only and only not in caso.id:
@@ -226,13 +229,16 @@ def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int
             if totais["chamadas"] >= max_calls:
                 totais["interrompido"] = f"teto de {max_calls} chamadas"
                 break
+            if max_usd and totais["usd"] >= max_usd:
+                totais["interrompido"] = f"teto de US$ {max_usd:.2f}"
+                break
             fala = texto(bruta, today)
             request = InterpretRequest(
                 request=ModelRequest(purpose="interpret", data_class="redacted",
                                      budget={"max_calls": 1, "max_spend": {"amount_minor": 0, "currency": "BRL"}}),
                 event_id=f"eval-{caso.id}-{numero}", content_ref=f"text:{fala}", allowed_acts=ACTS)
             started = time.perf_counter()
-            reader.last_usage = None
+            reader.last_usage, reader.last_error = None, ""
             understanding, consumption = reader.interpret(ctx, request)
             ms = (time.perf_counter() - started) * 1000
             totais["chamadas"] += int(consumption.calls)
@@ -240,6 +246,10 @@ def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int
             tin, tout = int(getattr(usage, "input_tokens", 0) or 0), int(getattr(usage, "output_tokens", 0) or 0)
             totais["tokens_in"] += tin
             totais["tokens_out"] += tout
+            if model:
+                totais["usd"] += ai_governor.estimate_usd(model, tokens_in=tin, tokens_out=tout)
+            if reader.last_error:
+                totais["erros"].append(f"{caso.id} #{numero}: {reader.last_error}")
             atos = []
             for act in understanding.acts:
                 fields = dict(act.fields)
@@ -252,7 +262,7 @@ def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int
                         sacola.pop(str(fields["item"]), None)
                 elif act.act == "choose_fulfillment":
                     recebimento.update({k: str(v) for k, v in fields.items() if k in ("date", "mode", "time")})
-            falas.append(Fala(fala, understanding.reader.name, atos, ms, tin, tout))
+            falas.append(Fala(fala, understanding.reader.name, atos, ms, tin, tout, reader.last_error))
         erros = conferir(caso, sacola, recebimento, today) if not totais["interrompido"] else ["não rodou inteiro"]
         resultados.append(Resultado(caso, not erros, erros, falas, sacola, recebimento))
         if totais["interrompido"]:
@@ -260,14 +270,11 @@ def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int
     return resultados, totais
 
 
-def relatorio(resultados: list[Resultado], totais: dict, *, model: str = "") -> str:
-    """O placar e a transcrição, em texto, para o console."""
-    from shopman.shop import ai_governor
-
+def relatorio(resultados: list[Resultado], totais: dict) -> str:
+    """O placar e a transcrição, em texto puro, para o console."""
     linhas = []
     passou = sum(r.passou for r in resultados)
-    usd = ai_governor.estimate_usd(model, tokens_in=totais["tokens_in"], tokens_out=totais["tokens_out"]) \
-        if model else 0.0
+    usd = totais.get("usd", 0.0)
     tempos = sorted(f.ms for r in resultados for f in r.falas)
     p95 = tempos[max(0, int(len(tempos) * 0.95) - 1)] if tempos else 0.0
     linhas.append(f"bateria: {passou} / {len(resultados)} passaram")
@@ -278,6 +285,7 @@ def relatorio(resultados: list[Resultado], totais: dict, *, model: str = "") -> 
     quedas = sum(1 for r in resultados for f in r.falas if f.leitor == "concierge-local-rules")
     if quedas:
         linhas.append(f"ATENÇÃO: {quedas} falas caíram para a regra local (a IA não respondeu)")
+    linhas.extend(f"ERRO DA IA: {erro}" for erro in totais.get("erros", [])[:10])
     for r in resultados:
         linhas.append("")
         linhas.append(f"[{'ok' if r.passou else 'FALHOU'}] {r.caso.id} ({r.caso.grupo})")
@@ -285,6 +293,8 @@ def relatorio(resultados: list[Resultado], totais: dict, *, model: str = "") -> 
             atos = "; ".join(a["act"] + (f" {a['fields']}" if a["fields"] else "") for a in f.atos)
             linhas.append(f"  > {f.texto}")
             linhas.append(f"    {f.leitor} · {f.ms:.0f} ms · {atos}")
+            if f.erro:
+                linhas.append(f"    erro da IA: {f.erro}")
         if not r.passou:
             linhas.extend(f"    ✗ {erro}" for erro in r.erros)
     return "\n".join(linhas)

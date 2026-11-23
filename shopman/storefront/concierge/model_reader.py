@@ -349,8 +349,9 @@ class NiceReader:
         # A conversa e a sacola de fora: o ensaio (``concierge_eval``) lê sem gravar nada no banco.
         self._conversation = conversation
         self._lines_of = lines_of or _cart_lines
-        #: O consumo da última chamada à IA (tokens), para o relatório do ensaio.
+        #: O consumo da última chamada à IA (tokens) e o erro verdadeiro dela, para o relatório do ensaio.
         self.last_usage = None
+        self.last_error = ""
 
     def capabilities(self) -> Capabilities:
         return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score"),
@@ -381,6 +382,7 @@ class NiceReader:
                                                               cart_note=cart_note(lines), model=model))
         except Exception as exc:  # rede, cota, chave, freio, tempo: vale a regra local
             logger.warning("concierge.model_reader.read_failed exception_type=%s", type(exc).__name__)
+            self.last_error = f"{type(exc).__name__}: {exc}"[:300]
             record_read(ok=False)
             return LocalReader().interpret(ctx, request)
         record_read(ok=True)
@@ -393,6 +395,7 @@ class NiceReader:
             readings = parse(raw, redacted, allowed)
         except (ValueError, json.JSONDecodeError) as exc:
             logger.warning("concierge.model_reader.unreadable reason=%s", str(exc)[:40])
+            self.last_error = f"resposta ilegível: {exc}"[:300]
             return LocalReader().interpret(ctx, request)
         logger.info("concierge.model_reader.read acts=%s ms=%d", ",".join(r.act for r in readings),
                     (time.perf_counter() - started) * 1000)

@@ -1732,12 +1732,12 @@ Custo zero, nenhuma chamada de modelo. Imprime as contagens do ciclo em JSON.
 Nenhum efeito, nenhuma mensagem, nenhuma linha nova no banco: a conversa e a sacola são de memória. O produto é conferido pelo nome do item no catálogo.
 
 ```bash
-python manage.py concierge_eval --battery                 # os 56, teto de 120 chamadas
+python manage.py concierge_eval --battery                 # os 56, tetos de 150 chamadas e US$ 0,50
 python manage.py concierge_eval --battery --case frase    # só os casos cujo id contém "frase"
 python manage.py concierge_eval --battery --max-calls 20  # teto menor
 ```
 
-Sem conexão utilizável na rota `intents` (ou com o freio puxado), o comando falha antes de chamar.
+Sem conexão utilizável na rota `intents` (ou com o freio puxado), o comando falha antes de chamar. Sai com código diferente de zero, depois de imprimir o placar, quando um teto estoura (`--max-calls`, `--max-usd`) ou quando a IA recusa alguma fala, com o erro verdadeiro dela (aí o placar não mede o leitor).
 
 ### concierge_engine_tick
 

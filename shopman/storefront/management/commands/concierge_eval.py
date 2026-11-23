@@ -17,7 +17,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--battery", action="store_true", help="roda a bateria de 56 pedidos")
-        parser.add_argument("--max-calls", type=int, default=120, help="teto de chamadas à IA (padrão 120)")
+        parser.add_argument("--max-calls", type=int, default=150, help="teto de chamadas à IA (padrão 150)")
+        parser.add_argument("--max-usd", type=float, default=0.50,
+                            help="teto de custo estimado, em dólares (padrão 0,50)")
         parser.add_argument("--case", default="", help="só os casos cujo id contém este texto")
         parser.add_argument("--channel", default="whatsapp", help="o canal cujo cardápio a leitura usa")
 
@@ -27,8 +29,8 @@ class Command(BaseCommand):
 
         if not options["battery"]:
             raise CommandError("diga o que rodar: --battery")
-        if options["max_calls"] < 1:
-            raise CommandError("--max-calls precisa ser ao menos 1")
+        if options["max_calls"] < 1 or options["max_usd"] <= 0:
+            raise CommandError("--max-calls precisa ser ao menos 1 e --max-usd maior que zero")
         client, model = build_client()
         if client is None:
             raise CommandError("a rota de IA 'intents' não tem conexão utilizável (Admin, conexões de IA), "
@@ -39,5 +41,10 @@ class Command(BaseCommand):
 
         resultados, totais = eval_battery.rodar(reader_for, channel_ref=options["channel"],
                                                 today=timezone.localdate(), max_calls=options["max_calls"],
-                                                only=options["case"])
-        self.stdout.write(eval_battery.relatorio(resultados, totais, model=model))
+                                                max_usd=options["max_usd"], model=model, only=options["case"])
+        self.stdout.write(eval_battery.relatorio(resultados, totais))
+        # Teto estourado ou IA que recusou: o placar não mede o leitor, e o comando sai com erro.
+        if totais["interrompido"]:
+            raise CommandError(f"ensaio interrompido: {totais['interrompido']}")
+        if totais["erros"]:
+            raise CommandError(f"a IA recusou {len(totais['erros'])} falas; a primeira: {totais['erros'][0]}")

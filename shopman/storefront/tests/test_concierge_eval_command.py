@@ -61,7 +61,14 @@ def _run(*args) -> str:
 
 
 def _rows():
-    return Conversation.objects.count(), Session.objects.count(), ConversationMessage.objects.count()
+    """As tabelas que um turno da Concierge toca: nenhuma pode ganhar linha no ensaio."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.models import AiInvocation, ConversationalCommitment, ConversationalEpisode
+
+    return tuple(model.objects.count() for model in (Conversation, Session, ConversationMessage, Order,
+                                                     ConversationalEpisode, ConversationalCommitment,
+                                                     AiInvocation))
 
 
 def test_the_battery_scores_the_reader_and_writes_nothing(house):
@@ -80,15 +87,29 @@ def test_a_wrong_reading_fails_with_the_reason(house):
     assert "[FALHOU] entrega-com" in out and "recebimento -, esperado delivery" in out
 
 
-def test_the_call_ceiling_stops_the_run(house):
-    out = _run("--case", "espalhado-tres", "--max-calls", "1")
+def _failing(*args):
+    out = StringIO()
+    with pytest.raises(CommandError) as failed:
+        call_command("concierge_eval", "--battery", *args, stdout=out)
+    return out.getvalue(), str(failed.value)
+
+
+def test_the_call_ceiling_stops_the_run_with_an_error(house):
+    out, error = _failing("--case", "espalhado-tres", "--max-calls", "1")
     assert "INTERROMPIDO: teto de 1 chamadas" in out and house.calls == 1
+    assert "teto de 1 chamadas" in error
 
 
-def test_when_the_ai_fails_the_report_says_so(monkeypatch, house):
-    house.error = TimeoutError("rede")
-    out = _run("--case", "so-pedido-hoje", "--max-calls", "5")
-    assert "caíram para a regra local" in out
+def test_the_cost_ceiling_stops_the_run_and_the_report_says_the_spend(house):
+    out, error = _failing("--case", "espalhado-tres", "--max-usd", "0.0000001")
+    assert "custo estimado: US$" in out and "teto de US$" in error and house.calls == 1
+
+
+def test_when_the_ai_refuses_the_run_fails_with_the_true_error(house):
+    house.error = TimeoutError("a DeepSeek não respondeu em 8 s")
+    out, error = _failing("--case", "so-pedido-hoje", "--max-calls", "5")
+    assert "caíram para a regra local" in out and "TimeoutError: a DeepSeek não respondeu em 8 s" in out
+    assert "a IA recusou 1 falas" in error and "TimeoutError" in error
 
 
 def test_without_a_connection_nothing_is_called(monkeypatch):
