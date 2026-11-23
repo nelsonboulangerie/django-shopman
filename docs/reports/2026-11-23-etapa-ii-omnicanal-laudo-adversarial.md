@@ -1,6 +1,6 @@
 # Excelência Comercial Omnicanal, Etapa II: laudo adversarial
 
-> **Data:** 23/11/2026. **Base:** `origin/main` `0644992aa`. **Estado:** PROPOSTA PARA APROVAÇÃO. Nenhum código, configuração, ADR ou documento existente foi alterado.
+> **Data:** 23/11/2026. **Base:** `origin/main` `0644992aa`. **Estado:** APROVADO pelo dono em 23/11/2026 (decisões no §10 do plano). Nenhum código, configuração, ADR ou documento existente foi alterado.
 > **Compromisso:** `DEV-2026-085`.
 > **Documento irmão (especificação e plano para o agente de implementação):** [2026-11-23-etapa-ii-omnicanal-espec-e-plano.md](2026-11-23-etapa-ii-omnicanal-espec-e-plano.md).
 > **Relatórios de origem (preservados, não editados, lidos na íntegra):** branch `docs/storefront-excellence-omnicanal-20261123`, commit `dbf912118`:
