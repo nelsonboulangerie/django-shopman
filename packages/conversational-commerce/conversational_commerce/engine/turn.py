@@ -564,7 +564,7 @@ class Engine:
                     ctx, Transition(episode=self._walk(episode, event.id, prefix), expected_version=episode.version),
                     (*unwritten,), ())
                 unwritten.clear()
-                effects["walked"] = effects.get("walked", 0) - 1
+                # O recibo anterior andou aqui; o ``_execute`` conta a volta (``walked``) uma vez só.
             return episode, None
         command = build_command(record=self._envelope(ctx, "cmd", episode.episode_id, trace_id, grant.id),
                                 command_id=clock.new_id("command"), decision_id=decision.decision_id, grant=grant,

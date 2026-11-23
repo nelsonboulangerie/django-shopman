@@ -128,10 +128,16 @@ comando. Daí as três regras:
   própria concessão, o próprio comando (chave própria), a intenção gravada antes e o próprio recibo;
   o recibo terminal de um devolve o episódio a `active` antes do próximo, e a sequência **para no
   primeiro recibo que não é sucesso** (`sequence_stopped`). Assim há no máximo uma espera de efeito
-  e uma reconciliação aberta por vez. Cada parte da resposta cita o próprio recibo (K24).
+  e uma reconciliação aberta por vez. Cada parte da resposta cita o próprio recibo (K24). A parte
+  que a sequência não tentou não foi impossível: sai no molde `inform_limitation.not_attempted`
+  ("fica para depois de acertar o passo anterior"), nunca na limitação genérica. **Com o primeiro
+  efeito pendente, a sacola dita no turno não fica guardada**: o cliente a repete depois que o
+  recebimento se resolver (o motor não guarda uma intenção para depois).
 - **Fora disso, um efeito por turno**: o segundo efeito escolhido fica recusado
   (`one_effect_per_turn`) e a decisão refeita diz a limitação. O `commit_order` (A3) nunca entra
-  em sequência.
+  em sequência, e o "sim" com uma mudança do mesmo carrinho no mesmo turno ("sim, e põe quatro", em
+  qualquer ordem) **não grava o pedido**: os termos confirmados deixaram de ser os do carrinho (v2
+  4.7, propriedade 2).
 
 Em `shadow` nada se executa (`shadow:effect_not_executed:<movimento>`), e a resposta que afirmaria
 o efeito é segurada pela verificação.
