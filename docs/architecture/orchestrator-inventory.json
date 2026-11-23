@@ -3100,6 +3100,9 @@
             "PRODUCER_NAME",
             "UNSUPPORTED",
             "_date_of",
+            "_date_or_none",
+            "_fulfillment",
+            "_fulfillment_conditions",
             "_text",
             "instant",
             "logger"

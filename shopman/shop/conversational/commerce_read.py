@@ -230,7 +230,7 @@ class ShopmanCommerceRead:
             terms_id=f"{cart_ref}-r{session.rev}", version=max(1, int(session.rev or 0)), items=items,
             adjustments=adjustments, total={"amount_minor": total, "currency": CURRENCY},
             recipient={"subject_ref": ctx.subject or "unknown-subject"},
-            fulfillment={"mode": str(data.get("fulfillment_type") or "pickup")},
+            fulfillment=_fulfillment(data), conditions=_fulfillment_conditions(data),
             valid_until=instant(now + timedelta(minutes=self._hold_minutes())),
         ))
 
@@ -287,6 +287,45 @@ class ShopmanCommerceRead:
 
     def scarcity(self, ctx: TrustedContext, ref: str):
         return Unavailable(reason="not_supported")
+
+
+def _fulfillment(data: dict) -> dict:
+    """O recebimento da sacola: o modo e, quando há janela combinada, o começo (e o fim) dela."""
+    from django.utils import timezone
+
+    from shopman.shop.services.fulfillment_window import _hour_pair, _window_start
+
+    found: dict = {"mode": str(data.get("fulfillment_type") or "pickup")}
+    day, slot = _date_or_none(data.get("delivery_date")), str(data.get("delivery_time_slot") or "")
+    start = _window_start({"ref": slot}) if day and slot else None
+    if start is not None:
+        zone = timezone.get_current_timezone()
+        found["window_start"] = instant(datetime.combine(day, start, tzinfo=zone))
+        pair = _hour_pair(slot)
+        if pair is not None and pair[1] > start:
+            found["window_end"] = instant(datetime.combine(day, pair[1], tzinfo=zone))
+    return found
+
+
+def _fulfillment_conditions(data: dict) -> list[dict]:
+    """O dia e a janela como a casa os guarda (a resposta mostra o rótulo da janela, não a hora crua)."""
+    found = []
+    day = _date_or_none(data.get("delivery_date"))
+    if day:
+        found.append({"code": "fulfillment_date", "value": day.isoformat()})
+        slot = str(data.get("delivery_time_slot") or "")
+        if slot:
+            found.append({"code": "fulfillment_window", "value": slot})
+    return found
+
+
+def _date_or_none(value: Any):
+    from datetime import date
+
+    try:
+        return date.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
 
 
 def _text(value: Any) -> str | None:

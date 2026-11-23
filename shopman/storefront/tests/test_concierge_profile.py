@@ -113,6 +113,7 @@ def test_the_live_mode_and_channel_are_measured_not_assumed(shop):
     ("recommend", "commerce.recommend", IneligibilityCode.PROFILE_LINE_ABSENT),  # P13 ausente
     ("present_terms", "commerce.order_in_conversation", IneligibilityCode.PROFILE_LINE_NOT_APPROVED),  # P08
     ("change_cart", "commerce.order_in_conversation", IneligibilityCode.PROFILE_LINE_NOT_APPROVED),
+    ("set_fulfillment", "commerce.order_in_conversation", IneligibilityCode.PROFILE_LINE_NOT_APPROVED),
     ("commit_order", "commerce.order_in_conversation", IneligibilityCode.PROFILE_LINE_NOT_APPROVED),
 ])
 def test_k39_on_the_real_profile_lines_without_decision_keep_the_action_ineligible(shop, move, line_id, code):

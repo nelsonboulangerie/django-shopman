@@ -55,6 +55,14 @@ def subject_of(conversation_id: int | str) -> str:
     return f"{SUBJECT_PREFIX}{conversation_id}"
 
 
+#: A sacola que a conversa ainda não tem: o alvo do primeiro pedido pelo motor. Nasce no efeito.
+NEW_CART_PREFIX = "new-cart:"
+
+
+def new_cart_ref(conversation_id: int | str) -> str:
+    return f"{NEW_CART_PREFIX}{subject_of(conversation_id)}"
+
+
 def _conversation(ctx: TrustedContext):
     from shopman.shop.models import Conversation
 

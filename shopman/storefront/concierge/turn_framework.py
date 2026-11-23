@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 ACTION_CLASSES = {
     "inform": ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification"),
     "handoff": ("handoff",),
-    "order": ("present_terms", "change_cart", "commit_order"),
+    "order": ("present_terms", "change_cart", "set_fulfillment", "commit_order"),
 }
 SWITCH_FIELD = {"inform": "conversational_live_inform", "handoff": "conversational_live_handoff",
                 "order": "conversational_live_order"}
@@ -103,11 +103,13 @@ class NiceRules:
 
 def subject_for(conversation):
     """O sujeito do turno: a conversa, com a sacola dela. Identidade nunca acima do transporte."""
-    from .ports import subject_of
+    from .ports import new_cart_ref, subject_of
 
     def subject(ctx: TrustedContext, event) -> Subject:
+        # Sem sacola ainda, o alvo é a sacola nova da conversa: o primeiro pedido pelo motor tem
+        # onde cair, e ela só nasce no efeito (nunca na leitura nem na sombra).
         return Subject(subject_ref=subject_of(conversation.pk), identity_evidence=tuple(event.identity_evidence),
-                       cart_ref=conversation.session_key or None)
+                       cart_ref=conversation.session_key or new_cart_ref(conversation.pk))
 
     return subject
 

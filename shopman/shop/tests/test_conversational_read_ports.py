@@ -127,6 +127,28 @@ def test_quote_seals_the_subject_cart_only(shop):
         assert refused.value.code.value == "object_forbidden"
 
 
+def test_quote_carries_the_day_and_the_window_of_the_cart(shop):
+    """Passo 3 do pedido pelo motor: os termos dizem o dia e a janela combinados, não só o modo."""
+    from datetime import datetime
+
+    from django.utils import timezone
+
+    Session.objects.filter(session_key="sess-1").update(
+        data={"fulfillment_type": "pickup", "delivery_date": "2026-11-24", "delivery_time_slot": "slot-15"})
+    terms = port().quote(CTX, "sess-1")
+    start = datetime(2026, 11, 24, 15, 0, tzinfo=timezone.get_current_timezone())
+    assert terms.fulfillment.mode == "pickup"
+    assert terms.fulfillment.window_start == start.astimezone(timezone.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    assert terms.fulfillment.window_end is None  # "a partir das 15h" não tem fim
+    assert {c.code: c.value for c in terms.conditions} == {"fulfillment_date": "2026-11-24",
+                                                          "fulfillment_window": "slot-15"}
+
+
+def test_quote_without_a_day_has_no_window(shop):
+    terms = port().quote(CTX, "sess-1")
+    assert (terms.fulfillment.window_start, terms.conditions) == (None, ())
+
+
 def test_customer_and_order_are_the_subject_only(shop):
     reader = port(ownership=Owns(orders=("ORD-1",)))
     assert reader.read_customer(CTX, "cust-1").value == {"ref": "cust-1"}  # só a referência sai (P17)
