@@ -1169,6 +1169,11 @@ def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> 
 
     matching_orders = _customer_orders(customer_ref, phone)
     matching_order_refs = tuple(matching_orders.values_list("ref", flat=True))
+
+    # O comentário da nota baixa também mora no aviso do operador (#2359).
+    from shopman.shop.adapters import alert as alert_adapter
+
+    counts["operator_alerts"] = alert_adapter.scrub_customer_comments(matching_order_refs)
     payment_intents = PaymentIntent.objects.filter(order_ref__in=matching_order_refs)
     for payment_intent in payment_intents.only("pk", "gateway_data").iterator():
         gateway_data, changed = _scrub_gateway_pii(payment_intent.gateway_data)

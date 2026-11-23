@@ -125,6 +125,70 @@ def test_confirmed_order_links_existing_planned_work_order(recipe):
     assert wo.meta[WORK_ORDER_COMMITTED_ORDER_REFS_KEY] == [order.ref]
 
 
+def _shelf_hold(order: Order, qty: int, *, sku: str = "CROISSANT", status: str = "confirmed"):
+    """A reserva do pedido na prateleira: o quant da vitrine, sem data (pão que já existe)."""
+    from shopman.stockman import Hold, Quant, stock
+
+    vitrine, _ = Position.objects.get_or_create(ref="vitrine", defaults={"name": "Vitrine", "is_saleable": True})
+    stock.receive(quantity=Decimal("50"), sku=sku, position=vitrine, reason="vitrine")
+    quant = Quant.objects.get(sku=sku, position=vitrine, target_date__isnull=True)
+    return Hold.objects.create(
+        sku=sku, quant=quant, quantity=Decimal(qty), target_date=date.today(), status=status,
+        metadata={"reference": f"order:{order.ref}", "priority": 0},
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["confirmed", "fulfilled"], ids=["reservado", "ja-baixado"])
+def test_pedido_servido_da_prateleira_nao_espera_o_lote(recipe, status):
+    """#2721 item 8: o pedido que já tem o pão na vitrine não está à espera da produção.
+
+    Ligado ao lote planejado do dia, o cartão dizia "Produção de Croissant: não
+    começou" para um croissant que já estava reservado na prateleira, e o lote
+    contava o pedido como comprometido (o fechamento abaixo dele era recusado).
+    """
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="")
+    order = _order("SYNC-SHELF", qty=2)
+    _shelf_hold(order, 2, status=status)
+
+    link_order_to_work_orders(order=order, event_type="status_changed")
+
+    order.refresh_from_db()
+    wo.refresh_from_db()
+    assert "awaiting_wo_refs" not in (order.data or {})
+    assert order.ref not in (wo.meta or {}).get(WORK_ORDER_COMMITTED_ORDER_REFS_KEY, [])
+    assert build_operator_order(order).awaiting_work_orders == ()
+    assert order_requirement_for_work_order(wo) == Decimal("0")
+
+
+@pytest.mark.django_db
+def test_pedido_com_parte_na_prateleira_espera_o_lote_so_pelo_que_falta(recipe):
+    """Duas na vitrine e três para o lote: o lote leva o pedido, pelas três."""
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="")
+    order = _order("SYNC-SHELF-PART", qty=5)
+    _shelf_hold(order, 2)
+
+    link_order_to_work_orders(order=order, event_type="status_changed")
+
+    order.refresh_from_db()
+    wo.refresh_from_db()
+    assert order.data["awaiting_wo_refs"] == [wo.ref]
+    assert order_requirement_for_work_order(wo) == Decimal("3")
+
+
+@pytest.mark.django_db
+def test_reserva_solta_da_prateleira_volta_a_esperar_o_lote(recipe):
+    """A reserva liberada não cobre mais nada: o pedido volta a ser do lote."""
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="")
+    order = _order("SYNC-SHELF-REL", qty=2)
+    _shelf_hold(order, 2, status="released")
+
+    link_order_to_work_orders(order=order, event_type="status_changed")
+
+    order.refresh_from_db()
+    assert order.data["awaiting_wo_refs"] == [wo.ref]
+
+
 @pytest.mark.django_db
 def test_operator_order_projects_gift_recipient():
     """GIFT-UX: o operador vê o destinatário do presente (entrega a terceiro)."""

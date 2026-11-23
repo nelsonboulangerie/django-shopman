@@ -21,8 +21,8 @@ _FIELD_NAMES: dict[type, tuple[str, ...]] = {}
 def projection_data(value: Any) -> Any:
     """Convert projection dataclasses into JSON-safe primitives.
 
-    O mesmo card do cardápio aparece em ``items`` e de novo em ``featured`` (as
-    seções carregam só SKUs) — é o MESMO objeto. A conversão de uma dataclass é
+    O mesmo card do cardápio aparece em ``items`` e de novo nas seções: é o MESMO
+    objeto. A conversão de uma dataclass é
     lembrada por identidade durante esta chamada, e as duas posições recebem o
     mesmo dict. O JSON que sai é byte a byte o de antes: o dict é só serializado
     mais de uma vez. Quem recebe o resultado não deve mutá-lo (ninguém muta; a

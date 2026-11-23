@@ -1,11 +1,9 @@
 """A fila das filas da Central (SUITE-UX §4.1 e §6, UX-H1).
 
-A Central soma as filas dos papéis do operador e leva o ITEM EXATO para a linha de cada app
-(``next_item``, a pendência mais urgente dele): "Pedido K7Q2 para aceitar", "Pedido F15
-atrasado", "Lote de Croissant passou do tempo". Cada item traz o essencial da decisão, a hora
-que importa (há quanto espera, ou quanto falta) e um gesto que abre o lugar exato no app
-certo. A lista inteira não viaja mais no JSON (dono, 09/10/2026: "Precisa de você" saiu da
-Central); dela sai só ``total_count``.
+A Central soma as filas dos papéis do operador: "Pedido K7Q2 para aceitar", "Pedido F15
+atrasado", "Lote de Croissant passou do tempo". Nenhum item viaja no JSON da Central (dono,
+09/10/2026: "Precisa de você" saiu; #2134: a linha do app virou um número só, e o detalhe
+mora dentro do app); da fila sai só ``total_count``.
 
 **Só fontes que já existem.** Nada aqui é regra nova: cada fonte é a mesma leitura que o app
 de destino já faz, recortada para o que pede alguém agora.
@@ -116,8 +114,7 @@ class HubAppStatusProjection:
 
 @dataclass(frozen=True)
 class HubQueueProjection:
-    """O que a Central recebe da fila: quantas pendências e o relógio do servidor (os
-    itens chegam pela linha de cada app, em ``next_item``)."""
+    """O que a Central recebe da fila: quantas pendências e o relógio do servidor."""
 
     total_count: int
     server_now: str
@@ -125,16 +122,15 @@ class HubQueueProjection:
 
 @dataclass(frozen=True)
 class HubQueueCollection:
-    """O resultado da coleta: a projeção da fila, a linha de estado de cada app, a
-    pendência mais urgente de cada app e a fila inteira, ordenada por urgência.
+    """O resultado da coleta: a projeção da fila, a linha de estado de cada app e a fila
+    inteira, ordenada por urgência.
 
-    ``items`` é interno (não viaja no JSON da Central): é dele que saem ``most_urgent`` e
-    ``total_count``, e é o que os testes leem para travar a ordem e a permissão por item.
+    ``items`` é interno (não viaja no JSON da Central): é dele que sai ``total_count``, e é
+    o que os testes leem para travar a ordem e a permissão por item.
     """
 
     queue: HubQueueProjection
     statuses: dict[str, HubAppStatusProjection]
-    most_urgent: dict[str, HubQueueItemProjection]
     items: tuple[HubQueueItemProjection, ...]
 
 
@@ -821,12 +817,8 @@ def collect_hub_queue(
     ordered = tuple(
         sorted(out.items, key=lambda item: (item.slack_seconds, item.waiting_since or item.due_at, item.key))
     )
-    most_urgent: dict[str, HubQueueItemProjection] = {}
-    for item in ordered:
-        most_urgent.setdefault(item.app, item)
     return HubQueueCollection(
         queue=HubQueueProjection(total_count=len(ordered), server_now=_iso(now)),
         statuses=out.statuses,
-        most_urgent=most_urgent,
         items=ordered,
     )

@@ -11,9 +11,11 @@ import logging
 from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from django.db import transaction
+from django.utils import timezone
 from shopman.orderman.exceptions import ValidationError as OrderingValidationError
 from shopman.orderman.services.commit import CommitAuthority, CommitSeal, CommitService
 
@@ -269,6 +271,94 @@ def map_order_error(exc: Exception) -> CheckoutDomainError | None:
         context=getattr(exc, "context", {}),
         http_status=http_status,
     )
+
+
+@dataclass(frozen=True)
+class RefusedCart:
+    """Onde está a sacola que o envio não conseguiu selar.
+
+    ``sent_order_ref``: a sacola já virou pedido (outra aba a enviou primeiro).
+    ``gone``: a sacola não existe mais como sacola: foi encerrada (outro dispositivo
+    da mesma pessoa enviou um pedido), apagada pela limpeza ou ficou sem item.
+    Nenhum dos dois: a sacola segue viva, e a recusa é dela mesmo.
+    """
+
+    sent_order_ref: str = ""
+    gone: bool = False
+
+
+def refused_cart(session_key: str, channel_ref: str) -> RefusedCart:
+    """Lê o estado ATUAL da sacola depois de uma recusa do envio.
+
+    A recusa do Core diz o que ele viu no instante dele ("sessão abandonada",
+    "revisão mudou"); a loja precisa dizer ao cliente o que aconteceu com a
+    sacola dele, e isso só o estado de agora responde. A sacola enviada por outra
+    aba, por exemplo, chega aqui como ``revision_changed`` (a outra aba gravou as
+    escolhas dela antes de selar), e "confira os itens" seria pedir conferência de
+    uma sacola que já é pedido.
+    """
+    from shopman.orderman.models import Order, Session
+
+    from shopman.shop.projections.cart import build_cart
+
+    if not session_key:
+        return RefusedCart(gone=True)
+    state = (
+        Session.objects.filter(session_key=session_key, channel_ref=channel_ref)
+        .values_list("state", flat=True)
+        .first()
+    )
+    if state == "committed":
+        order_ref = (
+            Order.objects.filter(session_key=session_key, channel_ref=channel_ref)
+            .order_by("-pk")
+            .values_list("ref", flat=True)
+            .first()
+        )
+        return RefusedCart(sent_order_ref=order_ref) if order_ref else RefusedCart(gone=True)
+    if state == "open" and not build_cart(session_key, channel_ref).is_empty:
+        return RefusedCart()
+    return RefusedCart(gone=True)
+
+
+#: Por quanto tempo o pedido que ESTE navegador enviou ainda responde por "este
+#: pedido" quando outra aba dele tenta enviar a sacola que já saiu. Duas abas da
+#: mesma sacola são um acontecimento de minutos (a segunda aba recarrega sozinha
+#: quando a primeira termina; o que sobra é a revisão que ficou aberta). Trinta
+#: minutos é o prazo padrão da reserva da sacola (``stock.hold_ttl_minutes``):
+#: uma revisão mais velha que isso já tinha perdido as reservas, e depois dele
+#: "este pedido" deixaria de ser inequívoco (o pedido de meia hora atrás não é o
+#: desta revisão, é outro).
+RECENTLY_SENT_WINDOW = timedelta(minutes=30)
+
+
+def recently_sent_order_ref(request, channel_ref: str, *, now: datetime | None = None) -> str:
+    """O pedido que este navegador acabou de enviar neste canal, ou ``""``.
+
+    O envio que dá certo dá ao navegador o acesso ao pedido
+    (``customer_orders.grant_order_access``) e tira a chave da sacola da sessão.
+    A outra aba do mesmo navegador, com a revisão ainda aberta, chega depois sem
+    sacola nenhuma; o pedido dela é o mais novo entre os que este navegador
+    recebeu, neste canal, dentro de ``RECENTLY_SENT_WINDOW``, e da mesma pessoa
+    que está logada. Outro navegador não tem a concessão e não recebe nada.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.customer_orders import ORDER_ACCESS_SESSION_KEY, customer_can_access_order
+
+    session = getattr(request, "session", None)
+    refs = [str(ref) for ref in ((session.get(ORDER_ACCESS_SESSION_KEY) if session is not None else None) or []) if ref]
+    if not refs:
+        return ""
+    since = (now or timezone.now()) - RECENTLY_SENT_WINDOW
+    order = (
+        Order.objects.filter(ref__in=refs, channel_ref=channel_ref, created_at__gte=since)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if order is None or not customer_can_access_order(getattr(request, "customer", None), order):
+        return ""
+    return order.ref
 
 
 def _fill_missing_first_name(customer_obj, name: str) -> None:

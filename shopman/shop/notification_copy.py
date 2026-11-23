@@ -349,8 +349,11 @@ ACCESS_BUTTON_COPY: dict[str, str] = {
 #
 # - é PROPOSTA ("Posso trocar…?"), nunca fato consumado: o operador só conclui
 #   depois da resposta;
-# - fala a língua do cliente: o item "não vai ficar pronto", nunca "lote",
+# - fala a língua do cliente: "não vamos ter Focaccia amanhã", nunca "lote",
 #   "reserva" ou "fornada cancelada";
+# - não depende do gênero do produto (#2809 item 6, decisão da coordenação em
+#   22/11/2026): o catálogo não sabe se é "o" ou "a", e "O item Focaccia" soava
+#   como sistema. A oração carrega o nome sem concordar com ele;
 # - no máximo um 💛 (na abertura) e um ✨ (no fecho) por mensagem.
 #
 # ``{customer_name_greeting}`` é ", Ana" ou vazio (o primeiro nome); sem o nome da
@@ -358,13 +361,11 @@ ACCESS_BUTTON_COPY: dict[str, str] = {
 PROMISE_PROPOSAL_COPY: dict[str, str] = {
     "opening": "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛",
     "opening_without_shop": "Oi{customer_name_greeting}! 💛",
-    # O que houve, com um item e com vários. ``{what}`` vem de PROMISE_ITEM_SITUATION.
-    "one_item": "O item {item} do seu pedido {order_ref_short} {what}, e sinto muito por isso.",
-    "many_items": "No seu pedido {order_ref_short}, {items}, e sinto muito por isso.",
-    "many_items_entry": "o item {item} {what}",
-    # Vários itens na MESMA situação, uma oração só (coordenação, 21/11/2026, #2809
-    # item 5): "os itens Focaccia e Brioche não vão ficar prontos amanhã".
-    "many_items_group": "os itens {items} {what}",
+    # O que houve, com um item ou com vários: as orações de PROMISE_ITEM_SITUATION,
+    # cada uma já com o nome do produto. Vários itens na MESMA situação viram uma
+    # oração só (coordenação, 21/11/2026, #2809 item 5): "não vamos ter Focaccia e
+    # Brioche amanhã".
+    "happened": "No seu pedido {order_ref_short}, {items}, e sinto muito por isso.",
     # O que a casa propõe, uma frase por escolha do diálogo.
     "swap": "Posso trocar por {offer}? Me avisa e eu ajusto por aqui ✨",
     "swap_named": "Posso trocar {item} por {offer}? Me avisa e eu ajusto por aqui ✨",
@@ -377,30 +378,32 @@ PROMISE_PROPOSAL_COPY: dict[str, str] = {
     "cancel": "Se preferir, cancelo o pedido. Me avisa como fica melhor para você ✨",
 }
 
-#: O que houve com o item, nas palavras do cliente. ``{day}`` é " hoje", " amanhã",
+#: O que houve com o item, nas palavras do cliente, numa oração que traz o nome do
+#: produto (``{item}``) sem concordar com ele. ``{day}`` é " hoje", " amanhã",
 #: " para sábado, 21/11" ou vazio; ``{lacking}`` é "falta 1 de 3" / "faltam 2 de 4".
-#: O verbo só afirma o que a casa sabe: o item que a Produção ainda pode fazer e a
-#: reserva que se soltou "podem" faltar; o lote cancelado "não vai" ficar pronto.
+#: O verbo só afirma o que a casa sabe: o que a Produção ainda pode fazer e a reserva
+#: que se soltou "pode ser que" faltem; o lote cancelado "não vamos ter".
 PROMISE_ITEM_SITUATION: dict[str, str] = {
-    "not_ready": "não vai ficar pronto{day}",
-    "not_ready_partial": "não vai ficar pronto por inteiro{day} ({lacking})",
-    "may_not_be_ready": "pode não ficar pronto{day}",
-    "may_not_be_ready_partial": "pode não ficar pronto por inteiro{day} ({lacking})",
-    "late": "está atrasado",
-    "out_of_stock": "está em falta",
-    "out_of_stock_partial": "está em falta em parte ({lacking})",
-    "may_be_missing": "pode faltar",
-    "may_be_missing_partial": "pode faltar em parte ({lacking})",
+    "not_ready": "não vamos ter {item}{day}",
+    "not_ready_partial": "vamos ter menos {item} do que você pediu{day} ({lacking})",
+    "may_not_be_ready": "pode ser que não tenhamos {item}{day}",
+    "may_not_be_ready_partial": "pode ser que tenhamos menos {item} do que você pediu{day} ({lacking})",
+    "late": "o preparo de {item} atrasou",
+    "out_of_stock": "estamos sem {item}",
+    "out_of_stock_partial": "temos menos {item} do que você pediu ({lacking})",
+    "may_be_missing": "pode ser que falte {item}",
+    "may_be_missing_partial": "pode ser que falte parte de {item} ({lacking})",
 }
 
-#: O plural de cada situação, para os itens que estão na mesma (#2809 item 5). A falta
-#: em parte não tem plural: cada item diz quanto falta dele, numa oração própria.
+#: A mesma oração para vários itens na mesma situação (#2809 item 5), com
+#: ``{item}`` = "Focaccia e Brioche". A falta em parte não junta: cada item diz
+#: quanto falta dele, numa oração própria.
 PROMISE_ITEMS_SITUATION: dict[str, str] = {
-    "not_ready": "não vão ficar prontos{day}",
-    "may_not_be_ready": "podem não ficar prontos{day}",
-    "late": "estão atrasados",
-    "out_of_stock": "estão em falta",
-    "may_be_missing": "podem faltar",
+    "not_ready": "não vamos ter {item}{day}",
+    "may_not_be_ready": "pode ser que não tenhamos {item}{day}",
+    "late": "o preparo de {item} atrasou",
+    "out_of_stock": "estamos sem {item}",
+    "may_be_missing": "pode ser que faltem {item}",
 }
 
 #: O que sai do pedido no "tirar o item": um item inteiro, vários inteiros, ou só a parte que falta.
@@ -435,22 +438,9 @@ def promise_proposal(
     opening = PROMISE_PROPOSAL_COPY["opening" if shop else "opening_without_shop"].format(
         customer_name_greeting=greeting, shop_name=shop,
     )
-    told = [
-        (
-            str(item["name"]),
-            PROMISE_ITEM_SITUATION[item["situation"]].format(day=item.get("day", ""), lacking=item.get("lacking", "")),
-        )
-        for item in items
-    ]
-    if len(told) == 1:
-        happened = PROMISE_PROPOSAL_COPY["one_item"].format(
-            item=told[0][0], what=told[0][1], order_ref_short=order_ref_short,
-        )
-    else:
-        entries = _grouped_entries(items)
-        happened = PROMISE_PROPOSAL_COPY["many_items"].format(
-            items=_listed(entries), order_ref_short=order_ref_short,
-        )
+    happened = PROMISE_PROPOSAL_COPY["happened"].format(
+        items=_listed(_grouped_entries(items)), order_ref_short=order_ref_short,
+    )
     return " ".join((opening, happened, PROMISE_PROPOSAL_COPY[proposal].format(**values)))
 
 
@@ -481,17 +471,16 @@ def _grouped_entries(items: list[dict[str, str]]) -> list[str]:
     for key in order:
         if key[0] == "single":
             item = items[int(key[1])]
-            what = PROMISE_ITEM_SITUATION[item["situation"]].format(day=item.get("day", ""), lacking=item.get("lacking", ""))
-            entries.append(PROMISE_PROPOSAL_COPY["many_items_entry"].format(item=item["name"], what=what))
+            entries.append(PROMISE_ITEM_SITUATION[item["situation"]].format(
+                item=item["name"], day=item.get("day", ""), lacking=item.get("lacking", ""),
+            ))
             continue
         situation, day = key
         names = groups[key]
         if len(names) == 1:
-            what = PROMISE_ITEM_SITUATION[situation].format(day=day, lacking="")
-            entries.append(PROMISE_PROPOSAL_COPY["many_items_entry"].format(item=names[0], what=what))
+            entries.append(PROMISE_ITEM_SITUATION[situation].format(item=names[0], day=day, lacking=""))
         else:
-            what = PROMISE_ITEMS_SITUATION[situation].format(day=day)
-            entries.append(PROMISE_PROPOSAL_COPY["many_items_group"].format(items=_listed(names), what=what))
+            entries.append(PROMISE_ITEMS_SITUATION[situation].format(item=_listed(names), day=day))
     return entries
 
 

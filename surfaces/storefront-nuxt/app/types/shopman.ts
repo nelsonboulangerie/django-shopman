@@ -154,7 +154,6 @@ export interface CatalogProjection {
   items: CatalogItemProjection[]
   categories: CategoryProjection[]
   sections: CatalogSectionProjection[]
-  featured: CatalogItemProjection[]
   active_category_ref: string | null
   favorite_category_ref: string | null
   has_items: boolean

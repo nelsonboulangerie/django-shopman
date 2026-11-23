@@ -76,10 +76,24 @@ const sourceClock = computed(() =>
       <time :datetime="metadata.generated_at">{{ sourceClock }}</time> (há
       {{ age }} s)<span v-if="failed"> · a última consulta falhou</span></span
     >
-    <span v-else-if="metadata?.generated_at"
-      >Última leitura útil:
-      <time :datetime="metadata.generated_at">{{ clock }}</time> · há
-      {{ age }} s<span v-if="failed"> · atualização falhou</span></span
+    <!-- Cada bloco é inteiro (#3143): no teto do `inline`, a frase quebra ENTRE a
+         hora, a idade e a falha, nunca dentro de um deles ("há 3 / s"). O bloco é
+         `inline-block`, e não texto que não quebra: desce inteiro para a linha de baixo
+         e só quebra por dentro se sozinho não couber numa linha, então nunca vaza do
+         menu do Gestor (a trava de `orders-nuxt/tests/canonicalPilot.guardrails`). O
+         espaço entre blocos é explícito (`{{ " " }}`): o compilador apaga o espaço que
+         é só quebra de linha entre dois elementos, e sem ele não há onde quebrar. -->
+    <span v-else-if="metadata?.generated_at" data-read-freshness-useful
+      ><span class="inline-block" data-read-freshness-block
+        >Última leitura útil:
+        <time :datetime="metadata.generated_at">{{ clock }}</time></span
+      >{{ " " }}<span class="inline-block" data-read-freshness-block
+        >· há {{ age }} s</span
+      ><template v-if="failed"
+        >{{ " " }}<span class="inline-block" data-read-freshness-block
+          >· atualização falhou</span
+        ></template
+      ></span
     >
     <span v-else>Horário da leitura indisponível</span>
     <span v-if="realtimeLabel">Conexão: {{ realtimeLabel }}</span>

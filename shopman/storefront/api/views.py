@@ -82,6 +82,61 @@ def _session_customer_identity(session_key: str) -> dict:
 #: O código da recusa de estoque no envio do pedido (``shop.services.stock``).
 STOCK_REFUSAL_CODE = "insufficient_supply"
 
+# Recusas do envio que falam da SACOLA, não do formulário (#3267). O Core recusa
+# com a frase dele ("Sessão foi abandonada", "Sessão não encontrada: web:…") ou
+# pede para conferir itens de uma sacola que já virou pedido em outra aba
+# (``revision_changed``). Quem decide a frase ao cliente é o estado atual da
+# sacola (``checkout_service.refused_cart``), não o código: o mesmo
+# ``revision_changed`` é "sua sacola mudou" numa sacola viva e "este pedido já foi
+# enviado" numa sacola selada. Pelo código, sem importar o Orderman.
+_BAG_REFUSAL_CODES = frozenset(
+    {"revision_changed", "already_committed", "already_abandoned", "abandoned", "not_found", "empty_session"}
+)
+#: O selo do Core ainda corre com esta mesma chave (o recibo da loja expirou antes).
+_CORE_SEAL_IN_PROGRESS = "in_progress"
+
+ORDER_ALREADY_SENT = "Este pedido já foi enviado."
+BAG_GONE = "Sua sacola ficou vazia antes do envio."
+SEAL_IN_PROGRESS = "Seu pedido ainda está sendo enviado. Aguarde a confirmação nesta tela."
+
+
+def _bag_gone_response() -> Response:
+    return Response(
+        {
+            "detail": BAG_GONE,
+            "error_code": "cart_empty",
+            "actions": [{"ref": "menu", "kind": "link", "label": "Ver o cardápio", "href": "/menu"}],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _order_already_sent_response(request, order_ref: str) -> Response:
+    # A mesma passagem do envio que deu certo: o acompanhamento abre neste
+    # navegador e a sacola enviada não volta a aparecer.
+    order_service.grant_order_access(request, order_ref)
+    request.session.pop("cart_session_key", None)
+    order_url = f"/pedido/{order_ref}"
+    return Response(
+        {
+            "detail": ORDER_ALREADY_SENT,
+            "error_code": "order_already_sent",
+            "next_url": order_url,
+            "actions": [{"ref": "view_order", "kind": "link", "label": "Ver o pedido", "href": order_url}],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _refused_bag_response(request, *, session_key: str) -> Response | None:
+    """A frase da loja para a sacola que saiu ou sumiu; ``None`` se ela segue viva."""
+    bag = checkout_service.refused_cart(session_key, CHANNEL_REF)
+    if bag.sent_order_ref:
+        return _order_already_sent_response(request, bag.sent_order_ref)
+    if bag.gone:
+        return _bag_gone_response()
+    return None
+
 
 def _stock_refusal_payload(exc: Exception, *, session_key: str = "", request=None) -> dict | None:
     """A recusa de estoque no envio, com o item (plano EXCELENCIA-STOREFRONT, P1-11).
@@ -250,10 +305,18 @@ class CheckoutView(APIView):
         # Check cart has items
         cart = _cart_data(request)
         if cart.is_empty:
-            return Response(
-                {"detail": "Sua sacola está vazia."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            # Vazia AGORA, com a tela mostrando itens: outra aba já a enviou, ou ela
+            # foi encerrada/apagada. A recusa diz qual e leva à saída certa.
+            cart_session_key = str(request.session.get("cart_session_key") or "")
+            if not cart_session_key:
+                # Sem chave: o envio que deu certo a tira da sessão. A outra aba deste
+                # navegador, com a revisão ainda aberta, chega aqui; o pedido dela é o
+                # que este navegador acabou de enviar. Dizer "ficou vazia" mentiria.
+                sent_order_ref = checkout_service.recently_sent_order_ref(request, CHANNEL_REF)
+                if sent_order_ref:
+                    return _order_already_sent_response(request, sent_order_ref)
+            refused = _refused_bag_response(request, session_key=cart_session_key)
+            return refused or _bag_gone_response()
 
         # Item de coleção exclusiva de grupo que o visitante não integra (pôs na sacola
         # quando era do grupo, ou o grupo mudou): o pedido não fecha com ele. A decisão é
@@ -610,6 +673,17 @@ class CheckoutView(APIView):
             stock_refusal = _stock_refusal_payload(exc, session_key=session_key, request=request)
             if stock_refusal is not None:
                 return Response(stock_refusal, status=status.HTTP_400_BAD_REQUEST)
+            order_error = checkout_service.map_order_error(exc)
+            if order_error is not None and order_error.error_code in _BAG_REFUSAL_CODES:
+                refused = _refused_bag_response(request, session_key=session_key)
+                if refused is not None:
+                    return refused
+            if order_error is not None and order_error.error_code == _CORE_SEAL_IN_PROGRESS:
+                # O código que a tela já sabe esperar: confere até o pedido aparecer.
+                return Response(
+                    {"detail": SEAL_IN_PROGRESS, "error_code": "mutation_in_progress"},
+                    status=status.HTTP_409_CONFLICT,
+                )
             mapped = checkout_service.map_checkout_error(exc)
             if mapped:
                 field, message = next(iter(mapped.items()))
@@ -617,7 +691,6 @@ class CheckoutView(APIView):
                     {"detail": message, "field": field, "errors": mapped},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            order_error = checkout_service.map_order_error(exc)
             if order_error is not None:
                 return Response(
                     {

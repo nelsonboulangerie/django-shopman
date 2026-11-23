@@ -3050,6 +3050,9 @@
             "_reconcile_pending_links",
             "order_requirement_for_work_order",
             "_order_sku_quantity",
+            "_SHELF_HOLD_STATUSES",
+            "_shelf_quantities",
+            "_production_quantity",
             "_adjusted_active_order_ids",
             "_append_order_work_order_link",
             "_unlink_inactive_order",
@@ -3068,7 +3071,8 @@
       ],
       "domains": [
         "craftsman",
-        "orderman"
+        "orderman",
+        "stockman"
       ],
       "ports": [],
       "events": [],
@@ -8057,7 +8061,11 @@
             "process",
             "process_ops",
             "map_checkout_error",
-            "map_order_error"
+            "map_order_error",
+            "RefusedCart",
+            "refused_cart",
+            "RECENTLY_SENT_WINDOW",
+            "recently_sent_order_ref"
           ]
         }
       ],
@@ -8065,6 +8073,7 @@
         "service"
       ],
       "domains": [
+        "guestman",
         "offerman",
         "orderman",
         "stockman"
@@ -15261,6 +15270,10 @@
             "_over_plan_recovery",
             "pay_at_pickup_other_day",
             "_refuse_pay_at_pickup_other_day",
+            "MANAGER_PIN_REFUSED",
+            "MANAGER_BADGE_REFUSED",
+            "MANAGER_PIN_RECOVERY",
+            "MANAGER_BADGE_RECOVERY",
             "validate_manager_override",
             "_MANAGER_PIN_VERDICTS",
             "manager_pin_checked_before_transaction",
@@ -19776,6 +19789,8 @@
             "connect",
             "on_production_changed",
             "freeze_work_order_cost",
+            "COST_GAP_ALERT_TYPE",
+            "_alert_cost_gap",
             "logger"
           ]
         }

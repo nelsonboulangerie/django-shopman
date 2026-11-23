@@ -3778,6 +3778,14 @@ def _over_plan_recovery(signed, current) -> str:
     )
 
 
+#: A assinatura do gerente que não conferiu: o fato e o próximo passo (#2667).
+MANAGER_PIN_REFUSED = "O PIN não confere com o gerente escolhido. Digite de novo."
+MANAGER_BADGE_REFUSED = "Este crachá não é de um gerente. Passe o crachá de um gerente ou digite o PIN."
+#: O passo seguinte pela porta usada (as frases aprovadas na #2691).
+MANAGER_PIN_RECOVERY = "Confira o gerente e digite o PIN de novo."
+MANAGER_BADGE_RECOVERY = "Passe o crachá de novo, ou escolha o gerente e digite o PIN."
+
+
 def validate_manager_override(
     approval: dict | None,
     *,
@@ -3785,7 +3793,7 @@ def validate_manager_override(
     action: str,
     message: str = "Esta operação exige aprovação gerencial.",
     recovery_required: str = "Peça a um gerente autorizado para aprovar com o crachá ou o PIN.",
-    recovery_invalid: str = "Revise o gerente e o PIN.",
+    recovery_invalid: str | None = None,
 ):
     """Gate an exceptional POS operation behind the manager PIN challenge.
 
@@ -3818,12 +3826,14 @@ def validate_manager_override(
     # 28/10/2026; ver `_verify_manager_pin`).
     approver = _verify_manager_badge(badge) if badge else _verify_manager_pin(username, pin)
     if approver is None:
+        # O fato e o próximo passo, pela porta que o gerente usou (#2667): "Aprovação
+        # gerencial inválida." era jargão sem saída, e o Gestor mostra só esta frase.
         raise PosIntentError(
             code="manager_approval_invalid",
-            message="Aprovação gerencial inválida.",
+            message=MANAGER_BADGE_REFUSED if badge else MANAGER_PIN_REFUSED,
             field="manager_approval",
             focus="approval",
-            recovery=recovery_invalid,
+            recovery=recovery_invalid or (MANAGER_BADGE_RECOVERY if badge else MANAGER_PIN_RECOVERY),
         )
     # Quem assina é o APROVADOR resolvido, não o que veio no corpo: com crachá o
     # `username` chega vazio, e a linha de auditoria saía `approved_by=` em
@@ -4727,8 +4737,17 @@ def _compute_engine_delivery_fee(payload: dict) -> DeliveryFeeResolution:
             fee_q=0, source="blocked", distance_km=distance_km, blocked=True, out_of_area=True,
         )
 
-    source = "zone" if postal_code or neighborhood else "distance"
-    if distance_km is None and not (postal_code or neighborhood):
+    # A origem é a que DECIDIU a taxa, não a que o endereço tem (#3311). Antes, CEP
+    # ou bairro preenchidos davam "zone" sempre, e a tela dizia "Tabela do
+    # bairro/CEP" para a taxa que a faixa de distância calculou. Zona é a que
+    # casou; sem ela, a faixa (com distância) ou a taxa padrão da loja (sem).
+    from shopman.shop.services import promotions as promotion_service
+
+    if promotion_service.match_delivery_zone(postal_code, neighborhood) is not None:
+        source = "zone"
+    elif distance_km is not None:
+        source = "distance"
+    else:
         source = "default"
     waiver = _delivery_fee_waiver(base_fee_q, payload)
     return DeliveryFeeResolution(
