@@ -484,6 +484,24 @@ def _on_production_changed(sender, product_ref, date, action, work_order, **kwar
         # O selo de fornada pronta nasce aqui e vale 60 min. O storefront precisa saber
         # na hora — é o badge mais perecível do sistema.
         emit_fomo_for_sku(work_order.output_sku, reason="production_finished")
+        # A vitrine pública (cardápio e página do produto) ouve a prateleira, e a
+        # assinatura dela não muda quando um produto já disponível ganha fornada:
+        # sem este aviso, o selo "Fornada pronta" só chegava no próximo poll (#2807).
+        sku = work_order.output_sku
+        if sku:
+            _publish_after_commit(("shelf-fresh", sku), lambda: _publish_fresh_batch(sku))
+
+
+def _publish_fresh_batch(sku: str) -> None:
+    try:
+        from django_eventstream import send_event
+
+        from shopman.shop.services import public_shelf
+
+        for ref in sorted(set(_channels_for_sku(sku)) & public_shelf.public_channels()):
+            send_event(public_shelf.shelf_channel(ref), public_shelf.SHELF_EVENT, {"sku": sku})
+    except Exception:
+        logger.warning("SSE fresh batch shelf emit failed sku=%s", sku, exc_info=True)
 
 
 def _on_operator_alert_saved(sender, instance, created, **kwargs):

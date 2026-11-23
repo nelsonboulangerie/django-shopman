@@ -236,7 +236,7 @@ describe('surface UX guardrails', () => {
     expect(productTile).toContain("import { tileBadge } from '~/presentation/menu'")
     // Indisponível = etiqueta neutra na foto (P&B); demais estados seguem tileBadge.
     expect(productTile).toContain('v-if="item.availability === \'unavailable\'"')
-    expect(productTile).toContain('v-else-if="badge"')
+    expect(productTile).toContain('v-else-if="badge || fomo.length"')
     expect(productTile).not.toContain('<UiPopover')
     expect(productTile).not.toContain('availabilityVariant')
     expect(productTile).not.toContain('item.allergens.length || item.available_qty')

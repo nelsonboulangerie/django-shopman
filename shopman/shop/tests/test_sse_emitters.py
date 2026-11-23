@@ -401,3 +401,27 @@ def test_pickup_handed_over_tells_the_tracking_page(
         and call.args[2]["status"] == "completed"
         for call in mock_send.call_args_list
     )
+
+
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_finished_batch_wakes_the_public_shelf(
+    mock_send, baguete, listings_for_baguete, django_capture_on_commit_callbacks,
+):
+    """Fornada pronta acorda a vitrine pública (#2807): a assinatura da prateleira não
+    muda quando um produto já disponível ganha fornada, e o selo "Fornada pronta"
+    só chegava ao cardápio no próximo poll."""
+    from types import SimpleNamespace
+
+    from shopman.shop.handlers._sse_emitters import _on_production_changed
+    from shopman.shop.services import public_shelf
+
+    work_order = SimpleNamespace(ref="WO-1", status="finished", output_sku="BAGUETE")
+    with patch.object(public_shelf, "_PUBLIC_CHANNELS", {"web"}):
+        with django_capture_on_commit_callbacks(execute=True):
+            _on_production_changed(
+                None, product_ref="BAGUETE", date=date.today(), action="finished", work_order=work_order
+            )
+
+    shelf_calls = [call.args for call in mock_send.call_args_list if call.args[0].startswith("shelf-")]
+    assert shelf_calls == [("shelf-web", public_shelf.SHELF_EVENT, {"sku": "BAGUETE"})]
