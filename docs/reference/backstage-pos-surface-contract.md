@@ -30,7 +30,8 @@ surface depends on it.
 | --- | --- | --- | --- |
 | POS projection | GET | `/api/v1/backstage/pos/` | `build_pos`, `build_pos_shift_summary`, `build_pos_tabs` |
 | Create tab | POST | `/api/v1/backstage/pos/tabs/` | `register_pos_tab` |
-| Open tab | POST | `/api/v1/backstage/pos/tabs/{tab_ref}/open/` | `open_pos_tab` |
+| Open tab (responde `created`: esta abertura pôs a comanda em uso) | POST | `/api/v1/backstage/pos/tabs/{tab_ref}/open/` | `open_pos_tab_reporting` |
+| Próxima livre, reservada pelo servidor (#2443) | POST | `/api/v1/backstage/pos/tabs/next-free/` | `reserve_next_free_pos_tab` |
 | Save tab | POST | `/api/v1/backstage/pos/tabs/save/` | `save_pos_tab` |
 | Clear tab | DELETE | `/api/v1/backstage/pos/tabs/{session_key}/clear/` | `clear_pos_tab` |
 | Review sale | POST | `/api/v1/backstage/pos/sale/review/` | `review_sale` |

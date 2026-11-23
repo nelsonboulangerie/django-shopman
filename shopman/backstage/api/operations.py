@@ -7661,7 +7661,7 @@ class POSTabOpenView(ServerTimingMixin, APIView):
 
     def post(self, request, tab_ref: str):
         try:
-            session = pos_tabs_service.open_pos_tab(
+            opening = pos_tabs_service.open_pos_tab_reporting(
                 channel_ref=POS_CHANNEL_REF,
                 tab_ref=tab_ref,
                 actor=_actor_pos(request),
@@ -7670,7 +7670,40 @@ class POSTabOpenView(ServerTimingMixin, APIView):
         except Exception as exc:
             logger.debug("pos_tab_open_failed tab_ref=%s", tab_ref, exc_info=True)
             return Response({"detail": public_error_detail(exc, "Falha ao abrir comanda.")}, status=400)
-        return Response(build_open_tab(session))
+        # ``created``: foi esta abertura que pôs a comanda em uso. É a deixa do PDV
+        # para devolvê-la ao quadro se ele sair dela vazia (#2443).
+        return Response({**build_open_tab(opening.session), "created": opening.created})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Reserve and open the next free numeric POS tab",
+        responses={200: OpenApiResponse(description="Tab payload of the reserved tab.")},
+    ),
+)
+class POSTabReserveNextFreeView(ServerTimingMixin, APIView):
+    """A "Próxima livre" escolhida e reservada pelo servidor, numa ida só (#2443).
+
+    Duas estações que tocam juntas recebem comandas diferentes: a reserva é a
+    criação da conta, travada pelo banco.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+    server_timing_methods = ("POST",)
+
+    def post(self, request):
+        try:
+            body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+            session = pos_tabs_service.reserve_next_free_pos_tab(
+                channel_ref=POS_CHANNEL_REF,
+                operator_username=_username(request),
+                client_request_id=str(body.get("client_request_id") or ""),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({**build_open_tab(session), "created": True})
 
 
 @extend_schema_view(
