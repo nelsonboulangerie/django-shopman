@@ -385,16 +385,19 @@ createServer((req, res) => {
     return;
   }
   if (path === "/__visual/health") { send(res, 200, { ok: true }); return; }
-  // A trava do operador (kit): `lock` = ninguém operando; `lock-forced` = o gerente
-  // redefiniu o PIN e a troca é obrigatória. Destrave e troca sempre recusam: o
-  // spec mede a geometria da tela de PIN, inclusive com a recusa.
+  // A trava do operador (kit): `lock` = ninguém operando; `lock-forced` = a troca é
+  // obrigatória (o gerente redefiniu o PIN, ou o PIN é de antes dos 4 fixos) e quem
+  // está aqui já DESTRAVOU com o PIN de hoje: `locked: false`. Com o dispositivo
+  // travado, a trava mostra a escolha de usuário, e não a troca de quem ficou logado
+  // (P0 de 23/11, #3401). Destrave e troca sempre recusam: o spec mede a geometria
+  // da tela de PIN, inclusive com a recusa.
   if (scenario.startsWith("lock")) {
     if (path === "/api/v1/backstage/operator/session/") {
       const forced = scenario === "lock-forced";
       send(res, 200, {
         station: "GESTOR-1", workstation: null,
         operator: forced ? LOCK_PEOPLE[0] : null,
-        locked: true, pin_must_change: forced, authorized: false,
+        locked: !forced, pin_must_change: forced, authorized: false,
       });
       return;
     }

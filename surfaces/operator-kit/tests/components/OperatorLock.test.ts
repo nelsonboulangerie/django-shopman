@@ -8,7 +8,7 @@
 //
 // A regra de TEMPO (janela entre teclas) é pura e mora em `tests/operatorLock.test.ts`,
 // sem relógio falso — aqui o assunto é foco e o Enter.
-import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { mountSuspended, registerEndpoint } from "@nuxt/test-utils/runtime";
 import { flushPromises } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
@@ -18,10 +18,19 @@ import { PICK_QUIET_MS } from "../../app/composables/useIdentityCapture";
 
 const BADGE = "a1b2c3d4e5f6"; // 12 hex: o formato de `issue_badge`
 
+// "Não é você?" encerra a sessão pela MESMA rota do "Sair" do menu.
+const logoutCalls: string[] = [];
+registerEndpoint("/api/v1/backstage/operator/logout/", (event) => {
+  logoutCalls.push(event.method);
+  return {};
+});
+
 const unlock = vi.fn();
 const changePin = vi.fn();
 const reportBadgeLost = vi.fn();
 const mustChange = ref(false);
+const operator = ref<{ id: number; username: string; name: string } | null>(null);
+const locked = ref(false);
 const lostBadgeError = ref("");
 const unlockError = ref("");
 const PEOPLE = [
@@ -43,8 +52,9 @@ vi.mock("../../app/composables/useOperatorLock", () => ({
     changeError: ref(""),
     reportBadgeLost,
     lostBadgeError,
-    operator: ref(null),
+    operator,
     mustChange,
+    locked,
     busy: ref(false),
   }),
 }));
@@ -87,6 +97,8 @@ describe("OperatorLock — crachá", () => {
     unlock.mockReset().mockResolvedValue(true);
     changePin.mockReset();
     mustChange.value = false;
+    operator.value = null;
+    locked.value = false;
     vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
   });
 
@@ -154,6 +166,7 @@ describe("OperatorLock — crachá", () => {
 
   it("fica desligado durante a troca forçada de PIN", async () => {
     mustChange.value = true;
+    operator.value = PEOPLE[0]!;
     await mount();
 
     scan(BADGE);
@@ -205,6 +218,8 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
     unlock.mockReset().mockResolvedValue(true);
     changePin.mockReset();
     mustChange.value = false;
+    operator.value = null;
+    locked.value = false;
     vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
   });
 
@@ -574,6 +589,8 @@ describe("OperatorLock — diz que a sessão TROCA", () => {
     unlock.mockReset().mockResolvedValue(true);
     changePin.mockReset();
     mustChange.value = false;
+    operator.value = null;
+    locked.value = false;
     vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
   });
   afterEach(() => {
@@ -905,3 +922,46 @@ describe("OperatorLock — entrar com senha (BI-09)", () => {
     expect(form.props("extraBody")).toEqual({ perm: "backstage.operate_pos" });
   });
 });
+
+
+// P0 de 23/11 (depois do #3337): a troca forçada prendia quem não sabia o PIN da
+// conta que ficou logada. Ela é de quem ESTÁ operando, tem nome e tem saída.
+describe("OperatorLock — troca forçada de PIN", () => {
+  beforeEach(() => {
+    mustChange.value = true;
+    operator.value = PEOPLE[0]!;
+    locked.value = false;
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+    mustChange.value = false;
+    operator.value = null;
+  });
+
+  it("com o dispositivo destravado, é a troca de quem está logado, pelo nome", async () => {
+    const wrapper = await mount();
+    const forced = wrapper.findComponent({ name: "OperatorPinChange" });
+    expect(forced.exists()).toBe(true);
+    expect(forced.props("operatorName")).toBe("Bia Forno");
+    expect(forced.props("forced")).toBe(true);
+  });
+
+  it("com o dispositivo travado, mostra a escolha de usuário em vez da troca de quem ficou logado", async () => {
+    locked.value = true;
+    const wrapper = await mount();
+    expect(wrapper.findComponent({ name: "OperatorPinChange" }).exists()).toBe(false);
+    expect(wrapper.text()).toContain("Davi Sousa");
+  });
+
+  it("'Não é você?' encerra a sessão e volta à entrada", async () => {
+    const wrapper = await mount();
+    wrapper.findComponent({ name: "OperatorPinChange" }).vm.$emit("switchUser");
+    await vi.waitFor(() => expect(logoutCalls).toEqual(["POST"]));
+  });
+});
+
