@@ -173,7 +173,9 @@ def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
 
 #: A sequência declarada de efeitos A2 reversíveis num turno (spec 08 §5, [DECIDIDO]): o recebimento antes
 #: da sacola, para a sacola medir a data combinada. ``commit_order`` (A3) nunca entra nela.
-EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "change_cart", "set_payment")
+EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "set_delivery_address", "change_cart", "set_payment")
+#: O fechamento que perguntou por uma condição obrigatória (``present_terms.needs_*``), no estado de diálogo.
+CLOSING_KEY = "terms_closing"
 #: As mudanças materiais do carrinho (v2 4.7, propriedade 2): depois de uma delas, os termos de antes não valem.
 MATERIAL_CHANGES = frozenset(EFFECT_SEQUENCE)
 
@@ -468,7 +470,7 @@ class Engine:
                 state.subject = self.subject_of(ctx, event)
                 self._quote(ctx, state, budget, refresh=True)
                 requoted = True
-            elif action == "set_payment":
+            elif action in ("set_payment", "set_delivery_address"):
                 self._quote(ctx, state, budget, refresh=True)  # a condição mudou: termos novos
                 requoted = True
             elif action == "commit_order" and receipt.domain_refs.get("effect"):
@@ -847,7 +849,9 @@ class Engine:
         needs, answered_question = self._needs(understanding, previous_dialogue, epoch)
         state = TurnState(now=clock.now(), channel=event.channel_binding.channel,
                           identity=strongest_identity(subject.identity_evidence), profile=self.profile,
-                          needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer)
+                          needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer,
+                          closing=subject.cart_ref is not None and previous_dialogue.get(CLOSING_KEY) == subject.cart_ref,
+                          content_ref=event.content_ref)
         for need in needs:
             if state.answers_offer(need):
                 state.confirmation_problems[need.need_id] = confirmation_problem(
@@ -919,7 +923,11 @@ class Engine:
         terms_wait = None
         if asked is not None:
             dialogue = ask(dialogue, question_id=clock.new_id("q"), need_id=asked.need_id, epoch=epoch)
+        if presented is not None and not held and state.missing_conditions():
+            # O fechamento perguntou por uma condição: a resposta que mudar o carrinho volta aos termos.
+            dialogue = {**dialogue, CLOSING_KEY: subject.cart_ref}
         if presented is not None and not held and not state.missing_conditions():
+            dialogue = {key: value for key, value in dialogue.items() if key != CLOSING_KEY}
             # Termos que o cliente não viu (mensagem segurada) não esperam confirmação; nem os que ainda pedem
             # uma condição obrigatória (a parte perguntou por ela, e os termos não foram apresentados).
             terms = state.terms[subject.cart_ref]

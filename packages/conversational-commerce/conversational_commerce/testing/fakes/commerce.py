@@ -165,7 +165,9 @@ class FakeCommerceRead(FakeBase):
             items=items,
             total={"amount_minor": total, "currency": items[0]["unit_price"].currency},
             recipient={"subject_ref": owner or "unknown-subject"},
-            fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup")},
+            fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup"),
+                         **({"address_ref": self.state.address[cart_ref]["ref"]}
+                            if cart_ref in self.state.address else {})},
             conditions=([{"code": "payment_method", "value": self.state.payment[cart_ref]}]
                         if cart_ref in self.state.payment else []),
             valid_until=self.clock.at(TERMS_VALIDITY_SECONDS),
@@ -202,8 +204,20 @@ class FakeCommerceRead(FakeBase):
         if cart_ref not in self.state.carts or (ctx.subject is not None and owner != ctx.subject):
             raise PortError("object_forbidden", "carrinho inexistente ou de outro sujeito")
         methods = list(self.state.payment_methods)
-        missing = [] if self.state.payment.get(cart_ref) or len(methods) <= 1 else ["payment_method"]
-        return self._fact("requirements", {"missing": missing, "payment_method": methods}, "fake-channel")
+        value: dict = {"missing": []}
+        if self.state.fulfillment.get(cart_ref, {}).get("mode") == "delivery":
+            # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
+            address = self.state.address.get(cart_ref)
+            if address is None:
+                value["missing"].append("delivery_address")
+                value["delivery_address"] = []
+            elif address["missing"]:
+                value["missing"].append("delivery_address_details")
+                value["delivery_address_details"] = list(address["missing"])
+        if not self.state.payment.get(cart_ref) and len(methods) > 1:
+            value["missing"].append("payment_method")
+        value["payment_method"] = methods
+        return self._fact("requirements", value, "fake-channel")
 
     def read_policy(self, ctx: TrustedContext, policy_id: str) -> Fact:
         return self._fact("read_policy", POLICIES.get(policy_id), "fake-policies")
@@ -269,6 +283,15 @@ class FakeCommerceExecute(FakeBase):
         if command.action == "set_payment":
             self.state.payment[command.targets[0]] = command.parameters["method"]
             self.applied_refs[command.command_id] = {"method": command.parameters["method"]}
+        if command.action == "set_delivery_address":
+            # O sistema de registro lê o texto pela referência; um número na fala é o endereço inteiro,
+            # sem número falta o número (a régua sintética do que falta). O recibo leva só a referência.
+            text = _content(command.parameters["source"])
+            cart = command.targets[0]
+            ref = f"addr-{cart}"
+            self.state.address[cart] = {"text": text, "ref": ref,
+                                        "missing": [] if any(ch.isdigit() for ch in text) else ["number"]}
+            self.applied_refs[command.command_id] = {"address_ref": ref}
         if command.action == "set_fulfillment":
             current = self.state.fulfillment.setdefault(command.targets[0], {})
             current.update(command.parameters)
@@ -332,6 +355,11 @@ class FakeCommerceExecute(FakeBase):
         if command.action == "set_payment":
             method = command.parameters.get("method")
             return None if method in self.state.payment_methods else ErrorCode.INVALID_CONTENT
+        if command.action == "set_delivery_address":
+            if set(command.parameters) != {"source"} or not _content(command.parameters.get("source")):
+                return ErrorCode.INVALID_CONTENT
+            mode = self.state.fulfillment.get(command.targets[0], {}).get("mode")
+            return None if mode == "delivery" else ErrorCode.FULFILLMENT_UNAVAILABLE
         if command.action == "change_cart":
             lines = command.parameters.get("lines")
             good = isinstance(lines, (list, tuple)) and lines and all(
@@ -376,3 +404,8 @@ class FakeCommerceExecute(FakeBase):
                                     error={"code": "provider_unavailable", "retry": "never"})
         self.by_key[key] = (command.content_hash, receipt)
         return receipt
+
+
+def _content(source) -> str:
+    """O texto da fala pela referência protegida (no mundo falso, ``text:<fala>``)."""
+    return source[len("text:"):].strip() if isinstance(source, str) and source.startswith("text:") else ""

@@ -26,6 +26,14 @@ TEMPLATES = (
     # ``requirements.<carrinho>``. Um molde por condição; o genérico diz só o que falta.
     Template("present_terms.needs_payment_method", "1", MOVE, "How would you like to pay? {payment_method}",
              {"payment_method": SlotSpec(("fact",), "payment_method")}),
+    # A entrega (spec 08 §6): o endereço, o que falta nele (lista lastreada no fato) e o complemento.
+    Template("present_terms.needs_delivery_address", "1", MOVE,
+             "What is the delivery address? Send your location or write street, number and district."),
+    Template("present_terms.needs_delivery_address_details", "1", MOVE,
+             "For the delivery, tell me {delivery_address_details}.",
+             {"delivery_address_details": SlotSpec(("fact",), "delivery_address_details")}),
+    Template("present_terms.needs_delivery_complement", "1", MOVE,
+             "Is there a complement (apartment, block)? If not, just say \"no complement\"."),
     Template("present_terms.needs", "1", MOVE, "Before I can place the order I still need: {missing}.",
              {"missing": SlotSpec(("fact",), "missing")}),
     Template("present_terms.changed", "1", MOVE,

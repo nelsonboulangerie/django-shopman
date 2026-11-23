@@ -49,9 +49,21 @@ o estado do recibo de sucesso) e mostra o carrinho pelos termos novos (`{items}`
 caminho dela para acompanhar) e o total pelo pedido lido depois do efeito (`{total}`);
 `present_terms.confirm` mostra `{items}`, `{total}`, `{fulfillment}` e `{conditions}` do mesmo
 fato dos termos. Com uma condição obrigatória ausente (`requirements.<carrinho>`, spec 03), a parte do
-`present_terms` pergunta por ela: `present_terms.needs_<código>` (hoje, `needs_payment_method`, com as
-opções do canal num espaço de LISTA lastreado no fato) ou o genérico `present_terms.needs`
-(`{missing}`); os termos não se apresentam, e nenhuma pergunta de confirmação nasce. O molde da casa mantém esses espaços, como todos.
+`present_terms` pergunta por ela: `present_terms.needs_<código>` (`needs_payment_method`, com as
+opções do canal num espaço de LISTA lastreado no fato; `needs_delivery_address` e
+`needs_delivery_complement`, sem espaço; `needs_delivery_address_details`, com a lista do que falta) ou
+o genérico `present_terms.needs` (`{missing}`); os termos não se apresentam, e nenhuma pergunta de
+confirmação nasce.
+
+**Formatador de referência.** Há valor que o lastro carrega só como referência opaca, porque o texto é
+pessoal (o endereço da entrega: o recibo traz `address_ref`). Quem o diz em texto é um formatador da casa
+que resolve a referência, e ele segue quatro regras:
+- recebe só a referência do lastro, nunca texto vindo do modelo;
+- resolve só o que é do próprio sujeito da conversa;
+- o texto existe só no envio (o `ReplyPlan` grava espaços e referências, e o corpo vive só durante o
+  envio, em `bodies`);
+- quando não resolve, levanta `UnresolvedReference`: o espaço fica vazio, a verificação acha
+  `reference_unresolved` e SEGURA a mensagem. Nunca sai frase sem o valor, nem o valor de outro sujeito. O molde da casa mantém esses espaços, como todos.
 
 O adaptador entrega os moldes dele ao `Engine` em `house_templates`, pelo `template_id`. Cada molde
 da casa troca a frase de um molde do pacote e mantém o movimento e os espaços (nome, lastro aceito

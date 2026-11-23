@@ -91,6 +91,10 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
     # A forma de pagamento escolhida (``engine/moves/set_payment.py``), dita pelo recibo.
     Template("set_payment.done", "1", "set_payment", "Done: payment by {method}.",
              {"method": SlotSpec(("receipt:success",), "method")}),
+    # O endereço da entrega (``engine/moves/set_delivery_address.py``): o recibo traz só a referência
+    # opaca; quem a resolve em texto é o formatador de referência da casa (spec 06), só no envio.
+    Template("set_delivery_address.done", "1", "set_delivery_address", "Done: delivery to {address}.",
+             {"address": SlotSpec(("receipt:success",), "address_ref")}),
     Template("commit_order.done", "2", "commit_order", "Your order {order} is placed. Total: {total}. Track it: {track}.",
              {"order": SlotSpec(("receipt:success",), "effect"), "total": SlotSpec(("fact",), "total"),
               "track": SlotSpec(("receipt:success",), "effect")}),

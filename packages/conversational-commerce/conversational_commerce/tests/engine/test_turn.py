@@ -16,7 +16,8 @@ from .helpers import CTX, SHADOW, WITH_MODEL, engine, message
 def test_moves_are_discovered_by_module_name():
     assert sorted(registry()) == ["acknowledge", "amend_order", "ask_clarification", "cancel_order", "change_cart",
                                   "commit_order", "cover_readings", "grant_discount", "handoff", "inform",
-                                  "inform_limitation", "open_case", "present_terms", "recommend", "set_fulfillment", "set_payment",
+                                  "inform_limitation", "open_case", "present_terms", "recommend",
+                                  "set_delivery_address", "set_fulfillment", "set_payment",
                                   "verify_with_staff", "wait"]
 
 

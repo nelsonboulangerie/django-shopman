@@ -22,6 +22,15 @@ from .verify import PhraseRule, RenderedClaim, RenderedPart, Segment, VerifyResu
 Formatter = Callable[[Any], str]
 
 
+class UnresolvedReference(Exception):
+    """O formatador de REFERÊNCIA (spec 06) não resolveu o valor: o espaço fica vazio e a verificação segura.
+
+    É o mecanismo de quem diz em texto o que o lastro carrega só como referência opaca (o endereço da
+    entrega, P17): o lastro guarda a referência, o texto existe só no envio, e a falha nunca vira frase
+    sem o valor nem o valor de outro sujeito.
+    """
+
+
 def plain(value: Any) -> str:
     """Formatação neutra. Dinheiro, data e quantidade na voz da casa são do adaptador."""
     if isinstance(value, bool):
@@ -68,7 +77,13 @@ def render_part(spec: PartSpec, template: Template, evidence: Evidence,
         accepted = set(evidence.kinds_of(backing, ref)) & set(template.slots[slot].accepts)
         if evidence.problem(backing, ref) is None and accepted:
             value = evidence.value(backing, ref, template.slots[slot].field)
-            segments.append(Segment(formatters.get(slot, plain)(value), slot))
+            try:
+                segments.append(Segment(formatters.get(slot, plain)(value), slot))
+            except UnresolvedReference:
+                segments.append(Segment("", slot))
+                claims.append(RenderedClaim(slot, backing, ref, unresolved=True))  # a verificação segura
+                cursor = match.end()
+                continue
         else:
             segments.append(Segment("", slot))  # lastro que não vale ou não serve: a verificação segura
         claims.append(RenderedClaim(slot, backing, ref))

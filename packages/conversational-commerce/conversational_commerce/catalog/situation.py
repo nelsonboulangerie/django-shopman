@@ -70,6 +70,9 @@ class Situation(Value):
     fulfillment_is_absolute: bool | None = None
     # Pagamento: a forma pedida está entre as que o canal oferece (``commerce_read.requirements``).
     payment_method_offered: bool | None = None
+    # Endereço: a fala chega por referência protegida (``content_ref``) e a leitura não traz campo nenhum
+    # (quem lê o endereço é o executor da casa, no texto original, dentro do efeito; P17).
+    address_by_reference: bool | None = None
 
     # Compromisso vinculante.
     current_terms_hash: Hash | None = None

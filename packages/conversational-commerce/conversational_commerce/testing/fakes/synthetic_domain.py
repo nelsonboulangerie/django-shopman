@@ -81,3 +81,5 @@ class SyntheticState:
     # carrinho → forma de pagamento escolhida; e as formas que o canal oferece
     payment: dict[str, str] = field(default_factory=dict)
     payment_methods: tuple[str, ...] = PAYMENT_METHODS
+    # carrinho → endereço da entrega (só no sistema de registro): o texto, a referência opaca e o que falta
+    address: dict[str, dict] = field(default_factory=dict)
