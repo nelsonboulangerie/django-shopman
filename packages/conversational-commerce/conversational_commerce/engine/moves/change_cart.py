@@ -44,6 +44,8 @@ def propose(state, need):
     fields = _line(need)
     if fields is None or state.subject.cart_ref is None or need.need_id in state.refused:
         return None
+    if state.changed_under_offer(need):
+        return None  # já mudou neste turno, com termos no ar: a decisão refeita apresenta os termos novos
     group = lines(state)
     items = [_line(other)["item"] for other in group]
     if len(set(items)) != len(items):

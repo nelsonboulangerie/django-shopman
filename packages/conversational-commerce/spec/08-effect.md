@@ -165,6 +165,13 @@ molde mais completo que o lastro sustenta: sem os termos novos (carrinho vazio, 
 `change_cart.done_receipt` diz só o efeito; sem o total do pedido (leitura que falha, ou fato sem
 `total`), `commit_order.done_order` diz o pedido e onde acompanhar.
 
+**Mudança com termos no ar.** Se o carrinho muda (recibo de sucesso do `change_cart`) enquanto a
+pergunta dos termos está no ar ("pode fechar" → resumo → "na verdade 4"), os termos de antes deixam
+de valer (v2 4.7, propriedade 2). A decisão é refeita, ligada à anterior (N14): a necessidade da
+mudança passa a ser atendida pelo `present_terms`, com os termos cotados depois do efeito, e o
+`change_cart` não é proposto de novo. O "sim" seguinte responde ao documento novo
+(`TurnState.changed_under_offer`).
+
 **Termos apresentados no turno de uma mudança.** Se o mesmo turno muda o carrinho e apresenta os
 termos ("põe mais um e fecha"), a decisão é refeita sobre os termos cotados depois do efeito,
 ligada à anterior (`parent_decision_id`, N14), como depois de uma recusa. A decisão gravada e a

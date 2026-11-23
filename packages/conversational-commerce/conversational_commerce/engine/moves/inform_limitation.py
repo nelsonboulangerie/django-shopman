@@ -47,6 +47,8 @@ def _handled(state, need) -> bool:
     moves = registry()
     if state.answers_offer(need):
         names = ("commit_order", "present_terms")
+    elif state.changed_under_offer(need):
+        names = ("present_terms",)  # a mudança já feita com termos no ar: quem atende são os termos novos
     elif _fact_missing(state, need):
         names = ("verify_with_staff",)
     else:

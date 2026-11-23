@@ -850,7 +850,10 @@ class Engine:
         # os termos novos, ligada à anterior (N14), para a decisão gravada e a pergunta no ar citarem o
         # MESMO documento.
         presents = any(decision.candidates[i].move == "present_terms" for i in decision.chosen)
-        if state.refused or (requoted and presents):
+        # A mudança feita com termos no ar pede termos novos (v2 4.7, propriedade 2): a decisão refeita
+        # apresenta o documento novo para a confirmação nova.
+        changed_under_offer = requoted and any(state.changed_under_offer(need) for need in needs)
+        if state.refused or (requoted and presents) or changed_under_offer:
             self._quote(ctx, state, budget)
             snapshot = self._snapshot(ctx, episode, trace_id, decision.id, state, dialogue)
             decision = self._decide(state, needs, snapshot, trace_id, parent=decision.decision_id)
