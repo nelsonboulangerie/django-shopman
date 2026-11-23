@@ -106,6 +106,8 @@ TEAM_TOPICS = {
 #: Copy da casa (registro ``OmotenashiCopy``, editável no Admin).
 TEAM_COPY_KEY = "CONCIERGE_PARTS_TEAM"
 ORDER_WITH_TEAM_COPY_KEY = "CONCIERGE_PARTS_ORDER_WITH_TEAM"
+CART_NO_BATCH_COPY_KEY = "CONCIERGE_CART_NO_BATCH_ON_DAY"
+CART_NEXT_BATCH_COPY_KEY = "CONCIERGE_CART_NEXT_BATCH"
 NOT_FOUND_COPY_KEY = "CONCIERGE_PARTS_NOT_FOUND"
 CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
 CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
@@ -847,6 +849,12 @@ _ORDER_FILLER = frozenset({
     "na", "no", "sacola", "carrinho", "entao", "ai", "tambem", "so", "tira", "tirar", "tire", "retira", "retirar",
     "remove", "remover", "exclui", "excluir", "isso", "esse", "essa",
 })
+#: O dia e o recebimento dito junto com o pedido ("para retirar amanhã às 16h"): não são
+#: produto, e quem os lê é o fechamento (``order_closing.prefill``).
+_FULFILLMENT_WORDS = frozenset({
+    "hoje", "amanha", "depois", "retirada", "buscar", "busco", "busca", "pegar", "pego", "passo", "la", "loja",
+    "balcao", "entrega", "entregar", "horario", "hora", "horas", "manha", "tarde", "noite", "eu", "vou", "ir",
+})
 
 
 def _cart_authorized(conversation) -> bool:
@@ -1094,12 +1102,17 @@ def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemRea
     devolve mais de um (no turno, o Jev); sem ``pick``, nenhum modelo é chamado e o empate
     fica com o cliente. Ler não é agir: a autoridade de compra é do turno, não daqui.
     """
-    from . import dialogue
+    from . import dialogue, order_closing
     from . import tools as tools_module
 
     tokens = dialogue.words(act.span)
-    removing = bool(set(tokens) & _REMOVE_WORDS)
-    query = act.product or " ".join(t for t in tokens if t not in _ORDER_FILLER and not t.isdigit() and t not in dialogue._NUMBER_WORDS)
+    # "retirar" é tirar da sacola só sem dia, hora nem "para retirar" (WP-14, cartão 1).
+    removing = bool(set(tokens) & _REMOVE_WORDS) and not order_closing.fulfillment_cue(act.span)
+    query = act.product or " ".join(
+        t for t in tokens
+        if t not in _ORDER_FILLER and t not in _FULFILLMENT_WORDS and not any(ch.isdigit() for ch in t)
+        and t not in dialogue._NUMBER_WORDS
+    )
     if not query.strip():
         return None
     found = tools_module.execute("search_storefront", {}, context(query))
@@ -1143,7 +1156,18 @@ def _cart_change(act: Act, *, conversation, context, copy):
     item = items[0]
     name, sku = item.get("name", ""), item.get("sku", "")
     qty, relative = _order_qty(act)
-    if not removing and not item.get("can_order"):
+    on_day = tools_module.cart_day(context(act.span)) if not removing else None
+    if on_day is not None and not tools_module.orderable_on_cart_date(context(act.span), item, qty or 1):
+        # A sacola é para outro dia, e nesse dia não há fornada (WP-14): diz o dia, nunca o
+        # "Indisponível" seco de hoje, e oferece a próxima fornada quando a casa sabe qual é.
+        from shopman.shop.policies.order_date_before_batch import batch_day_phrase
+
+        text = _fill(copy(CART_NO_BATCH_COPY_KEY) or "", item=name, day=batch_day_phrase(on_day))
+        following = tools_module.next_batch_day(context(act.span), sku, qty or 1, on_day)
+        if following is not None:
+            text = " ".join((text, _fill(copy(CART_NEXT_BATCH_COPY_KEY) or "", day=batch_day_phrase(following))))
+        return PartReply(act, text=text, memo={"focus": {"ref": sku, "name": name}})
+    if not removing and not tools_module.orderable_on_cart_date(context(act.span), item, qty or 1):
         # Para o cliente é só "Indisponível" (regra da casa), e no lugar, o que a casa tem
         # (dono, 21/11/2026: "a Concierge DEVE fazer uso" das alternativas da Loja).
         text, memo, asks = _offer_alternatives(
@@ -1882,12 +1906,36 @@ def run(conversation, *, binding, decision, client=None):
         needed = CANCEL if decision.escalated_by == "cancel_order" else decision.intent
         if needed in TEAM_ACTS | OTHER_DESK_ACTS | {ALLERGY} and needed not in {act.act for act in found.acts}:
             found.acts.append(Act(needed, span=text.strip()[:300]))
+    # O dia, o recebimento e o horário ditos JUNTO com o pedido (WP-14, cartão 1): aplicados
+    # antes da sacola, que passa a medir a fornada da data. A parte que só dizia o
+    # recebimento ("eu vou aí buscar às 16h") fica atendida, nunca vira "vou verificar".
+    prefilled = {}
+    if any(act.act == ORDER for act in found.acts) and _cart_authorized(conversation):
+        prefilled = order_closing.prefill(conversation, text, binding=binding, channel_ref=channel_ref)
+        if prefilled:
+            found.acts = [act for act in found.acts if not (act.act == HOURS and _only_fulfillment(act.span))]
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)
     outcome = _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+    from .service import copy_message
+
+    note = order_closing.noted(prefilled, copy=copy_message)
+    if note and outcome.reply_text:
+        outcome.reply_text = "\n".join((note, outcome.reply_text))
     # Troca de assunto no meio do fechamento: a pergunta que estava no ar volta no fim.
     return order_closing.resume(conversation, outcome, binding=binding, channel_ref=channel_ref, memory=memory)
+
+
+def _only_fulfillment(span: str) -> bool:
+    """A parte só diz como e quando recebe ("eu vou aí buscar às 16h"), sem perguntar nada."""
+    from . import order_closing
+
+    folded = _fold(span)
+    # "entendeu?", "ok?", "certo?" no fim cobram atenção, não perguntam nada.
+    plain = re.sub(r"\b(?:entendeu|entendesse|ok|certo|ta|beleza|combinado|pode ser)\s*\?+", "", folded)
+    asks = "?" in plain or re.search(r"\b(?:abre|abrem|fecha|fecham|funciona|funcionam|que horas)\b", folded)
+    return order_closing.fulfillment_cue(span) and not asks
 
 
 def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos, team_decided=False):
