@@ -350,6 +350,77 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
   });
 });
 
+// O PIN de 4 fixos entra sozinho no quarto dígito (#3223, decisão do dono): sem o
+// Enter nem o Confirmar, depois do mesmo silêncio que separa o dedo do leitor.
+describe("OperatorLock — PIN de 4 fixos entra sozinho", () => {
+  const quiet = () => new Promise((resolve) => setTimeout(resolve, PICK_QUIET_MS + 40));
+  const keydown = (key: string) =>
+    ((document.activeElement ?? document.body) as HTMLElement).dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    );
+
+  beforeEach(() => {
+    unlock.mockReset().mockResolvedValue(true);
+    mustChange.value = false;
+    // A Bia já tem o PIN de 4 fixos; o Davi ainda tem o antigo (troca pendente).
+    eligibleList.value = [{ ...PEOPLE[0]!, pin_digits: 4 }, PEOPLE[1]!] as typeof PEOPLE;
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    eligibleList.value = [...PEOPLE];
+  });
+
+  it("o quarto dígito destrava, sem Enter", async () => {
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click"); // Bia
+
+    for (const key of ["1", "2", "3", "4"]) keydown(key);
+    await quiet();
+
+    expect(unlock).toHaveBeenCalledTimes(1);
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+
+  it("o toque no quarto botão do pad também destrava", async () => {
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click"); // Bia
+
+    const digits = wrapper.findAll("button").filter((b) => ["1", "2", "3", "4"].includes(b.text()));
+    for (const button of digits) await button.trigger("click");
+    await quiet();
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+
+  it("o PIN antigo, de quem ainda não trocou, segue esperando o Enter", async () => {
+    const wrapper = await mount();
+    await wrapper.findAll("button")[1]!.trigger("click"); // Davi
+
+    for (const key of ["1", "2", "3", "4"]) keydown(key);
+    await quiet();
+    expect(unlock).not.toHaveBeenCalled();
+
+    // E quem tem 6 dígitos ainda entra.
+    for (const key of ["5", "6", "Enter"]) keydown(key);
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 2, pin: "123456" });
+  });
+
+  it("crachá que começa com quatro dígitos destrava pelo crachá, não pelo PIN", async () => {
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click"); // Bia
+
+    scan("1234abcdef56");
+    await quiet();
+
+    expect(unlock).toHaveBeenCalledTimes(1);
+    expect(unlock).toHaveBeenCalledWith({ badge: "1234abcdef56" });
+  });
+});
+
 // ── Teclado de primeira, com o foco esquecido atrás da trava ─────────────────
 //
 // O achado do dono (03/10/2026): "quando a tela do PDV trava, na tela do PIN

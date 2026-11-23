@@ -66,7 +66,8 @@ describe("OperatorPinChange — teclado físico em todos os passos (PDV-25)", ()
 
     expect(wrapper.text()).toContain("Novo PIN");
     // O que o leitor de tela ouve do campo do passo novo: os 4 dígitos chegaram.
-    expect(wrapper.find("[data-operator-pin-pad] [aria-live]").text()).toBe("4 de no mínimo 4 dígitos");
+    // O PIN novo tem 4 fixos (#3223): o campo diz "de 4".
+    expect(wrapper.find("[data-operator-pin-pad] [aria-live]").text()).toBe("4 de 4 dígitos");
     expect(wrapper.find("[data-operator-lock]").element.contains(document.activeElement)).toBe(true);
   });
 
@@ -96,5 +97,42 @@ describe("OperatorPinChange — PIN igual ao atual (PDV-26)", () => {
     expect(wrapper.text()).toContain("Escolha um PIN diferente do atual.");
     expect(wrapper.text()).not.toContain("Repita o novo PIN");
     expect(wrapper.findComponent(OperatorPinChange).emitted("submit")).toBeUndefined();
+  });
+});
+
+describe("OperatorPinChange — o PIN novo tem 4 dígitos (#3223)", () => {
+  it("o atual pode ser o antigo, de 6; o novo para no quarto dígito", async () => {
+    const wrapper = await mount();
+    await type("123456");
+    await enter();
+    await type("567890");
+    await enter();
+    await type("5678");
+    await enter();
+
+    expect(wrapper.findComponent(OperatorPinChange).emitted("submit")).toEqual([
+      [{ currentPin: "123456", newPin: "5678" }],
+    ]);
+  });
+
+  it("com menos de 4 no PIN novo, não avança", async () => {
+    const wrapper = await mount();
+    await type("1234");
+    await enter();
+    await type("567");
+    await enter();
+
+    expect(wrapper.text()).toContain("Novo PIN");
+    expect(wrapper.text()).not.toContain("Repita o novo PIN");
+  });
+
+  it("a troca forçada não diz que foi o gerente: vale para o PIN antigo também", async () => {
+    mounted = await mountSuspended(InLock, {
+      attachTo: document.body,
+      props: { forced: true },
+      global: { stubs: { Icon: true } },
+    });
+    expect(mounted.text()).toContain("Seu PIN precisa ser trocado antes de operar.");
+    expect(mounted.text()).not.toContain("O gerente redefiniu");
   });
 });
