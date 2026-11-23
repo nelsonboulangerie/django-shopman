@@ -7689,9 +7689,11 @@ class POSTabReserveNextFreeView(ServerTimingMixin, APIView):
 
     def post(self, request):
         try:
+            body = request.data if isinstance(getattr(request, "data", None), dict) else {}
             session = pos_tabs_service.reserve_next_free_pos_tab(
                 channel_ref=POS_CHANNEL_REF,
                 operator_username=_username(request),
+                client_request_id=str(body.get("client_request_id") or ""),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)

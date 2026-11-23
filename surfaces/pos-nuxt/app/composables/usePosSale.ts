@@ -2343,7 +2343,11 @@ export function usePosSale(deps: PosSaleDeps) {
           "/api/v1/backstage/pos/tabs/{tab_ref}/open/",
           { tab_ref: tabRef },
         );
-      const payload = await action.call<POSTabPayload>(path);
+      // A reserva leva a chave da tentativa: repetida (a resposta se perdeu), ela
+      // devolve a mesma comanda em vez de pôr outra em uso.
+      const payload = options.nextFree
+        ? await action.call<POSTabPayload>(path, { body: { client_request_id: newClientRequestId() } })
+        : await action.call<POSTabPayload>(path);
       if (options.preserveDraft && cart.items.length) {
         if ((payload.items || []).length) {
           throw new Error("Esta comanda já possui pedido. Abra a comanda separadamente ou escolha uma comanda livre.");

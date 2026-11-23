@@ -47,6 +47,8 @@ describe("usePosSale.openNextSale", () => {
     expect(await h.sale.openNextSale()).toBe(true);
 
     expect(String(h.handles.actionCall.mock.calls[0]![0])).toContain("/tabs/next-free/");
+    // A reserva leva a chave da tentativa: repetida, devolve a mesma comanda.
+    expect(h.handles.actionCall.mock.calls[0]![1]).toMatchObject({ body: { client_request_id: expect.any(String) } });
     expect(h.sale.cart.tabRef).toBe("2");
     expect(h.sale.cart.salesMode).toBe("counter");
     expect(h.sale.inSaleView.value).toBe(true);

@@ -1965,7 +1965,7 @@ def _next_free_numeric_tab_ref(channel_ref: str) -> str:
     return str((numbers[-1] + 1) if numbers else 1).zfill(MAX_NUMERIC_TAB_REF_DIGITS)
 
 
-def reserve_next_free_pos_tab(*, channel_ref: str, operator_username: str) -> Session:
+def reserve_next_free_pos_tab(*, channel_ref: str, operator_username: str, client_request_id: str = "") -> Session:
     """A "Próxima livre" reservada no servidor, de forma atômica (#2443).
 
     O quadro escolhia a livre no navegador e abria pelo número: duas estações
@@ -1973,20 +1973,34 @@ def reserve_next_free_pos_tab(*, channel_ref: str, operator_username: str) -> Se
     da primeira. Aqui a reserva é a criação da conta, e a trava é a do banco (uma
     conta aberta por comanda, ``ord_uniq_open_session_handle``): quem perde a
     corrida leva a seguinte, nunca a mesma.
+
+    ``client_request_id``: a MESMA chamada repetida (a rede caiu antes da
+    resposta e o PDV tentou de novo) devolve a comanda que ela já reservou, em vez
+    de pôr mais uma em uso. A chave fica na conta (``pos.reservation_request_id``).
     """
     channel, _config = _channel_and_config(channel_ref)
+    request_id = str(client_request_id or "").strip()
+    if request_id:
+        already = Session.objects.filter(
+            channel_ref=channel.ref, state="open", data__pos__reservation_request_id=request_id,
+        ).first()
+        if already is not None:
+            return already
     for _attempt in range(_NEXT_FREE_ATTEMPTS):
         ref = _next_free_numeric_tab_ref(channel.ref)
         tab_display = _ensure_pos_tab(ref)
         try:
             with transaction.atomic():
+                data = _new_pos_tab_session_data(
+                    ref=ref, tab_display=tab_display, operator_username=operator_username,
+                )
+                if request_id:
+                    data["pos"] = {"reservation_request_id": request_id}
                 session = session_service.create_session(
                     channel.ref,
                     handle_type="pos_tab",
                     handle_ref=ref,
-                    data=_new_pos_tab_session_data(
-                        ref=ref, tab_display=tab_display, operator_username=operator_username,
-                    ),
+                    data=data,
                 )
         except IntegrityError:
             # silêncio-deliberado: outra estação reservou esta no mesmo instante;

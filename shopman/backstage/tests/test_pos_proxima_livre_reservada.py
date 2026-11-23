@@ -100,6 +100,17 @@ def test_quem_perde_a_corrida_leva_a_seguinte(pdv):
     assert Session.objects.filter(channel_ref="pdv", state="open", handle_ref="00000001").count() == 1
 
 
+def test_a_mesma_reserva_repetida_devolve_a_mesma_comanda(pdv):
+    """A resposta se perdeu e o PDV tentou de novo com a mesma chave: nada a mais em uso."""
+    first = pos_service.reserve_next_free_pos_tab(channel_ref="pdv", operator_username="fran", client_request_id="r-1")
+    again = pos_service.reserve_next_free_pos_tab(channel_ref="pdv", operator_username="fran", client_request_id="r-1")
+    other = pos_service.reserve_next_free_pos_tab(channel_ref="pdv", operator_username="fran", client_request_id="r-2")
+
+    assert again.pk == first.pk
+    assert other.handle_ref != first.handle_ref
+    assert Session.objects.filter(channel_ref="pdv", state="open").count() == 2
+
+
 def test_disputa_sem_fim_recusa_com_voz_de_balcao(pdv):
     _open("1", operator="joyce")
 
@@ -132,9 +143,11 @@ def test_o_quadro_diz_quem_abriu_pelo_primeiro_nome(pdv):
 def test_api_reserva_e_diz_que_criou(balcao):
     _open("1", operator="joyce")
 
-    response = balcao.post(NEXT_FREE_URL, content_type="application/json")
+    response = balcao.post(NEXT_FREE_URL, {"client_request_id": "api-1"}, content_type="application/json")
+    again = balcao.post(NEXT_FREE_URL, {"client_request_id": "api-1"}, content_type="application/json")
 
     assert response.status_code == 200, response.content
+    assert again.json()["session_key"] == response.json()["session_key"]
     body = response.json()
     assert body["tab_ref"] == "00000002"
     assert body["created"] is True

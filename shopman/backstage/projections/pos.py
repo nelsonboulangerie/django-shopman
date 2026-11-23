@@ -1537,8 +1537,10 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/tabs/next-free/",
-            payload_schema={},
-            idempotency="none",
+            payload_schema={"optional": ["client_request_id"]},
+            # Cada chamada reserva uma comanda NOVA: sem a chave, a repetição de
+            # uma chamada que perdeu a resposta deixaria uma a mais em uso.
+            idempotency="client_request_id",
         ),
         Action(ref="read_tab", kind="navigation", label="Atualizar comanda", priority="quiet",
                method="GET", href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
