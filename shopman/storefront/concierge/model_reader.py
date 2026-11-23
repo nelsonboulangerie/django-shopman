@@ -71,7 +71,7 @@ DESCRIPTIONS = {
     "decline_offers": "pedir para não receber sugestões",
     "accept_offers": "aceitar receber sugestões",
     "affirm": "sim, confirmação, concordância",
-    "deny": "não, recusa",
+    "deny": "não, recusa; também desistir do pedido no resumo (\"deixa pra lá\", \"desisti\", \"não quero mais\")",
     FULFILLMENT_ACT: "dizer o dia, se vai retirar ou receber em casa, ou a hora (\"amanhã às 16h\", "
                      "\"vou aí buscar\", \"entrega na sexta\")",
     "unknown": "nada disso",

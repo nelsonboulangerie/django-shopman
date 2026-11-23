@@ -66,6 +66,8 @@ NICE_TEMPLATE_COPY = {
     # com a frase de hoje; o resumo termina em "Posso registrar?" (aprovada no lugar do código).
     "change_cart.done": "CONCIERGE_ENGINE_CART_UPDATED",
     "present_terms.confirm": "CONCIERGE_ENGINE_TERMS_CONFIRM",
+    # "Deixa pra lá" no resumo, sem efeito no turno: a MESMA frase do fechamento de hoje (#3388, "Igual").
+    "acknowledge.terms_declined": "CONCIERGE_CLOSE_GAVE_UP",
 }
 
 #: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).

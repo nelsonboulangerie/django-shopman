@@ -13,6 +13,9 @@ TEMPLATES = (
     Template("acknowledge.got_it", "1", MOVE, "Got it, thank you."),
     Template("acknowledge.declined_offers", "1", MOVE, "Understood. I won't make suggestions."),
     Template("acknowledge.accepted_offers", "1", MOVE, "Understood. I'll suggest things again when it helps."),
+    # O "não" à pergunta dos termos, com NENHUM efeito no turno: nada foi registrado, e o carrinho
+    # ficou como estava. Com uma mudança junto ("deixa pra lá, tira o croissant"), esta frase seria falsa.
+    Template("acknowledge.terms_declined", "1", MOVE, "Understood, nothing was placed. Your cart stays as it is."),
 )
 
 
@@ -27,5 +30,7 @@ def reply(state, need):
     if need.act in DECLARATION_ACTS:
         return PartSpec(MOVE, {"decline_offers": "acknowledge.declined_offers",
                                "accept_offers": "acknowledge.accepted_offers"}[need.act])
+    if state.declines_offer(need) and not state.effect_chosen:
+        return PartSpec(MOVE, "acknowledge.terms_declined")
     template = "acknowledge.got_it" if need.answers_question else "acknowledge.thanks"
     return PartSpec(MOVE, template)

@@ -95,6 +95,8 @@ class TurnState:
     subject: Subject = field(default_factory=Subject)
     # Os termos apresentados, se a pergunta que pede a confirmação deles está no ar nesta época.
     offer: Offer | None = None
+    # Algum movimento de efeito foi escolhido neste turno (executado ou não, inclusive em sombra).
+    effect_chosen: bool = False
     # Necessidade que responde à oferta → por que a confirmação não autoriza (``None``: autoriza).
     confirmation_problems: dict[str, str | None] = field(default_factory=dict)
     # Termos cotados neste turno, por alvo.
@@ -124,6 +126,11 @@ class TurnState:
     def answers_offer(self, need: NeedSpec) -> bool:
         """O "sim" desta necessidade é a resposta à pergunta que pede a confirmação dos termos."""
         return (self.offer is not None and need.act == "affirm"
+                and need.answers_question == self.offer.question_id)
+
+    def declines_offer(self, need: NeedSpec) -> bool:
+        """O "não" desta necessidade responde à pergunta dos termos ("deixa pra lá")."""
+        return (self.offer is not None and need.act == "deny"
                 and need.answers_question == self.offer.question_id)
 
     def has_fresh_terms(self) -> bool:

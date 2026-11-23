@@ -501,6 +501,7 @@ class Engine:
                                                                              "EFFECT", False)]
         if not chosen:
             return episode
+        state.effect_chosen = True
         if ctx.environment == "shadow":
             fallbacks.extend(f"shadow:effect_not_executed:{c.move}" for c in chosen)
             return episode

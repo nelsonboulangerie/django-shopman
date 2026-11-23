@@ -143,6 +143,8 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "change_cart.done": ("{done}, sua sacola ficou assim:\n{items}\nTotal: {total}\nQuer mais alguma coisa? "
                          "Quando terminar, é só escrever “pode fechar”."),
     "present_terms.confirm": "{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?",
+    "acknowledge.terms_declined": ("Tudo bem, fica sem pedido por agora. Os itens continuam na sacola, "
+                                   "se mudar de ideia."),
 }
 REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team")
 
