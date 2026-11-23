@@ -40,7 +40,6 @@ _STOP = {
     "sabado", "domingo", "manha", "tarde", "noite", "entrega", "entregar", "delivery", "hora", "horas",
     "ok", "obrigada", "obrigado", "pfv", "pf", "pls", "tb", "tambem",
 }
-_LEAD = r"(?:quero|queria|qro|vou querer|gostaria de|me (?:ve|manda|separa)|separa|reserva|encomendar|pedir|coloca|poe|bota|mais)"
 _TAGS = r"\b(?:entendeu|entendesse|ok|certo|ta|beleza|combinado|pode ser)\s*\?+"
 _CORRECT_QTY = re.compile(
     rf"^(?:na verdade|alias|melhor|corrigindo|nao|so que|opa|ops|desculpa|errei)?[\s,]*"
@@ -54,10 +53,34 @@ _SWAP = re.compile(r"\btroca\w*\s+(?:(?:o|a|os|as)\s+[a-z ]+?\s+)?(?:por|pelo|pe
 
 @dataclass
 class Talk:
-    """O que a fala pede à sacola: as partes de pedido, e se só disse o quando/como."""
+    """O que a fala pede à sacola: as partes de pedido, e se só disse o quando/como.
+
+    ``certain``: TODA palavra da fala foi entendida (itens, quantidade, quando/como, cortesia).
+    Só aí a casa decide sem o leitor de IA; sobrou palavra ("e o de ontem veio queimado"), a
+    fala vai ao leitor, que pode achar o que a casa não vê.
+    """
 
     acts: list = field(default_factory=list)
     fulfillment_only: bool = False
+    certain: bool = False
+
+
+#: Palavras que a casa entende numa fala de pedido, além do produto e da quantidade.
+_KNOWN = _STOP | {
+    "quero", "queria", "qro", "querer", "gostaria", "ve", "manda", "separa", "reserva", "encomendar", "pedir",
+    "coloca", "poe", "bota", "oi", "ola", "opa", "bom", "boa", "tudo", "bem", "valeu", "so", "isso", "pode",
+    "ser", "aqui", "loja", "balcao", "casa", "partir", "das", "pelas", "umas", "uns", "h", "unidades",
+    "unidade", "un", "und", "o", "os", "um", "uma", "feira", "retira", "busque", "pegue", "buscando",
+    "na", "verdade", "alias", "melhor", "corrigindo", "nao", "sao", "serao", "faz", "faca", "muda", "troca",
+    "por", "pelo", "pela", "tira", "tire", "remove", "menos", "mais", "deixa", "fica", "pfvr", "obg",
+}
+_TIME_TOKEN = re.compile(r"\d{1,2}(?:h\d{0,2}|:\d{2})?|\d{1,2}/\d{1,2}")
+#: Fala sobre pedido JÁ feito ("os croissants que pedi", "cadê meu pedido"): não é pedido novo.
+_PAST_ORDER = re.compile(r"\b(?:pedi|pedimos|encomendei|comprei|cade|chegou|meu pedido|ja paguei|paguei)\b")
+
+
+def _leftover(tokens: list[str], consumed: set[int]) -> list[str]:
+    return [t for n, t in enumerate(tokens) if n not in consumed and t not in _KNOWN and not _TIME_TOKEN.fullmatch(t)]
 
 
 def _fold(text: str) -> str:
@@ -128,9 +151,10 @@ def match_product(words: str, products: list[tuple[str, str]]) -> tuple[str, str
     return best if best_score >= 0.84 else None
 
 
-def _items(clean: str, products) -> list[tuple[int, tuple[str, str]]]:
-    """Os pares (quantidade, produto) da fala: "2 croissants e 2 pain au chocolat"."""
-    found = []
+def _items(clean: str, products) -> tuple[list[tuple[int, tuple[str, str], bool]], set[int]]:
+    """Os itens da fala ("2 croissants e 2 pain au chocolat"): (quantidade, produto, é a mais), e as
+    posições das palavras usadas."""
+    found, consumed = [], set()
     tokens = clean.split()
     i = 0
     while i < len(tokens):
@@ -158,11 +182,12 @@ def _items(clean: str, products) -> list[tuple[int, tuple[str, str]]]:
             j += 1
         product = match_product(" ".join(name_tokens), products) if name_tokens else None
         if product is not None and _qty(qty_word):
-            found.append((_qty(qty_word), product))
+            found.append((_qty(qty_word), product, i > 0 and tokens[i - 1] == "mais"))
+            consumed.update(range(i, j))
             i = j
         else:
             i += 1
-    return found
+    return found, consumed
 
 
 def _focus(lines: list[dict]) -> dict | None:
@@ -177,10 +202,14 @@ def read(text: str, *, channel_ref: str, cart_lines: list[dict]):
     if asks(text):
         return None
     clean = _clean(text)
-    if not clean:
+    if not clean or _PAST_ORDER.search(clean):
         return None
     products = menu(channel_ref)
     focus = _focus(cart_lines)
+    tokens = clean.split()
+
+    def everything_understood(consumed=frozenset()) -> bool:
+        return not _leftover(tokens, set(consumed))
 
     swap = _SWAP.search(clean)
     if swap and focus is not None:
@@ -189,16 +218,20 @@ def read(text: str, *, channel_ref: str, cart_lines: list[dict]):
             qty = int(float(focus.get("qty") or 1))
             # Primeiro o novo, depois sai o antigo: a sacola nunca fica vazia no meio da troca.
             return Talk(acts=[Act(ORDER, span=f"{qty} {product[1]}", product=product[1], qty=qty),
-                              Act(ORDER, span=f"tira o {focus.get('name', '')}", product=focus.get("name", ""), qty=0)])
+                              Act(ORDER, span=f"tira o {focus.get('name', '')}", product=focus.get("name", ""), qty=0)],
+                        certain=everything_understood(range(clean[:swap.start("prod")].count(" "), len(tokens))))
     removal = _REMOVE_PRODUCT.search(clean)
     if removal and not order_closing.fulfillment_cue(clean.replace(removal.group(0), "")):
         product = match_product(removal.group("prod"), products)
         if product is not None:
-            return Talk(acts=[Act(ORDER, span=f"tira o {product[1]}", product=product[1], qty=0)])
+            return Talk(acts=[Act(ORDER, span=f"tira o {product[1]}", product=product[1], qty=0)],
+                        certain=everything_understood(range(clean[:removal.start("prod")].count(" "), len(tokens))))
 
-    items = _items(re.sub(rf"^{_LEAD}\s+", "", clean), products)
+    items, consumed = _items(clean, products)
     if items:
-        return Talk(acts=[Act(ORDER, span=f"{qty} {name}", product=name, qty=qty) for qty, (_, name) in items])
+        return Talk(acts=[Act(ORDER, span=f"{'mais ' if more else ''}{qty} {name}", product=name, qty=qty)
+                          for qty, (_, name), more in items],
+                    certain=everything_understood(consumed))
 
     if focus is not None:
         current = int(float(focus.get("qty") or 0))
@@ -206,12 +239,14 @@ def read(text: str, *, channel_ref: str, cart_lines: list[dict]):
         less = _LESS.search(clean)
         if less and _qty(less.group("qty")) and not order_closing.fulfillment_cue(clean):
             target = max(current - _qty(less.group("qty")), 0)
-            return Talk(acts=[Act(ORDER, span=f"{target} {name}" if target else f"tira o {name}", product=name, qty=target)])
+            return Talk(acts=[Act(ORDER, span=f"{target} {name}" if target else f"tira o {name}", product=name, qty=target)],
+                        certain=everything_understood())
         correct = _CORRECT_QTY.match(clean)
         if correct and _qty(correct.group("qty")) and not order_closing.read(clean, {}).minutes:
             qty = _qty(correct.group("qty"))
-            return Talk(acts=[Act(ORDER, span=f"{qty} {name}", product=name, qty=qty)])
+            return Talk(acts=[Act(ORDER, span=f"{qty} {name}", product=name, qty=qty)], certain=True)
         if order_closing.fulfillment_cue(clean) and not re.search(r"\b(?:abre|abrem|fecha|fecham|funciona)\b", clean):
             # Só o quando/como: a sacola fica como está, e o turno aplica o dia, a hora ou o recebimento.
-            return Talk(acts=[Act(ORDER, span=f"{current} {name}", product=name, qty=current)], fulfillment_only=True)
+            return Talk(acts=[Act(ORDER, span=f"{current} {name}", product=name, qty=current)], fulfillment_only=True,
+                        certain=everything_understood())
     return None

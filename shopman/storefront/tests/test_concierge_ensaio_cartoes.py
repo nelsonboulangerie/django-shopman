@@ -141,17 +141,21 @@ def test_cartao_4_desistir(ensaio):
     assert {i["sku"]: int(i["qty"]) for i in _session(ensaio.conversation).items} == {"CROISSANT": 2}
 
 
-def test_cartao_5_pix(ensaio, settings, django_capture_on_commit_callbacks):
+@pytest.mark.django_db(transaction=True)
+def test_cartao_5_pix(ensaio, settings):
+    """Sem transação por fora, como no ar (#3340): o Pix nasce no commit do pedido e o
+    copia-e-cola chega à cliente numa mensagem própria, logo depois do "registrado"."""
     from shopman.shop.services import pix_confirmation
 
     # O Pix de teste, como no alpha (``payment_mock``): sem a Efí, o pedido sai sem cobrança.
     settings.SHOPMAN_PAYMENT_ADAPTERS = {**settings.SHOPMAN_PAYMENT_ADAPTERS, "pix": "shopman.shop.adapters.payment_mock"}
-
     resumo = _ate_o_resumo(ensaio, "quero 2 croissants")
-    with django_capture_on_commit_callbacks(execute=True):  # o que roda depois do commit, como no ar
-        registrado = ensaio.diz(f"confirmo {ensaio.codigo(resumo)}")
+    registrado = ensaio.diz(f"confirmo {ensaio.codigo(resumo)}")
     order = Order.objects.get()
     assert registrado.startswith(f"Pedido {order.ref} registrado."), registrado
+    assert "ainda não está disponível" not in registrado, registrado
+    copia_e_cola = order.data["payment"]["copy_paste"]
+    assert copia_e_cola and copia_e_cola in registrado, registrado  # o código Pix, na conversa
     (intent,) = list(PaymentService.get_by_order(order.ref))
     pix_confirmation.confirm_pix(txid=intent.gateway_id, e2e_id="ensaio-e2e",
                                  amount=f"{order.total_q / 100:.2f}")

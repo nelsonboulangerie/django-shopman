@@ -1891,16 +1891,28 @@ def run(conversation, *, binding, decision, client=None):
     if meter is not None and (client is not None or has_key):
         reader = meter.wrap(client, "intents", factory=build_client)
     started = time.perf_counter()
-    found = plan(
-        text,
-        rules_intent=rules_intent,
-        rules_source=rules_source,
-        jev_scores=getattr(decision, "jev_scores", None),
-        memory_note=reading_note(memory),
-        client=reader,
-        use_model=reader is not None or has_key,
-    )
-    talk = _order_talk(found, text, conversation=conversation, channel_ref=channel_ref, binding=binding)
+    # A casa primeiro (coordenação, 22/11/2026): o pedido que a leitura da casa reconhece com
+    # certeza (itens, correção da sacola, só o quando/como, e nada sensível na fala) não vai ao
+    # leitor de IA. A IA lê só o que a casa não resolve.
+    # Lê a fala da cliente como veio: a reescrita da memória ("mais 2" virando "2") é para o leitor.
+    talk = _order_talk_first(customer_text or text, rules_intent, conversation=conversation,
+                             channel_ref=channel_ref, binding=binding)
+    if talk is not None:
+        courtesy = [act for act in local_acts(text) if act.act in COURTESY]
+        found = Plan(acts=_with_rules([*courtesy, *talk.acts], text, rules_intent), source="order_talk",
+                     reason="order_talk", jev=dict(getattr(decision, "jev_scores", None) or {}))
+    else:
+        found = plan(
+            text,
+            rules_intent=rules_intent,
+            rules_source=rules_source,
+            jev_scores=getattr(decision, "jev_scores", None),
+            memory_note=reading_note(memory),
+            client=reader,
+            use_model=reader is not None or has_key,
+        )
+    if talk is None:
+        talk = _order_talk(found, text, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if getattr(decision, "escalates", False):
         # A triagem (regra, modelo ou Jev) mandou para a equipe: essa parte fica, nunca sai.
         # O cancelamento a triagem grava como pedido (``escalated_by=cancel_order``, R4).
@@ -1935,18 +1947,23 @@ def run(conversation, *, binding, decision, client=None):
     return order_closing.resume(conversation, outcome, binding=binding, channel_ref=channel_ref, memory=memory)
 
 
-def _order_talk(found: Plan, text: str, *, conversation, channel_ref: str, binding):
-    """O pedido como a cliente escreve, lido pela casa quando o leitor de IA não leu (DEV-2026-076).
+#: O que, dito na fala, tira a certeza da casa: vai à equipe, ou pede leitura de verdade.
+_SENSITIVE_ACTS = TEAM_ACTS | OTHER_DESK_ACTS | {ALLERGY, NEGOTIATION}
 
-    Só com a leitura do porteiro ou a divisão local (``found.source`` "gate"/"local"): a do
-    modelo vale como veio. Reconhecida a forma de pedido (itens, correção do que está na sacola,
-    ou só o dia/hora/recebimento), as partes de pedido tomam o lugar das partes lidas, menos a
-    cortesia (o "oi" continua respondido).
-    """
+
+def _order_talk_first(text: str, rules_intent: str, *, conversation, channel_ref: str, binding):
+    """O pedido reconhecido pela casa com certeza, ANTES do leitor de IA; ``None`` quando não."""
+    if rules_intent in _SENSITIVE_ACTS or any(act.act in _SENSITIVE_ACTS for act in local_acts(text)):
+        return None
+    talk = _read_order_talk(text, conversation=conversation, channel_ref=channel_ref, binding=binding)
+    return talk if talk is not None and talk.certain else None
+
+
+def _read_order_talk(text: str, *, conversation, channel_ref: str, binding):
     from . import order_talk
     from . import tools as tools_module
 
-    if found.source not in ("gate", "local") or conversation is None or not _cart_authorized(conversation):
+    if conversation is None or not _cart_authorized(conversation):
         return None
     ctx = tools_module.ToolContext(conversation=conversation, channel_ref=channel_ref,
                                    provider=str(getattr(binding, "provider", "") or ""),
@@ -1958,7 +1975,21 @@ def _order_talk(found: Plan, text: str, *, conversation, channel_ref: str, bindi
     if session is not None and session.items:
         lines = list(tools_module.execute("view_cart", {}, ctx).get("lines") or [])
     talk = order_talk.read(text, channel_ref=channel_ref, cart_lines=lines)
-    if talk is None or not talk.acts:
+    return talk if talk is not None and talk.acts else None
+
+
+def _order_talk(found: Plan, text: str, *, conversation, channel_ref: str, binding):
+    """O pedido como a cliente escreve, lido pela casa quando o leitor de IA não leu (DEV-2026-076).
+
+    Só com a leitura do porteiro ou a divisão local (``found.source`` "gate"/"local"): a do
+    modelo vale como veio. Reconhecida a forma de pedido (itens, correção do que está na sacola,
+    ou só o dia/hora/recebimento), as partes de pedido tomam o lugar das partes lidas, menos a
+    cortesia (o "oi" continua respondido).
+    """
+    if found.source not in ("gate", "local"):
+        return None
+    talk = _read_order_talk(text, conversation=conversation, channel_ref=channel_ref, binding=binding)
+    if talk is None:
         return None
     found.acts = [act for act in found.acts if act.act in COURTESY] + list(talk.acts)
     found.reason = f"order_talk:{found.reason}"

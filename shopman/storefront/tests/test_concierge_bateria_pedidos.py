@@ -185,11 +185,58 @@ CASOS = (
 LACUNAS: dict[str, int] = {}
 
 
+def _leitor(monkeypatch) -> None:
+    """Sem nada: a leitura da casa, sem o modelo (a da CI). ``BATERIA_LEITOR=ia``: o leitor de IA.
+
+    Com ``ia``, a conexão de IA do teste recebe a chave de ``BATERIA_IA_CHAVE`` e o modelo de
+    ``BATERIA_IA_MODELO`` (o da rota ``intents`` no ar; padrão ``claude-haiku-4-5``, o semeado).
+    Cada chamada grava os tokens em ``BATERIA_TOKENS`` (uma linha por chamada), para o custo.
+    Roda fora da CI, à mão: custa a cada rodada e muda de uma chamada para outra (#3339).
+    """
+    consultas = os.environ.get("BATERIA_CONSULTAS")
+    if consultas:
+        # Quantas falas ainda iriam ao leitor de IA (a casa não resolveu com certeza).
+        original_read = intents.read_with_model
+
+        def contado(text, **kwargs):
+            with open(consultas, "a", encoding="utf-8") as saida:
+                saida.write(json.dumps({"fala": text}, ensure_ascii=False) + "\n")
+            return original_read(text, **kwargs)
+
+        monkeypatch.setattr(intents, "read_with_model", contado)
+    if os.environ.get("BATERIA_LEITOR") != "ia":
+        monkeypatch.setattr(intents, "build_client", lambda: None)
+        return
+    from shopman.shop import ai
+    from shopman.shop.tests.ai_support import configure_ai
+
+    configure_ai(os.environ["BATERIA_IA_CHAVE"], model=os.environ.get("BATERIA_IA_MODELO", "claude-haiku-4-5"))
+    original = ai.anthropic_client
+
+    def medido(purpose, **kwargs):
+        client, model = original(purpose, **kwargs)
+        create = client.messages.create
+
+        def create_medido(**request):
+            response = create(**request)
+            destino = os.environ.get("BATERIA_TOKENS")
+            usage = getattr(response, "usage", None)
+            if destino and usage is not None:
+                with open(destino, "a", encoding="utf-8") as saida:
+                    saida.write(json.dumps({"purpose": purpose, "model": model, "in": usage.input_tokens,
+                                            "out": usage.output_tokens}) + "\n")
+            return response
+
+        client.messages.create = create_medido
+        return client, model
+
+    monkeypatch.setattr(ai, "anthropic_client", medido)
+
+
 @pytest.fixture
 def bateria(surface, settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
-    # A leitura da casa, sem o modelo: o mesmo resultado a cada rodada.
-    monkeypatch.setattr(intents, "build_client", lambda: None)
+    _leitor(monkeypatch)
     _listed(C, "Croissant", description="Folhado amanteigado", stock="50")
     _listed(P, "Pain au Chocolat", description="Folhado com chocolate", stock="50")
     _listed(B, "Baguete", description="Pão francês longo", stock="50")
