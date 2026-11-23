@@ -153,27 +153,51 @@ def test_an_effect_refused_on_air_says_the_nice_limitation(order_on_air, outbox,
     assert outbox.sent == [OFFER_TEAM]
 
 
-@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
-def test_after_the_effect_a_part_outside_the_nice_voice_holds_and_today_path_stays_quiet(order_on_air, outbox,
-                                                                                         monkeypatch):
-    """O porteiro de voz: no ar, a parte por molde sem frase da Nice segura. O efeito já aconteceu, por isso o
-    caminho de hoje não responde (refaria o efeito); nenhum texto do pacote chega ao cliente."""
+HELD = "Pronto, anotei. Já te confirmo os detalhes por aqui."
+
+
+def _held_on_air(kind):
+    """O motor do ar com a resposta do efeito segurada: molde fora da voz da Nice, ou referência que não resolve."""
     import dataclasses
 
-    from shopman.orderman.models import Session
+    from conversational_commerce.reply import UnresolvedReference
 
     build = turn_framework.build_engine
 
-    def without_done_on_air(conversation, *, environment=turn_framework.ENVIRONMENT, channel=None):
+    def held(conversation, *, environment=turn_framework.ENVIRONMENT, channel=None):
         engine = build(conversation, environment=environment, channel=channel)
         if engine is None or environment == "shadow":
             return engine
-        house = {k: v for k, v in engine.house_templates.items() if k != "set_payment.done"}
-        return dataclasses.replace(engine, house_templates=house)
+        if kind == "template_not_in_voice":
+            house = {k: v for k, v in engine.house_templates.items() if k != "set_payment.done"}
+            return dataclasses.replace(engine, house_templates=house)
 
-    monkeypatch.setattr(turn_framework, "build_engine", without_done_on_air)
-    result = _pix_turn(order_on_air, "pix-held-1")
-    assert outbox.sent == [] and result.replies == []  # nada saiu, nem na voz do pacote, nem pelo caminho de hoje
+        def unresolved(value):
+            raise UnresolvedReference(str(value))
+
+        return dataclasses.replace(engine, formatters={**engine.formatters, "method": unresolved})
+
+    return held
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+@pytest.mark.parametrize("kind", ["template_not_in_voice", "reference_unresolved"])
+def test_after_the_effect_a_held_answer_never_ends_in_silence(order_on_air, outbox, monkeypatch, kind):
+    """#3413: o efeito aconteceu e a resposta segurou. O caminho de hoje não responde (refaria o efeito), o
+    cliente ouve o recuo da casa, lastreado só no recibo, e a equipe recebe o cartão com prazo para confirmar."""
+    from shopman.orderman.models import Session
+
+    from shopman.backstage.models import OperatorAlert
+
+    monkeypatch.setattr(turn_framework, "build_engine", _held_on_air(kind))
+    seen, answer = [], turn_framework.answer_after_effect
+    monkeypatch.setattr(turn_framework, "answer_after_effect",
+                        lambda conversation, held: seen.append(turn_framework._findings(held)) or answer(conversation, held))
+    result = _pix_turn(order_on_air, f"pix-held-{kind}")
+    assert len(seen) == 1 and kind in seen[0]  # segurou pelo motivo que se quis provar
+    assert outbox.sent == [HELD]  # nunca silêncio, nunca a voz do pacote, nunca o caminho de hoje
     assert result.processed_message_ids  # a entrada foi consumida: o caminho de hoje não a pega de novo
     order_on_air.refresh_from_db()
     assert Session.objects.get(session_key=order_on_air.session_key).data["payment"] == {"method": "pix"}
+    card = OperatorAlert.objects.get(type=turn_framework.EFFECT_HELD_ALERT)
+    assert card.respond_by is not None and card.resolved_at is None and "set_payment" in card.message

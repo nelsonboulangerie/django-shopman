@@ -32,12 +32,16 @@ SLOTS = [{"ref": "slot-09", "label": "A partir das 9h", "available": True},
 
 
 def command(target="sess-1", **parameters):
-    return SimpleNamespace(action="set_fulfillment", targets=(target,), parameters=parameters, expected_ownership_epoch=1)
+    return SimpleNamespace(action="set_fulfillment", targets=(target,), parameters=parameters, episode_id="ep-site",
+                           expected_ownership_epoch=0)
 
 
 @pytest.fixture
 def house(monkeypatch):
     """A sacola da conversa e os executores da casa, gravando o que foi chamado."""
+    from shopman.storefront.tests.test_concierge_effect_site import _episode_store
+
+    _episode_store()  # o episódio do motor, de onde a leitura tira a época de posse
     conversation = Conversation.objects.create(pk=1, session_key="sess-1", channel_ref=CHANNEL, turn_fence=3)
     session = Session.objects.create(session_key="sess-1", channel_ref=CHANNEL, data={})
     calls: list = []
@@ -149,14 +153,14 @@ def test_the_first_order_falls_in_the_new_cart_of_the_conversation(house):
     with transaction.atomic():
         for action in ("change_cart", "set_fulfillment"):
             reading = house.site.lock(CTX, SimpleNamespace(action=action, targets=(new_cart_ref(1),), parameters={},
-                                                           expected_ownership_epoch=1))
-            assert (reading.ownership_epoch, dict(reading.versions)) == (1, {new_cart_ref(1): 0})
+                                                           episode_id="ep-site", expected_ownership_epoch=0))
+            assert (reading.ownership_epoch, dict(reading.versions)) == (0, {new_cart_ref(1): 0})  # a época do episódio
 
 
 def test_closing_the_order_never_targets_a_cart_that_does_not_exist(house):
     with transaction.atomic(), pytest.raises(PortError) as refused:
         house.site.lock(CTX, SimpleNamespace(action="commit_order", targets=(new_cart_ref(1),), parameters={},
-                                                  expected_ownership_epoch=1))
+                                                  episode_id="ep-site", expected_ownership_epoch=0))
     assert refused.value.code == ErrorCode.OBJECT_FORBIDDEN
 
 

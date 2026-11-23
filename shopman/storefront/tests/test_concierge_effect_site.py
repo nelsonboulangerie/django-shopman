@@ -31,17 +31,48 @@ CTX = TrustedContext(tenant="t", environment="test", subject="conversation:1")
 CHANNEL = "whatsapp"
 
 
-#: A época do episódio do motor, de propósito diferente da cerca do turno da casa (``turn_fence=7``).
-EPISODE_EPOCH = 2
+EPISODE = "ep-site"
+AT = "2026-11-23T12:00:00.000000Z"
 
 
 def command(action, target, **parameters):
-    return SimpleNamespace(action=action, targets=(target,), parameters=parameters,
-                           expected_ownership_epoch=EPISODE_EPOCH)
+    return SimpleNamespace(action=action, targets=(target,), parameters=parameters, episode_id=EPISODE,
+                           expected_ownership_epoch=0)
+
+
+def _episode_store():
+    """O episódio do motor gravado no livro durável da casa, na época 0 (a automação dona)."""
+    from conversational_commerce.contracts import Producer
+    from conversational_commerce.ports.store import Transition
+    from conversational_commerce.workflow.machine import open_episode
+
+    from shopman.shop.conversational.store import ShopmanStore
+
+    store = ShopmanStore()
+    episode = open_episode(record_id="eprec-site-1", episode_id=EPISODE, tenant=CTX.tenant,
+                           environment=CTX.environment, trace_id="trace-site", at=AT,
+                           producer=Producer(name="test", version="1"), subject="whatsapp:conversation:1")
+    store.commit_transition(CTX, Transition(episode=episode, expected_version=0), (episode,), ())
+    return store, episode
+
+
+def _owner_change(store, episode, kind, minute, **event):
+    from conversational_commerce.contracts.episode import Wait
+    from conversational_commerce.ports.store import Transition
+    from conversational_commerce.workflow.machine import EpisodeEvent, transition
+
+    at = f"2026-11-23T12:{minute:02d}:00.000000Z"
+    if kind == "handoff_requested":
+        event["wait"] = Wait(condition="a pessoa aceita", owner="queue", deadline="2026-11-23T13:00:00.000000Z")
+    changed = transition(episode, EpisodeEvent(kind=kind, at=at, cause_id=f"cause-{kind}", **event),
+                         expected_version=episode.version, record_id=f"eprec-{kind}")
+    return store.commit_transition(CTX, Transition(episode=changed, expected_version=episode.version),
+                                   (changed,), ())
 
 
 @pytest.fixture
 def site(monkeypatch):
+    _episode_store()
     conversation = Conversation.objects.create(session_key="sess-1", channel_ref=CHANNEL,
                                                quote={"token": "tok-1"}, turn_fence=7)
     Session.objects.create(session_key="sess-1", channel_ref=CHANNEL)
@@ -94,9 +125,8 @@ def test_lock_reads_epoch_version_and_terms_of_the_conversation(site):
         reading = site.lock(CTX, command("commit_order", "sess-1"))
         discount = site.lock(CTX, command("grant_discount", "sess-1"))
     rev = Session.objects.get(session_key="sess-1").rev
-    # A posse conferida pela casa (cerca, conversa ativa, reivindicação) atesta a época do episódio do comando;
-    # a cerca do turno (7) nunca é a época (#3410).
-    assert (reading.ownership_epoch, reading.versions, reading.terms_ref) == (EPISODE_EPOCH, {"sess-1": rev}, "tok-1")
+    # A época é a do episódio, lida no livro (0), nunca a cerca do turno da casa (7) nem a do comando.
+    assert (reading.ownership_epoch, reading.versions, reading.terms_ref) == (0, {"sess-1": rev}, "tok-1")
     assert discount.terms_ref is None  # termos só no fechamento do pedido
 
 
@@ -125,7 +155,7 @@ def test_lock_refuses_an_order_of_someone_else(site, monkeypatch):
     assert refused.value.code == ErrorCode.OBJECT_FORBIDDEN
     monkeypatch.setattr("shopman.storefront.concierge.order_addition.own_order", lambda conv, ref: object())
     with transaction.atomic():
-        assert site.lock(CTX, command("amend_order", "ORD-1")).ownership_epoch == EPISODE_EPOCH
+        assert site.lock(CTX, command("amend_order", "ORD-1")).ownership_epoch == 0
 
 
 @pytest.mark.parametrize(("result", "applied", "code"), [
@@ -188,3 +218,28 @@ def test_change_cart_applies_every_line_or_none(site, monkeypatch):
     monkeypatch.setattr("shopman.storefront.concierge.tools.set_item", lambda ctx, sku, qty: {"ok": True})
     both = site.apply(CTX, command("change_cart", "sess-1", lines=lines))
     assert both.applied and both.domain_refs["items"] == "CROISSANT,BAGUETE"
+
+
+def test_the_epoch_is_read_from_the_episode_and_a_stale_command_is_revoked(site):
+    """#3414: a leitura lê a época VIGENTE do episódio. A equipe assumiu e devolveu (a época subiu duas vezes):
+    o comando decidido antes, retomado num turno seguinte, encontra outra época, e a guarda do Core revoga."""
+    from shopman.shop.conversational.store import ShopmanStore
+
+    store = ShopmanStore()
+    episode = store.load_episode(CTX, EPISODE)
+    episode = _owner_change(store, episode, "handoff_requested", 1)
+    episode = _owner_change(store, episode, "handoff_accepted", 2, holder_ref="ana")
+    episode = _owner_change(store, episode, "returned", 3)
+    assert episode.ownership.epoch == 3  # pediu, aceitou, devolveu: a época sobe a cada troca de dono
+    stale = command("commit_order", "sess-1")  # decidido na época 0
+    with transaction.atomic():
+        reading = site.lock(CTX, stale)
+    assert reading.ownership_epoch == 3 != stale.expected_ownership_epoch  # a guarda: "a posse mudou" (revoga)
+
+
+def test_a_command_whose_episode_cannot_be_read_is_revoked(site):
+    lost = SimpleNamespace(action="commit_order", targets=("sess-1",), parameters={}, episode_id="ep-que-nao-existe",
+                           expected_ownership_epoch=0)
+    with transaction.atomic(), pytest.raises(PortError) as refused:
+        site.lock(CTX, lost)
+    assert refused.value.code == ErrorCode.AUTHORITY_REVOKED

@@ -84,6 +84,23 @@ CART_REFUSALS = {
 }
 
 
+def _current_epoch(ctx: TrustedContext, command: ActionCommand) -> int:
+    """A época de posse VIGENTE do episódio que decidiu o comando, lida na fonte (o ``ShopmanStore``).
+
+    A época é a do episódio do motor: sobe quando a equipe assume e quando devolve (``workflow.machine``,
+    ``OWNER_CHANGE``). Não é a cerca do turno da casa (``turn_fence``, que sobe a cada mensagem), e nunca
+    é a do próprio comando: a guarda do Core compara as duas, e um comando decidido antes de uma troca de
+    posse (retomado num turno seguinte, N13) sai ``authority_revoked``. Episódio que não se lê: revogado.
+    """
+    from shopman.shop.conversational.store import ShopmanStore
+
+    episode_id = getattr(command, "episode_id", None)
+    episode = ShopmanStore().load_episode(ctx, episode_id) if episode_id else None
+    if episode is None:
+        raise PortError(ErrorCode.AUTHORITY_REVOKED, "o episódio que decidiu o comando não se lê")
+    return int(episode.ownership.epoch)
+
+
 @dataclass
 class ConciergeEffectSite:
     """Pedido, desconto, cancelamento e acréscimo da conversa de ``tool_context``."""
@@ -104,12 +121,7 @@ class ConciergeEffectSite:
             current = lock_turn_authority(conversation, channel_ref=self.tool_context.channel_ref if cart else None)
         except TurnRevoked as revoked:
             raise PortError(ErrorCode.AUTHORITY_REVOKED, f"a posse da conversa mudou ({revoked})") from revoked
-        # A época de posse é a do episódio do motor (muda quando a equipe assume e devolve), não a cerca do
-        # turno da casa (``turn_fence``, que sobe a cada mensagem). O que a guarda pergunta, "a posse mudou
-        # depois da decisão?", a casa acabou de responder na trava acima: a mesma cerca, a conversa ativa, a
-        # reivindicação válida. Passada a trava, a leitura atesta a época que o comando espera; não passada,
-        # o efeito já foi recusado (#3410: com a cerca no lugar da época, todo efeito no ar saía revogado).
-        epoch = command.expected_ownership_epoch
+        epoch = _current_epoch(ctx, command)
         target = command.targets[0]
         if cart and command.action in NEW_CART_ACTIONS and target == new_cart_ref(conversation.pk):
             # A sacola nova desta conversa: nasce no efeito. Se outra parte do turno já a criou,

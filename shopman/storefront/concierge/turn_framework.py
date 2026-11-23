@@ -561,6 +561,43 @@ def judge(result, *, enabled: frozenset[str], approved: frozenset[str]) -> Verdi
 
 
 
+#: O recuo da casa depois de um efeito feito cuja resposta segurou: diz só o que o recibo sustenta (foi
+#: anotado) e promete a confirmação, que a equipe cumpre pelo cartão (``EFFECT_HELD_ALERT``).
+EFFECT_HELD_COPY = "CONCIERGE_ENGINE_EFFECT_HELD"
+EFFECT_HELD_ALERT = "concierge_effect_unconfirmed"
+#: O prazo da promessa "já te confirmo": o cartão conta até ele no sino do Gestor.
+EFFECT_HELD_MINUTES = 10
+
+
+def answer_after_effect(conversation, result) -> None:
+    """Efeito feito e resposta segurada: o cliente ouve o recuo, e a equipe recebe o cartão com prazo."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    from . import house_rules, service
+
+    actions = sorted({command.action for command in result.commands})
+    decision = getattr(result.decision, "decision_id", "") or ""
+    text = (service.copy_message(EFFECT_HELD_COPY) or "").strip()
+    sent = None
+    if text:
+        receipts = frozenset({house_rules.ORDER} if "commit_order" in actions else {house_rules.CART})
+        sent = service.send_out_of_turn(conversation, text, receipts=receipts, send_key=f"held:{decision}")
+    create_operator_alert(
+        type=EFFECT_HELD_ALERT, severity="warning",
+        message=(f"A Concierge fez {', '.join(actions)} e não conseguiu confirmar ao cliente. "
+                 "Confirme os detalhes por aqui."),
+        stamp_dedupe=False, order_ref=getattr(conversation, "last_order_ref", "") or "",
+        conversation_id=conversation.pk, owner_role="atendimento",
+        respond_by=timezone.now() + timedelta(minutes=EFFECT_HELD_MINUTES),
+    )
+    if sent is None:
+        logger.warning("concierge.turn_framework.held_after_effect_unsent conversation=%s", conversation.pk)
+
+
 def _findings(result) -> list[str]:
     reply = getattr(result, "reply", None)
     return [f.code for f in reply.verification.findings] if reply is not None else []
@@ -596,10 +633,12 @@ def run(conversation, message, *, channel=None, interrupted=None):
         result = live.turn(live.ports.clock.ctx, _raw(message), interrupted=interrupted)
         if result.outcome != "answered" or getattr(result, "exposure", None) is None:
             if any(receipt.status == "success" for receipt in result.receipts):
-                # O efeito aconteceu e a mensagem segurou (o porteiro de voz, um fato que não se lê): o caminho
-                # de hoje NÃO responde, porque refaria o que já foi feito. Nada sai; fica o registro para a equipe.
+                # O efeito aconteceu e a mensagem segurou (o porteiro de voz, uma referência que não resolve, o
+                # pendente sem frase). O caminho de hoje NÃO responde, porque refaria o que já foi feito; e nunca
+                # termina em silêncio: o recuo da casa, lastreado só no recibo, e um cartão para a equipe cumprir.
                 logger.warning("concierge.turn_framework.held_after_effect conversation=%s outcome=%s findings=%s",
                                conversation.pk, result.outcome, _findings(result))
+                answer_after_effect(conversation, result)
                 return result
             logger.info("concierge.turn_framework.not_sent conversation=%s outcome=%s fallbacks=%s",
                         conversation.pk, result.outcome, list(result.fallbacks))

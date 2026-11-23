@@ -1570,6 +1570,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_ORDER_PLACED_SHORT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pedido {order} registrado. Acompanhar: {track}")},
     },
+    "CONCIERGE_ENGINE_EFFECT_HELD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, anotei. Já te confirmo os detalhes por aqui.")},
+    },
     "CONCIERGE_ENGINE_EFFECT_FAILED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
     },
