@@ -5,6 +5,7 @@
     manage.py concierge_conversation_eval --conversation 42
     manage.py concierge_conversation_eval --replay           # as mesmas falas no código de hoje
     manage.py concierge_conversation_eval --replay --paid    # idem, com Jev e modelo (custa)
+    manage.py concierge_conversation_eval --replay --framework inform   # idem, com o motor ligado
 
 Só leitura, sem modelo, sem rede. Cada turno sai como útil, sem saída, sem lastro ou
 silêncio, com a coluna do ManyChat AI ESTIMADA pela documentação (não medida: o add-on está desligado).
@@ -31,15 +32,21 @@ class Command(BaseCommand):
             help="Refaz as falas reais no código de HOJE, numa transação desfeita, sem enviar nada.",
         )
         parser.add_argument("--paid", action="store_true", help="Com --replay: a IA paga liga (freio de sempre).")
+        parser.add_argument(
+            "--framework", default="",
+            help="Com --replay: classes do motor do framework ligadas só no replay (inform,handoff,order).",
+        )
 
     def handle(self, *args, **options):
         if options["replay"]:
             turns, info = conversation_eval.replay_turns(
                 days=options["days"], channel_ref=options["channel"], conversation_id=options["conversation"],
                 paid=options["paid"],
+                framework=tuple(name for name in options["framework"].split(",") if name),
             )
             self.stdout.write(
-                f"Replay no código de hoje ({'IA paga ligada' if info['paid'] else 'sem IA paga'}): "
+                f"Replay no código de hoje ({'IA paga ligada' if info['paid'] else 'sem IA paga'}"
+                f"{'; motor do framework: ' + ','.join(info['framework']) if info['framework'] else ''}): "
                 f"{info['turns']} turnos de {info['conversations']} conversas; "
                 f"{info['skipped']} conversas fora da coorte ficaram de fora. Nada foi enviado nem gravado."
             )

@@ -286,6 +286,7 @@ from .operations import (
     POSCustomerResolveView,
     POSCustomerSearchView,
     POSDanfeEscposView,
+    POSDeliveryFeeView,
     POSEmitFiscalView,
     POSManagerApprovalCheckView,
     POSMovementView,
@@ -1440,6 +1441,7 @@ urlpatterns = [
     path("pos/sale/review/", POSReviewSaleView.as_view(), name="api-backstage-pos-review-sale"),
     path("pos/sale/close/", POSCloseSaleView.as_view(), name="api-backstage-pos-close-sale"),
     path("pos/schedule/", POSScheduleView.as_view(), name="api-backstage-pos-schedule"),
+    path("pos/delivery-fee/", POSDeliveryFeeView.as_view(), name="api-backstage-pos-delivery-fee"),
     path("pos/recent-sales/", POSRecentSalesView.as_view(), name="api-backstage-pos-recent-sales"),
     path("pos/preorders/", POSPreorderListView.as_view(), name="api-backstage-pos-preorders"),
     # ⚠️ ANTES de `pos/preorders/<str:ref>/`: `search` casaria com o ref.

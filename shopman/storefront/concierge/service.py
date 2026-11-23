@@ -949,6 +949,26 @@ def _best_window_evidence(
 
 
 @_observed("turn")
+def _framework_turn(conversation, inbound):
+    """O turno pelo motor do framework (N9b), ou ``None``: só com UMA entrada e a chave da classe.
+
+    ``interrupted``: a conversa mudou de dono no meio (a equipe assumiu, o turno foi revogado);
+    o motor confere antes de enviar e, aí, não envia.
+    """
+    if len(inbound) != 1:
+        return None
+    from . import turn_framework
+
+    fence = conversation.turn_fence
+
+    def interrupted() -> bool:
+        return not Conversation.objects.filter(
+            pk=conversation.pk, turn_fence=fence, state=Conversation.State.ACTIVE
+        ).exists()
+
+    return turn_framework.run(conversation, inbound[0], interrupted=interrupted)
+
+
 def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, intents_client=None) -> TurnResult:
     """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
     conversation, binding, inbound = _claim(conversation_id, binding_id)
@@ -1041,6 +1061,23 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
             )
             result.fallback = "turn_limit"
         else:
+            # N9b: o turno pelo motor do framework, só onde a loja ligou a classe e a casa tem a
+            # frase de hoje (``turn_framework``). Com as chaves desligadas, nada muda. Feito pelo
+            # motor, a resposta já saiu pelo mesmo caminho do envio; aqui só se fecha o turno.
+            framework = _framework_turn(conversation, inbound)
+            if framework is not None:
+                meter.layer = metrics.LAYER_FRAMEWORK
+                with transaction.atomic():
+                    Conversation.objects.select_for_update().get(pk=conversation.pk)
+                    assert_turn_authority(conversation, for_mutation=False)
+                    ConversationMessage.objects.filter(
+                        pk__in=ids, binding=binding, consumed_by__isnull=True
+                    ).update(consumed_by=conversation.turn_fence)
+                    Conversation.objects.filter(pk=conversation.pk).update(consecutive_failures=0)
+                result.processed_message_ids = ids
+                result.replies = [framework.text] if framework.text else []
+                result.pending_more = bool(unanswered_inbound(conversation, binding))
+                return result
             try:
                 outcome = intents_module.run(
                     conversation, binding=binding, decision=decision, client=intents_client

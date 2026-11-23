@@ -1035,6 +1035,14 @@ export interface POSOverPlanLine {
 /** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção
  *  `promotion_name`; `threshold`: compras a partir de `threshold_q`.
  *  `base_fee_q` é a taxa sem a renúncia. */
+/** Resposta de `/pos/delivery-fee/`: a taxa na tela de venda, os campos da review (#2402). */
+export interface POSDeliveryFeeQuote {
+  delivery_fee_q: number;
+  delivery_fee_source: string;
+  delivery_distance_km: number | null;
+  delivery_fee_waiver: POSDeliveryFeeWaiverProjection | null;
+}
+
 export interface POSDeliveryFeeWaiverProjection {
   reason: "promotion" | "threshold" | "group";
   promotion_name: string;
