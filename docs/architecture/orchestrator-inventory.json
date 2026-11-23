@@ -3104,6 +3104,7 @@
             "_fulfillment",
             "_fulfillment_conditions",
             "_text",
+            "conversation_payment_methods",
             "instant",
             "logger"
           ]
