@@ -190,3 +190,27 @@ def test_the_terms_summary_is_today_review_ending_in_may_i_register(db):
     assert _say("present_terms.confirm", items=LINES, total={"price_minor": 2400, "currency": "BRL"},
                 fulfillment={"mode": "pickup"},
                 conditions={"fulfillment_date": day, "fulfillment_window": "slot-15", "payment_method": "pix"}) == summary
+
+
+def test_the_money_in_the_fact_is_a_frozen_map_and_still_says_reais(db):
+    """O lastro da resposta guarda o dinheiro como ``FrozenMap``: o formatador da Nice lê um ``Mapping``."""
+    from conversational_commerce.contracts.canonical import FrozenMap
+
+    from shopman.storefront.concierge import turn_framework
+
+    assert turn_framework.money_text(FrozenMap({"price_minor": 2400, "currency": "BRL"})) == "R$ 24,00"
+
+
+def test_the_frozen_terms_fact_renders_today_summary(db):
+    """O fato dos termos chega congelado (``Known`` guarda ``FrozenMap`` e tuplas): o resumo sai igual."""
+    from conversational_commerce.contracts import Known
+
+    fact = Known(value={"items": LINES, "total": {"price_minor": 2400, "currency": "BRL"},
+                        "fulfillment": {"mode": "pickup"}, "conditions": {"payment_method": "pix"}},
+                 source="commerce-quote", observed_at="2026-11-23T10:00:00.000000Z",
+                 valid_until="2026-11-23T11:00:00.000000Z")
+    value = fact.value
+    text = _say("present_terms.confirm", items=value["items"], total=value["total"],
+                fulfillment=value["fulfillment"], conditions=value["conditions"])
+    assert text.startswith("2 × “Croissant”: R$ 24,00\nTotal: R$ 24,00\nRetirada")
+    assert text.endswith("Pagamento: Pix.\nPosso registrar?")
