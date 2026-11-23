@@ -138,7 +138,10 @@ def money_text(value) -> str:
     """ "R$ 24,00": o dinheiro como a casa escreve (o neutro do pacote é "BRL 24.00")."""
     from shopman.utils.monetary import format_money
 
-    if not isinstance(value, dict) or "price_minor" not in value:
+    from collections.abc import Mapping
+
+    # O valor do fato chega como ``FrozenMap`` (um ``Mapping``, não um ``dict``).
+    if not isinstance(value, Mapping) or "price_minor" not in value:
         raise ValueError("valor sem price_minor")
     return f"R$ {format_money(int(value['price_minor']))}"
 

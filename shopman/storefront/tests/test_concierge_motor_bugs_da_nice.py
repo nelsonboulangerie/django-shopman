@@ -150,3 +150,12 @@ def test_the_order_placed_says_where_to_follow(db, settings):
     settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.exemplo/"
     assert _say("commit_order.done", order="WHATSAPP-261122-S50") == \
         "Pedido registrado: WHATSAPP-261122-S50. Acompanhar: https://loja.exemplo/pedido/WHATSAPP-261122-S50/"
+
+
+def test_the_money_in_the_fact_is_a_frozen_map_and_still_says_reais(db):
+    """O lastro da resposta guarda o dinheiro como ``FrozenMap``: o formatador da Nice lê um ``Mapping``."""
+    from conversational_commerce.contracts.canonical import FrozenMap
+
+    from shopman.storefront.concierge import turn_framework
+
+    assert turn_framework.money_text(FrozenMap({"price_minor": 2400, "currency": "BRL"})) == "R$ 24,00"
