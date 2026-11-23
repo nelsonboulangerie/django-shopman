@@ -2539,7 +2539,11 @@ if SENTRY_DSN:
             acesso, chave de assinatura e telefone de cliente costumam viajar.
             """
             from shopman.shop.telemetry_redaction import scrub_sentry_event
+            from shopman.shop.telemetry_throttle import drop_repeated_provider_error
 
+            event = drop_repeated_provider_error(event)
+            if event is None:
+                return None
             return scrub_sentry_event(event)
 
         sentry_sdk.init(

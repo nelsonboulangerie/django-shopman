@@ -15260,6 +15260,29 @@
       ]
     },
     {
+      "path": "shopman/shop/telemetry_throttle.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "EVERY_SECONDS",
+            "PROVIDER_MECHANISMS",
+            "_provider_exception",
+            "drop_repeated_provider_error",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/templatetags/__init__.py",
       "touchpoints": [
         "outro"
