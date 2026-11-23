@@ -333,7 +333,7 @@ async function submitForcedChange(payload: {
           variant="subtle"
           icon="i-lucide-wifi-off"
           title="Não foi possível carregar os operadores."
-          :actions="alertActions('error', [{ label: 'Tentar de novo', onClick: loadEligible }])"
+          :actions="alertActions('error', [{ label: 'Tentar de novo', onClick: () => loadEligible() }])"
           data-operator-lock-eligible-error
         />
 

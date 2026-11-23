@@ -44,8 +44,10 @@ class Command(BaseCommand):
         if not user.is_staff:
             raise CommandError(f"'{username}' não é staff — não pode operar.")
 
+        from shopman.backstage.services.operator import validate_operator_pin
+
         try:
-            cred = PinCredential.set_for(user, pin)
+            cred = PinCredential.set_for(user, validate_operator_pin(pin))
         except PinCredentialError as exc:
             raise CommandError(f"PIN inválido: {exc}") from exc
 
