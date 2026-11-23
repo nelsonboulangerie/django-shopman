@@ -24,7 +24,7 @@ Nenhum domínio, app, modelo persistente ou camada nova. Duas funções de servi
 | Conceito | Dono único | Onde mora | Muda com esta proposta? |
 |---|---|---|---|
 | Pessoa, contatos, posse do contato, consentimento, linha do tempo | Guestman | `Customer`, `ContactPoint`, `CustomerIdentifier`, `contrib/consent`, `contrib/timeline` | Só frescor da verificação e evento de reatribuição (OC-07) |
-| Sessão autenticada, força da identidade, dispositivo confiável, links | Doorman + `storefront/identity.py` | `AccessLink`, `TrustedDevice`, `request.session` | Links de aviso deixam de confiar no dispositivo e passam a conceder só o pedido (OC-01) |
+| Sessão autenticada, força da identidade, dispositivo confiável, links | Doorman + `storefront/identity.py` | `AccessLink`, `TrustedDevice`, `request.session` | Avisos de pedido passam a levar o link comum, sem credencial (OC-01) |
 | Garantia do transporte da conversa | Orquestrador (Concierge) | `ConversationBinding.identity_assurance` | Rebaixa quando o contato é reatribuído (OC-07) |
 | Episódio conversacional, turno, orçamento vigente, posse humana | Orquestrador (Concierge) sobre o núcleo do framework | `Conversation`, `ConversationMessage`, `Conversation.quote` | Avisos entram na transcrição (OC-10) |
 | Sacola pré-pedido, revisão, holds, commit | Orderman (+ Stockman para holds) | `Session` por canal, `CommitSeal`, `IdempotencyKey` | Nenhuma mudança de modelo; chave `experience` na lista de cópia do commit (OC-22) |
@@ -124,7 +124,7 @@ sequenceDiagram
 
 ### 4.6 O que fica explicitamente fora
 
-Sessão compartilhada entre canais; espelhamento de sacola; entidade de intenção; caixa de entrada humana própria (depende da decisão D6); experimentação em visitante anônimo (depende de D2); mudança visual L3.
+Sessão compartilhada entre canais; espelhamento de sacola; entidade de intenção; caixa de entrada humana própria (depende da decisão D6); experimentação em visitante anônimo (fora por D2); mudança visual L3.
 
 ---
 
@@ -183,7 +183,7 @@ Invariantes verificáveis. Cada um tem **onde é provado**. Nenhum é variável 
 | X3 | Rótulo de ação diz o que a ação faz | Teste da Nice: ação `copy_pix` entrega o código, não um link (OC-05) |
 | X4 | Um efeito comercial por intenção do cliente | Testes de idempotência: checkout web (mesma chave → mesmo 201), Nice (mesmo token → mesmo pedido), transferência (mesma oferta → mesmo recibo) |
 | X5 | Termos defasados nunca viram pedido | `revision_changed`, `quote_stale`, `source_changed` cobertos |
-| X6 | Link que a casa envia nunca confia no dispositivo nem dá a conta a quem o recebe encaminhado | Teste de troca: `source=internal` ⇒ força `number`, sem `trust_device`; link de aviso concede só o pedido (OC-01) |
+| X6 | Aviso que a casa envia não carrega credencial: encaminhado, não abre conta nem pedido | Teste: texto renderizado de todo aviso de pedido não contém `/a?t=` (OC-01) |
 | X7 | Pedido de uma pessoa nunca é exibido a outra por coincidência de telefone | Teste de número reciclado (OC-02) |
 | X8 | Copy editada no Admin chega à loja em até 60 s, sem deploy | Teste de invalidação entre processos (OC-03) |
 | X9 | Texto decisivo (preço, disponibilidade, total, estado, erro) com no mínimo 14 px e contraste AA; corpo de leitura 16 px | Auditoria automatizada no Playwright em 320/375/390 px, marcando decisivos com `data-decisive` |
@@ -214,7 +214,7 @@ Invariantes verificáveis. Cada um tem **onde é provado**. Nenhum é variável 
 - **Configuração:** `RuleConfig` com `rule_path = "shopman.shop.rules.experience.ExperienceRule"`, `params` validados por `validate_params`:
   `{ref, surface, variants: ["a","b"], default: "a", cohorts: {internal: [...refs], pilot: [...]}, allocation: {"b": 0}, salt, owner, hypothesis, metrics: [...], remove_after: "AAAA-MM-DD"}`.
   `remove_after` obrigatório e no máximo 90 dias à frente. Histórico e permissão já vêm do `RuleConfig`.
-- **Resolução** (`shopman/shop/services/experience.py`, `resolve(request, surface) -> Assignment`), na precedência do D5: kill switch (regra desligada) → ambiente → loja → allow-list de coorte → percentual estável por identidade (só depois de D2) → padrão. Regra vencida (`remove_after` passado) resolve para o padrão e gera alerta de operador.
+- **Resolução** (`shopman/shop/services/experience.py`, `resolve(request, surface) -> Assignment`), na precedência do D5 do WP-RELEASE-01: kill switch (regra desligada) → ambiente → loja → allow-list de coorte → percentual estável por identidade (fora por ora: D2) → padrão. Regra vencida (`remove_after` passado) resolve para o padrão e gera alerta de operador.
 - **Aderência:** gravada em `request.session["shopman_experience"] = {ref: {variant, generation}}`. Para cliente identificado, hash estável de `customer_ref + salt`, igual em todo dispositivo. **Nenhum cookie novo** (a sessão de servidor já existe e já é cookie necessário); a política de privacidade não muda enquanto não houver alocação de anônimos.
 - **Exposição ao Nuxt:** campo aditivo `experience: {ref, variant}` na projeção `shell` (e `site`). O Nuxt usa um composable `useExperience(ref)`; o código de cada variante leva a anotação `// EXPERIMENT(<ref>) remove_after AAAA-MM-DD`.
 - **Borda:** toda resposta com variante diferente da padrão é privada. Como a atribuição exige sessão de servidor, a requisição carrega `Cookie` e `carries_credentials` já a tira do gêmeo público (`public_cache.py:46-56`); o teste de aceite prova isso.
@@ -247,15 +247,14 @@ Convenções: **um WP = um branch = um PR**; cada PR cita `Compromisso: DEV-2026
 
 | WP | O quê | Arquivos | Aceite | Tam. |
 |---|---|---|---|---|
-| **OC-01a** | Links de aviso não confiam no dispositivo | `shopman/shop/services/access_urls.py` (padrão `source=AccessLink.Source.INTERNAL` nos três builders), testes em `shopman/storefront/tests/` | Troca de link de aviso ⇒ `identity_strength == "number"`, nenhum `trust_device`; link que o cliente originou (`#menu`, código NB) continua confiando | P |
-| **OC-01b** | Link de aviso concede só o pedido, vale mais, e o vencido cai no pedido certo (depende de **D5**) | `access_urls.py`, `storefront/api/auth.py` (troca: `grant_order_access` sem `login()` quando `metadata.scope == "order"`), `doorman` só via `ttl_minutes` já existente, `surfaces/storefront-nuxt/app/pages/a.vue` | Link encaminhado mostra e deixa pagar aquele pedido, não abre conta nem histórico; link vencido leva a `/pedido/<ref>` com a entrada pedida no contexto | M |
+| **OC-01** | Avisos de pedido sem credencial (D5, recomendação revista) | `shopman/shop/services/notification.py:829-840` (os avisos passam a usar o link comum de `storefront_links`, não `build_*_access_url`), `shopman/shop/services/access_urls.py` (os três builders saem se ficarem sem uso), `/pedido/<ref>` sem sessão leva à entrada com o pedido como destino | Aviso encaminhado não abre conta nem pedido; dono no próprio celular abre direto; em outro dispositivo, entrada pelo WhatsApp cai no pedido; nenhum token em texto de aviso | P |
 | **OC-02** | Pedido por telefone só sem dono declarado | `shopman/shop/services/customer_orders.py` (`order_matches_customer_identity`, histórico `:773-783`), `shopman/shop/projections/customer.py:72` | Pedido com `customer_ref` de A nunca aparece para B que tem o mesmo telefone; pedido sem `customer_ref` (convidado) continua casando por telefone | P |
 | **OC-03** | Copy do Admin chega a todos os processos | `shopman/shop/omotenashi/copy.py` (versão no cache Django/Valkey, conferida por requisição, memo local), sinais em `models/omotenashi_copy.py`, `admin/omotenashi.py`; mesmo tratamento para `attribute_defaults` se usar o mesmo padrão | Teste que simula dois processos: salvar no "operador" faz o "storefront" reler; X8 | P |
 | **OC-04** | Loja fechada promete só o que existe | `shopman/storefront/presentation/home.py`, `cart.py` (campo `ordering: {state: now/preorder/none, next_date}` derivado dos fatos de promessa do catálogo), `surfaces/storefront-nuxt/app/presentation/home.ts` (frase escolhida pelo estado; textos no catálogo de copy), vitrine com encomendáveis primeiro, snapshots de contrato | X1; com zero encomendáveis a home e a sacola dizem que hoje não há encomenda aberta e oferecem aviso | M |
 | **OC-05** | Pix e cartão como ações de conversa | `shopman/shop/projections/order_tracking.py` (ação `copy_pix` com `value` do código, campo aditivo), `shopman/shop/services/conversation.py`, `shopman/storefront/concierge/tools.py` (`render_result`: código em mensagem própria; cartão imprime o link do gateway no pedido), caminho do motor (`service.py:1078` repassa as mensagens extras) | X3; N10–N12 no harness; o motor com `conversational_live_order=True` entrega o Pix. **Coordenar com #3399/#3414** (mesmos arquivos do motor): entra depois deles ou dentro de um deles, nunca em paralelo | M |
 | **OC-06** | Copy "de pessoa para pessoa" verdadeira | `shopman/shop/omotenashi/copy.py:409-414` (texto condicionado a a Nice estar viva no número, via estado já projetado) | Com a Nice ligada, a home não promete atendimento humano direto | P |
 
-### Fase 1: identidade (depois de OC-01a/OC-02)
+### Fase 1: identidade (depois de OC-01/OC-02)
 
 | WP | O quê | Arquivos | Aceite | Tam. |
 |---|---|---|---|---|
@@ -291,7 +290,7 @@ Convenções: **um WP = um branch = um PR**; cada PR cita `Compromisso: DEV-2026
 | OC-22 | Marcação no pedido | `shopman/storefront` (grava `Session.data["experience"]`), `packages/orderman/.../services/commit.py` (uma chave na lista explícita de `_do_commit`, conforme a regra 5 do `CLAUDE.md`; o PR traz a prova de que nenhuma chave existente carrega isso), `data-schemas.md` | Pedido sabe de qual variante veio | P |
 | OC-23 | Protocolo e ferramenta de comparação | `surfaces/storefront-nuxt/tests/e2e/journeys/*` (mesmas jornadas para A e B, mesmo seed, relógio fixo), relatório com capturas e `axe` | §9.6 | M |
 | OC-24 | Dimensão `experience` na copy (**condicional**) | `OmotenashiCopy` (+ migração), resolvedor, Admin (filtro e ação de promover) | Só abre quando um B aprovado precisar; §7.3 | M |
-| OC-25 | Alocação de anônimos e exposição (**condicional, D2**) | política de privacidade, gêmeo público com variante na URL ou desligado, registro de exposição | Só depois de D2 | G |
+| ~~OC-25~~ | Alocação de anônimos: **fora do plano** (D2: nenhum cliente nas coortes por ora) | | | |
 
 ### Fase 5: excelência visual L1/L2 do Storefront (paralelizável com tudo, exceto arquivos de OC-04)
 
@@ -306,15 +305,14 @@ Convenções: **um WP = um branch = um PR**; cada PR cita `Compromisso: DEV-2026
 
 ```mermaid
 flowchart LR
-  OC01a & OC02 & OC03 & OC04 & OC06 --> F1[Fase 1: OC-07, OC-08, OC-09]
+  OC01 & OC02 & OC03 & OC04 & OC06 --> F1[Fase 1: OC-07, OC-08, OC-09]
   OC05 --> F2[Fase 2: OC-10..OC-14]
   F2 --> F3[Fase 3: OC-15..OC-18]
   OC03 --> F4[Fase 4: OC-20..OC-23]
   F4 --> OC33[OC-33 candidatas B]
-  OC01a --> OC01b
 ```
 
-Podem correr ao mesmo tempo, por não tocarem os mesmos arquivos: {OC-01a, OC-02, OC-03, OC-04, OC-06}; {fase 1} ∥ {fase 2}; {fase 4} ∥ {fases 1–3}; {fase 5} ∥ tudo, menos OC-04. Não podem: OC-05 com #3399/#3414; OC-15 com OC-16 (mesmo serviço); OC-11 com OC-12 (mesmas ferramentas).
+Podem correr ao mesmo tempo, por não tocarem os mesmos arquivos: {OC-01, OC-02, OC-03, OC-04, OC-06}; {fase 1} ∥ {fase 2}; {fase 4} ∥ {fases 1–3}; {fase 5} ∥ tudo, menos OC-04. Não podem: OC-05 com #3399/#3414; OC-15 com OC-16 (mesmo serviço); OC-11 com OC-12 (mesmas ferramentas).
 
 ### Migrações
 
@@ -326,7 +324,7 @@ Só OC-24 (condicional) cria migração. Antes de abrir PR: `ls <app>/migrations
 
 ### 9.1 Unidade e integração (pytest)
 
-- OC-01: troca por fonte (`manychat`, `internal`, `api`) × força × confiança; link encaminhado; link vencido.
+- OC-01: nenhum aviso de pedido renderizado contém token; `/pedido/<ref>` sem sessão leva à entrada e volta ao pedido; link do cliente (`#menu`, código NB) continua confiando como hoje.
 - OC-02: matriz de identidade (ref igual, ref diferente com mesmo telefone, convidado).
 - OC-03: dois "processos" (limpar memo local + versão no cache).
 - OC-04: projeção `ordering` com catálogo vazio, só fornada planejada, pronto agora, loja fechada, virada do dia (relógio fixo).
@@ -359,18 +357,20 @@ Cada WP fecha com: saída de comando dos testes tocados e das travas da fila (n�
 
 ---
 
-## 10. Decisões pendentes do dono
+## 10. Decisões do dono
 
-Seis, cada uma com recomendação. Todo o resto é mecânica.
+Respostas do dono em 23/11/2026, no chat desta etapa. **Decididas:** D1, D2, D6. **Com recomendação revista, aguardando o ok do dono:** D3, D4, D5.
 
-| # | Pergunta | Opções | Recomendação |
-|---|---|---|---|
-| **D1** | Fazer agora o resolvedor de variantes (R4 do release), com a loja como primeiro app? O plano de release põe a loja por último. | (1) sim, agora; (2) depois do go-live | **(1)**: sem ele não existe A/B; a correção de verdade e segurança (fase 0) não depende dele |
-| **D2** | Experimentar em visitante anônimo depois do go-live (sorteio, exige mudar a política de privacidade e o cache de borda)? | (1) só coortes de pessoas escolhidas; (2) sortear anônimos | **(1)** até haver tráfego que justifique |
-| **D3** | Número de WhatsApp que muda de dono: o que fazer quando o número passa muito tempo sem uso verificado? | (1) aceitar o risco; (2) depois de 12 meses sem uso, o número dá acesso fraco (sem endereço nem histórico) até nova prova; (3) consultar operadora | **(2)** |
-| **D4** | Telefone digitado no balcão (não verificado) deve dar acesso à conta por código no WhatsApp/SMS? | (1) sim, como hoje; (2) sim, mas sem endereço nem histórico até a primeira compra pelo próprio número | **(2)** |
-| **D5** | Link dos avisos de pedido ("acompanhar", "pagar"): entra na conta ou só abre aquele pedido? | (1) entra na conta, sem confiar no dispositivo, válido 5 min; (2) abre só aquele pedido, sem conta, válido 72 h | **(2)**: encaminhar deixa de ser risco e o link funciona quando o cliente lê o aviso |
-| **D6** | Atendimento humano: as respostas da equipe ficam só no Live Chat do ManyChat (a Nice não as vê) ou o Shopman passa a recebê-las? | (1) manter; (2) investigar se o ManyChat entrega as mensagens da equipe por webhook e gravá-las na conversa | **(2)** como investigação curta antes de ligar a volta à Nice |
+| # | Pergunta | Resposta / estado |
+|---|---|---|
+| **D1** | Fazer agora o resolvedor de variantes (R4 do release), com a loja como primeiro app? | **Sim, Storefront.** E nem o cliente nem o operador escolhem a versão: quem decide é o servidor, pela coorte configurada no Admin (`RuleConfig`). Não existe chave, botão ou parâmetro de URL para trocar de versão. Para comparar A e B lado a lado, o dono usa duas contas de teste, uma em cada coorte. |
+| **D2** | Quem vê a candidata B? | **Só o dono/admin, a gerente (Joyce) e os operadores cadastrados. Nenhum cliente por ora.** OC-25 (anônimos) sai do plano. A coorte `internal` deve ser derivada do cadastro de operadores, para que um operador novo entre sozinho e um desligado saia sozinho; o agente confere como a conta de operador se liga à conta de cliente da loja (que é por telefone) e, se não houver ligação, propõe a menor antes de criar lista à mão. |
+| **D3** | Número de WhatsApp que muda de dono | **Recomendação revista (aguarda ok):** defesa em camadas, que é o que a prática recomenda (NIST SP 800-63B trata o telefone como autenticador restrito, nunca como identidade permanente). (a) O número sozinho dá **acesso de número**: pedir, ver pedidos recentes, pagar. Endereços salvos, histórico completo e troca de dados pedem **acesso de dispositivo** (passkey ou dispositivo confiável, que a loja já tem e que não passa com o chip). (b) O acesso de número sem uso verificado há mais de 12 meses volta a pedir prova. (c) Sinal de troca de dono, quando o provedor oferecer: aviso de troca de identidade do WhatsApp na Cloud API da Meta e APIs de troca de chip/reciclagem das operadoras (padrão CAMARA/Open Gateway) [H: disponibilidade pelo ManyChat e pelas operadoras no Brasil a verificar]. (d) Caminho "não sou eu / troquei de número" que desliga o vínculo antigo. |
+| **D4** | Telefone digitado no balcão (não verificado) | **Recomendação revista (aguarda ok):** verificar na hora do cadastro. Quando o balcão grava um telefone, o cliente recebe no WhatsApp "Confirme que este número é seu" e responde com um toque. Até confirmar, o número não abre a conta existente; depois de confirmado, vale a regra de D3. Com isso a pergunta "é seguro o bastante?" passa a ter resposta sim: o risco que sobra é o de D3, tratado lá. |
+| **D5** | Link dos avisos de pedido | **Recomendação revista (aguarda ok):** nem 5 min nem 72 h. **O aviso leva o link comum do pedido (`/pedido/<ref>`), sem credencial nenhuma.** No celular do próprio cliente a loja já reconhece a sessão ou o dispositivo confiável (180 dias) e abre direto; em outro dispositivo, a entrada pelo WhatsApp (três toques) leva ao pedido. O código Pix já vai no próprio texto do aviso, então pagar não depende do link. Encaminhar deixa de ser risco e não há prazo para discutir. É também o que os avisos por *flow* do ManyChat já fazem por segurança (`adapters/notification_manychat.py:686-715`). OC-01a e OC-01b viram um WP só (OC-01). |
+| **D6** | Respostas da equipe no Live Chat | **Investigar se o ManyChat entrega as mensagens da equipe ao Shopman e gravá-las na conversa**, antes de ligar a volta à Nice (OC-13). |
+
+**Pagamento com a loja fechada:** não é decisão pendente. Está decidido na [ADR-036](../decisions/adr-036-loja-online-paga-ao-pedir.md) e na emenda de 09/11: paga ao pedir; cartão autoriza e é capturado no aceite; Pix pago e estornado sozinho se recusar ou vencer; 60 min de loja aberta para aceitar encomenda e pedido feito com a casa fechada; a fila da fornada cobra só quando o cliente confirma a vaga. A nota do dono na ADR ("se os estornos ficarem constantes, reavaliar") pede uma medida. Sugestão para o plano: contar, por mês, os pedidos estornados por recusa ou prazo (`cancellation_reason` + `payment_refunded`, dados que já existem) e mostrar no B.I.; o gatilho de reavaliação é decisão do dono.
 
 Mudanças L3: **nenhuma proposta**. As candidatas B1–B3 são L2 e pedem aprovação antes de abrir OC-33.
 
@@ -384,7 +384,7 @@ Leia, nesta ordem: o laudo; este plano; `CLAUDE.md`; ADR-043, ADR-049, ADR-050; 
 
 ### 11.2 Sequência
 
-1. Confirmar as respostas de D1–D6 no compromisso `DEV-2026-085`.
+1. D1, D2 e D6 estão decididas (§10). Não comece OC-07, OC-08 nem OC-01 antes do ok do dono a D3, D4 e D5.
 2. Fase 0, em paralelo (um worktree e um PR por WP). OC-05 só depois de conferir o estado de #3399/#3414 e combinar com a frente do framework.
 3. Fases 1 e 2 em paralelo; fase 4 em paralelo a partir de OC-03; fase 3 depois da fase 2; fase 5 a qualquer momento, fora dos arquivos de OC-04.
 
