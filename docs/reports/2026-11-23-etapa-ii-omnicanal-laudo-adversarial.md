@@ -231,4 +231,4 @@ Legenda: **Mantida** · **Aprimorada** · **Qualificada** · **Refutada** · **S
 
 ## 5. Decisões que só o dono pode tomar
 
-Ver [plano §10](2026-11-23-etapa-ii-omnicanal-espec-e-plano.md#10-decisões-pendentes-do-dono). São seis; todo o resto é mecânica ou óbvio de omotenashi.
+Ver [plano §10](2026-11-23-etapa-ii-omnicanal-espec-e-plano.md#10-decisões-do-dono). São seis; todo o resto é mecânica ou óbvio de omotenashi.

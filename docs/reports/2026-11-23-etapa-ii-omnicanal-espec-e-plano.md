@@ -5,7 +5,7 @@
 > **Laudo que fundamenta cada escolha (ler antes):** [2026-11-23-etapa-ii-omnicanal-laudo-adversarial.md](2026-11-23-etapa-ii-omnicanal-laudo-adversarial.md). Os códigos S1–S5, T1–T5 e U1–U6 citados aqui são os achados de lá.
 > **Relatórios de origem (preservados):** branch `docs/storefront-excellence-omnicanal-20261123`, commit `dbf912118`.
 
-Sumário: [4 Arquitetura](#4-arquitetura-proposta) · [5 Experiência](#5-especificação-da-experiência-comercial) · [6 Contrato de Excelência](#6-contrato-de-excelência) · [7 Experimentação](#7-especificação-de-experimentação) · [8 Plano](#8-plano-de-implementação) · [9 Testes](#9-plano-de-testes-e-homologação) · [10 Decisões](#10-decisões-pendentes-do-dono) · [11 Instruções ao agente](#11-instruções-para-o-agente-de-implementação)
+Sumário: [4 Arquitetura](#4-arquitetura-proposta) · [5 Experiência](#5-especificação-da-experiência-comercial) · [6 Contrato de Excelência](#6-contrato-de-excelência) · [7 Experimentação](#7-especificação-de-experimentação) · [8 Plano](#8-plano-de-implementação) · [9 Testes](#9-plano-de-testes-e-homologação) · [10 Decisões](#10-decisões-do-dono) · [11 Instruções ao agente](#11-instruções-para-o-agente-de-implementação)
 
 (As seções 1 a 3 do pedido, diagnóstico, análise do código e análise dos relatórios, estão no laudo.)
 
