@@ -57,11 +57,15 @@ _MSG_FORBIDDEN = "Acesso restrito a operadores."
 _MSG_SEM_PERMISSAO = "Operador sem permissão para esta ação."
 
 
-def deny_production_capability(capability: str) -> None:
-    """Return the typed denial contract consumed by every production client."""
+def deny_production_capability(capability: str, *, detail: str = "") -> None:
+    """Return the typed denial contract consumed by every production client.
+
+    ``detail`` troca a frase genérica pela regra da casa quando ela tem nome
+    ("Cancelar lote é com o gerente."); o envelope e o código não mudam.
+    """
     raise PermissionDenied(
         {
-            "detail": "Operador sem capacidade para esta ação de produção.",
+            "detail": detail or "Operador sem capacidade para esta ação de produção.",
             "error": {
                 "code": "forbidden",
                 "capability": capability,

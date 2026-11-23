@@ -448,6 +448,37 @@ def _refuse_finish_below_delivered(work_order, finished: Decimal) -> None:
         )
 
 
+def _void_locked_work_order(
+    work_order,
+    *,
+    actor: str,
+    reason: str,
+    expected_rev: int | None,
+    idempotency_key: str | None,
+) -> str:
+    """O cancelamento com as guardas dele, sobre um lote já travado.
+
+    Um caminho só para "Cancelar lote…" e para zerar o lote no Planejamento: as
+    duas portas tiram o lote do plano, então as duas passam pela mesma guarda do
+    pão entregue (#3232) e gravam o motivo que a pessoa deu.
+    """
+    _refuse_void_with_deliveries(work_order)
+    result = production_core.void_work_order(
+        work_order.pk,
+        actor=actor,
+        reason=reason,
+        expected_rev=expected_rev,
+        idempotency_key=idempotency_key,
+    )
+    _abandon_open_oven_run(
+        work_order,
+        actor=actor,
+        transition="void",
+        reason="work_order_voided",
+    )
+    return result
+
+
 def apply_void(
     work_order_id,
     *,
@@ -468,21 +499,13 @@ def apply_void(
     try:
         with transaction.atomic():
             work_order = WorkOrder.objects.select_for_update().get(pk=work_order_id)
-            _refuse_void_with_deliveries(work_order)
-            result = production_core.void_work_order(
-                work_order_id,
+            return _void_locked_work_order(
+                work_order,
                 actor=actor,
                 reason=reason,
                 expected_rev=expected_rev,
                 idempotency_key=_mutation_idempotency_key("void", work_order_id, idempotency_key),
             )
-            _abandon_open_oven_run(
-                work_order,
-                actor=actor,
-                transition="void",
-                reason="work_order_voided",
-            )
-            return result
     except WorkOrder.DoesNotExist:
         raise ProductionNotFound(
             "Ordem de produção não encontrada.",
@@ -1151,11 +1174,15 @@ def apply_planned(
     The recipe lock keeps the coverage read and the cell write in one transaction.
     """
     from django.db import transaction
-    from shopman.craftsman.models import ProductionMode, Recipe
+    from shopman.craftsman.models import ProductionMode, Recipe, WorkOrder
 
     _require_creation_attempt(actor=actor, idempotency_key=idempotency_key)
     quantity = _positive_quantity(quantity, allow_zero=True)
     attempt_key = f"production.plan:{str(idempotency_key).strip()}" if idempotency_key else None
+    # Zerar um lote que existe vira cancelamento, gravado com chave própria: o
+    # evento de cancelamento não carrega a tentativa do plano, e a releitura do
+    # plano (``replay_planned_quantity``) o tomaria por outra tentativa.
+    void_key = f"production.plan_void:{str(idempotency_key).strip()}" if idempotency_key else None
     attempt_payload = {"force": bool(force)}
     try:
         _claim_projected_action_attempt(
@@ -1214,6 +1241,26 @@ def apply_planned(
             )
             if replay:
                 return replay
+            cleared_lot = _zeroed_planned_work_order(
+                recipe_id=recipe_id,
+                quantity=quantity,
+                target_date_value=target_date_value,
+                position_ref=resolved_position_ref,
+                work_order_id=work_order_id,
+                create_new=create_new,
+                void_key=void_key,
+            )
+            if cleared_lot is not None and cleared_lot.status == WorkOrder.Status.VOID:
+                # Releitura do mesmo zero: o cancelamento idempotente do core
+                # confere quem e por quê, e a resposta é a da primeira vez.
+                _void_locked_work_order(
+                    cleared_lot,
+                    actor=actor,
+                    reason=_zeroing_reason(reason),
+                    expected_rev=expected_rev,
+                    idempotency_key=void_key,
+                )
+                return cleared_lot.output_sku, "", Decimal("0"), "cleared"
             shortage = _check_linked_order_coverage(
                 recipe_id=recipe_id,
                 quantity=quantity,
@@ -1230,23 +1277,42 @@ def apply_planned(
                 )
             if shortage and not force:
                 raise shortage
-            result = production_core.set_planned_quantity(
-                recipe_id=recipe_id,
-                quantity=quantity,
-                target_date_value=target_date_value,
-                position_ref=position_ref,
-                operator_ref=operator_ref,
-                reason=reason,
-                actor=actor,
-                source_ref=source_ref,
-                expected_rev=expected_rev,
-                idempotency_key=attempt_key,
-                attempt_payload=attempt_payload,
-                planning_meta=planning_meta,
-                work_order_id=work_order_id,
-                resolved_position_ref=resolved_position_ref,
-                create_new=create_new,
-            )
+            if cleared_lot is not None:
+                # Zerar um lote que existe é cancelar o lote: mesmas guardas,
+                # mesma autoridade (a view pede ``can_void``) e o motivo de quem
+                # zerou, nunca o texto que o core escreveria.
+                cleaned_reason = _zeroing_reason(reason)
+                _require_irreversible_attempt(
+                    actor=actor,
+                    expected_rev=expected_rev,
+                    idempotency_key=idempotency_key,
+                )
+                _void_locked_work_order(
+                    cleared_lot,
+                    actor=actor,
+                    reason=cleaned_reason,
+                    expected_rev=expected_rev,
+                    idempotency_key=void_key,
+                )
+                result = (cleared_lot.output_sku, "", Decimal("0"), "cleared")
+            else:
+                result = production_core.set_planned_quantity(
+                    recipe_id=recipe_id,
+                    quantity=quantity,
+                    target_date_value=target_date_value,
+                    position_ref=position_ref,
+                    operator_ref=operator_ref,
+                    reason=reason,
+                    actor=actor,
+                    source_ref=source_ref,
+                    expected_rev=expected_rev,
+                    idempotency_key=attempt_key,
+                    attempt_payload=attempt_payload,
+                    planning_meta=planning_meta,
+                    work_order_id=work_order_id,
+                    resolved_position_ref=resolved_position_ref,
+                    create_new=create_new,
+                )
             if shortage:
                 _record_shortage_override(
                     work_order_ref=result[1] or shortage.work_order_ref,
@@ -1265,6 +1331,85 @@ def apply_planned(
     except Exception as exc:
         translated = _operator_error(exc)
         raise translated from (None if translated is exc else exc)
+
+
+def _zeroing_reason(reason) -> str:
+    """O motivo de quem tirou o lote do plano; sem ele, não sai."""
+    cleaned = str(reason or "").strip()
+    if not cleaned:
+        raise ProductionError("Diga o motivo de tirar o lote do plano.")
+    return cleaned
+
+
+def _zeroed_planned_work_order(
+    *,
+    recipe_id,
+    quantity,
+    target_date_value,
+    position_ref: str,
+    work_order_id=None,
+    create_new: bool = False,
+    void_key: str | None = None,
+):
+    """O lote planejado que esta célula zerada tira do plano, travado; ``None`` se não há.
+
+    Resolve o alvo como o core resolve (o ``work_order_id`` pedido, ou o único lote
+    planejado da célula). Quando não resolve (célula vazia, alvo velho, dois lotes
+    sem dizer qual), devolve ``None`` e o core responde como sempre respondeu.
+    A releitura de um cancelamento já aceito devolve o mesmo lote, para que o
+    cancelamento idempotente do core responda a tentativa repetida.
+    """
+    from shopman.craftsman.exceptions import CraftError
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+
+    try:
+        target_date = date.fromisoformat(str(target_date_value))
+    except ValueError:
+        target_date = None
+    accepted = None
+    if void_key:
+        accepted = (
+            WorkOrderEvent.objects.filter(idempotency_key=void_key)
+            .select_related("work_order")
+            .first()
+        )
+    if accepted is not None:
+        # A chave já tirou um lote do plano. Só a MESMA tentativa (zero, mesma
+        # célula, mesmo alvo) relê esse cancelamento; qualquer outra é conflito,
+        # como a releitura do plano responde.
+        voided = accepted.work_order
+        same_attempt = (
+            not create_new
+            and Decimal(str(quantity)) == 0
+            and accepted.kind == WorkOrderEvent.Kind.VOIDED
+            and str(voided.recipe_id) == str(recipe_id)
+            and voided.target_date == target_date
+            and voided.position_ref == position_ref
+            and str(work_order_id or voided.pk) == str(voided.pk)
+        )
+        if not same_attempt:
+            raise CraftError(
+                "IDEMPOTENCY_CONFLICT",
+                idempotency_key=void_key,
+                work_order=voided.ref,
+                existing_work_order=voided.ref,
+            )
+        return WorkOrder.objects.select_for_update().get(pk=voided.pk)
+    if create_new or Decimal(str(quantity)) != 0 or target_date is None:
+        return None
+    planned = list(
+        WorkOrder.objects.select_for_update()
+        .filter(
+            recipe_id=recipe_id,
+            target_date=target_date,
+            position_ref=position_ref,
+            status=WorkOrder.Status.PLANNED,
+        )
+        .order_by("pk")
+    )
+    if work_order_id not in (None, ""):
+        return next((wo for wo in planned if str(wo.pk) == str(work_order_id)), None)
+    return planned[0] if len(planned) == 1 else None
 
 
 def _locked_planning_position_ref(position_ref: str) -> str:
