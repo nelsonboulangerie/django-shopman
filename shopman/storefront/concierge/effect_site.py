@@ -254,9 +254,11 @@ class ConciergeEffectSite:
         if session is None or data.get("fulfillment_type") != "delivery":
             # O endereço vem com a entrega: sem ela, o motor pergunta "retirada ou entrega?" (``ask_mode``).
             return Done(False, refusal=ErrorCode.FACT_UNAVAILABLE.value)
+        # Só o trecho de endereço da fala: "apto 12, e põe mais um croissant" grava "apto 12" (o croissant é da
+        # sacola, outro movimento do turno, e nunca vai para a etiqueta nem para a nota).
         said = (
             {"use_shared_location": True} if shared_location_of(source)
-            else address_parts(resolve_text(source), data.get("delivery_address_structured"))
+            else address_parts(address_of(resolve_text(source)), data.get("delivery_address_structured"))
         )
         if not said:
             return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
@@ -364,6 +366,79 @@ _NUMBER = re.compile(r"^(?:n[º°o.]?\s*)?(\d{1,6}[a-z]?|s/?n|sem n[uú]mero)$")
 #: Sobre o texto dobrado (sem acento, minúsculo): "na verdade e rua y, 50", "av. brasil 1200", "86010-000".
 _NEW_ADDRESS = re.compile(
     r"\b(?:rua|avenida|av|alameda|travessa|rodovia|estrada|praca|largo)\.?\s+\w|\b\d{5}-?\d{3}\b")
+
+
+#: Onde uma fala se divide em trechos: vírgula, ponto e vírgula, exclamação, interrogação, "e", "mas".
+#: O ponto fica de fora ("Av. Brasil" é um trecho só).
+_CLAUSE_SEP = re.compile(r"(\s*[,;!?]\s*|\s+(?:e|mas)\s+)", re.IGNORECASE)
+#: Trecho que pede outra coisa, pelas palavras da casa (sobre o texto dobrado): mexer na sacola, agradecer.
+_OTHER_CUE = re.compile(
+    r"\b(?:poe|ponha|coloca|coloque|bota|adiciona|acrescenta|inclui|mais|menos|tira|remove|troca|quero|queria|"
+    r"gostaria|manda|traz|vou querer|obrigad\w*|valeu)\b")
+MASK = "[endereço omitido]"
+
+
+def _product_words() -> frozenset[str]:
+    """As palavras dos nomes do cardápio (dobradas, de 4 letras ou mais): "croissant", "campanha"."""
+    from shopman.offerman.models import Product
+
+    from .address import _fold
+
+    names = Product.objects.filter(is_sellable=True).values_list("name", flat=True)
+    return frozenset(word for name in names for word in re.findall(r"\w{4,}", _fold(str(name))))
+
+
+def _other_clause(piece: str, products: frozenset[str]) -> bool:
+    """O trecho pede outra coisa que não o endereço: um ato da regra local, uma palavra do fechamento
+    (desistir, fechar, pagar, retirar, entregar), um verbo de sacola ou um produto do cardápio."""
+    from .address import _fold
+    from .order_closing import _CARD_RE, _CASH_RE, _DELIVERY_RE, _GIVE_UP_RE, _PICKUP_RE, _PIX_RE, _START_RE
+    from .turn_framework import NiceRules
+
+    folded = _fold(piece)
+    rules = (_GIVE_UP_RE, _START_RE, _PIX_RE, _CARD_RE, _CASH_RE, _PICKUP_RE, _DELIVERY_RE, _OTHER_CUE)
+    words = re.findall(r"\w{4,}", folded)
+    named = any(word in products or word.rstrip("s") in products for word in words)  # "croissants"
+    return bool(NiceRules().read(piece)) or any(rule.search(folded) for rule in rules) or named
+
+
+def address_clauses(text: str) -> list[tuple[str, bool | None]]:
+    """A fala em trechos, na ordem: ``(trecho, é_endereço)``; o separador vem como ``(sep, None)``.
+
+    "apto 12, e põe mais um croissant" → ``[("apto 12", True), (", e ", None), ("põe mais um croissant", False)]``.
+    """
+    products = _product_words()
+    found: list[tuple[str, bool | None]] = []
+    for index, piece in enumerate(_CLAUSE_SEP.split(str(text or ""))):
+        if index % 2:
+            found.append((piece, None))
+        elif piece.strip():
+            found.append((piece.strip(), not _other_clause(piece, products)))
+    return found
+
+
+def address_of(text: str) -> str:
+    """Só os trechos de endereço da fala ("apto 12, e põe mais um croissant" → "apto 12")."""
+    return ", ".join(piece for piece, is_address in address_clauses(text) if is_address)
+
+
+def masked_for_reading(text: str) -> str:
+    """A fala com cada trecho de endereço trocado pela máscara: é o que a IA lê (P17)."""
+    clauses = address_clauses(text)
+    out: list[str] = []
+    for index, (piece, is_address) in enumerate(clauses):
+        if is_address is None:
+            before = clauses[index - 1][1] if index else None
+            after = clauses[index + 1][1] if index + 1 < len(clauses) else None
+            if before and after:
+                continue  # entre dois trechos de endereço: some na máscara única
+            out.append(piece)
+        elif is_address:
+            if MASK not in out[-1:]:
+                out.append(MASK)
+        else:
+            out.append(piece)
+    return "".join(out)
 
 
 def address_parts(text: str, structured) -> dict:

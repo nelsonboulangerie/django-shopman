@@ -24,7 +24,7 @@ from shopman.orderman.models import Session
 from shopman.shop.conversational.commerce_read import ShopmanCommerceRead, address_ref
 from shopman.shop.models import Channel, Conversation, ConversationMessage
 from shopman.storefront.concierge import turn_framework
-from shopman.storefront.concierge.effect_site import ConciergeEffectSite, address_parts
+from shopman.storefront.concierge.effect_site import ConciergeEffectSite, address_of, address_parts
 from shopman.storefront.concierge.ports import ConversationOwnership, shared_location_of
 from shopman.storefront.concierge.tools import ToolContext
 
@@ -313,6 +313,60 @@ def test_a_partial_address_answer_never_reaches_the_ai(conversation, pending, te
     ai = FakeAI(error=AssertionError("o pedaço de endereço não vai à IA"))
     understanding, consumption = _read(text, ai, allowed=ACTS)
     assert _fields(understanding) == [("give_address", {})] and consumption.calls == 0 and ai.requests == []
+
+
+@pytest.mark.parametrize("text", ["apto 12, e põe mais um croissant", "apto 12, e quero mais um croissant",
+                                  "apto 12, 2 croissants"])
+def test_a_mixed_answer_masks_the_address_for_the_ai_and_keeps_the_croissant(conversation, monkeypatch, text):
+    """A fala mista com o complemento pendente: a IA lê o trecho de endereço mascarado e o resto inteiro;
+    o croissant entra pela sacola, e o executor grava só o trecho de endereço."""
+    from conversational_commerce.engine.acts import ACTS
+    from shopman.offerman.models import Product
+
+    from shopman.storefront.concierge import tools
+    from shopman.storefront.tests.test_concierge_model_reader import FakeAI, _read
+
+    Product.objects.create(sku="CROISSANT", name="Croissant", base_price_q=1200, is_published=True, is_sellable=True)
+    monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": [
+        {"sku": "CROISSANT", "name": "Croissant", "price_q": 1200, "is_available": True}]})
+    _session(fulfillment_type="delivery", delivery_address=FULL["formatted_address"], delivery_address_structured=FULL)
+    ai = FakeAI([{"act": "give_address", "span": "[endereço omitido]"},
+                 {"act": "change_quantity", "span": "mais um croissant", "product": "croissant", "qty": 1,
+                  "change": "add"}])
+    understanding, consumption = _read(text, ai, allowed=ACTS)
+    sent = ai.requests[0]["messages"][0]["content"]  # a fala do cliente, como a IA a lê (sem o prompt do sistema)
+    assert consumption.calls == 1 and "[endereço omitido]" in sent
+    assert "apto" not in sent and " 12" not in sent  # nada do endereço chega à IA
+    assert "croissant" in sent.lower()  # o resto da fala, inteiro
+    assert [a.act for a in understanding.acts] == ["give_address", "change_quantity"]
+    assert dict(understanding.acts[0].fields) == {}  # o endereço, sem campo: o executor lê pela referência
+    assert dict(understanding.acts[1].fields)["item"] == "CROISSANT"  # o croissant entra pela sacola
+    assert address_parts(address_of(text), FULL) == {"complement": "apto 12"}  # o executor grava só o endereço
+
+
+def test_a_pure_address_answer_and_a_pure_order_keep_their_paths(conversation, monkeypatch):
+    from conversational_commerce.engine.acts import ACTS
+
+    from shopman.storefront.tests.test_concierge_model_reader import FakeAI, _read
+
+    _session(fulfillment_type="delivery", delivery_address=FULL["formatted_address"], delivery_address_structured=FULL)
+    silent = FakeAI(error=AssertionError("o pedaço de endereço não vai à IA"))
+    understanding, _ = _read("bloco B, apto 12", silent, allowed=ACTS)
+    assert [a.act for a in understanding.acts] == ["give_address"] and silent.requests == []
+    order = FakeAI([{"act": "change_quantity", "span": "mais um croissant", "product": "croissant", "qty": 1,
+                     "change": "add"}])
+    _read("quero mais um croissant", order, allowed=ACTS)
+    sent = order.requests[0]["messages"][0]["content"]
+    assert "quero mais um croissant" in sent and "[endereço omitido]" not in sent  # nada a mascarar
+
+
+def test_the_house_reads_only_the_address_clauses():
+    from shopman.storefront.concierge.effect_site import masked_for_reading
+
+    assert address_of("Rua das Flores, 120, Centro") == "Rua das Flores, 120, Centro"
+    assert address_of("Av. Brasil 1200") == "Av. Brasil 1200"  # o ponto não divide
+    assert address_of("apto 12, e põe mais um croissant") == "apto 12"
+    assert masked_for_reading("bloco B, apto 12 e quero mais um") == "[endereço omitido] e quero mais um"
 
 
 @pytest.mark.parametrize("text", ["obrigada", "não, deixa pra lá", "pode fechar", "vou pagar no pix",

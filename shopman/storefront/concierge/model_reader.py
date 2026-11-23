@@ -271,30 +271,43 @@ def _cart_lines(conversation) -> list[dict]:
 _ADDRESS_DETAIL_CODES = frozenset({"delivery_address_details", "delivery_complement"})
 
 
-def address_answer(conversation, text: str) -> bool:
-    """A fala responde ao que falta no endereço da entrega e vai ao motor SEM a IA (P17).
-
-    O redator mascara endereço inteiro ("Rua das Flores 120"), mas não o pedaço que o fechamento pede:
-    o bairro, o número, o complemento. Com um deles pendente, a fala que não é outra coisa conhecida
-    (desistir, fechar, pagar, trocar o modo, ou um ato da regra local) é a resposta, e o texto não sai daqui.
-    """
+def address_detail_pending(conversation) -> bool:
+    """O fechamento espera um pedaço do endereço da entrega (o número, o CEP, o bairro, o complemento)."""
     from shopman.orderman.models import Session
 
     from shopman.shop.conversational.commerce_read import _address_requirements
 
-    from .address import _fold
-    from .order_closing import _CARD_RE, _CASH_RE, _DELIVERY_RE, _GIVE_UP_RE, _PICKUP_RE, _PIX_RE, _START_RE
-    from .turn_framework import NiceRules
-
-    if conversation is None or not conversation.session_key or not str(text or "").strip():
+    if conversation is None or not conversation.session_key:
         return False
     session = Session.objects.filter(session_key=conversation.session_key).first()
     data = (session.data if session is not None else None) or {}
-    if data.get("fulfillment_type") != "delivery" or not _ADDRESS_DETAIL_CODES & set(_address_requirements(data)):
+    return data.get("fulfillment_type") == "delivery" and bool(_ADDRESS_DETAIL_CODES & set(_address_requirements(data)))
+
+
+def address_answer(conversation, text: str) -> bool:
+    """A fala é SÓ o pedaço de endereço que o fechamento pede, e vai ao motor sem a IA (P17).
+
+    O redator mascara endereço inteiro ("Rua das Flores 120"), mas não o pedaço: "Jardim Botânico", "apto 12".
+    Com um deles pendente, a fala cujos trechos são todos de endereço não sai daqui. A fala mista ("apto 12,
+    e põe mais um croissant") vai à IA com o trecho de endereço mascarado (``reading_text``).
+    """
+    from .effect_site import address_clauses
+
+    if not str(text or "").strip() or not address_detail_pending(conversation):
         return False
-    folded = _fold(text)
-    other = (_GIVE_UP_RE, _START_RE, _PIX_RE, _CARD_RE, _CASH_RE, _PICKUP_RE, _DELIVERY_RE)
-    return not NiceRules().read(text) and not any(rule.search(folded) for rule in other)
+    clauses = [is_address for _piece, is_address in address_clauses(text) if is_address is not None]
+    return bool(clauses) and all(clauses)
+
+
+def reading_text(conversation, text: str) -> str:
+    """O texto que a IA lê: com um pedaço de endereço pendente, os trechos de endereço mascarados; e sempre
+    pelo redator, que mascara o que ele conhece (endereço inteiro, telefone, nome)."""
+    from .effect_site import masked_for_reading
+    from .observation_privacy import redact_observation_text
+
+    if address_detail_pending(conversation):
+        text = masked_for_reading(text)
+    return redact_observation_text(text).text
 
 
 def cart_note(lines: list[dict]) -> str:
@@ -399,7 +412,6 @@ class NiceReader:
                             guarantees={"priced": False, "calls_model": True, "falls_back_to": "local_rules"})
 
     def interpret(self, ctx: TrustedContext, request) -> tuple[Understanding, Consumption]:
-        from .observation_privacy import redact_observation_text
         from .ports import LocalReader, _conversation, resolve_text
         from .reading_health import record_read
 
@@ -426,7 +438,7 @@ class NiceReader:
         if client is None or not text:
             return LocalReader().interpret(ctx, request)
         lines = _cart_lines(conversation)
-        redacted = redact_observation_text(text).text
+        redacted = reading_text(conversation, text)
         started = time.perf_counter()
         try:
             response = client.messages.create(**build_request(redacted, allowed=allowed,
