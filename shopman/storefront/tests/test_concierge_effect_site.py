@@ -46,7 +46,8 @@ def site(monkeypatch):
 
 
 def test_the_site_declares_the_existing_effects(site):
-    assert site.actions == ACTIONS == ("change_cart", "commit_order", "grant_discount", "cancel_order", "amend_order")
+    assert site.actions == ACTIONS == ("change_cart", "set_fulfillment", "commit_order", "grant_discount",
+                                      "cancel_order", "amend_order")
 
 
 def test_change_cart_locks_the_cart_without_terms(site):

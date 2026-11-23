@@ -30,7 +30,7 @@ from shopman.storefront.concierge.model_reader import NiceReader, Reading, resol
 
 CTX = TrustedContext(tenant="nelson-boulangerie", environment="shadow", subject="conversation:1")
 TODAY = date(2026, 11, 23)  # segunda-feira
-WITH_FULFILLMENT = (*ACTS, model_reader.FULFILLMENT_ACT)
+WITH_FULFILLMENT = tuple(dict.fromkeys((*ACTS, model_reader.FULFILLMENT_ACT)))
 CROISSANT = {"sku": "CROISSANT", "name": "Croissant", "can_order": True}
 BAGUETE = {"sku": "BAGUETE", "name": "Baguete", "can_order": True}
 
@@ -169,7 +169,8 @@ def test_day_pickup_and_time_said_with_the_order(conversation, menu, cart):
 
 def test_without_the_fulfillment_act_in_the_engine_the_reader_never_returns_it(conversation, menu, cart):
     ai = FakeAI([{"act": "choose_fulfillment", "span": "amanhã", "day": "tomorrow"}])
-    understanding, _ = _read("pra amanhã", ai)
+    without = tuple(act for act in ACTS if act != model_reader.FULFILLMENT_ACT)
+    understanding, _ = _read("pra amanhã", ai, allowed=without)
     assert [a.act for a in understanding.acts] == ["unknown"]
     assert "choose_fulfillment" not in json.dumps(ai.requests[0]["output_config"])  # nem pedido à IA
 

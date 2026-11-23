@@ -7,6 +7,7 @@ inventa efeito nenhum: chama os executores que já existem, com as conferências
 | Ação do framework | Efeito que já existe | Alvo |
 |---|---|---|
 | ``change_cart`` | ``tools.set_item`` (quantidade absoluta; zero tira) | a sacola (``session_key``) |
+| ``set_fulfillment`` | ``tools.set_fulfillment`` e a grade de horários (retirada); o dia pela régua do checkout | a sacola |
 | ``commit_order`` | ``tools.place_order`` (revisão ``quote_token``, confirmação posterior, ``run_idempotent_mutation``) | a sacola (``session_key``) |
 | ``grant_discount`` | ``discount.handle_request`` → ``discount._grant`` | a sacola |
 | ``cancel_order`` | ``cancellation._execute`` | o pedido do cliente |
@@ -18,13 +19,18 @@ reconfere a posse. A época de posse que a guarda confere é esse ``turn_fence``
 travada também, e a versão dela é a ``Session.rev``; pedido não tem versão no Orderman, e o
 efeito reconfere o estado dele (``self_cancellable``, a cotação nova do acréscimo).
 
+A sacola ainda não existe no primeiro pedido pelo motor: o alvo é a sacola NOVA da conversa
+(``ports.new_cart_ref``), e ela nasce no efeito (``set_item``, ``_ensure_session``), nunca na leitura.
+
 O sítio é do turno: nasce com o ``ToolContext`` da conversa reivindicada. Ligá-lo no turno
 da Nice é o N9.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from datetime import date
 
 from conversational_commerce.contracts import ActionCommand
 from conversational_commerce.contracts.errors import ErrorCode
@@ -32,10 +38,16 @@ from conversational_commerce.ports import PortError, TrustedContext
 
 from shopman.shop.conversational.commerce_execute import TERMS_REF, Done, Reading
 
+from .ports import new_cart_ref
 from .tools import ToolContext
 
-ACTIONS = ("change_cart", "commit_order", "grant_discount", "cancel_order", "amend_order")
-CART_ACTIONS = frozenset({"change_cart", "commit_order", "grant_discount"})
+ACTIONS = ("change_cart", "set_fulfillment", "commit_order", "grant_discount", "cancel_order", "amend_order")
+CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "commit_order", "grant_discount"})
+#: As ações que podem cair na sacola nova da conversa (as outras pedem sacola com item).
+NEW_CART_ACTIONS = frozenset({"change_cart", "set_fulfillment"})
+#: O que o comando ``set_fulfillment`` aceita: só o que o cliente disse.
+FULFILLMENT_FIELDS = frozenset({"date", "mode", "time"})
+_CLOCK = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 #: O código de recusa do ``place_order`` no vocabulário do framework.
 ORDER_REFUSALS = {
@@ -53,6 +65,14 @@ ORDER_REFUSALS = {
 DISCOUNT_REFUSALS = {"no_cart": ErrorCode.FACT_UNAVAILABLE}
 #: O código de recusa do ``set_item``. O resto (estoque, escolha que se faz pela loja) é o
 #: produto indisponível agora: fato, não erro de quem pediu.
+#: A recusa do ``set_fulfillment`` da casa. O resto (validação de dia ou horário, modo que o canal
+#: não oferece) é o recebimento que a casa não atende.
+FULFILLMENT_REFUSALS = {
+    "invalid_fulfillment": ErrorCode.INVALID_CONTENT,
+    "invalid_date": ErrorCode.INVALID_CONTENT,
+    "no_cart": ErrorCode.FACT_UNAVAILABLE,
+    "revision_conflict": ErrorCode.REVISION_CONFLICT,
+}
 CART_REFUSALS = {
     "missing_sku": ErrorCode.INVALID_CONTENT,
     "unknown_sku": ErrorCode.INVALID_CONTENT,
@@ -81,6 +101,10 @@ class ConciergeEffectSite:
         except TurnRevoked as revoked:
             raise PortError(ErrorCode.AUTHORITY_REVOKED, f"a posse da conversa mudou ({revoked})") from revoked
         target = command.targets[0]
+        if cart and command.action in NEW_CART_ACTIONS and target == new_cart_ref(conversation.pk):
+            # A sacola nova desta conversa: nasce no efeito. Se outra parte do turno já a criou,
+            # o efeito cai nela, a mesma sacola presa ao telefone.
+            return Reading(ownership_epoch=current.turn_fence, versions={target: 0})
         if not cart:
             if own_order(conversation, target) is None:
                 raise PortError(ErrorCode.OBJECT_FORBIDDEN, "pedido que não é do cliente da conversa")
@@ -118,6 +142,81 @@ class ConciergeEffectSite:
             return Done(True, domain_refs={"cart": command.targets[0], "item": sku})
         code = CART_REFUSALS.get(str(result.get("code") or ""), ErrorCode.FACT_UNAVAILABLE)
         return Done(False, refusal=code.value)
+
+    def _set_fulfillment(self, command: ActionCommand) -> Done:
+        """O dia, retirada ou entrega, e a hora: aplica o que veio e guarda o resto.
+
+        Retirada passa pelo ``tools.set_fulfillment`` (o mesmo do fechamento de hoje), com a
+        janela da grade que cobre a hora dita. O dia sem modo, e a entrega (cujo endereço vem
+        depois, no fechamento), passam pela régua de encomenda do checkout e pela operação
+        canônica da sessão. O recibo diz o recebimento DEPOIS do efeito: ``date``, ``mode``,
+        ``time`` e a ``window`` (a janela da grade, quando há).
+        """
+        from shopman.shop.services import cart as cart_service
+        from shopman.shop.services import sessions as session_service
+        from shopman.storefront.intents.checkout import _validate_preorder
+
+        from . import tools
+        from .order_closing import _fulfillment_types, _match_slot
+
+        said = dict(command.parameters)
+        if not said or set(said) - FULFILLMENT_FIELDS or not all(isinstance(v, str) and v for v in said.values()):
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        try:
+            day = date.fromisoformat(said["date"]).isoformat() if "date" in said else ""
+        except ValueError:
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        clock = _CLOCK.match(said.get("time", "")) if "time" in said else None
+        if "time" in said and clock is None:
+            return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
+        unavailable = Done(False, refusal=ErrorCode.FULFILLMENT_UNAVAILABLE.value)
+        ctx = self.tool_context
+        types = _fulfillment_types(ctx.channel_ref)
+        if "mode" in said and said["mode"] not in types:
+            return unavailable
+        session = tools._ensure_session(ctx)
+        data = dict(session.data or {})
+        day = day or str(data.get("delivery_date") or "")
+        kind = said.get("mode") or str(data.get("fulfillment_type") or "")
+        if not kind and len(types) == 1:
+            kind = types[0]
+        if not kind and clock is not None and "pickup" in types:
+            kind = "pickup"  # hora dita sem modo é a de buscar (a mesma leitura do fechamento de hoje)
+        slot = ""
+        if clock is not None:
+            day = day or tools._today_iso()
+            listing = tools.execute("list_fulfillment_slots", {"delivery_date": day,
+                                                               "fulfillment_type": kind or "pickup"}, ctx)
+            slots = list(listing.get(f"{kind or 'pickup'}_slots") or [])
+            chosen = _match_slot(slots, int(clock.group(1)) * 60 + int(clock.group(2)))
+            if chosen is None or not chosen.get("available", chosen.get("enabled", True)):
+                return unavailable
+            slot = str(chosen.get("ref") or "")
+        elif day == str(data.get("delivery_date") or "") and kind == str(data.get("fulfillment_type") or ""):
+            slot = str(data.get("delivery_time_slot") or "")
+        if kind == "pickup":
+            result = tools.execute("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": day,
+                                                       "slot_ref": slot}, ctx)
+            if not result.get("ok"):
+                code = FULFILLMENT_REFUSALS.get(str(result.get("error") or result.get("code") or ""),
+                                                ErrorCode.FULFILLMENT_UNAVAILABLE)
+                return Done(False, refusal=code.value)
+        else:
+            if day and _validate_preorder(day, cart_lines=list(session.items or []), channel_ref=ctx.channel_ref,
+                                          session_key=session.session_key):
+                return unavailable
+            if kind == "delivery":
+                cart_service.set_delivery_draft(session_key=session.session_key, channel_ref=ctx.channel_ref,
+                                                fulfillment_type="delivery")
+            if day:
+                session_service.modify_session(
+                    session_key=session.session_key, channel_ref=ctx.channel_ref,
+                    ops=[{"op": "set_data", "path": "delivery_date", "value": day},
+                         {"op": "set_data", "path": "delivery_time_slot", "value": slot}])
+        refs = {"cart": session.session_key}
+        refs.update({key: value for key, value in (("date", day), ("mode", kind), ("window", slot),
+                                                   ("time", said.get("time", ""))) if value})
+        return Done(True, domain_refs=refs)
 
     def _commit_order(self, command: ActionCommand) -> Done:
         from . import tools
