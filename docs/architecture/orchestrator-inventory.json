@@ -3629,6 +3629,7 @@
             "_publish_fomo",
             "_publish_for_order",
             "_publish_for_sku",
+            "_publish_fresh_batch",
             "_publish_pickup_board",
             "_publish_public_shelf",
             "_publish_surface_changed",
@@ -7942,6 +7943,7 @@
             "keywords_by_sku",
             "label_attributes",
             "label_attributes_by_sku",
+            "last_finished_by_sku",
             "listing_exists",
             "listing_price_for_product",
             "listing_price_map",
@@ -14032,6 +14034,7 @@
         {
           "responsibility": "contrato",
           "symbols": [
+            "COUNTER_SERVICES",
             "MAX_LINE_QTY",
             "ORDER_NOTES_LIMIT",
             "POS_AUTHORSHIP_META_KEY",
@@ -14593,11 +14596,11 @@
             "_notify_customer",
             "_order_skus",
             "_parse_day",
-            "_physical_work_started",
             "_relink_production",
             "_replace_reminder",
             "_validate",
-            "logger"
+            "logger",
+            "physical_work_started"
           ]
         }
       ]

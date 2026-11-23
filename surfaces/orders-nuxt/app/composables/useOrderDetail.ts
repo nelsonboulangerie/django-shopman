@@ -310,8 +310,15 @@ export function useOrderDetail(orderRef: string) {
   // da prévia (`refund/preview/`), com a base que o comando confere; o valor e a
   // segunda confirmação vêm do diálogo. Devolve o recibo DESTA cobrança (o meio de
   // pagamento confirmou, recusou ou não respondeu), ou `null` quando nada foi aplicado.
-  async function refundOrder(contract: Action, amountQ: number): Promise<OrderRefundReceipt | null> {
-    const ok = await act("refund", { amount_q: amountQ, confirm: true }, undefined, contract);
+  // Pedido com mais de uma cobrança (#3134): `intentRef` é a escolhida no diálogo.
+  async function refundOrder(
+    contract: Action,
+    amountQ: number,
+    intentRef?: string,
+  ): Promise<OrderRefundReceipt | null> {
+    const body: Record<string, unknown> = { amount_q: amountQ, confirm: true };
+    if (intentRef) body.intent_ref = intentRef;
+    const ok = await act("refund", body, undefined, contract);
     if (!ok) return null;
     return (lastReceipt.value?.refund as OrderRefundReceipt | undefined) ?? null;
   }

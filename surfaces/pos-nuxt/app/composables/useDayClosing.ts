@@ -8,6 +8,16 @@ export interface ProductionRelease {
   manager_approval: { username?: string; pin?: string; badge?: string };
 }
 
+/**
+ * O gesto em lote do fechamento (#2684): encerra como não retirado os pedidos prontos
+ * da lista. A base que a tela leu de cada um e o gerente; uma assinatura para todos.
+ * Opcional: fechar o dia não depende dele.
+ */
+export interface ReadyOrdersRelease {
+  orders: Array<{ ref: string; revision: string }>;
+  manager_approval: { username?: string; pin?: string; badge?: string };
+}
+
 interface DayClosingDeps {
   action: { call: (path: string, opts?: { body?: Record<string, unknown> }) => Promise<unknown> };
 }
@@ -41,6 +51,37 @@ export async function useDayClosing({ action }: DayClosingDeps) {
   // ao diálogo do gerente, não a um toast: a saída É assinar de novo.
   const productionBlock = ref("");
   const releaseChallenge = ref<{ code: string; message: string } | null>(null);
+
+  // "Encerrar todos como não retirado" (#2684): opcional, fora do fechamento. A lista
+  // que mudou (409 `not_picked_up_refused`) relê a tela e avisa; a assinatura
+  // recusada (`manager_approval_*`) volta ao diálogo do gerente.
+  const resolvingNotPickedUp = ref(false);
+  const readyChallenge = ref<{ code: string; message: string } | null>(null);
+  async function resolveNotPickedUp(release: ReadyOrdersRelease): Promise<boolean> {
+    if (resolvingNotPickedUp.value) return false;
+    resolvingNotPickedUp.value = true;
+    try {
+      const result = (await action.call("/api/v1/backstage/closing/not-picked-up/", {
+        body: release as unknown as Record<string, unknown>,
+      })) as { orders?: string[] } | null;
+      readyChallenge.value = null;
+      await refresh();
+      const many = (result?.orders?.length ?? release.orders.length) > 1;
+      toast.success(many ? "Pedidos encerrados como não retirado." : "Pedido encerrado como não retirado.");
+      return true;
+    } catch (err) {
+      const code = httpErrorCode(err);
+      if (code === "manager_approval_required" || code === "manager_approval_invalid") {
+        readyChallenge.value = { code, message: httpErrorMessage(err, "Revise o gerente e o PIN.") };
+        return false;
+      }
+      await refresh();
+      toast.warning(httpErrorMessage(err, "Nenhum pedido foi encerrado. Confira a lista e tente de novo."));
+      return false;
+    } finally {
+      resolvingNotPickedUp.value = false;
+    }
+  }
 
   async function submit(
     quantities: Record<string, string>,
@@ -106,6 +147,9 @@ export async function useDayClosing({ action }: DayClosingDeps) {
     submitting,
     submit,
     productionBlock,
+    resolvingNotPickedUp,
+    resolveNotPickedUp,
+    readyChallenge,
     releaseChallenge,
     answering,
     answerEpisode,

@@ -86,6 +86,12 @@ export interface IdentityCaptureOptions {
    *  ficou focado fora (atrás do overlay) não recebe as teclas. Sem moldura,
    *  vale o comportamento antigo: qualquer campo é do dono. */
   frame?: () => Element | null;
+  /** Quantos dígitos tem o PIN de quem está escolhido, quando a credencial é de
+   *  tamanho fixo (`pin_digits`, #3223). Com ele, o PIN completo SE ENVIA depois
+   *  de `PICK_QUIET_MS` de silêncio, sem o Enter nem o Confirmar. É o silêncio
+   *  que separa o dedo do leitor: um crachá que começa com quatro dígitos manda a
+   *  quinta tecla em ~10-30ms, e ela cancela o envio. `null` = Confirmar. */
+  autoSubmitAt?: () => number | null;
 }
 
 /** Silêncio que prova que o dígito veio de um dedo, não de um leitor. Folgado
@@ -100,6 +106,25 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
   const keys = shallowRef<readonly CapturedKey[]>([]);
   let lastAt = 0;
   let pickTimer: ReturnType<typeof setTimeout> | null = null;
+  let autoTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Desarma o envio sozinho em curso: chegou mais alguma coisa. */
+  function cancelAuto(): void {
+    if (autoTimer === null) return;
+    clearTimeout(autoTimer);
+    autoTimer = null;
+  }
+
+  /** O PIN fixo acabou de ficar completo: envia depois do silêncio. */
+  function armAuto(): void {
+    cancelAuto();
+    const digits = options.autoSubmitAt?.() ?? null;
+    if (!digits || capturedPin(keys.value).length !== digits || !options.canSubmitEnter()) return;
+    autoTimer = setTimeout(() => {
+      autoTimer = null;
+      if (capturedPin(keys.value).length === digits && options.canSubmitEnter()) options.onSubmit();
+    }, PICK_QUIET_MS);
+  }
 
   /** Desarma a escolha por número em curso. Chamado por QUALQUER outra entrada:
    *  se veio mais alguma coisa, aquilo era uma rajada, não um dedo. */
@@ -121,15 +146,19 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
   /** Botão do pad na tela: entra no MESMO buffer, com o relógio de verdade —
    *  clique é dedo por definição, e a cadência registrada diz isso sozinha. */
   function pressDigit(digit: string): void {
+    cancelAuto();
     feed(digit, true);
+    armAuto();
   }
 
   function backspace(): void {
+    cancelAuto();
     keys.value = backspaceCapture(keys.value);
   }
 
   function clear(): void {
     cancelPick();
+    cancelAuto();
     keys.value = [];
     lastAt = 0;
   }
@@ -162,10 +191,14 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
     // Backspace e Enter também quebram o silêncio: o que vinha antes deles não
     // era um dedo escolhendo um nome.
     if (event.key === "Backspace" || event.key === "Enter") cancelPick();
+    // Qualquer tecla depois do PIN completo desarma o envio sozinho: ou era um
+    // crachá (o leitor segue digitando), ou a pessoa apagou ou confirmou.
+    if (isCaptureKey(event.key) || event.key === "Backspace" || event.key === "Enter") cancelAuto();
 
     if (isCaptureKey(event.key)) {
       const toPin = options.padVisible() && !editing;
       feed(event.key, toPin);
+      if (toPin) armAuto();
       // Sem pad na tela o dígito PODE ser escolha de pessoa — ou a primeira
       // tecla de um crachá. Quem decide é o silêncio depois dele. O buffer já
       // recebeu a tecla acima e continua intocado nos dois casos: se for

@@ -656,8 +656,8 @@ function onRefundRetryDone() {
 // recibo diz se o dinheiro voltou; a recusa do meio de pagamento vira o aviso, e a
 // tentativa fica na linha do tempo do pedido.
 const refundAction = computed(() => projectedAction(REFUND));
-async function submitRefund(payload: { contract: Action; amountQ: number }) {
-  const receipt = await refundOrder(payload.contract, payload.amountQ);
+async function submitRefund(payload: { contract: Action; amountQ: number; intentRef?: string }) {
+  const receipt = await refundOrder(payload.contract, payload.amountQ, payload.intentRef);
   if (!receipt) return;
   dialog.value = "";
   const told = refundToast(receipt);

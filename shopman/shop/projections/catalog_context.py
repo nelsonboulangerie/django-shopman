@@ -550,6 +550,38 @@ def visible_in_channel(product, channel_ref: str, *, fallback_when_listing_missi
     ).exists()
 
 
+def last_finished_by_sku(skus: list[str], *, window_minutes: int = 60) -> dict[str, Any]:
+    """A hora da fornada mais recente de cada SKU, dentro da janela — leitura em lote.
+
+    O selo "Fornada pronta há 12 min" no card do cardápio (#2807) com uma query para
+    o cardápio inteiro, em vez das ~6 por SKU do ``fomo.context_for_sku``. A janela
+    espelha ``presentation.fomo.FRESH_WINDOW_MINUTES``: fornada mais velha nunca vira
+    selo.
+    """
+    if not skus:
+        return {}
+    from datetime import timedelta
+
+    from django.db.models import Max
+    from django.utils import timezone
+
+    try:
+        from shopman.craftsman.models import WorkOrder
+    except ImportError:
+        return {}
+    cutoff = timezone.now() - timedelta(minutes=window_minutes)
+    rows = (
+        WorkOrder.objects.filter(
+            output_sku__in=list(skus),
+            status=WorkOrder.Status.FINISHED,
+            finished_at__gte=cutoff,
+        )
+        .values("output_sku")
+        .annotate(last=Max("finished_at"))
+    )
+    return {row["output_sku"]: row["last"] for row in rows}
+
+
 def active_promotions(channel_ref: str) -> list[Any]:
     """Promoções automáticas ativas que alcançam ``channel_ref`` — leitura.
 

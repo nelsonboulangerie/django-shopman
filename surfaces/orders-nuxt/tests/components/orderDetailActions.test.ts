@@ -1681,7 +1681,7 @@ describe("detalhe do pedido — estornar", () => {
     w.getComponent({ name: "OrderRefundDialog" }).vm.$emit("confirm", { contract, amountQ: 1250 });
     await flushPromises();
 
-    expect(refundOrder).toHaveBeenCalledWith(contract, 1250);
+    expect(refundOrder).toHaveBeenCalledWith(contract, 1250, undefined);
     expect(w.getComponent({ name: "OrderRefundDialog" }).props("open")).toBe(false);
     expect(useSonner.success).toHaveBeenCalledWith("R$ 12,50 devolvidos ao cliente pelo mesmo meio do pagamento.");
     w.unmount();
