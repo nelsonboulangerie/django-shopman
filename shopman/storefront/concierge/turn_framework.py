@@ -71,13 +71,13 @@ def owner_text(value) -> str:
 
 def deadline_text(value) -> str:
     """O prazo em hora local, como a casa fala: "hoje às 15h", "amanhã às 7h10", "24/11 às 9h"."""
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
 
     from django.utils import timezone
 
     moment = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if timezone.is_naive(moment):
-        moment = timezone.make_aware(moment, timezone.utc)
+        moment = timezone.make_aware(moment, UTC)
     local = timezone.localtime(moment)
     today = timezone.localdate()
     day = {today: "hoje", today + timedelta(days=1): "amanhã"}.get(local.date()) or local.strftime("%d/%m")

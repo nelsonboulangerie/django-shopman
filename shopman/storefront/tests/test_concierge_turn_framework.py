@@ -154,7 +154,7 @@ def test_the_nice_templates_are_the_approved_phrases_and_a_broken_copy_drops_out
 
 
 def test_who_answers_and_until_when_are_said_in_portuguese(settings):
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
 
     from django.utils import timezone
 
@@ -163,7 +163,7 @@ def test_who_answers_and_until_when_are_said_in_portuguese(settings):
     tomorrow = (now + timedelta(days=1)).replace(hour=7, minute=10, second=0, microsecond=0)
     assert turn_framework.deadline_text(tomorrow.isoformat()) == "amanhã às 7h10"
     today = now.replace(hour=15, minute=0, second=0, microsecond=0)
-    assert turn_framework.deadline_text(today.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")) == "hoje às 15h"
+    assert turn_framework.deadline_text(today.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")) == "hoje às 15h"
     later = datetime(2030, 3, 4, 9, 0, tzinfo=timezone.get_current_timezone())
     assert turn_framework.deadline_text(later.isoformat()) == "04/03 às 9h"
 
@@ -176,7 +176,9 @@ def test_the_tick_does_nothing_with_the_classes_off(shop, sent):
 def test_the_tick_stays_silent_while_the_deadline_notice_has_no_nice_phrase(shop, sent):
     _switch(shop, inform=True, handoff=True)
     counts = turn_framework.tick(channel=_channel())
-    assert counts["skipped"].startswith("no_nice_template:wait.") and counts["notices"] == 0
+    # Todo molde de espera (``effect.pending`` também é ``wait``) precisa da frase da Nice antes.
+    assert counts["skipped"].startswith("no_nice_template:") and "wait.overdue" in counts["skipped"]
+    assert counts["notices"] == 0
     assert sent == []  # aviso em frase genérica do pacote nunca sai
 
 
