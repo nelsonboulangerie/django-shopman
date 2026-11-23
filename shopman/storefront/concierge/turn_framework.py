@@ -140,9 +140,12 @@ def time_text(value) -> str:
 
 def money_text(value) -> str:
     """ "R$ 24,00": o dinheiro como a casa escreve (o neutro do pacote é "BRL 24.00")."""
+    from collections.abc import Mapping
+
     from shopman.utils.monetary import format_money
 
-    if not isinstance(value, dict) or "price_minor" not in value:
+    # O valor do fato chega como ``FrozenMap`` (um ``Mapping``, não um ``dict``).
+    if not isinstance(value, Mapping) or "price_minor" not in value:
         raise ValueError("valor sem price_minor")
     return f"R$ {format_money(int(value['price_minor']))}"
 
@@ -175,7 +178,9 @@ def items_text(value) -> str:
 
 def fulfillment_text(value) -> str:
     """O começo da linha do recebimento: "Retirada" ou "Entrega" (o dia e a janela vêm das condições)."""
-    mode = value.get("mode") if isinstance(value, dict) else None
+    from collections.abc import Mapping
+
+    mode = value.get("mode") if isinstance(value, Mapping) else None
     return {"pickup": "Retirada", "delivery": "Entrega"}.get(str(mode), "")
 
 
