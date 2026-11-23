@@ -160,6 +160,7 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
                                          "rua, o número e o bairro, ou envie sua localização pelo WhatsApp."),
     "present_terms.needs_delivery_complement": ("Tem complemento (apartamento, bloco, fundos)? Se não tiver, "
                                                 "é só dizer \"sem complemento\"."),
+    "set_payment.not_offered": "Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {payment_method}",
 }
 REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team")
 

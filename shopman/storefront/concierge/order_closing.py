@@ -342,9 +342,9 @@ def answers(said: Said, pending: dict) -> bool:
 
 
 def _methods(channel_ref: str) -> list[str]:
-    from shopman.shop.config import ChannelConfig
+    from shopman.shop.conversational.commerce_read import conversation_payment_methods
 
-    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
+    return conversation_payment_methods(channel_ref)
 
 
 def _fulfillment_types(channel_ref: str) -> list[str]:

@@ -254,9 +254,7 @@ class ShopmanCommerceRead:
         if not cart_ref or cart_ref not in {self.ownership.cart(ctx), self.ownership.new_cart(ctx)}:
             raise PortError("object_forbidden", "sacola inexistente ou de outro sujeito")
         try:
-            from shopman.shop.config import ChannelConfig
-
-            methods = [m for m in ChannelConfig.for_channel(self.channel_ref).payment.available_methods if m != "cash"]
+            methods = conversation_payment_methods(self.channel_ref)
             session = Session.objects.filter(session_key=cart_ref, channel_ref=self.channel_ref).first()
         except Exception:  # noqa: BLE001 - K04: a fonte que falha vira Unknown, nunca o valor velho
             logger.warning("conversational.requirements: fonte falhou", exc_info=True)
@@ -390,6 +388,17 @@ def _fulfillment(data: dict, cart_ref: str = "") -> dict:
     return found
 
 
+def conversation_payment_methods(channel_ref: str) -> list[str]:
+    """As formas de pagamento que a conversa oferece: as do canal, sem dinheiro (D-003).
+
+    Régua ÚNICA: o ``requirements`` conta por ela o que falta, as condições dos termos mostram por
+    ela a forma única, e o fechamento de hoje (``order_closing._methods``) lista por ela as opções.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
+
+
 def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "") -> list[dict]:
     """O dia e a janela como a casa os guarda (a resposta mostra o rótulo da janela, não a hora crua).
 
@@ -410,11 +419,9 @@ def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "
             found.append({"code": "delivery_fee", "value": fee})
     method = str(((data.get("payment") or {}).get("method")) or "")
     if not method and channel_ref:
-        # A MESMA regra da revisão que grava o pedido (``tools.review_order``): sem escolha, vale a
-        # única forma do canal. O cliente vê, antes do "sim", o pagamento que vai ser gravado.
-        from shopman.shop.config import ChannelConfig
-
-        methods = list(ChannelConfig.for_channel(channel_ref).payment.available_methods)
+        # Sem escolha, vale a única forma que a conversa oferece: a MESMA régua do ``requirements``
+        # (``conversation_payment_methods``), para que "não falta" e "esta é a forma" nunca discordem.
+        methods = conversation_payment_methods(channel_ref)
         method = methods[0] if len(methods) == 1 else ""
     if method:
         # A forma de pagamento escolhida é condição dos termos: o cliente vê como paga antes do "sim".

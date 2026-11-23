@@ -83,3 +83,44 @@ def test_cart_and_payment_in_one_turn_run_in_sequence():
     result = turn_engine.turn(CTX, both.message)
     assert [c.action for c in result.commands] == ["change_cart", "set_payment"]
     assert world.state.carts["cart-1"]["ITEM-A"] == "3" and world.state.payment["cart-1"] == "pix"
+
+
+def test_unknown_requirements_hold_the_close_and_never_present_terms():
+    """K04: sem saber o que falta, o fechamento não apresenta termos nem nasce pergunta de confirmação."""
+    from conversational_commerce.testing.fakes import Fault
+
+    world = _world()
+    world.faults.arm("requirements", Fault.SOURCE_FAILED, times=5)
+    turn_engine, world = engine(steps=(CLOSE,), world=world)
+    result = turn_engine.turn(CTX, CLOSE.message)
+    assert "present_terms" not in result.chosen_moves
+    blocked = [c for c in result.decisions[0].candidates if c.move == "present_terms"]
+    assert blocked and "fact_unavailable" in blocked[0].blocked_by
+    assert result.episode.state != "waiting_authorization"
+
+
+def test_unknown_requirements_refuse_the_choice_as_unavailable_not_as_not_offered():
+    from conversational_commerce.testing.fakes import Fault
+
+    world = _world()
+    world.faults.arm("requirements", Fault.SOURCE_FAILED, times=5)
+    turn_engine, world = engine(steps=(PIX,), world=world)
+    result = turn_engine.turn(CTX, PIX.message)
+    assert result.commands == () and "cart-1" not in world.state.payment
+    [blocked] = [c for c in result.decisions[0].candidates if c.move == "set_payment"]
+    assert blocked.blocked_by == ("fact_unavailable",)  # nunca "forma não oferecida": não se sabe
+
+
+def test_a_payment_without_the_method_is_a_question_not_a_limitation():
+    bare = _step("bare", {"act": "choose_payment"})
+    turn_engine, world = engine(steps=(bare,), world=_world())
+    result = turn_engine.turn(CTX, bare.message)
+    assert result.chosen_moves == ["ask_clarification"] and result.commands == ()
+
+
+def test_a_method_the_channel_does_not_offer_says_so_with_the_options():
+    cash = _step("cash", {"act": "choose_payment", "fields": {"method": "cash"}})
+    turn_engine, world = engine(steps=(cash,), world=_world())
+    result = turn_engine.turn(CTX, cash.message)
+    assert result.reply.template_ids == ("set_payment.not_offered",)
+    assert result.text == "We don't take that payment method here. How would you like to pay? pix, card"
