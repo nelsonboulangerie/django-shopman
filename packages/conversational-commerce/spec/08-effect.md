@@ -183,7 +183,15 @@ mudança passa a ser atendida pelo `present_terms`, com os termos cotados depois
 `change_cart` não é proposto de novo. O "sim" seguinte responde ao documento novo
 (`TurnState.changed_under_offer`). O mesmo vale para o "sim" dito junto com a mudança ("sim, e põe
 quatro", em qualquer ordem): a mudança executa, o pedido NÃO é gravado pelos termos de antes, e o
-turno apresenta os termos novos uma vez só (as duas necessidades, a mesma parte).
+turno apresenta os termos novos uma vez só (as duas necessidades, a mesma parte). Três cuidados:
+
+- a nova cotação descarta os termos de antes ANTES de ler; se ela falha, nada é apresentado sobre o
+  documento velho: a mudança é dita pelo degrau de baixo (`change_cart.done_receipt`) e a pergunta
+  dos termos sai do ar (o "sim" seguinte não confirma os termos velhos);
+- se a mudança junto do "sim" falha ou fica pendente, o "sim" não foi impossível: sai
+  `inform_limitation.confirm_after_change` (o pedido espera a sacola), nunca a limitação genérica;
+- só uma mudança ELEGÍVEL segura o "sim" (linhas absolutas, sem item repetido): "põe mais um,
+  sim", com a linha relativa inelegível, deixa o "sim" seguir pelos termos confirmados.
 
 **Termos apresentados no turno de uma mudança.** Se o mesmo turno muda o carrinho e apresenta os
 termos ("põe mais um e fecha"), a decisão é refeita sobre os termos cotados depois do efeito,

@@ -395,6 +395,11 @@ class Engine:
         if not refresh and (target in state.terms or not any(state.wants_terms(n) for n in state.needs)):
             return
         key = state.terms_key(target)
+        if refresh:
+            # O documento de antes não vale depois da mudança: sai antes de ler, para que a falha da leitura
+            # nunca deixe os termos velhos parecerem os de agora.
+            state.terms.pop(target, None)
+            state.facts.pop(key, None)
         if not budget.take_step(f"read:{key}"):
             state.facts[key] = Unknown(reason="source_failed")
             return
@@ -847,6 +852,13 @@ class Engine:
         promised = self._promise(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks)
         self._remember(ctx, state, decision, by_need, event, episode, trace_id, unwritten)
         requoted = self._after_effects(ctx, state, event, budget, effects)
+        if offer is not None and any(r.status == "success" for r in effects["receipts"]
+                                     if r.command_id in {c.command_id for c in effects["commands"]
+                                                         if c.action == "change_cart"}):
+            # O carrinho mudou: a pergunta dos termos de antes sai do ar (o "sim" seguinte nunca a confirma).
+            # Se os termos novos forem apresentados neste turno, a pergunta nova a substitui.
+            dialogue = dict(dialogue)
+            dialogue.pop(OFFER_KEY, None)
         # Termos apresentados no mesmo turno de uma mudança: a decisão que os apresenta é refeita sobre
         # os termos novos, ligada à anterior (N14), para a decisão gravada e a pergunta no ar citarem o
         # MESMO documento.
