@@ -41,6 +41,7 @@ export interface TabDraftFields {
   deliveryFeeOverrideInput: string;
   deliveryFeeOverride: boolean;
   orderNotes: string;
+  counterService: "here" | "to_go";
 }
 
 export const TAB_DRAFT_FIELDS: ReadonlyArray<keyof TabDraftFields> = [
@@ -64,6 +65,7 @@ export const TAB_DRAFT_FIELDS: ReadonlyArray<keyof TabDraftFields> = [
   "deliveryFeeOverrideInput",
   "deliveryFeeOverride",
   "orderNotes",
+  "counterService",
 ];
 
 export interface TabDraft {

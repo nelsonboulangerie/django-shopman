@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fomoBadgeViews, fomoCoversLowStock } from '~/presentation/fomo'
 import { tileBadge } from '~/presentation/menu'
 import { promiseAddLabel } from '~/presentation/promise'
 import { hasOptionGroups } from '~/presentation/productOptions'
@@ -11,7 +12,14 @@ const props = defineProps<{
   sectionLabel?: string
 }>()
 
-const badge = computed(() => tileBadge(props.item))
+// Selos de urgência (#2807) sobre a foto, empilhados com o de estado; o de estoque
+// com o número substitui o "Últimas unidades" genérico.
+const now = useMinuteClock()
+const fomo = computed(() => fomoBadgeViews(props.item.fomo_badges, now.value))
+const badge = computed(() => {
+  const base = tileBadge(props.item)
+  return base && props.item.availability === 'low_stock' && fomoCoversLowStock(props.item.fomo_badges) ? null : base
+})
 
 const { qtyForSku } = useCartState()
 const meta = computed<ProductMutationMeta>(() => ({
@@ -68,8 +76,9 @@ function productRoute (sku: string) {
             <div v-if="item.availability === 'unavailable'" class="absolute left-2 top-2 z-20">
               <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
             </div>
-            <div v-else-if="badge" class="absolute left-2 top-2 z-20">
-              <UiBadge :variant="badge.variant" class="font-normal shadow-sm">{{ badge.label }}</UiBadge>
+            <div v-else-if="badge || fomo.length" class="absolute left-2 top-2 z-20 flex flex-col items-start gap-1" data-product-badges>
+              <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal shadow-sm" :data-fomo-badge="selo.type">{{ selo.label }}</UiBadge>
+              <UiBadge v-if="badge" :variant="badge.variant" class="font-normal shadow-sm">{{ badge.label }}</UiBadge>
             </div>
           </UiAspectRatio>
         </div>

@@ -4,8 +4,12 @@
 // que foi pago, o que já voltou e o que ainda pode voltar. O valor vem com o
 // disponível inteiro; parcial vale. A segunda confirmação é a mesma marca do diálogo
 // do Admin ("Confirmo o estorno, que não tem desfazer"): sem ela, o botão não acende.
+// Com mais de uma cobrança (#3134), o Gerente escolhe qual estornar, vendo o valor de
+// cada uma separado; a escolha relê a prévia DAQUELA cobrança (`?intent=`), com a base
+// que o estorno confere. O total do pedido nunca aparece.
 import {
   initialRefundAmount,
+  refundChargeOptions,
   refundDialogView,
   type OrderRefundPreview,
 } from "~/presentation/orderRefund";
@@ -19,7 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
-  confirm: [payload: { contract: Action; amountQ: number }];
+  confirm: [payload: { contract: Action; amountQ: number; intentRef?: string }];
 }>();
 
 const preview = ref<OrderRefundPreview | null>(null);
@@ -27,14 +31,16 @@ const loading = ref(false);
 const loadError = ref("");
 const amount = ref("");
 const confirmed = ref(false);
+const chosen = ref("");
 
-async function load() {
+async function load(intent = "") {
   loading.value = true;
   loadError.value = "";
+  const url = `/api/v1/backstage/orders/${encodeURIComponent(props.orderRef)}/refund/preview/`;
   try {
-    preview.value = await $fetch<OrderRefundPreview>(
-      `/api/v1/backstage/orders/${encodeURIComponent(props.orderRef)}/refund/preview/`,
-    );
+    preview.value = intent
+      ? await $fetch<OrderRefundPreview>(url, { query: { intent } })
+      : await $fetch<OrderRefundPreview>(url);
     amount.value = initialRefundAmount(preview.value);
   } catch (error) {
     preview.value = null;
@@ -54,10 +60,19 @@ watch(
     // Cada abertura lê de novo: outro estorno pode ter mudado o disponível.
     preview.value = null;
     confirmed.value = false;
+    chosen.value = "";
     void load();
   },
   { immediate: true },
 );
+
+const chargeOptions = computed(() => refundChargeOptions(preview.value));
+// Trocar a cobrança relê a prévia dela: o valor, o disponível e a base são dela.
+watch(chosen, (intent) => {
+  if (!intent || intent === preview.value?.intent_ref) return;
+  confirmed.value = false;
+  void load(intent);
+});
 
 const view = computed(() =>
   preview.value
@@ -72,7 +87,11 @@ const view = computed(() =>
 function confirm() {
   const contract = preview.value?.action;
   if (!view.value?.canConfirm || !contract || !view.value.amountQ) return;
-  emit("confirm", { contract, amountQ: view.value.amountQ });
+  emit("confirm", {
+    contract,
+    amountQ: view.value.amountQ,
+    intentRef: preview.value?.intent_ref || undefined,
+  });
 }
 </script>
 
@@ -107,7 +126,28 @@ function confirm() {
       <p v-else-if="view?.blocked" class="text-sm" data-refund-block>
         {{ view.blockReason }}
       </p>
+      <div v-else-if="view?.choosing" class="flex flex-col gap-3">
+        <p class="text-sm" data-refund-choose>{{ view.chooseLine }}</p>
+        <NuxtRadioGroup
+          v-model="chosen"
+          :items="chargeOptions"
+          variant="card"
+          data-refund-charges
+        />
+      </div>
       <div v-else-if="view" class="flex flex-col gap-4">
+        <NuxtFormField
+          v-if="chargeOptions.length > 1"
+          label="Cobrança"
+          data-refund-charge-field
+        >
+          <NuxtRadioGroup
+            v-model="chosen"
+            :items="chargeOptions"
+            variant="card"
+            data-refund-charges
+          />
+        </NuxtFormField>
         <ul
           class="flex flex-col gap-1 rounded-md bg-elevated p-3 text-sm"
           data-refund-values
@@ -150,7 +190,7 @@ function confirm() {
           @click="emit('update:open', false)"
         />
         <NuxtButton
-          v-if="view && !view.blocked"
+          v-if="view && !view.blocked && !view.choosing"
           :label="view.confirmLabel"
           color="error"
           :disabled="!view.canConfirm"

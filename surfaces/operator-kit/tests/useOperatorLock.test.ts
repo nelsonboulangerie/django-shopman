@@ -274,6 +274,25 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
     expect(changeError.value).toBe("");
   });
 
+  it("depois da troca, relê a lista em silêncio: o PIN novo já entra sozinho (#3223)", async () => {
+    env.fetchData.value = { station: "balcao" };
+    env.fetchMock.mockResolvedValueOnce({}); // a troca
+    env.fetchMock.mockResolvedValueOnce({ operators: [{ id: 2, username: "joyce", name: "Joyce", pin_digits: 4 }] });
+    const { changePin, eligible, eligibleStatus } = useOperatorLock(PERM);
+    eligibleStatus.value = "ready";
+
+    expect(await changePin({ currentPin: "123456", newPin: "4821" })).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/operator/eligible/",
+      expect.objectContaining({ query: { perm: PERM } }),
+    );
+    expect(eligible.value[0]?.pin_digits).toBe(4);
+    // Em silêncio: a trava não volta a dizer "lendo".
+    expect(eligibleStatus.value).toBe("ready");
+  });
+
   it("changePin exposes the server message on failure", async () => {
     env.fetchData.value = { station: "balcao" };
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "PIN atual errado" } });

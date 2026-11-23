@@ -336,3 +336,94 @@ def test_quem_so_gerencia_pedidos_recebe_403(client, django_user_model):
 
     assert resp.status_code == 403, resp.content
     assert not _refunds("EST-403").exists()
+
+
+# ── Mais de uma cobrança: cobrança por cobrança (#3134) ──────────────────────
+#
+# Decisão da coordenação em 22/11/2026, reversível: o Gerente estorna cobrança por
+# cobrança, vendo o valor de cada uma separado. A tela NUNCA mostra o total do pedido.
+
+
+def _second_charge(order: Order, amount_q: int, *, method: str = "pix") -> str:
+    ref = f"INT-{order.ref}-2"
+    PaymentService.create_intent(order.ref, amount_q, method, gateway="mock", ref=ref)
+    PaymentService.authorize(ref, gateway_id=f"gw-{ref}")
+    PaymentService.capture(ref)
+    return ref
+
+
+def test_com_duas_cobrancas_a_porta_abre_para_a_escolha(client, gerente):
+    order = _paid("EST-DUAS", total_q=3000)
+    second = _second_charge(order, 800)
+
+    action = _action(order, gerente)
+    assert action.enabled, action.reason
+    body = client.get(reverse("api-backstage-order-refund-preview", args=[order.ref])).json()
+
+    assert body["choose"] is True
+    assert body["choose_reason"] == "Este pedido tem mais de uma cobrança. Escolha qual estornar."
+    assert [(row["intent_ref"], row["method_label"], row["paid_display"], row["available_display"]) for row in body["charges"]] == [
+        ("INT-EST-DUAS", "Pix", "R$ 30,00", "R$ 30,00"),
+        (second, "Pix", "R$ 8,00", "R$ 8,00"),
+    ]
+    # O total do pedido (R$ 38,00) não aparece em lugar nenhum.
+    assert "38,00" not in str(body) and "3800" not in str(body)
+
+
+def test_a_cobranca_escolhida_mostra_so_o_valor_dela(client, gerente):
+    order = _paid("EST-ESCOLHA", total_q=3000)
+    second = _second_charge(order, 800)
+
+    url = reverse("api-backstage-order-refund-preview", args=[order.ref])
+    body = client.get(url, {"intent": second}).json()
+
+    assert body["choose"] is False and body["intent_ref"] == second
+    assert (body["paid_display"], body["available_display"], body["available_q"]) == ("R$ 8,00", "R$ 8,00", 800)
+    assert len(body["charges"]) == 2, "a escolha segue na tela, para trocar"
+    assert body["action"]["enabled"] is True
+    assert "38,00" not in str(body)
+
+
+def test_estorna_so_a_cobranca_escolhida(client, gerente):
+    order = _paid("EST-SO-UMA", total_q=3000)
+    second = _second_charge(order, 800)
+    gateway = Gateway()
+    base = order_refund.revision(order, order_refund.plan(order, intent_ref=second))
+
+    with patch(ADAPTER, return_value=gateway):
+        resp = _refund(client, gerente, order, base=base, intent_ref=second, amount_q=500)
+
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["refund"] == {"outcome": "refunded", "amount_q": 500, "refunded_q": 500, "available_q": 300, "message": ""}
+    (call,) = gateway.calls
+    assert (call["intent_ref"], call["amount_q"]) == (second, 500)
+    assert PaymentService.refunded_total(second) == 500
+    assert PaymentService.refunded_total("INT-EST-SO-UMA") == 0
+
+
+def test_sem_escolher_a_cobranca_nada_sai(client, gerente):
+    order = _paid("EST-SEM-ESCOLHA", total_q=3000)
+    _second_charge(order, 800)
+    gateway = Gateway()
+
+    with patch(ADAPTER, return_value=gateway):
+        resp = _refund(client, gerente, order)
+
+    assert resp.status_code == 409, resp.content
+    assert resp.json()["detail"] == "Este pedido tem mais de uma cobrança. Escolha qual estornar."
+    assert gateway.calls == []
+
+
+def test_cobranca_de_outro_pedido_e_recusada(client, gerente):
+    order = _paid("EST-ALHEIA", total_q=3000)
+    _second_charge(order, 800)
+    other = _paid("EST-OUTRO", total_q=900)
+    gateway = Gateway()
+    base = order_refund.revision(order, order_refund.plan(order, intent_ref=f"INT-{other.ref}"))
+
+    with patch(ADAPTER, return_value=gateway):
+        resp = _refund(client, gerente, order, base=base, intent_ref=f"INT-{other.ref}")
+
+    assert resp.status_code == 409, resp.content
+    assert resp.json()["detail"] == "Esta cobrança não é deste pedido. Abra o estorno de novo."
+    assert gateway.calls == []

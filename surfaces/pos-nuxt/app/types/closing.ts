@@ -43,6 +43,42 @@ export interface ClosingPendingProduction {
   is_overdue: boolean;
 }
 
+/**
+ * Um pedido de retirada pronto que ninguém veio buscar (#2684). Nenhum segura o dia.
+ * `resolve`: o "Não retirado" já pode ser feito (no Gestor ou no gesto em lote do
+ * fechamento); `in_time`: ainda no prazo combinado; `owner`: o gesto não serve a
+ * este pedido, fica com o Dono. O valor é o DESTE pedido, nunca somado.
+ */
+export interface ClosingPendingReadyOrder {
+  ref: string;
+  customer_name: string;
+  /** "Combinado para 15h"; "" sem hora combinada. */
+  promised_display: string;
+  state: "resolve" | "in_time" | "owner";
+  /** `in_time` e `owner`: o porquê, por extenso. */
+  reason: string;
+  /** `resolve`: o que acontece com o dinheiro. */
+  money_sentence: string;
+  /** `resolve`: a base que a tela leu, devolvida na assinatura. */
+  revision: string;
+}
+
+/**
+ * Um pedido aberto que não ficou pronto (#3169): novo, aceito, em preparo ou a
+ * entrega. Aviso, com o caminho que o Gestor oferece; não segura o dia.
+ */
+export interface ClosingPendingOpenOrder {
+  ref: string;
+  customer_name: string;
+  /** "Novo", "Aceito", "Em preparo", "Pronto", "Despachado". */
+  status_label: string;
+  /** "Combinado para 15h"; "" sem hora combinada. */
+  promised_display: string;
+  path: "cancel_or_reschedule" | "cancel" | "conclude_or_cancel" | "conclude";
+  /** "Cancele ou remarque no Gestor." */
+  path_sentence: string;
+}
+
 export interface ClosingUpcomingPreorder {
   date: string;
   date_display: string;
@@ -71,6 +107,10 @@ export interface DayClosingProjection {
   hourly_shape?: ClosingHourlyShape | null;
   /** Quem fecha ("Admin · gerência"). */
   operator_display?: string;
+  /** Pedidos prontos que ninguém veio buscar (#2684). Aviso: não seguram o dia. */
+  pending_ready_orders?: ClosingPendingReadyOrder[];
+  /** Pedidos abertos que não ficaram prontos (#3169). Aviso: não seguram o dia. */
+  pending_open_orders?: ClosingPendingOpenOrder[];
 }
 
 /** Algo estranho que o sistema notou no dia e ninguém explicou (`OperationEpisode`). */
