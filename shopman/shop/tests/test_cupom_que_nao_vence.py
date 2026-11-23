@@ -162,15 +162,17 @@ def test_cupom_fixo_maior_que_o_desconto_por_item_entra_no_lugar_dele(web):
         "Cupom aplicado no lugar do desconto que já valia (Desconto de aniversário, R$ 3,90), porque dá mais."
     )
     session = Session.objects.get(session_key=key)
-    # 3 unidades não repartem R$ 5,00 em centavos inteiros por unidade (1,666…): o rateio
-    # de valor fixo entrega o mínimo acima do prometido (``_spread_order_discount`` com
-    # ``at_least=True``), R$ 1,67 por unidade, e registra o que de fato aplicou.
-    assert session.items[0]["unit_price_q"] == 1133
-    assert session.items[0]["line_total_q"] == 3399
-    assert session.pricing["coupon"] == {"code": "PRIMEIRACOMPRA", "discount_q": 501}
+    # 3 unidades não repartem R$ 5,00 em centavos inteiros por unidade (1,666…): a linha
+    # se parte (#3240), 2 a R$ 11,33 e 1 a R$ 11,34, e o desconto fecha exato.
+    assert [(i["qty"], i["unit_price_q"], i["line_total_q"]) for i in session.items] == [
+        (2, 1133, 2266),
+        (1, 1134, 1134),
+    ]
+    assert sum(i["line_total_q"] for i in session.items) == 3400
+    assert session.pricing["coupon"] == {"code": "PRIMEIRACOMPRA", "discount_q": 500}
     records = session.pricing["discount"]["items"]
-    assert [(r["type"], r["sku"], r["discount_q"]) for r in records] == [("coupon", "", 501)]
-    assert session.pricing["discount"]["total_discount_q"] == 501
+    assert [(r["type"], r["sku"], r["discount_q"]) for r in records] == [("coupon", "", 500)]
+    assert session.pricing["discount"]["total_discount_q"] == 500
 
 
 def test_a_troca_do_cupom_fixo_devolve_a_linha_ao_preco_de_lista_e_tira_o_registro_deslocado():
