@@ -27,9 +27,12 @@ from __future__ import annotations
 
 #: SKU → nome do arquivo em ``surfaces/storefront-nuxt/public/img/products/``.
 HOSTED_PHOTOS: dict[str, str] = {
+    # Ampliada de 323 para 1000 px: não há original maior, e o Google reprova foto
+    # menor que 500 px a partir de 31/01/2027 (#2139).
+    "DELI": "dl.v2.webp",
     "REFRI-GUARANA-WEWI-255": "refri-guarana-wewi-255.webp",
     "REFRI-LARANJA-WEWI-255": "refri-laranja-wewi-255.webp",
-    "REFRI-LEMONSOUR-WEWI-255": "refri-lemonsour-wewi-255.webp",
+    "REFRI-LEMONSOUR-WEWI-255": "refri-lemonsour-wewi-255.v2.webp",
     "TONICA-ORIGINAL-WEWI-255": "tonica-original-wewi-255.webp",
     "TONICA-ROSE-WEWI-255": "tonica-rose-wewi-255.webp",
     "TONICA-GINGER-WEWI-255": "tonica-ginger-wewi-255.webp",
