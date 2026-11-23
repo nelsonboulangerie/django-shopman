@@ -669,10 +669,28 @@ def _home_sections_copy(
         how_facets=_home_facets(omotenashi, default_city=default_city),
         tomorrow_label=_copy_entry("HOME_TOMORROW_LABEL", omotenashi=omotenashi),
         tomorrow_hook=_copy_entry("TRACKING_TOMORROW_HOOK", omotenashi=omotenashi),
-        whatsapp_cta=_copy_entry("HOME_WHATSAPP_CTA", omotenashi=omotenashi),
+        whatsapp_cta=_copy_entry(
+            "HOME_WHATSAPP_CTA_CONCIERGE" if _concierge_answers_whatsapp() else "HOME_WHATSAPP_CTA",
+            omotenashi=omotenashi,
+        ),
         whatsapp_cta_label=_copy_entry("HOME_WHATSAPP_CTA_LABEL", omotenashi=omotenashi),
         faq_heading=_copy_entry("HOME_FAQ_HEADING", omotenashi=omotenashi),
     )
+
+
+def _concierge_answers_whatsapp() -> bool:
+    """A Concierge atende o WhatsApp da casa neste deployment?
+
+    Os mesmos portões que o atendimento confere em runtime: ``service.is_enabled``
+    (contrato, modo ``assist``, chave ligada) e uma conexão ativa no canal WhatsApp
+    (``transport.configured_connections``). É estado do deployment, igual para todo
+    visitante: a home pública pode ficar em cache sem vazar nada.
+    """
+    from shopman.storefront.concierge import service, transport
+
+    if not service.is_enabled():
+        return False
+    return any(connection.channel == "whatsapp" for connection in transport.configured_connections())
 
 
 def _home_facets(
