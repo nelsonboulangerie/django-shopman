@@ -113,18 +113,28 @@ Recusado no ponto de efeito (ou na concessão), decide-se de novo: uma decisão 
 concessão vencida e confirmação anterior aos termos pedem termos novos (`present_terms`), com
 uma confirmação nova (K07). Outras recusas dizem a limitação.
 
-Um efeito por turno: o segundo movimento de efeito escolhido fica recusado
-(`one_effect_per_turn`). [DECIDIDO] É restrição do mecanismo, não limitação: a máquina do episódio tem UMA espera de
-efeito (`waiting_effect`) e UMA reconciliação aberta por vez; a concessão, o comando e a intenção
-de execução são gravados juntos antes do efeito (N13), e um recibo pendente ou desconhecido abre a
-reconciliação daquele comando. Por isso, **várias linhas do carrinho num turno são uma mudança
-só**: a primeira necessidade de mudança leva um `change_cart` com todas as linhas
-(`parameters={"lines": [{item, quantity}, ...]}`), atômico e com um recibo; as outras são levadas
-por ela (`carried_by`), herdam a elegibilidade do grupo e recebem o mesmo recibo, e a resposta sai
-uma vez. A levada nunca executa sem a líder (`carried_without_lead`), e o mesmo item em duas
-linhas não vira comando (qual vale não se sabe). Uma linha que não é absoluta torna a mudança inteira inelegível (tudo ou nada). Efeitos
-diferentes no mesmo turno (mudar o carrinho e o recebimento) continuam um por turno. Em `shadow` nada se executa (`shadow:effect_not_executed:<movimento>`),
-e a resposta que afirmaria o efeito é segurada pela verificação.
+Um efeito por vez. [DECIDIDO] A máquina do episódio tem UMA espera de efeito (`waiting_effect`) e
+UMA reconciliação aberta por vez: a concessão, o comando e a intenção de execução são gravados
+juntos antes do efeito (N13), e um recibo pendente ou desconhecido abre a reconciliação daquele
+comando. Daí as três regras:
+
+- **Várias linhas do carrinho são uma mudança só**: a primeira necessidade de mudança leva um
+  `change_cart` com todas as linhas (`parameters={"lines": [{item, quantity}, ...]}`), atômico e
+  com um recibo; as outras são levadas por ela (`carried_by`), herdam a elegibilidade do grupo e
+  recebem o mesmo recibo, e a resposta sai uma vez. A levada nunca executa sem a líder
+  (`carried_without_lead`), e o mesmo item em duas linhas não vira comando.
+- **Efeitos A2 reversíveis diferentes saem em SEQUÊNCIA declarada** (`EFFECT_SEQUENCE`: o
+  `set_fulfillment` antes do `change_cart`, para a sacola medir a data combinada). Cada efeito tem a
+  própria concessão, o próprio comando (chave própria), a intenção gravada antes e o próprio recibo;
+  o recibo terminal de um devolve o episódio a `active` antes do próximo, e a sequência **para no
+  primeiro recibo que não é sucesso** (`sequence_stopped`). Assim há no máximo uma espera de efeito
+  e uma reconciliação aberta por vez. Cada parte da resposta cita o próprio recibo (K24).
+- **Fora disso, um efeito por turno**: o segundo efeito escolhido fica recusado
+  (`one_effect_per_turn`) e a decisão refeita diz a limitação. O `commit_order` (A3) nunca entra
+  em sequência.
+
+Em `shadow` nada se executa (`shadow:effect_not_executed:<movimento>`), e a resposta que afirmaria
+o efeito é segurada pela verificação.
 
 O adaptador diz quem fala e qual é o carrinho dele por `Engine.subject_of(ctx, event) ->
 Subject`, a partir do contexto confiável, nunca do texto. Sem carrinho, nenhuma mudança nem
