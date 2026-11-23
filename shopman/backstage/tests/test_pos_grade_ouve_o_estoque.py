@@ -97,7 +97,10 @@ def test_os_selos_sozinhos_sao_os_mesmos_da_projecao_e_custam_uma_fracao(balcao)
 
     assert set(selos) == {"availability"}
     da_projecao = {
-        p["sku"]: {"sku": p["sku"], "sold_out": p["sold_out"], "sold_out_reason": p["sold_out_reason"]}
+        p["sku"]: {
+            "sku": p["sku"], "sold_out": p["sold_out"], "sold_out_reason": p["sold_out_reason"],
+            "units_left": p["units_left"],
+        }
         for p in inteira["pos"]["products"]
     }
     assert {entry["sku"]: entry for entry in selos["availability"]} == da_projecao

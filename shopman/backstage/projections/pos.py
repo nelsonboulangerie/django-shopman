@@ -79,6 +79,11 @@ class POSProductProjection:
     # "Sem caixa" = caixa presente cuja caixa física (componente de estoque
     # limitado, ``metadata['kit_packaging']``) acabou. Vazio = "Esgotado".
     sold_out_reason: str = ""
+    # Quantas unidades a casa ainda promete HOJE (o teto do Stockman, a mesma régua
+    # do "Esgotado"), para o tile dizer "Restam 3" (#2610, WP-E8). ``None`` quando
+    # o número não vale como "restam": item sem rastreio de estoque, sem teto, só
+    # com fornada futura (nada pronto na prateleira), esgotado, ou vendido por peso.
+    units_left: int | None = None
     # Vendido por peso (``Product.unit == "kg"``): ``price_q`` é o preço DO
     # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
     # uma unidade. Ver ``shop/services/weighed_sale.py``.
@@ -1010,13 +1015,15 @@ def build_pos_availability() -> list[dict]:
     except Exception:
         logger.exception("pos_availability_listing_failed")
         return []
-    sold_out = _sold_out_skus(skus)
+    sold_out, units_left = _grid_stock(skus)
     without_box = _kits_without_box(skus)
+    weighed = _weighed_skus(skus)
     return [
         {
             "sku": sku,
             "sold_out": sku in sold_out or sku in without_box,
             "sold_out_reason": "Sem caixa" if sku in without_box else "",
+            "units_left": None if sku in without_box or sku in weighed else units_left.get(sku),
         }
         for sku in skus
     ]
@@ -1386,7 +1393,7 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
         return []
 
     skus = [p.sku for p, _ in entries]
-    sold_out = _sold_out_skus(skus)
+    sold_out, units_left = _grid_stock(skus)
     without_box = _kits_without_box(skus)
     routes = _kitchen_routes(skus)
     promotion_prices = _promotion_prices(entries)
@@ -1395,6 +1402,7 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
             p, price_q,
             sold_out=p.sku in sold_out or p.sku in without_box,
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
+            units_left=None if p.sku in without_box else units_left.get(p.sku),
             kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
             kitchen_prep=bool((routes.get(p.sku) or {}).get("prep")),
@@ -2705,6 +2713,7 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
 
 def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
+    units_left: int | None = None,
     kitchen_station: str = "",
     kitchen_auto_fire: bool = False,
     kitchen_prep: bool = False,
@@ -2759,6 +2768,9 @@ def _product_projection(
         gtin=_product_gtin(product),
         sold_out=sold_out,
         sold_out_reason=sold_out_reason,
+        # O teto de quem vende por peso é em quilo, e "Restam 3" de pão por quilo
+        # não diz nada ao balcão: o número fica só no que se conta por unidade.
+        units_left=None if sold_out or sold_by_weight else units_left,
         sold_by_weight=sold_by_weight,
         choice_group=product_choice_group(product),
         choice_group_label=product_choice_group_label(product),
@@ -2814,10 +2826,32 @@ def _kits_without_box(skus: list[str]) -> set[str]:
 
 
 def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
-    """SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
+    """SKUs esgotados no escopo do canal do PDV (o primeiro lado de ``_grid_stock``)."""
+    return _grid_stock(skus, target_date=target_date)[0]
+
+
+def _weighed_skus(skus: list[str]) -> set[str]:
+    """Os SKUs vendidos por peso (``Product.unit == "kg"``), numa consulta."""
+    if not skus:
+        return set()
+    return {
+        sku for sku, unit in Product.objects.filter(sku__in=skus).values_list("sku", "unit")
+        if weighed_sale.is_sold_by_weight(unit)
+    }
+
+
+def _grid_stock(skus: list[str], *, target_date=None) -> tuple[set[str], dict[str, int]]:
+    """O estoque da grade numa leitura só: ``(esgotados, unidades que restam)``.
+
+    SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
     storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
     query para a grade inteira. Silencioso quando o stockman não responde: a
     grade do balcão nunca quebra por causa de um selo.
+
+    As unidades que restam (#2610) saem da MESMA resposta: o teto do que a casa
+    promete, só quando há pronto na prateleira (``available``/``low_stock``). O
+    item que só tem a fornada de mais tarde (``planned_ok``) não entra: "Restam 12"
+    de um pão que ainda não saiu mentiria ao balcão.
 
     ⚠️ Este selo NÃO distingue "tem pão na prateleira" de "sai da próxima
     fornada", e a diferença não está ao alcance daqui: para o stockman um quant
@@ -2832,7 +2866,7 @@ def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
     régua por data da reserva que o salvamento usa (``stock_on_dates``).
     """
     if not skus:
-        return set()
+        return set(), {}
     try:
         from decimal import Decimal
 
@@ -2843,6 +2877,7 @@ def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
 
         avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF, target_date=target_date)
         sold_out: set[str] = set()
+        units_left: dict[str, int] = {}
         for sku in skus:
             raw = avail_map.get(sku)
             # SKU sem rastreio de estoque não é esgotado: o zero dele é ausência
@@ -2854,10 +2889,12 @@ def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
             )
             if resolved.status == "unavailable":
                 sold_out.add(sku)
-        return sold_out
+            elif resolved.status in ("available", "low_stock") and resolved.available_qty is not None:
+                units_left[sku] = int(resolved.available_qty)
+        return sold_out, units_left
     except Exception:
         logger.exception("pos_sold_out_lookup_failed")
-        return set()
+        return set(), {}
 
 
 def _operator_first_names(usernames: set[str]) -> dict[str, str]:

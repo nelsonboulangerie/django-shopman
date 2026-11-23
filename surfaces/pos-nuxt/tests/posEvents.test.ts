@@ -61,7 +61,7 @@ describe("mergeAvailability — o selo troca sem ninguém tocar (WP-E4)", () => 
       { sku: "CROISSANT", sold_out: true, sold_out_reason: "" },
     ]);
     expect(next).not.toBe(grid);
-    expect(next[0]).toEqual({ ...grid[0], sold_out: true, sold_out_reason: "" });
+    expect(next[0]).toEqual({ ...grid[0], sold_out: true, sold_out_reason: "", units_left: null });
     // O tile que não mudou é o MESMO objeto: o Vue não redesenha o que não mexeu.
     expect(next[1]).toBe(grid[1]);
     expect(next[2]).toBe(grid[2]);
