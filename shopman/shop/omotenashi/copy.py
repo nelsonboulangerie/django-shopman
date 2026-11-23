@@ -1558,6 +1558,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT": {
         WILDCARD: {WILDCARD: CopyEntry(message='Tem complemento (apartamento, bloco, fundos)? Se não tiver, é só dizer "sem complemento".')},
     },
+    "CONCIERGE_ENGINE_OFFER_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?")},
+    },
     "CONCIERGE_ENGINE_EFFECT_FAILED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
     },

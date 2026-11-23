@@ -160,8 +160,10 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
                                          "rua, o número e o bairro, ou envie sua localização pelo WhatsApp."),
     "present_terms.needs_delivery_complement": ("Tem complemento (apartamento, bloco, fundos)? Se não tiver, "
                                                 "é só dizer \"sem complemento\"."),
+    # Aprovada pelo dono em 23/11 (#3408): a limitação que o efeito recusado no ar faz dizer.
+    "inform_limitation.offer_team": "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?",
 }
-REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team")
+REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices")
 
 
 def test_the_nice_templates_are_the_approved_phrases_and_a_broken_copy_drops_out(shop, monkeypatch):
@@ -255,3 +257,47 @@ def test_the_order_templates_are_today_phrases(shop):
 
 def test_a_window_the_house_grid_does_not_know_never_leaks(shop):
     assert turn_framework.window_text("manha") == "horário a confirmar"
+
+
+def test_an_effect_refused_on_air_says_the_nice_limitation_never_the_package_english(shop, sent, monkeypatch):
+    """#3408: a sombra não executa efeito; no ar, o efeito recusado refaz a decisão, e quem responde é a limitação."""
+    import dataclasses
+    import json
+
+    from conversational_commerce.contracts.errors import ErrorCode
+
+    from shopman.shop.conversational.commerce_execute import Done
+    from shopman.storefront.concierge import model_reader
+    from shopman.storefront.concierge.effect_site import ConciergeEffectSite
+    from shopman.storefront.tests.test_concierge_model_reader import FakeAI
+
+    pix = json.dumps({"acts": [{"act": "choose_payment", "span": "pix", "product": "", "qty": 0, "change": "",
+                                "day": "", "mode": "", "time": "", "payment": "pix"}]})
+    real = model_reader.NiceReader
+    monkeypatch.setattr(model_reader, "NiceReader", lambda: real(client=FakeAI(raw=pix), model="m", gate=lambda t: ""))
+
+    def refuse(self, command):
+        return Done(False, refusal=ErrorCode.FACT_UNAVAILABLE.value)  # o sistema de registro diz não, só no ar
+
+    monkeypatch.setattr(ConciergeEffectSite, "_set_payment", refuse)
+    # O pedido na conversa (P08) ainda espera o dono no perfil do ar: aqui, aprovado só em memória.
+    from shopman.storefront.concierge import profile
+
+    build = profile.build_profile
+
+    def approved(**kwargs):
+        built = build(**kwargs)
+        lines = tuple(dataclasses.replace(line, state="approved", decided_at=line.decided_at or "2026-11-23T00:00:00.000000Z")
+                      if line.id == "commerce.order_in_conversation" else line for line in built.lines)
+        return dataclasses.replace(built, lines=lines)
+
+    monkeypatch.setattr(profile, "build_profile", approved)
+    conversation, message = _inbound("pix")
+    # O motor do ar, direto: a sombra não executa efeito, e é só no ar que o sistema de registro recusa.
+    live = turn_framework.build_engine(conversation, channel=_channel())
+    result = live.turn(live.ports.clock.ctx, turn_framework._raw(message))
+    # Quem recusa no ar (a concessão ou o sistema de registro), a decisão refeita é a limitação.
+    assert result.outcome == "answered" and result.chosen_moves == ["inform_limitation"]
+    assert result.reply.template_ids == ("inform_limitation.offer_team",)
+    assert result.text == "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?"
+    assert sent == [result.text]  # a frase da Nice, pelo envio de hoje; nunca o inglês do pacote
