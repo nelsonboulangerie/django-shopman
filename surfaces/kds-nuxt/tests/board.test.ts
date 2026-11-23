@@ -167,7 +167,7 @@ describe("kds board presentation", () => {
     expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "Consumir aqui" }))).toBe("Consumir aqui");
     // O balcão que não disse segue Retirada; a encomenda segue Encomenda.
     expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "" }))).toBe("Retirada");
-    expect(ticketOverline(ticket({ is_preorder: true, service_label: "Para levar" }))).toBe("Encomenda");
+    expect(ticketOverline(ticket({ is_preorder: true, service_label: "Para levar" }))).toBe("Encomenda · Ana");
   });
 
   it("v4 nota 7: iniciado por e a hora combinada numa linha", () => {
