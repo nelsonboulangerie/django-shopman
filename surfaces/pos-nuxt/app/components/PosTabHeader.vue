@@ -426,7 +426,8 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
          decide é o começo do fluxo, não esta barra. -->
     <!-- BALCÃO: "Consumir aqui" e "Para levar" (#3193). Quem quer levar tinha só a
          porta da encomenda; agora é um toque, e a Cozinha lê no ticket se monta no
-         prato ou embala. F8 troca entre os dois. -->
+         prato ou embala. F8 troca entre os dois. O ligado é o `solid` da suíte, o
+         mesmo do seletor Balcão/Encomendas: no `soft` o desligado lia mais forte. -->
     <div
       v-if="hasOpenTab && isCounter"
       class="inline-flex shrink-0 items-center gap-1 max-sm:hidden"
@@ -441,7 +442,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         color="neutral"
         variant="outline"
         active-color="primary"
-        active-variant="soft"
+        active-variant="solid"
         class="min-w-0 gap-2"
         :active="(counterService || 'here') === service.ref"
         :aria-pressed="(counterService || 'here') === service.ref"
@@ -451,7 +452,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       >
         <Icon :name="service.icon" class="size-4 shrink-0" />
         <span class="sr-only">{{ service.label }}</span>
-        <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ service.label }}</span>
+        <span class="hidden whitespace-nowrap @min-[36rem]:inline" aria-hidden="true">{{ service.label }}</span>
       </NuxtButton>
       <OperatorKbd
         v-if="!coarsePointer"
