@@ -201,3 +201,21 @@ def test_after_the_effect_a_held_answer_never_ends_in_silence(order_on_air, outb
     assert Session.objects.get(session_key=order_on_air.session_key).data["payment"] == {"method": "pix"}
     card = OperatorAlert.objects.get(type=turn_framework.EFFECT_HELD_ALERT)
     assert card.respond_by is not None and card.resolved_at is None and "set_payment" in card.message
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_a_pending_effect_says_so_with_the_deadline(order_on_air, outbox, monkeypatch):
+    """#3328: o efeito que não volta confirmado diz "ainda estou concluindo", na frase aprovada e com o prazo da
+    reconciliação; nunca a voz do pacote, nunca o recuo de efeito segurado."""
+    from conversational_commerce.contracts.errors import ErrorCode
+    from conversational_commerce.ports import PortError
+
+    from shopman.shop.conversational.commerce_execute import ShopmanCommerceExecute
+
+    def running(self, ctx, command, guard):
+        raise PortError(ErrorCode.EFFECT_PENDING, "a mesma chave está em execução")
+
+    monkeypatch.setattr(ShopmanCommerceExecute, "execute", running)
+    _pix_turn(order_on_air, "pix-pending-1")
+    assert len(outbox.sent) == 1
+    assert outbox.sent[0].startswith("Ainda estou concluindo isso. Te confirmo por aqui até ")

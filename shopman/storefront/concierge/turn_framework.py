@@ -721,7 +721,9 @@ def tick(*, channel=None) -> dict:
     from .profile import build_profile
 
     profile = build_profile(environment=ENVIRONMENT)
-    for pk in _due_conversations(TrustedContext(tenant=profile.tenant, environment=ENVIRONMENT, subject="")):
+    # A busca dos vencidos é do inquilino inteiro: contexto sem sujeito (``subject=""`` o contrato recusa, e o tick
+    # caía na primeira vez que podia falar, #3328).
+    for pk in _due_conversations(TrustedContext(tenant=profile.tenant, environment=ENVIRONMENT)):
         conversation = Conversation.objects.filter(pk=pk).first()
         if conversation is None:
             continue
