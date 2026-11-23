@@ -182,6 +182,10 @@ class FakeCommerceRead(FakeBase):
         order = self.state.orders.get(ref)
         if order is not None and ctx.subject is not None and order["subject"] != ctx.subject:
             raise PortError("object_forbidden", "pedido de outro sujeito")
+        terms = self.quotes.get(order.get("terms_hash")) if order is not None else None
+        if terms is not None:
+            # O total do pedido é o dos termos confirmados (o executor grava o pedido por eles).
+            order = {**order, "total": {"price_minor": terms.total.amount_minor, "currency": terms.total.currency}}
         return self._fact("read_order", order, "fake-orders")
 
     def read_customer(self, ctx: TrustedContext, ref: str) -> Fact:

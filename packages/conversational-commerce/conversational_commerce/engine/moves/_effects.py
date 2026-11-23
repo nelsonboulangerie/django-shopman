@@ -26,12 +26,15 @@ def commitment_id(command_id: str) -> str:
     return f"reconcile.{command_id}"
 
 
-def receipt_part(state, need, move: str, template_id: str, slot: str) -> PartSpec:
+def receipt_part(state, need, move: str, template_id: str, slot: str, *, also=None) -> PartSpec:
+    """A parte pelo recibo. ``also(receipt)``: os outros espaços do molde de sucesso (o fato lido depois
+    do efeito), com o recibo que existe, ou ``None`` sem recibo (o espaço aponta o que não há, e segura)."""
     receipt = state.receipts.get(need.need_id)
+    extra = dict(also(receipt)) if also is not None else {}
     if receipt is None:
-        return PartSpec(move, template_id, {slot: ("receipt", f"none.{need.need_id}")})
+        return PartSpec(move, template_id, {slot: ("receipt", f"none.{need.need_id}"), **extra})
     if receipt.status == "success":
-        return PartSpec(move, template_id, {slot: ("receipt", receipt.command_id)})
+        return PartSpec(move, template_id, {slot: ("receipt", receipt.command_id), **extra})
     if receipt.status == "failure":
         return PartSpec("inform_limitation", FAILED.template_id)
     return PartSpec("wait", PENDING.template_id, {"deadline": ("commitment", commitment_id(receipt.command_id))})

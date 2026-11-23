@@ -38,10 +38,9 @@ def site(monkeypatch):
     return ConciergeEffectSite(ToolContext(conversation=conversation, channel_ref=CHANNEL))
 
 
-def _fills(template_id: str, refs) -> object:
-    """O valor que o molde do pacote lê do recibo (a faceta do espaço)."""
-    template = TEMPLATES_BY_ID[template_id]
-    [(slot, spec)] = template.slots.items()
+def _fills(template_id: str, refs, slot: str) -> object:
+    """O valor que o espaço do molde do pacote lê do recibo (a faceta dele)."""
+    spec = TEMPLATES_BY_ID[template_id].slots[slot]
     evidence = Evidence(now="2026-11-23T10:00:00.000000Z",
                         receipts={"cmd-1": SimpleNamespace(status="success", domain_refs=dict(refs))})
     return evidence.value("receipt", "cmd-1", spec.field)
@@ -57,7 +56,9 @@ def command(action, target="sess-1", **parameters):
 def test_the_cart_receipt_fills_the_package_template(site, monkeypatch):
     monkeypatch.setattr("shopman.storefront.concierge.tools.set_item", lambda ctx, sku, qty: {"ok": True})
     done = site.apply(CTX, command("change_cart", item="CROISSANT", quantity="2"))
-    assert _fills("change_cart.done", done.domain_refs) == "sess-1"
+    # O efeito é afirmado pelo estado do recibo; o que ele aponta é a sacola de verdade.
+    assert _fills("change_cart.done", done.domain_refs, "done") == "success"
+    assert done.domain_refs["effect"] == "sess-1"
 
 
 def test_the_order_receipt_fills_the_package_template(site, monkeypatch):
@@ -65,7 +66,8 @@ def test_the_order_receipt_fills_the_package_template(site, monkeypatch):
 
     monkeypatch.setattr(tools, "place_order", lambda ctx, token, method, notes: {"ok": True, "order_ref": "ORD-1"})
     done = site.apply(CTX, command("commit_order", terms_ref="tok-1", payment_method="pix"))
-    assert _fills("commit_order.done", done.domain_refs) == "ORD-1"
+    assert _fills("commit_order.done", done.domain_refs, "order") == "ORD-1"
+    assert _fills("commit_order.done", done.domain_refs, "track") == "ORD-1"
 
 
 # ── 2. a forma de pagamento é condição dos termos ──────────────────────────────────────
@@ -137,7 +139,7 @@ def _say(template_id: str, **values) -> str:
     text = turn_framework.nice_templates()[template_id].text
     formatters = turn_framework.nice_formatters()
     for slot, value in values.items():
-        text = text.replace("{" + slot + "}", formatters[slot](value))
+        text = text.replace("{" + slot + "}", formatters.get(slot, str)(value))
     return text
 
 
@@ -146,7 +148,45 @@ def test_the_total_changed_says_the_new_total_in_reais(db):
         "O total mudou; agora é R$ 24,00. Confira antes de confirmar."
 
 
-def test_the_order_placed_says_where_to_follow(db, settings):
+def test_the_order_placed_is_today_phrase_with_the_total(db, settings):
+    """Critério de pronto da coordenação: a frase de hoje com o total (sem a frase do Pix, que vem à parte)."""
+    from shopman.storefront.concierge.tools import render_result
+
     settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.exemplo/"
-    assert _say("commit_order.done", order="WHATSAPP-261122-S50") == \
-        "Pedido registrado: WHATSAPP-261122-S50. Acompanhar: https://loja.exemplo/pedido/WHATSAPP-261122-S50/"
+    today = render_result("place_order", {"ok": True, "order_ref": "WHATSAPP-261122-S50", "total": "R$ 24,00",
+                                          "tracking_url": "https://loja.exemplo/pedido/WHATSAPP-261122-S50/"})
+    assert _say("commit_order.done", order="WHATSAPP-261122-S50", total={"price_minor": 2400, "currency": "BRL"},
+                track="WHATSAPP-261122-S50") == today == \
+        "Pedido WHATSAPP-261122-S50 registrado. Total: R$ 24,00.\nAcompanhar: https://loja.exemplo/pedido/WHATSAPP-261122-S50/"
+
+
+LINES = [{"ref": "CROISSANT", "quantity": "2", "unit": "unit", "name": "Croissant",
+          "unit_price": {"price_minor": 1200, "currency": "BRL"},
+          "line_total": {"price_minor": 2400, "currency": "BRL"}}]
+TODAY_LINES = [{"qty": 2, "name": "Croissant", "line_total": "R$ 24,00"}]
+
+
+def test_the_cart_updated_is_today_phrase(db):
+    from shopman.storefront.concierge.service import copy_message
+    from shopman.storefront.concierge.tools import render_result
+
+    today = "\n".join((copy_message("CONCIERGE_CART_UPDATED").strip(),
+                       render_result("set_item", {"ok": True, "lines": TODAY_LINES, "total": "R$ 24,00"}),
+                       copy_message("CONCIERGE_CART_NEXT").strip()))
+    assert _say("change_cart.done", done="success", items=LINES,
+                total={"price_minor": 2400, "currency": "BRL"}) == today
+
+
+def test_the_terms_summary_is_today_review_ending_in_may_i_register(db):
+    from datetime import date, timedelta
+
+    from shopman.storefront.concierge.tools import render_result
+
+    day = (date.today() + timedelta(days=1)).isoformat()
+    today = render_result("review_order", {
+        "ok": True, "lines": TODAY_LINES, "total": "R$ 24,00", "payment_method": "pix",
+        "fulfillment": {"type": "pickup", "date": day, "slot_label": "A partir das 15h"}})
+    summary = "\n".join(today.split("\n")[:-1] + ["Posso registrar?"])  # sem o "confirmo <código>" (aprovado 23/11)
+    assert _say("present_terms.confirm", items=LINES, total={"price_minor": 2400, "currency": "BRL"},
+                fulfillment={"mode": "pickup"},
+                conditions={"fulfillment_date": day, "fulfillment_window": "slot-15", "payment_method": "pix"}) == summary

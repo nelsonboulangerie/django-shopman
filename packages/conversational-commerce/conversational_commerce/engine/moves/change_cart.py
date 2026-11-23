@@ -39,4 +39,9 @@ def effect(state, need) -> EffectPlan:
 
 
 def reply(state, need):
-    return receipt_part(state, need, MOVE, "change_cart.done", "ref")
+    # A sacola depois da mudança: os termos cotados de novo depois do recibo de sucesso (``Engine._after_effects``).
+    def cart(receipt):
+        key = ("fact", state.terms_key(state.subject.cart_ref)) if state.subject.cart_ref else ("fact", "terms.none")
+        return {"items": key, "total": key}
+
+    return receipt_part(state, need, MOVE, "change_cart.done", "done", also=cart)

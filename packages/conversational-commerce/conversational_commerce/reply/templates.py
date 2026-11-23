@@ -61,8 +61,11 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
     Template("verify_with_staff.promise", "1", "verify_with_staff",
              "I'll check with the team and answer by {deadline}.",
              {"deadline": SlotSpec(("commitment:promise",), "at")}),
-    Template("change_cart.done", "1", "change_cart", "Done: your cart is updated ({ref}).",
-             {"ref": SlotSpec(("receipt:success",), "effect")}),
+    # A sacola depois da mudança: o efeito pelo recibo (``done`` é o estado dele) e a sacola pelos termos
+    # cotados de novo depois do recibo de sucesso (v2 4.7, propriedade 2: mudança material, termos novos).
+    Template("change_cart.done", "2", "change_cart", "{done} Your cart now has:\n{items}\nTotal: {total}.",
+             {"done": SlotSpec(("receipt:success",)), "items": SlotSpec(("fact",), "items"),
+              "total": SlotSpec(("fact",), "total")}),
     # Recebimento: o molde mais completo que o recibo sustenta (``engine/moves/set_fulfillment.py``).
     # Os valores saem do recibo (o estado do alvo depois do efeito); a casa formata data, modo e janela.
     Template("set_fulfillment.done", "1", "set_fulfillment", "Done: {mode} on {date}, {window}.",
@@ -79,8 +82,11 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
              {"mode": SlotSpec(("receipt:success",), "mode")}),
     Template("set_fulfillment.updated", "1", "set_fulfillment", "Done: your order details are updated ({ref}).",
              {"ref": SlotSpec(("receipt:success",), "effect")}),
-    Template("commit_order.done", "1", "commit_order", "Your order {order} is placed.",
-             {"order": SlotSpec(("receipt:success",), "effect")}),
+    # O pedido pelo recibo, o total pelo pedido lido depois do efeito, e onde acompanhar (o mesmo recibo,
+    # que a casa formata como o caminho dela para o pedido).
+    Template("commit_order.done", "2", "commit_order", "Your order {order} is placed. Total: {total}. Track it: {track}.",
+             {"order": SlotSpec(("receipt:success",), "effect"), "total": SlotSpec(("fact",), "total"),
+              "track": SlotSpec(("receipt:success",), "effect")}),
     # Efeito pendente não é efeito: a parte é uma espera, não a confirmação do pedido.
     Template("commit_order.pending", "1", "wait",
              "Your order is being processed; I'll confirm by {deadline}.",

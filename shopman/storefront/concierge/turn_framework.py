@@ -62,6 +62,10 @@ NICE_TEMPLATE_COPY = {
     # "Não" de 22/11, porque a frase de antes pedia o código), e o pedido registrado traz o link.
     "present_terms.changed": "CONCIERGE_ENGINE_TOTAL_CHANGED",
     "commit_order.done": "CONCIERGE_ENGINE_ORDER_PLACED",
+    # Com os termos inteiros no motor (PR do Core, opção 1 aprovada em 23/11): a sacola e o resumo
+    # com a frase de hoje; o resumo termina em "Posso registrar?" (aprovada no lugar do código).
+    "change_cart.done": "CONCIERGE_ENGINE_CART_UPDATED",
+    "present_terms.confirm": "CONCIERGE_ENGINE_TERMS_CONFIRM",
 }
 
 #: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).
@@ -143,22 +147,67 @@ def money_text(value) -> str:
     return f"R$ {format_money(int(value['price_minor']))}"
 
 
-def order_text(value) -> str:
-    """O número do pedido e onde acompanhar ("WHATSAPP-261122-S50. Acompanhar: <link>").
-
-    O link é a página do pedido no site, determinística a partir do número: nenhum fato novo.
-    """
+def track_text(value) -> str:
+    """Onde acompanhar o pedido: a página dele no site, determinística a partir do número (nenhum fato novo)."""
     from .tools import _storefront_base_url
 
-    ref = str(value)
-    return f"{ref}. Acompanhar: {_storefront_base_url()}/pedido/{ref}/"
+    return f"{_storefront_base_url()}/pedido/{value}/"
+
+
+def done_text(value) -> str:
+    """O recibo de sucesso dito como a casa diz: "Pronto"."""
+    return "Pronto" if str(value) == "success" else str(value)
+
+
+def items_text(value) -> str:
+    """As linhas da sacola como hoje (``tools.render_result``): "2 × “Croissant”: R$ 24,00"."""
+    from decimal import Decimal
+
+    from .tools import _display_name
+
+    rows = []
+    for line in value:
+        quantity = Decimal(str(line["quantity"]))
+        shown = int(quantity) if quantity == quantity.to_integral_value() else quantity
+        rows.append(f"{shown} × {_display_name(line.get('name') or line['ref'])}: {money_text(line['line_total'])}")
+    return "\n".join(rows)
+
+
+def fulfillment_text(value) -> str:
+    """O começo da linha do recebimento: "Retirada" ou "Entrega" (o dia e a janela vêm das condições)."""
+    mode = value.get("mode") if isinstance(value, dict) else None
+    return {"pickup": "Retirada", "delivery": "Entrega"}.get(str(mode), "")
+
+
+def conditions_text(value) -> str:
+    """O resto do recebimento e o pagamento, como no resumo de hoje.
+
+    ": segunda-feira, 23/11, a partir das 15h" (o dia e a janela da grade da casa) e, em linha
+    própria, "Pagamento: Pix.". Sem dia, só o pagamento.
+    """
+    from shopman.shop.services.fulfillment_window import window_label
+
+    from .tools import PAYMENT_LABELS, _summary_when
+
+    found = dict(value or {})
+    text = ""
+    if found.get("fulfillment_date"):
+        slot = found.get("fulfillment_window")
+        label = window_label(str(slot), for_customer=True) if slot else ""
+        text = f": {_summary_when(str(found['fulfillment_date']), label)}"
+    method = PAYMENT_LABELS.get(str(found.get("payment_method") or ""), "")
+    if method:
+        text += f"\nPagamento: {method}."
+    return text
 
 
 def nice_formatters() -> dict:
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
 
-    money = dict.fromkeys(DEFAULT_FORMATTERS, money_text)  # os espaços de dinheiro do pacote, em reais
-    return {**DEFAULT_FORMATTERS, **money, "order": order_text, "owner": owner_text, "deadline": deadline_text,
+    money = dict.fromkeys(("price", "price_a", "price_b", "total"), money_text)  # o dinheiro do pacote, em reais
+    return {**DEFAULT_FORMATTERS, **money, "track": track_text, "done": done_text, "items": items_text,
+            "fulfillment": fulfillment_text, "conditions": conditions_text, "owner": owner_text,
+            "deadline": deadline_text,
             "date": date_text,
             "mode": mode_text, "window": window_text, "time": time_text}
 

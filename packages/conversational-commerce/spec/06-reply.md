@@ -40,7 +40,15 @@ ele é criado:
 
 O pacote traz só moldes genéricos mínimos (`GENERIC_TEMPLATES`), para os testes e como
 exemplo da forma. A voz e a língua da casa são do perfil e do adaptador. A formatação também
-(dinheiro, data e quantidade, por `formatters`); a padrão é neutra.
+(dinheiro, data e quantidade, por `formatters`); a padrão é neutra (`engine/format.py`:
+dinheiro, `done` para o estado do recibo, `items`, `fulfillment` e `conditions` dos termos).
+
+Moldes de efeito com mais de um lastro: `change_cart.done` afirma o efeito pelo recibo (`{done}`,
+o estado do recibo de sucesso) e mostra o carrinho pelos termos novos (`{items}`, `{total}`);
+`commit_order.done` diz o pedido pelo recibo (`{order}` e `{track}`, que a casa formata como o
+caminho dela para acompanhar) e o total pelo pedido lido depois do efeito (`{total}`);
+`present_terms.confirm` mostra `{items}`, `{total}`, `{fulfillment}` e `{conditions}` do mesmo
+fato dos termos. O molde da casa mantém esses espaços, como todos.
 
 O adaptador entrega os moldes dele ao `Engine` em `house_templates`, pelo `template_id`. Cada molde
 da casa troca a frase de um molde do pacote e mantém o movimento e os espaços (nome, lastro aceito

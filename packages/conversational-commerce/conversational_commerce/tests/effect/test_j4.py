@@ -14,7 +14,9 @@ from .helpers import CTX, engine
 
 
 def _yes(mid: str, **extra):
-    return dataclasses.replace(j4.CONFIRM, message=j4.message(mid, "yes", **extra))
+    # O texto do pedido registrado diz o total do pedido lido depois do efeito: o de cada caso.
+    return dataclasses.replace(j4.CONFIRM, message=j4.message(mid, "yes", **extra),
+                               expect_text=("Your order order-", "is placed. Total: XTS "))
 
 
 def test_j4_order_with_effect():

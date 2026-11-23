@@ -46,4 +46,10 @@ def effect(state, need) -> EffectPlan:
 
 
 def reply(state, need):
-    return receipt_part(state, need, MOVE, "commit_order.done", "order")
+    # O total pelo pedido lido depois do efeito (``Engine._after_effects``); onde acompanhar, pelo mesmo recibo.
+    def placed(receipt):
+        ref = (receipt.domain_refs.get("effect") if receipt is not None else None) or f"none.{need.need_id}"
+        track = ("receipt", receipt.command_id) if receipt is not None else ("receipt", f"none.{need.need_id}")
+        return {"total": ("fact", state.order_key(ref)), "track": track}
+
+    return receipt_part(state, need, MOVE, "commit_order.done", "order", also=placed)

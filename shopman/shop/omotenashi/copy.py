@@ -1532,7 +1532,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="O total mudou; agora é {total}. Confira antes de confirmar.")},
     },
     "CONCIERGE_ENGINE_ORDER_PLACED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pedido registrado: {order}")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido {order} registrado. Total: {total}.\nAcompanhar: {track}")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, sua sacola ficou assim:\n{items}\nTotal: {total}\nQuer mais alguma coisa? Quando terminar, é só escrever “pode fechar”.")},
+    },
+    "CONCIERGE_ENGINE_TERMS_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?")},
     },
     "CONCIERGE_ENGINE_EFFECT_FAILED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},

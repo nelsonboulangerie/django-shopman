@@ -15,4 +15,34 @@ def money_text(value: Any) -> str:
     return f"{value['currency']} {amount}"
 
 
-DEFAULT_FORMATTERS = {"price": money_text, "price_a": money_text, "price_b": money_text, "total": money_text}
+def done_text(value: Any) -> str:
+    """O estado do recibo dito como efeito: ``success`` → ``Done.`` (a casa diz na língua dela)."""
+    return {"success": "Done."}.get(str(value), str(value))
+
+
+def items_text(value: Any) -> str:
+    """As linhas dos termos: ``2 × Item A: XTS 9.00``, uma por linha. O nome vem do fato do item."""
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("itens sem lista")
+    return "\n".join(f"{line['quantity']} × {line.get('name') or line['ref']}: {money_text(line['line_total'])}"
+                     for line in value)
+
+
+def fulfillment_text(value: Any) -> str:
+    """O recebimento dos termos: o modo e, quando há, o começo da janela (instante canônico)."""
+    if not isinstance(value, Mapping) or "mode" not in value:
+        raise ValueError("recebimento sem modo")
+    start = value.get("window_start")
+    return f"{value['mode']} from {start}" if start else str(value["mode"])
+
+
+def conditions_text(value: Any) -> str:
+    """As condições dos termos, ``código: valor``; nenhuma vira texto vazio."""
+    if not isinstance(value, Mapping):
+        raise ValueError("condições sem mapa")
+    return "; ".join(f"{code}: {item}" for code, item in value.items())
+
+
+DEFAULT_FORMATTERS = {"price": money_text, "price_a": money_text, "price_b": money_text, "total": money_text,
+                      "done": done_text, "items": items_text, "fulfillment": fulfillment_text,
+                      "conditions": conditions_text}

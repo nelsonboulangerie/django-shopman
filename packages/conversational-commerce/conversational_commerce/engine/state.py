@@ -139,6 +139,10 @@ class TurnState:
     def terms_key(target: str) -> str:
         return f"terms.{target}"
 
+    @staticmethod
+    def order_key(ref: str) -> str:
+        return f"order.{ref}"
+
     def situation(self, need: NeedSpec, **fields: Any) -> Situation:
         """A situação comum a toda proposta da necessidade, mais o que o movimento acrescenta."""
         keys = self.fact_keys_for(need)

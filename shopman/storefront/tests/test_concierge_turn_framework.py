@@ -139,7 +139,10 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     # Aprovadas pelo dono em 23/11, no cartão do motor. O "total mudou" substitui o "não" de 22/11
     # (a frase de antes pedia o código).
     "present_terms.changed": "O total mudou; agora é {total}. Confira antes de confirmar.",
-    "commit_order.done": "Pedido registrado: {order}",
+    "commit_order.done": "Pedido {order} registrado. Total: {total}.\nAcompanhar: {track}",
+    "change_cart.done": ("{done}, sua sacola ficou assim:\n{items}\nTotal: {total}\nQuer mais alguma coisa? "
+                         "Quando terminar, é só escrever “pode fechar”."),
+    "present_terms.confirm": "{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?",
 }
 REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team")
 
@@ -229,7 +232,7 @@ def test_the_order_templates_are_today_phrases(shop):
     assert turn_framework.time_text("16:30") == "16h30"
     # O que não tem frase de hoje fica fora: o turno segue o caminho de hoje (a hora sem janela, o resumo,
     # o "total mudou" com o total, a sacola e o pedido registrado esperam a palavra do dono).
-    for missing in ("set_fulfillment.updated", "present_terms.confirm", "change_cart.done"):
+    for missing in ("set_fulfillment.updated",):
         assert missing not in found, missing
 
 
