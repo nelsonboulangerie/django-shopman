@@ -126,10 +126,111 @@ def test_the_judge_needs_a_switched_on_class_and_a_nice_template_for_every_part(
     assert turn_framework.judge(ok, enabled=frozenset({"inform"}), approved=approved).eligible
 
 
-def test_the_nice_templates_are_today_copy_and_a_broken_copy_drops_out(shop, monkeypatch):
+APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
+    "ask_clarification.more": "Desculpe, não entendi bem. Pode me dizer o que você gostaria?",
+    "effect.failed": ("Não consegui concluir esta ação. Suas escolhas foram preservadas. "
+                      "Se quiser, chamo alguém da equipe."),
+    "handoff.routed": ("Solicitei atendimento a {owner} e preservei suas escolhas. "
+                       "Se ninguém assumir até {deadline}, te aviso por aqui."),
+    "handoff.routed_no_deadline": ("Solicitei atendimento a {owner} e preservei suas escolhas. "
+                                   "A equipe continuará por aqui conforme a disponibilidade."),
+    "handoff.not_accepted": ("Solicitei atendimento humano e preservei suas escolhas. Enquanto ninguém "
+                             "assume, sigo com você por aqui e te dou notícia até {deadline}."),
+}
+REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices", "inform_limitation.offer_team",
+           "present_terms.changed")
+
+
+def test_the_nice_templates_are_the_approved_phrases_and_a_broken_copy_drops_out(shop, monkeypatch):
     found = turn_framework.nice_templates()
-    assert set(found) == {"acknowledge.got_it", "acknowledge.thanks"}
+    assert set(found) == {"acknowledge.got_it", "acknowledge.thanks", *APPROVED, *turn_framework.FULFILLMENT_TEMPLATES}
     assert found["acknowledge.thanks"].text == copy_message("CONCIERGE_SMALL_TALK_THANKS").strip()
+    for template_id, text in APPROVED.items():
+        assert found[template_id].text == text, template_id  # a frase aprovada, letra por letra
+    assert not set(REFUSED) & set(found)  # o "não" do dono: a classe fica com a frase de hoje
     monkeypatch.setattr("shopman.storefront.concierge.service.copy_message",
                         lambda key: "Fechamos às 19h." if key == "CONCIERGE_SMALL_TALK_THANKS" else "Combinado.")
-    assert set(turn_framework.nice_templates()) == {"acknowledge.got_it"}  # dígito no texto fixo: fora
+    assert "acknowledge.thanks" not in turn_framework.nice_templates()  # dígito no texto fixo: fora
+
+
+def test_who_answers_and_until_when_are_said_in_portuguese(settings):
+    from datetime import UTC, datetime, timedelta
+
+    from django.utils import timezone
+
+    assert turn_framework.owner_text("operator_on_duty") == "alguém da equipe"  # nunca o nome do papel
+    now = timezone.localtime()
+    tomorrow = (now + timedelta(days=1)).replace(hour=7, minute=10, second=0, microsecond=0)
+    assert turn_framework.deadline_text(tomorrow.isoformat()) == "amanhã às 7h10"
+    today = now.replace(hour=15, minute=0, second=0, microsecond=0)
+    assert turn_framework.deadline_text(today.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")) == "hoje às 15h"
+    later = datetime(2030, 3, 4, 9, 0, tzinfo=timezone.get_current_timezone())
+    assert turn_framework.deadline_text(later.isoformat()) == "04/03 às 9h"
+
+
+def test_the_tick_does_nothing_with_the_classes_off(shop, sent):
+    assert turn_framework.tick(channel=_channel())["skipped"] == "classes_off"
+    assert sent == []
+
+
+def test_the_tick_stays_silent_while_the_deadline_notice_has_no_nice_phrase(shop, sent):
+    _switch(shop, inform=True, handoff=True)
+    counts = turn_framework.tick(channel=_channel())
+    # Todo molde de espera (``effect.pending`` também é ``wait``) precisa da frase da Nice antes.
+    assert counts["skipped"].startswith("no_nice_template:") and "wait.overdue" in counts["skipped"]
+    assert counts["notices"] == 0
+    assert sent == []  # aviso em frase genérica do pacote nunca sai
+
+
+def test_the_engine_tick_command_runs_in_the_worker(shop):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("concierge_engine_tick", stdout=out)
+    assert '"skipped": "classes_off"' in out.getvalue()
+
+
+# ── os moldes do pedido com a frase de hoje (passo 4 do pedido pelo motor) ────────────────
+
+
+def test_the_order_templates_are_today_phrases(shop):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.storefront.concierge import order_closing
+    found = turn_framework.nice_templates()
+    tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+    formatters = turn_framework.nice_formatters()
+
+    def say(template_id, **values):
+        text = found[template_id].text
+        for slot, value in values.items():
+            text = text.replace("{" + slot + "}", formatters[slot](value))
+        return text
+
+    today_with_window = order_closing.noted({"day": tomorrow, "kind": "pickup", "slot": "A partir das 15h"},
+                                            copy=copy_message)
+    today_without = order_closing.noted({"day": tomorrow, "kind": "delivery", "slot": ""}, copy=copy_message)
+    assert say("set_fulfillment.done", mode="pickup", date=tomorrow, window="slot-15") == today_with_window \
+        == "Combinado: retirada amanhã, a partir das 15h."
+    assert say("set_fulfillment.done_day", mode="delivery", date=tomorrow) == today_without \
+        == "Combinado: entrega amanhã."
+    assert say("set_fulfillment.done_date", date=tomorrow) == "Combinado: para amanhã."
+    assert say("set_fulfillment.done_mode", mode="delivery") == "Combinado: entrega."
+    # A hora sem janela da grade: derivada das aprovadas (coordenação, 23/11).
+    assert say("set_fulfillment.done_time", mode="pickup", date=tomorrow, time="16:00") == \
+        "Combinado: retirada amanhã às 16h."
+    assert turn_framework.time_text("16:30") == "16h30"
+    # O que não tem frase de hoje fica fora: o turno segue o caminho de hoje (a hora sem janela, o resumo,
+    # o "total mudou" com o total, a sacola e o pedido registrado esperam a palavra do dono).
+    for missing in ("set_fulfillment.updated", "present_terms.confirm",
+                    "present_terms.changed",
+                    "change_cart.done", "commit_order.done"):
+        assert missing not in found, missing
+
+
+def test_a_window_the_house_grid_does_not_know_never_leaks(shop):
+    assert turn_framework.window_text("manha") == "horário a confirmar"
