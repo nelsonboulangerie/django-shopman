@@ -59,8 +59,12 @@ def house(monkeypatch):
     Shop.objects.create(name="Nelson Boulangerie")
     Channel.objects.create(ref="whatsapp", name="WhatsApp", config={})
     Product.objects.create(sku="CROISSANT", name="Croissant", base_price_q=1200, is_published=True, is_sellable=True)
+    from shopman.shop.ai import FittedClient
+
     ai = FakeAI()
-    monkeypatch.setattr(model_reader, "build_client", lambda: (ai, "deepseek-flash"))
+    # O cliente medido da casa, como no ar: cada chamada paga grava uma AiInvocation (o freio vale).
+    metered = FittedClient(ai, frozenset(), purpose="intents", connection_ref="eval-test", default_model="deepseek-flash")
+    monkeypatch.setattr(model_reader, "build_client", lambda: (metered, "deepseek-flash"))
     monkeypatch.setattr(triage, "jev_enabled", lambda: False)
     monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": [CROISSANT]})
     return ai
@@ -95,7 +99,9 @@ def _run(*args):
 def test_the_five_cards_run_through_the_engine_and_write_nothing(house):
     before = _rows()
     out, error = _run()
-    assert _rows() == before and error == ""  # nenhuma tabela tocada por um turno ganhou linha
+    after = _rows()
+    assert error == "" and after[:-1] == before[:-1]  # nenhuma tabela tocada por um turno ganhou linha
+    assert after[-1] - before[-1] == house.calls  # só o medidor da casa: uma AiInvocation por chamada paga
     assert out.startswith("cartões: ") and out.count("\n[") == 5
     assert "Cliente: quero 2 croissants\n  Nice: Pronto, sua sacola ficou assim:" in out
     assert "Posso registrar?" in out and "movimentos: change_cart" in out
