@@ -15,11 +15,13 @@
 3. **WhatsApp contra o ManyChat falso local** (``fake_manychat.py``, #3272), quando
    ``MANYCHAT_API_BASE`` aponta para 127.0.0.1: o ``notification_manychat`` de
    produção roda inteiro (a resposta do login com "Liberar o Chrome" e "Encerrar
-   acesso" sai de verdade), com um token falso só no ``SHOPMAN_MANYCHAT`` e a
-   trava de DEBUG aberta só para o ManyChat. O ``MANYCHAT_API_TOKEN`` de topo fica
-   VAZIO de propósito: o resolvedor de assinantes do Guestman fala com
-   ``api.manychat.com`` por endereço fixo e só chama com esse token. Sem ele, nada
-   sai da máquina (o assinante do login vem do próprio ManyChat, por id).
+   acesso" sai de verdade), com um token falso e a trava de DEBUG aberta só para
+   o ManyChat. O resolvedor de assinantes do Guestman (que acha ou cria o contato
+   do telefone antes do aviso do pedido, #3282) também roda inteiro contra o fake:
+   o endereço dele é fixo no módulo (``resolver._API_BASE``, sem setting), e é
+   trocado aqui como o ``stripe.api_base``, sem mexer no Core. O token falso de
+   topo (``MANYCHAT_API_TOKEN``) é o que ele lê; com o endereço trocado, nada sai
+   da máquina.
 4. **Geocoding contra os mapas falsos locais** (``fake_maps.py``, #2569 item 4),
    quando ``SHOPMAN_E2E_MAPS_API_BASE`` aponta para 127.0.0.1: o ``geocoding`` de
    produção roda inteiro e só o endereço da API muda (``geocoding.GEOCODE_URL``,
@@ -61,10 +63,13 @@ _FAKE_MANYCHAT_BASE = os.environ.get("MANYCHAT_API_BASE", "").strip()
 if _FAKE_MANYCHAT_BASE:
     if urlparse(_FAKE_MANYCHAT_BASE).hostname not in {"127.0.0.1", "localhost"}:
         raise RuntimeError("MANYCHAT_API_BASE no harness precisa apontar para o ManyChat falso local.")
-    MANYCHAT_API_TOKEN = ""
+    from shopman.guestman.contrib.manychat import resolver as _manychat_resolver
+
+    _manychat_resolver._API_BASE = _FAKE_MANYCHAT_BASE.rstrip("/")
+    MANYCHAT_API_TOKEN = "e2e-fake-manychat-local-only"
     SHOPMAN_MANYCHAT = {
         **SHOPMAN_MANYCHAT,
-        "api_token": "e2e-fake-manychat-local-only",
+        "api_token": MANYCHAT_API_TOKEN,
         "base_url": _FAKE_MANYCHAT_BASE.rstrip("/"),
     }
     SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG = True

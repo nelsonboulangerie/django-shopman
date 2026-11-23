@@ -61,7 +61,7 @@ import {
   checkoutNotesCopy,
   couponCardState,
   deliveryZoneRefused,
-  DELIVERY_ZONE_REFUSAL_SELECTOR,
+  DELIVERY_ZONE_REFUSAL_FOCUS,
   rememberChoicesDescription,
   whenSummary as buildWhenSummary,
   checkoutNow,
@@ -1384,7 +1384,7 @@ async function continueFromAddress () {
 // gesto que resolve ("Mudar para retirada"), em vez de deixar o cliente olhando
 // para a seção onde estava (beta SMS-05).
 function revealZoneRefusal () {
-  reveal(() => document.querySelector(DELIVERY_ZONE_REFUSAL_SELECTOR), { align: 'start', focus: true })
+  reveal(DELIVERY_ZONE_REFUSAL_FOCUS, { align: 'start', focus: true })
 }
 
 function continueFromWhen () {
@@ -1419,6 +1419,9 @@ function openConfirmSheet () {
 }
 
 function openReceiptSheet () {
+  // No computador o resumo é o lateral, e a folha não tem conteúdo ali: abrir
+  // seria um véu vazio (#3281). A linha do total nem é toque em `lg`.
+  if (import.meta.client && window.matchMedia?.('(min-width: 64rem)').matches) return
   receiptOpen.value = true
 }
 
@@ -1838,7 +1841,7 @@ useSeoMeta({
             </UiAlert>
           </div>
 
-          <UiAlert v-if="pickupSwapOffer" variant="warning" data-checkout-pickup-swap>
+          <UiAlert v-if="pickupSwapOffer" variant="warning" data-checkout-pickup-swap data-focus-target="zone-refusal">
             <UiAlertTitle>{{ serverError || 'Ainda não entregamos nesse endereço' }}</UiAlertTitle>
             <UiAlertDescription>
               <p>Mas você pode retirar na loja quando quiser.</p>
@@ -1850,7 +1853,7 @@ useSeoMeta({
 
           <!-- Mesma recusa, loja sem retirada: não há "Mudar para retirada" a oferecer,
                então a saída é outro endereço ou a gente. -->
-          <UiAlert v-else-if="deliveryUncovered" variant="warning" data-checkout-zone-uncovered>
+          <UiAlert v-else-if="deliveryUncovered" variant="warning" data-checkout-zone-uncovered data-focus-target="zone-refusal">
             <UiAlertTitle>Ainda não entregamos nesse endereço</UiAlertTitle>
             <UiAlertDescription>
               <p>Escolha outro endereço aqui em cima, ou fale com a gente no WhatsApp.</p>
@@ -2643,10 +2646,13 @@ useSeoMeta({
             data-focus-obstruction
           >
             <!-- A linha do total abre o resumo. Era um botão "Resumo" próprio na
-                 barra invisível; aqui ela é o toque, e o ícone de nota diz isso. -->
+                 barra invisível; aqui ela é o toque, e o ícone de nota diz isso.
+                 A partir de `lg` o resumo lateral já está aberto ao lado e a folha
+                 não existe (`lg:hidden` no conteúdo): a linha vira só o total, sem
+                 toque, em vez de abrir um véu vazio (#3281). -->
             <UiButton
               variant="ghost"
-              class="h-auto w-full p-0 text-left hover:bg-transparent"
+              class="h-auto w-full p-0 text-left hover:bg-transparent lg:hidden"
               aria-label="Ver o resumo do pedido"
               data-checkout-open-receipt
               @click="openReceiptSheet"
@@ -2659,6 +2665,10 @@ useSeoMeta({
                 <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
               </span>
             </UiButton>
+            <p class="hidden w-full items-baseline justify-between gap-2 lg:flex" data-checkout-total-line>
+              <span class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</span>
+              <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
+            </p>
             <template v-if="!bagGoneNoticeShowing">
               <UiButton
                 size="lg"

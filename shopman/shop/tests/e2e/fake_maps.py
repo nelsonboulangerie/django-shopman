@@ -30,8 +30,9 @@ responde 404 e fica no log.
 A tabela: endereços de Londrina com coordenadas ESCOLHIDAS para cair numa faixa do seed
 (``seed._seed_delivery_distance_bands``: até 3 km R$ 5,00, até 6 km R$ 8,00, até 10 km
 R$ 12,00, além disso fora da área), medidas da loja do seed (-23,3348384, -51,1673157).
-Não são as coordenadas reais desses CEPs; são as que fazem cada faixa ser medida. Nenhum
-está em zona de exceção (bairro Bela Suíça, CEP 862…), para que a distância decida.
+Não são as coordenadas reais desses CEPs; são as que fazem cada faixa ser medida. Fora o
+da J8, nenhum está em zona de exceção (bairro Bela Suíça, CEP 862…), para que a
+distância decida.
 
 Uso (o ``scripts/run_storefront_journeys.sh`` sobe sozinho)::
 
@@ -52,6 +53,15 @@ from urllib.parse import parse_qs, urlparse
 #: CEP (só dígitos) → endereço. ``km`` é a distância haversine da loja do seed, para
 #: quem lê saber em que faixa cada um cai (o teste do fake confere).
 ADDRESSES: dict[str, dict] = {
+    # O endereço da J8 (#3282): o bairro da loja, zona de cortesia do seed (a zona decide
+    # a taxa antes da distância). Está aqui para o ViaCEP da J8 não sair da máquina.
+    "86050480": {
+        "route": "Rua Jorge Velho",
+        "neighborhood": "Bela Suíça",
+        "lat": -23.3385,
+        "lng": -51.1700,
+        "km": 0.5,
+    },
     # Até 3 km: R$ 5,00.
     "86020120": {
         "route": "Rua Pernambuco",

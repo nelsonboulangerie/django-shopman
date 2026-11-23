@@ -211,6 +211,10 @@ ADAPTERS_SEM_DADO_DE_CLIENTE: dict[str, str] = {
     # mas ele já é reivindicado pelo operador de entrega, para o dia em que a casa
     # trocar o adapter sem lembrar da política.
     "payment_mock": "simulador local; a URL no arquivo é exemplo, não destino",
+    # A nota simulada da pilha de teste (#3124): o XML dela leva o `qrCode` e o
+    # `urlChave` da SEFAZ-PR, como a nota real, para a DANFE se compor dele. O
+    # simulador só ESCREVE a URL no arquivo; não chama a SEFAZ nem manda dado nenhum.
+    "fiscal_simulated": "simulador local; a URL da SEFAZ-PR vai escrita no XML, não é destino",
 }
 
 

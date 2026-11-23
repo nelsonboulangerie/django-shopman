@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
 import { addReadyProductFromMenu, checkoutSigningInByCode } from './support/customer'
+import { viaCepFromFakeMaps } from './support/maps'
 import { capture, newCustomerPhone, settled } from './support/stack'
 
 // J15 · Endereço fora da área, taxa por distância e a troca por retirada (#2569, item 4).
@@ -22,22 +23,12 @@ import { capture, newCustomerPhone, settled } from './support/stack'
 // Nenhum estado nasce por API, Admin ou banco: a cliente põe na sacola, entra pelo código
 // que chegou e digita o endereço.
 const PRODUCT = 'Croissant' // pronto agora no seed `--profile qa`
-const MAPS = (process.env.JOURNEY_MAPS_URL || `http://127.0.0.1:${process.env.JOURNEYS_MAPS_PORT || '12192'}`).replace(/\/$/, '')
 
 interface TableAddress { cep: string, route: string, number: string, neighborhood: string }
 // A tabela do fake_maps.py (as distâncias são as da loja do seed).
 const NEAR: TableAddress = { cep: '86020-120', route: 'Rua Pernambuco', number: '1000', neighborhood: 'Centro' } // 2,5 km
 const FAR: TableAddress = { cep: '86082-000', route: 'Avenida Saul Elkind', number: '2000', neighborhood: 'Lago Parque' } // 7,2 km
 const OUTSIDE: TableAddress = { cep: '86118-000', route: 'Estrada do Limoeiro', number: '10', neighborhood: 'Irerê' } // 14,8 km
-
-/** O ViaCEP que o navegador consulta ao digitar o CEP, desviado para os mapas falsos. */
-async function viaCepFromFakeMaps (page: Page) {
-  await page.context().route(/^https:\/\/viacep\.com\.br\/ws\/\d{8}\/json\/?$/, async (route) => {
-    const cep = new URL(route.request().url()).pathname.split('/')[2]
-    const response = await route.fetch({ url: `${MAPS}/ws/${cep}/json/` })
-    await route.fulfill({ response })
-  })
-}
 
 /** Da sacola com um Croissant, põe o segundo (o mínimo da entrega) e entra pelo código. */
 async function twoCroissantsAndSignsIn (page: Page, testInfo: TestInfo) {
@@ -119,6 +110,16 @@ async function summaryShowsDeliveryFee (page: Page, testInfo: TestInfo, fee: str
   })
 }
 
+/** Quanto o topo do elemento fica abaixo da base do cabeçalho fixo (negativo = escondido). */
+async function belowHeader (page: Page, selector: string): Promise<number> {
+  return await page.evaluate((sel) => {
+    const header = document.querySelector('header')
+    const target = document.querySelector(sel)
+    if (!header || !target) return -9999
+    return target.getBoundingClientRect().top - header.getBoundingClientRect().bottom
+  }, selector)
+}
+
 /** Volta ao passo do endereço pelo cabeçalho dele, para trocar o endereço. */
 async function reopensAddress (page: Page) {
   const step = page.locator("[data-checkout-step='address']")
@@ -140,6 +141,19 @@ test('J15: a taxa é a da faixa de distância; longe demais, a loja oferece a re
     await summaryShowsDeliveryFee(page, testInfo, '5,00', '2,5 km', 'taxa-da-primeira-faixa')
   })
 
+  if (!isPhoneProject(testInfo)) {
+    await test.step('no computador, o total do pedido é só o total: o resumo já está ao lado', async () => {
+      // A linha do total não abre folha em lg (a folha não tem conteúdo ali, #3281).
+      await expect(page.locator('[data-checkout-open-receipt]')).toBeHidden()
+      const total = page.locator('[data-checkout-total-line]')
+      await expect(total).toBeVisible()
+      await expect(total).toContainText(/Total do pedido\s*R\$\s*31,00/)
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await total.scrollIntoViewIfNeeded()
+      await capture(page, testInfo, 'resumo-desktop')
+    })
+  }
+
   await test.step('um endereço a 7,2 km: a taxa muda para a da faixa dele', async () => {
     await reopensAddress(page)
     await typesAddressByCep(page, FAR)
@@ -150,20 +164,21 @@ test('J15: a taxa é a da faixa de distância; longe demais, a loja oferece a re
   await test.step('um endereço a 14,8 km: a loja recusa a entrega e oferece a retirada', async () => {
     await reopensAddress(page)
     await typesAddressByCep(page, OUTSIDE)
+    // A linha de cima do formulário é o endereço confirmado, não o anterior (#3281).
+    const accepted = page.locator("[data-checkout-step='address'] [data-address-accepted]")
+    await expect(accepted).toContainText(`${OUTSIDE.route}, ${OUTSIDE.number}`)
+    await expect(accepted).not.toContainText(FAR.route)
     const refusal = page.locator('[data-checkout-pickup-swap]')
     await expect(refusal).toBeVisible()
     await expect(refusal).toContainText('Ainda não entregamos nesse endereço')
     await expect(refusal).toContainText('Mas você pode retirar na loja quando quiser.')
-    // A loja leva a página até a recusa, com o gesto que resolve à vista (beta SMS-05). A
-    // rolagem é suave: a captura espera o botão inteiro na tela.
-    await expect(refusal.getByRole('button', { name: 'Mudar para retirada' })).toBeInViewport({ ratio: 1 })
-    // Achado da J15: a página para com o aviso sob o cabeçalho fixo, e o título e a frase
-    // ("Ainda não entregamos…", "Mas você pode retirar…") ficam escondidos; só o botão
-    // aparece (375 e 1366 px). A jornada afirma o gesto à vista, não a frase.
-    testInfo.annotations.push({
-      type: 'achado',
-      description: 'a recusa de área para sob o cabeçalho fixo: título e frase escondidos, só o botão à vista'
-    })
+    // A loja leva a página até a recusa (beta SMS-05), e ela para INTEIRA abaixo do
+    // cabeçalho fixo: título, frase e "Mudar para retirada" à vista (#3281). A rolagem é
+    // suave: espera o aviso inteiro na janela e o título livre do cabeçalho.
+    await expect(refusal).toBeInViewport({ ratio: 1 })
+    await expect.poll(() => belowHeader(page, '[data-checkout-pickup-swap]'), {
+      message: 'o topo do aviso fica abaixo do cabeçalho fixo'
+    }).toBeGreaterThanOrEqual(0)
     // O passo não avança, e nenhuma taxa entra no total.
     await expect(page.locator('[data-checkout-zone-ok]')).toHaveCount(0)
     await capture(page, testInfo, 'fora-da-area')

@@ -628,7 +628,10 @@ export function deliveryZoneRefused ({ fulfillmentType, pickupSwapOffer, deliver
   return fulfillmentType === 'delivery' && (pickupSwapOffer || deliveryUncovered || !!zoneError)
 }
 
-export const DELIVERY_ZONE_REFUSAL_SELECTOR = '[data-checkout-pickup-swap], [data-checkout-zone-uncovered]'
+// A recusa de área (com ou sem a troca por retirada) é alvo do próximo foco: o
+// `data-focus-target` traz a régua (`scroll-margin-top`), e o aviso para inteiro
+// abaixo do cabeçalho fixo, com título, frase e gesto à vista (#3281).
+export const DELIVERY_ZONE_REFUSAL_FOCUS = 'zone-refusal'
 
 // Observação e "Lembrar destas escolhas" falam do pedido que a pessoa está
 // fazendo (beta PIXEXP-12, SMS-21). Na retirada não há interfone nem endereço;
