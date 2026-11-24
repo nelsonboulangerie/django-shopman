@@ -411,7 +411,7 @@ def _saved_flow(conversation, monkeypatch, script, saved, *, said_in_order=None,
     Session.objects.create(session_key="sess-salvo", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
                            data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25",
-                                 "payment": {"method": "pix"}})
+                                 "delivery_time_slot": "slot-15", "payment": {"method": "pix"}})
     conversation.session_key = "sess-salvo"
     conversation.save(update_fields=["session_key"])
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -433,7 +433,7 @@ def test_the_saved_address_is_offered_with_today_phrase_and_yes_takes_it(order_o
     assert outbox.sent[0] == saved_offer(saved) == "Entregamos no endereço do seu cadastro, Rua do Cadastro, 10 - Centro?"
     assert written and written[0].get("saved_address_pk") == 7  # o "sim" grava O endereço oferecido, pelo id
     # O "sim" volta ao resumo, com o endereço do cadastro na linha da entrega, pronto para o "sim" do pedido.
-    assert "Entrega: quarta-feira, 25/11\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1]
+    assert "Entrega: quarta-feira, 25/11, a partir das 15h\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1]
     assert outbox.sent[1].endswith("Posso registrar?")
 
 
@@ -802,3 +802,55 @@ def test_a_cart_change_in_the_middle_of_the_close_says_it_changed_and_keeps_the_
     assert outbox.sent[0] == ask_date
     assert outbox.sent[1] == f"Pronto, a sacola foi atualizada. Total: R$ 2,70.\n\n{ask_date}"
     assert Session.objects.get(session_key="sess-adj").items[0]["qty"] == 3
+
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it(order_on_air, outbox, monkeypatch):
+    """Coordenação, 24/11: na entrega, depois do endereço, "Qual janela de entrega fica melhor?" com as janelas do
+    dia (as da loja on-line); a hora dita grava a janela, e o resumo a mostra. Pelo serviço real."""
+    import re
+
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import address, model_reader, tools
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    # O endereço inteiro chega à IA mascarado (P17): o roteiro é pela fala mascarada.
+    script = {"pode fechar": [{"act": "place_order"}], "às 15h": [{"act": "choose_fulfillment", "time": "15:00"}],
+              "pix": [{"act": "choose_payment", "payment": "pix"}],
+              "[endereço omitido]": [{"act": "give_address"}], "[endereço omitido], Centro": [{"act": "give_address"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [])
+
+    def house_writes(ctx, **said):  # a geocodificação da casa: o endereço inteiro, sem complemento
+        tools._set_session_data(ctx, ctx.conversation.session_key, {
+            "delivery_address": "Rua das Flores, 120 - Centro",
+            "delivery_address_structured": {"formatted_address": "Rua das Flores, 120 - Centro",
+                                            "route": "Rua das Flores", "street_number": "120",
+                                            "neighborhood": "Centro", "city": "Londrina", "state_code": "PR",
+                                            "postal_code": "86010-000", "latitude": -23.3, "longitude": -51.1,
+                                            "complement": ""}})
+        return {"ok": True}
+
+    monkeypatch.setattr(tools, "set_fulfillment", house_writes)
+    shop = Shop.load()
+    shop.conversational_live_inform = True  # a config do teste do dono: "informar" e "pedido"
+    shop.save()
+    Session.objects.create(session_key="sess-win", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
+                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25"})
+    order_on_air.session_key = "sess-win"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(["pode fechar", "Rua das Flores 120, Centro", "às 15h", "pix"]):
+            _receive(order_on_air, said, f"win-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    close, window, pay, summary = outbox.sent[:4]
+    assert close == service.copy_message("CONCIERGE_CLOSE_ASK_ADDRESS").strip()
+    assert window.startswith("Qual janela de entrega fica melhor? ") and re.search(r"\d+h", window)
+    assert pay.startswith("Como você prefere pagar?")
+    assert re.search(r"Entrega: quarta-feira, 25/11, .*15h", summary) and summary.endswith("Posso registrar?")
+    assert Session.objects.get(session_key="sess-win").data["delivery_time_slot"]

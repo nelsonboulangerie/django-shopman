@@ -56,7 +56,7 @@ CARTOES = (
            # Sem "sem complemento": o mundo de memória não pergunta o complemento (só a casa pergunta, provado
            # nos testes da loja) e o falso leria a fala como outro endereço, sem número.
            ("quero 1 pain de campagne com entrega", "amanhã", "Rua das Flores, 120, Centro, Londrina, CEP 86010-000",
-            "pode fechar", "pix", "sim"),
+            "pode fechar", "às 15h", "pix", "sim"),
            pedido=True, itens={"campagne": 1}, recebe="delivery", dia=1),
     Cartao("cartao-3-mudar-no-meio", "muda a quantidade depois do resumo",
            ("quero 2 croissants", "pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "na verdade 3", "sim"),
@@ -125,6 +125,7 @@ def _world():
     from shopman.shop.services.fulfillment_window import canonical_slots
 
     world.state.pickup_slots = tuple(str(slot.get("label") or slot["ref"]) for slot in canonical_slots())
+    world.state.delivery_windows = world.state.pickup_slots  # a mesma grade da casa (fulfillment_window)
     world.state.carts = {CART: {}}
     world.state.cart_owner = {CART: SUBJECT}
     world.state.versions = {CART: 1}
