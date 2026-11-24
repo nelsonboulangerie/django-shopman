@@ -587,6 +587,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
                     critical=critical,
                     attempts=attempts,
                 )
+                _note_in_conversation(order, template, backend_name, recipient, context)
                 return True, None
             accepted_without_receipt = (backend_name, recipient)
             logger.info(
@@ -631,6 +632,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
             critical=critical,
             attempts=attempts,
         )
+        _note_in_conversation(order, template, backend_name, recipient, context)
         return True, None
 
     if ambiguous is not None:
@@ -676,6 +678,89 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
         attempts=attempts,
     )
     return False, last_error
+
+
+# ── O aviso na conversa da Concierge (OC-10) ──
+#
+# O aviso de pedido sai por este pipeline, à parte da conversa: sem a nota, a
+# Concierge não sabia o que o cliente já tinha recebido ("cadê o Pix?" depois do
+# aviso com o código). Entregue o aviso pelo WhatsApp, a MESMA conversa em que ela
+# atende ganha uma nota com o texto e a hora. Só grava: nada é enviado de novo.
+
+#: Backends cujo aviso cai no chat de WhatsApp em que a Concierge atende.
+_CONVERSATION_BACKENDS = frozenset({"manychat", "whatsapp"})
+
+#: ``ConversationMessage.envelope["kind"]`` da nota do aviso. Ver docs/reference/data-schemas.md.
+ORDER_NOTICE_NOTE = "order_notice"
+
+
+def _note_in_conversation(order, template: str, backend_name: str, recipient: str, context: dict) -> None:
+    """Grava o aviso entregue como nota na conversa da Concierge com este contato.
+
+    A conversa é a do chat que recebeu o aviso: o assinante do ManyChat (o
+    ``subject`` do vínculo) ou o telefone. Contato sem conversa não grava nada.
+    O aviso já saiu: falhar aqui só registra no log, nunca devolve erro (erro faria
+    a directive tentar de novo e o cliente receber o aviso em dobro).
+    """
+    if backend_name not in _CONVERSATION_BACKENDS or not recipient:
+        return
+    try:
+        from django.db.models import Q
+        from shopman.utils.phone import normalize_phone
+
+        from shopman.shop.adapters import notification_manychat
+        from shopman.shop.models import Conversation, ConversationMessage
+
+        recipient = str(recipient).strip()
+        same_chat = Q(transport_bindings__subject=recipient)
+        if recipient.startswith("+") or backend_name == "whatsapp":
+            same_chat |= Q(phone=normalize_phone(recipient) or recipient)
+        # Savepoint: a directive pode rodar dentro de uma transação, e um erro de banco
+        # aqui não pode envenená-la.
+        with transaction.atomic():
+            conversation = (
+                Conversation.objects.filter(same_chat)
+                .exclude(state=Conversation.State.CLOSED)
+                .order_by("-pk")
+                .first()
+            )
+            if conversation is None:
+                return
+            approved_template = _sent_as_approved_template(backend_name, template)
+            if approved_template:
+                # O template aprovado na Meta não leva o código Pix (é longo e opcional,
+                # docs/reference/whatsapp-templates-meta.md): a nota não pode dizer que levou.
+                context = {**context, "pix_suffix": "", "copy_paste": ""}
+            ConversationMessage.objects.create(
+                conversation=conversation,
+                role=ConversationMessage.Role.ASSISTANT,
+                kind=ConversationMessage.Kind.NOTE,
+                # O texto como a casa o monta, o mesmo do envio em texto livre.
+                text=notification_manychat._build_message(template, context),
+                envelope={
+                    "version": 3,
+                    "kind": ORDER_NOTICE_NOTE,
+                    "order_ref": order.ref,
+                    "template": template,
+                    "backend": backend_name,
+                    "approved_template": approved_template,
+                },
+            )
+    except Exception:
+        logger.exception(
+            "notification.conversation_note_failed order=%s template=%s", getattr(order, "ref", ""), template
+        )
+
+
+def _sent_as_approved_template(backend_name: str, template: str) -> bool:
+    """O aviso saiu pelo template aprovado na Meta (texto fixo), e não em texto livre?"""
+    if backend_name == "manychat":
+        from shopman.shop.adapters import notification_manychat
+
+        return notification_manychat.sends_as_flow(template)
+    from shopman.shop.adapters import notification_whatsapp
+
+    return bool((notification_whatsapp._get_config().get("templates") or {}).get(template))
 
 
 # ── private helpers ──

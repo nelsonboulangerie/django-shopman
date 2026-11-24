@@ -12595,7 +12595,11 @@
             "_eta_clock",
             "_qualify_template",
             "_CUSTOMER_NOTICE_TEMPLATES",
-            "_shop_name"
+            "_shop_name",
+            "_CONVERSATION_BACKENDS",
+            "ORDER_NOTICE_NOTE",
+            "_note_in_conversation",
+            "_sent_as_approved_template"
           ]
         }
       ],
@@ -12613,12 +12617,15 @@
       "config_surface": [
         "DEBUG",
         "SHOPMAN_FOCUS_NFE",
-        "SHOPMAN_STOREFRONT_BASE_URL"
+        "SHOPMAN_MANYCHAT",
+        "SHOPMAN_STOREFRONT_BASE_URL",
+        "SHOPMAN_WHATSAPP"
       ],
       "tests": [
         "shopman/shop/tests/test_notification_relay_contact.py::test_ifood_relay_does_not_notify_and_consults_no_backend",
         "shopman/shop/tests/test_notification_relay_contact.py::test_order_without_any_phone_keeps_skipping",
-        "shopman/shop/tests/test_notification_relay_contact.py::test_own_channel_with_a_real_phone_still_notifies"
+        "shopman/shop/tests/test_notification_relay_contact.py::test_own_channel_with_a_real_phone_still_notifies",
+        "shopman/shop/tests/test_notification_na_conversa.py::test_x15_aviso_entregue_pelo_whatsapp_grava_a_nota_na_conversa"
       ],
       "test_gap_reason": null,
       "policy": false,
