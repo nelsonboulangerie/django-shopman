@@ -106,6 +106,8 @@ NICE_TEMPLATE_COPY = {
     # A mudança com uma pergunta do fechamento no ar (#3488): decidida pela coordenação em 24/11 (a aprovada
     # acima, com o total novo).
     "change_cart.done_total": "CONCIERGE_ENGINE_CART_UPDATED_TOTAL",
+    # A dúvida do verificador (ADR-051), aprovada pela coordenação em 24/11: a leitura nas palavras do "Combinado".
+    "ask_clarification.confirm_reading": "CONCIERGE_ENGINE_CONFIRM_READING",
     "set_fulfillment.updated": "CONCIERGE_ENGINE_FULFILLMENT_UPDATED",
     "commit_order.done_order": "CONCIERGE_ENGINE_ORDER_PLACED_SHORT",
     # As esperas (#3328), aprovadas em 23/11 ("decidido, pode reverter"): o efeito ainda em andamento (o pedido
@@ -249,6 +251,39 @@ def noted_text(value) -> str:
     return "Combinado" if str(value) == "success" else str(value)
 
 
+def reading_words(value) -> str:
+    """A leitura em dúvida nas palavras do "Combinado" (ADR-051): "retirada amanhã às 16h", "para amanhã", "Pix".
+
+    Só o recebimento e a forma de pagamento se dizem de volta. Outro ato (o endereço, que nunca vem em texto na
+    leitura; a sacola) não tem palavras aprovadas: ``UnresolvedReference``, a verificação segura a mensagem e
+    responde o caminho de hoje.
+    """
+    from collections.abc import Mapping
+
+    from conversational_commerce.reply import UnresolvedReference
+
+    acts = value.get("acts") if isinstance(value, Mapping) else None
+    said = []
+    for act in acts or ():
+        fields = dict(act.get("fields") or {})
+        if act.get("act") == "choose_fulfillment":
+            words = [mode_text(fields["mode"])] if fields.get("mode") else (["para"] if fields.get("date") else [])
+            if fields.get("date"):
+                words.append(date_text(fields["date"]))
+            if fields.get("time"):
+                words.append(f"às {time_text(fields['time'])}")
+            if words:
+                said.append(" ".join(words))
+                continue
+        elif act.get("act") == "choose_payment" and fields.get("method"):
+            said.append(method_text(fields["method"]))
+            continue
+        raise UnresolvedReference(str(act.get("act")))
+    if not said:
+        raise UnresolvedReference("reading")
+    return ", ".join(said)
+
+
 def items_text(value) -> str:
     """As linhas da sacola como hoje (``tools.render_result``): "2 × “Croissant”: R$ 24,00"."""
     from decimal import Decimal
@@ -364,7 +399,7 @@ def nice_formatters(conversation=None) -> dict:
             "deadline": deadline_text,
             "date": date_text,
             "mode": mode_text, "window": window_text, "time": time_text,
-            "method": method_text, "payment_method": payment_options_text,
+            "method": method_text, "payment_method": payment_options_text, "reading": reading_words,
             "delivery_address_details": address_words_text, "delivery_time_slot": pickup_slots_text(conversation),
             "delivery_window": delivery_windows_text(conversation),
             **_address_formatters(conversation, partial)}
