@@ -148,9 +148,14 @@ def test_compensation_has_no_mandate_and_verify_waits_for_the_concierge(shop):
 
 
 def test_the_profile_reads_once_by_model_and_spends_only_through_the_house_brake(shop):
-    """P04 (D-040): uma leitura pela IA por turno; o gasto é do freio da casa, nunca do teto do motor."""
+    """P04 (D-040): uma leitura pela IA por turno; o gasto é do freio da casa, nunca do teto do motor. A segunda
+    chamada é a verificação da ADR-051, só no turno em conflito (a leitura não responde à pergunta no ar)."""
+    from shopman.storefront.concierge import profile
+
     built = _profile()
-    assert built.limits.max_model_calls == 1 and built.limits.max_spend.amount_minor == 0
+    assert profile.MODEL_CALLS_PER_TURN == 1 and profile.ADJUDICATIONS_PER_TURN == 1
+    assert built.limits.max_model_calls == 2 and built.limits.max_adjudications_per_turn == 1
+    assert built.limits.max_spend.amount_minor == 0
 
 
 def test_no_new_file_reads_settings_directly():

@@ -275,8 +275,8 @@ desligada, nada disto responde e o turno segue como antes.
    → "Continue no site: <link>" + "Sua sacola vai junto."
      (oferecer não tira a sacola daqui; a troca do link é o aceite)
 2. A mensagem seguinte, com a sacola aceita no site (Session.data["transferred_to"]):
-   a resposta do turno + "Sua sacola está no site, com 2 itens (R$ 1,80). Se quiser
-   pedir por aqui, me peça que eu trago os itens para cá."
+   a resposta do turno + "Sua sacola está no site, com 2 itens (R$ 1,80). Posso trazer
+   os itens para cá, se quiser."
    Uma vez só (a conversa esquece a chave), e só com a sacola do site ainda aberta. A
    oferta inversa só aparece quando é possível agora (ponte ligada, número verificado).
 3. "traz a sacola pra cá" / "prefiro pedir por aqui" → tools.bring_site_cart: oferta e
@@ -307,7 +307,7 @@ dono.
 
 O cliente que não pede o site nunca recebe o link (§5.3, C09). Frase com negação ("não
 quero o site", "o site não abre") não é pedido; a fala que só diz o canal ("prefiro pedir
-por aqui") recebe "Claro, seguimos por aqui na conversa." e a sacola, se houver.
+por aqui") recebe "Claro, seguimos por aqui." e a sacola, se houver.
 
 ### Ligar a ponte no ambiente de testes
 

@@ -366,6 +366,35 @@ dizer que não há mais cancelamento. No bloco "Quer cancelar?" esse botão é a
 principal, e o **Ajuda** (WhatsApp da loja) fica secundário: quem chegou ali quer desistir,
 e o caminho é a ouvidoria, que abre o caso no Gestor.
 
+⛔ **Sobre o PRODUTO, disponibilidade; nunca prontidão** (dono, 24/11/2026, DEV-2026-088). A
+frase que diz quando o produto pode ser pedido fala em **Disponível**, e o estado padrão
+(disponível agora) **não se diz**: a tela só fala quando a disponibilidade difere.
+
+| Onde | Disponível agora | Mais tarde hoje | Outro dia |
+|---|---|---|---|
+| página do produto | (nada) | Disponível a partir das 15h | Disponível amanhã, quarta, a partir das 7h |
+| selo do card do cardápio e das vitrines | (nada) | Disponível a partir das 15h | Disponível amanhã · Disponível na quinta |
+| linha da sacola (o item de fornada) | (nada) | Disponível a partir das 15h | Disponível amanhã, quarta, a partir das 7h |
+
+A frase vem de um lugar só, `shopman/storefront/presentation/promise.py` (o texto) e
+`surfaces/storefront-nuxt/app/presentation/promise.ts` (onde cada pedaço aparece). Saiu o
+"Pronto agora" e saiu o "Fica pronto amanhã" do card.
+
+⛔ **A fronteira: "Disponível" é do PRODUTO; "fica pronto" é do PEDIDO** (dono, 24/11/2026;
+não se reabre). A frase sobre o pedido fica como está: "Seu pedido fica pronto hoje, a
+partir das 15h" no alto da sacola, "Seu pedido fica pronto para retirada hoje…" no checkout
+e "Fica pronto por volta de 12h40" no acompanhamento. A régua é o sujeito da frase. Quando
+o sujeito é o item (página do produto, card, vitrine, linha do item na sacola), a palavra é
+**Disponível**. Quando é o pedido, a palavra é **fica pronto**. Uma mesma tela pode ter as
+duas: na sacola, a linha do item diz "Disponível amanhã, quarta, a partir das 7h", e o alto
+diz "Seu pedido fica pronto amanhã, quarta, a partir das 7h".
+
+⛔ **A linha da loja no produto é curta: "Disponível hoje na Nelson Boulangerie"**, sem
+endereço e sem "Retirada grátis" (dono, 24/11/2026: com uma loja só, o endereço "chega a
+ser hilário de tão inútil"). A linha não sai de vez porque o Google a exige para a
+disponibilidade na loja (#2652): o nome da loja e o estado de hoje, visíveis ao abrir a
+página. O endereço completo o Google só pede quando a cliente abre os detalhes da loja.
+
 ---
 
 ## 6. O que a trava cobra, e o que só olho pega

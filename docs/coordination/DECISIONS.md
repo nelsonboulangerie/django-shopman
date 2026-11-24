@@ -1149,6 +1149,15 @@ fixadas pela coordenação no mesmo dia, e cumpridas em `triage.house_line`:
 
 O ref do produto em foco, que as condições permitiam, não foi mandado: o ganho medido não pediu.
 
+**Adendo de 24/11/2026 · uma leitura por turno; uma segunda chamada só para verificar conflito.** O
+desenho da leitura com contexto ([ADR-051](../decisions/adr-051-leitura-com-contexto.md)), aprovado
+pelo dono em 24/11 depois do ensaio no ar, põe um verificador com o contexto da conversa nos turnos em
+que a leitura não responde à pergunta no ar nem muda de assunto, ou em que o Jev e a IA discordam. A
+coordenação confirmou no mesmo dia: *"max_model_calls=2 na Nice (leitor 1 + verificador só em
+conflito). É o desenho que o dono aprovou, e ele disse que o custo está confortável."* A regra da P04
+passa a ser: **uma leitura pela IA por turno; uma segunda chamada só para verificar conflito**
+(`profile.MODEL_CALLS_PER_TURN` = 1 e `ADJUDICATIONS_PER_TURN` = 1). O gasto segue pelo freio da casa.
+
 ## D-041 · PDV: encomenda acima do plano, sem plano, a pagar na retirada e o que a Caixa vê
 
 - **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-16 · **revisar_em:** 2026-12-16

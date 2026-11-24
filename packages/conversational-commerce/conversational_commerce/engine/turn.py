@@ -54,6 +54,7 @@ from conversational_commerce.catalog.levels import identity_rank
 from conversational_commerce.contracts import (
     ActionCommand,
     ActionReceipt,
+    Alternative,
     AuthorizationGrant,
     Commitment,
     ContextSnapshot,
@@ -89,6 +90,7 @@ from conversational_commerce.memory import MemoryStore
 from conversational_commerce.policy import DecisionInput, decide
 from conversational_commerce.policy.advisor import adheres_to_declared_need
 from conversational_commerce.ports import (
+    AdjudicateRequest,
     Budget,
     HandoffRequest,
     InterpretRequest,
@@ -118,10 +120,11 @@ from conversational_commerce.workflow import (
     transition,
 )
 
-from .acts import ACTS, ANSWER_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
+from .acts import ACTS, ANSWER_ACTS, CHANGE_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
 from .budget import TurnBudget
 from .format import DEFAULT_FORMATTERS
 from .moves import expected_acts, registry, templates, yes_no_conditions
+from .moves.ask_clarification import READING_REF
 from .state import NeedSpec, Subject, TurnState
 
 PRODUCER = Producer(name="conversational-commerce", version="engine-1")
@@ -204,6 +207,78 @@ def condition_in(dialogue: dict, cart_ref: str | None, epoch: int) -> dict | Non
 RECENT_KEY = "recent_turns"
 #: Os atos que respondem à oferta dos termos ("Posso registrar?"): o sim e o não.
 TERMS_OFFER_ACTS = ("affirm", "deny")
+#: A leitura que o verificador deixou em dúvida e o agente perguntou "é isso?" (ADR-051): ``{"epoch", "acts"}``.
+#: O "sim" do turno seguinte aplica ``acts``; o "não" devolve a pergunta do fechamento; outra fala a descarta.
+CONFIRM_KEY = "reading_confirmation"
+#: Os atos que mudam de assunto de forma legítima com uma pergunta no ar (a conferência não os julga): mudança
+#: material, fechar ou cancelar, recusar, pedir a equipe ou reclamar.
+RUPTURE_ACTS = CHANGE_ACTS | {"deny", "request_human", "complain"}
+UNRATED = {"status": "unavailable", "reason": "conference"}
+
+
+def coherence(acts, expected) -> str:
+    """A leitura diante da pergunta no ar (ADR-051, peça 2): ``answers`` (algum ato a responde), ``rupture`` (o
+    cliente mudou de assunto de forma legítima), ``suspect`` (só pergunta, cortesia ou ``unknown``, nada que a
+    responda), ou ``free`` (nenhuma pergunta no ar). Determinística: não custa chamada."""
+    names = {act.act for act in acts}
+    if not expected:
+        return "free"
+    if names & set(expected):
+        return "answers"
+    if names & RUPTURE_ACTS:
+        return "rupture"
+    return "suspect"
+
+
+@dataclass(frozen=True, slots=True)
+class Conference:
+    """O conflito de leitura que vai ao verificador: a classe, as candidatas (a do leitor primeiro) e os atos que
+    respondem à pergunta no ar (vazio sem pergunta)."""
+
+    found: str
+    candidates: tuple[Alternative, ...]
+    expected: frozenset[str]
+
+
+def plan_conference(acts, alternatives, context: ReadingContext | None) -> Conference | None:
+    """O que vai ao verificador (ADR-051): a leitura ``suspect`` diante da pergunta no ar, ou leitores que
+    discordam em ato, com ou sem pergunta no ar. ``None``: nada a conferir, a leitura segue."""
+    names = {act.act for act in acts}
+    expected = frozenset(context.expected_acts) if context is not None and context.pending is not None else frozenset()
+    found = coherence(acts, expected)
+    differing = [alternative for alternative in alternatives if {act.act for act in alternative.acts} != names]
+    if found != "suspect" and not differing:
+        return None
+    return Conference(found=found + (":disagreement" if differing else ""),
+                      candidates=(Alternative(acts=acts, confidence=UNRATED), *differing), expected=expected)
+
+
+def in_doubt(conference: Conference, *, confirmed_before: bool = False, closing: bool = False) -> dict:
+    """O que o turno faz quando o verificador não escolhe (nunca chuta).
+
+    Com pergunta no ar, a candidata que a responde vai à confirmação ("é isso?"); sem candidata que responda, a
+    pergunta do fechamento volta. Sem pergunta no ar, a leitura do leitor vai à confirmação.
+
+    ``confirmed_before``: o turno anterior já perguntou "é isso?" e a resposta deu dúvida de novo. A confirmação
+    não se repete em seguida (coordenação, 24/11): com o fechamento em curso (``closing``), a pergunta dele volta;
+    sem ele, o agente pede para o cliente dizer de outro jeito (``ask_clarification.more``).
+    """
+    if confirmed_before:
+        return {"reask": True} if closing else {"more": True}
+    if not conference.expected:
+        chosen = conference.candidates[0].acts
+    else:
+        answering = next((candidate for candidate in conference.candidates
+                          if {act.act for act in candidate.acts} & conference.expected), None)
+        if answering is None:
+            return {"reask": True}
+        chosen = tuple(act for act in answering.acts if act.act in conference.expected)
+    return {"confirm": {"acts": [{"act": act.act, "fields": dict(act.fields)} for act in chosen]}}
+
+
+def confirmation_in(dialogue: Mapping[str, Any], epoch: int) -> Mapping[str, Any] | None:
+    value = dialogue.get(CONFIRM_KEY)
+    return value if isinstance(value, Mapping) and value.get("epoch") == epoch and value.get("acts") else None
 
 
 def reading_context(dialogue: Mapping[str, Any], cart_ref: str | None, epoch: int,
@@ -212,8 +287,11 @@ def reading_context(dialogue: Mapping[str, Any], cart_ref: str | None, epoch: in
     ela, o que o fechamento ainda pede e as últimas falas. Só códigos e referências (P17)."""
     pending, expected, open_conditions = None, (), ()
     condition = condition_in(dict(dialogue), cart_ref, epoch)
+    confirming = confirmation_in(dialogue, epoch)
     closing = dialogue.get(CLOSING_KEY) if closing_in(dict(dialogue), cart_ref, epoch) else None
-    if condition is not None and condition.get("code"):
+    if confirming is not None:
+        pending, expected = PendingQuestion(kind="clarification", code="confirm_reading"), TERMS_OFFER_ACTS
+    elif condition is not None and condition.get("code"):
         code = str(condition["code"])
         pending = PendingQuestion(kind="condition_yes_no", code=code, options=(str(condition.get("ref", "")),))
         expected = expected_acts(code)
@@ -484,6 +562,70 @@ class Engine:
                                               confidence={"status": "unavailable", "reason": "local_risk_rule"}))
         return dataclasses.replace(understanding, acts=acts, id=self.ports.clock.new_id("und"),
                                    episode_id=episode.episode_id)
+
+    def _confer(self, ctx: TrustedContext, event: InteractionEvent, understanding: Understanding,
+                context: ReadingContext | None, dialogue: Mapping[str, Any], epoch: int, budget: TurnBudget,
+                fallbacks: list[str]) -> tuple[Understanding, dict | None]:
+        """A conferência de coerência (ADR-051, peça 2): a leitura diante da pergunta no ar.
+
+        Devolve a leitura (a escolhida pelo verificador, ou a confirmada pelo "sim") e, quando nada se aplica,
+        o que o turno faz no lugar: ``{"confirm": {"acts": [...]}}`` (perguntar "é isso?") ou ``{"reask": True}``
+        (devolver a pergunta do fechamento). Desligada pelo perfil (``max_adjudications_per_turn`` zero).
+        """
+        acts = list(understanding.acts)
+        names = {act.act for act in acts}
+        confirming = confirmation_in(dialogue, epoch)
+        if confirming is not None:
+            if "affirm" in names:
+                fallbacks.append("conference:confirmed")
+                return dataclasses.replace(understanding, acts=[{**dict(act), "confidence": UNRATED}
+                                                                for act in confirming["acts"]],
+                                           alternatives=()), None
+            if "deny" in names:
+                fallbacks.append("conference:denied")
+                return understanding, {"reask": True}
+            # Outra resposta: a confirmação sai do ar, e a fala passa pela conferência como qualquer outra; se der
+            # dúvida de novo, o "é isso?" não se repete em seguida.
+        if self.profile.limits.max_adjudications_per_turn <= 0 or context is None or event.content_ref is None:
+            return understanding, None
+        conference = plan_conference(acts, understanding.alternatives, context)
+        if conference is None:
+            return understanding, None
+        fallbacks.append(f"conference:{conference.found}")
+        candidates = list(conference.candidates)
+        choice = self._adjudicate(ctx, event, context, candidates, budget, fallbacks)
+        if choice is not None:
+            return dataclasses.replace(understanding, acts=list(candidates[choice].acts), alternatives=()), None
+        closing = bool(context.open_conditions) or OFFER_KEY in dialogue
+        return understanding, in_doubt(conference, confirmed_before=confirming is not None, closing=closing)
+
+    def _adjudicate(self, ctx: TrustedContext, event: InteractionEvent, context: ReadingContext, candidates: list,
+                    budget: TurnBudget, fallbacks: list[str]) -> int | None:
+        """O verificador com o contexto escolhe uma candidata; sem porta, sem orçamento, com falha ou na dúvida,
+        ``None``: nunca um chute."""
+        port = self.ports.model
+        if not port.capabilities().supports("adjudicate"):
+            fallbacks.append("adjudicate:unsupported")
+            return None
+        if not budget.may_call_model():
+            fallbacks.append("adjudicate:budget")
+            return None
+        request = AdjudicateRequest(
+            request=ModelRequest(purpose="adjudicate", data_class="redacted",
+                                 budget=Budget(max_calls=1, max_spend=self.profile.limits.max_spend)),
+            event_id=event.id, content_ref=event.content_ref, context=context, candidates=tuple(candidates))
+        try:
+            adjudication = port.adjudicate(ctx, request)
+        except PortError as error:
+            fallbacks.append(f"adjudicate_failed:{error.code.value}")
+            return None
+        cost = adjudication.consumption.cost
+        budget.record_model_call(cost.amount.amount_minor if getattr(cost, "status", "") == "known" else None)
+        if adjudication.choice is None or adjudication.choice >= len(candidates):
+            fallbacks.append("adjudicate:doubt")
+            return None
+        fallbacks.append(f"adjudicate:chose:{adjudication.choice}")
+        return adjudication.choice
 
     # ── passo 4 ─────────────────────────────────────────────────────────────
     def _needs(self, understanding: Understanding, previous_dialogue: Mapping[str, Any],
@@ -984,7 +1126,19 @@ class Engine:
 
         context = reading_context(previous_dialogue, subject.cart_ref, epoch, offer)
         understanding = self._understand(ctx, event, episode, trace_id, budget, fallbacks, context)
+        understanding, conference = self._confer(ctx, event, understanding, context, previous_dialogue, epoch,
+                                                 budget, fallbacks)
         needs, answered_question = self._needs(understanding, previous_dialogue, epoch)
+        if conference is not None:
+            # A conferência não aplicou leitura nenhuma: o turno só pergunta "é isso?", ou devolve a pergunta do
+            # fechamento pelos termos (a mesma frase da casa, que pede o que ainda falta).
+            if "confirm" in conference:
+                needs = (NeedSpec("n1", "unknown", confirm=conference["confirm"]),)
+            elif "more" in conference:
+                needs = (NeedSpec("n1", "unknown"),)  # "pode me dizer de outro jeito?"
+            else:
+                needs = (NeedSpec("n1", "place_order"),)
+            answered_question = answer_refers_to(previous_dialogue, epoch)
         state = TurnState(now=clock.now(), channel=event.channel_binding.channel,
                           identity=strongest_identity(subject.identity_evidence), profile=self.profile,
                           needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer,
@@ -1061,7 +1215,9 @@ class Engine:
             reply = compose(specs=specs, templates=self._templates(), formatters=self.formatters,
                             voice=self._voice(),
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
-                                              receipts=receipts, commitments=state.commitments),
+                                              receipts=receipts, commitments=state.commitments,
+                                              readings={READING_REF.format(need_id=need.need_id): need.confirm
+                                                        for need in needs if need.confirm is not None}),
                             decision_id=decision_id,
                             record=self._envelope(ctx, "reply", episode.episode_id, trace_id, decision.id))
         held = reply is None or reply.verification.result == "hold"
@@ -1072,6 +1228,10 @@ class Engine:
         terms_wait = None
         if asked is not None:
             dialogue = ask(dialogue, question_id=clock.new_id("q"), need_id=asked.need_id, epoch=epoch)
+        dialogue = {key: value for key, value in dialogue.items() if key != CONFIRM_KEY}
+        confirming = next((need for need in needs if need.confirm is not None), None)
+        if confirming is not None and asked is not None and asked.need_id == confirming.need_id and not held:
+            dialogue[CONFIRM_KEY] = {"epoch": epoch, "acts": [dict(act) for act in confirming.confirm["acts"]]}
         if presented is not None and not held and state.missing_conditions():
             # O fechamento perguntou por uma condição: a resposta que mudar o carrinho volta aos termos.
             code = state.missing_conditions()[0]

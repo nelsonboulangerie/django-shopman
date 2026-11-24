@@ -75,7 +75,7 @@ def find_order(ref: str):
 
 
 def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, list[dict]]:
-    """Return the last old-enough order ref and sealed snapshot items for reorder."""
+    """Return the last concluded order ref and its items for the reorder offer."""
     return customer_orders.last_reorder_context(customer_uuid=customer_uuid, min_days=min_days)
 
 

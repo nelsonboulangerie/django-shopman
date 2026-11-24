@@ -37,6 +37,9 @@ CHANNEL = "whatsapp"
 MODEL_CALLS_PER_TURN = 1
 #: Os turnos recentes que vão ao leitor com a fala (ADR-051): a pergunta no ar e o que veio antes dela.
 READING_CONTEXT_TURNS = 3
+#: A verificação da leitura no conflito (ADR-051): a leitura que não responde à pergunta no ar nem muda de assunto,
+#: ou o portão e a IA discordando. É a segunda chamada do turno, e só nesses turnos.
+ADJUDICATIONS_PER_TURN = 1
 
 # P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge. ``wait`` é o aviso do prazo
 # vencido de um compromisso com a equipe (K22, ``Engine.tick``): sem ele, o aviso nunca saía (#3417).
@@ -204,8 +207,9 @@ def build_profile(*, environment: str = "shadow", config: Mapping[str, Any] | No
                      "accept_within_seconds": profile_lines.STAFF_ACCEPT_WITHIN_SECONDS,
                      "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS,
                      "after_hours_contingency": "inform_when_team_returns"},
-        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": MODEL_CALLS_PER_TURN,
-                "max_spend": {"amount_minor": 0, "currency": "BRL"}, "reading_context_turns": READING_CONTEXT_TURNS},
+        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": MODEL_CALLS_PER_TURN + ADJUDICATIONS_PER_TURN,
+                "max_spend": {"amount_minor": 0, "currency": "BRL"}, "reading_context_turns": READING_CONTEXT_TURNS,
+                "max_adjudications_per_turn": ADJUDICATIONS_PER_TURN},
         privacy={"purposes": ("service",), "retention_days": _retention(measured), "fields_by_recipient": {}},
     )
 

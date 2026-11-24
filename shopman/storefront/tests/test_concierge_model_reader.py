@@ -272,6 +272,76 @@ def test_the_recent_turns_go_to_the_ai_redacted_and_by_what_the_nice_asked(conve
     assert content.index("Conversa até aqui") < content.index("<<<")  # o contexto antes da fala, nunca dentro
 
 
+def test_with_the_conversation_going_the_gate_does_not_decide_alone_even_without_a_question(conversation):
+    """No ar: "quero 2 croissants", "pra amanhã", "vou buscar às 16h", sem pergunta no ar. Com falas recentes, o
+    Jev não decide sozinho: a IA lê, e a leitura dele vai junto. No começo da conversa e na cortesia, decide."""
+    from conversational_commerce.ports import ReadingContext, RecentTurn
+
+    going = ReadingContext(recent=(RecentTurn(role="customer", content_ref="text:pra amanhã"),))
+    ai = FakeAI([{"act": "choose_fulfillment", "span": "vou buscar às 16h", "mode": "pickup", "time": "16:00"}])
+    understanding, _ = _read("vou buscar às 16h", ai, allowed=WITH_FULFILLMENT, gate=lambda t: "ask_hours",
+                             context=going)
+    assert [a.act for a in understanding.acts] == ["choose_fulfillment"]
+    assert [[a.act for a in alt.acts] for alt in understanding.alternatives] == [["ask_hours"]]
+    silent = FakeAI(error=AssertionError("a IA não devia ser chamada"))
+    assert _fields(_read("que horas abre?", silent, gate=lambda t: "ask_hours", context=ReadingContext())[0]) \
+        == [("ask_hours", {})]  # começo da conversa: a frase sozinha basta
+    assert _fields(_read("obrigada", silent, gate=lambda t: "thank", context=going)[0]) == [("thank", {})]
+
+
+def test_the_verifier_answers_a_choice_or_doubt_and_a_failure_is_a_port_error(conversation):
+    from conversational_commerce.contracts import Alternative
+    from conversational_commerce.ports import AdjudicateRequest, ModelRequest, PortError
+
+    def adjudicate(raw=None, error=None):
+        ai = FakeAI(raw=raw, error=error)
+        reader = NiceReader(client=ai, model="deepseek-flash", gate=lambda t: "", today=TODAY)
+        unrated = {"status": "unavailable", "reason": "t"}
+        candidates = (Alternative(acts=[{"act": "ask_hours", "fields": {}, "confidence": unrated}], confidence=unrated),
+                      Alternative(acts=[{"act": "choose_fulfillment", "fields": {"time": "16:00"},
+                                         "confidence": unrated}], confidence=unrated))
+        request = AdjudicateRequest(
+            request=ModelRequest(purpose="adjudicate", data_class="redacted",
+                                 budget={"max_calls": 1, "max_spend": {"amount_minor": 0, "currency": "BRL"}}),
+            event_id="evt-1", content_ref="text:16h", context=_asked("delivery_time_slot", ("choose_fulfillment",)),
+            candidates=candidates)
+        return reader.adjudicate(CTX, request), ai
+
+    chosen, ai = adjudicate(raw=json.dumps({"choice": 1}))
+    assert chosen.choice == 1 and chosen.consumption.calls == 1
+    assert ai.requests[0]["system"][0]["text"] == model_reader.VERIFIER_PROMPT
+    assert '1: choose_fulfillment {"time": "16:00"}' in ai.requests[0]["messages"][0]["content"]
+    assert adjudicate(raw=json.dumps({"choice": -1}))[0].choice is None  # dúvida
+    assert adjudicate(raw=json.dumps({"choice": 7}))[0].choice is None  # fora das candidatas: dúvida
+    with pytest.raises(PortError):
+        adjudicate(error=TimeoutError("sem rede"))
+
+
+@pytest.mark.parametrize(("acts", "said"), [
+    ([{"act": "choose_fulfillment", "fields": {"mode": "pickup", "date": "2026-11-24", "time": "16:00"}}],
+     "retirada amanhã às 16h"),
+    ([{"act": "choose_fulfillment", "fields": {"date": "2026-11-24"}}], "para amanhã"),
+    ([{"act": "choose_fulfillment", "fields": {"time": "10:00"}}], "às 10h"),
+    ([{"act": "choose_payment", "fields": {"method": "pix"}}], "Pix"),
+])
+def test_the_doubtful_reading_is_said_back_in_the_combinado_words(monkeypatch, acts, said):
+    from django.utils import timezone
+
+    from shopman.storefront.concierge import turn_framework
+
+    monkeypatch.setattr(timezone, "localdate", lambda: TODAY)
+    assert turn_framework.reading_words({"acts": acts}) == said
+
+
+def test_a_reading_without_approved_words_holds_the_message():
+    from conversational_commerce.reply import UnresolvedReference
+
+    from shopman.storefront.concierge import turn_framework
+
+    with pytest.raises(UnresolvedReference):
+        turn_framework.reading_words({"acts": [{"act": "give_address", "fields": {}}]})
+
+
 # ── "dia 25", o erro de digitação e o "troca por" (ensaio no ar, 24/11) ────────────────
 
 
@@ -422,4 +492,5 @@ def test_the_engine_reads_by_the_nice_reader_once_per_turn(db, monkeypatch):
     engine = turn_framework.build_engine(conversation, environment="shadow",
                                          channel=NiceChannel(ManyChatWhatsAppAdapter(connection=connection)))
     assert isinstance(engine.ports.model, NiceReader)
-    assert engine.profile.limits.max_model_calls == 1
+    # Uma leitura e, só no conflito, uma verificação (ADR-051).
+    assert engine.profile.limits.max_model_calls == 2 and engine.profile.limits.max_adjudications_per_turn == 1

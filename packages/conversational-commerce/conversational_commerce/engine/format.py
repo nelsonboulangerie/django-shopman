@@ -50,7 +50,18 @@ def options_text(value: Any) -> str:
     return ", ".join(str(option) for option in value)
 
 
+def reading_text(value: Any) -> str:
+    """A leitura que o agente repete para confirmar, em texto neutro: ``choose_fulfillment date=…, time=…``.
+    A casa troca pelas palavras dela (as do recibo do mesmo ato)."""
+    acts = value.get("acts") if isinstance(value, Mapping) else None
+    if not acts:
+        raise ValueError("leitura sem ato")
+    return "; ".join(" ".join([str(act["act"]), *(f"{key}={item}" for key, item in sorted(dict(act.get("fields") or {})
+                                                                                           .items()))])
+                     for act in acts)
+
+
 DEFAULT_FORMATTERS = {"price": money_text, "price_a": money_text, "price_b": money_text, "total": money_text,
                       "done": done_text, "noted": done_text, "items": items_text, "fulfillment": fulfillment_text,
-                      "conditions": conditions_text, "payment_method": options_text, "missing": options_text,
+                      "conditions": conditions_text, "reading": reading_text, "payment_method": options_text, "missing": options_text,
                       "delivery_address_details": options_text}

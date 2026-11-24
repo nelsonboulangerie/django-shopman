@@ -256,7 +256,7 @@ class LocalReader:
     PORT = "model"
 
     def capabilities(self) -> Capabilities:
-        return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score"),
+        return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score", "adjudicate"),
                             guarantees={"priced": False, "calls_model": False})
 
     def interpret(self, ctx: TrustedContext, request) -> tuple[Understanding, Consumption]:
@@ -288,6 +288,9 @@ class LocalReader:
 
     def score(self, ctx, request):
         raise PortError("capability_missing", "o leitor local não pontua")
+
+    def adjudicate(self, ctx, request):
+        raise PortError("capability_missing", "o leitor local não verifica leitura")
 
 
 def resolve_text(content_ref: str | None) -> str:

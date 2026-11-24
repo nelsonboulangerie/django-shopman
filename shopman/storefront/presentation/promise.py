@@ -18,9 +18,11 @@ frase.
 
 Três tipos (``kind``):
 
-- ``ready`` (pronto): há pronto hoje e um horário hoje já serve. "Pronto agora".
+- ``ready`` (pronto): há pronto hoje e um horário hoje já serve. "Disponível
+  agora". É o estado padrão, e a tela do produto não o diz: só fala quando
+  difere (dono, 24/11/2026).
 - ``batch`` (fornada): o item espera uma fornada, hoje mais tarde ou num dia
-  planejado. "Fica pronto hoje às 15h", "Fica pronto amanhã, terça, a partir
+  planejado. "Disponível a partir das 15h", "Disponível amanhã, terça, a partir
   das 15h".
 - ``preorder`` (encomenda): o item seria de hoje, mas hoje já não há horário
   (casa fechada, corte do dia, dia sem expediente), ou o dia da fornada é
@@ -30,7 +32,9 @@ Sem promessa (``None``): item indisponível ou pausado, prontidão que não pôd
 ser apurada (o checkout recusa todo horário nesse caso), fornada que não se
 achou, ou nenhum dia com horário na busca. Nunca "hoje" por falta de dado.
 
-O verbo é "fica pronto", nunca "sai".
+Sobre o PRODUTO a loja fala de disponibilidade, nunca de prontidão: "Disponível
+amanhã", não "Fica pronto amanhã" (dono, 24/11/2026; ``docs/reference/
+suite-vocabulary.md``). "Fica pronto" segue só na frase sobre o PEDIDO.
 """
 
 from __future__ import annotations
@@ -51,7 +55,7 @@ _WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domin
 
 @dataclass(frozen=True)
 class PromiseProjection:
-    """Quando o item fica pronto, já escrito para a cliente.
+    """Quando o item está disponível, já escrito para a cliente.
 
     ``date`` é o dia (ISO) do primeiro horário em que a casa entrega o item;
     ``ready_at`` é a hora desse horário (``"HH:MM"``), a mesma que o checkout
@@ -91,14 +95,14 @@ def promise_for(
     if day == today:
         now_clock = _local_clock(facts.now)
         if target == today and (ready_at is None or ready_at <= now_clock):
-            text = "Preparado na hora" if made_to_order else "Pronto agora"
+            text = "Preparado na hora" if made_to_order else "Disponível agora"
             return PromiseProjection(KIND_READY, day.isoformat(), _clock(start), day_label, text)
         return PromiseProjection(
-            KIND_BATCH, day.isoformat(), _clock(start), day_label, f"Fica pronto hoje às {_hour(start)}"
+            KIND_BATCH, day.isoformat(), _clock(start), day_label, f"Disponível a partir das {_hour(start)}"
         )
 
     kind = KIND_BATCH if day == target and target != today else KIND_PREORDER
-    text = f"Fica pronto {day_label}, a partir das {_hour(start)}"
+    text = f"Disponível {day_label}, a partir das {_hour(start)}"
     return PromiseProjection(kind, day.isoformat(), _clock(start), day_label, text)
 
 

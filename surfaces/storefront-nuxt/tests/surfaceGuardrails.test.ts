@@ -318,7 +318,7 @@ describe('surface UX guardrails', () => {
     expect(home).not.toContain('v-if="operationalStatus.message"')
     expect(home).toContain('data-home-reorder-card')
     expect(home).toContain('const quickReorderImageItem = computed')
-    expect(home).toContain('<UiCard v-if="reorderAction || quickReorderItems.length" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
+    expect(home).toContain('<UiCard v-if="!reorderOnTop && (reorderAction || quickReorderItems.length)" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
     expect(home).toContain('<div class="grid grid-cols-1 md:grid-cols-2">')
     expect(home).toContain('<UiAspectRatio :ratio="16 / 9" class="overflow-hidden bg-muted md:h-full">')
     expect(home).not.toContain('class="mx-auto max-w-3xl"')
@@ -1645,6 +1645,29 @@ describe('customer surface never names the reason behind unavailability', () => 
     expect(offenders).toEqual([])
     expect(read('app/pages/conta/preferencias.vue')).toContain("subscription.active ? 'Ativo' : 'Pausado'")
     expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.value?.state === 'paused'")
+  })
+
+  it('every action on the dark floating card of the product page uses the inverted tone (#3558)', () => {
+    // O "outline" sobre o card escuro herdava letra e fundo claros: no produto
+    // pausado, o "Ver itens parecidos" (a única saída da cliente) ficava invisível.
+    const pdp = read('app/pages/produto/[sku].vue')
+    const dock = pdp.slice(pdp.indexOf('class="shop-action-dock'))
+    const buttons = dock.match(/<UiButton[^>]*>/g) || []
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const button of buttons) expect(button).toContain('shop-action-inverted')
+    expect(dock).toContain('tone="inverted"')
+    expect(dock).toMatch(/<StockNotifyButton[^>]*\binverted\b/)
+  })
+
+  it('keeps the store line for Google discreet, at the end of the product info (#2652)', () => {
+    // O dono: "Quero apenas cumpri-la, não dar destaque" (24/11/2026). A linha fica
+    // depois da descrição, em texto de rodapé, sem ícone e sem endereço.
+    const pdp = read('app/pages/produto/[sku].vue')
+    const line = pdp.slice(pdp.indexOf('data-pdp-in-store-pickup') - 200, pdp.indexOf('data-pdp-in-store-pickup') + 300)
+    expect(pdp.indexOf('data-pdp-in-store-pickup')).toBeGreaterThan(pdp.indexOf('product.short_description'))
+    expect(line).toContain('shop-meta')
+    expect(line).not.toContain('lucide:store')
+    expect(line).not.toContain('address')
   })
 
   it('shows one label for every unavailable cause on the product page', () => {

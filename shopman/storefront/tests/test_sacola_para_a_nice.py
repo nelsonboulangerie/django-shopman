@@ -28,7 +28,7 @@ from shopman.shop.models import Conversation, ConversationBinding
 from shopman.shop.models import ConversationMessage as Message
 from shopman.shop.services import cart as cart_service
 from shopman.shop.services import sessions
-from shopman.storefront.concierge import service, tools
+from shopman.storefront.concierge import cart_arrival, service, tools
 from shopman.storefront.identity import IDENTITY_NUMBER, IDENTITY_SESSION_KEY
 from shopman.storefront.tests.identity_fakes import make_identity_view
 from shopman.storefront.tests.test_concierge_engine import (
@@ -260,7 +260,7 @@ def test_c02_an_unverified_number_does_not_take_an_anonymous_cart(conversation, 
 
     web.refresh_from_db()
     assert web.state == "open"
-    assert "Ela continua no site." in reply
+    assert cart_arrival.REFUSED["not_authorized"] in reply
 
 
 def test_x4_the_same_message_twice_lands_on_one_cart(conversation, outbox, bridge):
@@ -285,7 +285,7 @@ def test_x5_a_store_cart_that_changed_after_the_offer_is_offered_again(conversat
 
     reply = _turn(conversation, started["message"])
 
-    assert reply.startswith("A sacola do site mudou depois do toque.")
+    assert reply.startswith(cart_arrival.REFUSED["source_changed"])
     web.refresh_from_db()
     assert web.state == "open"
     assert _conversation_cart(conversation) is None
