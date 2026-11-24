@@ -4,12 +4,15 @@ Toda gravação do documento passa por aqui. O ciclo de uma emissão:
 
 1. :func:`open_pending`, gravado e confirmado ANTES do pedido ao provedor;
 2. o pedido ao provedor, que o chamador faz;
-3. :func:`record_authorized` (ou :func:`record_denied`) na MESMA linha.
+3. :func:`record_authorized` na MESMA linha, quando o provedor confirma a nota.
 
-Se o processo morrer entre 2 e 3, a linha fica ``pending``. Quem retoma
-(retry ou reprocesso) vê a linha pendente, consulta o provedor pela mesma
-referência e chama :func:`record_authorized`, que completa o documento que já
-existe. Uma referência é um documento só.
+A linha só sai de ``pending`` com a nota confirmada. Recusa, erro e resposta
+perdida a deixam ``pending``, porque do lado de cá não dá para distinguir "o
+provedor recusou" de "a resposta se perdeu depois que ele autorizou". Quem
+retoma (retry, reprocesso, outro processo depois de um deploy) acha a linha
+pendente, consulta o provedor pela mesma referência e só então decide: adota a
+nota que existe (``record_authorized``) ou reenvia a referência. Uma referência
+é um documento só.
 
 Invariante: depois de autorizada, a chave de acesso e o protocolo não mudam
 mais. O cancelamento grava os seus campos ao lado, e uma segunda autorização
@@ -31,31 +34,43 @@ logger = logging.getLogger(__name__)
 
 NFCE = FiscalDocument.Kind.NFCE
 
+#: A chave de acesso da NF-e/NFC-e: 44 dígitos (cUF, AAMM, CNPJ, modelo, série,
+#: número, tipo de emissão, código numérico, DV). O provedor pode devolvê-la com
+#: o prefixo ``NFe`` do atributo ``Id`` do XML (a Focus faz isso em ``chave_nfe``).
+ACCESS_KEY_LENGTH = 44
+_ID_PREFIX = "NFE"
+
 
 class FiscalDocumentConflict(Exception):
-    """A referência já tem documento autorizado com outra chave, ou não tem o que cancelar."""
+    """A referência já tem outra nota, a chave não é chave, ou não há o que cancelar."""
 
 
 def document_for(reference: str, *, kind: str = NFCE) -> FiscalDocument | None:
     return FiscalDocument.objects.filter(kind=kind, reference=reference).first()
 
 
-def open_pending(reference: str, *, kind: str = NFCE) -> FiscalDocument:
-    """A linha do documento, gravada antes do pedido ao provedor.
+def open_pending(reference: str, *, kind: str = NFCE) -> tuple[FiscalDocument, bool]:
+    """A linha do documento, gravada antes do pedido ao provedor; ``(linha, criada_agora)``.
 
-    Idempotente: a linha que já existe volta como está. A recusada volta a
-    ``pending``, porque o provedor aceita reenviar a referência de nota que não
-    foi autorizada. Precisa ser confirmada antes do pedido ao provedor: chamada
-    dentro de uma transação externa, ela some junto se o processo morrer.
+    Idempotente: a linha que já existe volta como está, com ``False``. Quem
+    recebe ``False`` com a linha ``pending`` não é o primeiro a tentar esta
+    referência (um processo anterior, ou um concorrente agora) e consulta o
+    provedor antes de emitir. Precisa ser confirmada antes do pedido ao
+    provedor: chamada dentro de uma transação externa, ela some junto se o
+    processo morrer.
     """
     with transaction.atomic():
-        document, _created = FiscalDocument.objects.select_for_update().get_or_create(
-            kind=kind, reference=reference,
-        )
-        if document.status == FiscalDocument.Status.DENIED:
-            document.status = FiscalDocument.Status.PENDING
-            document.save(update_fields=["status", "updated_at"])
-    return document
+        return FiscalDocument.objects.select_for_update().get_or_create(kind=kind, reference=reference)
+
+
+def normalized_access_key(raw) -> str:
+    """A chave de 44 dígitos, sem o prefixo ``NFe``; :class:`FiscalDocumentConflict` se não for chave."""
+    key = str(raw or "").strip()
+    if key[: len(_ID_PREFIX)].upper() == _ID_PREFIX:
+        key = key[len(_ID_PREFIX):]
+    if len(key) != ACCESS_KEY_LENGTH or not key.isdigit():
+        raise FiscalDocumentConflict(f"O provedor devolveu {raw!r}, que não é uma chave de acesso de 44 dígitos.")
+    return key
 
 
 def record_authorized(reference: str, result: FiscalDocumentResult, *, kind: str = NFCE) -> FiscalDocument:
@@ -63,12 +78,12 @@ def record_authorized(reference: str, result: FiscalDocumentResult, *, kind: str
 
     Serve à emissão e à adoção por consulta. Sem linha (adoção de nota que não
     passou pelo ``open_pending``), a linha nasce aqui. A mesma chave de novo é
-    inofensiva e não reescreve nada; chave diferente é
+    inofensiva e não reescreve nada; chave diferente, ou que não seja chave, é
     :class:`FiscalDocumentConflict`.
     """
-    access_key = str(result.access_key or "").strip()
-    if not access_key:
+    if not str(result.access_key or "").strip():
         raise FiscalDocumentConflict(f"Autorização sem chave de acesso para {reference}.")
+    access_key = normalized_access_key(result.access_key)
     with transaction.atomic():
         document, _created = FiscalDocument.objects.select_for_update().get_or_create(
             kind=kind, reference=reference,
@@ -92,20 +107,6 @@ def record_authorized(reference: str, result: FiscalDocumentResult, *, kind: str
     return document
 
 
-def record_denied(reference: str, *, kind: str = NFCE) -> FiscalDocument | None:
-    """O provedor respondeu que não há nota autorizada: a linha pendente vira recusada.
-
-    Nunca rebaixa documento autorizado ou cancelado.
-    """
-    with transaction.atomic():
-        document = FiscalDocument.objects.select_for_update().filter(kind=kind, reference=reference).first()
-        if document is None or document.status != FiscalDocument.Status.PENDING:
-            return document
-        document.status = FiscalDocument.Status.DENIED
-        document.save(update_fields=["status", "updated_at"])
-    return document
-
-
 def record_cancelled(reference: str, result: FiscalCancellationResult, *, kind: str = NFCE) -> FiscalDocument:
     """O cancelamento, gravado ao lado da autorização, que fica intacta.
 
@@ -120,7 +121,7 @@ def record_cancelled(reference: str, result: FiscalCancellationResult, *, kind: 
             return document
         document.status = FiscalDocument.Status.CANCELLED
         document.cancellation_protocol = str(result.protocol_number or "")
-        document.cancelled_at = _parse_moment(result.cancellation_date, reference) or timezone.now()
+        document.cancelled_at = _parse_moment(getattr(result, "cancellation_date", None), reference) or timezone.now()
         document.save(update_fields=["status", "cancellation_protocol", "cancelled_at", "updated_at"])
     return document
 
@@ -136,10 +137,11 @@ def _parse_moment(raw, reference: str):
 
 
 __all__ = [
+    "ACCESS_KEY_LENGTH",
     "FiscalDocumentConflict",
     "document_for",
+    "normalized_access_key",
     "open_pending",
     "record_authorized",
     "record_cancelled",
-    "record_denied",
 ]

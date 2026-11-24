@@ -19,17 +19,18 @@ def _authorized(access_key=KEY, protocol="P-AUT"):
     )
 
 
-def test_open_pending_e_idempotente():
-    first = services.open_pending("REF-1")
-    again = services.open_pending("REF-1")
+def test_open_pending_e_idempotente_e_diz_quem_abriu():
+    first, opened = services.open_pending("REF-1")
+    again, opened_again = services.open_pending("REF-1")
 
     assert first.pk == again.pk
     assert again.status == FiscalDocument.Status.PENDING
+    assert (opened, opened_again) == (True, False)
     assert FiscalDocument.objects.count() == 1
 
 
 def test_autorizacao_completa_a_linha_pendente():
-    pending = services.open_pending("REF-1")
+    pending, _opened = services.open_pending("REF-1")
 
     document = services.record_authorized("REF-1", _authorized())
 
@@ -94,21 +95,22 @@ def test_cancelamento_sem_nota_autorizada_e_conflito():
         services.record_cancelled("REF-1", FiscalCancellationResult(success=True, protocol_number="P-CAN"))
 
 
-def test_recusa_nunca_rebaixa_documento_autorizado():
-    services.record_authorized("REF-1", _authorized())
+def test_chave_com_o_prefixo_nfe_do_provedor_e_gravada_sem_ele():
+    """A Focus devolve ``chave_nfe`` como ``NFe`` + 44 dígitos (o ``Id`` do XML)."""
+    document = services.record_authorized("REF-1", _authorized(access_key="NFe" + KEY))
 
-    document = services.record_denied("REF-1")
+    assert document.access_key == KEY
+    assert services.record_authorized("REF-1", _authorized(access_key=KEY)).pk == document.pk
 
-    assert document.status == FiscalDocument.Status.AUTHORIZED
 
-
-def test_recusado_volta_a_pendente_no_reenvio():
+@pytest.mark.parametrize("raw", ["stub", "4" * 43, "4" * 45, "41a" + "4" * 41, "NFe" + "4" * 43])
+def test_o_que_nao_e_chave_de_44_digitos_e_conflito(raw):
     services.open_pending("REF-1")
-    services.record_denied("REF-1")
 
-    document = services.open_pending("REF-1")
+    with pytest.raises(services.FiscalDocumentConflict):
+        services.record_authorized("REF-1", _authorized(access_key=raw))
 
-    assert document.status == FiscalDocument.Status.PENDING
+    assert FiscalDocument.objects.get(reference="REF-1").status == FiscalDocument.Status.PENDING
 
 
 def test_data_ilegivel_do_provedor_fica_vazia():

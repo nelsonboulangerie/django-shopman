@@ -163,28 +163,91 @@ def test_a_linha_nasce_pendente_antes_do_pedido_ao_provedor(order):
     assert seen["status"] == FiscalDocument.Status.PENDING
 
 
-def test_recusa_do_provedor_deixa_o_documento_recusado_e_o_reprocesso_reenvia(order):
-    class RefusingThenAuthorizing(ProviderWithMemory):
-        def emit(self, *, reference, **kwargs):
-            self.emit_calls += 1
-            if self.emit_calls == 1:
-                return FiscalDocumentResult(
-                    success=False, status="denied", error_code="focus_nfe_http_400", error_message="Rejeição 778",
-                )
-            return super().emit(reference=reference, **kwargs)
+class FailingOnceThenAuthorizing(ProviderWithMemory):
+    """O primeiro POST volta com erro; a nota NÃO fica no provedor."""
 
-    provider = RefusingThenAuthorizing()
+    def __init__(self, error_code):
+        super().__init__()
+        self.error_code = error_code
+        self.failed = False
+
+    def emit(self, *, reference, **kwargs):
+        if not self.failed:
+            self.failed = True
+            self.emit_calls += 1
+            return FiscalDocumentResult(
+                success=False, status="denied", error_code=self.error_code, error_message="Rejeição 778",
+            )
+        return super().emit(reference=reference, **kwargs)
+
+
+@pytest.mark.parametrize("error_code", ["focus_nfe_http_400", "focus_nfe_unexpected_error"])
+def test_recusa_ou_resposta_perdida_deixa_a_linha_pendente_e_o_reprocesso_consulta(order, error_code):
+    """Daqui não se distingue "o provedor recusou" de "a resposta se perdeu depois de
+    autorizar" (revisão do #3460): a linha fica pendente e o reprocesso consulta."""
+    provider = FailingOnceThenAuthorizing(error_code)
     with pytest.raises(DirectiveTerminalError):
         NFCeEmitHandler(provider).handle(message=_emit_directive(order), ctx={})
     refused = FiscalDocument.objects.get(reference=order.ref)
-    assert refused.status == FiscalDocument.Status.DENIED
+    assert refused.status == FiscalDocument.Status.PENDING
 
-    NFCeEmitHandler(provider).handle(message=_emit_directive(order), ctx={})
+    NFCeEmitHandler(provider).handle(message=_emit_directive(order, attempts=1), ctx={})
 
+    assert provider.query_calls == 1  # consultou antes de reenviar
+    assert provider.emit_calls == 2
     document = FiscalDocument.objects.get(reference=order.ref)
     assert document.pk == refused.pk
     assert document.status == FiscalDocument.Status.AUTHORIZED
-    assert provider.query_calls == 0
+    _assert_mirror_matches_document(order)
+
+
+def test_resposta_perdida_com_a_nota_autorizada_no_provedor_e_adotada_sem_reenviar(order):
+    class AuthorizesButAnswerIsLost(ProviderWithMemory):
+        def emit(self, *, reference, **kwargs):
+            super().emit(reference=reference, **kwargs)  # a nota fica no provedor
+            return FiscalDocumentResult(
+                success=False, status="denied", error_code="focus_nfe_unexpected_error", error_message="IncompleteRead",
+            )
+
+    provider = AuthorizesButAnswerIsLost()
+    with pytest.raises(DirectiveTerminalError):
+        NFCeEmitHandler(provider).handle(message=_emit_directive(order), ctx={})
+
+    NFCeEmitHandler(provider).handle(message=_emit_directive(order, attempts=1), ctx={})
+
+    assert provider.emit_calls == 1
+    assert FiscalDocument.objects.get(reference=order.ref).access_key == ACCESS_KEY
+
+
+def test_chave_com_o_prefixo_nfe_da_focus_e_gravada_sem_ele(order):
+    """A Focus devolve ``chave_nfe`` como ``NFe`` + 44 dígitos. Com 47 caracteres, o
+    Postgres recusaria a gravação e a nota ficaria autorizada sem registro local."""
+
+    class PrefixingProvider(ProviderWithMemory):
+        def emit(self, *, reference, **kwargs):
+            note = super().emit(reference=reference, **kwargs)
+            note.access_key = "NFe" + ACCESS_KEY
+            return note
+
+    NFCeEmitHandler(PrefixingProvider()).handle(message=_emit_directive(order), ctx={})
+
+    assert FiscalDocument.objects.get(reference=order.ref).access_key == ACCESS_KEY
+    _assert_mirror_matches_document(order)
+    assert order.data["nfce_access_key"] == ACCESS_KEY
+
+
+def test_quem_nao_abriu_a_linha_pendente_consulta_antes_de_emitir(order):
+    """Concorrência: outra execução abriu a linha entre a leitura do documento e o
+    ``open_pending`` desta. Quem não a criou não é o primeiro e consulta."""
+    provider = ProviderWithMemory()
+    fiscal_documents.open_pending(order.ref)  # o concorrente chegou primeiro
+
+    with mock.patch.object(fiscal_documents, "document_for", return_value=None):
+        NFCeEmitHandler(provider).handle(message=_emit_directive(order, attempts=1), ctx={})
+
+    assert provider.query_calls == 1
+    assert provider.emit_calls == 1
+    assert FiscalDocument.objects.count() == 1
 
 
 def test_provedor_com_outra_chave_para_a_mesma_referencia_falha_gritando(order):

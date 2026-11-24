@@ -27,10 +27,11 @@ class FiscalDocument(models.Model):
         NFCE = "nfce", _("NFC-e")
 
     class Status(models.TextChoices):
-        # Gravado antes do pedido ao provedor: a nota pode ou não existir lá.
+        # Gravado antes do pedido ao provedor: a nota pode ou não existir lá. Só
+        # sai daqui com a nota confirmada pelo provedor: recusa, erro e resposta
+        # perdida deixam a linha pendente, e quem retoma consulta antes de emitir.
         PENDING = "pending", _("Aguardando o provedor")
         AUTHORIZED = "authorized", _("Autorizada")
-        DENIED = "denied", _("Recusada")
         CANCELLED = "cancelled", _("Cancelada")
 
     kind = models.CharField(_("tipo"), max_length=16, choices=Kind.choices, default=Kind.NFCE)

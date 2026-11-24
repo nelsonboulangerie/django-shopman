@@ -71,6 +71,28 @@ def _writes(tree: ast.AST):
             # ``{**data, "nfce_x": …}``: um dicionário montado em cima de outro.
             for key in _dict_keys(node):
                 yield node.lineno, key
+        if isinstance(node, ast.BinOp | ast.AugAssign) and isinstance(node.op, ast.BitOr):
+            # ``data | {"nfce_x": …}`` e ``data |= {…}``.
+            right = node.right if isinstance(node, ast.BinOp) else node.value
+            for key in _dict_keys(right):
+                yield node.lineno, key
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "dict":
+            # ``dict(data, nfce_x=…)``.
+            for keyword in node.keywords:
+                if keyword.arg in KEYS:
+                    yield node.lineno, keyword.arg
+        if isinstance(node, ast.Call):
+            # ``Order.objects.filter(…).update(data={"nfce_x": …})``.
+            for keyword in node.keywords:
+                if keyword.arg == "data":
+                    for key in _dict_keys(keyword.value):
+                        yield node.lineno, key
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Attribute) and target.attr == "data" for target in node.targets
+        ):
+            # ``order.data = {"nfce_x": …}``: literal sem ``**`` também grava aqui.
+            for key in _dict_keys(node.value):
+                yield node.lineno, key
 
 
 def test_so_o_fiscal_mirror_grava_as_chaves_do_espelho():
@@ -103,6 +125,11 @@ def test_a_varredura_pega_cada_forma_de_gravar():
             'data.setdefault("nfce_cancelled", True)',
             'data.pop("nfce_danfe_url")',
             'merged = {**data, "nfce_xml_url": 1}',
+            'merged = data | {"nfce_authorized_at": 1}',
+            'data |= {"nfce_cancellation_protocol": 1}',
+            "merged = dict(data, nfce_qrcode_url=1)",
+            'Order.objects.filter(pk=1).update(data={"nfce_access_key": 1})',
+            'order.data = {"nfce_protocol": 1}',
             'projection = {"nfce_qrcode_url": 1}',  # saída de projeção: não é gravação
             'data["nfce_email_sent_at"] = 1',  # não é chave do espelho
         ])
@@ -111,4 +138,6 @@ def test_a_varredura_pega_cada_forma_de_gravar():
     assert sorted(key for _, key in _writes(sample)) == sorted([
         "nfce_access_key", "nfce_number", "nfce_series", "nfce_protocol",
         "nfce_status", "nfce_cancelled", "nfce_danfe_url", "nfce_xml_url",
+        "nfce_authorized_at", "nfce_cancellation_protocol", "nfce_qrcode_url",
+        "nfce_access_key", "nfce_protocol",
     ])

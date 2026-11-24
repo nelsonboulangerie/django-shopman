@@ -28,6 +28,7 @@ from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler, on_or
 from shopman.shop.handlers.lifecycle_phase import LifecyclePhaseHandler
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import cancellation, ifood_auth, ifood_cancellation, ifood_events, kds, operator_orders
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 pytestmark = pytest.mark.django_db
 
@@ -40,7 +41,7 @@ class LocalFiscalBackend:
 
     def emit(self, **payload):
         self.emissions.append(payload)
-        return FiscalDocumentResult(success=True, status="authorized", access_key="local-rehearsal-key")
+        return FiscalDocumentResult(success=True, status="authorized", access_key=access_key_for(payload["reference"]))
 
 
 @pytest.fixture
@@ -186,7 +187,7 @@ def test_food_fixture_full_lifecycle_keeps_stock_kds_and_fiscal_exactly_once(reh
     order.refresh_from_db()
     assert order.status == "completed"
     assert order.fulfillments.get().status == Fulfillment.Status.DELIVERED
-    assert order.data["nfce_access_key"] == "local-rehearsal-key"
+    assert order.data["nfce_access_key"] == access_key_for(order.ref)
     assert len(rehearsal.fiscal.emissions) == 1
     assert len(rehearsal.fiscal.emissions[0]["items"]) == len(rehearsal.raw["items"])
     assert _quantities() == expected
@@ -340,4 +341,4 @@ def test_ifood_without_cpf_issues_presential_nfce_only_with_intermediated_sale(r
     assert not (emission["customer"] or {}).get("tax_id")
     assert emission["delivery"] is None
     assert emission["intermediary"]["cnpj"] == "14380200000121"
-    assert order.data["nfce_access_key"] == "local-rehearsal-key"
+    assert order.data["nfce_access_key"] == access_key_for(order.ref)

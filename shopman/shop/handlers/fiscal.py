@@ -155,12 +155,12 @@ class NFCeEmitHandler:
         # só a partir da 2ª (re-claim após transiente) é retry de verdade — e
         # só então pode existir um POST anterior com a resposta perdida.
         # A linha ``pending`` do documento diz o mesmo sem depender da contagem:
-        # ela é gravada antes do POST, então um processo que morreu depois da
-        # autorização e antes da gravação local a deixa para trás. O reprocesso
+        # ela é gravada antes do POST e só sai de ``pending`` com a nota
+        # confirmada, então um processo que morreu depois da autorização, uma
+        # resposta perdida ou uma recusa a deixam para trás. O reprocesso
         # (``fiscal_emit``) nasce com attempts=1 e, sem esta guarda, re-POSTaria.
-        is_retry = int(getattr(message, "attempts", 0) or 0) > 1 or (
-            document is not None and document.status == FiscalDocument.Status.PENDING
-        )
+        retried = int(getattr(message, "attempts", 0) or 0) > 1
+        left_pending = document is not None and document.status == FiscalDocument.Status.PENDING
 
         if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
             # Venda desfeita enquanto a emissão estava em retry: o POST anterior
@@ -168,21 +168,22 @@ class NFCeEmitHandler:
             # consultar deixava nota válida na SEFAZ sem chave no pedido e sem
             # cancelamento — ``fiscal.cancel`` não age sem a chave. Nunca POSTa
             # para pedido desfeito: só consulta, adota e cancela.
-            if is_retry and self._adopt_for_cancellation(order, order_ref):
+            if (retried or left_pending) and self._adopt_for_cancellation(order, order_ref):
                 return
             raise DirectiveTerminalError(
                 f"Pedido {order_ref} está {order.status}: não emitir NFC-e."
             )
 
-        # Retry: o POST anterior pode ter emitido e a resposta se perdido
-        # (timeout/worker morto). Consultar antes de re-POSTar com o mesmo ref.
-        if is_retry:
+        # A linha nasce ANTES do POST e fica gravada mesmo que o processo morra
+        # com a nota autorizada no provedor: é ela que o reenvio acha. Quem não a
+        # criou agora não é o primeiro a tentar esta referência (processo
+        # anterior, retry, ou um concorrente neste instante): consulta antes de
+        # re-POSTar com o mesmo ref.
+        _document, opened_now = fiscal_documents.open_pending(order_ref)
+        if retried or not opened_now:
             if self._adopt_existing(order, order_ref):
                 return
 
-        # A linha nasce ANTES do POST e fica gravada mesmo que o processo morra
-        # com a nota autorizada no provedor: é ela que o reenvio acha.
-        fiscal_documents.open_pending(order_ref)
         result = self._emit(order_ref, payload)
         result = self._reemit_without_rejected_gtin(message, order_ref, payload, result)
 
@@ -225,9 +226,9 @@ class NFCeEmitHandler:
         payload = {**(message.payload or {}), "emitter_answer": str(answer or "").strip()}
         Directive.objects.filter(pk=message.pk).update(payload=payload)
         message.payload = payload
-        # O provedor disse que não há nota autorizada: a linha pendente vira
-        # recusada, e o reprocesso pode reenviar a mesma referência.
-        fiscal_documents.record_denied(str(payload.get("order_ref") or ""))
+        # A linha do documento fica ``pending``: "recusada" e "resposta perdida
+        # depois de autorizar" não se distinguem daqui (revisão do #3460), e o
+        # reprocesso consulta antes de reenviar a referência.
         raise DirectiveTerminalError(f"NFC-e emission failed: {answer}")
 
     def _emit(self, order_ref: str, payload: dict) -> FiscalDocumentResult:
