@@ -20362,6 +20362,109 @@
       "test_gap_reason": null,
       "policy": false,
       "out_of_extraction": false
+    },
+    {
+      "id": "shop.policies-experience-decision",
+      "question": "Quais parâmetros constituem um experimento de experiência válido (variantes, coortes, dono, hipótese e prazo)?",
+      "owner": "experience.rule-policy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.experience:ExperienceRule",
+      "authoritative_symbols": [
+        "shopman.shop.policies.experience:ExperienceRule"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/experience.py",
+          "symbols": [
+            "COHORTS",
+            "EXPERIENCE_RULE_PATH",
+            "ExperienceRule",
+            "ExperienceRuleError",
+            "KNOWN",
+            "MAX_LIFETIME_DAYS",
+            "REQUIRED",
+            "_SLUG",
+            "_today",
+            "parse_remove_after"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_experience.py::test_remove_after_is_at_most_90_days_ahead",
+        "shopman/shop/tests/test_experience.py::test_validate_params_refuses"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "shop.services-experience",
+      "question": "Qual versão de uma superfície esta requisição vê, e por quê (kill switch, prazo, ambiente, aderência, coorte, padrão)?",
+      "owner": "experience.assignment",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.experience:resolve",
+      "authoritative_symbols": [
+        "shopman.shop.services.experience:resolve"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/experience.py",
+          "symbols": [
+            "Assignment",
+            "REASON_DEFAULT",
+            "REASON_ENVIRONMENT",
+            "REASON_EXPIRED",
+            "REASON_INTERNAL",
+            "REASON_PILOT",
+            "REASON_SESSION",
+            "SESSION_KEY",
+            "_active_experiments",
+            "_cohort_lookup",
+            "_decide",
+            "_environment_allows",
+            "_expired",
+            "alert_expired_experiments",
+            "exposure",
+            "has_non_default",
+            "on_user_logged_in",
+            "operator_customer_refs",
+            "remember",
+            "resolve"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [
+        "SHOPMAN_ENVIRONMENT"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_experience.py::test_cohorts_see_the_candidate_and_everyone_else_the_default",
+        "shopman/shop/tests/test_experience.py::test_environment_outside_the_list_resolves_default",
+        "shopman/shop/tests/test_experience.py::test_expired_rule_resolves_default_and_alerts_the_operator",
+        "shopman/shop/tests/test_experience.py::test_generation_bump_discards_stickiness_and_reassigns",
+        "shopman/shop/tests/test_experience.py::test_kill_switch_wins_over_cohort",
+        "shopman/shop/tests/test_experience.py::test_reload_never_alternates_even_if_the_cohort_changes_mid_session",
+        "shopman/shop/tests/test_experience.py::test_resolve_only_reads_the_session"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
     }
   ]
 }
