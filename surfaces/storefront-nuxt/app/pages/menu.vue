@@ -655,7 +655,8 @@ useHead({
           <Icon name="lucide:calendar-days" class="size-4 shrink-0" aria-hidden="true" />
           <span class="font-semibold" data-decisive="availability">{{ menuDayBar }}</span>
           <span aria-hidden="true">·</span>
-          <UiButton variant="link" class="h-auto min-h-6 px-1 py-0 shop-body" data-menu-day-change @click="pickingMenuDay = true">Trocar</UiButton>
+          <!-- Na barra de latão, o "Trocar" herda a cor do texto da barra (o vinho do link não passa no AA ali). -->
+          <UiButton variant="link" class="h-auto min-h-6 px-1 py-0 shop-body font-semibold text-current underline" data-menu-day-change @click="pickingMenuDay = true">Trocar</UiButton>
         </p>
 
         <p class="sr-only" aria-live="polite">{{ menuFocusLabel }}</p>
