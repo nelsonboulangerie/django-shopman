@@ -20182,7 +20182,10 @@
             "BLOCK",
             "NoShowPolicy",
             "_minutes",
-            "resolve_no_show_policy"
+            "resolve_no_show_policy",
+            "TERMS_RETENTION_CAP_PERCENT",
+            "RetentionRule",
+            "_retention"
           ]
         }
       ],
@@ -20221,7 +20224,10 @@
             "customer_text",
             "_account_text",
             "_mixed_text",
-            "_amount"
+            "_amount",
+            "RECEIPT_HINT",
+            "_money_text",
+            "kept_money_q"
           ]
         }
       ],
@@ -20236,6 +20242,7 @@
     {
       "entrypoint_kind": "symbol",
       "domains": [
+        "craftsman",
         "offerman",
         "orderman"
       ],
@@ -20307,7 +20314,16 @@
             "revision",
             "preview",
             "mark_not_picked_up",
-            "stock_plan"
+            "stock_plan",
+            "RECEIPT_TITLE",
+            "RECEIPT_NATURE",
+            "RetainedLine",
+            "RetentionReceipt",
+            "_format_tax_id",
+            "_moment",
+            "retention_receipt",
+            "apply_retention",
+            "line_retained_q"
           ]
         }
       ],

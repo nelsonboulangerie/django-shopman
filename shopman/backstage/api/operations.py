@@ -4885,6 +4885,62 @@ class OrderTicketEscposView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Retained-amount receipt bytes (ESC/POS, base64) of a not-picked-up order, for the station agent",
+        responses={
+            200: OpenApiResponse(description="Receipt payload."),
+            404: OpenApiResponse(description="No retained amount on this order."),
+        },
+    ),
+)
+class OrderRetentionReceiptEscposView(APIView):
+    """O recibo do valor retido de uma encomenda não retirada (#3538).
+
+    Contador (24/11/2026, #2695): o valor que a loja retém é multa, com recibo e
+    sem NFC-e. O papel é composto aqui (``receipt_escpos.retention_receipt``) a
+    partir do que o gesto do "Não retirado" gravou, e a página relaia ao agente
+    local da estação, como a Via Pedido. Sai sozinho no fim do gesto e pode ser
+    reimpresso pelo pedido; a partir do segundo, é 2ª via
+    (``retention_receipt_printed_at`` em ``Order.data``).
+
+    Não é uma das vias do pedido (``order_documents``): é o documento do
+    encerramento, como a DANFE é o da venda. Mesma permissão do gesto e da
+    filipeta (``shop.manage_orders``).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.services.receipt_escpos import retention_receipt
+        from shopman.shop.services import no_show, storefront_links
+
+        order = Order.objects.filter(ref=ref).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        receipt = no_show.retention_receipt(order)
+        if receipt is None:
+            return Response({"detail": "Este pedido não tem valor retido pela loja."}, status=404)
+        reprint = _stamp_first_print(ref, "retention_receipt_printed_at")
+        payload = retention_receipt(
+            receipt, verify_url=storefront_links.order_tracking_url(ref), reprint=reprint,
+        )
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"recibo-retido:{ref}",
+                "reprint": reprint,
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Print the delivery DANFE on the dispatch printer (relay), or return bytes for the station agent",
         responses={200: OpenApiResponse(description="DANFE payload.")},
     ),

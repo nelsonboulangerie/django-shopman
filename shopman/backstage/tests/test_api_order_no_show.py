@@ -32,6 +32,9 @@ def operador(client, django_user_model):
     world.product("BOLO", price_q=3000)
     world.lot("CROIS")
     world.lot("BOLO")
+    # A casa produz os dois (ficha ativa): a perda deles tem retenção (DEV-2026-089).
+    world.produced("CROIS")
+    world.produced("BOLO")
     user = django_user_model.objects.create_user(username="gestor-nao-retirado", is_staff=True)
     user.user_permissions.add(Permission.objects.get(codename="manage_orders", content_type__app_label="shop"))
     client.force_login(user)
@@ -85,12 +88,12 @@ def test_preview_says_the_destiny_of_each_line_and_of_the_money(client, operador
     assert (lines["CROIS"]["destiny"], lines["CROIS"]["destiny_label"], lines["CROIS"]["value_q"]) == ("restock", "Volta à venda", 1870)
     assert (lines["BOLO"]["destiny"], lines["BOLO"]["destiny_label"], lines["BOLO"]["reason"]) == ("loss", "Perda", "no_stock")
     assert lines["BOLO"]["reason_label"] == "Sem estoque baixado: não há o que devolver ao balcão."
-    assert (body["paid_q"], body["refund_q"], body["retained_q"]) == (4870, 1870, 3000)
-    assert (body["refund_display"], body["retained_display"]) == ("R$ 18,70", "R$ 30,00")
+    assert (body["paid_q"], body["refund_q"], body["retained_q"]) == (4870, 3670, 1200)
+    assert (body["refund_display"], body["retained_display"]) == ("R$ 36,70", "R$ 12,00")
     assert body["money_sentence"] == (
-        "R$ 18,70 serão estornados ao Pix do cliente. R$ 30,00 ficam com a loja, pelo que se perdeu."
+        "R$ 36,70 serão estornados ao Pix do cliente. R$ 12,00 ficam com a loja, conforme os Termos do serviço."
     )
-    assert body["customer_text"].startswith("O pedido ficou pronto e não foi retirado. Vamos devolver R$ 18,70")
+    assert body["customer_text"].startswith("O pedido ficou pronto e não foi retirado. Vamos devolver R$ 36,70")
     assert body["action"]["ref"] == "no-show"
     assert body["action"]["enabled"] is True
     assert body["action"]["confirmation"] == {"required": True, "manager_approval": True}
@@ -171,7 +174,7 @@ def test_signed_no_show_cancels_and_records_who_signed(client, operador, relogio
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["outcome"] == "applied"
-    assert (body["refund_q"], body["retained_q"]) == (1870, 3000)
+    assert (body["refund_q"], body["retained_q"]) == (3670, 1200)
     assert signature.call_args.kwargs["action"] == "order_no_show"
     assert signature.call_args.kwargs["message"] == "Não retirado pede a autorização de um gerente."
     order.refresh_from_db()
@@ -179,7 +182,7 @@ def test_signed_no_show_cancels_and_records_who_signed(client, operador, relogio
     assert order.data["cancellation_reason_key"] == "not_picked_up"
     block = order.data["no_show"]
     assert block["approved_by"] == operador.get_username()
-    assert (block["paid_q"], block["refund_q"], block["retained_q"]) == (4870, 1870, 3000)
+    assert (block["paid_q"], block["refund_q"], block["retained_q"]) == (4870, 3670, 1200)
     assert body["order"]["status"] == "cancelled"
     assert "SYNTHETIC-NOT-A-PIN" not in str(IdempotencyKey.objects.get(key=key).response_body)
 
@@ -202,7 +205,7 @@ def test_detail_of_a_closed_no_show_says_what_went_back_what_stayed_and_who_sign
 
     detail = build_operator_order(order, user=operador)
 
-    assert detail.payment_status_label == "R$ 18,70 devolvidos, R$ 30,00 com a loja"
+    assert detail.payment_status_label == "R$ 36,70 devolvidos, R$ 12,00 com a loja"
     cancelled = next(event for event in detail.timeline if event.label == "Cancelado")
     assert cancelled.detail == "Não retirado · autorizado por Joyce"
 
@@ -300,6 +303,9 @@ def test_no_show_needs_the_permission_to_manage_orders(client, django_user_model
     world.product("BOLO", price_q=3000)
     world.lot("CROIS")
     world.lot("BOLO")
+    # A casa produz os dois (ficha ativa): a perda deles tem retenção (DEV-2026-089).
+    world.produced("CROIS")
+    world.produced("BOLO")
     user = django_user_model.objects.create_user(username="sem-permissao", is_staff=True)
     client.force_login(user)
     relogio(19)

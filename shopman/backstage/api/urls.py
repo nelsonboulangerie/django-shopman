@@ -249,6 +249,7 @@ from .operations import (
     OrderRequeueFiscalView,
     OrderRescheduleView,
     OrderResendPaymentLinkView,
+    OrderRetentionReceiptEscposView,
     OrderReturnPreviewView,
     OrderReturnView,
     OrderSettleDeliveryCashView,
@@ -1004,6 +1005,11 @@ urlpatterns = [
         "orders/<str:ref>/ticket-escpos/",
         OrderTicketEscposView.as_view(),
         name="api-backstage-order-ticket-escpos",
+    ),
+    path(
+        "orders/<str:ref>/retention-receipt-escpos/",
+        OrderRetentionReceiptEscposView.as_view(),
+        name="api-backstage-order-retention-receipt-escpos",
     ),
     path(
         "orders/<str:ref>/danfe-escpos/",

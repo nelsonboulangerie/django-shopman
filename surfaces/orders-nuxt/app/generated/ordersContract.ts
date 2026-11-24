@@ -895,6 +895,8 @@ export interface OperatorOrderProjection {
   danfe_printed: boolean;
   danfe_state: string;
   danfe_problem: string;
+  retention_receipt_printable: boolean;
+  retention_receipt_printed: boolean;
   promise: OrderPromiseProjection | null;
 }
 

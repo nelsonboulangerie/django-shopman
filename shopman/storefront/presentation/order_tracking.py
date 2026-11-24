@@ -295,6 +295,44 @@ class FiscalNoteProjection:
 
 
 @dataclass(frozen=True)
+class RetentionReceiptLineProjection:
+    name: str
+    qty_display: str
+    value_display: str
+    #: "40% de R$ 89,00": o cálculo que dá ``retained_display``.
+    calculation_display: str
+    retained_display: str
+
+
+@dataclass(frozen=True)
+class RetentionReceiptRowProjection:
+    label: str
+    value_display: str
+
+
+@dataclass(frozen=True)
+class RetentionReceiptProjection:
+    """O recibo do valor que a loja reteve de uma encomenda não retirada (#3538).
+
+    O mesmo conteúdo do papel do balcão, escrito para a tela: quem emite (razão
+    social e CNPJ), o pedido, o que ficou com a loja, o dinheiro e o que o valor
+    é (multa, sem nota fiscal).
+    """
+
+    title: str
+    issuer_lines: tuple[str, ...]
+    order_line: str
+    commitment_display: str
+    closed_display: str
+    lines: tuple[RetentionReceiptLineProjection, ...]
+    money_rows: tuple[RetentionReceiptRowProjection, ...]
+    retained_label: str
+    retained_display: str
+    nature: str
+    not_fiscal: str
+
+
+@dataclass(frozen=True)
 class TrackingDiscountLineProjection:
     """Uma linha de desconto da conta do pedido ("Cupom BEMVINDO", "- R$ 3,00")."""
 
@@ -373,6 +411,7 @@ class OrderTrackingProjection:
     cancellation_contact: CancellationContactProjection | None = None
     rating_followup: RatingFollowupProjection | None = None
     fiscal_note: FiscalNoteProjection | None = None
+    retention_receipt: RetentionReceiptProjection | None = None
     # O Resumo conta o que a revisão do checkout contou (beta 06/11): a conta
     # inteira (subtotal de etiqueta, descontos, entrega, total) e o que o
     # cliente informou. ``schedule_display`` é o combinado (data e janela)
@@ -509,6 +548,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         ),
         mock_payment_enabled=data.can_mock_confirm_payment,
         fiscal_note=_present_fiscal_note(data.fiscal_note),
+        retention_receipt=_present_retention_receipt(data.retention_receipt),
         subtotal_display=f"R$ {format_money(_list_subtotal_q(data))}",
         discount_lines=tuple(
             TrackingDiscountLineProjection(
@@ -615,6 +655,58 @@ def _share_summary(data: TrackingData, *, copy: CopyCatalog) -> str:
     if where:
         lines.append(f"Endereço: {where}")
     return "\n".join(lines)
+
+
+def _present_retention_receipt(receipt) -> RetentionReceiptProjection | None:
+    if receipt is None:
+        return None
+
+    def money(value_q: int) -> str:
+        return f"R$ {format_money(int(value_q or 0))}"
+
+    issuer = tuple(
+        line
+        for line in (receipt.legal_name or receipt.store_name, f"CNPJ {receipt.tax_id}" if receipt.tax_id else "")
+        if line
+    )
+    if receipt.mixed:
+        rows = [RetentionReceiptRowProjection("Valor do pedido", money(receipt.paid_q))]
+        if receipt.from_account_q:
+            rows.append(RetentionReceiptRowProjection("Saiu da sua conta na loja", money(receipt.from_account_q)))
+        rows.append(RetentionReceiptRowProjection("Devolvido a você", money(receipt.refund_q)))
+        if receipt.debt_left_q:
+            rows.append(RetentionReceiptRowProjection("Continua na sua conta na loja", money(receipt.debt_left_q)))
+    else:
+        rows = [
+            RetentionReceiptRowProjection("Pago", money(receipt.paid_q)),
+            RetentionReceiptRowProjection("Devolvido a você", money(receipt.refund_q)),
+        ]
+    return RetentionReceiptProjection(
+        title=receipt.title,
+        issuer_lines=issuer,
+        order_line=f"Pedido {receipt.order_ref}",
+        commitment_display=(
+            f"Dia combinado: {receipt.commitment_day:%d/%m/%Y}" if receipt.commitment_day else ""
+        ),
+        closed_display=(
+            f"Encerrado em {format_local(receipt.closed_at)}" if receipt.closed_at else ""
+        ),
+        lines=tuple(
+            RetentionReceiptLineProjection(
+                name=line.name,
+                qty_display=f"Quantidade: {line.qty}",
+                value_display=money(line.value_q),
+                calculation_display=f"{line.percent}% de {money(line.value_q)}",
+                retained_display=money(line.retained_q),
+            )
+            for line in receipt.lines
+        ),
+        money_rows=tuple(rows),
+        retained_label="Ficou com a loja",
+        retained_display=money(receipt.retained_q),
+        nature=receipt.nature,
+        not_fiscal="Não é documento fiscal.",
+    )
 
 
 def _present_fiscal_note(note) -> FiscalNoteProjection | None:

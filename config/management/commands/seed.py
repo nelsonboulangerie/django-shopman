@@ -1747,6 +1747,9 @@ class Command(BaseCommand):
                 "menu": {
                     "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],
                 },
+                # Não retirado (DEV-2026-089, dono, 24/11/2026): a loja retém 40% do valor
+                # dos itens feitos para a encomenda; provisório até medir o custo real.
+                "no_show": {"retention": {"percent": 40, "decided_at": "2026-11-24", "provisional": True}},
                 "notifications": {"backend": "console"},
                 "rules": {
                     # Políticas de pedido/entrega em centavos. 0 = desligada.
