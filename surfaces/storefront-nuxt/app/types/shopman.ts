@@ -479,6 +479,17 @@ export interface CartDayProjection {
   label: string
 }
 
+// A recusa do "Trocar" (OC-33 B1, 409 `cart_day_change_refused`): nada mudou; cada
+// item que não dá no dia novo vem nomeado, e a frase é a da casa.
+export interface CartDayChangeRefusal {
+  error_code: 'cart_day_change_refused'
+  title: string
+  detail: string
+  date: string
+  date_label: string
+  items: Array<{ sku: string, name: string, requested_qty: number, available_qty: number }>
+}
+
 // A sacola aberta em outro canal (OC-17). `bring` é a ação de trazê-la para cá:
 // nasce desligada (`enabled: false`) até a passagem entre canais existir, e a
 // tela só oferece o gesto com ela ligada (X1).

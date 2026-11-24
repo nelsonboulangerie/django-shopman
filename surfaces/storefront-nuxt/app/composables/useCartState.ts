@@ -508,6 +508,24 @@ export function useCartState () {
     )
   }
 
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // O "Trocar" do dia (OC-33 B1): a sacola INTEIRA passa para `date`, ou nada muda.
+  // Quem decide é o servidor, num comando só; aqui só se espera a fila de mudanças
+  // e se aceita a sacola que ele devolve. Recusa (400 dia que a casa não atende, 409
+  // item que não dá no dia) sobe para a tela, que a mostra no lugar da escolha.
+  async function changeCartDay (date: string, without: string[] = []): Promise<CartProjection> {
+    return enqueueMutation(async () => {
+      const response = await $fetch<{ cart: CartProjection }>(apiPath('/api/v1/cart/day/'), {
+        method: 'PUT',
+        headers: await csrfHeaders(),
+        body: { date, without },
+        credentials: 'include'
+      })
+      setCartProjection(response.cart)
+      return response.cart
+    })
+  }
+
   // `notice`: o cupom entrou no lugar de um desconto que já valia, e a resposta diz
   // de qual (o maior ganha, os descontos não se somam).
   async function mutateCoupon (method: 'POST' | 'DELETE', body?: Record<string, unknown>) {
@@ -687,6 +705,8 @@ export function useCartState () {
     replayEarlyAdd,
     setLineQty,
     addLineWithOptions,
+    // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+    changeCartDay,
     applyCoupon,
     removeCoupon,
     setLineNotes,

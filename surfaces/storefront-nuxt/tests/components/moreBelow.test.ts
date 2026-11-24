@@ -150,6 +150,21 @@ describe('MoreBelow — a dica de que ainda há conteúdo', () => {
     wrapper.unmount()
   })
 
+  // A seta é chrome e nunca senta sobre texto legível (OC-33 B1, 24/11): a lavagem
+  // é sólida na faixa da pílula (folga de 12 + chevron de 48 = 60 de 80px, 75%) e
+  // só dissolve acima dela. Com o degradê inteiro, "A partir das 15h" aparecia
+  // atrás do chevron no checkout.
+  it('a faixa da pílula é chão liso: o conteúdo some antes de chegar ao chevron', async () => {
+    const wrapper = await montar()
+    sentinelaEm(window.innerHeight + 85)
+    await nextTick()
+    const lavagem = document.querySelector('[data-more-below-wash]') as HTMLElement
+    expect(lavagem.className).toContain('h-20')
+    expect(lavagem.className).toContain('from-background')
+    expect(lavagem.className).toContain('from-75%')
+    wrapper.unmount()
+  })
+
   // O pedido é literal: clicar leva até o fim do conteúdo.
   it('clicar no chevron leva até o fim do conteúdo', async () => {
     const wrapper = await montar(97)

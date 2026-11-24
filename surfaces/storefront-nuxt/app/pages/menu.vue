@@ -25,7 +25,7 @@ import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 import { initialMenuDay, isTodayChoice, menuDayBarLabel } from '~/presentation/menuDay'
 import type { CatalogStructureState } from '~/types/continuum'
-import type { CatalogResponse } from '~/types/shopman'
+import type { CartDayChangeRefusal, CatalogResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
 const { openSearch } = useSearchOverlay()
@@ -149,11 +149,70 @@ provideMenuDay({
 })
 
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-function pickMenuDay (value: string) {
+function settleMenuDay (value: string) {
   chosenMenuDay.value = value
   pickingMenuDay.value = false
+  dayChangeRefusal.value = null
+  dayChangeError.value = ''
   const { trocar: _closedPicker, ...query } = menuDayRoute.query
   void router.replace({ query: { ...query, dia: value } })
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// O "Trocar" com a sacola cheia muda a sacola INTEIRA de dia (X3), num comando só
+// do servidor (X4): ou tudo vai para o dia novo, ou nada muda. Sacola vazia não tem
+// o que mover: o primeiro "Adicionar" leva o dia.
+const { changeCartDay } = useCartState()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayChangeRefusal = ref<CartDayChangeRefusal | null>(null)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayChangeError = ref('')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayChanging = ref(false)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const cartDayNow = computed(() => (
+  menuCart.value.is_empty ? '' : (menuCart.value.day?.date || menuDays.value?.today || '')
+))
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+async function moveCartTo (value: string, without: string[] = []) {
+  dayChanging.value = true
+  dayChangeError.value = ''
+  try {
+    await changeCartDay(value, without)
+    settleMenuDay(value)
+  } catch (failure: unknown) {
+    const { status, data } = httpError(failure)
+    if (status === 409 && data?.error_code === 'cart_day_change_refused') {
+      dayChangeRefusal.value = data as unknown as CartDayChangeRefusal
+    } else {
+      dayChangeRefusal.value = null
+      dayChangeError.value = String(data?.detail || 'Não conseguimos trocar o dia agora. Tente de novo.')
+    }
+  } finally {
+    dayChanging.value = false
+  }
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function pickMenuDay (value: string) {
+  if (cartDayNow.value && value !== cartDayNow.value) {
+    void moveCartTo(value)
+    return
+  }
+  settleMenuDay(value)
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function proceedWithoutRefused () {
+  const refusal = dayChangeRefusal.value
+  if (refusal) void moveCartTo(refusal.date, refusal.items.map(item => item.sku))
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function keepCartDay () {
+  dayChangeRefusal.value = null
+  if (cartDayNow.value) settleMenuDay(cartDayNow.value)
 }
 
 const route = useRoute()
@@ -694,7 +753,17 @@ useHead({
           </UiAlert>
 
           <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
-          <MenuDayPicker v-if="showMenuDayPicker && menuDays" :days="menuDays" :model-value="chosenMenuDay" @pick="pickMenuDay" />
+          <MenuDayPicker
+            v-if="showMenuDayPicker && menuDays"
+            :days="menuDays"
+            :model-value="chosenMenuDay"
+            :refusal="dayChangeRefusal"
+            :error="dayChangeError"
+            :busy="dayChanging"
+            @pick="pickMenuDay"
+            @proceed-without="proceedWithoutRefused"
+            @keep="keepCartDay"
+          />
 
           <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
           <section v-if="!showMenuDayPicker" data-menu-results class="min-w-0 scroll-mt-40 space-y-4">

@@ -350,3 +350,129 @@ def test_tirar_da_sacola_nao_depende_do_dia():
         assert resp.status_code == 200, resp.content[:400]
         [line] = resp.json()["cart"]["items"]
         assert line["qty"] == 1
+
+
+# ── o "Trocar": a sacola inteira muda de dia, ou nada muda (X3, X4) ─────
+
+FRIDAY = THURSDAY + timedelta(days=1)
+
+
+def _day(client, day, without=None):
+    body = {"date": day.isoformat()}
+    if without is not None:
+        body["without"] = without
+    return client.put("/api/v1/cart/day/", data=json.dumps(body), content_type="application/json")
+
+
+def _bag_on_thursday(client):
+    """Brioche e Tabatière na sacola da quinta; na sexta só há fornada de brioche."""
+    from shopman.stockman.models import Quant
+
+    Quant.objects.create(sku="BRIOCHE", position=None, target_date=FRIDAY, _quantity=Decimal(10))
+    assert _put(client, "BRIOCHE", qty=2, date=THURSDAY.isoformat()).status_code == 200
+    assert _put(client, "TABAT", qty=1, date=THURSDAY.isoformat()).status_code == 200
+
+
+def _live_hold_dates(session_key):
+    from shopman.stockman.models import Hold
+
+    return {
+        hold.target_date
+        for hold in Hold.objects.filter(metadata__reference=session_key, status__in=["pending", "confirmed"])
+        if hold.quant_id
+    }
+
+
+def _lines(session):
+    return {item["sku"]: int(float(item["qty"])) for item in session.items}
+
+
+def test_trocar_para_um_dia_em_que_um_item_nao_da_nomeia_o_item_e_nao_muda_nada():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+        before = _session()
+
+        resp = _day(client, FRIDAY)
+
+        assert resp.status_code == 409, resp.content[:400]
+        body = resp.json()
+        assert body["error_code"] == "cart_day_change_refused"
+        assert [item["name"] for item in body["items"]] == ["Tabatière"]
+        assert body["title"] == "Tabatière não está disponível para sexta, 20/11"
+        assert body["detail"] == "Você pode seguir para sexta, 20/11 sem ele, ou manter o dia que tinha."
+        # Nada mudou: o dia, as reservas e as linhas são os de antes.
+        after = _session()
+        assert after.data["delivery_date"] == "2026-11-19"
+        assert _live_hold_dates(after.session_key) == {THURSDAY}
+        assert _lines(after) == _lines(before) == {"BRIOCHE": 2, "TABAT": 1}
+
+
+def test_seguir_sem_ele_tira_so_aquele_item_e_leva_o_resto_para_o_dia_novo():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+
+        resp = _day(client, FRIDAY, without=["TABAT"])
+
+        assert resp.status_code == 200, resp.content[:400]
+        session = _session()
+        assert _lines(session) == {"BRIOCHE": 2}
+        assert session.data["delivery_date"] == "2026-11-20"
+        assert _live_hold_dates(session.session_key) == {FRIDAY}
+        assert resp.json()["cart"]["day"] == {"date": "2026-11-20", "label": "sexta, 20/11"}
+
+
+def test_adicionar_depois_da_troca_nao_da_409():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+        assert _day(client, FRIDAY, without=["TABAT"]).status_code == 200
+
+        resp = _put(client, "GELEIA", qty=1, date=FRIDAY.isoformat())
+
+        assert resp.status_code == 200, resp.content[:400]
+        assert _live_hold_dates(_session().session_key) == {FRIDAY}
+
+
+def test_trocar_quando_tudo_da_move_a_sacola_inteira_com_efeito_unico():
+    from shopman.stockman.models import Quant
+
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+        Quant.objects.create(sku="TABAT", position=None, target_date=FRIDAY, _quantity=Decimal(10))
+
+        resp = _day(client, FRIDAY)
+
+        assert resp.status_code == 200, resp.content[:400]
+        session = _session()
+        assert _lines(session) == {"BRIOCHE": 2, "TABAT": 1}
+        assert _live_hold_dates(session.session_key) == {FRIDAY}
+        # X4: a mesma troca de novo deixa a sacola igual.
+        assert _day(client, FRIDAY).status_code == 200
+        again = _session()
+        assert _lines(again) == {"BRIOCHE": 2, "TABAT": 1}
+        assert _live_hold_dates(again.session_key) == {FRIDAY}
+
+
+def test_trocar_para_um_dia_que_a_casa_nao_atende_recusa_e_a_sacola_fica_intacta():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+
+        resp = _day(client, SUNDAY)
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert (body["field"], body["error_code"]) == ("date", "date_refused")
+        assert body["detail"] == "A casa não abre em 22/11/2026. Escolha outra data."
+        after = _session()
+        assert after.data["delivery_date"] == "2026-11-19"
+        assert _live_hold_dates(after.session_key) == {THURSDAY}
+        assert _lines(after) == {"BRIOCHE": 2, "TABAT": 1}

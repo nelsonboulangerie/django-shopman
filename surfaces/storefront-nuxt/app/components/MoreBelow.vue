@@ -25,6 +25,11 @@
 // trabalha nas bordas e onde o conteúdo atrás tem contraste — um cartão, uma
 // foto, um bloco escuro. Está em 33% por decisão do Pablo.
 //
+// ⚠️ A SETA NUNCA SENTA SOBRE TEXTO. A lavagem é sólida na faixa da pílula (folga
+// + chevron, 60px) e só dissolve acima dela: com a lavagem toda em degradê, a
+// linha "Quando · A partir das 15h" do checkout aparecia legível ATRÁS do chevron
+// (OC-33 B1, capturas de 24/11; o main tinha o mesmo defeito).
+//
 // ⚠️ O DEGRADÊ ENCOSTA NO OBSTÁCULO. A folga de 12px é do chevron e mora no
 // recuo interno (`pb-3`), não no posicionamento: enquanto ela empurrava a dica
 // inteira para cima, sobrava uma faixa de conteúdo cru entre a lavagem e o card
@@ -85,7 +90,7 @@ function irAteOFim() {
       leave-to-class="opacity-0"
     >
       <div v-if="visible" class="absolute inset-x-0 bottom-0" data-more-below>
-        <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t to-transparent" :class="fadeFrom" aria-hidden="true" />
+        <div class="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-75% to-transparent" :class="fadeFrom" aria-hidden="true" data-more-below-wash />
         <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
           <UiButton
             type="button"
@@ -117,7 +122,11 @@ function irAteOFim() {
                que é a própria mensagem. Mesmo par do bottom-sheet da loja.
                Mais alto que a pílula de propósito: ela precisa ficar DENTRO da
                lavagem, e a lavagem precisa chegar colada no card. -->
-          <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" aria-hidden="true" />
+          <!-- A FAIXA DA PÍLULA É CHÃO LISO (OC-33 B1, Coordenação 24/11): os 60px de baixo
+               (folga + chevron) são cor de página, sem texto atrás; só os 20px de cima
+               dissolvem. A seta é chrome e nunca senta sobre conteúdo legível: o que rola
+               por baixo some como some atrás do card, e a pílula continua translúcida. -->
+          <div class="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-background from-75% to-transparent" aria-hidden="true" data-more-below-wash />
           <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
             <!-- ⚠️ `UiButton`, nunca o controle nativo cru: a loja trava isso em
                  `app/pages` e `app/components` (tests/surfaceGuardrails), e a

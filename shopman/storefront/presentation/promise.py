@@ -40,17 +40,16 @@ suite-vocabulary.md``). "Fica pronto" segue só na frase sobre o PEDIDO.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, time, timedelta
+from datetime import date, time
 
 from shopman.utils.formatting import format_clock
 
-from shopman.shop.projections.ready_promise import PromiseFacts, ready_window
+from shopman.shop.projections.ready_promise import PromiseFacts, day_label_for, ready_window
 
 KIND_READY = "ready"
 KIND_BATCH = "batch"
 KIND_PREORDER = "preorder"
 
-_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
 
 
 @dataclass(frozen=True)
@@ -159,12 +158,7 @@ def _hour(value: time) -> str:
 
 
 def _day_label(day: date, *, today: date) -> str:
-    weekday = _WEEKDAYS[day.weekday()]
-    if day == today:
-        return "hoje"
-    if day == today + timedelta(days=1):
-        return f"amanhã, {weekday}"
-    return f"{weekday}, {day:%d/%m}"
+    return day_label_for(day, today=today)
 
 
 # ── Dá para pedir? (OC-04) ─────────────────────────────────────────────

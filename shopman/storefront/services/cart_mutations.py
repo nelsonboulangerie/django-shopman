@@ -16,7 +16,7 @@ from shopman.shop.discount_spread import merged_for_display
 from shopman.shop.product_options import OptionSelectionError
 from shopman.shop.projections import cart_context
 from shopman.shop.projections.cart import build_minimum_order_progress
-from shopman.shop.services.cart import CartDateRefused, CartUnavailableError
+from shopman.shop.services.cart import CartDateRefused, CartDayChangeRefused, CartUnavailableError
 from shopman.storefront.cart import CartService
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.intents.cart import interpret_set_qty
@@ -47,6 +47,14 @@ class CartMutationDateRefused(Exception):
         self.message = message
 
 
+class CartMutationDayChangeRefused(Exception):
+    """A troca de dia deixaria item de fora; ``refusal`` nomeia cada um (OC-33 B1)."""
+
+    def __init__(self, refusal: CartDayChangeRefused):
+        super().__init__(refusal.detail)
+        self.refusal = refusal
+
+
 class CartMutationUnavailable(Exception):
     """Raised when the server refuses a cart mutation for stock reasons."""
 
@@ -63,6 +71,31 @@ class CartMutationOutcome:
     intent: SetQtyIntent
     cart: dict[str, Any]
     payload: dict[str, Any]
+
+
+def change_cart_day(request: HttpRequest, *, chosen_date, without_skus: list[str]) -> None:
+    """O "Trocar" do dia (OC-33 B1): a sacola inteira passa para ``chosen_date``, ou nada muda.
+
+    Quem decide é ``shop.services.cart.change_cart_day`` (um comando, efeito
+    único). Sem sacola aberta não há o que mover: a escolha fica só na tela, e o
+    primeiro "Adicionar" leva o dia.
+    """
+    from shopman.shop.services import cart as cart_service
+
+    key = request.session.get("cart_session_key")
+    if not key:
+        return
+    try:
+        cart_service.change_cart_day(
+            session_key=key,
+            channel_ref=STOREFRONT_CHANNEL_REF,
+            chosen=chosen_date,
+            without_skus=without_skus,
+        )
+    except CartDateRefused as exc:
+        raise CartMutationDateRefused(exc.message) from exc
+    except CartDayChangeRefused as exc:
+        raise CartMutationDayChangeRefused(exc) from exc
 
 
 def _cart_qty_of(cart: dict, sku: str) -> int:

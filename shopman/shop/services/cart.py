@@ -139,6 +139,122 @@ def _apply_chosen_date(session: Session, chosen: date, *, sku: str, qty: int) ->
         session.save(update_fields=["data"])
 
 
+class CartDayChangeRefused(Exception):
+    """A troca de dia deixaria item de fora: nada mudou (OC-33 B1, o "Trocar").
+
+    ``items`` são os que não dão no dia novo, ``[{sku, name, requested_qty,
+    available_qty}]``; ``title``/``detail`` são a frase da casa
+    (``policies.preorder_date.cart_day_change_refusal``).
+    """
+
+    error_code = "cart_day_change_refused"
+
+    def __init__(self, *, day: date, day_label: str, items: list[dict], title: str, detail: str):
+        super().__init__(detail)
+        self.day = day
+        self.day_label = day_label
+        self.items = items
+        self.title = title
+        self.detail = detail
+
+
+class _DayChangeRollback(Exception):
+    """Interno: desfaz a troca inteira (savepoint) e leva a recusa para fora."""
+
+    def __init__(self, refusal: CartDayChangeRefused):
+        super().__init__(str(refusal))
+        self.refusal = refusal
+
+
+@transaction.atomic
+def change_cart_day(
+    *,
+    session_key: str,
+    channel_ref: str,
+    chosen: date,
+    without_skus: tuple[str, ...] | list[str] = (),
+) -> Session | None:
+    """Passa a sacola INTEIRA para ``chosen``: um comando, efeito único (OC-33 B1, X4).
+
+    O "Trocar" do cardápio e da sacola. Ou a sacola toda muda de dia (todas as
+    reservas soltas e refeitas no dia novo, ``delivery_date`` regravada), ou nada
+    muda:
+
+    - dia que a casa não combina: :class:`CartDateRefused`, sacola intacta;
+    - item que não dá no dia novo: :class:`CartDayChangeRefused` nomeando cada um,
+      sacola intacta (a transação desfaz o que foi solto e refeito);
+    - ``without_skus``: "seguir sem ele". Esses itens saem da sacola na mesma
+      escrita, e o resto vai para o dia novo.
+
+    Hoje é a régua de sempre para dizer "dá?" (o pronto e a fornada de hoje), e a
+    escolha de dia sai da sessão. ``None`` = não há sacola aberta.
+    """
+    from shopman.shop.policies.preorder_date import cart_day_change_refusal, cart_day_refusal
+    from shopman.shop.projections.ready_promise import day_label_for
+
+    today = timezone.localdate()
+    refusal = cart_day_refusal(chosen, today=today)
+    if refusal:
+        raise CartDateRefused(refusal)
+    session = Session.objects.select_for_update().filter(
+        session_key=session_key, channel_ref=channel_ref, state="open",
+    ).first()
+    if session is None:
+        return None
+
+    dropped = {str(sku) for sku in without_skus if sku}
+    lines = [
+        item for item in (session.items or [])
+        if item.get("sku") and item.get("sku") != "__DELIVERY_FEE__"
+        and (item.get("meta") or {}).get("type") != "delivery_fee"
+    ]
+    wanted: dict[str, Decimal] = {}
+    names: dict[str, str] = {}
+    for item in lines:
+        sku = str(item["sku"])
+        if sku in dropped:
+            continue
+        wanted[sku] = wanted.get(sku, Decimal("0")) + Decimal(str(item.get("qty") or 0))
+        names.setdefault(sku, str(item.get("name") or sku))
+
+    try:
+        with transaction.atomic():
+            availability.release_session_holds(session_key)
+            missing: list[dict] = []
+            for sku, qty in wanted.items():
+                if qty <= 0:
+                    continue
+                result = availability.reserve(
+                    sku, qty, session_key=session_key, channel_ref=channel_ref, target_date=chosen,
+                )
+                if not result["ok"]:
+                    missing.append({
+                        "sku": sku,
+                        "name": names[sku],
+                        "requested_qty": _whole(qty),
+                        "available_qty": _whole(Decimal(str(result.get("available_qty") or 0))),
+                    })
+            if missing:
+                label = day_label_for(chosen, today=today)
+                copy = cart_day_change_refusal(day_label=label, names=[m["name"] for m in missing])
+                raise _DayChangeRollback(CartDayChangeRefused(
+                    day=chosen, day_label=label, items=missing, title=copy["title"], detail=copy["detail"],
+                ))
+            data = dict(session.data or {})
+            if chosen > today:
+                data["delivery_date"] = chosen.isoformat()
+            else:
+                data.pop("delivery_date", None)
+            session.data = data
+            session.save(update_fields=["data"])
+    except _DayChangeRollback as rollback:
+        raise rollback.refusal from None
+
+    availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
+    ops = [{"op": "remove_line", "line_id": item["line_id"]} for item in lines if str(item["sku"]) in dropped]
+    return session_service.modify_session(session_key=session_key, channel_ref=channel_ref, ops=ops)
+
+
 def _refuse_a_second_date(*, session_key: str, sku: str, requested_qty: int, new_hold_id: str | None) -> None:
     """Loja online: um pedido, uma data (decisão do dono, 01/10/2026).
 

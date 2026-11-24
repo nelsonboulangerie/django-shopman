@@ -8,7 +8,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import { getQuery } from 'h3'
+import { getQuery, readBody, setResponseStatus } from 'h3'
 
 import catalogDayContractJson from '../../../../contracts/projections/storefront_catalog_day.json'
 import catalogContractJson from '../../../../contracts/projections/storefront_catalog.json'
@@ -40,6 +40,29 @@ registerEndpoint('/api/v1/storefront/catalog/', (event) => {
   const query = getQuery(event)
   catalogQueries.push(query)
   return { catalog: query.date ? DAY_CATALOG : TODAY_CATALOG }
+})
+
+// O "Trocar" (PUT cart/day/): a primeira tentativa esbarra na Tabatière; com `without`, passa.
+const dayCalls: Array<Record<string, unknown>> = []
+registerEndpoint('/api/v1/cart/day/', {
+  method: 'PUT',
+  handler: async (event) => {
+    const body = await readBody(event)
+    dayCalls.push(body)
+    if (!(body.without || []).length) {
+      // O corpo do 409 é o da API (Django), não o envelope de erro do h3.
+      setResponseStatus(event, 409)
+      return {
+        error_code: 'cart_day_change_refused',
+        title: 'Tabatière não está disponível para quinta, 26/11',
+        detail: 'Você pode seguir para quinta, 26/11 sem ele, ou manter o dia que tinha.',
+        date: '2026-11-26',
+        date_label: 'quinta, 26/11',
+        items: [{ sku: 'TABAT', name: 'Tabatière', requested_qty: 1, available_qty: 0 }]
+      }
+    }
+    return { cart: { ...useState<CartProjection>('storefront-cart').value, day: { date: '2026-11-26', label: 'quinta, 26/11' } } }
+  }
 })
 
 function setShell (variant?: 'a' | 'b') {
@@ -129,6 +152,32 @@ describe('cardápio: "Para quando?" antes da lista (OC-33 B1)', () => {
     const page = await openMenu('b')
     await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
     expect(page.find('[data-menu-day-picker]').exists()).toBe(false)
+    useState<CartProjection>('storefront-cart').value = { ...useState<CartProjection>('storefront-cart').value, is_empty: true, day: null }
+  })
+
+  it('B, "Trocar" com a sacola cheia: o item que não dá é nomeado, e "Seguir sem ele" leva o resto', async () => {
+    useState<CartProjection>('storefront-cart').value = {
+      ...(useState<CartProjection>('storefront-cart').value || {}),
+      is_empty: false,
+      items: [],
+      day: { date: '2026-11-25', label: 'amanhã, quarta' }
+    } as CartProjection
+    dayCalls.length = 0
+    const page = await openMenu('b')
+    await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
+    await page.find('[data-menu-day-change]').trigger('click')
+    await nextTick()
+    await page.find('[data-menu-day-option="2026-11-26"]').trigger('click')
+
+    // A casa diz o que não dá, pelo nome, e nada mudou: a barra segue fora, a pergunta fica.
+    await vi.waitFor(() => expect(page.find('[data-menu-day-refusal]').exists()).toBe(true))
+    expect(page.find('[data-menu-day-refusal]').text()).toContain('Tabatière não está disponível para quinta, 26/11')
+    expect(dayCalls[0]).toEqual({ date: '2026-11-26', without: [] })
+
+    await page.find('[data-menu-day-proceed]').trigger('click')
+    await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
+    expect(dayCalls[1]).toEqual({ date: '2026-11-26', without: ['TABAT'] })
+    expect(page.find('[data-menu-day-bar]').text()).toContain('Para quinta, 26/11')
     useState<CartProjection>('storefront-cart').value = { ...useState<CartProjection>('storefront-cart').value, is_empty: true, day: null }
   })
 })
