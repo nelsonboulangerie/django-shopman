@@ -162,7 +162,9 @@ def test_the_body_of_an_answer_never_picks_the_faq(surface):
 
     FAQEntry.objects.create(ref="fotos", question="Posso tirar fotos na loja?", search_terms="",
                             answer="Na parte interna, pedimos que nos avise antes.", is_published=True)
-    FAQEntry.objects.create(ref="encomenda", question="Posso encomendar para outro dia?", search_terms="",
+    # A pergunta não repete a operacional da encomenda ("Posso encomendar para outro dia?"):
+    # essa a FAQ pública já responde pela configuração, e a curada igual fica de fora (OC-31).
+    FAQEntry.objects.create(ref="encomenda", question="Posso encomendar um pão especial?", search_terms="",
                             answer="Alguns pães precisam de 24 horas de antecedência.", is_published=True)
     shop = Shop.load()
 

@@ -23,7 +23,7 @@ from shopman.storefront.presentation.catalog import (
     build_featured_items,
     fresh_from_oven_skus,
 )
-from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
+from shopman.storefront.presentation.public_information import HOME_FAQ_LIMIT, FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
 
@@ -458,7 +458,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         shop_status=shell.shop_status,
         notices=shell.notices,
         opening_hours=shell.opening_hours,
-        faq=shell.faq,
+        faq=shell.faq[:HOME_FAQ_LIMIT],
         last_order_ref=last_ref,
         last_order_items=last_items,
         actions=_home_actions(last_ref),
