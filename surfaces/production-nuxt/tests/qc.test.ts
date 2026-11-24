@@ -290,7 +290,7 @@ describe("motivos de rendeu menos e rendeu mais (P1-07)", () => {
         expect(new Set(list).size).toBe(list.length);
         expect(list).not.toContain("Outro");
         // A causa nunca repete a pergunta ("rendeu menos/mais"), e não se chama
-        // "perda": a folha diz que a diferença não entra como perda.
+        // "perda": a folha já diz que a diferença é perda; o motivo diz a causa.
         for (const reason of list) expect(reason).not.toMatch(/rendeu|^perda/i);
       }
     }

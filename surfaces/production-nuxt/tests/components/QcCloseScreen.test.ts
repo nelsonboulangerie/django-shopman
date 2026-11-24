@@ -301,9 +301,10 @@ describe("QcCloseScreen — classificação por grau", () => {
     });
   });
 
-  it("rendeu menos: o Normal aceita número, o motivo vem em um toque e a diferença não vira perda", async () => {
+  it("rendeu menos: o Normal aceita número, o motivo vem em um toque e a diferença fica como perda", async () => {
     // Beta 05/11: Normal era só saldo, e fechar abaixo do previsto exigia lançar
     // a diferença como Perda com motivo de defeito. P1-07: o motivo não pede teclado.
+    // Dono, 24/11: a diferença nunca some; a folha diz que ela fica como perda.
     const wrapper = mountQc();
 
     await wrapper.find('[data-grade-ref="standard"]').trigger("click");
@@ -313,6 +314,11 @@ describe("QcCloseScreen — classificação por grau", () => {
     await buttonByText(wrapper, "Finalizar")!.trigger("click");
 
     expect(wrapper.text()).toContain("Rendeu 38 de 40 previstos?");
+    const sheet = wrapper.find("[data-shortfall]").text().replace(/\s+/g, " ");
+    expect(sheet).toContain(
+      "A diferença de 2 un. fica registrada como perda, com este motivo, seu nome e a hora.",
+    );
+    expect(sheet).not.toContain("não entra");
     expect(wrapper.find("[data-shortfall] textarea").exists()).toBe(false);
     expect(wrapper.emitted("confirm")).toBeUndefined();
     await buttonByText(wrapper, "Massa perdida antes do forno")!.trigger("click");

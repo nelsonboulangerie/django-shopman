@@ -2,8 +2,8 @@
 // Finalização de um único lote. Os quatro botões são buckets de qualidade
 // disjuntos; o grau padrão recebe automaticamente o saldo que não foi lançado
 // nos demais graus nem em Perda. Quando rendeu menos (beta 05/11), o operador
-// toca no grau padrão e digita o que saiu: a diferença para o previsto vira
-// "rendeu menos", com motivo, sem virar perda de qualidade nem estoque.
+// toca no grau padrão e digita o que saiu: a diferença para o previsto é
+// perda, registrada com a causa escolhida, quem fechou e a hora (dono, 24/11).
 import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
@@ -215,7 +215,7 @@ const total = computed(() => round(finishedTotal.value + lossQuantity.value));
 const overshootQuantity = computed(() =>
   anchor.anchor === null ? 0 : Math.max(0, round(total.value - anchor.anchor)),
 );
-// Rendeu menos que o previsto: não é perda de qualidade, é o que não saiu.
+// Rendeu menos que o previsto: é perda, e a causa escolhida a classifica.
 const shortfallQuantity = computed(() =>
   anchor.anchor === null ? 0 : Math.max(0, round(anchor.anchor - total.value)),
 );
@@ -1086,10 +1086,15 @@ const actionBarValue = computed(() =>
         >
           <p class="text-sm text-muted-foreground">
             <template v-if="sheetQuestion?.kind === 'shortfall'">
-              Por que rendeu menos? A diferença ({{ qtyWithUnit(shortfallQuantity) }})
-              não entra como perda nem no estoque.
+              Por que rendeu menos? A diferença de
+              {{ qtyWithUnit(shortfallQuantity) }} fica registrada como perda,
+              com este motivo, seu nome e a hora.
             </template>
-            <template v-else>Por que o realizado ficou acima do previsto?</template>
+            <template v-else>
+              Por que o realizado ficou acima do previsto? A diferença de
+              {{ qtyWithUnit(overshootQuantity) }} fica registrada com este
+              motivo, seu nome e a hora.
+            </template>
           </p>
           <div
             v-if="!yieldOtherOpen"

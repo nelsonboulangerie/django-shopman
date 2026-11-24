@@ -3428,9 +3428,11 @@ def apply_finish(
             yield_deviation = reported_quantity - yield_anchor
             deviation_context = None
             if yield_deviation < 0:
-                # Rendeu menos que o previsto (beta 05/11): a diferença não é
-                # perda de qualidade nem estoque. Fica no evento, com o motivo
-                # e o nome de quem confirmou; sem eles, recusa.
+                # Rendeu menos que o previsto: a diferença é perda e nunca some.
+                # O evento guarda a quantidade, a causa e quem fechou (a hora é a
+                # do evento); o ledger de estoque a baixa como WASTE e os
+                # relatórios a contam (previsto menos realizado). Sem a causa
+                # confirmada, recusa.
                 deviation_reason = str(yield_deviation_reason or "").strip()
                 if yield_deviation_confirmed is not True or not deviation_reason:
                     raise ProductionError(
