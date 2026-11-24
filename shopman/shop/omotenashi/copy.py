@@ -1570,6 +1570,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_ORDER_PLACED_SHORT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pedido {order} registrado. Acompanhar: {track}")},
     },
+    "CONCIERGE_ENGINE_EFFECT_PENDING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Ainda estou concluindo isso. Te confirmo por aqui até {deadline}.")},
+    },
+    "CONCIERGE_ENGINE_WAIT_OVERDUE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora. Até {deadline}, {owner} te responde por aqui.")},
+    },
+    "CONCIERGE_ENGINE_WAIT_OVERDUE_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora. Ainda estou esperando {owner} e te aviso por aqui assim que tiver a resposta.")},
+    },
     "CONCIERGE_ENGINE_EFFECT_HELD": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pronto, anotei. Já te confirmo os detalhes por aqui.")},
     },
