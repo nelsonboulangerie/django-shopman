@@ -238,3 +238,19 @@ def test_in_doubt_the_nice_asks_in_the_combinado_words_and_the_yes_applies(house
     assert not time.commands
     assert world.state.fulfillment[eval_cards.CART]["time"] == "16:00"  # o "sim" aplicou
     assert "conference:confirmed" in yes.fallbacks
+
+
+def test_the_eval_world_says_the_delivery_address_like_the_air(house):
+    """#3540: o ensaio segurava a resposta ao endereço (o mundo de memória não resolvia a referência). O resolvedor
+    do ensaio lê o endereço do executor de memória: a rua e o número, como o do ar."""
+    from types import SimpleNamespace as Namespace
+
+    from conversational_commerce.reply import UnresolvedReference
+
+    from shopman.storefront.concierge import eval_cards, turn_framework
+
+    world = Namespace(state=Namespace(address={"cart-eval": {"text": "Rua das Flores, 120, Centro", "ref": "addr-1"}}))
+    resolve = eval_cards._address_of(world)
+    assert turn_framework.address_text(resolve)("addr-1") == "Rua das Flores, 120"
+    with pytest.raises(UnresolvedReference):
+        resolve("addr-outro")

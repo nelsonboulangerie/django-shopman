@@ -856,6 +856,58 @@ def test_a_cart_change_in_the_middle_of_the_close_says_it_changed_and_keeps_the_
 
 
 @pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_delivery_summary_says_the_fee_and_the_address_and_the_total_has_the_fee(order_on_air, outbox, monkeypatch):
+    """Ensaio no ar (24/11): o resumo do cartão 2 saiu sem a taxa e sem o endereço. Era o mundo de memória do ensaio
+    (sem geocodificação, sem taxa). Pelo serviço de verdade, o resumo diz o endereço e "Entrega: R$ 8,00", e o total
+    já soma a taxa, como o resumo de hoje (``tools.render_result``)."""
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import address, model_reader, tools
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    script = {"pode fechar": [{"act": "place_order"}], "às 15h": [{"act": "choose_fulfillment", "time": "15:00"}],
+              "pix": [{"act": "choose_payment", "payment": "pix"}],
+              "[endereço omitido], Centro": [{"act": "give_address"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [])
+
+    def house_writes(ctx, **said):  # a geocodificação e a zona da casa: o endereço e a taxa da entrega
+        tools._set_session_data(ctx, ctx.conversation.session_key, {
+            "delivery_address": "Rua das Flores, 120 - Centro",
+            "delivery_address_structured": {"formatted_address": "Rua das Flores, 120 - Centro",
+                                            "route": "Rua das Flores", "street_number": "120",
+                                            "neighborhood": "Centro", "city": "Londrina", "state_code": "PR",
+                                            "postal_code": "86010-000", "latitude": -23.3, "longitude": -51.1,
+                                            "complement": ""}})
+        return {"ok": True}
+
+    monkeypatch.setattr(tools, "set_fulfillment", house_writes)
+    shop = Shop.load()
+    shop.conversational_live_inform = True
+    shop.save()
+    from shopman.shop.models import DeliveryZone
+
+    # A taxa vem da zona da casa (o modificador ``shop.delivery_fee`` a recalcula a cada passagem), não da escrita.
+    DeliveryZone.objects.create(shop=shop, name="Centro", zone_type=DeliveryZone.ZONE_TYPE_NEIGHBORHOOD,
+                                match_value="Centro", fee_q=800, is_active=True)
+    Session.objects.create(session_key="sess-fee", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
+                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25"})
+    order_on_air.session_key = "sess-fee"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(["pode fechar", "Rua das Flores 120, Centro", "às 15h", "pix"]):
+            _receive(order_on_air, said, f"fee-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    summary = outbox.sent[3]
+    assert "Total: R$ 8,90" in summary, summary  # R$ 0,90 do pão e R$ 8,00 da entrega
+    assert "\nRua das Flores, 120 - Centro\n" in summary and "\nEntrega: R$ 8,00\n" in summary, summary
+    assert summary.endswith("Posso registrar?")
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
 def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it(order_on_air, outbox, monkeypatch):
     """Coordenação, 24/11: na entrega, depois do endereço, "Qual janela de entrega fica melhor?" com as janelas do
     dia (as da loja on-line); a hora dita grava a janela, e o resumo a mostra. Pelo serviço real."""

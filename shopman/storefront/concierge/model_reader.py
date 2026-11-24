@@ -170,7 +170,8 @@ def system_prompt(allowed: tuple[str, ...]) -> str:
         "- \"Troca por X\" é uma parte change_quantity com o produto NOVO (X), sem quantidade se o cliente não "
         "disse.\n"
         "- product: escreva o nome como o cliente escreveu, mesmo com erro de digitação.\n"
-        "- Não invente partes nem produtos que não estão na mensagem."
+        "- Não invente partes nem produtos que não estão na mensagem.\n"
+        "- Toda mensagem tem ao menos uma parte: o que não for nenhum ato da lista é unknown."
     )
 
 
@@ -213,8 +214,10 @@ def conversation_note(context, resolve=None) -> str:
     if pending is not None and pending.code in PENDING_TEXT:
         expected = ", ".join(context.expected_acts) or "nenhum"
         asked = (f"A Nice acabou de perguntar {PENDING_TEXT[pending.code]}. Uma fala curta (\"16h\", \"pix\", "
-                 f"\"sim\", \"o do trabalho\") responde a essa pergunta, com os atos {expected}, a menos que o "
-                 "cliente mude de assunto.")
+                 f"\"sim\", \"o do trabalho\") responde a essa pergunta, com os atos {expected}. Se o cliente "
+                 "perguntar outra coisa ou mudar de assunto (\"tem pão de queijo?\", \"que horas vocês fecham?\"), "
+                 "leia a fala normalmente, com o ato dela (ask_item, ask_hours, ask_price...): a pergunta nova "
+                 "também é uma parte, nunca uma lista vazia.")
         note = f"{note}\n\n{asked}" if note else asked
     return note
 
@@ -724,8 +727,12 @@ class NiceReader:
             acts.append({"act": reading.act, "fields": fields, "confidence": UNAVAILABLE})
         acts = swapped(acts, lines, text)
         consumption = Consumption(model=Producer(name=READER.name, version=model or PURPOSE), calls=1, cost=NO_PRICE)
-        acts = acts or [{"act": "unknown", "fields": {}, "confidence": UNAVAILABLE}]
         alternatives = ()
+        if gated and not [act for act in acts if act["act"] != "unknown"]:
+            # A IA não leu nada e o portão leu: vale a leitura do portão, em vez de a Nice perguntar de novo
+            # (ensaio no ar, 24/11: "que horas vocês fecham?" no meio do fechamento voltava vazio).
+            acts = [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}]
+        acts = acts or [{"act": "unknown", "fields": {}, "confidence": UNAVAILABLE}]
         if gated and gated not in {act["act"] for act in acts}:
             # O portão e a IA discordam: as duas leituras vão ao motor, e a conferência de coerência decide (ADR-051).
             alternatives = ({"acts": [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],

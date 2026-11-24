@@ -304,9 +304,19 @@ def day_word(day: date) -> str:
     return {today: "hoje", today + timedelta(days=1): "amanhã"}.get(day) or day.strftime("%d/%m")
 
 
+#: A hora do rótulo com zero à esquerda: "09h", "09h30" (o rótulo da grade é dado editável no Admin).
+_PADDED_HOUR_RE = re.compile(r"\b0(\d)(?=h)")
+
+
+def spoken_hours(label: str) -> str:
+    """ "A partir das 09h" → "A partir das 9h": a hora como a casa fala (6h42, 9h). Só na fala; o rótulo da grade
+    e o site não mudam (coordenação, 24/11)."""
+    return _PADDED_HOUR_RE.sub(r"\1", str(label or ""))
+
+
 def window_phrase(label: str) -> str:
     """ "A partir das 15h" → "a partir das 15h": a janela no meio da frase."""
-    label = str(label or "").strip()
+    label = spoken_hours(label).strip()
     return f"{label[:1].lower()}{label[1:]}"
 
 
@@ -459,7 +469,7 @@ def advance(ctx, said: Said, closing: dict, *, copy) -> Step | None:
 
 
 def _slot_question(slots: list[dict], *, copy) -> tuple[str, list[dict]]:
-    options = _options([{"ref": s["ref"], "name": s["label"]} for s in slots if s.get("available", True)])
+    options = _options([{"ref": s["ref"], "name": spoken_hours(s["label"])} for s in slots if s.get("available", True)])
     return _fill(copy(ASK_SLOT_KEY), options=_options_text(options)), options
 
 
@@ -494,7 +504,7 @@ def _pickup(ctx, said: Said, closing: dict, *, day: str, applied: bool, data: di
     if chosen is not None:
         if not chosen.get("available", True):
             closing["asked"] = "ask_slot"
-            refused = _fill(copy(SLOT_REFUSED_KEY), slot=chosen.get("label", ""), reason=str(chosen.get("reason") or "").rstrip("."))
+            refused = _fill(copy(SLOT_REFUSED_KEY), slot=spoken_hours(chosen.get("label", "")), reason=str(chosen.get("reason") or "").rstrip("."))
             return Step(" ".join(p for p in (refused, question) if p),
                         pending={"kind": "ask_slot", "options": options, "day": day}, closing=closing)
         result = tools.execute(
@@ -532,7 +542,7 @@ def _delivery(ctx, said: Said, closing: dict, *, day: str, applied: bool, copy, 
             chosen = windows[picked - 1] if 1 <= picked <= len(windows) else None
         if chosen is None:
             # Fora das janelas de entrega: o motivo é a grade da casa, com as janelas do dia.
-            options = _options([{"ref": w["ref"], "name": w["label"]} for w in windows])
+            options = _options([{"ref": w["ref"], "name": spoken_hours(w["label"])} for w in windows])
             closing["asked"] = "ask_slot"
             return Step(_fill(copy(NO_DELIVERY_AT_KEY), time=said.time_text or "nesse horário", windows=_options_text(options)),
                         pending={"kind": "ask_slot", "options": options, "day": day}, closing=closing)

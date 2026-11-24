@@ -219,8 +219,15 @@ class ShopmanCommerceRead:
         session = Session.objects.filter(session_key=cart_ref, channel_ref=self.channel_ref).first()
         if session is None:
             raise PortError("object_forbidden", "sacola inexistente ou de outro sujeito")
+        from shopman.shop.modifiers import _is_non_merchandise_line
+
         items = []
         for line in session.items or []:
+            if _is_non_merchandise_line(line):
+                # A linha da taxa de entrega é cobrança, não item: a taxa entra uma vez, pelo ajuste (como o
+                # carrinho, ``projections.cart``). Com ela nos itens, o resumo dizia "1 × DELIVERY_FEE" e somava a
+                # taxa duas vezes (ensaio no ar, 24/11).
+                continue
             items.append({"ref": str(line.get("sku")), "quantity": {"value": _text(line.get("qty")), "unit": "unit"},
                           "unit_price": {"amount_minor": int(line.get("unit_price_q") or 0), "currency": CURRENCY},
                           "line_total": {"amount_minor": int(line.get("line_total_q") or 0), "currency": CURRENCY}})

@@ -421,7 +421,9 @@ def _summary_when(value: str, slot: str) -> str:
 
     day = _parse_date(str(value or ""))
     text = f"{formats.date_format(day, 'l').lower()}, {formats.date_format(day, 'd/m')}" if day else str(value or "")
-    slot = str(slot or "").strip()
+    from .order_closing import spoken_hours
+
+    slot = spoken_hours(str(slot or "")).strip()
     if slot:
         text = ", ".join(p for p in (text, f"{slot[:1].lower()}{slot[1:]}") if p)
     return text
