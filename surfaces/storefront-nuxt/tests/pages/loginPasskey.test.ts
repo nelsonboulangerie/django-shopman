@@ -134,7 +134,7 @@ describe('login — entrar com a chave deste aparelho', () => {
     vi.useFakeTimers()
     await page.find('[data-login-passkey]').trigger('click')
     await flushPromises()
-    expect(page.find('[data-login-moment]').text()).toContain('Bem-vindo de volta, Talita!')
+    expect(page.find('[data-login-moment]').text()).toContain('Que bom te ver de novo, Talita!')
     expect(page.find('[data-login-moment]').text()).toContain('Aparelho reconhecido')
     await vi.advanceTimersByTimeAsync(1500)
     expect(navigate).toHaveBeenCalledWith('/conta')

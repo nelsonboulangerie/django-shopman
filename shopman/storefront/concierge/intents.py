@@ -1354,6 +1354,44 @@ def _repayment(conversation, act: Act, *, context) -> PartReply | None:
     )
 
 
+def _repeat_expired_order(conversation, text: str, *, binding, channel_ref: str, memory):
+    """Remontar na sacola o pedido que venceu sem pagamento (``tools.repeat_order``).
+
+    ``None`` quando a fala não pede (nem responde "sim" à oferta), quando a conversa não
+    tem a autoridade de sacola, ou quando não há pedido vencido do cliente para remontar.
+    """
+    from . import tools as tools_module
+    from .metrics import LAYER_INTENTS
+    from .service import copy_message
+    from .tools import ToolContext
+    from .turn_outcome import TurnOutcome
+
+    if conversation is None or not _cart_authorized(conversation):
+        return None
+    if not tools_module.asks_to_repeat(text, offered=lambda: tools_module.repeat_was_offered(conversation)):
+        return None
+    ctx = ToolContext(
+        conversation=conversation,
+        channel_ref=channel_ref,
+        provider=str(getattr(binding, "provider", "") or ""),
+        account=str(getattr(binding, "account", "") or ""),
+        transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+        connection_key=str(getattr(binding, "connection_key", "") or ""),
+        customer_text=text,
+    )
+    result = tools_module.execute("repeat_order", {}, ctx)
+    if not result.get("ok") or not result.get("order_ref"):
+        return None
+    reply = tools_module.render_result("repeat_order", result)
+    if result.get("cart"):
+        reply = "\n".join(part for part in (reply, copy_message(CART_NEXT_COPY_KEY)) if part)
+    return TurnOutcome(
+        reply_text=reply, layer=LAYER_INTENTS, memory=memory,
+        tool_events=[{"name": "repeat_order", "input": {}, "ok": True, "order_found": True},
+                     *([{"name": "set_item", "ok": True}] if result.get("cart") else [])],
+    )
+
+
 def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=None) -> Execution:
     """Cada ato pelo executor determinístico que já existe. Sem modelo, sem laço."""
     from . import allergens, house_rules
@@ -1865,6 +1903,12 @@ def run(conversation, *, binding, decision, client=None):
         if cancel_turn.code == "refused":
             return TurnOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
         return TurnOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+    # "Monta de novo" (ou o "sim" à oferta) depois do prazo de pagar vencido (OC-12, variante
+    # "oferecer"): a recompra da loja na sacola da conversa, antes da leitura em partes.
+    repeated = _repeat_expired_order(conversation, customer_text, binding=binding, channel_ref=channel_ref,
+                                     memory=memory)
+    if repeated is not None:
+        return repeated
 
     # Alterar o pedido já feito (OC-11): o código que confirma a prévia, a resposta à pergunta
     # do que mudar, ou o pedido de alteração ("troca o horário do pedido", "tira o croissant

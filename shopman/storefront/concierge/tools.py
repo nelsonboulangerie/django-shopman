@@ -2027,6 +2027,9 @@ def repay_order(ctx: ToolContext, order_ref: str = "", method: str = "") -> dict
         lead = REPAY_REFUSED[reason].format(ref=order.ref, method=PAYMENT_FORM_WORDS.get(want, ""))
         if reason in {"payment_expired_cancelled", "payment_expired"} and current == "pix":
             lead = f"{lead} {OLD_PIX_CODE_WARNING}"
+        if reason == "payment_expired_cancelled":
+            # Variante "oferecer": o pedido vencido não renasce, mas pode ser remontado.
+            lead = f"{lead}\n{REPEAT_OFFER}"
         # Recusada a troca, a cobrança que vale continua embaixo (o código ou o link).
         return {"ok": True, "code": reason, "order_ref": order.ref, "lead": lead, "payable": False,
                 "orders": [entry] if still_due else [], "order_url": entry["tracking_url"]}
@@ -2055,6 +2058,96 @@ def amend_order(ctx: ToolContext, kind: str = "", order_ref: str = "", code: str
     from . import order_amendment
 
     return order_amendment.run_tool(ctx, kind=kind, order_ref=order_ref, code=code, **said)
+
+
+#: "Monta de novo", "repete o pedido": o cliente aceita a oferta de remontar o pedido que
+#: venceu sem pagamento (OC-12, variante "oferecer"). Também vale o "sim" logo depois da oferta.
+_REPEAT_ASK = re.compile(
+    r"\b(?:monta|monte|montar|refaz|refaca|refazer|repete|repita|repetir)\b.{0,24}"
+    r"\b(?:de novo|novamente|outra vez|o pedido|mesmo pedido|o mesmo)\b"
+    r"|\bmesmo pedido de novo\b"
+)
+_REPEAT_YES = frozenset({
+    "sim", "s", "pode", "pode sim", "sim pode", "sim, pode", "quero", "quero sim", "isso", "por favor",
+    "sim por favor", "sim, por favor", "pode montar", "monta", "monte", "claro", "ok", "beleza",
+})
+
+
+def repeat_was_offered(conversation) -> bool:
+    """A última resposta da Nice nesta conversa ofereceu remontar o pedido vencido."""
+    from shopman.shop.models import ConversationMessage
+
+    if conversation is None or not conversation.pk:
+        return False
+    last = (
+        ConversationMessage.objects.filter(conversation=conversation, kind=ConversationMessage.Kind.REPLY)
+        .order_by("-pk").values_list("text", flat=True).first()
+    )
+    return REPEAT_OFFER in str(last or "")
+
+
+def asks_to_repeat(text: str, *, offered) -> bool:
+    """O cliente pede para remontar o pedido: pela frase, ou pelo "sim" à oferta da Nice.
+
+    ``offered`` é ``bool`` ou uma função sem argumento (``repeat_was_offered``), chamada
+    só quando a fala é um "sim": a conversa não paga a leitura da última resposta à toa.
+    """
+    folded = " ".join(_fold(text).replace("!", " ").replace(".", " ").split())
+    if _REPEAT_ASK.search(folded):
+        return True
+    return folded in _REPEAT_YES and bool(offered() if callable(offered) else offered)
+
+
+class _ConversationCart:
+    """A sacola da conversa no lugar da sacola da página, para ``add_reorder_items``.
+
+    A recompra é a da loja (``customer_orders.add_reorder_items``: a taxa de entrega não
+    volta, o que não se vende mais fica de fora); cada linha entra pelo ``set_item`` da
+    conversa, que reserva o estoque e põe o preço de AGORA. A escolha de sabor ou
+    adicional não é da Concierge (``_line_for_sku``): a linha com escolha fica de fora.
+    """
+
+    def __init__(self, ctx: ToolContext):
+        self.ctx = ctx
+
+    def add_item(self, request, *, sku, qty, unit_price_q, name, options):
+        from shopman.shop import product_options
+        from shopman.shop.services.cart import CartUnavailableError
+
+        if options:
+            raise product_options.OptionSelectionError("option_required", "A escolha não vem pela conversa.")
+        session = _open_session(self.ctx)
+        line = _line_for_sku(session, sku) if session is not None else None
+        current = Decimal(str((line or {}).get("qty") or 0))
+        result = set_item(self.ctx, sku, int(current + Decimal(str(qty))))
+        if not result.get("ok"):
+            raise CartUnavailableError(sku, int(qty), 0, False, [], str(result.get("error") or "unavailable"))
+
+
+def repeat_order(ctx: ToolContext, order_ref: str = "") -> dict:
+    """Remontar na sacola o pedido cujo prazo de pagar venceu (OC-12, variante "oferecer").
+
+    Só o pedido que a Nice ofereceu: o mais recente do cliente cancelado pelo prazo de pagar.
+    Pelo caminho de recompra da loja, com preço e disponibilidade de agora; o pedido novo
+    nasce pelo fechamento de sempre (dia, recebimento, forma e o código de confirmação).
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.customer_orders import add_reorder_items
+
+    _status, entry = _payment_entry(ctx, order_ref)
+    if entry is None or entry.get("state") != "payment_expired" or entry.get("status") != Order.Status.CANCELLED:
+        return {"ok": True, "code": "not_offered"}
+    order = Order.objects.get(ref=entry["order_ref"])
+    skipped = add_reorder_items(None, order, cart_service=_ConversationCart(ctx), channel_ref=_catalog_channel_ref(ctx.channel_ref))
+    cart = view_cart(ctx)
+    if not cart.get("lines"):
+        return {"ok": True, "code": "nothing_available", "order_ref": order.ref,
+                "lead": REPEAT_NOTHING.format(ref=order.ref)}
+    lead = REPEAT_DONE.format(ref=order.ref)
+    if skipped:
+        lead = f"{lead}\n{REPEAT_SKIPPED.format(items=', '.join(skipped))}"
+    return {"ok": True, "code": "repeated", "order_ref": order.ref, "lead": lead, "cart": cart}
 
 
 def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
@@ -2316,8 +2409,9 @@ READ_TOOLS = frozenset({"search_storefront", "view_cart", "last_order", "order_s
 CART_TOOLS = frozenset({"set_item", "set_fulfillment", "review_order", "place_order"})
 
 
-#: Pagar o próprio pedido de novo ou de outra forma (OC-12): a autoridade de sacola basta.
-PAYMENT_TOOLS = frozenset({"repay_order"})
+#: Pagar o próprio pedido de novo ou de outra forma, e remontar na sacola o que venceu sem
+#: pagamento (OC-12): a autoridade de sacola basta.
+PAYMENT_TOOLS = frozenset({"repay_order", "repeat_order"})
 #: Alterar o próprio pedido (OC-11): a autoridade de sacola, com a confirmação pelo código da
 #: prévia (ADR-050), como o pedido fechado na conversa.
 AMEND_TOOLS = frozenset({"amend_order"})
@@ -2363,6 +2457,7 @@ repay_order = _guard(repay_order)
 #: Alterar o PRÓPRIO pedido (OC-11) é mudar compromisso: a autoridade de sacola, e nada se
 #: aplica sem o código da prévia que o cliente viu (ADR-050), conferido na transação.
 amend_order = _guard(amend_order)
+repeat_order = _guard(repeat_order)
 
 
 def _display_text(value) -> str:
@@ -2435,6 +2530,9 @@ AMEND_EFFECT = {
     "total": "Total: {after} (era {before}).",
     "total_same": "Total: continua {total}.",
     "collect": "A pagar na {mode}: {amount}.",
+    # Pix aberto e nada pago: o Pix antigo é cancelado e o novo sai pelo valor novo
+    # (decisão do dono, 24/11/2026).
+    "new_pix": "O código Pix muda para o novo valor.",
 }
 AMEND_CONFIRM = "Para confirmar, responda: confirmo {code}"
 AMEND_STALE = "O pedido {ref} mudou desde a minha pergunta. Confira de novo:"
@@ -2492,6 +2590,10 @@ AMEND_REFUSED = {
         "O pagamento do pedido {ref} está dividido em mais de uma forma, e aí a diferença precisa da equipe."
     ),
     "payment_unreadable": "Não consegui conferir o pagamento do pedido {ref} agora.",
+    "pix_paid_meanwhile": "O Pix do pedido {ref} foi pago agora há pouco, e aí a alteração precisa da equipe.",
+    "open_pix_not_cancelled": (
+        "Não consegui cancelar o código Pix antigo do pedido {ref} agora, e aí o pedido continua como estava."
+    ),
     "activation_running": "O pedido {ref} está indo para a cozinha neste instante.",
     "generic": "Não consigo fazer essa alteração no pedido {ref} por aqui.",
 }
@@ -2524,6 +2626,12 @@ REPAY_REFUSED = {
 OLD_PIX_CODE_WARNING = "Não pague o código Pix antigo."
 #: A forma de pagar como entra na frase ("não aceitamos pagamento com cartão").
 PAYMENT_FORM_WORDS = {"pix": "Pix", "card": "cartão"}
+#: Variante "oferecer" (OC-12): o pedido que venceu sem pagamento pode ser remontado na
+#: sacola, pela recompra da loja, com preço e disponibilidade de agora e confirmação nova.
+REPEAT_OFFER = "Se quiser, monto o mesmo pedido de novo, com os preços e a disponibilidade de agora. É só me dizer “monta de novo”."
+REPEAT_DONE = "Pronto, montei de novo na sacola os itens do pedido {ref}, com os preços de agora."
+REPEAT_SKIPPED = "Indisponível agora: {items}."
+REPEAT_NOTHING = "Nenhum item do pedido {ref} está disponível agora, então a sacola continua vazia."
 
 
 def _opens_as_page(action: dict) -> bool:
@@ -2710,6 +2818,11 @@ def _render_facts(name: str, result: dict) -> str:
         if result.get("confirm_code") and result.get("code") in {"proposed", "stale"}:
             rows.append(AMEND_CONFIRM.format(code=result["confirm_code"]))
         return "\n".join(rows)
+    if name == "repeat_order":
+        if not result.get("cart"):
+            return _display_text(result.get("lead") or "")
+        # O "pode fechar" vem de quem compõe o turno (``CONCIERGE_CART_NEXT``), como na sacola.
+        return "\n".join(part for part in (result["lead"], render_result("view_cart", result["cart"])) if part)
     if name == "send_web_link":
         return f"Continue no site: {result['url']}"
     if name == "last_order":
@@ -2801,6 +2914,10 @@ INPUT_SCHEMAS: dict[str, dict] = {
         },
         "required": ["order_ref", "sku", "qty"],
     },
+    "repeat_order": {
+        "properties": {"order_ref": {"type": "string"}},
+        "required": [],
+    },
     "repay_order": {
         "properties": {
             "order_ref": {"type": "string"},
@@ -2854,6 +2971,7 @@ _HANDLERS = {
     "add_to_order": add_to_order,
     "repay_order": repay_order,
     "amend_order": amend_order,
+    "repeat_order": repeat_order,
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,

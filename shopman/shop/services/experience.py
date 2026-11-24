@@ -16,7 +16,9 @@ Precedência (WP-RELEASE-01 D5), por experimento ativo da superfície:
    loja, ADR-042), então o experimento de uma loja não existe para a outra.
 5. **aderência**: a versão que esta sessão já recebeu, na mesma ``generation``.
    Recarregar a página não alterna a versão (D5).
-6. **allow-list de coorte**: ``internal`` e ``pilot`` veem a versão candidata.
+6. **coorte**: ``internal`` (os clientes marcados "É da equipe" de um operador
+   ativo, :func:`operator_customer_refs`, mais a allow-list da regra) e ``pilot``
+   (a allow-list) veem a versão candidata.
 7. **percentual por identidade**: FORA (D2: nenhum cliente nas coortes por ora; a
    regra recusa alocação diferente de zero).
 8. **padrão**.
@@ -79,28 +81,56 @@ class Assignment:
         return {"ref": self.ref, "variant": self.variant}
 
 
+#: Chave em ``Customer.metadata``: o ``pk`` do ``User`` do operador que este cliente é
+#: (decisão do dono, 24/11/2026, opção 1 da #3437). Escrita no Admin do cliente
+#: (``backstage/admin/customer_team.py``); schema em ``docs/reference/data-schemas.md``.
+TEAM_OPERATOR_KEY = "team_operator_id"
+
+
+def team_operators():
+    """Os ``User`` que contam como operador ATIVO da loja: a régua da coorte interna.
+
+    Ativo (``is_active``), da equipe (``is_staff``) e com ao menos um grupo, que é a
+    persona RBAC aplicada pelo ``setup_groups`` a partir do descritor da Instância.
+    Desligar alguém é qualquer um dos três gestos que a casa já faz: desativar a
+    conta, tirar o acesso de equipe ou tirar todos os grupos.
+    """
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.filter(
+        is_active=True,
+        is_staff=True,
+        groups__isnull=False,
+    ).distinct()
+
+
 def operator_customer_refs() -> frozenset[str]:
     """Os ``customer_ref`` da loja que pertencem a operadores cadastrados e ativos.
 
     É a coorte ``internal`` DERIVADA do cadastro de operadores (decisão D2): operador
     novo entra sozinho, desligado sai sozinho. Esta é a única função que liga
-    operador a cliente; trocar a ligação é trocar o corpo dela.
+    operador a cliente.
 
-    Hoje não existe ligação, e por isso devolve vazio (investigado no OC-20):
+    A ligação é a marca "É da equipe" no cadastro do cliente
+    (``Customer.metadata["team_operator_id"]``, decisão do dono de 24/11/2026): o
+    operador e o cliente são contas diferentes (o cliente entra pelo telefone e vira
+    outro ``User``, e a sessão do operador nunca chega à loja), então a ponte é
+    declarada uma vez por pessoa, no cadastro. Vale só enquanto o operador estiver em
+    :func:`team_operators`; o cliente sem a marca nunca entra (D2).
 
-    - o operador é um ``User`` do Django com ``is_staff``, grupos e PIN/passkey, sem
-      telefone (``backstage/services/operator.py:eligible_operators``,
-      ``setup_operators``);
-    - o cliente entra na loja pelo telefone e vira OUTRO ``User`` (``customer_<uuid>``),
-      ligado ao Guestman por ``CustomerUser`` (``doorman/services/_user_bridge.py``);
-    - a sessão do operador é fisicamente separada da sessão da loja
-      (``OperatorSessionDomainMiddleware``), então a loja nunca vê o ``User`` do
-      operador.
-
-    Até o dono escolher a ligação, a coorte interna é a lista explícita por
-    ``customer_ref`` em ``params["cohorts"]["internal"]``.
+    Só lê. A allow-list explícita em ``params["cohorts"]["internal"]`` continua como
+    complemento (conta de teste, por exemplo).
     """
-    return frozenset()
+    from shopman.guestman.models import Customer
+
+    operator_ids = [int(pk) for pk in team_operators().values_list("pk", flat=True)]
+    if not operator_ids:
+        return frozenset()
+    refs = Customer.objects.filter(
+        is_active=True,
+        **{f"metadata__{TEAM_OPERATOR_KEY}__in": operator_ids},
+    ).values_list("ref", flat=True)
+    return frozenset(ref.strip() for ref in refs if ref and ref.strip())
 
 
 def resolve(request, surface: str, *, customer_ref: str | None = None) -> tuple[Assignment, ...]:
@@ -241,7 +271,11 @@ def _cohort_lookup():
 
     def internal() -> frozenset[str]:
         if not cached:
-            cached.append(operator_customer_refs())
+            try:
+                cached.append(operator_customer_refs())
+            except Exception:  # silêncio-deliberado: sem cadastro legível, só a allow-list da regra vale
+                logger.warning("experience.operator_cohort_unavailable", exc_info=True)
+                cached.append(frozenset())
         return cached[0]
 
     return internal

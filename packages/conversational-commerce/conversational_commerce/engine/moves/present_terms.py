@@ -50,6 +50,9 @@ TEMPLATES = (
              "address, tell me which.",
              {"delivery_address_saved": SlotSpec(("fact",), "delivery_address_saved")}),
     Template("present_terms.needs_delivery_address_saved_declined", "1", MOVE, "What is the delivery address?"),
+    # A janela da entrega, depois do endereço (lista lastreada no fato): a entrega também tem horário.
+    Template("present_terms.needs_delivery_window", "1", MOVE, "Which delivery window works best? {delivery_window}",
+             {"delivery_window": SlotSpec(("fact",), "delivery_window")}),
     # O "outro" à oferta: todas as opções do fato, por referência opaca (P17), e a pergunta de qual.
     Template("present_terms.needs_delivery_address_saved_options", "1", MOVE,
              "Your saved addresses: {delivery_address_saved_options}. Which one should we deliver to?",

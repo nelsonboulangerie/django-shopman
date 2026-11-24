@@ -81,3 +81,19 @@ def test_the_summary_already_shows_the_cart_so_no_extra_part():
     turn_engine, world = engine(steps=steps, world=_world())
     *_, changed = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
     assert changed.reply.template_ids == ("present_terms.confirm",)
+
+
+def test_the_delivery_asks_the_window_after_the_address():
+    """A entrega também tem horário: depois do endereço completo, a janela do dia; só então os termos."""
+    delivery = _step("delivery", {"act": "choose_fulfillment", "fields": {"mode": "delivery"}})
+    address = _step("addr", {"act": "give_address"}, text="Rua das Flores 120")
+    at_three = _step("three-pm", {"act": "choose_fulfillment", "fields": {"time": "15:00"}})
+    world = _world()
+    world.state.delivery_windows = ("das 9h às 12h", "das 15h às 18h")
+    steps = (CLOSE, TOMORROW, delivery, address, at_three)
+    turn_engine, world = engine(steps=steps, world=world)
+    *_, mode, addr, window = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert mode.reply.template_ids[-1] == "present_terms.needs_delivery_address"
+    assert addr.reply.template_ids[-1] == "present_terms.needs_delivery_window"
+    assert "das 15h às 18h" in addr.text
+    assert window.reply.template_ids[-1] == "present_terms.confirm"

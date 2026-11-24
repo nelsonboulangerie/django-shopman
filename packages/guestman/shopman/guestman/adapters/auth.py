@@ -29,18 +29,19 @@ class IdentityResolver:
             raise IdentityConflict("handle_has_multiple_subjects")
         if not holder_ids:
             return None
-        # Contato que ninguém provou não abre a conta (decisão do dono D4,
-        # 23/11/2026; laudo S4). O telefone digitado no balcão, ou no Gestor,
-        # nasce sem prova: o código que chega nele prova a posse do número, não
-        # que quem o recebe é a pessoa que estava no balcão. Até o titular
-        # confirmar (o toque no WhatsApp, que o vínculo do ManyChat registra
-        # como verificado pelo canal), o número não resolve para a conta.
+        # Contato que ninguém provou não resolve para a conta (decisão do dono
+        # D4, 23/11/2026; laudo S4). O telefone digitado no balcão, ou no
+        # Gestor, nasce sem prova. Até o titular confirmar (o toque no WhatsApp,
+        # que o vínculo do ManyChat registra como verificado pelo canal, ou o
+        # código certo do SMS, decisão D), o número não resolve para a conta.
         #
         # ``None``, e não conflito, de propósito: pedir o código para um número
         # assim responde igual a pedir para um número que ninguém tem, e a loja
         # não vira oráculo de "este telefone é cliente". Quem prova a posse
-        # depois também não ganha conta nova por cima: o contato é único, e o
-        # ``create`` recusa com conflito. Falha FECHADO dos dois lados.
+        # depois (o código certo) é recebido pelo ``create``, que entrega o
+        # cadastro sem prova a quem acabou de provar o contato, e o
+        # ``bind_verified_handle`` grava a prova na mesma transação (decisão D,
+        # 24/11/2026): nunca nasce uma conta nova por cima do mesmo contato.
         #
         # Só vale para contato que se reivindica (e-mail e telefone); o
         # identificador de provedor (ManyChat, CPF) segue como era.
@@ -119,6 +120,9 @@ class IdentityResolver:
     def _create(self, kind: str, value: str):
         self._assert_claimable_kind(kind)
         normalized = self._normalize(kind, value)
+        claimed = self._claim_unproven_holder(kind, normalized)
+        if claimed is not None:
+            return claimed
         kwargs = {"email": normalized} if kind == "email" else {"phone": normalized}
         customer = customer_service.create(
             ref=Customer.generate_ref(),
@@ -137,6 +141,45 @@ class IdentityResolver:
             value_normalized=normalized,
             is_primary=True,
         )
+        return self._to_view(
+            customer,
+            purpose="login",
+            requested_kinds={kind},
+            requested_value=normalized,
+        )
+
+    def _claim_unproven_holder(self, kind: str, normalized: str):
+        """O cadastro que guarda este contato sem prova, para quem acabou de prová-lo.
+
+        O Doorman só chama o ``create`` depois do código CERTO e quando o
+        ``resolve`` não achou titular: o contato acabou de ser provado por quem o
+        recebeu. Se um cadastro só o guarda, e ninguém o provou ainda (o telefone
+        ou e-mail digitado pela equipe no balcão ou no Gestor), a prova é dele:
+        o código certo confirma o contato e entra nesse cadastro, e o
+        ``bind_verified_handle`` que vem em seguida, na mesma transação, grava a
+        prova (decisão D, 24/11/2026). Código errado nunca chega aqui.
+
+        A trava do cadastro é ``skip_locked``: o código já está travado nesta
+        transação, e a ordem da casa é cadastro antes de código (exclusão, troca
+        de contato). Esperar aqui inverteria a ordem; com o cadastro ocupado, a
+        entrada cai no ``create`` comum, que recusa com conflito porque o contato
+        é único. Falha fechado, sem impasse. Com a trava na mão, os titulares são
+        relidos: se a equipe tirou o número do cadastro enquanto isso, ele já não
+        é de ninguém e o ``create`` comum segue.
+        """
+        holder_ids, verified_ids = self._holders(kind, normalized)
+        if len(holder_ids) != 1 or verified_ids:
+            return None
+        holder_id = next(iter(holder_ids))
+        customer = (
+            Customer.objects.select_for_update(skip_locked=True)
+            .filter(pk=holder_id, is_active=True)
+            .first()
+        )
+        if customer is None:
+            return None
+        if self._holders(kind, normalized)[0] != {customer.pk}:
+            return None
         return self._to_view(
             customer,
             purpose="login",

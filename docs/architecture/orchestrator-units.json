@@ -13924,6 +13924,11 @@
             "SETTLE_REFUND_GATEWAY",
             "SETTLE_REFUND_CASH",
             "SETTLE_REFUND_CARD_MACHINE",
+            "SETTLE_NEW_PIX",
+            "_OPEN_CHARGE_KEYS",
+            "_open_charge_is_pending_pix",
+            "_retire_open_pix",
+            "_payment_after_settlement",
             "REFUND_KINDS",
             "ROUTE_CASH",
             "ROUTE_GATEWAY",
@@ -20637,6 +20642,7 @@
             "REASON_PILOT",
             "REASON_SESSION",
             "SESSION_KEY",
+            "TEAM_OPERATOR_KEY",
             "_active_experiments",
             "_cohort_lookup",
             "_decide",
@@ -20649,14 +20655,17 @@
             "operator_customer_refs",
             "order_mark",
             "remember",
-            "resolve"
+            "resolve",
+            "team_operators"
           ]
         }
       ],
       "touchpoints": [
         "service"
       ],
-      "domains": [],
+      "domains": [
+        "guestman"
+      ],
       "ports": [],
       "events": [],
       "directives": [],

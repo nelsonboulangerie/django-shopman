@@ -1574,6 +1574,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_CART_UPDATED_SHORT": {
         WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada.")},
     },
+    "CONCIERGE_ENGINE_ASK_DELIVERY_WINDOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual janela de entrega fica melhor? {delivery_window}")},
+    },
     "CONCIERGE_ENGINE_CART_UPDATED_TOTAL": {
         WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada. Total: {total}.")},
     },
@@ -1989,7 +1992,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Continuar")},
     },
     "LOGIN_AUTH_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Bem-vindo de volta", message="Tudo pronto. Levando você para a loja…")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Que bom te ver de novo", message="Tudo pronto. Levando você para a loja…")},
     },
     "DEVICE_TRUST_REDIRECTING": {
         WILDCARD: {WILDCARD: CopyEntry(message="Aparelho reconhecido. Entrando automaticamente…")},

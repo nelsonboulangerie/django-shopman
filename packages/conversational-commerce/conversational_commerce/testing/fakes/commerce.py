@@ -235,6 +235,9 @@ class FakeCommerceRead(FakeBase):
             elif address["missing"]:
                 value["missing"].append("delivery_address_details")
                 value["delivery_address_details"] = list(address["missing"])
+            elif self.state.delivery_windows and not self.state.fulfillment.get(cart_ref, {}).get("time"):
+                value["missing"].append("delivery_window")  # a janela, depois do endereço completo
+                value["delivery_window"] = list(self.state.delivery_windows)
         if not self.state.payment.get(cart_ref) and len(methods) > 1:
             value["missing"].append("payment_method")
         value["payment_method"] = methods

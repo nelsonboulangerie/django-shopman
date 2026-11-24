@@ -272,6 +272,12 @@ class ShopmanCommerceRead:
             # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
             value.update(_address_requirements(data, saved=saved))
             value["missing"] += [code for code in ADDRESS_CODES if code in value]
+            if data.get("delivery_date") and not any(code in value for code in ADDRESS_CODES) \
+                    and not data.get("delivery_time_slot"):
+                # A janela, depois do endereço completo: a loja on-line exige a janela na entrega (coordenação,
+                # 24/11). As opções, a casa diz no envio (a grade do dia); o fato leva o dia.
+                value["delivery_window"] = {"date": str(data["delivery_date"])}
+                value["missing"].append("delivery_window")
         chosen = str((data.get("payment") or {}).get("method") or "")
         if chosen not in methods and len(methods) > 1:
             value["missing"].append("payment_method")

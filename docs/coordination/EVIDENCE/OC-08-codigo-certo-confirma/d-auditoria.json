@@ -1,0 +1,548 @@
+{
+  "375": {
+    "codigo": {
+      "path": "/entrar",
+      "h1": "Informe o código",
+      "alerts": [],
+      "texts": [
+        {
+          "text": "Informe o código",
+          "size": 30,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Você pode colar o código. Ao completar, a confirmação é auto",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Código enviado por SMS para",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "(43) 99999-5313",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Código de 6 dígitos",
+          "size": 14,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Vale até 7h27.",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Reenviar em 60s",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Trocar telefone",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Salvar este aparelho?",
+          "size": 14,
+          "contrast": 10.45,
+          "ok": true
+        },
+        {
+          "text": "Use só em um aparelho seu. Você entra sem código enquanto vo",
+          "size": 12,
+          "contrast": 4.99,
+          "ok": true
+        },
+        {
+          "text": "Entrar",
+          "size": 14,
+          "contrast": 7.25,
+          "ok": true
+        },
+        {
+          "text": "Usamos seu telefone para autenticar a entrada. Seus dados nã",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Ao continuar, você confirma que é maior de idade e aceita os",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Termos de uso",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "O código não chegou?",
+          "size": 16,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Fale com a loja e resolvemos juntos.",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Falar com a loja",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        }
+      ],
+      "belowAA": [],
+      "under14": [
+        "12px \"Use só em um aparelho seu. Você entra sem código enquanto vo\"",
+        "12px \"Usamos seu telefone para autenticar a entrada. Seus dados nã\"",
+        "12px \"Ao continuar, você confirma que é maior de idade e aceita os\"",
+        "12px \"Termos de uso\""
+      ],
+      "scroll": "375/375"
+    },
+    "entrou": {
+      "path": "/entrar",
+      "h1": "Bem-vindo de volta, Iara!",
+      "alerts": [],
+      "texts": [
+        {
+          "text": "Bem-vindo de volta, Iara!",
+          "size": 30,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Tudo pronto. Levando você para a loja…",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Aparelho salvo. Cada entrada renova o prazo de 6 meses.",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        }
+      ],
+      "belowAA": [],
+      "under14": [
+        "12px \"Aparelho salvo. Cada entrada renova o prazo de 6 meses.\""
+      ],
+      "scroll": "375/375"
+    },
+    "conta": {
+      "path": "/conta",
+      "h1": "Olá, Iara",
+      "alerts": [],
+      "texts": [
+        {
+          "text": "Início",
+          "size": 14,
+          "contrast": 3.82,
+          "ok": false
+        },
+        {
+          "text": "Conta",
+          "size": 14,
+          "contrast": 4.95,
+          "ok": true
+        },
+        {
+          "text": "Olá, Iara",
+          "size": 30,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Nenhum pedido ainda",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Sair",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Pedidos",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Histórico completo, acompanhar e repetir",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Endereços",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Locais de entrega salvos",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Favoritos",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Produtos que você salvou",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Perfil",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Seus dados de contato",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Preferências",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Alimentação e notificações",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Segurança e dados",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Aparelhos, exportar e excluir",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        }
+      ],
+      "belowAA": [
+        {
+          "text": "Início",
+          "size": 14,
+          "contrast": 3.82,
+          "ok": false
+        }
+      ],
+      "under14": [],
+      "scroll": "375/375"
+    },
+    "sessao": {
+      "is_authenticated": true,
+      "customer_ref": "CUST-FEE3198EEE60",
+      "customer_name": "Iara Prado"
+    }
+  },
+  "desktop": {
+    "codigo": {
+      "path": "/entrar",
+      "h1": "Informe o código",
+      "alerts": [],
+      "texts": [
+        {
+          "text": "Informe o código",
+          "size": 30,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Você pode colar o código. Ao completar, a confirmação é auto",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Código enviado por SMS para",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "(43) 99999-5314",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Código de 6 dígitos",
+          "size": 14,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Vale até 7h27.",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Reenviar em 60s",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Trocar telefone",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Salvar este aparelho?",
+          "size": 14,
+          "contrast": 10.45,
+          "ok": true
+        },
+        {
+          "text": "Use só em um aparelho seu. Você entra sem código enquanto vo",
+          "size": 12,
+          "contrast": 4.99,
+          "ok": true
+        },
+        {
+          "text": "Entrar",
+          "size": 14,
+          "contrast": 7.25,
+          "ok": true
+        },
+        {
+          "text": "Usamos seu telefone para autenticar a entrada. Seus dados nã",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Ao continuar, você confirma que é maior de idade e aceita os",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Termos de uso",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "O código não chegou?",
+          "size": 16,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Fale com a loja e resolvemos juntos.",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Falar com a loja",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        }
+      ],
+      "belowAA": [],
+      "under14": [
+        "12px \"Use só em um aparelho seu. Você entra sem código enquanto vo\"",
+        "12px \"Usamos seu telefone para autenticar a entrada. Seus dados nã\"",
+        "12px \"Ao continuar, você confirma que é maior de idade e aceita os\"",
+        "12px \"Termos de uso\""
+      ],
+      "scroll": "1280/1280"
+    },
+    "entrou": {
+      "path": "/entrar",
+      "h1": "Bem-vindo de volta, Juno!",
+      "alerts": [],
+      "texts": [
+        {
+          "text": "Bem-vindo de volta, Juno!",
+          "size": 30,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Tudo pronto. Levando você para a loja…",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Aparelho salvo. Cada entrada renova o prazo de 6 meses.",
+          "size": 12,
+          "contrast": 5.38,
+          "ok": true
+        }
+      ],
+      "belowAA": [],
+      "under14": [
+        "12px \"Aparelho salvo. Cada entrada renova o prazo de 6 meses.\""
+      ],
+      "scroll": "1280/1280"
+    },
+    "conta": {
+      "path": "/conta",
+      "h1": "Olá, Juno",
+      "alerts": [],
+      "texts": [
+        {
+          "text": "Início",
+          "size": 14,
+          "contrast": 3.82,
+          "ok": false
+        },
+        {
+          "text": "Conta",
+          "size": 14,
+          "contrast": 4.95,
+          "ok": true
+        },
+        {
+          "text": "Olá, Juno",
+          "size": 30,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Nenhum pedido ainda",
+          "size": 14,
+          "contrast": 5.38,
+          "ok": true
+        },
+        {
+          "text": "Sair",
+          "size": 14,
+          "contrast": 11.27,
+          "ok": true
+        },
+        {
+          "text": "Pedidos",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Histórico completo, acompanhar e repetir",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Endereços",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Locais de entrega salvos",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Favoritos",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Produtos que você salvou",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Perfil",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Seus dados de contato",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Preferências",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Alimentação e notificações",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        },
+        {
+          "text": "Segurança e dados",
+          "size": 16,
+          "contrast": 12.76,
+          "ok": true
+        },
+        {
+          "text": "Aparelhos, exportar e excluir",
+          "size": 14,
+          "contrast": 6.09,
+          "ok": true
+        }
+      ],
+      "belowAA": [
+        {
+          "text": "Início",
+          "size": 14,
+          "contrast": 3.82,
+          "ok": false
+        }
+      ],
+      "under14": [],
+      "scroll": "1280/1280"
+    },
+    "sessao": {
+      "is_authenticated": true,
+      "customer_ref": "CUST-25C89E1441BF",
+      "customer_name": "Juno Prado"
+    }
+  }
+}

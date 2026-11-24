@@ -59,12 +59,12 @@ def _ctx():
     return TrustedContext(tenant="t", environment="test", subject="conversation:1")
 
 
-#: O quando já dito: estes testes são do endereço (#3482 pôs o dia e o horário antes dele).
-WHEN = {"delivery_date": "2026-11-25"}
+#: O quando já dito: estes testes são do endereço (#3482 pôs o dia antes dele, e a janela da entrega depois).
+WHEN = {"delivery_date": "2026-11-25", "delivery_time_slot": "slot-15"}
 
 
 def _missing(**data):
-    data = {**WHEN, **({"delivery_time_slot": "slot-15"} if data.get("fulfillment_type") == "pickup" else {}), **data}
+    data = {**WHEN, **data}
     _session(**data)
     fact = ShopmanCommerceRead(channel_ref=CHANNEL, ownership=ConversationOwnership()).requirements(_ctx(), "sess-1")
     return list(fact.value["missing"]), fact.value
@@ -130,6 +130,14 @@ def test_a_complete_address_asks_the_complement_once(conversation):
 def test_without_complement_answered_nothing_is_missing(conversation):
     assert _missing(fulfillment_type="delivery", delivery_address_structured={**FULL, "complement": ""},
                     payment={"method": "pix"})[0] == []
+
+
+def test_a_complete_address_without_a_window_asks_the_window_of_the_day(conversation):
+    """Coordenação, 24/11: a entrega também tem horário (a loja on-line exige a janela). Depois do endereço
+    completo, a janela; o fato leva o dia, e a casa diz as janelas no envio."""
+    missing, value = _missing(fulfillment_type="delivery", delivery_time_slot="",
+                              delivery_address_structured={**FULL, "complement": ""}, payment={"method": "pix"})
+    assert missing == ["delivery_window"] and dict(value["delivery_window"]) == {"date": "2026-11-25"}
 
 
 def test_pickup_never_asks_an_address(conversation):

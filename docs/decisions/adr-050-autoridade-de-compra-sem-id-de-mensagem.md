@@ -104,6 +104,13 @@ total) e o código tirado dela (`quote_code` sobre o hash do `order_edit.plan`);
 outro código (X5). A mesma confirmação de novo não aplica outra vez (X4). O item 3 continua
 valendo para `add_to_order`, `send_web_link` e `notify_when_available`.
 
+Pedido com o Pix aberto e nada pago (decisão do dono, 24/11/2026): a alteração que muda o
+valor troca o Pix. Depois do código, a Nice pergunta ao gateway se o Pix já foi pago; com o
+pedido e os pagamentos travados, o `order_edit.edit(reissue_open_pix=True)` cancela o Pix
+aberto no gateway por último e `payment.initiate` abre um novo pelo valor novo, em mensagem
+própria. Pago no meio, o pagamento vale e a alteração vai à equipe; cancelamento recusado
+no gateway, nada muda. Nunca um estorno silencioso.
+
 ## Consequências
 
 - O pedido na conversa fica possível com o ManyChat de hoje, sem esperar identificador.

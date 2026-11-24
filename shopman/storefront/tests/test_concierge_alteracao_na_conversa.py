@@ -13,8 +13,11 @@ O que se prova (N15 e os invariantes do §6):
 - X5: o pedido mudou entre a prévia e o código: o código antigo não aplica, e a prévia
   nova vem com outro código;
 - a mesma elegibilidade do balcão (``order_edit.state_refusal``), caso a caso, com a recusa
-  explicada; o dinheiro que o serviço não move sem gente (devolução, cobrança aberta) vai
-  à equipe com o contexto;
+  explicada; o dinheiro que o serviço não move sem gente (devolução) vai à equipe com o
+  contexto;
+- Pix aberto e nada pago (decisão do dono, 24/11/2026): depois do código, o Pix antigo é
+  cancelado no gateway e um novo sai pelo valor novo, em mensagem própria; pago entre a
+  prévia e o código, o pagamento vale e a alteração vai à equipe, sem estorno silencioso;
 - X1: a consulta só oferece a alteração que o serviço aceita agora; X3: nenhuma resposta
   traz endereço de API.
 """
@@ -27,9 +30,11 @@ import pytest
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order, OrderItem
 from shopman.payman import PaymentService
+from shopman.payman.models import PaymentIntent
 
 from shopman.shop.models import Conversation, ConversationMessage, DeliveryZone, Shop
 from shopman.shop.services import order_composition, order_edit, stock
+from shopman.shop.services import payment as payment_service
 from shopman.storefront.concierge import order_amendment, tools
 from shopman.storefront.tests import test_concierge_fechar_pedido as closing
 from shopman.storefront.tests.test_concierge_engine import (
@@ -364,17 +369,102 @@ def test_paid_order_that_gets_cheaper_goes_to_the_team_with_the_context(shop):
     )
 
 
-def test_open_pix_charge_keeps_the_value_and_goes_to_the_team(shop):
-    summary = _summary(shop, "pix")
-    closing._turn(shop, f"confirmo {closing._code(summary)}")
-    order = Order.objects.get()
+def _pix_order(conversation) -> Order:
+    summary = _summary(conversation, "pix")
+    closing._turn(conversation, f"confirmo {closing._code(summary)}")
+    return Order.objects.get()
 
-    reply = _turn(shop, "tira 1 pão francês do meu pedido")
 
-    assert reply[0].startswith(tools.AMEND_REFUSED["open_digital_charge"].format(ref=order.ref)), reply
-    assert _unchanged(order)
+def _live_pix(order) -> list[PaymentIntent]:
+    return list(PaymentIntent.objects.filter(order_ref=order.ref, status__in=["pending", "authorized"]))
+
+
+# ── Pix aberto: o código muda para o valor novo (decisão do dono, 24/11/2026) ──
+
+
+def test_open_pix_is_cancelled_and_a_new_one_follows_the_new_value(shop):
+    order = _pix_order(shop)
+    old_intent = order.data["payment"]["intent_ref"]
+    old_code = order.data["payment"]["copy_paste"]
+
+    asked = _turn(shop, "tira 1 pão francês do meu pedido")
+
+    lines = asked[0].splitlines()
+    assert "Pão Francês passa de 2 para 1." in lines, asked
+    assert "Total: R$ 0,90 (era R$ 1,80)." in lines, asked
+    assert "O código Pix muda para o novo valor." in lines, asked
+    assert [intent.ref for intent in _live_pix(order)] == [old_intent], "a prévia não toca no Pix"
+
+    done = _turn(shop, f"confirmo {_code(asked[0])}")
+
+    order.refresh_from_db()
+    payment = order.data["payment"]
+    assert done[0].splitlines()[0] == tools.AMEND_DONE["applied"].format(ref=order.ref), done
+    assert "O código Pix muda para o novo valor." in done[0].splitlines()
+    assert tools.PIX_CODE_FOLLOWS in done[0].splitlines(), done
+    assert done[1:] == [payment["copy_paste"]], "o código novo, sozinho na mensagem seguinte (OC-05)"
+    assert payment["method"] == "pix" and payment["copy_paste"] != old_code
+    assert PaymentIntent.objects.get(ref=old_intent).status == "cancelled", "o Pix antigo não se paga mais"
+    live = _live_pix(order)
+    assert [(intent.ref, intent.amount_q) for intent in live] == [(payment["intent_ref"], 90)]
+    assert order_composition.effective_total_q(order) == 90
+    assert order.events.get(type="order_edited").payload["settlement"]["kind"] == order_edit.SETTLE_NEW_PIX
+    _no_api(asked + done)
+    shop.refresh_from_db()
+    assert shop.state == Conversation.State.ACTIVE, "a Nice resolveu: a equipe não foi chamada"
+
+
+def test_race_pix_paid_between_the_preview_and_the_code_is_kept_and_goes_to_the_team(shop):
+    """O Pix pago entre a prévia e o "confirmo": o pagamento vale, nada é cancelado nem
+    estornado em silêncio; a alteração segue o caminho do pedido pago (a equipe)."""
+    order = _pix_order(shop)
+    paid_intent = order.data["payment"]["intent_ref"]
+    code = _code(_turn(shop, "tira 1 pão francês do meu pedido")[0])
+    assert payment_service.mock_confirm(order) is True  # o cliente pagou o Pix antigo
+
+    reply = _turn(shop, f"confirmo {code}")
+
+    order.refresh_from_db()
+    assert reply[0] == (
+        f"{tools.AMEND_REFUSED['manager_approval_required'].format(ref=order.ref, amount='R$ 0,90')} "
+        f"{tools.AMEND_TEAM_SUFFIX}"
+    ), reply
+    assert PaymentIntent.objects.get(ref=paid_intent).status == "captured"
+    assert PaymentService.refunded_total(paid_intent) == 0, "nenhum estorno silencioso"
+    assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1, "nenhum Pix novo"
+    assert not order.events.filter(type="order_edited").exists()
     shop.refresh_from_db()
     assert shop.state == Conversation.State.HANDOFF
+
+
+def test_race_gateway_refuses_to_cancel_the_old_pix_and_nothing_changes(shop, monkeypatch):
+    """Pago no gateway e o aviso ainda não chegou: o cancelamento é recusado lá. A alteração
+    inteira volta (o Pix antigo segue valendo) e a equipe vê."""
+    order = _pix_order(shop)
+    old_intent = order.data["payment"]["intent_ref"]
+    code = _code(_turn(shop, "tira 1 pão francês do meu pedido")[0])
+    monkeypatch.setattr(payment_service, "cancel_stale_intents", lambda *args, **kwargs: 0)
+
+    reply = _turn(shop, f"confirmo {code}")
+
+    order.refresh_from_db()
+    assert reply[0].startswith(tools.AMEND_REFUSED["open_pix_not_cancelled"].format(ref=order.ref)), reply
+    assert tools.AMEND_TEAM_SUFFIX in reply[0]
+    assert order.data["payment"]["intent_ref"] == old_intent
+    assert [intent.ref for intent in _live_pix(order)] == [old_intent]
+    assert not order.events.filter(type="order_edited").exists()
+    assert order_composition.effective_total_q(order) == 180
+
+
+def test_the_counter_still_refuses_a_value_change_with_an_open_pix(shop):
+    """A troca do Pix é do caminho da Nice (``reissue_open_pix``); o balcão segue como era."""
+    order = _pix_order(shop)
+    lines = [{"line_id": line["line_id"], "sku": line["sku"], "qty": 1} for line in order_edit.product_lines(order)]
+
+    with pytest.raises(order_edit.EditRefused) as refused:
+        order_edit.plan(order, lines=lines)
+
+    assert refused.value.code == "open_digital_charge"
 
 
 # ── Trocar o endereço ─────────────────────────────────────────────────
@@ -425,15 +515,24 @@ def test_status_offers_only_the_amendments_the_service_takes_now(shop):
     _no_api(status)
 
 
-def test_status_of_an_order_with_an_open_pix_does_not_offer_to_remove(shop):
-    summary = _summary(shop, "pix")
-    closing._turn(shop, f"confirmo {closing._code(summary)}")
+def test_status_of_an_order_with_an_open_pix_offers_to_remove_the_pix_follows(shop):
+    _pix_order(shop)
+
+    status = _turn(shop, "como está meu pedido?", [_act("order_status", "como está meu pedido?")])
+
+    assert "Se quiser remarcar ou tirar um item, é só me dizer." in status[0].splitlines(), status
+
+
+def test_status_of_a_paid_order_does_not_offer_to_remove(shop):
+    order = _order(shop, "NB-AM-17")
+    intent = PaymentService.settle(order.ref, 1470, "cash", idempotency_key=f"test:{order.ref}:cash")
+    Order.objects.filter(pk=order.pk).update(data={**order.data, "payment": {"method": "cash", "intent_ref": intent.ref}})
 
     status = _turn(shop, "como está meu pedido?", [_act("order_status", "como está meu pedido?")])
 
     lines = status[0].splitlines()
     assert tools.CONVERSATION_EQUIVALENTS["reschedule_order"] in lines, status
-    assert not any("tirar um item" in line for line in lines), status
+    assert not any("tirar um item" in line for line in lines), "devolução precisa da equipe: a Nice não oferece"
 
 
 def test_change_address_without_the_address_asks_and_takes_the_answer(shop, monkeypatch):
