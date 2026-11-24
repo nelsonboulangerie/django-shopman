@@ -46,28 +46,27 @@ class Cartao:
     falta: str = ""  # o que o motor ainda não tem para este cartão (vira issue)
 
 
+#: As falas respondem ao que a Nice pergunta hoje, como um cliente real (#3489): o quando (o dia, retirar ou
+#: entregar, o horário) e a forma de pagamento, que o canal oferece em mais de uma.
 CARTOES = (
     Cartao("cartao-1-retirada", "retirada, tudo numa frase",
-           ("quero 2 croissants para retirar amanhã às 16h", "pode fechar", "sim"),
-           pedido=True, itens={"croissant": 2}, recebe="pickup", dia=1,
-           falta="a sacola e o recebimento no mesmo turno são dois efeitos (#3374)"),
+           ("quero 2 croissants para retirar amanhã às 16h", "pode fechar", "pix", "sim"),
+           pedido=True, itens={"croissant": 2}, recebe="pickup", dia=1),
     Cartao("cartao-2-entrega", "entrega com endereço",
-           ("quero 1 pão de campanha com entrega", "amanhã", "Rua das Flores, 120, Centro, Londrina, CEP 86010-000",
-            "sem complemento", "pode fechar", "sim"),
-           pedido=True, itens={"campanha": 1}, recebe="delivery", dia=1,
-           falta="o motor não tem movimento para pedir o endereço e o complemento"),
+           # Sem "sem complemento": o mundo de memória não pergunta o complemento (só a casa pergunta, provado
+           # nos testes da loja) e o falso leria a fala como outro endereço, sem número.
+           ("quero 1 pain de campagne com entrega", "amanhã", "Rua das Flores, 120, Centro, Londrina, CEP 86010-000",
+            "pode fechar", "pix", "sim"),
+           pedido=True, itens={"campagne": 1}, recebe="delivery", dia=1),
     Cartao("cartao-3-mudar-no-meio", "muda a quantidade depois do resumo",
-           ("quero 2 croissants", "pode fechar", "na verdade 3", "sim", "sim"),
-           pedido=True, itens={"croissant": 3},
-           falta="depois de mudar a sacola com o resumo no ar, o motor não apresenta o resumo novo"),
+           ("quero 2 croissants", "pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "na verdade 3", "sim"),
+           pedido=True, itens={"croissant": 3}, recebe="pickup", dia=1),
     Cartao("cartao-4-desistir", "desiste no resumo",
-           ("quero 2 croissants", "pode fechar", "deixa pra lá"),
-           pedido=False, itens={"croissant": 2},
-           falta="o motor não tem ato de desistir do resumo"),
+           ("quero 2 croissants", "pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "deixa pra lá"),
+           pedido=False, itens={"croissant": 2}, recebe="pickup", dia=1),
     Cartao("cartao-5-pix", "fecha com Pix",
-           ("quero 2 croissants", "pode fechar", "pix", "sim"),
-           pedido=True, itens={"croissant": 2},
-           falta="o motor não pergunta a forma de pagamento; o copia-e-cola do Pix é da loja, depois do recibo"),
+           ("quero 2 croissants", "pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "sim"),
+           pedido=True, itens={"croissant": 2}, recebe="pickup", dia=1),
 )
 
 
