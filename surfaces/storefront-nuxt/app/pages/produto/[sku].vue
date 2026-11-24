@@ -336,12 +336,14 @@ useHead({
                  pronto são o que se decide primeiro; a descrição vem depois. -->
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <!-- O risco mudo não dizia que o desconto já está no valor grande. -->
-                <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta" data-decisive="price">
-                  antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
-                </p>
+                <!-- O risco mudo não dizia que o desconto já está no valor grande. O "antes"
+                     vem na linha do preço, não acima dela: cada linha a mais empurra a
+                     promessa para trás do card flutuante no celular (#3343). -->
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <p class="shop-price-strong" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
+                  <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta" data-decisive="price">
+                    antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
+                  </p>
                   <p v-if="product.unit_weight_label" class="shop-meta">
                     {{ product.unit_weight_label }}
                   </p>
@@ -467,10 +469,14 @@ useHead({
               <!-- Uma linha: o nome inteiro está logo acima, na página, e cada linha
                    a mais do card cobre mais da primeira tela (#3343). -->
               <p class="truncate shop-body" :title="product.name">{{ product.name }}</p>
-              <p class="shop-price-strong text-ink-foreground" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
-              <p v-if="product.unit_weight_label" class="text-sm text-ink-foreground/80">
-                {{ compactUnitWeightLabel(product.unit_weight_label) }}
-              </p>
+              <!-- Peso ao lado do preço: uma linha a menos no card que cobre a tela (#3343).
+                   Sem espaço, ele desce sozinho (flex-wrap). -->
+              <div class="flex flex-wrap items-baseline gap-x-2">
+                <p class="shop-price-strong text-ink-foreground" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
+                <p v-if="product.unit_weight_label" class="text-sm text-ink-foreground/80">
+                  {{ compactUnitWeightLabel(product.unit_weight_label) }}
+                </p>
+              </div>
               <p v-if="unavailableReason" class="mt-1 text-sm text-ink-foreground/80" data-decisive="availability">{{ unavailableReason }}</p>
             </div>
             <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" compact inverted />
