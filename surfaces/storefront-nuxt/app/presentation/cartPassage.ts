@@ -13,12 +13,17 @@ export interface OpenElsewhereNotice {
   bring: Action | null
 }
 
+// "3 itens" e "R$ 2,70" não quebram no meio da linha (no 375 o número ficava sozinho).
+function glue (text: string): string {
+  return text.replace(/ /g, '\u00A0')
+}
+
 export function openElsewhereNotices (cart: Pick<CartProjection, 'open_elsewhere'>): OpenElsewhereNotice[] {
   return (cart.open_elsewhere || []).map((entry: CartOpenElsewhere) => {
     const bring = entry.bring?.enabled ? entry.bring : null
     return {
       channel: entry.channel,
-      text: `Você tem outra sacola no ${entry.channel_label}: ${entry.items_phrase} (${entry.subtotal_display}).`,
+      text: `Você tem outra sacola no ${entry.channel_label}: ${glue(entry.items_phrase)} (${glue(entry.subtotal_display)}).`,
       consequence: bring
         ? `Ao trazer, ela sai do ${entry.channel_label}.`
         : 'Ela fica lá, separada desta.',

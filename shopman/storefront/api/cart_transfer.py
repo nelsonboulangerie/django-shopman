@@ -119,7 +119,9 @@ class CartContinueInConversationView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
         bridge = _bridge_channel()
-        if not bridge or knows_only_the_number(request):
+        from shopman.storefront.presentation.cart import nice_answers_this_customer
+
+        if not bridge or knows_only_the_number(request) or not nice_answers_this_customer(request, bridge):
             return _refused("transfer_unavailable", http_status=status.HTTP_409_CONFLICT)
         customer = get_authenticated_customer(request)
         try:

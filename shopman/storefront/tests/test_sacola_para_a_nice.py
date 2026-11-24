@@ -54,7 +54,13 @@ def _no_rate_limit(settings):
 
 
 @pytest.fixture
-def bridge(settings):
+def open_cohort(monkeypatch):
+    """A Nice atende todo visitante (coorte aberta), como o predicado da home (OC-06) responde."""
+    monkeypatch.setattr("shopman.storefront.presentation.home._concierge_answers_whatsapp", lambda: True)
+
+
+@pytest.fixture
+def bridge(settings, open_cohort):
     settings.SHOPMAN_CONCIERGE = BRIDGE_ON
     return settings
 
@@ -143,7 +149,7 @@ def _conversation_cart(conversation) -> Session | None:
 # ── X1: a ação só aparece quando a passagem é possível ───────────────
 
 
-def test_x1_continue_in_conversation_only_with_the_bridge_on(surface, settings):
+def test_x1_continue_in_conversation_only_with_the_bridge_on(surface, settings, open_cohort):
     browser = _browser(cart=_web_cart())
 
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS  # a chave da ponte desligada
@@ -157,6 +163,29 @@ def test_x1_continue_in_conversation_only_with_the_bridge_on(surface, settings):
 
     settings.SHOPMAN_CONCIERGE = {**BRIDGE_ON, "enabled": False}  # a Nice desligada
     assert _cart(browser)["continue_in_conversation"] is None
+
+
+def test_x1_closed_cohort_offers_only_to_whom_the_nice_answers(conversation, customer, settings):
+    """Chave ligada não basta: a Nice atende só a coorte (``allowed_subjects``) (X1).
+
+    Quem conversa com ela por um assinante da coorte vê o botão; quem está fora, ou
+    é anônimo, não vê, porque mandaria a mensagem e não encontraria a Nice.
+    """
+    settings.SHOPMAN_CONCIERGE = BRIDGE_ON  # coorte fechada: só o SUBJECT da fixture
+
+    inside = _browser(cart=_web_cart(owner=customer), customer=customer)
+    assert _cart(inside)["continue_in_conversation"]["label"] == "Continuar pelo WhatsApp"
+    assert _continue(inside).status_code == 200
+
+    anonymous = _browser(cart=_web_cart())
+    assert _cart(anonymous)["continue_in_conversation"] is None
+    assert _continue(anonymous).status_code == 409
+
+    ConversationBinding.objects.filter(conversation=conversation).update(subject="fora-da-coorte")
+    outside = _browser(cart=_web_cart(owner=customer), customer=customer)
+    assert _cart(outside)["continue_in_conversation"] is None
+    refused = _continue(outside)
+    assert refused.status_code == 409 and refused.data["error_code"] == "transfer_unavailable"
 
 
 def test_x1_no_action_with_an_empty_cart_or_a_forwarded_link(surface, customer, bridge):

@@ -896,13 +896,43 @@ def _bring_action(source_channel: str, *, bridge: str) -> Action:
     )
 
 
+def nice_answers_this_customer(request: HttpRequest, bridge_channel: str) -> bool:
+    """A Nice atende ESTE cliente no WhatsApp? Sem isso, oferecer a passagem é mentir (X1).
+
+    A Concierge pode atender só uma coorte (``allowed_subjects`` da conexão). Quem já
+    conversou com ela tem assinante conhecido: a resposta é a da admissão do runtime
+    (``service.is_allowed`` para o vínculo dele). Anônimo, ou cliente sem conversa:
+    só quando a Nice atende todo visitante, o mesmo predicado da home (OC-06).
+    """
+    from shopman.shop.models import ConversationBinding
+    from shopman.storefront.concierge import service
+    from shopman.storefront.identity import get_authenticated_customer
+    from shopman.storefront.presentation.home import _concierge_answers_whatsapp
+
+    customer = get_authenticated_customer(request) if getattr(request, "customer", None) is not None else None
+    if customer is not None:
+        binding = (
+            ConversationBinding.objects.filter(
+                conversation__customer_ref=customer.ref,
+                conversation__channel_ref=bridge_channel,
+                status=ConversationBinding.Status.ACTIVE,
+            )
+            .order_by("-pk")
+            .first()
+        )
+        if binding is not None:
+            return service.is_allowed(binding)
+    return _concierge_answers_whatsapp()
+
+
 def _continue_in_conversation(request: HttpRequest, channel_ref: str, *, is_empty: bool) -> Action | None:
     """"Continuar pelo WhatsApp", só quando a passagem é possível agora (X1, OC-16)."""
     from shopman.storefront.identity import knows_only_the_number
 
     if is_empty or knows_only_the_number(request):
         return None
-    if not _bridge_channel(channel_ref) or not cart_data.conversation_number_available():
+    bridge = _bridge_channel(channel_ref)
+    if not bridge or not cart_data.conversation_number_available() or not nice_answers_this_customer(request, bridge):
         return None
     return Action(
         ref="continue_in_conversation",

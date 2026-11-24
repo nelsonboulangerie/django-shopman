@@ -40,7 +40,7 @@ function elsewhere (bring: Action): CartOpenElsewhere {
 describe('a sacola aberta no WhatsApp (#3515)', () => {
   it('avisa e oferece trazer só com a ação ligada (X1)', () => {
     const [notice] = openElsewhereNotices({ open_elsewhere: [elsewhere(action())] })
-    expect(notice!.text).toBe('Você tem outra sacola no WhatsApp: 3 itens (R$ 2,70).')
+    expect(notice!.text).toBe('Você tem outra sacola no WhatsApp: 3\u00A0itens (R$\u00A02,70).')
     expect(notice!.consequence).toBe('Ao trazer, ela sai do WhatsApp.')
     expect(notice!.bring?.label).toBe('Trazer para cá')
   })
