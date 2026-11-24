@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { cartBatchFloor, cartHoldBanner, cartReservationNotice, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice, reservationDeadlineMs } from '~/presentation/cart'
 import { cartLinePromise, cartReadyLine } from '~/presentation/promise'
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+import { cartDayLine } from '~/presentation/menuDay'
 import { metaForCartLine } from '~/composables/useCartState'
 import type { CartItemProjection } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
@@ -105,6 +107,16 @@ function holdFor (line: CartItemProjection) {
 // recém-adicionada, que ainda espera a resposta do servidor, não cala a frase
 // das outras.
 const readyLine = computed(() => cartReadyLine(cart.value.items.filter(line => !isOptimisticLine(line))))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// B (OC-33 B1): a sacola de outro dia diz o dia no alto, com quando fica tudo
+// pronto e o gesto de trocar o dia (que volta à pergunta do cardápio).
+const { is: cartExperienceIs } = useExperience('cardapio-dia-primeiro')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayLine = computed(() => (
+  cartExperienceIs('b') && !cart.value.is_empty
+    ? cartDayLine(cart.value.day, cart.value.items.filter(line => !isOptimisticLine(line)))
+    : null
+))
 
 // Lixeira e "Usar N disponíveis" mostram que estão em andamento até a sacola
 // responder; a trava é por linha (remover A não trava B). A chave é a `line_id`:
@@ -177,7 +189,19 @@ useSeoMeta({
         <p v-if="!cart.is_empty" class="mt-2 shop-muted">
           {{ `${formatCount(cart.items_count, 'item', 'itens')} · ${cart.grand_total_display}` }}
         </p>
-        <p v-if="!cart.is_empty && readyLine" class="mt-1 flex items-start gap-2 shop-body" data-cart-ready-line>
+        <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+        <p v-if="dayLine" class="mt-1 flex flex-wrap items-center gap-x-1 shop-body" data-cart-day-line>
+          <Icon name="lucide:calendar-days" class="size-4 shrink-0" aria-hidden="true" />
+          <span class="font-semibold" data-decisive="availability">{{ dayLine.day }}</span>
+          <template v-if="dayLine.ready">
+            <span aria-hidden="true">·</span>
+            <span data-decisive="availability">{{ dayLine.ready }}</span>
+          </template>
+          <span aria-hidden="true">·</span>
+          <UiButton variant="link" to="/menu?trocar=1" class="h-auto min-h-6 px-1 py-0 shop-body" data-cart-day-change>Trocar</UiButton>
+        </p>
+        <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+        <p v-if="!cart.is_empty && readyLine && !dayLine" class="mt-1 flex items-start gap-2 shop-body" data-cart-ready-line>
           <Icon name="lucide:clock" class="mt-0.5 size-4 shrink-0" />
           {{ readyLine }}
         </p>

@@ -990,12 +990,32 @@ watch(() => checkout.value, value => {
   reconcileDeliverySlot()
 }, { immediate: true })
 
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// B (OC-33 B1): a cliente já escolheu o dia no cardápio e a sacola é desse dia
+// (`cart.day`, o dia em que ela reserva). O checkout abre nele, uma vez, sem
+// perguntar de novo (WCAG 3.3.7); trocar a data aqui continua possível.
+const { is: checkoutExperienceIs } = useExperience('cardapio-dia-primeiro')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+let menuDayApplied = false
+
 // Pré-seleciona a primeira data REALMENTE disponível só depois que a projection
 // existe. Na navegação cliente o fetch é lazy; usar o relógio local enquanto ele
 // ainda está pendente escolheria "hoje" mesmo num dia fechado e deixaria todos
 // os horários desabilitados. O watch cobre essa chegada tardia sem segurar a rota.
 function initializeDeliveryDate () {
   if (!checkout.value) return
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  const menuDay = checkoutExperienceIs('b') && !menuDayApplied ? (checkout.value.cart?.day?.date || '') : ''
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  if (menuDay && !isCheckoutDateUnavailable(menuDay, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) {
+    menuDayApplied = true
+    const parsedMenuDay = parseLocalDate(menuDay)
+    if (parsedMenuDay) {
+      chosenDate.value = parsedMenuDay
+      state.delivery_date = menuDay
+      return
+    }
+  }
   const restoredDate = state.delivery_date
   const restoredUsable = !!restoredDate && !isCheckoutDateUnavailable(restoredDate, dateBounds.value, closedDateEntries.value, closedWeekdays.value)
   // Já escolhida e ainda válida: a escolha é do cliente. Inválida (a sacola

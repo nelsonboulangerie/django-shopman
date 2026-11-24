@@ -447,7 +447,8 @@ export function useCartState () {
     return async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
       method: 'PUT',
       headers: await csrfHeaders(),
-      body: { qty },
+      // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+      body: meta.date ? { qty, date: meta.date } : { qty },
       credentials: 'include'
     })
   }
@@ -499,7 +500,8 @@ export function useCartState () {
       async () => $fetch<CartMutationResponse>(apiPath('/api/v1/cart/lines/'), {
         method: 'POST',
         headers: await csrfHeaders(),
-        body: { sku: meta.sku, qty, options: chosen },
+        // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+        body: meta.date ? { sku: meta.sku, qty, options: chosen, date: meta.date } : { sku: meta.sku, qty, options: chosen },
         credentials: 'include'
       }),
       { idempotent: false }

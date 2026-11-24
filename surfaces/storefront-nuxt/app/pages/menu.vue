@@ -22,6 +22,8 @@ import {
   installCatalogStructureSnapshot
 } from '~/presentation/continuumCatalog'
 import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+import { initialMenuDay, isTodayChoice, menuDayBarLabel } from '~/presentation/menuDay'
 import type { CatalogStructureState } from '~/types/continuum'
 import type { CatalogResponse } from '~/types/shopman'
 
@@ -43,6 +45,24 @@ const continuum = continuumEnabled
     })
   : null
 const structureCatalog = computed(() => catalogFromStructureSnapshot(continuum?.data.value))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// B (OC-33 B1): o cardápio pergunta "Para quando?" antes da lista e lê o dia
+// escolhido (`?date=`). Hoje com data é o cardápio de sempre no servidor (X13).
+const { is: menuExperienceIs } = useExperience('cardapio-dia-primeiro')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayFirst = computed(() => menuExperienceIs('b'))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const chosenMenuDay = useChosenMenuDay()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuDayRoute = useRoute()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const pickingMenuDay = ref(dayFirst.value && menuDayRoute.query.trocar === '1')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+if (dayFirst.value && typeof menuDayRoute.query.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(menuDayRoute.query.dia)) {
+  chosenMenuDay.value = menuDayRoute.query.dia
+}
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuQuery = computed((): Record<string, string> => (dayFirst.value && chosenMenuDay.value ? { date: chosenMenuDay.value } : {}))
 // Se o snapshot falhar ou estiver desligado, o SSR volta integralmente ao menu
 // canônico. Com snapshot utilizável, preço/estoque/sessão convergem no cliente.
 const canonicalOnServer = import.meta.server && (!continuumEnabled || !structureCatalog.value)
@@ -53,6 +73,8 @@ const {
   refresh: refreshCanonical
 } = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
   credentials: 'include',
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  query: menuQuery,
   $fetch: useStorefrontPageFetch(),
   server: canonicalOnServer,
   lazy: import.meta.client || !canonicalOnServer
@@ -62,7 +84,8 @@ await siteSeoReady
 // (seções, ordem) segue no ritmo próprio do snapshot; aqui só a leitura canônica.
 useLiveRevalidate(
   data,
-  () => $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include' }),
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  () => $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include', query: menuQuery.value }),
   { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS }
 )
 
@@ -91,6 +114,47 @@ async function refresh () {
 }
 
 requireContentOnSsr(error.value, !!catalog.value, 'Cardápio')
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// O dia em que o cardápio abre: o escolhido agora, o guardado na aba, o da sacola
+// (ou hoje, com a sacola de hoje). Sem nenhum, a pergunta vem antes da lista.
+const { cart: menuCart } = useCartState()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuDays = computed(() => catalog.value?.days || null)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+watch([dayFirst, menuDays], ([enabled, days]) => {
+  if (!enabled || !days) return
+  const cartDay = menuCart.value.day?.date || (menuCart.value.is_empty ? '' : days.today)
+  const resolved = initialMenuDay(days, [chosenMenuDay.value, cartDay])
+  if (resolved !== chosenMenuDay.value) chosenMenuDay.value = resolved
+}, { immediate: true })
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// Dia que o servidor recusou (passou, a casa fechou): volta à pergunta.
+watch(canonicalError, failure => {
+  if (dayFirst.value && failure && chosenMenuDay.value) {
+    chosenMenuDay.value = ''
+    pickingMenuDay.value = true
+  }
+})
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const showMenuDayPicker = computed(() => dayFirst.value && !!menuDays.value && (pickingMenuDay.value || !chosenMenuDay.value))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuDayBar = computed(() => (dayFirst.value && !showMenuDayPicker.value ? menuDayBarLabel(menuDays.value, chosenMenuDay.value) : ''))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuOnDay = computed(() => dayFirst.value && !!chosenMenuDay.value && !isTodayChoice(menuDays.value, chosenMenuDay.value))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+provideMenuDay({
+  date: computed(() => (dayFirst.value && !showMenuDayPicker.value ? chosenMenuDay.value : '')),
+  onDay: menuOnDay
+})
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function pickMenuDay (value: string) {
+  chosenMenuDay.value = value
+  pickingMenuDay.value = false
+  const { trocar: _closedPicker, ...query } = menuDayRoute.query
+  void router.replace({ query: { ...query, dia: value } })
+}
 
 const route = useRoute()
 const activeSection = ref('all')
@@ -586,6 +650,14 @@ useHead({
           </UiTabs>
         </div>
 
+        <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+        <p v-if="menuDayBar" class="mt-2 flex flex-wrap items-center gap-x-1 shop-body" data-menu-day-bar>
+          <Icon name="lucide:calendar-days" class="size-4 shrink-0" aria-hidden="true" />
+          <span class="font-semibold" data-decisive="availability">{{ menuDayBar }}</span>
+          <span aria-hidden="true">·</span>
+          <UiButton variant="link" class="h-auto min-h-6 px-1 py-0 shop-body" data-menu-day-change @click="pickingMenuDay = true">Trocar</UiButton>
+        </p>
+
         <p class="sr-only" aria-live="polite">{{ menuFocusLabel }}</p>
       </div>
     </section>
@@ -620,7 +692,11 @@ useHead({
             </UiAlertDescription>
           </UiAlert>
 
-          <section data-menu-results class="min-w-0 scroll-mt-40 space-y-4">
+          <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+          <MenuDayPicker v-if="showMenuDayPicker && menuDays" :days="menuDays" :model-value="chosenMenuDay" @pick="pickMenuDay" />
+
+          <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+          <section v-if="!showMenuDayPicker" data-menu-results class="min-w-0 scroll-mt-40 space-y-4">
             <!-- Mostrar só disponíveis: padrão da casa, chave do cliente. -->
             <div
               v-if="showAvailableOnlyToggle"
@@ -669,7 +745,8 @@ useHead({
             </div>
 
             <!-- "Seus favoritos": prateleira pessoal no topo, só logado e sem filtro ativo. -->
-            <MenuFavoritesShelf :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" :available-only="availableOnly" />
+            <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+            <MenuFavoritesShelf v-if="!menuOnDay" :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" :available-only="availableOnly" />
 
             <div v-if="activeSections.length" class="shop-stack-section">
               <!-- O cardápio não salta (P2-01). "Destaques" e as outras seções vivas

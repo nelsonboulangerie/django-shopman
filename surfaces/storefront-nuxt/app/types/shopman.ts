@@ -183,6 +183,29 @@ export interface CatalogProjection {
   // Copy de vitrine vazia / busca sem resultado (backend); opcional + fallback na tela.
   empty_state?: EmptyStateCtaCopy | null
   search_empty_state?: EmptyStateCtaCopy | null
+  // O "Para quando?" (OC-33 B1): os dias que dá para escolher e o escolhido.
+  days?: CatalogDaysProjection | null
+}
+
+// O dia escolhido no cardápio (OC-33 B1). `label` é o dia como a loja o diz
+// ("amanhã, quarta", "quinta, 26/11"); `opens_at` ("HH:MM") é o primeiro horário do dia.
+export interface CatalogDayProjection {
+  date: string
+  label: string
+  opens_at: string
+}
+
+// Os dias que o "Para quando?" pode oferecer (OC-33 B1), lidos do calendário da casa.
+export interface CatalogDaysProjection {
+  today: string
+  // Hoje ainda tem horário (falso: encerrado ou casa fechada).
+  today_open: boolean
+  // Próximos dias em que a casa opera, depois de hoje (ISO).
+  next_days: string[]
+  max_date: string
+  // 0 = segunda.
+  closed_weekdays: number[]
+  selected: CatalogDayProjection | null
 }
 
 export interface ComponentProjection {
@@ -440,11 +463,20 @@ export interface CartProjection {
   // Só na sacola vazia (com itens, cada linha já diz quando fica pronta): null
   // com a sacola cheia. Ver `OrderingProjection`.
   ordering?: OrderingProjection | null
+  // Para que dia é a sacola, quando é de OUTRO dia (OC-33 B1): o dia em que ela
+  // reserva. null para hoje (o padrão não se anuncia).
+  day?: CartDayProjection | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
   upsell: { sku: string, name: string, unit_price_q: number, price_display: string, image_url: string | null } | null
   actions: Action[]
+}
+
+// O dia da sacola (OC-33 B1): `date` ISO e `label` como a loja diz ("quinta, 26/11").
+export interface CartDayProjection {
+  date: string
+  label: string
 }
 
 // A sacola aberta em outro canal (OC-17). `bring` é a ação de trazê-la para cá:
@@ -958,6 +990,9 @@ export interface ProductMutationMeta {
   price_q: number
   price_display: string
   image_url: string | null
+  // O dia do "Para quando?" do cardápio (OC-33 B1, AAAA-MM-DD): vai com o
+  // Adicionar, e a reserva cai nele. Ausente fora do cardápio da variante B.
+  date?: string
 }
 
 // Alternativa em estoque oferecida quando o item escolhido falta. O backend
