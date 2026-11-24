@@ -83,3 +83,5 @@ class SyntheticState:
     payment_methods: tuple[str, ...] = PAYMENT_METHODS
     # carrinho → endereço da entrega (só no sistema de registro): o texto, a referência opaca e o que falta
     address: dict[str, dict] = field(default_factory=dict)
+    # Os endereços do cadastro do sujeito, por carrinho (o texto; o padrão primeiro).
+    saved_addresses: dict[str, list[str]] = field(default_factory=dict)

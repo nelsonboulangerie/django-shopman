@@ -112,6 +112,8 @@ class TurnState:
     closing: bool = False
     # A referência protegida do conteúdo do evento (spec 01): o endereço se lê por ela, nunca pelo texto.
     content_ref: str | None = None
+    # As necessidades cujo "sim" respondeu à condição pendente de sim ou não (``answers_condition``).
+    answered_conditions: set[str] = field(default_factory=set)
     # Algum movimento de efeito foi escolhido neste turno (executado ou não, inclusive em sombra).
     effect_chosen: bool = False
     # Necessidade que responde à oferta → por que a confirmação não autoriza (``None``: autoriza).
@@ -176,8 +178,16 @@ class TurnState:
         return code
 
     def answers_condition(self, need: NeedSpec) -> bool:
-        """O "sim" à condição pendente de sim ou não: aceita a primeira opção que o fato oferece."""
-        return need.act == "affirm" and self._yes_no_condition() is not None
+        """O "sim" à condição pendente de sim ou não: aceita a primeira opção que o fato oferece.
+
+        Lembrado no turno (``answered_conditions``): depois do efeito a condição já não falta, e o mesmo "sim"
+        continua sendo a resposta a ela (os termos voltam, ``changed_under_offer``)."""
+        if need.need_id in self.answered_conditions:
+            return True
+        if need.act == "affirm" and self._yes_no_condition() is not None:
+            self.answered_conditions.add(need.need_id)
+            return True
+        return False
 
     def declines_condition(self, need: NeedSpec) -> bool:
         """O "não" à condição pendente de sim ou não: recusa a opção, e o fechamento pergunta o que falta."""

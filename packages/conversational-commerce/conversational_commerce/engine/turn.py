@@ -873,6 +873,10 @@ class Engine:
                     offer, self._confirmation(ctx, event, subject, epoch), state.now)
         self._read_facts(ctx, state, budget)
         self._commercial_context(ctx, state, episode, understanding, budget)
+        if state.closing and state.requirements_key(state.subject.cart_ref or "") not in state.facts:
+            # Com o fechamento perguntando por uma condição, o "sim" e o "não" só se entendem pelo que falta
+            # (``answers_condition``): o fato vem antes de decidir se há termos a cotar.
+            self._requirements(ctx, state, budget)
         self._quote(ctx, state, budget)
         if any(need.act == "choose_payment" for need in needs) and state.requirements_key(
                 state.subject.cart_ref or "") not in state.facts:
