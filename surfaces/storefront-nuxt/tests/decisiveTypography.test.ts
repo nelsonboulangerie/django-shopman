@@ -62,14 +62,17 @@ describe('tipografia decisiva (X9, OC-30)', () => {
     expect(exceptions).toEqual(['app/components/Ui/Badge.vue'])
   })
 
-  it('o botão quebra o rótulo e cresce, nunca vaza com a fonte grande (X11)', () => {
+  it('o botão COM RÓTULO quebra o rótulo e cresce (X11); o de tamanho fixo fica como no main', () => {
+    // A prova por montagem está em tests/components/buttonGrow.test.ts (pontos do carrossel,
+    // ícone, pílula com altura própria). Aqui: o tamanho continua FIXO na escala e o
+    // crescimento é a variante `grow`, que o componente decide.
     const button = read('app/components/Ui/Button.vue')
-    const base = button.match(/base:\s*"([^"]+)"/)?.[1] || ''
-    expect(base).not.toContain('whitespace-nowrap')
-    expect(base).toContain('max-w-full')
-    for (const size of ['sm', 'default', 'lg']) {
-      expect(button).toMatch(new RegExp(`${size}:\\s*"min-h-`))
+    for (const [size, height] of [['xs', 'h-7'], ['sm', 'h-8'], ['default', 'h-9'], ['lg', 'h-10']]) {
+      expect(button).toMatch(new RegExp(`\\b${size}: "${height} `))
     }
+    expect(button).toContain('true: "max-w-full whitespace-normal text-center"')
+    expect(button).toContain('grow: grows,')
+    expect(button).toContain('floor: floors,')
   })
 
   it('aviso e erro de campo são decisivos por construção', () => {

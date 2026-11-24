@@ -48,6 +48,11 @@ async function expectReadable (page: Page, testInfo: TestInfo, route: string, op
       await page.emulateMedia({ colorScheme })
       await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${colorScheme}\\b`))
       await layoutSettled(page)
+      // Trocar a largura pode remontar o bloco (o resumo do finalizar some e volta entre o
+      // celular e o computador): espera os decisivos reaparecerem antes de medir.
+      if (opts.decisive) {
+        await expect.poll(async () => (await page.evaluate(auditTypographyInPage, {})).measured.length, { message: `${route} a ${width} px: algum [data-decisive] medido` }).toBeGreaterThan(0)
+      }
       const normal = await page.evaluate(auditTypographyInPage, {})
       expect(normal.findings, `${route} a ${width} px no tema ${colorScheme}: decisivo abaixo de 14 px ou sem AA, corpo de leitura abaixo de 16 px, rolagem lateral`).toEqual([])
       if (opts.decisive) expect(normal.measured.length, `${route} a ${width} px: nenhum [data-decisive] à vista`).toBeGreaterThan(0)
