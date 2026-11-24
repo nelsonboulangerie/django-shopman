@@ -655,7 +655,8 @@ class StorefrontPublicProductRecommendationsView(
     ele pagava TTFB inteiro (~0,72 s medidos) para o mesmo corpo que todo visitante
     anônimo recebe: o rail mostra o que se parece com o produto, e para quem não
     tem sessão o corpo é idêntico por construção. Sem cookie, a borda serve a
-    seção por 60 s (``RECOMMENDATIONS_EDGE_CACHE_CONTROL``).
+    seção por 30 s, mais 30 s de revalidação em segundo plano
+    (``RECOMMENDATIONS_EDGE_CACHE_CONTROL``, sob o teto de 60 s do X8).
 
     O que é pessoal (favorito, quantidade na sacola) não se perde: o request
     anônimo já vem com ``is_favorite=false`` e ``qty_in_cart=0``, e o cliente
