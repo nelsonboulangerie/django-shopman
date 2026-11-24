@@ -908,6 +908,50 @@ def test_the_delivery_summary_says_the_fee_and_the_address_and_the_total_has_the
 
 
 @pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_order_placed_in_the_conversation_with_delivery_counts_the_fee_once(order_on_air, outbox, monkeypatch,
+                                                                                django_capture_on_commit_callbacks):
+    """Coordenação (24/11), depois de o ensaio no ar achar a taxa contada duas vezes NO RESUMO: o pedido GRAVADO pela
+    conversa, com zona de entrega de verdade, é itens mais UMA taxa, com uma linha de taxa só. Pelo serviço de
+    verdade: o fechamento, o "sim" e o registro da casa (``tools.place_order``); só a geocodificação é de teste."""
+    from shopman.orderman.models import Order, Session
+
+    from shopman.shop.models import DeliveryZone
+    from shopman.storefront.concierge import address, model_reader
+    from shopman.storefront.tests.test_concierge_authority import _located
+    from shopman.storefront.tests.test_concierge_engine import SKU, _tomorrow
+
+    script = {"pode fechar": [{"act": "place_order"}], "às 15h": [{"act": "choose_fulfillment", "time": "15:00"}],
+              "pix": [{"act": "choose_payment", "payment": "pix"}], "sim": [{"act": "affirm"}],
+              "[endereço omitido], Centro": [{"act": "give_address"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [])
+    monkeypatch.setattr("shopman.shop.services.geocoding.forward_geocode_structured",
+                        lambda text: _located("Rua das Flores", "120", "86010-000"))
+    shop = Shop.load()
+    shop.conversational_live_inform = True
+    shop.save()
+    DeliveryZone.objects.create(shop=shop, name="Centro", zone_type=DeliveryZone.ZONE_TYPE_CEP_PREFIX,
+                                match_value="860", fee_q=800, is_active=True)
+    Session.objects.create(session_key="sess-fee-order", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 2, "unit_price_q": 90, "line_total_q": 180}],
+                           data={"fulfillment_type": "delivery", "delivery_date": _tomorrow()})
+    order_on_air.session_key = "sess-fee-order"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS), django_capture_on_commit_callbacks(execute=True):
+        for index, said in enumerate(["pode fechar", "Rua das Flores 120, Centro", "sem complemento", "às 15h", "pix",
+                                      "sim"]):
+            _receive(order_on_air, said, f"fee-order-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    assert Order.objects.exists(), " ||| ".join(outbox.sent)  # o "sim" registrou
+    order = Order.objects.get()
+    assert order.total_q == 180 + 800, (order.total_q, outbox.sent)  # dois pães e UMA taxa
+    assert order.items.filter(sku="__DELIVERY_FEE__").count() == 1
+    assert order.data["payment"]["amount_q"] == 980
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
 def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it(order_on_air, outbox, monkeypatch):
     """Coordenação, 24/11: na entrega, depois do endereço, "Qual janela de entrega fica melhor?" com as janelas do
     dia (as da loja on-line); a hora dita grava a janela, e o resumo a mostra. Pelo serviço real."""
