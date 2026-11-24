@@ -8062,10 +8062,12 @@
           "responsibility": "leitura",
           "symbols": [
             "AcceptanceWindow",
+            "MenuDays",
             "acceptance_window",
             "availability_dates",
             "customer_checkout_defaults",
             "logger",
+            "menu_days",
             "shop_today"
           ]
         }
@@ -8482,6 +8484,7 @@
             "_read_grid",
             "_today_orderable",
             "logger",
+            "opening_slot",
             "read_promise_facts",
             "ready_window"
           ]

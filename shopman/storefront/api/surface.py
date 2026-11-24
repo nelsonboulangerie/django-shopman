@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django_ratelimit.core import is_ratelimited
-from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny
@@ -27,6 +27,7 @@ from shopman.shop.observability import (
     log_catalog_observation,
 )
 from shopman.shop.omotenashi import resolve_copy
+from shopman.shop.policies import preorder_date
 from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
@@ -52,6 +53,7 @@ from shopman.storefront.presentation import (
 from shopman.storefront.presentation.product_detail import build_product_recommendations
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
+    CartMutationDateRefused,
     CartMutationNotFound,
     CartMutationOptionRefused,
     CartMutationUnavailable,
@@ -485,6 +487,15 @@ class StorefrontMenuView(APIView):
     include_cart = True
 
     def get(self, request, collection: str | None = None):
+        # ``?date=AAAA-MM-DD``: o dia do "Para quando?" (OC-33 B1). Leitura aditiva:
+        # sem ela (ou com hoje) o cardápio é o de sempre. A gêmea pública recusa
+        # qualquer parâmetro, então o dia nunca vai para o cache de borda.
+        target_date, refusal = preorder_date.chosen_day(request.GET.get("date"))
+        if refusal:
+            return Response(
+                {"detail": refusal, "field": "date", "errors": {"date": [refusal]}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         with capture_catalog_timing() as timing:
             with catalog_stage("projection"):
                 if collection is not None:
@@ -493,6 +504,7 @@ class StorefrontMenuView(APIView):
                     channel_ref=STOREFRONT_CHANNEL_REF,
                     collection_ref=collection,
                     request=request,
+                    target_date=target_date,
                 )
                 with catalog_stage("personalization"):
                     catalog_projection = projection_data(catalog)
@@ -503,7 +515,8 @@ class StorefrontMenuView(APIView):
             shadow = None
             shadow_error = False
             shadow_query_count = 0
-            if collection is None and shadow_enabled():
+            # A sombra compara o cardápio de HOJE; o de outro dia não tem cabeça.
+            if collection is None and target_date is None and shadow_enabled():
                 try:
                     queries_before_shadow = timing.query_count
                     with catalog_stage("shadow"):
@@ -555,7 +568,21 @@ class StorefrontMenuView(APIView):
     get=extend_schema(
         tags=["storefront"],
         summary="Storefront canonical catalog projection",
-        responses={200: OpenApiResponse(description="Catalog projection without cart projection.")},
+        parameters=[
+            OpenApiParameter(
+                "date",
+                str,
+                required=False,
+                description=(
+                    "O dia do 'Para quando?' (AAAA-MM-DD, OC-33 B1). Disponibilidade e promessa "
+                    "respondem para esse dia; hoje ou ausente = o cardápio de sempre."
+                ),
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(description="Catalog projection without cart projection."),
+            400: OpenApiResponse(description="Dia que a casa não combina (field=date)."),
+        },
     ),
 )
 class StorefrontCatalogView(StorefrontMenuView):
@@ -1325,13 +1352,19 @@ class CartSkuQtyView(APIView):
 
         serializer = SetSkuQtySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        chosen_date, refused = _chosen_cart_date(serializer.validated_data.get("date"))
+        if refused is not None:
+            return refused
 
         try:
             outcome = set_qty_by_sku(
                 request,
                 sku=sku.strip(),
                 qty=serializer.validated_data["qty"],
+                chosen_date=chosen_date,
             )
+        except CartMutationDateRefused as refused_date:
+            return _date_refused_response(refused_date.message)
         except CartMutationNotFound:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except CartItemRefused as refused:
@@ -1391,6 +1424,34 @@ def _option_refused_response(refused: CartMutationOptionRefused) -> Response:
     )
 
 
+def _date_refused_response(message: str) -> Response:
+    """400 no dialeto ``{detail, field, errors}``: o dia escolhido não pode ser combinado."""
+    return Response(
+        {
+            "detail": message,
+            "field": "date",
+            "errors": {"date": [message]},
+            "error_code": "date_refused",
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _chosen_cart_date(raw):
+    """``(dia, recusa)``: o dia do "Para quando?" que chega com o Adicionar (OC-33 B1).
+
+    Sem ``date``, ``(None, None)``: a sacola segue a régua de sempre. Hoje volta
+    como hoje (a escolha explícita de hoje também é escolha); dia que a casa não
+    combina volta como a resposta de recusa.
+    """
+    if raw is None or not str(raw).strip():
+        return None, None
+    day, refusal = preorder_date.chosen_day(raw)
+    if refusal:
+        return None, _date_refused_response(refusal)
+    return day or timezone.localdate(), None
+
+
 def _cart_rate_limited(request, *, group: str, method: str):
     if _request_is_rate_limited(request, group=group, rate="120/m", method=method):
         return _rate_limited_response(
@@ -1437,13 +1498,19 @@ class CartLinesView(APIView):
         serializer = AddCartLineSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        chosen_date, refused = _chosen_cart_date(data.get("date"))
+        if refused is not None:
+            return refused
         try:
             outcome = add_line_with_options(
                 request,
                 sku=data["sku"].strip(),
                 qty=data["qty"],
                 options=[{"group": o["group"].strip(), "ref": o["ref"].strip()} for o in data["options"]],
+                chosen_date=chosen_date,
             )
+        except CartMutationDateRefused as refused_date:
+            return _date_refused_response(refused_date.message)
         except CartMutationNotFound:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except CartItemRefused as refused:

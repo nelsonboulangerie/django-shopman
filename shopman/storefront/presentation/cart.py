@@ -31,6 +31,7 @@ from shopman.storefront.presentation.promise import (
     ORDERING_NONE,
     OrderingProjection,
     PromiseProjection,
+    day_label,
     promise_for,
 )
 
@@ -219,6 +220,20 @@ class CartTransferArrivalProjection:
 
 
 @dataclass(frozen=True)
+class CartDayProjection:
+    """Para que dia é a sacola, quando é de OUTRO dia (OC-33 B1).
+
+    ``date`` (ISO) é o dia em que a sacola reserva: o escolhido no "Para
+    quando?" do cardápio, ou o da fornada que ela já reservou. ``label`` é o dia
+    como a loja o diz ("amanhã, quarta", "quinta, 26/11"), o mesmo do cardápio.
+    O checkout abre nele, sem perguntar de novo.
+    """
+
+    date: str
+    label: str
+
+
+@dataclass(frozen=True)
 class CartProjection:
     """Full projection for the storefront cart."""
 
@@ -340,6 +355,9 @@ class CartProjection:
     # já diz quando fica pronta, e reler o cardápio inteiro a cada gesto na
     # sacola seria custo sem leitor. ``None`` com a sacola cheia.
     ordering: OrderingProjection | None = None
+    # O dia da sacola quando ela é de outro dia (OC-33 B1). ``None`` para hoje:
+    # o padrão não se anuncia.
+    day: CartDayProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -474,6 +492,16 @@ def build_cart(
         actions=actions,
         group_savings_message=data.group_savings_message,
         ordering=ordering,
+        day=_cart_day(data),
+    )
+
+
+def _cart_day(data: cart_data.CartProjection) -> CartDayProjection | None:
+    if data.cart_date is None:
+        return None
+    return CartDayProjection(
+        date=data.cart_date.isoformat(),
+        label=day_label(data.cart_date, today=timezone.localdate()),
     )
 
 

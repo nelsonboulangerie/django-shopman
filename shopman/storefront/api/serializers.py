@@ -8,6 +8,9 @@ from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH
 
 class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
+    # O dia do "Para quando?" do cardápio (OC-33 B1), ``AAAA-MM-DD``. Opcional:
+    # sem ele a sacola segue a régua de sempre. Quem o confere é o serviço da sacola.
+    date = serializers.CharField(required=False, allow_blank=True, max_length=10)
 
 
 class CartLineOptionSerializer(serializers.Serializer):
@@ -21,6 +24,8 @@ class AddCartLineSerializer(serializers.Serializer):
     sku = serializers.CharField(max_length=64)
     qty = serializers.IntegerField(min_value=1, max_value=99)
     options = CartLineOptionSerializer(many=True, required=False, default=list)
+    # O dia do "Para quando?" do cardápio (OC-33 B1), como em ``SetSkuQtySerializer``.
+    date = serializers.CharField(required=False, allow_blank=True, max_length=10)
 
 
 class CartLineNotesSerializer(serializers.Serializer):

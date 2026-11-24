@@ -1088,6 +1088,7 @@ def bundle_availability_for_skus(
     channel_ref: str,
     expanded: dict[str, list[dict]] | None = None,
     today_availability: dict[str, dict] | None = None,
+    target_date: date | None = None,
 ) -> dict[str, dict | None]:
     """Availability for bundle SKUs, derived from their components' stock.
 
@@ -1100,6 +1101,10 @@ def bundle_availability_for_skus(
     (o pronto de hoje cru, de :func:`availability_and_today_for_skus`) deixam o
     cardápio reaproveitar o que já leu: componente que já está em
     ``today_availability`` não é lido de novo, e só o que falta vai ao Stockman.
+
+    ``target_date`` é o dia que a cliente escolheu no cardápio (OC-33 B1): os
+    componentes são lidos naquele dia, com a margem de validade dele. Sem ele, hoje.
+    ``today_availability`` é, então, a leitura já feita DAQUELE dia.
     """
     if not bundle_skus:
         return {}
@@ -1117,7 +1122,7 @@ def bundle_availability_for_skus(
             availability_for_skus(
                 missing,
                 channel_ref=channel_ref,
-                target_date=timezone.localdate(),
+                target_date=target_date or timezone.localdate(),
             )
         )
 

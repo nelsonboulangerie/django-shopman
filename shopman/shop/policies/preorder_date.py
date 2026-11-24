@@ -17,7 +17,36 @@ dizer antes da cotação, com o item e o dia.
 
 from __future__ import annotations
 
+from datetime import date
+
 from django.utils import timezone
+
+
+def chosen_day(raw: str | None, *, today: date | None = None) -> tuple[date | None, str | None]:
+    """O dia que a cliente escolheu no "Para quando?" do cardápio (OC-33 B1).
+
+    Devolve ``(dia, recusa)``. Vazio ou HOJE é ``(None, None)``: hoje é o
+    cardápio de sempre, sem data (X13). Data ilegível ou que a casa não combina
+    (passada, além do máximo, dia fechado: ``preorder_dates.date_refusal``) volta com a
+    frase da recusa, para a tela dizer por quê. A loja pergunta isto ao ler o
+    cardápio do dia e ao pôr o primeiro item na sacola daquele dia.
+    """
+    from shopman.shop.services.preorder_dates import date_refusal
+
+    text = str(raw or "").strip()
+    if not text:
+        return None, None
+    try:
+        day = date.fromisoformat(text)
+    except ValueError:
+        return None, "Data inválida. Use AAAA-MM-DD."
+    today = today or timezone.localdate()
+    if day == today:
+        return None, None
+    refusal = date_refusal(day, today=today)
+    if refusal:
+        return None, refusal
+    return day, None
 
 
 def preorder_date_errors(

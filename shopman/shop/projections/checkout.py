@@ -128,6 +128,50 @@ def availability_dates(
         return (), (), False
 
 
+@dataclass(frozen=True)
+class MenuDays:
+    """Os dias que o "Para quando?" do cardápio pode oferecer (OC-33 B1).
+
+    ``today_open``: hoje ainda tem horário de retirada ou entrega (a mesma conta
+    de ``availability_dates``). ``next_days``: os próximos dias em que a casa
+    opera, DEPOIS de hoje, em ordem. ``max_date``: o último dia que a casa aceita
+    encomenda (``max_preorder_days``), teto do "Outro dia".
+    """
+
+    today: date
+    today_open: bool
+    next_days: tuple[date, ...]
+    max_date: date
+    closed_weekdays: tuple[int, ...]
+
+
+def menu_days(max_preorder_days: int, *, count: int = 4, now: datetime | None = None) -> MenuDays | None:
+    """Os dias do "Para quando?": hoje (se ainda dá) e os ``count`` próximos dias operantes.
+
+    Mesmas fontes do checkout: ``business_calendar`` (expediente, feriado,
+    férias) e a grade de hoje (``fulfillment_window``). Só lê. ``None`` se a
+    leitura falhar: a tela não oferece dia que ninguém conferiu.
+    """
+    try:
+        from shopman.shop.services import business_calendar, fulfillment_window
+
+        today = fulfillment_window._local_today(now=now)
+        dates = business_calendar.available_dates(
+            max_count=count + 1, horizon_days=max_preorder_days, now=now,
+        )
+        today_open = today in dates and bool(fulfillment_window.delivery_windows_for(today, now=now))
+        return MenuDays(
+            today=today,
+            today_open=today_open,
+            next_days=tuple(day for day in dates if day > today)[:count],
+            max_date=today + timedelta(days=max(0, max_preorder_days)),
+            closed_weekdays=tuple(business_calendar.closed_weekdays()),
+        )
+    except Exception:
+        logger.debug("checkout_projection_menu_days_failed", exc_info=True)
+        return None
+
+
 def customer_checkout_defaults(customer_ref: str, channel_ref: str) -> dict:
     """Preferências lembradas pelo checkout, no read-side canônico.
 

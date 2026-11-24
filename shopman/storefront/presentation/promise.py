@@ -106,6 +106,42 @@ def promise_for(
     return PromiseProjection(kind, day.isoformat(), _clock(start), day_label, text)
 
 
+def promise_on_day(
+    sku: str,
+    facts: PromiseFacts,
+    *,
+    day: date,
+    orderable: bool,
+) -> PromiseProjection | None:
+    """A promessa de ``sku`` no dia ``day`` que a cliente escolheu no cardápio (OC-33 B1).
+
+    É :func:`promise_for` com o dia fixo (``planned_for=day``): a mesma prontidão
+    e a mesma grade que o checkout oferece naquele dia. Só vale se o primeiro
+    horário cair NO dia: item cuja hora de pronto passa do último horário do dia
+    não é daquele dia, e fica sem promessa (``None``: indisponível no dia).
+
+    A frase é a do dia já escolhido, que a barra "Para quinta, 26/11" já diz:
+    disponível desde a abertura não diz nada (o padrão não se anuncia, dono,
+    24/11/2026); depois da abertura, "A partir das 11h".
+    """
+    window = ready_window(sku, facts, orderable=orderable, planned_for=day)
+    if window is None or window.day != day:
+        return None
+    opening = facts.grid(day)
+    from_opening = bool(opening) and window.start <= opening[0]
+    text = "" if from_opening else f"A partir das {_hour(window.start)}"
+    # O dia escolhido é sempre depois de hoje (hoje é o cardápio sem data, X13):
+    # o item espera a fornada DAQUELE dia.
+    return PromiseProjection(
+        KIND_BATCH, day.isoformat(), _clock(window.start), day_label(day, today=facts.today), text,
+    )
+
+
+def day_label(day: date, *, today: date) -> str:
+    """O dia como a loja o diz: "hoje", "amanhã, terça", "quinta, 26/11"."""
+    return _day_label(day, today=today)
+
+
 def _local_clock(value) -> time:
     from django.utils import timezone
 
