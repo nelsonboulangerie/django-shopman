@@ -20,6 +20,8 @@ import {
   toneClass,
   unmatchedItems,
   versionRefLabel,
+  versionUsage,
+  versionUsageLine,
 } from "~/presentation/recipeBook";
 
 const route = useRoute();
@@ -78,6 +80,9 @@ function selectVersion(version: RecipeVersionProjection) {
 const subtitle = computed(() => (entry.value && selected.value ? `Versão ${selected.value.number}` : ""));
 const stale = computed(() => isStale({ error: !!error.value, hasData: !!entry.value }));
 const isCurrent = computed(() => !!selected.value && selected.value.number === entry.value?.current_version_number);
+// A reputação da versão (#2387, fatia 2): os lotes fechados com ela, já contados no servidor.
+const usage = computed(() => entry.value?.usage ?? null);
+const selectedUsage = computed(() => versionUsage(usage.value, selected.value?.number));
 const editAction = computed(() =>
   canEdit.value && entry.value?.is_active
     ? {
@@ -479,12 +484,29 @@ const publishDiff = computed(() => [
                     <template v-else-if="version.created_at_display"> · criada {{ version.created_at_display }}</template>
                     <template v-if="version.created_by"> · {{ version.created_by }}</template>
                   </span>
+                  <span
+                    v-if="versionUsageLine(versionUsage(usage, version.number))"
+                    class="text-xs font-normal tabular-nums text-muted-foreground"
+                    data-version-usage
+                  >{{ versionUsageLine(versionUsage(usage, version.number)) }}</span>
                 </NuxtButton>
               </li>
             </ol>
             <p v-else class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">Nenhuma versão ainda.</p>
 
             <div class="mt-4 grid gap-3">
+              <NuxtCard v-if="selected" data-version-batches>
+                <h3 class="text-sm font-semibold">Lotes da versão {{ selected.number }}</h3>
+                <template v-if="selectedUsage">
+                  <p class="mt-1 text-sm">{{ selectedUsage.summary_display }}.</p>
+                  <ul v-if="selectedUsage.quality.length" class="mt-2 grid gap-0.5 text-xs text-muted-foreground" aria-label="Qualidade dos lotes">
+                    <li v-for="grade in selectedUsage.quality" :key="grade.grade_ref" class="tabular-nums">
+                      {{ grade.label }}: {{ grade.quantity_display }}<template v-if="grade.share_display"> ({{ grade.share_display }})</template>
+                    </li>
+                  </ul>
+                </template>
+                <p v-else class="mt-1 text-sm text-muted-foreground">Nenhum lote fechado com esta versão.</p>
+              </NuxtCard>
               <RecipeVersionRating
                 :version="selected"
                 :criteria="entry.rating_criteria"

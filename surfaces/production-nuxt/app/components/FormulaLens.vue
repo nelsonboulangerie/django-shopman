@@ -124,6 +124,15 @@ const BOM_COLUMNS = [
             <span>{{ row.original.recipe_version_ref }}</span>
             <span v-if="row.original.composition_label">· {{ row.original.composition_label }}</span>
           </span>
+          <!-- A anotação prática do item (#2386): quem lê a ficha precisa dela. -->
+          <span
+            v-if="row.original.note"
+            class="mt-1 flex items-start gap-1 whitespace-pre-line text-xs text-foreground"
+            data-item-note
+          >
+            <Icon name="lucide:sticky-note" class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span><span class="sr-only">Nota: </span>{{ row.original.note }}</span>
+          </span>
         </template>
         <template #quantity-cell="{ row }">
           <span>{{ row.original.quantity_display }}</span>
@@ -189,6 +198,7 @@ const BOM_COLUMNS = [
           <template #name-cell="{ row }">
             <span>{{ row.original.name || row.original.sku }}</span>
             <span v-if="row.original.sku" class="ml-1 font-mono text-xs text-muted-foreground">{{ row.original.sku }}</span>
+            <span v-if="row.original.note" class="block whitespace-pre-line text-xs text-muted-foreground" data-item-note>{{ row.original.note }}</span>
           </template>
         </OperatorTable>
       </div>

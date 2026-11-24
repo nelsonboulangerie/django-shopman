@@ -1,0 +1,129 @@
+{
+  "state": "preorder",
+  "pages": [
+    {
+      "page": "home",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "eyebrow": {
+        "text": "Fechado agora. Encomende para amanhã, terça.",
+        "fontSizePx": 14,
+        "fontWeight": "600",
+        "contrastOverPhoto": {
+          "worst": 5.32,
+          "p05": 9.28,
+          "median": 15.25
+        },
+        "aboveTitle": true,
+        "centeredWithTitle": true,
+        "insideViewport": true
+      },
+      "heroCta": "Fazer pedido",
+      "railHeading": "Do nosso cardápio",
+      "railCards": [
+        "Ver detalhes de Tabatière Fica pronto amanhã Tabatière Pãozinho de tradição fran",
+        "Ver detalhes de Pão de Hambúrguer Pão de Hambúrguer Pão de tradição francesa e f",
+        "Ver detalhes de Baguette de Tradition Baguette de Tradition Pão de tradição fran"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": {
+            "text": "Fica pronto amanhã",
+            "fontSizePx": 12,
+            "contrast": 11.27
+          }
+        },
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Já fechamos por hoje",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": "Você pode encomendar para o próximo dia.",
+        "messageFontSizePx": 14,
+        "messageContrast": 5.38,
+        "titleAboveMessage": true,
+        "centered": true,
+        "button": "Continuar comprando"
+      }
+    },
+    {
+      "page": "home",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "eyebrow": {
+        "text": "Fechado agora. Encomende para amanhã, terça.",
+        "fontSizePx": 14,
+        "fontWeight": "600",
+        "contrastOverPhoto": {
+          "worst": 4.71,
+          "p05": 6.58,
+          "median": 11.27
+        },
+        "aboveTitle": true,
+        "centeredWithTitle": true,
+        "insideViewport": true
+      },
+      "heroCta": "Fazer pedido",
+      "railHeading": "Do nosso cardápio",
+      "railCards": [
+        "Ver detalhes de Tabatière Fica pronto amanhã Tabatière Pãozinho de tradição fran",
+        "Ver detalhes de Pão de Hambúrguer Pão de Hambúrguer Pão de tradição francesa e f",
+        "Ver detalhes de Baguette de Tradition Baguette de Tradition Pão de tradição fran"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 115,
+          "priceSingleLine": true,
+          "badge": {
+            "text": "Fica pronto amanhã",
+            "fontSizePx": 12,
+            "contrast": 11.27
+          }
+        },
+        {
+          "priceBlockWidthPx": 115,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 115,
+          "priceSingleLine": true,
+          "badge": null
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Já fechamos por hoje",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": "Você pode encomendar para o próximo dia.",
+        "messageFontSizePx": 14,
+        "messageContrast": 5.38,
+        "titleAboveMessage": true,
+        "centered": true,
+        "button": "Continuar comprando"
+      }
+    }
+  ]
+}

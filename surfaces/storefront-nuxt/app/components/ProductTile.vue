@@ -78,7 +78,14 @@ function productRoute (sku: string) {
             </div>
             <div v-else-if="badge || fomo.length" class="absolute left-2 top-2 z-20 flex flex-col items-start gap-1" data-product-badges>
               <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal shadow-sm" :data-fomo-badge="selo.type">{{ selo.label }}</UiBadge>
-              <UiBadge v-if="badge" :variant="badge.variant" class="font-normal shadow-sm">{{ badge.label }}</UiBadge>
+              <!-- O selo "contorno" (fornada: "Fica pronto amanhã") não tem fundo e,
+                   sobre a foto, ficava ilegível; aqui ele ganha o fundo do cartão. -->
+              <UiBadge
+                v-if="badge"
+                :variant="badge.variant"
+                class="font-normal shadow-sm"
+                :class="badge.variant === 'outline' ? 'bg-background text-foreground' : ''"
+              >{{ badge.label }}</UiBadge>
             </div>
           </UiAspectRatio>
         </div>
@@ -106,8 +113,11 @@ function productRoute (sku: string) {
           <UiBadge v-for="tag in item.dietary_info.slice(0, 2)" :key="tag" variant="outline" class="border-muted-foreground/40 text-xs font-normal text-muted-foreground">{{ tag }}</UiBadge>
         </div>
 
+        <!-- O preço tem largura mínima: com `min-w-0` ele encolhia até uma letra por
+             linha quando o botão era longo ("Encomendar para amanhã") num card
+             estreito (vitrine da home a 375 px, prévia do OC-04); assim o botão desce. -->
         <div class="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-          <div class="min-w-0 flex-1">
+          <div class="min-w-28 flex-1">
             <p v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta">
               antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span>
             </p>

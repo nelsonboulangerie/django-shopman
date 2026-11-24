@@ -7878,6 +7878,7 @@
             "DEFAULT_STOREFRONT_CHANNEL_REF",
             "FreeDeliveryProgressProjection",
             "MinimumOrderProgressProjection",
+            "TransferArrival",
             "UpsellSuggestionProjection",
             "_NO_PLANNED_HOLD",
             "_PRICING_MODIFIER_KEYS",
@@ -7901,12 +7902,14 @@
             "build_delivery_minimum_progress",
             "build_free_delivery_progress",
             "build_minimum_order_progress",
+            "conversation_number_available",
             "items_phrase",
             "logger",
             "open_elsewhere",
             "reservation_lapsed_at",
             "reserved_until",
-            "shop_rule_q"
+            "shop_rule_q",
+            "transfer_arrival"
           ]
         }
       ]
@@ -16034,6 +16037,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/services/running_low.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-running-low"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
     }
   ]
 }

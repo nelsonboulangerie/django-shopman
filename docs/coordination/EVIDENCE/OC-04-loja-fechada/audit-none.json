@@ -1,0 +1,103 @@
+{
+  "state": "none",
+  "pages": [
+    {
+      "page": "home",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "eyebrow": null,
+      "heroCta": "Ver cardápio",
+      "railHeading": "Do nosso cardápio",
+      "railCards": [
+        "Ver detalhes de Fendu Indisponível Fendu Pãozinho de tradição francesa e ferment",
+        "Ver detalhes de Tabatière Indisponível Tabatière Pãozinho de tradição francesa e",
+        "Ver detalhes de Mini Baguete Indisponível Mini Baguete Mini baguete com fermenta"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Sacola vazia",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": null,
+        "messageFontSizePx": null,
+        "messageContrast": null,
+        "titleAboveMessage": null,
+        "titleAboveButton": true,
+        "centered": true,
+        "button": "Ver cardápio",
+        "buttonFontSizePx": 14,
+        "buttonContrast": 7.25
+      }
+    },
+    {
+      "page": "home",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "eyebrow": null,
+      "heroCta": "Ver cardápio",
+      "railHeading": "Do nosso cardápio",
+      "railCards": [
+        "Ver detalhes de Fendu Indisponível Fendu Pãozinho de tradição francesa e ferment",
+        "Ver detalhes de Tabatière Indisponível Tabatière Pãozinho de tradição francesa e",
+        "Ver detalhes de Mini Baguete Indisponível Mini Baguete Mini baguete com fermenta"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 177,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 177,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 208,
+          "priceSingleLine": true,
+          "badge": null
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Sacola vazia",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": null,
+        "messageFontSizePx": null,
+        "messageContrast": null,
+        "titleAboveMessage": null,
+        "titleAboveButton": true,
+        "centered": true,
+        "button": "Ver cardápio",
+        "buttonFontSizePx": 14,
+        "buttonContrast": 7.25
+      }
+    }
+  ]
+}

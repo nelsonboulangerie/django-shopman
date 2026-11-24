@@ -424,7 +424,7 @@ Lentes: PROM, FLUXO. **[medido]**
 | P2-13 | Na Produção, o lote fechado some e o progresso encolhe | UX | `GRID:193-195`, `:964-970` |
 | P2-14 | A Qualidade troca de dia pelo menu de três pontos; as outras etapas, pelo seletor | UX | `quality.vue:118-134` |
 | P2-15 | Letreiro: nome cortado em 22 letras; relógio no fuso do dispositivo | UX | `board.vue:110`, `:72-76` |
-| P2-16 | "Perda" tem duas contas: previsto menos realizado no cartão e nos relatórios, só as linhas de perda na gestão do dia | CONTR | `PROJ:2991-2996`, `:3361-3363` contra `:2016-2028` |
+| P2-16 | "Perda" tem duas contas: previsto menos realizado no cartão e nos relatórios, só as linhas de perda na gestão do dia, que assim **esconde a perda de processo** ("rendeu menos") | CONTR | `PROJ:2991-2996`, `:3361-3363` contra `:2016-2028` |
 | P2-17 | Abertura implícita grava início igual ao fim, e a produtividade faz média com duração zero; agrupa pelo nome declarado, não por quem tocou | CONTR | `CORE/services/execution.py:390-411`; `PROJ:3392-3413` |
 | P2-18 | Não há trava de data: planeja, abre e fecha em data passada ou em dia já selado | PERM | `PROJ:4419`; `MUT:383` |
 | P2-19 | Texto do servidor com SKU cru e jargão ("A mutação exige operador, revisão e chave idempotente", "…preservado para retry") e erro de campo fora do dialeto `{detail, field, errors}` | COPY, CONTR | `SVC:129-130`, `:352`, `:1116`; `MUT:287-301` |
@@ -460,7 +460,7 @@ Lentes: PROM, FLUXO. **[medido]**
 | F-08 | O validador de insumo do Core usa a quantidade líquida, e `adjust` valida enquanto `plan` não (`CORE/services/scheduling.py:521-613`) | metade do P1-23 | Core (craftsman) | - |
 | F-09 | Seed: lote gravado como produzido sem baixar insumo (#2339); peças sem lote futuro (#2955); "Fechados por Diofer entre 0h09 e 23h59"; série de vendas que dá sugestão de 6 a 9 vezes o plano; aviso "sementes de validação: manteiga francesa…" | distorce a jornada 3 e o P2-01 na pilha | seed (`config`) | toda revisão em pilha |
 | F-10 | Concessões do descritor: ninguém tem `override_production_shortage`, `quick_finish_production` nem `reveal_production_blind_map` (D1 pendente); não há persona só de leitura para o totem | P1-14 e P1-27 | `config/instances/nelson.json` | - |
-| F-11 | O que falta **gravar** para o B.I. ler: o porquê da sugestão em todo plano, por append; os pedidos afetados no evento de cancelamento (`SYNC:726` os apaga); qual forno de verdade (hoje é a posição do lote, `SVC:1885`); perda e "rendeu menos" lidos em separado; lotes cancelados e motivos (`bi_production.py` só lê fechados); o ator do gesto | o B.I. aprende com dado incompleto | a Produção grava (WP-F17 e WP-F07 cobrem os dois primeiros); o B.I. lê | B.I. |
+| F-11 | O que falta **gravar** para o B.I. ler: o porquê da sugestão em todo plano, por append; os pedidos afetados no evento de cancelamento (`SYNC:726` os apaga); qual forno de verdade (hoje é a posição do lote, `SVC:1885`); perda declarada e "rendeu menos" lidos cada um com a causa, quem e a hora, e somados na perda (#3536); lotes cancelados e motivos (`bi_production.py` só lê fechados); o ator do gesto | o B.I. aprende com dado incompleto | a Produção grava (WP-F17 e WP-F07 cobrem os dois primeiros); o B.I. lê | B.I. |
 | F-12 | `operator-kit`: alvo padrão de 32 px (`operator-theme.css:22`); o convite "Vincular este dispositivo…" aparece para a Gerente dizendo que não há posto para o app; a Cozinha recebe 403 em `/operator/station/?surface=production` a cada tela; "Hydration completed but contains mismatches" no console **[medido]** | ruído na abertura de toda tela | `operator-kit` | todos os apps de operador |
 | F-13 | Corrigir o total de um lote fechado mexe no ledger de estoque | P1-29 | Stockman e `shop` | loja, PDV |
 | F-14 | `docs/reference/glossary.md:51-52` (Abertura e Fechamento) e o brief desta revisão (vocabulário de 16/09) | quem lê o doc escreve a palavra proibida pela trava | docs | - |
@@ -906,21 +906,42 @@ Tamanhos: P (até meio dia) · M (um dia).
 
 ### WP-F18 · Relatórios e palavras
 
-- **Objetivo:** os relatórios e os textos soltos falam a língua da casa.
-- **Achados que fecha:** P2-03 a P2-06, P2-12, P2-14, P2-16, P2-17 (a leitura).
+- **Objetivo:** os relatórios e os textos soltos falam a língua da casa, e a perda aparece
+  inteira: a declarada e a de processo, cada uma com a causa, quem e a hora, somadas.
+- **Achados que fecha:** P2-03 a P2-06, P2-12, P2-14, P2-16, P2-17 (a leitura); a parte dos
+  Relatórios da #3536.
 - **Dependências:** nenhuma.
 - **Arquivos:** `FE/pages/reports.vue`, `FE/presentation/reports.ts`,
-  `FE/composables/useProductionReports.ts` e `docs/reference/glossary.md` (F-14). Os textos
-  de `timers.vue` ficam no WP-F12 e os de `quality.vue` no WP-F15.
-- **Fora do escopo:** `GRID`; o B.I.
+  `FE/composables/useProductionReports.ts`, `PROJ` (só os construtores dos Relatórios e da
+  gestão do dia), o contrato gerado e `docs/reference/glossary.md` (F-14). Os textos de
+  `timers.vue` ficam no WP-F12 e os de `quality.vue` no WP-F15.
+- **Fora do escopo:** `GRID`; o B.I. e o texto do movimento de perda no ledger de estoque
+  (fronteira, na #3536: o B.I. lê a causa do evento de fechamento; o ledger é do Core).
+- **A regra (dono, 24/11):** nenhum desenho esconde perda. *"Sua proposta não vai ocultar
+  silenciosamente perdas (ou até desvios/fraudes)???"* A perda do lote é previsto menos
+  realizado, sempre. Ela se abre em duas partes, as duas visíveis e somadas: a **perda
+  declarada** (graus de Perda na Finalização, com o motivo) e a **diferença de rendimento**
+  ("rendeu menos", com a causa escolhida). Cada parte mostra a causa, quem fechou e a hora.
+  "Rendeu mais" aparece com a causa e nunca abate a perda de outro lote nem a declarada do
+  mesmo lote. Nenhuma tela mostra só uma das partes como "a perda".
 - **Pronto quando:**
-  - roteiro: a Gerente abre os Relatórios e lê "Lote", "17/11", o nome de quem fez, peça e
-    quilo em colunas separadas, e uma perda só (a declarada), com "rendeu menos" ao lado.
+  - roteiro: a Cozinha fecha um lote com 2 de perda ("Assou demais") e outro que rendeu 3 a
+    menos ("A massa rendeu menos peças"). A Gerente abre os Relatórios e lê, por lote, a perda
+    total e as duas partes, cada uma com a causa, quem e a hora; a perda do dia soma as duas
+    partes de todos os lotes, e o número bate com as baixas de perda do ledger de estoque do
+    dia. Lê também "Lote", "17/11", o nome de quem fez, e peça e quilo em colunas separadas.
     Capturas em 1366 e 375.
-  - testes: `reports.test.ts`; a trava de vocabulário cobrindo "OP" e "QC".
-- **Muda tela:** sim (prévia). **Tamanho:** P.
-- **Brief:** leia P2-04, P2-05, P2-16 e `suite-vocabulary.md`. A Gerente vê o valor de cada
-  registro; nada de soma em dinheiro (regra de 21/11): confira que a tela continua sem custo.
+  - testes: projeção (a perda do lote é a soma das partes; a gestão do dia usa a mesma conta
+    dos Relatórios, fechando o P2-16; nenhuma diferença fica sem parte: lote sem causa
+    registrada aparece como "sem causa", nunca some); `reports.test.ts`; a trava de
+    vocabulário cobrindo "OP" e "QC".
+- **Muda tela:** sim (prévia). **Tamanho:** M.
+- **Brief:** leia P2-04, P2-05, P2-16, a #3536 e `suite-vocabulary.md` (perda e
+  aproveitamento são os indicadores). A causa e a diferença já estão gravadas no evento de
+  fechamento (`context.yield_deviation`, provado no #3397 por
+  `test_no_yield_difference_goes_unrecorded`); não crie dado novo, leia o que existe. A
+  Gerente vê o valor de cada registro; nada de soma em dinheiro (regra de 21/11): confira que
+  a tela continua sem custo.
 
 ### WP-F19 · A virada do dia
 
@@ -1006,7 +1027,7 @@ Dois WPs da mesma onda nunca tocam o mesmo arquivo. Os gargalos são `GRID`, `SV
 | 1 | **F06** · **F07** · **F08** · **F09a** · **F20** | F20 | F06 | F08 | F06 |
 | 2 | **F09b** · **F10** · **F11** · **F12** | F10 | F11 | F11 | F12 |
 | 3 | **F13** · **F14** · **F15** · **F16** | F13 | F14 | F16 | F15 |
-| 4 | **F17** · **F18** | F17 | F17 | - | - |
+| 4 | **F17** · **F18** | F17 | F17 | F18 | - |
 | 5 | **F19** | F19 | - | F19 | F19 |
 | 6 | **F21** | F21 | - | - | - |
 
@@ -1025,7 +1046,8 @@ Conferência dos arquivos por onda:
   F12 com `close.vue`, os composables de forno e timer e `timers.vue`.
 - Onda 3: F13 com `PlanLens.vue`, `PlanReasonCard.vue` e `GRID`; F14 com `SVC` e `MUT`; F15
   com o cabeçalho, os composables de leitura, `quality.vue` e `close.vue`; F16 com `PROJ`.
-- Onda 4: F17 com `GRID`, `SVC`, `planningReason.ts` e `PlanLens.vue`; F18 com os Relatórios.
+- Onda 4: F17 com `GRID`, `SVC`, `planningReason.ts` e `PlanLens.vue`; F18 com os Relatórios,
+  inclusive os construtores deles em `PROJ`, que ninguém mais abre nessa onda.
 - Ondas 5 e 6: F19 e depois F21, sozinhos, porque atravessam quase todas as páginas.
 
 O contrato gerado (`productionContract.ts`) é regenerado por F04, F08 e F11, em ondas

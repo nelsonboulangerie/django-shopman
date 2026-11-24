@@ -55,6 +55,7 @@ export interface RecipeBookAccessProjection {
   can_view: boolean;
   can_edit: boolean;
   capture_available: boolean;
+  purchase_url: string;
 }
 
 /** One ingredient line of a formula, with its share of the anchor. */
@@ -74,6 +75,7 @@ export interface FormulaItemProjection {
   composition: string;
   composition_label: string;
   quantity_rule_display: string;
+  note: string;
 }
 
 /** A bakery metric with its reference range and tone. */
@@ -381,6 +383,14 @@ export interface RecipeCompareMetricProjection {
 export interface RecipeCompareProjection {
   a_title: string;
   b_title: string;
+  a_status: string;
+  a_status_label: string;
+  a_is_current: boolean;
+  a_when_display: string;
+  b_status: string;
+  b_status_label: string;
+  b_is_current: boolean;
+  b_when_display: string;
   rows: RecipeCompareRowProjection[];
   metrics: RecipeCompareMetricProjection[];
 }

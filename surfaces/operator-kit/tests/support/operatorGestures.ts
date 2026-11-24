@@ -164,8 +164,16 @@ export async function operatorUnlocksWithPin(page: Page, who: Person): Promise<v
   for (const digit of who.pin) {
     await page.getByRole("button", { name: digit, exact: true }).click();
   }
-  await page.getByText(`${who.pin.length} de no mínimo`).waitFor({ state: "visible", timeout: 10_000 });
-  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  // PIN de tamanho fixo (4, #3223): o último dígito envia sozinho e a trava fecha.
+  // A regra antiga (de 4 a 8) conta "N de no mínimo 4" e pede o Confirmar.
+  const opened = lock.waitFor({ state: "hidden", timeout: 60_000 }).then(() => "opened" as const);
+  const asksConfirm = page
+    .getByText(`${who.pin.length} de no mínimo`)
+    .waitFor({ state: "visible", timeout: 60_000 })
+    .then(() => "confirm" as const);
+  if ((await Promise.race([opened, asksConfirm.catch(() => opened)])) === "confirm") {
+    await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  }
   await lock.waitFor({ state: "hidden", timeout: 60_000 });
   await settled(page);
 }

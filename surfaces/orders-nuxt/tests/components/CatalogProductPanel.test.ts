@@ -237,6 +237,32 @@ describe("Preparo da encomenda", () => {
   });
 });
 
+// DEV-2026-077: a porcentagem do SKU que diz quando ele está acabando.
+describe("Avisar que está acabando", () => {
+  it("em branco diz quanto vale o padrão da loja, e a porcentagem digitada vai no Salvar", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, running_low_percent: null, running_low_default_percent: 20 } });
+    const field = w.get('[data-testid="running-low"]');
+    expect(field.text()).toContain("Avisar que está acabando (%)");
+    expect(field.text()).toContain("botão do produto");
+    const input = field.get("input");
+    expect(input.attributes("placeholder")).toBe("Em branco = padrão da loja (20%)");
+    await input.setValue(40);
+    await w.find("[data-panel-save]").trigger("click");
+    expect(w.emitted("save")).toEqual([[{ running_low_percent: 40 }]]);
+  });
+
+  it("apagar a porcentagem própria devolve o produto ao padrão", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, running_low_percent: 35, running_low_default_percent: 20 } });
+    const input = w.get('[data-testid="running-low"] input');
+    expect((input.element as HTMLInputElement).value).toBe("35");
+    await input.setValue("");
+    await w.find("[data-panel-save]").trigger("click");
+    expect(w.emitted("save")).toEqual([[{ running_low_percent: null }]]);
+  });
+});
+
 describe("Permitir compra", () => {
   it("é gesto na hora, com cara de botão, fora do rascunho (GES-20)", async () => {
     const w = panel();

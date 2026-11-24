@@ -1458,11 +1458,18 @@ def _ticket_status_label(status: str) -> str:
 
 
 def _add_stock_warnings(items: list[dict]) -> list[dict]:
-    """Add stock_warning to items where physical stock is low or zero."""
+    """Avisa no item da Cozinha quando o estoque físico zerou ou está acabando.
+
+    "Acabando" é a régua única do balcão e da Cozinha (DEV-2026-077,
+    ``shop/services/running_low.py``): a porcentagem do SKU sobre o que o dia
+    teve. O ``StockAlert.min_quantity`` do Stockman NÃO entra aqui: ele é o
+    alerta de reposição do painel, outro significado.
+    """
     try:
-        from shopman.stockman.models import Quant, StockAlert
+        from shopman.stockman.models import Quant
     except ImportError:
         return items
+    from shopman.shop.services.running_low import running_low_skus
 
     skus = [item.get("sku") for item in items if item.get("sku")]
     if not skus:
@@ -1476,9 +1483,7 @@ def _add_stock_warnings(items: list[dict]) -> list[dict]:
     )
     stock_by_sku = {row["sku"]: row["total"] for row in quant_qs}
 
-    alert_mins: dict[str, Decimal] = {}
-    for alert in StockAlert.objects.filter(sku__in=skus, is_active=True):
-        alert_mins[alert.sku] = alert.min_quantity
+    low = running_low_skus({sku: int(qty) for sku, qty in stock_by_sku.items() if qty > 0})
 
     enriched = []
     for item in items:
@@ -1488,7 +1493,7 @@ def _add_stock_warnings(items: list[dict]) -> list[dict]:
 
         if available <= 0:
             item["stock_warning"] = "Sem estoque"
-        elif sku in alert_mins and available < alert_mins[sku]:
+        elif sku in low:
             item["stock_warning"] = f"Últimas {int(available)} un."
 
         enriched.append(item)

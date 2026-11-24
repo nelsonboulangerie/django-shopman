@@ -228,13 +228,17 @@ useSeoMeta({
           </UiAlertDescription>
         </UiAlert>
 
+        <!-- A sacola entre a loja e a conversa (OC-16): a pergunta "substituir ou
+             manter", o que mudou na sacola que chegou e a sacola aberta no WhatsApp. -->
+        <CartPassageNotices :cart="cart" />
+
         <UiEmpty v-if="cart.is_empty" class="border">
           <UiEmptyMedia variant="icon">
             <Icon name="lucide:shopping-bag" />
           </UiEmptyMedia>
           <UiEmptyHeader>
             <UiEmptyTitle>{{ cart.empty_title }}</UiEmptyTitle>
-            <UiEmptyDescription>{{ cart.empty_message }}</UiEmptyDescription>
+            <UiEmptyDescription v-if="cart.empty_message">{{ cart.empty_message }}</UiEmptyDescription>
           </UiEmptyHeader>
           <UiEmptyContent class="flex flex-col items-center gap-2">
             <UiButton :to="continueAction?.href || '/menu'" icon="lucide:utensils">
@@ -431,6 +435,8 @@ useSeoMeta({
               <UiAlertTitle>Endereço fora da área de entrega</UiAlertTitle>
               <UiAlertDescription>Escolha a retirada na loja ou um endereço dentro da nossa área.</UiAlertDescription>
             </UiAlert>
+
+            <CartContinueInConversation :cart="cart" />
 
           </section>
 

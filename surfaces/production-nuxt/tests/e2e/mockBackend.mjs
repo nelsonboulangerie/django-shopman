@@ -429,7 +429,7 @@ const QC_POPULATED = {
   },
 };
 
-const RECIPE_ACCESS = { can_view: true, can_edit: true, capture_available: false };
+const RECIPE_ACCESS = { can_view: true, can_edit: true, capture_available: false, purchase_url: "http://compras.e2e.test" };
 const PRODUCTION_MODE_OPTIONS = [
   { value: "batch", label: "Em lote" },
   { value: "made_to_order", label: "Na hora" },
@@ -539,7 +539,7 @@ const RECIPE_BOOK = {
 };
 const RECIPE_DRAFTS = new Set();
 
-function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
+function lensItem(sku, name, role, roleLabel, grams, pct, anchor, note = "") {
   return {
     ref: `ingredient-${sku || name}`,
     sku,
@@ -556,6 +556,7 @@ function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
     composition: "additional",
     composition_label: "Adicional",
     quantity_rule_display: "Exata",
+    note,
   };
 }
 const LENS = {
@@ -568,7 +569,7 @@ const LENS = {
   total_mass_display: "1.700 g",
   ingredients: [
     lensItem("FARINHA-T65", "Farinha T65", "flour", "Farinha", 1000, "100%", true),
-    lensItem("AGUA", "Água", "liquid", "Líquido", 660, "66%", false),
+    lensItem("AGUA", "Água", "liquid", "Líquido", 660, "66%", false, "A conferir: no inverno a massa pede 680 g."),
     lensItem("SAL", "Sal", "salt", "Sal", 20, "2%", false),
     lensItem("FERMENTO", "Fermento biológico", "leavening", "Fermento", 20, "2%", false),
   ],
@@ -589,6 +590,28 @@ const LENS = {
     },
   ],
   warnings: [],
+};
+
+function formulaItem(ref, sku, name, role, grams, note = "") {
+  return {
+    ref,
+    sku,
+    name,
+    role,
+    quantity: { kind: "fixed", minimum: grams, target: grams, maximum: grams, unit: "g" },
+    composition: "additional",
+    ...(note ? { note } : {}),
+  };
+}
+const FORMULA = {
+  anchor: { kind: "flour" },
+  basis_g: 1000,
+  standardized: true,
+  ingredients: [
+    formulaItem("ingredient-flour", "FARINHA-T65", "Farinha T65", "flour", 1000),
+    formulaItem("ingredient-water", "AGUA", "Água", "liquid", 660, "A conferir: no inverno a massa pede 680 g."),
+    formulaItem("ingredient-salt", "SAL", "Sal", "salt", 20),
+  ],
 };
 
 function recipeVersion(number, status, statusLabel) {
@@ -612,7 +635,8 @@ function recipeVersion(number, status, statusLabel) {
       { name: "Assar", instructions: "Forno com vapor.", target_seconds: 1200, target_display: "20 min", temperature_celsius: 230, note: "" },
     ],
     lens: LENS,
-    formula: {},
+    // A suíte cria a fórmula do zero no editor; a prévia (MOCK_RECIPE_FORMULA=1) abre com ela.
+    formula: process.env.MOCK_RECIPE_FORMULA ? FORMULA : {},
     origin: {},
     provenance_kind: "agent",
     provenance_label: "Do cadastro inicial",
@@ -667,7 +691,7 @@ function recipeDetail(card) {
         date_to: "2026-07-06",
         bake_loss_basis: "",
         caveats: [],
-        versions: [],
+        versions: card.current_version_number ? [recipeVersionUsage(2, 12, "96%"), recipeVersionUsage(1, 30, "93%")] : [],
         unversioned: null,
       },
       external_references: [],
@@ -900,11 +924,65 @@ function sheetResponse(req, url, body) {
   return null;
 }
 
+function recipeVersionUsage(number, batches, yieldDisplay) {
+  return {
+    version_ref: `v@${number}`,
+    version_number: number,
+    is_versioned: true,
+    label: `Versão ${number}`,
+    batches,
+    batches_display: `${batches} lotes`,
+    planned_display: "",
+    finished_display: "",
+    loss_display: "",
+    yield_pct: "",
+    yield_display: yieldDisplay,
+    started_assumed_batches: 0,
+    avg_loss: "",
+    avg_loss_display: "",
+    loss_pct_display: "",
+    summary_display: `${batches} lotes; aproveitamento médio ${yieldDisplay}`,
+    quality: [],
+  };
+}
+
+/** Duas versões lado a lado: a 2 é a publicada e em uso, a 1 foi substituída. */
+function recipeCompare(url) {
+  const query = new URL(url, "http://mock").searchParams;
+  const side = (value) => {
+    const [ref, raw] = String(value || "").split("@");
+    const number = Number(raw || 0);
+    const published = number === 2;
+    const name = RECIPE_CARDS.find((entry) => entry.ref === ref)?.name ?? ref;
+    return {
+      title: `${name} (versão ${number})`,
+      status: published ? "published" : "superseded",
+      status_label: published ? "Publicada" : "Substituída",
+      is_current: published,
+      when: published ? "publicada 04/07/2026" : "publicada 01/06/2026",
+    };
+  };
+  const a = side(query.get("a"));
+  const b = side(query.get("b"));
+  return {
+    compare: {
+      a_title: a.title, a_status: a.status, a_status_label: a.status_label, a_is_current: a.is_current, a_when_display: a.when,
+      b_title: b.title, b_status: b.status, b_status_label: b.status_label, b_is_current: b.is_current, b_when_display: b.when,
+      rows: [
+        { name: "Farinha T65", sku: "FARINHA-T65", role_label: "Farinha", a_display: "1.000 g", b_display: "1.000 g", delta_display: "0 g", delta_pct_display: "0%", tone: "muted" },
+        { name: "Água", sku: "AGUA", role_label: "Líquido", a_display: "640 g", b_display: "660 g", delta_display: "+20 g", delta_pct_display: "+3%", tone: "ok" },
+      ],
+      metrics: [{ label: "Hidratação", a_display: "64%", b_display: "66%", delta_display: "+2%", tone: "ok" }],
+    },
+  };
+}
+
 /** A resposta do cenário povoado para esta URL, ou `null` para seguir o mock de base. */
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
   if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
   if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
+  if (/\/recipes\/compare\/?(\?|$)/.test(url)) return recipeCompare(url);
   if (/\/recipes\/ingredients\/?(\?|$)/.test(url)) return recipeIngredients(url);
   if (/\/recipes\/reference\/?(\?|$)/.test(url)) return RECIPE_REFERENCE;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
