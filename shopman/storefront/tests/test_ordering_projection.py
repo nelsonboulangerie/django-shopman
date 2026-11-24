@@ -256,7 +256,11 @@ def test_x1_nada_encomendavel_a_home_e_a_sacola_nao_oferecem_finalizar():
     assert cart["ordering"]["state"] == ORDERING_NONE
 
     assert "preorder" not in [facet["ref"] for facet in home["sections_copy"]["how_facets"]]
-    rendered = json.dumps(home, ensure_ascii=False) + json.dumps(cart, ensure_ascii=False)
+    # A FAQ fica de fora da varredura: ela RESPONDE a pergunta "Posso encomendar
+    # para outro dia?" com a regra da casa ("Ao finalizar o pedido, você escolhe o
+    # dia"), não convida a pedir agora. O resto da home e a sacola não podem.
+    offers = {key: value for key, value in home.items() if key != "faq"}
+    rendered = json.dumps(offers, ensure_ascii=False) + json.dumps(cart, ensure_ascii=False)
     assert "finalizar o pedido" not in rendered
     assert "Você pode encomendar" not in rendered
     # A sacola vazia diz o que há (nenhuma encomenda) e aponta o aviso.

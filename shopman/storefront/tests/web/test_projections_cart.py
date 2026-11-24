@@ -80,9 +80,19 @@ class TestEmptyCart:
         assert proj.empty_title
         assert proj.empty_message
 
-    def test_empty_copy_honours_admin_override(self, client):
+    def test_empty_copy_honours_admin_override(self, client, monkeypatch):
         """O operador reescreve o estado vazio pelo Admin, sem deploy."""
         from shopman.shop.models import OmotenashiCopy
+        from shopman.storefront.presentation import cart as cart_presentation
+        from shopman.storefront.presentation.catalog import CatalogOrdering
+        from shopman.storefront.presentation.promise import OrderingProjection
+
+        # Há o que pedir: a copy do momento vale (sem nada, vale CART_EMPTY_NO_ORDERING).
+        monkeypatch.setattr(
+            cart_presentation,
+            "build_ordering",
+            lambda **_kw: CatalogOrdering(OrderingProjection("now", "2026-11-17", "hoje"), frozenset({"PAO"})),
+        )
 
         OmotenashiCopy.objects.create(
             key="CART_EMPTY",
@@ -99,6 +109,27 @@ class TestEmptyCart:
 
         assert proj.empty_title == "Sacola vazia, dia cheio"
         assert proj.empty_message == "Escolha um pão e nós cuidamos do resto."
+
+    def test_nothing_to_order_copy_honours_admin_override(self, client):
+        """A copy de "nada para pedir" também é do Admin (OC-04)."""
+        from shopman.shop.models import OmotenashiCopy
+
+        OmotenashiCopy.objects.create(
+            key="CART_EMPTY_NO_ORDERING",
+            moment="*",
+            audience="*",
+            title="Nada no forno por enquanto",
+            message="Toque em “Me avise” no cardápio.",
+        )
+        rf = RequestFactory()
+        request = rf.get("/carrinho/")
+        request.session = client.session  # type: ignore[attr-defined]
+
+        proj = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert proj.ordering is not None and proj.ordering.state == "none"
+        assert proj.empty_title == "Nada no forno por enquanto"
+        assert proj.empty_message == "Toque em “Me avise” no cardápio."
 
     def test_populated_cart_skips_empty_copy(self, cart_session):
         """Sacola com itens não resolve a copy do vazio — o bloco nem renderiza."""

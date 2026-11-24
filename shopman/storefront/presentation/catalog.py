@@ -43,6 +43,7 @@ from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
 from shopman.storefront.presentation.icons import collection_icon
 from shopman.storefront.presentation.promise import (
     KIND_READY,
+    ORDERING_NONE,
     OrderingProjection,
     PromiseProjection,
     ordering_from_promises,
@@ -583,10 +584,13 @@ def _read_ordering(*, channel_ref: str, request: HttpRequest | None) -> CatalogO
     by_sku: dict[str, Any] = {}
     for product in products:
         by_sku.setdefault(product.sku, product)
+    if not by_sku:
+        # Cardápio vazio: nada a pedir, sem ler estoque nem a configuração do canal.
+        return CatalogOrdering(ordering=OrderingProjection(ORDERING_NONE), orderable_skus=frozenset())
     unique = list(by_sku.values())
     skus = list(by_sku)
     session_key = _session_key(request)
-    own_holds = catalog_context.own_holds_by_sku(session_key, skus) if session_key and skus else {}
+    own_holds = catalog_context.own_holds_by_sku(session_key, skus) if session_key else {}
     config = ChannelConfig.for_channel(channel_ref)
     states = _availability_states(
         unique,
