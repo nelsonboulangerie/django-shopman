@@ -61,6 +61,8 @@ IDEMPOTENT_BY_NATURE = {
     "create_tab": "cria a comanda pelo tab_ref informado — o segundo POST esbarra no ref que ja existe",
     "set_available_qty": "PUT que fixa a qty num valor CONSTANTE do payload — repetir deixa a mesma qty",
     "notify_when_available": "a assinatura de aviso dedupe por (sku, alert_type, alvo) em stock_alerts.subscribe",
+    "continue_in_conversation": "so oferece: guarda a oferta sob um codigo NB novo e nao toca a sacola; o aceite na conversa e idempotente pelo recibo (session_transfer.accept)",
+    "bring_cart": "oferta e aceite no mesmo gesto; repetir acha a origem ja abandonada (no_cart) ou o recibo gravado da mesma oferta, nunca soma de novo",
 }
 
 # ── Divida nomeada: mutacao de dinheiro ainda sem chave ────────────────────

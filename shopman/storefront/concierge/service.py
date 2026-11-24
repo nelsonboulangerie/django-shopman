@@ -102,6 +102,18 @@ def is_enabled() -> bool:
     return not disabled_reason()
 
 
+def transfer_bridge_channel() -> str:
+    """O canal da Nice quando a ponte de sacola com ela está ligada; vazio quando não.
+
+    A ponte é a Concierge atendendo e a chave ``CONCIERGE_TRANSFER_ENABLED`` ligada
+    (OC-18 a liga). É a única pergunta que a loja faz antes de oferecer "Continuar
+    pelo WhatsApp" ou "Trazer a sacola do WhatsApp" (X1): desligada, a ação não aparece.
+    """
+    if not is_enabled() or config().get("transfer_enabled") is not True:
+        return ""
+    return str(config().get("channel_ref") or "")
+
+
 # ── Copy ──────────────────────────────────────────────────────────────
 
 
@@ -1020,6 +1032,27 @@ FRAMEWORK_HANDOFF_REASONS = {
 }
 
 
+def _cart_arrival(conversation, binding, turn_text: str):
+    """A resposta da casa quando a mensagem traz a sacola da loja (OC-16); ``None`` se não traz."""
+    from . import cart_arrival
+
+    return cart_arrival.receive(conversation, binding, turn_text)
+
+
+def _site_passage(conversation, binding, turn_text: str, decision):
+    """A resposta da casa quando a cliente pede o site ou a sacola de volta (OC-18); ``None`` se não pede."""
+    from . import site_passage
+
+    return site_passage.handle(conversation, binding, turn_text, decision=decision)
+
+
+def _site_passage_lead(conversation, binding) -> str:
+    """Onde a sacola está, na mensagem seguinte ao aceite no site (OC-18); vazio quando não há o que dizer."""
+    from . import site_passage
+
+    return site_passage.lead(conversation, binding)
+
+
 @_observed("turn")
 def _framework_turn(conversation, inbound):
     """O turno pelo motor do framework (N9b), ou ``None``: só com UMA entrada e a chave da classe.
@@ -1132,11 +1165,23 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                 reply_text=copy_message("CONCIERGE_TURN_LIMIT"), layer=metrics.LAYER_TURN_LIMIT
             )
             result.fallback = "turn_limit"
+        elif (arrival := _cart_arrival(conversation, binding, turn_text)) is not None:
+            # A sacola da loja pelo código NB de "Continuar pelo WhatsApp" (OC-16): o
+            # aceite é do serviço de transferência, e a frase é da casa, sem modelo.
+            outcome = arrival
+        elif (passage := _site_passage(conversation, binding, turn_text, decision)) is not None:
+            # A cliente pediu o site ou a sacola de volta (OC-18): o link pela ferramenta, a
+            # passagem pelo serviço de transferência, e a frase da casa, sem modelo.
+            outcome = passage
         else:
+            # A sacola desta conversa foi aceita no site (OC-18, §4.4): o turno responde como
+            # sempre e diz, uma vez, onde ela está. Com o aviso, o turno vai pelo caminho de
+            # hoje, que é o que leva o aviso junto da resposta.
+            passage_lead = _site_passage_lead(conversation, binding)
             # N9b: o turno pelo motor do framework, só onde a loja ligou a classe e a casa tem a
             # frase de hoje (``turn_framework``). Com as chaves desligadas, nada muda. Feito pelo
             # motor, a resposta já saiu pelo mesmo caminho do envio; aqui só se fecha o turno.
-            framework = _framework_turn(conversation, inbound)
+            framework = None if passage_lead else _framework_turn(conversation, inbound)
             if framework is not None:
                 meter.layer = metrics.LAYER_FRAMEWORK
                 with transaction.atomic():
@@ -1162,6 +1207,10 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                     conversation, binding=binding, decision=decision, client=intents_client
                 )
                 meter.intents = getattr(outcome, "intents", {}) or {}
+                if passage_lead:
+                    from . import site_passage
+
+                    outcome = site_passage.with_lead(outcome, passage_lead)
             except TurnRevoked:
                 raise
             except Exception:

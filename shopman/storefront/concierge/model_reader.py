@@ -71,8 +71,8 @@ DESCRIPTIONS = {
     "ask_hours": "pergunta de horário de funcionamento, de entrega ou de retirada",
     "ask_price": "pergunta de preço de um produto",
     "ask_item": "pergunta sobre um produto: se tem, como é, ingredientes, tamanho",
-    "change_quantity": "pôr, trocar a quantidade ou tirar um produto do pedido (\"quero 2 croissants\", "
-                       "\"mais um\", \"tira a baguete\")",
+    "change_quantity": "pôr, trocar a quantidade, trocar um produto por outro ou tirar um produto do pedido "
+                       "(\"quero 2 croissants\", \"mais um\", \"troca por pain au chocolat\", \"tira a baguete\")",
     "place_order": "pedir para fechar, finalizar ou confirmar o pedido (\"pode fechar\", \"é só isso\")",
     "cancel_order": "cancelar um pedido já feito",
     "complain": "reclamação de algo que deu errado",
@@ -98,6 +98,9 @@ MODES = ("pickup", "delivery")
 #: dá), nunca gravado: o sítio e o fato do canal só aceitam as formas sem dinheiro (D-003).
 PAYMENTS = ("pix", "card", "cash")
 _DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})$")
+#: Só o dia do mês: "25", "dia 25". E na fala, "dia 25" (com o mês ou sem ele), quando a IA não devolveu o dia.
+_MONTH_DAY_RE = re.compile(r"^(?:dia\s*)?(\d{1,2})$")
+_SAID_DAY_RE = re.compile(r"\bdia\s+(\d{1,2})(?:/(\d{1,2}))?\b")
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
@@ -148,8 +151,8 @@ def system_prompt(allowed: tuple[str, ...]) -> str:
         "- change, só em change_quantity: set (\"quero 2\", \"muda para 3\"), add (\"mais 2\", "
         "\"outro\"), remove (\"tira 1\"), remove_all (\"tira o croissant\", \"não quero mais a baguete\").\n"
         + (
-            "- day: today, tomorrow, day_after_tomorrow, o dia da semana em inglês (monday … sunday) ou "
-            "DD/MM, quando o cliente diz o dia.\n"
+            "- day: today, tomorrow, day_after_tomorrow, o dia da semana em inglês (monday … sunday), "
+            "DD/MM, ou só DD quando o cliente diz só o dia do mês (\"dia 25\" = 25).\n"
             "- mode: pickup quando vai buscar ou retirar; delivery quando quer receber em casa.\n"
             "- time: HH:MM em 24 horas, quando diz a hora (\"às 4 da tarde\" = 16:00).\n"
             f"- Dia, recebimento e hora ditos junto com o pedido são uma parte {FULFILLMENT_ACT} à parte.\n"
@@ -164,6 +167,9 @@ def system_prompt(allowed: tuple[str, ...]) -> str:
         "duas.\n"
         "- \"Tem croissant? Queria 2\" são duas partes: ask_item e change_quantity.\n"
         "- \"Retirar\" com dia, hora ou \"para retirar\" é buscar na loja, não tirar do pedido.\n"
+        "- \"Troca por X\" é uma parte change_quantity com o produto NOVO (X), sem quantidade se o cliente não "
+        "disse.\n"
+        "- product: escreva o nome como o cliente escreveu, mesmo com erro de digitação.\n"
         "- Não invente partes nem produtos que não estão na mensagem."
     )
 
@@ -285,6 +291,33 @@ def _clean(value, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+#: O quanto a palavra pode diferir para ser a mesma com erro de digitação ("croisants", "croisant", "baguet").
+SPELLING_CUTOFF = 0.8
+
+
+def close_word(word: str, said: list[str]) -> bool:
+    from difflib import get_close_matches
+
+    return bool(get_close_matches(word, said, n=1, cutoff=SPELLING_CUTOFF))
+
+
+def spelled_name(product: str, names: list[str]) -> str:
+    """O nome do cardápio que o cliente quis dizer com erro de digitação, ou vazio (nenhum, ou mais de um).
+
+    Compara o nome inteiro, dobrado (sem acento e caixa): "croisants" acha "Croissant". Dois nomes perto
+    demais um do outro não escolhem: o produto fica sem item e a Nice pergunta.
+    """
+    from difflib import get_close_matches
+
+    from .intents import _fold
+
+    by_fold = {}
+    for name in names:
+        by_fold.setdefault(_fold(name), name)
+    found = get_close_matches(_fold(product), list(by_fold), n=2, cutoff=SPELLING_CUTOFF)
+    return by_fold[found[0]] if len(found) == 1 else ""
+
+
 def parse(raw: str, text: str, allowed: tuple[str, ...]) -> list[Reading]:
     """As partes da resposta, validadas. Levanta ``ValueError`` fora do esquema."""
     from .intents import _fold
@@ -305,7 +338,9 @@ def parse(raw: str, text: str, allowed: tuple[str, ...]) -> list[Reading]:
         # Produto que não está na fala não existe: a IA não acrescenta nome.
         if product and _fold(product) not in folded:
             words = re.findall(r"[a-z0-9]{3,}", _fold(product))
-            if not words or not all(word in folded for word in words):
+            said = re.findall(r"[a-z0-9]{3,}", folded)
+            # A palavra que a IA corrigiu ("croisants" → "croissants") ainda é a do cliente: a parecida conta.
+            if not words or not all(word in folded or close_word(word, said) for word in words):
                 product = ""
         change = item.get("change") if item.get("change") in CHANGES else ""
         mode = item.get("mode") if item.get("mode") in MODES else ""
@@ -341,6 +376,23 @@ def resolve_day(day: str, today: date) -> str:
                 return ""
             if when >= today:
                 return when.isoformat()
+    matched = _MONTH_DAY_RE.match(day)
+    if matched:
+        return next_month_day(int(matched.group(1)), today)
+    return ""
+
+
+def next_month_day(dd: int, today: date) -> str:
+    """ "Dia 25": o próximo dia 25 a partir de hoje (hoje é 25, é hoje); o mês sem esse dia passa adiante."""
+    year, month = today.year, today.month
+    for _ in range(13):
+        try:
+            when = date(year, month, dd)
+        except ValueError:
+            when = None
+        if when is not None and when >= today:
+            return when.isoformat()
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
     return ""
 
 
@@ -445,6 +497,46 @@ def absolute_quantity(reading: Reading, current: int) -> int | None:
     return reading.qty or None
 
 
+def menu_names(channel_ref: str) -> list[str]:
+    """Os nomes do cardápio do canal, o MESMO que a busca lê (ler não é agir)."""
+    from shopman.storefront.presentation.catalog import build_catalog
+
+    from .tools import _catalog_channel_ref
+
+    return [item.name for item in build_catalog(channel_ref=_catalog_channel_ref(channel_ref)).items if item.name]
+
+
+#: "Troca por pain au chocolat", "troca o croissant pela baguete", "em vez do croissant", "no lugar do sonho".
+_SWAP_RE = re.compile(r"\b(?:troc\w*|substitu\w*)\b.*\bp(?:or|el[oa]s?)\b|\bem vez d|\bno lugar d")
+
+
+def swapped(acts: list[dict], lines: list[dict], text: str) -> list[dict]:
+    """ "Troca por X": X entra no lugar do item da sacola, na MESMA quantidade, e o anterior sai.
+
+    O anterior é o que a fala tirou ("troca o croissant por …", lido como tirar) ou, sem nome, o único item
+    da sacola. Sem saber qual sai (dois itens e nenhum nome), a fala fica como a IA leu.
+    """
+    from .intents import _fold
+
+    if not _SWAP_RE.search(_fold(text)):
+        return acts
+    cart = {str(line.get("sku")): int(line.get("qty") or 0) for line in lines if line.get("qty")}
+    changes = [act for act in acts if act["act"] == "change_quantity" and act["fields"].get("item")]
+    new = [act for act in changes if act["fields"]["item"] not in cart]
+    leaving = [act["fields"]["item"] for act in changes
+               if act["fields"]["item"] in cart and act["fields"].get("quantity") == "0"]
+    if len(new) != 1 or len(leaving) > 1:
+        return acts
+    old = leaving[0] if leaving else (next(iter(cart)) if len(cart) == 1 else "")
+    if not old:
+        return acts
+    new[0]["fields"].setdefault("quantity", str(cart[old]))
+    if not leaving:
+        acts.insert(acts.index(new[0]), {"act": "change_quantity", "fields": {"item": old, "quantity": "0"},
+                                         "confidence": UNAVAILABLE})
+    return acts
+
+
 def cart_fields(reading: Reading, conversation, lines: list[dict], text: str) -> dict:
     """Produto (SKU) pela busca do cardápio da sacola e quantidade ABSOLUTA pela sacola."""
     from .intents import Act, read_cart_item
@@ -460,6 +552,12 @@ def cart_fields(reading: Reading, conversation, lines: list[dict], text: str) ->
         if reading.product:
             found = read_cart_item(Act("order", span=reading.span or text, product=reading.product, qty=reading.qty),
                                    conversation=conversation, context=context)
+            if found is None:
+                # "croisants": a busca do cardápio não tolera o erro de digitação; o nome parecido, sim.
+                name = spelled_name(reading.product, menu_names(conversation.channel_ref or "whatsapp"))
+                if name:
+                    found = read_cart_item(Act("order", span=reading.span or text, product=name, qty=reading.qty),
+                                           conversation=conversation, context=context)
             if found is not None and len(found.items) == 1 and found.items[0].get("sku"):
                 sku = str(found.items[0]["sku"])
         elif len({line.get("sku") for line in lines if line.get("qty")}) == 1:
@@ -474,9 +572,15 @@ def cart_fields(reading: Reading, conversation, lines: list[dict], text: str) ->
     return fields
 
 
-def fulfillment_fields(reading: Reading, today: date) -> dict:
+def fulfillment_fields(reading: Reading, today: date, text: str = "") -> dict:
+    from .intents import _fold
+
     fields = {}
     day = resolve_day(reading.day, today)
+    said = _SAID_DAY_RE.search(_fold(reading.span or text)) if not day else None
+    if said:
+        # "Para retirar dia 25 às 16h": a IA devolveu o modo e a hora e deixou o dia (ensaio no ar, 24/11).
+        day = resolve_day(f"{said.group(1)}/{said.group(2)}" if said.group(2) else said.group(1), today)
     if day:
         fields["date"] = day
     if reading.mode:
@@ -612,12 +716,13 @@ class NiceReader:
                     Reading(act=reading.act, span=reading.span, product=reading.product),
                     conversation, [], text).items() if key == "item"}
             elif reading.act == FULFILLMENT_ACT:
-                fields = fulfillment_fields(reading, today)
+                fields = fulfillment_fields(reading, today, text)
             elif reading.act == PAYMENT_ACT:
                 fields = {"method": reading.payment} if reading.payment else {}
             else:
                 fields = {}
             acts.append({"act": reading.act, "fields": fields, "confidence": UNAVAILABLE})
+        acts = swapped(acts, lines, text)
         consumption = Consumption(model=Producer(name=READER.name, version=model or PURPOSE), calls=1, cost=NO_PRICE)
         acts = acts or [{"act": "unknown", "fields": {}, "confidence": UNAVAILABLE}]
         alternatives = ()

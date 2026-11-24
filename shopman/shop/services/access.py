@@ -90,6 +90,34 @@ def exchange_token(token_str: str, request):
     )
 
 
+def redeem_without_session(token_str: str) -> bool:
+    """Gasta o link de uso único SEM abrir sessão: o convite que leva só a sacola (OC-18, #3529).
+
+    A mesma régua da troca que abre sessão (``exchange_token``): a audiência da porta da
+    loja e o portão de validade do doorman (``Gates.access_link_validity``: usado, vencido),
+    sob a trava da linha do link. O link é marcado usado sem usuário: ninguém entrou. Quem
+    o recebe é a sacola, nunca a conta (condição 1); ele vale uma vez e no mesmo prazo do
+    convite de hoje (condição 2). ``False`` quando não vale, sem dizer por quê.
+    """
+    from django.db import transaction
+    from shopman.doorman.exceptions import GateError
+    from shopman.doorman.gates import Gates
+    from shopman.doorman.models import AccessLink
+
+    if not token_str:
+        return False
+    with transaction.atomic():
+        token = AccessLink.get_by_token(token_str, for_update=True)
+        if token is None or token.audience not in STORE_ENTRY_AUDIENCES:
+            return False
+        try:
+            Gates.access_link_validity(token)
+        except GateError:
+            return False
+        token.mark_used(None)
+    return True
+
+
 def token_metadata(token_str: str) -> dict:
     """Return AccessLink metadata for a raw token without exposing token data."""
     if not token_str:

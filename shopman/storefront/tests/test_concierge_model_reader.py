@@ -342,6 +342,103 @@ def test_a_reading_without_approved_words_holds_the_message():
         turn_framework.reading_words({"acts": [{"act": "give_address", "fields": {}}]})
 
 
+# ── "dia 25", o erro de digitação e o "troca por" (ensaio no ar, 24/11) ────────────────
+
+
+@pytest.mark.parametrize(("day", "expected"), [
+    ("25", "2026-11-25"), ("dia 25", "2026-11-25"), ("23", "2026-11-23"),  # hoje é 23: é hoje
+    ("20", "2026-12-20"), ("31", "2026-12-31"),  # novembro não tem 31: o próximo que tem
+])
+def test_only_the_day_of_the_month_is_the_next_one(day, expected):
+    assert resolve_day(day, TODAY) == expected
+
+
+def test_the_day_said_in_the_message_comes_in_when_the_ai_left_it(conversation, menu, cart):
+    ai = FakeAI([{"act": "change_quantity", "span": "2 croissants", "product": "croissants", "qty": 2,
+                  "change": "set"},
+                 {"act": "choose_fulfillment", "span": "para retirar dia 25 às 16h", "mode": "pickup",
+                  "time": "16:00"}])
+    understanding, _ = _read("quero 2 croissants para retirar dia 25 às 16h", ai, allowed=WITH_FULFILLMENT)
+    assert _fields(understanding)[1] == ("choose_fulfillment",
+                                         {"date": "2026-11-25", "mode": "pickup", "time": "16:00"})
+
+
+@pytest.fixture
+def strict_menu(monkeypatch):
+    """A busca do cardápio como a do ar: o nome com erro de digitação não acha nada."""
+    from shopman.storefront.concierge import tools
+
+    def search(name, args, ctx):
+        query = (ctx.customer_text or "").lower()
+        return {"ok": True, "items": [i for i in (CROISSANT, BAGUETE) if i["name"].lower() in query]}
+
+    monkeypatch.setattr(tools, "execute", search)
+    monkeypatch.setattr(model_reader, "menu_names", lambda channel_ref: ["Croissant", "Baguete", "Brioche"])
+
+
+@pytest.mark.parametrize("product", ["croisants", "croissants"])  # como o cliente escreveu, ou corrigido pela IA
+def test_a_typo_in_the_product_name_still_finds_the_product(conversation, strict_menu, cart, product):
+    ai = FakeAI([{"act": "change_quantity", "span": "2 croisants", "product": product, "qty": 2, "change": "set"}])
+    understanding, _ = _read("quero 2 croisants pra amanhã, busco 16h", ai)
+    assert _fields(understanding) == [("change_quantity", {"item": "CROISSANT", "quantity": "2"})]
+
+
+def test_a_name_far_from_the_menu_does_not_become_a_product(conversation, strict_menu, cart):
+    ai = FakeAI([{"act": "change_quantity", "span": "2 empadas", "product": "empadas", "qty": 2, "change": "set"}])
+    assert _fields(_read("quero 2 empadas", ai)[0]) == [("change_quantity", {"quantity": "2"})]
+    assert model_reader.spelled_name("brioch", ["Brioche", "Brioches"]) == ""  # dois perto demais: ninguém escolhe
+
+
+BAGUETTES = [{"sku": "TRADI", "name": "Baguette de Tradition", "can_order": True},
+             {"sku": "BGL", "name": "Baguete Lanche", "can_order": True}]
+
+
+def test_two_close_names_never_become_a_silent_choice(conversation, cart, monkeypatch):
+    """Coordenação (24/11): "baguete" com "Baguette de Tradition" e "Baguete Lanche" no cardápio. A busca devolve
+    as duas, ou o erro de digitação ("bagete") não acha nenhuma: nos dois casos o item fica em aberto (o turno
+    pergunta qual), e nem a busca nem o nome parecido escolhem por ele."""
+    from shopman.storefront.concierge import tools
+
+    monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": list(BAGUETTES)})
+    monkeypatch.setattr(model_reader, "menu_names", lambda channel_ref: [b["name"] for b in BAGUETTES])
+    ai = FakeAI([{"act": "change_quantity", "span": "2 baguetes", "product": "baguetes", "qty": 2, "change": "set"}])
+    assert _fields(_read("quero 2 baguetes", ai)[0]) == [("change_quantity", {"quantity": "2"})]
+
+    monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": []})
+    ai = FakeAI([{"act": "change_quantity", "span": "2 bagetes", "product": "bagetes", "qty": 2, "change": "set"}])
+    assert _fields(_read("quero 2 bagetes", ai)[0]) == [("change_quantity", {"quantity": "2"})]
+    assert model_reader.spelled_name("bagete", [b["name"] for b in BAGUETTES]) == ""
+
+
+def test_swap_puts_the_new_product_in_the_same_quantity_and_takes_the_old_one_out(conversation, menu, cart):
+    """ "troca por pain au chocolat" depois de 2 croissants: o croissant ficava e o novo vinha sem quantidade."""
+    cart.append({"sku": "CROISSANT", "name": "Croissant", "qty": 2})
+    ai = FakeAI([{"act": "change_quantity", "span": "troca por baguete", "product": "baguete", "change": "set"}])
+    assert _fields(_read("troca por baguete", ai)[0]) == [
+        ("change_quantity", {"item": "CROISSANT", "quantity": "0"}),
+        ("change_quantity", {"item": "BAGUETE", "quantity": "2"})]
+
+
+def test_swap_naming_the_old_one_with_two_in_the_cart(conversation, menu, cart):
+    cart.extend([{"sku": "CROISSANT", "name": "Croissant", "qty": 3}, {"sku": "SONHO", "name": "Sonho", "qty": 1}])
+    ai = FakeAI([{"act": "change_quantity", "span": "troca o croissant", "product": "croissant",
+                  "change": "remove_all"},
+                 {"act": "change_quantity", "span": "pela baguete", "product": "baguete", "change": "set"}])
+    assert _fields(_read("troca o croissant pela baguete", ai)[0]) == [
+        ("change_quantity", {"item": "CROISSANT", "quantity": "0"}),
+        ("change_quantity", {"item": "BAGUETE", "quantity": "3"})]
+
+
+def test_without_knowing_what_leaves_the_swap_stays_as_read(conversation, menu, cart):
+    cart.extend([{"sku": "CROISSANT", "qty": 3}, {"sku": "SONHO", "qty": 1}])
+    ai = FakeAI([{"act": "change_quantity", "span": "troca por baguete", "product": "baguete", "change": "set"}])
+    assert _fields(_read("troca por baguete", ai)[0]) == [("change_quantity", {"item": "BAGUETE"})]
+    # Sem "troca", "quero baguete" não tira nada da sacola.
+    cart[:] = [{"sku": "CROISSANT", "qty": 2}]
+    ai = FakeAI([{"act": "change_quantity", "span": "quero baguete", "product": "baguete", "change": "set"}])
+    assert _fields(_read("quero baguete", ai)[0]) == [("change_quantity", {"item": "BAGUETE"})]
+
+
 # ── a queda para a regra local ──────────────────────────────────────────────────────────
 
 

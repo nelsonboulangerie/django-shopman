@@ -29,6 +29,11 @@ na §8.
   em segundo, logo depois do cliente, porque diz respeito à disponibilidade (dono, 19/11/2026,
   #2754; revê a ordem de 16/09, que punha o recebimento antes do quando).
 - "Via Recibo primeiro, Nota depois": a NFC-e acompanha a **saída** da mercadoria.
+- Encomenda paga e **não retirada**: o valor que a loja retém é multa por desistência, com
+  recibo e **sem NFC-e**, fora da receita bruta do Simples. A parte executada de uma encomenda
+  é o que foi **entregue**, não o que foi produzido. Na retirada parcial, a NFC-e é só do que
+  saiu, e o resto retido é multa (contador, 24/11/2026, #2695). No sistema, o "Não retirado"
+  termina em `cancelled` sem passar pela saída, e `fiscal.emit` recusa pedido desfeito.
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).
 - Expedição sem NFC-e só avisa, nunca segura a sacola.
 - KDS: dois gestos (Iniciar, Pronto), desfazer de 5 s, cancelamento com alarde.

@@ -1801,6 +1801,10 @@ useSeoMeta({
           </p>
         </div>
 
+        <!-- A sacola entre a loja e a conversa (OC-16, #3515, #3517): mesmos avisos da
+             sacola. Depois de trazer ou trocar, o Finalizar relê o rascunho. -->
+        <CartPassageNotices :cart="liveCart" @changed="refresh" />
+
         <!-- Skeleton só no carregamento INICIAL. Em refresh de fundo (ex.: rascunho
              de entrega) manter o conteúdo montado — apagar a página remontava o
              AddressPicker, que re-selecionava o salvo e re-disparava o rascunho →
@@ -2183,10 +2187,10 @@ useSeoMeta({
               <div class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div class="space-y-2">
                   <UiLabel>Data</UiLabel>
-                  <p v-if="todayOverNotice" class="shop-meta text-muted-foreground" data-checkout-today-over>
+                  <p v-if="todayOverNotice" class="shop-meta text-muted-foreground" data-checkout-today-over data-decisive="availability">
                     {{ todayOverNotice }}
                   </p>
-                  <p v-if="batchFloorNotice" id="checkout-batch-floor" class="shop-meta text-muted-foreground" data-checkout-batch-floor>
+                  <p v-if="batchFloorNotice" id="checkout-batch-floor" class="shop-meta text-muted-foreground" data-checkout-batch-floor data-decisive="availability">
                     {{ batchFloorNotice }}
                   </p>
                   <!-- Datas padronizadas como as demais escolhas: caixas verticais
@@ -2249,7 +2253,7 @@ useSeoMeta({
                     </UiPopover>
                   </UiRadioGroup>
                   <UiFieldError v-if="fieldErrors.delivery_date" :errors="fieldErrors.delivery_date" />
-                  <p v-if="deliveryDateHint" class="shop-meta text-muted-foreground" data-checkout-preorder-hint>{{ deliveryDateHint }}</p>
+                  <p v-if="deliveryDateHint" class="shop-meta text-muted-foreground" data-checkout-preorder-hint data-decisive="availability">{{ deliveryDateHint }}</p>
                 </div>
 
                 <!-- Entrega, e retirada de hoje: o cliente escolhe a janela na grade
@@ -2258,11 +2262,11 @@ useSeoMeta({
                      janela apagada sai uma vez acima dela. -->
                 <div v-if="isWindowGrid && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
                   <UiLabel>{{ isDeliveryWindows ? 'Horário da entrega' : 'Horário da retirada' }}</UiLabel>
-                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-delivery-windows-empty>
+                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-delivery-windows-empty data-decisive="availability">
                     {{ noWindowsMessage(state.fulfillment_type, isTodaySelected) }}
                   </p>
                   <template v-else>
-                    <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
+                    <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness data-decisive="availability">
                       {{ windowsReason }}
                     </p>
                     <UiRadioGroup v-model="state.delivery_time_slot" class="grid grid-cols-2 gap-2">
@@ -2271,7 +2275,6 @@ useSeoMeta({
                         :key="slot.ref"
                         :for="`checkout-window-${slot.ref}`"
                         class="bg-card has-data-[state=checked]:bg-card has-data-[state=checked]:ring-1 has-data-[state=checked]:ring-primary"
-                        :class="!slot.enabled ? 'opacity-50' : ''"
                         :title="slot.enabled ? slot.label : `${slot.label}: ${slot.reason}`"
                       >
                         <UiField orientation="horizontal" :data-disabled="!slot.enabled || undefined">
@@ -2295,10 +2298,10 @@ useSeoMeta({
 
                 <div v-if="!isWindowGrid && state.delivery_date" class="space-y-2">
                   <UiLabel>Horário</UiLabel>
-                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-pickup-slots-empty>
+                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-pickup-slots-empty data-decisive="availability">
                     {{ noWindowsMessage(state.fulfillment_type, isTodaySelected) }}
                   </p>
-                  <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness>
+                  <p v-if="windowsReason" class="shop-meta text-muted-foreground" data-checkout-pickup-readiness data-decisive="availability">
                     {{ windowsReason }}
                   </p>
                   <UiRadioGroup v-if="slots.length" v-model="state.delivery_time_slot" class="grid gap-2">
@@ -2307,7 +2310,6 @@ useSeoMeta({
                       :key="slot.ref"
                       :for="`checkout-slot-${slot.ref}`"
                       class="bg-card has-data-[state=checked]:bg-card has-data-[state=checked]:ring-1 has-data-[state=checked]:ring-primary"
-                      :class="!slot.enabled ? 'opacity-50' : ''"
                     >
                       <UiField orientation="horizontal" :data-disabled="!slot.enabled || undefined">
                         <UiRadioGroupItem
@@ -2325,7 +2327,10 @@ useSeoMeta({
                                enxerga via um horário riscado sem saber se lotou, se
                                passou ou se o turno não existe — e a diferença decide
                                entre mudar de horário e mudar de dia. -->
-                          <UiFieldDescription v-if="!slot.enabled && !(windowsReason && slot.reason && windowsReason.startsWith(slot.reason))">
+                          <!-- O horário apagado esmaece sozinho (o título e o rádio, pelo
+                               data-disabled do campo); o motivo NÃO: a meia opacidade do
+                               cartão inteiro o deixava abaixo do contraste AA (X9, OC-30). -->
+                          <UiFieldDescription v-if="!slot.enabled && !(windowsReason && slot.reason && windowsReason.startsWith(slot.reason))" data-decisive="availability">
                             {{ slot.reason || 'Esgotado para este horário.' }}
                           </UiFieldDescription>
                         </UiFieldContent>
@@ -2657,17 +2662,17 @@ useSeoMeta({
               data-checkout-open-receipt
               @click="openReceiptSheet"
             >
-              <span class="flex w-full items-baseline justify-between gap-2">
-                <span class="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-foreground/70">
+              <span class="flex w-full flex-wrap items-baseline justify-between gap-x-2">
+                <span class="flex items-center gap-2 shop-body text-ink-foreground/80">
                   <Icon name="lucide:receipt-text" class="size-4 shrink-0" />
                   Total do pedido
                 </span>
-                <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
+                <span class="shop-price-strong shrink-0" data-decisive="total">{{ checkoutTotalDisplay }}</span>
               </span>
             </UiButton>
-            <p class="hidden w-full items-baseline justify-between gap-2 lg:flex" data-checkout-total-line>
-              <span class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</span>
-              <span class="shop-price-strong shrink-0">{{ checkoutTotalDisplay }}</span>
+            <p class="hidden w-full flex-wrap items-baseline justify-between gap-x-2 lg:flex" data-checkout-total-line>
+              <span class="shop-body text-ink-foreground/80">Total do pedido</span>
+              <span class="shop-price-strong shrink-0" data-decisive="total">{{ checkoutTotalDisplay }}</span>
             </p>
             <template v-if="!bagGoneNoticeShowing">
               <UiButton
@@ -2680,7 +2685,7 @@ useSeoMeta({
               >
                 {{ primaryAction.label }}
               </UiButton>
-              <p v-if="primaryAction.reason" class="text-center text-xs text-ink-foreground/70">
+              <p v-if="primaryAction.reason" class="text-center text-sm text-ink-foreground/80" data-decisive="state">
                 {{ primaryAction.reason }}
               </p>
             </template>
@@ -2723,13 +2728,13 @@ useSeoMeta({
                        amanhã, quinta, a partir das 15h"); o selo e o "Previsto para" só
                        sobram quando a promessa não veio. -->
                   <template v-if="reviewWaitlist(line, state.delivery_date, shopToday)">
-                    <span v-if="cartLinePromise(line.promise)" class="flex items-start gap-1 shop-meta text-foreground" data-review-line-promise>
+                    <span v-if="cartLinePromise(line.promise)" class="flex items-start gap-1 shop-meta text-foreground" data-review-line-promise data-decisive="availability">
                       <Icon name="lucide:clock" class="mt-px size-3.5 shrink-0" />
                       {{ cartLinePromise(line.promise) }}
                     </span>
                     <template v-else>
-                      <UiBadge variant="outline" class="ml-1 align-middle">Lista de espera</UiBadge>
-                      <span v-if="reviewWaitlist(line, state.delivery_date, shopToday)?.notice" class="ml-1 shop-meta">{{ reviewWaitlist(line, state.delivery_date, shopToday)?.notice }}</span>
+                      <UiBadge variant="outline" class="ml-1 align-middle" data-decisive="availability">Lista de espera</UiBadge>
+                      <span v-if="reviewWaitlist(line, state.delivery_date, shopToday)?.notice" class="ml-1 shop-meta" data-decisive="availability">{{ reviewWaitlist(line, state.delivery_date, shopToday)?.notice }}</span>
                     </template>
                   </template>
                   <!-- Preparado na hora: promessa declarada da casa, eixo próprio.
@@ -2772,14 +2777,14 @@ useSeoMeta({
                 <dl class="space-y-1 text-sm" data-review-bill>
                   <div class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">Subtotal</dt>
-                    <dd class="text-right tabular-nums">
+                    <dd class="text-right tabular-nums" data-decisive="price">
                       {{ cart.lines_subtotal_display }}
                       <span v-if="promoSavingsNote(cart)" class="block shop-meta" data-review-promo-savings>{{ promoSavingsNote(cart) }}</span>
                     </dd>
                   </div>
                   <div v-for="discount in cart.order_discount_lines" :key="discount.label" class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">{{ discount.label }}</dt>
-                    <dd class="tabular-nums text-primary">{{ discountDisplay(discount.amount_display) }}</dd>
+                    <dd class="tabular-nums text-promotion" data-decisive="price">{{ discountDisplay(discount.amount_display) }}</dd>
                   </div>
                   <div v-if="cart.delivery_fee_display" class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">Entrega<span v-if="cart.delivery_distance_display"> · {{ cart.delivery_distance_display }}</span></dt>
@@ -2826,7 +2831,7 @@ useSeoMeta({
               <div class="space-y-2">
                 <div class="flex items-baseline justify-between gap-3">
                   <span class="shop-kicker">Total</span>
-                  <span class="shop-price-strong">{{ checkoutTotalDisplay }}</span>
+                  <span class="shop-price-strong" data-decisive="total">{{ checkoutTotalDisplay }}</span>
                 </div>
                 <UiButton
                   :loading="submitting"
@@ -2889,7 +2894,7 @@ useSeoMeta({
                 <UiCardTitle>Seu pedido</UiCardTitle>
                 <UiCardDescription>{{ formatCount(cart?.items_count || 0, 'item', 'itens') }}</UiCardDescription>
               </div>
-              <p class="shop-price-strong">{{ checkoutTotalDisplay }}</p>
+              <p class="shop-price-strong" data-decisive="total">{{ checkoutTotalDisplay }}</p>
             </div>
             <div class="mt-4 space-y-2 shop-muted" data-checkout-live-summary>
               <div class="flex items-center gap-2">

@@ -11,6 +11,8 @@
         class: normalizeClass(props.class) || undefined,
         effect: props.effect,
         skeuomorphic: props.skeuomorphic,
+        grow: grows,
+        floor: floors,
       })
     "
     :disabled="isDisabled"
@@ -54,7 +56,16 @@
 
   import type { NuxtLinkProps } from "#app/components";
 
-  /** Exported button styles that can be used by other components. */
+  /** Exported button styles that can be used by other components.
+   *
+   *  `grow` (X11, OC-30): o botão COM RÓTULO quebra a linha e cresce em vez de vazar. Com a
+   *  fonte do sistema a 200 %, "Encomendar para amanhã" e "Prefere receber um código por
+   *  SMS?" saíam da tela com o `whitespace-nowrap`. Aí a altura do tamanho vira MÍNIMA e o
+   *  botão nunca passa da largura de quem o contém. Só vale para botão com rótulo e sem
+   *  altura própria: controle de tamanho fixo (pontos do carrossel `h-2 w-2 p-0`, ícones
+   *  `size-*`, pílula `h-9`) fica exatamente como era, porque o piso de altura transformava
+   *  o ponto de 8 px numa barra de 36 px. O botão-link `h-auto` quebra a linha sem ganhar
+   *  piso (`floor`). Quem decide é o componente (`grows`/`floors` abaixo), não a página. */
   export const buttonStyles = tv({
     base: "group focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] active:translate-y-px data-[acknowledged=true]:ring-2 data-[acknowledged=true]:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     variants: {
@@ -104,10 +115,24 @@
       hasIcon: {
         false: "gap-2",
       },
+      grow: {
+        true: "max-w-full whitespace-normal text-center",
+      },
+      floor: {
+        true: "h-auto",
+      },
       skeuomorphic: {
         true: "[box-shadow:0px_0px_0px_1px_rgba(0,0,0,0.18)_inset,0px_-2px_0px_0px_rgba(0,0,0,0.05)_inset,var(--shadow-xs)]",
       },
     },
+    compoundVariants: [
+      { floor: true, size: "xs", class: "min-h-7" },
+      { floor: true, size: "sm", class: "min-h-8 py-1" },
+      // `py-1.5`, não o `py-2` do tamanho: com altura automática, o `py-2` mais a borda do
+      // `outline` davam 38 px onde o main tem 36; assim o piso manda e nada muda na fonte normal.
+      { floor: true, size: "default", class: "min-h-9 py-1.5" },
+      { floor: true, size: "lg", class: "min-h-10 py-2" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",
@@ -173,6 +198,20 @@
   });
 
   const isLink = computed(() => elementType.value !== "button");
+
+  // Só o botão que TEM rótulo, num tamanho de texto, quebra a linha (`grow`). Quem fixou a
+  // altura (`h-9`, `size-*`, `min-h-*`, o ponto `h-2`) fica exatamente como no main. O
+  // botão-link sem moldura (`h-auto p-0`, "Observação deste item") quebra a linha mas não
+  // ganha piso (`floor`): a altura dele é a do texto, como no main.
+  const slots = useSlots();
+  const FIXED_HEIGHT = /(?:^|\s)(?:[\w[\]&>-]+:)*(?:h-(?!auto\b)|size-|min-h-)/;
+  const AUTO_HEIGHT = /(?:^|\s)(?:[\w[\]&>-]+:)*h-auto\b/;
+  const grows = computed(() => {
+    if (String(props.size || "").startsWith("icon")) return false;
+    if (!slots.default && !props.text) return false;
+    return !FIXED_HEIGHT.test(normalizeClass(props.class) || "");
+  });
+  const floors = computed(() => grows.value && !AUTO_HEIGHT.test(normalizeClass(props.class) || ""));
   const isDisabled = computed(() => props.disabled || props.loading);
   const acknowledged = ref(false);
   let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;

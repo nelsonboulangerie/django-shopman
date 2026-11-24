@@ -233,8 +233,12 @@ def conferir(caso: Caso, sacola: dict[str, int], recebimento: dict[str, str], to
     erros.extend(f"sobrou {nomes.get(sku, sku)} x{q}" for sku, q in restante.items())
     if caso.dia is not None and recebimento.get("date") != dia(caso.dia, today):
         erros.append(f"dia {recebimento.get('date') or '-'}, esperado {dia(caso.dia, today)}")
-    if caso.recebe and recebimento.get("mode") != caso.recebe:
-        erros.append(f"recebimento {recebimento.get('mode') or '-'}, esperado {caso.recebe}")
+    # A hora dita sem o modo é a de buscar: a regra da casa no executor (``effect_site._set_fulfillment``, a mesma
+    # do fechamento de hoje), e a Nice diz "Combinado: retirada amanhã às 16h". O leitor não inventa o modo; a
+    # bateria confere o recebimento que a casa grava (#5 do ensaio no ar, 24/11: "frase-so-horario").
+    modo = recebimento.get("mode") or ("pickup" if recebimento.get("time") else "")
+    if caso.recebe and modo != caso.recebe:
+        erros.append(f"recebimento {modo or '-'}, esperado {caso.recebe}")
     if caso.janela:
         lida = janela_da_hora(recebimento["time"]) if recebimento.get("time") else ""
         if lida != caso.janela:

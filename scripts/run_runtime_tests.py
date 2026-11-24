@@ -46,6 +46,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # Transferência de sacola entre canais (OC-15): o aceite e a edição na origem
     # disputam a mesma linha; quem trava primeiro decide, sem reserva em dobro.
     "shopman/shop/tests/test_session_transfer_postgres.py",
+    # A Nice traz a sacola do site (OC-18) enquanto a loja a edita: quem trava a
+    # sacola do site primeiro decide, sem duas sacolas vivas nem reserva em dobro.
+    "shopman/storefront/tests/test_ponte_da_nice_postgres.py",
     # Eventos operacionais continuam depois da retenção do pedido, mas um
     # writer stale não pode recolocar note/reason após a anonimização.
     "shopman/shop/tests/test_order_event_privacy_fence_postgres.py",

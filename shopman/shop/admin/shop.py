@@ -995,6 +995,19 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         widget=UnfoldAdminDecimalFieldWidget,
         help_text="Teto da tolerância, para dia de muito dinheiro. Em branco = padrão (R$ 20,00).",
     )
+    fields["defaults_running_low_percent"] = forms.IntegerField(
+        label="Avisar que está acabando (%)",
+        required=False,
+        min_value=0,
+        max_value=100,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text=(
+            "Quando restar esta parte do que o dia teve, o PDV mostra o saldo no botão do produto "
+            "e a Cozinha avisa as últimas unidades. Ex.: 20% de 30 pães avisa a partir de 6; de 6 "
+            "pães, a partir de 2 (arredonda para cima). Vale para todo produto sem porcentagem "
+            "própria no Catálogo. 0 desliga. Em branco = 20%."
+        ),
+    )
     fields["defaults_pos_late_fiscal_emission_days"] = forms.IntegerField(
         label="Emissão avulsa de NFC-e: dias depois da venda",
         required=False,
@@ -1801,6 +1814,13 @@ class ShopForm(forms.ModelForm):
                 if isinstance(tolerance.get(key), int):
                     self.fields[field_name].initial = Decimal(int(tolerance[key])) / 100
 
+        if self._has("defaults_running_low_percent"):
+            from shopman.shop.services import running_low
+
+            block = defaults.get(running_low.BLOCK) if isinstance(defaults.get(running_low.BLOCK), dict) else {}
+            # Mostra o GRAVADO; ausente fica em branco (= 20%, dito na ajuda).
+            self.fields["defaults_running_low_percent"].initial = running_low.coerce_percent(block.get("percent"))
+
         if self._has("defaults_pos_late_fiscal_emission_days"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             # Mostra o GRAVADO; ausente fica em branco (= mesmo dia, dito na ajuda).
@@ -2444,6 +2464,20 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("pos", None)
 
+        if self._has("defaults_running_low_percent"):
+            from shopman.shop.services import running_low
+
+            block = dict(defaults.get(running_low.BLOCK) if isinstance(defaults.get(running_low.BLOCK), dict) else {})
+            percent = self.cleaned_data.get("defaults_running_low_percent")
+            if percent is None:
+                block.pop("percent", None)
+            else:
+                block["percent"] = int(percent)
+            if block:
+                defaults[running_low.BLOCK] = block
+            else:
+                defaults.pop(running_low.BLOCK, None)
+
         if self._has("defaults_marketing_whatsapp_minimum_audience"):
             marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
             marketing = dict(marketing)
@@ -3060,6 +3094,7 @@ _POS_FIELDSETS = (
                 "defaults_pos_discount_approval_threshold_q",
                 "defaults_pos_fiscal_toggle",
                 "defaults_pos_late_fiscal_emission_days",
+                "defaults_running_low_percent",
                 "defaults_pos_cash_tolerance_percent",
                 ("defaults_pos_cash_tolerance_min", "defaults_pos_cash_tolerance_max"),
             ),

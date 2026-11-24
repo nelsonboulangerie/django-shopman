@@ -619,15 +619,21 @@ class TestCartFromAnotherChannel:
         assert first.session["cart_session_key"] == second.session["cart_session_key"]
         assert Session.objects.filter(channel_ref="web").count() == 1
 
-    def test_a_browser_with_its_own_cart_is_asked_never_merged(self, chat_cart, cart_session, customer):
+    def test_a_browser_with_its_own_cart_receives_the_items(self, chat_cart, cart_session, customer):
+        """Decisão do dono (24/11/2026): os itens da conversa entram na sacola do navegador."""
         from shopman.orderman.models import Session
 
         own = cart_session.session["cart_session_key"]
+        def units(key):
+            return sum(float(line["qty"]) for line in Session.objects.get(session_key=key).items)
+
+        before, arriving = units(own), units(chat_cart)
         body = cart_session.post(self.URL, {"token": self._token(customer, chat_cart)}).json()
 
-        assert body["cart_transfer"] == {"status": "refused", "code": "destination_conflict"}
+        assert body["cart_transfer"]["status"] == "accepted"
         assert cart_session.session["cart_session_key"] == own
-        assert Session.objects.get(session_key=chat_cart).state == "open"
+        assert units(own) == before + arriving
+        assert Session.objects.get(session_key=chat_cart).state == "abandoned"
 
     def test_c05_someone_elses_link_does_not_bring_the_cart(self, chat_cart, customer):
         from shopman.orderman.models import Session
