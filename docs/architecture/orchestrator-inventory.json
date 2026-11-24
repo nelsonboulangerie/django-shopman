@@ -3110,7 +3110,6 @@
             "_fulfillment_conditions",
             "_text",
             "address_ref",
-            "conversation_payment_methods",
             "instant",
             "logger",
             "parse_saved_address_ref",

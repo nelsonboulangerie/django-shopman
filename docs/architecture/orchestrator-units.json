@@ -4896,6 +4896,7 @@
             "MISSING_MESSAGE",
             "PAYMENT_METHODS",
             "PaymentMethodRule",
+            "conversation_payment_methods",
             "payment_refusal",
             "sole_payment_method"
           ]

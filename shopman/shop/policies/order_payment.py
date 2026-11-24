@@ -23,6 +23,20 @@ PAYMENT_METHODS = frozenset(
 MISSING_MESSAGE = "Escolha a forma de pagamento antes de fechar o pedido."
 
 
+def conversation_payment_methods(channel_ref: str) -> list[str]:
+    """As formas de pagamento que a conversa oferece: as do canal, sem dinheiro (D-003).
+
+    D-003: dinheiro não entra no fluxo remoto; troco e dinheiro vivo moram na
+    encomenda anotada pelo operador. Régua ÚNICA das portas da conversa: o
+    orçamento e o pedido da Concierge (``concierge.tools``), o ``requirements``
+    e as condições dos termos (``conversational.commerce_read``) e o fechamento
+    de hoje (``concierge.order_closing``) leem as opções daqui.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
+
+
 def sole_payment_method(offered: Sequence[str]) -> str:
     """A forma que vale quando o cliente não escolheu: a única oferecida, ou nenhuma (``""``).
 

@@ -29,6 +29,8 @@ from conversational_commerce.contracts.common import Unavailable
 from conversational_commerce.ports import Capabilities, ItemSummary, PortError, PromiseReading, TrustedContext
 from conversational_commerce.ports.commerce_read import OPERATIONS
 
+from shopman.shop.policies.order_payment import conversation_payment_methods, sole_payment_method
+
 logger = logging.getLogger(__name__)
 
 PORT = "commerce_read"
@@ -444,17 +446,6 @@ def _fulfillment(data: dict, cart_ref: str = "") -> dict:
     return found
 
 
-def conversation_payment_methods(channel_ref: str) -> list[str]:
-    """As formas de pagamento que a conversa oferece: as do canal, sem dinheiro (D-003).
-
-    Régua ÚNICA: o ``requirements`` conta por ela o que falta, as condições dos termos mostram por
-    ela a forma única, e o fechamento de hoje (``order_closing._methods``) lista por ela as opções.
-    """
-    from shopman.shop.config import ChannelConfig
-
-    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
-
-
 def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "") -> list[dict]:
     """O dia e a janela como a casa os guarda (a resposta mostra o rótulo da janela, não a hora crua).
 
@@ -477,8 +468,6 @@ def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "
     if not method and channel_ref:
         # Sem escolha, vale a única forma que a conversa oferece: a MESMA régua do ``requirements``
         # (``conversation_payment_methods``), para que "não falta" e "esta é a forma" nunca discordem.
-        from shopman.shop.policies.order_payment import sole_payment_method
-
         method = sole_payment_method(conversation_payment_methods(channel_ref))
     if method:
         # A forma de pagamento escolhida é condição dos termos: o cliente vê como paga antes do "sim".

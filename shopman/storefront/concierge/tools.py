@@ -1221,8 +1221,7 @@ def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
 
 def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | None = None) -> dict:
     """O orçamento: recap completo, o que falta e o token que autoriza o pedido."""
-    from shopman.shop.config import ChannelConfig
-    from shopman.shop.policies.order_payment import sole_payment_method
+    from shopman.shop.policies.order_payment import conversation_payment_methods, sole_payment_method
     from shopman.storefront.intents.checkout import _validate_preorder
 
     session = _open_session(ctx)
@@ -1234,7 +1233,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         if not isinstance(order_notes, str) or len(order_notes) > 300:
             return _error("invalid_input", "A observação deve ter até 300 caracteres.")
         session = _set_session_data(ctx, session.session_key, {"order_notes": " ".join(order_notes.split())})
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
+    methods = conversation_payment_methods(ctx.channel_ref)
     selected = payment_method or (session.data or {}).get("payment", {}).get("method") or sole_payment_method(methods)
     if selected and selected not in methods:
         return _error("invalid_payment_method", "Escolha uma forma de pagamento disponível.")
@@ -1285,7 +1284,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
             missing.append("delivery_date")
             payload["date_error"] = " ".join(date_errors.values())
 
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
+    methods = conversation_payment_methods(ctx.channel_ref)
     result = {
         "ok": True,
         "ready": not missing,
@@ -1470,7 +1469,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     """Compra autorizada por revisão oferecida; recibo e efeito local compartilham commit."""
     from shopman.orderman.models import Order, Session
 
-    from shopman.shop.config import ChannelConfig
+    from shopman.shop.policies.order_payment import conversation_payment_methods
     from shopman.shop.services import checkout as checkout_service
     from shopman.shop.services import remote_mutations
     from shopman.shop.services.customer_orders import customer_identity_filter
@@ -1486,7 +1485,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     if not isinstance(quote_token, str) or not quote_token or not isinstance(payment_method, str) or not isinstance(order_notes, str):
         return _error("invalid_input", "Confira a revisão e a forma de pagamento.")
     payment_method = payment_method.strip().lower()
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
+    methods = conversation_payment_methods(ctx.channel_ref)
     if payment_method not in methods:
         return _error("invalid_payment_method", "Forma de pagamento indisponível neste canal.")
     if len(order_notes) > 300:
