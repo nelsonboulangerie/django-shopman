@@ -340,6 +340,9 @@ class TrackingData:
     # A nota fiscal chega ao cliente pela página do pedido (decisão do dono,
     # 25/09/2026): a loja online não imprime nem pede e-mail.
     fiscal_note: TrackingFiscalNoteData | None = None
+    # Encomenda paga e não retirada: o recibo do valor que a loja reteve (#3538),
+    # a mesma leitura do papel do balcão (``no_show.RetentionReceipt``).
+    retention_receipt: Any = None
     # A conta e o que o cliente informou no checkout, para o Resumo do pedido
     # contar o mesmo que a revisão contou (beta 06/11): os descontos selados no
     # commit (vazio quando o pedido foi editado depois: a conta selada já não é
@@ -536,6 +539,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
         fiscal_note=_fiscal_note(order_data),
+        retention_receipt=_retention_receipt(order),
         discount_lines=_sealed_discount_lines(order),
         is_gift=bool(order_data.get("is_gift")),
         gift_recipient_name=str((order_data.get("recipient") or {}).get("name") or "").strip(),
@@ -567,6 +571,13 @@ def _sealed_discount_lines(order) -> tuple[Any, ...]:
     discount = dict(pricing.get("discount") or {})
     discount["items"] = [d for d in discount.get("items") or [] if isinstance(d, dict) and d.get("type") == "coupon"]
     return _discount_lines(discount, pricing)
+
+
+def _retention_receipt(order):
+    """O recibo do valor retido de um pedido não retirado, ou ``None`` (#3538)."""
+    from shopman.shop.services import no_show
+
+    return no_show.retention_receipt(order)
 
 
 def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
@@ -2384,8 +2395,9 @@ def _cancellation_customer_text(order_data: dict) -> str:
     if reason is None or reason.key == cancel_reasons.OTHER:
         return ""
     # Pela função, não pelo campo: o "Não retirado" completa a frase com o
-    # destino do dinheiro (``order.data["no_show"]``).
-    return cancel_reasons.customer_text(order_data)
+    # destino do dinheiro (``order.data["no_show"]``). Sem a frase do recibo:
+    # nesta página ele aparece inteiro (``retention_receipt``).
+    return cancel_reasons.customer_text(order_data, receipt_hint=False)
 
 
 def _note_says_card_hold_released(order_data: dict, money_outcome) -> bool:

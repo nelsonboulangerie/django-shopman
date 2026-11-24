@@ -35,6 +35,10 @@ describe('selos de urgência (#2807)', () => {
     expect(fomoBadgeViews([promo('2026-11-23T14:00:00-03:00')], NOW)).toEqual([])
   })
 
+  it('a promoção acabando usa o selo de promoção, leve (dono, 24/11/2026: "B nos dois")', () => {
+    expect(fomoBadgeViews([promo('2026-11-23T16:45:00-03:00')], NOW)[0]?.variant).toBe('promotion')
+  })
+
   it('últimas unidades segue o número do servidor, e substitui o selo genérico', () => {
     expect(fomoBadgeViews([lowStock], NOW)).toEqual([{ type: 'low_stock', label: 'Últimas 3 unidades', variant: 'warning' }])
     expect(fomoCoversLowStock([lowStock])).toBe(true)

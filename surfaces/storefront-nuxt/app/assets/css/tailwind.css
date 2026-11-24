@@ -469,6 +469,19 @@
     @apply text-sm font-semibold tabular-nums;
   }
 
+  /* Selo de promoção (dono, 24/11/2026, "B nos dois"): a cor da promoção a ~10% sobre
+     o fundo, com o texto na cor da promoção. Opaco, para ler também sobre a foto do
+     card. No escuro, a cor da promoção é escura demais para ser letra (2,8:1): o texto
+     usa a mesma cor clareada com branco e o fundo sobe para 30% (6,2:1). No claro, 5,85:1. */
+  .shop-badge-promotion {
+    background-color: color-mix(in oklch, var(--shop-promotion) 10%, var(--background));
+    color: var(--shop-promotion);
+  }
+  .dark .shop-badge-promotion {
+    background-color: color-mix(in oklch, var(--shop-promotion) 30%, var(--background));
+    color: color-mix(in oklch, var(--shop-promotion), white 50%);
+  }
+
   .shop-price-strong {
     @apply text-xl font-semibold tabular-nums;
     line-height: 1.15;

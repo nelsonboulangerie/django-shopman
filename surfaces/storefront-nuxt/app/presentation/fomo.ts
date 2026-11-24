@@ -8,7 +8,7 @@ import type { FomoBadgeProjection } from '~/types/shopman'
 export type FomoBadgeView = {
   type: string
   label: string
-  variant: 'success' | 'warning' | 'default'
+  variant: 'success' | 'warning' | 'promotion'
 }
 
 // Espelha `presentation/fomo.py`: a fornada é notícia por 60 min; a promoção vira
@@ -47,7 +47,7 @@ export function fomoBadgeViews (badges: ReadonlyArray<FomoBadgeProjection> | nul
       if (label) views.push({ type: badge.type, label, variant: 'success' })
     } else if (badge.type === 'promo_countdown') {
       const label = promoLabel(badge, now)
-      if (label) views.push({ type: badge.type, label, variant: 'default' })
+      if (label) views.push({ type: badge.type, label, variant: 'promotion' })
     } else if (badge.type === 'low_stock') {
       views.push({ type: badge.type, label: badge.label, variant: 'warning' })
     }

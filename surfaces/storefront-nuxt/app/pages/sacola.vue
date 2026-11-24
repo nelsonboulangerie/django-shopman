@@ -21,6 +21,8 @@ const continueAction = computed(() => cart.value.actions.find(action => action.r
 const checkoutTarget = computed(() => checkoutAction.value?.href || '/finalizar')
 const checkoutDisabled = computed(() => !checkoutAction.value?.enabled)
 const checkoutReason = computed(() => checkoutAction.value?.reason || '')
+// EXPERIMENT(duvida-no-ponto) remove_after 2027-02-20
+const duvidaNoPonto = useExperience('duvida-no-ponto')
 
 // Timeout transparente: deadline explícito + countdown vivo enquanto há
 // itens planejados; o estado é re-sincronizado a cada 30s (materialização
@@ -471,6 +473,8 @@ useSeoMeta({
                 {{ continueAction.label }}
               </UiButton>
             </div>
+            <!-- EXPERIMENT(duvida-no-ponto) remove_after 2027-02-20 -->
+            <FaqAtPoint v-if="duvidaNoPonto.is('b')" point="cart" class="mt-6" />
           </aside>
         </div>
       </template>

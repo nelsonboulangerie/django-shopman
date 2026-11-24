@@ -321,7 +321,7 @@ useHead({
             <div v-if="(badge && product.availability !== 'unavailable') || fomo.length || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2" data-product-badges>
               <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type" data-decisive="availability">{{ selo.label }}</UiBadge>
               <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal" data-decisive="availability">{{ badge.label }}</UiBadge>
-              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="font-normal" :title="adjustmentLabel(adjustment)" data-decisive="price">{{ adjustmentLabel(adjustment) }}</UiBadge>
+              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="promotion" class="font-normal" :title="adjustmentLabel(adjustment)" data-decisive="price">{{ adjustmentLabel(adjustment) }}</UiBadge>
             </div>
 
             <div class="flex items-start justify-between gap-3">

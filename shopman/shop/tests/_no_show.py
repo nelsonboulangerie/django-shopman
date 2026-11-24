@@ -42,11 +42,26 @@ def at(hour: int, minute: int = 0, *, days: int = 0) -> datetime:
     return timezone.make_aware(datetime.combine(day, time(hour, minute)))
 
 
+#: A regra de retenção da loja de teste: a mesma que o dono decidiu (24/11/2026).
+RETENTION = {"percent": 40, "decided_at": "2026-11-24", "provisional": True}
+
+
 def make_shop(**fields):
     from shopman.shop.models import Shop
 
     fields.setdefault("opening_hours", OPEN_EVERY_DAY)
+    # A regra de retenção entra junto com os padrões que o teste passa, sem apagá-los.
+    defaults = dict(fields.pop("defaults", None) or {})
+    defaults["no_show"] = {"retention": dict(RETENTION), **(defaults.get("no_show") or {})}
+    fields["defaults"] = defaults
     return Shop.objects.create(name="Padaria de teste", **fields)
+
+
+def produced(sku: str):
+    """Ficha ativa para ``sku``: a casa produz, e a perda dele tem retenção."""
+    from shopman.craftsman.models import Recipe
+
+    return Recipe.objects.create(ref=f"ficha-{sku.lower()}", name=f"Ficha {sku}", output_sku=sku, batch_size=1)
 
 
 def vitrine():

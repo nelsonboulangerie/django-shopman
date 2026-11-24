@@ -98,9 +98,14 @@ function resumo (): string {
  * 2026-11-20: a política ganhou o uso da cópia anonimizada das mensagens do WhatsApp
  * para melhorar o atendimento, e o prazo dela (#2851, pedido do dono): sem nome,
  * contato, documento, data nem hora exata; amostra conferida toda semana.
+ *
+ * 2026-11-24: a cláusula do pedido não retirado ganhou o percentual (DEV-2026-089,
+ * decisão do dono: 40% provisório): os itens de revenda voltam inteiros; dos itens
+ * feitos para a encomenda, a loja retém até 40% do valor para cobrir o custo de
+ * produção, e o restante volta pelo mesmo meio de pagamento.
  */
-const RESUMO_PUBLICADO = 'b0c48179e6b736a1'
-const VERSAO_PUBLICADA = '2026-11-20'
+const RESUMO_PUBLICADO = '232656105d2ba13d'
+const VERSAO_PUBLICADA = '2026-11-24'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {

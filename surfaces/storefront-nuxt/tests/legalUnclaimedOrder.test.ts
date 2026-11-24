@@ -3,14 +3,15 @@ import { resolve } from 'node:path'
 import { parse } from 'vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
 
-// O pedido não retirado (#2613, decisão do dono de 17 e 18/11/2026).
+// O pedido não retirado (#2613, decisão do dono de 17 e 18/11/2026; o percentual, DEV-2026-089,
+// decisão do dono de 24/11/2026: 40% provisório).
 //
 // A regra tem um texto só, aprovado pelo dono, e mora em dois lugares: a cláusula dos
 // Termos (que a cliente aceita ao entrar) e a revisão do checkout da encomenda (que ela
 // lê antes de enviar e pagar). A trava de `legalVersion.test.ts` não deixa a constante
 // virar a fonte da cláusula (ela mede o texto do `.vue`), então a frase é escrita nos
 // dois arquivos, e esta trava reprova se uma mudar sem a outra.
-const REGRA = 'Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a loja.'
+const REGRA = 'Pedido não retirado até o fim do expediente do dia combinado: os itens de revenda voltam inteiros; dos itens feitos para a encomenda, retemos até 40% do valor para cobrir o custo de produção, e o restante volta pelo mesmo meio de pagamento.'
 
 const raiz = resolve(__dirname, '..')
 

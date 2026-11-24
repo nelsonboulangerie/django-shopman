@@ -213,12 +213,16 @@ def payment_deadline_reason_key(method: str) -> str:
     return "pix_expired" if str(method or "").strip().lower() == "pix" else "payment_deadline_passed"
 
 
-def customer_text(order_data: dict | None) -> str:
-    """O texto que o cliente lê sobre o motivo do cancelamento deste pedido."""
+def customer_text(order_data: dict | None, *, receipt_hint: bool = True) -> str:
+    """O texto que o cliente lê sobre o motivo do cancelamento deste pedido.
+
+    ``receipt_hint=False`` é da página do pedido, que mostra o recibo do valor
+    retido em vez de apontar para ele.
+    """
     key = reason_key_of(order_data)
     if key == no_show_reason.KEY:
         # O "Não retirado" completa a frase com o destino do dinheiro.
-        return no_show_reason.customer_text((order_data or {}).get("no_show"))
+        return no_show_reason.customer_text((order_data or {}).get("no_show"), receipt_hint=receipt_hint)
     return _BY_KEY[key].customer_text
 
 
