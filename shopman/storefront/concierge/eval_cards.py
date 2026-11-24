@@ -114,8 +114,13 @@ def _world():
     """O mundo de memória: as portas falsas do pacote, com o canal da Nice e a sacola vazia."""
     from conversational_commerce.testing.fakes import FakeWorld
 
+    from shopman.shop.conversational.commerce_read import conversation_payment_methods
+
     world = FakeWorld()
     world.channel.name = CHANNEL
+    # As formas que a conversa do canal oferece (as do ar, sem dinheiro), não as do falso: com as do falso,
+    # o "pix" virava forma não oferecida e a Nice respondia a frase do dinheiro.
+    world.state.payment_methods = tuple(conversation_payment_methods(CHANNEL))
     world.state.carts = {CART: {}}
     world.state.cart_owner = {CART: SUBJECT}
     world.state.versions = {CART: 1}
@@ -205,7 +210,18 @@ def _conferir(cartao: Cartao, world, today: date) -> list[str]:
 
 
 def rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, model: str = "",
-          only: str = "") -> tuple[list[Placar], dict]:
+          only: str = "", classes: frozenset[str] | None = None) -> tuple[list[Placar], dict]:
+    """Os cartões pelo motor. ``classes``: as classes ligadas que o juiz considera (todas, sem ela), para
+    ensaiar a config da loja ("informar" e "pedido", sem "encaminhar")."""
+    from .eval_battery import leitura_do_cardapio
+
+    with leitura_do_cardapio():
+        return _rodar(reader_for, today=today, max_calls=max_calls, max_usd=max_usd, model=model, only=only,
+                      classes=classes)
+
+
+def _rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, model: str, only: str,
+           classes: frozenset[str] | None) -> tuple[list[Placar], dict]:
     from conversational_commerce.ports import TrustedContext
     from conversational_commerce.testing.journeys import j4
 
@@ -264,9 +280,10 @@ def rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, 
                 resposta = "(sem resposta do motor)"
             bloqueios = {c.move: list(c.blocked_by) for c in (result.decision.candidates if result.decision else ())
                          if c.blocked_by and c.move not in result.chosen_moves}
-            # O mesmo juiz do turno vivo: com todas as classes ligadas, o turno sai pelo motor só se todo
+            # O mesmo juiz do turno vivo: com as classes ligadas, o turno sai pelo motor só se todo
             # molde usado tem a frase da Nice. Senão, no ar, ele sairia pelo caminho de hoje.
-            veredito = judge(result, enabled=frozenset(ACTION_CLASSES), approved=frozenset(nice_templates()))
+            veredito = judge(result, enabled=frozenset(ACTION_CLASSES) if classes is None else classes,
+                             approved=frozenset(nice_templates()))
             turnos.append(Turno(fala, resposta, list(result.chosen_moves), atos,
                                 understanding.reader.name if understanding else "-", ms, leitor.last_error,
                                 bloqueios, "" if veredito.eligible else veredito.reason))

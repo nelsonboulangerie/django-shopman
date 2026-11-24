@@ -23,6 +23,9 @@ class Command(BaseCommand):
                             help="teto de custo estimado, em dólares (padrão 0,50)")
         parser.add_argument("--case", default="", help="só os casos cujo id contém este texto")
         parser.add_argument("--channel", default="whatsapp", help="o canal cujo cardápio a leitura usa")
+        parser.add_argument("--classes", default="",
+                            help="as classes ligadas para o juiz dos cartões, separadas por vírgula "
+                                 "(ex.: inform,order); sem ela, todas")
 
     def handle(self, *args, **options):
         from shopman.storefront.concierge import eval_battery
@@ -30,6 +33,12 @@ class Command(BaseCommand):
 
         if not (options["battery"] or options["cards"]):
             raise CommandError("diga o que rodar: --battery, --cards ou os dois")
+        from shopman.storefront.concierge.turn_framework import ACTION_CLASSES
+
+        classes = frozenset(name.strip() for name in options["classes"].split(",") if name.strip()) or None
+        if classes is not None and classes - set(ACTION_CLASSES):
+            raise CommandError(f"classe desconhecida: {', '.join(sorted(classes - set(ACTION_CLASSES)))}; "
+                               f"as classes são {', '.join(sorted(ACTION_CLASSES))}")
         if options["max_calls"] < 1 or options["max_usd"] <= 0:
             raise CommandError("--max-calls precisa ser ao menos 1 e --max-usd maior que zero")
         client, model = build_client()
@@ -56,7 +65,8 @@ class Command(BaseCommand):
             if options["battery"]:
                 self.stdout.write("")
             placares, totais = eval_cards.rodar(reader_for, today=today, max_calls=max(restam["calls"], 0),
-                                                max_usd=max(restam["usd"], 1e-9), model=model, only=options["case"])
+                                                max_usd=max(restam["usd"], 1e-9), model=model, only=options["case"],
+                                                classes=classes)
             self.stdout.write(eval_cards.relatorio(placares, totais))
             problemas += self._problemas(totais)
         # Teto estourado ou IA que recusou: o placar não mede o leitor, e o comando sai com erro.

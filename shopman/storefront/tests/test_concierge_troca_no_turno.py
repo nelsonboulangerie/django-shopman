@@ -60,6 +60,21 @@ def test_a_thank_you_goes_through_the_engine_once_in_today_phrase(conversation, 
     assert all(m.consumed_by is not None for m in ConversationMessage.objects.filter(pk__in=result.processed_message_ids))
 
 
+def test_a_greeting_is_answered_with_today_greeting_not_with_the_thanks(conversation, outbox):
+    """Calibragem do básico (23/11): pelo motor, "oi" saía "Nós que agradecemos!". O cumprimento é o de hoje."""
+    from shopman.storefront.concierge.small_talk import INTRO_COPY_KEY
+
+    _inform_on()
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _receive(conversation, "oi", "troca-oi-1")
+        service.run_turn(conversation.pk, _binding(conversation).pk)
+    thanks = service.copy_message("CONCIERGE_SMALL_TALK_THANKS").strip()
+    assert len(outbox.sent) == 1 and outbox.sent[0] != thanks
+    intro = service.copy_message(INTRO_COPY_KEY).split("{", 1)[0].strip()
+    assert intro in outbox.sent[0]  # a apresentação de hoje ("Aqui é a concierge da …")
+    assert all("send_key" not in (reply.envelope or {}) for reply in _replies(conversation))  # o caminho de hoje
+
+
 def test_what_the_engine_cannot_say_in_the_nice_voice_stays_on_today_path(conversation, outbox):
     _inform_on()
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
