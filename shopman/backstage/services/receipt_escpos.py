@@ -438,6 +438,86 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     return bytes(out)
 
 
+
+def retention_receipt(receipt, *, verify_url: str = "", reprint: bool = False) -> bytes:
+    """Recibo do valor retido de uma encomenda não retirada (#3538).
+
+    ``receipt`` é o ``no_show.RetentionReceipt``: a leitura do que o gesto do
+    "Não retirado" gravou. Contador (24/11/2026, #2695): o valor retido é multa,
+    com recibo e sem NFC-e. Por isso o papel diz o que o valor é, de quem é a
+    loja (razão social e CNPJ) e que não é documento fiscal.
+
+    O QR leva à página do pedido, onde o mesmo recibo está escrito: o papel
+    aponta para o registro, como o comprovante de gaveta.
+    """
+    from shopman.utils.monetary import format_money
+
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _store_heading(receipt.store_name)
+    if receipt.legal_name:
+        for pedaco in _wrap(receipt.legal_name, COLUMNS):
+            out += _centered(pedaco)
+    if receipt.tax_id:
+        out += _centered(f"CNPJ {receipt.tax_id}")
+    out += _rule()
+    out += _centered(receipt.title)
+    if reprint:
+        out += _centered("*** 2a VIA ***")
+    out += _rule()
+
+    out += _pair(f"Pedido {receipt.order_ref}", _local(receipt.closed_at) if receipt.closed_at else "")
+    if receipt.customer_name:
+        out += _line(f"Cliente: {receipt.customer_name}"[:COLUMNS])
+    if receipt.commitment_day:
+        out += _line(f"Dia combinado: {receipt.commitment_day:%d/%m/%Y}")
+    out += _rule()
+
+    if receipt.lines:
+        out += _line("Ficou com a loja:")
+        for line in receipt.lines:
+            for pedaco in _wrap(line.name, COLUMNS):
+                out += _line(pedaco)
+            out += _pair(f"  Quantidade: {line.qty}", f"R$ {format_money(line.value_q)}")
+            # O cálculo à vista: quem confere não precisa saber a regra de cor.
+            out += _pair(
+                f"  {line.percent}% de R$ {format_money(line.value_q)}", f"R$ {format_money(line.retained_q)}"
+            )
+        out += _rule()
+
+    if receipt.mixed:
+        # Parte na conta da casa (#3151): a conta sai primeiro, depois o dinheiro.
+        out += _pair("Valor do pedido", f"R$ {format_money(receipt.paid_q)}")
+        if receipt.from_account_q:
+            out += _pair("Saiu da conta na loja", f"R$ {format_money(receipt.from_account_q)}")
+        out += _pair("Devolvido ao cliente", f"R$ {format_money(receipt.refund_q)}")
+        if receipt.debt_left_q:
+            out += _pair("Continua na conta na loja", f"R$ {format_money(receipt.debt_left_q)}")
+    else:
+        out += _pair("Pago", f"R$ {format_money(receipt.paid_q)}")
+        out += _pair("Devolvido ao cliente", f"R$ {format_money(receipt.refund_q)}")
+    out += _rule()
+    out += _line("")
+    out += _double(f"RETIDO R$ {format_money(receipt.retained_q)}")
+    out += _line("")
+    out += _rule()
+
+    for pedaco in _wrap(receipt.nature, COLUMNS):
+        out += _line(pedaco)
+    out += _centered("Não é documento fiscal.")
+
+    if verify_url:
+        out += _line("")
+        out += _centered("O mesmo recibo, na página do pedido:")
+        out += _qr(verify_url)
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])  # corte parcial
+    return bytes(out)
+
+
 def _fiscal_handoff_line(order) -> str:
     """"A nota fiscal sai na retirada." enquanto a NFC-e espera a saída; senão "".
 

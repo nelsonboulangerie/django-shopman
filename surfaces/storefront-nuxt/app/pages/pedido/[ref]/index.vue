@@ -1012,6 +1012,9 @@ useSeoMeta({
 
           <!-- A nota fiscal chega digital: aqui, quando autorizada. -->
           <OrderFiscalNote v-if="tracking.fiscal_note" :note="tracking.fiscal_note" />
+
+          <!-- Encomenda não retirada: o recibo do que ficou com a loja (#3538). -->
+          <OrderRetentionReceipt v-if="tracking.retention_receipt" :receipt="tracking.retention_receipt" />
         </template>
       </section>
 

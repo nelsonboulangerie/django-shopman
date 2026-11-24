@@ -109,7 +109,7 @@ function productRoute (sku: string) {
         </div>
 
         <div class="hidden flex-wrap gap-1 sm:flex">
-          <UiBadge v-for="adjustment in item.quote.adjustments" :key="adjustment.code" variant="default" class="font-normal" :title="adjustmentLabel(adjustment)" data-decisive="price">{{ adjustmentLabel(adjustment) }}</UiBadge>
+          <UiBadge v-for="adjustment in item.quote.adjustments" :key="adjustment.code" variant="promotion" class="font-normal" :title="adjustmentLabel(adjustment)" data-decisive="price">{{ adjustmentLabel(adjustment) }}</UiBadge>
           <UiBadge v-if="item.is_new" variant="secondary" class="font-normal">Novo</UiBadge>
           <UiBadge v-if="item.is_featured" variant="secondary" class="font-normal">Destaque</UiBadge>
           <!-- tags secundárias (dieta): mesma cor/peso/tamanho da descrição -->

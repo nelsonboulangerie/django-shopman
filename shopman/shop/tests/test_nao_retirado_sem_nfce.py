@@ -50,6 +50,7 @@ def mundo():
         world.make_shop()
         world.product("BOLO", price_q=3000)
         world.lot("BOLO")
+        world.produced("BOLO")
         yield
     fiscal_pool.reset()
 
@@ -90,7 +91,7 @@ def test_nao_retirado_retem_o_valor_sem_nfce(fim_do_expediente, django_capture_o
     order.refresh_from_db()
 
     assert order.status == Order.Status.CANCELLED
-    assert order.data["no_show"]["retained_q"] == 3000
+    assert order.data["no_show"]["retained_q"] == 1200  # 40% do bolo
     assert not _emissoes(order).exists()
     assert not FiscalDocument.objects.filter(reference=order.ref).exists()
     assert not order.data.get("nfce_access_key")

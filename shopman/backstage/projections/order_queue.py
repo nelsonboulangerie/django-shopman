@@ -53,7 +53,7 @@ from shopman.shop.projections.types import (
     TimelineEventProjection,
 )
 from shopman.shop.protocols import RideState
-from shopman.shop.services import operator_orders, order_composition, volume_check
+from shopman.shop.services import no_show, operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
@@ -914,6 +914,11 @@ class OperatorOrderProjection:
     danfe_printed: bool = False
     danfe_state: str = ""
     danfe_problem: str = ""
+    # Encomenda não retirada com dinheiro retido: o recibo do valor (#3538). Sai
+    # sozinho no fim do gesto; ``retention_receipt_printed`` diz que a próxima
+    # impressão é 2ª via.
+    retention_receipt_printable: bool = False
+    retention_receipt_printed: bool = False
     # A promessa do pedido, a MESMA do cartão (WP-G08). No detalhe as saídas são
     # as de verdade: a conversa com o cliente, o PDV e o cancelar de ``actions``.
     # ``None`` no contexto ``"pos"`` e quando a reserva está como deve estar.
@@ -1335,6 +1340,8 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         danfe_printed=danfe.printed,
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
+        retention_receipt_printable=no_show.retention_receipt(order) is not None,
+        retention_receipt_printed=bool((order.data or {}).get("retention_receipt_printed_at")),
         ifood_negotiations=negotiations(order, user=user),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status) and undo_block_allows_advance(order),

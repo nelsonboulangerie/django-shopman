@@ -1297,6 +1297,23 @@ export interface FiscalNote {
   note: string
 }
 
+// O recibo do valor retido de uma encomenda não retirada (#3538). Texto pronto.
+export interface RetentionReceipt {
+  title: string
+  // Razão social (ou nome da loja) e CNPJ.
+  issuer_lines: string[]
+  order_line: string
+  commitment_display: string
+  closed_display: string
+  // "40% de R$ 89,00" em `calculation_display`, e o resultado em `retained_display`.
+  lines: { name: string, qty_display: string, value_display: string, calculation_display: string, retained_display: string }[]
+  money_rows: { label: string, value_display: string }[]
+  retained_label: string
+  retained_display: string
+  nature: string
+  not_fiscal: string
+}
+
 export interface TrackingResponse {
   convenience_pending?: string[]
   ref: string
@@ -1357,6 +1374,7 @@ export interface TrackingResponse {
   // A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
   // pede e-mail). Ausente/`null` enquanto não há nota.
   fiscal_note?: FiscalNote | null
+  retention_receipt?: RetentionReceipt | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
   waitlist_state: string

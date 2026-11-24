@@ -456,6 +456,33 @@ class FiscalNoteSerializer(serializers.Serializer):
     note = serializers.CharField(allow_blank=True)
 
 
+class RetentionReceiptLineSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    qty_display = serializers.CharField()
+    value_display = serializers.CharField()
+    calculation_display = serializers.CharField()
+    retained_display = serializers.CharField()
+
+
+class RetentionReceiptRowSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    value_display = serializers.CharField()
+
+
+class RetentionReceiptSerializer(serializers.Serializer):
+    title = serializers.CharField()
+    issuer_lines = serializers.ListField(child=serializers.CharField())
+    order_line = serializers.CharField()
+    commitment_display = serializers.CharField(allow_blank=True)
+    closed_display = serializers.CharField(allow_blank=True)
+    lines = RetentionReceiptLineSerializer(many=True)
+    money_rows = RetentionReceiptRowSerializer(many=True)
+    retained_label = serializers.CharField()
+    retained_display = serializers.CharField()
+    nature = serializers.CharField()
+    not_fiscal = serializers.CharField()
+
+
 class TrackingDiscountLineSerializer(serializers.Serializer):
     label = serializers.CharField()
     amount_display = serializers.CharField()
@@ -505,6 +532,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
     # pede e-mail). ``None`` enquanto não há nota.
     fiscal_note = FiscalNoteSerializer(allow_null=True, required=False)
+    retention_receipt = RetentionReceiptSerializer(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.
