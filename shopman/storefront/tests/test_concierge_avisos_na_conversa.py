@@ -120,7 +120,8 @@ def test_x15_cade_o_pix_enxerga_o_aviso_ja_enviado(shop, whatsapp):
     reply = closing._turn(shop, "cadê o Pix?", WHERE_IS_PIX)
 
     assert reply[0].startswith(f"Pedido {order.ref}"), reply
-    assert SENT_LINE in reply[0].splitlines(), reply
+    # O código vai de novo na mensagem seguinte: as duas coisas numa linha só.
+    assert tools.PIX_SENT_AGAIN.format(when="às 14h12") in reply[0].splitlines(), reply
     assert whatsapp == sent_before, "a consulta não reenvia o aviso"
     assert Directive.objects.filter(topic=notification.TOPIC).count() == notices, "nem agenda outro"
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == charges, "nem cria outra cobrança"

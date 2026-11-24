@@ -76,9 +76,9 @@ test('a sacola diz quando fica pronto e o preço fecha com o resumo', async ({ p
   })
 
   await test.step('a linha da fornada diz quando fica pronta, e o alto da sacola diz para quando fica o pedido', async () => {
-    await expect(batchLine.locator('[data-cart-line-promise]')).toContainText(/Fica pronto .+, a partir das \d{1,2}h(\d{2})?$/)
+    await expect(batchLine.locator('[data-cart-line-promise]')).toContainText(/Disponível .+, a partir das \d{1,2}h(\d{2})?$/)
     // O Croissant, pronto na vitrine, vai junto no pedido de amanhã: a linha dele diz o dia.
-    await expect(readyLine.locator('[data-cart-line-promise]')).toContainText(/Fica pronto /)
+    await expect(readyLine.locator('[data-cart-line-promise]')).toContainText(/Disponível /)
     await expect(page.locator('[data-cart-ready-line]')).toContainText(/Seu pedido fica pronto .+, a partir das \d{1,2}h(\d{2})?\.$/)
     // O selo e a frase antigos saíram da sacola: a promessa do servidor diz o dia e a hora.
     await expect(page.getByText('Lista de espera')).toHaveCount(0)

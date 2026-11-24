@@ -39,3 +39,24 @@ export function headerCollapsed (collapsed: boolean, scrollY: number): boolean {
   if (collapsed) return scrollY >= HEADER_EXPAND_AT
   return scrollY > HEADER_COLLAPSE_AT
 }
+
+// A RÉGUA DO PRÓXIMO FOCO DEPENDE DE ONDE A PÁGINA PARA (#3477).
+//
+// A régua CSS (`[data-focus-target]`, 4rem + 6px) é a base da navbar com a status
+// bar já recolhida. Só que a status bar recolhe pela ROLAGEM: quando o bloco de
+// foco mora perto do topo, levá-lo à régua para a página numa rolagem que não
+// passa do limiar de colapso, a status bar continua de pé e cobre os 36px de cima
+// do bloco. Foi o título do /entrar no celular: rolagem 54, título em 70,
+// cabeçalho até 106.
+//
+// A folga devolvida aqui é o quanto a régua desce para quem vai parar nessa faixa.
+// Fecha nos dois estados de partida:
+// - parada depois do limiar de colapso: a status bar recolhe agora ou já estava
+//   recolhida (e fica, pois passou da reexpansão); a régua base é a certa;
+// - parada antes: mirar 36px mais alto deixa a rolagem no máximo na reexpansão,
+//   então a status bar fica (ou volta) de pé e o bloco encosta na base dela. No
+//   único ponto em que ela pode seguir recolhida (exatamente na reexpansão), o
+//   bloco só fica 36px abaixo da navbar: à vista, nunca coberto.
+export function focusRulerAllowance (landingScrollY: number): number {
+  return landingScrollY > HEADER_COLLAPSE_AT ? 0 : STATUS_BAR_HEIGHT
+}

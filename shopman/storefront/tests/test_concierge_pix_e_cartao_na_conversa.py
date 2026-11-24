@@ -86,7 +86,7 @@ def test_x3_copy_pix_action_carries_the_code_and_the_reply_never_links_it(shop):
     assert tools.copy_texts(result) == [pix]
     rendered = tools.render_result("order_status", result)
     _no_copy_link(rendered)
-    assert tools.PIX_CODE_FOLLOWS in rendered
+    assert tools.PIX_CODE_FOLLOWS in rendered or "Mando de novo na próxima mensagem." in rendered
     assert pix not in rendered, "o código vai sozinho na mensagem seguinte, não no meio do texto"
 
 
@@ -113,18 +113,18 @@ def test_n11_pix_again_later_returns_the_code_not_a_link(shop):
 
     assert len(again) == 2, again
     assert again[0].startswith(f"Pedido {order.ref}"), again
-    assert tools.PIX_CODE_FOLLOWS in again[0], again
     _no_copy_link(again[0])
     lines = again[0].splitlines()
     assert len(lines) == len(set(lines)), "nenhuma linha duplicada"
-    # Com o OC-10, "Já te mandei o código Pix por aqui às HHhMM." vem antes do aviso
-    # do código: primeiro o que já foi, depois o que vem.
-    sent_before = [i for i, line in enumerate(lines) if line.startswith("Já te mandei o código Pix")]
-    assert all(i < lines.index(tools.PIX_CODE_FOLLOWS) for i in sent_before), lines
+    # Com o OC-10, o que já foi e o que vem numa linha só: "Já te mandei o código Pix por
+    # aqui às HHhMM. Mando de novo na próxima mensagem."
+    sent = [line for line in lines if line.startswith("Já te mandei o código Pix por aqui ")]
+    assert len(sent) == 1 and sent[0].endswith(" Mando de novo na próxima mensagem."), lines
+    assert tools.PIX_CODE_FOLLOWS not in lines, "o aviso do código não se repete"
     assert again[1] == pix, "o código, sozinho, para copiar no WhatsApp"
     # X3 também para os comandos: cancelar é instrução de conversa, nunca endereço de API.
     assert not any("/api/" in text for text in again), again
-    assert tools.CONVERSATION_EQUIVALENTS["cancel_order"] in again[0].splitlines(), again
+    assert any(line.startswith("Posso ") and "cancelar, se quiser." in line for line in lines), again
     assert f"Acompanhar: /pedido/{order.ref}/" in again[0].splitlines()[-1], again
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1, "consultar não cria outra cobrança"
 

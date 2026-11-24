@@ -639,7 +639,7 @@ envs:
   type: GENERAL
 - key: CONCIERGE_TRANSFER_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
 - key: CONCIERGE_ACCOUNT_ID
   scope: RUN_TIME

@@ -9,7 +9,7 @@ import {
   websiteJsonLd
 } from '~/presentation/seo'
 import type { Action } from '~/types/shopman'
-import { closedHeroCtaLabel } from '~/presentation/home'
+import { closedHeroCtaLabel, homePageHeading } from '~/presentation/home'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
@@ -66,13 +66,23 @@ const operationalStatus = computed(() => {
 })
 const quickReorderItems = computed(() => home.value?.last_order_items.slice(0, 3) || [])
 // Sem ação de repetir disponível, o card não pode perguntar "quer repetir?" e responder
-// "ver histórico": pergunta e botão têm de ser a mesma coisa. E o gesto tem UM nome na
-// home inteira — "Repetir pedido", o mesmo do slide do hero.
+// "ver histórico": pergunta e botão têm de ser a mesma coisa. A recompra mora SÓ neste
+// cartão (o hero não tem mais slide de recompra, OC-32), e a pergunta é a copy da casa
+// que era do slide (`hero_copy.reorder_title_*`), editável no Admin.
 const quickReorderTitle = computed(() => {
   if (!reorderAction.value) return 'Seus pedidos anteriores'
-  const name = home.value?.omotenashi.customer_name
-  return `Quer repetir seu último pedido${name ? `, ${name}` : ''}?`
+  const copy = home.value?.hero_copy
+  const prefix = copy?.reorder_title_prefix.title?.trim() || 'Quer repetir seu'
+  const suffix = copy?.reorder_title_suffix.title?.trim() || 'último pedido'
+  const name = home.value?.omotenashi.customer_name?.trim()
+  return `${prefix} ${suffix}${name ? `, ${name}` : ''}?`
 })
+// EXPERIMENT(home-recompra-no-topo) remove_after 2027-02-22
+// B (OC-33 B2): o mesmo cartão, compacto, sobe para o topo; só com a recompra
+// possível (X1). A ação, o preço e a disponibilidade são os mesmos de A (X13).
+const { is: homeExperienceIs } = useExperience('home-recompra-no-topo')
+// EXPERIMENT(home-recompra-no-topo) remove_after 2027-02-22
+const reorderOnTop = computed(() => homeExperienceIs('b') && !!reorderAction.value)
 const featuredPreview = computed(() => featured.value.slice(0, 6))
 const quickReorderImageItem = computed(() => {
   const reorderSkus = new Set(quickReorderItems.value.map(item => item.sku))
@@ -122,6 +132,9 @@ function noticeVariant (tone: string) {
 
 const canonicalUrl = computed(() => `${requestUrl.origin}/`)
 const brandName = computed(() => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name)
+// O h1 diz o que a página é: a loja da casa. A saudação ("Boa noite.") continua
+// visível no hero, mas como título do slide; não é o assunto da página (OC-32).
+const pageHeading = computed(() => homePageHeading(brandName.value, home.value?.shop.tagline))
 const homePageSeo = computed(() => sitePageSeo(siteSeo.value, 'home'))
 // O título da home é o título INTEIRO ("Marca · o que ela é, onde"), escrito no
 // Admin — por isso `titleTemplate: null` abaixo: o template do shell colaria a
@@ -203,6 +216,7 @@ useHead({
 
 <template>
   <main class="bg-background">
+    <h1 class="sr-only" data-home-page-heading>{{ pageHeading }}</h1>
     <section class="shop-section-cta bg-background pb-6 pt-0 sm:py-8 lg:py-10">
       <div class="shop-container">
         <div v-if="pending" class="shop-stack-block">
@@ -243,15 +257,40 @@ useHead({
               </div>
             </NuxtLink>
 
+            <!-- EXPERIMENT(home-recompra-no-topo) remove_after 2027-02-22 -->
+            <UiCard v-if="reorderOnTop" class="mb-4 mt-4 gap-0 py-0 sm:mt-0" data-home-reorder-top>
+              <UiCardContent class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex min-w-0 items-start gap-3">
+                  <UiItemMedia variant="icon" class="size-10 shrink-0 rounded-full">
+                    <Icon name="lucide:rotate-ccw" />
+                  </UiItemMedia>
+                  <div class="shop-stack-tight min-w-0">
+                    <h2 class="shop-item-title font-display font-semibold">{{ quickReorderTitle }}</h2>
+                    <ul v-if="quickReorderItems.length" class="shop-muted flex flex-wrap gap-x-3 gap-y-1" aria-label="Itens do último pedido">
+                      <li v-for="item in quickReorderItems" :key="item.sku" class="inline-flex items-center gap-1">
+                        <span class="font-semibold text-foreground">{{ item.qty }}×</span>
+                        <span>{{ item.name }}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <UiButton
+                  icon="lucide:shopping-bag"
+                  :loading="home.last_order_ref ? !!reorderPending[home.last_order_ref] : false"
+                  class="w-full shrink-0 sm:w-fit"
+                  @click="handleReorder(reorderAction)"
+                >
+                  Repetir pedido
+                </UiButton>
+              </UiCardContent>
+            </UiCard>
+
             <HomeHeroThing
               :home="home"
               :primary-action="primaryAction"
-              :reorder-action="reorderAction"
-              :reorder-loading="home.last_order_ref ? !!reorderPending[home.last_order_ref] : false"
               :status-open="operationalStatus.isOpen"
               :status-label="operationalStatus.label"
               :closed-cta-label="closedHeroCtaLabel(home.ordering)"
-              @reorder="handleReorder"
             />
 
             <UiButton
@@ -288,7 +327,8 @@ useHead({
             </UiAlertDescription>
           </UiAlert>
 
-          <UiCard v-if="reorderAction || quickReorderItems.length" class="gap-0 overflow-hidden py-0" data-home-reorder-card>
+          <!-- EXPERIMENT(home-recompra-no-topo) remove_after 2027-02-22 -->
+          <UiCard v-if="!reorderOnTop && (reorderAction || quickReorderItems.length)" class="gap-0 overflow-hidden py-0" data-home-reorder-card>
             <div class="grid grid-cols-1 md:grid-cols-2">
               <UiAspectRatio :ratio="16 / 9" class="overflow-hidden bg-muted md:h-full">
                 <img

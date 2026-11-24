@@ -144,7 +144,7 @@ def test_pronto_agora_e_disponivel_com_a_promessa_pronto_agora():
     from shopman.storefront.presentation.catalog import ready_now
 
     pronto = SimpleNamespace(kind="ready")
-    as_15h = SimpleNamespace(kind="batch")  # "Fica pronto hoje às 15h"
+    as_15h = SimpleNamespace(kind="batch")  # "Disponível a partir das 15h"
     amanha = SimpleNamespace(kind="preorder")  # "Encomendar para amanhã"
 
     assert ready_now(Availability.AVAILABLE, pronto)

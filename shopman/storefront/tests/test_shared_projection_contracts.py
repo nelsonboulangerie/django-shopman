@@ -91,7 +91,7 @@ def _assert_matches_contract(payload, name: str) -> None:
 
 
 #: O relógio do contrato: terça, 17/11/2026, 10h em São Paulo, com a casa aberta.
-#: A promessa de quando ("Fica pronto amanhã, quarta, a partir das 9h") traz o dia
+#: A promessa de quando ("Disponível amanhã, quarta, a partir das 9h") traz o dia
 #: da semana e depende da hora; sem relógio fixo o contrato mudaria todo dia.
 CONTRACT_NOW = datetime(2026, 11, 17, 13, 0, tzinfo=UTC)
 

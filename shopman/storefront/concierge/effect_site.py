@@ -245,6 +245,13 @@ class ConciergeEffectSite:
                     session_key=session.session_key, channel_ref=ctx.channel_ref,
                     ops=[{"op": "set_data", "path": "delivery_date", "value": day},
                          {"op": "set_data", "path": "delivery_time_slot", "value": slot}])
+        if clock is not None and day and slot:
+            # A hora que o cliente disse, com o dia e a janela que ela escolheu: o resumo a ecoa enquanto os
+            # dois forem os mesmos (``commerce_read._fulfillment_conditions``). A janela segue sendo o que se grava.
+            session_service.modify_session(
+                session_key=session.session_key, channel_ref=ctx.channel_ref,
+                ops=[{"op": "set_data", "path": "delivery_time_said",
+                      "value": {"time": said["time"], "date": day, "slot": slot}}])
         refs = {"effect": session.session_key, "cart": session.session_key}
         refs.update({key: value for key, value in (("date", day), ("mode", kind), ("window", slot),
                                                    ("time", said.get("time", ""))) if value})

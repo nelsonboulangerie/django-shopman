@@ -807,11 +807,11 @@ def _build_items(
 
 
 def ready_now(availability, promise: PromiseProjection | None) -> bool:
-    """O produto está pronto agora: disponível (ou acabando) e com a promessa "Pronto agora".
+    """O produto está pronto agora: disponível (ou acabando) e com a promessa de agora (``ready``).
 
     É a régua dos selos de fornada pronta e de últimas unidades (#2807). "Fornada
     pronta há 12 min" ao lado de "Encomendar para amanhã" (a fornada que acabou, o
-    corte do dia que passou) ou de "Fica pronto hoje às 15h" é promessa que a loja
+    corte do dia que passou) ou de "Disponível a partir das 15h" é promessa que a loja
     não cumpre agora.
     """
     if availability not in (Availability.AVAILABLE, Availability.LOW_STOCK):
