@@ -274,10 +274,13 @@ class ConciergeEffectSite:
             return Done(False, refusal=ErrorCode.FACT_UNAVAILABLE.value)
         # Só o trecho de endereço da fala: "apto 12, e põe mais um croissant" grava "apto 12" (o croissant é da
         # sacola, outro movimento do turno, e nunca vai para a etiqueta nem para a nota).
-        said = (
-            {"use_shared_location": True} if shared_location_of(source)
-            else address_parts(address_of(resolve_text(source)), data.get("delivery_address_structured"))
-        )
+        if source.startswith(SAVED_PREFIX):
+            said = self._saved_choice(source, str(session.session_key))  # o "sim" ao endereço do cadastro
+        elif shared_location_of(source):
+            said = {"use_shared_location": True}
+        else:
+            text = address_of(resolve_text(source))
+            said = self._saved_by_name(text, data) or address_parts(text, data.get("delivery_address_structured"))
         if not said:
             return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
         result = tools.set_fulfillment(
@@ -295,6 +298,41 @@ class ConciergeEffectSite:
         written = tools._open_session(ctx)  # o endereço como ficou gravado: a referência é dele
         recorded = dict((written.data if written is not None else None) or {})
         return Done(True, domain_refs={"effect": cart, "cart": cart, "address_ref": address_ref(cart, recorded)})
+
+    def _saved_list(self) -> list:
+        from .address import saved_addresses
+
+        return saved_addresses(self.tool_context.conversation.customer_ref or "")
+
+    def _saved_choice(self, source: str, cart: str) -> dict:
+        """O endereço do cadastro pela referência opaca: só o desta sacola e do cliente desta conversa."""
+        from .address import saved_tag
+
+        prefix = f"{SAVED_PREFIX}{cart}:"
+        if not source.startswith(prefix):
+            return {}
+        saved_list = self._saved_list()
+        chosen = next((saved for saved in saved_list if str(saved.pk) == source[len(prefix):]), None)
+        if chosen is None:
+            return {}
+        # O padrão é o que o "sim" aceita (o fechamento de hoje, ``use_saved_address``); outro, pela etiqueta.
+        if chosen is saved_list[0]:
+            return {"use_saved_address": True}
+        return {"saved_address_label": saved_tag(chosen)} if saved_tag(chosen) else {}
+
+    def _saved_by_name(self, text: str, data: dict) -> dict:
+        """ "O do trabalho": sem endereço na sacola, a etiqueta de UM endereço do cadastro, dita na fala, escolhe ele.
+
+        Duas etiquetas na fala, ou nenhuma, não escolhem nada: a fala é lida como endereço novo.
+        """
+        from .address import _fold, saved_tag
+
+        if not text or (data.get("delivery_address_structured") or {}).get("formatted_address"):
+            return {}
+        words = set(re.findall(r"\w+", _fold(text)))
+        named = [saved for saved in self._saved_list()
+                 if saved_tag(saved) and set(re.findall(r"\w+", _fold(saved_tag(saved)))) <= words]
+        return {"saved_address_label": saved_tag(named[0])} if len(named) == 1 else {}
 
     def _set_payment(self, command: ActionCommand) -> Done:
         """A forma de pagamento na sacola, como a revisão da casa a grava (a mesma do fechamento de hoje).
@@ -378,6 +416,8 @@ class ConciergeEffectSite:
         return Done(False, refusal=code.value)
 
 
+#: A referência opaca de um endereço do cadastro (``commerce_read.saved_address_ref``).
+SAVED_PREFIX = "saved-address:"
 _CEP = re.compile(r"^\d{5}-?\d{3}$")
 _NUMBER = re.compile(r"^(?:n[º°o.]?\s*)?(\d{1,6}[a-z]?|s/?n|sem n[uú]mero)$")
 #: Fala que traz um logradouro (o tipo e o nome) ou um CEP: é endereço novo, nunca complemento.
