@@ -115,6 +115,12 @@ def test_n11_pix_again_later_returns_the_code_not_a_link(shop):
     assert again[0].startswith(f"Pedido {order.ref}"), again
     assert tools.PIX_CODE_FOLLOWS in again[0], again
     _no_copy_link(again[0])
+    lines = again[0].splitlines()
+    assert len(lines) == len(set(lines)), "nenhuma linha duplicada"
+    # Com o OC-10, "Já te mandei o código Pix por aqui às HHhMM." vem antes do aviso
+    # do código: primeiro o que já foi, depois o que vem.
+    sent_before = [i for i, line in enumerate(lines) if line.startswith("Já te mandei o código Pix")]
+    assert all(i < lines.index(tools.PIX_CODE_FOLLOWS) for i in sent_before), lines
     assert again[1] == pix, "o código, sozinho, para copiar no WhatsApp"
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1, "consultar não cria outra cobrança"
 
