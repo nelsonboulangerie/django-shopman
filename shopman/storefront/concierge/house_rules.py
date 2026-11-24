@@ -294,8 +294,8 @@ def _house_phrases() -> tuple[re.Pattern, ...]:
 
         texts |= set(OmotenashiCopy.objects.filter(active=True).exclude(message="")
                      .values_list("message", flat=True))
-    except Exception:  # noqa: BLE001 - sem o banco, valem as frases do código
-        logger.debug("house_rules: copy do banco indisponível para a R2", exc_info=True)
+    except Exception:  # noqa: BLE001 - banco indisponível: valem as frases do código, e a copy do Admin fica sem proteção
+        logger.warning("concierge.house_rules.house_phrases_failed", exc_info=True)
     found = []
     for text in texts:
         for sentence in _SENTENCE_BREAK.split(text)[::2]:
