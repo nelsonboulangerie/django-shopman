@@ -27,18 +27,49 @@ LABEL = "Não retirado"
 #: em "Seu pedido foi cancelado."
 BASE_TEXT = "O pedido ficou pronto e não foi retirado."
 
+#: Quando a loja ficou com dinheiro, há recibo (#3538), e o aviso diz onde ele
+#: está: o link do pedido que fecha a mensagem. A página do pedido não repete a
+#: frase, porque o recibo está nela.
+RECEIPT_HINT = "O recibo desse valor está no link do pedido."
 
-def customer_text(no_show: dict | None) -> str:
+
+def customer_text(no_show: dict | None, *, receipt_hint: bool = True) -> str:
     """A frase do "Não retirado" com o destino do dinheiro.
+
+    Com ``receipt_hint`` e dinheiro retido pela loja, termina dizendo onde está
+    o recibo (:data:`RECEIPT_HINT`).
 
     - nada foi pago: só o fato, sem frase de dinheiro;
     - tudo volta: quanto, e que vai voltar pelo mesmo meio de pagamento;
     - nada volta (tudo se perdeu): o valor ficou com a loja, como dizem os Termos;
     - volta uma parte: as duas metades, para o cliente não procurar a diferença.
     """
+    block = no_show if isinstance(no_show, dict) else {}
+    text = _money_text(block)
+    if receipt_hint and kept_money_q(block) > 0:
+        return f"{text} {RECEIPT_HINT}"
+    return text
+
+
+def kept_money_q(no_show: dict | None) -> int:
+    """O dinheiro que a loja RECEBEU e reteve: o valor do recibo.
+
+    A compra na conta da casa não tem dinheiro recebido (o retido continua como
+    dívida). Na venda mista, é o ``kept_q``. Nas outras, o retido de um pedido pago.
+    """
+    block = no_show if isinstance(no_show, dict) else {}
+    if block.get("on_account"):
+        return 0
+    if "kept_q" in block:
+        return _amount(block.get("kept_q"))
+    if _amount(block.get("paid_q")) <= 0:
+        return 0
+    return _amount(block.get("retained_q"))
+
+
+def _money_text(block: dict) -> str:
     from shopman.utils.monetary import format_money
 
-    block = no_show if isinstance(no_show, dict) else {}
     paid_q = _amount(block.get("paid_q"))
     refund_q = _amount(block.get("refund_q"))
     retained_q = _amount(block.get("retained_q"))

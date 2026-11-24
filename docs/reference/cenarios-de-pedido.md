@@ -33,7 +33,9 @@ na §8.
   recibo e **sem NFC-e**, fora da receita bruta do Simples. A parte executada de uma encomenda
   é o que foi **entregue**, não o que foi produzido. Na retirada parcial, a NFC-e é só do que
   saiu, e o resto retido é multa (contador, 24/11/2026, #2695). No sistema, o "Não retirado"
-  termina em `cancelled` sem passar pela saída, e `fiscal.emit` recusa pedido desfeito.
+  termina em `cancelled` sem passar pela saída, e `fiscal.emit` recusa pedido desfeito. O recibo
+  do valor retido (dono, 24/11/2026, #3538) sai no balcão no fim do gesto e fica na página do
+  pedido; o aviso ao cliente aponta para ele. Compra na conta da casa não tem recibo (nada foi recebido).
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).
 - Expedição sem NFC-e só avisa, nunca segura a sacola.
 - KDS: dois gestos (Iniciar, Pronto), desfazer de 5 s, cancelamento com alarde.

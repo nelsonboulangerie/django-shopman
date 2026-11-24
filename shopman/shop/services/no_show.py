@@ -765,6 +765,118 @@ def stock_plan(order) -> dict[str, tuple[Decimal, Decimal]] | None:
     return plan
 
 
+# ── O recibo do valor retido (#3538) ─────────────────────────────────────────
+#
+# Contador (24/11/2026, #2695): o valor que a loja retém de uma encomenda paga e
+# não retirada é multa por desistência, com RECIBO e sem NFC-e, fora da receita
+# bruta. O recibo é uma leitura do bloco que o gesto gravou: o papel do balcão
+# (``backstage/services/receipt_escpos.retention_receipt``) e a página do pedido
+# na loja leem a MESMA coisa, e por isso dizem o mesmo amanhã.
+
+#: O título do papel e do cartão na página do pedido.
+RECEIPT_TITLE = "Recibo de valor retido"
+
+#: O que o valor é, numa frase. "Multa" é a palavra do contador e dos Termos.
+RECEIPT_NATURE = (
+    "Multa por encomenda paga e não retirada, conforme os Termos. "
+    "Sem entrega de mercadoria, não há venda."
+)
+
+
+@dataclass(frozen=True)
+class RetainedLine:
+    name: str
+    qty: str
+    value_q: int
+
+
+@dataclass(frozen=True)
+class RetentionReceipt:
+    order_ref: str
+    store_name: str
+    legal_name: str
+    tax_id: str
+    customer_name: str
+    commitment_day: object  # ``date`` ou ``None``
+    closed_at: datetime | None
+    lines: tuple[RetainedLine, ...]
+    paid_q: int
+    refund_q: int
+    retained_q: int
+    # Venda mista (#3151): o que saiu da conta e o que continua nela. Zero fora dela.
+    from_account_q: int = 0
+    debt_left_q: int = 0
+    mixed: bool = False
+    title: str = RECEIPT_TITLE
+    nature: str = RECEIPT_NATURE
+
+
+def _format_tax_id(value: str) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    if len(digits) == 11:
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+    return ""
+
+
+def _moment(raw) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+    return moment if timezone.is_aware(moment) else None
+
+
+def retention_receipt(order) -> RetentionReceipt | None:
+    """O recibo do valor que a loja reteve deste pedido, ou ``None``.
+
+    Recibo é de dinheiro RECEBIDO. ``None`` quando o pedido não foi encerrado
+    como não retirado, ou quando a loja não ficou com dinheiro nenhum: tudo
+    voltou, nada foi pago, ou a compra foi na conta da casa (o retido continua
+    como dívida na conta, e quem a quita é o acerto da conta). Na venda mista,
+    o retido do recibo é só o que a loja recebeu (``kept_q``). Lê só o que o
+    gesto gravou em ``order.data["no_show"]``, mais a identidade da loja.
+    """
+    from shopman.shop.models import Shop
+
+    block = (order.data or {}).get(ORDER_DATA_KEY)
+    if not isinstance(block, dict) or str(getattr(order, "status", "")) != Order.Status.CANCELLED:
+        return None
+    # A mesma régua da frase do aviso: recibo só do dinheiro que a loja recebeu.
+    retained_q = no_show_reason.kept_money_q(block)
+    if retained_q <= 0:
+        return None
+    mixed = "kept_q" in block
+    shop = Shop.load()
+    customer = (order.data or {}).get("customer") or {}
+    lines = tuple(
+        RetainedLine(
+            name=str(line.get("name") or line.get("sku") or ""),
+            qty=str(line.get("qty") or ""),
+            value_q=int(line.get("value_q") or 0),
+        )
+        for line in block.get("lines") or ()
+        if isinstance(line, dict) and line.get("destiny") == LOSS
+    )
+    return RetentionReceipt(
+        order_ref=order.ref,
+        store_name=((shop.brand_name or shop.name) if shop else "").strip(),
+        legal_name=(getattr(shop, "legal_name", "") or "").strip() if shop else "",
+        tax_id=_format_tax_id(getattr(shop, "document", "") if shop else ""),
+        customer_name=str(customer.get("name") or "").strip() if isinstance(customer, dict) else "",
+        commitment_day=commitment_day(order),
+        closed_at=_moment(block.get("at")),
+        lines=lines,
+        paid_q=int(block.get("paid_q") or 0),
+        refund_q=int((block.get("money_q") if mixed else block.get("refund_q")) or 0),
+        retained_q=retained_q,
+        from_account_q=int(block.get("from_account_q") or 0),
+        debt_left_q=int(block.get("debt_left_q") or 0),
+        mixed=mixed,
+    )
+
+
 __all__ = [
     "LOSS",
     "MOVE_SOURCE",
@@ -774,6 +886,10 @@ __all__ = [
     "LineFacts",
     "NoShowRefused",
     "NoShowStale",
+    "RECEIPT_NATURE",
+    "RECEIPT_TITLE",
+    "RetainedLine",
+    "RetentionReceipt",
     "block_reason",
     "decide_destiny",
     "eligibility_reason",
@@ -785,6 +901,7 @@ __all__ = [
     "next_selling_day",
     "preview",
     "release_gate",
+    "retention_receipt",
     "revision",
     "stock_plan",
 ]

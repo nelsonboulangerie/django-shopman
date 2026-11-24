@@ -318,7 +318,8 @@ def test_mixed_sale_takes_the_debt_out_first(paes, relogio):
     )
     assert preview["customer_text"] == (
         "O pedido ficou pronto e não foi retirado. Tiramos R$ 18,70 da sua conta na loja, pelo que ainda pôde "
-        "voltar à venda. R$ 1,30 continuam na sua conta e R$ 28,70 ficaram com a loja, como dizem os Termos."
+        "voltar à venda. R$ 1,30 continuam na sua conta e R$ 28,70 ficaram com a loja, como dizem os Termos. "
+        "O recibo desse valor está no link do pedido."
     )
 
     block = no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
@@ -681,12 +682,14 @@ def test_not_picked_up_is_not_a_reason_the_operator_picks():
         ),
         (
             {"paid_q": 3000, "refund_q": 0, "retained_q": 3000},
-            "O pedido ficou pronto e não foi retirado. O valor ficou com a loja, como dizem os Termos.",
+            "O pedido ficou pronto e não foi retirado. O valor ficou com a loja, como dizem os Termos. "
+            "O recibo desse valor está no link do pedido.",
         ),
         (
             {"paid_q": 4870, "refund_q": 1870, "retained_q": 3000},
             "O pedido ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento, "
-            "pelo que ainda pôde voltar à venda. R$ 30,00 ficaram com a loja, como dizem os Termos.",
+            "pelo que ainda pôde voltar à venda. R$ 30,00 ficaram com a loja, como dizem os Termos. "
+            "O recibo desse valor está no link do pedido.",
         ),
         # Não pago: nenhuma frase de dinheiro.
         ({"paid_q": 0, "refund_q": 0, "retained_q": 0}, "O pedido ficou pronto e não foi retirado."),

@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-089",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Medir a indenização por percentual: revenda volta inteira; dos itens produzidos para a encomenda, a loja retém até X% do valor, X = custo de produção médio (ficha técnica + embalagem) com folga, aplicado pelo sistema e escrito nos Termos",
+  "dono": "Engenharia",
+  "criado": "2026-11-24",
+  "revisar_em": "2026-12-01",
+  "gatilho": "-",
+  "estado": "BLOQUEADO",
+  "prova": "medição local: 0 de 72 SKUs produzidos com custo (o Compras não tem custo de insumo); falta a fonte do custo, pergunta na coordenação"
+}
