@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
+from conversational_commerce.testing.fakes import FakeCommerceExecute
+
 ORDER_LINE = "commerce.order_in_conversation"
 CHANNEL = "whatsapp"
 CART = "cart-eval"
@@ -109,6 +111,31 @@ def _catalog_item(sku: str):
                          on_hand="99", expected="0", planned="0")
 
 
+class HouseGrid(FakeCommerceExecute):
+    """O executor de memória com a grade da casa, como o executor da loja (``effect_site._set_fulfillment``).
+
+    A hora dita escolhe a janela que a cobre: sem isso, o resumo do ensaio dizia "Retirada" sem o quando, e o do
+    ar diz "Retirada: quarta-feira, 25/11, a partir das 15h" (ensaio no ar, cartão 1, 24/11). E o dia sem hora
+    não tem janela no recibo: o falso do pacote punha uma janela dele, que a casa não conhece, e o ensaio dizia
+    "entrega amanhã, horário a confirmar".
+    """
+
+    def _apply(self, command):
+        from .eval_battery import janela_da_hora
+
+        ref = super()._apply(command)
+        if command.action == "set_fulfillment":
+            chosen = self.state.fulfillment[command.targets[0]]
+            if command.parameters.get("time"):
+                chosen["window"] = janela_da_hora(str(command.parameters["time"]))
+            refs = self.applied_refs[command.command_id]
+            if chosen.get("window"):
+                refs["window"] = chosen["window"]
+            else:
+                refs.pop("window", None)
+        return ref
+
+
 def _world():
     """O mundo de memória: as portas falsas do pacote, com o canal da Nice e a sacola vazia."""
     from conversational_commerce.testing.fakes import FakeWorld
@@ -116,6 +143,7 @@ def _world():
     from shopman.shop.conversational.commerce_read import conversation_payment_methods
 
     world = FakeWorld()
+    world.commerce_execute = HouseGrid(world.clock, world.faults, world.state)
     world.channel.name = CHANNEL
     # As formas que a conversa do canal oferece (as do ar, sem dinheiro), não as do falso: com as do falso,
     # o "pix" virava forma não oferecida e a Nice respondia a frase do dinheiro.

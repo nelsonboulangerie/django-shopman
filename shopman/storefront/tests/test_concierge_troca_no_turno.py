@@ -741,6 +741,53 @@ def test_the_close_asks_the_when_with_today_questions_before_the_summary(order_o
 
 
 @pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_card_one_in_one_sentence_says_the_agreement_before_the_invitation_and_the_when_in_the_summary(
+        order_on_air, outbox, monkeypatch):
+    """Ensaio no ar (24/11), cartão 1: (a) o "Combinado: retirada amanhã às 16h." saía DEPOIS do "Quer mais alguma
+    coisa? … pode fechar"; (b) o resumo dizia só "Retirada". Pelo serviço de verdade, o combinado vem antes do
+    resumo da sacola (que termina no convite), e o resumo diz o dia por extenso e a janela da grade."""
+    from datetime import timedelta
+
+    from django.utils import formats, timezone
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import model_reader, tools
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    first = "quero 2 desse para retirar amanhã às 16h"
+    script = {first: [{"act": "change_quantity", "qty": 2, "change": "set"},
+                      {"act": "choose_fulfillment", "day": "tomorrow", "mode": "pickup", "time": "16:00"}],
+              "pode fechar": [{"act": "place_order"}], "pix": [{"act": "choose_payment", "payment": "pix"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    execute = tools.execute
+
+    def house(name, args, ctx):
+        if name == "review_order":
+            return {"ok": True, "ready": True, "quote_token": "tok-card-1", "payment_method": "pix"}
+        return execute(name, args, ctx)
+
+    monkeypatch.setattr(tools, "execute", house)
+    Session.objects.create(session_key="sess-card-1", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}])
+    order_on_air.session_key = "sess-card-1"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(order_on_air, said, f"card-1-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    cart, _payment, summary = outbox.sent[:3]
+    agreed, listed = cart.split("\n\n", 1)
+    assert agreed == "Combinado: retirada amanhã às 16h.", cart
+    assert listed.startswith("Pronto, sua sacola ficou assim:") and listed.endswith("é só escrever “pode fechar”."), cart
+    tomorrow = timezone.localdate() + timedelta(days=1)
+    day = f"{formats.date_format(tomorrow, 'l').lower()}, {formats.date_format(tomorrow, 'd/m')}"
+    # As 16h caem na janela da casa que começa às 15h, como no resumo do caminho de hoje.
+    assert f"\nRetirada: {day}, a partir das 15h\n" in summary and summary.endswith("Posso registrar?"), summary
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
 def test_the_day_said_with_the_order_is_not_asked_again(order_on_air, outbox, monkeypatch):
     """Controle negativo do #3482: "pra amanhã, pode fechar" já diz o dia; o fechamento segue para retirar ou
     entregar e o horário, e nunca pergunta o dia de novo."""
