@@ -6297,7 +6297,8 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             )
             if phone_is_new:
                 # Digitado no balcão, o número ainda não é prova de nada: o
-                # titular confirma no WhatsApp, e até lá ele não abre a conta.
+                # titular confirma no WhatsApp ou com o código certo do SMS, e
+                # até lá ele não resolve para a conta.
                 phone_confirmation.request_on_commit(customer.ref, phone)
         if fill_email:
             _ensure_contact_point(
