@@ -192,6 +192,7 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "set_delivery_address.ask_mode": "Você vai retirar aqui na loja ou prefere entrega?",
     # Os degraus de baixo dos efeitos (#3412), aprovados em 23/11.
     "change_cart.done_receipt": "{done}, a sacola foi atualizada.",
+    "change_cart.done_total": "{done}, a sacola foi atualizada. Total: {total}.",  # #3488, coordenação 24/11
     "set_fulfillment.updated": "{noted}, atualizei o recebimento.",
     "commit_order.done_order": "Pedido {order} registrado. Acompanhar: {track}",
     # O endereço do cadastro (#3421): a MESMA oferta de hoje (``address.saved_offer``), e a pergunta de hoje.

@@ -101,7 +101,7 @@ from conversational_commerce.ports import (
     WorkItem,
 )
 from conversational_commerce.profile import read_line
-from conversational_commerce.reply import Composed, Evidence, Template, compose
+from conversational_commerce.reply import Composed, Evidence, PartSpec, Template, compose
 from conversational_commerce.workflow import (
     EpisodeEvent,
     answer_refers_to,
@@ -204,6 +204,32 @@ def closing_in(dialogue: dict, cart_ref: str | None, epoch: int) -> bool:
 NOTIFY_ATTEMPTS = 3
 #: As mudanças materiais do carrinho (v2 4.7, propriedade 2): depois de uma delas, os termos de antes não valem.
 MATERIAL_CHANGES = frozenset(EFFECT_SEQUENCE)
+
+
+#: A mudança da sacola com uma pergunta do fechamento no ar (#3488): os termos respondem a necessidade com a
+#: próxima pergunta (``present_terms.needs_*``), que não mostra a sacola. Sem a parte do recibo, "na verdade 3"
+#: mudava a sacola e ouvia só a pergunta de novo, como se nada tivesse acontecido. Diz o total novo pelos termos
+#: cotados de novo; sem eles, só o efeito (o degrau de baixo).
+CHANGE_TOTAL_TEMPLATE = "change_cart.done_total"
+CHANGE_RECEIPT_TEMPLATE = "change_cart.done_receipt"
+
+
+def _with_change_receipts(state, chosen, by_need, specs):
+    """A parte do recibo da mudança antes da pergunta do fechamento que respondeu por ela."""
+    from .moves._effects import known_with
+
+    key = state.terms_key(state.subject.cart_ref) if state.subject.cart_ref else "terms.none"
+    out = []
+    for candidate, spec in zip(chosen, specs, strict=True):
+        need = by_need[candidate.need_id]
+        receipt = state.receipts.get(need.need_id)
+        if candidate.move == "present_terms" and need.act == "change_quantity" and receipt is not None \
+                and receipt.status == "success" and str(spec.template_id).startswith("present_terms.needs_"):
+            done = {"done": ("receipt", receipt.command_id)}
+            out.append(PartSpec("change_cart", CHANGE_TOTAL_TEMPLATE, {**done, "total": ("fact", key)})
+                       if known_with(state, key, "total") else PartSpec("change_cart", CHANGE_RECEIPT_TEMPLATE, done))
+        out.append(spec)
+    return out
 
 
 def _distinct(specs):
@@ -949,7 +975,8 @@ class Engine:
         moves = registry()
 
         # Passo 7: dizer e verificar.
-        specs = _distinct([moves[c.move].reply(state, by_need[c.need_id]) for c in chosen])
+        specs = _distinct(_with_change_receipts(state, chosen, by_need,
+                                                [moves[c.move].reply(state, by_need[c.need_id]) for c in chosen]))
         reply = None
         if specs:
             receipts = {receipt.command_id: receipt for receipt in state.receipts.values()}
