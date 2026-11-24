@@ -26,6 +26,7 @@ from shopman.orderman.models import Order
 from shopman.shop.adapters import notification_email, notification_manychat, notification_sms
 from shopman.shop.adapters._notification_templates import derive_context, render_message, render_template
 from shopman.shop.services import notification as notification_service
+from shopman.storefront.tests.identity_fakes import proven
 
 from .conftest import login_as_customer
 
@@ -61,7 +62,8 @@ def _sem_portarias_de_ritmo(settings):
 
 @pytest.fixture
 def dona(db) -> Customer:
-    return Customer.objects.create(ref="CUS-OC01", first_name="Lia", phone=TELEFONE)
+    # A dona já provou o número (contato sem prova não abre a conta, OC-08).
+    return proven(Customer.objects.create(ref="CUS-OC01", first_name="Lia", phone=TELEFONE))
 
 
 @pytest.fixture
