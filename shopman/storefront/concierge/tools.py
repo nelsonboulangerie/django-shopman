@@ -1799,9 +1799,31 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
                 "pix_sent_at": _pix_sent_at(conversation, order) if projection.source_projection == "payment" else "",
             }
         )
+        orders[-1]["actions"].extend(_amendment_actions(conversation, order))
     if order_ref and not orders:
         return {"ok": True, "orders": [], "message": f"Não achei o pedido {order_ref} para este cliente."}
     return {"ok": True, "orders": orders}
+
+
+def _amendment_actions(conversation, order) -> list[dict]:
+    """As alterações que a Nice faz neste pedido agora (OC-11), como ações de conversa.
+
+    Só com a autoridade que a ``amend_order`` exige, e só as que o serviço do balcão aceita
+    agora (``order_amendment.offered``, X1): a resposta diz "é só me dizer", nunca um endereço.
+    """
+    if not (getattr(conversation, "_cart_authority", False) or getattr(conversation, "_commercial_authority", False)):
+        return []
+    from . import order_amendment
+
+    try:
+        refs = order_amendment.offered(order)
+    except Exception:
+        logger.warning("concierge.order_status amendment offer unavailable order=%s", order.ref, exc_info=True)
+        return []
+    return [
+        {"ref": ref, "label": AMEND_GESTURES[ref], "kind": "conversation", "enabled": True, "href": "", "method": ""}
+        for ref in refs
+    ]
 
 
 #: Estados de saída em que a mensagem chegou ao fornecedor (``ConversationMessage.transport_state``).
@@ -1982,6 +2004,20 @@ def repay_order(ctx: ToolContext, order_ref: str = "", method: str = "") -> dict
     )
     lead = REPAY_DONE[code if payable_now else "still_failing"].format(ref=order.ref)
     return {"ok": True, "code": code, "order_ref": order.ref, "lead": lead, "orders": [entry], "payable": payable_now}
+
+
+def amend_order(ctx: ToolContext, kind: str = "", order_ref: str = "", code: str = "", **said) -> dict:
+    """Alterar o pedido já feito pela conversa (OC-11): remarcar, tirar um item, trocar o endereço.
+
+    Sem ``code``, a prévia: o efeito (horário, item, endereço, taxa, total) e o código de
+    confirmação, ou a pergunta do que falta, ou a recusa com o motivo. Com ``code``, aplica
+    pelo ``order_edit.edit`` do balcão, se o pedido ainda é o da prévia (X5); a mesma
+    confirmação de novo não aplica outra vez (X4). Regra nenhuma mora aqui: a porta, a data,
+    a taxa e o dinheiro são do ``order_edit`` (``concierge/order_amendment.py``).
+    """
+    from . import order_amendment
+
+    return order_amendment.run_tool(ctx, kind=kind, order_ref=order_ref, code=code, **said)
 
 
 def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
@@ -2229,12 +2265,15 @@ CART_TOOLS = frozenset({"set_item", "set_fulfillment", "review_order", "place_or
 
 #: Pagar o próprio pedido de novo ou de outra forma (OC-12): a autoridade de sacola basta.
 PAYMENT_TOOLS = frozenset({"repay_order"})
+#: Alterar o próprio pedido (OC-11): a autoridade de sacola, com a confirmação pelo código da
+#: prévia (ADR-050), como o pedido fechado na conversa.
+AMEND_TOOLS = frozenset({"amend_order"})
 
 
 def _authority_level(name: str):
     if name in READ_TOOLS:
         return False
-    return CART_LEVEL if name in CART_TOOLS | PAYMENT_TOOLS else True
+    return CART_LEVEL if name in CART_TOOLS | PAYMENT_TOOLS | AMEND_TOOLS else True
 
 
 def _guard(handler):
@@ -2268,6 +2307,9 @@ for _name in ("search_storefront", "view_cart", "last_order", "order_status", "l
 #: vê os pedidos recentes e paga): vale com a autoridade de sacola, a mesma que fecha o
 #: pedido pelo código (ADR-050). Não move dinheiro: só refaz o código ou troca a forma.
 repay_order = _guard(repay_order)
+#: Alterar o PRÓPRIO pedido (OC-11) é mudar compromisso: a autoridade de sacola, e nada se
+#: aplica sem o código da prévia que o cliente viu (ADR-050), conferido na transação.
+amend_order = _guard(amend_order)
 
 
 def _display_text(value) -> str:
@@ -2310,7 +2352,97 @@ CONVERSATION_EQUIVALENTS = {
     "cancel_order": "Se quiser cancelar, é só me dizer.",
     "retry_payment": "Se quiser tentar pagar de novo, é só me dizer.",
     "pay_with_pix": "Se preferir pagar com Pix, é só me dizer.",
+    # As alterações do pedido já feito (OC-11, ``amend_order``), só quando o serviço do
+    # balcão aceita agora (``order_amendment.offered``). Juntas, saem numa linha só.
+    "reschedule_order": "Se quiser trocar o dia ou o horário, é só me dizer.",
+    "remove_item": "Se quiser tirar um item, é só me dizer.",
+    "change_address": "Se quiser trocar o endereço da entrega, é só me dizer.",
 }
+
+
+#: As alterações do pedido já feito (OC-11), como entram na frase quando são mais de uma
+#: ("Se quiser remarcar ou tirar um item, é só me dizer"; e no motivo que a equipe lê).
+AMEND_GESTURES = {
+    "reschedule_order": "remarcar",
+    "remove_item": "tirar um item",
+    "change_address": "trocar o endereço da entrega",
+}
+AMEND_OFFER = "Se quiser {gestures}, é só me dizer."
+AMEND_MODE_WORDS = {"pickup": "retirada", "delivery": "entrega"}
+#: A prévia da alteração (OC-11): o efeito em fatos do sistema e o código que confirma.
+AMEND_PREVIEW_LEAD = "Confira a alteração do pedido {ref}:"
+AMEND_EFFECT = {
+    "when": "{mode} passa para {when}.",
+    "removed": "Sai do pedido: {items}.",
+    "reduced": "{name} passa de {before} para {after}.",
+    "address": "Novo endereço: {address}.",
+    "fee": "Taxa de entrega: {after} (era {before}).",
+    "fee_same": "Taxa de entrega: continua {fee}.",
+    "fee_none": "Sem taxa de entrega.",
+    "total": "Total: {after} (era {before}).",
+    "total_same": "Total: continua {total}.",
+    "collect": "A pagar na {mode}: {amount}.",
+}
+AMEND_CONFIRM = "Para confirmar, responda: confirmo {code}"
+AMEND_STALE = "O pedido {ref} mudou desde a minha pergunta. Confira de novo:"
+AMEND_DONE = {
+    "applied": "Pronto, alterei o pedido {ref}.",
+    "already_applied": "Essa alteração do pedido {ref} já está feita.",
+}
+#: O que a Nice pergunta quando falta o que mudar.
+AMEND_ASK = {
+    "reschedule_order": "Qual horário fica melhor para {day}? {options}",
+    "no_slots": "Não tenho horário de {mode} para {day}. Me diga outro dia (dia/mês).",
+    "remove_item": "Qual item sai do pedido {ref}? {options}",
+    "change_address": "Qual é o endereço novo da entrega? Escreva rua, número, bairro e CEP.",
+    "address_incomplete": (
+        "Para trocar o endereço, preciso dele completo: falta {words}. Escreva rua, número, bairro e CEP."
+    ),
+}
+#: Por que a Nice não altera o pedido. O que o serviço recusa com motivo próprio (data,
+#: horário, estoque) sai com a frase dele; o que pede gente sai com a equipe chamada.
+AMEND_STATUS_REFUSED = {
+    "ready": "O pedido {ref} já está pronto, e aí não dá mais para alterar.",
+    "dispatched": "O pedido {ref} já saiu para entrega, e aí não dá mais para alterar.",
+    "delivered": "O pedido {ref} já foi entregue.",
+    "completed": "O pedido {ref} já foi concluído.",
+    "cancelled": "O pedido {ref} foi cancelado.",
+    "returned": "O pedido {ref} foi devolvido.",
+}
+AMEND_REFUSED = {
+    "no_order": "Não achei pedido seu por aqui.",
+    "many_orders": "Você tem mais de um pedido em andamento ({refs}). Me diga o número do pedido que quer alterar.",
+    "nothing_pending": "Não há alteração de pedido esperando confirmação.",
+    "unchanged": "O pedido {ref} já está assim, então nada muda.",
+    "marketplace_order": "O pedido {ref} é do iFood, e a alteração se faz pelo próprio iFood.",
+    "marketplace_schedule": "O pedido {ref} é do iFood, e a alteração se faz pelo próprio iFood.",
+    "test_order": "O pedido {ref} é de teste e não se altera.",
+    "fiscal_authorized": "A nota fiscal do pedido {ref} já foi emitida, e aí a alteração precisa da equipe.",
+    "already_in_preparation": "O pedido {ref} já está em preparo, e aí o dia não muda mais.",
+    "no_slot_at": "Não tenho horário de {mode} às {time} para {day}.",
+    "slot_closed": "O horário {slot} não está disponível para {day}: {reason}.",
+    "item_not_found": "Não achei {item} no pedido {ref}. O pedido tem: {items}.",
+    "empty_order": "Esse é o único item do pedido {ref}. Se quiser desistir dele, é só pedir o cancelamento.",
+    "pickup_order": "O pedido {ref} é para retirada na loja, então não tem endereço de entrega.",
+    "delivery_out_of_area": "Esse endereço fica fora da nossa área de entrega. O pedido {ref} continua como estava.",
+    "address_not_located": "Não consegui localizar esse endereço.",
+    "manager_approval_required": "O pedido {ref} já está pago, e a devolução de {amount} precisa da equipe.",
+    "open_digital_charge": (
+        "O pedido {ref} tem um pagamento esperando com o valor de agora, e aí o valor não muda por aqui."
+    ),
+    "delivery_payment_method_required": (
+        "Com a mudança, fica um valor a pagar na entrega, e a forma de pagar na porta precisa da equipe."
+    ),
+    "mixed_payment_refund": "O pedido {ref} foi pago em mais de uma forma, e aí a diferença precisa da equipe.",
+    "on_account_total_locked": "O pedido {ref} está na conta da casa, e o valor dele não muda por aqui.",
+    "split_pending_tenders": (
+        "O pagamento do pedido {ref} está dividido em mais de uma forma, e aí a diferença precisa da equipe."
+    ),
+    "payment_unreadable": "Não consegui conferir o pagamento do pedido {ref} agora.",
+    "activation_running": "O pedido {ref} está indo para a cozinha neste instante.",
+    "generic": "Não consigo fazer essa alteração no pedido {ref} por aqui.",
+}
+AMEND_TEAM_SUFFIX = "Já chamei a equipe para ver isso com você."
 
 
 #: O que a Nice diz depois de refazer ou trocar a cobrança pela conversa (OC-12). O código
@@ -2458,7 +2590,13 @@ def render_result(name: str, result: dict) -> str:
             if order.get("pix_sent_at"):
                 # O que este chat já recebeu (OC-10): "cadê o Pix?" depois do aviso com o código.
                 rows.append(f"Já te mandei o código Pix por aqui {order['pix_sent_at']}.")
+            amendments = [
+                action["ref"] for action in order.get("actions", [])
+                if action.get("enabled") and action.get("ref") in AMEND_GESTURES
+            ]
             for action in order.get("actions", []):
+                if action.get("ref") in AMEND_GESTURES:
+                    continue  # as alterações do pedido saem juntas, numa linha só (abaixo)
                 if action.get("enabled") and action.get("kind") == "copy":
                     # O que se copia vai sozinho na mensagem seguinte (``copy_texts``); sem
                     # o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
@@ -2472,6 +2610,11 @@ def render_result(name: str, result: dict) -> str:
                 elif action.get("enabled") and CONVERSATION_EQUIVALENTS.get(action.get("ref")):
                     # Comando que a Nice faz pela conversa: a instrução, nunca o endereço.
                     rows.append(CONVERSATION_EQUIVALENTS[action["ref"]])
+            if len(amendments) == 1:
+                rows.append(CONVERSATION_EQUIVALENTS[amendments[0]])
+            elif amendments:
+                gestures = [AMEND_GESTURES[ref] for ref in amendments]
+                rows.append(AMEND_OFFER.format(gestures=", ".join(gestures[:-1]) + " ou " + gestures[-1]))
             rows.append(f"Acompanhar: {order['tracking_url']}")
         return "\n".join(rows) or "Não encontrei pedidos para este acesso."
     if name == "repay_order":
@@ -2486,6 +2629,13 @@ def render_result(name: str, result: dict) -> str:
             # A página do pedido (``/pedido/<ref>/``), não o link do entregador: esse só
             # se lê por ``courier.proven_tracking``.
             rows.append(f"Acompanhar: {result['order_url']}")
+        return "\n".join(rows)
+    if name == "amend_order":
+        # O que a Nice fez, mostrou ou perguntou, e o código quando há o que confirmar (OC-11).
+        rows = [result["lead"]] if result.get("lead") else []
+        rows.extend(result.get("lines") or [])
+        if result.get("confirm_code") and result.get("code") in {"proposed", "stale"}:
+            rows.append(AMEND_CONFIRM.format(code=result["confirm_code"]))
         return "\n".join(rows)
     if name == "send_web_link":
         return f"Continue no site: {result['url']}"
@@ -2585,6 +2735,21 @@ INPUT_SCHEMAS: dict[str, dict] = {
         },
         "required": [],
     },
+    "amend_order": {
+        "properties": {
+            "kind": {"type": "string", "enum": ["", "reschedule_order", "remove_item", "change_address"]},
+            "order_ref": {"type": "string"},
+            "day": {"type": "string"},
+            "minutes": {"type": "integer"},
+            "time_text": {"type": "string"},
+            "pick": {"type": "integer"},
+            "item": {"type": "string"},
+            "qty": {"type": "integer"},
+            "address": {"type": "string"},
+            "code": {"type": "string"},
+        },
+        "required": [],
+    },
     "last_order": {
         "properties": {},
         "required": [],
@@ -2615,6 +2780,7 @@ _HANDLERS = {
     "order_status": order_status,
     "add_to_order": add_to_order,
     "repay_order": repay_order,
+    "amend_order": amend_order,
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,
