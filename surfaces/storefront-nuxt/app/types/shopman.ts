@@ -416,11 +416,27 @@ export interface CartProjection {
   // formato da casa ("19h18"; de outro dia, "18/11 às 19h18"). É o que diz a
   // quem abre a sacola depois do prazo que a reserva acabou. null com reserva viva.
   reservation_lapsed_display: string | null
+  // Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
+  // sincronização. Ausente ou vazio para visitante e para link encaminhado.
+  open_elsewhere?: CartOpenElsewhere[]
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
   upsell: { sku: string, name: string, unit_price_q: number, price_display: string, image_url: string | null } | null
   actions: Action[]
+}
+
+// A sacola aberta em outro canal (OC-17). `bring` é a ação de trazê-la para cá:
+// nasce desligada (`enabled: false`) até a passagem entre canais existir, e a
+// tela só oferece o gesto com ela ligada (X1).
+export interface CartOpenElsewhere {
+  channel: string
+  channel_label: string
+  items_count: number
+  items_phrase: string
+  subtotal_q: number
+  subtotal_display: string
+  bring: Action
 }
 
 export interface SocialLinkProjection {

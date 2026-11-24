@@ -307,6 +307,32 @@ def reservation_lapsed_at(session_key: str | None, skus):
     )
 
 
+def open_elsewhere(customer_ref: str, channel_ref: str):
+    """As sacolas abertas deste cliente nos outros canais (OC-17, C06).
+
+    Leitura pura sobre ``sessions.open_sessions_for_customer``: o canal que
+    pergunta avisa, nunca sincroniza. Vazio sem cliente.
+    """
+    if not customer_ref:
+        return ()
+    from shopman.shop.services.sessions import open_sessions_for_customer
+
+    return open_sessions_for_customer(customer_ref, exclude_channel=channel_ref)
+
+
+def items_phrase(entry) -> str:
+    """Quanto há na outra sacola, como a cliente conta: "3 itens", "1 item".
+
+    Com item de peso (quantidade quebrada) a soma de unidades não diz nada, e a
+    frase conta os produtos: "2 produtos".
+    """
+    count = entry.items_count
+    if isinstance(count, int):
+        return f"{count} {'item' if count == 1 else 'itens'}"
+    lines = entry.lines_count
+    return f"{lines} {'produto' if lines == 1 else 'produtos'}"
+
+
 def build_cart(
     session_key: str | None,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,

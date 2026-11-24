@@ -16854,7 +16854,9 @@
             "release_customer",
             "assign_experience",
             "assign_handle",
-            "abandon_session"
+            "abandon_session",
+            "OpenSessionElsewhere",
+            "open_sessions_for_customer"
           ]
         }
       ],
