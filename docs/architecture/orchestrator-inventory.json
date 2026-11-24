@@ -15859,6 +15859,84 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/policies/experience.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.policies-experience-decision"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/services/experience.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-experience"
+      ],
+      "responsibilities": [
+        "decisão",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_alert_expired",
+            "_customer_ref",
+            "_ref_of",
+            "_store",
+            "_stored",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/rules/experience.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": []
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/management/commands/alert_expired_experiments.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "Command",
+            "logger"
+          ]
+        }
+      ]
     }
   ]
 }

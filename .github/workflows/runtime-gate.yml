@@ -166,6 +166,14 @@ jobs:
           .venv/bin/python scripts/check_tenant_config.py
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_tenant_config.py -q
 
+      # R4 do release (OC-20): versão paralela permanente é dívida. Anotação
+      # `EXPERIMENT(<ref>) remove_after AAAA-MM-DD` vencida nas superfícies, ou
+      # ExperienceRule semeada com prazo passado, reprova. Stdlib-only.
+      - name: "R4: experimento vencido reprova"
+        run: |
+          .venv/bin/python scripts/check_experiments.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_experiments.py -q
+
       # Porta única de IA (ID3A-PLAN, E1): cliente de SDK e endereço de API de
       # provedor só em shopman/shop/ai.py, que freia e mede cada chamada paga.
       - name: "ID3A: nenhuma chamada a modelo fora da porta de IA"
