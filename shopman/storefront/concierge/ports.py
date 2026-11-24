@@ -178,7 +178,12 @@ class NiceChannel:
         text = (self.bodies or {}).get(prepared.body_ref)
         if not text:
             raise PortError("invalid_content", f"sem o texto de {prepared.body_ref}: nada foi enviado")
-        message = send_out_of_turn(conversation, text, send_key=idempotency_key)
+        from shopman.shop.models import Conversation
+
+        # Com a conversa na equipe, só sai o que fala do atendimento humano (``handoff_ack``, o mesmo propósito do
+        # aviso de hoje): o aviso do prazo que o encaminhamento prometeu ("te aviso por aqui até…") é isso.
+        purpose = "handoff_ack" if conversation.state == Conversation.State.HANDOFF else "reply"
+        message = send_out_of_turn(conversation, text, purpose=purpose, send_key=idempotency_key)
         if message is None:
             raise PortError("provider_unavailable", "a conversa não tem entrada por vínculo ativo: nada foi enviado")
         return self._exposure(ctx, message, decision_id=prepared.decision_id, recipient=prepared.recipient)

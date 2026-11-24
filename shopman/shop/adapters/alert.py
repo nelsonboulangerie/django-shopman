@@ -215,6 +215,17 @@ def resolve_pk(pk: int, *, actor: str) -> int:
     return resolve_alert_pk(pk, actor=actor)
 
 
+def handled_since(pk: int, since) -> bool:
+    """O aviso ``pk`` foi reconhecido ou resolvido por alguém em ``since`` ou depois (``None``: em qualquer hora)."""
+    from shopman.backstage.models import OperatorAlert
+
+    row = OperatorAlert.objects.filter(pk=pk).values("acknowledged", "acknowledged_at", "resolved_at").first()
+    if row is None:
+        return False
+    moments = [row["acknowledged_at"] if row["acknowledged"] else None, row["resolved_at"]]
+    return any(moment is not None and (since is None or moment >= since) for moment in moments)
+
+
 def connect_saved(receiver, *, dispatch_uid: str, weak: bool = False) -> None:
     """Connect a receiver to OperatorAlert post-save without leaking imports."""
     from django.db.models.signals import post_save

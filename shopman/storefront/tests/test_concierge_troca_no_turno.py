@@ -578,3 +578,55 @@ def test_the_deadline_notice_goes_out_once(order_on_air, outbox, monkeypatch):
         second = turn_framework.tick()
     assert (first["notices"], second["notices"]) == (1, 0), (first, second)
     assert len(outbox.sent) == 2 and outbox.sent[1].startswith("Desculpe a demora.")
+
+
+def _after_the_accept_window(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from shopman.shop.conversational import clock
+
+    later = datetime.now(UTC) + timedelta(minutes=30)  # passado o aceite, dentro da janela de 24 h do WhatsApp
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return later if tz is not None else later.replace(tzinfo=None)
+
+    monkeypatch.setattr(clock, "datetime", Later)
+    monkeypatch.setattr("django.utils.timezone.now", lambda: later)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_team_holds_the_conversation_and_does_not_answer_the_notice_goes_out_once(order_on_air, outbox,
+                                                                                      monkeypatch):
+    """A frase do encaminhamento prometeu "te aviso por aqui até {deadline}". Com a conversa na equipe e ninguém
+    tendo assumido, o aviso sai UMA vez (a Nice nunca afirma falso), e o tick seguinte cala."""
+    from shopman.shop.models import Conversation
+
+    _human_on_air(order_on_air, monkeypatch)
+    assert Conversation.objects.get(pk=order_on_air.pk).state == Conversation.State.HANDOFF
+    _after_the_accept_window(monkeypatch)
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        first = turn_framework.tick()
+        second = turn_framework.tick()
+    assert (first["notices"], second["notices"]) == (1, 0), (first, second)
+    assert len(outbox.sent) == 2 and outbox.sent[1].startswith("Desculpe a demora.")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_team_took_over_and_the_tick_stays_quiet(order_on_air, outbox, monkeypatch):
+    """Alguém da equipe assumiu o cartão de atendimento depois do encaminhamento: a promessa está com a equipe, e
+    o tick não fala."""
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.models import Conversation
+
+    _human_on_air(order_on_air, monkeypatch)
+    pk = (Conversation.objects.get(pk=order_on_air.pk).flags or {})["alerts"]["concierge_handoff"]
+    _after_the_accept_window(monkeypatch)
+    from django.utils import timezone
+
+    OperatorAlert.objects.filter(pk=pk).update(acknowledged=True, acknowledged_at=timezone.now(),
+                                               acknowledged_by="ana")
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        counts = turn_framework.tick()
+    assert counts["notices"] == 0 and len(outbox.sent) == 1

@@ -772,9 +772,23 @@ def _due_conversations(ctx: TrustedContext) -> list[int]:
     subjects = set(ConversationalEpisode.objects.filter(**_scope(ctx), episode_id__in=episodes)
                    .values_list("subject", flat=True))
     pks = sorted({pk for subject in subjects for pk in _conversations_of_subject(subject)})
-    # Só a conversa com a Concierge: a que está com a equipe é da equipe (a Concierge de hoje também cala).
-    return list(Conversation.objects.filter(pk__in=pks, state=Conversation.State.ACTIVE)
-                .values_list("pk", flat=True))
+    # A frase do encaminhamento promete "te aviso por aqui até {deadline}": com a conversa na equipe e NINGUÉM
+    # tendo assumido, o aviso sai (a Nice nunca afirma falso). Se alguém da equipe assumiu, o tick cala.
+    found = Conversation.objects.filter(pk__in=pks, state__in=(Conversation.State.ACTIVE, Conversation.State.HANDOFF))
+    return [conversation.pk for conversation in found
+            if conversation.state == Conversation.State.ACTIVE or not team_took_over(conversation)]
+
+
+def team_took_over(conversation) -> bool:
+    """Alguém da equipe assumiu o atendimento depois do encaminhamento: o cartão de "cliente esperando atendente"
+    (``concierge_handoff``) reconhecido ou resolvido por uma pessoa.
+
+    É o único sinal que a casa registra: a resposta pelo Live Chat do provedor não chega aqui. Sem ele, o prazo
+    prometido ao cliente vale, e o aviso sai."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    pk = ((conversation.flags or {}).get("alerts") or {}).get("concierge_handoff")
+    return bool(pk) and alert_adapter.handled_since(int(pk), conversation.handoff_at)
 
 
 def _conversations_of_subject(subject: str) -> set[int]:
