@@ -14768,6 +14768,32 @@
       ]
     },
     {
+      "path": "shopman/shop/services/session_transfer.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-session-transfer"
+      ],
+      "responsibilities": [
+        "decisão",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_qty",
+            "_qty_text",
+            "_sellable_lines",
+            "_total_q",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/shelf_recheck.py",
       "touchpoints": [
         "service"
