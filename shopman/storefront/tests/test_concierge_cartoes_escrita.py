@@ -12,6 +12,8 @@ Fonte dos cartões:
   dono repassou em 24/11;
 - ``erro-comum``: os erros que o dono citou (campanha, croassant, acento faltando, plural)
   sobre o cardápio do seed;
+- ``observação``: falas reais do ar, da observação dos últimos 7 dias (18 a 24/11/2026, #3591),
+  já redigidas, sem nome e sem telefone;
 - ``palavra-chave``: o produto que o cliente chama por outro nome, achado pelas palavras-chave
   do produto ("folhado de maçã" é o Chausson aux Pommes).
 
@@ -20,6 +22,8 @@ diz que não encontrou. Nenhuma resposta pode trazer o cardápio inteiro no luga
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from django.test import override_settings
@@ -45,6 +49,10 @@ MENU = (
     ("MIB", "Mini Baguete"), ("TRADI", "Baguette de Tradition"), ("CRO", "Croissant"), ("MDLN", "Madeleine"),
     ("PCHOC", "Pain au Chocolat"), ("COE", "Coelhinho de Chocolate"), ("CAP", "Cappuccino"),
     ("SP", "Espresso"), ("CQMA", "Croque Madame"), ("CQMO", "Croque Monsieur"), ("CN", "Chausson aux Pommes"),
+    ("ITA", "Italiano Rústico"), ("BAT", "Bâtard"), ("CPBG", "Baguette Campagne"), ("BGG", "Baguete Gergelim"),
+    ("BRBB", "Brioche Burger Bun"), ("TRABB", "Pão de Hambúrguer"), ("BRCH", "Brioche Chocolat"),
+    ("FORMA", "Shokupan"), ("FOA", "Focaccia Alecrim"), ("FOC", "Focaccia Cebola Roxa"), ("CHLH", "Challah"),
+    ("HOL", "Pão para Hot Dog"), ("BRRSN", "Pain aux Raisins"),
 )
 
 #: As palavras-chave do seed (``keywords_map``), genéricas como as do ar: "pao", "frances",
@@ -71,6 +79,13 @@ KEYWORDS = {
     "COE": ["pao-doce", "bichinho", "criancas", "do-dia"],
     "PERDU": ["doce", "rabanada", "chapa", "frances"],
     "MELSA": ["doce", "frutas", "chantilly", "japones", "gelado"],
+    "BGG": ["pao", "frances", "levain", "gergelim", "azeite"],
+    "BRBB": ["brioche", "hamburger", "manteiga", "ovos"],
+    "TRABB": ["pao", "hamburger", "levain", "individual"],
+    "FORMA": ["pao", "forma", "japones", "macio", "fatiado", "shokupan", "artesanal"],
+    "FOA": ["focaccia", "alecrim", "italiano", "azeite"],
+    "HOL": ["pao", "hotdog", "manteiga", "salgado"],
+    "BRRSN": ["pain", "raisins", "passas", "folhado"],
 }
 
 ASK, ORDER, HOUSE = "product_question", "order", "house"
@@ -79,8 +94,9 @@ ASK, ORDER, HOUSE = "product_question", "order", "house"
 #:  o que a resposta mostra, o que a casa diz que não encontrou).
 #: Várias coisas numa fala vêm num ato só, que é a leitura que falhou no ar em 24/11.
 CARDS = (
+    # Quatro Campagne no cardápio e a lista mostra três: o Pain de Campagne vem primeiro.
     ("real", "Ainda tem pão champagne e folhado de maçã?", [(ASK, None, "pão champagne e folhado de maçã", 0)],
-     ("Pain de Campagne", "Campagne Redondo", "Campagne Passas & Castanhas", "Chausson aux Pommes"), ()),
+     ("Pain de Campagne", "Chausson aux Pommes"), ()),
     ("real", "tem melonpan?", [(ASK, None, "melonpan", 0)], ("Melonpan",), ()),
     ("real", "Queria um Pain perdu, vocês entregam?", [(ORDER, None, "Pain perdu", 1)], ("Pain Perdu",), ()),
     ("real", "Corneto de chocolate 1", [(ORDER, None, "Corneto de chocolate", 1)], ("Cornet",), ()),
@@ -93,7 +109,7 @@ CARDS = (
     ("real", "E coelinho ou o ursinho (o que tiver)", [(ASK, "E coelinho ou o ursinho (o que tiver)", "coelinho ou o ursinho", 0)],
      ("Coelhinho de Chocolate",), ("ursinho",)),
     ("real", "1 pão italiano grande e 2 croissant", [(ORDER, None, "1 pão italiano grande e 2 croissant", 0)],
-     ("Croissant",), ("pão italiano grande",)),
+     ("Italiano Rústico", "Croissant"), ()),
     ("real", "Tem croissant hoje? e vocês aceitam vale refeição?", [(ASK, "Tem croissant hoje?", "croissant", 0), (HOUSE, "vocês aceitam vale refeição?", "", 0)],
      ("Croissant",), ()),
     ("real", "quero sim. mas a baguete de tradição, não tem?", [(ASK, "mas a baguete de tradição, não tem?", "baguete de tradição", 0)],
@@ -110,22 +126,91 @@ CARDS = (
     ("palavra-chave", "quero 2 folhados de maca", [(ORDER, None, "folhados de maca", 2)], ("Chausson aux Pommes",), ()),
     ("palavra-chave", "tem rabanada?", [(ASK, None, "rabanada", 0)], ("Pain Perdu",), ()),
     ("palavra-chave", "tem um sanduiche de presunto?", [(ASK, None, "sanduiche de presunto", 0)], ("Croque Monsieur",), ()),
+    # Falas reais da observação do ar, 18 a 24/11/2026 (#3591), redigidas: o pedido de produto
+    # como o cliente escreveu, fora as do número do dono (testes) e as com nome que a redação
+    # deixou passar. A leitura da IA vem como no ar: várias coisas num ato só.
+    ("observação", "Por favor, separa pra mim, 3 baguetes francesas e 2 ciabattas…pego as 11:30, pode ser?",
+     [(ORDER, None, "baguetes francesas e 2 ciabattas", 0)], ("Baguet", "Ciabatta"), ()),
+    ("observação", "Ainda há disponível pão de forma artesanal, 1 pacote?", [(ASK, None, "pão de forma artesanal", 0)],
+     ("Shokupan",), ()),
+    ("observação", "Vce consegue reservar pra mim , 1 baguete tradicional e um rústico grande?",
+     [(ORDER, None, "1 baguete tradicional e um rústico grande", 0)], ("Baguette de Tradition", "Rústico"), ()),
+    ("observação", "Oii tudo bem? Queria encomendar 3 pães brioche de hambúrguer pra amanhã por favor",
+     [(ORDER, None, "pães brioche de hambúrguer", 3)], ("Brioche Burger Bun",), ()),
+    ("observação", "Estou entrando em contato para encomendar 6 unidades de baguettes para hoje umas 15h - 15h30, teria como?",
+     [(ORDER, None, "baguettes", 6)], ("Baguet",), ()),
+    ("observação", "Tem pão au chocolat?", [(ASK, None, "pão au chocolat", 0)], ("Pain au Chocolat",), ()),
+    ("observação", "Gostaria de encomendar uma focaccia para hoje", [(ORDER, None, "focaccia", 1)], ("Focaccia",), ()),
+    ("observação", "Vcs tem baguette, ciabatta e batard?", [(ASK, None, "baguette, ciabatta e batard", 0)],
+     ("Baguet", "Ciabatta", "Bâtard"), ()),
+    ("observação", "e do pão de champanhe e passas", [(ASK, None, "pão de champanhe e passas", 0)],
+     ("Campagne Passas & Castanhas",), ()),
+    ("observação", "1 pão italiano grande", [(ORDER, None, "pão italiano grande", 1)], ("Italiano Rústico",), ()),
+    ("observação", "Queria 1 pão italiano rústico grande , 4 baguetes campagne e 2 ciabatas p/ entrega hoje à tarde .",
+     [(ORDER, None, "1 pão italiano rústico grande , 4 baguetes campagne e 2 ciabatas", 0)],
+     ("Italiano Rústico", "Baguette Campagne", "Ciabatta"), ()),
+    ("observação", "Quero 8 Madalena", [(ORDER, None, "Madalena", 8)], ("Madeleine",), ()),
+    ("observação", "Meninas,vocês podem reservar 4 bisnaguinhas pra mim?", [(ORDER, None, "bisnaguinhas", 4)],
+     (), ("bisnaguinhas",)),
+    ("observação", "Boa tarde , aí vcs tem panetone?", [(ASK, None, "panetone", 0)], (), ("panetone",)),
+    ("observação", "1 brioche e 1 campagne oval", [(ORDER, None, "1 brioche e 1 campagne oval", 0)],
+     ("Brioche", "Campagne"), ()),
+    ("observação", "Gostaria de reservar um pão rústico por favor!", [(ORDER, None, "pão rústico", 1)], ("Rústico",), ()),
+    ("observação", "Queria fazer encomenda de 4 pães ( chalá / gergelim e 2 pct de hot-dog )",
+     [(ORDER, None, "4 pães ( chalá / gergelim e 2 pct de hot-dog )", 0)], ("Challah", "Gergelim", "Hot Dog"), ()),
+    ("observação", "Meninas, ainda consigo um bâtard e um campagne oval para hoje?",
+     [(ORDER, None, "um bâtard e um campagne oval", 0)], ("Bâtard", "Campagne"), ()),
 )
 
 
+#: Os cartões que só passam com as palavras-chave da proposta (``keywords_proposal.json``, #3595):
+#: o nome que o cliente fala está longe demais do cardápio para a correção de escrita.
+NEEDS_PROPOSAL = {
+    "Quero 8 Madalena",  # Madeleine: "madalena"
+    "Queria fazer encomenda de 4 pães ( chalá / gergelim e 2 pct de hot-dog )",  # Challah: "chalá"
+}
+
+
+#: O que ainda falha, com a issue que carrega: duas escolhas no mesmo turno ("Qual deles?" do
+#: brioche e do campagne) e só a última chega ao cliente (#3597).
+KNOWN_GAPS = {"1 brioche e 1 campagne oval": "#3597: duas escolhas no mesmo turno"}
+
+
+def _proposal() -> dict:
+    from shopman.storefront.management.commands.concierge_keywords import PROPOSAL
+
+    return json.loads(PROPOSAL.read_text(encoding="utf-8"))["products"]
+
+
 @pytest.fixture
-def menu(surface):
+def menu(surface, request):
+    proposal = _proposal() if request.node.callspec.params["keywords"] == "proposta" else {}
     for sku, name in MENU:
         product = _listed(sku, name, stock="10")
         if KEYWORDS.get(sku):
             product.keywords.add(*KEYWORDS[sku])
+        entry = proposal.get(sku) or {}
+        if entry.get("add"):
+            product.keywords.add(*entry["add"])
+        if entry.get("remove"):
+            product.keywords.remove(*entry["remove"])
+
+
+def _cases():
+    for card in CARDS:
+        for keywords in ("seed", "proposta"):
+            marks = (
+                [pytest.mark.xfail(strict=True, reason=KNOWN_GAPS[card[1]])] if card[1] in KNOWN_GAPS
+                else [pytest.mark.xfail(strict=True, reason="só com as palavras-chave da proposta")]
+                if keywords == "seed" and card[1] in NEEDS_PROPOSAL else []
+            )
+            yield pytest.param(*card, keywords, marks=marks, id=f"{keywords}-{card[1][:40]}")
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
-@pytest.mark.parametrize(("source", "said", "reading", "shows", "not_found"), CARDS,
-                         ids=[card[1][:40] for card in CARDS])
+@pytest.mark.parametrize(("source", "said", "reading", "shows", "not_found", "keywords"), list(_cases()))
 def test_the_product_written_as_the_customer_writes_is_found(conversation, outbox, menu, monkeypatch, source, said,
-                                                             reading, shows, not_found):
+                                                             reading, shows, not_found, keywords):
     from shopman.shop.tests.ai_support import configure_ai
 
     configure_ai("isolated-fixture", model="claude-sonnet-5")
