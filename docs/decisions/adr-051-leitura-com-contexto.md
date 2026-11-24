@@ -93,6 +93,8 @@ texto vai à coordenação antes de entrar.
 
 ### 4. Conferência da resposta (antes dos efeitos)
 
+**Adiada (coordenação, 24/11), #3553:** pega pouco, porque a leitura que não responde já passa pela peça 2, e a que responde e cai numa recusa é, hoje, recusa legítima. Entra quando uma rodada no ar mostrar uma resposta que ignora uma pergunta respondida, com esse caso real como teste.
+
 Depois da decisão e antes dos efeitos, a necessidade classificada `answers` precisa ter escolhido um
 movimento que a consome (o catálogo diz quais movimentos atendem cada ato). Se ela caiu em
 `inform_limitation`, `handoff` ou `ask_clarification`, a leitura vira `suspect` e passa uma vez pelo
@@ -130,7 +132,7 @@ Meta para chamar o dono: cartões 100% e bateria ≥ 95%, medidas no console do 
 4. Core: a conferência de coerência, `adjudicate` na porta e a confirmação na dúvida.
 5. Loja: o verificador pela rota de IA da casa (`ai_governor`) e a frase de confirmação.
 6. Bateria: os grupos de continuidade e de ruptura.
-7. Core: a conferência da resposta.
+7. Core: a conferência da resposta (adiada, #3553).
 
 ## Alternativas recusadas
 
