@@ -1825,8 +1825,6 @@ def mark_handoff(
 
 #: ``ConversationMessage.envelope["kind"]`` da nota da devolução. Ver docs/reference/data-schemas.md.
 RETURN_NOTE = "returned_from_team"
-#: ``envelope["kind"]`` da nota de aviso de pedido gravada pela notificação (OC-10).
-ORDER_NOTICE_KIND = "order_notice"
 
 
 def return_to_concierge(conversation: Conversation, *, answer_waiting: bool = False) -> bool:
@@ -1972,13 +1970,15 @@ def _domain_on_return(conversation: Conversation, facts, *, team_since) -> dict:
     Sacola e pedidos vêm dos fatos já lidos (``dialogue.load_facts``); os avisos de pedido
     são as notas que a notificação gravou na conversa (OC-10) desde que a equipe assumiu.
     """
+    from shopman.shop.services.notification import ORDER_NOTICE_NOTE
+
     notices = []
     if team_since is not None:
         notices = [
             {"order_ref": (envelope or {}).get("order_ref", ""), "template": (envelope or {}).get("template", ""),
              "at": created_at.isoformat()}
             for envelope, created_at in conversation.messages.filter(
-                kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_KIND, created_at__gte=team_since
+                kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_NOTE, created_at__gte=team_since
             ).order_by("pk").values_list("envelope", "created_at")
         ]
     open_order = facts.open_order

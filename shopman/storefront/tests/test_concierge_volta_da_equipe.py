@@ -23,6 +23,7 @@ from django.utils import timezone
 from shopman.orderman.models import Directive, Order, Session
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage
+from shopman.shop.services.notification import ORDER_NOTICE_NOTE
 from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import cancellation, dialogue, service
 from shopman.storefront.concierge.turn_outcome import TurnOutcome
@@ -176,7 +177,7 @@ def test_a_volta_rele_o_dominio_e_nao_o_dialogo(monkeypatch):
     ConversationMessage.objects.create(
         conversation=conversation, role=ConversationMessage.Role.ASSISTANT, kind=ConversationMessage.Kind.NOTE,
         text="Seu pedido OC13-1 está pronto para retirada.",
-        envelope={"version": 3, "kind": service.ORDER_NOTICE_KIND, "order_ref": order.ref,
+        envelope={"version": 3, "kind": ORDER_NOTICE_NOTE, "order_ref": order.ref,
                   "template": "order_ready_pickup", "backend": "manychat", "approved_template": False},
     )
     conversation.refresh_from_db()
