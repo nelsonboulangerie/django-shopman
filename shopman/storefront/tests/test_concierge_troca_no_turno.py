@@ -851,6 +851,7 @@ def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it
     close, window, pay, summary = outbox.sent[:4]
     assert close == service.copy_message("CONCIERGE_CLOSE_ASK_ADDRESS").strip()
     assert window.startswith("Qual janela de entrega fica melhor? ") and re.search(r"\d+h", window)
+    assert "a partir das" in window and "A partir" not in window  # o rótulo da grade, minúsculo na frase
     assert pay.startswith("Como você prefere pagar?")
     assert re.search(r"Entrega: quarta-feira, 25/11, .*15h", summary) and summary.endswith("Posso registrar?")
     assert Session.objects.get(session_key="sess-win").data["delivery_time_slot"]

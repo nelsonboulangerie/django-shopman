@@ -371,7 +371,10 @@ def nice_formatters(conversation=None) -> dict:
 
 
 def _options_text(labels: list[str]) -> str:
-    return labels[0] if len(labels) == 1 else f"{', '.join(labels[:-1])} ou {labels[-1]}"
+    """Os rótulos da grade numa frase: "a partir das 9h, a partir das 12h ou a partir das 15h". Dentro da frase a
+    primeira letra é minúscula (regra do dono: maiúscula só em valor isolado); o rótulo da grade e o site não mudam."""
+    lowered = [label[:1].lower() + label[1:] for label in labels]
+    return lowered[0] if len(lowered) == 1 else f"{', '.join(lowered[:-1])} ou {lowered[-1]}"
 
 
 def delivery_windows_text(conversation):

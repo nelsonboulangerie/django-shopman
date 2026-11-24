@@ -362,3 +362,14 @@ def test_the_turn_reads_ceiling_fits_a_close_with_every_effect():
     from shopman.storefront.concierge.profile import _max_steps
 
     assert _max_steps() >= 2 + 8 + 2 * len(EFFECT_SEQUENCE)
+
+
+
+def test_grid_labels_inside_a_sentence_start_in_lower_case():
+    """Regra do dono: maiúscula só em valor isolado. Os rótulos da grade, encaixados na pergunta, começam
+    minúsculos; o rótulo em si não muda."""
+    labels = ["A partir das 9h", "A partir das 12h", "A partir das 15h"]
+    expected = "a partir das 9h, a partir das 12h ou a partir das 15h"
+    assert turn_framework.pickup_slots_text(None)(labels) == expected
+    assert turn_framework.delivery_windows_text(None)(labels) == expected
+    assert labels[0] == "A partir das 9h"
