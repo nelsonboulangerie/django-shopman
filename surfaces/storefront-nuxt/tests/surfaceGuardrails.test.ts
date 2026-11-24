@@ -274,19 +274,25 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain('const slides = computed<HeroSlide[]>')
     expect(hero).toContain("ref: 'birthday'")
     expect(hero).toContain("ref: 'order'")
-    expect(hero).toContain("ref: 'reorder'")
+    // A recompra mora só no cartão da home (OC-32): slide de recompra repetia a
+    // mesma pergunta na mesma tela.
+    expect(hero).not.toContain("ref: 'reorder'")
     expect(hero).toContain("ref: 'handmade'")
     expect(hero).toMatch(/ref: 'greeting',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
-    expect(hero).toMatch(/ref: 'greeting-return',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
+    // Saudação uma vez só: o slide que a repetia saiu com as fotos dele (#3496).
+    expect(hero).not.toContain("ref: 'greeting-return'")
+    expect(hero).not.toContain('/img/home/facade4.webp')
+    expect(hero).not.toContain('/img/home/interior.webp')
     // Foto da casa, e uma por formato: o herói é faixa larga no computador e
     // tela cheia em pé no celular — uma foto só perde metade do assunto num
     // dos dois. Banco de imagem aqui é padaria de outra gente na nossa vitrine.
     expect(hero).not.toContain('images.unsplash.com')
     expect(hero).toContain('<source media="(min-width: 640px)"')
-    for (const foto of ['facade6', 'facade2', 'selfservice', 'facade4', 'interior', 'baguette']) {
+    for (const foto of ['facade6', 'facade2', 'selfservice', 'baguette']) {
       expect(hero).toContain(`/img/home/${foto}.webp`)
     }
-    expect(hero).toContain('copy.reorder_title_prefix')
+    expect(hero).not.toContain('copy.reorder_title_prefix')
+    expect(home).toContain('copy?.reorder_title_prefix')
     expect(hero).toContain('copy.handmade_title_prefix')
     expect(hero).toContain('data-home-hero-carousel')
     expect(hero).toContain('aria-roledescription="carousel"')
@@ -300,8 +306,8 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain('UiButton')
     expect(home).toContain('<main class="bg-background">')
     expect(home).toContain('<section class="shop-section-cta bg-background pb-6 pt-0 sm:py-8 lg:py-10">')
-    expect(home).toContain(':reorder-action="reorderAction"')
-    expect(home).toContain('@reorder="handleReorder"')
+    expect(home).not.toContain(':reorder-action="reorderAction"')
+    expect(home).not.toContain('@reorder="handleReorder"')
     expect(home).toContain('sectionsCopy.availability_heading.title')
     expect(home).toContain('sectionsCopy.how_it_works_heading.title')
     expect(home).toContain('sectionsCopy.whatsapp_cta.title')
@@ -591,6 +597,10 @@ describe('surface UX guardrails', () => {
     expect(app).toContain('id="main-content"')
     expect(app).toContain('Pular para o conteúdo')
     expect(read('app/components/ShopHeader.vue')).toContain('bg-ink text-ink-foreground')
+    // Status bar recolhida sai da tela: `inert` tira do leitor E do Tab. Só
+    // `aria-hidden` deixava o "Ligar" focável e invisível (axe aria-hidden-focus).
+    expect(read('app/components/ShopHeader.vue')).toContain(':inert="scrolled ? true : undefined"')
+    expect(read('app/components/ShopHeader.vue')).not.toContain(':aria-hidden="scrolled')
     expect(footer).toContain('session.shop.value')
     expect(footer).toContain('session.openingHours.value')
     expect(footer).not.toContain('openingHours.slice')
@@ -722,6 +732,9 @@ describe('surface UX guardrails', () => {
     // rolagem/foco escritos à mão na página.
     expect(login).toContain('useNextFocus(step)')
     expect(login).toContain(':data-focus-target="step"')
+    // O título do passo para na linha de foco COM respiro: 16px do bloco
+    // (`-mt-4 pt-4`, o mesmo py-4 do passo do checkout), sem encostar no fio.
+    expect(login).toContain('<section :data-focus-target="step" class="shop-stack-block -mt-4 pt-4 outline-none" tabindex="-1">')
     expect(login).not.toContain('scrollTo(')
     expect(login).not.toContain('.focus(')
     expect(login).toContain('data-login-moment')

@@ -100,7 +100,10 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
            botão descia. Aqui a coluna da esquerda encolhe e o botão fica ancorado. -->
       <header class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
-          <h1 class="truncate shop-title">{{ greeting }}</h1>
+          <!-- O h1 diz o que a página é; a saudação segue visível no mesmo lugar,
+               mas não é o assunto da página (OC-32). -->
+          <h1 class="sr-only">Sua conta</h1>
+          <p class="truncate shop-title" data-account-greeting>{{ greeting }}</p>
           <p class="mt-0.5 shop-muted">
             <template v-if="pending">Carregando sua conta…</template>
             <template v-else>{{ countLabel }}</template>
