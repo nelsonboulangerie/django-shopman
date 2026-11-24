@@ -1796,11 +1796,47 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
                 "requires_payment_gate": projection.requires_payment_gate,
                 "supports_access_link": projection.supports_access_link,
                 "created_at": format_local(order.created_at, "%d/%m {clock}"),
+                "pix_sent_at": _pix_sent_at(conversation, order) if projection.source_projection == "payment" else "",
             }
         )
     if order_ref and not orders:
         return {"ok": True, "orders": [], "message": f"Não achei o pedido {order_ref} para este cliente."}
     return {"ok": True, "orders": orders}
+
+
+#: Estados de saída em que a mensagem chegou ao fornecedor (``ConversationMessage.transport_state``).
+_SENT_STATES = ("accepted", "delivered", "read")
+
+
+def _pix_sent_at(conversation, order) -> str:
+    """Quando este chat recebeu o código Pix VIGENTE do pedido: "às 14h12", ou vazio (OC-10).
+
+    Vale o aviso do pedido gravado na conversa (``notification._note_in_conversation``)
+    e a resposta da própria Concierge que já saiu. Código regenerado não conta o velho.
+    """
+    from django.db.models import Q
+
+    from shopman.shop.models import ConversationMessage
+    from shopman.shop.services.notification import ORDER_NOTICE_NOTE
+
+    code = str(((order.data or {}).get("payment") or {}).get("copy_paste") or "").strip()
+    if not code or conversation is None or not conversation.pk:
+        return ""
+    sent = (
+        ConversationMessage.objects.filter(conversation=conversation, text__contains=code)
+        .filter(
+            Q(kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_NOTE, envelope__order_ref=order.ref)
+            | Q(kind=ConversationMessage.Kind.REPLY, transport_state__in=_SENT_STATES)
+        )
+        .order_by("-pk")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if sent is None:
+        return ""
+    if timezone.localdate(sent) == timezone.localdate():
+        return format_local(sent, "às {clock}")
+    return format_local(sent, "em %d/%m, às {clock}")
 
 
 def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
@@ -2107,6 +2143,54 @@ def _sentence(text) -> str:
     return text if text[-1] in ".!?…:" else text + "."
 
 
+#: O código Pix sai SOZINHO na mensagem seguinte (``extra_replies``), para o cliente
+#: copiar no WhatsApp sem ruído; esta é a linha que avisa, no pedido e na consulta.
+PIX_CODE_FOLLOWS = "Mando o código Pix copia e cola na próxima mensagem."
+
+
+#: O que a Nice faz pela conversa quando a ação da projeção é um comando (POST/API), não
+#: uma página: a instrução no lugar do endereço. Ação de comando fora desta lista some da
+#: resposta, porque endereço de API não abre como link (X3). Cancelar é a J4 da Nice
+#: (``concierge/cancellation.py``, pela mesma régua do site).
+CONVERSATION_EQUIVALENTS = {
+    "cancel_order": "Se quiser cancelar, é só me dizer.",
+}
+
+
+def _opens_as_page(action: dict) -> bool:
+    """A ação leva a uma página que o cliente abre (GET), e não a um comando da API.
+
+    Decide pela natureza do destino, não pelo nome: tem endereço, o método é GET (ou
+    nenhum), não é comando (``mutation``) e o endereço fica fora de ``/api/``.
+    """
+    from urllib.parse import urlsplit
+
+    href = str(action.get("href") or "")
+    method = str(action.get("method") or "GET").upper()
+    return (
+        bool(href)
+        and method == "GET"
+        and action.get("kind") != "mutation"
+        and not urlsplit(href).path.startswith("/api/")
+    )
+
+
+def copy_texts(result: dict) -> list[str]:
+    """O que as ações de copiar da consulta copiam (o copia-e-cola do Pix), um por mensagem.
+
+    A conversa não tem botão de copiar: o texto da ação ``copy`` vai em mensagem própria,
+    e a linha de ``render_result`` só avisa. Nunca o ``href``: link com o rótulo
+    "Copiar código Pix" é rótulo que mente (X3).
+    """
+    texts: list[str] = []
+    for order in result.get("orders", []) if result.get("ok") else []:
+        for action in order.get("actions", []):
+            value = str(action.get("value") or "").strip()
+            if action.get("enabled") and action.get("kind") == "copy" and value and value not in texts:
+                texts.append(value)
+    return texts
+
+
 def render_result(name: str, result: dict) -> str:
     """Somente fatos do servidor; texto livre nunca entra na resposta."""
     if not result.get("ok"):
@@ -2171,7 +2255,10 @@ def render_result(name: str, result: dict) -> str:
         if payment.get("pending_setup"):
             text += " O pagamento ainda não está disponível; consulte o mesmo pedido para acompanhar."
         elif payment.get("pix_code_prepared_separately"):
-            text += " O pagamento está pendente; o código Pix é apresentado em um bloco separado."
+            text += f" {PIX_CODE_FOLLOWS}"
+        elif payment.get("checkout_url"):
+            # Cartão: o link do gateway já no pedido, com o mesmo rótulo da consulta.
+            text += f"\nPagar com cartão: {payment['checkout_url']}"
         text += f"\nAcompanhar: {result['tracking_url']}"
         return text
     if name == "order_status":
@@ -2184,12 +2271,23 @@ def render_result(name: str, result: dict) -> str:
             if str(order.get("total") or "").strip():
                 parts.append(f"Total: {order['total']}.")
             rows.append(f"Pedido {order['order_ref']}{when}: " + " ".join(p for p in parts if p))
+            if order.get("pix_sent_at"):
+                # O que este chat já recebeu (OC-10): "cadê o Pix?" depois do aviso com o código.
+                rows.append(f"Já te mandei o código Pix por aqui {order['pix_sent_at']}.")
             for action in order.get("actions", []):
-                if action.get("enabled"):
-                    href = action.get("href") or order["tracking_url"]
+                if action.get("enabled") and action.get("kind") == "copy":
+                    # O que se copia vai sozinho na mensagem seguinte (``copy_texts``); sem
+                    # o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
+                    if str(action.get("value") or "").strip() and action.get("ref") == "copy_pix":
+                        rows.append(PIX_CODE_FOLLOWS)
+                elif action.get("enabled") and _opens_as_page(action):
+                    href = action["href"]
                     if href.startswith("/") and not href.startswith("//"):
                         href = _storefront_base_url() + href
                     rows.append(f"{action['label']}: {href}")
+                elif action.get("enabled") and CONVERSATION_EQUIVALENTS.get(action.get("ref")):
+                    # Comando que a Nice faz pela conversa: a instrução, nunca o endereço.
+                    rows.append(CONVERSATION_EQUIVALENTS[action["ref"]])
             rows.append(f"Acompanhar: {order['tracking_url']}")
         return "\n".join(rows) or "Não encontrei pedidos para este acesso."
     if name == "send_web_link":

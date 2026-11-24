@@ -737,8 +737,7 @@ def test_a_venda_antes_de_o_lote_fechar_entra_na_receita_da_fornada(lote, caixa,
 
     lote.refresh_from_db()
     owners = bi_production._stock_batch_owners([lote])
-    hoje = timezone.localdate()
-    revenue, traced = bi_production._batch_revenue(owners, hoje, hoje)
+    revenue, traced = bi_production._batch_revenue(owners)
 
     order.refresh_from_db()
     assert traced == {lote.ref: D("4")}

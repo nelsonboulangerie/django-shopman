@@ -1260,6 +1260,8 @@ class TestStatusColours:
         assert proj.promise.actions[0].ref == "copy_pix"
         assert proj.promise.actions[0].label == "Copiar código Pix"
         assert proj.promise.actions[0].href == ""
+        # X3 (OC-05): a ação de copiar carrega o que copia, o mesmo código da página.
+        assert proj.promise.actions[0].value == order_with_payment.data["payment"]["pix_code"]
         assert proj.promise.payment_method == "pix"
         assert proj.promise.pix_copy_paste == order_with_payment.data["payment"]["pix_code"]
         assert proj.promise.message == (

@@ -445,6 +445,76 @@ def test_expired_lot_without_sales_is_the_whole_cost_lost(day):
     assert (row.lot_status, row.revenue_q, row.margin_q) == ("closed", 0, -1800)
 
 
+def test_batch_margin_is_the_same_whatever_the_date_filter(day):
+    """#3427: encomenda de R$ 100 criada na quinta, atendida pela fornada de sábado (custo R$ 30).
+
+    Antes, a venda vinha dos pedidos CRIADOS na janela: filtrando só sábado a
+    fornada mostrava -R$ 30, e filtrando de quinta a sábado, +R$ 70. A venda é
+    achada pela baixa do lote: +R$ 70 nos dois.
+    """
+    recipe = _recipe("BIPREORDER", "Bolo de encomenda")
+    saturday = day
+    thursday = day - timedelta(days=2)
+    wo = _lot(recipe, saturday, 1)
+    _freeze_cost(wo, saturday, 3000)
+    quant = _finished_stock(wo, "bi-margin-preorder")
+    _lot_batch(quant, saturday)
+    preorder = _sale(thursday, time(15), recipe.output_sku, 1)
+    OrderItem.objects.filter(order=preorder).update(line_total_q=10000)
+    _attach_sale_holds(preorder, saturday, [(quant, 1)])
+
+    for date_from in (saturday, thursday):
+        row = build_bi_production(date_from=date_from, date_to=saturday).batch_margins[0]
+        assert (row.ref, row.lot_status, row.revenue_q, row.margin_q) == (wo.ref, "closed", 10000, 7000), date_from
+
+
+def test_a_preorder_is_a_sale_of_the_agreed_day_not_of_the_day_it_was_made(day):
+    """#3427 (dono, 23/11): a venda entra no B.I. pelo dia combinado.
+
+    A encomenda feita na quinta para sábado soma no sábado e não na quinta; o
+    pedido sem data combinada soma no dia em que foi feito. O troco do balcão
+    continua pelo dia em que o pedido foi feito (quando o dinheiro entrou).
+    """
+    from shopman.backstage.bi.canonical import local_window, read_sales
+    from shopman.backstage.bi.sources import orderman
+
+    saturday = day
+    thursday = day - timedelta(days=2)
+    preorder = _sale(thursday, time(15), "BIAGREED", 1)
+    Order.objects.filter(pk=preorder.pk).update(data={"delivery_date": saturday.isoformat()})
+    walk_in = _sale(thursday, time(16), "BIAGREED", 2)
+
+    on_saturday = read_sales(saturday, saturday)
+    on_thursday = read_sales(thursday, thursday)
+    assert [(s.key, s.day) for s in on_saturday.sales] == [(preorder.pk, saturday)]
+    assert [(s.key, s.day) for s in on_thursday.sales] == [(walk_in.pk, thursday)]
+    assert {line.sale_key for line in on_saturday.lines()} == {preorder.pk}
+
+    by_created, _ = orderman.read_sales(local_window(thursday, thursday), by_created=True)
+    assert {s.key for s in by_created} == {preorder.pk, walk_in.pk}
+
+
+def test_a_sale_split_between_two_batches_adds_up_to_the_cent(day):
+    """#3427: uma linha atendida por dois lotes de dias diferentes; consultados
+    separadamente, as duas parcelas somam o valor da linha até o último centavo."""
+    recipe = _recipe("BISPLIT", "Pão dividido")
+    yesterday = day - timedelta(days=1)
+    first = _lot(recipe, yesterday, 5)
+    second = _lot(recipe, day, 5)
+    first_stock = _finished_stock(first, "bi-margin-split-a")
+    second_stock = _finished_stock(second, "bi-margin-split-b")
+    sale = _sale(day, time(9), recipe.output_sku, 3)
+    OrderItem.objects.filter(order=sale).update(line_total_q=10001)
+    _attach_sale_holds(sale, day, [(first_stock, 2), (second_stock, 1)])
+
+    first_row = next(r for r in build_bi_production(date_from=yesterday, date_to=yesterday).batch_margins
+                     if r.ref == first.ref)
+    second_row = next(r for r in build_bi_production(date_from=day, date_to=day).batch_margins
+                      if r.ref == second.ref)
+    assert first_row.revenue_q + second_row.revenue_q == 10001
+    assert (first_row.traced_quantity, second_row.traced_quantity) == ("2", "1")
+
+
 def test_batch_margin_does_not_attribute_sales_from_a_shared_daily_batch(day):
     recipe = _recipe("BISHARED", "Baguete")
     first = _lot(recipe, day - timedelta(days=1), 5)

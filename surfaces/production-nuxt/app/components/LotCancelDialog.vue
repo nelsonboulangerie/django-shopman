@@ -2,6 +2,7 @@
 // O lote aberto (ou planejado) abre para conferência e cancelamento, sem etapas e
 // sem gestão. O estado (qual linha, qual lote, se está confirmando o cancelamento)
 // mora na grade (`ProductionStageGrid`); aqui só se mostra e se avisa.
+import LotVoidStakes from "./LotVoidStakes.vue";
 import { formatQtyUnit } from "~/presentation/production";
 import type {
   ProductionActionProjection,
@@ -17,6 +18,8 @@ defineProps<{
   orders: WorkOrderCardProjection[];
   selectedOrder: WorkOrderCardProjection | null;
   voidConfirming: boolean;
+  /** O cancelamento está correndo: o botão fica ocupado até o servidor responder (#3393). */
+  voidSubmitting: boolean;
   oldDoughAction: ProductionActionProjection | undefined;
   deviationAction: ProductionActionProjection | undefined;
   kdsCard: ProductionKDSCardProjection | undefined;
@@ -109,25 +112,17 @@ const emit = defineEmits<{
           </p>
         </div>
 
-        <template v-if="voidConfirming">
-          <NuxtAlert
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :description="
-              row?.started_orders.length
-                ? 'O lote volta atrás e o vínculo com pedidos é desfeito.'
-                : 'O lote planejado sai do dia e o vínculo com pedidos é desfeito.'
-            "
-          />
-          <NuxtTextarea
-            v-model="voidReason"
-            :rows="2"
-            class="w-full"
-            placeholder="Motivo do cancelamento…"
-            aria-label="Motivo do cancelamento"
-          />
-        </template>
+        <LotVoidStakes
+          v-if="voidConfirming && selectedOrder"
+          v-model:reason="voidReason"
+          :commitments="selectedOrder.order_commitments ?? []"
+          :unit="row?.output_unit"
+          :consequence="
+            selectedOrder.started_qty
+              ? 'O lote volta atrás.'
+              : 'O lote planejado sai do dia.'
+          "
+        />
       </div>
     </template>
     <template #footer>
@@ -166,7 +161,12 @@ const emit = defineEmits<{
         <NuxtButton
           v-else-if="selectedOrder?.can_void"
           color="error"
-          label="Confirmar cancelamento"
+          :label="voidSubmitting ? 'Cancelando…' : 'Confirmar cancelamento'"
+          :loading="voidSubmitting"
+          :disabled="voidSubmitting || !voidReason.trim()"
+          :aria-busy="voidSubmitting"
+          :title="!voidReason.trim() ? 'Escolha o motivo' : undefined"
+          data-confirm-void
           @click="emit('confirm-void')"
         />
         <p
