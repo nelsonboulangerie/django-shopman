@@ -256,6 +256,9 @@ def test_x1_nada_encomendavel_a_home_e_a_sacola_nao_oferecem_finalizar():
     assert cart["ordering"]["state"] == ORDERING_NONE
 
     assert "preorder" not in [facet["ref"] for facet in home["sections_copy"]["how_facets"]]
+    # Sem "Fazer pedido", o botão do hero cai nesta copy: maiúscula só na primeira
+    # letra, igual ao botão da sacola ("Ver cardápio").
+    assert home["hero_copy"]["menu_cta"]["title"] == "Ver cardápio"
     # A FAQ fica de fora da varredura: ela RESPONDE a pergunta "Posso encomendar
     # para outro dia?" com a regra da casa ("Ao finalizar o pedido, você escolhe o
     # dia"), não convida a pedir agora. O resto da home e a sacola não podem.

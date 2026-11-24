@@ -302,7 +302,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="todo dia")},
     },
     "HOME_MENU_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ver Cardápio")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Ver cardápio")},
     },
     "HOME_BIRTHDAY_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Ver minha oferta de aniversário")},

@@ -27,6 +27,7 @@ describe('home presentation: o topo diz só o que dá para pedir (OC-04)', () =>
       expect(text).not.toMatch(ORDER_OFFER)
       expect(text).toMatch(/Me avise/)
     }
+    // Sem rótulo próprio: o hero cai na copy do servidor (HOME_MENU_CTA, "Ver cardápio").
     expect(closedHeroCtaLabel(NONE)).toBeUndefined()
   })
 
