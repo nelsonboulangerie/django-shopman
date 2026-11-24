@@ -1664,6 +1664,7 @@
         "handler"
       ],
       "domains": [
+        "fiscalman",
         "orderman"
       ],
       "ports": [],
@@ -1706,6 +1707,7 @@
         "handler"
       ],
       "domains": [
+        "fiscalman",
         "orderman"
       ],
       "ports": [],

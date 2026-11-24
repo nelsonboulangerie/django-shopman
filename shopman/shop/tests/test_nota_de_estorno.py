@@ -21,6 +21,7 @@ from shopman.backstage.models import OperatorAlert
 from shopman.shop.handlers.fiscal import NFCeCancelHandler
 from shopman.shop.models import Channel
 from shopman.shop.services import fiscal
+from shopman.shop.tests.fiscal_document_support import authorized_note
 
 pytestmark = pytest.mark.django_db
 
@@ -64,6 +65,7 @@ def _order(*, ref="EST-1", status="cancelled", minutes_ago: int | None = 5, data
     )
     Order.objects.filter(pk=order.pk).update(status=status)
     order.refresh_from_db()
+    authorized_note(order, access_key=ACCESS_KEY, authorized_at=payload.get("nfce_authorized_at"))
     return order
 
 
