@@ -25,6 +25,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
 | `origin_channel` | `string` | CartService, POS, iFood webhook | CommitService, hooks.py | Canal de origem: `"web"`, `"whatsapp"`, `"ifood"`, `"pos"`, `"instagram"` |
 | `concierge` | `dict` | `storefront.concierge.tools` (sessão aberta pelo concierge de WhatsApp) | Admin da conversa, diagnóstico | `{conversation_id}`: a `Conversation` que abriu esta sacola. Só presente em sessões do canal `whatsapp` criadas pelo concierge; acompanha `origin_channel = "whatsapp"`. Ver [Concierge de WhatsApp](#concierge-de-whatsapp) |
+| `experience` | `dict` | `storefront.cart.CartService` (toda escrita da sacola: `add_item`, `update_qty`, `remove_item`) e o login com a sacola aberta (`reprice_cart_on_login`), por `shop/services/sessions.assign_experience` | CommitService → `Order.data` | **De qual versão da loja a sacola veio** (OC-22, R4 do release). `{<ref do experimento>: {variant, generation}}`, um item por experimento LIGADO da superfície `storefront` que vale nesta instância, com a variante que `shop/services/experience.resolve` deu ao cliente nesta escrita. Experimento vencido (`remove_after`) ou de outro ambiente não entra. **Ausente = nenhum experimento valendo**, que é diferente de `{"para-quando": {"variant": "a", ...}}` (estava no experimento e viu o padrão): a métrica de pedido separa "sem experimento" de "braço A". Regravada a cada escrita (o experimento desligado some da chave). Sem PII: só ref, variante e geração; a coorte e o motivo nunca são gravados. Nunca escrita num GET |
 | `coupon_code` | `string` | CartService.apply_coupon | CouponModifier, CartService.get_cart_summary | Código do cupom aplicado (uppercase) |
 | `outside_business_hours` | `bool` | BusinessHoursRule (validation) | CheckoutView, CommitService | `True` se pedido feito fora do horário. Não bloqueia checkout — apenas flag informativa |
 | `delivery_address_structured` | `dict` | CheckoutView (`set_data`) · `shop/services/ifood_ingest.py` · concierge do WhatsApp (`set_fulfillment`, montado por `storefront/concierge/address.py`) | CommitService · `backstage/projections/order_queue._delivery_address` · `backstage/services/receipt_escpos._delivery_lines` | Endereço estruturado do Google Places: `{route, street_number, complement, neighborhood, city, state_code, postal_code, place_id, formatted_address, delivery_instructions, is_verified, latitude, longitude}`. **Do concierge do WhatsApp** o endereço é montado na conversa (decisão do dono, 25/09/2026): pela localização (pin → `geocoding.reverse_geocode`, sem o `street_number` do Google, que é interpolado), pelo texto (`geocoding.forward_geocode_structured`) e pelas partes que o cliente diz depois; `formatted_address` é recomposto das partes, `is_verified` é `false`, e `coordinates_source` (`"pin"` \| `"geocoded"` \| `"saved"`) diz de onde veio a coordenada da taxa (o pin não se move quando o cliente corrige a rua; `"saved"` = endereço do cadastro aceito na conversa, que entra com o `formatted_address` e o `is_verified` do cadastro). `complement: ""` gravado = o cliente respondeu que não tem; ausente = ainda não perguntado. **Do iFood vêm só três**: `complement`, `delivery_instructions` (o `reference` do cliente — é o que as duas telas de despacho imprimem sob "Referência:") e `postal_code`; o endereço formatado NÃO é repetido aqui, porque ele já é `delivery_address` e dois donos do mesmo texto divergem. Ausente no pedido iFood cujo endereço não traz nenhum dos três |
@@ -367,12 +368,15 @@ A lista de chaves propagadas está explícita em `commit.py`, método `_do_commi
 
 ```python
 for key in (
-    "customer", "fulfillment_type", "delivery_address",
+    "customer", "customer_ref", "fulfillment_type", "delivery_address",
+    "save_as_default", "saved_address_id", "address_label",
     "delivery_address_structured", "delivery_date",
     "delivery_time_slot", "order_notes",
-    "origin_channel", "payment",
-    "delivery_fee_q",
+    "origin_channel", "payment", "loyalty", "fiscal", "receipt",
+    "delivery_fee_q", "delivery_distance_km",
     "is_gift", "recipient", "gift_message", "gift_hide_values",
+    "transferred_from",
+    "experience",
 ):
 ```
 
@@ -401,6 +405,7 @@ for key in (
 |-------|------|-------------|----------|-----------|
 | `seating_spot_ref` | `string` | `shop/services/pos._mark_tab_committed` (da `Session.data`) | B.I. (lotação real por mesa: pedido × `SeatingSpot.ref`, com `seats` vigente no dia) | A mesa da comanda que virou o pedido, quando o operador vinculou uma (opcional). Ausente na venda sem mesa |
 | `transferred_from` | `dict` | CommitService (da `Session.data`) | `projections/order_queue.transferred_from_label` (linha "Transferida da comanda #13" no detalhe do pedido, Gestor e PDV) | O rastro da comanda do PDV que nasceu de uma transferência: `{tab_ref, tab_display, session_key, at, by}`. Ausente no resto |
+| `experience` | `dict` | CommitService (da `Session.data`) | Métricas de pedido do experimento de versão da loja (§7.4 do plano da Etapa II: conversão, cancelamento, falha de pagamento, pedido recuperado, por braço), lidas do banco, sem rastreador | `{<ref>: {variant, generation}}`: as versões da loja que o cliente via na última escrita da sacola. Mesma forma de `Session.data.experience`. Ausente = o pedido não veio de nenhum experimento (canal que não é a loja, ou nenhum experimento ligado) |
 | `payment` | `dict` | CommitService (propaga `{method}` de Session.data), `payment.initiate()`, webhooks | Muitos (ver abaixo) | Dados de pagamento. Contrato: `{intent_ref, method}`. Todo pedido nasce com `method` (não existe pedido sem forma de pagamento; o seed se confere no fim). Status de pagamento vive em Payman — nunca duplicado aqui. Ver detalhamento abaixo. |
 | `customer_ref` | `string` | CustomerIdentificationHandler | CheckoutInferDefaultsHandler | Ref do Customer criado/encontrado |
 | `fulfillment_created` | `bool` | FulfillmentCreateHandler | FulfillmentCreateHandler (idempotência) | Flag: Fulfillment object criado |

@@ -364,6 +364,38 @@ def release_customer(*, session_key: str, channel_ref: str) -> bool:
 
 
 @transaction.atomic
+def assign_experience(
+    *,
+    session_key: str,
+    channel_ref: str,
+    mark: dict,
+) -> bool:
+    """Grava em ``Session.data["experience"]`` de qual versão da loja a sacola veio (OC-22).
+
+    ``mark`` é o ``experience.order_mark`` da requisição. Vazio tira a chave
+    (nenhum experimento valendo). Não mexe em linha, preço nem revisão: é marcação,
+    e o commit a copia para ``Order.data``. Devolve ``True`` quando gravou.
+    """
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key, channel_ref=channel_ref, state="open")
+        .first()
+    )
+    if session is None:
+        return False
+    data = dict(session.data or {})
+    if data.get("experience") == (mark or None):
+        return False
+    if mark:
+        data["experience"] = dict(mark)
+    else:
+        data.pop("experience", None)
+    session.data = data
+    session.save(update_fields=["data"])
+    return True
+
+
+@transaction.atomic
 def assign_handle(
     *,
     session_key: str,

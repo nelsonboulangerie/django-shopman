@@ -103,19 +103,22 @@ def operator_customer_refs() -> frozenset[str]:
     return frozenset()
 
 
-def resolve(request, surface: str) -> tuple[Assignment, ...]:
+def resolve(request, surface: str, *, customer_ref: str | None = None) -> tuple[Assignment, ...]:
     """As versões que esta requisição vê, uma por experimento ativo de ``surface``.
 
     Ordenadas por ``ref``. Experimento desligado não aparece (ausente = padrão).
     Só LÊ: a aderência é gravada no login (:func:`on_user_logged_in`), nunca num GET
     (trava ``test_read_side_never_writes``). Nunca levanta: configuração ilegível
     vira log e o experimento fica de fora.
+
+    ``customer_ref`` é para quem já sabe o cliente antes do middleware (o login,
+    em que ``request.customer`` ainda é o anônimo); sem ele, vale o da sessão.
     """
     rules = _active_experiments(surface)
     if not rules:
         return ()
 
-    customer_ref = _customer_ref(request)
+    customer_ref = customer_ref or _customer_ref(request)
     stored = _stored(request)
     cohort_of = _cohort_lookup()
     assignments: list[Assignment] = []
@@ -129,6 +132,22 @@ def resolve(request, surface: str) -> tuple[Assignment, ...]:
             reason=reason,
         ))
     return tuple(sorted(assignments, key=lambda a: a.ref))
+
+
+def order_mark(request, surface: str, *, customer_ref: str | None = None) -> dict[str, dict]:
+    """O que a sacola guarda em ``Session.data["experience"]`` (OC-22), e o pedido herda.
+
+    ``{ref: {variant, generation}}`` de cada experimento LIGADO de ``surface`` que vale
+    nesta instância. Vencido ou de outro ambiente fica de fora: para a métrica, ali
+    não há experimento, e o pedido não engrossa o braço padrão. Vazio quando nenhum
+    experimento vale, e a sacola então não leva a chave (ausente = sem experimento,
+    diferente de "viu o padrão"). Sem coorte nem motivo: nada que identifique alguém.
+    """
+    return {
+        assignment.ref: {"variant": assignment.variant, "generation": assignment.generation}
+        for assignment in resolve(request, surface, customer_ref=customer_ref)
+        if assignment.reason not in (REASON_EXPIRED, REASON_ENVIRONMENT)
+    }
 
 
 def remember(request, customer_ref: str) -> None:
