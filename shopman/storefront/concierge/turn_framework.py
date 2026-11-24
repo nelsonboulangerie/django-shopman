@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 #: que o perfil não liga) nunca sai pelo motor no N9.
 ACTION_CLASSES = {
     "inform": ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification"),
-    "handoff": ("handoff",),
+    "handoff": ("handoff", "wait"),  # o aviso de prazo vencido é do compromisso com a equipe
     "order": ("present_terms", "change_cart", "set_fulfillment", "set_delivery_address", "set_payment",
               "commit_order"),
 }

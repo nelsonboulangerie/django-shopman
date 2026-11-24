@@ -465,3 +465,116 @@ def test_yes_after_the_saved_address_changed_writes_nothing(order_on_air, outbox
     script = {"pode fechar": [{"act": "place_order"}], "sim": [{"act": "affirm"}]}
     written = _saved_flow(order_on_air, monkeypatch, script, saved, before_turn=edit_after_offer)
     assert written == []  # nada gravado com um endereço que o cliente não viu
+
+
+# ── #3419: a porta de equipe da Nice pelo motor ─────────────────────────────────────────────────
+
+HUMAN = {"atendente, por favor": [{"act": "request_human"}]}
+
+
+def _human_on_air(conversation, monkeypatch, *, handoff=True, times=1):
+    from shopman.storefront.concierge import model_reader
+
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(HUMAN), model="m", gate=lambda t: ""))
+    shop = Shop.load()
+    shop.conversational_live_inform = True
+    shop.conversational_live_handoff = handoff
+    shop.save()
+    seen, run = [], turn_framework.run
+    monkeypatch.setattr(turn_framework, "run", lambda *a, **k: seen.append(run(*a, **k)) or seen[-1])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index in range(times):
+            _receive(conversation, "atendente, por favor", f"humano-{index}")
+            service.run_turn(conversation.pk, _binding(conversation).pk)
+    return seen
+
+
+def _cards(kind):
+    from shopman.backstage.models import OperatorAlert
+
+    return OperatorAlert.objects.filter(type=kind).count()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_asking_for_a_person_hands_over_with_the_approved_phrase_and_one_card(order_on_air, outbox, monkeypatch):
+    """ "Quero falar com uma pessoa" pelo motor: a frase aprovada do encaminhamento, a MESMA entrega à equipe de
+    hoje (a conversa com a equipe e o cartão de "cliente esperando atendente"), e nenhum cartão de verificar."""
+    from shopman.shop.models import Conversation
+
+    seen = _human_on_air(order_on_air, monkeypatch)
+    assert seen and seen[0] is not None and "handoff" in seen[0].chosen_moves
+    assert len(outbox.sent) == 1 and outbox.sent[0].startswith("Solicitei atendimento a alguém da equipe")
+    assert Conversation.objects.get(pk=order_on_air.pk).state == Conversation.State.HANDOFF
+    assert (_cards("concierge_handoff"), _cards("concierge_verify")) == (1, 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_asking_twice_for_a_person_is_one_card_and_one_phrase(order_on_air, outbox, monkeypatch):
+    """Idempotência: com a conversa já com a equipe, o segundo pedido não abre outro cartão nem repete a frase."""
+    _human_on_air(order_on_air, monkeypatch, times=2)
+    assert len(outbox.sent) == 1 and _cards("concierge_handoff") == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_with_the_handoff_class_off_nothing_changes(order_on_air, outbox, monkeypatch):
+    """A configuração de teste do dono: "encaminhar" desligado. O pedido de pessoa segue o caminho de hoje."""
+    seen = _human_on_air(order_on_air, monkeypatch, handoff=False)
+    assert seen == [None]  # o motor não respondeu
+    assert outbox.sent and not outbox.sent[0].startswith("Solicitei atendimento a alguém da equipe")
+    assert all("send_key" not in (reply.envelope or {}) for reply in _replies(order_on_air))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_verify_card_shows_the_customer_words_and_the_ask_carries_only_the_internal_code(conversation):
+    """P17: a pergunta do motor à equipe é interna ("ask_item: …") e é tudo o que o ask e o tíquete levam; a fala
+    do cliente, que a equipe lê no cartão, é lida AQUI, na mensagem que abriu o turno."""
+    from conversational_commerce.ports import TrustedContext
+    from conversational_commerce.ports.staff import StaffQuestion
+
+    from shopman.shop.models import Conversation
+    from shopman.storefront.concierge.ports import subject_of
+    from shopman.storefront.concierge.staff_port import NiceStaff
+    from shopman.storefront.concierge.verification import FLAG_KEY
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _receive(conversation, "tem glúten no pão de queijo?", "verify-1")
+    question = StaffQuestion(episode_id="ep-x", question="ask_item: item.PAO-QUEIJO",
+                             respond_by="2026-11-23T23:59:00.000000Z")
+    ctx = TrustedContext(tenant="nelson-boulangerie", environment="live", subject=subject_of(conversation.pk))
+    ticket = NiceStaff().ask(ctx, question)
+    assert ticket.state == "routed" and "glúten" not in ticket.ticket_id
+    assert set(question.__dataclass_fields__) == {"episode_id", "question", "respond_by"}  # nada além do código
+    record = (Conversation.objects.get(pk=conversation.pk).flags or {}).get(FLAG_KEY) or {}
+    asked = str(record)
+    assert "glúten" in asked and "ask_item" not in asked  # a equipe lê a fala, nunca o código interno
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_deadline_notice_goes_out_once(order_on_air, outbox, monkeypatch):
+    """K22 de ponta a ponta: o motor encaminhou com prazo; a equipe devolveu a conversa sem responder; vencido o
+    prazo, o cliente é avisado UMA vez na frase aprovada, e o tick seguinte cala."""
+    from datetime import UTC, datetime, timedelta
+
+    from shopman.shop.conversational import clock
+    from shopman.shop.models import Conversation
+
+    _human_on_air(order_on_air, monkeypatch)
+    with override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "human_return_enabled": True}):
+        assert service.return_to_concierge(Conversation.objects.get(pk=order_on_air.pk))  # a equipe devolveu
+    # Passado o prazo de aceite (minutos), dentro da janela de 24 h do WhatsApp (fora dela, nada sai).
+    later = datetime.now(UTC) + timedelta(minutes=30)
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return later if tz is not None else later.replace(tzinfo=None)
+
+    monkeypatch.setattr(clock, "datetime", Later)
+    monkeypatch.setattr("django.utils.timezone.now", lambda: later)
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        first = turn_framework.tick()
+        second = turn_framework.tick()
+    assert (first["notices"], second["notices"]) == (1, 0), (first, second)
+    assert len(outbox.sent) == 2 and outbox.sent[1].startswith("Desculpe a demora.")

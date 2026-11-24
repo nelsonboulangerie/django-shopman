@@ -36,8 +36,10 @@ CHANNEL = "whatsapp"
 #: e o gasto passa pelo freio da casa (``ai_governor``). Estouro cai para a regra local.
 MODEL_CALLS_PER_TURN = 1
 
-# P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge.
-ENABLED_MOVES = ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification", "handoff")
+# P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge. ``wait`` é o aviso do prazo
+# vencido de um compromisso com a equipe (K22, ``Engine.tick``): sem ele, o aviso nunca saía (#3417).
+ENABLED_MOVES = ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification", "handoff",
+                 "wait")
 # P08: o pedido na conversa, em validação até o WP-14 da Concierge.
 ORDER_MOVES = ("present_terms", "change_cart", "set_fulfillment", "set_delivery_address", "set_payment",
                "commit_order")
@@ -53,7 +55,7 @@ LEVEL_OF_MOVE = {"acknowledge": "A0", "inform": "A0", "cover_readings": "A0", "i
                  "ask_clarification": "A0", "handoff": "A0", "present_terms": "A1", "change_cart": "A2",
                  "set_fulfillment": "A2", "set_delivery_address": "A2", "set_payment": "A2",
                  "commit_order": "A3", "cancel_order": "A3", "amend_order": "A3", "grant_discount": "A4",
-                 "recommend": "A0"}
+                 "recommend": "A0", "wait": "A0"}
 # P03: o telefone do WhatsApp é identidade transportada. É com ela que a Nice atende,
 # cancela e acrescenta hoje (o cliente é o dono do número); o vínculo verificado
 # (``weak_verified``) é o que o fato pessoal pede, e está desligado no alpha.
@@ -183,7 +185,10 @@ def build_profile(*, environment: str = "shadow", config: Mapping[str, Any] | No
         version=PROFILE_VERSION,
         adapters={"commerce": ("search", "read_item", "promise", "quote"),
                   "channel": ("normalize", "send", "delivery_status", "request_handoff"),
-                  "staff": ()},
+                  # A porta de equipe da Nice (``staff_port.NiceStaff``): perguntar e encaminhar (``ask``), o
+                  # compromisso (``open_or_update``) e a devolução (``return_conversation``). Sem elas, o motor não
+                  # prometia prazo, e "quero falar com uma pessoa" caía na limitação (#3419).
+                  "staff": ("ask", "open_or_update", "return_conversation")},
         catalog_version=CATALOG_VERSION, policy_version=POLICY_VERSION,
         house_rules_ref="shopman.storefront.concierge.house_rules.RULES",
         actions=actions,
