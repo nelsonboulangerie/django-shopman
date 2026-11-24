@@ -1579,6 +1579,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_WAIT_OVERDUE_NO_DEADLINE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora. Ainda estou esperando {owner} e te aviso por aqui assim que tiver a resposta.")},
     },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entregamos no endereço do seu cadastro, {delivery_address_saved}?")},
+    },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER_MANY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entregamos no endereço do seu cadastro, {delivery_address_saved}? Se preferir outro endereço cadastrado, é só dizer qual.")},
+    },
     "CONCIERGE_ENGINE_EFFECT_HELD": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pronto, anotei. Já te confirmo os detalhes por aqui.")},
     },
