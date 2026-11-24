@@ -136,6 +136,23 @@ class HouseGrid(FakeCommerceExecute):
         return ref
 
 
+def _address_of(world):
+    """O endereço da entrega pela referência do executor de memória, como o resolvedor do ar lê o da sacola: a rua
+    e o número do texto dado, e o texto inteiro (#3540: sem isto, o ensaio segurava a resposta ao endereço, que no
+    ar sai). Referência que o mundo não conhece não se diz."""
+    from conversational_commerce.reply import UnresolvedReference
+
+    def resolve(ref) -> dict:
+        found = next((address for address in world.state.address.values() if address.get("ref") == str(ref)), None)
+        if found is None or not found.get("text"):
+            raise UnresolvedReference(str(ref))
+        parts = [part.strip() for part in str(found["text"]).split(",")]
+        number = parts[1] if len(parts) > 1 and parts[1][:1].isdigit() else ""
+        return {"route": parts[0], "street_number": number, "formatted_address": str(found["text"])}
+
+    return resolve
+
+
 def _world():
     """O mundo de memória: as portas falsas do pacote, com o canal da Nice e a sacola vazia."""
     from conversational_commerce.testing.fakes import FakeWorld
@@ -217,7 +234,7 @@ def engine_for(reader: Callable, *, today: date):
         return Subject(subject_ref=SUBJECT, identity_evidence=(evidence,), cart_ref=CART)
 
     engine = Engine(ports, _profile(), rules=NiceRules(), subject_of=subject_of,
-                    house_templates=nice_templates(), formatters=nice_formatters())
+                    house_templates=nice_templates(), formatters=nice_formatters(resolve_address=_address_of(world)))
     return engine, world
 
 

@@ -439,6 +439,32 @@ def test_without_knowing_what_leaves_the_swap_stays_as_read(conversation, menu, 
     assert _fields(_read("quero baguete", ai)[0]) == [("change_quantity", {"item": "BAGUETE"})]
 
 
+def test_a_new_question_in_the_close_is_read_and_an_empty_ai_reading_takes_the_gate_one(conversation):
+    """Ensaio no ar (24/11): no meio do fechamento, "que horas vocês fecham?" voltou VAZIO da IA, e a Nice perguntou
+    de novo. A IA é avisada de que pergunta nova é uma parte; e, se ainda vier vazia, vale a leitura do Jev."""
+    ai = FakeAI([])
+    understanding, _ = _read("que horas vocês fecham?", ai, allowed=WITH_FULFILLMENT, gate=lambda t: "ask_hours",
+                             context=_asked("delivery_time_slot", ("choose_fulfillment",)))
+    assert _fields(understanding) == [("ask_hours", {})] and understanding.alternatives == ()
+    content = ai.requests[0]["messages"][0]["content"]
+    assert "tem pão de queijo?" in content and "nunca uma lista vazia" in content
+    assert "unknown" in ai.requests[0]["system"][0]["text"]
+
+
+@pytest.mark.parametrize(("label", "spoken"), [
+    ("A partir das 09h", "A partir das 9h"), ("09h30 às 10h", "9h30 às 10h"), ("A partir das 15h", "A partir das 15h"),
+    ("20h", "20h"),
+])
+def test_the_slot_hour_is_said_without_the_leading_zero(label, spoken):
+    from shopman.storefront.concierge import order_closing, tools, turn_framework
+
+    assert order_closing.spoken_hours(label) == spoken
+    assert order_closing.window_phrase("A partir das 09h") == "a partir das 9h"
+    assert turn_framework.labels_in_sentence(["A partir das 09h", "A partir das 12h"], before="Qual? ", closes=True) \
+        == "A partir das 9h ou a partir das 12h."
+    assert tools._summary_when("", "A partir das 09h") == "a partir das 9h"
+
+
 # ── a queda para a regra local ──────────────────────────────────────────────────────────
 
 

@@ -201,6 +201,9 @@ class FakeCommerceRead(FakeBase):
                 found.append({"code": "fulfillment_window", "value": window})
             if chosen.get("time"):
                 found.append({"code": "fulfillment_time", "value": chosen["time"]})
+        if chosen.get("mode") == "delivery" and cart_ref in self.state.address:
+            # O endereço da entrega, pela referência (o texto é da casa, no envio), como o sistema de registro.
+            found.append({"code": "delivery_address", "value": self.state.address[cart_ref]["ref"]})
         if cart_ref in self.state.payment:
             found.append({"code": "payment_method", "value": self.state.payment[cart_ref]})
         return found

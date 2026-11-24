@@ -139,3 +139,17 @@ def test_the_said_hour_is_echoed_before_the_window_the_house_records():
     window = SimpleNamespace(receipts={"n1": receipt(mode="pickup", date="2026-01-06", window="slot-15")})
     assert set_fulfillment.reply(both, need).template_id == "set_fulfillment.done_time"
     assert set_fulfillment.reply(window, need).template_id == "set_fulfillment.done"
+
+
+def test_the_delivery_terms_carry_the_address_by_reference_like_the_record_system():
+    """#3540: o falso declara o endereço da entrega nos termos, pela referência, como o sistema de registro."""
+    delivery = _step("delivery", {"act": "choose_fulfillment", "fields": {"date": "2026-01-06", "mode": "delivery"}})
+    address = _step("addr", {"act": "give_address"}, text="Rua das Flores 120")
+    world = _world()
+    world.state.delivery_windows = ("das 9h às 12h",)
+    steps = (delivery, address, CLOSE)
+    turn_engine, world = engine(steps=steps, world=world)
+    run_journey(turn_engine, CTX, list(steps))
+    terms = world.commerce_read.quotes[world.state.current_terms["cart-1"]]
+    codes = {condition.code: condition.value for condition in terms.conditions}
+    assert codes["delivery_address"] == world.state.address["cart-1"]["ref"]

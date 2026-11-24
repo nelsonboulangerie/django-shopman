@@ -389,8 +389,12 @@ def conditions_text(value, resolve=_no_address) -> str:
     return text
 
 
-def nice_formatters(conversation=None) -> dict:
-    """Os formatadores da Nice. Com a conversa, os de referência resolvem o endereço DELA (e só dela)."""
+def nice_formatters(conversation=None, *, resolve_address=None) -> dict:
+    """Os formatadores da Nice. Com a conversa, os de referência resolvem o endereço DELA (e só dela).
+
+    ``resolve_address``: outro resolvedor da referência do endereço, para o ensaio (o mundo de memória não tem
+    sacola gravada); no ar, nunca.
+    """
     from functools import partial
 
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
@@ -405,7 +409,7 @@ def nice_formatters(conversation=None) -> dict:
             "method": method_text, "payment_method": payment_options_text, "reading": reading_words,
             "delivery_address_details": address_words_text, "delivery_time_slot": pickup_slots_text(conversation),
             "delivery_window": delivery_windows_text(conversation),
-            **_address_formatters(conversation, partial)}
+            **_address_formatters(conversation, partial, resolve_address)}
 
 
 def labels_in_sentence(labels: list[str], *, before: str = "", closes: bool = False) -> str:
@@ -415,8 +419,10 @@ def labels_in_sentence(labels: list[str], *, before: str = "", closes: bool = Fa
     no meio, minúsculo; os demais, sempre minúsculos. ``closes``: a lista termina a frase sem pontuação, e ganha
     o ponto final. O rótulo da grade e o site não mudam.
     """
+    from .order_closing import spoken_hours
+
     opens = not before.strip() or before.rstrip()[-1] in ".?!"
-    lowered = [label[:1].lower() + label[1:] for label in labels]
+    lowered = [spoken[:1].lower() + spoken[1:] for spoken in (spoken_hours(label) for label in labels)]
     if opens and lowered:
         lowered[0] = lowered[0][:1].upper() + lowered[0][1:]
     text = lowered[0] if len(lowered) == 1 else f"{', '.join(lowered[:-1])} ou {lowered[-1]}"
@@ -505,8 +511,8 @@ def address_words_text(value) -> str:
     return join_words([str(word) for word in value])
 
 
-def _address_formatters(conversation, partial) -> dict:
-    resolve = address_resolver(conversation) if conversation is not None else _no_address
+def _address_formatters(conversation, partial, resolve_address=None) -> dict:
+    resolve = resolve_address or (address_resolver(conversation) if conversation is not None else _no_address)
     return {"address": address_text(resolve), "conditions": partial(conditions_text, resolve=resolve),
             "delivery_address_saved": saved_address_text(conversation),
             "delivery_address_saved_options": saved_addresses_text(conversation)}
