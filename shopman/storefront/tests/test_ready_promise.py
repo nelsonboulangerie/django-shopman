@@ -81,7 +81,7 @@ class TestPromiseSentence:
         promise = promise_for("MELON", facts, orderable=True)
 
         assert promise.kind == KIND_READY
-        assert promise.text == "Pronto agora"
+        assert promise.text == "Disponível agora"
         assert promise.date == "2026-11-17"
         assert promise.ready_at == "10:30"
         assert promise.day_label == "hoje"
@@ -105,7 +105,7 @@ class TestPromiseSentence:
         promise = promise_for("BAGUETE", facts, orderable=True)
 
         assert promise.kind == KIND_BATCH
-        assert promise.text == "Fica pronto hoje às 15h"
+        assert promise.text == "Disponível a partir das 15h"
         assert promise.ready_at == "15:00"
 
     def test_fornada_de_amanha_diz_o_dia_e_a_hora(self):
@@ -122,7 +122,7 @@ class TestPromiseSentence:
         promise = promise_for("TABAT", facts, orderable=True)
 
         assert promise.kind == KIND_BATCH
-        assert promise.text == "Fica pronto amanhã, quarta, a partir das 15h"
+        assert promise.text == "Disponível amanhã, quarta, a partir das 15h"
         assert promise.date == "2026-11-18"
         assert promise.day_label == "amanhã, quarta"
 
@@ -135,7 +135,7 @@ class TestPromiseSentence:
         promise = promise_for("CROISSANT", facts, orderable=True)
 
         assert promise.kind == KIND_PREORDER
-        assert promise.text == "Fica pronto amanhã, quarta, a partir das 9h"
+        assert promise.text == "Disponível amanhã, quarta, a partir das 9h"
 
     def test_corte_do_dia_passa_para_o_proximo_dia(self):
         """Casa ainda aberta às 17h45, mas a antecedência já não deixa horário hoje."""
@@ -146,7 +146,7 @@ class TestPromiseSentence:
         promise = promise_for("MELON", facts, orderable=True)
 
         assert promise.kind == KIND_PREORDER
-        assert promise.text == "Fica pronto amanhã, quarta, a partir das 9h"
+        assert promise.text == "Disponível amanhã, quarta, a partir das 9h"
 
     def test_hora_de_pronto_corta_os_horarios_de_hoje_e_dos_proximos_dias(self):
         """Hoje o último horário começa às 16h30; os turnos de amanhã, às 9h, 12h e 15h."""
@@ -158,7 +158,7 @@ class TestPromiseSentence:
             ready_at={"BAGUETE": time(13)},
         )
         # hoje, 13h cabe
-        assert promise_for("BAGUETE", facts, orderable=True).text == "Fica pronto hoje às 13h"
+        assert promise_for("BAGUETE", facts, orderable=True).text == "Disponível a partir das 13h"
         facts.ready_at["BAGUETE"] = time(17)
         promise = promise_for("BAGUETE", facts, orderable=True)
         assert promise is None  # nenhum turno de amanhã começa depois das 17h
@@ -181,7 +181,7 @@ class TestPromiseSentence:
         promise = promise_for("MELON", facts, orderable=True)
 
         assert promise.kind == KIND_PREORDER
-        assert promise.text == "Fica pronto amanhã, segunda, a partir das 9h"
+        assert promise.text == "Disponível amanhã, segunda, a partir das 9h"
 
     def test_fornada_num_dia_fechado_fica_para_o_proximo_dia_aberto(self):
         at = datetime(2026, 11, 20, 10, 0, tzinfo=SP)  # sexta
@@ -196,7 +196,7 @@ class TestPromiseSentence:
         promise = promise_for("TABAT", facts, orderable=True)
 
         assert promise.kind == KIND_PREORDER
-        assert promise.text == "Fica pronto segunda, 23/11, a partir das 9h"
+        assert promise.text == "Disponível segunda, 23/11, a partir das 9h"
 
     def test_sem_promessa_quando_nao_ha_o_que_afirmar(self):
         at = datetime(2026, 11, 17, 10, 0, tzinfo=SP)
@@ -220,7 +220,7 @@ class TestPromiseSentence:
         promise = promise_for("TABAT", facts, orderable=True, planned_for=thursday)
 
         assert promise.kind == KIND_BATCH
-        assert promise.text == "Fica pronto quinta, 19/11, a partir das 9h"
+        assert promise.text == "Disponível quinta, 19/11, a partir das 9h"
 
     def test_meia_hora_aparece_na_frase(self):
         at = datetime(2026, 11, 17, 10, 0, tzinfo=SP)
@@ -230,7 +230,7 @@ class TestPromiseSentence:
             ready_at={"BAGUETE": time(11, 30)},
         )
 
-        assert promise_for("BAGUETE", facts, orderable=True).text == "Fica pronto hoje às 11h30"
+        assert promise_for("BAGUETE", facts, orderable=True).text == "Disponível a partir das 11h30"
 
     def test_verbo_e_fica_pronto_nunca_sai(self):
         at = datetime(2026, 11, 17, 19, 0, tzinfo=SP)
@@ -372,16 +372,16 @@ CLOCKS = {
 
 EXPECTED = {
     "aberta": {
-        "MELON": ("ready", "Pronto agora"),
-        "TABAT": ("batch", "Fica pronto amanhã, quarta, a partir das 15h"),
+        "MELON": ("ready", "Disponível agora"),
+        "TABAT": ("batch", "Disponível amanhã, quarta, a partir das 15h"),
     },
     "fechada": {
-        "MELON": ("preorder", "Fica pronto amanhã, quarta, a partir das 9h"),
-        "TABAT": ("batch", "Fica pronto amanhã, quarta, a partir das 15h"),
+        "MELON": ("preorder", "Disponível amanhã, quarta, a partir das 9h"),
+        "TABAT": ("batch", "Disponível amanhã, quarta, a partir das 15h"),
     },
     "domingo": {
-        "MELON": ("preorder", "Fica pronto amanhã, segunda, a partir das 9h"),
-        "TABAT": ("batch", "Fica pronto amanhã, segunda, a partir das 15h"),
+        "MELON": ("preorder", "Disponível amanhã, segunda, a partir das 9h"),
+        "TABAT": ("batch", "Disponível amanhã, segunda, a partir das 15h"),
     },
 }
 

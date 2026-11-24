@@ -138,7 +138,7 @@ describe('productJsonLd', () => {
     const ld = productJsonLd({
       product: product({
         can_add_to_cart: true,
-        promise: { kind: 'batch', date: '2026-11-17', ready_at: '15:00', day_label: 'hoje', text: 'Fica pronto hoje às 15h' },
+        promise: { kind: 'batch', date: '2026-11-17', ready_at: '15:00', day_label: 'hoje', text: 'Disponível a partir das 15h' },
         pickup_store: { name: 'Nelson Boulangerie', address: 'Rua das Flores, 100, Centro' }
       }),
       origin: ORIGIN,
@@ -159,7 +159,7 @@ describe('productJsonLd', () => {
       product: product({
         availability: 'available',
         can_add_to_cart: true,
-        promise: { kind: 'preorder', date: '2026-11-18', ready_at: '09:00', day_label: 'amanhã, quarta', text: 'Fica pronto amanhã, quarta, a partir das 9h' }
+        promise: { kind: 'preorder', date: '2026-11-18', ready_at: '09:00', day_label: 'amanhã, quarta', text: 'Disponível amanhã, quarta, a partir das 9h' }
       }),
       origin: ORIGIN,
       url: 'x'

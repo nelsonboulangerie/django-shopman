@@ -39,41 +39,54 @@ export function promiseAddLabel (promise: ReadyPromise | null | undefined, fallb
 
 /**
  * O selo curto do card, no lugar do antigo "Lista de espera": o card não cabe a
- * frase inteira. Hoje leva a hora ("Fica pronto hoje às 15h"); outro dia leva
- * só o dia ("Fica pronto amanhã", "Fica pronto na quinta"), e a página do
- * produto diz a hora. Pronto agora não tem selo: é o normal.
+ * frase inteira. Sobre o produto a loja fala de disponibilidade, não de
+ * prontidão (dono, 24/11/2026). Hoje leva a hora ("Disponível a partir das
+ * 15h"); outro dia leva só o dia ("Disponível amanhã", "Disponível na
+ * quinta"), e a página do produto diz a hora. Disponível agora não tem selo: é
+ * o normal.
  */
 export function promiseBadgeLabel (promise: ReadyPromise | null | undefined): string {
   if (!promise || promise.kind === 'ready') return ''
-  if (promiseIsToday(promise)) return `Fica pronto hoje às ${promiseHour(promise.ready_at)}`
-  return `Fica pronto ${dayWithArticle(promise)}`
+  if (promiseIsToday(promise)) return `Disponível a partir das ${promiseHour(promise.ready_at)}`
+  return `Disponível ${dayWithArticle(promise)}`
+}
+
+/**
+ * A frase da promessa na página do produto, ou nada. O estado padrão (disponível
+ * agora) não se diz: a tela só fala quando a disponibilidade difere (dono,
+ * 24/11/2026). O texto é o do servidor ("Disponível amanhã, quarta, a partir
+ * das 7h").
+ */
+export function productPromiseLine (promise: ReadyPromise | null | undefined): string {
+  if (!promise || promise.kind === 'ready') return ''
+  return promise.text
 }
 
 export type PickupStoreLines = {
   // "Disponível hoje na Nelson Boulangerie" | "Indisponível hoje na Nelson Boulangerie"
   availability: string
   availableToday: boolean
-  // "Rua X, 123, Centro. Retirada grátis."
-  address: string
 }
 
 /**
- * Em qual loja o produto está e se está disponível hoje (#2652, o que o Google
- * exige para "disponibilidade na loja"). Só com promessa: sem ela a tela não
- * afirma nem "hoje" nem "indisponível". Disponível hoje = a promessa é de hoje
- * (pronto agora ou fica pronto mais tarde); a encomenda para outro dia é
- * "Indisponível hoje", e a linha da promessa logo acima diz quando fica pronto.
+ * Em qual loja o produto está e se está disponível hoje (#2652). É o que o
+ * Google exige para "disponibilidade na loja": o nome da loja e o estado,
+ * visíveis ao abrir a página. O endereço completo só é exigido quando a cliente
+ * abre os detalhes da loja, e com um endereço só ele era ruído (dono,
+ * 24/11/2026): a linha fica curta, sem endereço. Só com promessa: sem ela a
+ * tela não afirma nem "hoje" nem "indisponível". Disponível hoje = a promessa é
+ * de hoje; a encomenda para outro dia é "Indisponível hoje", e a linha da
+ * promessa logo acima diz quando fica disponível.
  */
 export function pickupStoreLines (
   promise: ReadyPromise | null | undefined,
   store: PickupStoreProjection | null | undefined
 ): PickupStoreLines | null {
-  if (!promise || !store?.name || !store.address) return null
+  if (!promise || !store?.name) return null
   const availableToday = promiseIsToday(promise)
   return {
     availability: `${availableToday ? 'Disponível' : 'Indisponível'} hoje na ${store.name}`,
-    availableToday,
-    address: `${store.address.replace(/[.\s]+$/, '')}. Retirada grátis.`
+    availableToday
   }
 }
 
@@ -102,8 +115,8 @@ function latestPromise (
 }
 
 /**
- * A promessa na LINHA da sacola: só a de fornada, que é fato do item ("Fica
- * pronto amanhã, terça, a partir das 15h"). Pronto agora é o normal e não tem
+ * A promessa na LINHA da sacola: só a de fornada, que é fato do item
+ * ("Disponível amanhã, terça, a partir das 15h"). Disponível agora é o normal e não tem
  * frase. A encomenda (o item é de hoje, mas a casa já não tem horário hoje) é
  * fato da casa, igual para todas as linhas: quem diz é `cartReadyLine`, uma
  * vez, no alto da sacola.
