@@ -114,6 +114,16 @@ describe("ShortageDialog — o lote curto fecha com a verdade", () => {
     expect(wrapper.emitted("review")).toHaveLength(1);
   });
 
+  it("uma unidade e um pedido no singular", () => {
+    const wrapper = mount(ShortageDialog, {
+      props: { shortage: { ...shortLot, required: "2", requested: "1" } as ProductionShortageError, allowShortLot: true },
+      global: { stubs: nuxtUiStubs },
+    });
+
+    expect(wrapper.findComponent({ name: "NuxtModal" }).props("description")).toBe("Rendeu 1. Falta 1 para as encomendas.");
+    expect(wrapper.get("[data-short-lot-outcome]").text()).toContain('este pedido aparece em "Promessa em risco"');
+  });
+
   it("a tela que não sabe fechar o lote curto não oferece o botão", () => {
     const wrapper = mountShortLot(false);
 

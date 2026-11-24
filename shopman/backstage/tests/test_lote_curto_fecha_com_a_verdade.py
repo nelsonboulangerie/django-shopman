@@ -21,8 +21,6 @@ from decimal import Decimal
 import pytest
 from shopman.craftsman.models import WorkOrder, WorkOrderEvent
 from shopman.orderman.models import OrderEvent
-from shopman.stockman.models import Position
-from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.services import production
@@ -82,8 +80,10 @@ def test_rendeu_4_de_6_encomendados_pergunta_e_fecha_com_a_verdade(ficha, django
 
     lote.refresh_from_db()
     assert lote.status == WorkOrder.Status.FINISHED
-    # O pão entra no estoque, inteiro, e a reserva que coube vai junto.
-    assert _saldos() == {"vitrine": (Decimal("4"), Decimal("4"))}
+    # O pão entra no estoque, inteiro. A reserva do pedido não coube e fica onde
+    # estava, esperando quem cuida das encomendas: soltar é decisão de gente (#3149).
+    assert _saldos() == {"vitrine": (Decimal("4"), Decimal("0")), "em_producao": (Decimal("0"), Decimal("6"))}
+    assert _onde(order) == "em_producao"
     # O fato fica com o lote: quanto rendeu, quanto faltou, para quem, e quem confirmou.
     finished = lote.events.get(kind=WorkOrderEvent.Kind.FINISHED)
     shortfall = finished.payload["context"]["order_shortfall"]
@@ -96,7 +96,7 @@ def test_rendeu_4_de_6_encomendados_pergunta_e_fecha_com_a_verdade(ficha, django
     }
     # O Gestor fica sabendo pelo caminho de sempre (#3149): "Promessa em risco".
     assert OperatorAlert.objects.filter(type="order_promise_lost", order_ref=order.ref).count() == 1
-    assert OrderEvent.objects.filter(order=order, type="production_hold_lost").exists()
+    assert OrderEvent.objects.filter(order=order, type="production_hold_short").exists()
 
 
 def test_o_reenvio_da_confirmacao_nao_dobra_estoque_nem_aviso(ficha, django_capture_on_commit_callbacks):
@@ -170,22 +170,31 @@ def test_abrir_abaixo_do_encomendado_pergunta_e_abre(ficha, django_capture_on_co
     assert lote.started_qty == Decimal("4")
 
 
-def test_a_conta_desconta_o_que_o_pedido_ja_tem_na_prateleira(ficha, django_capture_on_commit_callbacks):
+def test_a_conta_desconta_o_que_o_pedido_ja_tem_na_prateleira(ficha, monkeypatch):
     """P1-03: a trava conta o que a produção deve, não as linhas seladas do pedido.
 
-    Com 2 na vitrine, o pedido de 6 leva 2 dali e espera só 4 do lote: fechar com 4
-    não é lote curto e não pergunta nada.
+    O pedido de 6 que já tem 2 reservados na vitrine espera 4 do lote; o que já foi
+    todo servido da vitrine não espera nada e nem aparece na pergunta.
     """
-    day = _hoje()
-    StockMovements.receive(quantity=Decimal("2"), sku=SKU, position=Position.objects.get(ref="vitrine"))
-    lote = _planejar(ficha, 10, day)
-    with django_capture_on_commit_callbacks(execute=True):
-        order = _pedido_da_loja(6)
-        _iniciar(lote, 10)
+    from shopman.orderman.models import Order, OrderItem
 
-    with django_capture_on_commit_callbacks(execute=True):
-        _fechar(lote, 4)
+    from shopman.shop.handlers import production_order_sync
 
-    lote.refresh_from_db()
-    assert lote.status == WorkOrder.Status.FINISHED
-    assert _onde(order) == "vitrine"
+    def pedido(ref, qty):
+        order = Order.objects.create(ref=ref, channel_ref="web", status="accepted", total_q=0, data={})
+        OrderItem.objects.create(
+            order=order, line_id=f"{ref}-1", sku=SKU, name=SKU, qty=qty, unit_price_q=0, line_total_q=0
+        )
+        return order
+
+    parcial, servido = pedido("P1-03-PARCIAL", 6), pedido("P1-03-SERVIDO", 3)
+    monkeypatch.setattr(
+        production_order_sync,
+        "_shelf_quantities",
+        lambda orders: {(parcial.ref, SKU): Decimal("2"), (servido.ref, SKU): Decimal("3")},
+    )
+
+    required, lines = production._production_demand([parcial, servido], SKU)
+
+    assert required == Decimal("4")
+    assert lines == ((parcial.ref, Decimal("4")),)

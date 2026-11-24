@@ -54,10 +54,15 @@ const shortLot = computed(() => {
   const value = last.value;
   if (!shortLotPossibility.value || value?.code !== "order_shortage") return null;
   const missing = Math.max(0, Number(value.required) - Number(value.requested));
+  const orders = value.orders ?? [];
   return {
     yielded: formatQty(value.requested),
-    missing: formatQty(String(missing)),
-    orders: value.orders ?? [],
+    missing: `${missing === 1 ? "Falta" : "Faltam"} ${formatQty(String(missing))}`,
+    orders,
+    outcome:
+      orders.length === 1
+        ? "este pedido aparece em \"Promessa em risco\" no Gestor"
+        : "estes pedidos aparecem em \"Promessa em risco\" no Gestor",
   };
 });
 const overrideReason = ref("");
@@ -83,7 +88,7 @@ const title = computed(() =>
 const description = computed(() => {
   const ref = last.value?.work_order_ref;
   if (shortLot.value) {
-    return `Rendeu ${shortLot.value.yielded}. Faltam ${shortLot.value.missing} para as encomendas.`;
+    return `Rendeu ${shortLot.value.yielded}. ${shortLot.value.missing} para as encomendas.`;
   }
   if (isMaterial.value && forcePossibility.value) {
     return `Faltam insumos para concluir ${ref}. Registre o motivo real da autorização; a identidade do operador e um alerta serão preservados.`;
@@ -152,9 +157,8 @@ function confirmOverride() {
             </li>
           </ul>
           <p class="text-sm" data-short-lot-outcome>
-            O lote fecha com {{ shortLot.yielded }}, o pão entra no estoque, e estes
-            pedidos aparecem em "Promessa em risco" no Gestor, para quem cuida das
-            encomendas resolver.
+            O lote fecha com {{ shortLot.yielded }}, o pão entra no estoque, e
+            {{ shortLot.outcome }}, para quem cuida das encomendas resolver.
           </p>
         </template>
         <template v-else-if="last && last.code === 'order_shortage'">
