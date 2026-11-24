@@ -226,9 +226,113 @@ def test_internal_cohort_comes_from_the_operator_link_function():
     assert (assignment.variant, assignment.reason) == ("b", experience.REASON_INTERNAL)
 
 
-def test_operator_link_is_empty_until_the_owner_decides():
-    """Hoje não há ligação operador → cliente (ver docstring); a função diz isso."""
+def _operator(username: str, *, group: str = "Caixa", is_active: bool = True, is_staff: bool = True):
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    user = get_user_model().objects.create_user(
+        username=username, first_name=username.title(), is_active=is_active, is_staff=is_staff
+    )
+    if group:
+        user.groups.add(Group.objects.get_or_create(name=group)[0])
+    return user
+
+
+def _team_customer(ref: str, operator) -> Customer:
+    """O cadastro marcado "É da equipe: <operador>" no Admin (decisão do dono, 24/11)."""
+    return Customer.objects.create(
+        ref=ref, first_name=ref, metadata={experience.TEAM_OPERATOR_KEY: operator.pk}
+    )
+
+
+def test_new_operator_enters_the_internal_cohort_by_the_customer_mark():
+    """D2: operador novo entra sozinho, sem lista à mão na regra."""
+    fran = _operator("fran")
+    cliente = _team_customer("CLI-FRAN", fran)
+    _rule()  # nenhuma lista à mão
+
+    assert experience.operator_customer_refs() == frozenset({"CLI-FRAN"})
+    [assignment] = experience.resolve(_request(cliente), SURFACE)
+    assert (assignment.variant, assignment.reason) == ("b", experience.REASON_INTERNAL)
+
+
+@pytest.mark.parametrize(
+    "desligar",
+    [
+        pytest.param(lambda user: setattr(user, "is_active", False), id="conta-inativa"),
+        pytest.param(lambda user: setattr(user, "is_staff", False), id="sem-acesso-de-equipe"),
+        pytest.param(lambda user: user.groups.clear(), id="sem-grupo"),
+    ],
+)
+def test_dismissed_operator_leaves_the_cohort_without_editing_the_customer(desligar):
+    """D2: desligado sai sozinho; a marca no cadastro fica e não vale mais."""
+    diofer = _operator("diofer", group="Cozinha")
+    cliente = _team_customer("CLI-DIOFER", diofer)
+    _rule()
+    assert _variant(_request(cliente)) == "b"
+
+    desligar(diofer)
+    diofer.save()
+
     assert experience.operator_customer_refs() == frozenset()
+    assert _variant(_request(cliente)) == "a"
+    cliente.refresh_from_db()
+    assert cliente.metadata == {experience.TEAM_OPERATOR_KEY: diofer.pk}
+
+
+def test_unmarked_customer_never_enters_even_with_active_operators():
+    """D2: cliente comum NUNCA entra na coorte interna."""
+    _team_customer("CLI-EQUIPE", _operator("joyce", group="Gerente"))
+    comum = _customer("CLI-COMUM")
+    # Marca que aponta para uma conta que não é de operador (a própria conta de
+    # cliente da loja, sem grupo nem acesso de equipe) também não vale.
+    from django.contrib.auth import get_user_model
+
+    conta_de_cliente = get_user_model().objects.create_user(username="customer_x")
+    falsa = Customer.objects.create(
+        ref="CLI-FALSA", first_name="Falsa", metadata={experience.TEAM_OPERATOR_KEY: conta_de_cliente.pk}
+    )
+    lixo = Customer.objects.create(
+        ref="CLI-LIXO", first_name="Lixo", metadata={experience.TEAM_OPERATOR_KEY: "joyce"}
+    )
+    _rule()
+
+    assert experience.operator_customer_refs() == frozenset({"CLI-EQUIPE"})
+    for cliente in (comum, falsa, lixo):
+        [assignment] = experience.resolve(_request(cliente), SURFACE)
+        assert (assignment.variant, assignment.reason) == ("a", experience.REASON_DEFAULT)
+
+
+def test_explicit_allow_list_still_complements_the_derived_cohort():
+    """A lista à mão continua valendo, ao lado da coorte derivada (conta de teste)."""
+    equipe = _team_customer("CLI-EQUIPE", _operator("fran"))
+    teste = _customer("CLI-CONTA-DE-TESTE")
+    _rule(cohorts={"internal": ["CLI-CONTA-DE-TESTE"], "pilot": []})
+
+    assert _variant(_request(equipe)) == "b"
+    assert _variant(_request(teste)) == "b"
+
+
+def test_operator_cohort_only_reads():
+    """Leitura pura: derivar a coorte não grava nada (nem a sessão)."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _team_customer("CLI-FRAN", _operator("fran"))
+    with CaptureQueriesContext(connection) as queries:
+        refs = experience.operator_customer_refs()
+
+    assert refs == frozenset({"CLI-FRAN"})
+    assert queries.captured_queries
+    assert all(q["sql"].lstrip().upper().startswith("SELECT") for q in queries.captured_queries)
+
+
+def test_unreadable_operator_cohort_falls_back_to_the_allow_list():
+    cliente = _customer("CLI-LISTA")
+    _rule(cohorts={"internal": ["CLI-LISTA"], "pilot": []})
+    with patch.object(experience, "operator_customer_refs", side_effect=RuntimeError("banco")):
+        assert _variant(_request(cliente)) == "b"
+        assert _variant(_request(_customer("CLI-FORA"))) == "a"
 
 
 def test_no_request_input_chooses_the_variant():

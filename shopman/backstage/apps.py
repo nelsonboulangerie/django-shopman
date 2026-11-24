@@ -234,3 +234,9 @@ class BackstageConfig(AppConfig):
         install_product_options_admin()
         install_enrichment_review()
         install_material_enrichment_review()
+
+        # "É da equipe: <operador>" no cadastro do cliente (decisão do dono,
+        # 24/11/2026): a coorte interna dos experimentos da loja vem daqui.
+        from shopman.backstage.admin.customer_team import install_customer_team_link
+
+        install_customer_team_link()
