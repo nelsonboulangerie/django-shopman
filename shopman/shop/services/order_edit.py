@@ -292,7 +292,7 @@ def product_lines(order) -> list[dict]:
     return [
         {"line_id": item.line_id, "sku": item.sku, "qty": str(item.qty), "name": item.name or item.sku}
         for item in order_composition.effective_items(order)
-        if not _is_fixed_line(item)
+        if not is_fixed_line(item)
     ]
 
 
