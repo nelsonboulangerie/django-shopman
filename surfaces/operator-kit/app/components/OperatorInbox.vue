@@ -290,7 +290,33 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 :color="alertColor(alert.tone)"
               />
               <template v-else-if="alert.actLabel && source?.act">
+                <!-- O gesto secundário (``actSecondary``): o lugar que resolve vem primeiro, sólido. -->
                 <NuxtButton
+                  v-if="alert.actSecondary && alert.href"
+                  class="min-w-0 basis-full justify-center"
+                  :to="alert.href"
+                  :color="alertColor(alert.tone)"
+                  variant="solid"
+                  trailing-icon="i-lucide-arrow-right"
+                  :label="alert.hrefLabel || 'Abrir'"
+                  :target="attrsFor(alert.href).target"
+                  :rel="attrsFor(alert.href).rel"
+                  data-alert-open
+                  @click="open = false"
+                />
+                <NuxtButton
+                  v-if="alert.actSecondary"
+                  class="min-w-0 basis-full justify-center"
+                  :color="alertColor(alert.tone)"
+                  variant="outline"
+                  :label="alert.actLabel"
+                  :disabled="source?.isPending?.(alert.key)"
+                  :loading="source?.isPending?.(alert.key)"
+                  data-alert-act
+                  @click="source?.act?.(alert.key)"
+                />
+                <NuxtButton
+                  v-else
                   class="min-w-0 basis-full justify-center"
                   :color="alertColor(alert.tone)"
                   variant="solid"
@@ -301,7 +327,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                   @click="source?.act?.(alert.key)"
                 />
                 <NuxtButton
-                  v-if="alert.href"
+                  v-if="alert.href && !alert.actSecondary"
                   :class="alert.secondaryHref ? 'min-w-0 basis-full justify-center' : 'min-w-0 basis-0 flex-[2]'"
                   :to="alert.href"
                   :color="alertColor(alert.tone)"

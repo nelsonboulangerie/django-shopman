@@ -11,7 +11,9 @@ import {
   ANSWER_PLACEHOLDER,
   ANSWER_SENT,
   giveBackAction,
+  GIVE_BACK_CONFIRM,
   GIVE_BACK_FAILED,
+  handoffInbox,
   GIVEN_BACK,
   isFinalAnswerError,
   TAKE_OVER_FAILED,
@@ -177,15 +179,26 @@ describe("cartão do handoff da Concierge (#3578)", () => {
     ],
   };
 
-  it("o gesto direto do cartão é devolver a conversa à Concierge", () => {
-    const inbox = { ...operatorAlertToInbox(HANDOFF), ...verificationInbox(HANDOFF) };
+  it("devolver é o gesto do cartão, mas em contorno: o principal é o Live Chat (dono, 24/11)", () => {
+    const inbox = { ...operatorAlertToInbox(HANDOFF), ...verificationInbox(HANDOFF), ...handoffInbox(HANDOFF) };
     expect(inbox.actLabel).toBe("Devolver à Concierge");
+    expect(inbox.actSecondary).toBe(true);
+    expect(handoffInbox(CARD)).toEqual({});
     expect(giveBackAction(HANDOFF)?.href).toBe("/api/v1/backstage/alerts/41/concierge-handoff/give-back/");
   });
 
   it("sem o gesto do servidor, nada é oferecido", () => {
     expect(giveBackAction({ ...HANDOFF, actions: [] })).toBeNull();
     expect(giveBackAction(CARD)).toBeNull();
+  });
+
+  it("pergunta antes de devolver, com as palavras do ato", () => {
+    expect(GIVE_BACK_CONFIRM).toEqual({
+      title: "A equipe terminou com este cliente?",
+      description: "A Concierge volta a responder.",
+      confirmLabel: "Devolver",
+      cancelLabel: "Cancelar",
+    });
   });
 
   it("as frases do desfecho", () => {

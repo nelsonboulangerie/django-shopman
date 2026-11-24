@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteChrome";
-import { giveBackAction, verificationInbox } from "~/presentation/conciergeVerification";
+import { giveBackAction, handoffInbox, verificationInbox } from "~/presentation/conciergeVerification";
 import { gestorSwitcherSections } from "~/presentation/gestorSections";
 import { gestorSupportContext } from "~/presentation/supportContext";
 
@@ -132,7 +132,11 @@ provideOperatorInboxAlerts(() => ({
   title: "Gerais",
   emptyText: "Nenhum alerta de pedido agora.",
   // O "vou verificar" da Concierge troca o gesto direto pelo campo de resposta (WP-07).
-  items: readableAlerts.value.map((alert) => ({ ...operatorAlertToInbox(alert), ...verificationInbox(alert) })),
+  items: readableAlerts.value.map((alert) => ({
+    ...operatorAlertToInbox(alert),
+    ...verificationInbox(alert),
+    ...handoffInbox(alert),
+  })),
   count: activeCount.value,
   ack: (key) => {
     const alert = alerts.value.find((item) => item.pk === key);

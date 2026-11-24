@@ -224,6 +224,9 @@ def test_the_card_gives_the_conversation_back_to_the_concierge_from_the_bell(con
     [give_back] = [a for a in row.actions if a.kind == "give_back_to_concierge"]
     assert (give_back.label, give_back.method, give_back.source_alert_effect) == (
         "Devolver à Concierge", "POST", "resolves")
+    # Com confirmação (dono, 24/11): o Gestor pergunta antes; a resposta do servidor diz isso.
+    assert give_back.confirmation.required is True
+    assert give_back.confirmation.title == "A equipe terminou com este cliente?"
     client.force_login(gestor)
 
     response = client.post(give_back.href)

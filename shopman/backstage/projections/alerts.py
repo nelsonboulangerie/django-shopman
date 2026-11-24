@@ -807,7 +807,7 @@ def _give_back_action(alert) -> ProductionActionProjection:
         ref=f"give-back:{alert.pk}",
         kind="give_back_to_concierge",
         label=GIVE_BACK_LABEL,
-        priority=5,
+        priority=11,
         enabled=True,
         reason="",
         method="POST",
@@ -818,10 +818,11 @@ def _give_back_action(alert) -> ProductionActionProjection:
             required=False,
             key_scope="",
         ),
+        # Com confirmação (dono, 24/11): o Gestor pergunta antes de devolver.
         confirmation=ProductionActionConfirmationProjection(
-            required=False,
+            required=True,
             reason_required=False,
-            title="",
+            title="A equipe terminou com este cliente?",
             confirm_label="Devolver",
         ),
         approval_requirement=None,
